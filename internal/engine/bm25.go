@@ -186,7 +186,7 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	relaxed := plan.expr(b, true)
 	clause := ""
 	if restrict {
-		clause = ` AND kind = ANY(` + b.textArray(types) + `)`
+		clause = ` AND r.kind = ANY(` + b.textArray(types) + `)`
 	}
 	words := make([]string, len(terms))
 	prefix := make([]bool, len(terms))
@@ -199,13 +199,16 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	// each (candidate, term) pair's weighted occurrences per band. A term's
 	// exact lexemes are its word under `english`, the dictionary the row was
 	// indexed with; a prefix term's starts are the word under `simple`,
-	// unstemmed, for the reason tsquery.go gives.
+	// unstemmed, for the reason tsquery.go gives. The pool's match goes
+	// through records_matching, the one read of the index row level security
+	// allows (migration 0010); every column is read back under the policy.
 	rows, err := ds.db.QueryContext(ctx, `
 		WITH cand AS (
-			SELECT kind, id, fts, fts @@ `+strict+` AS whole, `+demotion("records")+` AS demoted
-			FROM records
-			WHERE deleted_at IS NULL AND fts @@ `+relaxed+clause+`
-			ORDER BY whole DESC, ts_rank(fts, `+relaxed+`) DESC, kind, id
+			SELECT r.kind, r.id, r.fts, r.fts @@ `+strict+` AS whole, `+demotion("r")+` AS demoted
+			FROM records_matching(`+relaxed+`, NULL) m
+			JOIN records r ON r.kind = m.kind AND r.id = m.id
+			WHERE r.deleted_at IS NULL`+clause+`
+			ORDER BY whole DESC, ts_rank(r.fts, `+relaxed+`) DESC, r.kind, r.id
 			LIMIT `+b.arg(pool)+`
 		), terms AS (
 			SELECT t.i::int AS i,
@@ -275,7 +278,7 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 }
 
 // termIDF reads each term's document frequency in one statement, each count
-// capped at dfCap, and turns it into the term's IDF.
+// capped at dfCap inside records_matching, and turns it into the term's IDF.
 func (ds *dataset) termIDF(ctx context.Context, terms []scoreTerm, st searchStats) ([]float64, error) {
 	if len(terms) == 0 {
 		return nil, nil
@@ -285,7 +288,7 @@ func (ds *dataset) termIDF(ctx context.Context, terms []scoreTerm, st searchStat
 	capArg := b.arg(dfCap)
 	for i, t := range terms {
 		expr := searchOperand{words: []string{t.word}, prefix: t.prefix}.sql(b)
-		cols[i] = `(SELECT count(*) FROM (SELECT 1 FROM records WHERE deleted_at IS NULL AND fts @@ ` + expr + ` LIMIT ` + capArg + `) s)`
+		cols[i] = `(SELECT count(*) FROM records_matching(` + expr + `, ` + capArg + `))`
 	}
 	dfs := make([]int64, len(terms))
 	dest := make([]any, len(terms))

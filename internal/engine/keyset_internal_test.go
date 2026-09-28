@@ -30,9 +30,16 @@ func TestRenderOrder(t *testing.T) {
 		t.Fatalf("renderOrder = %q, want %q", got, want)
 	}
 	got = renderOrder([]orderTerm{{expr: "created_at", desc: false}, {expr: "id", desc: false}})
-	want = "created_at ASC NULLS LAST, id ASC"
+	want = "created_at ASC, id ASC"
 	if got != want {
 		t.Fatalf("renderOrder asc = %q, want %q", got, want)
+	}
+	// A NOT NULL column carries no null ordering, so a backward walk of its
+	// btree serves the newest-first default.
+	got = renderOrder([]orderTerm{{expr: "updated_at", desc: true}, {expr: "kind", desc: true}, {expr: "id", desc: true}})
+	want = "updated_at DESC, kind DESC, id DESC"
+	if got != want {
+		t.Fatalf("renderOrder updated_at = %q, want %q", got, want)
 	}
 }
 
