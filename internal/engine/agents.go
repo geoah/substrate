@@ -384,6 +384,100 @@ func (ds *dataset) settleInterruptedClaims(ctx context.Context) error {
 	return nil
 }
 
+// lostThreadReason is the reason a thread settles with when the run that
+// held it ended inside a live process without settling it: a panic, a
+// canceled context, a write that failed on the way out.
+const lostThreadReason = "interrupted: the agent run holding this thread stopped without settling it, and its lease expired at "
+
+// settleLostThreads settles a `running` thread whose lease expired and whose
+// loop this process does not run (runningThreads) to `error`, naming the
+// lost run. The lease is the loop's deadline plus slack (agentloop.go
+// leaseUntil), so no live loop outlives it. Only the thread settles: a
+// claim the run left already lists as interrupted (presentFailure), and the
+// sweep reruns nothing (decision 0064).
+func (ds *dataset) settleLostThreads(ctx context.Context) error {
+	if ds.svc.readOnly {
+		return nil
+	}
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT id, COALESCE(props->>'leaseUntil', '') FROM records
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'status' = $2
+		ORDER BY id`, typeThread, threadRunning)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	now := nowUTC()
+	for rows.Next() {
+		var id, lease string
+		if err := rows.Scan(&id, &lease); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if leaseExpired(lease, now) {
+			ids = append(ids, id)
+		}
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, live := ds.runningThreads.Load(id); live {
+			continue
+		}
+		var settled bool
+		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			settled = false
+			if err := t.lockRegistryDepShared(); err != nil {
+				return err
+			}
+			ref := eref{Kind: typeThread, ID: id}
+			if err := t.lockRecord(ref); err != nil {
+				return err
+			}
+			// Re-read under the row lock: a continuation may have claimed
+			// the thread with a fresh lease since the scan.
+			row, err := t.loadRow(ref, true)
+			if err != nil || row == nil || row.DeletedAt != nil {
+				return err
+			}
+			status, _ := row.Props["status"].(string)
+			lease, _ := row.Props["leaseUntil"].(string)
+			if status != threadRunning || !leaseExpired(lease, t.now) {
+				return nil
+			}
+			reason := lostThreadReason + lease
+			if lease == "" {
+				reason = lostThreadReason + "an unknown time"
+			}
+			if _, err := t.patch(ref, substrate.PatchInput{Properties: map[string]any{
+				"status":     threadError,
+				"reason":     reason,
+				"finishedAt": t.now.Format(time.RFC3339Nano),
+			}}); err != nil {
+				return err
+			}
+			settled = true
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("settle lost thread %s: %w", id, err)
+		}
+		if settled {
+			ds.svc.log.Warn("substrate: agent thread lost its run, marked error", "thread", id)
+		}
+	}
+	return nil
+}
+
+// leaseExpired reports whether a thread's `leaseUntil` lies before now. A
+// missing or unreadable lease is expired, as claimThread reads it.
+func leaseExpired(lease string, now time.Time) bool {
+	at, err := time.Parse(time.RFC3339Nano, lease)
+	return err != nil || !now.Before(at)
+}
+
 // settleInterruptedThreads settles every `running` thread to `error`.
 func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
 	rows, err := ds.db.QueryContext(ctx, `

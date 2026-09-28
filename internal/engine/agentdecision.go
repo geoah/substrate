@@ -367,7 +367,14 @@ func (ds *dataset) continueThread(ctx context.Context, threadID string) {
 // runs on the same background cadence the trigger dispatcher does
 // (cmd/substrated). N unconsumed resolutions on one thread coalesce into the
 // one continuation, which replays them all.
+//
+// It settles the threads a lost run left `running` first
+// (settleLostThreads), so the sweep is the one recovery pass for both.
 func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
+	if err := ds.settleLostThreads(ctx); err != nil {
+		// A failed settle must not hold back the resumes below.
+		ds.svc.log.Error("substrate: settling lost agent threads failed", "error", err)
+	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT t.id FROM records t
 		WHERE t.kind = $1 AND t.deleted_at IS NULL
