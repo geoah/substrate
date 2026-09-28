@@ -67,6 +67,20 @@ propertytype, recordmapping, function, agent, actor, bundle)
 rides the batch schema verb — the whole input's schema documents are one
 transaction, every one admitted by the loader or none, active on commit.
 
+Each one is a whole declaration there. A declaration naming neither
+` + "`data.authority`" + ` nor ` + "`data.package`" + ` is a change to the
+stored one instead: apply reads it, replaces the keys the document writes and
+sends the result, so this flips one key of an agent and keeps the rest:
+
+  kind: substrate.reamde.dev/core/agent
+  metadata:
+    id: <authority>/llm/helper
+  data:
+    hiddenFromChat: true
+
+A document naming either key is sent as written, and a key it leaves out is
+dropped from the declaration.
+
 --as <authority> REHOMES the input first: every mention of the one authority
 the documents are authored under is rewritten to the one named, which is what
 importing a shipped sample by hand takes (` + "`substratectl import`" + ` does
@@ -137,6 +151,9 @@ whose source kind is present but does not fit it still refuses the batch.`,
 			// admitted or none — so the record documents behind them can use
 			// the types they declare.
 			if len(vocabularyDocs) > 0 {
+				if err := completePartialDeclarations(cmd.Context(), cl, vocabularyDocs); err != nil {
+					return err
+				}
 				opts := vocabularyOptions{origin: origin, holdWaiting: holdWaiting}
 				if err := a.applySchemaDocuments(cmd.Context(), cl, vocabularyDocs, allowDataLoss, opts); err != nil {
 					return err
@@ -366,6 +383,80 @@ func (a *app) readDocuments(files []string) ([]*document, []map[string]any, erro
 		}
 	}
 	return docs, vocabularyDocs, nil
+}
+
+// completePartialDeclarations turns each PARTIAL declaration into a whole one,
+// in place. /vocabulary/apply takes a declaration whole, and every whole one
+// names its `data.authority` and `data.package`, so a document naming neither
+// could only ever be refused. Apply is put, which merges: such a document is
+// laid over the stored declaration it names, each key it writes replacing that
+// key whole, the way a record put replaces the properties it names and keeps
+// the rest. A document naming either key is whole and is sent untouched, so
+// dropping a key from a file still drops it from the declaration.
+//
+// A declaration keeps its keys straight under `data`, and a record keeps them
+// under `data.properties`. On a declaration that has no `properties` key of
+// its own (an agent, a function, a bundle) a `data.properties` block can only
+// be the record habit, so its keys are read as the declaration's.
+func completePartialDeclarations(ctx context.Context, cl *client, docs []map[string]any) error {
+	for _, doc := range docs {
+		kind, _ := doc["kind"].(string)
+		short, ok := declarationKindOf(kind)
+		if !ok {
+			continue
+		}
+		admitted := vocabulary.DeclarationDataKeys(short)
+		if !admitted["authority"] || !admitted["package"] {
+			continue
+		}
+		data, _ := doc["data"].(map[string]any)
+		if data == nil {
+			data = map[string]any{}
+		}
+		if _, whole := data["authority"]; whole {
+			continue
+		}
+		if _, whole := data["package"]; whole {
+			continue
+		}
+		meta, _ := doc["metadata"].(map[string]any)
+		id, _ := meta["id"].(string)
+		if id == "" {
+			// Nothing stored to complete it from; the loader's refusal names
+			// what a new declaration needs.
+			continue
+		}
+		if props, ok := data["properties"].(map[string]any); ok && !admitted["properties"] {
+			delete(data, "properties")
+			for k, v := range props {
+				data[k] = v
+			}
+		}
+		stored, _, err := cl.get(ctx, vocabulary.PackageCore, short, id)
+		if err != nil {
+			var ae *apiError
+			if errors.As(err, &ae) && ae.Status == 404 {
+				return fmt.Errorf("%s %s: no such declaration to change, and a new one names data.authority and data.package", kind, id)
+			}
+			return err
+		}
+		whole := declarationDocumentOf(short, stored, nil)
+		for k, v := range data {
+			whole.Data[k] = v
+		}
+		doc["data"] = whole.Data
+		if meta == nil {
+			meta = map[string]any{"id": id}
+			doc["metadata"] = meta
+		}
+		if _, ok := meta["labels"]; !ok && len(whole.Metadata.Labels) > 0 {
+			meta["labels"] = whole.Metadata.Labels
+		}
+		if _, ok := meta["annotations"]; !ok && len(whole.Metadata.Annotations) > 0 {
+			meta["annotations"] = whole.Metadata.Annotations
+		}
+	}
+	return nil
 }
 
 // isSchemaDocument recognizes a schema manifest by its envelope: a record of
