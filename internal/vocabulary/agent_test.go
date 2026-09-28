@@ -281,6 +281,55 @@ func TestAgentBuiltinsAndHiddenFromChat(t *testing.T) {
 	}
 }
 
+// An agent's purpose takes a kind's three words and nothing else, and an
+// absent key stays absent: the reader takes it as primary, the declaration
+// never gains it.
+func TestAgentPurpose(t *testing.T) {
+	body := func(purpose string) string {
+		return `  description: sorts widgets
+  prompt: You sort widgets.
+  provider: default
+  model: claude-opus-5
+` + purpose
+	}
+	for _, p := range []string{vocabulary.PurposePrimary, vocabulary.PurposeSupporting, vocabulary.PurposeInternal} {
+		r, err := loadAgAuthorityWithCore(t, agAuthority(body("  purpose: "+p+"\n")))
+		if err != nil {
+			t.Fatalf("%s: load: %v", p, err)
+		}
+		ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ag.Purpose != p {
+			t.Fatalf("purpose = %q, want %q", ag.Purpose, p)
+		}
+	}
+
+	r, err := loadAgAuthorityWithCore(t, agAuthority(body("")))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ag.Purpose != "" {
+		t.Fatalf("an absent purpose parsed as %q", ag.Purpose)
+	}
+	if _, ok := ag.Definition["purpose"]; ok {
+		t.Fatal("an absent purpose was written into the definition")
+	}
+
+	for _, bad := range []string{"  purpose: helper\n", "  purpose: 1\n", "  purpose: [primary]\n"} {
+		_, err := loadAgAuthorityWithCore(t, agAuthority(body(bad)))
+		if err == nil || !strings.Contains(err.Error(), "data.purpose:") ||
+			!strings.Contains(err.Error(), `"supporting"`) {
+			t.Fatalf("%q: err = %v, want a refusal naming the three purposes", bad, err)
+		}
+	}
+}
+
 func TestAgentRefusals(t *testing.T) {
 	cases := []struct {
 		name string

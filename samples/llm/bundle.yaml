@@ -43,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 21
+  version: 22
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -106,6 +106,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrate
 data:
+  purpose: primary
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
@@ -200,6 +201,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrateEditor
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
@@ -254,6 +256,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrateArbiter
 data:
+  purpose: internal
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
@@ -318,6 +321,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrateJudge
 data:
+  purpose: internal
   authority: samples.substrate.reamde.dev
   package: llm
   description: >-
@@ -353,6 +357,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrateSummarizer
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: llm
   description: Summarize a piece of text in one sentence.
@@ -372,6 +377,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/llm/substrateEcho
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: llm
   description: Answers you, and summarizes what you said through a sub-agent.

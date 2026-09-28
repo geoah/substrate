@@ -129,6 +129,13 @@ data:
   sub-agent calls, the call API and triggers still dispatch it. An
   llm-as-judge is the shape it exists for. Any agent, marked or not, remains
   selectable as another agent's sub-agent.
+- optional **`purpose:`**, `primary`, `supporting` or `internal`, the words a
+  kind's `purpose` uses
+  ([0139](decisions/0139-an-agent-declares-its-purpose.md)); absent reads as
+  `primary`. `primary` is an agent a person chats with, `supporting` one that
+  works for another agent or a trigger, `internal` machinery such as a
+  policy's judge. Nothing on the server acts on it: the console lists the
+  primary agents first and keeps the rest behind **Show more agents**.
 - optional **`resume:`**, `always` or `never`; absent means `always`. It says
   whether a resolution reported into this agent's thread (a decided proposal,
   an answered interaction) also resumes the thread. The `system` row lands

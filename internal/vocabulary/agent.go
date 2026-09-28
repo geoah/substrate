@@ -162,6 +162,11 @@ type Agent struct {
 	// absent, today's behavior) continues the thread. A resume is a paid
 	// agent turn, so this is the declaration's own cost knob (issue #69).
 	Resume string
+	// Purpose is why the agent exists, in the three words a kind's `purpose`
+	// uses (decision record 0139): primary, supporting or internal, "" when
+	// the declaration says nothing, which a reader takes as primary. Clients
+	// read it to decide what they list; nothing here acts on it.
+	Purpose string
 
 	// Definition is the declaration's own data map, exactly as authored — what
 	// the row stores as its properties.
@@ -233,7 +238,7 @@ var agentDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
 	"tools": true, "subagents": true, "budgets": true, "permissions": true,
-	"hiddenFromChat": true, "resume": true,
+	"hiddenFromChat": true, "resume": true, "purpose": true,
 }
 
 // deletedAgentKeys are the removed keys, each naming what replaced it. An
@@ -350,6 +355,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 	a.Resume = mstr(d.Data, "resume")
 	if a.Resume != "" && a.Resume != AgentResumeAlways && a.Resume != AgentResumeNever {
 		l.errf("%s: data.resume: %q — \"always\" or \"never\" (absent means always)", where, a.Resume)
+		return nil
+	}
+	if !l.parseAgentPurpose(where, d.Data, a) {
 		return nil
 	}
 	if !l.parseAgentParams(where, d.Data, a) {
@@ -728,4 +736,21 @@ func AgentManifest(pkg, name string, data map[string]any) map[string]any {
 		"metadata": map[string]any{"id": pkg + "/" + name},
 		"data":     full,
 	}
+}
+
+// parseAgentPurpose reads an agent's `purpose:`, the same closed value set a
+// kind's takes. The raw value is asserted rather than read through mstr, which
+// would turn a number or a list into "" and so into the default.
+func (l *loader) parseAgentPurpose(where string, d map[string]any, a *Agent) bool {
+	raw, present := d["purpose"]
+	if !present {
+		return true
+	}
+	if v, ok := raw.(string); ok && IsPurpose(v) {
+		a.Purpose = v
+		return true
+	}
+	l.errf("%s: data.purpose: %v is not a purpose: %q (someone chats with it), %q (it works for another agent or a trigger) or %q (machinery); drop the key and the agent reads as %q",
+		where, raw, PurposePrimary, PurposeSupporting, PurposeInternal, PurposePrimary)
+	return false
 }
