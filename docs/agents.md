@@ -478,8 +478,9 @@ does. At open, every `running` thread settles to `error` naming the stop. In a
 live process, the resolution sweep settles a `running` thread to `error` once
 its `leaseUntil` (the loop's deadline plus 30 seconds) has passed and no loop
 of this process holds it: a canceled request, a failed write on the way out or
-a panic leaves exactly that. Only the thread settles. The delivery's claim
-lists as interrupted and waits for a hand to retry or forget it
+a panic leaves exactly that. The sweep reruns nothing: where the run's
+delivery was left claimed, the claim lists as interrupted and waits for a
+hand to retry or forget it
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
 
 ## Providers

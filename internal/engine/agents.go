@@ -392,9 +392,9 @@ const lostThreadReason = "interrupted: the agent run holding this thread stopped
 // settleLostThreads settles a `running` thread whose lease expired and whose
 // loop this process does not run (runningThreads) to `error`, naming the
 // lost run. The lease is the loop's deadline plus slack (agentloop.go
-// leaseUntil), so no live loop outlives it. Only the thread settles: the
-// delivery's claim already lists as interrupted (presentFailure), and nothing
-// reruns it by itself (decision 0064).
+// leaseUntil), so no live loop outlives it. Only the thread settles: a
+// claim the run left already lists as interrupted (presentFailure), and the
+// sweep reruns nothing (decision 0064).
 func (ds *dataset) settleLostThreads(ctx context.Context) error {
 	if ds.svc.readOnly {
 		return nil

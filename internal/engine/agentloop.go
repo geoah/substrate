@@ -897,6 +897,9 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 			"costUSD":     baseCost + cost,
 			"finishedAt":  nowUTC().Format(time.RFC3339Nano),
 		}
+		// A settle with no reason clears an older one: a continued thread that
+		// ends ok must not keep the reason its last run died with.
+		props["reason"] = nil
 		if reason != "" {
 			props["reason"] = reason
 		}
