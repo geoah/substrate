@@ -739,7 +739,32 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		if err != nil {
 			return nil, err
 		}
-		b.add(`fts @@ ` + tq)
+		// Under row level security `fts @@` on the row cannot probe the
+		// index, so a term few live rows hold is read through
+		// records_matching (migration 0010). A common term stays on the row:
+		// each identity the function returns is a probe back to its row, and
+		// the list's order finds a page of a common term's rows sooner. So
+		// does a search of tombstones, which the function does not answer.
+		few := false
+		if f.Deleted == nil || !*f.Deleted {
+			limit := indexedMatchMax
+			if ds.svc.searchMatchMax >= 0 {
+				limit = ds.svc.searchMatchMax
+			}
+			probe := &builder{}
+			ptq, err := searchExpr(probe, "filter.search", f.Search)
+			if err != nil {
+				return nil, err
+			}
+			if few, err = indexedMatch(ctx, x, probe, ptq, limit); err != nil {
+				return nil, err
+			}
+		}
+		if few {
+			b.add(`(kind, id) IN (SELECT m.kind, m.id FROM records_matching(` + tq + `, NULL) m)`)
+		} else {
+			b.add(`fts @@ ` + tq)
+		}
 	}
 	// The orphan mark is a column on the row, derived (orphans.go), so it is
 	// a predicate here and not a property condition: no kind declares it.
@@ -1409,11 +1434,23 @@ type orderTerm struct {
 	desc bool
 }
 
-// nonNull reports whether this term is one of the (kind, id) tiebreak columns
-// — never null, so its seek needs no null branch and its ORDER BY needs no
-// NULLS LAST. A caller ordering explicitly by `kind`/`id` also lands here,
-// which is correct: both columns are NOT NULL.
-func (t orderTerm) nonNull() bool { return t.expr == "id" || t.expr == "kind" }
+// nonNullColumns are the records columns declared NOT NULL that an order can
+// name: the (kind, id) tiebreak and the columns orderExpr maps a property to.
+//
+// The list must NOT say NULLS LAST on them. A btree walked backwards yields
+// DESC NULLS FIRST, and the planner does not use a column's NOT NULL to
+// excuse the mismatch, so `created_at DESC NULLS LAST` could not read
+// records_created_at_idx: every newest-first page, the default order, sorted
+// the whole repository to return its first rows (1.3 s for `first=1` over
+// 389k rows, against 0.3 ms with the index).
+var nonNullColumns = map[string]bool{
+	"kind": true, "id": true, "created_at": true, "updated_at": true,
+	"title": true, "body": true, "version": true,
+}
+
+// nonNull reports whether this term is a NOT NULL column, so its seek needs
+// no null branch and its ORDER BY needs no NULLS LAST.
+func (t orderTerm) nonNull() bool { return nonNullColumns[t.expr] }
 
 // orderExpr resolves one order property to its SQL expression.
 func (ds *dataset) orderExpr(property string) (string, error) {
@@ -1492,8 +1529,8 @@ func (ds *dataset) orderTerms(orders []substrate.Order) ([]orderTerm, error) {
 }
 
 // renderOrder renders the ORDER BY clause. Nullable keys sort NULLS LAST (the
-// keyset seek is built to match); the (kind, id) tiebreak columns are never
-// null.
+// keyset seek is built to match); NOT NULL columns carry no null ordering
+// (nonNullColumns says why).
 func renderOrder(terms []orderTerm) string {
 	parts := make([]string, len(terms))
 	for i, t := range terms {

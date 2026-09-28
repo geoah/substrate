@@ -414,6 +414,62 @@ func TestRepositoryIsolation(t *testing.T) {
 		}
 	})
 
+	// records_matching reads the text index unbound by the policy, so it must
+	// apply the policy's predicate itself: the query matches both
+	// repositories' rows at the shared id, and each scope sees its own alone.
+	t.Run("records_matching answers the session's repository alone", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		const bothTitles = `to_tsquery('simple', '''alpha.example.com'' | ''beta.example.com''')`
+		for _, id := range []string{repos.alpha, repos.beta} {
+			raw, err := engine.OpenScopedDB(repos.dsn, id, engine.RoleApp)
+			if err != nil {
+				t.Fatalf("open a scoped pool: %v", err)
+			}
+			t.Cleanup(func() { _ = raw.Close() })
+			var titles []string
+			rows, err := raw.QueryContext(ctx, `
+				SELECT r.title FROM records_matching(`+bothTitles+`, NULL) m
+				JOIN records r ON r.kind = m.kind AND r.id = m.id
+				WHERE m.id = 'shared-id'`)
+			if err != nil {
+				t.Fatalf("records_matching under %s: %v", id, err)
+			}
+			for rows.Next() {
+				var title string
+				if err := rows.Scan(&title); err != nil {
+					t.Fatal(err)
+				}
+				titles = append(titles, title)
+			}
+			_ = rows.Close()
+			if len(titles) != 1 || titles[0] != id+" only" {
+				t.Fatalf("%s matched %q, want its own row alone", id, titles)
+			}
+			// The id half alone, before any join under the policy.
+			var n int
+			if err := raw.QueryRowContext(ctx,
+				`SELECT count(*) FROM records_matching(`+bothTitles+`, NULL) WHERE id = 'shared-id'`).Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			if n != 1 {
+				t.Fatalf("%s: records_matching returned %d identities, want 1", id, n)
+			}
+		}
+		// The bypass is the owner's, and the owner is maint, not the engine's
+		// own user: a superuser-owned SECURITY DEFINER would run as superuser.
+		var owner string
+		var definer bool
+		if err := rawDB(t, repos.dsn).QueryRowContext(ctx, `
+			SELECT pg_get_userbyid(p.proowner), p.prosecdef FROM pg_proc p
+			WHERE p.proname = 'records_matching' AND p.pronamespace = current_schema()::regnamespace`).Scan(&owner, &definer); err != nil {
+			t.Fatalf("read records_matching: %v", err)
+		}
+		if owner != engine.RoleMaint || !definer {
+			t.Fatalf("records_matching owner=%s definer=%v, want %s and SECURITY DEFINER", owner, definer, engine.RoleMaint)
+		}
+	})
+
 	// The engine's own handles share one pool, so one physical connection
 	// serves alpha and then beta. The connector pins it on every checkout
 	// and the pool unpins it on every release: a handle reads its own
