@@ -15,7 +15,13 @@ backup and recovery procedures. A substrate on your own machine is
   which bypasses it for registration and cross-repository lookups), and enables
   the extensions, so the DSN it starts with must be allowed to do those things.
 - **One port**. The service serves the API under `/api`, the authentication
-  endpoints beside it, and the console at `/`.
+  endpoints beside it, and the console at `/`. Two routes are live streams:
+  an agent chat (`POST …/core/agent/{name}/chat`) and the change feed with
+  `watch=1`. A proxy in front of the service must pass their lines through as
+  they are written. Both send `X-Accel-Buffering: no`, which nginx and its
+  ingress honor, and `Cache-Control: no-store, no-transform`, which stops an
+  intermediary from compressing them. A proxy that ignores both turns a
+  streamed chat reply into one block at the end.
 - **Nothing else.** Search, the change feed, the function runner, and the OAuth
   facility are all in the one process; the image also carries `python3` and
   `uv`, because [functions](functions.md) run as child processes of the

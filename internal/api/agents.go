@@ -54,9 +54,7 @@ func (h *handler) postAgentChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, codeInternal, "streaming unsupported")
 		return
 	}
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "no-store")
+	setStreamHeaders(w)
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	emit := func(ev substrate.AgentEvent) {

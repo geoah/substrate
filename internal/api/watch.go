@@ -34,6 +34,18 @@ func retentionHorizon() int64 { return 0 }
 // (`{"error":{…}}`) is the reserved TERMINAL error frame: a mid-stream
 // failure travels as one problem object rather than a silent EOF.
 //
+// setStreamHeaders opens a live ndjson stream. Every line is flushed as it is
+// written, and the two proxy headers keep whatever sits in front of the server
+// from undoing that: nginx and its ingress buffer a response unless
+// `X-Accel-Buffering: no` says otherwise, and `no-transform` refuses the
+// compression an intermediary would hold lines back for.
+func setStreamHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "no-store, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+}
+
 // writeWatchError encodes that terminal frame. A client-gone encode error is
 // swallowed: there is no one left to tell.
 func writeWatchError(enc *json.Encoder, flusher http.Flusher, err error) {
@@ -135,9 +147,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 		from = rs.head.Seq
 	}
 
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "no-store")
+	setStreamHeaders(w)
 	w.WriteHeader(http.StatusOK)
 
 	enc := json.NewEncoder(w)
