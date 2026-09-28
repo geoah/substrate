@@ -141,10 +141,16 @@ def seed_note(msg):
     note(("SEED RELAXATION: " if SEED else "(e2e asserts this) ") + msg)
 
 
+_STARTED = time.time()
+
+
 def section(name):
+    """Print the heading with the seconds since the scenario started, so a
+    run's log says which section the time went to."""
     global _section
     _section = name
-    print("\n\033[1m--- %s\033[0m" % name, flush=True)
+    print("\n\033[1m--- %s\033[0m  (t+%ds)" % (name, time.time() - _STARTED),
+          flush=True)
 
 
 def note(msg):

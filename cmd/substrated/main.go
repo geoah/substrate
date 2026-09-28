@@ -36,11 +36,10 @@ const (
 	// resumeInterval is the resolution sweep's cadence: the recovery path for
 	// resumes a restart or a lost lease dropped, so a slow tick suffices —
 	// the common case is delivered by the resolving transaction itself.
-	resumeInterval   = 2 * time.Minute
-	embedInterval    = time.Minute
-	embedBatch       = 64
-	triggersInterval = 5 * time.Second
-	oauthInterval    = time.Minute
+	resumeInterval = 2 * time.Minute
+	embedInterval  = time.Minute
+	embedBatch     = 64
+	oauthInterval  = time.Minute
 	// triggerDispatchPasses caps the repository passes the dispatcher runs at
 	// once. A pass takes a connection per statement or transaction and none
 	// while a function body runs, but each pass has a runner process or a
@@ -222,7 +221,9 @@ func run() error {
 	start("resolution sweep", resumeInterval, func(ctx context.Context) { sweepResolutions(ctx, svc) })
 	// The dispatcher's per-repository passes outlive the tick that started
 	// them, so they are counted on the same barrier as the loops.
-	start("trigger dispatch", triggersInterval, newTriggerDispatcher(svc, &loops).dispatch)
+	// The tick is SUBSTRATE_TRIGGER_INTERVAL (5s unless set): a record write
+	// waits at most one tick for the delivery it fires.
+	start("trigger dispatch", cfg.TriggerInterval, newTriggerDispatcher(svc, &loops).dispatch)
 	// The drain runs unconditionally: whether a repository embeds is its own
 	// row's answer, given fresh on every pass, so a provider written after
 	// boot starts draining without a restart.

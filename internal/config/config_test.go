@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The credential key is the AES-256 key that unwraps every repository's DEK, so
@@ -46,7 +47,7 @@ func TestValidateCredentialKey(t *testing.T) {
 		t.Fatalf("ValidateCredentialKey rejected base64 of 32 bytes: %v", err)
 	}
 	data := Data{Root: t.TempDir(), ChangelogSegmentBytes: MinChangelogSegmentBytes}
-	if err := (Config{CredentialKey: good, Data: data, RepositoryConnections: 16}).Validate(); err != nil {
+	if err := (Config{CredentialKey: good, Data: data, RepositoryConnections: 16, TriggerInterval: 5 * time.Second}).Validate(); err != nil {
 		t.Fatalf("Config.Validate rejected a good key: %v", err)
 	}
 	if err := (Config{CredentialKey: "", Data: data}).Validate(); err == nil {
@@ -143,7 +144,24 @@ func TestRepositoryConnectionsRefusesACapUnderTheFloor(t *testing.T) {
 			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_REPOSITORY_CONNECTIONS", n, err)
 		}
 	}
-	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections}).Validate(); err != nil {
+	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections, TriggerInterval: 5 * time.Second}).Validate(); err != nil {
 		t.Fatalf("the floor itself was refused: %v", err)
+	}
+}
+
+// The dispatcher tick feeds time.NewTicker, which panics at zero or below, so
+// Validate refuses both before the boot reaches it and names the variable.
+func TestTriggerIntervalRefusesZeroAndNegative(t *testing.T) {
+	t.Parallel()
+	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	for _, d := range []time.Duration{0, -time.Second} {
+		err := (Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: d}).Validate()
+		if err == nil || !strings.Contains(err.Error(), "SUBSTRATE_TRIGGER_INTERVAL") {
+			t.Fatalf("a tick of %s: err = %v, want a refusal naming SUBSTRATE_TRIGGER_INTERVAL", d, err)
+		}
+	}
+	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second}).Validate(); err != nil {
+		t.Fatalf("a one-second tick was refused: %v", err)
 	}
 }

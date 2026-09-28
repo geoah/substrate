@@ -122,8 +122,9 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 #
 # ./internal/providere2e/...: the provider suites. That one starts a real
 # substrated and replays recorded upstream traffic through seven provider
-# bundles, ten minutes of wall time, and it wants `uv` and `python3` as well
-# as a database (it skips itself without them).
+# bundles side by side, three to five minutes of wall time (the slowest
+# case), and it wants `uv` and `python3` as well as a database (it skips
+# itself without them).
 #
 # -timeout 45m: the engine suite alone runs 4 to 10 minutes depending on the
 # machine, and Go's default of 10m has killed it on a slow CI runner with no
@@ -157,7 +158,8 @@ run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./in
 [tasks."test:db:providers"]
 description = "The provider suite: seven closures synced end to end against a substrated the test starts, over recorded upstreams"
 # Its own task and its own CI job (`providers e2e`), not a line in
-# test:db:rest: one run is eight to twelve minutes on a laptop and longer on a
+# test:db:rest: one run is three to five minutes on a laptop (the seven cases
+# run side by side, so the slowest one is the wall time) and longer on a
 # runner, past the `go test` job's budget. -p 1 keeps it alone on the box: the
 # suite pins one mock port per provider, so two of it at once would serve one
 # provider's recordings to another's sync. It wants `uv` and `python3` beside
@@ -242,8 +244,11 @@ run = [
   # gate as any provider. A caller's own allowlist is appended, never
   # substituted, so it cannot silently close the loopback the suite needs.
   # The invite code is set here because the bare dev substrate reads none,
-  # and AUTH-02 (a wrong code is refused) needs a door that does.
-  "SUBSTRATE_INVITE_CODE=\"${SUBSTRATE_INVITE_CODE:-let-me-in}\" SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" .mise/dev.sh restart",
+  # and AUTH-02 (a wrong code is refused) needs a door that does. The
+  # dispatcher tick is 1s because the cases write a record and then wait for
+  # the delivery it fires, and at the 5s default each of those waits was
+  # mostly the tick.
+  "SUBSTRATE_INVITE_CODE=\"${SUBSTRATE_INVITE_CODE:-let-me-in}\" SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" SUBSTRATE_TRIGGER_INTERVAL=\"${SUBSTRATE_TRIGGER_INTERVAL:-1s}\" .mise/dev.sh restart",
   """
     SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \
     SUBSTRATE_E2E_INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}" \

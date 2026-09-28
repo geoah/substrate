@@ -42,10 +42,10 @@ const (
 	oauthStateKey = "providere2e-oauth-state-key"
 )
 
-// The providers, in the order the suite runs them: cheapest recordings first,
-// so a harness fault shows up in the first minute rather than the twentieth.
-// Each name is a directory under providers/ and under fixtures/, and a
-// directory under kinds/providers.substrate.reamde.dev/.
+// The providers. Each name is a directory under providers/ and under
+// fixtures/, and a directory under kinds/providers.substrate.reamde.dev/. The
+// cases run side by side (see TestProviderE2E), so the order is only the
+// order they start in.
 var providers = []string{"whoop", "linear", "notion", "beeper", "github", "google", "slack"}
 
 // caseBudget is what one provider's run gets before the harness kills it. The
@@ -63,25 +63,68 @@ func TestMain(m *testing.M) {
 	os.Exit(testdb.Main(m))
 }
 
+// TestProviderE2E runs every provider's case against one server, all at once.
+//
+// The cases share nothing that would make them wait on each other: each one
+// registers its own repository, its mock listens on the port its e2e.json
+// pins (distinct per provider), its substratectl contexts live in a config
+// file of its own, and the runner and the scenario read and write that
+// repository alone. What they share is the server, whose dispatcher runs one
+// pass per repository at a time and caps the passes at eight, above the seven
+// here. Run sequentially the suite was the sum of its cases, ten minutes,
+// most of it the slowest three waiting on their own syncs; side by side it is
+// the slowest case alone.
+//
+// The registrations are made here, before the cases start, so a door refusal
+// is one failure on the parent rather than seven. The auth gate admits them
+// back to back: its per-peer and per-repository buckets key on the repository
+// name, which differs per case, and the global bucket holds thirty-two.
 func TestProviderE2E(t *testing.T) {
 	requirePython(t)
 	requireUV(t)
 
 	srv := startServer(t)
 
+	cases := make([]providerCase, 0, len(providers))
 	for _, provider := range providers {
-		t.Run(provider, func(t *testing.T) {
-			runProvider(t, srv, provider)
+		cases = append(cases, newProviderCase(t, srv, provider))
+	}
+	for _, c := range cases {
+		t.Run(c.provider, func(t *testing.T) {
+			t.Parallel()
+			runProvider(t, srv, c)
 		})
 	}
 }
 
-// runProvider is one case: a fresh repository, then the runner over it.
-func runProvider(t *testing.T, srv *server, provider string) {
+// providerCase is one provider's repository: the authority it registered as,
+// its bearer and the substratectl config that holds its context.
+type providerCase struct {
+	provider  string
+	authority string
+	token     string
+	ctlConfig string
+}
+
+// newProviderCase registers the case's repository. The config file is the
+// case's own: substratectl rewrites the whole file on every context change,
+// so seven cases sharing one would race each other's writes.
+func newProviderCase(t *testing.T, srv *server, provider string) providerCase {
 	t.Helper()
+	c := providerCase{
+		provider:  provider,
+		authority: fmt.Sprintf("e2e-%s.localhost", provider),
+		ctlConfig: filepath.Join(srv.dir, provider+"-substratectl.yaml"),
+	}
+	c.token = srv.register(t, c.authority, c.ctlConfig)
+	return c
+}
+
+// runProvider is one case: the runner over the case's repository.
+func runProvider(t *testing.T, srv *server, c providerCase) {
+	t.Helper()
+	provider := c.provider
 	cfg := readProviderConfig(t, provider)
-	authority := fmt.Sprintf("e2e-%s.localhost", provider)
-	token := srv.register(t, authority)
 
 	logPath := filepath.Join(srv.logDir, provider+".log")
 	budget := caseBudget(cfg.SettleSeconds)
@@ -90,7 +133,7 @@ func runProvider(t *testing.T, srv *server, provider string) {
 		filepath.Join(srv.suiteDir, "runner", "e2e.py"), provider,
 		"--mode", "e2e",
 		"--server", srv.baseURL,
-		"--authority", authority,
+		"--authority", c.authority,
 		"--ctl", srv.substratectl,
 		"--recordings", filepath.Join(srv.suiteDir, "fixtures", provider),
 	}
@@ -99,11 +142,11 @@ func runProvider(t *testing.T, srv *server, provider string) {
 	cmd.Env = append(os.Environ(),
 		// The bearer goes through the environment and never through argv:
 		// `ps` shows a command line to every process on the box.
-		"SUBSTRATE_TOKEN="+token,
+		"SUBSTRATE_TOKEN="+c.token,
 		"SUBSTRATE_E2E_ROOT="+srv.suiteDir,
 		"SUBSTRATE_E2E_REPO="+srv.repoRoot,
-		// The contexts substratectl reads and writes are this run's own.
-		"SUBSTRATECTL_CONFIG="+srv.ctlConfig,
+		// The contexts substratectl reads and writes are this case's own.
+		"SUBSTRATECTL_CONFIG="+c.ctlConfig,
 		"PATH="+srv.path,
 		// The mock, the scenario and the runner all print progress; buffered,
 		// a case that trips its budget would show nothing.
