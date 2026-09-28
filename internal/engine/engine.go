@@ -112,6 +112,10 @@ type options struct {
 	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
 	// with the partial directory after each copy step (snapshot.go).
 	snapshotFault func(stage, dir string) error
+	// progressEvery is how often a long walk reports its position
+	// (progress.go); the test seam WithTestProgressEvery lowers it so a
+	// short history reports at all.
+	progressEvery time.Duration
 	// invokeHook is the runner's test seam (seams.go WithTestInvokeHook): a
 	// hook run with a function's identity as its body is about to be invoked
 	// (runner.go runCallableRaw), so a test can act while the body runs.
@@ -374,6 +378,9 @@ type service struct {
 	testSnapshotFault func(stage, dir string) error
 	// testInvokeHook is the options' runner seam (runner.go). Tests only.
 	testInvokeHook func(function string)
+	// progressEvery is how often a long walk of a changelog reports where
+	// it is (progress.go).
+	progressEvery time.Duration
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -398,7 +405,7 @@ func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, er
 }
 
 func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
-	o := options{log: slog.Default(), now: nowUTC}
+	o := options{log: slog.Default(), now: nowUTC, progressEvery: progressEvery}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -505,6 +512,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testImportBatch:   o.importBatch,
 		testCommitFault:   o.commitFault,
 		testSnapshotFault: o.snapshotFault,
+		progressEvery:     o.progressEvery,
 		testInvokeHook:    o.invokeHook,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {

@@ -576,10 +576,14 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 	// nothing until the import is done, and a long history takes minutes.
 	ds.svc.log.Info("substrate: importing the repository directory",
 		"repository", ds.scope.Repository, "rows", log.Head()-tableHead, "fileHead", log.Head())
+	// One cursor across every batch, so each segment is read once (issue 745).
+	cur := log.Cursor(tableHead)
+	defer func() { _ = cur.Close() }()
+	prog := ds.svc.progress("substrate: importing the changelog rows",
+		"repository", ds.scope.Repository, "fileHead", log.Head())
 	var n int64
-	after := tableHead
 	for {
-		entries, err := log.Read(after, batch)
+		entries, err := cur.Next(batch)
 		if err != nil {
 			return n, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
@@ -590,7 +594,7 @@ func (ds *dataset) importEntries(ctx context.Context, log *changelogfile.Log, ta
 			return n, err
 		}
 		n += int64(len(entries))
-		after = entries[len(entries)-1].Seq
+		prog.tick(cur.Position())
 		if err := ds.importFault(importAfterBatch); err != nil {
 			return n, err
 		}

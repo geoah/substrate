@@ -202,9 +202,13 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			return fmt.Errorf("substrate/engine: rebuild: clear %s: %w", table, err)
 		}
 	}
-	var after int64
+	// One cursor across every page, so each segment is read once (issue 745).
+	cur := log.Cursor(0)
+	defer func() { _ = cur.Close() }()
+	prog := t.ds.svc.progress("substrate: replaying the changelog into the fold",
+		"repository", t.ds.scope.Repository, "head", log.Head())
 	for {
-		entries, err := log.Read(after, rebuildBatch)
+		entries, err := cur.Next(rebuildBatch)
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
@@ -225,8 +229,8 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			}
 			report.Entries++
 			report.Head = ch.Seq
-			after = ch.Seq
 		}
+		prog.tick(cur.Position())
 	}
 	if err := t.rederiveOffers(); err != nil {
 		return err

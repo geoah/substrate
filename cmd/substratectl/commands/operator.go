@@ -127,8 +127,10 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 		return nil, err
 	}
 	// The engine logs its boot at info; an operator command's output is its
-	// own report, so only warnings and worse reach stderr.
-	log := slog.New(slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	// own report, so only warnings and worse reach stderr, plus the progress
+	// lines a long walk (verify, rebuild, snapshot) prints every thirty
+	// seconds, which are what tells the person waiting that it is moving.
+	log := slog.New(operatorHandler{slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelInfo})})
 	opts := []engine.Option{
 		engine.WithRegistry(vocabulary.NewRegistry()),
 		engine.WithDataRoot(data.Root),
@@ -145,6 +147,26 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 		return nil, lockHint(fmt.Errorf("open the substrate database: %w", err))
 	}
 	return svc, nil
+}
+
+// operatorHandler passes warnings and worse and the engine's progress lines
+// (engine.IsProgress), and drops the rest of its info: the boot check and
+// the directory outcome, which an operator command's own report covers.
+type operatorHandler struct{ slog.Handler }
+
+func (h operatorHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Level < slog.LevelWarn && !engine.IsProgress(r) {
+		return nil
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
+func (h operatorHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return operatorHandler{h.Handler.WithAttrs(attrs)}
+}
+
+func (h operatorHandler) WithGroup(name string) slog.Handler {
+	return operatorHandler{h.Handler.WithGroup(name)}
 }
 
 // lockHint says what a writer-lock refusal means to the person at the

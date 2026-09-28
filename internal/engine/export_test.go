@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -180,6 +181,13 @@ const (
 // mid-copy; a nil hook is the production path.
 func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
 	return func(o *options) { o.snapshotFault = fn }
+}
+
+// WithTestProgressEvery sets how often a long walk reports its position
+// (progress.go). Zero reports at every tick, so a test with a short history
+// sees the lines a two-hour verify prints every thirty seconds.
+func WithTestProgressEvery(every time.Duration) Option {
+	return func(o *options) { o.progressEvery = every }
 }
 
 // SeedKindsDir is the shipped SEED AUTHORITY, relative to this package — core
