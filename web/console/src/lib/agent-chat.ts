@@ -529,6 +529,122 @@ export function toolFailure(output: string | undefined): string | undefined {
   return typeof parsed.error === "string" ? parsed.error : undefined
 }
 
+/** One record a call wrote. `seq` is the changelog entry, known only once the
+ * engine has stamped the persisted row: the live stream carries the write's
+ * answer and not its stamp. */
+export interface LandedChange {
+  op: string
+  kind: string
+  id: string
+  seq?: number
+}
+
+/** What came back from one settled call, for the card's opened body. Empty
+ * when the check mark already said everything, and then the card does not
+ * open. */
+export type ToolDetail =
+  | { type: "failed"; reason?: string }
+  | { type: "found"; records: { kind: string; id: string }[]; total: number }
+  | { type: "changed"; changes: LandedChange[] }
+  | { type: "reply"; agent: string; text: string; thread?: string }
+  | { type: "output"; raw: string }
+
+/** The write tool's `op` as the changelog op it lands: create and put both
+ * put a row. */
+function writeOp(op: unknown): string {
+  if (op === "create" || op === "put") return "put"
+  return typeof op === "string" && op ? op : "patch"
+}
+
+function recordOf(value: unknown): { kind: string; id: string } | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const r = value as Record<string, unknown>
+  return typeof r.kind === "string" && typeof r.id === "string"
+    ? { kind: r.kind, id: r.id }
+    : undefined
+}
+
+/** What a settled call answered, by the function behind its name. `skip` is
+ * the ids that render as their own cards under the line (a suggestion, a
+ * batch of questions), so their stamps are not listed twice. */
+export function toolDetails(
+  call: ToolCallView,
+  resolved: ResolvedTool,
+  skip: string[] = []
+): ToolDetail[] {
+  if (call.ok === undefined) return []
+  if (call.ok === false)
+    return [{ type: "failed", reason: toolFailure(call.output) }]
+  const payload = parseJSON(call.output)
+  const out: ToolDetail[] = []
+
+  if (Array.isArray(payload.records)) {
+    out.push({
+      type: "found",
+      records: foundRecords(call.output),
+      total: payload.records.length,
+    })
+  } else if (resolved.function === HOST_FUNCTION_QUERY && "record" in payload) {
+    const one = recordOf(payload.record)
+    out.push({ type: "found", records: one ? [one] : [], total: one ? 1 : 0 })
+  }
+
+  const stamped = (call.changes ?? []).filter((c) => !skip.includes(c.id))
+  if (stamped.length) {
+    out.push({ type: "changed", changes: stamped })
+  } else if (resolved.function === HOST_FUNCTION_WRITE) {
+    // The live card: the write answered with the record it wrote, and the
+    // stamp arrives only with the persisted row.
+    const written = recordOf(payload.record)
+    if (written) {
+      const args = parseJSON(call.arguments)
+      out.push({
+        type: "changed",
+        changes: [{ ...written, op: writeOp(args.op) }],
+      })
+    }
+  }
+
+  if (resolved.subagent) {
+    const text = typeof payload.reply === "string" ? payload.reply.trim() : ""
+    if (text) {
+      out.push({
+        type: "reply",
+        agent: resolved.subagent,
+        text,
+        thread: typeof payload.thread === "string" ? payload.thread : undefined,
+      })
+    }
+    return out
+  }
+
+  // A function tool answers `{output, effects}`; the output is what it
+  // returned, and the effects are already the stamps above.
+  const host = [
+    HOST_FUNCTION_QUERY,
+    HOST_FUNCTION_WRITE,
+    HOST_FUNCTION_PROPOSE,
+    HOST_FUNCTION_ASK,
+  ]
+  if (!host.includes(resolved.function ?? "")) {
+    const returned = "output" in payload ? payload.output : undefined
+    // A payload of no known shape is shown whole, unless what it named has
+    // already been read out of it above.
+    const raw =
+      returned === undefined
+        ? out.length
+          ? ""
+          : (call.output ?? "").trim()
+        : typeof returned === "string"
+          ? returned.trim()
+          : JSON.stringify(returned)
+    if (raw && raw !== "{}" && raw !== "null" && raw !== "[]") {
+      out.push({ type: "output", raw })
+    }
+  }
+  return out
+}
+
 // ── a suggested change, in words ───────────────────────────────────────────
 
 /** A property key as a label: `dueAt` → "Due", `assignee` → "Assignee",

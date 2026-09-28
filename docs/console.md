@@ -485,10 +485,14 @@ panel on the right.
   reload shows the same conversation; while a run streams, the same turns fill
   in live and are replaced by the stored rows when it settles. Your messages
   are bubbles; the agent's consecutive turns read as one reply, each tool call
-  as one line saying what it did and whether it worked, opening onto what came
-  back (with Technical details on, the function and the request and response
-  verbatim). A thread a trigger started opens with the record whose change
-  started it.
+  as one line saying what it did and whether it worked. Opening the line shows
+  what came back: the records a search found (or that nothing matched), the
+  records a write changed, a sub-agent's reply, a function's output, or why the
+  call failed. A call with nothing more to say than its check mark does not
+  open. With Technical details on, every line opens and adds the function and
+  the request and response verbatim. Only what you act on sits under the line
+  whether it is open or not: a suggested change and a batch of questions. A
+  thread a trigger started opens with the record whose change started it.
 - **Suggested changes** are cards inside the thread, not a queue somewhere
   else: each reads the change request's live state, says what it would change
   as before and after, and offers **Apply** (**Add it**, **Delete it**, a

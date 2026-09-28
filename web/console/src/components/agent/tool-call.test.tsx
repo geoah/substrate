@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-/** The tool line: what the call did in words, whether it worked, and what it
- * LANDED. A settled `propose` did not change anything — it landed a row
- * somebody has to decide — so the line carries the suggestion card with its
- * live state and its decisions. Technical mode names the function and shows
- * the payloads. */
+/** The tool line: what the call did in words and whether it worked; opened,
+ * what came back. A settled `propose` did not change anything — it landed a
+ * row somebody has to decide — so the line carries the suggestion card with
+ * its live state and its decisions, open or not. Technical mode names the
+ * function and shows the payloads. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
@@ -49,7 +49,8 @@ function call(over: Partial<ToolCallView> = {}): ToolCallView {
 function renderCard(
   view: ToolCallView,
   request?: SubstrateRecord,
-  technical = false
+  technical = false,
+  agent?: SubstrateRecord
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
@@ -82,7 +83,7 @@ function renderCard(
       }}
     >
       <QueryClientProvider client={client}>
-        <ToolCallCard call={view} />
+        <ToolCallCard call={view} agent={agent} />
       </QueryClientProvider>
     </ConsolePreferencesContext.Provider>
   )
@@ -183,7 +184,7 @@ describe("the tool line", () => {
     expect(screen.getByText("Searched for “handover”")).toBeTruthy()
   })
 
-  it("says what a write changed, the record as its mark", () => {
+  it("says what a write changed once opened, the record as its mark", () => {
     const { container } = renderCard(
       call({
         name: "write",
@@ -201,11 +202,14 @@ describe("the tool line", () => {
       })
     )
     expect(screen.getByText("Changed a widget")).toBeTruthy()
+    const mark = () =>
+      container.querySelector('a[data-to="/data/$authority/$pkg/$name/$id"]')
+    // Closed, the line is the whole card, as it is for a search.
+    expect(screen.queryByText("Changed")).toBeNull()
+    expect(mark()).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /Changed a widget/ }))
     expect(screen.getByText("Changed")).toBeTruthy()
-    const mark = container.querySelector(
-      'a[data-to="/data/$authority/$pkg/$name/$id"]'
-    )
-    expect(JSON.parse(mark?.getAttribute("data-params") ?? "{}")).toEqual({
+    expect(JSON.parse(mark()?.getAttribute("data-params") ?? "{}")).toEqual({
       authority: "crew.test.dev",
       pkg: "crew",
       name: "widget",
@@ -213,6 +217,124 @@ describe("the tool line", () => {
     })
     // The seq is technical.
     expect(screen.queryByText(/seq 202/)).toBeNull()
+  })
+
+  it("says what a live write changed before the row is stamped", () => {
+    const { container } = renderCard(
+      call({
+        name: "write",
+        arguments: '{"op":"create","kind":"crew.test.dev/crew/widget"}',
+        output: '{"record":{"id":"w2","kind":"crew.test.dev/crew/widget"}}',
+      })
+    )
+    fireEvent.click(screen.getByRole("button", { name: /Saved a widget/ }))
+    expect(screen.getByText("Saved")).toBeTruthy()
+    const mark = container.querySelector(
+      'a[data-to="/data/$authority/$pkg/$name/$id"]'
+    )
+    expect(JSON.parse(mark?.getAttribute("data-params") ?? "{}")).toMatchObject(
+      { id: "w2" }
+    )
+  })
+
+  it("lists what a search found once opened, and says when nothing matched", () => {
+    const found = renderCard(
+      call({
+        name: "query",
+        arguments: '{"q":"cups"}',
+        output:
+          '{"records":[{"kind":"crew.test.dev/crew/widget","id":"w1"},{"kind":"crew.test.dev/crew/widget","id":"w2"}]}',
+      })
+    )
+    expect(screen.queryByText("Found")).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: /Searched for “cups”, found 2/ })
+    )
+    expect(screen.getByText("Found")).toBeTruthy()
+    expect(
+      found.container.querySelectorAll(
+        'a[data-to="/data/$authority/$pkg/$name/$id"]'
+      )
+    ).toHaveLength(2)
+    cleanup()
+
+    renderCard(
+      call({
+        name: "query",
+        arguments: '{"q":"cups"}',
+        output: '{"records":[]}',
+      })
+    )
+    fireEvent.click(screen.getByRole("button", { name: /found 0/ }))
+    expect(screen.getByText("Nothing matched.")).toBeTruthy()
+  })
+
+  it("does not open a call whose check mark already said everything", () => {
+    renderCard(
+      call({
+        name: "write",
+        arguments: '{"op":"patch","kind":"crew.test.dev/crew/widget"}',
+        output: '{"record":null}',
+      })
+    )
+    expect(screen.getByText("Changed a widget")).toBeTruthy()
+    expect(screen.getByLabelText("Done")).toBeTruthy()
+    expect(screen.queryByRole("button")).toBeNull()
+    expect(screen.queryByText(/It worked/)).toBeNull()
+  })
+
+  it("shows a sub-agent's reply and a function's output once opened", () => {
+    const agent: SubstrateRecord = {
+      id: "crew.test.dev/crew/lead",
+      kind: "substrate.reamde.dev/core/agent",
+      properties: {
+        subagents: [
+          { ref: "substrate.reamde.dev/core/agent/crew.test.dev/crew/scout" },
+        ],
+        tools: [
+          {
+            function: {
+              ref: "substrate.reamde.dev/core/function/crew.test.dev/crew/fetch",
+            },
+          },
+        ],
+      },
+      labels: {},
+      version: 1,
+      createdAt: "2026-08-13T00:00:00Z",
+      updatedAt: "2026-08-13T00:00:00Z",
+    }
+    const { container } = renderCard(
+      call({
+        name: "scout",
+        arguments: '{"input":"look around"}',
+        output:
+          '{"reply":"Two widgets are overdue.","thread":"t1","status":"ok"}',
+      }),
+      undefined,
+      false,
+      agent
+    )
+    fireEvent.click(screen.getByRole("button", { name: /Asked Scout/ }))
+    expect(screen.getByText("Scout replied")).toBeTruthy()
+    expect(screen.getByText("Two widgets are overdue.")).toBeTruthy()
+    const link = container.querySelector('a[data-to="/agents"]')
+    expect(link?.textContent).toBe("Open its conversation")
+    cleanup()
+
+    renderCard(
+      call({
+        name: "fetch",
+        arguments: '{"url":"https://example.com"}',
+        output: '{"output":"<title>Example</title>","effects":0}',
+      }),
+      undefined,
+      false,
+      agent
+    )
+    fireEvent.click(screen.getByRole("button", { name: /Used fetch/ }))
+    expect(screen.getByText("What it returned")).toBeTruthy()
+    expect(screen.getByText("<title>Example</title>")).toBeTruthy()
   })
 
   it("names the function and shows the payloads in technical mode", () => {
@@ -234,8 +356,8 @@ describe("the tool line", () => {
       true
     )
     expect(screen.getByText("substrate.reamde.dev/core/write")).toBeTruthy()
-    expect(screen.getByText("patch · seq 202")).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /Made a change/ }))
+    expect(screen.getByText("patch · seq 202")).toBeTruthy()
     expect(screen.getByText("Request")).toBeTruthy()
     expect(screen.getByText("Response")).toBeTruthy()
   })
