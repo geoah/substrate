@@ -464,11 +464,15 @@ loop:
 		if err != nil {
 			if errors.Is(err, llm.ErrContextTooLong) && !overflowRetried {
 				overflowRetried = true
-				// The refused call still counts as a turn above. The retry
-				// runs on the compacted history and the same in-run tail.
+				// The retry runs on the compacted history and the same in-run
+				// tail. The refused call is handed back its turn: the provider
+				// generated nothing for it, and charging it would end a run on
+				// its last allowed turn as overbudget with the compacted request
+				// never sent.
 				next, cerr := l.compactOnOverflow(ctx, messages)
 				if cerr == nil {
 					messages = next
+					l.turns--
 					continue
 				}
 				l.ds.svc.log.Warn("substrate: agent thread overflowed its context and could not compact",

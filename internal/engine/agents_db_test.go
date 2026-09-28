@@ -391,6 +391,13 @@ def main(input, host):
 				"writes": []any{vocabulary.KindLLMInteraction},
 			},
 		}),
+		// compactorone is compactor with ONE turn: the overflow retry must
+		// still get its compacted request through on the last allowed turn.
+		agent("compactorone", map[string]any{
+			"provider": "compactllm", "model": "compact",
+			"compaction": map[string]any{"reserveTokens": 200, "keepRecentTokens": 60},
+			"budgets":    map[string]any{"maxTurns": 1},
+		}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
 		// own emit could write tasks — the ceiling test pair.
 		agent("warden", map[string]any{

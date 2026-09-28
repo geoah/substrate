@@ -376,3 +376,28 @@ func TestCompactionTranscriptLabelsAndCaps(t *testing.T) {
 		t.Fatalf("system line = %q", lines[3])
 	}
 }
+
+func TestCompactionWindowClampsTheKeepBudget(t *testing.T) {
+	t.Parallel()
+	// keep and reserve are declared independently, so a keep at or above
+	// what the window leaves is legal; the loop clamps it to half of the
+	// usable window, or no plan could ever fold anything.
+	loop := func(keep int) *agentLoop {
+		return &agentLoop{
+			ag:       &vocabulary.Agent{Compaction: vocabulary.AgentCompaction{Enabled: true, ReserveTokens: 200, KeepRecentTokens: keep}},
+			provider: &providerConfig{pricing: map[string]modelPrice{"m": {contextWindow: 1000}}},
+			model:    "m",
+		}
+	}
+	if _, _, keep, ok := loop(2000).compactionWindow(); !ok || keep != 400 {
+		t.Fatalf("keep 2000 on a 1000 window: keep=%d ok=%v, want 400", keep, ok)
+	}
+	if _, _, keep, ok := loop(60).compactionWindow(); !ok || keep != 60 {
+		t.Fatalf("keep 60 on a 1000 window: keep=%d ok=%v, want 60 untouched", keep, ok)
+	}
+	full := loop(60)
+	full.ag.Compaction.ReserveTokens = 1000
+	if _, _, _, ok := full.compactionWindow(); ok {
+		t.Fatal("a reserve at the window still compacts")
+	}
+}

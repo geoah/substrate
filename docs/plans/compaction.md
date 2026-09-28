@@ -133,6 +133,12 @@ Agent declaration, under `data.compaction`, added to `agentDataKeys` and
 - `reserveTokens` (default 16384)
 - `keepRecentTokens` (default 20000)
 
+The two token budgets are declared independently, so the loop clamps
+`keepRecentTokens` to half of `contextWindow - reserveTokens`. A keep at or
+above the usable window is a legal declaration under which every plan would
+find the whole history inside the kept tail, and an overflow could never
+recover.
+
 Trigger: `contextTokens > contextWindow - reserveTokens`. `llm.Usage` gains
 `ContextTokens`, the whole input the model saw: on the Anthropic wire
 `input_tokens` plus cache read and cache creation tokens, which
@@ -160,9 +166,11 @@ Three check points, as in pi:
    continues uncompacted.
 3. On `llm.ErrContextTooLong` from a completion during any run: compact over
    the current rows, rebuild the history view followed by the run's in-memory
-   tail, and retry the completion once. The failed call still counts as a
-   turn, since it was billed. A second overflow, or nothing to compact,
-   settles `error` as today.
+   tail, and retry the completion once. The refused call is handed its turn
+   back: the provider generated nothing for it, and counting it would end a
+   run on its last allowed turn as `overbudget` with the compacted request
+   never sent. A second overflow, or nothing to compact, settles `error` as
+   today.
 
 Before compacting at any check point the loop extends the lease to 60
 seconds plus the lease slack from now, and the summarizer call runs under its

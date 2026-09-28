@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -126,8 +127,11 @@ func TestCompactionAtSettleWritesSummaryAndReplaysIt(t *testing.T) {
 			compacted = &events[i]
 		}
 	}
-	if compacted == nil || compacted.Thread != thread || compacted.TokensBefore != 900 || compacted.Covered != 2 {
-		t.Fatalf("compacted event: %+v", compacted)
+	// tokensBefore is the size that fired the trigger: the measured context
+	// of run 2's first completion plus the reply that landed after it.
+	wantBefore := 900 + messageTokens(llm.Message{Content: r2})
+	if compacted == nil || compacted.Thread != thread || compacted.TokensBefore != wantBefore || compacted.Covered != 2 {
+		t.Fatalf("compacted event: %+v (want tokensBefore %d)", compacted, wantBefore)
 	}
 	if last := events[len(events)-1]; last.Kind != substrate.AgentEventDone {
 		t.Fatalf("the stream did not end with done: %+v", last)
@@ -143,7 +147,7 @@ func TestCompactionAtSettleWritesSummaryAndReplaysIt(t *testing.T) {
 	if covers["from"] != rowIDWithContent(t, rows, "user", q1) || covers["through"] != rowIDWithContent(t, rows, "assistant", r1) {
 		t.Fatalf("covers = %v", covers)
 	}
-	if intProp(s.props, "tokensBefore") != 900 || s.props["model"] != "compact" || intProp(s.props, "promptTokens") != 77 {
+	if intProp(s.props, "tokensBefore") != wantBefore || s.props["model"] != "compact" || intProp(s.props, "promptTokens") != 77 {
 		t.Fatalf("summary row: %+v", s.props)
 	}
 	if s.content() != "SUMMARY ONE" {
@@ -369,5 +373,42 @@ func TestCompactionOnOverflowRetriesOnce(t *testing.T) {
 		if th["__id"] == thread && th["status"] != threadError {
 			t.Fatalf("status = %v", th["status"])
 		}
+	}
+}
+
+func TestCompactionOverflowRetriesOnTheLastTurn(t *testing.T) {
+	t.Parallel()
+	// compactorone has maxTurns 1. The provider refuses the one completion
+	// the run may spend; compaction hands that turn back, so the compacted
+	// retry still goes out instead of the run settling overbudget.
+	ds, fake := openAgentDataset(t)
+	one := crewPackage + "/compactorone"
+	chatOne := func(thread, text string) *substrate.AgentResult {
+		res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, one, thread, text, func(substrate.AgentEvent) {})
+		if err != nil {
+			t.Fatalf("chat %.20q: %v", text, err)
+		}
+		return res
+	}
+	fake.script("compact", fakeTurn{content: "r1"})
+	thread := chatOne("", "q1"+strings.Repeat("o", 200)).Thread
+	fake.script("compact", fakeTurn{content: "r2"})
+	chatOne(thread, "q2"+strings.Repeat("o", 200))
+
+	before := len(fake.requestsOf("compact"))
+	fake.script("compact",
+		fakeTurn{status: 400, errBody: overflowBody},
+		fakeTurn{content: "LAST TURN SUMMARY"},
+		fakeTurn{content: "fits now"})
+	res := chatOne(thread, "q3")
+	if res.Status != threadOK || res.Reply != "fits now" || res.Turns != 1 {
+		t.Fatalf("result: %+v", res)
+	}
+	reqs := fake.requestsOf("compact")[before:]
+	if len(reqs) != 3 || !isSummarizerRequest(reqs[1]) {
+		t.Fatalf("requests: %d", len(reqs))
+	}
+	if n := len(summaryRows(compactionRows(t, ds, thread))); n != 1 {
+		t.Fatalf("summary rows: %d", n)
 	}
 }

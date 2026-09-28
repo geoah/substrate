@@ -614,13 +614,24 @@ func compactionTranscript(msgs []llm.Message, speakers []string) string {
 // context window from the provider row, and the agent's reserve and keep.
 // A model without a window, a disabled agent, or a reserve that leaves no
 // room under the window, never compacts.
+//
+// The keep budget is clamped to half of what the window leaves under the
+// reserve. The two are declared independently, so a keep at or above the
+// usable window is a legal declaration under which every plan would find the
+// whole history inside the kept tail and nothing to fold, and an overflow
+// could then never recover. Half leaves the summary and the tail room to
+// coexist.
 func (l *agentLoop) compactionWindow() (window, reserve, keep int, ok bool) {
 	c := l.ag.Compaction
 	window = l.provider.pricing[l.model].contextWindow
 	if !c.Enabled || window <= 0 || c.ReserveTokens >= window {
 		return 0, 0, 0, false
 	}
-	return window, c.ReserveTokens, c.KeepRecentTokens, true
+	keep = c.KeepRecentTokens
+	if usable := window - c.ReserveTokens; keep > usable/2 {
+		keep = usable / 2
+	}
+	return window, c.ReserveTokens, keep, true
 }
 
 // compact summarizes one planned range and writes the summary row. It writes
@@ -794,7 +805,12 @@ func (l *agentLoop) compactAtSettle(ctx context.Context, reply string) {
 		return
 	}
 	window, reserve, keep, ok := l.compactionWindow()
-	if !ok || l.firstContext+messageTokens(llm.Message{Content: reply}) <= window-reserve {
+	// size is what the next continuation would replay: the measured context
+	// plus the reply that has just landed. It is both the trigger and the
+	// tokensBefore the row records, so the row never states a size under the
+	// threshold that fired it.
+	size := l.firstContext + messageTokens(llm.Message{Content: reply})
+	if !ok || size <= window-reserve {
 		return
 	}
 	err := func() error {
@@ -811,7 +827,7 @@ func (l *agentLoop) compactAtSettle(ctx context.Context, reply string) {
 		if !ok {
 			return errNothingToCompact
 		}
-		return l.compact(ctx, plan, l.firstContext)
+		return l.compact(ctx, plan, size)
 	}()
 	switch {
 	case errors.Is(err, errNothingToCompact):
