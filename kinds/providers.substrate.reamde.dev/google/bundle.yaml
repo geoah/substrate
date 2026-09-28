@@ -236,7 +236,10 @@ data:
   #
   # 38: the account declares `tokenError` and `tokenErrorAt`, the reason
   # and time the OAuth facility last failed to refresh its token. ADDITIVE.
-  version: 38
+  #
+  # 39: the `syncError` and `syncErrorAt` descriptions say a later
+  # run that ends `ok`, or a reconnect, clears the pair. Text only.
+  version: 39
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -779,13 +782,13 @@ data:
       writer: connector
       displayName: Sync error
       description: the last failure's text, from a stream body or from a parked
-        delivery the dispatcher stamped
+        delivery the dispatcher stamped; a later run that ends ok, or a reconnect,
+        clears it and syncErrorAt
     syncErrorAt:
       type: datetime
       writer: connector
       displayName: Sync error at
-      description: when syncError was written; it is not cleared by a later
-        success, so a recovered account still says when it last broke
+      description: when syncError was written; cleared with it
     syncStreams:
       type: json
       writer: connector

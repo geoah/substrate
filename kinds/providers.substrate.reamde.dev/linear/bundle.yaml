@@ -97,7 +97,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 19
+  version: 20
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -467,13 +467,13 @@ data:
       type: string
       writer: connector
       displayName: Sync error
-      description: the LAST error text, from the body or a parked delivery;
-        it is not cleared by a later good run — syncErrorAt says when
+      description: the last error text, from the body or a parked delivery;
+        a later run that ends ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
       writer: connector
       displayName: Sync error at
-      description: when syncError was written
+      description: when syncError was written; cleared with it
     syncStreams:
       type: json
       writer: connector

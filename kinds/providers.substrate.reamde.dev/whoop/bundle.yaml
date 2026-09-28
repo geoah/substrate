@@ -115,7 +115,10 @@ data:
   #
   # 16: the account declares `tokenError` and `tokenErrorAt`, the reason
   # and time the OAuth facility last failed to refresh its token. ADDITIVE.
-  version: 16
+  #
+  # 17: the `syncError` and `syncErrorAt` descriptions say a later
+  # run that ends `ok`, or a reconnect, clears the pair. Text only.
+  version: 17
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -561,13 +564,13 @@ data:
       writer: connector
       displayName: Sync error
       description: the last error text, from the body's own failure path or
-        from a parked delivery the dispatcher stamped
+        from a parked delivery the dispatcher stamped; a later run that ends
+        ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
       writer: connector
       displayName: Sync error at
-      description: when syncError was written. Neither is cleared by a later
-        success — the state is what says the account is healthy again
+      description: when syncError was written; cleared with it
     syncStreams:
       type: json
       writer: connector
