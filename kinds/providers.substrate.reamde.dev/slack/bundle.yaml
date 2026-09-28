@@ -143,7 +143,11 @@ data:
   #
   # 15: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
-  version: 15
+  #
+  # 16: every Slack call rides one kept-alive HTTPS session per runner
+  # process, so a drain of hundreds of invocations pays the TCP and TLS
+  # handshake once instead of once per call.
+  version: 16
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2960,6 +2964,7 @@ data:
     list the row already holds.
     """
     import datetime as _dt
+    import http.cookiejar
     import re
     import time
     import urllib.parse
@@ -3383,14 +3388,36 @@ data:
                     + _dt.timedelta(seconds=min(secs, MAX_RETRY_AFTER))).isoformat()
 
 
+    # ONE SESSION PER PROCESS. The runner execs this module once and calls
+    # main() for every invocation of a drain, so a module-level session keeps
+    # its HTTPS connection to Slack alive across the hundreds of invocations a
+    # drain spends, where a bare requests.get paid a TCP and TLS handshake per
+    # call. The token rides each request's own header, never the session, and
+    # the cookie jar accepts nothing, so no account's call carries state from
+    # another account's.
+    _SESSION = requests.Session()
+    _SESSION.cookies.set_policy(http.cookiejar.DefaultCookiePolicy(allowed_domains=[]))
+
+
+    def _get(url, params, headers):
+        try:
+            return _SESSION.get(url, params=params, timeout=HTTP_TIMEOUT, headers=headers)
+        except requests.exceptions.ConnectionError as e:
+            # A kept-alive connection Slack closed between invocations fails on
+            # its first reuse; the call is a read, so one fresh try is safe. A
+            # timeout is not a closed connection and is not retried.
+            if isinstance(e, requests.exceptions.Timeout):
+                raise
+            return _SESSION.get(url, params=params, timeout=HTTP_TIMEOUT, headers=headers)
+
+
     def _call(base, token, method, params=None):
         # ONE Slack Web API call. GET with the token in the Authorization header —
         # never in the query, so no URL a proxy or a recording holds can carry the
         # credential.
         url = base + "/api/" + method
-        resp = requests.get(url, params=params or {}, timeout=HTTP_TIMEOUT,
-                            headers={"Authorization": "Bearer " + token,
-                                     "Accept": "application/json"})
+        resp = _get(url, params or {}, {"Authorization": "Bearer " + token,
+                                         "Accept": "application/json"})
         if resp.status_code == 429:
             raise RateLimited(method, _retry_after(resp))
         if resp.status_code >= 400:

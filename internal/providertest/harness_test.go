@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -894,13 +895,31 @@ type fakeAPI struct {
 	paths   []string
 	queries []string
 	counts  map[string]int
+	// conns counts the TCP connections the body opened, which is what says
+	// whether its calls share one.
+	conns int
 }
 
 // serve puts mux on loopback for the length of the test.
 func (f *fakeAPI) serve(t *testing.T, mux http.Handler) {
 	t.Helper()
-	f.ts = httptest.NewServer(mux)
+	f.ts = httptest.NewUnstartedServer(mux)
+	f.ts.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			f.mu.Lock()
+			f.conns++
+			f.mu.Unlock()
+		}
+	}
+	f.ts.Start()
 	t.Cleanup(f.ts.Close)
+}
+
+// connections is how many TCP connections the fake accepted.
+func (f *fakeAPI) connections() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.conns
 }
 
 // record logs one request: the escaped path and the raw query, apart, because

@@ -509,3 +509,28 @@ func TestSlackThreadsDrainBeforeFiles(t *testing.T) {
 		t.Fatalf("threads left after the run: %v", left)
 	}
 }
+
+// TestSlackDrainSharesOneConnection: the runner keeps the body's process
+// across the invocations of a drain, and every call of the drain rides the
+// one kept-alive connection instead of opening its own.
+func TestSlackDrainSharesOneConnection(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, _ := slackDataset(t)
+	f := newFakeSlack(t)
+	for i := range 6 {
+		id := fmt.Sprintf("C%d", i+1)
+		f.channels = append(f.channels, slackChannel(id))
+		f.history[id] = []map[string]any{slackMessage("1700000000.000100", slackOwner)}
+	}
+	slackSetup(t, ds, f)
+	slackRun(t, ds, f, nil)
+
+	calls := len(f.callOrder())
+	if calls < 10 {
+		t.Fatalf("the drain made %d calls, too few to say anything about reuse: %v", calls, f.callOrder())
+	}
+	if n := f.connections(); n != 1 {
+		t.Fatalf("the drain's %d calls opened %d connections, want them all on one", calls, n)
+	}
+}
