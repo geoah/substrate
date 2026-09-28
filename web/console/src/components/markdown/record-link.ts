@@ -1,9 +1,10 @@
 /** A record named inside prose: an inline atom that reads as the record's
  * mark (glyph and live title) and is stored as a plain Markdown link whose
- * target is `ref:<kind>/<id>`, the same record path a reference property
- * stores. Any Markdown reader shows the link text; the console parses the
- * scheme back into the mark. The link is prose, not a reference property: the
- * substrate does not index it and the referent's history does not see it. */
+ * target is `substrate://` and the record path a reference property stores
+ * (decision record 0137). Any Markdown reader shows the link text; the
+ * console parses the scheme back into the mark. The link is prose, not a
+ * reference property: the substrate does not index it and the referent's
+ * history does not see it. */
 
 import { Node, mergeAttributes, type Editor } from "@tiptap/core"
 import { ReactNodeViewRenderer } from "@tiptap/react"
@@ -11,7 +12,7 @@ import { ReactNodeViewRenderer } from "@tiptap/react"
 import { RecordLinkView } from "./record-link-view"
 import { recordPath, splitRecordPath } from "@/lib/record-path"
 
-export const REF_SCHEME = "ref:"
+export const RECORD_SCHEME = "substrate://"
 
 export interface RecordLinkAttrs {
   kind: string
@@ -20,22 +21,14 @@ export interface RecordLinkAttrs {
   title: string
 }
 
-/** `[text](ref:<kind>/<id>)`, the text with `\`, `[` and `]` escaped. */
-const LINK = /^\[((?:\\.|[^\\\]])*)\]\(ref:([^)\s]+)\)/
-const LINK_START = /\[(?:\\.|[^\\\]])*\]\(ref:/
+/** `[text](substrate://<kind>/<id>)`, the text with `\`, `[` and `]` escaped. */
+const LINK = /^\[((?:\\.|[^\\\]])*)\]\(substrate:\/\/([^)\s]+)\)/
+const LINK_START = /\[(?:\\.|[^\\\]])*\]\(substrate:\/\//
 
 /** The Markdown a record link is stored as. */
 export function recordLinkMarkdown({ kind, id, title }: RecordLinkAttrs) {
   const text = (title || id).replace(/[\\[\]]/g, (c) => `\\${c}`)
-  return `[${text}](${REF_SCHEME}${recordPath(kind, id)})`
-}
-
-/** The record a `ref:` link target names, or `undefined` for any other URL. */
-export function parseRecordHref(
-  href: string
-): { kind: string; id: string } | undefined {
-  if (!href.startsWith(REF_SCHEME)) return undefined
-  return splitRecordPath(href.slice(REF_SCHEME.length))
+  return `[${text}](${RECORD_SCHEME}${recordPath(kind, id)})`
 }
 
 declare module "@tiptap/core" {
@@ -61,10 +54,12 @@ export const RecordLink = Node.create({
   selectable: true,
 
   addAttributes() {
+    // Carried by the node, never written as HTML attributes: an `id` on
+    // the anchor would be a DOM id.
     return {
-      kind: { default: "" },
-      id: { default: "" },
-      title: { default: "" },
+      kind: { default: "", rendered: false },
+      id: { default: "", rendered: false },
+      title: { default: "", rendered: false },
     }
   },
 
@@ -72,21 +67,27 @@ export const RecordLink = Node.create({
     return [
       {
         tag: "a[data-record-link]",
+        // Before the link mark's `a[href]`, which would read it as a link.
+        priority: 100,
         getAttrs: (el) => {
-          const hit = parseRecordHref(el.getAttribute("href") ?? "")
+          const hit = splitRecordPath(el.getAttribute("data-record-link") ?? "")
           return hit ? { ...hit, title: el.textContent ?? "" } : false
         },
       },
     ]
   },
 
+  // What a copy carries: the record's console page as an absolute URL, so
+  // a paste anywhere else is a working link, and the record path, so a paste
+  // back into an editor is the record link again.
   renderHTML({ node, HTMLAttributes }) {
     const { kind, id, title } = node.attrs as RecordLinkAttrs
+    const path = recordPath(kind, id)
     return [
       "a",
       mergeAttributes(HTMLAttributes, {
-        "data-record-link": "",
-        href: `${REF_SCHEME}${recordPath(kind, id)}`,
+        "data-record-link": path,
+        href: `${globalThis.location?.origin ?? ""}/data/${path}`,
       }),
       title || id,
     ]

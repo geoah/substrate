@@ -452,7 +452,7 @@
     & .selectedCell {
       background: var(--primary-soft);
     }
-    & [data-record-link] {
+    & [data-record-chip] {
       white-space: nowrap;
     }
     & .ProseMirror-selectednode [data-slot="kind-glyph"] {

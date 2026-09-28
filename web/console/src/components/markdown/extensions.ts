@@ -106,6 +106,6 @@ export function markdownExtensions(placeholder = "") {
 export function storedMarkdown(editor: Editor): string {
   return editor
     .getMarkdown()
-    .replace(/(\]\(ref:[^)\s]+\)) +(?=\n|$)/g, "$1")
+    .replace(/(\]\(substrate:\/\/[^)\s]+\)) +(?=\n|$)/g, "$1")
     .replace(/^\n+|\n+$/g, "")
 }

@@ -130,7 +130,7 @@ describe("RecordBody", () => {
   it("renders the Markdown, record links as links to the record", async () => {
     renderRouted(
       record(
-        "# Plan\n\n- one\n- two\n\nWith [Grace](ref:ada.example.com/people/person/grace)."
+        "# Plan\n\n- one\n- two\n\nWith [Grace](substrate://ada.example.com/people/person/grace)."
       )
     )
     const heading = await screen.findByRole("heading", { level: 1 }, LOADED)

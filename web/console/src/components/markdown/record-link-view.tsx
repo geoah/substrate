@@ -9,7 +9,7 @@ import type { RecordLinkAttrs } from "./record-link"
 export function RecordLinkView({ node }: ReactNodeViewProps) {
   const { kind, id } = node.attrs as RecordLinkAttrs
   return (
-    <NodeViewWrapper as="span" data-record-link="">
+    <NodeViewWrapper as="span" data-record-chip="">
       <RecordRef kind={kind} id={id} variant="chip" />
     </NodeViewWrapper>
   )
