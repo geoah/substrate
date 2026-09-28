@@ -194,8 +194,12 @@ entry could name only a function.
 
 - **`substrate.reamde.dev/core/query`** is the read, and it speaks the
   [records route](api.md#the-records-route)'s grammar as a tool: `kind` + `id`
-  reads one record; `q` (with `mode`, `first` and `filter.kinds`) is the ranked read;
-  otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
+  reads one record; `q` (with `mode`, `first`, `filter.kinds` and
+  `filter.purposes`) is the ranked read. A `q` that names no kinds and no
+  purposes searches only the `primary` and `supporting` kinds
+  ([0133](decisions/0133-a-kind-declares-its-purpose.md)), so a wide grant
+  does not answer with a thread's own messages or other machinery; naming an
+  internal kind or `purposes: [internal]` reaches it. Otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
   `referencing` included), `orderBy`, `first`, `after` and `expand` list a
   page, which answers `{records, cursor, head, generation, included?,
   matches?}` exactly as the route does. A `filter` bounding `at` on both

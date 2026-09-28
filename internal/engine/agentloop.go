@@ -1203,6 +1203,14 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			return toolError("filter." + arm + " is not supported with q: a ranked read narrows by filter.kinds and filter.purposes alone"), false, 0
 		}
 		in := substrate.SearchInput{Q: text, K: min(q.First, scope.rows), Purposes: q.Filter.Purposes}
+		if len(q.Filter.Kinds) == 0 && len(in.Purposes) == 0 {
+			// A search that names nothing skips machinery, as the console's
+			// everyday search does (record 0136). Without it a wide grant
+			// answers with the loop's own transcript: every llm/message that
+			// repeated the words ranks beside the records they were about.
+			// Naming a kind or a purpose reaches it.
+			in.Purposes = []string{vocabulary.PurposePrimary, vocabulary.PurposeSupporting}
+		}
 		if m, _ := args["mode"].(string); m != "" {
 			in.Mode = substrate.SearchMode(m)
 		}

@@ -85,7 +85,8 @@ data:
     - name: q
       type: string
       description: search query; ranks instead of filtering, narrowed by filter.kinds
-        and filter.purposes alone, first hits
+        and filter.purposes alone, first hits; naming neither skips internal
+        kinds
     - name: mode
       type: enum
       values:
