@@ -33,6 +33,7 @@ import { fromLocalInput, toLocalInput } from "@/components/property-sheet/dates"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
+import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
 import { ReferenceListPicker } from "@/components/record/identity-picker"
 import { PropertyChoice } from "@/components/record/property-choice"
 import { RecordCombobox } from "@/components/record/record-combobox"
@@ -443,6 +444,30 @@ export function PropertyField({
           onChange={onChange}
           invalid={Boolean(error)}
         />
+        {help()}
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
+    )
+  }
+
+  if (field.control === "prose" && field.spec.kind === "markdown") {
+    return (
+      <Field>
+        {label}
+        <div
+          className={cn(
+            "min-h-16 rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
+            error && "border-destructive"
+          )}
+        >
+          <LazyMarkdownEditor
+            value={text}
+            label={field.label}
+            editable
+            onChange={onChange}
+            className="[&_.ProseMirror]:min-h-12"
+          />
+        </div>
         {help()}
         {error && <FieldError>{error}</FieldError>}
       </Field>
