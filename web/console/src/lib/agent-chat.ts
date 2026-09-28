@@ -21,6 +21,7 @@ import {
   valueIdentity,
 } from "@/lib/agent-grants"
 import type { ChangeOp, Decision } from "@/lib/changerequests"
+import type { KindPurpose } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
@@ -66,6 +67,46 @@ export function threadAgentId(thread: SubstrateRecord): string | undefined {
  * as working on its own rather than offered a conversation. */
 export function chatCapable(agent: SubstrateRecord): boolean {
   return agent.properties.hiddenFromChat !== true
+}
+
+/** Why an agent exists (decision record 0139), in a kind's three words. An
+ * absent or unknown value reads as primary, so an agent nobody classified is
+ * listed rather than hidden. */
+export function agentPurpose(agent: SubstrateRecord): KindPurpose {
+  const declared = agent.properties.purpose
+  return declared === "supporting" || declared === "internal"
+    ? declared
+    : "primary"
+}
+
+/** The agents column, split by what it lists before "Show more".
+ *
+ * Listed: the primary agents a person can chat with, and the picked agent
+ * whatever it is, so a narrowing never hides the row that made it. Behind
+ * "Show more": the other agents a person can chat with, then the ones that
+ * only work for other agents. With no primary agent at all, everything a
+ * person can chat with is listed, because an empty column with a "Show more"
+ * under it hides the only answers there are. */
+export function agentListing(
+  agents: SubstrateRecord[],
+  picked = ""
+): {
+  listed: SubstrateRecord[]
+  more: SubstrateRecord[]
+  background: SubstrateRecord[]
+} {
+  const talkable = agents.filter(chatCapable)
+  const background = agents.filter((a) => !chatCapable(a))
+  const everyday = (a: SubstrateRecord) =>
+    agentPurpose(a) === "primary" || a.id === picked
+  if (!talkable.some((a) => agentPurpose(a) === "primary")) {
+    return { listed: talkable, more: [], background }
+  }
+  return {
+    listed: talkable.filter(everyday),
+    more: talkable.filter((a) => !everyday(a)),
+    background,
+  }
 }
 
 /** When a thread happened: the loop's own stamp, else the row's creation. */

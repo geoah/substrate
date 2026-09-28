@@ -5,7 +5,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  agentListing,
   agentName,
+  agentPurpose,
   canChange,
   canSee,
   chatCapable,
@@ -119,6 +121,48 @@ describe("names", () => {
     expect(chatCapable(record({ properties: { hiddenFromChat: true } }))).toBe(
       false
     )
+  })
+})
+
+describe("which agents the column lists", () => {
+  const agent = (id: string, properties: Record<string, unknown> = {}) =>
+    record({ id, kind: "substrate.reamde.dev/core/agent", properties })
+  const chat = agent("a.example.com/llm/chat")
+  const unclassified = agent("a.example.com/llm/mine")
+  const helper = agent("a.example.com/llm/helper", { purpose: "supporting" })
+  const arbiter = agent("a.example.com/llm/arbiter", { purpose: "internal" })
+  const judge = agent("a.example.com/llm/judge", {
+    purpose: "internal",
+    hiddenFromChat: true,
+  })
+  const ids = (rs: SubstrateRecord[]) => rs.map((r) => r.id)
+
+  it("reads an absent or unknown purpose as primary", () => {
+    expect(agentPurpose(unclassified)).toBe("primary")
+    expect(agentPurpose(agent("x", { purpose: "helper" }))).toBe("primary")
+    expect(agentPurpose(helper)).toBe("supporting")
+    expect(agentPurpose(arbiter)).toBe("internal")
+  })
+
+  it("lists the primary agents and keeps the rest behind show more", () => {
+    const all = [chat, helper, unclassified, arbiter, judge]
+    const split = agentListing(all)
+    expect(ids(split.listed)).toEqual([chat.id, unclassified.id])
+    expect(ids(split.more)).toEqual([helper.id, arbiter.id])
+    expect(ids(split.background)).toEqual([judge.id])
+  })
+
+  it("keeps the picked agent listed whatever its purpose", () => {
+    const split = agentListing([chat, helper, arbiter], helper.id)
+    expect(ids(split.listed)).toEqual([chat.id, helper.id])
+    expect(ids(split.more)).toEqual([arbiter.id])
+  })
+
+  it("lists every agent a person can chat with when none is primary", () => {
+    const split = agentListing([helper, arbiter, judge])
+    expect(ids(split.listed)).toEqual([helper.id, arbiter.id])
+    expect(split.more).toEqual([])
+    expect(ids(split.background)).toEqual([judge.id])
   })
 })
 

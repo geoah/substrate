@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 /** The chats column: agents sit above the chats, so a long history never
  * buries them; picking one narrows the chats; the chats show the most recent
- * page with "Show more"; the agents that only work for other agents are
- * listed under their own caption; technical mode prints each thread's tally. */
+ * page with "Show more"; only primary agents are listed until "Show more
+ * agents", which opens the helpers and, under their own caption, the agents
+ * that only work for other agents; technical mode prints each thread's
+ * tally. */
 
 import {
   createMemoryHistory,
@@ -42,6 +44,7 @@ function record(id: string, properties: Record<string, unknown> = {}) {
 const HELPER = "ada.example.com/llm/helper"
 const NOTES = "ada.example.com/notes/notekeeper"
 const JUDGE = "ada.example.com/llm/judge"
+const EDITOR = "ada.example.com/llm/editor"
 
 function row(i: number, agentId: string, title = `Chat ${i}`): ChatRow {
   const at = new Date(Date.UTC(2026, 8, 20, 12, 0, 0) - i * 3600_000)
@@ -104,7 +107,8 @@ function renderList(props: Partial<Parameters<typeof ThreadList>[0]> = {}) {
         agents={[
           record(HELPER),
           record(NOTES),
-          record(JUDGE, { hiddenFromChat: true }),
+          record(EDITOR, { purpose: "supporting" }),
+          record(JUDGE, { hiddenFromChat: true, purpose: "internal" }),
         ]}
         selected=""
         agent=""
@@ -202,16 +206,38 @@ describe("ThreadList", () => {
     expect(onAddAgents).toHaveBeenCalledOnce()
   })
 
-  it("lists the agents that run on their own under a caption", async () => {
+  it("keeps helpers and the agents that run on their own behind show more", async () => {
     renderList()
     const agents = await screen.findByRole("navigation", { name: "Agents" })
+    expect(within(agents).getByRole("button", { name: /Helper/ })).toBeTruthy()
+    expect(within(agents).queryByRole("button", { name: /Editor/ })).toBeNull()
+    expect(within(agents).queryByText("Runs on its own")).toBeNull()
+    expect(within(agents).queryByRole("link", { name: /Judge/ })).toBeNull()
+
+    fireEvent.click(
+      within(agents).getByRole("button", { name: "Show 2 more agents" })
+    )
+    const editor = within(agents).getByRole("button", { name: /Editor/ })
+    expect(within(editor).getByText("supporting")).toBeTruthy()
     expect(within(agents).getByText("Runs on its own")).toBeTruthy()
-    expect(
-      within(agents).queryByRole("button", { name: /Runs on its own/ })
-    ).toBeNull()
     expect(
       within(agents).getByRole("link", { name: /Judge/ }).getAttribute("href")
     ).toBe(`/data/substrate.reamde.dev/core/agent/${encodeURIComponent(JUDGE)}`)
+
+    fireEvent.click(
+      within(agents).getByRole("button", { name: "Show fewer agents" })
+    )
+    expect(within(agents).queryByRole("button", { name: /Editor/ })).toBeNull()
+  })
+
+  it("keeps a picked helper listed", async () => {
+    renderList({ agent: EDITOR })
+    const agents = await screen.findByRole("navigation", { name: "Agents" })
+    const editor = within(agents).getByRole("button", { name: /Editor/ })
+    expect(editor.getAttribute("aria-current")).toBe("true")
+    expect(
+      within(agents).getByRole("button", { name: "Show 1 more agent" })
+    ).toBeTruthy()
   })
 
   it("never dates a chat in the future", async () => {

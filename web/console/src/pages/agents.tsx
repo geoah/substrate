@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import {
   agentProviderId,
+  agentPurpose,
   chatCapable,
   chatRows,
   openingMessages,
@@ -100,7 +101,19 @@ export function AgentsPage() {
   const policies = useQuery(writePoliciesQueryOptions())
 
   const allAgents = useMemo(() => agents.data?.records ?? [], [agents.data])
-  const talkable = useMemo(() => allAgents.filter(chatCapable), [allAgents])
+  // Primary agents first: a new chat defaults to the first of them, and the
+  // picker offers them before the helpers.
+  const talkable = useMemo(
+    () =>
+      allAgents
+        .filter(chatCapable)
+        .sort(
+          (a, b) =>
+            Number(agentPurpose(a) !== "primary") -
+            Number(agentPurpose(b) !== "primary")
+        ),
+    [allAgents]
+  )
   const threads = useMemo(
     () => conversations.data?.records ?? [],
     [conversations.data]
