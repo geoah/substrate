@@ -5,7 +5,10 @@
 # an `assistant` row carries prose and/or its tool calls; a `tool` row is one
 # dispatched call's result, keyed back by toolCallId; a `system` row is the
 # substrate's own turn (a proposal decision), written by the engine and
-# replayed to the model as context.
+# replayed to the model as context; a `summary` row is the engine's fold of
+# older turns, written by the loop when the history nears the model's context
+# window and replayed in place of the rows its `covers` names, which stay
+# untouched as the audit.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/llm/message
@@ -17,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 13
+  version: 14
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -37,6 +40,7 @@ data:
         - assistant
         - tool
         - system
+        - summary
       description: whose turn the row is, following the chat wire
     content:
       type: text
@@ -107,6 +111,39 @@ data:
         id:
           type: string
           description: the written record's id
+    # A summary row's range is two message ROW IDS, not turn ordinals: two
+    # rows can share an ordinal, and replay orders by creation. The rows in
+    # the range stay; replay emits the summary where `from` sat and resumes
+    # after `through`.
+    covers:
+      type: object
+      description: the first and last message rows a summary row replaces
+        in replay, inclusive
+      fields:
+        from:
+          type: string
+          description: the id of the first message row the summary replaces
+        through:
+          type: string
+          description: the id of the last message row the summary replaces
+    tokensBefore:
+      type: int
+      min: 0
+      description: the context size in tokens that triggered a summary row's
+        compaction
+    model:
+      type: string
+      description: the model that wrote a summary row
+    promptTokens:
+      type: int
+      min: 0
+      description: the input tokens the summarizer call spent on a summary
+        row
+    completionTokens:
+      type: int
+      min: 0
+      description: the output tokens the summarizer call spent on a summary
+        row
     thread:
       type: reference
       kind: substrate.reamde.dev/llm/thread

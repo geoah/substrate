@@ -1043,13 +1043,19 @@ func (l *loader) boundedDuration(where string, m map[string]any, key string, def
 
 // boundedInt reads an optional positive integer with a default and a cap.
 func (l *loader) boundedInt(where string, m map[string]any, key string, def, limit int) (int, bool) {
+	return l.boundedIntFrom(where, m, key, def, 1, limit)
+}
+
+// boundedIntFrom is boundedInt with its own floor, for a count where zero is
+// a meaning rather than a mistake.
+func (l *loader) boundedIntFrom(where string, m map[string]any, key string, def, floor, limit int) (int, bool) {
 	v, has := m[key]
 	if !has {
 		return def, true
 	}
 	f, isNum := mfloat(m, key)
-	if !isNum || f != float64(int(f)) || int(f) < 1 || int(f) > limit {
-		l.errf("%s: %v — an integer between 1 and %d", where, v, limit)
+	if !isNum || f != float64(int(f)) || int(f) < floor || int(f) > limit {
+		l.errf("%s: %v — an integer between %d and %d", where, v, floor, limit)
 		return 0, false
 	}
 	return int(f), true

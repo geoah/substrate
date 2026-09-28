@@ -27,7 +27,7 @@ data:
     the key that reaches it, and what its models cost. An agent names a provider
     and a model, so re-pointing every agent on a provider is one patch to
     this row.
-  version: 10
+  version: 11
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -141,3 +141,11 @@ data:
           type: decimal
           min: 0
           description: USD per 1M output tokens, exact digits as a string
+        # What compaction measures a thread against. It sits beside the
+        # prices because both are facts about one model on one endpoint, and
+        # a row edit changes it without a release.
+        contextWindow:
+          type: int
+          min: 1
+          description: the model's context window in tokens; a model without
+            one never compacts

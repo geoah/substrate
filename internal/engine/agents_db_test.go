@@ -46,6 +46,12 @@ type fakeTurn struct {
 	// concurrency barriers.
 	arrived chan struct{}
 	release <-chan struct{}
+	// promptTokens, when non-zero, is the turn's reported prompt_tokens: the
+	// context size compaction measures. Zero reports the default 10.
+	promptTokens int
+	// finish is the turn's finish_reason; empty sends "stop". A "length"
+	// turn is a reply cut off by its output ceiling.
+	finish string
 }
 
 // fakeLLM scripts /chat/completions per MODEL: each request pops the next
@@ -128,7 +134,15 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	usage := map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+	prompt := 10
+	if turn.promptTokens > 0 {
+		prompt = turn.promptTokens
+	}
+	finish := "stop"
+	if turn.finish != "" {
+		finish = turn.finish
+	}
+	usage := map[string]any{"prompt_tokens": prompt, "completion_tokens": 5, "total_tokens": prompt + 5}
 	toolCalls := make([]map[string]any, 0, len(turn.calls))
 	for i, c := range turn.calls {
 		toolCalls = append(toolCalls, map[string]any{
@@ -144,7 +158,7 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "cmpl", "object": "chat.completion",
-			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}},
+			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": finish}},
 			"usage":   usage,
 		})
 		return
@@ -171,6 +185,9 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 			map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{tc}}},
 		}})
 	}
+	chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{
+		map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": finish},
+	}})
 	chunk(map[string]any{"object": "chat.completion.chunk", "choices": []any{}, "usage": usage})
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
@@ -211,6 +228,18 @@ func provisionAgents(t *testing.T, ds *dataset) *fakeLLM {
 		}); err != nil {
 			t.Fatalf("put llm/provider row %s: %v", id, err)
 		}
+	}
+	// compactllm is the one row that declares a context window, so its agent
+	// is the one that compacts: a window of 1000 tokens, which the compactor's
+	// reserve of 200 puts the threshold at 800 under.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "compactllm",
+		Properties: map[string]any{
+			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-compactllm",
+			"pricing": []any{map[string]any{"model": "compact", "inputPer1M": "1", "outputPer1M": "5", "contextWindow": 1000}},
+		},
+	}); err != nil {
+		t.Fatalf("put llm/provider row compactllm: %v", err)
 	}
 	agent := func(name string, data map[string]any) map[string]any {
 		data["description"] = name + " under test"
@@ -352,6 +381,16 @@ def main(input, host):
 			"budgets":     map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
+		// compactor chats on the one provider row with a context window, and
+		// may ask: the compaction fixture, a pending ask its blocked head.
+		agent("compactor", map[string]any{
+			"provider": "compactllm", "model": "compact",
+			"compaction": map[string]any{"reserveTokens": 200, "keepRecentTokens": 60},
+			"tools":      []any{map[string]any{"function": vocabulary.HostFunctionAsk}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindLLMInteraction},
+			},
+		}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
 		// own emit could write tasks — the ceiling test pair.
 		agent("warden", map[string]any{

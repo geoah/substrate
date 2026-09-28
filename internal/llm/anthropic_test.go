@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -394,6 +395,10 @@ func TestAnthropicStreamsDeltasAndAccumulatesToolInput(t *testing.T) {
 	if res.Usage == nil || res.Usage.PromptTokens != 5 || res.Usage.CompletionTokens != 9 {
 		t.Fatalf("usage = %+v", res.Usage)
 	}
+	// The accumulated message's stop_reason is the streamed turn's.
+	if res.Stop != StopToolCall {
+		t.Fatalf("stop = %q", res.Stop)
+	}
 	if srv.last["stream"] != true {
 		t.Fatalf("stream = %v", srv.last["stream"])
 	}
@@ -412,6 +417,83 @@ func TestAnthropicSurfacesAnAPIError(t *testing.T) {
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "temperature is not supported") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// The wire's stop_reason maps onto the neutral set, and the context size adds
+// the cache reads and writes this wire reports beside input_tokens, while the
+// billed prompt stays input_tokens alone.
+func TestAnthropicMapsStopReasonAndContextTokens(t *testing.T) {
+	for reason, want := range map[string]string{
+		"end_turn":      StopEnd,
+		"stop_sequence": StopEnd,
+		"max_tokens":    StopLength,
+		"tool_use":      StopToolCall,
+		"refusal":       StopOther,
+		"pause_turn":    StopOther,
+	} {
+		t.Run(reason, func(t *testing.T) {
+			srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
+				jsonBody(w, map[string]any{
+					"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+					"content": []any{map[string]any{"type": "text", "text": "x"}}, "stop_reason": reason,
+					"usage": map[string]any{
+						"input_tokens": 10, "output_tokens": 2,
+						"cache_read_input_tokens": 300, "cache_creation_input_tokens": 40,
+					},
+				})
+			})
+			res, err := srv.client(t, nil).Complete(context.Background(), Request{
+				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+			}, nil)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if res.Stop != want {
+				t.Fatalf("stop = %q, want %q", res.Stop, want)
+			}
+			if res.Usage.PromptTokens != 10 || res.Usage.ContextTokens != 350 {
+				t.Fatalf("usage = %+v", res.Usage)
+			}
+		})
+	}
+}
+
+// A context overflow is the one provider failure the loop can act on, so it
+// wraps ErrContextTooLong; a rate-limit refusal that shares its words does
+// not, and neither does any other error. The key is scrubbed first.
+func TestAnthropicClassifiesAContextOverflow(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status   int
+		message  string
+		overflow bool
+	}{
+		"prompt too long":   {400, "prompt is too long: 210000 tokens > 200000 maximum", true},
+		"a count with 429":  {400, "prompt is too long: 214290 tokens > 200000 maximum", true},
+		"request too large": {413, "Request too large for this model", true},
+		"rate limit":        {429, "Number of request tokens has exceeded your rate limit: too many tokens", false},
+		"unrelated":         {400, "temperature is not supported", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"invalid_request_error","message":%q}}`,
+					tc.message+" (key sk-test)")
+			})
+			_, err := srv.client(t, nil).Complete(context.Background(), Request{
+				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+			}, nil)
+			if err == nil {
+				t.Fatal("no error")
+			}
+			if got := errors.Is(err, ErrContextTooLong); got != tc.overflow {
+				t.Fatalf("errors.Is(ErrContextTooLong) = %v, want %v: %v", got, tc.overflow, err)
+			}
+			if strings.Contains(err.Error(), "sk-test") {
+				t.Fatalf("the error carries the key: %v", err)
+			}
+		})
 	}
 }
 

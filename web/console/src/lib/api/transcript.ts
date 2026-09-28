@@ -40,20 +40,66 @@ export interface ToolCallView {
   changes?: ChangeStamp[]
 }
 
+/** What a compaction folded, as far as its `summary` row or its live
+ * `compacted` event says. Every field is optional: the row and the event
+ * carry different halves, and an older or partial row carries less. */
+export interface CompactionView {
+  /** The first and last message row ids the summary stands in for,
+   * inclusive (the row's `covers`). */
+  from?: string
+  through?: string
+  /** The context size, in tokens, that set the compaction off. */
+  tokensBefore?: number
+  /** How many message rows the summary covers (the live event's count; a
+   * row names its range instead). */
+  covered?: number
+  /** The model that wrote the summary, and what writing it cost. */
+  model?: string
+  promptTokens?: number
+  completionTokens?: number
+}
+
 export interface TurnView {
   /** Stable across a re-render and across the live→persisted handover. */
   key: string
   /** `system` is the substrate's own turn — a proposal decision the engine
-   * wrote into the thread, never something a model said. */
-  role: "user" | "assistant" | "system"
+   * wrote into the thread, never something a model said. `summary` is the
+   * engine's fold of older turns: the model reads it in place of the rows it
+   * covers, which stay in the thread as they were. */
+  role: "user" | "assistant" | "system" | "summary"
   content: string
   tools: ToolCallView[]
   /** On a system turn: the changelog entries the decision wrote. */
   changes?: ChangeStamp[]
+  /** On a summary turn: what it folded. */
+  compaction?: CompactionView
 }
 
 function str(value: unknown): string {
   return typeof value === "string" ? value : ""
+}
+
+function num(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+/** A summary row's own facts: its `covers` range, the context size that set
+ * it off, and the summarizer's model and usage. Read tolerantly, like every
+ * engine-written property here. */
+export function compactionOf(record: SubstrateRecord): CompactionView {
+  const p = record.properties
+  const covers =
+    typeof p.covers === "object" && p.covers !== null
+      ? (p.covers as Record<string, unknown>)
+      : {}
+  return {
+    from: str(covers.from) || undefined,
+    through: str(covers.through) || undefined,
+    tokensBefore: num(p.tokensBefore),
+    model: str(p.model) || undefined,
+    promptTokens: num(p.promptTokens),
+    completionTokens: num(p.completionTokens),
+  }
 }
 
 /** Whether a tool row reports a failure.
@@ -215,6 +261,19 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
         role,
         content: str(record.properties.content),
         tools,
+      })
+      continue
+    }
+    if (role === "summary") {
+      // The engine's fold of older turns. It stands where the compaction
+      // happened, and never joins an assistant turn: no model said it to
+      // the reader.
+      turns.push({
+        key: record.id,
+        role,
+        content: str(record.properties.content),
+        tools: [],
+        compaction: compactionOf(record),
       })
       continue
     }
@@ -483,6 +542,32 @@ export function pushToolStart(
   }
   turns[turns.length - 1] = { ...last, tools: [...last.tools, call] }
   return { ...live, turns }
+}
+
+/** Marks where the loop compacted the thread mid-run. The event carries no
+ * summary text (the row does, and replaces this line at handover), and the
+ * next delta or tool call opens a new assistant turn after it. */
+export function pushCompacted(
+  live: LiveOverlay,
+  compaction: Pick<CompactionView, "tokensBefore" | "covered">,
+  seq: number
+): LiveOverlay {
+  return {
+    turns: [
+      ...live.turns,
+      {
+        key: `live-c${seq}`,
+        role: "summary",
+        content: "",
+        tools: [],
+        compaction: {
+          tokensBefore: compaction.tokensBefore,
+          covered: compaction.covered,
+        },
+      },
+    ],
+    closed: true,
+  }
 }
 
 /** Settles a call BY ID: one turn may dispatch the same tool twice, and

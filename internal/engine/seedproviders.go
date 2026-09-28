@@ -17,6 +17,10 @@ import (
 //
 // Shipped sample agents name `openai`. The other two rows are the same shape
 // for the other vendors, so keying one is a write to that row and nothing else.
+//
+// Each pricing entry carries the model's contextWindow, which is what lets a
+// thread on it compact. Being create-only, the seed does not add it to a row
+// an older binary wrote; the owner patches that row.
 var defaultLLMProviders = []struct {
 	id    string
 	props map[string]any
@@ -33,8 +37,8 @@ var defaultLLMProviders = []struct {
 			// to put function tools on a chat completion. An agent names the
 			// value its own model accepts.
 			"pricing": []any{
-				map[string]any{"model": "gpt-5", "inputPer1M": "1.25", "outputPer1M": "10"},
-				map[string]any{"model": "gpt-5-mini", "inputPer1M": "0.25", "outputPer1M": "2"},
+				map[string]any{"model": "gpt-5", "inputPer1M": "1.25", "outputPer1M": "10", "contextWindow": 400000},
+				map[string]any{"model": "gpt-5-mini", "inputPer1M": "0.25", "outputPer1M": "2", "contextWindow": 400000},
 			},
 		},
 	},
@@ -47,9 +51,9 @@ var defaultLLMProviders = []struct {
 			// slash is load-bearing.
 			"baseURL": "https://api.anthropic.com/",
 			"pricing": []any{
-				map[string]any{"model": "claude-opus-5", "inputPer1M": "5", "outputPer1M": "25"},
-				map[string]any{"model": "claude-sonnet-5", "inputPer1M": "3", "outputPer1M": "15"},
-				map[string]any{"model": "claude-haiku-4-5", "inputPer1M": "1", "outputPer1M": "5"},
+				map[string]any{"model": "claude-opus-5", "inputPer1M": "5", "outputPer1M": "25", "contextWindow": 200000},
+				map[string]any{"model": "claude-sonnet-5", "inputPer1M": "3", "outputPer1M": "15", "contextWindow": 200000},
+				map[string]any{"model": "claude-haiku-4-5", "inputPer1M": "1", "outputPer1M": "5", "contextWindow": 200000},
 			},
 		},
 	},
@@ -60,8 +64,8 @@ var defaultLLMProviders = []struct {
 			"wire":    "openai",
 			"baseURL": "https://generativelanguage.googleapis.com/v1beta/openai",
 			"pricing": []any{
-				map[string]any{"model": "gemini-2.5-pro", "inputPer1M": "1.25", "outputPer1M": "10"},
-				map[string]any{"model": "gemini-2.5-flash", "inputPer1M": "0.15", "outputPer1M": "0.60"},
+				map[string]any{"model": "gemini-2.5-pro", "inputPer1M": "1.25", "outputPer1M": "10", "contextWindow": 1048576},
+				map[string]any{"model": "gemini-2.5-flash", "inputPer1M": "0.15", "outputPer1M": "0.60", "contextWindow": 1048576},
 			},
 		},
 	},

@@ -426,6 +426,8 @@ const agentEvent: Shape<AgentEvent> = {
   args: false,
   ok: false,
   output: false,
+  tokensBefore: false,
+  covered: false,
   result: false,
   error: false,
 }
@@ -747,6 +749,7 @@ const notOnTheWire: Record<string, string> = {
   ChangeStamp: "a view the console folds from llm/message records",
   ToolCallView: "a view the console folds from llm/message records",
   TurnView: "a view the console folds from llm/message records",
+  CompactionView: "a view the console folds from llm/message records",
   DecisionNotice: "a view the console folds from llm/message records",
   InteractionNotice: "a view the console folds from llm/message records",
   DeliveryNotice: "a view the console folds from llm/message records",

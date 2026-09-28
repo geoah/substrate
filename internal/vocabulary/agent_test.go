@@ -452,3 +452,50 @@ func TestAgentRefusals(t *testing.T) {
 		})
 	}
 }
+
+// data.compaction: absent means on at the defaults, keepRecentTokens may be
+// zero, and each bound refuses at load.
+func TestAgentCompaction(t *testing.T) {
+	load := func(block string) (*vocabulary.Agent, error) {
+		t.Helper()
+		r, err := loadAgAuthority(t, agAuthority(`  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+`+block))
+		if err != nil {
+			return nil, err
+		}
+		return r.ResolveAgent("ag.example.com/ag/classifier")
+	}
+	ag, err := load("")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := vocabulary.AgentCompaction{
+		Enabled:          true,
+		ReserveTokens:    vocabulary.DefaultAgentReserveTokens,
+		KeepRecentTokens: vocabulary.DefaultAgentKeepRecentTokens,
+	}
+	if ag.Compaction != want {
+		t.Fatalf("defaults %+v", ag.Compaction)
+	}
+	ag, err = load("  compaction: {enabled: false, reserveTokens: 200, keepRecentTokens: 0}\n")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if ag.Compaction != (vocabulary.AgentCompaction{Enabled: false, ReserveTokens: 200, KeepRecentTokens: 0}) {
+		t.Fatalf("parsed %+v", ag.Compaction)
+	}
+	for block, msg := range map[string]string{
+		"  compaction: {reserveTokens: 0}\n":          "data.compaction.reserveTokens",
+		"  compaction: {keepRecentTokens: -1}\n":      "data.compaction.keepRecentTokens",
+		"  compaction: {keepRecentTokens: 1000001}\n": "data.compaction.keepRecentTokens",
+		"  compaction: {enabled: yes please}\n":       "data.compaction.enabled",
+		"  compaction: {window: 5}\n":                 "window",
+	} {
+		if _, err := load(block); err == nil || !strings.Contains(err.Error(), msg) {
+			t.Errorf("%q: err = %v, want %q", strings.TrimSpace(block), err, msg)
+		}
+	}
+}

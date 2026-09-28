@@ -160,6 +160,30 @@ data:
           min: 1
           max: 3
           description: how deep the sub-agent chain below may go
+    # When a continued thread's history is folded into a summary row. The
+    # trigger needs the model's contextWindow from the provider row's pricing
+    # entry, so a model without one never compacts whatever this says.
+    compaction:
+      type: object
+      description: when this agent's thread history is compacted into a summary,
+        and how much of it stays verbatim
+      fields:
+        enabled:
+          type: bool
+          description: whether threads compact at all; absent means true
+        reserveTokens:
+          type: int
+          min: 1
+          max: 1000000
+          description: tokens kept free under the model's context window;
+            compaction runs when a thread would leave less than this, 16384
+            when absent
+        keepRecentTokens:
+          type: int
+          min: 0
+          max: 1000000
+          description: the newest history, in tokens, a compaction keeps verbatim,
+            20000 when absent
     # THE GRANT, in one object, spelled the way a function's is: an agent has
     # no body of its own to spend, so it carries two of the five, what it may
     # read and what it may write.

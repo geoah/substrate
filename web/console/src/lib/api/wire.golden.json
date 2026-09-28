@@ -8,6 +8,7 @@
   },
   "AgentEvent": {
     "args": false,
+    "covered": false,
     "error": false,
     "id": false,
     "kind": true,
@@ -16,6 +17,7 @@
     "result": false,
     "text": false,
     "thread": false,
+    "tokensBefore": false,
     "tool": false
   },
   "AgentResult": {

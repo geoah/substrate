@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -219,6 +220,7 @@ func TestOpenAIStreamsDeltasAndAccumulatesToolCalls(t *testing.T) {
 		`{"choices":[{"delta":{"content":"llo"}}]}`,
 		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_0","type":"function","function":{"name":"peek","arguments":"{\"id\":"}}]}}]}`,
 		`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"x\"}"}}]}}]}`,
+		`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
 		`{"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":9}}`,
 	}
 	srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
@@ -244,8 +246,13 @@ func TestOpenAIStreamsDeltasAndAccumulatesToolCalls(t *testing.T) {
 	if len(res.ToolCalls) != 1 || res.ToolCalls[0].Arguments != `{"id":"x"}` {
 		t.Fatalf("tool calls = %+v", res.ToolCalls)
 	}
-	if res.Usage == nil || res.Usage.PromptTokens != 5 || res.Usage.CompletionTokens != 9 {
+	if res.Usage == nil || res.Usage.PromptTokens != 5 || res.Usage.CompletionTokens != 9 || res.Usage.ContextTokens != 5 {
 		t.Fatalf("usage = %+v", res.Usage)
+	}
+	// The finish reason rides a chunk before the usage chunk, which carries
+	// none, and the stream keeps the last one it saw.
+	if res.Stop != StopToolCall {
+		t.Fatalf("stop = %q", res.Stop)
 	}
 	// The usage tally only rides a stream that asked for it.
 	opts, _ := srv.last["stream_options"].(map[string]any)
@@ -348,5 +355,85 @@ func TestOpenAICompletionErrorDoesNotCarryTheKey(t *testing.T) {
 				t.Fatalf("the scrub ate the endpoint's message: %v", got)
 			}
 		})
+	}
+}
+
+// The wire's finish_reason maps onto the neutral set, and prompt_tokens is the
+// context size as well as the billed input, since it already counts cache.
+func TestOpenAIMapsFinishReasonAndContextTokens(t *testing.T) {
+	for reason, want := range map[string]string{
+		"stop":           StopEnd,
+		"length":         StopLength,
+		"tool_calls":     StopToolCall,
+		"function_call":  StopToolCall,
+		"content_filter": StopOther,
+	} {
+		t.Run(reason, func(t *testing.T) {
+			srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
+				jsonBody(w, map[string]any{
+					"choices": []any{map[string]any{"message": map[string]any{"content": "x"}, "finish_reason": reason}},
+					"usage":   map[string]any{"prompt_tokens": 70, "completion_tokens": 3},
+				})
+			})
+			client, _ := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+			res, err := client.Complete(context.Background(), Request{
+				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+			}, nil)
+			if err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			if res.Stop != want {
+				t.Fatalf("stop = %q, want %q", res.Stop, want)
+			}
+			if res.Usage.PromptTokens != 70 || res.Usage.ContextTokens != 70 {
+				t.Fatalf("usage = %+v", res.Usage)
+			}
+		})
+	}
+}
+
+// A context overflow wraps ErrContextTooLong on both paths; a rate-limit
+// refusal that shares its words does not, nor does any other error, and the
+// key is scrubbed before the text is read.
+func TestOpenAIClassifiesAContextOverflow(t *testing.T) {
+	const key = "sk-proj-notarealkey000000000000000000000000000cdef"
+	for name, tc := range map[string]struct {
+		status   int
+		body     string
+		overflow bool
+	}{
+		"maximum context length": {400, `{"error":{"message":"This model's maximum context length is 1000 tokens. However, your messages resulted in 1200 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}}`, true},
+		"exceeds the window":     {400, `{"error":{"message":"Input exceeds the context window of this model","type":"invalid_request_error"}}`, true},
+		"rate limit":             {429, `{"error":{"message":"Rate limit reached: too many tokens per min","type":"tokens"}}`, false},
+		"throttled":              {400, `{"error":{"message":"Request too large, throttled","type":"invalid_request_error"}}`, false},
+		"unrelated":              {400, `{"error":{"message":"Incorrect API key provided: ` + key + `","type":"invalid_request_error"}}`, false},
+	} {
+		for mode, oneShot := range map[string]bool{"one-shot": true, "streamed": false} {
+			t.Run(name+"/"+mode, func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(tc.status)
+					_, _ = w.Write([]byte(tc.body))
+				}))
+				t.Cleanup(srv.Close)
+				client, _ := New(WireOpenAI, Config{BaseURL: srv.URL, APIKey: key})
+				var onDelta func(string)
+				if !oneShot {
+					onDelta = func(string) {}
+				}
+				_, err := client.Complete(context.Background(), Request{
+					Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+				}, onDelta)
+				if err == nil {
+					t.Fatal("no error")
+				}
+				if got := errors.Is(err, ErrContextTooLong); got != tc.overflow {
+					t.Fatalf("errors.Is(ErrContextTooLong) = %v, want %v: %v", got, tc.overflow, err)
+				}
+				if strings.Contains(err.Error(), key) {
+					t.Fatalf("the error carries the key: %v", err)
+				}
+			})
+		}
 	}
 }

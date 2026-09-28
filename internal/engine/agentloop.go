@@ -164,6 +164,9 @@ type providerConfig struct {
 type modelPrice struct {
 	inPer1M  float64
 	outPer1M float64
+	// contextWindow is the model's window in tokens; 0 means unknown, and a
+	// model with no window never compacts.
+	contextWindow int
 }
 
 func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerConfig, error) {
@@ -210,7 +213,8 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		}
 		in, _ := priceFloat(entry["inputPer1M"])
 		out, _ := priceFloat(entry["outputPer1M"])
-		pc.pricing[model] = modelPrice{inPer1M: in, outPer1M: out}
+		window, _ := anyFloat(entry["contextWindow"])
+		pc.pricing[model] = modelPrice{inPer1M: in, outPer1M: out, contextWindow: int(window)}
 	}
 
 	// What each wire needs from a row is internal/llm's own fact (llm.Wire.Policy);
@@ -364,6 +368,22 @@ type agentLoop struct {
 	// the child's own rows carry the child's writes.
 	dispatchChanges []changeEntry
 
+	// rows are the thread's message rows this run replays from: those it
+	// loaded at open, plus any summary it wrote since (agentcompaction.go).
+	// origin maps each replayed message to its row, and historyLen is how
+	// many leading messages of the run's list are that replay rather than the
+	// run's own turns.
+	rows       []threadRow
+	origin     []int
+	historyLen int
+	// firstContext is the context size the run's first completion reported:
+	// the system prompt, the replayed history and the new user turn,
+	// measured. The settle-time compaction check starts from it.
+	firstContext int
+	measured     bool
+	// leaseAt is the lease this run last wrote on the thread row.
+	leaseAt time.Time
+
 	// own counters (the thread row's); the tally aggregates across the chain
 	turns      int
 	toolCalls  int
@@ -420,6 +440,7 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	ds.runningThreads.Store(l.threadID, l)
 	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: l.threadID})
+	messages = l.compactAtOpen(ctx, messages)
 
 	deadline := nowUTC().Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)
 	if !in.notAfter.IsZero() && in.notAfter.Before(deadline) {
@@ -429,6 +450,9 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	defer cancel()
 
 	status, reason, reply := threadOverBudget, "", ""
+	// overflowRetried spends the one compact-and-retry a run gets when the
+	// provider refuses the context: a second refusal settles the thread.
+	overflowRetried := false
 loop:
 	for l.turns < ag.Budgets.MaxTurns {
 		if !nowUTC().Before(deadline) {
@@ -438,19 +462,32 @@ loop:
 		l.turns++
 		res, err := l.complete(lctx, messages)
 		if err != nil {
+			if errors.Is(err, llm.ErrContextTooLong) && !overflowRetried {
+				overflowRetried = true
+				// The refused call still counts as a turn above. The retry
+				// runs on the compacted history and the same in-run tail.
+				next, cerr := l.compactOnOverflow(ctx, messages)
+				if cerr == nil {
+					messages = next
+					continue
+				}
+				l.ds.svc.log.Warn("substrate: agent thread overflowed its context and could not compact",
+					"thread", l.threadID, "error", cerr)
+			}
 			serr := l.settle(ctx, threadError, err.Error(), reply, nil)
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
 		}
 		content, calls, usage := res.Content, res.ToolCalls, res.Usage
-		if usage != nil {
-			price := l.provider.pricing[l.model]
-			l.prompt += usage.PromptTokens
-			l.completion += usage.CompletionTokens
-			turnCost := (float64(usage.PromptTokens)*price.inPer1M + float64(usage.CompletionTokens)*price.outPer1M) / 1e6
-			l.cost += turnCost
-			l.in.tally.prompt += usage.PromptTokens
-			l.in.tally.completion += usage.CompletionTokens
-			l.in.tally.cost += turnCost
+		l.charge(usage)
+		if !l.measured {
+			l.measured = true
+			l.firstContext = l.estimateTokens(messages)
+			if usage != nil {
+				l.firstContext = usage.PromptTokens
+				if usage.ContextTokens > 0 {
+					l.firstContext = usage.ContextTokens
+				}
+			}
 		}
 		if len(calls) == 0 {
 			// The final tool-free reply is the loop's natural end.
@@ -520,6 +557,11 @@ loop:
 	}
 	if status == threadOverBudget && reason == "" {
 		reason = fmt.Sprintf("max turns reached (%d)", l.ag.Budgets.MaxTurns)
+	}
+	if status == threadOK {
+		// Before the result and the settle, so the summarizer's tokens land
+		// in the same tally.
+		l.compactAtSettle(ctx, reply)
 	}
 	res := &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
@@ -605,6 +647,22 @@ func (l *agentLoop) emitAllows(ident string) bool {
 	return false
 }
 
+// charge adds one completion's usage to the thread's counters and the root
+// tally, priced at the provider row's rate for the model.
+func (l *agentLoop) charge(usage *llm.Usage) {
+	if usage == nil {
+		return
+	}
+	price := l.provider.pricing[l.model]
+	l.prompt += usage.PromptTokens
+	l.completion += usage.CompletionTokens
+	turnCost := (float64(usage.PromptTokens)*price.inPer1M + float64(usage.CompletionTokens)*price.outPer1M) / 1e6
+	l.cost += turnCost
+	l.in.tally.prompt += usage.PromptTokens
+	l.in.tally.completion += usage.CompletionTokens
+	l.in.tally.cost += turnCost
+}
+
 func (l *agentLoop) event(ev substrate.AgentEvent) {
 	if l.in.emit != nil {
 		l.in.emit(ev)
@@ -642,11 +700,13 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		if err := l.claimThread(ctx); err != nil {
 			return nil, err
 		}
-		history, maxTurn, err := l.loadHistory(ctx)
+		rows, err := l.loadThreadRows(ctx)
 		if err != nil {
 			return nil, err
 		}
+		history, origin, maxTurn := replayView(rows, l.ds.svc.log)
 		messages = append(messages, history...)
+		l.rows, l.origin, l.historyLen = rows, origin, len(history)
 		l.turn = maxTurn + 1
 	} else {
 		id, err := newID()
@@ -654,13 +714,14 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			return nil, err
 		}
 		l.threadID = id
+		l.leaseAt = l.leaseUntil()
 		props := map[string]any{
 			// `agent` and `parent` are REFERENCES: a bare id, which each `kind:`
 			// pin completes to the kind it pins.
 			"agent": l.ag.Identity(), "provider": l.provider.id, "model": l.model, "mode": l.in.mode,
 			"status": threadRunning, "agentDepth": l.in.depth,
 			"startedAt":  nowUTC().Format(time.RFC3339Nano),
-			"leaseUntil": l.leaseUntil().Format(time.RFC3339Nano),
+			"leaseUntil": l.leaseAt.Format(time.RFC3339Nano),
 		}
 		if l.in.parent != "" {
 			props[threadRelPare] = l.in.parent
@@ -768,80 +829,68 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 			// No lease, or an expired one: a crashed turn — take over.
 		}
 		l.threadID = l.in.threadID
+		l.leaseAt = l.leaseUntil()
 		_, err = t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
-			"status": threadRunning, "leaseUntil": l.leaseUntil().Format(time.RFC3339Nano),
+			"status": threadRunning, "leaseUntil": l.leaseAt.Format(time.RFC3339Nano),
 		}})
 		return err
 	})
 }
 
-// loadHistory rebuilds a continued thread's prose history: user and
-// assistant turns in order. Tool exchanges are per-run artifacts — audit,
-// not context — so the replay stays robust against tool renames.
-func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error) {
+// loadThreadRows reads a continued thread's message rows in stored order,
+// every role included: replay (replayView) and compaction planning both work
+// from them. Tool exchanges are per-run artifacts, audit and not context, so
+// replay drops them and stays robust against tool renames.
+func (l *agentLoop) loadThreadRows(ctx context.Context) ([]threadRow, error) {
 	probe, err := json.Marshal(map[string]any{
 		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, l.threadID)),
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	// `thread` is a reference, so the transcript read is a containment probe
 	// — which rides the repository-wide GIN index on props.
 	rows, err := l.ds.db.QueryContext(ctx, `
-		SELECT e.props FROM records e
+		SELECT e.id, e.props FROM records e
 		WHERE e.kind = $1 AND e.deleted_at IS NULL AND e.props @> $2::jsonb
 		ORDER BY e.created_at, e.id`,
 		typeMessage, string(probe))
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []llm.Message
-	maxTurn := -1
+	var out []threadRow
 	for rows.Next() {
+		var id string
 		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			return nil, 0, err
+		if err := rows.Scan(&id, &raw); err != nil {
+			return nil, err
 		}
 		var props map[string]any
 		if err := json.Unmarshal(raw, &props); err != nil {
-			return nil, 0, err
+			return nil, err
 		}
-		if t, ok := anyFloat(props["turn"]); ok && int(t) > maxTurn {
-			maxTurn = int(t)
-		}
-		role, _ := props["role"].(string)
-		content, _ := props["content"].(string)
-		switch role {
-		case "user":
-			out = append(out, llm.Message{Role: llm.RoleUser, Content: content})
-		case "assistant":
-			if content != "" && props["toolCalls"] == nil {
-				out = append(out, llm.Message{Role: llm.RoleAssistant, Content: content})
-			}
-		case msgRoleSystem:
-			// The substrate's own turn (a proposal decision) replays as USER
-			// content: no wire admits a mid-thread system role on the messages
-			// array — the system slot is the agent's prompt — and the content
-			// is a self-describing JSON envelope either way.
-			if content != "" {
-				out = append(out, llm.Message{Role: llm.RoleUser, Content: content})
-			}
-		}
+		out = append(out, threadRow{id: id, props: props})
 	}
-	return out, maxTurn, rows.Err()
+	return out, rows.Err()
 }
 
 func (l *agentLoop) putMessage(ctx context.Context, actor substrate.Actor, props map[string]any) error {
+	_, err := l.putMessageID(ctx, actor, props)
+	return err
+}
+
+// putMessageID is putMessage returning the minted row id.
+func (l *agentLoop) putMessageID(ctx context.Context, actor substrate.Actor, props map[string]any) (string, error) {
 	id, err := newID()
 	if err != nil {
-		return err
+		return "", err
 	}
 	props["turn"] = l.turn
 	l.turn++
 	// The thread is a REFERENCE: a bare id, which the `kind:` pin completes.
 	props[msgRelThread] = l.threadID
-	return l.putRow(ctx, actor, substrate.PutInput{
+	return id, l.putRow(ctx, actor, substrate.PutInput{
 		Kind: typeMessage, ID: id, Properties: props,
 	})
 }

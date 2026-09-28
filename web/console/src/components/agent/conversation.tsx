@@ -54,6 +54,7 @@ import {
 import { LLM_PACKAGE } from "@/lib/api/http"
 import {
   EMPTY_OVERLAY,
+  pushCompacted,
   pushDelta,
   pushToolStart,
   settleTool,
@@ -256,6 +257,15 @@ export function Conversation({
             },
             ev.output ?? "",
             ev.ok ?? true,
+            seqRef.current++
+          )
+        )
+        break
+      case "compacted":
+        update(
+          pushCompacted(
+            liveRef.current,
+            { tokensBefore: ev.tokensBefore, covered: ev.covered },
             seqRef.current++
           )
         )
