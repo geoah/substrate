@@ -17,6 +17,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react"
+import type { TiptapEditorHTMLElement } from "@tiptap/core"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@tanstack/react-router", () => ({
@@ -1103,5 +1104,50 @@ describe("PropertySheet under a live refresh", () => {
       within(dialog).getByRole("button", { name: "Use Google’s" })
     )
     await pinned()
+  })
+})
+
+describe("a markdown row", () => {
+  // `description` is the body; `agenda` is a second prose property, a row.
+  const planned = kind(TASK, {
+    displayTemplate: "{name|title}",
+    properties: {
+      name: { type: "string" },
+      description: { type: "markdown" },
+      agenda: { type: "markdown" },
+    },
+  })
+  const LOADED = { timeout: 5000 }
+
+  it("reads rendered and saves the Markdown it edits", async () => {
+    renderSheet(
+      record({
+        properties: {
+          name: "Offsite",
+          title: "Offsite",
+          description: "Body.",
+          agenda: "## Day one\n\n- open",
+        },
+      }),
+      planned
+    )
+    const heading = await within(row("agenda")).findByRole(
+      "heading",
+      { level: 2 },
+      LOADED
+    )
+    expect(heading.textContent).toBe("Day one")
+    fireEvent.click(valueOf("agenda")!)
+    const box = await screen.findByRole("textbox", { name: "Agenda" }, LOADED)
+    ;(box as TiptapEditorHTMLElement).editor!.commands.setContent(
+      "## Day one\n\n- open\n- close",
+      { contentType: "markdown" }
+    )
+    fireEvent.keyDown(box, { key: "Enter", metaKey: true })
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].body).toEqual({
+      properties: { agenda: "## Day one\n\n- open\n- close" },
+      ifVersion: 7,
+    })
   })
 })

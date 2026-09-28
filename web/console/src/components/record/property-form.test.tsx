@@ -17,6 +17,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
+import type { TiptapEditorHTMLElement } from "@tiptap/core"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
@@ -496,6 +497,32 @@ function stubCollections() {
     return Promise.resolve(page([]))
   })
 }
+
+describe("a markdown field", () => {
+  const note: KindInfo = {
+    ...providerKind,
+    identity: "ada.example.com/notes/note",
+    name: "note",
+    authority: "ada.example.com",
+    package: "notes",
+    definition: { properties: { body: { type: "markdown" } } },
+  }
+
+  it("edits as a document and writes Markdown into the YAML", async () => {
+    const { onChange } = renderKindForm(note, templateYAML(note))
+    const box = await screen.findByRole(
+      "textbox",
+      { name: "Body" },
+      { timeout: 5000 }
+    )
+    ;(box as TiptapEditorHTMLElement).editor!.commands.setContent(
+      "## Plan\n\n- [ ] book",
+      { contentType: "markdown" }
+    )
+    const next = onChange.mock.calls.at(-1)?.[0] as string
+    expect(propertiesOf(next)?.body).toBe("## Plan\n\n- [ ] book")
+  })
+})
 
 describe("the form lens over the widened dialect", () => {
   afterEach(() => vi.unstubAllGlobals())

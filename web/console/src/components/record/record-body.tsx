@@ -1,14 +1,16 @@
 /** The record's prose, read as the page's body under a divider and edited in
- * place: a click opens a textarea with the same footer as the list editor
- * (Save, Cancel, and the keys that do the same), ⌘Enter or leaving the editor
- * saves and says so, Esc cancels. Reader and editor span the document column,
- * as the property sheet does, and sit on the same box so opening the editor
- * does not move the text. The same single-property PATCH as every other
- * in-place edit. */
+ * place as a Markdown document (components/markdown): a click opens the
+ * editor with the same footer as the list editor (Save, Cancel, and the keys
+ * that do the same), ⌘Enter or leaving the editor saves and says so, Esc
+ * cancels. Reader and editor span the document column, as the property sheet
+ * does, and sit on the same box so opening the editor does not move the text.
+ * A click on a link in the reader follows it instead of opening the editor.
+ * The same single-property PATCH as every other in-place edit. */
 
 import { useEffect, useRef, useState } from "react"
 import { CheckIcon } from "lucide-react"
 
+import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
 import { useFocusReturn } from "@/components/property-sheet/focus-return"
 import {
   useRecordPatch,
@@ -41,7 +43,9 @@ export function RecordBody({
   // The version the edit began from, held while it is open (useEditBase).
   const [base, setBase] = useState<number>()
   const editing = base !== undefined
-  const [draft, setDraft] = useState("")
+  // A ref, not state: a ⌘Enter in the same tick as the last keystroke must
+  // save that keystroke.
+  const draft = useRef("")
   const [error, setError] = useState<string>()
   const [saved, setSaved] = useState(false)
   const patch = useRecordPatch(record, base)
@@ -62,9 +66,10 @@ export function RecordBody({
     if (busy.current) return
     busy.current = true
     try {
-      const changed = draft !== text
+      const next = draft.current
+      const changed = next !== text
       if (changed) {
-        await patch.mutateAsync({ [spec.name]: draft.trim() ? draft : null })
+        await patch.mutateAsync({ [spec.name]: next.trim() ? next : null })
       }
       setError(undefined)
       setBase(undefined)
@@ -96,24 +101,34 @@ export function RecordBody({
             void save()
           }}
         >
-          <textarea
-            autoFocus
-            aria-label={spec.label}
-            value={draft}
-            disabled={patch.isPending}
-            rows={Math.min(18, Math.max(4, draft.split("\n").length + 1))}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
+          <div
+            // ⌘Enter saves before the editor reads it as a line break, and
+            // an Esc the editor spent closing a menu cancels nothing.
+            onKeyDownCapture={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault()
-                cancel()
-              } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault()
+                e.stopPropagation()
                 void save()
               }
             }}
-            className="-mx-2 block field-sizing-content min-h-24 w-[calc(100%+1rem)] resize-y rounded-md border border-primary bg-background px-2 py-1 leading-[1.65] ring-3 ring-primary-soft outline-none"
-          />
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && !e.nativeEvent.defaultPrevented) {
+                e.preventDefault()
+                cancel()
+              }
+            }}
+            className="-mx-2 block min-h-24 w-[calc(100%+1rem)] rounded-md border border-primary bg-background px-2 py-1 ring-3 ring-primary-soft"
+          >
+            <LazyMarkdownEditor
+              value={text}
+              label={spec.label}
+              editable
+              autoFocus
+              disabled={patch.isPending}
+              onChange={(markdown) => (draft.current = markdown)}
+              className="min-h-[5.5rem] [&_.ProseMirror]:min-h-[5.5rem]"
+            />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
@@ -133,7 +148,7 @@ export function RecordBody({
               Cancel
             </Button>
             <span className="ml-auto text-xs text-faint max-sm:hidden">
-              Enter starts a new line · ⌘Enter saves · Esc cancels
+              / for blocks · @ or ⌘K links a record · ⌘Enter saves · Esc cancels
             </span>
           </div>
         </div>
@@ -146,8 +161,9 @@ export function RecordBody({
           onClick={
             readOnly
               ? undefined
-              : () => {
-                  setDraft(text)
+              : (e) => {
+                  if ((e.target as Element).closest("a, input")) return
+                  draft.current = text
                   setBase(record.version)
                 }
           }
@@ -158,7 +174,7 @@ export function RecordBody({
               e.target === e.currentTarget
             ) {
               e.preventDefault()
-              setDraft(text)
+              draft.current = text
               setBase(record.version)
             }
           }}
@@ -170,11 +186,11 @@ export function RecordBody({
           )}
         >
           {text ? (
-            text.split(/\n{2,}/).map((p, i) => (
-              <p key={i} className="mb-[0.8em] whitespace-pre-wrap last:mb-0">
-                {p}
-              </p>
-            ))
+            <LazyMarkdownEditor
+              value={text}
+              label={spec.label}
+              editable={false}
+            />
           ) : (
             <p className="text-faint">Add {lowerFirst(spec.label)}…</p>
           )}

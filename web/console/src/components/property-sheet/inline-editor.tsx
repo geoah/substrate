@@ -26,6 +26,7 @@ import { type SheetRow } from "./sheet-rows"
 import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
+import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
 import { PropertyField } from "@/components/record/property-field"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
@@ -70,6 +71,7 @@ export function InlineEditor(props: InlineEditorProps) {
   if (control === "reference" && style === "line") {
     return <ReferencePicker {...props} />
   }
+  if (isMarkdownRow(props)) return <MarkdownRowEditor {...props} />
   if (style === "line") return <LineEditor {...props} />
   return <PanelEditor {...props} />
 }
@@ -97,6 +99,76 @@ function useSave({ row, record, onDone, onError }: InlineEditorProps) {
     }
   }
   return { save, pending: patch.isPending }
+}
+
+function isMarkdownRow({ row }: InlineEditorProps): boolean {
+  const { spec, control } = row.field
+  return control === "prose" && spec.kind === "markdown"
+}
+
+/** A `markdown` row, edited as the body is: the document editor in the
+ * row's box, ⌘Enter or leaving it saves, Esc cancels. The draft is a ref
+ * so a ⌘Enter in the same tick as the last keystroke saves that keystroke. */
+function MarkdownRowEditor(props: InlineEditorProps) {
+  const { row, onDone, onError } = props
+  const { save, pending } = useSave(props)
+  const [initial] = useState(() => {
+    const seeded = seedField(row.field, row.value, false)
+    return typeof seeded === "string" ? seeded : ""
+  })
+  const draft = useRef(initial)
+  const done = useRef(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  function commit() {
+    if (done.current) return
+    if (draft.current === initial) return cancel()
+    done.current = true
+    void save(draft.current).finally(() => {
+      done.current = false
+    })
+  }
+  function cancel() {
+    done.current = true
+    onError(undefined)
+    onDone()
+  }
+  return (
+    <div
+      ref={box}
+      className={cn(INPUT, "flex items-start gap-2 leading-relaxed")}
+      onKeyDownCapture={(e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault()
+          e.stopPropagation()
+          commit()
+        }
+      }}
+      onKeyDown={(e) => {
+        // An Esc the editor spent closing a menu cancels nothing.
+        if (e.key === "Escape" && !e.nativeEvent.defaultPrevented) {
+          e.preventDefault()
+          cancel()
+        }
+      }}
+      onBlur={(e) => {
+        if (box.current?.contains(e.relatedTarget as Node | null)) return
+        commit()
+      }}
+    >
+      <div className="min-w-0 flex-1">
+        <LazyMarkdownEditor
+          value={initial}
+          label={row.field.label}
+          editable
+          autoFocus
+          disabled={pending}
+          onChange={(markdown) => (draft.current = markdown)}
+        />
+      </div>
+      {pending && <Spinner className="mt-1 size-3.5 shrink-0" />}
+    </div>
+  )
 }
 
 const INPUT =

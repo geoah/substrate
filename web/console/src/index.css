@@ -322,3 +322,149 @@
   --shiki-token-punctuation: var(--muted-foreground);
   --shiki-token-link: var(--primary);
 }
+
+/* A `markdown` property rendered as a document (components/markdown). The
+   blocks keep the body's reading rhythm: the same line height and paragraph
+   gap the plain-text body had, so a record that holds only paragraphs lays
+   out as it did before. */
+@layer components {
+  .markdown .ProseMirror {
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+    & > * + * {
+      margin-top: 0.8em;
+    }
+    & h1,
+    & h2,
+    & h3 {
+      font-weight: 600;
+      line-height: 1.3;
+      margin-top: 1.2em;
+    }
+    & h1 {
+      font-size: 1.5em;
+    }
+    & h2 {
+      font-size: 1.25em;
+    }
+    & h3 {
+      font-size: 1.08em;
+    }
+    & > :first-child {
+      margin-top: 0;
+    }
+    & ul,
+    & ol {
+      padding-left: 1.4em;
+    }
+    & ul {
+      list-style: disc;
+    }
+    & ol {
+      list-style: decimal;
+    }
+    & li + li,
+    & li > * + * {
+      margin-top: 0.2em;
+    }
+    & ul[data-type="taskList"] {
+      list-style: none;
+      padding-left: 0.1em;
+      & li {
+        display: flex;
+        gap: 0.5em;
+        align-items: baseline;
+      }
+      & li > label {
+        flex-shrink: 0;
+        user-select: none;
+      }
+      & li > div {
+        flex: 1;
+        min-width: 0;
+      }
+      & li[data-checked="true"] > div {
+        color: var(--muted-foreground);
+        text-decoration: line-through;
+      }
+      & input[type="checkbox"] {
+        accent-color: var(--primary);
+        translate: 0 0.1em;
+      }
+    }
+    & blockquote {
+      border-left: 3px solid var(--border-strong);
+      padding-left: 0.9em;
+      color: var(--muted-foreground);
+    }
+    & a {
+      color: var(--primary-text);
+      text-underline-offset: 2px;
+      text-decoration: underline;
+      text-decoration-color: var(--border-strong);
+    }
+    & code {
+      border-radius: 4px;
+      background: var(--hover);
+      padding: 0.05em 0.3em;
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+    }
+    & pre {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 0.6em 0.9em;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.6;
+      & code {
+        background: none;
+        padding: 0;
+        font-size: inherit;
+      }
+    }
+    & hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.4em 0;
+    }
+    & table {
+      border-collapse: collapse;
+      width: 100%;
+      table-layout: fixed;
+    }
+    & th,
+    & td {
+      border: 1px solid var(--border);
+      padding: 0.3em 0.6em;
+      vertical-align: top;
+      text-align: left;
+      & > p {
+        margin: 0;
+      }
+    }
+    & th {
+      background: var(--panel);
+      font-weight: 600;
+    }
+    & .selectedCell {
+      background: var(--primary-soft);
+    }
+    & [data-record-chip] {
+      white-space: nowrap;
+    }
+    & .ProseMirror-selectednode [data-slot="kind-glyph"] {
+      outline: 2px solid var(--ring);
+      outline-offset: 1px;
+    }
+    & p.is-editor-empty:first-child::before {
+      content: attr(data-placeholder);
+      float: left;
+      height: 0;
+      pointer-events: none;
+      color: var(--faint-text);
+    }
+  }
+}

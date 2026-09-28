@@ -29,6 +29,7 @@ import {
   IdentityCard,
   IdentityHoverCard,
 } from "@/components/identity/identity-hover-card"
+import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
 import { Button } from "@/components/ui/button"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
@@ -131,11 +132,24 @@ function pointsAtRecords(row: SheetRow): boolean {
 }
 
 function Value({ row }: { row: SheetRow }) {
-  return row.lock === "undeclared" ? (
-    <LooseValue value={row.value} />
-  ) : (
-    <DeclaredValue spec={row.spec} value={row.value} />
-  )
+  if (row.lock === "undeclared") return <LooseValue value={row.value} />
+  const { spec, value } = row
+  // Markdown reads rendered on the sheet; history and review show the
+  // stored text, because that is what changed.
+  if (
+    spec.kind === "markdown" &&
+    !spec.repeated &&
+    !spec.keyed &&
+    typeof value === "string" &&
+    value
+  ) {
+    return (
+      <div className="line-clamp-4 min-w-0">
+        <LazyMarkdownEditor value={value} label={spec.label} editable={false} />
+      </div>
+    )
+  }
+  return <DeclaredValue spec={spec} value={value} />
 }
 
 export interface PropertySheetProps {

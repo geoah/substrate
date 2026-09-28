@@ -295,3 +295,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0134](0134-the-records-list-counts-its-filtered-set-on-request.md) | The records list counts its filtered set on request | accepted |
 | [0135](0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md) | A change row carries before and after values on request, derived at read | accepted |
 | [0136](0136-search-ranks-by-bm25f-and-a-kinds-purpose.md) | Search ranks by BM25F and a kind's purpose | accepted |
+| [0137](0137-a-record-link-in-markdown-is-a-substrate-url-of-its-record-path.md) | A record link in Markdown is a `substrate://` URL of its record path | accepted |
