@@ -53,6 +53,7 @@ import type { KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { type EnumProperty } from "@/lib/enum-hue"
 import { enumLabel } from "@/lib/grid-values"
+import { MONEY_HINT } from "@/lib/money"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   asBag,
@@ -533,7 +534,9 @@ export function PropertyField({
       {help(
         isSecret && mode === "patch"
           ? "It’s never shown again. Leave it blank to keep the saved one."
-          : undefined
+          : field.spec.kind === "money"
+            ? MONEY_HINT
+            : undefined
       )}
       {error && <FieldError>{error}</FieldError>}
     </Field>

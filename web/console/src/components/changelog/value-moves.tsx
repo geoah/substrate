@@ -61,7 +61,9 @@ export function ChangeValue({
     spec && (spec.repeated || spec.keyed ? elementSpec(spec) : spec)
   const prose =
     !scalar ||
-    (typeof value === "object" && scalar.kind !== "reference") ||
+    (typeof value === "object" &&
+      scalar.kind !== "reference" &&
+      scalar.kind !== "money") ||
     (TEXT_KINDS.has(scalar.kind) && !scalar.values?.length) ||
     spec?.keyed
   if (prose && scalar?.kind !== "secret") {

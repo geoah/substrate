@@ -3,6 +3,7 @@
  * rendering of a property value into a table cell. */
 
 import { readReference } from "@/lib/api/types"
+import { isMoney, moneyText } from "@/lib/money"
 import { splitRecordPath } from "@/lib/record-path"
 
 const MINUTE = 60_000
@@ -156,10 +157,13 @@ export function referenceObjects(value: unknown): unknown[] | undefined {
 }
 
 /** One property value flattened into a cell: arrays join, objects summarize,
- * scalars pass through. The cell truncates; this only has to be honest. */
+ * scalars pass through. The cell truncates; this only has to be honest. A
+ * value in exactly the money shape reads as its exact text (`19.99 EUR`),
+ * which is what those three members say whatever declared them. */
 export function cellValue(value: unknown): string {
   if (value === null || value === undefined) return ""
   if (Array.isArray(value)) return value.map(cellValue).join(", ")
+  if (isMoney(value)) return moneyText(value)
   if (typeof value === "object") {
     const keys = Object.keys(value as Record<string, unknown>)
     return keys.length ? `{${keys.join(", ")}}` : "{}"

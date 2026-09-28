@@ -26,6 +26,12 @@ import {
   type KindInfo,
 } from "@/lib/api/types"
 import { temporalProperties } from "@/lib/definition"
+import {
+  MONEY_EXAMPLE,
+  checkMoney,
+  moneyText,
+  parseMoneyText,
+} from "@/lib/money"
 import { coerceReferencePath, recordPath } from "@/lib/record-path"
 
 /** The `kind:` pin a reference wears when it is pinned to no kind at all. */
@@ -493,6 +499,8 @@ export function exampleFor(spec: PropSpec): string | undefined {
       return "PT47M12S"
     case "decimal":
       return "19.99"
+    case "money":
+      return MONEY_EXAMPLE
     case "email":
       return "someone@example.com"
     case "url":
@@ -669,6 +677,8 @@ function checkItem(spec: PropSpec, value: unknown): string | undefined {
   if (isBooleanKind(spec.kind)) {
     return typeof value === "boolean" ? undefined : "expected a boolean"
   }
+
+  if (spec.kind === "money") return checkMoney(value, spec.min, spec.max)
 
   if (isNumericKind(spec.kind)) {
     if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -848,6 +858,13 @@ export function checkValue(spec: PropSpec, value: unknown): string | undefined {
 export function formatValue(spec: PropSpec, value: unknown): string {
   if (value === null || value === undefined) return ""
   if (controlFor(spec) === "secret") return ""
+  // Money is edited as its exact text, `19.99 EUR`, which parseValue reads
+  // back to the same value; a value the text cannot hold stays JSON.
+  if (spec.kind === "money" && !spec.keyed) {
+    const items = Array.isArray(value) ? value : [value]
+    const texts = items.map(moneyText)
+    if (texts.every(Boolean)) return texts.join("\n")
+  }
   if (Array.isArray(value)) {
     return value
       .map((v) =>
@@ -904,6 +921,12 @@ export function parseValue(spec: PropSpec, text: string): ParsedValue {
 }
 
 function parseScalarText(spec: PropSpec, text: string): ParsedValue {
+  if (spec.kind === "money") {
+    const parsed = parseMoneyText(text)
+    if (parsed.error) return { error: parsed.error }
+    const problem = checkItem(spec, parsed.value)
+    return problem ? { error: problem } : { value: parsed.value }
+  }
   if (isObjectKind(spec.kind)) {
     try {
       return { value: JSON.parse(text) }

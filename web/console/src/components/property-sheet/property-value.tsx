@@ -11,6 +11,7 @@ import { friendlyCalendarDay, friendlyDateTime } from "./dates"
 import { repeatedLayout } from "./sheet-model"
 import { EmptyValue } from "@/components/identity/empty-value"
 import { EnumTag } from "@/components/identity/enum-tag"
+import { MoneyValue } from "@/components/identity/money-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
@@ -106,6 +107,7 @@ function ScalarValue({
   if (spec.kind === "object" && spec.fields?.length) {
     return <ObjectBlock spec={spec} value={value} dense={dense} />
   }
+  if (spec.kind === "money") return <MoneyValue value={value} />
   if (typeof value === "object" && value !== null) {
     return <JsonBlock value={value} />
   }

@@ -181,6 +181,26 @@ describe("propertyWrite", () => {
     )
   })
 
+  it("holds money list items as their exact text and keeps untouched ones", () => {
+    const prices = fieldOf({
+      ...propSpecsByName(task).find((s) => s.name === "tags")!,
+      kind: "money",
+    })
+    const stored = [
+      { amount: 300, currency: "EUR", decimals: 2 },
+      { amount: 3250, currency: "EUR", decimals: 3 },
+    ]
+    const item = { ...prices.spec, repeated: false }
+    expect(listItems(stored, item)).toEqual(["3.00 EUR", "3.250 EUR"])
+    expect(listWrite(prices, stored, ["3.00 EUR", "3.250 EUR"])).toEqual({})
+    expect(listWrite(prices, stored, ["3.00 EUR", "4 usd"])).toEqual({
+      properties: {
+        tags: [stored[0], { amount: 4, currency: "USD", decimals: 0 }],
+      },
+    })
+    expect(listWrite(prices, stored, ["3.00"]).error).toMatch(/^Item 1: /)
+  })
+
   it("writes a picked reference as its path", () => {
     expect(
       propertyWrite(field("project"), undefined, {

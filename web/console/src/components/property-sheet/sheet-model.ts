@@ -4,6 +4,7 @@
 import {
   AlignLeftIcon,
   AtSignIcon,
+  BanknoteIcon,
   BracesIcon,
   CalendarIcon,
   CheckSquareIcon,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react"
 
 import { kindGlyph } from "@/lib/kind-glyph"
+import { moneyText } from "@/lib/money"
 import { toFieldValue, type FormField, type FormValue } from "@/lib/record-form"
 import {
   TO_ANY,
@@ -114,7 +116,7 @@ export function listWrite(
   // recognized wherever a move left it.
   const untouched = new Map<string, unknown[]>()
   if (Array.isArray(stored)) {
-    listItems(stored).forEach((text, i) => {
+    listItems(stored, element).forEach((text, i) => {
       untouched.set(text, [...(untouched.get(text) ?? []), stored[i]])
     })
   }
@@ -136,12 +138,15 @@ export function listWrite(
   return { properties: { [field.name]: values } }
 }
 
-/** A stored list's items as the strings a list editor holds. */
-export function listItems(stored: unknown): string[] {
+/** A stored list's items as the strings a list editor holds. Money items are
+ * held as their exact text (`19.99 EUR`), which the element's parse reads
+ * back to the same value. */
+export function listItems(stored: unknown, item?: PropSpec): string[] {
   if (!Array.isArray(stored)) return []
-  return stored.map((v) =>
-    typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)
-  )
+  return stored.map((v) => {
+    if (item?.kind === "money" && moneyText(v)) return moneyText(v)
+    return typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)
+  })
 }
 
 /** A stored reference is served as `{ref}` and written as the path; compare
@@ -181,6 +186,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   number: HashIcon,
   float: HashIcon,
   decimal: HashIcon,
+  money: BanknoteIcon,
 }
 
 /** A property's icon: a reference wears its target kind's own glyph icon, an
@@ -210,6 +216,7 @@ export function repeatedLayout(
   if (item.kind === "markdown" || item.kind === "text") return "lines"
   if (item.values?.length) return "chips"
   if (item.kind === "email" || item.kind === "phone") return "chips"
+  if (item.kind === "money") return "chips"
   return values.every(
     (v) =>
       (typeof v === "string" && v.length <= CHIP_MAX && !v.includes("\n")) ||

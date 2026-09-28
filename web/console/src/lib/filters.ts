@@ -18,6 +18,7 @@
 import type { Cond, RecordFilter } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
 import { enumLabel } from "@/lib/grid-values"
+import { parseMoneyText } from "@/lib/money"
 import { stateWord } from "@/lib/state-words"
 
 export type FilterOp = "eq" | "contains" | "prefix" | "match"
@@ -73,6 +74,10 @@ function coerceValue(raw: string, prop?: DeclaredProperty): unknown {
     if (raw === "true") return true
     if (raw === "false") return false
   }
+  // Money compares as money, within its currency: `19.99 EUR` is the value
+  // {amount: 1999, currency: EUR, decimals: 2}, and text that is not one is
+  // sent as typed for the server to refuse by name.
+  if (kind === "money") return parseMoneyText(raw).value ?? raw
   return raw
 }
 

@@ -67,7 +67,7 @@ export function ListEditor({
   const prose = controlFor(item) === "prose"
   const patch = useRecordPatch(record, useEditBase(record))
   const [items, setItems] = useState<Item[]>(() => {
-    const seeded = listItems(row.value).map(make)
+    const seeded = listItems(row.value, item).map(make)
     return seeded.length ? seeded : [make("")]
   })
   const boxes = useRef(new Map<number, Box>())

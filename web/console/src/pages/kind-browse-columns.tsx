@@ -24,6 +24,7 @@ import {
   useRowTreeNode,
 } from "@/components/data-table/data-table-tree"
 import { KindGlyph } from "@/components/identity/kind-glyph"
+import { MoneyValue } from "@/components/identity/money-value"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
@@ -158,6 +159,7 @@ const WIDTHS: Record<string, number> = {
   int: 100,
   float: 100,
   decimal: 100,
+  money: 120,
   email: 240,
   url: 220,
   phone: 170,
@@ -319,6 +321,13 @@ function propertyCell(
   }
   if (NUMERIC.has(prop.kind)) {
     return <span className="tabular-nums">{cellValue(value)}</span>
+  }
+  if (prop.kind === "money" && !prop.keyed) {
+    return (
+      <FirstOf count={values.length}>
+        <MoneyValue value={first} className="truncate" />
+      </FirstOf>
+    )
   }
   if (prop.keyed) {
     const text = cellValue(value)
@@ -554,7 +563,8 @@ export function buildColumns(
   const propertyColumn = (
     prop: DeclaredProperty
   ): DataTableColumn<SubstrateRecord> => {
-    const numeric = NUMERIC.has(prop.kind)
+    const numeric =
+      NUMERIC.has(prop.kind) || (prop.kind === "money" && !prop.keyed)
     return {
       id: propertyColumnId(prop.name),
       accessorFn: (e) => e.properties[prop.name],
