@@ -1,6 +1,8 @@
 /** The chats column. Agents come first, one line each, so a long history
- * never buries them: "All agents", every agent you can talk to, and the ones
- * that only work for other agents listed under a "Runs on its own" caption.
+ * never buries them: "All agents" and the primary agents you talk to. "Show
+ * more agents" opens the rest: the supporting and internal agents you can
+ * still talk to, tagged with their purpose, and the ones that only work for
+ * other agents under a "Runs on its own" caption (`agentListing`).
  * Picking an agent narrows the chats below to that agent's. The chats follow:
  * a search over the loaded chats' titles, Today / Yesterday / Earlier, the
  * most recent few with "Show more". Technical mode adds each thread's stored
@@ -11,12 +13,14 @@ import { Link } from "@tanstack/react-router"
 import { MessagesSquareIcon, PlusIcon, SearchIcon } from "lucide-react"
 
 import { AgentRef } from "@/components/agent/agent-ref"
+import { PurposeTag } from "@/components/identity/purpose-tag"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
+  agentListing,
   agentName,
-  chatCapable,
+  agentPurpose,
   groupByDay,
   sinceWords,
   tallyWords,
@@ -74,6 +78,7 @@ export function ThreadList({
   const [query, setQuery] = useState("")
   const [limit, setLimit] = useState(CHAT_PAGE)
   const [technical] = useTechnicalDetails()
+  const [showAll, setShowAll] = useState(false)
   // The agents list scrolls on its own; the picked agent is kept in view.
   const pickedRow = useRef<HTMLButtonElement>(null)
   useEffect(() => {
@@ -95,8 +100,8 @@ export function ThreadList({
   for (const r of rows) {
     if (r.agentId) counts.set(r.agentId, (counts.get(r.agentId) ?? 0) + 1)
   }
-  const talkable = agents.filter(chatCapable)
-  const background = agents.filter((a) => !chatCapable(a))
+  const { listed, more: extra, background } = agentListing(agents, agent)
+  const hidden = extra.length + background.length
   const picked = agent ? agentName(agent) : ""
 
   return (
@@ -139,7 +144,7 @@ export function ThreadList({
               <span className="min-w-0 flex-1 truncate">All agents</span>
               <Count n={rows.length} />
             </button>
-            {talkable.map((a) => (
+            {[...listed, ...(showAll ? extra : [])].map((a) => (
               <button
                 key={a.id}
                 ref={a.id === agent ? pickedRow : undefined}
@@ -148,13 +153,14 @@ export function ThreadList({
                 onClick={() => onAgent(a.id)}
                 className={AGENT_ROW}
               >
-                <span className="flex min-w-0 flex-1">
+                <span className="flex min-w-0 flex-1 items-center gap-1.5">
                   <AgentRef id={a.id} agent={a} className="text-inherit" />
+                  <PurposeTag purpose={agentPurpose(a)} />
                 </span>
                 <Count n={counts.get(a.id) ?? 0} />
               </button>
             ))}
-            {background.length > 0 && (
+            {showAll && background.length > 0 && (
               <>
                 <div className={HEADING}>Runs on its own</div>
                 {background.map((a) => (
@@ -176,6 +182,18 @@ export function ThreadList({
                   </Link>
                 ))}
               </>
+            )}
+            {hidden > 0 && (
+              <button
+                type="button"
+                aria-expanded={showAll}
+                onClick={() => setShowAll((v) => !v)}
+                className="mt-0.5 w-full cursor-pointer rounded-md px-2 py-1 text-left text-xs text-faint hover:text-muted-foreground"
+              >
+                {showAll
+                  ? "Show fewer agents"
+                  : `Show ${hidden} more ${hidden === 1 ? "agent" : "agents"}`}
+              </button>
             )}
           </>
         )}

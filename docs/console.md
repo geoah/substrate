@@ -476,8 +476,10 @@ panel on the right.
 
 - **The chats column** has **New chat**, a search over the chats' titles,
   every conversation under Today, Yesterday and Earlier, and the agents
-  themselves: one you can talk to starts a chat, and one that only works for
-  other agents says so. **Add agents** lists the shipped samples that bring
+  themselves. It lists the primary agents you talk to; **Show more agents**
+  adds the supporting and internal ones, each tagged with its
+  [purpose](agents.md), and the ones that only work for other agents. One you
+  can talk to starts a chat, and one that only works for other agents says so. **Add agents** lists the shipped samples that bring
   agents, each with **Add**, the same import as
   [Add a collection](#add-a-collection)'s samples.
 - **The conversation** is a thread, and a thread is a run. It is rebuilt from
