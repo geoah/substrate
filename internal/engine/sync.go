@@ -26,6 +26,9 @@ const (
 	propSyncErrorAt        = "syncErrorAt"
 	propLastSyncStartedAt  = "lastSyncStartedAt"
 	propLastSyncDurationMs = "lastSyncDurationMs"
+	// propLastSyncedAt is the body's, read here only to see a run finish
+	// healthy (syncClearOnRecovery).
+	propLastSyncedAt = "lastSyncedAt"
 )
 
 // syncErrorMax bounds the error text a park stamps onto the record: a
@@ -157,6 +160,52 @@ func syncErrorBefore(p map[string]any, at time.Time) bool {
 	}
 	errAt := syncTime(p, propSyncErrorAt)
 	return errAt == nil || errAt.Before(at)
+}
+
+// syncClearOnRecovery completes a write by the kind's own package that
+// finishes a healthy run: one that moves `lastSyncedAt` and leaves
+// `syncState` at `ok` drops an error pair written before that instant, in the
+// same write. A schedule-fired sync names no record, so the dispatcher's
+// settle never sees it (0085), and without this an account that recovers on
+// the schedule would show its last failure as current forever. A write that
+// names either half of the pair has said what it means and keeps it, and
+// another package's write is not a run of this sync (syncStampFor).
+func (t *txn) syncClearOnRecovery(sp *applySpec) {
+	if sp.existing == nil || !sp.ty.Implements(vocabulary.TraitSyncCore) || !t.writesAsPackage(sp.ty.Package) {
+		return
+	}
+	if _, ok := sp.props[propSyncError]; ok {
+		return
+	}
+	if _, ok := sp.props[propSyncErrorAt]; ok {
+		return
+	}
+	synced := syncTime(sp.props, propLastSyncedAt)
+	if synced == nil || jsonEqual(sp.props[propLastSyncedAt], sp.existing.Props[propLastSyncedAt]) {
+		return
+	}
+	state, ok := sp.props[propSyncState].(string)
+	if _, named := sp.props[propSyncState]; !named {
+		state, ok = sp.existing.Props[propSyncState].(string)
+	}
+	if !ok || state != substrate.SyncStateOK || !syncErrorBefore(sp.existing.Props, *synced) {
+		return
+	}
+	sp.props[propSyncError] = nil
+	sp.props[propSyncErrorAt] = nil
+}
+
+// writesAsPackage reports whether the transaction writes under one of pkg's
+// own hands: the package's bundle actor, or a function or agent it declares.
+func (t *txn) writesAsPackage(pkg string) bool {
+	authority, name := vocabulary.SplitPackageRef(pkg)
+	a := string(t.actor)
+	if a == string(substrate.BundleActor(authority, name)) {
+		return true
+	}
+	suffix := authority + ":" + name + ":"
+	return strings.HasPrefix(a, substrate.FunctionActorPrefix+suffix) ||
+		strings.HasPrefix(a, substrate.AgentActorPrefix+suffix)
 }
 
 // syncClearErrorOnReconnect rides the OAuth facility's reconnect: a fresh

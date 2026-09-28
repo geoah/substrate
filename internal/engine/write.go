@@ -830,6 +830,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.checkManagedProps(sp); err != nil {
 		return nil, err
 	}
+	t.syncClearOnRecovery(sp)
 
 	take := func(name string, cur any, had bool, next any) bool {
 		if next == nil {
