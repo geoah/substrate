@@ -5,7 +5,7 @@ type: feature
 # A `money` property type holds an amount and its currency
 
 A kind may declare `type: money`. The value is two members: `amount`, an
-integer count of minor units, and `currency`, an active ISO 4217 code whose
+integer count of minor units, and `currency`, an ISO 4217 code whose
 minor unit places the decimal point (2 for EUR, 0 for JPY). This record stores
 a price of 19.99 EUR:
 

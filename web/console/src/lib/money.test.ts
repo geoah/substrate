@@ -102,7 +102,9 @@ describe("the exact text", () => {
 
   it("asks for what is missing", () => {
     expect(parseMoneyText("19.99").error).toBe("choose a currency")
-    expect(parseMoneyText("19.99 XYZ").error).toMatch(/not an active ISO 4217/)
+    expect(parseMoneyText("19.99 XYZ").error).toMatch(
+      /not an ISO 4217 currency/
+    )
     expect(parseMoneyText("").error).toMatch(/an amount and a currency/)
   })
 })

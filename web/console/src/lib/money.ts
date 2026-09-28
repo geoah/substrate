@@ -178,6 +178,7 @@ export const CURRENCY_DECIMALS: Record<string, number> = {
   VND: 0,
   VUV: 0,
   WST: 2,
+  XAD: 2,
   XAF: 0,
   XCD: 2,
   XCG: 2,
@@ -264,7 +265,7 @@ export function checkMoney(
   const decimals =
     typeof currency === "string" ? currencyDecimals(currency) : undefined
   if (decimals === undefined) {
-    return "currency is an active ISO 4217 code, three capital letters (EUR)"
+    return "currency is an ISO 4217 code with a minor unit, three capital letters (EUR)"
   }
   const n = Number(moneyDecimal(amount, decimals))
   if (min !== undefined && n < min) return `must be >= ${min}`
@@ -383,7 +384,9 @@ export function parseMoneyText(text: string): {
       : { error: `expected an amount and a currency (${MONEY_TEXT_EXAMPLE})` }
   }
   if (currencyDecimals(currency) === undefined) {
-    return { error: `${currency} is not an active ISO 4217 currency` }
+    return {
+      error: `${currency} is not an ISO 4217 currency with a minor unit`,
+    }
   }
   const parsed = parseAmount(amount, currency)
   if (parsed.error) return { error: parsed.error }

@@ -22,10 +22,17 @@ const (
 	MoneyCurrency = "currency"
 )
 
-// currencyDecimals is ISO 4217's minor unit per active alphabetic code: how
-// many of an amount's digits follow the decimal point. The codes with no minor
-// unit (the precious metals, XDR, the bond units, XTS, XXX) are left out,
-// because a count of minor units means nothing there.
+// currencyDecimals is ISO 4217's minor unit per alphabetic code: how many of
+// an amount's digits follow the decimal point. It holds every code the
+// maintenance agency's list one (published 2026-09-17) gives a minor unit, and
+// the codes withdrawn since, because a price recorded in one is still a price.
+// The codes with no minor unit (the precious metals, XDR, the bond units, XTS,
+// XXX) are left out: a count of minor units means nothing there.
+//
+// CODES ARE ONLY EVER ADDED. A stored amount is read through this table, so a
+// removed code leaves its rows unwritable and a changed minor unit rescales
+// every amount in that currency without a write; either takes a migration of
+// the rows, never an edit here. TestCurrencyTableOnlyGrows holds that.
 //
 // The console carries a copy (web/console/src/lib/money.ts, CURRENCY_DECIMALS)
 // that TestConsoleCurrenciesMatchTheEngine holds to this one.
@@ -39,8 +46,8 @@ var currencyDecimals = map[string]int{
 	// Ten-thousandths: the two unidades de fomento.
 	"CLF": 4, "UYW": 4,
 	// Hundredths, which is every other active code.
-	"AED": 2, "AFN": 2, "ALL": 2, "AMD": 2, "ANG": 2, "AOA": 2, "ARS": 2,
-	"AUD": 2, "AWG": 2, "AZN": 2, "BAM": 2, "BBD": 2, "BDT": 2, "BGN": 2,
+	"AED": 2, "AFN": 2, "ALL": 2, "AMD": 2, "AOA": 2, "ARS": 2,
+	"AUD": 2, "AWG": 2, "AZN": 2, "BAM": 2, "BBD": 2, "BDT": 2,
 	"BMD": 2, "BND": 2, "BOB": 2, "BOV": 2, "BRL": 2, "BSD": 2, "BTN": 2,
 	"BWP": 2, "BYN": 2, "BZD": 2, "CAD": 2, "CDF": 2, "CHE": 2, "CHF": 2,
 	"CHW": 2, "CNY": 2, "COP": 2, "COU": 2, "CRC": 2, "CUP": 2, "CVE": 2,
@@ -58,7 +65,11 @@ var currencyDecimals = map[string]int{
 	"SRD": 2, "SSP": 2, "STN": 2, "SVC": 2, "SYP": 2, "SZL": 2, "THB": 2,
 	"TJS": 2, "TMT": 2, "TOP": 2, "TRY": 2, "TTD": 2, "TWD": 2, "TZS": 2,
 	"UAH": 2, "USD": 2, "USN": 2, "UYU": 2, "UZS": 2, "VED": 2, "VES": 2,
-	"WST": 2, "XCD": 2, "XCG": 2, "YER": 2, "ZAR": 2, "ZMW": 2, "ZWG": 2,
+	"WST": 2, "XAD": 2, "XCD": 2, "XCG": 2, "YER": 2, "ZAR": 2, "ZMW": 2,
+	"ZWG": 2,
+	// Withdrawn, and kept: the Netherlands Antillean guilder (2025-03, for the
+	// Caribbean guilder XCG) and the Bulgarian lev (2026-01, for the euro).
+	"ANG": 2, "BGN": 2,
 }
 
 // CurrencyDecimals answers a known currency's minor unit: 2 for EUR, 0 for

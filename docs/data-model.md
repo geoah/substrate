@@ -371,7 +371,7 @@ render order.
 
 **Money.** A `money` value is two members, both required and nothing else:
 `amount`, an integer count of minor units under the same safe-integer bound
-as an `int`, and `currency`, an active ISO 4217 code. The currency's ISO 4217
+as an `int`, and `currency`, an ISO 4217 code. The currency's ISO 4217
 minor unit says where the decimal point sits: 2 digits for EUR, 0 for JPY, 3
 for KWD. The value below is 19.99 EUR, and the same amount in JPY is 1999 yen:
 
@@ -383,7 +383,9 @@ price:
 
 A code with no minor unit (gold, XDR, the test code XTS) or no ISO 4217
 assignment (BTC) is refused, and so is a price finer than its currency's
-minor unit: 1.899 EUR a litre is a `decimal`. A `min` or `max` bounds the exact
+minor unit: 1.899 EUR a litre is a `decimal`. A code ISO withdraws stays
+admitted (the Bulgarian lev, BGN, still records a 2025 receipt), because the
+table of codes only grows. A `min` or `max` bounds the exact
 number (`min: 0` refuses a refund of -2.50), and `pattern` and `values` are
 refused on the declaration. A [filter](api.md#the-filter-grammar) compares
 within one currency and an order compares the exact number. A

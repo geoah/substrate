@@ -706,7 +706,7 @@ func coerceMoney(p *vocabulary.Property, v any) (any, error) {
 	currency, _ := m[vocabulary.MoneyCurrency].(string)
 	decimals, known := vocabulary.CurrencyDecimals(currency)
 	if !known {
-		return nil, fmt.Errorf("%s is an active ISO 4217 code, three capital letters (EUR)", vocabulary.MoneyCurrency)
+		return nil, fmt.Errorf("%s is an ISO 4217 code with a minor unit, three capital letters (EUR)", vocabulary.MoneyCurrency)
 	}
 	if p.Min != nil || p.Max != nil {
 		r := moneyRat(amount, decimals)
