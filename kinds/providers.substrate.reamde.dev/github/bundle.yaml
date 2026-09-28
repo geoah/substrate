@@ -91,7 +91,10 @@ data:
   # saves an unfinished walk on `account.syncWalk`, which the next run
   # resumes; a pull request's `url` is its own REST address on every
   # payload.
-  version: 29
+  #
+  # 30: the `syncError` and `syncErrorAt` descriptions say a later
+  # run that ends `ok`, or a reconnect, clears the pair. Text only.
+  version: 30
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -501,13 +504,13 @@ data:
       type: string
       writer: connector
       displayName: Sync error
-      description: the LAST error text, from the body or a parked delivery;
-        it is not cleared by a later good run — syncErrorAt says when
+      description: the last error text, from the body or a parked delivery;
+        a later run that ends ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
       writer: connector
       displayName: Sync error at
-      description: when syncError was written
+      description: when syncError was written; cleared with it
     syncStreams:
       type: json
       writer: connector

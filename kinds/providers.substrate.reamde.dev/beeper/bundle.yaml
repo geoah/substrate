@@ -158,7 +158,10 @@ data:
   # 19: every kind declares its purpose (decision 0133), and its
   # description opens with one plain sentence saying what a record is to
   # a person.
-  version: 19
+  #
+  # 20: the `syncError` and `syncErrorAt` descriptions say a later
+  # run that ends `ok`, or a reconnect, clears the pair. Text only.
+  version: 20
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -484,13 +487,13 @@ data:
       writer: connector
       displayName: Sync error
       description: >-
-        the last error text, from the body or from a parked delivery. Never
-        cleared by a later success — syncState is what says it is over
+        the last error text, from the body or from a parked delivery. A later
+        run that ends ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
       writer: connector
       displayName: Sync error at
-      description: when syncError was written
+      description: when syncError was written; cleared with it
     syncStreams:
       type: json
       writer: connector
