@@ -399,6 +399,10 @@ server_start() {
 	# llm/provider rows point at a stub the test process hosts.
 	local egress=()
 	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
+	# The dispatcher tick passes through the same way: the e2e suite sets a
+	# fast one, because its cases wait on the deliveries their writes fire.
+	local tick=()
+	[ -n "${SUBSTRATE_TRIGGER_INTERVAL:-}" ] && tick=("SUBSTRATE_TRIGGER_INTERVAL=${SUBSTRATE_TRIGGER_INTERVAL}")
 	nohup env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -409,6 +413,7 @@ server_start() {
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		"${egress[@]}" \
+		"${tick[@]}" \
 		bin/substrate >>"$LOGFILE" 2>&1 &
 	echo $! >"$PIDFILE"
 	if ! wait_healthy; then
@@ -462,6 +467,8 @@ cmd_run() {
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
 	local egress=()
 	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
+	local tick=()
+	[ -n "${SUBSTRATE_TRIGGER_INTERVAL:-}" ] && tick=("SUBSTRATE_TRIGGER_INTERVAL=${SUBSTRATE_TRIGGER_INTERVAL}")
 	exec env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -472,6 +479,7 @@ cmd_run() {
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		"${egress[@]}" \
+		"${tick[@]}" \
 		bin/substrate
 }
 

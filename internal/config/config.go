@@ -59,6 +59,15 @@ type Config struct {
 	// deployment asks for by naming a window. A negative value is refused.
 	OrphanGrace time.Duration `envconfig:"SUBSTRATE_ORPHAN_GRACE" default:"0"`
 
+	// TriggerInterval is the trigger dispatcher's tick: how often every
+	// repository is checked for a trigger due to run, so it bounds the delay
+	// between a record write and the delivery it fires. Each tick lists the
+	// repositories and runs one pass per idle repository, so a busy host with
+	// many repositories may want a slower tick; a test suite that waits on
+	// deliveries in a loop wants a faster one. At most 5s by default; zero or
+	// negative is refused.
+	TriggerInterval time.Duration `envconfig:"SUBSTRATE_TRIGGER_INTERVAL" default:"5s"`
+
 	// InsecureDisableTOTP takes the SECOND FACTOR OFF the whole door: login,
 	// registration and the credential changes ask for a repository and a
 	// password and nothing else. It exists for a local substrate you wipe
@@ -124,6 +133,9 @@ func (c Config) Validate() error {
 	}
 	if c.OrphanGrace < 0 {
 		return errors.New("SUBSTRATE_ORPHAN_GRACE must not be negative: unset or 0 collects no orphans, and a positive duration (168h) is the window a marked record waits out before the sweep takes it")
+	}
+	if c.TriggerInterval <= 0 {
+		return fmt.Errorf("SUBSTRATE_TRIGGER_INTERVAL is %s: it is how often the trigger dispatcher checks every repository for a delivery due, and it must be a positive duration (5s is the default)", c.TriggerInterval)
 	}
 	return ValidateCredentialKey(c.CredentialKey)
 }

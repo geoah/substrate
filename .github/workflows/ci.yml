@@ -352,9 +352,10 @@ jobs:
     # Seven provider closures, each installed into its own repository on a
     # substrated this job builds and starts, connected through the mock
     # upstream over the recordings under internal/providere2e/fixtures, synced
-    # and asserted by the provider's scenario. About twelve minutes on a
-    # laptop; the runner is slower and the first run also warms uv.
-    timeout-minutes: 60
+    # and asserted by the provider's scenario. The seven cases run side by
+    # side, so the job is the slowest case: about four minutes on a laptop;
+    # the runner is slower and the first run also warms uv.
+    timeout-minutes: 30
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -398,11 +399,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    # Seven provider closures, each installed into its own repository on a
-    # substrated this job builds and starts, connected through the mock
-    # upstream over the recordings under internal/providere2e/fixtures, synced
-    # and asserted by the provider's scenario. About twelve minutes on a
-    # laptop; the runner is slower and the first run also warms uv.
+    # TestReleaseAcceptanceDrill: seven stages against one substrated, each
+    # reading the one before it, so it cannot be cut into shards. Under a
+    # minute on a laptop; the budget is for a runner that builds cold.
     timeout-minutes: 20
     services:
       postgres:

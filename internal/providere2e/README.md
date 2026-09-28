@@ -17,11 +17,18 @@ starts the server on a free loopback port with the OAuth facility on and
 loopback egress allowed. It stops the server at the end and fails the run if
 it did not exit cleanly.
 
-Then one subtest per provider, sequentially. Each one registers a fresh
-repository through `substratectl register` (the CLI config lives in the test's
-temp directory, so nothing touches yours) and hands `runner/e2e.py` the
-server, the authority, the repository's bearer, the `substratectl` it just
-built and `fixtures/<provider>`. The runner:
+Then one subtest per provider, all at once. The parent registers a fresh
+repository per provider through `substratectl register` (each case's CLI
+config is a file of its own in the test's temp directory, so nothing touches
+yours and no two cases write one file), then every case starts as a parallel
+subtest and hands `runner/e2e.py` the server, the authority, the repository's
+bearer, the `substratectl` it just built and `fixtures/<provider>`. The cases
+share the server and nothing else: each mock listens on its own pinned port,
+and the dispatcher runs one pass per repository, capped at eight, so seven
+cases never queue behind each other. The server's dispatcher tick is
+`SUBSTRATE_TRIGGER_INTERVAL=1s`, because every scenario stamps the account
+and then polls for the run it fired, and at the 5s default that wait was most
+of a case. The runner:
 
 1. starts `runner/mockserver.py` over the recordings, on the port
    `providers/<provider>/e2e.json` pins;

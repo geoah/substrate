@@ -59,7 +59,6 @@ type server struct {
 	substratectl string
 	python3      string
 	path         string // the PATH substrated and the runner are given
-	ctlConfig    string // SUBSTRATECTL_CONFIG: the contexts are this run's own
 	// logDir outlives the run: <checkout>/.dev/providere2e, gitignored, one
 	// file per case plus the server's own. t.TempDir() is deleted the moment
 	// the test ends, and the log of a failed sync is the whole diagnosis.
@@ -96,7 +95,6 @@ func startServer(t *testing.T) *server {
 		suiteDir:     suiteDir,
 		repoRoot:     repoRoot,
 		substratectl: filepath.Join(dir, "substratectl"),
-		ctlConfig:    filepath.Join(dir, "substratectl.yaml"),
 		logDir:       logDir,
 		logDst:       filepath.Join(logDir, "substrated.log"),
 	}
@@ -146,6 +144,11 @@ func startServer(t *testing.T) *server {
 		// widened there.
 		"SUBSTRATE_EGRESS_ALLOW=127.0.0.0/8,::1/128",
 		"SUBSTRATE_SANDBOX_EGRESS_ALLOW=127.0.0.0/8,::1/128",
+		// A fast dispatcher tick. Every scenario stamps the account and then
+		// polls for the run it fired, tens of times per case, and each round
+		// waits out the tick: at the 5s default that wait was most of the
+		// suite's idle time.
+		"SUBSTRATE_TRIGGER_INTERVAL=1s",
 		"WEB_DIR=",
 		"LOG_LEVEL=info",
 		"PATH="+srv.path,
@@ -225,33 +228,34 @@ func (s *server) logTail(lines int) string {
 // register creates one repository through substratectl, exactly as an
 // operator would, and hands back its bearer. Registering through the CLI (and
 // not over HTTP) is what leaves the context the runner's own `substratectl
-// apply` addresses; SUBSTRATECTL_CONFIG keeps that file inside the test's temp
-// directory, so nothing reads or writes the developer's.
-func (s *server) register(t *testing.T, authority string) string {
+// apply` addresses; ctlConfig is the SUBSTRATECTL_CONFIG that context lands
+// in, a file inside the test's temp directory, so nothing reads or writes the
+// developer's.
+func (s *server) register(t *testing.T, authority, ctlConfig string) string {
 	t.Helper()
 	cmd := exec.Command(s.substratectl, //nolint:gosec // the binary this test just built
 		"--context", authority, "--server", s.baseURL,
 		"register", "--repository", authority,
 		"--invite-code", inviteCode, "--password-stdin")
 	cmd.Stdin = strings.NewReader(repoPassword + "\n")
-	cmd.Env = append(os.Environ(), "SUBSTRATECTL_CONFIG="+s.ctlConfig, "PATH="+s.path)
+	cmd.Env = append(os.Environ(), "SUBSTRATECTL_CONFIG="+ctlConfig, "PATH="+s.path)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("registering %s: %v\n%s", authority, err, out)
 	}
-	token := s.contextToken(t, authority)
+	token := contextToken(t, ctlConfig, authority)
 	if token == "" {
-		t.Fatalf("registering %s stored no token in %s", authority, s.ctlConfig)
+		t.Fatalf("registering %s stored no token in %s", authority, ctlConfig)
 	}
 	return token
 }
 
 // contextToken reads one context's bearer out of the CLI config the
 // registration wrote.
-func (s *server) contextToken(t *testing.T, name string) string {
+func contextToken(t *testing.T, ctlConfig, name string) string {
 	t.Helper()
-	raw, err := os.ReadFile(s.ctlConfig) //nolint:gosec // a path under the test's own temp dir
+	raw, err := os.ReadFile(ctlConfig) //nolint:gosec // a path under the test's own temp dir
 	if err != nil {
-		t.Fatalf("reading %s: %v", s.ctlConfig, err)
+		t.Fatalf("reading %s: %v", ctlConfig, err)
 	}
 	var cfg struct {
 		Contexts []struct {
@@ -260,7 +264,7 @@ func (s *server) contextToken(t *testing.T, name string) string {
 		} `yaml:"contexts"`
 	}
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
-		t.Fatalf("parsing %s: %v", s.ctlConfig, err)
+		t.Fatalf("parsing %s: %v", ctlConfig, err)
 	}
 	for _, c := range cfg.Contexts {
 		if c.Name == name {
