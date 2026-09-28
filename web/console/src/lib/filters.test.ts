@@ -101,6 +101,28 @@ describe("toRecordFilter", () => {
     ).toEqual({ properties: { number: { eq: 42 }, draft: { eq: false } } })
   })
 
+  it("sends money as a money value, a comma as any of", () => {
+    const price = prop({ name: "price", kind: "money" })
+    expect(
+      toRecordFilter(
+        [{ field: "price", op: "eq", value: "19.99 EUR, 5 USD" }],
+        [price]
+      )
+    ).toEqual({
+      properties: {
+        price: {
+          in: [
+            { amount: 1999, currency: "EUR" },
+            { amount: 500, currency: "USD" },
+          ],
+        },
+      },
+    })
+    expect(
+      toRecordFilter([{ field: "price", op: "eq", value: "19.99" }], [price])
+    ).toEqual({ properties: { price: { eq: "19.99" } } })
+  })
+
   it("leaves unparseable numbers as text rather than NaN", () => {
     expect(
       toRecordFilter(

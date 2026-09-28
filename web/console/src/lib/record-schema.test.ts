@@ -75,6 +75,8 @@ const wideKind: KindInfo = {
       calls: { type: "int", min: 1, max: 10 },
       ratio: { type: "float" },
       price: { type: "decimal", min: 0 },
+      cost: { type: "money", min: 0 },
+      costs: { type: "money", repeated: true },
       headers: { type: "json" },
       callable: { type: "reference", kind: "any" },
       owner: { type: "reference", kind: "substrate.reamde.dev/core/actor" },
@@ -345,6 +347,48 @@ describe("blobref: the read shape applies back", () => {
     // A read-only rendering keeps name, mediaType, size and status.
     expect(formatValue(one, MANIFEST)).toContain('"name": "layout.png"')
     expect(formatValue(one, MANIFEST)).toContain('"size": 2048')
+  })
+})
+
+describe("money", () => {
+  const cost = { amount: 1990, currency: "EUR" }
+
+  it("checks the stored shape and the bound on the number it denotes", () => {
+    expect(controlFor(spec(wideKind, "cost"))).toBe("text")
+    expect(checkValue(spec(wideKind, "cost"), cost)).toBeUndefined()
+    expect(checkValue(spec(wideKind, "cost"), "19.90 EUR")).toMatch(
+      /is an object/
+    )
+    expect(checkValue(spec(wideKind, "cost"), { ...cost, amount: -1 })).toMatch(
+      />= 0/
+    )
+    expect(checkValue(spec(wideKind, "costs"), [cost, { amount: 1 }])).toMatch(
+      /^\[1\]: /
+    )
+  })
+
+  it("edits as its exact text and reads back to the same value", () => {
+    const one = spec(wideKind, "cost")
+    expect(formatValue(one, cost)).toBe("19.90 EUR")
+    expect(parseValue(one, "19.90 EUR")).toEqual({ value: cost })
+    expect(parseValue(one, "-1 EUR").error).toMatch(/>= 0/)
+    expect(parseValue(one, "19.90").error).toBe("choose a currency")
+    // A currency chosen with no amount typed is no value yet.
+    expect(parseValue(one, "EUR")).toEqual({})
+    expect(parseValue(spec(wideKind, "costs"), "19.90 EUR\nEUR")).toEqual({
+      value: [cost],
+    })
+    const many = spec(wideKind, "costs")
+    const list = [cost, { amount: 500, currency: "JPY" }]
+    expect(formatValue(many, list)).toBe("19.90 EUR\n500 JPY")
+    expect(parseValue(many, "19.90 EUR\n500 JPY")).toEqual({ value: list })
+  })
+
+  it("seeds blank and shows the YAML shape as its example", () => {
+    expect(seedValue(spec(wideKind, "cost"))).toBe("")
+    expect(exampleFor(spec(wideKind, "cost"))).toBe(
+      "{amount: 1999, currency: EUR}"
+    )
   })
 })
 

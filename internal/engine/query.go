@@ -867,10 +867,104 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 			if p.Repeated {
 				kind = ""
 			}
+			if p.Keyed && kind == vocabulary.DatatypeMoney {
+				kind = ""
+			}
 			break
 		}
 	}
+	if kind == vocabulary.DatatypeMoney {
+		return condMoney(b, name, c)
+	}
 	return condJSON(b, `props`, name, c, kind)
+}
+
+// moneyValueSQL is the exact number a stored money value at `expr` (a jsonb
+// expression) denotes, as numeric: the amount's digits with an exponent of
+// minus its currency's minor unit, so 1999 EUR reads 19.99 and no division
+// rounds. A value of another shape reads NULL, because a name one kind
+// declares money may be another kind's string, and the cast must not fail
+// that kind's rows.
+func moneyValueSQL(expr string) string {
+	return `(CASE WHEN jsonb_typeof(` + expr + `) = 'object'` +
+		` AND (` + expr + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
+		` THEN ((` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || ` +
+		currencyDecimalsSQL(`(`+expr+`->>'`+vocabulary.MoneyCurrency+`')`) + `)::numeric END)`
+}
+
+// currencyDecimalsSQL is CurrencyDecimals in SQL: the minor unit of the code
+// at `expr`, as text. Only the codes whose unit is not 2 are spelled out; the
+// write path admits no code the table does not hold, so the rest are 2.
+func currencyDecimalsSQL(expr string) string {
+	var b strings.Builder
+	b.WriteString(`(CASE ` + expr)
+	for _, code := range vocabulary.Currencies() {
+		if d, _ := vocabulary.CurrencyDecimals(code); d != 2 {
+			b.WriteString(` WHEN '` + code + `' THEN '` + strconv.Itoa(d) + `'`)
+		}
+	}
+	b.WriteString(` ELSE '2' END)`)
+	return b.String()
+}
+
+// condMoney filters one money property. A comparison's operand is itself a
+// money value, and the comparison holds within its currency, where one minor
+// unit is one minor unit: `gte` {1000, EUR} is the EUR values of at least
+// 10.00. `in` is any of several such equalities. A bare number carries no
+// currency, and comparing amounts across currencies answers a question nobody
+// asked, so it is refused. A money value has no words and no text prefix, and
+// `contains` is for a list.
+func condMoney(b *builder, key string, c substrate.Cond) error {
+	switch {
+	case c.Prefix != "", c.Match != "":
+		return fmt.Errorf("%w: %s is money — filter it with eq, in or the comparison operators", substrate.ErrValidation, key)
+	case c.Contains != nil:
+		return fmt.Errorf("%w: %s is one money value, and contains is for a list", substrate.ErrValidation, key)
+	}
+	v := `props->(` + b.arg(key) + `::text)`
+	compare := func(op string, raw any) (string, error) {
+		m, err := coerceMoney(&vocabulary.Property{Datatype: vocabulary.DatatypeMoney}, raw)
+		if err != nil {
+			return "", fmt.Errorf("%w: %s compares against a money value: %w", substrate.ErrValidation, key, err)
+		}
+		mv := m.(map[string]any)
+		return `(` + v + `->>'` + vocabulary.MoneyCurrency + `') = ` + b.arg(mv[vocabulary.MoneyCurrency]) +
+			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
+			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `')::numeric ` + op + ` ` +
+			b.arg(strconv.FormatInt(mv[vocabulary.MoneyAmount].(int64), 10)) + `::numeric`, nil
+	}
+	for _, x := range []struct {
+		op string
+		v  any
+	}{{"=", c.Eq}, {">", c.Gt}, {">=", c.Gte}, {"<", c.Lt}, {"<=", c.Lte}} {
+		if x.v == nil {
+			continue
+		}
+		clause, err := compare(x.op, x.v)
+		if err != nil {
+			return err
+		}
+		b.add(clause)
+	}
+	if len(c.In) > 0 {
+		ors := make([]string, 0, len(c.In))
+		for _, raw := range c.In {
+			clause, err := compare("=", raw)
+			if err != nil {
+				return err
+			}
+			ors = append(ors, `(`+clause+`)`)
+		}
+		b.add(`(` + strings.Join(ors, ` OR `) + `)`)
+	}
+	if c.Exists != nil {
+		clause := `jsonb_exists(props, ` + b.arg(key) + `)`
+		if !*c.Exists {
+			clause = `NOT ` + clause
+		}
+		b.add(clause)
+	}
+	return nil
 }
 
 // matchRefusal says why `match` does not apply to a property, or nil: every
@@ -1155,6 +1249,23 @@ func (ds *dataset) numericProp(name string) bool {
 		numeric := p.Datatype == vocabulary.DatatypeInt || p.Datatype == vocabulary.DatatypeFloat ||
 			p.Datatype == vocabulary.DatatypeDecimal
 		if p.Repeated || !numeric {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+// moneyProp reports whether EVERY loaded kind that declares this property
+// declares it as one money value, under numericProp's every-not-any rule.
+func (ds *dataset) moneyProp(name string) bool {
+	found := false
+	for _, t := range ds.registry().Kinds() {
+		p, ok := t.Prop(name)
+		if !ok {
+			continue
+		}
+		if p.Repeated || p.Keyed || p.Datatype != vocabulary.DatatypeMoney {
 			return false
 		}
 		found = true
@@ -1478,6 +1589,11 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// the same cast the FILTER already applies (condJSON) applies here.
 		if ds.numericProp(property) {
 			return `(props->>` + sqlLiteral(property) + `)::numeric`, nil
+		}
+		// MONEY sorts by the exact number it denotes, across currencies: an
+		// order is one key, and a list that wants one currency filters on it.
+		if ds.moneyProp(property) {
+			return moneyValueSQL(`(props->` + sqlLiteral(property) + `)`), nil
 		}
 		// An INSTANT sorts as an instant. validate.go normalizes a datetime to
 		// one UTC RFC 3339 layout, but RFC3339Nano trims trailing fractional

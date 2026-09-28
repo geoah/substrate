@@ -76,6 +76,8 @@ const SPECS = new Map<string, PropSpec>([
     }),
   ],
   ["favorites", spec("favorites", "string", { repeated: true })],
+  ["price", spec("price", "money")],
+  ["pastPrices", spec("pastPrices", "money", { repeated: true })],
   ["originDigest", spec("originDigest", "string", { managed: true })],
   ["syncToken", spec("syncToken", "string", { writer: "connector" })],
 ])
@@ -142,6 +144,23 @@ describe("ValueMoves", () => {
     expect(screen.getByText("removed").nextSibling?.textContent).toBe(
       "old@example.com"
     )
+  })
+
+  it("says money in the reader's currency, not as its JSON", () => {
+    const eur = (amount: number) => ({ amount, currency: "EUR" })
+    show([
+      move({ name: "price", before: eur(300), after: eur(350) }),
+      move({
+        name: "pastPrices",
+        before: [],
+        after: [eur(325)],
+        added: [eur(325)],
+      }),
+    ])
+    const row = screen.getByText("Price:").closest("[data-slot=value-move]")
+    expect(row?.textContent).toMatch(/3\.00.*→.*3\.50/)
+    expect(screen.getByText("added").nextSibling?.textContent).toMatch(/3\.25/)
+    expect(document.body.textContent).not.toContain("amount")
   })
 
   it("keeps a secret sealed on both sides", () => {

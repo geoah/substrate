@@ -5,6 +5,7 @@
 import {
   ArrowUpRightIcon,
   AtSignIcon,
+  BanknoteIcon,
   CalendarIcon,
   CircleDotIcon,
   GlobeIcon,
@@ -32,6 +33,7 @@ const ICONS: Record<string, LucideIcon> = {
   int: HashIcon,
   float: HashIcon,
   decimal: HashIcon,
+  money: BanknoteIcon,
   bool: SquareCheckIcon,
   timezone: GlobeIcon,
   recurrence: RepeatIcon,

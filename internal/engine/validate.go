@@ -447,6 +447,8 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 		return n, nil
 	case vocabulary.DatatypeDecimal:
 		return coerceDecimal(p, v)
+	case vocabulary.DatatypeMoney:
+		return coerceMoney(p, v)
 	case vocabulary.DatatypeFloat:
 		f, err := asFloat(v)
 		if err != nil {
@@ -674,6 +676,63 @@ func canonicalDecimal(s string) (string, error) {
 	return out, nil
 }
 
+// coerceMoney admits one money value: exactly the two members, the amount an
+// integer count of minor units and the currency a code whose minor unit the
+// substrate knows, stored as written. A declared `min`/`max` bounds the exact
+// value the two denote: 1999 EUR is 19.99, 1999 JPY is 1999.
+func coerceMoney(p *vocabulary.Property, v any) (any, error) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf(`a money value is an object {%s: 1999, %s: "EUR"}`,
+			vocabulary.MoneyAmount, vocabulary.MoneyCurrency)
+	}
+	for k := range m {
+		if k != vocabulary.MoneyAmount && k != vocabulary.MoneyCurrency {
+			return nil, fmt.Errorf("a money value holds %s and %s, and %q is neither: the currency says where the decimal point sits",
+				vocabulary.MoneyAmount, vocabulary.MoneyCurrency, k)
+		}
+	}
+	rawAmount, held := m[vocabulary.MoneyAmount]
+	if !held {
+		return nil, fmt.Errorf("a money value needs %s, the integer count of minor units (1999 for 19.99 EUR)", vocabulary.MoneyAmount)
+	}
+	if _, isString := rawAmount.(string); isString {
+		return nil, fmt.Errorf("%s is an integer count of minor units (1999 for 19.99 EUR), not a string", vocabulary.MoneyAmount)
+	}
+	amount, err := asInt(rawAmount)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", vocabulary.MoneyAmount, err)
+	}
+	currency, _ := m[vocabulary.MoneyCurrency].(string)
+	decimals, known := vocabulary.CurrencyDecimals(currency)
+	if !known {
+		return nil, fmt.Errorf("%s is an ISO 4217 code with a minor unit, three capital letters (EUR)", vocabulary.MoneyCurrency)
+	}
+	if p.Min != nil || p.Max != nil {
+		r := moneyRat(amount, decimals)
+		if p.Min != nil {
+			if min := new(big.Rat).SetFloat64(*p.Min); min != nil && r.Cmp(min) < 0 {
+				return nil, fmt.Errorf("must be >= %v", *p.Min)
+			}
+		}
+		if p.Max != nil {
+			if max := new(big.Rat).SetFloat64(*p.Max); max != nil && r.Cmp(max) > 0 {
+				return nil, fmt.Errorf("must be <= %v", *p.Max)
+			}
+		}
+	}
+	return map[string]any{
+		vocabulary.MoneyAmount:   amount,
+		vocabulary.MoneyCurrency: currency,
+	}, nil
+}
+
+// moneyRat is the exact value a money value denotes: amount / 10^decimals.
+func moneyRat(amount int64, decimals int) *big.Rat {
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
+	return new(big.Rat).SetFrac(big.NewInt(amount), scale)
+}
+
 func asFloat(v any) (float64, error) {
 	switch n := v.(type) {
 	case int:
@@ -805,6 +864,10 @@ func (r *titleResolver) Prop(name string) string {
 		// reference may name a row that does not exist (references.go).
 		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeReference {
 			return r.reference(name, "")
+		}
+		// A money value is an object, which scalarString renders as nothing.
+		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeMoney && !p.Repeated && !p.Keyed {
+			return vocabulary.FormatMoney(v)
 		}
 		return scalarString(v)
 	}
@@ -1008,6 +1071,12 @@ func (r *titleResolver) First(name, field string) string {
 	}
 	items, _ := r.row.Props[name].([]any)
 	for _, item := range items {
+		if field == "" && p.Datatype == vocabulary.DatatypeMoney {
+			if s := vocabulary.FormatMoney(item); s != "" {
+				return s
+			}
+			continue
+		}
 		if field == "" {
 			if s := scalarString(item); s != "" {
 				return s

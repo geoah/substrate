@@ -317,6 +317,7 @@ are written and filtered the same way.
 | `markdown`         | `text` renderers treat as Markdown                          |
 | `int`, `float`     | numbers, optional `min`/`max`; an `int` is a safe integer, refused past 2^53 - 1 in magnitude because JSON rides float64 |
 | `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded |
+| `money`            | an amount in a currency: `{amount: 1999, currency: EUR}` is 19.99 EUR; optional `min`/`max` on the number it denotes |
 | `bool`             | true/false                                                  |
 | `datetime`, `date` | RFC 3339 instants / civil dates; the year must fall in Postgres's storable range (4713 BC to 294276 AD) |
 | `duration`         | ISO 8601 without years/months (`PT47M12S`, `P2DT3H`, `P1W`); a day is exactly 24h, and the stored form is one canonical decomposition |
@@ -367,6 +368,29 @@ kind:
 Validation is on the value alone, so a bare-string list stays valid, and an
 empty label leaves the client to humanize the value. Declaration order is
 render order.
+
+**Money.** A `money` value is two members, both required and nothing else:
+`amount`, an integer count of minor units under the same safe-integer bound
+as an `int`, and `currency`, an ISO 4217 code. The currency's ISO 4217
+minor unit says where the decimal point sits: 2 digits for EUR, 0 for JPY, 3
+for KWD. The value below is 19.99 EUR, and the same amount in JPY is 1999 yen:
+
+```yaml
+price:
+  amount: 1999
+  currency: EUR
+```
+
+A code with no minor unit (gold, XDR, the test code XTS) or no ISO 4217
+assignment (BTC) is refused, and so is a price finer than its currency's
+minor unit: 1.899 EUR a litre is a `decimal`. A code ISO withdraws stays
+admitted (the Bulgarian lev, BGN, still records a 2025 receipt), because the
+table of codes only grows. A `min` or `max` bounds the exact
+number (`min: 0` refuses a refund of -2.50), and `pattern` and `values` are
+refused on the declaration. A [filter](api.md#the-filter-grammar) compares
+within one currency and an order compares the exact number. A
+`displayTemplate` renders the value as `19.99 EUR`. The console edits it as an
+amount beside a currency picker.
 
 **Secrets.** A `secret` property stores a credential. Writes take a string
 like any other property, but the material never lands in the record: the

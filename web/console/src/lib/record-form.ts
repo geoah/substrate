@@ -31,6 +31,7 @@
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
 import { REFERENCE_KEY, readReference } from "@/lib/api/types"
 import { temporalProperties } from "@/lib/definition"
+import { MONEY_TEXT_EXAMPLE, moneyText } from "@/lib/money"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
 import type { EditPath as DocumentPath, Problem } from "@/lib/record-yaml"
 import {
@@ -117,10 +118,13 @@ export function fieldOf(spec: PropSpec): FormField {
     defaultValue:
       typeof spec.default === "string" && spec.default.length
         ? spec.default
-        : undefined,
+        : spec.kind === "money"
+          ? moneyText(spec.default) || undefined
+          : undefined,
     required: spec.required,
     description: spec.description,
-    example: exampleFor(spec),
+    // A form edits money as text, so its example is the text, not the YAML.
+    example: spec.kind === "money" ? MONEY_TEXT_EXAMPLE : exampleFor(spec),
     spec,
   }
 }

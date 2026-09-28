@@ -1246,7 +1246,7 @@ func patternApplies(dt vocabulary.Datatype) bool {
 	switch dt {
 	case vocabulary.DatatypeObject, vocabulary.DatatypeReference, vocabulary.DatatypeJSON,
 		vocabulary.DatatypeBool, vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal,
-		vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef, vocabulary.DatatypeState:
+		vocabulary.DatatypeMoney, vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef, vocabulary.DatatypeState:
 		return false
 	}
 	return true
@@ -1262,9 +1262,11 @@ func sealedPresence(ident string, path []fieldStep) (string, []any) {
 }
 
 // boundsApply reports whether coerceScalar holds a datatype's values to `min`
-// and `max`: the three numbers.
+// and `max`: the three numbers, and money, whose bound is on the number it
+// denotes.
 func boundsApply(dt vocabulary.Datatype) bool {
-	return dt == vocabulary.DatatypeInt || dt == vocabulary.DatatypeFloat || dt == vocabulary.DatatypeDecimal
+	return dt == vocabulary.DatatypeInt || dt == vocabulary.DatatypeFloat || dt == vocabulary.DatatypeDecimal ||
+		dt == vocabulary.DatatypeMoney
 }
 
 // patternStrands judges one stored root value for a pattern narrowing: true
@@ -1338,7 +1340,8 @@ func leavesAtPath(v any, path []fieldStep) []any {
 // `max`. The comparison is the write path's, per datatype. An int or float is
 // compared as float8, which is how checkRange reads both; a decimal is compared
 // exactly as numeric against the bound's own exact value, which is how
-// coerceDecimal reads it (big.Rat.SetFloat64). A stored value of another JSON
+// coerceDecimal reads it (big.Rat.SetFloat64), and a money value is compared
+// by the number it denotes, the way coerceMoney reads it. A stored value of another JSON
 // type is not counted: the write path refuses it before any bound is read.
 func boundOutsidePath(ident string, path []fieldStep, dt vocabulary.Datatype, op string, bound float64) (string, []any) {
 	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
@@ -1363,6 +1366,12 @@ func boundPredicate(expr string, dt vocabulary.Datatype, op string, bound float6
 		return fmt.Sprintf(
 			"jsonb_typeof(%s) = 'string' AND (%s #>> '{}') ~ '^[+-]?[0-9]+(\\.[0-9]+)?$' AND (%s #>> '{}')::numeric %s %s::numeric",
 			expr, expr, expr, op, a.add(exactDecimal(bound)))
+	}
+	if dt == vocabulary.DatatypeMoney {
+		// coerceMoney compares the exact value against the bound's exact value,
+		// and so does this; a value of another shape reads NULL and is not
+		// counted.
+		return fmt.Sprintf("%s %s %s::numeric", moneyValueSQL(expr), op, a.add(exactDecimal(bound)))
 	}
 	return fmt.Sprintf("jsonb_typeof(%s) = 'number' AND (%s #>> '{}')::float8 %s %s::float8",
 		expr, expr, op, a.add(bound))

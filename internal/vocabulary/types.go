@@ -34,7 +34,14 @@ const (
 	// float64, so a bare number may arrive already rounded, and the engine
 	// refuses one rather than store the rounding. Filters and ordering compare
 	// it numerically (::numeric), not as text.
-	DatatypeDecimal    Datatype = "decimal"
+	DatatypeDecimal Datatype = "decimal"
+	// DatatypeMoney is an amount in a currency, stored as the object
+	// `{amount: 1999, currency: "EUR"}` (19.99 EUR): an integer count of minor
+	// units and an ISO 4217 code whose minor unit places the decimal point
+	// (money.go). A `min`/`max` bounds the exact value the two denote, a filter
+	// compares within the operand's currency, and an ordering compares the
+	// exact value.
+	DatatypeMoney      Datatype = "money"
 	DatatypeBool       Datatype = "bool"
 	DatatypeDatetime   Datatype = "datetime"
 	DatatypeDate       Datatype = "date"
@@ -120,7 +127,7 @@ const (
 
 var builtinKinds = map[Datatype]bool{
 	DatatypeString: true, DatatypeText: true, DatatypeMarkdown: true, DatatypeInt: true,
-	DatatypeFloat: true, DatatypeDecimal: true, DatatypeBool: true, DatatypeDatetime: true, DatatypeDate: true,
+	DatatypeFloat: true, DatatypeDecimal: true, DatatypeMoney: true, DatatypeBool: true, DatatypeDatetime: true, DatatypeDate: true,
 	DatatypeDuration: true, DatatypeEmail: true, DatatypeURL: true, DatatypePhone: true,
 	DatatypeTimezone: true, DatatypeRecurrence: true, DatatypeEnum: true,
 	DatatypeJSON: true, DatatypeSecret: true, DatatypeDigest: true,

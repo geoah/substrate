@@ -35,6 +35,7 @@ import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
 import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
 import { ReferenceListPicker } from "@/components/record/identity-picker"
+import { MoneyInput } from "@/components/record/money-input"
 import { PropertyChoice } from "@/components/record/property-choice"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
@@ -53,6 +54,7 @@ import type { KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { type EnumProperty } from "@/lib/enum-hue"
 import { enumLabel } from "@/lib/grid-values"
+import { moneyCurrency } from "@/lib/money"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
 import {
   asBag,
@@ -497,6 +499,25 @@ export function PropertyField({
     )
   }
 
+  if (field.spec.kind === "money") {
+    return (
+      <Field>
+        {label}
+        <MoneyInput
+          id={id}
+          label={field.label}
+          value={text}
+          onChange={onChange}
+          fallbackCurrency={moneyCurrency(field.spec.default)}
+          invalid={Boolean(error)}
+          boxClassName={MONEY_BOX}
+        />
+        {help()}
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
+    )
+  }
+
   const isSecret = field.control === "secret"
   // A time is picked on the same local-time control the sheet opens; what is
   // stored is the instant it names.
@@ -539,6 +560,10 @@ export function PropertyField({
     </Field>
   )
 }
+
+/** The form's input look, for the two halves of a money input. */
+const MONEY_BOX =
+  "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive disabled:opacity-50"
 
 /** The affordances a container's rows carry, the property sheet's own: a
  * quiet cross to take a row out and a quiet "Add another" to grow the list.
@@ -653,6 +678,21 @@ function ItemList({
                 value={value}
                 onChange={(next) => change(i, next)}
                 invalid={invalid}
+              />
+            ) : item.kind === "money" ? (
+              <MoneyInput
+                id={i === 0 ? id : undefined}
+                amountRef={(el) => {
+                  boxes.current[i] = el
+                }}
+                label={`${field.label} ${i + 1}`}
+                value={value}
+                onChange={(next) => change(i, next)}
+                fallbackCurrency={moneyCurrency(item.default)}
+                invalid={invalid}
+                onKeyDown={(e) => onKeyDown(e, i)}
+                boxClassName={MONEY_BOX}
+                className="flex-1"
               />
             ) : (
               <Input

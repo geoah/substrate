@@ -218,6 +218,13 @@ function ValueEditor({
         ) : (
           <>
             Press Enter to apply. A comma means any of
+            {field.kind === "money" && (
+              <>
+                . An amount and its currency,{" "}
+                <span className="data">19.99 EUR</span>, matches that currency
+                only
+              </>
+            )}
             {canPrefix(field) && (
               <>
                 . <span className="data">geo*</span> means starts with

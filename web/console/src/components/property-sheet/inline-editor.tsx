@@ -27,6 +27,7 @@ import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { StateBadge } from "@/components/identity/state-badge"
 import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
+import { MoneyInput } from "@/components/record/money-input"
 import { PropertyField } from "@/components/record/property-field"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
@@ -39,6 +40,7 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { enumLabel } from "@/lib/grid-values"
+import { moneyCurrency } from "@/lib/money"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import {
   seedField,
@@ -72,6 +74,9 @@ export function InlineEditor(props: InlineEditorProps) {
     return <ReferencePicker {...props} />
   }
   if (isMarkdownRow(props)) return <MarkdownRowEditor {...props} />
+  if (props.row.field.spec.kind === "money" && control === "text") {
+    return <MoneyEditor {...props} />
+  }
   if (style === "line") return <LineEditor {...props} />
   return <PanelEditor {...props} />
 }
@@ -258,6 +263,65 @@ function LineEditor(props: InlineEditorProps) {
           onChange={(e) => setText(e.target.value)}
         />
       )}
+      {pending && <Spinner className="size-3.5 shrink-0" />}
+    </div>
+  )
+}
+
+/** A money row: the amount beside its currency. Enter or leaving the pair
+ * saves, Esc cancels; moving from the amount to the currency is not leaving. */
+function MoneyEditor(props: InlineEditorProps) {
+  const { row, onDone, onError } = props
+  const { field } = row
+  const { save, pending } = useSave(props)
+  const [initial] = useState(() => {
+    const seeded = seedField(field, row.value, false)
+    return typeof seeded === "string" ? seeded : ""
+  })
+  const [text, setText] = useState(initial)
+  const done = useRef(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  function commit() {
+    if (done.current) return
+    if (text === initial) return cancel()
+    done.current = true
+    void save(text).finally(() => {
+      done.current = false
+    })
+  }
+  function cancel() {
+    done.current = true
+    onError(undefined)
+    onDone()
+  }
+  return (
+    <div
+      ref={box}
+      className="flex w-full min-w-0 items-center gap-2"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          cancel()
+        } else if (e.key === "Enter") {
+          e.preventDefault()
+          commit()
+        }
+      }}
+      onBlur={(e) => {
+        if (box.current?.contains(e.relatedTarget as Node | null)) return
+        commit()
+      }}
+    >
+      <MoneyInput
+        label={field.label}
+        value={text}
+        onChange={setText}
+        fallbackCurrency={moneyCurrency(field.spec.default)}
+        autoFocus
+        disabled={pending}
+        boxClassName={INPUT}
+      />
       {pending && <Spinner className="size-3.5 shrink-0" />}
     </div>
   )

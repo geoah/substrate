@@ -2122,6 +2122,12 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	if p.Datatype == DatatypeEnum && len(p.Values) == 0 {
 		l.errf("%s: enum needs values", where)
 	}
+	// A money value is an object, so a pattern would match nothing and a value
+	// set would name strings it never holds. `min`/`max` apply: they bound the
+	// amount the value denotes.
+	if p.Datatype == DatatypeMoney && (p.Pattern != nil || len(p.Values) > 0) {
+		l.errf("%s: a money property takes min and max, never a pattern or values", where)
+	}
 	// NOTHING IS WRITTEN BACK. A property's `values` stay exactly as the author
 	// spelled them — bare scalars or {value, label} mappings — because the map this
 	// parse walks IS the declaration a row stores (engine/vocabularywrite.go
@@ -2295,6 +2301,13 @@ func (l *loader) parseDefault(where string, p *Property, v any) any {
 	case DatatypeJSON:
 		// A json property holds a shape we do not own, so its default is any
 		// literal the document carried.
+	case DatatypeMoney:
+		// The members are the write path's coercion to judge, which admission
+		// runs over every declared default.
+		if _, ok := v.(map[string]any); !ok {
+			l.errf("%s.default: expected a money value {%s, %s}", where, MoneyAmount, MoneyCurrency)
+			return nil
+		}
 	default:
 		s, ok := v.(string)
 		if !ok {
