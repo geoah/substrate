@@ -4,11 +4,12 @@ type: fix
 
 # Word search and newest-first lists read their indexes
 
-A lexical search, the list `search` filter, and a list ordered by
-`createdAt` or `updatedAt` (the default order) read an index instead of
-every record in the repository. On a repository of 389k records, this
-search spent 1.9 s counting the word's documents and 2.3 s gathering
-candidates:
+A lexical search or a list `search` filter for a word few records hold, and
+a list ordered by `createdAt` or `updatedAt` (the default order), read an
+index instead of every record in the repository. A word most records hold
+is still matched record by record, which is the cheaper read for it. On a
+repository of 389k records, this search spent 1.9 s counting the word's
+documents and 2.3 s gathering candidates:
 
 ```sh
 curl -H "Authorization: Bearer $TOKEN" \

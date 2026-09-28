@@ -19,7 +19,13 @@
 --
 -- `lim` caps the rows (NULL is no cap): a document frequency counts to a
 -- bound, and the cap has to reach inside, because a SECURITY DEFINER function
--- is never inlined into the caller's LIMIT.
+-- is never inlined into the caller's LIMIT. It answers live rows only; a
+-- search of tombstones matches on the row (internal/engine/query.go).
+--
+-- The callers join each identity back to its row, one probe per match, so the
+-- function wins only for a term few rows hold. The engine counts the matches
+-- through it, capped, and matches a common term on the row instead
+-- (internal/engine/bm25.go, indexedMatch).
 DO $$
 DECLARE
     sch text := current_schema();

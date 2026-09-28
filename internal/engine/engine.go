@@ -70,8 +70,13 @@ type options struct {
 	// a test sets it (export_test.go), to outrun it without thousands of
 	// writes.
 	valuesBudget int
-	blobs        blobbytes.Backend
-	log          *slog.Logger
+	// searchMatchMax, when set, replaces both match caps a search reads
+	// records_matching under (bm25.go indexedMatch). Only a test sets it
+	// (export_test.go), to put a small fixture on the row path.
+	searchMatchMax    int
+	searchMatchMaxSet bool
+	blobs             blobbytes.Backend
+	log               *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -326,6 +331,8 @@ type service struct {
 	catchUpBatch int
 	// valuesBudget is what one change read's before values may read.
 	valuesBudget int
+	// searchMatchMax replaces the search match caps; negative keeps them.
+	searchMatchMax int
 	// blobs is where blob bytes live (WithBlobStore); the fs backend under
 	// the data root by default.
 	blobs blobbytes.Backend
@@ -452,6 +459,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.valuesBudget <= 0 {
 		o.valuesBudget = valuesBudget
 	}
+	if !o.searchMatchMaxSet {
+		o.searchMatchMax = -1
+	}
 	if !o.conversionCeilingSet {
 		o.conversionCeiling = DefaultConversionCeiling
 	}
@@ -495,6 +505,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		catchUpBatch: o.catchUpBatch,
 		valuesBudget: o.valuesBudget,
 		blobs:        o.blobs,
+
+		searchMatchMax: o.searchMatchMax,
 
 		conversionCeiling: o.conversionCeiling,
 		orphanGrace:       o.orphanGrace,

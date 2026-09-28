@@ -739,9 +739,32 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		if err != nil {
 			return nil, err
 		}
-		// Through records_matching, never `fts @@` on this row: under row
-		// level security that match cannot probe the index (migration 0010).
-		b.add(`(kind, id) IN (SELECT m.kind, m.id FROM records_matching(` + tq + `, NULL) m)`)
+		// Under row level security `fts @@` on the row cannot probe the
+		// index, so a term few live rows hold is read through
+		// records_matching (migration 0010). A common term stays on the row:
+		// each identity the function returns is a probe back to its row, and
+		// the list's order finds a page of a common term's rows sooner. So
+		// does a search of tombstones, which the function does not answer.
+		few := false
+		if f.Deleted == nil || !*f.Deleted {
+			limit := indexedMatchMax
+			if ds.svc.searchMatchMax >= 0 {
+				limit = ds.svc.searchMatchMax
+			}
+			probe := &builder{}
+			ptq, err := searchExpr(probe, "filter.search", f.Search)
+			if err != nil {
+				return nil, err
+			}
+			if few, err = indexedMatch(ctx, x, probe, ptq, limit); err != nil {
+				return nil, err
+			}
+		}
+		if few {
+			b.add(`(kind, id) IN (SELECT m.kind, m.id FROM records_matching(` + tq + `, NULL) m)`)
+		} else {
+			b.add(`fts @@ ` + tq)
+		}
 	}
 	// The orphan mark is a column on the row, derived (orphans.go), so it is
 	// a predicate here and not a property condition: no kind declares it.

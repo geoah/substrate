@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -129,6 +130,52 @@ func TestFilterSearchMatchesTheRecordIndex(t *testing.T) {
 		t.Fatalf("search of stars: err = %v, want validation", err)
 	} else if !strings.Contains(err.Error(), "filter.search") {
 		t.Fatalf("message = %q, want the arm named", err)
+	}
+}
+
+// A search reads a term few live rows hold through records_matching and a
+// common term, or any search of tombstones, on the row, by a capped count
+// (bm25.go indexedMatch). The two paths answer the same rows: the cap only
+// moves the cost.
+func TestSearchAnswersTheSameOnEitherMatchPath(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	paths := map[string]substrate.Dataset{}
+	for name, opts := range map[string][]engine.Option{
+		"records_matching": nil,
+		"on the row":       {engine.WithSearchMatchMax(0)},
+	} {
+		_, ds := newCoreDataset(t, opts...)
+		importVocabulary(t, ds, "calendar")
+		seedEvents(t, ds)
+		if _, err := ds.Delete(ctx, gcal, "samples.substrate.reamde.dev/calendar/calendarevent", "gcal-event:e3", substrate.DeleteInput{}); err != nil {
+			t.Fatalf("%s: delete e3: %v", name, err)
+		}
+		paths[name] = ds
+	}
+	tombstones := true
+	for name, ds := range paths {
+		for _, tc := range []struct {
+			filter substrate.Filter
+			want   []string
+		}{
+			{substrate.Filter{Search: "rack"}, []string{"gcal-event:e1", "gcal-event:e2"}},
+			{substrate.Filter{Search: "rack -standup"}, []string{"gcal-event:e1"}},
+			{substrate.Filter{Search: "lunch"}, nil},
+			{substrate.Filter{Search: "lunch", Deleted: &tombstones}, []string{"gcal-event:e3"}},
+			{substrate.Filter{Search: "rack", Deleted: &tombstones}, nil},
+		} {
+			if got := listIDs(t, ds, eventQuery(tc.filter)); !equalStrings(got, tc.want) {
+				t.Errorf("%s: search %q deleted=%v = %v, want %v", name, tc.filter.Search, tc.filter.Deleted != nil, got, tc.want)
+			}
+		}
+		hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "rack layout", Mode: substrate.SearchLexical}))
+		if err != nil {
+			t.Fatalf("%s: ranked read: %v", name, err)
+		}
+		if got := hitIDs(hits); !equalStrings(got, []string{"gcal-event:e1", "gcal-event:e2"}) {
+			t.Errorf("%s: ranked read = %v, want e1 (the title line) then e2", name, got)
+		}
 	}
 }
 

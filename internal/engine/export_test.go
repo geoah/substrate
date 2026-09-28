@@ -292,6 +292,14 @@ func WithCatchUpBatch(n int) Option { return func(o *options) { o.catchUpBatch =
 // history included, with a few dozen writes.
 func WithValuesBudget(n int) Option { return func(o *options) { o.valuesBudget = n } }
 
+// WithSearchMatchMax sets the match count past which a search matches on the
+// row instead of through records_matching (bm25.go indexedMatch), so a test
+// can read a small fixture down either path: 0 puts every matching query on
+// the row.
+func WithSearchMatchMax(n int) Option {
+	return func(o *options) { o.searchMatchMax, o.searchMatchMaxSet = n, true }
+}
+
 // AdvisoryKeySQL is the engine's advisory-lock key expression (identity.go),
 // for a test that takes one of the engine's locks by hand: a barrier test that
 // composed the key itself would park on a lock nothing else takes.

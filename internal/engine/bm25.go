@@ -54,6 +54,17 @@ const (
 	// enough that its weight barely moves, and the count stops paying for
 	// itself.
 	dfCap = 20000
+	// probeCost is roughly how many rows matching in place costs what one
+	// match read through records_matching does, the count that picks the path
+	// included: about 13 µs a match against 0.5 µs a row, measured on 150k
+	// rows, and break-even near a thirtieth of the repository.
+	probeCost = 32
+	// indexedMatchMax is the most matches a list `search` filter reads
+	// through records_matching. Past it the filter matches on the row, where
+	// the list's own order stops at the page: newest first walks
+	// records_created_at_idx, 0.3 ms for a word 5000 rows hold against 57 ms
+	// through the function.
+	indexedMatchMax = 500
 	// statsTTL is how long one repository's collection statistics stand. They
 	// move only the length normalization and the IDF, both slowly, so a
 	// minutes-old average ranks the same as a fresh one.
@@ -195,19 +206,34 @@ func (ds *dataset) lexical(ctx context.Context, plan searchPlan, types []string,
 	}
 	wordsArg, prefixArg := b.arg(words), b.arg(prefix)
 	pool := max(bm25Pool, 4*k)
+	// The pool ranks every match, so the cheaper source depends on how many
+	// there are: through records_matching, the one read of the index row level
+	// security allows (migration 0010), for a few; the whole repository,
+	// matched in place, once the probes would cost more than the scan.
+	probe := &builder{}
+	limit := int(st.n / probeCost)
+	if ds.svc.searchMatchMax >= 0 {
+		limit = ds.svc.searchMatchMax
+	}
+	few, err := indexedMatch(ctx, ds.db, probe, plan.expr(probe, true), limit)
+	if err != nil {
+		return nil, err
+	}
+	source := `records r WHERE r.deleted_at IS NULL AND r.fts @@ ` + relaxed
+	if few {
+		source = `records_matching(` + relaxed + `, NULL) m
+			JOIN records r ON r.kind = m.kind AND r.id = m.id
+			WHERE r.deleted_at IS NULL`
+	}
 	// One statement: the candidate pool, each candidate's band lengths, and
 	// each (candidate, term) pair's weighted occurrences per band. A term's
 	// exact lexemes are its word under `english`, the dictionary the row was
 	// indexed with; a prefix term's starts are the word under `simple`,
-	// unstemmed, for the reason tsquery.go gives. The pool's match goes
-	// through records_matching, the one read of the index row level security
-	// allows (migration 0010); every column is read back under the policy.
+	// unstemmed, for the reason tsquery.go gives.
 	rows, err := ds.db.QueryContext(ctx, `
 		WITH cand AS (
 			SELECT r.kind, r.id, r.fts, r.fts @@ `+strict+` AS whole, `+demotion("r")+` AS demoted
-			FROM records_matching(`+relaxed+`, NULL) m
-			JOIN records r ON r.kind = m.kind AND r.id = m.id
-			WHERE r.deleted_at IS NULL`+clause+`
+			FROM `+source+clause+`
 			ORDER BY whole DESC, ts_rank(r.fts, `+relaxed+`) DESC, r.kind, r.id
 			LIMIT `+b.arg(pool)+`
 		), terms AS (
@@ -303,4 +329,17 @@ func (ds *dataset) termIDF(ctx context.Context, terms []scoreTerm, st searchStat
 		idf[i] = bm25IDF(st.n, float64(df))
 	}
 	return idf, nil
+}
+
+// indexedMatch reports whether the tsquery q, SQL over b's arguments, matches
+// at most limit live rows of the repository, counting through records_matching
+// and stopping at limit+1.
+func indexedMatch(ctx context.Context, x dbx, b *builder, q string, limit int) (bool, error) {
+	var n int
+	if err := x.QueryRowContext(ctx,
+		`SELECT count(*) FROM records_matching(`+q+`, `+b.arg(limit+1)+`)`,
+		b.args...).Scan(&n); err != nil {
+		return false, fmt.Errorf("substrate/engine: search: count matches: %w", err)
+	}
+	return n <= limit, nil
 }
