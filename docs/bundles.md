@@ -542,7 +542,12 @@ nothing around them. At open, a record still `running` becomes
 ([0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md))
 and nothing can be in flight. A SCHEDULE-sourced delivery names no record, so
 the dispatcher stamps nothing around the shipped bundles' hourly runs: there
-the body's own writes are the whole truth.
+the body's own writes are the whole truth, with one addition. A write by the
+kind's own package (its bundle actor, or one of its functions or agents) that
+moves `lastSyncedAt` and leaves `syncState` at `ok` also clears a `syncError`
+and `syncErrorAt` older than the new `lastSyncedAt`, unless the write names
+either half of the pair itself. An account that recovers on the schedule
+stops showing its last failure.
 
 **What the body does with it.** Everything else, through `host.effects.patch`
 on the account, in the same patch it already makes: `lastSyncedAt` and

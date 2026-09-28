@@ -237,7 +237,10 @@ opt into twice:
   `syncProgress` (`{phase, done, total, pending}`), `syncStreams` (a map of
   stream name to `{cursor, lastAt, pending, state, message, requestedAck}`)
   and `syncRequestedAck`, the acknowledgement of the owner's
-  `syncRequestedAt`.
+  `syncRequestedAt`. A write by the kind's own package that moves
+  `lastSyncedAt` and leaves `syncState` at `ok` clears an error pair older
+  than the new `lastSyncedAt`, so a schedule-fired run that recovers clears
+  it too.
   `syncState` is a string, not a machine: `never`, `running`, `ok`,
   `erroring` or `throttled`
   ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
