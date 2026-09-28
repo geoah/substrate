@@ -107,26 +107,24 @@ func TestCoerceDecimalIsExact(t *testing.T) {
 	}
 }
 
-// The money contract: exactly {amount, currency, decimals}, the amount an
-// integer count of minor units under the int bound, the currency an ISO 4217
-// code, the scale data that is never rescaled, and a declared bound held
-// against the exact value the three denote.
-func TestCoerceMoneyIsThreeExactMembers(t *testing.T) {
+// The money contract: exactly {amount, currency}, the amount an integer count
+// of minor units under the int bound, the currency a known ISO 4217 code whose
+// minor unit places the decimal point, and a declared bound held against the
+// exact value the two denote.
+func TestCoerceMoneyIsAnAmountAndACurrency(t *testing.T) {
 	p := &vocabulary.Property{Name: "price", Datatype: vocabulary.DatatypeMoney}
-	money := func(amount, currency, decimals any) map[string]any {
-		return map[string]any{"amount": amount, "currency": currency, "decimals": decimals}
+	money := func(amount, currency any) map[string]any {
+		return map[string]any{"amount": amount, "currency": currency}
 	}
 	for _, tc := range []struct {
 		name string
 		in   map[string]any
 		want map[string]any
 	}{
-		{"cents", money(1999, "EUR", 2), money(int64(1999), "EUR", int64(2))},
-		{"the scale is data", money(1990, "EUR", 2), money(int64(1990), "EUR", int64(2))},
-		{"a float64 integer from the JSON door", money(float64(1999), "USD", float64(2)), money(int64(1999), "USD", int64(2))},
-		{"a json.Number", money(json.Number("-500"), "JPY", json.Number("0")), money(int64(-500), "JPY", int64(0))},
-		{"the finest scale", money(1, "ETH", 18), money(int64(1), "ETH", int64(18))},
-		{"the largest safe amount", money(int64(1<<53-1), "EUR", 2), money(int64(1<<53-1), "EUR", int64(2))},
+		{"cents", money(1999, "EUR"), money(int64(1999), "EUR")},
+		{"a float64 integer from the JSON door", money(float64(1999), "USD"), money(int64(1999), "USD")},
+		{"a json.Number, negative", money(json.Number("-500"), "JPY"), money(int64(-500), "JPY")},
+		{"the largest safe amount", money(int64(1<<53-1), "KWD"), money(int64(1<<53-1), "KWD")},
 	} {
 		got, err := coerceScalar(p, tc.in)
 		if err != nil {
@@ -143,38 +141,40 @@ func TestCoerceMoneyIsThreeExactMembers(t *testing.T) {
 	}{
 		{"a bare number", float64(19.99), "is an object"},
 		{"a decimal string", "19.99", "is an object"},
-		{"a fractional amount", money(19.99, "EUR", 2), "amount: expected an integer"},
-		{"an amount as a string", money("1999", "EUR", 2), "not a string"},
-		{"an unsafe amount", money(json.Number("9007199254740993"), "EUR", 2), "safe integer"},
-		{"no amount", map[string]any{"currency": "EUR", "decimals": 2}, "needs amount"},
-		{"a lowercase currency", money(1999, "eur", 2), "ISO 4217"},
-		{"a symbol for a currency", money(1999, "€", 2), "ISO 4217"},
-		{"no currency", map[string]any{"amount": 1999, "decimals": 2}, "ISO 4217"},
-		{"no decimals", map[string]any{"amount": 1999, "currency": "EUR"}, "needs decimals"},
-		{"negative decimals", money(1999, "EUR", -1), "from 0 to 18"},
-		{"too many decimals", money(1999, "EUR", 19), "from 0 to 18"},
-		{"fractional decimals", money(1999, "EUR", 1.5), "from 0 to 18"},
-		{"an undeclared member", map[string]any{"amount": 1999, "currency": "EUR", "decimals": 2, "symbol": "€"}, `"symbol" is none of them`},
+		{"a fractional amount", money(19.99, "EUR"), "amount: expected an integer"},
+		{"an amount as a string", money("1999", "EUR"), "not a string"},
+		{"an unsafe amount", money(json.Number("9007199254740993"), "EUR"), "safe integer"},
+		{"no amount", map[string]any{"currency": "EUR"}, "needs amount"},
+		{"a lowercase currency", money(1999, "eur"), "ISO 4217"},
+		{"a symbol for a currency", money(1999, "€"), "ISO 4217"},
+		{"an unassigned code", money(1999, "XYZ"), "ISO 4217"},
+		{"a code with no minor unit", money(1, "XAU"), "ISO 4217"},
+		{"no currency", map[string]any{"amount": 1999}, "ISO 4217"},
+		{"a scale beside the currency", map[string]any{"amount": 1999, "currency": "EUR", "decimals": 2}, `"decimals" is neither`},
 	} {
 		if _, err := coerceScalar(p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%s: got %v, want it to name %q", tc.name, err, tc.want)
 		}
 	}
-	// 0.1 is not a dyadic rational, so the bound is compared at its exact binary
-	// value, the way a decimal's is: 10 cents sits just below a max of 0.1.
+	// The bound is on the number, so the currency's minor unit decides it:
+	// 10 EUR cents sits just below a max of 0.1 (compared at its exact binary
+	// value, as a decimal's is), and 10 yen is far above it.
 	zero, dime := 0.0, 0.1
 	bounded := &vocabulary.Property{Name: "price", Datatype: vocabulary.DatatypeMoney, Min: &zero, Max: &dime}
-	if _, err := coerceScalar(bounded, money(-1, "EUR", 2)); err == nil || !strings.Contains(err.Error(), ">= 0") {
+	if _, err := coerceScalar(bounded, money(-1, "EUR")); err == nil || !strings.Contains(err.Error(), ">= 0") {
 		t.Fatalf("min: got %v, want the bound named", err)
 	}
-	if _, err := coerceScalar(bounded, money(0, "EUR", 2)); err != nil {
+	if _, err := coerceScalar(bounded, money(0, "EUR")); err != nil {
 		t.Fatalf("min boundary: %v", err)
 	}
-	if _, err := coerceScalar(bounded, money(10, "EUR", 2)); err != nil {
-		t.Fatalf("0.10 under a max of 0.1: %v", err)
+	if _, err := coerceScalar(bounded, money(10, "EUR")); err != nil {
+		t.Fatalf("0.10 EUR under a max of 0.1: %v", err)
 	}
-	if _, err := coerceScalar(bounded, money(101, "EUR", 3)); err == nil || !strings.Contains(err.Error(), "<= 0.1") {
-		t.Fatalf("max: got %v, want the bound named", err)
+	if _, err := coerceScalar(bounded, money(100, "KWD")); err != nil {
+		t.Fatalf("0.100 KWD under a max of 0.1: %v", err)
+	}
+	if _, err := coerceScalar(bounded, money(10, "JPY")); err == nil || !strings.Contains(err.Error(), "<= 0.1") {
+		t.Fatalf("10 JPY: got %v, want the bound named", err)
 	}
 }
 

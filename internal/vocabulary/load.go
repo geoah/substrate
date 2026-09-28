@@ -2305,7 +2305,7 @@ func (l *loader) parseDefault(where string, p *Property, v any) any {
 		// The members are the write path's coercion to judge, which admission
 		// runs over every declared default.
 		if _, ok := v.(map[string]any); !ok {
-			l.errf("%s.default: expected a money value {%s, %s, %s}", where, MoneyAmount, MoneyCurrency, MoneyDecimals)
+			l.errf("%s.default: expected a money value {%s, %s}", where, MoneyAmount, MoneyCurrency)
 			return nil
 		}
 	default:

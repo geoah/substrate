@@ -881,24 +881,39 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 
 // moneyValueSQL is the exact number a stored money value at `expr` (a jsonb
 // expression) denotes, as numeric: the amount's digits with an exponent of
-// minus the scale, so 1999 at 2 decimals reads 19.99 and no division rounds.
-// A value of another shape reads NULL, because a name one kind declares money
-// may be another kind's string, and the cast must not fail that kind's rows.
+// minus its currency's minor unit, so 1999 EUR reads 19.99 and no division
+// rounds. A value of another shape reads NULL, because a name one kind
+// declares money may be another kind's string, and the cast must not fail
+// that kind's rows.
 func moneyValueSQL(expr string) string {
 	return `(CASE WHEN jsonb_typeof(` + expr + `) = 'object'` +
 		` AND (` + expr + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
-		` AND (` + expr + `->>'` + vocabulary.MoneyDecimals + `') ~ '^[0-9]+$'` +
-		` THEN ((` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || (` +
-		expr + `->>'` + vocabulary.MoneyDecimals + `'))::numeric END)`
+		` THEN ((` + expr + `->>'` + vocabulary.MoneyAmount + `') || 'e-' || ` +
+		currencyDecimalsSQL(`(`+expr+`->>'`+vocabulary.MoneyCurrency+`')`) + `)::numeric END)`
+}
+
+// currencyDecimalsSQL is CurrencyDecimals in SQL: the minor unit of the code
+// at `expr`, as text. Only the codes whose unit is not 2 are spelled out; the
+// write path admits no code the table does not hold, so the rest are 2.
+func currencyDecimalsSQL(expr string) string {
+	var b strings.Builder
+	b.WriteString(`(CASE ` + expr)
+	for _, code := range vocabulary.Currencies() {
+		if d, _ := vocabulary.CurrencyDecimals(code); d != 2 {
+			b.WriteString(` WHEN '` + code + `' THEN '` + strconv.Itoa(d) + `'`)
+		}
+	}
+	b.WriteString(` ELSE '2' END)`)
+	return b.String()
 }
 
 // condMoney filters one money property. A comparison's operand is itself a
-// money value, and the comparison holds within its currency: `gte` 10.00 EUR
-// is the EUR values of at least 10, compared by the exact number, so 1000 at
-// 2 decimals equals 10000 at 3. `in` is any of several such equalities. A bare
-// number carries no currency, and comparing amounts across currencies answers
-// a question nobody asked, so it is refused. A money value has no words and no
-// text prefix, and `contains` is for a list.
+// money value, and the comparison holds within its currency, where one minor
+// unit is one minor unit: `gte` {1000, EUR} is the EUR values of at least
+// 10.00. `in` is any of several such equalities. A bare number carries no
+// currency, and comparing amounts across currencies answers a question nobody
+// asked, so it is refused. A money value has no words and no text prefix, and
+// `contains` is for a list.
 func condMoney(b *builder, key string, c substrate.Cond) error {
 	switch {
 	case c.Prefix != "", c.Match != "":
@@ -907,16 +922,16 @@ func condMoney(b *builder, key string, c substrate.Cond) error {
 		return fmt.Errorf("%w: %s is one money value, and contains is for a list", substrate.ErrValidation, key)
 	}
 	v := `props->(` + b.arg(key) + `::text)`
-	value := moneyValueSQL(v)
 	compare := func(op string, raw any) (string, error) {
 		m, err := coerceMoney(&vocabulary.Property{Datatype: vocabulary.DatatypeMoney}, raw)
 		if err != nil {
 			return "", fmt.Errorf("%w: %s compares against a money value: %w", substrate.ErrValidation, key, err)
 		}
 		mv := m.(map[string]any)
-		amount, decimals := mv[vocabulary.MoneyAmount].(int64), mv[vocabulary.MoneyDecimals].(int64)
 		return `(` + v + `->>'` + vocabulary.MoneyCurrency + `') = ` + b.arg(mv[vocabulary.MoneyCurrency]) +
-			` AND ` + value + ` ` + op + ` ` + b.arg(vocabulary.MoneyDecimal(amount, int(decimals))) + `::numeric`, nil
+			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `') ~ '^-?[0-9]+$'` +
+			` AND (` + v + `->>'` + vocabulary.MoneyAmount + `')::numeric ` + op + ` ` +
+			b.arg(strconv.FormatInt(mv[vocabulary.MoneyAmount].(int64), 10)) + `::numeric`, nil
 	}
 	for _, x := range []struct {
 		op string

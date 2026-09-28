@@ -35,12 +35,12 @@ const (
 	// refuses one rather than store the rounding. Filters and ordering compare
 	// it numerically (::numeric), not as text.
 	DatatypeDecimal Datatype = "decimal"
-	// DatatypeMoney is an amount in a currency at a declared scale, stored as
-	// the object `{amount: 1999, currency: "EUR", decimals: 2}` (19.99 EUR):
-	// an integer count of minor units, an ISO 4217 code and the number of the
-	// amount's digits after the decimal point (money.go). A `min`/`max` bounds
-	// the exact value the three denote, and a filter or an ordering compares
-	// that value numerically, a filter within the bound's own currency.
+	// DatatypeMoney is an amount in a currency, stored as the object
+	// `{amount: 1999, currency: "EUR"}` (19.99 EUR): an integer count of minor
+	// units and an ISO 4217 code whose minor unit places the decimal point
+	// (money.go). A `min`/`max` bounds the exact value the two denote, a filter
+	// compares within the operand's currency, and an ordering compares the
+	// exact value.
 	DatatypeMoney      Datatype = "money"
 	DatatypeBool       Datatype = "bool"
 	DatatypeDatetime   Datatype = "datetime"

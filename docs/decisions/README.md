@@ -299,3 +299,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0138](0138-a-compacted-thread-keeps-its-rows-and-replays-a-summary-message-over-the-range-it-covers.md) | A compacted thread keeps its rows and replays a `summary` message over the range it covers | accepted |
 | [0139](0139-an-agent-declares-its-purpose.md) | An agent declares its purpose | accepted |
 | [0139](0139-money-is-an-integer-amount-a-currency-and-a-scale.md) | Money is an integer amount, a currency and a scale | proposed |
+| [0140](0140-money-is-an-integer-amount-of-its-currencys-minor-unit.md) | Money is an integer amount of its currency's minor unit | proposed |

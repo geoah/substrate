@@ -17,8 +17,8 @@ import (
 
 const moneyPackage = "money.example.substrate.reamde.dev/money"
 
-func moneyValue(amount int64, currency string, decimals int64) map[string]any {
-	return map[string]any{"amount": amount, "currency": currency, "decimals": decimals}
+func moneyValue(amount int64, currency string) map[string]any {
+	return map[string]any{"amount": amount, "currency": currency}
 }
 
 func itemManifest(price map[string]any) map[string]any {
@@ -35,7 +35,7 @@ func itemManifest(price map[string]any) map[string]any {
 
 // installPricedItems declares one kind with a money property and seeds it
 // with prices whose order differs from their amounts' order and from their
-// text, in three currencies and three scales, inserted scrambled.
+// text, in currencies of three minor units, inserted scrambled.
 func installPricedItems(t *testing.T) substrate.Dataset {
 	t.Helper()
 	_, ds := newDataset(t)
@@ -46,13 +46,13 @@ func installPricedItems(t *testing.T) substrate.Dataset {
 		t.Fatalf("install the money kind: %v", err)
 	}
 	for name, price := range map[string]map[string]any{
-		"ten":     moneyValue(1005, "EUR", 2),  // 10.05
-		"cheap":   moneyValue(99, "USD", 2),    // 0.99
-		"hundred": moneyValue(1001, "EUR", 1),  // 100.1
-		"nine":    moneyValue(9500, "EUR", 3),  // 9.500
-		"two":     moneyValue(2, "JPY", 0),     // 2
-		"refund":  moneyValue(-250, "EUR", 2),  // -2.50
-		"precise": moneyValue(19990, "EUR", 3), // 19.990
+		"ten":     moneyValue(1005, "EUR"),  // 10.05
+		"cheap":   moneyValue(99, "USD"),    // 0.99
+		"hundred": moneyValue(10010, "EUR"), // 100.10
+		"nine":    moneyValue(9500, "KWD"),  // 9.500
+		"two":     moneyValue(2, "JPY"),     // 2
+		"refund":  moneyValue(-250, "EUR"),  // -2.50
+		"precise": moneyValue(1999, "EUR"),  // 19.99
 	} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: moneyPackage + "/item", Properties: map[string]any{"name": name, "price": price},
@@ -83,7 +83,7 @@ func TestMoneyStoresReadsAndTitles(t *testing.T) {
 	ds := installPricedItems(t)
 	rec := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       moneyPackage + "/item",
-		Properties: map[string]any{"name": "coffee", "price": moneyValue(350, "EUR", 2)},
+		Properties: map[string]any{"name": "coffee", "price": moneyValue(350, "EUR")},
 	})
 	got, err := ds.Get(context.Background(), rec.Kind, rec.ID)
 	if err != nil {
@@ -98,9 +98,10 @@ func TestMoneyStoresReadsAndTitles(t *testing.T) {
 	for name, bad := range map[string]any{
 		"a bare number":    19.99,
 		"a decimal string": "19.99",
-		"a fraction":       map[string]any{"amount": 3.5, "currency": "EUR", "decimals": 2},
-		"a lowercase code": moneyValue(350, "eur", 2),
-		"a missing scale":  map[string]any{"amount": 350, "currency": "EUR"},
+		"a fraction":       map[string]any{"amount": 3.5, "currency": "EUR"},
+		"a lowercase code": moneyValue(350, "eur"),
+		"an unknown code":  moneyValue(350, "XYZ"),
+		"a scale":          map[string]any{"amount": 350, "currency": "EUR", "decimals": 2},
 	} {
 		_, err := ds.Put(context.Background(), owner, substrate.PutInput{
 			Kind: moneyPackage + "/item", Properties: map[string]any{"name": "bad", "price": bad},
@@ -111,8 +112,9 @@ func TestMoneyStoresReadsAndTitles(t *testing.T) {
 	}
 }
 
-// An order compares the exact number each value denotes, whatever its scale:
-// 9.500 at three decimals sits between 2 and 10.05, never where 9500 would.
+// An order compares the exact number each value denotes, the currency's minor
+// unit placing the point: 9500 KWD fils is 9.500 and sits between 2 yen and
+// 10.05 EUR, never where 9500 would.
 // One-row pages put a cursor at every boundary, so the numeric key survives
 // its round trip through the cursor as text.
 func TestOrderByMoneyComparesTheExactNumber(t *testing.T) {
@@ -147,8 +149,8 @@ func TestOrderByMoneyComparesTheExactNumber(t *testing.T) {
 	}
 }
 
-// A comparison holds within the operand's currency and compares exact numbers
-// across scales, so 9.5 EUR at one decimal equals 9.500 EUR at three.
+// A comparison holds within the operand's currency, where one minor unit is
+// one minor unit.
 func TestFilterByMoneyComparesWithinACurrency(t *testing.T) {
 	t.Parallel()
 	ds := installPricedItems(t)
@@ -158,12 +160,12 @@ func TestFilterByMoneyComparesWithinACurrency(t *testing.T) {
 		cond substrate.Cond
 		want []string
 	}{
-		{"gte stays in its currency", substrate.Cond{Gte: moneyValue(950, "EUR", 2)}, []string{"nine", "ten", "precise", "hundred"}},
-		{"a range", substrate.Cond{Gt: moneyValue(0, "EUR", 0), Lt: moneyValue(20, "EUR", 0)}, []string{"nine", "ten", "precise"}},
-		{"eq across scales", substrate.Cond{Eq: moneyValue(95, "EUR", 1)}, []string{"nine"}},
-		{"eq is exact", substrate.Cond{Eq: moneyValue(1999, "EUR", 2)}, []string{"precise"}},
-		{"in", substrate.Cond{In: []any{moneyValue(99, "USD", 2), moneyValue(2, "JPY", 0)}}, []string{"cheap", "two"}},
-		{"another currency", substrate.Cond{Lte: moneyValue(100, "USD", 0)}, []string{"cheap"}},
+		{"gte stays in its currency", substrate.Cond{Gte: moneyValue(950, "EUR")}, []string{"ten", "precise", "hundred"}},
+		{"a range", substrate.Cond{Gt: moneyValue(0, "EUR"), Lt: moneyValue(2000, "EUR")}, []string{"ten", "precise"}},
+		{"eq", substrate.Cond{Eq: moneyValue(1999, "EUR")}, []string{"precise"}},
+		{"in", substrate.Cond{In: []any{moneyValue(99, "USD"), moneyValue(2, "JPY")}}, []string{"cheap", "two"}},
+		{"another currency", substrate.Cond{Lte: moneyValue(10000, "USD")}, []string{"cheap"}},
+		{"thousandths", substrate.Cond{Gte: moneyValue(9500, "KWD")}, []string{"nine"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -182,10 +184,10 @@ func TestFilterByMoneyComparesWithinACurrency(t *testing.T) {
 		want string
 	}{
 		{"a bare number has no currency", substrate.Cond{Gte: "9.50"}, "compares against a money value"},
-		{"a bad operand", substrate.Cond{Eq: moneyValue(1, "euro", 2)}, "ISO 4217"},
+		{"a bad operand", substrate.Cond{Eq: moneyValue(1, "euro")}, "ISO 4217"},
 		{"prefix", substrate.Cond{Prefix: "1"}, "is money"},
 		{"match", substrate.Cond{Match: "ten"}, "is money"},
-		{"contains", substrate.Cond{Contains: moneyValue(1, "EUR", 2)}, "contains is for a list"},
+		{"contains", substrate.Cond{Contains: moneyValue(1, "EUR")}, "contains is for a list"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -226,7 +228,7 @@ func TestMoneyDefaultFillsACreate(t *testing.T) {
 	ctx := context.Background()
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.PackageManifest(moneyPackage, 0),
-		itemManifest(map[string]any{"type": "money", "default": moneyValue(0, "EUR", 2)}),
+		itemManifest(map[string]any{"type": "money", "default": moneyValue(0, "EUR")}),
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -237,7 +239,7 @@ func TestMoneyDefaultFillsACreate(t *testing.T) {
 		t.Fatalf("price = %#v, want the default 0.00 EUR", rec.Properties["price"])
 	}
 	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		itemManifest(map[string]any{"type": "money", "default": moneyValue(0, "euro", 2)}),
+		itemManifest(map[string]any{"type": "money", "default": moneyValue(0, "euro")}),
 	})
 	if err == nil || !strings.Contains(err.Error(), "ISO 4217") {
 		t.Fatalf("err = %v, want a default no write could store refused", err)

@@ -676,44 +676,37 @@ func canonicalDecimal(s string) (string, error) {
 	return out, nil
 }
 
-// coerceMoney admits one money value: exactly the three members, each held to
-// its rule, stored as written. Nothing is rescaled: 1990 at 2 decimals stays
-// 1990 at 2, because the scale is data the way a decimal's trailing zero is.
-// A declared `min`/`max` bounds the exact value the three denote.
+// coerceMoney admits one money value: exactly the two members, the amount an
+// integer count of minor units and the currency a code whose minor unit the
+// substrate knows, stored as written. A declared `min`/`max` bounds the exact
+// value the two denote: 1999 EUR is 19.99, 1999 JPY is 1999.
 func coerceMoney(p *vocabulary.Property, v any) (any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf(`a money value is an object {%s: 1999, %s: "EUR", %s: 2}`,
-			vocabulary.MoneyAmount, vocabulary.MoneyCurrency, vocabulary.MoneyDecimals)
+		return nil, fmt.Errorf(`a money value is an object {%s: 1999, %s: "EUR"}`,
+			vocabulary.MoneyAmount, vocabulary.MoneyCurrency)
 	}
 	for k := range m {
-		if k != vocabulary.MoneyAmount && k != vocabulary.MoneyCurrency && k != vocabulary.MoneyDecimals {
-			return nil, fmt.Errorf("a money value holds %s, %s and %s, and %q is none of them",
-				vocabulary.MoneyAmount, vocabulary.MoneyCurrency, vocabulary.MoneyDecimals, k)
+		if k != vocabulary.MoneyAmount && k != vocabulary.MoneyCurrency {
+			return nil, fmt.Errorf("a money value holds %s and %s, and %q is neither: the currency says where the decimal point sits",
+				vocabulary.MoneyAmount, vocabulary.MoneyCurrency, k)
 		}
 	}
 	rawAmount, held := m[vocabulary.MoneyAmount]
 	if !held {
-		return nil, fmt.Errorf("a money value needs %s, the integer count of minor units (1999 for 19.99)", vocabulary.MoneyAmount)
+		return nil, fmt.Errorf("a money value needs %s, the integer count of minor units (1999 for 19.99 EUR)", vocabulary.MoneyAmount)
 	}
 	if _, isString := rawAmount.(string); isString {
-		return nil, fmt.Errorf("%s is an integer count of minor units (1999 for 19.99), not a string", vocabulary.MoneyAmount)
+		return nil, fmt.Errorf("%s is an integer count of minor units (1999 for 19.99 EUR), not a string", vocabulary.MoneyAmount)
 	}
 	amount, err := asInt(rawAmount)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", vocabulary.MoneyAmount, err)
 	}
 	currency, _ := m[vocabulary.MoneyCurrency].(string)
-	if !vocabulary.ValidCurrency(currency) {
-		return nil, fmt.Errorf("%s is an ISO 4217 code, three capital letters (EUR)", vocabulary.MoneyCurrency)
-	}
-	rawDecimals, held := m[vocabulary.MoneyDecimals]
-	if !held {
-		return nil, fmt.Errorf("a money value needs %s, how many of the amount's digits follow the decimal point (2 for cents)", vocabulary.MoneyDecimals)
-	}
-	decimals, err := asInt(rawDecimals)
-	if err != nil || decimals < 0 || decimals > vocabulary.MaxMoneyDecimals {
-		return nil, fmt.Errorf("%s is an integer from 0 to %d", vocabulary.MoneyDecimals, vocabulary.MaxMoneyDecimals)
+	decimals, known := vocabulary.CurrencyDecimals(currency)
+	if !known {
+		return nil, fmt.Errorf("%s is an active ISO 4217 code, three capital letters (EUR)", vocabulary.MoneyCurrency)
 	}
 	if p.Min != nil || p.Max != nil {
 		r := moneyRat(amount, decimals)
@@ -731,13 +724,12 @@ func coerceMoney(p *vocabulary.Property, v any) (any, error) {
 	return map[string]any{
 		vocabulary.MoneyAmount:   amount,
 		vocabulary.MoneyCurrency: currency,
-		vocabulary.MoneyDecimals: decimals,
 	}, nil
 }
 
 // moneyRat is the exact value a money value denotes: amount / 10^decimals.
-func moneyRat(amount, decimals int64) *big.Rat {
-	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(decimals), nil)
+func moneyRat(amount int64, decimals int) *big.Rat {
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil)
 	return new(big.Rat).SetFrac(big.NewInt(amount), scale)
 }
 

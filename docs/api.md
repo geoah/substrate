@@ -510,10 +510,9 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   declared [property type](data-model.md#property-types). State properties
   filter here like any other. A `money` property takes `eq`, `in`, the four
   comparisons and `exists`, and each operand is itself a money value:
-  `{"price": {"gte": {"amount": 1000, "currency": "EUR", "decimals": 2}}}`
-  is every price of at least 10.00 EUR. The comparison holds within the
-  operand's currency and compares the exact number, so 10.0 at one decimal
-  equals 10.000 at three; a bare number carries no currency and is refused. `match` is the one operator that reads words
+  `{"price": {"gte": {"amount": 1000, "currency": "EUR"}}}` is every price
+  of at least 10.00 EUR. The comparison holds within the operand's currency;
+  a bare number carries no currency and is refused. `match` is the one operator that reads words
   rather than values: a query in the [search grammar](#the-search-grammar)
   against ONE property's own text, so `{"notes": {"match": "rack lay*"}}` is
   every record whose `notes` holds a word `rack` and a word starting `lay`,

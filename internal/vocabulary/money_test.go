@@ -7,7 +7,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-func TestMoneyDecimalKeepsTheScale(t *testing.T) {
+func TestMoneyDecimalPlacesThePoint(t *testing.T) {
 	for _, tc := range []struct {
 		amount   int64
 		decimals int
@@ -20,11 +20,24 @@ func TestMoneyDecimalKeepsTheScale(t *testing.T) {
 		{-1999, 2, "-19.99"},
 		{0, 2, "0.00"},
 		{7, 0, "7"},
-		{1, 18, "0.000000000000000001"},
+		{1, 4, "0.0001"},
 		{1<<53 - 1, 2, "90071992547409.91"},
 	} {
 		if got := vocabulary.MoneyDecimal(tc.amount, tc.decimals); got != tc.want {
 			t.Fatalf("MoneyDecimal(%d, %d) = %q, want %q", tc.amount, tc.decimals, got, tc.want)
+		}
+	}
+}
+
+func TestCurrencyDecimalsIsISO4217sMinorUnit(t *testing.T) {
+	for code, want := range map[string]int{"EUR": 2, "USD": 2, "JPY": 0, "KRW": 0, "KWD": 3, "BHD": 3, "CLF": 4} {
+		if got, ok := vocabulary.CurrencyDecimals(code); !ok || got != want {
+			t.Fatalf("CurrencyDecimals(%s) = %d, %v, want %d", code, got, ok, want)
+		}
+	}
+	for _, code := range []string{"eur", "XAU", "XTS", "XXX", "BTC", ""} {
+		if _, ok := vocabulary.CurrencyDecimals(code); ok {
+			t.Fatalf("CurrencyDecimals(%q) is known; a code with no minor unit places no point", code)
 		}
 	}
 }
@@ -35,21 +48,23 @@ func TestMoneyDecimalKeepsTheScale(t *testing.T) {
 // writes a different title than the live fold did.
 func TestFormatMoneyReadsEveryStoredShape(t *testing.T) {
 	for _, v := range []any{
-		map[string]any{"amount": int64(1999), "currency": "EUR", "decimals": int64(2)},
-		map[string]any{"amount": float64(1999), "currency": "EUR", "decimals": float64(2)},
-		map[string]any{"amount": json.Number("1999"), "currency": "EUR", "decimals": json.Number("2")},
+		map[string]any{"amount": int64(1999), "currency": "EUR"},
+		map[string]any{"amount": float64(1999), "currency": "EUR"},
+		map[string]any{"amount": json.Number("1999"), "currency": "EUR"},
 	} {
 		if got := vocabulary.FormatMoney(v); got != "19.99 EUR" {
 			t.Fatalf("FormatMoney(%#v) = %q, want %q", v, got, "19.99 EUR")
 		}
 	}
+	if got := vocabulary.FormatMoney(map[string]any{"amount": 500, "currency": "JPY"}); got != "500 JPY" {
+		t.Fatalf("yen = %q, want 500 JPY", got)
+	}
 	for _, v := range []any{
 		nil,
 		"19.99 EUR",
-		map[string]any{"amount": 19.99, "currency": "EUR", "decimals": 2},
-		map[string]any{"amount": 1999, "currency": "eur", "decimals": 2},
-		map[string]any{"amount": 1999, "currency": "EUR"},
-		map[string]any{"amount": 1999, "currency": "EUR", "decimals": 19},
+		map[string]any{"amount": 19.99, "currency": "EUR"},
+		map[string]any{"amount": 1999, "currency": "eur"},
+		map[string]any{"amount": 1999},
 	} {
 		if got := vocabulary.FormatMoney(v); got != "" {
 			t.Fatalf("FormatMoney(%#v) = %q, want nothing", v, got)
@@ -60,7 +75,7 @@ func TestFormatMoneyReadsEveryStoredShape(t *testing.T) {
 func TestMoneyDeclarations(t *testing.T) {
 	t.Run("every container and a bound", func(t *testing.T) {
 		ty := loadThing(t, `  properties:
-    price: {type: money, min: 0, default: {amount: 0, currency: EUR, decimals: 2}}
+    price: {type: money, min: 0, default: {amount: 0, currency: EUR}}
     history: {type: money, repeated: true}
     byRegion: {type: money, keyed: true}
     line:
