@@ -136,6 +136,11 @@ type dataset struct {
 	// cannot both start a fire: the second answers ErrConflict. A crash
 	// empties it, and the claim it leaves behind is retryable.
 	runningClaims sync.Map
+	// runningThreads holds the llm/thread ids an agent loop of this process
+	// runs now, each mapped to its loop, from the thread's opening until the
+	// loop returns (agentloop.go runAgent). A `running` thread outside it
+	// whose lease expired has no loop left to settle it (settleLostThreads).
+	runningThreads sync.Map
 	// resumingWebhooks is set while a dispatcher pass's resume of pending
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.

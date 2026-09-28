@@ -376,7 +376,8 @@ on the box, through the DSN.
 Five loops then run in-process: the trigger dispatcher every 5 seconds, garbage
 collection every 5 minutes, OAuth refresh and finalizer processing every
 minute, the resolution sweep (the recovery path for a resume that a restart or
-a lost lease dropped) every 2 minutes, and the embed-queue drain every minute,
+a lost lease dropped, and for a `running` thread whose run died with its lease
+expired) every 2 minutes, and the embed-queue drain every minute,
 whether or not any repository holds an embedding provider yet. The GC sweep
 also drops `idempotency_keys` rows past their 24 hour retention
 ([idempotency and retries](api.md#idempotency-and-retries)), and collects

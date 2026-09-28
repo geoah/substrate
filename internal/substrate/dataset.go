@@ -169,7 +169,8 @@ type Dataset interface {
 	ChatAgent(ctx context.Context, actor Actor, name, threadID, message string, emit func(AgentEvent)) (*AgentResult, error)
 	// SweepResolutions is the resume-recovery pass the service loop drives:
 	// settled threads whose newest resolution row postdates their settlement
-	// get their dropped continuation back.
+	// get their dropped continuation back, after a `running` thread whose
+	// lease expired with no live loop behind it settles to `error`.
 	SweepResolutions(ctx context.Context) (int, error)
 
 	// --- bundles ---

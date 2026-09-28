@@ -417,6 +417,8 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	if err != nil {
 		return nil, err
 	}
+	ds.runningThreads.Store(l.threadID, l)
+	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: l.threadID})
 
 	deadline := nowUTC().Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)

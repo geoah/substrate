@@ -473,6 +473,15 @@ delivery identifier plus the call path and the tool ordinal, so an effectful
 tool that honors keys never double-fires across a retry. Thread ids are trace
 ids only; they never enter a key.
 
+A thread whose run ends without settling it stays `running` until something
+does. At open, every `running` thread settles to `error` naming the stop. In a
+live process, the resolution sweep settles a `running` thread to `error` once
+its `leaseUntil` (the loop's deadline plus 30 seconds) has passed and no loop
+of this process holds it: a canceled request, a failed write on the way out or
+a panic leaves exactly that. Only the thread settles. The delivery's claim
+lists as interrupted and waits for a hand to retry or forget it
+([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+
 ## Providers
 
 An `llm/provider` row is one place completions are bought, as pure data:
