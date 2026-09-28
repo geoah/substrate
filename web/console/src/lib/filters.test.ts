@@ -112,8 +112,8 @@ describe("toRecordFilter", () => {
       properties: {
         price: {
           in: [
-            { amount: 1999, currency: "EUR", decimals: 2 },
-            { amount: 5, currency: "USD", decimals: 0 },
+            { amount: 1999, currency: "EUR" },
+            { amount: 500, currency: "USD" },
           ],
         },
       },

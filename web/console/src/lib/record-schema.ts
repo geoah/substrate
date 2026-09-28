@@ -31,6 +31,7 @@ import {
   checkMoney,
   moneyText,
   parseMoneyText,
+  splitMoneyText,
 } from "@/lib/money"
 import { coerceReferencePath, recordPath } from "@/lib/record-path"
 
@@ -911,6 +912,8 @@ export function parseValue(spec: PropSpec, text: string): ParsedValue {
       .map((s) => s.trim())
       .filter(Boolean)
       .map((s) => parseScalarText(spec, s))
+      // A line that holds no value yet (a money row with only its currency).
+      .filter((p) => p.error || p.value !== undefined)
     const bad = items.find((p) => p.error)
     if (bad?.error) return { error: bad.error }
     return items.length ? { value: items.map((p) => p.value) } : {}
@@ -922,6 +925,8 @@ export function parseValue(spec: PropSpec, text: string): ParsedValue {
 
 function parseScalarText(spec: PropSpec, text: string): ParsedValue {
   if (spec.kind === "money") {
+    // A currency chosen with no amount typed is no value yet.
+    if (!splitMoneyText(text).amount) return {}
     const parsed = parseMoneyText(text)
     if (parsed.error) return { error: parsed.error }
     const problem = checkItem(spec, parsed.value)

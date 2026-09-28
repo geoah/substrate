@@ -75,7 +75,7 @@ function coerceValue(raw: string, prop?: DeclaredProperty): unknown {
     if (raw === "false") return false
   }
   // Money compares as money, within its currency: `19.99 EUR` is the value
-  // {amount: 1999, currency: EUR, decimals: 2}, and text that is not one is
+  // {amount: 1999, currency: EUR}, and text that is not one is
   // sent as typed for the server to refuse by name.
   if (kind === "money") return parseMoneyText(raw).value ?? raw
   return raw

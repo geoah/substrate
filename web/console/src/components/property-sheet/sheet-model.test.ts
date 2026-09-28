@@ -187,15 +187,15 @@ describe("propertyWrite", () => {
       kind: "money",
     })
     const stored = [
-      { amount: 300, currency: "EUR", decimals: 2 },
-      { amount: 3250, currency: "EUR", decimals: 3 },
+      { amount: 300, currency: "EUR" },
+      { amount: 3250, currency: "KWD" },
     ]
     const item = { ...prices.spec, repeated: false }
-    expect(listItems(stored, item)).toEqual(["3.00 EUR", "3.250 EUR"])
-    expect(listWrite(prices, stored, ["3.00 EUR", "3.250 EUR"])).toEqual({})
+    expect(listItems(stored, item)).toEqual(["3.00 EUR", "3.250 KWD"])
+    expect(listWrite(prices, stored, ["3.00 EUR", "3.250 KWD"])).toEqual({})
     expect(listWrite(prices, stored, ["3.00 EUR", "4 usd"])).toEqual({
       properties: {
-        tags: [stored[0], { amount: 4, currency: "USD", decimals: 0 }],
+        tags: [stored[0], { amount: 400, currency: "USD" }],
       },
     })
     expect(listWrite(prices, stored, ["3.00"]).error).toMatch(/^Item 1: /)

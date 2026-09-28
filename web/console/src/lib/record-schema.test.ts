@@ -351,7 +351,7 @@ describe("blobref: the read shape applies back", () => {
 })
 
 describe("money", () => {
-  const cost = { amount: 1990, currency: "EUR", decimals: 2 }
+  const cost = { amount: 1990, currency: "EUR" }
 
   it("checks the stored shape and the bound on the number it denotes", () => {
     expect(controlFor(spec(wideKind, "cost"))).toBe("text")
@@ -372,9 +372,14 @@ describe("money", () => {
     expect(formatValue(one, cost)).toBe("19.90 EUR")
     expect(parseValue(one, "19.90 EUR")).toEqual({ value: cost })
     expect(parseValue(one, "-1 EUR").error).toMatch(/>= 0/)
-    expect(parseValue(one, "19.90").error).toMatch(/ISO 4217/)
+    expect(parseValue(one, "19.90").error).toBe("choose a currency")
+    // A currency chosen with no amount typed is no value yet.
+    expect(parseValue(one, "EUR")).toEqual({})
+    expect(parseValue(spec(wideKind, "costs"), "19.90 EUR\nEUR")).toEqual({
+      value: [cost],
+    })
     const many = spec(wideKind, "costs")
-    const list = [cost, { amount: 500, currency: "JPY", decimals: 0 }]
+    const list = [cost, { amount: 500, currency: "JPY" }]
     expect(formatValue(many, list)).toBe("19.90 EUR\n500 JPY")
     expect(parseValue(many, "19.90 EUR\n500 JPY")).toEqual({ value: list })
   })
@@ -382,7 +387,7 @@ describe("money", () => {
   it("seeds blank and shows the YAML shape as its example", () => {
     expect(seedValue(spec(wideKind, "cost"))).toBe("")
     expect(exampleFor(spec(wideKind, "cost"))).toBe(
-      "{amount: 1999, currency: EUR, decimals: 2}"
+      "{amount: 1999, currency: EUR}"
     )
   })
 })

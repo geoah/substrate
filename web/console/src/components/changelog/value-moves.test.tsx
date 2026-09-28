@@ -147,23 +147,19 @@ describe("ValueMoves", () => {
   })
 
   it("says money in the reader's currency, not as its JSON", () => {
-    const eur = (amount: number, decimals: number) => ({
-      amount,
-      currency: "EUR",
-      decimals,
-    })
+    const eur = (amount: number) => ({ amount, currency: "EUR" })
     show([
-      move({ name: "price", before: eur(300, 2), after: eur(350, 2) }),
+      move({ name: "price", before: eur(300), after: eur(350) }),
       move({
         name: "pastPrices",
         before: [],
-        after: [eur(3250, 3)],
-        added: [eur(3250, 3)],
+        after: [eur(325)],
+        added: [eur(325)],
       }),
     ])
     const row = screen.getByText("Price:").closest("[data-slot=value-move]")
     expect(row?.textContent).toMatch(/3\.00.*→.*3\.50/)
-    expect(screen.getByText("added").nextSibling?.textContent).toMatch(/3\.250/)
+    expect(screen.getByText("added").nextSibling?.textContent).toMatch(/3\.25/)
     expect(document.body.textContent).not.toContain("amount")
   })
 
