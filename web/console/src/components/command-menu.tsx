@@ -92,7 +92,7 @@ export function CommandMenu({
   const records = useQuery({
     ...searchQueryOptions(asked, {
       mode: "lexical",
-      purposes: searchPurposes({ technical, includeSystem }),
+      purposes: searchPurposes({ quick: true, technical, includeSystem }),
       first: HITS,
     }),
     enabled: open && asked.length > 0,

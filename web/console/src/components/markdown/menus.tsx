@@ -32,7 +32,7 @@ import { matchesWordPrefixes, typeAheadQuery } from "@/lib/command-match"
 import { kindByIdentity } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { displayName, displayPlural, untitled } from "@/lib/kind-names"
-import { EVERYDAY_PURPOSES, searchPurposes } from "@/lib/search"
+import { QUICK_PURPOSES, searchPurposes } from "@/lib/search"
 import { openRecordPicker } from "./record-link"
 import { SuggestionMenu, type MenuKeys, type MenuRow } from "./suggestion-menu"
 
@@ -228,6 +228,7 @@ export function RecordMenu({ editor, range, query, keysRef }: MenuProps) {
       kinds,
       purposes: searchPurposes({
         narrowed: Boolean(kind),
+        quick: true,
         technical,
         includeSystem: false,
       }),
@@ -239,7 +240,7 @@ export function RecordMenu({ editor, range, query, keysRef }: MenuProps) {
   const recent = useQuery({
     ...recordsQueryOptions({
       kinds: kinds ?? [],
-      filter: kind ? undefined : { purposes: EVERYDAY_PURPOSES },
+      filter: kind ? undefined : { purposes: QUICK_PURPOSES },
       orderBy: "updatedAt:desc",
       first: HITS,
     }),
