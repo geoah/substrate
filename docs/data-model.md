@@ -317,6 +317,7 @@ are written and filtered the same way.
 | `markdown`         | `text` renderers treat as Markdown                          |
 | `int`, `float`     | numbers, optional `min`/`max`; an `int` is a safe integer, refused past 2^53 - 1 in magnitude because JSON rides float64 |
 | `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded |
+| `money`            | an amount in a currency: `{amount: 1999, currency: EUR, decimals: 2}` is 19.99 EUR; optional `min`/`max` on the number it denotes |
 | `bool`             | true/false                                                  |
 | `datetime`, `date` | RFC 3339 instants / civil dates; the year must fall in Postgres's storable range (4713 BC to 294276 AD) |
 | `duration`         | ISO 8601 without years/months (`PT47M12S`, `P2DT3H`, `P1W`); a day is exactly 24h, and the stored form is one canonical decomposition |
@@ -367,6 +368,27 @@ kind:
 Validation is on the value alone, so a bare-string list stays valid, and an
 empty label leaves the client to humanize the value. Declaration order is
 render order.
+
+**Money.** A `money` value is three members, all required and nothing
+else: `amount`, an integer count of minor units under the same safe-integer
+bound as an `int`; `currency`, an ISO 4217 code of three capital letters; and
+`decimals`, how many of the amount's digits follow the decimal point, from 0
+to 18. The value below is 19.99 EUR:
+
+```yaml
+price:
+  amount: 1999
+  currency: EUR
+  decimals: 2
+```
+
+The scale is data, never derived from the currency and never rescaled: 1990 at
+2 decimals is stored as written, and so is a fuel price at 3. A `min` or `max`
+bounds the exact number (`min: 0` refuses a refund of -2.50), and `pattern`
+and `values` are refused on the declaration. A
+[filter](api.md#the-filter-grammar) compares within one currency and an order
+compares the exact number. A `displayTemplate` renders the value as
+`19.99 EUR`, and the console edits it as that same text.
 
 **Secrets.** A `secret` property stores a credential. Writes take a string
 like any other property, but the material never lands in the record: the

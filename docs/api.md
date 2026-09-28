@@ -508,7 +508,12 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   the full grammar (`eq`, `gt`,
   `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
   declared [property type](data-model.md#property-types). State properties
-  filter here like any other. `match` is the one operator that reads words
+  filter here like any other. A `money` property takes `eq`, `in`, the four
+  comparisons and `exists`, and each operand is itself a money value:
+  `{"price": {"gte": {"amount": 1000, "currency": "EUR", "decimals": 2}}}`
+  is every price of at least 10.00 EUR. The comparison holds within the
+  operand's currency and compares the exact number, so 10.0 at one decimal
+  equals 10.000 at three; a bare number carries no currency and is refused. `match` is the one operator that reads words
   rather than values: a query in the [search grammar](#the-search-grammar)
   against ONE property's own text, so `{"notes": {"match": "rack lay*"}}` is
   every record whose `notes` holds a word `rack` and a word starting `lay`,
@@ -563,7 +568,9 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   ([above](#who-points-at-a-record-referencing)).
 
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
-a JSON list of `{property, desc}`). Only declared properties filter and order:
+a JSON list of `{property, desc}`). A number sorts as a number and an instant
+as an instant; a `money` property sorts by the exact number it denotes, across
+currencies, so a list that wants one currency filters on it. Only declared properties filter and order:
 **filterable, indexed, and declared are the same set**, so a query that would
 be slow is one the grammar cannot express.
 

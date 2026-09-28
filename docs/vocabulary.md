@@ -369,7 +369,8 @@ once. The narrowing diffs that refuse:
   pattern change on a secret property refuses while a record holds one
 - raising or adding `min:`, and lowering or adding `max:`, while records hold
   a number outside the new bound; a `decimal` is compared against the bound's
-  float64 value, as `coerceDecimal` compares it
+  float64 value, as `coerceDecimal` compares it, and a `money` value by the
+  number it denotes, as `coerceMoney` compares it
 - every one of those inside an object property's declared `fields:`, at each
   level the dialect nests: a dropped field, a field whose datatype or container
   changed, a field's removed enum value, a field's tightened keys, a field's

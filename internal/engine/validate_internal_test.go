@@ -107,6 +107,77 @@ func TestCoerceDecimalIsExact(t *testing.T) {
 	}
 }
 
+// The money contract: exactly {amount, currency, decimals}, the amount an
+// integer count of minor units under the int bound, the currency an ISO 4217
+// code, the scale data that is never rescaled, and a declared bound held
+// against the exact value the three denote.
+func TestCoerceMoneyIsThreeExactMembers(t *testing.T) {
+	p := &vocabulary.Property{Name: "price", Datatype: vocabulary.DatatypeMoney}
+	money := func(amount, currency, decimals any) map[string]any {
+		return map[string]any{"amount": amount, "currency": currency, "decimals": decimals}
+	}
+	for _, tc := range []struct {
+		name string
+		in   map[string]any
+		want map[string]any
+	}{
+		{"cents", money(1999, "EUR", 2), money(int64(1999), "EUR", int64(2))},
+		{"the scale is data", money(1990, "EUR", 2), money(int64(1990), "EUR", int64(2))},
+		{"a float64 integer from the JSON door", money(float64(1999), "USD", float64(2)), money(int64(1999), "USD", int64(2))},
+		{"a json.Number", money(json.Number("-500"), "JPY", json.Number("0")), money(int64(-500), "JPY", int64(0))},
+		{"the finest scale", money(1, "ETH", 18), money(int64(1), "ETH", int64(18))},
+		{"the largest safe amount", money(int64(1<<53-1), "EUR", 2), money(int64(1<<53-1), "EUR", int64(2))},
+	} {
+		got, err := coerceScalar(p, tc.in)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("%s: got %#v, want %#v", tc.name, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		in   any
+		want string
+	}{
+		{"a bare number", float64(19.99), "is an object"},
+		{"a decimal string", "19.99", "is an object"},
+		{"a fractional amount", money(19.99, "EUR", 2), "amount: expected an integer"},
+		{"an amount as a string", money("1999", "EUR", 2), "not a string"},
+		{"an unsafe amount", money(json.Number("9007199254740993"), "EUR", 2), "safe integer"},
+		{"no amount", map[string]any{"currency": "EUR", "decimals": 2}, "needs amount"},
+		{"a lowercase currency", money(1999, "eur", 2), "ISO 4217"},
+		{"a symbol for a currency", money(1999, "€", 2), "ISO 4217"},
+		{"no currency", map[string]any{"amount": 1999, "decimals": 2}, "ISO 4217"},
+		{"no decimals", map[string]any{"amount": 1999, "currency": "EUR"}, "needs decimals"},
+		{"negative decimals", money(1999, "EUR", -1), "from 0 to 18"},
+		{"too many decimals", money(1999, "EUR", 19), "from 0 to 18"},
+		{"fractional decimals", money(1999, "EUR", 1.5), "from 0 to 18"},
+		{"an undeclared member", map[string]any{"amount": 1999, "currency": "EUR", "decimals": 2, "symbol": "€"}, `"symbol" is none of them`},
+	} {
+		if _, err := coerceScalar(p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: got %v, want it to name %q", tc.name, err, tc.want)
+		}
+	}
+	// 0.1 is not a dyadic rational, so the bound is compared at its exact binary
+	// value, the way a decimal's is: 10 cents sits just below a max of 0.1.
+	zero, dime := 0.0, 0.1
+	bounded := &vocabulary.Property{Name: "price", Datatype: vocabulary.DatatypeMoney, Min: &zero, Max: &dime}
+	if _, err := coerceScalar(bounded, money(-1, "EUR", 2)); err == nil || !strings.Contains(err.Error(), ">= 0") {
+		t.Fatalf("min: got %v, want the bound named", err)
+	}
+	if _, err := coerceScalar(bounded, money(0, "EUR", 2)); err != nil {
+		t.Fatalf("min boundary: %v", err)
+	}
+	if _, err := coerceScalar(bounded, money(10, "EUR", 2)); err != nil {
+		t.Fatalf("0.10 under a max of 0.1: %v", err)
+	}
+	if _, err := coerceScalar(bounded, money(101, "EUR", 3)); err == nil || !strings.Contains(err.Error(), "<= 0.1") {
+		t.Fatalf("max: got %v, want the bound named", err)
+	}
+}
+
 // The duration contract: ISO 8601 is the ONE grammar, in and out. Years and
 // months are refused (no fixed length), Go's own syntax is refused (a second
 // grammar for the same word), and the stored form is a deterministic ISO
