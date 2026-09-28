@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import {
   DEFAULT_SEARCH_MODE,
   EVERYDAY_PURPOSES,
+  QUICK_PURPOSES,
   searchPurposes,
   SEARCH_MODE_DESCRIPTION,
   SEARCH_MODE_DETAIL,
@@ -70,6 +71,26 @@ describe("what a search reaches", () => {
     expect(searchPurposes({ technical: false, includeSystem: true })).toEqual(
       EVERYDAY_PURPOSES
     )
+  })
+
+  it("is the primary kinds alone in ⌘K and the @ picker", () => {
+    expect(QUICK_PURPOSES).toEqual(["primary"])
+    for (const technical of [false, true]) {
+      expect(
+        searchPurposes({ quick: true, technical, includeSystem: false })
+      ).toEqual(QUICK_PURPOSES)
+    }
+    expect(
+      searchPurposes({ quick: true, technical: true, includeSystem: true })
+    ).toBeUndefined()
+    expect(
+      searchPurposes({
+        quick: true,
+        narrowed: true,
+        technical: false,
+        includeSystem: false,
+      })
+    ).toBeUndefined()
   })
 
   it("searches a collection picked by name whatever its purpose", () => {

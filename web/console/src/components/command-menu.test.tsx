@@ -176,12 +176,12 @@ describe("CommandMenu", () => {
     await waitFor(() => expect(headings()).not.toContain("Collections"))
   })
 
-  it("searches what you keep and its details, not the substrate's machinery", async () => {
+  it("searches the primary kinds alone, not their details or the substrate's machinery", async () => {
     renderMenu()
     await type("lisb")
     await screen.findByText("Prepare travel for Lisbon")
     expect(filters.map((f) => f && JSON.parse(f))).toEqual([
-      { purposes: ["primary", "supporting"] },
+      { purposes: ["primary"] },
     ])
     // the switch that widens it is technical mode's
     expect(

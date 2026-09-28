@@ -5,7 +5,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { Editor } from "@tiptap/core"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@/lib/api/http", async (importOriginal) => {
@@ -30,6 +30,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
   }
 })
 
+import { request } from "@/lib/api/http"
 import { RecordMenu } from "./menus"
 import type { MenuKeys } from "./suggestion-menu"
 
@@ -70,5 +71,25 @@ describe("RecordMenu", () => {
     expect(
       keysRef.current?.(new KeyboardEvent("keydown", { key: "Enter" }))
     ).toBe(false)
+  })
+
+  it("reaches the primary kinds alone, recent and searched", async () => {
+    vi.mocked(request).mockClear()
+    const { retype } = renderMenu("")
+    await screen.findByRole("option", { name: /Draft the notes/ })
+    retype("gra")
+    const paths = () => vi.mocked(request).mock.calls.map((c) => String(c[1]))
+    await waitFor(() =>
+      expect(paths().some((p) => p.includes("q="))).toBe(true)
+    )
+    // The recent read and the search; the registry read carries no purpose.
+    const reads = paths().filter((p) => /[?&](q|orderBy)=/.test(p))
+    const filters = reads.map((p) =>
+      new URL(p, "http://localhost").searchParams.get("filter")
+    )
+    expect(filters.map((f) => f && JSON.parse(f))).toEqual([
+      { purposes: ["primary"] },
+      { purposes: ["primary"] },
+    ])
   })
 })
