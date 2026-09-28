@@ -981,7 +981,11 @@ the exec path needs nothing open at all.
   recorded checksum. It reports the head `(seq, checksum)` or every finding
   by seq, digest, ref or file name, never repairs the repository it judges
   (opening the engine still applies pending schema migrations, as every
-  operator command does), and exits nonzero on any finding. It is safe beside
+  operator command does), and exits nonzero on any finding. It reads the
+  segment files three times (the sidecar digests, the walk, the comparison
+  with the table) and on a long history prints a progress line to stderr
+  every thirty seconds naming the segment, the seq and the bytes read so
+  far. It is safe beside
   a running server; a finding about the heads taken mid-write can be a
   transaction in flight, and one about a blob can be an upload the sweep
   just collected, so run it twice before believing one. Run it on every
@@ -995,7 +999,9 @@ the exec path needs nothing open at all.
   whole `verify` first and refuses on any finding, then copies the manifest,
   every segment and sidecar, every committed sealed file and the bytes of
   every `stored` blob, each hashed against its digest on the way, and verifies
-  the copy's changelog and sealed files before writing `snapshot.json`. The
+  the copy's changelog and sealed files before writing `snapshot.json`. It
+  prints the same progress lines as `verify` while it verifies the source and
+  reads the copy back. The
   copy holds what the fold needs and nothing else: a pending upload, a
   tombstoned blob's bytes and a staged sealed file are not copied. It refuses
   a destination that already holds the repository, so a snapshot is never a
@@ -1024,7 +1030,8 @@ the exec path needs nothing open at all.
   fold: each trigger's cursor lands at the last delivery it acknowledged, its
   parked failures and a paged drain's resume row come back, and the next pass
   re-reads the rows after the cursor, which deliver nothing. OAuth flows in
-  flight are left alone. Stop the server
+  flight are left alone. On a long history it prints a progress line to
+  stderr every thirty seconds, as `verify` does. Stop the server
   first: it opens the repository as its changelog writer and refuses while
   the server holds the lock.
 - **`user reset <repository>`** is the answer to a user who has lost both

@@ -129,14 +129,23 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 		found(fmt.Sprintf("import: the import of the repository directory has not completed (marked at file head %d): the fold is not the changelog's until the server's next boot resumes it", markedHead))
 	}
 
-	// The files first, whole: every line's sum, every sidecar, the seq
-	// sequence. A directory that does not open is one finding, and the table
-	// is still walked so the report says what the table holds.
-	fileReport, fileErr := changelogfile.Verify(changelogfile.ChangelogDir(dir))
-	report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
-	report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
+	// The files first, whole: every finished segment's digest against its
+	// sidecar at the open, then every line's sum and the seq sequence in one
+	// walk of the opened Log, which the table pass below reads again rather
+	// than opening the directory a second time. A directory that does not
+	// open is one finding, and the table is still walked so the report says
+	// what the table holds.
+	log, fileErr := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
+	if fileErr == nil {
+		prog := s.progress("substrate: verifying the changelog files", "repository", repo.ID, "fileHead", log.Head())
+		var fileReport changelogfile.Report
+		fileReport, fileErr = log.Verify(prog.tick)
+		report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
+		report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
+	}
 	if fileErr != nil {
 		found(fmt.Sprintf("file: %v", fileErr))
+		log = nil
 	}
 	// A finding, not a refusal: beside a live server the tail can be a
 	// transaction the writer is still writing, and verify repairs nothing.
@@ -144,17 +153,21 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 		found(fmt.Sprintf("file: the active segment ends in an incomplete transaction: %d bytes past the last complete one, %d complete line(s) among them",
 			report.TruncatedBytes, report.TruncatedEntries))
 	}
-	var log *changelogfile.Log
-	if fileErr == nil {
-		if log, err = changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir)); err != nil {
-			found(fmt.Sprintf("file: %v", err))
-			log = nil
-		}
-	}
 
 	// The table, row by row, each checksum recomputed and, where the file has
 	// the seq, compared with the line's; and the transaction frame, so a
-	// `txn` the boot's writer would refuse is named here first.
+	// `txn` the boot's writer would refuse is named here first. The file is
+	// read through one cursor across every page: a Read per page opens the
+	// page's segment again and skips to the page from byte 0, which on a
+	// history of millions of entries read each segment hundreds of times
+	// (issue 745).
+	var cur *changelogfile.Cursor
+	if log != nil {
+		c := log.Cursor(0)
+		defer func() { _ = c.Close() }()
+		cur = c
+	}
+	prog := s.progress("substrate: verifying the changelog table against the files", "repository", repo.ID)
 	expected := int64(1)
 	var openTxn int64
 	for {
@@ -166,14 +179,17 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 			break
 		}
 		fileSums := map[int64][32]byte{}
-		if log != nil {
+		if cur != nil {
 			first, last := page[0].entry.Seq, page[len(page)-1].entry.Seq
-			entries, err := log.Read(first-1, int(last-first+1))
+			entries, err := cur.Until(last)
 			if err != nil {
 				found(fmt.Sprintf("file: reading seq %d..%d: %v", first, last, err))
-				log = nil
+				log, cur = nil, nil
 			}
 			for _, e := range entries {
+				if e.Seq < first {
+					continue
+				}
 				if _, sum, err := changelogfile.Encode(e); err == nil {
 					fileSums[e.Seq] = sum
 				}
@@ -231,6 +247,11 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 				found(fmt.Sprintf("seq %d: the file's checksum is not the table's", row.entry.Seq))
 			}
 		}
+		pos := changelogfile.Position{Seq: report.Head}
+		if cur != nil {
+			pos = cur.Position()
+		}
+		prog.tick(pos)
 	}
 	if openTxn != 0 {
 		found(fmt.Sprintf("the table ends inside the transaction ending at seq %d", openTxn))

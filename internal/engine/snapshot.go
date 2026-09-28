@@ -244,7 +244,12 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 	// that vouches for it is written: every line's checksum and every
 	// sidecar, every sealed file the source's and opened under the DEK, every
 	// blob hashed.
-	copied, err := changelogfile.Verify(changelogfile.ChangelogDir(partial))
+	copiedLog, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(partial))
+	if err != nil {
+		return "", fmt.Errorf("%w: the changelog: %w", ErrSnapshotCopyDamaged, err)
+	}
+	prog := s.progress("substrate: verifying the snapshot's changelog", "repository", repo.ID, "head", report.Head)
+	copied, err := copiedLog.Verify(prog.tick)
 	if err != nil {
 		return "", fmt.Errorf("%w: the changelog: %w", ErrSnapshotCopyDamaged, err)
 	}

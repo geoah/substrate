@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 )
 
 // MaxLineBytes caps one line. A reader that met a longer one would either
@@ -250,41 +249,12 @@ func (l *Log) unchanged() (bool, error) {
 // limit of them (every one when limit is not positive). It opens only the
 // segments that hold the range and skips lines below the range without
 // decoding them, which a segment's gapless seqs make sound; every returned
-// line's checksum is verified.
+// line's checksum is verified. It is one page: a caller that pages through
+// the whole log holds a Cursor instead, which reads each segment once.
 func (l *Log) Read(after int64, limit int) ([]Entry, error) {
-	if after < 0 {
-		after = 0
-	}
-	if after >= l.head {
-		return nil, nil
-	}
-	// The segment holding seq after+1: the last one whose first seq is at
-	// or below it.
-	idx := sort.Search(len(l.segments), func(i int) bool { return l.segments[i].First > after+1 }) - 1
-	var out []Entry
-	expected := after + 1
-	for i := idx; i < len(l.segments); i++ {
-		seg := l.segments[i]
-		if seg.last < expected {
-			continue
-		}
-		skip := expected - seg.First
-		err := l.scanSegment(seg, skip, func(e Entry) (bool, error) {
-			if e.Seq != expected {
-				return false, fmt.Errorf("%w: %s has seq %d, want %d", ErrSeqGap, seg.Name, e.Seq, expected)
-			}
-			out = append(out, e)
-			expected++
-			return expected <= l.head && (limit <= 0 || len(out) < limit), nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		if expected > l.head || (limit > 0 && len(out) >= limit) {
-			break
-		}
-	}
-	return out, nil
+	c := l.Cursor(after)
+	defer func() { _ = c.Close() }()
+	return c.Next(limit)
 }
 
 // Walk streams every entry from seq 1 to the head, verifying each line's
@@ -292,10 +262,17 @@ func (l *Log) Read(after int64, limit int) ([]Entry, error) {
 // transaction before it, and no transaction crosses a segment), and stops at
 // the first error fn returns.
 func (l *Log) Walk(fn func(Entry) error) error {
+	return l.walk(func(e Entry, _ Position) error { return fn(e) })
+}
+
+// walk is Walk with the reader's position beside each entry, for a caller
+// that reports progress.
+func (l *Log) walk(fn func(Entry, Position) error) error {
 	var expected int64 = 1
 	var frame txnFrame
+	var before int64
 	for _, seg := range l.segments {
-		err := l.scanSegment(seg, 0, func(e Entry) (bool, error) {
+		err := l.scanSegment(seg, 0, func(e Entry, off int64) (bool, error) {
 			if e.Seq != expected {
 				return false, fmt.Errorf("%w: %s has seq %d, want %d", ErrSeqGap, seg.Name, e.Seq, expected)
 			}
@@ -303,7 +280,7 @@ func (l *Log) Walk(fn func(Entry) error) error {
 				return false, fmt.Errorf("%s: %w", seg.Name, err)
 			}
 			expected++
-			return true, fn(e)
+			return true, fn(e, Position{Segment: seg.Name, Seq: e.Seq, Bytes: before + off})
 		})
 		if err != nil {
 			return err
@@ -311,40 +288,29 @@ func (l *Log) Walk(fn func(Entry) error) error {
 		if frame.open != 0 {
 			return fmt.Errorf("%w: %s ends inside the transaction ending at seq %d", ErrTxnFraming, seg.Name, frame.open)
 		}
+		before += seg.end
 	}
 	return nil
 }
 
 // scanSegment reads one segment up to its end, skips the first skip lines
-// without decoding them, and hands every following entry to fn until fn
-// returns false.
-func (l *Log) scanSegment(seg segment, skip int64, fn func(Entry) (bool, error)) error {
-	f, err := os.Open(filepath.Join(l.dir, seg.Name))
+// without decoding them, and hands every following entry to fn, with the
+// offset just past its line, until fn returns false.
+func (l *Log) scanSegment(seg segment, skip int64, fn func(Entry, int64) (bool, error)) error {
+	r, err := openSegment(l.dir, seg, skip)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	lr := newLineReader(io.NewSectionReader(f, 0, seg.end), MaxLineBytes)
+	defer func() { _ = r.close() }()
 	for {
-		line, start, complete, err := lr.next()
+		e, err := r.next()
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("changelogfile: %s: line at byte %d: %w", seg.Name, start, err)
+			return err
 		}
-		if !complete {
-			return fmt.Errorf("%w: %s: torn line at byte %d", ErrSegmentDigest, seg.Name, start)
-		}
-		if skip > 0 {
-			skip--
-			continue
-		}
-		e, _, err := Decode(line)
-		if err != nil {
-			return fmt.Errorf("changelogfile: %s: line at byte %d: %w", seg.Name, start, err)
-		}
-		more, err := fn(e)
+		more, err := fn(e, r.off())
 		if err != nil {
 			return err
 		}
@@ -377,9 +343,21 @@ func Verify(dir string) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	return l.Verify(nil)
+}
+
+// Verify walks every line of an opened Log, verifying each checksum, the seq
+// sequence and the transaction framing, and calls progress, when it is not
+// nil, with the position after each entry. A caller that already holds the
+// Log verifies it here rather than through the package's Verify, which opens
+// the directory again and digests every finished segment a second time.
+func (l *Log) Verify(progress func(Position)) (Report, error) {
 	r := Report{Segments: len(l.segments), Head: l.head, TruncatedBytes: l.TruncatedBytes, TruncatedEntries: l.TruncatedEntries}
-	err = l.Walk(func(Entry) error {
+	err := l.walk(func(_ Entry, pos Position) error {
 		r.Entries++
+		if progress != nil {
+			progress(pos)
+		}
 		return nil
 	})
 	return r, err
