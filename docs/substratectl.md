@@ -139,7 +139,14 @@ output applies back unchanged.
   document with `metadata.id` is put at that id; without one it creates. Apply
   is `put`: it **merges and never prunes**; deletion is only ever the explicit
   `delete` verb. Vocabulary documents apply too ([vocabulary](vocabulary.md)): they ride
-  the batch vocabulary verb as one transaction. `--as <authority>` rehomes the
+  the batch vocabulary verb as one transaction, and each one there is a
+  whole declaration. A declaration document naming neither `data.authority`
+  nor `data.package` is a change to the stored one: `apply` reads it, replaces
+  the keys the document writes and sends the result, so `data:
+  {hiddenFromChat: true}` on an agent's id changes that one key. On an agent,
+  a function or a bundle, keys written under `data.properties` read the same.
+  A document naming either key is sent as written, so a key dropped from the
+  file is dropped from the declaration. `--as <authority>` rehomes the
   input first: every mention of the one authority its declarations are
   written under becomes the one named, which is `import` (below) run
   client-side over files on disk. An input declaring under two authorities is

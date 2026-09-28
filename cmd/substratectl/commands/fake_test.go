@@ -202,6 +202,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("GET /tokens", f.handleTokens)
 	mux.HandleFunc("DELETE /tokens/{id}", f.handleRevoke)
 	mux.HandleFunc("GET "+tasksPath+"/{id}", f.handleGet)
+	// One stored declaration, read the way `apply` completes a partial one.
+	mux.HandleFunc("GET "+apiPrefix+"/"+vocabulary.PackageCore+"/{name}/{id}", f.handleGet)
 	mux.HandleFunc("PUT "+tasksPath+"/{id}", f.handlePut)
 	mux.HandleFunc("PATCH "+tasksPath+"/{id}", f.handlePatch)
 	mux.HandleFunc("DELETE "+tasksPath+"/{id}", f.handleDelete)
