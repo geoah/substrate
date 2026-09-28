@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 18
+  version: 19
   purpose: internal
   names:
     singular: agent
@@ -214,6 +214,19 @@ data:
     hiddenFromChat:
       type: bool
       description: only callable by other agents; withheld from the chat surface
+    # Why this agent exists, in a kind's three words (decision record 0139).
+    # Advisory like a kind's: the loader holds the values, clients read it to
+    # decide what they list, and nothing on the server acts on it. Absent
+    # reads as primary, so an agent nobody classified is still listed.
+    purpose:
+      type: enum
+      values:
+        - primary
+        - supporting
+        - internal
+      description: why this agent exists; primary (someone chats with it),
+        supporting (it works for another agent or a trigger) or internal (machinery);
+        absent reads as primary
     # A resolution on this agent's thread-borne records (a decided proposal,
     # an answered interaction) writes the system row either way; `resume` says
     # whether it also CONTINUES the thread. A resume is a paid agent turn, so

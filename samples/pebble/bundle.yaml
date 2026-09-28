@@ -67,7 +67,7 @@ data:
   #    provider allowlist (decision record 0097).
   # 11: every kind's description opens with one plain sentence
   # saying what a record is to a person.
-  version: 11
+  version: 12
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -334,6 +334,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/pebble/assistant
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: pebble
   description: >-

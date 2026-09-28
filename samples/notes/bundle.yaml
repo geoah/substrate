@@ -40,7 +40,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: notes
-  version: 10
+  version: 11
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -176,6 +176,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/notes/titler
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: notes
   description: >-
@@ -201,6 +202,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/notes/notekeeper
 data:
+  purpose: primary
   authority: samples.substrate.reamde.dev
   package: notes
   description: >-

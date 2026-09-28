@@ -28,7 +28,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: readinglist
-  version: 13
+  version: 14
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -296,6 +296,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/readinglist/pageclassifier
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: readinglist
   description: Work out whether a page is an article, a tool or a video, then
@@ -327,6 +328,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/readinglist/curator
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: readinglist
   description: Ask the owner whether a classified page belongs on the reading
@@ -361,6 +363,7 @@ kind: substrate.reamde.dev/core/agent
 metadata:
   id: samples.substrate.reamde.dev/readinglist/weeklyrollup
 data:
+  purpose: supporting
   authority: samples.substrate.reamde.dev
   package: readinglist
   description: Sum up the pages read this week and propose it as the week's
