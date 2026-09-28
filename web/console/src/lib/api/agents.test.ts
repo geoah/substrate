@@ -88,6 +88,16 @@ describe("parseAgentEvent", () => {
     expect(ev?.kind).toBe("done")
     expect(ev?.result?.status).toBe("ok")
   })
+  it("reads a compacted event with its counts", () => {
+    expect(
+      parseAgentEvent('{"kind":"compacted","tokensBefore":180000,"covered":42}')
+    ).toEqual({ kind: "compacted", tokensBefore: 180000, covered: 42 })
+  })
+  it("drops a count that is not a number rather than passing it on", () => {
+    expect(
+      parseAgentEvent('{"kind":"compacted","tokensBefore":"lots","covered":3}')
+    ).toEqual({ kind: "compacted", covered: 3 })
+  })
   it("returns null on blank lines, heartbeats and garbage", () => {
     expect(parseAgentEvent("")).toBeNull()
     expect(parseAgentEvent("   ")).toBeNull()
@@ -117,6 +127,24 @@ describe("streamChat post-200 failures", () => {
     ])
     expect(r.error).toBe("the loop failed")
     expect(r.done).toBe(false)
+  })
+
+  it("forwards a compacted event mid-run as an ordinary event", async () => {
+    const r = await runStream([
+      '{"kind":"thread","thread":"t-1"}',
+      '{"kind":"compacted","tokensBefore":900,"covered":6}',
+      '{"kind":"delta","text":"hi"}',
+      '{"kind":"done","result":{"reply":"hi","thread":"t-1","status":"ok","effects":0,"turns":2,"toolCalls":0,"promptTokens":1,"completionTokens":1,"totalTokens":2,"costUSD":0}}',
+    ])
+    expect(r.error).toBeUndefined()
+    expect(r.done).toBe(true)
+    expect(r.events.map((e) => e.kind)).toEqual([
+      "thread",
+      "compacted",
+      "delta",
+      "done",
+    ])
+    expect(r.events[1]).toMatchObject({ tokensBefore: 900, covered: 6 })
   })
 
   it("settles onDone on a clean run carrying a result", async () => {

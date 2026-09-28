@@ -118,6 +118,16 @@ const (
 	AgentPromptMaxBytes = 64 << 10
 )
 
+// The compaction bounds. ReserveTokens is the headroom kept free under the
+// model's context window for the next reply, KeepRecentTokens the newest
+// history a compaction leaves verbatim. Both are token counts, so one cap
+// fits both.
+const (
+	DefaultAgentReserveTokens    = 16384
+	DefaultAgentKeepRecentTokens = 20000
+	MaxAgentCompactionTokens     = 1000000
+)
+
 // Agent is one parsed agent: the loop's declaration, nothing more.
 type Agent struct {
 	Name string
@@ -144,6 +154,9 @@ type Agent struct {
 	Subagents []string
 	// Budgets bounds one invocation.
 	Budgets AgentBudgets
+	// Compaction says when a thread's replayed history is folded into a
+	// summary, and how much of it stays verbatim.
+	Compaction AgentCompaction
 	// Emit is `permissions.writes` parsed: every tool-call effect is held to it,
 	// and it names which request types `propose` may emit. Empty means the agent
 	// writes nothing.
@@ -204,6 +217,16 @@ type AgentBudgets struct {
 	Depth           int
 }
 
+// AgentCompaction is `data.compaction` parsed. A thread compacts when its
+// context would leave less than ReserveTokens of the model's window free; the
+// newest KeepRecentTokens of history stay verbatim. A model whose provider row
+// declares no contextWindow never compacts, whatever this says.
+type AgentCompaction struct {
+	Enabled          bool
+	ReserveTokens    int
+	KeepRecentTokens int
+}
+
 // Identity is "<authority>/<package>/<name>".
 func (a *Agent) Identity() string { return a.Package + "/" + a.Name }
 
@@ -238,7 +261,7 @@ var agentDataKeys = map[string]bool{
 	"authority": true, "package": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
 	"tools": true, "subagents": true, "budgets": true, "permissions": true,
-	"hiddenFromChat": true, "resume": true, "purpose": true,
+	"hiddenFromChat": true, "resume": true, "purpose": true, "compaction": true,
 }
 
 // deletedAgentKeys are the removed keys, each naming what replaced it. An
@@ -258,6 +281,10 @@ var agentPermissionKeys = map[string]bool{"reads": true, "writes": true}
 
 var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
+}
+
+var agentCompactionKeys = map[string]bool{
+	"enabled": true, "reserveTokens": true, "keepRecentTokens": true,
 }
 
 // agentToolKeys is a tool entry's key set: `function` names the tool, `name` and
@@ -403,6 +430,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 		a.Emit = append(a.Emit, t)
 	}
 	if !l.parseAgentBudgets(where, d.Data, a) {
+		return nil
+	}
+	if !l.parseAgentCompaction(where, d.Data, a) {
 		return nil
 	}
 	// `permissions.reads` reuses the function grant's shape verbatim.
@@ -638,6 +668,34 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 	}
 	if a.Budgets.Depth, ok = l.boundedInt(where+": data.budgets.depth", budgets, "depth",
 		DefaultAgentDepth, MaxAgentDepth); !ok {
+		return false
+	}
+	return true
+}
+
+// parseAgentCompaction reads `data.compaction`. Absent, or `enabled` absent,
+// means on: a model without a declared context window never compacts anyway,
+// so the default costs nothing where it cannot act. keepRecentTokens may be
+// 0, which summarizes everything up to the newest run.
+func (l *loader) parseAgentCompaction(where string, data map[string]any, a *Agent) bool {
+	c := mmap(data, "compaction")
+	l.checkKeys(where+": data.compaction", c, agentCompactionKeys)
+	a.Compaction.Enabled = true
+	if v, has := c["enabled"]; has {
+		b, isBool := v.(bool)
+		if !isBool {
+			l.errf("%s: data.compaction.enabled: %v is not a bool", where, v)
+			return false
+		}
+		a.Compaction.Enabled = b
+	}
+	var ok bool
+	if a.Compaction.ReserveTokens, ok = l.boundedInt(where+": data.compaction.reserveTokens", c, "reserveTokens",
+		DefaultAgentReserveTokens, MaxAgentCompactionTokens); !ok {
+		return false
+	}
+	if a.Compaction.KeepRecentTokens, ok = l.boundedIntFrom(where+": data.compaction.keepRecentTokens", c, "keepRecentTokens",
+		DefaultAgentKeepRecentTokens, 0, MaxAgentCompactionTokens); !ok {
 		return false
 	}
 	return true

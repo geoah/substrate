@@ -222,7 +222,14 @@ export interface AgentResult {
 
 /** One streamed loop event (substrate.AgentEvent). */
 export interface AgentEvent {
-  kind: "thread" | "delta" | "toolStarted" | "toolFinished" | "done" | "error"
+  kind:
+    | "thread"
+    | "delta"
+    | "toolStarted"
+    | "toolFinished"
+    | "compacted"
+    | "done"
+    | "error"
   /** Rides the first event: the thread id, minted or continued. */
   thread?: string
   /** A streamed content delta. */
@@ -237,6 +244,11 @@ export interface AgentEvent {
   args?: string
   ok?: boolean
   output?: string
+  /** Ride the compacted event: the loop folded older turns into a `summary`
+   * message row. `tokensBefore` is the context size that triggered it and
+   * `covered` the number of message rows the summary stands in for. */
+  tokensBefore?: number
+  covered?: number
   /** Rides the done event. */
   result?: AgentResult
   /** Rides the error event: a post-200 loop failure. */
@@ -256,6 +268,11 @@ export function parseAgentEvent(line: string): AgentEvent | null {
   if (typeof parsed !== "object" || parsed === null) return null
   const obj = parsed as Record<string, unknown>
   if (typeof obj.kind !== "string") return null
+  // The counts are read as numbers or not at all: a line that spells one
+  // some other way must not reach a sentence that formats it.
+  for (const key of ["tokensBefore", "covered"]) {
+    if (key in obj && typeof obj[key] !== "number") delete obj[key]
+  }
   return obj as unknown as AgentEvent
 }
 

@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -53,9 +52,10 @@ func newAnthropic(cfg Config) *anthropicClient {
 }
 
 // scrubbed rebuilds a provider error with the row's bearer taken back out,
-// rebuilt rather than %w-wrapped so no unwrap can recover the key.
+// rebuilt rather than %w-wrapped so no unwrap can recover the key. A context
+// overflow is classified on the scrubbed text (providerError).
 func (c *anthropicClient) scrubbed(err error) error {
-	return errors.New(providersecret.Scrub(c.apiKey, err.Error()))
+	return providerError(providersecret.Scrub(c.apiKey, err.Error()))
 }
 
 func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
@@ -230,10 +230,16 @@ func toolInput(arguments string) any {
 }
 
 func anthropicResult(msg *anthropic.Message) *Result {
-	res := &Result{Usage: &Usage{
-		PromptTokens:     int(msg.Usage.InputTokens),
-		CompletionTokens: int(msg.Usage.OutputTokens),
-	}}
+	res := &Result{
+		Usage: &Usage{
+			PromptTokens:     int(msg.Usage.InputTokens),
+			CompletionTokens: int(msg.Usage.OutputTokens),
+			// This wire reports cache reads and writes beside input_tokens,
+			// never inside it, and the window holds all three.
+			ContextTokens: int(msg.Usage.InputTokens + msg.Usage.CacheReadInputTokens + msg.Usage.CacheCreationInputTokens),
+		},
+		Stop: anthropicStop(msg.StopReason),
+	}
 	var content strings.Builder
 	for _, block := range msg.Content {
 		switch block.Type {
@@ -247,4 +253,21 @@ func anthropicResult(msg *anthropic.Message) *Result {
 	}
 	res.Content = content.String()
 	return res
+}
+
+// anthropicStop maps the wire's stop_reason onto the neutral set. An empty
+// reason stays empty: a stream cut before its message_delta said nothing.
+func anthropicStop(reason anthropic.StopReason) string {
+	switch reason {
+	case "":
+		return ""
+	case anthropic.StopReasonEndTurn, anthropic.StopReasonStopSequence:
+		return StopEnd
+	case anthropic.StopReasonMaxTokens:
+		return StopLength
+	case anthropic.StopReasonToolUse:
+		return StopToolCall
+	default:
+		return StopOther
+	}
 }

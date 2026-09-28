@@ -43,7 +43,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: llm
-  version: 22
+  version: 23
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:

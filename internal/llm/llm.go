@@ -12,7 +12,9 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -124,8 +126,83 @@ type ToolCall struct {
 
 // Usage is the turn's token tally.
 type Usage struct {
+	// PromptTokens is the input the wire bills at the input price: on the
+	// anthropic wire that excludes cache reads and writes, which it reports
+	// apart, and the cost stamp prices exactly this number.
 	PromptTokens     int
 	CompletionTokens int
+	// ContextTokens is the whole input the model saw, cache included: what
+	// the context window holds, and so what compaction measures against it.
+	// The openai wire's prompt_tokens already counts cached tokens, so there
+	// it equals PromptTokens.
+	ContextTokens int
+}
+
+// The neutral stop reasons a Result carries. Each wire maps its own words
+// onto these, and anything it adds later reads as StopOther rather than as a
+// clean end.
+const (
+	// StopEnd is a natural end: the model finished, or hit a stop sequence.
+	StopEnd = "end"
+	// StopLength is a reply cut off by the output ceiling. Its content is a
+	// prefix of what the model meant to write.
+	StopLength = "length"
+	// StopToolCall is a turn that ended to call tools.
+	StopToolCall = "toolCall"
+	// StopOther is every other reason, a refusal or a filter among them.
+	StopOther = "other"
+)
+
+// ErrContextTooLong marks a provider error that says the request did not fit
+// the model's context window. The adapters rebuild every provider error as a
+// scrubbed string, so this sentinel is the one fact about the failure a
+// caller can still test for with errors.Is: it is what lets the agent loop
+// compact and retry instead of failing the thread.
+var ErrContextTooLong = errors.New("llm: context too long")
+
+// contextTooLongMarkers are the phrasings the wires and the gateways that
+// copy them use for a request past the window, matched in lower case.
+var contextTooLongMarkers = []string{
+	"prompt is too long",
+	"prompt too long",
+	"context_length_exceeded",
+	"context length exceeded",
+	"exceeds the context window",
+	"maximum context length",
+	"too many tokens",
+	"input is too long",
+	"request too large",
+}
+
+// rateLimitMarkers veto the classification: "too many tokens" and "request
+// too large" also appear in rate-limit refusals, and compacting a thread
+// because a minute's quota ran out would throw its history away for nothing.
+var rateLimitMarkers = []string{"rate limit", "rate_limit", "too many requests", "throttl"}
+
+// rateLimitStatus is the 429 status as a whole number: an overflow message
+// quotes token counts, and a count such as 214290 must not veto it.
+var rateLimitStatus = regexp.MustCompile(`\b429\b`)
+
+// providerError is the error an adapter returns for a provider failure whose
+// text is already scrubbed of the row's key. It wraps ErrContextTooLong when
+// the text says the context overflowed, and is a plain error otherwise. The
+// text is passed in scrubbed, so nothing here can reach the key.
+func providerError(scrubbed string) error {
+	lower := strings.ToLower(scrubbed)
+	if rateLimitStatus.MatchString(lower) {
+		return errors.New(scrubbed)
+	}
+	for _, m := range rateLimitMarkers {
+		if strings.Contains(lower, m) {
+			return errors.New(scrubbed)
+		}
+	}
+	for _, m := range contextTooLongMarkers {
+		if strings.Contains(lower, m) {
+			return fmt.Errorf("%w: %s", ErrContextTooLong, scrubbed)
+		}
+	}
+	return errors.New(scrubbed)
 }
 
 // Params are the request knobs the contract carries, parsed once from the
@@ -162,6 +239,9 @@ type Result struct {
 	Content   string
 	ToolCalls []ToolCall
 	Usage     *Usage
+	// Stop is why the turn ended, one of the Stop constants; empty when the
+	// wire said nothing.
+	Stop string
 }
 
 // Client is one configured place to buy completions from.

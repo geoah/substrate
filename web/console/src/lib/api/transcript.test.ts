@@ -5,12 +5,14 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  compactionOf,
   decisionNoticeOf,
   deliveryNoticeOf,
   EMPTY_OVERLAY,
   interactionIdOf,
   interactionNoticeOf,
   proposedRequestId,
+  pushCompacted,
   pushDelta,
   pushToolStart,
   requestIdOf,
@@ -555,5 +557,95 @@ describe("the live overlay", () => {
       ok: false,
       output: "refused",
     })
+  })
+})
+
+describe("summary turns", () => {
+  const summary = (over: Record<string, unknown> = {}) =>
+    row({
+      role: "summary",
+      content: "## Goal\nShip the report.",
+      covers: { from: "m-first", through: "m-last" },
+      tokensBefore: 180000,
+      model: "claude-opus-5",
+      promptTokens: 2000,
+      completionTokens: 400,
+      turn: 4,
+      ...over,
+    })
+
+  it("gives a summary row its own turn, carrying what it folded", () => {
+    const turns = transcriptOf([
+      row({ role: "user", content: "hi", turn: 0 }),
+      row({ role: "assistant", content: "hello", turn: 1 }),
+      summary(),
+    ])
+    expect(turns.map((t) => t.role)).toEqual(["user", "assistant", "summary"])
+    expect(turns[2]).toMatchObject({
+      content: "## Goal\nShip the report.",
+      tools: [],
+      compaction: {
+        from: "m-first",
+        through: "m-last",
+        tokensBefore: 180000,
+        model: "claude-opus-5",
+        promptTokens: 2000,
+        completionTokens: 400,
+      },
+    })
+  })
+
+  it("never lets a summary join the assistant turn around it", () => {
+    const turns = transcriptOf([
+      row({
+        role: "assistant",
+        toolCalls: [call("c1", "query", "{}")],
+        turn: 1,
+      }),
+      summary(),
+      row({
+        role: "tool",
+        content: "{}",
+        toolCallId: "c1",
+        name: "query",
+        turn: 2,
+      }),
+    ])
+    // The tool row still finds its call across the summary, and the summary
+    // stays a turn of its own.
+    expect(turns.map((t) => t.role)).toEqual(["assistant", "summary"])
+    expect(turns[0].tools[0].ok).toBe(true)
+    expect(turns[1].tools).toEqual([])
+  })
+
+  it("reads a partial or malformed summary row without throwing", () => {
+    expect(
+      compactionOf(summary({ covers: "m1..m9", tokensBefore: "many" }))
+    ).toEqual({
+      from: undefined,
+      through: undefined,
+      tokensBefore: undefined,
+      model: "claude-opus-5",
+      promptTokens: 2000,
+      completionTokens: 400,
+    })
+  })
+
+  it("marks a live compaction and opens a new assistant turn after it", () => {
+    let live = pushDelta(EMPTY_OVERLAY, "Let me look", 1)
+    live = pushCompacted(live, { tokensBefore: 900, covered: 6 }, 2)
+    live = pushDelta(live, "Done.", 3)
+    expect(live.turns.map((t) => [t.role, t.content])).toEqual([
+      ["assistant", "Let me look"],
+      ["summary", ""],
+      ["assistant", "Done."],
+    ])
+    expect(live.turns[1].compaction).toEqual({ tokensBefore: 900, covered: 6 })
+  })
+
+  it("opens a new turn for a tool call that starts after a compaction", () => {
+    let live = pushCompacted(EMPTY_OVERLAY, {}, 1)
+    live = pushToolStart(live, call("c1", "query", "{}"), 2)
+    expect(live.turns.map((t) => t.role)).toEqual(["summary", "assistant"])
   })
 })

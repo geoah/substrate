@@ -50,9 +50,10 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 // scrubbed rebuilds a provider error with the row's bearer taken back out. The
 // error is REBUILT, not %w-wrapped: wrapping would carry the original, key and
 // all, to anything downstream that unwraps it, and the leak this closes ends
-// in a stored record and a host log.
+// in a stored record and a host log. A context overflow is classified on the
+// scrubbed text (providerError).
 func (c *openaiClient) scrubbed(err error) error {
-	return errors.New(providersecret.Scrub(c.apiKey, err.Error()))
+	return providerError(providersecret.Scrub(c.apiKey, err.Error()))
 }
 
 // headerDoer injects the provider row's extra headers on every request. The
@@ -120,12 +121,15 @@ func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRe
 	if err != nil {
 		return nil, c.scrubbed(err)
 	}
-	usage := &Usage{PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens}
+	usage := openaiUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 	if len(resp.Choices) == 0 {
 		return &Result{Usage: usage}, errors.New("empty response: no choices")
 	}
 	msg := resp.Choices[0].Message
-	return &Result{Content: msg.Content, ToolCalls: neutralToolCalls(msg.ToolCalls), Usage: usage}, nil
+	return &Result{
+		Content: msg.Content, ToolCalls: neutralToolCalls(msg.ToolCalls), Usage: usage,
+		Stop: openaiStop(resp.Choices[0].FinishReason),
+	}, nil
 }
 
 func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionRequest, onDelta func(string)) (*Result, error) {
@@ -139,6 +143,9 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	defer func() { _ = stream.Close() }()
 	var content strings.Builder
 	var usage *Usage
+	// The finish reason rides one chunk near the end, and the usage chunk
+	// after it carries none, so the last one seen is the turn's.
+	var finish openai.FinishReason
 	acc := &toolCallAccumulator{byIndex: map[int]*openai.ToolCall{}}
 	for {
 		chunk, err := stream.Recv()
@@ -149,10 +156,13 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			return nil, c.scrubbed(err)
 		}
 		if chunk.Usage != nil {
-			usage = &Usage{PromptTokens: chunk.Usage.PromptTokens, CompletionTokens: chunk.Usage.CompletionTokens}
+			usage = openaiUsage(chunk.Usage.PromptTokens, chunk.Usage.CompletionTokens)
 		}
 		if len(chunk.Choices) == 0 {
 			continue
+		}
+		if fr := chunk.Choices[0].FinishReason; fr != "" {
+			finish = fr
 		}
 		delta := chunk.Choices[0].Delta
 		if delta.Content != "" {
@@ -161,7 +171,33 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 		}
 		acc.absorb(delta.ToolCalls)
 	}
-	return &Result{Content: content.String(), ToolCalls: neutralToolCalls(acc.finalize()), Usage: usage}, nil
+	return &Result{
+		Content: content.String(), ToolCalls: neutralToolCalls(acc.finalize()), Usage: usage,
+		Stop: openaiStop(finish),
+	}, nil
+}
+
+// openaiUsage builds the neutral tally. This wire's prompt_tokens already
+// counts cached input, so it is the context size as well as the billed input.
+func openaiUsage(prompt, completion int) *Usage {
+	return &Usage{PromptTokens: prompt, CompletionTokens: completion, ContextTokens: prompt}
+}
+
+// openaiStop maps the wire's finish_reason onto the neutral set. An empty
+// reason stays empty: a gateway that sends none said nothing.
+func openaiStop(reason openai.FinishReason) string {
+	switch reason {
+	case "":
+		return ""
+	case openai.FinishReasonStop:
+		return StopEnd
+	case openai.FinishReasonLength:
+		return StopLength
+	case openai.FinishReasonToolCalls, openai.FinishReasonFunctionCall:
+		return StopToolCall
+	default:
+		return StopOther
+	}
 }
 
 // openaiMessages maps the neutral turns onto the wire's roles 1:1. The system

@@ -62,7 +62,11 @@ const (
 	AgentEventDelta        = "delta"
 	AgentEventToolStarted  = "toolStarted"
 	AgentEventToolFinished = "toolFinished"
-	AgentEventDone         = "done"
+	// AgentEventCompacted reports a summary row the loop wrote over older
+	// history: the thread, the context size that triggered it, and how many
+	// message rows it replaces in replay.
+	AgentEventCompacted = "compacted"
+	AgentEventDone      = "done"
 	// AgentEventError terminates a stream that already sent its 200: the loop
 	// failed after the status line was gone, so the failure travels as its own
 	// event rather than masquerading as a done with no result.
@@ -95,4 +99,9 @@ type AgentEvent struct {
 	// Error rides the error event: a post-200 loop failure the client routes to
 	// its error path instead of settling a blank assistant turn.
 	Error string `json:"error,omitempty"`
+	// TokensBefore and Covered ride the compacted event: the context size in
+	// tokens that triggered the compaction, and the number of message rows
+	// the new summary row covers.
+	TokensBefore int `json:"tokensBefore,omitempty"`
+	Covered      int `json:"covered,omitempty"`
 }

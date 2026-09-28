@@ -103,6 +103,11 @@ data:
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
   `maxToolCalls` (default 32, max 256), `deadlineSeconds` (default 120, max
   600), and `depth` (default 3, max 3).
+- optional **`compaction:`** bounds a thread's replayed history:
+  `enabled` (default `true`), `reserveTokens` (default 16384, max 1000000)
+  and `keepRecentTokens` (default 20000, max 1000000)
+  ([threads](#threads-messages-and-cost)). It acts only on a model whose
+  provider `pricing` entry declares `contextWindow`.
 - **`permissions:`**, what the agent is allowed to do while it runs: a
   function's grant, minus the three an LLM loop has no body to spend.
   - **`writes:`**, which record kinds it may create or change, the change
@@ -165,8 +170,8 @@ data:
 Because vocabulary is records, a parsed agent projects to a row the console
 lists and creates like any other, and **the properties are the declaration.**
 The row holds the manifest's own keys, one property per key: `params`, `tools`,
-`budgets` and `permissions` are declared properties like `prompt` and `model`,
-and the loader rebuilds the registry from exactly these. There is no
+`budgets`, `compaction` and `permissions` are declared properties like `prompt`
+and `model`, and the loader rebuilds the registry from exactly these. There is no
 `definition` blob and no projected mirror beside it, so what an author writes is
 what gets stored, and a write that names the retired blob is refused rather than
 half-obeyed.
@@ -456,8 +461,9 @@ is written as the loop runs under the agent's actor, carrying `agent`,
 `ok`/`overbudget`/`error`), `agentDepth`, the tallies (`turns`, `toolCalls`,
 the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. A `message` carries role (`user`, `assistant`,
-`tool`, or the engine-written `system`), content, turn, the tool-call audit,
-the engine-stamped `changes`, and the required `thread` it belongs to.
+`tool`, or the engine-written `system` and `summary`), content, turn, the
+tool-call audit, the engine-stamped `changes`, and the required `thread` it
+belongs to.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 
@@ -473,6 +479,26 @@ child thread carries only its own. Pricing is data on the provider row, keyed
 by model id, never a table in code. The loop terminates on the final tool-free
 reply, any budget, or its deadline; over-budget is a settled outcome (thread
 `overbudget` with a reason), never a park.
+
+**A long thread compacts**
+([decision 0138](decisions/0138-a-compacted-thread-keeps-its-rows-and-replays-a-summary-message-over-the-range-it-covers.md)).
+When a chat or resumed thread's context passes its model's `contextWindow`
+minus the agent's `compaction.reserveTokens`, the loop asks the thread's own
+model, with no tools, to summarize the older turns, and writes the answer as
+one `summary` message row. The loop checks at settle (the run's first
+completion's context tokens plus the reply), at open (an estimate of four
+characters per token), and when the provider refuses a completion as too long,
+where it compacts and retries that completion once. The newest
+`keepRecentTokens` of history stay verbatim, the cut falls only before a user
+turn, and a run with an unanswered tool call, a pending interaction or an
+undecided proposal is never summarized away. The row's `covers` names the
+first and last message rows it replaces; those rows stay as the audit, and
+replay sends the summary in their place. The summarizer's tokens and cost land
+on the thread's tallies, and the chat stream reports each compaction as one
+`compacted` event carrying `tokensBefore` and `covered`, the number of rows
+covered. A summary with no content, a tool call or a `length` stop is
+discarded: at settle and at open the run carries on uncompacted, and after an
+overflow the thread settles `error` as it did before compaction existed.
 
 An agent delivery is **at-least-once** where a function delivery is
 effectively-once: the loop's writes are incremental and the cursor advances
@@ -513,11 +539,14 @@ the transport.
 because one provider row serves many models: `claude-opus-5` on an
 `anthropic`-wire row, the gateway's alias (`anthropic/claude-opus-5`) on a row
 that speaks to a gateway. A model absent from the table leaves the thread's
-`costUSD` at 0 and the token tally authoritative.
+`costUSD` at 0 and the token tally authoritative. An entry's optional
+`contextWindow` is the model's context window in tokens; a model without one
+never [compacts](#threads-messages-and-cost). A new repository's seeded rows
+carry it for their models.
 
 ```yaml
 pricing:
-  - {model: claude-opus-5, inputPer1M: "5", outputPer1M: "25"}
+  - {model: claude-opus-5, inputPer1M: "5", outputPer1M: "25", contextWindow: 200000}
 ```
 
 The two rates are `decimal` properties, so they are written as quoted strings:
@@ -724,13 +753,15 @@ call, something durable is minted — the thread is the trace.
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat` with `{"thread"?, "message"}`
 opens or continues a thread and streams the loop: `application/x-ndjson`, one
 JSON object per line keyed by `kind` (`thread` first, `delta` carrying `text`
-per streamed token, `toolStarted` and `toolFinished` around each dispatch, one
-`done` carrying the settled result under `result`). A loop that fails after the
+per streamed token, `toolStarted` and `toolFinished` around each dispatch,
+`compacted` when the loop summarizes older turns, one `done` carrying the
+settled result under `result`). A loop that fails after the
 `200` status line has already gone out terminates the stream with an `error`
 event instead, the same choice the
 [changelog](changelog.md#frames-and-the-horizon) makes, so a failure is never a
 `done` with no result. A continued thread replays its prose history (user and
-assistant turns; tool exchanges are audit, not context) and keeps one running
+assistant turns, with a `summary` row standing in for the older turns it
+covers; tool exchanges are audit, not context) and keeps one running
 tally on the thread row; one active turn per thread is enforced by a lease, so
 a second concurrent turn is refused as a conflict, leaving nothing on the
 thread, and a crashed turn's expired lease is taken over by the next

@@ -9,19 +9,31 @@
  * screen. Within a turn, its tool calls sit above its text, because one
  * completion produces both and the text is what follows the calls. */
 
-import { CheckCircle2Icon, XCircleIcon } from "lucide-react"
+import {
+  CheckCircle2Icon,
+  ChevronRightIcon,
+  FoldVerticalIcon,
+  XCircleIcon,
+} from "lucide-react"
 
 import { AgentMark } from "@/components/agent/agent-mark"
 import { ChangesList } from "@/components/agent/changes"
 import { MessageText } from "@/components/agent/message-text"
 import { ToolCallCard } from "@/components/agent/tool-call"
 import { TriggerContext } from "@/components/agent/trigger-context"
+import { IdText } from "@/components/identity/id-text"
 import { RecordRef } from "@/components/identity/record-ref"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   decisionNoticeOf,
   deliveryNoticeOf,
   interactionNoticeOf,
+  type CompactionView,
   type TurnView,
 } from "@/lib/api/transcript"
 import type { SubstrateRecord } from "@/lib/api/types"
@@ -91,6 +103,84 @@ function SystemTurn({ turn }: { turn: TurnView }) {
   )
 }
 
+/** What a compaction cost and covered, in sentences, for technical mode. */
+function compactionSentences(c: CompactionView): string[] {
+  const out: string[] = []
+  if (c.covered !== undefined)
+    out.push(
+      `It stands in for ${c.covered.toLocaleString()} ${c.covered === 1 ? "message" : "messages"}.`
+    )
+  if (c.tokensBefore !== undefined)
+    out.push(
+      `The conversation had reached ${c.tokensBefore.toLocaleString()} tokens.`
+    )
+  const used =
+    c.promptTokens !== undefined || c.completionTokens !== undefined
+      ? (c.promptTokens ?? 0) + (c.completionTokens ?? 0)
+      : undefined
+  if (c.model && used !== undefined)
+    out.push(
+      `${c.model} wrote the summary with ${used.toLocaleString()} tokens.`
+    )
+  else if (c.model) out.push(`${c.model} wrote the summary.`)
+  else if (used !== undefined)
+    out.push(`Writing the summary took ${used.toLocaleString()} tokens.`)
+  return out
+}
+
+/** The engine's fold of older turns: one quiet line where it happened. The
+ * turns it covers stay above it as they were; the summary the model reads in
+ * their place opens under the line, folded until asked for. A live
+ * `compacted` event has no text yet, so it shows the line alone until the
+ * stored row replaces it. */
+function SummaryTurn({ turn }: { turn: TurnView }) {
+  const [technical] = useTechnicalDetails()
+  const facts = turn.compaction ?? {}
+  const sentences = technical ? compactionSentences(facts) : []
+  const expandable = turn.content.trim() !== ""
+  const line = (
+    <>
+      <FoldVerticalIcon className="size-3.5 shrink-0 text-faint" />
+      <span>Earlier conversation compacted</span>
+    </>
+  )
+  return (
+    <Collapsible
+      data-slot="compaction"
+      className="group/summary flex flex-col items-center gap-1.5 text-[12.5px] text-muted-foreground"
+    >
+      {expandable ? (
+        <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 hover:text-foreground">
+          {line}
+          <ChevronRightIcon className="size-3.5 shrink-0 text-faint transition-transform group-data-open/summary:rotate-90" />
+        </CollapsibleTrigger>
+      ) : (
+        <div className="flex items-center gap-1.5">{line}</div>
+      )}
+      {sentences.length > 0 && (
+        <p className="max-w-[85%] text-center text-[11.5px] text-faint">
+          {sentences.join(" ")}
+        </p>
+      )}
+      {technical && facts.from && facts.through && (
+        <p className="flex max-w-[85%] flex-wrap items-center justify-center gap-1 text-[11.5px] text-faint">
+          <span>Covers</span>
+          <IdText value={facts.from} />
+          <span>through</span>
+          <IdText value={facts.through} />
+        </p>
+      )}
+      {expandable && (
+        <CollapsibleContent className="w-full max-w-[680px]">
+          <div className="rounded-lg border bg-panel px-3.5 py-2.5 text-left text-sm leading-relaxed text-foreground">
+            <MessageText text={turn.content} />
+          </div>
+        </CollapsibleContent>
+      )}
+    </Collapsible>
+  )
+}
+
 function UserTurn({ turn }: { turn: TurnView }) {
   return (
     <div
@@ -153,6 +243,7 @@ function AgentReply({
 type Group =
   | { type: "user"; turn: TurnView }
   | { type: "system"; turn: TurnView }
+  | { type: "summary"; turn: TurnView }
   | { type: "trigger"; turn: TurnView }
   | { type: "agent"; key: string; turns: TurnView[] }
 
@@ -172,6 +263,10 @@ function groupTurns(turns: TurnView[]): Group[] {
     }
     if (turn.role === "system") {
       out.push({ type: "system", turn })
+      return
+    }
+    if (turn.role === "summary") {
+      out.push({ type: "summary", turn })
       return
     }
     const last = out[out.length - 1]
@@ -212,6 +307,8 @@ export function Transcript({
             return <UserTurn key={group.turn.key} turn={group.turn} />
           case "system":
             return <SystemTurn key={group.turn.key} turn={group.turn} />
+          case "summary":
+            return <SummaryTurn key={group.turn.key} turn={group.turn} />
           default:
             return (
               <AgentReply

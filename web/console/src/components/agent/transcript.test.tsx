@@ -4,7 +4,7 @@
  * records it names as their marks, and the substrate's own decisions as a
  * quiet line. */
 
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -25,6 +25,12 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
+const prefs = vi.hoisted(() => ({ technical: false }))
+vi.mock("@/hooks/use-console-preferences", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/use-console-preferences")>()),
+  useTechnicalDetails: () => [prefs.technical, () => {}],
+}))
+
 import type { TurnView } from "@/lib/api/transcript"
 import { Transcript } from "./transcript"
 
@@ -36,7 +42,10 @@ const turn = (over: Partial<TurnView>): TurnView => ({
   ...over,
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  prefs.technical = false
+})
 
 describe("the transcript", () => {
   it("folds consecutive agent turns into one reply under one mark", () => {
@@ -110,5 +119,82 @@ describe("the transcript", () => {
       />
     )
     expect(screen.getByText("You dismissed the change to")).toBeTruthy()
+  })
+
+  it("shows a summary as one folded line that opens to the summary text", () => {
+    const { container } = render(
+      <Transcript
+        agentId="ada.localhost/llm/substrate"
+        turns={[
+          turn({ content: "What is left?" }),
+          turn({ key: "a1", role: "assistant", content: "Two things." }),
+          turn({
+            key: "s1",
+            role: "summary",
+            content: "## Goal\nShip the **report**.",
+            compaction: { from: "m1", through: "m9", tokensBefore: 180000 },
+          }),
+          turn({ key: "a2", role: "assistant", content: "Next one." }),
+        ]}
+      />
+    )
+    const toggle = screen.getByRole("button", {
+      name: "Earlier conversation compacted",
+    })
+    expect(screen.queryByText("report")).toBeNull()
+    // The summary splits the agent's turns: it is not something it said.
+    expect(
+      container.querySelectorAll('[data-slot="agent-message"]')
+    ).toHaveLength(2)
+    // Everyday mode says nothing about ranges or tokens.
+    expect(screen.queryByText(/tokens/)).toBeNull()
+    fireEvent.click(toggle)
+    expect(container.querySelector("strong")?.textContent).toBe("report")
+  })
+
+  it("shows a live compaction as the same line, with nothing to open", () => {
+    render(
+      <Transcript
+        turns={[
+          turn({
+            key: "live-c1",
+            role: "summary",
+            compaction: { tokensBefore: 900, covered: 6 },
+          }),
+        ]}
+      />
+    )
+    expect(screen.getByText("Earlier conversation compacted")).toBeTruthy()
+    expect(screen.queryByRole("button")).toBeNull()
+  })
+
+  it("says what a compaction covered and cost in technical mode", () => {
+    prefs.technical = true
+    render(
+      <Transcript
+        turns={[
+          turn({
+            key: "s1",
+            role: "summary",
+            content: "Summary.",
+            compaction: {
+              from: "m1",
+              through: "m9",
+              tokensBefore: 180000,
+              model: "claude-opus-5",
+              promptTokens: 2000,
+              completionTokens: 400,
+            },
+          }),
+        ]}
+      />
+    )
+    expect(
+      screen.getByText(
+        `The conversation had reached ${(180000).toLocaleString()} tokens. claude-opus-5 wrote the summary with ${(2400).toLocaleString()} tokens.`
+      )
+    ).toBeTruthy()
+    expect(screen.getByText("m1")).toBeTruthy()
+    expect(screen.getByText("m9")).toBeTruthy()
   })
 })

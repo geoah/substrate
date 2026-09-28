@@ -22,13 +22,17 @@ data:
     # row's, and one row serves several. gpt-5 takes minimal..high and refuses
     # `none`; the gpt-5.6 family takes `none` and needs it to put function
     # tools on a chat completion. An agent names what its own model accepts.
+    # contextWindow is the model's window in tokens: what lets a thread on
+    # that model compact (docs/agents.md). A model without one never compacts.
     pricing:
       - model: gpt-5
         inputPer1M: "1.25"
         outputPer1M: "10"
+        contextWindow: 400000
       - model: gpt-5-mini
         inputPer1M: "0.25"
         outputPer1M: "2"
+        contextWindow: 400000
 ---
 # Anthropic, natively.
 kind: substrate.reamde.dev/llm/provider
@@ -45,12 +49,15 @@ data:
       - model: claude-opus-5
         inputPer1M: "5"
         outputPer1M: "25"
+        contextWindow: 200000
       - model: claude-sonnet-5
         inputPer1M: "3"
         outputPer1M: "15"
+        contextWindow: 200000
       - model: claude-haiku-4-5
         inputPer1M: "1"
         outputPer1M: "5"
+        contextWindow: 200000
 ---
 # Gemini on Google's OpenAI-compatible endpoint. Same wire as openai, different
 # baseURL — the row is data, not a new adapter.
@@ -66,6 +73,8 @@ data:
       - model: gemini-2.5-pro
         inputPer1M: "1.25"
         outputPer1M: "10"
+        contextWindow: 1048576
       - model: gemini-2.5-flash
         inputPer1M: "0.15"
         outputPer1M: "0.60"
+        contextWindow: 1048576
