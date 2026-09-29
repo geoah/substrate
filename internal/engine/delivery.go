@@ -1,9 +1,7 @@
 package engine
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,9 +41,11 @@ import (
 // A park re-states the chain's row with the cursor whole (parkTx), because a
 // parked failure is the handle a retry resumes from and a park is rare where
 // pages are not. A replay therefore brings a parked drain back at its last
-// committed page, and a drain that stopped between pages without parking (a
-// crash, a shutdown) back with no position: its next delivery starts the
-// body over from its first page under a fresh budget.
+// committed page. A drain that stopped between pages without parking (a
+// crash, a shutdown) comes back at its page from a rebuild, which keeps the
+// cursor the table held when its digest is the one the entry names, and with
+// no position from an import into an empty database: its next delivery starts
+// the body over from its first page under a fresh budget.
 //
 // One position is deliberately not in the ledger: the SCAN position a record
 // trigger moves past rows that did not match its source (functions.go
@@ -120,7 +120,7 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 			    effects = EXCLUDED.effects, bytes = EXCLUDED.bytes, started_at = EXCLUDED.started_at,
 			    trigger_id = EXCLUDED.trigger_id, kind = EXCLUDED.kind, identity = EXCLUDED.identity,
 			    updated_at = EXCLUDED.updated_at`,
-			p.Chain, p.storedCursor(), int64(p.Pages), int64(p.Version), int64(p.Effects), int64(p.Bytes),
+			p.Chain, p.storedCursor(t.keptCursors), int64(p.Pages), int64(p.Version), int64(p.Effects), int64(p.Bytes),
 			p.StartedAt.UTC(), op.ID, p.Kind, p.Identity, t.now)
 		return true, err
 	case foldUnpage:
@@ -460,9 +460,8 @@ func (t *txn) pageTx(owner pagedOwner, chain string, cursor any, version, pages,
 	if err != nil {
 		return fmt.Errorf("paged cursor: %w", err)
 	}
-	sum := sha256.Sum256(raw)
 	_, err = t.fold(foldOp{Kind: foldPage, Ref: typeTrigger, ID: owner.triggerID, Page: &foldPageRow{
-		Chain: chain, CursorSHA256: hex.EncodeToString(sum[:]), CursorBytes: foldInt(len(raw)), staged: raw,
+		Chain: chain, CursorSHA256: cursorDigest(raw), CursorBytes: foldInt(len(raw)), staged: raw,
 		Version: foldInt(version), Pages: foldInt(pages),
 		Effects: foldInt(effects), Bytes: foldInt(bytes), StartedAt: startedAt.UTC(),
 		Kind: owner.kind, Identity: owner.identity,

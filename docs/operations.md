@@ -1072,8 +1072,8 @@ the exec path needs nothing open at all.
   fold: each trigger's cursor lands at the last delivery it acknowledged, its
   parked failures and a parked drain's resume row come back, and the next pass
   re-reads the rows after the cursor, which deliver nothing. A drain that
-  stopped between pages without parking comes back with no cursor and starts
-  over from its first page. OAuth flows in
+  stopped between pages without parking keeps the cursor the database holds,
+  because its last page entry names that cursor's SHA-256. OAuth flows in
   flight are left alone. On a long history it prints a progress line to
   stderr every thirty seconds, as `verify` does. Stop the server
   first: it opens the repository as its changelog writer and refuses while

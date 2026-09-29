@@ -2,7 +2,9 @@ package engine
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -293,9 +295,11 @@ type foldFailure struct {
 // writes one per page, so the entry would otherwise copy it every page. A
 // park's checkpoint (delivery.go checkpointPagedCursor), and every entry
 // written before 0141, carries it whole in Cursor. A replay restores the
-// cursor only from Cursor; a page that named it by hash restores the row with
-// a null cursor, which the drain reads as a chain with no position
-// (functions.go loadPagedProgress).
+// cursor from Cursor, or, for a page that named it by hash, from the row the
+// replay found in paged_cursors before clearing it when that row's cursor has
+// the named digest (a rebuild over the same database). Otherwise the row comes
+// back with a null cursor, which the drain reads as a chain with no position
+// (functions.go loadPagedProgress): an import into an empty database.
 type foldPageRow struct {
 	Chain        string          `json:"chain"`
 	Cursor       json.RawMessage `json:"cursor,omitempty"`
@@ -313,17 +317,34 @@ type foldPageRow struct {
 }
 
 // storedCursor is the cursor a page effect writes to paged_cursors: the bytes
-// a live middle page staged, else the cursor the entry carries whole, else
-// JSON null, where the entry named the cursor by hash and a replay has no
-// bytes to restore.
-func (p *foldPageRow) storedCursor() []byte {
+// a live middle page staged, else the cursor the entry carries whole, else the
+// kept cursor of the same chain whose digest the entry names, else JSON null,
+// where a replay has no bytes the entry vouches for.
+func (p *foldPageRow) storedCursor(kept map[string]keptCursor) []byte {
 	switch {
 	case len(p.staged) > 0:
 		return p.staged
 	case len(p.Cursor) > 0:
 		return p.Cursor
 	}
+	if k, ok := kept[p.Chain]; ok && p.CursorSHA256 != "" && k.sha256 == p.CursorSHA256 {
+		return k.raw
+	}
 	return []byte(`null`)
+}
+
+// keptCursor is a resume cursor a replay read before it cleared the table: the
+// bytes as stored, and the digest a page entry names them by.
+type keptCursor struct {
+	raw    []byte
+	sha256 string
+}
+
+// cursorDigest is the digest a page entry names its cursor by: the hex SHA-256
+// of the cursor's JSON as encoding/json writes it (delivery.go pageTx).
+func cursorDigest(encoded []byte) string {
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
 }
 
 func (op foldOp) ref() eref { return eref{Kind: op.Ref, ID: op.ID} }

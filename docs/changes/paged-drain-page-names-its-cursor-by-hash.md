@@ -20,12 +20,13 @@ cursor stays in the `paged_cursors` table:
 
 A park still writes the cursor whole into its entry, so a parked drain
 resumes from its last committed page after a restore, as before.
+`substratectl repository rebuild` keeps every cursor the database holds.
 
-One case behaves differently after `substratectl repository rebuild`, or after
-an import of a repository directory into an empty database: a paged drain
-that stopped between pages without parking (the server crashed or was
-stopped mid-drain) starts over from its first page, where it used to resume.
-Its next delivery re-runs the pages it had committed.
+One case behaves differently after an import of a repository directory into
+an empty database (a restore from `substratectl export` or a copied data
+root): a paged drain that stopped between pages without parking (the server
+crashed or was stopped mid-drain) starts over from its first page, where it
+used to resume. Its next delivery re-runs the pages it had committed.
 
 Entries written before this release keep their cursors and replay as they
 did; nothing rewrites them, so the space they take stays. Decision record

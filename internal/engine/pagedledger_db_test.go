@@ -2,7 +2,7 @@ package engine
 
 // A paged drain's cursor in the delivery ledger (decision 0141): a middle
 // page names the cursor by hash and the bytes stay in paged_cursors, a park
-// carries them whole, and a replay starts a chain it cannot place over.
+// carries them whole, and a replay that has neither starts the chain over.
 
 import (
 	"context"
@@ -12,11 +12,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // bigCursorBody pages four times with a cursor of about 200 KB that grows by
@@ -241,16 +244,17 @@ def main(input, host):
     return {"effects": effects}
 `
 
-// A rebuild replays the three shapes a paged chain leaves in the ledger. A
-// drain that PARKED comes back at its last committed page, because the park
-// carried the cursor whole, and its retry resumes there. A drain that stopped
-// between pages without parking comes back with a null cursor, because its
-// last page named the cursor by hash; its redelivery starts the body over
-// from page 0 under a fresh budget, though its row says two pages under a
-// cap of two and a start an hour ago. An entry an earlier binary wrote, the
-// cursor whole on a middle page, replays as it always did. Not parallel: the
-// page cap is package-level.
-func TestARebuildResumesAParkedDrainAndStartsAnInterruptedOneOver(t *testing.T) {
+// A replay of the three shapes a paged chain leaves in the ledger. Chain A
+// PARKED, so the park carried its cursor whole; chain B stopped between pages
+// without parking, so its last page named the cursor by hash; chain C is what
+// an earlier binary wrote for every middle page, the cursor whole on the
+// effect. A rebuild over the same database reproduces all three rows exactly,
+// B's from the cursor the table held. An import into an empty database brings
+// A and C back and B with a null cursor, and B's redelivery starts the body
+// over from page 0 under a fresh budget, though its row says two pages under
+// a cap of two and a start an hour ago. A's retry resumes from page 2. Not
+// parallel: the page cap is package-level.
+func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *testing.T) {
 	ds, triggerID := openPagedDataset(t, "pagedrebuild.test.dev/pagedrebuild", keyedPagedBody)
 	ctx := context.Background()
 	restore := withMaxPages(2)
@@ -273,7 +277,7 @@ func TestARebuildResumesAParkedDrainAndStartsAnInterruptedOneOver(t *testing.T) 
 	chainA := chainKey(ds, triggerID, ach.Seq)
 	liveA, ok := pagedRowOf(t, ds, chainA)
 	if !ok || liveA.cursor != "2" {
-		t.Fatalf("chain a before the rebuild: %+v (%v), want parked at cursor 2", liveA, ok)
+		t.Fatalf("chain a: %+v (%v), want parked at cursor 2", liveA, ok)
 	}
 	failures, err := ds.TriggerFailures(ctx, triggerID)
 	if err != nil || len(failures) != 1 {
@@ -295,19 +299,19 @@ func TestARebuildResumesAParkedDrainAndStartsAnInterruptedOneOver(t *testing.T) 
 	chainB := chainKey(ds, triggerID, bch.Seq)
 	owner := pagedOwner{triggerID: triggerID, kind: pagedKindRecord, identity: fmt.Sprintf("%d", bch.Seq)}
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
-		if err := tx.claimPagedCursor(chainB, owner, 3, 2, 2, 2, nowUTC().Add(-time.Hour)); err != nil {
+		if err := tx.claimPagedCursor(chainB, owner, map[string]any{"page": 3, "token": "<b>"}, 2, 2, 2, nowUTC().Add(-time.Hour)); err != nil {
 			return err
 		}
 		return tx.settleDelivery(triggerID)
 	}); err != nil {
 		t.Fatalf("interrupt chain b: %v", err)
 	}
-	if got, ok := pagedRowOf(t, ds, chainB); !ok || got.cursor != "3" {
-		t.Fatalf("chain b before the rebuild: %+v (%v), want cursor 3", got, ok)
+	liveB, ok := pagedRowOf(t, ds, chainB)
+	if !ok || liveB.cursor == "null" {
+		t.Fatalf("chain b: %+v (%v), want its cursor", liveB, ok)
 	}
 
-	// Chain C is what an earlier binary wrote for every middle page: the
-	// cursor whole on the effect.
+	// Chain C, in the shape an earlier binary wrote.
 	chainC := chainKey(ds, triggerID, 999999)
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
 		if _, err := tx.fold(foldOp{Kind: foldPage, Ref: typeTrigger, ID: triggerID, Page: &foldPageRow{
@@ -320,33 +324,54 @@ func TestARebuildResumesAParkedDrainAndStartsAnInterruptedOneOver(t *testing.T) 
 	}); err != nil {
 		t.Fatalf("write chain c: %v", err)
 	}
+	wantC := pagedRow{cursor: `{"token": "c-7"}`, version: 4, pages: 4}
 
+	// A rebuild over the same database reproduces the fold, resume rows and
+	// all.
+	before, err := ds.FoldSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := ds.svc.RebuildRepository(ctx, ds.Repository().ID); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
+	after, err := ds.FoldSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifferenceOf(before, after))
+	}
+	for chain, want := range map[string]pagedRow{chainA: liveA, chainB: liveB, chainC: wantC} {
+		if got, ok := pagedRowOf(t, ds, chain); !ok || got != want {
+			t.Fatalf("%s after the rebuild: %+v (%v), want %+v", chain, got, ok, want)
+		}
+	}
 
-	if got, ok := pagedRowOf(t, ds, chainA); !ok || got != liveA {
-		t.Fatalf("chain a after the rebuild: %+v (%v), want %+v", got, ok, liveA)
+	// Import the directory into an empty database.
+	d2 := importIntoEmptyDatabase(t, ds)
+	if got, ok := pagedRowOf(t, d2, chainA); !ok || got != liveA {
+		t.Fatalf("chain a after the import: %+v (%v), want %+v", got, ok, liveA)
 	}
-	if got, ok := pagedRowOf(t, ds, chainB); !ok || got != (pagedRow{cursor: "null", version: 1, pages: 2}) {
-		t.Fatalf("chain b after the rebuild: %+v (%v), want a null cursor at version 1 with 2 pages", got, ok)
+	if got, ok := pagedRowOf(t, d2, chainB); !ok || got != (pagedRow{cursor: "null", version: 1, pages: 2}) {
+		t.Fatalf("chain b after the import: %+v (%v), want a null cursor at version 1 with 2 pages", got, ok)
 	}
-	if got, ok := pagedRowOf(t, ds, chainC); !ok || got != (pagedRow{cursor: `{"token": "c-7"}`, version: 4, pages: 4}) {
-		t.Fatalf("chain c after the rebuild: %+v (%v), want its whole cursor at version 4", got, ok)
+	if got, ok := pagedRowOf(t, d2, chainC); !ok || got != wantC {
+		t.Fatalf("chain c after the import: %+v (%v), want %+v", got, ok, wantC)
 	}
 
-	// B's redelivery starts over and drains all five pages. The cap stays at
-	// two: only a fresh budget lets the chain past it.
-	if _, err := ds.ProcessTriggers(ctx); err != nil {
-		t.Fatalf("process after the rebuild: %v", err)
+	// B's redelivery starts over. The cap stays at two: only a fresh budget
+	// lets the chain commit a page at all.
+	if _, err := d2.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process after the import: %v", err)
 	}
 	for page := range 2 {
-		if id := fmt.Sprintf("b-p-%d", page); !liveExists(t, ds, id) {
+		if id := fmt.Sprintf("b-p-%d", page); !liveExists(t, d2, id) {
 			t.Fatalf("%s is missing: the interrupted chain did not start over", id)
 		}
 	}
 	restore()
-	parked, err := ds.TriggerFailures(ctx, triggerID)
+	parked, err := d2.TriggerFailures(ctx, triggerID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,35 +384,70 @@ func TestARebuildResumesAParkedDrainAndStartsAnInterruptedOneOver(t *testing.T) 
 	if len(parked) != 2 || bFailure == 0 {
 		t.Fatalf("parked failures %+v, want chain a's and chain b's cap parks", parked)
 	}
-	if _, err := ds.RetryTriggerFailure(ctx, triggerID, bFailure); err != nil {
+	if _, err := d2.RetryTriggerFailure(ctx, triggerID, bFailure); err != nil {
 		t.Fatalf("retry chain b: %v", err)
 	}
 	for page := range 5 {
-		if id := fmt.Sprintf("b-p-%d", page); !liveExists(t, ds, id) {
+		if id := fmt.Sprintf("b-p-%d", page); !liveExists(t, d2, id) {
 			t.Fatalf("%s is missing after chain b's retry", id)
 		}
 	}
-	if _, ok := pagedRowOf(t, ds, chainB); ok {
+	if _, ok := pagedRowOf(t, d2, chainB); ok {
 		t.Fatal("chain b's resume row outlived its drain")
 	}
 
 	// A's retry resumes from page 2: pages 0 and 1 are erased first.
 	for _, id := range []string{"a-p-0", "a-p-1"} {
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, task, id, substrate.DeleteInput{}); err != nil {
+		if _, err := d2.Delete(ctx, substrate.ActorAPI, task, id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
-	if _, err := ds.RetryTriggerFailure(ctx, triggerID, failures[0].ID); err != nil {
+	if _, err := d2.RetryTriggerFailure(ctx, triggerID, failures[0].ID); err != nil {
 		t.Fatalf("retry chain a: %v", err)
 	}
 	for _, id := range []string{"a-p-2", "a-p-3", "a-p-4"} {
-		if !liveExists(t, ds, id) {
+		if !liveExists(t, d2, id) {
 			t.Fatalf("resumed page %s missing", id)
 		}
 	}
 	for _, id := range []string{"a-p-0", "a-p-1"} {
-		if liveExists(t, ds, id) {
+		if liveExists(t, d2, id) {
 			t.Fatalf("%s was re-run: the parked chain restarted instead of resuming", id)
 		}
 	}
+}
+
+// importIntoEmptyDatabase closes ds's service, copies its repository
+// directory under a fresh data root and opens it over a fresh database: the
+// boot import folds the directory into tables that hold nothing.
+func importIntoEmptyDatabase(t *testing.T, ds *dataset) *dataset {
+	t.Helper()
+	ctx := context.Background()
+	id := ds.Repository().ID
+	src := ds.dir
+	if err := ds.svc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	root := t.TempDir()
+	dst, err := changelogfile.RepoDir(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey),
+		WithKindsDir(SeedKindsDir))
+	if err != nil {
+		t.Fatalf("import the directory: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	imported, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the imported repository: %v", err)
+	}
+	return imported.(*dataset)
 }

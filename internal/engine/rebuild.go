@@ -39,10 +39,12 @@ import (
 //	                   matched nothing (functions.go advanceCursor): a replay
 //	                   leaves the cursor at the last acknowledged delivery and
 //	                   the next pass re-reads rows that deliver nothing. A
-//	                   resume row's cursor comes back only where an entry
-//	                   carries it whole (decision 0141): a parked drain's does,
-//	                   from the park's entry, and a drain that stopped between
-//	                   pages comes back with a null one and starts over.
+//	                   middle page names its resume cursor by hash (decision
+//	                   0141): a parked drain's cursor comes back from the
+//	                   park's entry, and a drain that stopped between pages
+//	                   gets back the cursor this table held if its digest
+//	                   matches (keepPagedCursors), else a null one, and starts
+//	                   over.
 //
 // property_offers is neither replayed nor kept: it is recompute's projection
 // of what each live source offers each target (mapping.go syncOffers), the
@@ -219,6 +221,12 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	if err := t.refuseNewerChangelogDialect(); err != nil {
 		return err
 	}
+	kept, err := t.keepPagedCursors()
+	if err != nil {
+		return err
+	}
+	t.keptCursors = kept
+	defer func() { t.keptCursors = nil }()
 	for _, table := range foldTables {
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {
 			return fmt.Errorf("substrate/engine: rebuild: clear %s: %w", table, err)
@@ -258,6 +266,42 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 		return err
 	}
 	return t.row(`SELECT count(*) FROM records`).Scan(&report.Records)
+}
+
+// keepPagedCursors reads every resume cursor paged_cursors holds, with the
+// digest a page entry names it by, before the replay clears the table. A page
+// entry names its cursor by hash alone (decision 0141), so these bytes are the
+// only copy; the replay folds a chain's row back with them where the entry's
+// digest matches (fold.go storedCursor), and a rebuild over the same database
+// keeps a drain that stopped between pages at its page. A null cursor has no
+// position to keep. The rows are read to the end before anything writes.
+func (t *txn) keepPagedCursors() (map[string]keptCursor, error) {
+	rows, err := t.query(`SELECT chain, cursor FROM paged_cursors`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	kept := map[string]keptCursor{}
+	for rows.Next() {
+		var chain string
+		var raw []byte
+		if err := rows.Scan(&chain, &raw); err != nil {
+			return nil, err
+		}
+		// The digest is over the JSON encoding/json writes for the value,
+		// which is what pageTx hashed; the column holds the same value in
+		// jsonb's own spelling.
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil || v == nil {
+			continue
+		}
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			continue
+		}
+		kept[chain] = keptCursor{raw: raw, sha256: cursorDigest(encoded)}
+	}
+	return kept, rows.Err()
 }
 
 // rederiveOffers clears property_offers and derives it again from the fold:
@@ -527,9 +571,9 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"trigger_failures": `SELECT to_jsonb(f) - 'repository' FROM (
 				SELECT id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at, payload
 				FROM trigger_failures ORDER BY id) f`,
-		// A resume row whose last page named its cursor by hash comes
-		// back with a null cursor (decision 0141), so a drain that stopped
-		// between pages is the one row a rebuild does not reproduce.
+		// A resume row whose last page named its cursor by hash comes back
+		// from the cursor the table held (decision 0141); an import into an
+		// empty database brings it back null.
 		"paged_cursors": `SELECT to_jsonb(p) - 'repository' FROM (
 				SELECT chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at
 				FROM paged_cursors ORDER BY chain) p`,

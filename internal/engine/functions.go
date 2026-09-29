@@ -1777,13 +1777,14 @@ func drainOverBudget(fn *vocabulary.Function, pages, effects, bytes int64, deadl
 // A null cursor is a chain with no position, and it is STARTED OVER: the body
 // runs from its first page, and the budget, which measures progress along a
 // cursor, starts again with it, deadline included; only the version is kept,
-// so the fence still holds. A replay writes a null cursor wherever the ledger
-// named the cursor by hash (decision 0141): a drain that stopped between
-// pages without parking comes back that way after a rebuild or an import.
-// Without the fresh budget such a chain would park again at its first middle
-// page, since its deadline is measured from a first page long past. A body that pages with no
-// cursor at all is re-invoked from its first page every page anyway, so it is
-// the same case, and each retry by hand gives it one more bounded drain.
+// so the fence still holds. A replay writes a null cursor where the ledger
+// named the cursor by hash and no kept bytes match it (decision 0141): a
+// drain that stopped between pages without parking comes back that way from
+// an import into an empty database. Without the fresh budget such a chain
+// would park again at its first middle page, since its deadline is measured
+// from a first page long past. A body that pages with no cursor at all is
+// re-invoked from its first page every page anyway, so it is the same case,
+// and each retry by hand gives it one more bounded drain.
 func (ds *dataset) loadPagedProgress(ctx context.Context, chain string) (pagedProgress, error) {
 	var (
 		raw []byte

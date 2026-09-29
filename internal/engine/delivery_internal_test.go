@@ -59,7 +59,8 @@ func TestALedgerEffectDecodesFromTheFileSpelling(t *testing.T) {
 // A middle page's effect encodes the digest and length of its cursor and never
 // the bytes it hands the live write, and it decodes from the file's spelling
 // of the length. What the fold stores is the staged cursor live, the carried
-// one on replay, and JSON null where the entry named the cursor by hash.
+// one on replay, the kept one where the entry names its digest, and JSON null
+// where no bytes match the digest.
 func TestAMiddlePageNamesItsCursorWithoutCarryingIt(t *testing.T) {
 	t.Parallel()
 	const cursor = `{"pending":["a-very-long-provider-cursor"]}`
@@ -71,7 +72,7 @@ func TestAMiddlePageNamesItsCursorWithoutCarryingIt(t *testing.T) {
 	if strings.Contains(string(raw), "a-very-long-provider-cursor") || !strings.Contains(string(raw), `"cursorSha256":"abab`) {
 		t.Fatalf("the encoded page effect is %s, want the digest and not the cursor", raw)
 	}
-	if got := string(live.storedCursor()); got != cursor {
+	if got := string(live.storedCursor(nil)); got != cursor {
 		t.Fatalf("the live write stores %s, want the staged cursor", got)
 	}
 
@@ -91,13 +92,40 @@ func TestAMiddlePageNamesItsCursorWithoutCarryingIt(t *testing.T) {
 		if p := ops[0].Page; p.CursorBytes != 44 || p.CursorSHA256 != "abab" || len(p.Cursor) != 0 {
 			t.Fatalf("spelling %s: page %+v", spelling, p)
 		}
-		if got := string(ops[0].Page.storedCursor()); got != `null` {
-			t.Fatalf("spelling %s: a replay stores %s, want null", spelling, got)
+		if got := string(ops[0].Page.storedCursor(nil)); got != `null` {
+			t.Fatalf("spelling %s: a replay with nothing kept stores %s, want null", spelling, got)
+		}
+		other := map[string]keptCursor{"c": {raw: []byte(`{"x": 1}`), sha256: "cdcd"}}
+		if got := string(ops[0].Page.storedCursor(other)); got != `null` {
+			t.Fatalf("spelling %s: a replay stores the kept %s under another digest, want null", spelling, got)
+		}
+		match := map[string]keptCursor{"c": {raw: []byte(`{"x": 1}`), sha256: "abab"}}
+		if got := string(ops[0].Page.storedCursor(match)); got != `{"x": 1}` {
+			t.Fatalf("spelling %s: a replay stores %s, want the kept cursor the digest names", spelling, got)
 		}
 	}
 
+	// The digest is over encoding/json's spelling, which a value read back
+	// from jsonb reaches again by a decode and an encode.
+	var v any
+	if err := json.Unmarshal([]byte(`{"b": "<x>", "a": 1.0}`), &v); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := json.Marshal(map[string]any{"a": 1, "b": "<x>"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursorDigest(encoded) != cursorDigest(direct) {
+		t.Fatalf("the jsonb spelling re-encodes to %s, the drain encodes %s", encoded, direct)
+	}
+
 	whole := foldPageRow{Chain: "c", Cursor: json.RawMessage(`7`)}
-	if got := string(whole.storedCursor()); got != `7` {
+	kept := map[string]keptCursor{"c": {raw: []byte(`8`), sha256: "abab"}}
+	if got := string(whole.storedCursor(kept)); got != `7` {
 		t.Fatalf("a page effect carrying its cursor stores %s, want 7", got)
 	}
 }
