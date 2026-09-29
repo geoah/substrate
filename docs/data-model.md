@@ -398,7 +398,10 @@ engine moves it into the sealed store (encrypted with AES-256-GCM under the
 repository's own DEK, which the host credential key wraps) and the record and
 the changelog carry only an
 opaque ref, so rotation deletes the old material instead of retiring it into
-the immutable changelog. Every read, whatever the surface, returns the sentinel
+the immutable changelog. The deletion reaches the live store alone: a backup
+taken while the old value was current still holds it
+([what older backups keep](operations.md#a-rotated-or-deleted-secret-stays-in-older-backups)).
+Every read, whatever the surface, returns the sentinel
 `<redacted>`. Applying a document carrying the sentinel back leaves the
 stored value alone, so a read-edit-apply round trip never wipes a
 credential. A secret offers no filter operators and cannot be ordered by

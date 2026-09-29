@@ -171,7 +171,9 @@ password hash (argon2id), one for the TOTP seed and its replay counter. **The
 material itself never enters the changelog or a record's data**, so the changelog shows
 "the credential changed at T" and nothing crackable, and a rotation deletes the
 old sealed rows in the same transaction rather than piling old hashes into an
-append-only sequence.
+append-only sequence. A backup taken while the old password or TOTP seed was
+current still holds it
+([what older backups keep](operations.md#a-rotated-or-deleted-secret-stays-in-older-backups)).
 
 Three endpoints change auth material, and all three obey one rule:
 
