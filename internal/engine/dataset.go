@@ -472,11 +472,12 @@ type txn struct {
 	// swaps it in under ds.mu held from before the commit, so a writer the
 	// commit wakes and a watcher the head signal wakes both read it.
 	publishReg *vocabulary.Registry
-	// publishParked is the parked set beside publishReg: the dataset's, less
-	// every package the apply touches (fold.go parkedSet.without). The
-	// transaction's fold derives under it and the commit activates it with
-	// publishReg. Nil outside a vocabulary apply.
-	publishParked *parkedSet
+	// writeParked is the parked set this transaction's fold derives under
+	// when it is not the dataset's (fold.go parkedSet): read beside the
+	// candidate a vocabulary apply publishes, less every package the apply
+	// touches, which the commit activates with publishReg, or beside the
+	// candidate the boot upgrade reloads. Nil otherwise.
+	writeParked *parkedSet
 	// interactionThread marks the agent loop's own ask dispatch: the ONE
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
@@ -817,8 +818,8 @@ func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 		ds.beforePublish(t)
 	}
 	ds.reg = t.publishReg
-	if t.publishParked != nil {
-		ds.parked = t.publishParked
+	if t.writeParked != nil {
+		ds.parked = t.writeParked
 	}
 	return nil
 }

@@ -483,7 +483,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// The parked set this commit publishes beside the candidate: a
 		// touched package is re-admitted or removed by the batch, so none of
 		// them stays parked, and the fold's derivations here read it already.
-		t.publishParked = ds.parkedSet().without(touched)
+		t.writeParked = st.parked
 		// inTx resolved the tier against the live registry, before the
 		// candidate was set: an actor this closure declares resolves here.
 		t.tier = t.actorTier(actor)
@@ -679,8 +679,11 @@ func touchedKinds(candidate *vocabulary.Registry, touched map[string]bool) []*vo
 // upgrade preview (PlanBundleUpgrade) share it, so what the preview reports
 // and what the install refuses can never disagree.
 type vocabularyStage struct {
-	candidate    *vocabulary.Registry
-	touched      map[string]bool
+	candidate *vocabulary.Registry
+	touched   map[string]bool
+	// parked is the parked set the commit publishes beside the candidate
+	// (fold.go parkedSet.without), never nil.
+	parked       *parkedSet
 	droppedTypes []string
 	// strandedMappings names the mappings another package declares FROM a kind
 	// this batch removes (record 49): uninstalling Linear while the
@@ -940,18 +943,30 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// door stores `movedFrom` and performs nothing, so nothing is passed to the
 	// conversion plan and the narrowing counts stand at full strength.
 	moveRefusals := userDoorMoveGuards(classifyKindMoves(current, candidate, touched, nil))
-	// A parked kind of a touched package is absent from both registries, so
-	// no shape diff names it, and its rows hold the indexes its stored
-	// declaration derived (fold.go foldView). From the commit on they derive
-	// under the candidate: a re-admitted kind's declaration, or the
-	// unknown-kind bands and no refs rows for one the batch removes. So both
-	// indexes re-derive for every such kind here.
-	parked := ds.parkedSet().kindsOf(touched)
-	reprojected := unionStrings(reprojectedKinds(current, candidate, touched), parked)
-	reprojectedFTS := unionStrings(reprojectedFTSKinds(current, candidate, touched), parked)
+	// The parked set the commit publishes (fold.go parkedSet): this one less
+	// every package the batch touches, read beside the candidate. A kind whose
+	// indexes a parked set decides on either side (a parked kind, or a live
+	// one a parked mapping reshapes) derived its rows under the old view, and
+	// the registries alone do not show it moving: a parked kind is in
+	// neither, and a reshaped one is the same kind in both. Such a kind
+	// re-derives where the two views disagree, so an uninstalled parked
+	// package's rows land at the unknown-kind bands with no refs rows, and a
+	// live source kind loses the slot row the package's mapping projected.
+	parked := ds.parkedSet()
+	staged := parked.without(touched, candidate)
+	decided := parked.derivedKinds()
+	for ident := range staged.derivedKinds() {
+		decided[ident] = true
+	}
+	before, after := foldView{reg: current, parked: parked}, foldView{reg: candidate, parked: staged}
+	reprojected := unionStrings(reprojectedKinds(current, candidate, touched),
+		kindsShapedApart(before, after, decided, referenceShape))
+	reprojectedFTS := unionStrings(reprojectedFTSKinds(current, candidate, touched),
+		kindsShapedApart(before, after, decided, ftsShape))
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
+		parked:    staged,
 		// Refuse-with-instances, plus:
 		// Bundle upgrades additionally refuse dropping a callable — function OR
 		// agent — that live triggers still reference (bundles.go): the closure
@@ -2323,7 +2338,7 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		return fmt.Errorf("substrate/engine: repository %s: the seeded closure %s no longer admits under this binary: %s",
 			ds.info.ID, q.name, q.reason)
 	}
-	ds.setParked(newParkedSet(ds.reg, parked, unparsed))
+	ds.setParked(newParkedSet(ds.reg, parked, unparsedNames(unparsed)))
 	if err := ds.clearGroupQuarantine(ctx, good); err != nil {
 		return err
 	}
@@ -2928,7 +2943,7 @@ func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[strin
 // (appendReferenceShape, per property). Two declarations with the same string
 // project the same refs rows from the same stored values; an undeclared kind
 // is the empty string, because its rows project none.
-func referenceShape(reg *vocabulary.Registry, ident string) string {
+func referenceShape(reg kindLookup, ident string) string {
 	ty, ok := reg.ByIdentity(ident)
 	if !ok {
 		return ""
@@ -2954,7 +2969,7 @@ func reprojectedFTSKinds(current, candidate *vocabulary.Registry, touched map[st
 // the same bands. An undeclared kind is the empty string, distinct from every
 // declared shape, because its rows take the unknown-kind bands (foldFTS)
 // rather than a declaration's.
-func ftsShape(reg *vocabulary.Registry, ident string) string {
+func ftsShape(reg kindLookup, ident string) string {
 	ty, ok := reg.ByIdentity(ident)
 	if !ok {
 		return ""
@@ -2976,7 +2991,7 @@ func ftsShape(reg *vocabulary.Registry, ident string) string {
 
 // kindsWhoseShapeMoved walks the touched packages' kinds on both sides of the
 // apply and keeps the ones whose `shape` differs, sorted.
-func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[string]bool, shape func(*vocabulary.Registry, string) string) []string {
+func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[string]bool, shape func(kindLookup, string) string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for aname := range touched {
@@ -3003,7 +3018,7 @@ func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[s
 
 // kindsShapedApart keeps the named kinds whose `shape` differs between two
 // registries, sorted.
-func kindsShapedApart(a, b *vocabulary.Registry, idents map[string]bool, shape func(*vocabulary.Registry, string) string) []string {
+func kindsShapedApart(a, b kindLookup, idents map[string]bool, shape func(kindLookup, string) string) []string {
 	var out []string
 	for _, ident := range sortedKeys(idents) {
 		if shape(a, ident) != shape(b, ident) {

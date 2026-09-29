@@ -826,7 +826,7 @@ func (ds *dataset) loadDeclarationsForReplay(ctx context.Context, q dbx) error {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	_, parked, _ := ds.admitStored(built)
-	ds.parked = newParkedSet(ds.reg, parked, unparsed)
+	ds.parked = newParkedSet(ds.reg, parked, unparsedNames(unparsed))
 	return nil
 }
 

@@ -264,6 +264,124 @@ func TestUninstallingAParkedPackageReindexesItsRows(t *testing.T) {
 	}
 }
 
+const (
+	pfSources = "parkedfold.example.substrate.reamde.dev/sources"
+	pfSource  = pfSources + "/source"
+	pfCard    = pfPackage + "/card"
+)
+
+// pfMappedDocs is a bundle closure whose mapping reaches into a package that
+// stays live: a link-only mapping from pfSource onto the closure's own card,
+// so the source kind carries the mapping's subject slot and no offer rows
+// exist.
+func pfMappedDocs() []map[string]any {
+	return []map[string]any{
+		vocabulary.PackageManifest(pfPackage, 0),
+		vocabulary.ActorManifest(pfPackage, vocabulary.PackageActor(pfPackage)),
+		vocabulary.BundleManifest(pfPackage, map[string]any{
+			"description": "a bundle mapping from a package that stays live", "installs": []any{pfCard, pfPackage + "/sourcecard"},
+		}),
+		vocabulary.KindManifest(pfPackage, map[string]any{"singular": "card"},
+			map[string]any{"displayTemplate": "{label}", "properties": map[string]any{
+				"label": map[string]any{"type": "string"},
+			}}),
+		vocabulary.MappingManifest(pfPackage, "sourcecard", map[string]any{
+			"from": pfSource, "to": pfCard, "property": "card",
+		}),
+	}
+}
+
+// pfSlotRows counts the refs rows the source kind holds in one snapshot.
+func pfSlotRows(t *testing.T, snap []byte) int {
+	t.Helper()
+	var s struct {
+		Refs []struct {
+			SrcKind  string `json:"src_kind"`
+			Property string `json:"property"`
+		} `json:"refs"`
+	}
+	if err := json.Unmarshal(snap, &s); err != nil {
+		t.Fatalf("read the snapshot: %v", err)
+	}
+	n := 0
+	for _, r := range s.Refs {
+		if r.SrcKind == pfSource && r.Property == "card" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestAParkedMappingKeepsTheSlotRowOfALiveSourceKind: a mapping lives with
+// its target, so a parked package can map from a kind of a package that stays
+// live. The subject slot leaves the live registry with the package, and the
+// source rows keep the refs row it projected, through a rebuild too; the
+// uninstall of the parked package drops the row, and a rebuild agrees.
+func TestAParkedMappingKeepsTheSlotRowOfALiveSourceKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := pfOpener(t, dsn, t.TempDir())
+
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pfSources, 0),
+		vocabulary.KindManifest(pfSources, map[string]any{"singular": "source"},
+			map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+			}}),
+	}); err != nil {
+		t.Fatalf("declare the source package: %v", err)
+	}
+	if _, err := ds.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pfPackage)), pfMappedDocs(), nil,
+		substrate.BundleInstall{}); err != nil {
+		t.Fatalf("install the mapping closure: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfSource, ID: "linked", Properties: map[string]any{"name": "a source"}})
+	if n := pfSlotRows(t, foldOf(t, ds)); n != 1 {
+		t.Fatalf("the source holds %d slot rows while the mapping is live, want 1", n)
+	}
+	_ = svc.Close()
+
+	svc2 := open(engine.WithTestInadmissible(pfPackage))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open with the package parked: %v", err)
+	}
+	rb := svc2.(rebuilder)
+	parked := foldOf(t, ds2)
+	if n := pfSlotRows(t, parked); n != 1 {
+		t.Fatalf("the source holds %d slot rows with the mapping parked, want 1", n)
+	}
+	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if rebuilt := foldOf(t, ds2); string(rebuilt) != string(parked) {
+		t.Fatalf("the rebuilt fold is not the fold\n%s", firstDifference(parked, rebuilt))
+	}
+
+	if err := ds2.UninstallBundle(ctx, pfPackage); err != nil {
+		t.Fatalf("uninstall the parked package: %v", err)
+	}
+	uninstalled := foldOf(t, ds2)
+	if n := pfSlotRows(t, uninstalled); n != 0 {
+		t.Fatalf("the source holds %d slot rows after its mapping was uninstalled, want 0", n)
+	}
+	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild after the uninstall: %v", err)
+	}
+	if rebuilt := foldOf(t, ds2); string(rebuilt) != string(uninstalled) {
+		t.Fatalf("the rebuilt fold after the uninstall is not the fold\n%s", firstDifference(uninstalled, rebuilt))
+	}
+}
+
 // TestTheSnapshotNamesAPackageThatDoesNotParse: a stored package that does
 // not parse has no declaration to derive its rows' indexes under, so the fold
 // snapshot names it as the divergence a rebuild may show, and stops naming it
