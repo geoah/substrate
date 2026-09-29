@@ -132,7 +132,10 @@ lines the install would refuse on as `blockers`. A preview that cannot run at
 all (a database fault, a closure this repository cannot admit) still leaves
 the entry in the listing, with one fixed blocker line ("the upgrade preview
 failed; see the server log") and no version motion; the error itself goes to
-the server log, never to a repository token. A PROVIDER is previewed as
+the server log, never to a repository token. The catalog reuses a preview
+until the repository's changelog head moves, so a listing read twice with no
+write between counts each closure once, and any write, to a declaration or to
+a record, counts it again. A PROVIDER is previewed as
 shipped, and measured from the shipped version its last install took: the
 install stamps it on the package row as `shippedVersion`, and the preview
 offers any shipped closure past it. The package's own version is the API's

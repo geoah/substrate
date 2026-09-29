@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 
@@ -826,4 +828,109 @@ func TestCatalogListsSuggestedMappingsAndTheirState(t *testing.T) {
 	if google != 0 {
 		t.Errorf("the google provider reports %d suggested mappings, want none: a provider declares no mapping", google)
 	}
+}
+
+// previewCountingDataset holds one reading-list copy stamped with the shipped
+// sample as its origin, under its own repository's authority, and counts the
+// upgrade previews the catalog asks of it. Its preview names the repository,
+// so an entry served another repository's plan says so.
+type previewCountingDataset struct {
+	heldDataset
+	previews *atomic.Int64
+}
+
+func (d previewCountingDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
+	d.previews.Add(1)
+	return substrate.BundleUpgrade{Blockers: []string{"counted in " + d.Repository().ID}}, nil
+}
+
+// A catalog read reuses the upgrade preview while the repository's changelog
+// head stands (issue #445): the listing read twice and the entry's own read
+// count one preview between them, a write counts a fresh one, and another
+// repository behind the same catalog counts and is served its own.
+func TestCatalogReadsReuseTheUpgradePreviewUntilTheHeadMoves(t *testing.T) {
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	const other = "ada.example.com"
+	base := newFakeService()
+	base.addRepository(other)
+	previews := map[string]*atomic.Int64{fakeRepository: new(atomic.Int64), other: new(atomic.Int64)}
+	base.wrap = func(d *fakeDataset) substrate.Dataset {
+		return previewCountingDataset{
+			heldDataset: heldDataset{fakeDataset: d, id: d.repository.ID + "/readinglist", origin: rlBundleID},
+			previews:    previews[d.repository.ID],
+		}
+	}
+	clock := &testClock{}
+	env := &testEnv{svc: base, h: New(Config{Service: base, Now: clock.now, Catalog: cat}), clock: clock}
+	type entry struct {
+		ID      string                   `json:"id"`
+		Upgrade *substrate.BundleUpgrade `json:"upgrade"`
+	}
+	listed := func(repository string) []string {
+		t.Helper()
+		rec := env.do(t, http.MethodGet, "/api/v1/catalog", env.svc.token(repository), nil)
+		wantStatus(t, rec, http.StatusOK)
+		for _, item := range decodeJSON[struct{ Items []entry }](t, rec).Items {
+			if item.ID == rlBundleID && item.Upgrade != nil {
+				return item.Upgrade.Blockers
+			}
+		}
+		t.Fatalf("the listing for %s carries no preview of %s", repository, rlBundleID)
+		return nil
+	}
+	detailed := func(repository string) []string {
+		t.Helper()
+		rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), env.svc.token(repository), nil)
+		wantStatus(t, rec, http.StatusOK)
+		item := decodeJSON[entry](t, rec)
+		if item.Upgrade == nil {
+			t.Fatalf("the entry for %s carries no preview", repository)
+		}
+		return item.Upgrade.Blockers
+	}
+	want := func(repository string, got []string, n int64, when string) {
+		t.Helper()
+		if len(got) != 1 || got[0] != "counted in "+repository {
+			t.Errorf("%s: %s is served the preview %q", when, repository, got)
+		}
+		if c := previews[repository].Load(); c != n {
+			t.Errorf("%s: %s counted %d previews, want %d", when, repository, c, n)
+		}
+	}
+
+	want(fakeRepository, listed(fakeRepository), 1, "the first listing")
+	want(fakeRepository, listed(fakeRepository), 1, "a second listing with no write between")
+	want(fakeRepository, detailed(fakeRepository), 1, "the entry's own read")
+	want(other, listed(other), 1, "another repository's first listing")
+	want(other, listed(other), 1, "another repository's second listing")
+
+	base.datasets[fakeRepository].commit(substrate.Change{
+		Actor: substrate.ActorAPI, Op: substrate.OpPut, Kind: fakeRepository + "/readinglist/page", RecordID: "moved",
+	})
+	want(fakeRepository, listed(fakeRepository), 2, "a listing after a write")
+	want(fakeRepository, listed(fakeRepository), 2, "a second listing after the write")
+	want(other, listed(other), 1, "another repository after the first one's write")
+
+	// A restore to a copy whose changelog reaches the same seq is another
+	// history: the generation moved, so the seq alone does not reuse a plan.
+	base.datasets[fakeRepository].restore(1)
+	want(fakeRepository, listed(fakeRepository), 3, "a listing after a restore to the same seq")
+
+	// Concurrent listings share the cached plan: each is served a copy, which
+	// the race detector holds to (mise run test:race).
+	tok := env.svc.token(other)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+			if rec.Code != http.StatusOK {
+				t.Errorf("a concurrent listing answered %d", rec.Code)
+			}
+		})
+	}
+	wg.Wait()
+	want(other, listed(other), 1, "listings read concurrently")
 }
