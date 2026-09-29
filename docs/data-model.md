@@ -818,6 +818,9 @@ mechanical:
   machine without a state some record still occupies is refused with the
   count, like every narrowing vocabulary change
   ([vocabulary evolution](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
+  Dropping the whole state property is allowed: it removes the state from
+  every record, as a lossy step the apply runs only when you confirm it
+  ([backfilling and remapping](vocabulary.md#backfilling-and-remapping)).
 
 ## The server-owned status
 

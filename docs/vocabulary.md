@@ -568,9 +568,13 @@ longer names, and no `renamedFrom:` takes, has its value removed from every
 live record carrying it: the record's manager row for it, its embedding and,
 for a secret, its sealed material go with the value, exactly as a patch
 clearing the property would leave it. The old values stay in the changelog,
-where a rebuild replays the removal as the write it was. A state property
-still refuses while records occupy a state, because a state moves by
-transition and never by assignment.
+where a rebuild replays the removal as the write it was. A `type: state`
+property drops the same way: its state is removed from every live record, as
+the same `null` step. The drop is not a transition, so it writes no stamp and
+runs no `onEnter` effect or `notifies:` resume. A mapping whose `where:`
+names the dropped property refuses the apply, and a trigger's `when:` guard
+that reads it finds no key and evaluates false. A drop retires no name;
+`retired:` does that ([Retiring a name](#retiring-a-name)).
 
 **A lossy plan runs only when you confirm it.** Two steps remove values from
 the fold: the null above, and a rename onto a value some live record already

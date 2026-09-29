@@ -22,8 +22,10 @@ package engine
 //     stored declaration still admits would collapse two stored values into
 //     one and is refused as lossy, by declaration and without a count
 //     (classifyConversions);
-//   - state removed while rows occupy it (a state property dropped or turned
-//     scalar counts as a kind change);
+//   - state removed while rows occupy it (a state property turned scalar
+//     counts as a kind change). A state property DROPPED is not in this
+//     list: like any other dropped property it is the lossy null step, which
+//     removes every live record's state for it (convert.go);
 //   - required added while rows lack the property (the write path enforces
 //     `required` on the merged row, so the rows that lack it now would be
 //     nonconforming and unpatchable), unless the declaration also carries a
@@ -297,13 +299,6 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 				out = append(out, propertyNarrowings(ident, pname, curP, candT.Props[to], candT, moved)...)
 				continue
 			}
-			if curP.IsState() {
-				out = append(out, narrowing{
-					format: fmt.Sprintf("kind %s: state property %q dropped while %%d live records hold a state — resolve them first", ident, pname),
-					query:  countStateQuery, args: []any{ident, pname},
-				})
-				continue
-			}
 			if curP.MappedBy != "" {
 				// A SUBJECT SLOT GOING IS THE MAPPING GOING (record 96), and
 				// it is REFUSED while links exist rather than nulled as a
@@ -323,7 +318,10 @@ func typeNarrowings(curT, candT *vocabulary.Kind, moved map[string]string) []nar
 			if nullable(curT, curP) {
 				// The apply removes the value from every live record as a
 				// lossy null step, confirmed by the caller (convert.go,
-				// decision 0067); the count is the step's, not a refusal.
+				// decision 0067); the count is the step's, not a refusal. A
+				// state property is one of these: every record holds a state
+				// (a create enters `initial`) and no write clears one, so a
+				// count here would refuse the drop on every kind with rows.
 				continue
 			}
 			out = append(out, narrowing{

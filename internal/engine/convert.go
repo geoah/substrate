@@ -21,7 +21,15 @@ package engine
 //     takes every live record's value under the old spelling, in a scalar, a
 //     list or a keyed map;
 //   - a null: a property the candidate no longer declares, and nothing
-//     renames, has its value removed from every live record carrying it.
+//     renames, has its value removed from every live record carrying it. A
+//     dropped `type: state` property is one: its state leaves the states
+//     column the way a value leaves `props` (issue #627). That is NOT a
+//     transition. No transition is declared out of a machine the candidate
+//     no longer has, so nothing a transition does happens: no stamp is
+//     written, no `onEnter` effect runs and no `notifies:` thread is told or
+//     resumed. The one entry per record is a `patch` like every other step's,
+//     so a record trigger watching patches of the kind receives it as it
+//     receives a rename or a backfill.
 //
 // The five compose. Every step a batch declares against one kind runs in one
 // pass over that kind's records, in id order, and a record any step touches is
@@ -48,7 +56,8 @@ package engine
 // its manager (rename.go moveManager), and a remapped one keeps its manager
 // too: the value's spelling moved, not who last wrote it. A nulled value has
 // no manager afterwards, no embedding and no sealed material, exactly as a
-// patch clearing it would leave the record. A converted record is a source
+// patch clearing it would leave the record; a nulled state had none of the
+// three to begin with. A converted record is a source
 // write like any other, so its subjects recompute after its entry
 // (recomputeSubjectsOf, as afterTombstone does): a mapped target and its offer
 // rows follow a remapped, backfilled or nulled source value, and a rebuild,
@@ -133,11 +142,14 @@ type enumRemap struct {
 // propertyNull is one dropped property whose live values the plan removes:
 // the kind as the candidate declares it (without the property), the dropped
 // name, and whether the stored declaration typed it secret, so the sealed
-// material goes with the value as a clearing patch would take it.
+// material goes with the value as a clearing patch would take it. state says
+// the stored declaration was a machine: its position lives in the states
+// column, never under `props`, so that is where the step counts and clears.
 type propertyNull struct {
 	kind   *vocabulary.Kind
 	prop   string
 	secret bool
+	state  bool
 }
 
 // conversionPlan is every conversion a batch declares, classified against the
@@ -192,7 +204,7 @@ func classifyConversions(current, candidate *vocabulary.Registry, touched, skip 
 					continue
 				}
 				if nullable(curT, curP) {
-					plan.nulls = append(plan.nulls, propertyNull{kind: candT, prop: pname, secret: curP.Secret()})
+					plan.nulls = append(plan.nulls, propertyNull{kind: candT, prop: pname, secret: curP.Secret(), state: curP.IsState()})
 				}
 			}
 			for _, pname := range candT.PropOrder {
@@ -263,13 +275,15 @@ func backfillable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
 }
 
 // nullable reports whether dropping p is a null step rather than a counted
-// narrowing: a value the record carries under `props`, which the step can
-// remove. A state is not a value (it moves by transition, never by
-// assignment), and a property living in its own column (a hot trait
-// property, the title, the body) is not under `props`, so the count the
-// narrowing takes stays the answer for those.
+// narrowing: a value the record carries under `props`, or a machine's state
+// in the states column, which the step can remove. A state has to be one: a
+// create enters `initial` and no write clears a state, so a counted refusal
+// would fire on every kind with records and name a migration nobody can run.
+// A property living in its own column (a hot trait property, the title, the
+// body) is not under `props`, so the count the narrowing takes stays the
+// answer for those.
 func nullable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
-	if p.IsState() || p.Name == substrate.PropTitle || p.Name == substrate.PropBody {
+	if p.Name == substrate.PropTitle || p.Name == substrate.PropBody {
 		return false
 	}
 	if _, hot := hotColumns[p.Name]; hot && ty.UsesHot(p.Name) {
@@ -525,7 +539,13 @@ func (p conversionPlan) wire(q sqlReader, ceiling int64, bind bool) (substrate.C
 			}
 		}
 		for _, nl := range kc.nulls {
-			n, c, err := rows(countPropQuery, ident, nl.prop)
+			// A state is counted where it lives, so the rows the hash binds
+			// are the rows the step clears (affectedRowsQuery).
+			query := countPropQuery
+			if nl.state {
+				query = countStateQuery
+			}
+			n, c, err := rows(query, ident, nl.prop)
 			if err := add(substrate.ConversionStep{Step: substrate.StepNull, Kind: ident, Property: nl.prop, Lossy: true}, n, c, err); err != nil {
 				return plan, err
 			}
@@ -889,6 +909,10 @@ func (t *txn) convertKind(kc *kindConversion) (int64, error) {
 		holds = append(holds, "props ? "+bind(kc.storedName(m.prop)))
 	}
 	for _, n := range kc.nulls {
+		if n.state {
+			holds = append(holds, "states ? "+bind(n.prop))
+			continue
+		}
 		holds = append(holds, "props ? "+bind(n.prop))
 	}
 	rows, err := t.query(`SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND (`+
@@ -1014,10 +1038,23 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	}
 	var nulled []propertyNull
 	for _, n := range kc.nulls {
-		if _, held := row.Props[n.prop]; !held {
-			continue
+		if n.state {
+			// The machine's position leaves the row as a value would, and the
+			// fold carries the states map whole, so a replay drops it too. No
+			// transition runs here (write.go is the only place one does, for a
+			// patch naming a declared target): no stamp, no onEnter effect and
+			// no `notifies:` resolution, because a drop moves the record to no
+			// state at all.
+			if _, held := row.States[n.prop]; !held {
+				continue
+			}
+			delete(row.States, n.prop)
+		} else {
+			if _, held := row.Props[n.prop]; !held {
+				continue
+			}
+			delete(row.Props, n.prop)
 		}
-		delete(row.Props, n.prop)
 		nulled = append(nulled, n)
 		touched[n.prop] = true
 	}
@@ -1077,6 +1114,10 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	}
 	var nulledNames []string
 	for _, n := range nulled {
+		nulledNames = append(nulledNames, n.prop)
+		if n.state {
+			continue // a state has no manager row, no vectors and no seal
+		}
 		// What a patch clearing the property leaves behind: no manager row (a
 		// released property is nobody's), no vectors and no queue row under a
 		// name no declaration has, and no sealed material behind a secret
@@ -1093,7 +1134,6 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 			}
 			t.mirrorSealedDelete(old)
 		}
-		nulledNames = append(nulledNames, n.prop)
 	}
 
 	properties := sortedKeys(touched)
