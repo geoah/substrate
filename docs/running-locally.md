@@ -148,8 +148,12 @@ Three variables have no default: `DATABASE_URL`, `SUBSTRATE_DATA_ROOT` and
 `SUBSTRATE_CREDENTIAL_KEY`. `SUBSTRATE_INVITE_CODE` is optional, and unset
 the register door reads none. `PORT` is `8080` and `WEB_DIR` names a built console
 to serve at `/` ([configuration](operations.md#configuration) is the full
-table). Postgres needs the `vector` and `pgcrypto` extensions available, and
-the DSN must be allowed to create them and the two roles isolation rests on.
+table). The binary listens on `127.0.0.1`; `SUBSTRATE_BIND_ADDRESS` names
+another interface only beside `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true`,
+because the port serves plain HTTP
+([TLS and the reverse proxy](operations.md#tls-and-the-reverse-proxy)).
+Postgres needs the `vector` and `pgcrypto` extensions available, and the DSN
+must be allowed to create them and the two roles isolation rests on.
 
 Function bodies are confined as far as the kernel allows: `SUBSTRATE_SANDBOX`
 defaults to `best-effort`, which runs a body unconfined where a layer is

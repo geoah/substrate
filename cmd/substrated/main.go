@@ -106,6 +106,12 @@ func run() error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	// The bind is decided here, before the boot, though the socket opens
+	// after it: a refused address must not wait out minutes of migrations and
+	// imports to say so.
+	if _, err := cfg.ListenAddress(); err != nil {
+		return err
+	}
 
 	ctx, cancelCause := context.WithCancelCause(context.Background())
 	cancel := func() { cancelCause(nil) }
@@ -259,16 +265,19 @@ func run() error {
 		// with no token, and only the deployment keeps it off the internet.
 		slog.Info("SUBSTRATE_METRICS is set: /metrics is served unauthenticated — keep the path off the ingress")
 	}
+	ln, err := listen(cfg)
+	if err != nil {
+		return err
+	}
 	httpSrv := &http.Server{
-		Addr:              ":" + cfg.Port,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("listening", "port", cfg.Port)
-		errCh <- httpSrv.ListenAndServe()
+		slog.Info("listening", "address", ln.Addr().String())
+		errCh <- httpSrv.Serve(ln)
 	}()
 
 	select {

@@ -6,6 +6,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
@@ -13,7 +16,22 @@ import (
 
 // Config is the full service configuration.
 type Config struct {
-	Port     string `envconfig:"PORT" default:"8080"`
+	Port string `envconfig:"PORT" default:"8080"`
+	// BindAddress is the interface the server listens on. Loopback by
+	// default, because the server speaks plain HTTP: a password, a TOTP code
+	// and every bearer token cross this socket readable, so the port is for
+	// this machine and a TLS terminator on it. Any other address is refused
+	// unless InsecureAllowCleartext says the deployment accounts for that
+	// (ListenAddress). Empty is every interface, and refused the same way.
+	BindAddress string `envconfig:"SUBSTRATE_BIND_ADDRESS" default:"127.0.0.1"`
+	// InsecureAllowCleartext admits a BindAddress that is not loopback. It
+	// is the operator's statement that nothing but a TLS terminator, or a
+	// port published on a host's loopback, reaches this socket: a container
+	// behind its runtime's port mapping, a pod behind an ingress, a binary
+	// behind a proxy on another host. Without one of those in front,
+	// passwords and bearer tokens cross the network in cleartext.
+	InsecureAllowCleartext bool `envconfig:"SUBSTRATE_INSECURE_ALLOW_CLEARTEXT" default:"false"`
+
 	LogLevel string `envconfig:"LOG_LEVEL" default:"info"`
 	// WebDir is the built SPA served at /; empty disables static serving
 	// (dev mode, where Vite proxies the API).
@@ -138,6 +156,42 @@ func (c Config) Validate() error {
 		return fmt.Errorf("SUBSTRATE_TRIGGER_INTERVAL is %s: it is how often the trigger dispatcher checks every repository for a delivery due, and it must be a positive duration (5s is the default)", c.TriggerInterval)
 	}
 	return ValidateCredentialKey(c.CredentialKey)
+}
+
+// ListenAddress is the host:port the server binds, or a refusal naming the
+// setting and the address. A loopback BindAddress needs nothing more. Any
+// other, every interface included, needs SUBSTRATE_INSECURE_ALLOW_CLEARTEXT,
+// because the server never terminates TLS and the bind is the one point where
+// it can tell that the socket is for more than this machine.
+//
+// `localhost` binds 127.0.0.1 itself rather than whatever the resolver
+// answers for the name, so the loopback check and the socket cannot disagree.
+func (c Config) ListenAddress() (string, error) {
+	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(c.BindAddress), "["), "]")
+	if strings.EqualFold(host, "localhost") {
+		host = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(host, c.Port)
+	if loopbackIP(host) || c.InsecureAllowCleartext {
+		return addr, nil
+	}
+	shown := strconv.Quote(host)
+	if host == "" {
+		shown += " (every interface)"
+	}
+	return "", fmt.Errorf("SUBSTRATE_BIND_ADDRESS is %s, so the server would listen on %s, which is not loopback, and it speaks plain HTTP: "+
+		"passwords, TOTP codes and bearer tokens would reach the network unencrypted. Bind 127.0.0.1 and put a TLS terminator in front, "+
+		"or, when only a TLS terminator or a loopback port mapping reaches this address, set SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true "+
+		"(docs/operations.md, \"TLS and the reverse proxy\")", shown, addr)
+}
+
+// loopbackIP reports whether host is a loopback IP literal (127.0.0.0/8,
+// ::1). A name is never loopback here, even one that resolves there today,
+// because the answer must not depend on a resolver; ListenAddress spells
+// `localhost` as 127.0.0.1 before it asks.
+func loopbackIP(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // ValidateCredentialKey holds SUBSTRATE_CREDENTIAL_KEY to key material: the

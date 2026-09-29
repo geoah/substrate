@@ -379,6 +379,11 @@ only a request that presents it), `SUBSTRATE_INSECURE_DISABLE_TOTP` (the
 compose file sets it, so a password is the whole credential; unset it), and
 `SUBSTRATE_CREDENTIAL_KEY` (base64 of exactly 32 bytes; it wraps the key every
 secret is sealed under, and a server without it refuses to boot).
+The server speaks plain HTTP and listens on `127.0.0.1`; reaching it from
+another machine without a TLS terminator in front is unsupported, and the
+binary refuses any other address unless `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT`
+says a terminator or a loopback port mapping is what reaches it
+([TLS and the reverse proxy](docs/operations.md#tls-and-the-reverse-proxy)).
 [docs/operations.md](docs/operations.md) has the full table, blob stores and
 egress rules included.
 
