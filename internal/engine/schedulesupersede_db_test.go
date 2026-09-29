@@ -303,6 +303,36 @@ func TestARecordDeliveryThatSettlesLeavesItsTriggersParksParked(t *testing.T) {
 	}
 }
 
+// A retry by hand of a parked occurrence that settles retires the parks at
+// or before it, as a dispatched fire does, and leaves the later ones.
+func TestARetriedScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := nowUTC().Add(-150 * time.Minute).Truncate(time.Minute)
+	s1, s2 := s.Add(time.Hour), s.Add(2*time.Hour)
+	ds := supersedeDataset(t, s, "update")
+	rewindSchedule(t, ds, supersedeSync, s.Add(-time.Minute))
+	processOnce(t, ds)
+	failures, err := ds.TriggerFailures(ctx, supersedeSync)
+	if err != nil || len(failures) != 3 {
+		t.Fatalf("%s parked %+v (%v), want three occurrences", supersedeSync, failures, err)
+	}
+
+	setJobSync(t, ds, supersedeOK)
+	var middle int64
+	for _, f := range failures {
+		if f.FireID == fireID(s1) {
+			middle = f.ID
+		}
+	}
+	if _, err := ds.RetryTriggerFailure(ctx, supersedeSync, middle); err != nil {
+		t.Fatalf("retry s+1h: %v", err)
+	}
+	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s2)}) {
+		t.Fatalf("%s parked %v after s+1h's retry settled, want s+2h's park alone", supersedeSync, got)
+	}
+}
+
 // An agent's schedule fire settles in the thread's own transaction
 // (settlement.complete), and it retires the older parks the same way.
 func TestAnAgentScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {

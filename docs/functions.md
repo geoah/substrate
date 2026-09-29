@@ -1017,8 +1017,8 @@ repository.
   another route — and it answers `204`, or `404` when the row is already gone
   ([#579](https://github.com/geoah/substrate/issues/579)). A
   schedule trigger's parked fire also ends without a hand: when a later
-  occurrence of the same trigger settles, every parked fire at or before it
-  is retired through the same unpark, because retrying one would repeat the
+  occurrence of the same trigger settles, dispatched or retried, every
+  parked fire at or before it is retired through the same unpark, because retrying one would repeat the
   work the settled fire just did. A record trigger's park, a webhook
   request's park and an agent run a stop interrupted are never retired this
   way

@@ -560,9 +560,9 @@ type settlement struct {
 	// by deliver once the guard passed on a record whose kind binds the
 	// trait, nil for every other delivery.
 	sync *syncStamp
-	// supersedes is the occurrence a schedule dispatch fires, zero on every
-	// other delivery: once it settles, the trigger's parked fires at or
-	// before it retire with it (retireSupersededFires).
+	// supersedes is the occurrence a schedule fire delivers, dispatched or
+	// retried, zero on every other delivery: once it settles, the trigger's
+	// parked fires at or before it retire with it (retireSupersededFires).
 	supersedes time.Time
 	// superseded is the parked fires this settlement holds in runningClaims
 	// while it retires them; release gives them back.
@@ -2591,6 +2591,13 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	}
 	f.Payload = json.RawMessage(payload)
 	settle := &settlement{ds: ds, trigger: tr.ID, seq: int64(f.Seq), fireID: f.FireID, retire: failureID}
+	// A retried occurrence that settles supersedes the parks at or before
+	// it, as a dispatched one does.
+	if tr.Schedule != nil && len(payload) == 0 {
+		if at, err := time.Parse(time.RFC3339, f.FireID); err == nil {
+			settle.supersedes = at.UTC()
+		}
+	}
 	// The failure is held in this process before anything runs and until the
 	// retirement or the re-park ends: a second retry of the same failure, or
 	// a retry of a claim whose dispatch is still running, answers conflict

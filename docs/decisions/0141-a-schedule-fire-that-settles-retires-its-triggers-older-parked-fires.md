@@ -43,8 +43,10 @@ An agent claim, in flight or interrupted, is left to a person, as
 [0064](0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)
 leaves it, because its run may have written records.
 
-The rows are deleted through the same unpark fold a delivered retry writes,
-on the settling fire's own delivery entry, so a rebuild and a restore agree.
+A settling fire is a dispatched occurrence or a parked one retried by hand;
+either retires the parks at or before its occurrence and none after it. The
+rows are deleted through the same unpark fold a delivered retry writes, on
+the settling fire's own delivery entry, so a rebuild and a restore agree.
 `trigger_failures` has no state column to mark, and the parked run rows and
 the changelog keep the history. A row a hand is retrying at that moment
 keeps its retry.
@@ -74,6 +76,7 @@ never to a clock.
 `internal/engine/schedulesupersede_db_test.go`: a function schedule parks
 three occurrences, the middle one settles and retires the first two while
 the later park stays, the last settles and the trigger status and sync
-status read 0 parked, and a rebuild reproduces the fold. An agent schedule
-fire retires the same way. A record trigger's park survives a later `ok`
-delivery and a schedule fire of the same function.
+status read 0 parked, and a rebuild reproduces the fold. A retry by hand of
+the middle occurrence retires the first and leaves the last. An agent
+schedule fire retires the same way. A record trigger's park survives a later
+`ok` delivery and a schedule fire of the same function.

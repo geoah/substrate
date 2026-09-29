@@ -4,9 +4,9 @@ type: fix
 
 # A settled schedule fire retires its trigger's older parked fires
 
-When a fire of a schedule trigger settles, the engine deletes every parked
-fire of that trigger at or before the settled occurrence, through the same
-unpark a retry writes. `GET /api/v1/sync/status`, the trigger status and
+When a fire of a schedule trigger settles, dispatched or retried by hand,
+the engine deletes every parked fire of that trigger at or before the
+settled occurrence, through the same unpark a retry writes. `GET /api/v1/sync/status`, the trigger status and
 `GET /api/v1/substrate.reamde.dev/core/trigger/{id}/parked` then report 0
 parked for it, and the console stops showing "N runs failed and are waiting
 to be tried again" for a sync that has recovered. Rows parked before the
