@@ -172,20 +172,12 @@ func TestAPageEntryStaysSmallAsItsCursorGrows(t *testing.T) {
 			t.Fatalf("page %d names a %v-byte cursor, want the 200 KB it drained", i+1, e.page["cursorBytes"])
 		}
 	}
-	// The hash names the cursor the table holds: the JSON the drain encoded.
-	var decoded any
-	if err := json.Unmarshal([]byte(stored), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(decoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(encoded)
+	// The hash names the cursor the table holds, as Postgres prints it.
+	sum := sha256.Sum256([]byte(stored))
 	last := pages[len(pages)-1].page
-	if last["cursorSha256"] != hex.EncodeToString(sum[:]) || last["cursorBytes"] != float64(len(encoded)) {
+	if last["cursorSha256"] != hex.EncodeToString(sum[:]) || last["cursorBytes"] != float64(len(stored)) {
 		t.Fatalf("the last page names %v (%v bytes), want the stored cursor's %x (%d bytes)",
-			last["cursorSha256"], last["cursorBytes"], sum, len(encoded))
+			last["cursorSha256"], last["cursorBytes"], sum, len(stored))
 	}
 	// The park is the one entry that carries the cursor, whole.
 	if raw, _ := json.Marshal(parks[0].page["cursor"]); len(raw) < 200_000 {
@@ -287,7 +279,8 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	// Chain B is pending and was interrupted after its second page: the pages
 	// committed, their entries named the cursor by hash, and no park
 	// followed. Its tasks are absent, so a resume from cursor 3 would leave
-	// b-p-0 missing.
+	// b-p-0 missing. Its cursor holds numbers jsonb respells (a negative zero,
+	// a trailing zero), which the rebuild must still match to their digest.
 	b, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: "b", Properties: map[string]any{"name": "b"}})
 	if err != nil {
 		t.Fatal(err)
@@ -299,7 +292,8 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	chainB := chainKey(ds, triggerID, bch.Seq)
 	owner := pagedOwner{triggerID: triggerID, kind: pagedKindRecord, identity: fmt.Sprintf("%d", bch.Seq)}
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
-		if err := tx.claimPagedCursor(chainB, owner, map[string]any{"page": 3, "token": "<b>"}, 2, 2, 2, nowUTC().Add(-time.Hour)); err != nil {
+		cursor := json.RawMessage(`{"page": 3, "offset": -0.0, "ratio": 1.50, "token": "<b>"}`)
+		if err := tx.claimPagedCursor(chainB, owner, cursor, 2, 2, 2, nowUTC().Add(-time.Hour)); err != nil {
 			return err
 		}
 		return tx.settleDelivery(triggerID)

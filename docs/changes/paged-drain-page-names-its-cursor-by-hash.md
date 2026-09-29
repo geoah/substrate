@@ -7,12 +7,13 @@ type: fix
 Each page of a paged drain appended a `delivery` changelog entry carrying the
 body's whole resume cursor. Slack's cursor is about 380 KB at 9,000 pending
 items, so its triggers grew the segment files by that much on every page. A
-page entry now records the cursor's `cursorSha256` and `cursorBytes`, and the
+page entry now records the cursor's `cursorSha256` and `cursorBytes`, the
+SHA-256 and byte length of the stored cursor as Postgres prints it, and the
 cursor stays in the `paged_cursors` table:
 
 ```
 {"kind": "page", "ref": "substrate.reamde.dev/core/trigger", "id": "<trigger>",
- "page": {"chain": "<chain>", "cursorSha256": "<SHA-256 of the cursor JSON>",
+ "page": {"chain": "<chain>", "cursorSha256": "<SHA-256 of cursor::text>",
           "cursorBytes": <its length>, "version": <n>, "pages": <n>,
           "effects": <n>, "bytes": <n>, "startedAt": "<first page>",
           "kind": "fire", "identity": "<fire id>"}}

@@ -111,18 +111,7 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 		if op.Page == nil {
 			return false, fmt.Errorf("substrate/engine: a page effect on %s carries no row", op.ID)
 		}
-		p := op.Page
-		_, err := t.exec(`
-			INSERT INTO paged_cursors (chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at)
-			VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-			ON CONFLICT (repository, chain) DO UPDATE
-			SET cursor = EXCLUDED.cursor, pages = EXCLUDED.pages, version = EXCLUDED.version,
-			    effects = EXCLUDED.effects, bytes = EXCLUDED.bytes, started_at = EXCLUDED.started_at,
-			    trigger_id = EXCLUDED.trigger_id, kind = EXCLUDED.kind, identity = EXCLUDED.identity,
-			    updated_at = EXCLUDED.updated_at`,
-			p.Chain, p.storedCursor(t.keptCursors), int64(p.Pages), int64(p.Version), int64(p.Effects), int64(p.Bytes),
-			p.StartedAt.UTC(), op.ID, p.Kind, p.Identity, t.now)
-		return true, err
+		return true, t.upsertPage(op.ID, op.Page)
 	case foldUnpage:
 		if op.Page == nil {
 			return false, fmt.Errorf("substrate/engine: an unpage effect on %s names no chain", op.ID)
@@ -140,6 +129,69 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 		return changed, nil
 	}
 	return false, fmt.Errorf("substrate/engine: %q is not a delivery effect", op.Kind)
+}
+
+// pageUpsert writes a resume row whole; %s is the expression the cursor
+// column takes.
+const pageUpsert = `
+	INSERT INTO paged_cursors (chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at)
+	VALUES ($1, %s, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	ON CONFLICT (repository, chain) DO UPDATE
+	SET cursor = EXCLUDED.cursor, pages = EXCLUDED.pages, version = EXCLUDED.version,
+	    effects = EXCLUDED.effects, bytes = EXCLUDED.bytes, started_at = EXCLUDED.started_at,
+	    trigger_id = EXCLUDED.trigger_id, kind = EXCLUDED.kind, identity = EXCLUDED.identity,
+	    updated_at = EXCLUDED.updated_at`
+
+// cursorDigestSQL is the digest a page entry names a cursor by (decision
+// 0141): the hex SHA-256 of the stored jsonb as Postgres prints it, so the
+// entry can be checked against the table with SQL alone and a jsonb value
+// read back names itself the same way. cursorLengthSQL is that text's length
+// in bytes.
+func cursorDigestSQL(column string) string {
+	return `encode(sha256(convert_to(` + column + `::text, 'UTF8')), 'hex')`
+}
+
+func cursorLengthSQL(column string) string {
+	return `octet_length(convert_to(` + column + `::text, 'UTF8'))`
+}
+
+// upsertPage writes a page effect's resume row. The cursor is the bytes a
+// live middle page staged, else the cursor the entry carries whole, else, on
+// a replay that kept the table's cursors (rebuild.go keepPagedCursors), the
+// kept cursor of the chain whose digest the entry names, else JSON null.
+//
+// A live middle page reads the digest and length of what the table stored
+// back onto the row, and p is the row of the effect fold records, so the
+// entry names exactly the stored cursor.
+func (t *txn) upsertPage(triggerID string, p *foldPageRow) error {
+	args := []any{
+		p.Chain, nil, int64(p.Pages), int64(p.Version), int64(p.Effects), int64(p.Bytes),
+		p.StartedAt.UTC(), triggerID, p.Kind, p.Identity, t.now,
+	}
+	switch {
+	case len(p.staged) > 0:
+		args[1] = []byte(p.staged)
+		var n int64
+		if err := t.row(fmt.Sprintf(pageUpsert, `$2::jsonb`)+`
+			RETURNING `+cursorDigestSQL("paged_cursors.cursor")+`, `+cursorLengthSQL("paged_cursors.cursor"), args...).
+			Scan(&p.CursorSHA256, &n); err != nil {
+			return err
+		}
+		p.CursorBytes = foldInt(n)
+		return nil
+	case len(p.Cursor) > 0:
+		args[1] = []byte(p.Cursor)
+	case t.keptCursors && p.CursorSHA256 != "":
+		args[1] = p.CursorSHA256
+		_, err := t.exec(fmt.Sprintf(pageUpsert, `coalesce(
+			(SELECT k.cursor FROM pg_temp.substrate_kept_cursors k WHERE k.chain = $1 AND k.digest = $2),
+			'null'::jsonb)`), args...)
+		return err
+	default:
+		args[1] = []byte(`null`)
+	}
+	_, err := t.exec(fmt.Sprintf(pageUpsert, `$2::jsonb`), args...)
+	return err
 }
 
 // rowsChanged runs a statement and reports whether it touched a row.
@@ -453,15 +505,15 @@ func (t *txn) lockPagedCursor(chain string) (pagedOwner, int64, error) {
 
 // pageTx records a middle page's resume row: whole in paged_cursors, and on
 // the delivery entry with the cursor named by the SHA-256 and byte length of
-// its JSON rather than carried (decision 0141). The entry stays a few hundred
-// bytes however large the cursor grows.
+// the stored value rather than carried (decision 0141, upsertPage). The entry
+// stays a few hundred bytes however large the cursor grows.
 func (t *txn) pageTx(owner pagedOwner, chain string, cursor any, version, pages, effects, bytes int64, startedAt time.Time) error {
 	raw, err := json.Marshal(cursor)
 	if err != nil {
 		return fmt.Errorf("paged cursor: %w", err)
 	}
 	_, err = t.fold(foldOp{Kind: foldPage, Ref: typeTrigger, ID: owner.triggerID, Page: &foldPageRow{
-		Chain: chain, CursorSHA256: cursorDigest(raw), CursorBytes: foldInt(len(raw)), staged: raw,
+		Chain: chain, staged: raw,
 		Version: foldInt(version), Pages: foldInt(pages),
 		Effects: foldInt(effects), Bytes: foldInt(bytes), StartedAt: startedAt.UTC(),
 		Kind: owner.kind, Identity: owner.identity,

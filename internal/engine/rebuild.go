@@ -221,12 +221,10 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	if err := t.refuseNewerChangelogDialect(); err != nil {
 		return err
 	}
-	kept, err := t.keepPagedCursors()
-	if err != nil {
+	if err := t.keepPagedCursors(); err != nil {
 		return err
 	}
-	t.keptCursors = kept
-	defer func() { t.keptCursors = nil }()
+	defer func() { t.keptCursors = false }()
 	for _, table := range foldTables {
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {
 			return fmt.Errorf("substrate/engine: rebuild: clear %s: %w", table, err)
@@ -262,46 +260,50 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 		}
 		prog.tick(cur.Position())
 	}
+	if err := t.dropKeptCursors(); err != nil {
+		return err
+	}
 	if err := t.rederiveOffers(); err != nil {
 		return err
 	}
 	return t.row(`SELECT count(*) FROM records`).Scan(&report.Records)
 }
 
-// keepPagedCursors reads every resume cursor paged_cursors holds, with the
-// digest a page entry names it by, before the replay clears the table. A page
-// entry names its cursor by hash alone (decision 0141), so these bytes are the
-// only copy; the replay folds a chain's row back with them where the entry's
-// digest matches (fold.go storedCursor), and a rebuild over the same database
-// keeps a drain that stopped between pages at its page. A null cursor has no
-// position to keep. The rows are read to the end before anything writes.
-func (t *txn) keepPagedCursors() (map[string]keptCursor, error) {
-	rows, err := t.query(`SELECT chain, cursor FROM paged_cursors`)
-	if err != nil {
-		return nil, err
+// keepPagedCursors copies every resume cursor paged_cursors holds into a
+// table of this transaction's own, with the digest a page entry names it by,
+// before the replay clears paged_cursors. A page entry names its cursor by
+// hash alone (decision 0141), so these rows are the only copy; the replay
+// folds a chain's row back with the kept cursor whose digest its entry names
+// (delivery.go upsertPage), and a rebuild over the same database keeps a
+// drain that stopped between pages at its page. The copy stays in Postgres,
+// however many parked drains hold a cursor, and goes with the transaction.
+func (t *txn) keepPagedCursors() error {
+	if _, err := t.exec(`DROP TABLE IF EXISTS pg_temp.substrate_kept_cursors`); err != nil {
+		return err
 	}
-	defer func() { _ = rows.Close() }()
-	kept := map[string]keptCursor{}
-	for rows.Next() {
-		var chain string
-		var raw []byte
-		if err := rows.Scan(&chain, &raw); err != nil {
-			return nil, err
-		}
-		// The digest is over the JSON encoding/json writes for the value,
-		// which is what pageTx hashed; the column holds the same value in
-		// jsonb's own spelling.
-		var v any
-		if err := json.Unmarshal(raw, &v); err != nil || v == nil {
-			continue
-		}
-		encoded, err := json.Marshal(v)
-		if err != nil {
-			continue
-		}
-		kept[chain] = keptCursor{raw: raw, sha256: cursorDigest(encoded)}
+	if _, err := t.exec(`
+		CREATE TEMPORARY TABLE substrate_kept_cursors (
+			chain  text  PRIMARY KEY,
+			cursor jsonb NOT NULL,
+			digest text  NOT NULL
+		) ON COMMIT DROP`); err != nil {
+		return fmt.Errorf("substrate/engine: rebuild: keep the paged cursors: %w", err)
 	}
-	return kept, rows.Err()
+	if _, err := t.exec(`
+		INSERT INTO pg_temp.substrate_kept_cursors (chain, cursor, digest)
+		SELECT chain, cursor, ` + cursorDigestSQL("cursor") + ` FROM paged_cursors`); err != nil {
+		return fmt.Errorf("substrate/engine: rebuild: keep the paged cursors: %w", err)
+	}
+	t.keptCursors = true
+	return nil
+}
+
+// dropKeptCursors ends what keepPagedCursors started, so nothing the
+// transaction folds after the replay reads the kept cursors.
+func (t *txn) dropKeptCursors() error {
+	t.keptCursors = false
+	_, err := t.exec(`DROP TABLE IF EXISTS pg_temp.substrate_kept_cursors`)
+	return err
 }
 
 // rederiveOffers clears property_offers and derives it again from the fold:

@@ -2,9 +2,7 @@ package engine
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -289,9 +287,9 @@ type foldFailure struct {
 // first page, carried because the drain deadline is measured from it.
 //
 // The cursor is carried one of two ways (decision 0141). A middle page names
-// it by CursorSHA256 and CursorBytes, the digest and length of the JSON the
-// drain encoded, and hands the bytes to the live write in `staged`, which is
-// never encoded: a provider cursor runs to hundreds of kilobytes and a drain
+// it by CursorSHA256 and CursorBytes, the digest and length of the stored
+// cursor as Postgres prints it (delivery.go cursorDigestSQL), and hands the
+// bytes to the live write in `staged`, which is never encoded: a provider cursor runs to hundreds of kilobytes and a drain
 // writes one per page, so the entry would otherwise copy it every page. A
 // park's checkpoint (delivery.go checkpointPagedCursor), and every entry
 // written before 0141, carries it whole in Cursor. A replay restores the
@@ -314,37 +312,6 @@ type foldPageRow struct {
 	Identity     string          `json:"identity,omitempty"`
 
 	staged json.RawMessage
-}
-
-// storedCursor is the cursor a page effect writes to paged_cursors: the bytes
-// a live middle page staged, else the cursor the entry carries whole, else the
-// kept cursor of the same chain whose digest the entry names, else JSON null,
-// where a replay has no bytes the entry vouches for.
-func (p *foldPageRow) storedCursor(kept map[string]keptCursor) []byte {
-	switch {
-	case len(p.staged) > 0:
-		return p.staged
-	case len(p.Cursor) > 0:
-		return p.Cursor
-	}
-	if k, ok := kept[p.Chain]; ok && p.CursorSHA256 != "" && k.sha256 == p.CursorSHA256 {
-		return k.raw
-	}
-	return []byte(`null`)
-}
-
-// keptCursor is a resume cursor a replay read before it cleared the table: the
-// bytes as stored, and the digest a page entry names them by.
-type keptCursor struct {
-	raw    []byte
-	sha256 string
-}
-
-// cursorDigest is the digest a page entry names its cursor by: the hex SHA-256
-// of the cursor's JSON as encoding/json writes it (delivery.go pageTx).
-func cursorDigest(encoded []byte) string {
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:])
 }
 
 func (op foldOp) ref() eref { return eref{Kind: op.Ref, ID: op.ID} }
