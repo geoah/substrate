@@ -44,6 +44,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -350,11 +351,31 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 
 // applyVocabularyBatch is the write path for schema: candidate before the
 // transaction, rows + changelog inside it, pointer publish after commit —
-// all under the per-repository schema-write mutex.
+// all under the per-repository schema-write mutex. It logs a wait for that
+// mutex, when there is one, and how the batch ended (logApply).
 func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Actor, b vocabularyBatch) (map[string]*substrate.Record, error) {
-	ds.vocabularyWriteMu.Lock()
+	if !ds.vocabularyWriteMu.TryLock() {
+		ds.logApply("waiting for the vocabulary batch ahead of this one")
+		ds.vocabularyWriteMu.Lock()
+	}
 	defer ds.vocabularyWriteMu.Unlock()
+	started := time.Now()
+	written, err := ds.applyVocabularyBatchLocked(ctx, actor, b)
+	took := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		// Not "rolled back": an error after the database commit (the
+		// changelog files, an in-doubt COMMIT) leaves the batch durable. The
+		// error goes to the caller and is not logged, because a refusal can
+		// quote a record's values.
+		ds.logApply("ended with an error", "took", took)
+		return nil, err
+	}
+	ds.logApply("committed", "took", took)
+	return written, nil
+}
 
+// applyVocabularyBatchLocked is applyVocabularyBatch under the mutex.
+func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substrate.Actor, b vocabularyBatch) (map[string]*substrate.Record, error) {
 	current := ds.registry()
 	st, err := ds.stageVocabularyBatch(ctx, current, &actor, b)
 	if err != nil {
@@ -404,6 +425,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 			prepare = append(prepare, f)
 		}
 	}
+	if len(prepare) > 0 {
+		ds.logApply("preparing function bodies", "functions", len(prepare))
+	}
 	if err := ds.prepareFunctions(ctx, candidate, prepare); err != nil {
 		return nil, err
 	}
@@ -417,7 +441,10 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	// conflict with. An index built for a batch the guards below then refuse
 	// is harmless: IF NOT EXISTS finds it next time, and nothing reads it
 	// until its kind lands.
-	if err := ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched)); err != nil {
+	building := func(kind, index string) {
+		ds.logApply("building an index", "kind", logSafeID(kind), "index", logSafeID(index))
+	}
+	if err := ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched), building); err != nil {
 		return nil, err
 	}
 
@@ -433,6 +460,8 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
 		}
+		ds.logApply("holding the registry lock, checking the batch against the stored records",
+			"documents", len(b.docs), "packages", len(touched))
 		// Every registry read in this transaction is the candidate's
 		// (txn.declarations): the guards, the projection, the reprojected
 		// refs and the batch's `extra` writes all resolve, map and admit
@@ -488,6 +517,7 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		}
 		got, err := t.projectPackages(candidate, touched, projectOpts{
 			meta: b.meta, prune: true, origin: b.origin, originVersion: b.originVersion,
+			logPackages: true,
 		})
 		if err != nil {
 			return err
@@ -500,6 +530,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// declaration rows, so the entries follow the declaration they answer
 		// to, and before the refs index re-derives, so it reads the converted
 		// properties.
+		if !st.conversions.empty() {
+			ds.logApply("rewriting records for the declared conversions")
+		}
 		if _, err := t.convertRecords(candidate, st.conversions); err != nil {
 			return err
 		}
@@ -511,6 +544,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// gone. The narrowing guards above have already refused every change
 		// that would strand a LIVE value, so what this reaches is the additive
 		// case and the tombstones the counts deliberately do not see.
+		if len(st.reprojected) > 0 {
+			ds.logApply("re-deriving the refs index", "kinds", len(st.reprojected))
+		}
 		if err := t.reprojectRefs(st.reprojected); err != nil {
 			return err
 		}
@@ -520,6 +556,9 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		// searchable shape this batch changes, against the candidate, so the
 		// live index and its replay agree; the rows' values do not move, so
 		// this bumps nothing and appends nothing.
+		if len(st.reprojectedFTS) > 0 {
+			ds.logApply("re-deriving the search index", "kinds", len(st.reprojectedFTS))
+		}
 		if err := t.reprojectFTS(candidate, st.reprojectedFTS); err != nil {
 			return err
 		}
@@ -556,8 +595,15 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		if err := t.checkMappingWhere(candidate); err != nil {
 			return err
 		}
-		if err := t.linkUnpointedSources(backfilledMappings(ds.registry(), candidate, b.docs)); err != nil {
+		backfilled := backfilledMappings(ds.registry(), candidate, b.docs)
+		if len(backfilled) > 0 {
+			ds.logApply("linking unlinked mapping sources", "mappings", len(backfilled))
+		}
+		if err := t.linkUnpointedSources(backfilled); err != nil {
 			return err
+		}
+		if targets := changedMappingTargets(ds.registry(), candidate); len(targets) > 0 {
+			ds.logApply("recomputing the records of changed mapping targets", "kinds", len(targets))
 		}
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
@@ -1172,6 +1218,24 @@ type projectOpts struct {
 	// already decided, and a re-projection that let the package's version win
 	// would move a row the API had moved ahead of it.
 	versions map[string]int64
+	// logPackages logs one line per package as its declarations are written,
+	// naming the package and its place in the batch (logApply). The seed, the
+	// boot upgrade and a repository migration run once per repository at open
+	// and leave it off.
+	logPackages bool
+}
+
+// logApply logs one step of a vocabulary batch at info. The apply door holds
+// its transaction and the registry lock for as long as a batch takes, which
+// on a large repository is minutes, and these lines are an operator's only
+// sign of where it is (issue 720). Every step that can run long logs as it
+// starts, and only when it has work: the wait for the batch ahead, function
+// bodies to prepare, an index to build, each walk over stored records. The
+// registry lock, each package and the end always log, so an apply that
+// changes no stored record logs those alone.
+func (ds *dataset) logApply(step string, attrs ...any) {
+	ds.svc.log.Info("substrate: vocabulary apply: "+step,
+		append([]any{"repository", logSafeID(ds.scope.Repository)}, attrs...)...)
 }
 
 // projectPackages writes the touched packages' declarations as record rows
@@ -1222,7 +1286,11 @@ func (t *txn) projectPackages(reg *vocabulary.Registry, authorities map[string]b
 	prevReg := t.writeReg
 	t.writeReg = reg
 	defer func() { t.writeReg = prevReg }()
-	for _, p := range passes {
+	for i, p := range passes {
+		if opts.logPackages {
+			t.ds.logApply("writing the declarations of one package",
+				"package", logSafeID(p.g.Identity), "declarations", len(p.decls), "index", i+1, "packages", len(passes))
+		}
 		if err := t.projectPackage(reg, projecting, p.decls, live, opts, out); err != nil {
 			return nil, err
 		}

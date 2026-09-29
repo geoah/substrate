@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -482,9 +483,14 @@ func isSchemaDocument(node *yaml.Node) bool {
 // "", and `opts.holdWaiting` asks the door to hold back waiting mappings.
 func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[string]any, allowDataLoss bool, opts vocabularyOptions) error {
 	origin := opts.origin
+	shape := batchShape(docs)
 	var confirm *substrate.ConversionConfirm
 	if allowDataLoss {
-		plan, err := cl.planVocabulary(ctx, docs, opts)
+		var plan *substrate.VocabularyPlan
+		err := a.whileWaiting("previewing "+shape, func() (err error) {
+			plan, err = cl.planVocabulary(ctx, docs, opts)
+			return err
+		})
 		if err != nil {
 			return err
 		}
@@ -502,7 +508,11 @@ func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[s
 			confirm = &substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
 		}
 	}
-	applied, err := cl.applyVocabulary(ctx, docs, confirm, opts)
+	var applied *vocabularyApplied
+	err := a.whileWaiting("applying "+shape, func() (err error) {
+		applied, err = cl.applyVocabulary(ctx, docs, confirm, opts)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -513,6 +523,69 @@ func (a *app) applySchemaDocuments(ctx context.Context, cl *client, docs []map[s
 		fmt.Fprintf(a.out, "%s/%s held: waits on %s from %s (install it, then apply again)\n", vocabulary.DocRecordMapping, m.ID, m.From, m.Package)
 	}
 	return nil
+}
+
+// progressEvery is how often a vocabulary request still in flight says so.
+// The server admits a batch in one transaction and answers only at its end,
+// which on a large repository is minutes (issue 720).
+const progressEvery = 10 * time.Second
+
+// whileWaiting runs call and, until it returns, prints what is in flight and
+// how long it has taken to errOut once per progressEvery. The lines go to
+// stderr and never to stdout, so a script reading the summary reads what it
+// always did, and none prints when the answer comes inside one interval. The
+// printer has stopped by the time whileWaiting returns, so no progress line
+// lands after the summary.
+func (a *app) whileWaiting(what string, call func() error) error {
+	if a.progressEvery <= 0 {
+		return call()
+	}
+	started := a.now()
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		tick := time.NewTicker(a.progressEvery)
+		defer tick.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-tick.C:
+				fmt.Fprintf(a.errOut, "%s, %s elapsed\n", what, a.now().Sub(started).Round(time.Second))
+			}
+		}
+	}()
+	err := call()
+	close(stop)
+	<-stopped
+	return err
+}
+
+// batchShape counts a vocabulary batch for its progress line: "96 documents
+// in 12 packages". A package is one declaration's data.authority and
+// data.package together; a batch whose documents name no package (an
+// authority document alone) is counted in documents only.
+func batchShape(docs []map[string]any) string {
+	packages := map[string]bool{}
+	for _, d := range docs {
+		authority, pkg := mapString(d["data"], "authority"), mapString(d["data"], "package")
+		if authority != "" && pkg != "" {
+			packages[authority+"/"+pkg] = true
+		}
+	}
+	shape := countOf(len(docs), "document")
+	if len(packages) > 0 {
+		shape += " in " + countOf(len(packages), "package")
+	}
+	return shape
+}
+
+// countOf is "1 document" and "2 documents".
+func countOf(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // documentRef names a document for error messages: "task.yaml document 2",

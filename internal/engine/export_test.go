@@ -435,3 +435,11 @@ const WebhookPendingError = pendingWebhookError
 // PoolStats is the repository pool's statistics, for a test that has to know
 // every connection is held.
 func PoolStats(ds substrate.Dataset) sql.DBStats { return ds.(*dataset).db.Stats() }
+
+// HoldVocabularyWrites takes the dataset's vocabulary write mutex, as a batch
+// in flight holds it, and returns what releases it.
+func HoldVocabularyWrites(ds substrate.Dataset) (release func()) {
+	d := ds.(*dataset)
+	d.vocabularyWriteMu.Lock()
+	return d.vocabularyWriteMu.Unlock
+}

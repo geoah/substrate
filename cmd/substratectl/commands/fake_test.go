@@ -81,6 +81,9 @@ type fakeSubstrate struct {
 	// plan is POST /api/v1/vocabulary/plan's answer: the conversion plan the
 	// apply would run, which `apply --allow-data-loss` confirms by its hash.
 	plan substrate.VocabularyPlan
+	// vocabularyDelay holds the vocabulary apply's and the plan's answer back
+	// this long, as a server admitting a large batch does.
+	vocabularyDelay time.Duration
 	// installRefusesLossy makes a bare POST .../install (no confirmation in
 	// the body) answer the server's 403 `lossy`, as a lossy plan does.
 	installRefusesLossy bool
@@ -428,6 +431,7 @@ func (f *fakeSubstrate) handleTypes(w http.ResponseWriter, r *http.Request) {
 // answers one schema record per document, the way the engine does.
 func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	f.hold()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var req struct {
@@ -482,9 +486,19 @@ func (f *fakeSubstrate) handleCatalogInstall(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// hold waits out vocabularyDelay outside the lock, so the fake answers
+// everything else while one vocabulary request is held.
+func (f *fakeSubstrate) hold() {
+	f.mu.Lock()
+	delay := f.vocabularyDelay
+	f.mu.Unlock()
+	time.Sleep(delay)
+}
+
 // handleVocabularyPlan serves the apply preview the harness seeded.
 func (f *fakeSubstrate) handleVocabularyPlan(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	f.hold()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.lastBody["documents"]; !ok {
