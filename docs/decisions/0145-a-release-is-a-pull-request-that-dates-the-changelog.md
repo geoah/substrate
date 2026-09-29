@@ -4,15 +4,16 @@ date: 2026-09-29
 decision-makers: George Antoniadis
 ---
 
-# 0104. A release is a pull request that dates the changelog, and a merge to main releases nothing
+# 0145. A release is a pull request that dates the changelog, and a merge to main releases nothing
 
 ## Context and Problem Statement
 
 People and agents upgrading a substrate need to know what changed and what
-to do about it. The first answer (PR #655) was one fragment file per change
-under `docs/changes/`, rendered onto GitHub release pages: no changelog file
-to find, release pages as the primary surface, entries for breaks and some
-features only. The second answer (this record as drafted on 2026-09-26) kept
+to do about it. The first answer (PR #655, record 0104, rejected by this
+one) was one fragment file per change under `docs/changes/`, rendered onto
+GitHub release pages: no changelog file to find, release pages as the primary
+surface, entries for breaks and some features only. The second answer (a
+2026-09-26 draft that rewrote 0104 in place) kept
 release on every green merge and added a GitHub App that pushed a dated
 `CHANGELOG.md` to `main` after each release, because with a release on every
 merge nothing else could move the unreleased entries under a version.

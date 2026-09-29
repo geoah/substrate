@@ -266,7 +266,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0101](0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md) | A kind, trait or callable is named in full on every surface | accepted |
 | [0102](0102-the-oauth-surface-takes-the-full-identity-only.md) | The OAuth surface takes the full identity only | accepted |
 | [0103](0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md) | An ambiguous probe follows its mapping's `onAmbiguous`, and a probed value never spreads to a second target | accepted |
-| [0104](0104-a-release-is-a-pull-request-that-dates-the-changelog.md) | A release is a pull request that dates the changelog, and a merge to main releases nothing | accepted |
+| [0104](0104-a-break-ships-an-upgrade-note-under-docs-changes.md) | A break ships an upgrade note under docs/changes | rejected |
 | [0105](0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md) | A lossy confirmation binds to what the plan affects | accepted |
 | [0106](0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md) | The apply door holds back a mapping whose provider is absent, on request | accepted |
 | [0107](0107-an-apply-links-the-sources-its-mappings-left-unlinked.md) | An apply links the sources its mappings left unlinked | accepted |
@@ -303,3 +303,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0142](0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md) | A schedule fire that settles retires its trigger's older parked fires | accepted |
 | [0143](0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md) | A token has full access to its repository, and a login token does not expire | accepted |
 | [0144](0144-a-restoring-put-completes-the-conversions-a-tombstone-missed.md) | A restoring put completes the conversions a tombstone missed | accepted |
+| [0145](0145-a-release-is-a-pull-request-that-dates-the-changelog.md) | A release is a pull request that dates the changelog, and a merge to main releases nothing | accepted |
