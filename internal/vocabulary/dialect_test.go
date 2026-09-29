@@ -510,29 +510,104 @@ func TestDefaultRefusedWhenTheValueCouldNotBeStored(t *testing.T) {
 	}
 }
 
-// A field's `default` is refused rather than accepted and ignored: the write
-// path fills a property a create did not name and never reaches inside an
-// object to build one, so a field default would be a declared promise nothing
-// keeps. `required` on a field is a different matter, and is enforced.
-func TestDefaultRefusedInsideFields(t *testing.T) {
-	_, err := dialectLoad(t, `  properties:
-    profile:
-      type: object
-      fields:
-        locale: {type: string, default: en}
-`)
-	if err == nil || !strings.Contains(err.Error(), "default fills a type's own property, not a field") {
-		t.Fatalf("got %v, want a field default refused by name", err)
-	}
-	// The sibling markers stay: a required field parses, and is what the engine
-	// enforces against the written object.
+// A field's `default:` parses onto the field, at any depth, beside `required`
+// or without it: the write path fills it into each object a write sends that
+// leaves the field out (issue 248).
+func TestFieldDefaultParsesOntoTheField(t *testing.T) {
 	w := dialectWidget(t, `  properties:
     profile:
       type: object
       fields:
         email: {type: email, required: true}
+        locale: {type: string, default: en}
+        tier: {type: enum, values: [free, paid], required: true, default: free}
+        home:
+          type: object
+          fields:
+            country: {type: string, default: GR}
+    seen:
+      type: object
+      repeated: true
+      fields:
+        count: {type: int, default: 1}
 `)
-	if p, _ := w.Prop("profile"); p == nil || !p.Fields["email"].Required {
-		t.Fatal("a required field must survive the parse")
+	profile, _ := w.Prop("profile")
+	seen, _ := w.Prop("seen")
+	if profile == nil || seen == nil {
+		t.Fatal("the object properties must survive the parse")
+	}
+	for name, tc := range map[string]struct {
+		field *vocabulary.Property
+		want  any
+	}{
+		"profile.email":        {profile.Fields["email"], nil},
+		"profile.locale":       {profile.Fields["locale"], "en"},
+		"profile.tier":         {profile.Fields["tier"], "free"},
+		"profile.home.country": {profile.Fields["home"].Fields["country"], "GR"},
+		"seen.count":           {seen.Fields["count"], 1},
+	} {
+		if tc.field.Default != tc.want {
+			t.Errorf("%s: default = %#v, want %#v", name, tc.field.Default, tc.want)
+		}
+	}
+	if !profile.Fields["email"].Required || !profile.Fields["tier"].Required {
+		t.Error("a required field must survive the parse beside a default")
+	}
+}
+
+// A field's default is held to the field's own type by the rules a property's
+// default meets, and a field that is itself an object or a reference takes no
+// default, so no default can build an object or a pointer the writer did not
+// send.
+func TestFieldDefaultRefusedWhenTheValueCouldNotBeStored(t *testing.T) {
+	for name, tc := range map[string]struct{ field, want string }{
+		"a string where a number belongs": {
+			field: `retries: {type: int, default: "3"}`,
+			want:  `profile.fields.retries.default: expected a number`,
+		},
+		"a number where a string belongs": {
+			field: `locale: {type: string, default: 3}`,
+			want:  `profile.fields.locale.default: expected a string, written as a string`,
+		},
+		"a bool where an int belongs": {
+			field: `retries: {type: int, default: true}`,
+			want:  `profile.fields.retries.default: expected a number`,
+		},
+		"not an enum value": {
+			field: `tier: {type: enum, values: [free, paid], default: gold}`,
+			want:  `"gold" is not one of free, paid`,
+		},
+		"a list field": {
+			field: `tags: {type: string, repeated: true, default: x}`,
+			want:  "a default fills one value, and this property holds a list",
+		},
+		"a keyed field": {
+			field: `counts: {type: int, keyed: true, default: 1}`,
+			want:  "a default fills one value, and this property holds a map",
+		},
+		"null": {
+			field: `note: {type: string, default: null}`,
+			want:  "a default is a value",
+		},
+		"an object field": {
+			field: `home: {type: object, default: {country: GR}, fields: {country: {type: string}}}`,
+			want:  `profile.fields.home: unknown key "default"`,
+		},
+		"a reference field": {
+			field: `owner: {type: reference, kind: w.example.com/w/widget, default: w1}`,
+			want:  `profile.fields.owner: unknown key "default"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := dialectLoad(t, `  properties:
+    profile:
+      type: object
+      fields:
+        `+tc.field+`
+`)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want it to name %q", err, tc.want)
+			}
+		})
 	}
 }

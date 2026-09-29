@@ -421,9 +421,8 @@ field, and `{}` does not satisfy it: core's `trigger` requires its `source`
 this way.
 
 A `default:` beside it is what a create that does not name the property stores,
-materialized into the row and the changelog entry at the write. It is a
-property's own: a `default:` inside `fields:` is refused, because nothing builds
-an object to put one in. A default alone never rewrites a stored record, so
+materialized into the row and the changelog entry at the write. A default
+alone never rewrites a stored record, so
 adding `required:` without one is still a narrowing: the guard counts the
 records that hold no value for it, by the same rule the write path refuses
 them, and tells you to declare a default or write them. With a `default:`
@@ -431,6 +430,38 @@ beside it the apply backfills them instead ([below](#backfilling-and-remapping))
 Nothing discards your records behind your back; a conversion writes values
 the changelog keeps, and a lossy one runs only when you confirm the plan you
 previewed ([below](#backfilling-and-remapping)).
+
+A `default:` on a field inside `fields:` is what an object value stores for
+that field when the object leaves it out:
+
+```yaml
+properties:
+  contact:
+    type: object
+    fields:
+      email: {type: email}
+      locale: {type: string, default: en}
+```
+
+A create writing `contact: {email: a@example.com}` stores
+`contact: {email: a@example.com, locale: en}`, in the row and in the changelog
+entry. The default fills only the objects a write sends:
+
+- a create without `contact` stores no `contact`;
+- each item of a `repeated` object and each value of a `keyed` one is filled,
+  and so is `{}`, which is an object the writer sent;
+- a nested object the writer left out stays out, since an object field takes
+  no `default:`;
+- a put or a patch that writes `contact` replaces it whole and gets the same
+  fill, while one that does not name `contact` leaves the stored object as it
+  is;
+- a field the writer sets to `null` keeps no value.
+
+The loader holds a field's default to the field's type as it holds a
+property's, and the apply refuses one no write could store. A field default
+never backfills: a field that becomes required, or is added as required,
+while stored objects lack it is refused even beside a default, and the
+refusal says so. Write those objects with a value first.
 
 **Moving: `movedFrom:` carries the records.** A KIND may declare the reference
 it used to be spelled as. The boot upgrade of the shipped tree honors it: on a
@@ -530,7 +561,9 @@ property with `embed: true` is queued to embed. A record already carrying a
 value is left alone, and so is a default declared without `required:`, which
 seeds creates and nothing else. A required property's default may not be an
 empty value (`""`, `[]`, `{}`), because `required:` refuses those on every
-write; the pair is refused at admission.
+write; the pair is refused at admission. The backfill is a kind's own
+property's: a field's `default:` beside a new `required:` backfills no stored
+object, and the declaration is refused while one lacks the field.
 
 **A new `state` property enters every record.** A machine declared on a kind
 that already holds records writes its `initial` state onto every record
@@ -644,7 +677,8 @@ merge in
   manager row, its embedding and its sealed material where it does not (a
   property the kind no longer declares, a removed enum value, a changed type,
   a tightened pattern or bound, a reference its pin no longer admits, a blob
-  that is gone);
+  that is gone). An object value takes the defaults its fields declare,
+  since a put naming it would;
 - a `required:` property with a `default:` receives the default where the
   record holds no value, managed by the actor that restored it.
 

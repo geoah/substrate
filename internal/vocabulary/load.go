@@ -2412,15 +2412,11 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 			l.errf("%s: managed marks a type's own property, not a field", fwhere)
 			continue
 		}
-		// `default` is the same claim: the write path fills a PROPERTY the
-		// create did not name (withDefaults, in internal/engine) and never
-		// reaches inside an object to build one, so a field default would be a
-		// declared promise no write keeps. Refused rather than accepted and
-		// ignored. `required` on a field is enforced, and stays.
-		if fp.Default != nil {
-			l.errf("%s: default fills a type's own property, not a field: the write path never builds an object to put one in", fwhere)
-			continue
-		}
+		// A field `default` passed parseDefault above, so it is one literal of
+		// the field's own family. The write path fills it into each object
+		// value a write sends that leaves the field out (engine coerceObject),
+		// and never builds the object itself: an object field takes no
+		// `default` (objectPropKeys), so no default can invent a nested one.
 		out[fname] = fp
 	}
 	return out

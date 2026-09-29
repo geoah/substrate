@@ -230,6 +230,15 @@ func coerceKeyed(p *vocabulary.Property, v any) (any, error) {
 // container — a repeated field elementwise, a keyed field per key, a nested
 // object recursively. An empty object stores as {}.
 //
+// A field's `default:` fills a field the object value leaves out, coerced as
+// a written value would be. The fill runs here and nowhere else, so it reaches
+// exactly the objects a write sends: each item of a repeated object and each
+// value of a keyed one, at any depth the writer wrote, and never an object the
+// writer left out (no object field takes a default, so none can invent one).
+// Every write of the object gets it, a create, a put or a patch, because the
+// value coerced here replaces the stored one whole. A field the writer set to
+// null keeps no value, as an explicit null on a kind's own property does.
+//
 // A `required:` FIELD is checked against the object this write stores. An
 // object value is written whole (the merge replaces the property, it does not
 // reach inside it), so the value coerced here IS the value the record ends up
@@ -254,6 +263,20 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 		cv, err := coerceValue(f, fv)
 		if err != nil {
 			return nil, fmt.Errorf(".%s: %w", fname, err)
+		}
+		out[fname] = cv
+	}
+	for _, fname := range p.FieldOrder {
+		f := p.Fields[fname]
+		if f.Default == nil {
+			continue
+		}
+		if _, named := in[fname]; named {
+			continue
+		}
+		cv, err := coerceValue(f, f.Default)
+		if err != nil {
+			return nil, fmt.Errorf(".%s: the default: %w", fname, err)
 		}
 		out[fname] = cv
 	}
