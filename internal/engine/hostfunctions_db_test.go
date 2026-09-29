@@ -186,14 +186,14 @@ func preHostKindsDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	body = strings.Replace(body, "  version: 19\n", "  version: 4\n", 1)
+	body = strings.Replace(body, "  version: 20\n", "  version: 4\n", 1)
 	body = strings.Replace(body, "        - python\n        - host\n", "        - python\n", 1)
 	body = strings.Replace(body,
-		"      fts: false\n      description: the inline body, on an inline runtime\n",
-		"      fts: false\n      required: true\n      description: the inline body\n", 1)
+		"    source:\n      type: text\n      fts: false\n",
+		"    source:\n      type: text\n      fts: false\n      required: true\n", 1)
 	// The rewrite is a fixture, so it says so when the declaration moves out
 	// from under it instead of silently testing today's tree twice.
-	for _, want := range []string{"version: 4", "required: true"} {
+	for _, want := range []string{"  version: 4\n", "      fts: false\n      required: true\n"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the pre-host function.yaml rewrite missed %q", want)
 		}

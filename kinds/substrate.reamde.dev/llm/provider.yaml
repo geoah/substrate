@@ -27,7 +27,7 @@ data:
     the key that reaches it, and what its models cost. An agent names a provider
     and a model, so re-pointing every agent on a provider is one patch to
     this row.
-  version: 11
+  version: 12
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -64,8 +64,8 @@ data:
         official endpoint, and openai and azure both require it
     apiKey:
       type: secret
-      description: bearer for the endpoint; every row carries its own, because
-        there is no host key to fall back to
+      description: the key the endpoint is called with; every row carries
+        its own, because the substrate has no shared key to fall back to
     # Naming a model here is what makes this row the repository's embeddings
     # provider — there is no agent to name one, so the declaration IS the
     # selection. One row per repository may carry it; a second refuses at the

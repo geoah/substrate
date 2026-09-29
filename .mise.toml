@@ -376,8 +376,10 @@ description = "The docs, held: links and anchors (lychee), then the prose rules"
 # forms, which link into docs/ — went unchecked.
 #
 # docscheck.sh, for what they SAY: the dead words docs/terms.md retired, the
-# retired envelope keys, `mise run` names that no longer exist, and a page the
-# index does not list. Only what a grep can decide; the rest is a reading pass.
+# retired envelope keys, `mise run` names that no longer exist, a page the
+# index does not list, and a refused word in a kind document's `description:`
+# under kinds/ and samples/. Only what a grep can decide; the rest is a
+# reading pass.
 #
 # Both halves run even when the first fails, and the task exits nonzero if
 # either did: a `run` array is fail-fast, which would hide every prose finding

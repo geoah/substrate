@@ -51,7 +51,9 @@ data:
   # read and the list both take.
   # version 36: the query tool card names referencing.refs, the reverse read
   # over several targets in one call.
-  version: 36
+  # version 37: the descriptions say "the function's code" and "the
+  # substrate" where they said an undefined "body" and "host" (#49).
+  version: 37
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -210,8 +212,8 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  description: "one connected account of a bundle; the host writes its credential
-    ref"
+  description: one connected account of a bundle; only the substrate's OAuth
+    flow may write its credential ref
   # The host-written hands on an account (review-google #2): the account kind
   # redeclares these with `writer: oauth` so only the OAuth facility may set
   # them — a stranger cannot assign a credential ref, a status, or a scope set.
@@ -234,8 +236,8 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  description: "the OAuth client credentials; endpoints are manifest metadata,
-    the host runs the flow"
+  description: the OAuth client credentials; the endpoints come from the bundle's
+    manifest, and the substrate runs the flow
   properties:
     clientId: string
     clientSecret: secret

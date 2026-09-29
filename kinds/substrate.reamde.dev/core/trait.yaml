@@ -8,9 +8,9 @@ data:
   description: >-
     One declared trait: reusable typed properties with shared semantics that
     a kind binds — `temporal`, `accountconfig`, `oauth2`. Traits resolve across
-    authorities, and host behavior keys on the trait a kind binds rather than
-    on what the kind is called.
-  version: 9
+    authorities, and the substrate picks its behavior by the trait a kind
+    binds, never by the kind's name.
+  version: 10
   purpose: internal
   names:
     singular: trait
