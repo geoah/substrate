@@ -217,7 +217,6 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	// changes are then read by CONTENT, the way the install decides them
 	// (resolveDeclarationVersions), each at the version it would land at.
 	//
-	//
 	// A provider's offer is exactly those changes. A shipped release past its
 	// `shippedVersion` that moves nothing the install would write (a bare
 	// version bump) is not offered: the preview would read `available` with

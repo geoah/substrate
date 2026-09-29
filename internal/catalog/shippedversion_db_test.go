@@ -145,6 +145,13 @@ func TestAProviderInstalledOverAHigherStoredVersionIsOfferedTheNextShipped(t *te
 	if v, _ := vocabulary.VersionValue(row.Properties["shippedVersion"]); v != shipped {
 		t.Errorf("the install stamped shippedVersion %v, want %d", row.Properties["shippedVersion"], shipped)
 	}
+	st, err := ds.(bundleStatuser).BundleStatus(ctx, whoopID)
+	if err != nil {
+		t.Fatalf("bundle status: %v", err)
+	}
+	if st.Version != shipped+3 || st.ShippedVersion != shipped {
+		t.Errorf("the status reads version %d, shippedVersion %d, want %d and %d", st.Version, st.ShippedVersion, shipped+3, shipped)
+	}
 	if up := whoopPreview(t, loadCatalog(t), ds); up.Available {
 		t.Fatalf("the closure just installed previews an upgrade: %+v", up)
 	}
@@ -211,6 +218,13 @@ func TestAVerbatimSampleInstallStampsNoShippedVersion(t *testing.T) {
 	}
 	if v, held := row.Properties["shippedVersion"]; held && v != nil {
 		t.Errorf("a verbatim sample install stamped shippedVersion %v", v)
+	}
+	st, err := ds.(bundleStatuser).BundleStatus(ctx, tasksBundleID)
+	if err != nil {
+		t.Fatalf("bundle status: %v", err)
+	}
+	if st.ShippedVersion != 0 {
+		t.Errorf("a verbatim sample's status reads shippedVersion %d, want none", st.ShippedVersion)
 	}
 }
 

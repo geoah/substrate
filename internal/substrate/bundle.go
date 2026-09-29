@@ -58,6 +58,15 @@ type BundleStatus struct {
 	// OriginVersion is the shipped package version the copy was taken at.
 	// Zero when Origin is empty.
 	OriginVersion int64 `json:"originVersion,omitempty"`
+	// ShippedVersion is the shipped package version the last PROVIDER
+	// install took, read off the owned package row where the install
+	// stamped it. The upgrade preview measures the next shipped closure from
+	// it rather than from Version, which the API moves to stored+1 on every
+	// change and which hand applies before the install may have run past the
+	// shipped line (issue #642). Zero, and omitted, on a sample, on a
+	// hand-applied closure and on a provider installed before the stamp
+	// existed.
+	ShippedVersion int64 `json:"shippedVersion,omitempty"`
 	// Modified reports the copy's declarations no longer match what the
 	// import landed: a kind, trait, property type, mapping, function, agent
 	// or bundle document edited, added or removed since. Versions alone

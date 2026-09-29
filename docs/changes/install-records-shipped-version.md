@@ -17,7 +17,10 @@ included: a header edit (its `description`, its `retired` names) now moves
 the package to stored+1 on every door, where before it kept the stored
 version. A release that only bumps the package version is not offered. A
 sample installed verbatim through the same route stays editable and is not
-stamped.
+stamped. The bundle status
+(`GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status`) carries the
+stamp back as `shippedVersion` beside the stored `version`, and the console
+shows both in technical mode.
 
 A provider installed before this release carries no stamp and is measured
 from its stored version until it is installed once more:

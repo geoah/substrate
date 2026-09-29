@@ -269,7 +269,10 @@ every installed bundle under an `{items}` envelope and
 one: `{id, name, authority, package, installed, enabled, inputs, setup,
 accounts, functions, kinds, liveRecords, version}`, plus the quarantine pair
 when it applies and, on an imported sample, the `origin`, `originVersion` and
-`modified` its [stamp](#the-two-doors) carries. `id` is the package the bundle
+`modified` its [stamp](#the-two-doors) carries. On a provider the catalog
+installed, `shippedVersion` is the shipped package version that install took,
+which can sit below `version`: the API lands every change at stored+1, so an
+install over hand applies lands above the shipped number. `id` is the package the bundle
 owns, and `name` and `package` are both that package's own word.
 `inputs` is each declared input's resolution: `{name, kind, description?,
 record?, via?}`,

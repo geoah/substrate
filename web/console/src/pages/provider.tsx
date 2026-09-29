@@ -244,6 +244,11 @@ function ProviderDoc({
             {technical && status?.version !== undefined && (
               <span>version {status.version}</span>
             )}
+            {technical && status?.shippedVersion !== undefined && (
+              <span>
+                installed from shipped version {status.shippedVersion}
+              </span>
+            )}
           </>
         }
         description={row.catalog?.description}
@@ -393,6 +398,11 @@ function PackageDoc({
             {technical && <IdText value={row.id} copy />}
             {technical && status.version !== undefined && (
               <span>version {status.version}</span>
+            )}
+            {technical && status.shippedVersion !== undefined && (
+              <span>
+                installed from shipped version {status.shippedVersion}
+              </span>
             )}
             {technical && status.origin && (
               <span>
