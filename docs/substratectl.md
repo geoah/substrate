@@ -154,6 +154,18 @@ output applies back unchanged.
   mapping whose source kind this repository does not have, applies the rest,
   and prints one line per mapping held; apply the same files again once the
   provider is installed ([vocabulary](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
+  The server answers a vocabulary batch only when the whole batch is
+  admitted, which on a large repository takes minutes. Until it answers,
+  `apply` prints `applying 96 documents in 12 packages, 1m20s elapsed` to
+  stderr every 10 s (`previewing …` for the `--allow-data-loss` preview), and
+  stdout carries the summary alone. The server logs each step of the batch
+  at info as the step starts, each message prefixed `vocabulary apply:`.
+  Every batch logs `holding the registry lock`, one `writing the
+  declarations of one package` line per package with its `index` among the
+  batch's `packages`, and `committed` or `ended with an error` with the time
+  it `took`. A step that can run long logs only when it has work: waiting
+  for the batch ahead, preparing function bodies, building an index, and
+  each walk over stored records.
 - `patch <kind> <id>` edits in place: `--state status=done` for
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a

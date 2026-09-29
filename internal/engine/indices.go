@@ -40,7 +40,10 @@ import (
 // in one statement group. Comparing our own rendering to our own rendering
 // is exact; comparing it to pg_indexes.indexdef would mean normalizing
 // Postgres's spelling of every expression.
-func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind) error {
+//
+// building, when set, is told each index before it is built: a build on a
+// large records table takes the SHARE lock for as long as it runs.
+func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind, building func(kind, index string)) error {
 	stmts, err := indexStatements(types)
 	if err != nil {
 		return err
@@ -55,6 +58,9 @@ func ensureIndices(ctx context.Context, admin *sql.DB, types []*vocabulary.Kind)
 		}
 		if exists && have.Valid && have.String == s.stmt {
 			continue
+		}
+		if building != nil {
+			building(s.kind, s.name)
 		}
 		if err := s.rebuild(ctx, admin, exists); err != nil {
 			return fmt.Errorf("substrate/engine: create index for %s: %w", s.kind, err)

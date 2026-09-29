@@ -452,6 +452,10 @@ func (t *txn) recomputeDemotedActors(live, cand *vocabulary.Registry, touched ma
 			return err
 		}
 	}
+	if len(refs) > 0 {
+		t.ds.logApply("recomputing the records held by actors declared at the machine tier",
+			"actors", len(demoted), "records", len(refs))
+	}
 	for _, ref := range refs {
 		if len(cand.MappingsTo(ref.Kind)) == 0 {
 			continue

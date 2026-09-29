@@ -718,7 +718,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// running server, and the server's own boot builds what its vocabulary
 	// declares.
 	if !s.readOnly {
-		if err := ensureIndices(ctx, admin, reg.Kinds()); err != nil {
+		if err := ensureIndices(ctx, admin, reg.Kinds(), nil); err != nil {
 			repoPool.Close()
 			_ = maint.Close()
 			_ = admin.Close()

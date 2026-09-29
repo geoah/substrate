@@ -22,6 +22,9 @@ type app struct {
 	errOut io.Writer
 	hc     *http.Client
 	now    func() time.Time
+	// progressEvery is how often a request the server may hold for minutes
+	// (a vocabulary batch) prints to errOut that it is still waiting.
+	progressEvery time.Duration
 	// stdin is the invocation's one buffered view of in, shared by every
 	// prompt so a reader's lookahead cannot eat the next secret.
 	stdin *bufio.Reader
@@ -45,11 +48,12 @@ type app struct {
 
 func newApp(version string) *app {
 	return &app{
-		in:      os.Stdin,
-		out:     os.Stdout,
-		errOut:  os.Stderr,
-		now:     time.Now,
-		version: version,
+		in:            os.Stdin,
+		out:           os.Stdout,
+		errOut:        os.Stderr,
+		now:           time.Now,
+		progressEvery: progressEvery,
+		version:       version,
 	}
 }
 
