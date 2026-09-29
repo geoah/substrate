@@ -70,6 +70,10 @@ func (ds *dataset) startSearchReindex() {
 	}
 }
 
+// searchReindexMaxPause caps the pause between tries of a step that failed
+// (reindexStep).
+const searchReindexMaxPause = time.Minute
+
 // stopSearchReindex cancels the open's reindex and waits for it to return,
 // up to the drain budget the service's own shutdown gives a detached task.
 // A dataset whose open started none returns at once.
@@ -78,6 +82,12 @@ func (ds *dataset) stopSearchReindex() {
 		return
 	}
 	ds.reindexCancel()
+	// The service's shutdown already waited its one budget for every detached
+	// task, this one included, and said so if any outlived it. Waiting again
+	// here, once per repository it closes, would multiply that budget.
+	if ds.svc.bg.stopping() {
+		return
+	}
 	timer := time.NewTimer(backgroundDrainTimeout)
 	defer timer.Stop()
 	select {
@@ -96,10 +106,12 @@ func (ds *dataset) stopSearchReindex() {
 // over it. Reads and writes are served throughout, and a row keeps its old
 // `fts`, still searchable, until its page commits.
 //
-// The version is recorded only after the last row, so a reindex that stops
-// (the process closes, a page fails, the writer lease drops) leaves the old
-// version, and the next open starts it again from the first kind. A row
-// redone twice lands at the same bands.
+// A step that fails is tried again after a pause (reindexStep), so a passing
+// database error or a dropped writer lease costs a pause and not the rest of
+// the reindex. The version is recorded only after the last row, so a reindex
+// the close or a rebuild stops leaves the old version, and the next open
+// starts it again from the first kind. A row redone twice lands at the same
+// bands.
 //
 // WHY A WRITE DURING THE REINDEX IS NEVER UNDONE BY IT. A page derives
 // exactly what the write path would, so its overwrite is harmless. It holds
@@ -121,29 +133,39 @@ func (ds *dataset) stopSearchReindex() {
 func (ds *dataset) reindexSearch(ctx context.Context, from int) {
 	started := time.Now()
 	repo := logSafeID(ds.scope.Repository)
-	kinds, total, err := ds.searchReindexPlan(ctx)
-	if err != nil {
-		ds.searchReindexStopped(ctx, 0, total, err)
+	var kinds []string
+	var total, done int64
+	stopped := func() {
+		ds.svc.log.Info("substrate: the search index re-derivation stopped before it finished; the next open runs it again",
+			"repository", repo, "done", done, "total", total)
+	}
+	if ds.reindexStep(ctx, "plan", func() error {
+		var err error
+		kinds, total, err = ds.searchReindexPlan(ctx)
+		return err
+	}) != nil {
+		stopped()
 		return
 	}
 	ds.svc.log.Info("substrate: re-deriving the search index",
 		"repository", repo, "from", from, "to", searchIndexVersion, "kinds", len(kinds), "rows", total)
 	prog := ds.svc.progress("substrate: re-deriving the search index", "repository", repo)
-	var done int64
 	for _, kind := range kinds {
 		n, err := ds.reindexKind(ctx, kind, func(rows int) {
 			done += int64(rows)
 			prog.report("kind", kind, "done", done, "total", total)
 		})
 		if err != nil {
-			ds.searchReindexStopped(ctx, done, total, err)
+			stopped()
 			return
 		}
 		ds.svc.log.Info("substrate: re-derived the search index of one kind",
 			"repository", repo, "kind", kind, "rows", n, "done", done, "total", total)
 	}
-	if err := ds.inRawTx(ctx, func(t *txn) error { return t.markSearchIndexed() }); err != nil {
-		ds.searchReindexStopped(ctx, done, total, err)
+	if ds.reindexStep(ctx, "record the version", func() error {
+		return ds.inRawTx(ctx, func(t *txn) error { return t.markSearchIndexed() })
+	}) != nil {
+		stopped()
 		return
 	}
 	ds.svc.log.Info("substrate: re-derived the search index",
@@ -151,18 +173,30 @@ func (ds *dataset) reindexSearch(ctx context.Context, from int) {
 		"took", time.Since(started).Round(time.Millisecond))
 }
 
-// searchReindexStopped says why a reindex ended before its last row: a close
-// or a rebuild is the process's own doing, anything else is an error. Either
-// way the version stays, so the next open runs it again.
-func (ds *dataset) searchReindexStopped(ctx context.Context, done, total int64, err error) {
-	repo := logSafeID(ds.scope.Repository)
-	if ctx.Err() != nil {
-		ds.svc.log.Info("substrate: the search index re-derivation stopped with the dataset; the next open runs it again",
-			"repository", repo, "done", done, "total", total)
-		return
+// reindexStep runs one step of the reindex until it succeeds or ctx ends,
+// pausing between tries from a second up to searchReindexMaxPause, and
+// returns an error only for ctx. Every step is safe to run again: a page
+// that failed rolled back, and one redone lands at the same bands. A step
+// that can never succeed logs its error at every try, which is how an
+// operator hears of it.
+func (ds *dataset) reindexStep(ctx context.Context, step string, fn func() error) error {
+	pause := time.Second
+	for {
+		err := fn()
+		if err == nil || ctx.Err() != nil {
+			return ctx.Err()
+		}
+		ds.svc.log.Error("substrate: a search index re-derivation step failed; trying it again",
+			"repository", logSafeID(ds.scope.Repository), "step", step, "retry_in", pause, "error", err)
+		timer := time.NewTimer(pause)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+		pause = min(2*pause, searchReindexMaxPause)
 	}
-	ds.svc.log.Error("substrate: the search index re-derivation failed; the next open runs it again",
-		"repository", repo, "done", done, "total", total, "error", err)
 }
 
 // searchReindexPlan names every kind with a stored row, in order, and counts
@@ -190,7 +224,7 @@ func (ds *dataset) searchReindexPlan(ctx context.Context) ([]string, int64, erro
 
 // reindexKind re-derives every row of one kind: its pages first, then the
 // rows a write held when their page came, and reports the rows it wrote to
-// advanced as it goes.
+// advanced as it goes. It returns an error only when ctx ends.
 func (ds *dataset) reindexKind(ctx context.Context, kind string, advanced func(rows int)) (int, error) {
 	batch := ds.svc.searchReindexBatch
 	if batch <= 0 {
@@ -200,23 +234,26 @@ func (ds *dataset) reindexKind(ctx context.Context, kind string, advanced func(r
 	var held []string
 	after := ""
 	for {
-		if hook := ds.svc.testSearchReindexHook; hook != nil {
-			hook(ctx, kind)
-		}
 		var page, missed []string
 		var n int
-		err := ds.inRawTx(ctx, func(t *txn) error {
-			if err := t.lockRegistryDepShared(); err != nil {
-				return err
+		if err := ds.reindexStep(ctx, "page of "+kind, func() error {
+			if hook := ds.svc.testSearchReindexHook; hook != nil {
+				if err := hook(ctx, kind); err != nil {
+					return err
+				}
 			}
-			var err error
-			if page, err = t.reindexPage(kind, after, batch); err != nil || len(page) == 0 {
+			return ds.inRawTx(ctx, func(t *txn) error {
+				if err := t.lockRegistryDepShared(); err != nil {
+					return err
+				}
+				var err error
+				if page, err = t.reindexPage(kind, after, batch); err != nil || len(page) == 0 {
+					return err
+				}
+				n, missed, err = t.reindexRows(kind, page, true)
 				return err
-			}
-			n, missed, err = t.reindexRows(kind, page, true)
-			return err
-		})
-		if err != nil {
+			})
+		}); err != nil {
 			return redone, err
 		}
 		if len(page) == 0 {
@@ -232,13 +269,15 @@ func (ds *dataset) reindexKind(ctx context.Context, kind string, advanced func(r
 	}
 	for _, id := range held {
 		var n int
-		if err := ds.inRawTx(ctx, func(t *txn) error {
-			if err := t.lockRegistryDepShared(); err != nil {
+		if err := ds.reindexStep(ctx, "held row of "+kind, func() error {
+			return ds.inRawTx(ctx, func(t *txn) error {
+				if err := t.lockRegistryDepShared(); err != nil {
+					return err
+				}
+				var err error
+				n, _, err = t.reindexRows(kind, []string{id}, false)
 				return err
-			}
-			var err error
-			n, _, err = t.reindexRows(kind, []string{id}, false)
-			return err
+			})
 		}); err != nil {
 			return redone, err
 		}

@@ -202,8 +202,8 @@ func WithTestDigestHook(fn func(repository, segment string)) Option {
 // searchReindexBatch) and a hook it runs before each page with the kind it is
 // about to re-derive (searchindex.go reindexKind). A hook that blocks holds
 // the reindex there; it should return when ctx ends, which is the dataset
-// closing.
-func WithTestSearchReindex(batch int, hook func(ctx context.Context, kind string)) Option {
+// closing. An error from it fails the page, as a database error would.
+func WithTestSearchReindex(batch int, hook func(ctx context.Context, kind string) error) Option {
 	return func(o *options) { o.searchReindexBatch, o.searchReindexHook = batch, hook }
 }
 

@@ -123,6 +123,21 @@ func waitReindex(t *testing.T, ds *dataset) {
 	}
 }
 
+// holdSecondPage is a reindex hook that closes reached before the second page
+// and holds the reindex there until the dataset closes: one page has
+// committed, the rest wait.
+func holdSecondPage(reached chan struct{}) func(context.Context, string) error {
+	var pages atomic.Int32
+	return func(ctx context.Context, kind string) error {
+		if pages.Add(1) != 2 {
+			return nil
+		}
+		close(reached)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+}
+
 func openReindexing(t *testing.T, dsn, root, repo string, opts ...Option) (substrate.Service, *dataset) {
 	t.Helper()
 	svc, err := OpenForTest(t, context.Background(), dsn, append([]Option{WithDataRoot(root)}, opts...)...)
@@ -149,16 +164,17 @@ func TestTheSearchReindexServesRequestsUntilItFinishes(t *testing.T) {
 	reached := make(chan struct{})
 	release := make(chan struct{})
 	var pages atomic.Int32
-	hook := func(ctx context.Context, kind string) {
+	hook := func(ctx context.Context, kind string) error {
 		// Held before the second page: one page has committed, the rest wait.
 		if pages.Add(1) != 2 {
-			return
+			return nil
 		}
 		close(reached)
 		select {
 		case <-release:
 		case <-ctx.Done():
 		}
+		return nil
 	}
 	logs := &syncBuffer{}
 	svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root),
@@ -273,15 +289,7 @@ func TestAnInterruptedSearchReindexCompletesAtTheNextOpen(t *testing.T) {
 	dsn, root, repo := staleSearchIndex(t)
 
 	reached := make(chan struct{})
-	var pages atomic.Int32
-	hook := func(ctx context.Context, kind string) {
-		if pages.Add(1) != 2 {
-			return
-		}
-		close(reached)
-		<-ctx.Done()
-	}
-	svc, ds := openReindexing(t, dsn, root, repo, WithTestSearchReindex(reindexPage, hook))
+	svc, ds := openReindexing(t, dsn, root, repo, WithTestSearchReindex(reindexPage, holdSecondPage(reached)))
 	select {
 	case <-reached:
 	case <-time.After(time.Minute):
@@ -327,15 +335,7 @@ func TestARebuildStopsTheSearchReindexAndRecordsTheVersion(t *testing.T) {
 	dsn, root, repo := staleSearchIndex(t)
 
 	reached := make(chan struct{})
-	var pages atomic.Int32
-	hook := func(ctx context.Context, kind string) {
-		if pages.Add(1) != 2 {
-			return
-		}
-		close(reached)
-		<-ctx.Done()
-	}
-	svc, ds := openReindexing(t, dsn, root, repo, WithTestSearchReindex(reindexPage, hook))
+	svc, ds := openReindexing(t, dsn, root, repo, WithTestSearchReindex(reindexPage, holdSecondPage(reached)))
 	select {
 	case <-reached:
 	case <-time.After(time.Minute):
@@ -425,5 +425,34 @@ func TestTheSearchReindexRedoesARowAWriteHeld(t *testing.T) {
 	}
 	if stale := underivedRows(t, ds); len(stale) != 0 {
 		t.Fatalf("rows whose fts is not a fresh derivation after the reindex: %v", stale)
+	}
+}
+
+// A page that fails is tried again after a pause, so one database error does
+// not leave the index half re-derived until the next restart.
+func TestASearchReindexPageThatFailsIsTriedAgain(t *testing.T) {
+	t.Parallel()
+	dsn, root, repo := staleSearchIndex(t)
+
+	var pages atomic.Int32
+	hook := func(ctx context.Context, kind string) error {
+		if pages.Add(1) == 2 {
+			return fmt.Errorf("the database went away for a moment")
+		}
+		return nil
+	}
+	logs := &syncBuffer{}
+	_, ds := openReindexing(t, dsn, root, repo,
+		WithTestSearchReindex(reindexPage, hook),
+		WithLogger(slog.New(slog.NewTextHandler(logs, nil))))
+	waitReindex(t, ds)
+	if v := searchIndexVersionOf(t, ds); v != searchIndexVersion {
+		t.Fatalf("the reindex recorded version %d after a failed page, want %d", v, searchIndexVersion)
+	}
+	if stale := underivedRows(t, ds); len(stale) != 0 {
+		t.Fatalf("rows whose fts is not a fresh derivation after the reindex: %v", stale)
+	}
+	if got := logs.String(); !logLine(got, "level=ERROR", "trying it again", "the database went away for a moment") {
+		t.Fatalf("the failed page was not logged:\n%s", got)
 	}
 }

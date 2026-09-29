@@ -391,9 +391,11 @@ on the box, through the DSN.
   kind by kind, in transactions of 2000 rows, and logs
   `substrate: re-derived the search index of one kind` with `kind`, `done`
   and `total` after each kind, then `substrate: re-derived the search index`
-  once it finishes. A reindex a shutdown interrupts starts again at the next
-  open; `repository rebuild` finishes it, because the replay indexes every
-  row.
+  once it finishes. A transaction that fails logs
+  `substrate: a search index re-derivation step failed; trying it again` and
+  is tried again after a pause of up to a minute. A reindex a shutdown
+  interrupts starts again at the next open; `repository rebuild` finishes
+  it, because the replay indexes every row.
 - Persisted function bodies re-warm in the background. One that no longer
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.

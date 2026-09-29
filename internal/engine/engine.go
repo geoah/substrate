@@ -121,9 +121,9 @@ type options struct {
 	// test seams (export_test.go WithTestSearchReindex): a page size below
 	// searchReindexBatch, so a few rows span several pages, and a hook run
 	// before each page with the kind it is about to re-derive, so a test can
-	// hold the reindex there. Tests only.
+	// hold the reindex there or fail the page. Tests only.
 	searchReindexBatch int
-	searchReindexHook  func(ctx context.Context, kind string)
+	searchReindexHook  func(ctx context.Context, kind string) error
 	// progressEvery is how often a long walk reports its position
 	// (progress.go); the test seam WithTestProgressEvery lowers it so a
 	// short history reports at all.
@@ -401,7 +401,7 @@ type service struct {
 	// seams (searchindex.go reindexKind); a batch of zero is
 	// searchReindexBatch. Tests only.
 	searchReindexBatch    int
-	testSearchReindexHook func(ctx context.Context, kind string)
+	testSearchReindexHook func(ctx context.Context, kind string) error
 	// progressEvery is how often a long walk of a changelog reports where
 	// it is (progress.go).
 	progressEvery time.Duration
