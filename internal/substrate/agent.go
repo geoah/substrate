@@ -88,8 +88,13 @@ type AgentEvent struct {
 	// (`toolCallId`), so a live card and its replayed row are the same card.
 	ID   string `json:"id,omitempty"`
 	Tool string `json:"tool,omitempty"`
-	Args string `json:"args,omitempty"`
-	OK   *bool  `json:"ok,omitempty"`
+	// Callable rides both tool events: the identity behind the Tool alias, in
+	// the actor spelling the `llm/message` rows carry as `callable`, so a live
+	// card resolves what ran and not what the alias means on the agent now.
+	// Empty for a name the agent carries no tool for.
+	Callable string `json:"callable,omitempty"`
+	Args     string `json:"args,omitempty"`
+	OK       *bool  `json:"ok,omitempty"`
 	// Output rides the finished event: the dispatched call's result payload,
 	// verbatim, as the tool row stores it. Named apart from Result because
 	// that one is the whole run's tally.

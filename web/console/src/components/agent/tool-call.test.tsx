@@ -3,7 +3,7 @@
  * what came back. A settled `propose` did not change anything — it landed a
  * row somebody has to decide — so the line carries the suggestion card with
  * its live state and its decisions, open or not. Technical mode names the
- * function and shows the payloads. */
+ * callable in full and shows the payloads. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
@@ -337,7 +337,7 @@ describe("the tool line", () => {
     expect(screen.getByText("<title>Example</title>")).toBeTruthy()
   })
 
-  it("names the function and shows the payloads in technical mode", () => {
+  it("names the callable and shows the payloads in technical mode", () => {
     renderCard(
       call({
         name: "write",
@@ -355,10 +355,49 @@ describe("the tool line", () => {
       undefined,
       true
     )
-    expect(screen.getByText("substrate.reamde.dev/core/write")).toBeTruthy()
+    // No stamp: the name resolves, spelled as the rows spell a callable.
+    expect(
+      screen.getByText("function:substrate.reamde.dev:core:write")
+    ).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /Made a change/ }))
     expect(screen.getByText("patch · seq 202")).toBeTruthy()
     expect(screen.getByText("Request")).toBeTruthy()
     expect(screen.getByText("Response")).toBeTruthy()
+  })
+
+  it("reads a stamped callable over an alias the agent no longer carries", () => {
+    const agent: SubstrateRecord = {
+      id: "crew.test.dev/crew/lead",
+      kind: "substrate.reamde.dev/core/agent",
+      properties: {
+        tools: [
+          {
+            function: {
+              ref: "substrate.reamde.dev/core/function/crew.test.dev/crew/fetch",
+            },
+          },
+        ],
+      },
+      labels: {},
+      version: 1,
+      createdAt: "2026-08-13T00:00:00Z",
+      updatedAt: "2026-08-13T00:00:00Z",
+    }
+    const stamped = "function:substrate.reamde.dev:core:query"
+    renderCard(
+      call({
+        name: "lookup",
+        callable: stamped,
+        arguments: '{"q":"cups"}',
+        output: '{"records":[]}',
+      }),
+      undefined,
+      true,
+      agent
+    )
+    // The words come from what ran, and the callable is shown whole.
+    expect(screen.getByText("Searched for “cups”, found 0")).toBeTruthy()
+    expect(screen.getByText(stamped)).toBeTruthy()
+    expect(screen.queryByText("lookup")).toBeNull()
   })
 })

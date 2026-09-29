@@ -240,6 +240,7 @@ export function Conversation({
             {
               id: ev.id ?? "",
               name: ev.tool ?? "tool",
+              ...(ev.callable ? { callable: ev.callable } : {}),
               arguments: ev.args ?? "",
             },
             seqRef.current++
@@ -253,6 +254,7 @@ export function Conversation({
             {
               id: ev.id ?? "",
               name: ev.tool ?? "tool",
+              ...(ev.callable ? { callable: ev.callable } : {}),
               arguments: ev.args ?? "",
             },
             ev.output ?? "",

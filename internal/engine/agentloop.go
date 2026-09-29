@@ -327,6 +327,21 @@ type agentTool struct {
 	sub     *vocabulary.Agent
 }
 
+// callable is the tool's identity as the message rows stamp it: the actor
+// spelling of the agent or the function behind the alias (record 0025), so
+// rows written under different aliases join on one string. A host function
+// takes its record's function spelling although its writes land under the
+// calling agent. The zero tool, a name the agent does not carry, has none.
+func (t agentTool) callable() string {
+	switch {
+	case t.sub != nil:
+		return t.sub.Actor()
+	case t.fn != nil:
+		return t.fn.Actor()
+	}
+	return ""
+}
+
 // agentLoop is one running invocation's state.
 type agentLoop struct {
 	ds *dataset
@@ -503,7 +518,11 @@ loop:
 		}
 		callsJSON := make([]any, 0, len(calls))
 		for _, tc := range calls {
-			callsJSON = append(callsJSON, map[string]any{"id": tc.ID, "name": tc.Name, "arguments": tc.Arguments})
+			call := map[string]any{"id": tc.ID, "name": tc.Name, "arguments": tc.Arguments}
+			if callable := l.byName[tc.Name].callable(); callable != "" {
+				call["callable"] = callable
+			}
+			callsJSON = append(callsJSON, call)
 		}
 		props := map[string]any{"role": "assistant", "toolCalls": callsJSON}
 		if content != "" {
@@ -539,6 +558,9 @@ loop:
 			// successful result carrying an `error` key would counterfeit it.
 			toolProps := map[string]any{
 				"role": "tool", "content": out, "toolCallId": tc.ID, "name": tc.Name, "ok": ok,
+			}
+			if callable := l.byName[tc.Name].callable(); callable != "" {
+				toolProps["callable"] = callable
 			}
 			// The dispatch's committed writes, as changelog addresses: what a
 			// reader resolves instead of parsing the payload. Only committed
@@ -680,7 +702,7 @@ func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool, out string
 	if l.in.emit == nil {
 		return
 	}
-	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, OK: ok}
+	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, Callable: l.byName[tc.Name].callable(), OK: ok}
 	if kind == substrate.AgentEventToolStarted {
 		ev.Args = tc.Arguments
 	} else {

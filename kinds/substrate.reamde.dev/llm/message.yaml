@@ -20,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 14
+  version: 15
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -53,6 +53,17 @@ data:
     # The arguments ride as the VERBATIM wire string: they are the model's own
     # JSON, echoed back on the tool result, and re-encoding them would change
     # the bytes the provider matched a call by.
+    #
+    # `name` is the agent's ALIAS, the tool name the model saw, and `callable`
+    # is the identity behind it in the spelling the changelog's actor column
+    # uses (decision record 0025): `function:<authority>:<package>:<name>` for
+    # a function tool, `agent:<authority>:<package>:<name>` for a sub-agent.
+    # A host function is a function record, so it is the function spelling of
+    # that record (`function:substrate.reamde.dev:core:query`). Two agents may
+    # alias one function differently, and an alias may be renamed, so only the
+    # callable joins every call of one function. The engine stamps it on the
+    # call and on the tool row that answers it, and leaves it off a name no
+    # tool of the agent's carries.
     toolCalls:
       type: object
       repeated: true
@@ -63,7 +74,11 @@ data:
           description: the provider's call id, which a tool row answers by
         name:
           type: string
-          description: the tool the model called
+          description: the tool the model called, as the agent aliased it
+        callable:
+          type: string
+          description: the function or agent the call named, in the actor
+            spelling, stamped by the engine
         arguments:
           type: text
           fts: false
@@ -73,7 +88,12 @@ data:
       description: the assistant tool call a tool row answers
     name:
       type: string
-      description: the tool name a tool row answers for
+      description: the tool name a tool row answers for, as the agent aliased
+        it
+    callable:
+      type: string
+      description: the function or agent a tool row answers for, in the actor
+        spelling, stamped by the engine
     ok:
       type: bool
       description: whether the dispatch a tool row answers for succeeded

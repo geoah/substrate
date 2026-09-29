@@ -282,6 +282,19 @@ instead of parsing tool payloads. A rolled-back dispatch stamps nothing, and a
 sub-agent call stamps nothing on the parent: the child thread's own rows carry
 the child's writes.
 
+**Every tool row names its callable beside its alias.** `name` on a
+`toolCalls` entry and on the tool row is the name the model saw, which is the
+agent's alias. The engine also stamps `callable` on both: the identity behind
+the alias in the spelling the changelog's actor column uses
+([0025](decisions/0025-an-actor-carries-the-full-authority.md)),
+`function:<authority>:<package>:<name>` for a function tool and
+`agent:<authority>:<package>:<name>` for a sub-agent. A host function is a
+function record, so `query` is `function:substrate.reamde.dev:core:query`
+whatever an agent aliased it to. Two agents that alias one function
+differently write tool rows that list together on `callable`, and renaming
+an alias keeps the function's history. The chat stream's tool events carry
+the same `callable`. A name the agent carries no tool for gets none.
+
 ## The decision loop
 
 A request an agent's `propose` landed knows its thread, so the decision

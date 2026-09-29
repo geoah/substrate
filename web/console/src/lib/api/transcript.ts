@@ -28,7 +28,14 @@ export interface ChangeStamp {
 /** One dispatched tool call, with whatever has settled about it so far. */
 export interface ToolCallView {
   id: string
+  /** The tool name the model saw: the agent's alias for the callable. */
   name: string
+  /** The callable behind the name, as the engine stamps it on the rows, in
+   * the actor spelling (`function:<authority>:<package>:<name>` or
+   * `agent:<authority>:<package>:<name>`, decision 0025); the live tool
+   * events carry the same string. Absent on a name the agent carried no tool
+   * for, and on a row written before the stamp. */
+  callable?: string
   /** The arguments the model emitted, verbatim — a JSON string, usually. */
   arguments: string
   /** The dispatch's result payload; absent while the call is still running. */
@@ -133,6 +140,9 @@ export function toolOK(record: SubstrateRecord): boolean {
  * segment of `substrate.reamde.dev/core/propose`). */
 const PROPOSE_TOOL = "propose"
 
+/** The `propose` host function as a row's `callable` spells it. */
+const PROPOSE_CALLABLE = "function:substrate.reamde.dev:core:propose"
+
 /** The change-request kind, as a `changes` stamp spells it. */
 const REQUEST_KIND = "substrate.reamde.dev/core/recordpatchrequest"
 
@@ -178,18 +188,17 @@ const MINTED_ID = /^[a-z2-7]{12}$/
 
 /** The change request a settled `propose` call landed, or undefined.
  *
- * THE NAME IS NOT PROVENANCE, and that is the limit of this. A transcript row
- * records the model-facing tool NAME, never the `function` behind it, so an
- * agent that aliases `{function: …/propose, name: file}` gets no link, and one
- * that aliases some other function TO `propose` would get one on any payload
- * that looked right. Carrying the tool entry's function identity on the
- * llm/message row is what would settle it, and it is not carried yet (noted
- * follow-up).
+ * THE NAME IS NOT PROVENANCE. The name is the agent's alias, so an agent that
+ * aliases `{function: …/propose, name: file}` would get no link from it, and
+ * one that aliases some other function TO `propose` would get one on any
+ * payload that looked right. The stamped `callable` is the identity, and
+ * where the call carries one it decides; a row written before the stamp has
+ * only the name.
  *
- * Everything that CAN be checked is: the call settled ok, the name is exactly
- * the built-in's, and the payload is `{"id": <minted id>}` and nothing else,
- * which is precisely what `dispatchPropose` answers on success. A payload with
- * a second key, or an id no mint could have produced, is some other tool. */
+ * The rest is checked as well: the call settled ok and the payload is
+ * `{"id": <minted id>}` and nothing else, which is precisely what
+ * `dispatchPropose` answers on success. A payload with a second key, or an id
+ * no mint could have produced, is some other tool. */
 /** The change request a settled call landed, settled from PROVENANCE where the
  * row carries it: an engine-stamped `changes` entry putting the request kind is
  * the fact the payload sniff below could only approximate — an aliased propose
@@ -205,7 +214,13 @@ export function requestIdOf(call: ToolCallView): string | undefined {
 }
 
 export function proposedRequestId(call: ToolCallView): string | undefined {
-  if (call.ok !== true || call.name !== PROPOSE_TOOL) return undefined
+  if (call.ok !== true) return undefined
+  if (
+    call.callable
+      ? call.callable !== PROPOSE_CALLABLE
+      : call.name !== PROPOSE_TOOL
+  )
+    return undefined
   const payload = (call.output ?? "").trim()
   if (!payload.startsWith("{")) return undefined
   try {
@@ -237,7 +252,13 @@ function callsOf(record: SubstrateRecord): ToolCallView[] {
     const id = str(call.id)
     const name = str(call.name)
     if (!id && !name) continue
-    out.push({ id, name, arguments: str(call.arguments) })
+    const callable = str(call.callable)
+    out.push({
+      id,
+      name,
+      arguments: str(call.arguments),
+      ...(callable ? { callable } : {}),
+    })
   }
   return out
 }
@@ -294,11 +315,15 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
 
     const output = str(record.properties.content)
     const ok = toolOK(record)
+    // The tool row carries the same stamp as its call, so either side names
+    // the callable.
+    const callable = str(record.properties.callable)
     const call = pending.get(str(record.properties.toolCallId))
     if (call) {
       call.output = output
       call.ok = ok
       call.changes = changesOf(record)
+      if (callable && !call.callable) call.callable = callable
       pending.delete(str(record.properties.toolCallId))
       continue
     }
@@ -316,6 +341,7 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
         {
           id: str(record.properties.toolCallId),
           name: str(record.properties.name),
+          ...(callable ? { callable } : {}),
           arguments: "",
           output,
           ok,

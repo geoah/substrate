@@ -423,6 +423,7 @@ const agentEvent: Shape<AgentEvent> = {
   text: false,
   id: false,
   tool: false,
+  callable: false,
   args: false,
   ok: false,
   output: false,
