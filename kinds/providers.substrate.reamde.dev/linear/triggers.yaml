@@ -26,6 +26,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Linear first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/linear/account]
@@ -53,6 +54,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Linear scheduled sync
     source:
       schedule:
         recurrence: FREQ=HOURLY
@@ -82,6 +84,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Linear sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/linear/account]

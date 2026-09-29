@@ -57,6 +57,12 @@ func TestTemplateEmptyTokenDropsItsSeparator(t *testing.T) {
 		{"{a|b}: {c}", map[string]string{"b": "B", "c": "C"}, "B: C"},
 		{"{a|b}: {c}", map[string]string{"c": "C"}, "C"},
 
+		// Whitespace alone is no value: the next alternative answers, and a
+		// token with nothing else takes its separator as an empty one does.
+		{"{label|callable}", map[string]string{"label": "  ", "callable": "x.dev/mail/sync"}, "x.dev/mail/sync"},
+		{"{label|callable}", map[string]string{"label": "\t\n"}, ""},
+		{"{a}: {b}", map[string]string{"a": " ", "b": "B"}, "B"},
+
 		// Nothing empty, nothing touched: literals and values alike.
 		{"C++", nil, "C++"},
 		{"Q3: plan", nil, "Q3: plan"},

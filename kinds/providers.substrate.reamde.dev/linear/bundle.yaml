@@ -97,7 +97,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 20
+  version: 21
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this

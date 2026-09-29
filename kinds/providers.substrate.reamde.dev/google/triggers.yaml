@@ -41,6 +41,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Contacts first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
@@ -66,6 +67,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Contacts scheduled sync
     source:
       schedule:
         recurrence: "FREQ=HOURLY"
@@ -84,6 +86,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Gmail first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
@@ -102,6 +105,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Gmail scheduled sync
     source:
       schedule:
         recurrence: "FREQ=HOURLY"
@@ -116,6 +120,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Calendar first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
@@ -133,6 +138,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Calendar scheduled sync
     source:
       schedule:
         recurrence: "FREQ=HOURLY"
@@ -157,6 +163,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Contacts sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
@@ -189,6 +196,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Gmail sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
@@ -221,6 +229,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Calendar sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
@@ -249,6 +258,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Drive first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]
@@ -268,6 +278,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Drive scheduled sync
     source:
       schedule:
         recurrence: "FREQ=HOURLY"
@@ -292,6 +303,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Google Drive sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/google/account]

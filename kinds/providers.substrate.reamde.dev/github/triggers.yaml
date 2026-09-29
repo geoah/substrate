@@ -20,6 +20,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: GitHub first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/github/account]
@@ -48,6 +49,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: GitHub scheduled sync
     source:
       schedule:
         recurrence: "FREQ=HOURLY"
@@ -72,6 +74,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: GitHub sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/github/account]

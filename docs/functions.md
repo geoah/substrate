@@ -955,7 +955,9 @@ or [agent](agents.md) to run, written as one `<kind>/<id>` path (the example
 above): the kind is `substrate.reamde.dev/core/function` or
 `substrate.reamde.dev/core/agent`, and the id is that callable's own reference.
 `enabled` defaults to true, and setting it false stops delivery without losing
-the cursor's position. Every trigger write is admitted: the guard must
+the cursor's position. `label` is an optional short name: the trigger's title
+reads it, and a trigger without one is titled by its callable, so several
+triggers on one function list apart once each carries a label. Every trigger write is admitted: the guard must
 compile, the recurrence and timezone must parse, and the callable must resolve
 to a registered callable of its kind.
 

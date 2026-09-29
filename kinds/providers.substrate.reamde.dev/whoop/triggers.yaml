@@ -21,6 +21,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: WHOOP first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/whoop/account]
@@ -57,6 +58,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: WHOOP sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/whoop/account]
@@ -77,6 +79,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: WHOOP scheduled sync
     source:
       schedule:
         recurrence: "FREQ=HOURLY"
