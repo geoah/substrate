@@ -147,7 +147,11 @@ data:
   # 16: every Slack call rides one kept-alive HTTPS session per runner
   # process, so a drain of hundreds of invocations pays the TCP and TLS
   # handshake once instead of once per call.
-  version: 16
+  #
+  # 17, #718: a `missing_scope` refusal names the `needed` and `provided`
+  # scopes Slack sends beside it, in `postmessage`'s error and in the
+  # sync's `syncError`, so the caller knows which scope to grant.
+  version: 17
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -3359,10 +3363,14 @@ data:
     # --------------------------------------------------------------- the API
 
     class Slack(Exception):
-        """A Slack-reported failure, carrying the error word Slack used."""
+        """A Slack-reported failure, carrying the error word Slack used.
 
-        def __init__(self, method, error):
-            super().__init__("%s: %s" % (method, error))
+        `error` stays the bare word: the permanent and refused sets, the
+        failure classes and the refusal keys all match on it. `detail` rides
+        the message alone."""
+
+        def __init__(self, method, error, detail=""):
+            super().__init__("%s: %s%s" % (method, error, detail))
             self.method = method
             self.error = error
 
@@ -3428,8 +3436,19 @@ data:
             err = body.get("error") or "unknown"
             if err == "ratelimited":
                 raise RateLimited(method, _retry_after(resp))
-            raise Slack(method, err)
+            raise Slack(method, err, _scopes(body))
         return body
+
+
+    def _scopes(body):
+        """On `missing_scope`, the `needed` and `provided` scopes Slack sends
+        beside the error, as ` (needed a, provided b)`: the word alone does not
+        say which scope to grant. Either field may be absent."""
+        if body.get("error") != "missing_scope":
+            return ""
+        scopes = ["%s %s" % (k, body[k]) for k in ("needed", "provided")
+                  if body.get(k)]
+        return " (%s)" % ", ".join(scopes) if scopes else ""
 
 
     def _retry_after(resp):
@@ -5949,7 +5968,9 @@ data:
     toward https on a slack.com host, or loopback (the test seam). One call,
     `chat.postMessage`, as a form POST with the token in the Authorization
     header. A Slack refusal (`ok: false`) fails the call with Slack's own
-    error code, so `missing_scope` or `not_in_channel` reaches the caller.
+    error code, so `missing_scope` or `not_in_channel` reaches the caller,
+    and a `missing_scope` names the `needed` and `provided` scopes Slack
+    sends beside it.
     """
     import json
     import urllib.error
@@ -5971,6 +5992,18 @@ data:
             return True
         return u.scheme == "https" and (
             host == "slack.com" or host.endswith(".slack.com"))
+
+
+    def _refusal(body):
+        """Slack's error code, and on `missing_scope` the `needed` and
+        `provided` scopes Slack sends beside it: the code alone does not say
+        which scope to grant. Either field may be absent."""
+        err = str(body.get("error") or "unknown")
+        if err != "missing_scope":
+            return err
+        scopes = ["%s %s" % (k, body[k]) for k in ("needed", "provided")
+                  if body.get(k)]
+        return "%s (%s)" % (err, ", ".join(scopes)) if scopes else err
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -6029,7 +6062,7 @@ data:
                                % (e.code, e.read()[:200].decode("utf-8", "replace")))
         if not body.get("ok"):
             raise RuntimeError("slack chat.postMessage refused: %s"
-                               % (body.get("error") or "unknown"))
+                               % _refusal(body))
         if not body.get("ts"):
             raise RuntimeError("slack chat.postMessage answered ok with no ts")
         return {"output": {"channel": body.get("channel") or channel,
