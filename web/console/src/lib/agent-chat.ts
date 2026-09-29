@@ -614,8 +614,51 @@ export type ToolDetail =
   | { type: "failed"; reason?: string }
   | { type: "found"; records: { kind: string; id: string }[]; total: number }
   | { type: "changed"; changes: LandedChange[] }
+  | {
+      type: "wrote"
+      records: number
+      kinds: string[]
+      moreKinds: number
+      thread?: string
+    }
   | { type: "reply"; agent: string; text: string; thread?: string }
   | { type: "output"; raw: string }
+
+/** A sub-agent chain's writes as the three parts of one sentence: the lead
+ * ("Wrote 3 records across"), the kinds to list after it, and the tail that
+ * counts the kinds past the listed ones (" and 5 more kinds"). The caller
+ * names each kind, as a word or by its full reference. The overflow count
+ * means nothing without listed kinds, so it is dropped with them. */
+export function wroteParts(
+  records: number,
+  kinds: string[],
+  moreKinds: number
+): { lead: string; kinds: string[]; tail: string } {
+  if (records === 0) return { lead: "Wrote no records", kinds: [], tail: "" }
+  const noun = records === 1 ? "record" : "records"
+  if (kinds.length === 0) {
+    return { lead: `Wrote ${records} ${noun}`, kinds: [], tail: "" }
+  }
+  const more = Math.max(0, moreKinds)
+  const one = kinds.length + more === 1
+  return {
+    lead: `Wrote ${records} ${noun} ${one ? "of" : "across"}`,
+    kinds,
+    tail: more ? ` and ${more} more ${more === 1 ? "kind" : "kinds"}` : "",
+  }
+}
+
+/** The same sentence with every kind as a word: "Wrote 3 records across
+ * task, note". */
+export function wroteSentence(
+  records: number,
+  kinds: string[],
+  moreKinds: number
+): string {
+  const parts = wroteParts(records, kinds, moreKinds)
+  const words = parts.kinds.map((k) => lowerFirst(displayName(k))).join(", ")
+  return `${parts.lead}${words ? ` ${words}` : ""}${parts.tail}`
+}
 
 /** The write tool's `op` as the changelog op it lands: create and put both
  * put a row. */
@@ -641,8 +684,18 @@ export function toolDetails(
   skip: string[] = []
 ): ToolDetail[] {
   if (call.ok === undefined) return []
-  if (call.ok === false)
-    return [{ type: "failed", reason: toolFailure(call.output) }]
+  // A sub-agent chain's writes are said whether or not the call worked: a
+  // child that failed may have written before it did.
+  const wrote = call.subagentWrites
+    ? { type: "wrote" as const, ...call.subagentWrites }
+    : undefined
+  if (call.ok === false) {
+    const failed: ToolDetail = {
+      type: "failed",
+      reason: toolFailure(call.output),
+    }
+    return wrote ? [failed, wrote] : [failed]
+  }
   const payload = parseJSON(call.output)
   const out: ToolDetail[] = []
 
@@ -673,14 +726,19 @@ export function toolDetails(
     }
   }
 
+  if (wrote) out.push(wrote)
   if (resolved.subagent) {
     const text = typeof payload.reply === "string" ? payload.reply.trim() : ""
+    const thread =
+      typeof payload.thread === "string" ? payload.thread : undefined
     if (text) {
       out.push({
         type: "reply",
         agent: resolved.subagent,
         text,
-        thread: typeof payload.thread === "string" ? payload.thread : undefined,
+        // One link into the child thread: the writes line carries it where
+        // the row names the thread.
+        thread: wrote?.thread ? undefined : thread,
       })
     }
     return out

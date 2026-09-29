@@ -137,6 +137,13 @@ type agentTally struct {
 	completion int
 	cost       float64
 	effects    map[string]int
+	// changes is every changelog entry a dispatch on the chain committed, in
+	// commit order: exactly the entries the chain's tool rows stamp as
+	// `changes`, appended where each row is stamped. A sub-agent call
+	// summarizes the stretch its child chain appended (dispatchSubAgent), so
+	// the parent row's `subagentWrites` and the child rows' `changes` are one
+	// list read twice and cannot disagree.
+	changes []changeEntry
 }
 
 func (t *agentTally) effectsTotal() int {
@@ -145,6 +152,44 @@ func (t *agentTally) effectsTotal() int {
 		n += c
 	}
 	return n
+}
+
+// subagentWritesKinds caps the kinds a `subagentWrites` summary lists: the
+// row is one message, and a chain may write any number of kinds. The rest
+// are counted in `moreKinds`.
+const subagentWritesKinds = 20
+
+// subagentWrites is the `subagentWrites` summary of the entries a child chain
+// committed: how many distinct records they wrote and which kinds, in the
+// order the chain first wrote each, capped. It never copies the entries,
+// which the child thread's own rows already stamp, so a compaction of the
+// parent thread reads no child obligation as its own
+// (agentcompaction.go rowObligations reads `changes` alone).
+func subagentWrites(thread string, entries []changeEntry) map[string]any {
+	records := map[eref]bool{}
+	seenKind := map[string]bool{}
+	kinds := []any{}
+	more := 0
+	for _, e := range entries {
+		records[eref{Kind: e.kind, ID: e.id}] = true
+		if seenKind[e.kind] {
+			continue
+		}
+		seenKind[e.kind] = true
+		if len(kinds) < subagentWritesKinds {
+			kinds = append(kinds, e.kind)
+		} else {
+			more++
+		}
+	}
+	out := map[string]any{"thread": thread, "records": len(records)}
+	if len(kinds) > 0 {
+		out["kinds"] = kinds
+	}
+	if more > 0 {
+		out["moreKinds"] = more
+	}
+	return out
 }
 
 // providerConfig is one llm/provider row resolved against the host's gateway
@@ -382,6 +427,11 @@ type agentLoop struct {
 	// as `changes`. Sub-agent dispatches deliberately collect nothing here:
 	// the child's own rows carry the child's writes.
 	dispatchChanges []changeEntry
+	// dispatchWrites is the CURRENT sub-agent dispatch's summary of what its
+	// child chain wrote, stamped onto the tool row as `subagentWrites`; nil on
+	// every other dispatch and on a sub-agent call whose child thread never
+	// opened.
+	dispatchWrites map[string]any
 
 	// rows are the thread's message rows this run replays from: those it
 	// loaded at open, plus any summary it wrote since (agentcompaction.go).
@@ -538,6 +588,7 @@ loop:
 			var out string
 			var ok bool
 			l.dispatchChanges = nil
+			l.dispatchWrites = nil
 			if l.toolCalls >= l.ag.Budgets.MaxToolCalls {
 				// The v4 lesson: refuse with a synthetic result the model
 				// SEES, so it can land a final reply instead of a silent
@@ -565,9 +616,15 @@ loop:
 			// The dispatch's committed writes, as changelog addresses: what a
 			// reader resolves instead of parsing the payload. Only committed
 			// entries land here (inTx flushes the sink after commit), so a
-			// failed call stamps nothing.
+			// failed call stamps nothing. The same entries join the chain's
+			// tally before the row is written, so a caller's summary counts
+			// them even where this row fails to land.
+			l.in.tally.changes = append(l.in.tally.changes, l.dispatchChanges...)
 			if len(l.dispatchChanges) > 0 {
 				toolProps["changes"] = changeProps(l.dispatchChanges)
+			}
+			if l.dispatchWrites != nil {
+				toolProps["subagentWrites"] = l.dispatchWrites
 			}
 			if err := l.putMessage(ctx, l.actor, toolProps); err != nil {
 				return nil, err
@@ -1715,6 +1772,13 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 	if input == "" {
 		return toolError("input is required — the task for the sub-agent"), false
 	}
+	// The child chain's writes are the tally's entries past this mark: the
+	// child and every grandchild append theirs to the one shared tally as
+	// their own tool rows are stamped, and nothing on the child's run writes
+	// after runAgent returns, so the stretch is complete whatever status the
+	// child ended in, an error path that skipped its settle included.
+	mark := len(l.in.tally.changes)
+	var child string
 	res, err := l.ds.runAgent(ctx, sub, agentInvocation{
 		mode: agentModeSubagent, user: input,
 		parent: l.threadID, depth: depth,
@@ -1726,7 +1790,17 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 		// The child's delivery identity extends the caller's by the stable
 		// call path (this agent, this tool ordinal) — retries reproduce it.
 		delivery: fmt.Sprintf("%s/agent/%s/%d", l.in.delivery, l.ag.Identity(), l.toolCalls),
+		// After commit, so a thread row that rolled back is never named.
+		onThread: func(t *txn, id string) error {
+			t.afterCommit = append(t.afterCommit, func() { child = id })
+			return nil
+		},
 	})
+	if child != "" {
+		// A child thread that never opened wrote nothing, and there is no
+		// thread to name.
+		l.dispatchWrites = subagentWrites(child, l.in.tally.changes[mark:])
+	}
 	if err != nil {
 		return toolError(err.Error()), false
 	}

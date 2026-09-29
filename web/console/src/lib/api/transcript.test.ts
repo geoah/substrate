@@ -332,6 +332,54 @@ describe("system turns and engine-stamped changes", () => {
       { seq: 1, op: "put", kind: "a.dev/b", id: "c" },
     ])
   })
+
+  it("attaches a sub-agent row's write summary, the child thread by id", () => {
+    const turns = transcriptOf([
+      row({
+        role: "assistant",
+        toolCalls: [call("c1", "worker", '{"input":"go"}')],
+        turn: 0,
+      }),
+      row({
+        role: "tool",
+        content: '{"reply":"done","thread":"th1","status":"ok"}',
+        toolCallId: "c1",
+        name: "worker",
+        ok: true,
+        turn: 1,
+        subagentWrites: {
+          thread: { ref: "substrate.reamde.dev/llm/thread/th1" },
+          records: 3,
+          kinds: ["crew.test.dev/crew/task", 7, "crew.test.dev/crew/note"],
+        },
+      }),
+    ])
+    expect(turns[0].tools[0].subagentWrites).toEqual({
+      thread: "th1",
+      records: 3,
+      kinds: ["crew.test.dev/crew/task", "crew.test.dev/crew/note"],
+      moreKinds: 0,
+    })
+  })
+
+  it("drops a write summary that carries no count", () => {
+    const turns = transcriptOf([
+      row({
+        role: "assistant",
+        toolCalls: [call("c1", "worker", "{}")],
+        turn: 0,
+      }),
+      row({
+        role: "tool",
+        content: "{}",
+        toolCallId: "c1",
+        ok: true,
+        turn: 1,
+        subagentWrites: { kinds: ["crew.test.dev/crew/task"] },
+      }),
+    ])
+    expect(turns[0].tools[0].subagentWrites).toBeUndefined()
+  })
 })
 
 describe("requestIdOf", () => {

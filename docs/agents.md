@@ -280,9 +280,19 @@ the write.
 changelog row the dispatch committed, whether a `write` call, a
 `propose`'s request row, or a function tool's applied effects — so any reader
 of the thread (the console, a client on the changefeed) resolves WHAT changed from the changelog
-instead of parsing tool payloads. A rolled-back dispatch stamps nothing, and a
-sub-agent call stamps nothing on the parent: the child thread's own rows carry
-the child's writes.
+instead of parsing tool payloads. A rolled-back dispatch stamps nothing.
+
+**A sub-agent call's tool row summarizes what the child chain wrote.** The
+child thread's own rows carry each write's `changes`, so the parent's row
+copies none of them. It carries `subagentWrites` instead: the child `thread`,
+`records` (how many distinct records the child and every agent it called
+wrote) and `kinds` (the kinds they wrote, in first-write order, at most 20,
+with `moreKinds` counting the rest). The engine stamps it when the child's
+run returns, whatever status it ended in, from the same entries the child
+rows stamp, on every call whose child thread opened, `records: 0` included.
+A write a later continuation of the child thread makes (a decision resume)
+is on the child's rows and not in the count. A reader that wants the entries
+opens the child thread.
 
 **Every tool row names its callable beside its alias.** `name` on a
 `toolCalls` entry and on the tool row is the name the model saw, which is the
@@ -519,8 +529,8 @@ is written as the loop runs under the agent's actor, carrying `agent`,
 the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. A `message` carries role (`user`, `assistant`,
 `tool`, or the engine-written `system` and `summary`), content, turn, the
-tool-call audit, the engine-stamped `changes`, and the required `thread` it
-belongs to.
+tool-call audit, the engine-stamped `changes` (and `subagentWrites` on a
+sub-agent call's row), and the required `thread` it belongs to.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 
@@ -532,7 +542,9 @@ a thread's `messages` and its `subagentThreads`.
 
 **Cost rolls up onto the root thread**: every loop on a chain adds to one
 shared tally, so the root thread's numbers include every descendant while a
-child thread carries only its own. Pricing is data on the provider row, keyed
+child thread carries only its own. The same tally collects every committed
+dispatch entry on the chain, which is what a sub-agent call's
+`subagentWrites` counts. Pricing is data on the provider row, keyed
 by model id, never a table in code. The loop terminates on the final tool-free
 reply, any budget, or its deadline; over-budget is a settled outcome (thread
 `overbudget` with a reason), never a park.
