@@ -19,6 +19,10 @@ const gcBatch = 200
 // TARGETS: a marked record past its grace window that nothing live points at
 // is tombstoned and collected like any other (orphans.go). That half is off
 // by default.
+//
+// It returns the records it purged plus the blobs it collected. A victim a
+// pass visits and skips, because a write restored it or gave it a finalizer
+// after the victim query, is not counted.
 func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 	// Orphans FIRST, so a tombstone this pass writes is purged by the
 	// fixpoint below rather than waiting for the next sweep. It is a no-op
@@ -30,12 +34,16 @@ func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 	}
 	collected := 0
 	for {
-		n, err := ds.gcPass(ctx)
+		n, full, err := ds.gcPass(ctx)
 		if err != nil {
 			return collected, err
 		}
 		collected += n
-		if n == 0 {
+		// A pass that purged nothing from a short batch saw every victim
+		// there was. One that filled its batch may have left victims beyond
+		// it, and it cannot spin: a victim it skipped no longer matches the
+		// victim query.
+		if n == 0 && !full {
 			break
 		}
 	}
@@ -126,13 +134,15 @@ func (ds *dataset) sweepUnheldSealed(ctx context.Context) (int, error) {
 	}
 }
 
-func (ds *dataset) gcPass(ctx context.Context) (int, error) {
+// gcPass purges up to gcBatch collectable tombstones and reports how many it
+// purged and whether the victim query filled its batch.
+func (ds *dataset) gcPass(ctx context.Context) (int, bool, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, kind FROM records
 		WHERE deleted_at IS NOT NULL AND cardinality(finalizers) = 0
 		ORDER BY deleted_at LIMIT $1`, gcBatch)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	type victim struct{ id, typ string }
 	var victims []victim
@@ -140,17 +150,29 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 		var v victim
 		if err := rows.Scan(&v.id, &v.typ); err != nil {
 			_ = rows.Close()
-			return 0, err
+			return 0, false, err
 		}
 		victims = append(victims, v)
 	}
-	_ = rows.Close()
-	if len(victims) == 0 {
-		return 0, nil
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, false, err
 	}
+	_ = rows.Close()
+	if hook := ds.svc.testGCPassHook; hook != nil {
+		hook(len(victims))
+	}
+	if len(victims) == 0 {
+		return 0, false, nil
+	}
+	full := len(victims) == gcBatch
 
+	// n counts the rows this pass purged, not the victims it visited: RunGC
+	// runs another pass after any purge, so a skipped victim counted here
+	// would over-report the sweep and run one pass more than it needs.
 	n := 0
 	for _, v := range victims {
+		purged := false
 		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 			ref := eref{Kind: v.typ, ID: v.id}
 			// The record's advisory lock before its row lock, the order every
@@ -181,15 +203,21 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 			if err := t.hardDelete(ref); err != nil {
 				return err
 			}
-			return t.appendChange(substrate.ActorSystem, substrate.OpGC, v.id, v.typ,
-				map[string]any{"reason": "collected"})
+			if err := t.appendChange(substrate.ActorSystem, substrate.OpGC, v.id, v.typ,
+				map[string]any{"reason": "collected"}); err != nil {
+				return err
+			}
+			purged = true
+			return nil
 		})
 		if err != nil {
-			return n, err
+			return n, full, err
 		}
-		n++
+		if purged {
+			n++
+		}
 	}
-	return n, nil
+	return n, full, nil
 }
 
 // ownedChild is one record the cascade collects: its kind (typ) and id.
