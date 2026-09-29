@@ -1,11 +1,12 @@
-# An agent reads each pull request for what the release will owe its readers:
-# a missing or wrong upgrade note under docs/changes/, a `!` the title needs
-# or does not, and a sentence in the agent-facing docs the diff makes false.
-# .github/review.md is the whole brief.
+# An agent reads each pull request for what the changelog will owe its
+# readers: a `!` the title needs or does not, a BREAKING CHANGE footer whose
+# steps are missing or wrong, and a sentence in the agent-facing docs the
+# diff makes false. .github/review.md is the whole brief.
 #
 # Advice, not a gate. It posts one comment and never approves or blocks, and
 # no ruleset requires it: a model's judgement is not a merge condition. The
-# one rule CI enforces, a break ships a note, is `commits:check` in pr.yml.
+# one rule CI enforces, a break carries its steps, is `commits:check` in
+# pr.yml.
 #
 # It runs when a pull request opens or leaves draft, not on every push, so a
 # branch that pushes twenty times pays once. "Re-run jobs" on the run is the
@@ -28,8 +29,8 @@ permissions:
   contents: read
 
 jobs:
-  upgrade-notes:
-    name: upgrade notes review
+  changelog:
+    name: changelog review
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20

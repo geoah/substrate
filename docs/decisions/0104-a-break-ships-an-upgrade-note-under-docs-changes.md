@@ -1,6 +1,6 @@
 ---
-status: proposed
-date: 2026-09-26
+status: rejected
+date: 2026-09-29
 decision-makers: George Antoniadis
 ---
 
@@ -67,6 +67,6 @@ shape. The agent review in `.github/workflows/review.yml` is advice only.
 ## More Information
 
 The format and the rules for when a note is required are
-[docs/changes/README.md](../changes/README.md). Revisit if releases move to a
+`docs/changes/README.md`. Revisit if releases move to a
 release pull request, which would make a single rendered file possible
 without a bypass on main.

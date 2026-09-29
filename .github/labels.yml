@@ -64,3 +64,14 @@
 - name: system/agent
   color: c7d2fe
   description: filed by the agent as a plan follow-up
+
+# ---- autorelease: release-please's own -------------------------------------
+# release-please.yml marks the release pull request `pending` while it is
+# open and `tagged` once its merge is tagged, and finds a merged one by these.
+# Named here so the sync does not delete them.
+- name: "autorelease: pending"
+  color: ededed
+  description: the open release pull request, kept current by release-please
+- name: "autorelease: tagged"
+  color: ededed
+  description: a merged release pull request whose tag is cut

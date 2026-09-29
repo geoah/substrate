@@ -7,7 +7,7 @@ description: >-
   API clients and scripts. Use when asked to upgrade, update or move to a new
   substrate release, when a substrate release is out and code depends on the
   server, or when a server reports a version the client code was not written
-  against. Reads the upgrade notes of every release in the range, writes a
+  against. Reads the changelog section of every release in the range, writes a
   plan, takes a verified backup, deploys, verifies, and takes the upgrades the
   catalog offers.
 ---
@@ -23,7 +23,7 @@ approves the plan in step 3.
 Substrate is one Go binary and one Postgres database. A **repository** is
 everything one user has; its name is its **authority**, the DNS-style name
 that kinds are declared under (`ada.example.com/tasks/task`). Every piece of
-upgrade guidance below comes from the upgrade notes and the docs at
+upgrade guidance below comes from the changelog and the docs at
 <https://github.com/geoah/substrate>. When this runbook and a note disagree,
 the note for the release wins.
 
@@ -145,33 +145,34 @@ docker compose exec substrate substratectl repository list    # or DATABASE_URL=
 **Show the user:** the current version, the target version, the role, and
 the inventory.
 
-## Step 2: Read every upgrade note in the range
+## Step 2: Read every release's changelog section in the range
 
-Read the notes of every release after the current one, up to and including
-the target. Read all of them, oldest first: releases ship several times a
-day, so a range often spans dozens, and any one of them can hold a break.
+Read the section of every release after the current one, up to and including
+the target. Read all of them, oldest first: a range often spans several
+releases, and any one of them can hold a break.
 
-**Where the notes are.** Each release page carries its notes between two
-markers, above the commit list:
+**Where the sections are.** `CHANGELOG.md` on `main`, one `## [X.Y.Z]`
+heading per release, newest first. Read it from `main`, not from the target
+tag: the file was folded from older notes on 2026-09-29, and tags before
+that carry no changelog or a stub.
 
 ```bash
-# every release tag, newest first
-gh release list --repo geoah/substrate --limit 500 --json tagName -q '.[].tagName'
+# the whole file
+curl -fsSL https://raw.githubusercontent.com/geoah/substrate/main/CHANGELOG.md
 
-# one release's notes
-gh release view v0.105.0 --repo geoah/substrate --json body -q .body |
-  sed -n '/<!-- upgrade-notes:start -->/,/<!-- upgrade-notes:end -->/p'
+# one release's section, as the release page carries it
+gh release view v0.105.0 --repo geoah/substrate --json body -q .body
 ```
 
 Without `gh`, the same bodies are at
 `https://api.github.com/repos/geoah/substrate/releases?per_page=100&page=N`,
-in the `body` field of each entry. A page without the markers has no notes;
-read its commit list for subjects with `!` before the colon, because each of
-those is a break.
+in the `body` field of each entry.
 
-**How to read a note.** Each note is a break, a deprecation, a feature or a
-fix. A break or a deprecation ends in a `What to do` section whose steps are
-written to be followed literally. For each note, decide:
+**How to read a section.** It opens with `⚠ BREAKING CHANGES`, one entry
+per break with its steps as sub-bullets, written to be followed literally,
+then `Added` and `Fixed`. Releases before v0.70.0 are not listed: a database
+from before it cannot be upgraded in place (below). Each break entry is a
+note below. For each one, decide:
 
 1. **Does it apply?** Check it against the step 1 inventory. A note about a
    provider the user never installed does not apply. Record why you skipped

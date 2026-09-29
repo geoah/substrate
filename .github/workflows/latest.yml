@@ -11,9 +11,9 @@
 # No per-commit tags: one moving tag, so the registry does not fill up with
 # images nobody will ever ask for by name.
 #
-# It hangs off ci, like version.yml, rather than off the push: on the push it
-# built and published a commit whose suite was still running, so `latest` could
-# be red. There is no dispatch, because a dispatch is that same untested
+# It hangs off ci, like release-please.yml, rather than off the push: on the
+# push it built and published a commit whose suite was still running, so
+# `latest` could be red. There is no dispatch, because a dispatch is that same untested
 # publish with a person's name on it.
 #
 # A green ci run is necessary and not sufficient, so the `tip` job below asks

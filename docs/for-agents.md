@@ -225,14 +225,14 @@ kind ([vocabulary as records](vocabulary.md)):
 
 `server.version` in discovery is the release you are talking to. Keep the
 version you last worked against, and when discovery reports a newer one,
-read the upgrade notes of every release in between before the next write.
-Each release on the [releases page](https://github.com/geoah/substrate/releases)
-opens with them, grouped as breaking changes, deprecations, features and
-fixes, and a `## What to do` under each break lists the steps in order.
-`GET https://api.github.com/repos/geoah/substrate/releases` returns the same
-text as `body`, one release per entry. In a checkout of this repository,
-`mise run changelog` renders every release at once, and the notes themselves
-are the files under [docs/changes](changes/README.md).
+read the section of every release in between in
+[`CHANGELOG.md`](https://github.com/geoah/substrate/blob/main/CHANGELOG.md)
+before the next write. Each section lists the release's breaking changes
+first, each with the steps to follow in order, then what was added and what
+was fixed. The same section is the body of the release on the
+[releases page](https://github.com/geoah/substrate/releases), and
+`GET https://api.github.com/repos/geoah/substrate/releases` returns it as
+`body`, one release per entry.
 
 ## Never
 

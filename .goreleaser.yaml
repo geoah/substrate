@@ -1,9 +1,9 @@
 # Releasing substrate: the CLI for every platform, and one multi-arch image.
 #
-# Versions come from the git tag, which .github/workflows/version.yml writes
-# from the conventional commits on main: `feat:` bumps the minor, `fix:` the
-# patch, and a `!` or a BREAKING CHANGE footer the major (the minor, below
-# 1.0.0). Nothing here needs editing to cut a release.
+# Versions come from the git tag, which release-please cuts when its release
+# pull request merges (.github/workflows/release-please.yml): `feat:` bumps
+# the minor, `fix:` the patch, and a `!` or a BREAKING CHANGE footer the minor
+# while below 1.0.0. Nothing here needs editing to cut a release.
 #
 # Run it locally exactly as CI does:
 #
@@ -124,36 +124,18 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
 
 changelog:
-  # The release notes ARE the changelog: there is no release pull request
-  # accumulating one into a file any more, so this is where the commits since
-  # the last tag are read back to a person. Grouped, because an ungrouped list
-  # buries the two lines somebody is looking for under the housekeeping.
-  use: git
-  sort: asc
-  groups:
-    - title: Features
-      regexp: '^.*?feat(\([[:word:]\.\-]+\))??!?:.+$'
-      order: 0
-    - title: Fixes
-      regexp: '^.*?fix(\([[:word:]\.\-]+\))??!?:.+$'
-      order: 1
-    - title: Everything else
-      order: 99
-  filters:
-    exclude:
-      # Never a reason to read the release: they change nothing that ships.
-      # No closing paren on the last one, because dependabot writes both
-      # `chore(deps)` and `chore(deps-dev)` and both are the same non-news.
-      - "^docs:"
-      - "^test:"
-      - "^chore\\(deps"
+  # release-please writes the release notes: its pull request holds the next
+  # CHANGELOG.md section, and the GitHub release it creates carries that
+  # section as its body. A commit list from here would be a second, worse
+  # copy underneath it.
+  disable: true
 
 release:
   prerelease: auto
-  # No `mode: append`. That was for a release somebody else had already
-  # created and written the body of; goreleaser now creates it, so appending
-  # would only mean a re-run stacking a second copy of the notes under the
-  # first.
+  # release-please created the release and wrote its body before this runs,
+  # so the body is kept as it is and only the artifacts are attached. Not
+  # `append` or `replace`: a re-run would stack or drop the notes.
+  mode: keep-existing
   #
   # Re-running a release that died partway through is the recovery path for
   # one (the image push failed at v0.1.0, and the same thing can fail during

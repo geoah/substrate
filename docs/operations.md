@@ -664,12 +664,14 @@ provider and sample upgrades afterwards, and the
 [README](../README.md#upgrading) says how to install it. What follows is
 the mechanics it relies on.
 
-**Read the upgrade notes first.** Every release between the version you run
-and the one you deploy opens its
-[release page](https://github.com/geoah/substrate/releases) with them: the
-breaks, each with a `## What to do`, then deprecations, features and fixes
-([upgrade notes](changes/README.md)). A break in an env var, a default or the
-boot is listed there, not only in the commit list.
+**Read the changelog first.** [`CHANGELOG.md`](../CHANGELOG.md) has one
+section per release, newest first: the breaking changes, each with the steps
+to follow in order, then what was added and what was fixed. Read the section
+of every release between the version you run and the one you deploy. A break
+in an env var, a default or the boot is listed there; the
+[release page](https://github.com/geoah/substrate/releases) carries the same
+section as its body. [Releasing](releasing.md) says how a section is written
+and how a release is cut.
 
 **Take a backup before you deploy** ([backups](#backups): the data root and a
 database dump, together). An upgrade that applies a schema migration closes

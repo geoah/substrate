@@ -392,8 +392,9 @@ egress rules included.
 Do not upgrade by hand: have an agent follow the upgrade runbook,
 [skills/substrate-runbook-upgrade](skills/substrate-runbook-upgrade/SKILL.md).
 A new binary migrates the database and every repository it opens, and only
-a backup taken beforehand undoes that. Each release's upgrade notes say what
-you must change before and after. The runbook reads the notes of every
+a backup taken beforehand undoes that. Each release's section in
+[CHANGELOG.md](CHANGELOG.md) says what you must change before and after. The
+runbook reads the section of every
 release between yours and the target, writes a plan for you to approve,
 takes the backup, deploys, verifies, and then takes the provider and sample
 upgrades the catalog offers.
@@ -449,6 +450,6 @@ rules. [docs/testing.md](docs/testing.md) maps the test suites.
 | [skills/](skills)                                    | agent skills for running and building on a substrate              |
 | [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
 | [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
-| [Releases](https://github.com/geoah/substrate/releases) | every released version, its upgrade notes and its commits      |
-| [docs/changes](docs/changes/README.md)               | the upgrade notes, one file per change a user must know about     |
+| [Releases](https://github.com/geoah/substrate/releases) | every released version, with its changelog section as the body |
+| [CHANGELOG.md](CHANGELOG.md)                         | every release, newest first: breaks with their steps, then what was added and fixed |
 | [Issues](https://github.com/geoah/substrate/issues)  | known bugs and planned work                                       |

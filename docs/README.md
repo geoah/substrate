@@ -63,8 +63,8 @@ API call that completes a task.
   approved prototype
 - [Running one locally](running-locally.md)
 - [Running a substrate](operations.md)
-- [Upgrade notes](changes/README.md): what each release changes that a
-  client, an agent or an operator has to act on, and how to write one
+- [Releasing](releasing.md): how a version is cut from the release pull
+  request, and how a change reaches `CHANGELOG.md`
 - [Testing](testing.md) — every suite, which to reach for, and how to give the
   live one keys
 - [Built-in kinds](builtin-kinds.md) — reference

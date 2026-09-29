@@ -1,0 +1,97 @@
+# The release pull request, kept current after every green merge to main, and
+# the tag when it merges.
+#
+# A merge to main releases nothing on its own. release-please reads the
+# conventional commits since the last tag and keeps ONE pull request open,
+# `chore(release): vX.Y.Z`, whose branch holds the next CHANGELOG.md section
+# and whose title holds the next version (`fix:` the patch, `feat:` the minor,
+# a `!` or a BREAKING CHANGE footer the minor while below 1.0.0, from
+# release-please-config.json). Every merge regenerates it. Merging it is the
+# release: the next run here finds the merged release pull request by its
+# `autorelease: pending` label, tags its merge commit, creates the GitHub
+# release with that section as its body, and calls release.yml to build and
+# attach the artifacts. docs/releasing.md is the checklist a person runs
+# before merging it.
+#
+# It hangs off ci rather than off the push, like latest.yml, so the pull
+# request is refreshed and the tag is cut only after a suite has passed on
+# main. release.yml checks the tagged commit's own ci run again before it
+# builds, because a green run for a later commit is what brought us here.
+#
+# The token is a fine-grained personal access token (contents and pull
+# requests, read and write, on this repository alone), stored as
+# RELEASE_PLEASE_TOKEN. Not GITHUB_TOKEN: a pull request opened or pushed with
+# the workflow token starts no workflow run of its own, so the release pull
+# request would never get the checks the ruleset requires and could never be
+# merged. The token has no bypass on the ruleset: main still moves only
+# through a pull request that passed the checks.
+name: release-please
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  # The same run by hand, for a main whose green ci run this workflow never
+  # saw (a workflow_run event GitHub dropped, a run that failed after ci
+  # passed). release-please is idempotent: an open pull request is refreshed,
+  # a merged one is tagged if it was not, and a tagged one is left alone.
+  workflow_dispatch:
+
+concurrency:
+  # ONE, for the whole repository, and never cancelled: two runs racing would
+  # both try to push the release branch or the tag.
+  group: release-please
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: release pull request
+    # Both halves are load-bearing. `conclusion == 'success'` is the gate this
+    # workflow exists for; `event == 'push'` is because ci runs on pull
+    # requests too and those runs arrive here as well.
+    if: >-
+      github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event
+      == 'push' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - name: require RELEASE_PLEASE_TOKEN
+        env:
+          TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "RELEASE_PLEASE_TOKEN is not set; see the comment at the top of this workflow" >&2
+            exit 1
+          fi
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: main
+
+  # Called rather than left to the tag, and this call is release.yml's only
+  # door. A tag pushed by a token starts no workflow of its own here, and an
+  # `on: push: tags` release would build whatever commit a hand-pushed tag
+  # names.
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+      sha: ${{ needs.release-please.outputs.sha }}
