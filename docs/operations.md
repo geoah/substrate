@@ -413,6 +413,18 @@ orphaned mapping targets where the deployment asked for it
 repositories and opens each one through the same row-level-security-bound pool
 a request uses.
 
+**A purge erases the record's sealed material.** When the GC sweep purges a
+tombstone, or `DELETE ?purge=true` purges a record, the record's rows in
+`sealed` and their files under `sealed/` go in the same transaction. A
+tombstone keeps them, so a restore reads its secrets again. Each sweep also
+erases every sealed row that no record, live or tombstoned, holds the ref of:
+the rows purges in earlier releases left behind, and any an imported copy
+carries. `repository verify` names each such row or file as an orphan. The
+erasure covers the live table and the directory only. The ciphertext stays
+in Postgres's dead tuples until `VACUUM`, in the WAL until its segment is
+recycled, on any replica, and in every backup or snapshot taken before the
+purge, and each of those copies still opens under the repository's key.
+
 The trigger dispatcher runs each repository's pass in a goroutine of its own,
 at most 8 at once. The cap bounds the function runner processes and the
 transactions the dispatcher has in flight; a pass takes a connection for each
@@ -719,10 +731,13 @@ mid-write is usually consistent or short by its last transaction, which the
 importer cuts whole (every line names the seq its transaction ends at, so a
 prefix of one is never taken for history, and a transaction still missing its
 final newline, like a `.pending` file under `sealed/`, is a write the
-directory has not committed, which the importer ignores). Three windows remain: a copy that reads a segment while the
+directory has not committed, which the importer ignores). Four windows remain: a copy that reads a segment while the
 server finishes it can hold the segment with a sidecar that does not match
 yet; a copy that reads `sealed/` before `changelog/` can hold a line whose
-sealed file it missed; and a copy that reads `blobs/` before `changelog/`
+sealed file it missed; one that reads `sealed/` after `changelog/`, as
+`rsync` does, can hold the file of a secret written or erased meanwhile,
+which no record in the copy holds and verify names as an orphan; and a copy
+that reads `blobs/` before `changelog/`
 can hold a blob manifest marked `stored` whose bytes it missed, because an
 upload writes the bytes first and the `stored` manifest after
 ([the blob store](#the-blob-store)), and `rsync` reads `blobs/` before
@@ -1033,7 +1048,10 @@ the exec path needs nothing open at all.
   hashed against its digest, every secret reference a live record holds
   (by the repository's own declarations, as a replay loads them, so the
   records of a package the loader parked are not walked) must have its
-  sealed file, and with
+  sealed file, every sealed row and file must have its ref held by the
+  record that owns it, live or tombstoned (one that is not is an orphan,
+  counted and named by ref, and the next GC sweep erases an orphan row and
+  its file), and with
   `SUBSTRATE_CREDENTIAL_KEY` in the environment every sealed file is opened
   under the repository's key; without the key the files are compared with
   the rows and the report says nothing was opened. A directory that is a

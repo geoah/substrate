@@ -713,6 +713,167 @@ func TestRoundTripDirectoryRestoresARepository(t *testing.T) {
 	wantLabelsAndVersion(t, ds2, cleared)
 }
 
+// sealedRowCount counts the sealed rows under one ref.
+func sealedRowCount(t *testing.T, dsn, ref string) int {
+	t.Helper()
+	var n int
+	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM sealed WHERE ref = $1`, ref).Scan(&n); err != nil {
+		t.Fatalf("count sealed rows under %s: %v", ref, err)
+	}
+	return n
+}
+
+// sealedFileExists reports whether sealed/ holds the file for one ref.
+func sealedFileExists(t *testing.T, dir, ref string) bool {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(changelogfile.SealedDir(dir), changelogfile.SealedFileName(ref)))
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, fs.ErrNotExist):
+		return false
+	}
+	t.Fatalf("stat the sealed file of %s: %v", ref, err)
+	return false
+}
+
+// A purge erases the record's sealed rows and their files (#236): the GC
+// sweep's purge of a tombstone, and `?purge=true` in the delete itself. The
+// tombstone keeps them, so a restore would read the secret again, and verify
+// counts a ref a tombstone holds as held.
+func TestPurgeErasesTheRecordsSealedMaterial(t *testing.T) {
+	t.Parallel()
+	svc, dsn := newService(t)
+	ctx := context.Background()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := repoDirOf(t, svc, ds)
+	swept := putProvider(t, ds, dsn, "swept", "sk-swept")
+	purged := putProvider(t, ds, dsn, "purged", "sk-purged")
+	kept := putProvider(t, ds, dsn, "kept", "sk-kept")
+
+	if _, err := ds.Delete(ctx, owner, typeProvider, "swept", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if sealedRowCount(t, dsn, swept) != 1 || !sealedFileExists(t, dir, swept) {
+		t.Fatal("the tombstone erased its sealed material; a restore could not read the secret")
+	}
+	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK || report.SealedOrphans != 0 {
+		t.Fatalf("a ref a tombstone holds is not held: %+v", report)
+	}
+
+	// The purge in the delete erases in the delete's own transaction, before
+	// any sweep could.
+	if _, err := ds.Delete(ctx, owner, typeProvider, "purged", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("delete with purge: %v", err)
+	}
+	if sealedRowCount(t, dsn, purged) != 0 || sealedFileExists(t, dir, purged) {
+		t.Fatal("the purge left the record's sealed row or file behind")
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	for name, ref := range map[string]string{"swept": swept, "purged": purged} {
+		if n := sealedRowCount(t, dsn, ref); n != 0 {
+			t.Errorf("%s: %d sealed row(s) outlived the purge", name, n)
+		}
+		if sealedFileExists(t, dir, ref) {
+			t.Errorf("%s: sealed/ still holds the file the purge erased the row of", name)
+		}
+	}
+	if sealedRowCount(t, dsn, kept) != 1 || !sealedFileExists(t, dir, kept) {
+		t.Fatal("the purge erased a live record's sealed material")
+	}
+	if got := openSecret(t, dsn, kept); got != "sk-kept" {
+		t.Fatalf("the live secret = %q", got)
+	}
+	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK || report.SealedOrphans != 0 {
+		t.Fatalf("the repository does not verify after the purge: %+v", report)
+	}
+}
+
+// Sealed rows a purge left before #236, and rows whose owner no longer holds
+// them, are orphans: verify names each, a tombstone's hold still counts, and
+// the GC sweep erases the orphans' rows and files and nothing else.
+func TestVerifyNamesUnheldSealedRowsAndGCErasesThem(t *testing.T) {
+	t.Parallel()
+	svc, dsn := newService(t)
+	ctx := context.Background()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := repoDirOf(t, svc, ds)
+	gone := putProvider(t, ds, dsn, "gone", "sk-gone")
+	dropped := putProvider(t, ds, dsn, "dropped", "sk-dropped")
+	kept := putProvider(t, ds, dsn, "kept", "sk-kept")
+	held := putProvider(t, ds, dsn, "held", "sk-held")
+	// A finalizer keeps this one a tombstone through the sweep, so its ref
+	// is held by a tombstone when the orphans go.
+	const hold = "example.com/hold"
+	mustPatch(t, ds, owner, typeProvider, "held", substrate.PatchInput{AddFinalizers: []string{hold}})
+	if _, err := ds.Delete(ctx, owner, typeProvider, "held", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the held provider: %v", err)
+	}
+
+	// What a purge before #236 left: the record's row gone, its sealed row
+	// and file in place. And a row its owner stopped holding.
+	raw := rawDB(t, dsn)
+	if _, err := raw.Exec(`DELETE FROM records WHERE kind = $1 AND id = $2`, typeProvider, "gone"); err != nil {
+		t.Fatalf("drop the record row: %v", err)
+	}
+	if _, err := raw.Exec(`UPDATE records SET props = props - 'apiKey' WHERE kind = $1 AND id = $2`, typeProvider, "dropped"); err != nil {
+		t.Fatalf("drop the owner's hold: %v", err)
+	}
+
+	report := mustVerify(t, svc, testdb.Repository(t))
+	if report.OK || report.SealedOrphans != 2 {
+		t.Fatalf("verify did not count the two orphans: %+v", report)
+	}
+	for _, want := range []string{
+		"sealed " + gone + " (" + typeProvider + " gone): an orphan",
+		"sealed " + dropped + " (" + typeProvider + " dropped): an orphan",
+	} {
+		if !findingContaining(report, want) {
+			t.Errorf("no finding contains %q:\n%s", want, strings.Join(report.Findings, "\n"))
+		}
+	}
+	if len(report.Findings) != 2 {
+		t.Fatalf("%d findings, want the two orphans alone:\n%s", len(report.Findings), strings.Join(report.Findings, "\n"))
+	}
+
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	for _, ref := range []string{gone, dropped} {
+		if n := sealedRowCount(t, dsn, ref); n != 0 {
+			t.Errorf("%s: %d sealed row(s) survived the sweep", ref, n)
+		}
+		if sealedFileExists(t, dir, ref) {
+			t.Errorf("%s: sealed/ still holds the orphan's file", ref)
+		}
+	}
+	for name, ref := range map[string]string{"kept": kept, "held": held} {
+		if sealedRowCount(t, dsn, ref) != 1 || !sealedFileExists(t, dir, ref) {
+			t.Errorf("%s: the sweep erased material a record holds", name)
+		}
+	}
+	if got := openSecret(t, dsn, held); got != "sk-held" {
+		t.Fatalf("the tombstone's secret = %q", got)
+	}
+	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK || report.SealedOrphans != 0 {
+		t.Fatalf("the repository does not verify after the sweep: %+v", report)
+	}
+}
+
 // Rotating a secret deletes the old sealed row; the mirror follows, so
 // exactly the live ref has a file.
 func TestSealedMirrorFollowsRotation(t *testing.T) {

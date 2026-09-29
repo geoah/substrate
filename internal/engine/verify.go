@@ -4,10 +4,11 @@ package engine
 // line and sidecar by sidecar (changelogfile.VerifyDir), the changelog table
 // row by row, its stamped checksums held to the files' seq by seq (and, with
 // VerifyOptions.Recanonicalize, recomputed from the stored columns), both
-// heads, the sealed files against the sealed rows, the recorded recovery
-// point against the files, every stored blob's bytes against its digest,
-// every live secret reference against the sealed files and, under the
-// credential key, every sealed file opened. It MUTATES NOTHING: the files
+// heads, the sealed files against the sealed rows, every sealed row and file
+// against the record that should hold its ref, the recorded recovery point
+// against the files, every stored blob's bytes against its digest, every live
+// secret reference against the sealed files and, under the credential key,
+// every sealed file opened. It MUTATES NOTHING: the files
 // are opened read-only and the table is read inside one repeatable-read
 // transaction, so a concurrent write cannot make it stitch two states into
 // one report.
@@ -18,6 +19,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -60,6 +62,10 @@ type VerifyReport struct {
 	// DEK: every one, or the walk found the rest; 0 with no credential key,
 	// when nothing is opened.
 	SealedOpened int `json:"sealedOpened"`
+	// SealedOrphans is how many sealed refs, rows and files alike, no live or
+	// tombstoned record holds (credentials.go sealedUnheld). Each is a
+	// finding, and the GC sweep erases the rows among them.
+	SealedOrphans int `json:"sealedOrphans"`
 	// SecretRefs is how many secret references live records hold, each held
 	// to a sealed file.
 	SecretRefs int `json:"secretRefs"`
@@ -325,6 +331,9 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 	for _, name := range pending {
 		found(fmt.Sprintf("sealed/%s: a staged write that has not committed", name))
 	}
+	if err := verifyUnheldSealed(ctx, tx, rows, files, &report, found); err != nil {
+		return report, nil, err
+	}
 
 	// The recorded recovery point, when the directory is a snapshot or was
 	// restored from one: the entry it names must be in the files, as recorded.
@@ -518,6 +527,56 @@ func (s *service) verifySecretRefs(ctx context.Context, tx dbx, db *sql.DB, repo
 		}
 	}
 	return nil
+}
+
+// verifyUnheldSealed names every sealed ref, in the table or under sealed/,
+// that no live or tombstoned record holds (credentials.go sealedUnheld): the
+// material nothing reads, which a purge before #236 left and the GC sweep
+// erases. A ref with a row is judged by the row's owner and a file with no
+// row by the owner its file names, so a file that is not its row is not
+// judged twice.
+func verifyUnheldSealed(ctx context.Context, tx dbx, rows map[string]changelogfile.SealedRecord, files []changelogfile.SealedRecord, report *VerifyReport, found func(string)) error {
+	byRef := make(map[string]changelogfile.SealedRecord, len(rows)+len(files))
+	for _, f := range files {
+		byRef[f.Ref] = f
+	}
+	for ref, r := range rows {
+		byRef[ref] = r
+	}
+	if len(byRef) == 0 {
+		return nil
+	}
+	type candidate struct {
+		Ref        string `json:"ref"`
+		RecordKind string `json:"record_kind"`
+		RecordID   string `json:"record_id"`
+	}
+	candidates := make([]candidate, 0, len(byRef))
+	for _, ref := range sortedKeys(byRef) {
+		candidates = append(candidates, candidate{Ref: ref, RecordKind: byRef[ref].RecordKind, RecordID: byRef[ref].RecordID})
+	}
+	raw, err := json.Marshal(candidates)
+	if err != nil {
+		return err
+	}
+	unheld, err := tx.QueryContext(ctx, `
+		SELECT s.ref, s.record_kind, s.record_id
+		FROM jsonb_to_recordset($1::jsonb) AS s(ref text, record_kind text, record_id text)
+		WHERE `+sealedUnheld+` ORDER BY s.ref`, raw)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unheld.Close() }()
+	for unheld.Next() {
+		var ref, kind, id string
+		if err := unheld.Scan(&ref, &kind, &id); err != nil {
+			return err
+		}
+		report.SealedOrphans++
+		found(fmt.Sprintf("sealed %s (%s %s): an orphan: no live or tombstoned record holds the ref, so nothing reads the material",
+			ref, kind, id))
+	}
+	return unheld.Err()
 }
 
 // verifySealedOpen opens every sealed file under the repository's DEK, the

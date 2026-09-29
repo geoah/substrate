@@ -563,7 +563,7 @@ Exits nonzero when anything does not verify.`,
 					fmt.Fprintln(a.out, "  table:    every checksum recomputed from its stored row")
 				}
 				fmt.Fprintf(a.out, "  files:    head %d in %d segment(s)\n", report.FileHead, report.Segments)
-				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files\n", report.SealedRows, report.SealedFiles)
+				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files, %d held by no record\n", report.SealedRows, report.SealedFiles, report.SealedOrphans)
 				if report.SealedOpened > 0 || os.Getenv(credentialKeyEnv) != "" {
 					fmt.Fprintf(a.out, "  sealed:   %d file(s) opened under %s\n", report.SealedOpened, credentialKeyEnv)
 				} else {
