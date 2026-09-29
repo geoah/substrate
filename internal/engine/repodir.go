@@ -816,17 +816,17 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 // declaration rows and WRITES NOTHING: loadStoredVocabulary clears quarantine
 // markers through a patch, which appends an entry, and an import may not
 // append. A closure that does not admit is left out, which is what the open
-// ladder does too.
+// ladder does too, and parked the same way (fold.go parkedSet), so the second
+// pass derives its rows' indexes as the live fold did.
 func (ds *dataset) loadDeclarationsForReplay(ctx context.Context, q dbx) error {
-	built, _, err := ds.storedPackages(ctx, q, nil)
+	built, unparsed, err := ds.storedPackages(ctx, q, nil)
 	if err != nil {
 		return err
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	if err := ds.reg.InstallAll(built); err != nil {
-		ds.admissibleSubset(built)
-	}
+	_, parked, _ := ds.admitStored(built)
+	ds.parked = newParkedSet(ds.reg, parked, unparsed)
 	return nil
 }
 

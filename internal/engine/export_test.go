@@ -207,6 +207,18 @@ func WithTestSearchReindex(batch int, hook func(ctx context.Context, kind string
 	return func(o *options) { o.searchReindexBatch, o.searchReindexHook = batch, hook }
 }
 
+// WithTestInadmissible has the loader refuse the named stored packages at
+// every open and import, as a binary whose contract tightened would, so a
+// test parks a package whose stored rows and changelog still agree.
+func WithTestInadmissible(packages ...string) Option {
+	return func(o *options) {
+		o.inadmissible = map[string]bool{}
+		for _, p := range packages {
+			o.inadmissible[p] = true
+		}
+	}
+}
+
 // SearchReindexDone is closed when the dataset's latest reindex has returned,
 // finished or stopped; a dataset that started none returns a closed channel.
 func SearchReindexDone(ds substrate.Dataset) <-chan struct{} {

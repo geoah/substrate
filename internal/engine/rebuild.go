@@ -623,10 +623,26 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 // what `repository rebuild` must reproduce, byte for byte. It is the
 // containment test's instrument — operator tooling and the rebuild test both
 // read the fold through it rather than through a hand-written query each.
+//
+// One divergence is expected, and the snapshot names it rather than hide it:
+// the stored packages whose declarations do not parse under this binary, in a
+// section of their own (snapshotUnparsed), present only when there is one. A
+// rebuild folds those packages' rows at the unknown-kind bands with no refs
+// rows (fold.go parkedSet), while the live rows keep the indexes they were
+// written with, so `fts` and `refs` may differ for those rows and nowhere
+// else. A package that parses and does not admit is not in it: its rows
+// derive from its stored declaration, live and in a replay alike.
 func (ds *dataset) FoldSnapshot(ctx context.Context) ([]byte, error) {
 	snap, err := foldSnapshot(ctx, ds.db)
 	if err != nil {
 		return nil, err
 	}
+	if unparsed := ds.parkedSet().unparsedPackages(); len(unparsed) > 0 {
+		snap[snapshotUnparsed] = unparsed
+	}
 	return json.MarshalIndent(snap, "", "  ")
 }
+
+// snapshotUnparsed is the fold snapshot's section naming the stored packages
+// whose rows a rebuild cannot index as the live fold did.
+const snapshotUnparsed = "unparsed_packages"

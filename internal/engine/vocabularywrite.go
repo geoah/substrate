@@ -480,6 +480,10 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// the batch removes is refused as unknown. The live pointer still
 		// holds the declarations being replaced until the publish below.
 		t.writeReg = candidate
+		// The parked set this commit publishes beside the candidate: a
+		// touched package is re-admitted or removed by the batch, so none of
+		// them stays parked, and the fold's derivations here read it already.
+		t.publishParked = ds.parkedSet().without(touched)
 		// inTx resolved the tier against the live registry, before the
 		// candidate was set: an actor this closure declares resolves here.
 		t.tier = t.actorTier(actor)
@@ -936,6 +940,15 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// door stores `movedFrom` and performs nothing, so nothing is passed to the
 	// conversion plan and the narrowing counts stand at full strength.
 	moveRefusals := userDoorMoveGuards(classifyKindMoves(current, candidate, touched, nil))
+	// A parked kind of a touched package is absent from both registries, so
+	// no shape diff names it, and its rows hold the indexes its stored
+	// declaration derived (fold.go foldView). From the commit on they derive
+	// under the candidate: a re-admitted kind's declaration, or the
+	// unknown-kind bands and no refs rows for one the batch removes. So both
+	// indexes re-derive for every such kind here.
+	parked := ds.parkedSet().kindsOf(touched)
+	reprojected := unionStrings(reprojectedKinds(current, candidate, touched), parked)
+	reprojectedFTS := unionStrings(reprojectedFTSKinds(current, candidate, touched), parked)
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
@@ -949,8 +962,8 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
 		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
-		reprojected:      reprojectedKinds(current, candidate, touched),
-		reprojectedFTS:   reprojectedFTSKinds(current, candidate, touched),
+		reprojected:      reprojected,
+		reprojectedFTS:   reprojectedFTS,
 		// Evolution-with-data: a NARROWING definition
 		// diff — property dropped/kind-changed, enum value or state
 		// removed, required added — is classified here against the currently
@@ -2273,6 +2286,10 @@ func cappedQuarantineReason(reason string) string {
 // re-install of the offending bundle clears the mark. The same holds one step
 // earlier, for a closure that no longer PARSES (storedPackages): both
 // failures arrive here as quarantine candidates and are marked identically.
+//
+// What it leaves out is the dataset's parked set (fold.go parkedSet): a
+// parked package's rows keep deriving their `fts` and refs rows from its
+// stored declaration, so a rebuild reproduces what they hold.
 func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 	built, unparsed, err := ds.storedPackages(ctx, ds.db, nil)
 	if err != nil {
@@ -2285,17 +2302,10 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		// a hard error upstream, so this is never a quarantine cascade.
 		return fmt.Errorf("substrate/engine: repository %s holds no vocabulary — it was never seeded", ds.info.ID)
 	}
-	// Fast path: the whole stored set admits together. A binary that RELAXED
-	// a contract also clears any stale quarantine markers here.
-	good, quarantined := built, unparsed
-	if err := ds.reg.InstallAll(built); err != nil {
-		// Slow path: install the admissible subset and quarantine the rest. The
-		// failed InstallAll removed everything it added, so ds.reg is clean
-		// again.
-		var inadmissible []quarantinedPackage
-		good, inadmissible = ds.admissibleSubset(built)
-		quarantined = append(quarantined, inadmissible...)
-	}
+	// A binary that RELAXED a contract clears any stale quarantine markers
+	// below, off every package that admits.
+	good, parked, inadmissible := ds.admitStored(built)
+	quarantined := append(append([]quarantinedPackage(nil), unparsed...), inadmissible...)
 	// A SEEDED package is never quarantined, at either step (record 0077): a
 	// repository whose own meta-kinds do not admit resolves nothing, and the
 	// engine writes the llm kinds from Go constants, so serving the repository
@@ -2313,6 +2323,7 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		return fmt.Errorf("substrate/engine: repository %s: the seeded closure %s no longer admits under this binary: %s",
 			ds.info.ID, q.name, q.reason)
 	}
+	ds.setParked(newParkedSet(ds.reg, parked, unparsed))
 	if err := ds.clearGroupQuarantine(ctx, good); err != nil {
 		return err
 	}
@@ -2327,6 +2338,49 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// admitStored installs stored packages into ds.reg: all of them where they
+// admit together, else the admissible subset. What does not admit comes back
+// twice, as the parsed packages for the parked set and as a quarantine
+// candidate each. The test seam's packages (WithTestInadmissible) are refused
+// before anything installs, as a binary whose contract tightened refuses them.
+func (ds *dataset) admitStored(built []*vocabulary.Package) (good, parked []*vocabulary.Package, quarantined []quarantinedPackage) {
+	candidates := built
+	if refuse := ds.svc.testInadmissible; len(refuse) > 0 {
+		candidates = nil
+		for _, g := range built {
+			if !refuse[g.Identity] {
+				candidates = append(candidates, g)
+				continue
+			}
+			parked = append(parked, g)
+			quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: "refused by the test seam"})
+		}
+	}
+	if err := ds.reg.InstallAll(candidates); err == nil {
+		return candidates, parked, quarantined
+	}
+	// The failed InstallAll removed everything it added, so ds.reg is clean
+	// again for the subset.
+	good, inadmissible := ds.admissibleSubset(candidates)
+	admitted := make(map[string]bool, len(good))
+	for _, g := range good {
+		admitted[g.Identity] = true
+	}
+	for _, g := range candidates {
+		if !admitted[g.Identity] {
+			parked = append(parked, g)
+		}
+	}
+	return good, parked, append(quarantined, inadmissible...)
+}
+
+// setParked replaces the dataset's parked set.
+func (ds *dataset) setParked(s *parkedSet) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.parked = s
 }
 
 // admissibleSubset installs the maximal subset of built packages that admits

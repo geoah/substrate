@@ -928,5 +928,14 @@ to add it again. Re-applying a valid closure clears
 the marker, and so does a later open under a binary that relaxed the contract
 again.
 
+A quarantined package's records keep their search index and their reference
+rows: the fold derives both from the package's stored declaration, which it
+reads for nothing else, so `repository rebuild` and a boot import reproduce
+them. A package whose stored declaration no longer parses has nothing to
+derive them from, and a rebuild indexes its records by title and body alone,
+with no reference rows. The fold snapshot names such a package under
+`unparsed_packages`. Uninstalling a quarantined bundle re-indexes its
+remaining records the same way.
+
 Next: [projection](projection.md), how many source records describe one
 subject.

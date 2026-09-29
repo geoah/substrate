@@ -1202,7 +1202,10 @@ the exec path needs nothing open at all.
   agree from that apply on. Rows indexed before this re-indexing existed,
   under a declaration that has since changed, keep the old bands until a
   rebuild or the next such edit of their kind; a search over them can return
-  a hit the rebuilt repository does not, or miss one it does. It does not
+  a hit the rebuilt repository does not, or miss one it does. The records of
+  a [quarantined](vocabulary.md#quarantine) package index under its stored
+  declaration in the replay as they did live, except where that declaration
+  no longer parses. It does not
   touch blobs or sealed files, which were never in the changelog. It replays the delivery ledger with the rest of the
   fold: each trigger's cursor lands at the last delivery it acknowledged, its
   parked failures and a parked drain's resume row come back, and the next pass

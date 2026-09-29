@@ -2543,6 +2543,41 @@ func (r *Registry) InstallAll(packages []*Package) error {
 	return nil
 }
 
+// UnadmittedKinds returns the kinds of packages that did not admit into r,
+// by identity, each as it parsed plus the subject slot any mapping in r or in
+// pkgs synthesizes on it (mappingsubject.go). Nothing of pkgs is resolved or
+// checked, because a reference pin, a trait binding or a bundle input is
+// exactly what may have refused them, and r is left as it was.
+//
+// A stored row of such a kind was indexed under this declaration while its
+// package was live, and the engine derives the row's search bands and refs
+// rows from these kinds alone. They must never serve a read or admit a write:
+// nothing here was admitted. A package whose identity r already holds is not
+// unadmitted and is skipped.
+func (r *Registry) UnadmittedKinds(pkgs []*Package) map[string]*Kind {
+	if len(pkgs) == 0 {
+		return nil
+	}
+	c := r.Clone()
+	var added []*Package
+	for _, g := range pkgs {
+		if err := c.add(g); err == nil {
+			added = append(added, g)
+		}
+	}
+	// The problems are the admission's business, and it already refused.
+	c.mappingSubjectProblems()
+	out := map[string]*Kind{}
+	for _, g := range added {
+		for _, name := range g.KindOrder {
+			if t, ok := c.ByIdentity(g.Kinds[name].Identity); ok {
+				out[t.Identity] = t
+			}
+		}
+	}
+	return out
+}
+
 func (r *Registry) remove(identity string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

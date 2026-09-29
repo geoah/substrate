@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -505,8 +506,10 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// DECLARES is not skipped: its stored rows project a declaration that is
 		// gone, and syncRefs is what removes them. A declaration that stops
 		// carrying a reference is covered by reprojectRefs, which re-derives
-		// every record of the kinds whose reference shape moved.
-		ty, _ := t.declarations().ByIdentity(row.Kind)
+		// every record of the kinds whose reference shape moved. A PARKED kind
+		// derives from its stored declaration (foldView), live and in a
+		// replay alike.
+		ty, _ := t.derivationView().ByIdentity(row.Kind)
 		if ty == nil || declaresReference(ty) {
 			if err := t.syncRefs(ref, ty, row.Props); err != nil {
 				return foldResult{}, err
@@ -534,12 +537,13 @@ func (t *txn) foldFTS(row *erow) [3]string {
 	// data document of a dropped kind is refused as unknown before it folds,
 	// and beforeGuards runs before any row moves. The branch exists for a
 	// transaction with no candidate at all, whose writeReg is nil. Keep it so.
-	return ftsBandsUnder(t.ds.registry(), row)
+	// Past the live registry the parked kinds answer (foldView).
+	return ftsBandsUnder(t.liveFoldView(), row)
 }
 
 // ftsBandsUnder computes a row's bands under one registry alone: its kind's
 // declaration where the registry holds it, the unknown-kind bands otherwise.
-func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
+func ftsBandsUnder(reg kindLookup, row *erow) [3]string {
 	if ty, ok := reg.ByIdentity(row.Kind); ok {
 		return ftsBands(ty, row)
 	}
@@ -548,6 +552,160 @@ func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
 	// default for an unknown row, and it keeps a legacy body searchable rather
 	// than dropping it out of the index on a binary that forgot its kind (#68).
 	return [3]string{searchText(row.Title), "", searchText(row.Body)}
+}
+
+// kindLookup is what the index derivations read a declaration through: a
+// registry, or a foldView over one.
+type kindLookup interface {
+	ByIdentity(identity string) (*vocabulary.Kind, bool)
+}
+
+// PARKED KINDS (issue 461). A stored package the loader leaves out of the live
+// registry (vocabularywrite.go loadStoredVocabulary) still has rows, indexed
+// under its declaration while it was live. A replay that folded them under
+// the live registry alone would index them at the unknown-kind bands with no
+// refs rows, so the rebuild and the boot import would not reproduce the store
+// for a package nobody edited. The fold therefore derives a parked row's `fts`
+// and refs rows from the package's stored declaration, parsed with its own
+// package (vocabulary.UnadmittedKinds), live and in a replay alike.
+//
+// foldView is the ONLY reader of a parked kind. Every read and write resolves
+// through the registry, where a parked kind is absent, so it stays unreadable
+// and unwritable until its package admits again.
+//
+// A stored package that does not PARSE has no kinds to derive under. Its rows
+// fold at the unknown-kind bands with no refs rows, the live rows keep what
+// they were indexed under, and the fold snapshot names the package
+// (rebuild.go FoldSnapshot) as the one divergence it expects.
+
+// parkedSet is what the loader left out of the live registry: the kinds of
+// the stored packages that parse and do not admit, by identity, and the
+// identities of the stored packages that do not parse, sorted. It is replaced
+// whole, never written through, and nil when nothing is parked.
+type parkedSet struct {
+	kinds    map[string]*vocabulary.Kind
+	unparsed []string
+}
+
+// newParkedSet builds the set from what one load left out: the packages that
+// did not admit into reg and the ones that did not parse.
+func newParkedSet(reg *vocabulary.Registry, parked []*vocabulary.Package, unparsed []quarantinedPackage) *parkedSet {
+	if len(parked) == 0 && len(unparsed) == 0 {
+		return nil
+	}
+	s := &parkedSet{kinds: reg.UnadmittedKinds(parked)}
+	for _, q := range unparsed {
+		s.unparsed = append(s.unparsed, q.name)
+	}
+	sort.Strings(s.unparsed)
+	return s
+}
+
+func (s *parkedSet) kind(identity string) (*vocabulary.Kind, bool) {
+	if s == nil {
+		return nil, false
+	}
+	ty, ok := s.kinds[identity]
+	return ty, ok
+}
+
+// unparsedPackages is the sorted identities of the stored packages that do
+// not parse.
+func (s *parkedSet) unparsedPackages() []string {
+	if s == nil {
+		return nil
+	}
+	return s.unparsed
+}
+
+// kindsOf lists the parked kinds of the named packages, sorted.
+func (s *parkedSet) kindsOf(packages map[string]bool) []string {
+	if s == nil {
+		return nil
+	}
+	var out []string
+	for ident, ty := range s.kinds {
+		if packages[ty.Package] {
+			out = append(out, ident)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// without is the set less the named packages, and never nil: a vocabulary
+// apply re-admits every package it touches or removes it, so none of them is
+// parked from its commit on.
+func (s *parkedSet) without(packages map[string]bool) *parkedSet {
+	out := &parkedSet{}
+	if s == nil {
+		return out
+	}
+	for ident, ty := range s.kinds {
+		if packages[ty.Package] {
+			continue
+		}
+		if out.kinds == nil {
+			out.kinds = map[string]*vocabulary.Kind{}
+		}
+		out.kinds[ident] = ty
+	}
+	for _, name := range s.unparsed {
+		if !packages[name] {
+			out.unparsed = append(out.unparsed, name)
+		}
+	}
+	return out
+}
+
+// foldView is a registry with the parked kinds behind it: a kind the registry
+// declares answers from the registry, a parked kind from its stored
+// declaration, and anything else is unknown.
+type foldView struct {
+	reg    kindLookup
+	parked *parkedSet
+}
+
+func (v foldView) ByIdentity(identity string) (*vocabulary.Kind, bool) {
+	if ty, ok := v.reg.ByIdentity(identity); ok {
+		return ty, true
+	}
+	return v.parked.kind(identity)
+}
+
+// liveFoldView is the live registry and the parked set, read under one lock
+// so a publish cannot land between the two reads.
+func (ds *dataset) liveFoldView() foldView {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	return foldView{reg: ds.reg, parked: ds.parked}
+}
+
+// parkedSet is the dataset's parked set as it stands.
+func (ds *dataset) parkedSet() *parkedSet {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	return ds.parked
+}
+
+// liveFoldView is the live registry with this transaction's parked set
+// behind it: the one a vocabulary apply publishes, else the dataset's.
+func (t *txn) liveFoldView() foldView {
+	v := t.ds.liveFoldView()
+	if t.publishParked != nil {
+		v.parked = t.publishParked
+	}
+	return v
+}
+
+// derivationView is declarations() with the parked kinds behind it: what the
+// fold derives a row's refs rows under.
+func (t *txn) derivationView() foldView {
+	v := t.liveFoldView()
+	if t.writeReg != nil {
+		v.reg = t.writeReg
+	}
+	return v
 }
 
 // reprojectFTS re-derives `fts` for every stored row of the named kinds, live
@@ -594,7 +752,7 @@ func (t *txn) reprojectFTS(reg *vocabulary.Registry, kinds []string) error {
 // with, so the two cannot derive it differently. The UPDATE touches `fts` and
 // nothing else (see the header): the row's values did not move, so neither
 // `version` nor `updated_at` may.
-func (t *txn) rederiveFTS(reg *vocabulary.Registry, kind string, rows []*erow) error {
+func (t *txn) rederiveFTS(reg kindLookup, kind string, rows []*erow) error {
 	if len(rows) == 0 {
 		return nil
 	}
