@@ -41,7 +41,8 @@ const (
 	// kindToken and kindCredential (auth.go) are the two AUTH kinds: the
 	// generic surface refuses writes to both (forbidSystemKind) and only the
 	// auth paths write them. Revoking a token is the one exception — an
-	// ordinary record delete, so every revoke path is the same write.
+	// ordinary record delete, so every revoke path is the same write. It is
+	// the owner's alone: softDeleteIf refuses it below the owner tier.
 	kindToken       = "substrate.reamde.dev/core/token"
 	kindActor       = "substrate.reamde.dev/core/actor"
 	kindRecordMerge = "substrate.reamde.dev/core/recordmerge"

@@ -119,6 +119,10 @@ The two KIND lists also take a glob — `*`, `<authority>/*` or
 covers kinds the repository gains later, and never reaches
 `substrate.reamde.dev/core/token`, `/credential`, `/secret` or `/recoverykey`
 ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
+A `writes` entry that names `/token`, `/credential` or `/recoverykey`
+outright is refused at load: they are the owner's alone, and the engine
+refuses a token delete from a function whatever its grant says
+([auth](auth.md#tokens)).
 `call` and `agents` admit no glob: they name callables, not kinds.
 
 The body's entrypoint is `main(input, host)`, and it returns

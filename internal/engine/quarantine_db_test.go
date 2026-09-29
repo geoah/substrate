@@ -294,6 +294,98 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 }
 
+const (
+	trPackage  = "legacy.tokens.substrate.reamde.dev/legacy"
+	trFunction = trPackage + "/revoker"
+	trNoteKind = trPackage + "/note"
+	trToken    = "substrate.reamde.dev/core/token"
+)
+
+// trDocs is a bundle carrying one function granted its own kind alone: the
+// shape a stored declaration is planted over below.
+func trDocs() []map[string]any {
+	return []map[string]any{
+		vocabulary.PackageManifest(trPackage, 0),
+		vocabulary.ActorManifest(trPackage, vocabulary.PackageActor(trPackage)),
+		vocabulary.BundleManifest(trPackage, map[string]any{
+			"description": "a bundle carrying one function",
+			"installs":    []any{trNoteKind, trFunction},
+		}),
+		vocabulary.KindManifest(trPackage,
+			map[string]any{"singular": "note"},
+			map[string]any{
+				"properties": map[string]any{"text": map[string]any{"type": "string"}},
+			}),
+		vocabulary.FunctionManifest(trPackage, "revoker", map[string]any{
+			"description": "writes one note",
+			"runtime":     vocabulary.RuntimePython,
+			"source":      "def main(input, host): return {}",
+			"permissions": map[string]any{"writes": []any{trNoteKind}},
+		}),
+	}
+}
+
+// A function declaration stored before the loader refused the token kind in
+// `permissions.writes` (planted here through the fold, the only way such a
+// row exists now) does not run under this binary: the next open quarantines
+// its package, the reason names the kind, and the owner's tokens keep
+// working.
+func TestAStoredTokenGrantQuarantinesItsPackage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := func() substrate.Service {
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.SeedKindsDir))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, secret, err := ds.MintToken(ctx, "laptop", nil)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, trDocs()); err != nil {
+		t.Fatalf("install the bundle: %v", err)
+	}
+	row := mustGet(t, ds, "substrate.reamde.dev/core/function", trFunction)
+	props := map[string]any{}
+	for k, v := range row.Properties {
+		props[k] = v
+	}
+	props["permissions"] = map[string]any{"writes": []any{trNoteKind, trToken}}
+	if err := planter(t, ds).PlantDeclarationRow(ctx, "substrate.reamde.dev/core/function", trFunction, props); err != nil {
+		t.Fatalf("plant the token grant: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("a repository holding one stored token grant failed to open: %v", err)
+	}
+	st := bundleStatusFor(t, ds2, trPackage)
+	if !st.Quarantined || st.Installed || st.Enabled {
+		t.Fatalf("the package granting the token kind must be quarantined: %+v", st)
+	}
+	if want := `"` + trToken + `" is refused: tokens are the owner's alone`; !strings.Contains(st.QuarantineReason, want) {
+		t.Fatalf("the quarantine reason must name the kind: want %q in %q", want, st.QuarantineReason)
+	}
+	if _, _, err := svc2.Authenticate(ctx, secret); err != nil {
+		t.Fatalf("the owner's token must still sign in: %v", err)
+	}
+}
+
 // A SEEDED closure is never quarantined (record 0077): a repository whose core
 // or llm declarations no longer admit resolves nothing, so serving it "without"
 // them would be a lie dressed as a recovery. The open fails instead, naming the
