@@ -466,6 +466,87 @@ func TestPythonTimeoutKillsAndRestarts(t *testing.T) {
 	}
 }
 
+func TestRegisterBoundFloorsTheBodyTimeout(t *testing.T) {
+	// A body's `timeout` bounds its invocation, not its start (#298): the
+	// register roundtrip gets at least registerTimeout, a longer declared
+	// timeout keeps its own, and a PEP 723 body gets the uv provisioning floor.
+	if registerTimeout >= 10*time.Second {
+		t.Fatalf("registerTimeout %s: the 10s case below no longer tells a kept timeout from the floor", registerTimeout)
+	}
+	plain := "def main(input, host):\n    return {}\n"
+	deps := "# /// script\n# dependencies = [\"six\"]\n# ///\n" + plain
+	for _, tc := range []struct {
+		name      string
+		source    string
+		timeoutMs int
+		want      time.Duration
+	}{
+		{"a 250ms body gets the floor", plain, 250, registerTimeout},
+		{"a 10s body keeps 10s", plain, 10_000, 10 * time.Second},
+		{"a PEP 723 body gets the provisioning floor", deps, 250, uvProvisionTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := Spec{Runtime: "python", Source: tc.source, TimeoutMs: tc.timeoutMs}
+			if got := registerBound(spec); got != tc.want {
+				t.Fatalf("registerBound = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWarmRegistersABodyWhoseTimeoutIsShorterThanItsStart(t *testing.T) {
+	// No interpreter boots and registers in 1ms, so this Warm passes only if
+	// the register roundtrip runs under registerBound rather than the body's
+	// own timeout.
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "brief.g.test",
+		Runtime:   "python",
+		Source:    "def main(input, host):\n    return {}\n",
+		TimeoutMs: 1,
+	}
+	if err := r.Warm(context.Background(), spec); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+}
+
+func TestColdInvokeStartsTheBodyOutsideItsTimeout(t *testing.T) {
+	// A delivery that finds the process stopped (reaped, crashed, killed by
+	// its last timeout) starts it under registerBound, and the manifest
+	// deadline starts after. This module takes 1.5s to load against a 1s
+	// timeout, so the invoke succeeds only if the restart is not charged to
+	// the invocation.
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "slowstart.g.test",
+		Runtime:   "python",
+		Source:    "import time\ntime.sleep(1.5)\ndef main(input, host):\n    return {\"output\": \"ok\"}\n",
+		TimeoutMs: 1000,
+	}
+	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
+	if err != nil || res.Output != "ok" {
+		t.Fatalf("cold invoke: %+v %v", res, err)
+	}
+}
+
+func TestRegisterUnderACallersDeadlineNamesItsCause(t *testing.T) {
+	// A caller's context shorter than registerBound (a Calling body's
+	// invocation) ends the register. The error names the caller's cause, not
+	// the register floor that did not run out.
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "caller.g.test",
+		Runtime: "python",
+		Source:  "def main(input, host):\n    return {}\n",
+	}
+	ctx, cancel := context.WithTimeoutCause(context.Background(), time.Millisecond, errors.New("the caller's deadline"))
+	defer cancel()
+	err := r.Warm(ctx, spec)
+	if err == nil || !strings.Contains(err.Error(), "python register: the caller's deadline") {
+		t.Fatalf("warm under a caller's deadline: %v", err)
+	}
+}
+
 func TestTimeoutBoundsStuckHostCall(t *testing.T) {
 	// Review W1 #5: the manifest timeout is a deadline over the WHOLE
 	// invocation, host calls included — a stuck backend read cannot wedge

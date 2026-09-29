@@ -57,7 +57,9 @@ trigger, a host call and the call API all address it with.
   runtime. A `host` function has none: the engine is its body.
 - **`timeout`** bounds one invocation's wall clock, host calls included. It is
   the `duration` datatype, an ISO 8601 string (`PT30S`); absent defaults to 5s
-  and the loader caps it at 60s.
+  and the loader caps it at 60s. Starting the body's process, at admission or
+  when a delivery finds it stopped, is bounded apart: by the larger of
+  `timeout` and 5s, and by two minutes for a PEP 723 body.
 - Optional **`arguments:`** and **`returns:`** are the flat named IO: a caller's
   arguments are checked before the body runs, the returned value after.
   [Arguments and returns](#arguments-and-returns) is the whole grammar.

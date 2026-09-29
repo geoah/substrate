@@ -39,10 +39,35 @@ import (
 
 // uvProvisionTimeout is the floor for provisioning: a cold uv resolve
 // (download, build a venv) can outlast a body's invoke timeout, so it gets its
-// own budget. It only takes effect under a context that allows it: Warm
-// (registration) does; a cold Invoke is still clamped by the manifest
-// timeout.
+// own budget. Warm gives the provisioning and the register roundtrip this
+// floor each; a cold Invoke gives the two of them this floor together, before
+// the manifest timeout starts (invokeOnce).
 const uvProvisionTimeout = 120 * time.Second
+
+// registerTimeout is the floor for the register roundtrip of a body with no
+// PEP 723 block. The roundtrip waits for a fresh interpreter to boot and exec
+// the module, which is not the work a body's `timeout` bounds: a body that
+// declares PT0.25S so an overrun parks still has to start, and on a loaded
+// machine the start alone outlasts 250 ms. Five seconds because a register
+// measured about 50 ms on a 16-core box at load 9, and 190 ms for the first
+// start in a fresh test binary: the floor is more than 25 times the slow case,
+// and it is the bound a body that declares no `timeout`
+// (vocabulary.DefaultRunTimeout) already registers under. It stays short
+// because a module whose import hangs fails admission only when the floor
+// runs out.
+const registerTimeout = 5 * time.Second
+
+// registerBound is how long starting a body may take: the body's own timeout,
+// lifted to registerTimeout, and to uvProvisionTimeout for a PEP 723 body.
+// Warm bounds the register roundtrip by it, and a cold Invoke bounds the uv
+// provisioning and the register roundtrip together by it (invokeOnce).
+func registerBound(spec Spec) time.Duration {
+	bound := max(spec.timeout(), registerTimeout)
+	if _, uv := spec.pep723(); uv {
+		bound = max(bound, uvProvisionTimeout)
+	}
+	return bound
+}
 
 // pythonProc returns the live process for one installation, provisioning,
 // starting and registering it if needed: one supervised process per Spec.Key,
@@ -65,15 +90,18 @@ func (r *Runner) pythonProc(ctx context.Context, spec Spec) (*proc, error) {
 	// The register frame is also the verification: a syntax error or a failed
 	// module-level import surfaces to the caller, which is what lets schema
 	// admission refuse a body that cannot load.
-	provTimeout := spec.timeout()
-	if _, uv := spec.pep723(); uv && provTimeout < uvProvisionTimeout {
-		provTimeout = uvProvisionTimeout
-	}
-	rctx, cancel := context.WithTimeout(ctx, provTimeout)
+	bound := registerBound(spec)
+	rctx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
-	resp, err := p.roundtrip(rctx, provTimeout, frame{Op: "register", ID: key, Source: spec.Source}, nil)
+	resp, err := p.roundtrip(rctx, bound, frame{Op: "register", ID: key, Source: spec.Source}, nil)
 	if err != nil {
 		p.kill()
+		if ctx.Err() != nil {
+			// The caller's context ended the roundtrip, not bound, so bound is
+			// not what was exceeded: the cause names what was (a cold Invoke's
+			// process start, or the invocation of the body that Called this one).
+			err = context.Cause(ctx)
+		}
 		return nil, fmt.Errorf("runner: python register: %w%s", err, p.stderrTail())
 	}
 	if !resp.OK {
