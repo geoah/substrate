@@ -1022,7 +1022,7 @@ repository.
   work the settled fire just did. A record trigger's park, a webhook
   request's park and an agent run a stop interrupted are never retired this
   way
-  ([decision 0141](decisions/0141-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)). A
+  ([decision 0142](decisions/0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)). A
   failure's id is the seq of the changelog entry that parked it, so it
   survives a restore ([backups](operations.md#backups)). A webhook request
   is recorded there minus what a replay does not need, from the `202` on:

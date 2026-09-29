@@ -739,7 +739,7 @@ func (s *settlement) release() {
 
 // retireSupersededFires retires, once a schedule occurrence settles, every
 // parked fire of the same trigger at or before that occurrence (decision
-// 0141). A schedule fire carries nothing a later one does not carry again,
+// 0142). A schedule fire carries nothing a later one does not carry again,
 // so a retry of the parked fire repeats work the settled one did: a
 // provider's scheduled sync drains whatever is due when it runs. The rows
 // are DELETED through the unpark fold a delivered retry writes, on the

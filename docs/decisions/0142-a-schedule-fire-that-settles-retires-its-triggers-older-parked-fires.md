@@ -4,7 +4,7 @@ date: 2026-09-29
 decision-makers: George Antoniadis
 ---
 
-# 0141. A schedule fire that settles retires its trigger's older parked fires
+# 0142. A schedule fire that settles retires its trigger's older parked fires
 
 ## Context and Problem Statement
 
