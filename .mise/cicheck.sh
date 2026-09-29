@@ -2,6 +2,10 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/llmliveissue.sh is the fifth: it keeps the weekly `llm live` job's
+# one tracking issue, so a wrong answer is a second issue every week or a
+# failure nobody is told about. Its scenarios run against a fake gh.
+#
 # .mise/decisionscheck.sh is the fourth: it decides whether a decision
 # record's number is already taken on another branch, so a wrong pass is the
 # collision issue #587 describes, found only after the merge.
@@ -28,6 +32,7 @@ changescheck="$PWD/.mise/changescheck.sh"
 shardselect="$PWD/.mise/shardselect.sh"
 commitscheck="$PWD/.mise/commitscheck.sh"
 decisionscheck="$PWD/.mise/decisionscheck.sh"
+llmliveissue="$PWD/.mise/llmliveissue.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -201,6 +206,60 @@ printf '%s\n' "$names" | SHARD=0 SHARDS=8 "$shardselect" >/dev/null 2>&1
 printf '%s\n' "$names" | SHARD=30 SHARDS=30 "$shardselect" >/dev/null 2>&1
 [ $? -eq 1 ] || flag "an empty shard (30/30 of 23 names) did not exit 1"
 
+
+# --- the llm live tracking issue ---------------------------------------------
+
+# .mise/llmliveissue.sh keeps ONE tracking issue for the weekly `llm live` job.
+# A fake gh first on PATH answers the lookup with FAKE_GH_FOUND (what the real
+# lookup's --jq prints: "<number> <state>" or nothing) and logs every call as
+# "<command> <subcommand>" and the first all-digit argument. The repository
+# name is one GitHub cannot hold, so a real gh reached by mistake fails
+# instead of writing.
+fakebin="$tmp/fakebin"
+mkdir -p "$fakebin"
+cat >"$fakebin/gh" <<'FAKE'
+#!/usr/bin/env bash
+n=""
+for a in "$@"; do
+  case "$a" in
+  "" | *[!0-9]*) ;;
+  *)
+    n=" $a"
+    break
+    ;;
+  esac
+done
+printf '%s %s%s\n' "$1" "$2" "$n" >>"$FAKE_GH_LOG"
+if [ "$1 $2" = "issue list" ]; then
+  printf '%s\n' "${FAKE_GH_FOUND:-}"
+fi
+FAKE
+chmod +x "$fakebin/gh"
+
+# issue <name> <verdict> <found> <expected writes, one per line>: the writes
+# are the logged calls other than the lookup.
+issue() {
+  local name="$1" verdict="$2" found="$3" want="$4" got
+  : >"$tmp/gh.log"
+  if ! PATH="$fakebin:$PATH" FAKE_GH_LOG="$tmp/gh.log" FAKE_GH_FOUND="$found" \
+    GITHUB_SERVER_URL=https://example.com GITHUB_REPOSITORY="-/-" GITHUB_RUN_ID=1 \
+    "$llmliveissue" "$verdict" >/dev/null 2>"$tmp/stderr"; then
+    flag "llm live issue ${name}: exit non-zero: $(cat "$tmp/stderr")"
+    return
+  fi
+  got="$(grep -v '^issue list' "$tmp/gh.log")"
+  [ "$got" = "$want" ] || flag "llm live issue ${name}: wrote '${got}', expected '${want}'"
+  grep -q '^issue list' "$tmp/gh.log" || flag "llm live issue ${name}: no lookup before the write"
+}
+
+issue first-failure failure "" "issue create"
+issue open-failure failure "7 OPEN" "issue comment 7"
+issue closed-failure failure "7 CLOSED" "$(printf 'issue reopen 7\nissue comment 7')"
+issue open-success success "7 OPEN" "issue close 7"
+issue closed-success success "7 CLOSED" ""
+issue none-success success "" ""
+PATH="$fakebin:$PATH" FAKE_GH_LOG="$tmp/gh.log" GITHUB_SERVER_URL=https://example.com GITHUB_REPOSITORY="-/-" GITHUB_RUN_ID=1 "$llmliveissue" maybe >/dev/null 2>&1
+[ $? -eq 2 ] || flag "llm live issue: an unknown verdict was not refused with exit 2"
 
 # --- the lint jobs cover every linter --------------------------------------
 

@@ -217,7 +217,8 @@ description = "The LIVE suite: real completions from real providers, when the ke
 # a pgvector container, or SUBSTRATE_TEST_DATABASE_URL.
 #
 # It SPENDS MONEY. Cheap models and tiny prompts keep a pass well under a cent,
-# but do not loop it.
+# but do not loop it. Each test binary holds its live cases to a request and a
+# token ceiling (internal/llm/livespend). CI runs it weekly through `ci:llm`.
 run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine/..."
 
 [tasks."test:e2e"]
@@ -342,7 +343,7 @@ description = "The CI tasks still set SUBSTRATE_TEST_REQUIRE_SANDBOX, and still 
 run = ".mise/sandboxgatecheck.sh"
 
 [tasks."lint:ci"]
-description = "The CI scripts' own tests: the path gate's verdicts, the shard partition, the commit check and the decision number check"
+description = "The CI scripts' own tests: the path gate's verdicts, the shard partition, the commit check, the decision number check and the llm live tracking issue"
 # .mise/changescheck.sh decides whether the database suite runs at all and
 # .mise/shardselect.sh decides which tests each engine shard runs, so a wrong
 # answer from either is a green build that tested nothing, and nothing else
@@ -843,10 +844,20 @@ description = "CI job `image builds and boots` — the image builds from a clean
 # a person would check by hand.
 run = ["docker build -t $IMAGE:ci .", ".mise/imagesmoke.sh $IMAGE:ci"]
 
+[tasks."ci:llm"]
+description = "CI job `llm live`: the live suite with both keys required, and its spend in the run summary"
+# Not in `ci` below, and not in ci.yml: it buys real completions, so it runs
+# weekly and on dispatch from .github/workflows/llm-live.yml and never on a
+# pull request, and `mise run ci` on a laptop spends nothing. The script fails
+# on a missing key, where `test:llm` would skip and pass.
+run = ".mise/llmlive.sh"
+
 [tasks.ci]
 description = "Every CI job, locally. This is the whole pipeline."
 # `ci:coverage` and not `ci:go` plus the shards: it is the same tests as
 # `ci:go` and every `ci:engine` shard together, run once, with the profile.
+# `ci:llm` is absent on purpose: it is not a pull request job, and it buys
+# real completions, so `mise run ci` on a laptop spends nothing.
 depends = [
   "ci:lint",
   "ci:lint:go",

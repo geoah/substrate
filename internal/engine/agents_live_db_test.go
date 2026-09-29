@@ -16,10 +16,12 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/llm/livespend"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -27,6 +29,22 @@ import (
 const (
 	liveOpenAIModel    = "gpt-4.1-mini"
 	liveAnthropicModel = "claude-haiku-4-5"
+)
+
+// The chain's budgets. The engine builds its own clients, so this case cannot
+// meter them the way internal/llm's live cases are metered; the hard request
+// cap is the agents' own budgets, which the loop checks before every
+// completion. The conductor takes at most liveConductorTurns completions and
+// liveConductorToolCalls tool calls, and each tool call may be a speller run of
+// liveSpellerTurns completions. Neither provider row declares a contextWindow,
+// so compaction, the one completion outside a turn, never runs. The thread
+// rows are booked afterwards and held to both ceilings.
+const (
+	liveConductorTurns     = 6
+	liveConductorToolCalls = 4
+	liveSpellerTurns       = 2
+	liveChainMaxRequests   = liveConductorTurns + liveConductorToolCalls*liveSpellerTurns
+	liveChainTokenCeiling  = 20_000
 )
 
 // liveAgentModel reads the same override variables internal/llm's live suite
@@ -50,6 +68,30 @@ func liveKeys(t *testing.T) (string, string) {
 		t.Skip("live agent test: OPENAI_API_KEY and ANTHROPIC_API_KEY must both be set — see docs/testing.md")
 	}
 	return openaiKey, anthropicKey
+}
+
+// liveChainSpend books the chain's thread rows into a ledger, prints its
+// summary for the CI run summary, and fails the test past either ceiling. The
+// conductor's row carries the whole chain's tokens, because the root absorbs
+// the tally, so the Anthropic share is the root's less every speller's.
+func liveChainSpend(t *testing.T, ds *dataset) {
+	t.Helper()
+	ledger := livespend.New("agent chain (internal/engine)", liveChainMaxRequests, liveChainTokenCeiling)
+	var turns, prompt, completion int
+	for _, th := range agentThreadsOf(t, ds, "speller") {
+		turns += intProp(th, "turns")
+		prompt += intProp(th, "promptTokens")
+		completion += intProp(th, "completionTokens")
+	}
+	ledger.Book("openai", turns, prompt, completion)
+	for _, th := range agentThreadsOf(t, ds, "conductor") {
+		ledger.Book("anthropic", intProp(th, "turns"),
+			intProp(th, "promptTokens")-prompt, intProp(th, "completionTokens")-completion)
+	}
+	fmt.Print(ledger.Summary())
+	if err := ledger.Err(); err != nil {
+		t.Error(err)
+	}
 }
 
 func TestLiveAgentChainAcrossWires(t *testing.T) {
@@ -113,7 +155,7 @@ def main(input, host):
 			"model":       openaiModel,
 			"description": "Spells a number in English words.",
 			"prompt":      "You are given a number. Reply with only that number spelled in English words. Nothing else.",
-			"budgets":     map[string]any{"maxTurns": 2, "deadlineSeconds": 60},
+			"budgets":     map[string]any{"maxTurns": liveSpellerTurns, "deadlineSeconds": 60},
 		}),
 		vocabulary.AgentManifest(crewPackage, "conductor", map[string]any{
 			"provider":    "liveanthropic",
@@ -128,7 +170,10 @@ def main(input, host):
 			}, "\n"),
 			"tools":     []any{map[string]any{"function": crewPackage + "/add"}},
 			"subagents": []any{crewPackage + "/speller"},
-			"budgets":   map[string]any{"maxTurns": 6, "maxToolCalls": 4, "depth": 3, "deadlineSeconds": 120},
+			"budgets": map[string]any{
+				"maxTurns": liveConductorTurns, "maxToolCalls": liveConductorToolCalls,
+				"depth": 3, "deadlineSeconds": 120,
+			},
 		}),
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
@@ -136,6 +181,8 @@ def main(input, host):
 	}
 
 	res, err := ds.CallAgent(ctx, crewPackage+"/conductor", "Run the procedure.")
+	// Before any assertion, so a failing chain still prints what it spent.
+	liveChainSpend(t, ds)
 	if err != nil {
 		t.Fatalf("call the conductor: %v", err)
 	}
