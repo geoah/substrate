@@ -71,6 +71,10 @@ export function GroupByMenu({
       <DropdownMenuContent align="start" className="max-h-96 min-w-52">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Group by</DropdownMenuLabel>
+          <p className="max-w-56 px-1.5 pb-1.5 text-[11.5px] leading-snug text-faint">
+            A page shows the groups of the records on it. Each count is the
+            whole group.
+          </p>
           <DropdownMenuRadioGroup
             value={current?.name ?? NONE}
             onValueChange={(next) =>

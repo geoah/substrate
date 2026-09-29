@@ -148,6 +148,17 @@ describe("grouping", () => {
       "continues on the next page"
     )
     expect(groupRunNote(at(true, true, 19), count, 2, false)).toBeUndefined()
+    // A middle page one group fills: it may have begun or ended on this very
+    // page, so only the rows elsewhere are said.
+    expect(groupRunNote(at(true, true, 5), count, 2, true)).toBe(
+      "14 more on other pages"
+    )
+    expect(groupRunNote(at(true, true, 5), count, 1, true)).toBe(
+      "continues on the next page"
+    )
+    expect(groupRunNote(at(true, true, 5), count, 3, false)).toBe(
+      "continued from the previous page"
+    )
     expect(groupRunNote(at(true, false, 2), count, 1, true)).toBeUndefined()
     expect(
       groupRunNote(at(true, false, 2), { value: 1000, capped: true }, 2, true)
