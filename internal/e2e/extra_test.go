@@ -7,12 +7,15 @@ import "sort"
 // hundred-block of the order space, so files never edit each other and the
 // run order stays deterministic whatever order the files compile in.
 //
-//	100 auth, tokens, rate limits, isolation
+//	100 auth, credential changes, tokens, rate limits, isolation
 //	200 records, references, merge/split, error shapes
 //	300 queries, changelog, blobs
 //	400 vocabulary upgrades, bundle lifecycle, the records route
 //	500 functions, triggers, agents
 //	600 recurrence, the calendar, the occurrences read
+//	700 wrong routes, the body caps, every published error code
+//	800 the OAuth facility and the embeddings queue
+//	900 the operator hat and the server's restart, last because they stop it
 type extraCase struct {
 	order int
 	id    string

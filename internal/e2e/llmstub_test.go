@@ -24,6 +24,64 @@ type llmStub struct {
 	srv        *httptest.Server
 	responders map[string]func(req llmReq) llmTurn
 	requests   map[string]int // model -> how many completions it answered
+
+	// The embeddings endpoint (`POST /embeddings`) refuses until a case opens
+	// it, so a case can hold a write's queue entry pending for as long as it
+	// needs to read it. embedded is every text it answered, in order.
+	embedOpen bool
+	embedded  []string
+}
+
+// stubVectorWidth is the width every stub vector has: the one the known
+// models the substrate stores are.
+const stubVectorWidth = 1536
+
+func (s *llmStub) openEmbeddings() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.embedOpen = true
+}
+
+func (s *llmStub) embeddedTexts() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.embedded...)
+}
+
+// handleEmbeddings answers the OpenAI embeddings wire with one fixed unit
+// vector per input, so every stored vector is the stub's and the cosine
+// similarity between any two is exactly 1.
+func (s *llmStub) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Model string   `json:"model"`
+		Input []string `json:"input"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	open := s.embedOpen
+	if open {
+		s.embedded = append(s.embedded, req.Input...)
+	}
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	if !open {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":{"message":"the e2e stub's embeddings endpoint is closed"}}`)
+		return
+	}
+	vec := make([]float32, stubVectorWidth)
+	vec[0] = 1
+	data := make([]map[string]any, len(req.Input))
+	for i := range req.Input {
+		data[i] = map[string]any{"object": "embedding", "index": i, "embedding": vec}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"object": "list", "model": req.Model, "data": data,
+		"usage": map[string]any{"prompt_tokens": len(req.Input), "total_tokens": len(req.Input)},
+	})
 }
 
 type llmReq struct {
@@ -73,6 +131,10 @@ func (s *llmStub) count(model string) int {
 }
 
 func (s *llmStub) handle(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/embeddings" {
+		s.handleEmbeddings(w, r)
+		return
+	}
 	if r.URL.Path != "/chat/completions" {
 		http.NotFound(w, r)
 		return

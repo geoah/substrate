@@ -15,20 +15,38 @@ call crosses the real HTTP door of the real binary against the real database.
 A case a unit suite already pins is not here. `internal/api` drives every
 route against a hand-written fake, `internal/engine` drives the same writes
 against a real Postgres, and `internal/testenv` drives the published error
-codes over a real socket, so these cases are what only a live server, a live
-database and a real client show.
+codes over a real socket in one process, so these cases are what only a live
+server, a live database and a real client show. ERR-04 is the one overlap on
+purpose: it asks the shipped binary for every code the conformance suite asks
+the in-process engine for, and it reads the list from the same source,
+`internal/api`'s `code*` declarations.
 
-Four preconditions gate individual cases and steps, and the `test:e2e` task
-sets what it can:
+Five preconditions gate individual cases and steps, and the `test:e2e` task
+sets every one it can:
 
-- `totp`: the enforced door, `mise run dev:totp`, which every case that
-  proves a live code needs. ISO-01's second registration skips against that
-  door instead, because a second user there needs an enrolled seed of its own.
-- `egress`: `SUBSTRATE_EGRESS_ALLOW` pointed at loopback on the server, which
-  is what lets a function or an agent reach the test's own stubs.
+- `totp`: the enforced door, which AUTH-05 and AUTH-07 need and skip without:
+  `SUBSTRATE_INSECURE_DISABLE_TOTP=false mise run test:e2e`, or a server of
+  your own under `mise run dev:totp`. AUTH-06 and OPR-03 run on either door
+  and carry a live code when the door asks for one. ISO-01's second
+  registration skips against the enforced door instead, because a second user
+  there needs an enrolled seed of its own.
+- `egress`: loopback allowed on the server, which is what lets it reach the
+  test's own stubs. `SUBSTRATE_EGRESS_ALLOW` governs the server's own dials
+  (the agents' completions, the embeddings queue, the OAuth token endpoint)
+  and `SUBSTRATE_SANDBOX_EGRESS_ALLOW` a function body's (FN-04). The OAuth
+  cases also need the facility on, which is `SUBSTRATE_OAUTH_CALLBACK_URL`;
+  they skip with that name when `oauth/start` says it is off.
 - `dsn`: the operator hat, so `SUBSTRATE_E2E_DSN`, `SUBSTRATE_E2E_CTL` and the
-  credential key those commands read. A step that needs it and does not have
-  it records SKIPPED in the report instead of asserting.
+  credential key those commands read (`SUBSTRATE_E2E_CREDENTIAL_KEY`). A step
+  that needs it and does not have it records SKIPPED in the report instead of
+  asserting.
+- `restart`: `SUBSTRATE_E2E_STOP` and `SUBSTRATE_E2E_START`, shell commands
+  that stop and start the server under test. DUR-01 restarts the server, and
+  OPR-03 stops it because `user reset` needs the writer lock the running
+  server holds; both skip without the pair. Each checks that `/healthz` stops
+  answering after the stop, so a hook that does nothing fails the case rather
+  than passing it, and a case that fails while the server is down starts it
+  again for the cases after it.
 - `uv`: `uv` on PATH and a reachable package index, which BUN-07 needs because
   a provider's body declares its dependencies in a PEP 723 block and the
   runner resolves them with `uv sync --script` before the body runs. Neither
@@ -40,8 +58,6 @@ an id is permanent: a case that moves keeps it, so a six-month-old report
 still names the same behavior. `registerCase` takes an order too, and each
 group file owns one hundred-block of that space (`extra_test.go` lists the
 blocks), so files never renumber each other.
-[Issue 520](https://github.com/geoah/substrate/issues/520) holds the ids that
-have no case yet.
 
 [STORIES.md](STORIES.md) is the other half of the list: the story-level cases,
 whole scenarios that compose many endpoint-level cases into one coherent

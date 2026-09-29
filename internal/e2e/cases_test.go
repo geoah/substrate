@@ -567,16 +567,12 @@ func (c *C) watchForWrite(from int64, recordID string, write func()) changeRow {
 	return changeRow{}
 }
 
-// nextTOTPCode computes a code on a step no earlier attempt consumed.
+// nextTOTPCode computes a code on a step no earlier attempt consumed, and
+// records the step as consumed.
 func (r *run) nextTOTPCode(c *C) string {
-	step := engine.TOTPStep(time.Now())
-	if step <= r.lastStep {
-		step = r.lastStep + 1
-	}
-	code, err := engine.TOTPCode(r.totpSecret, step)
-	c.requiref(err == nil, "computing a TOTP code: %v", err)
+	step := c.totpStepAfter(r.lastStep)
 	r.lastStep = step
-	return code
+	return c.totpCode(r.totpSecret, step)
 }
 
 // redacted keeps a refusal's body in a failure message and drops a 2xx body,

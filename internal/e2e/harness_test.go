@@ -12,17 +12,21 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/geoah/substrate/internal/engine"
 )
 
 const (
@@ -32,6 +36,13 @@ const (
 	envDSN       = "SUBSTRATE_E2E_DSN"
 	envCtl       = "SUBSTRATE_E2E_CTL"
 	envTimeout   = "SUBSTRATE_E2E_TIMEOUT"
+	envCredKey   = "SUBSTRATE_E2E_CREDENTIAL_KEY"
+	// envStop and envStart are shell commands that stop and start the server
+	// under test. A case that restarts the server, or runs an operator command
+	// that needs the repository's writer lock, runs them; without both it
+	// skips, because the suite cannot restart a server it did not start.
+	envStop  = "SUBSTRATE_E2E_STOP"
+	envStart = "SUBSTRATE_E2E_START"
 )
 
 // defaultRequestTimeout bounds one exchange: it is the CLIENT's timeout, and
@@ -208,6 +219,114 @@ func (c *C) paceAuth() {
 		}
 	}
 	c.r.lastAuth = time.Now()
+}
+
+// totpStepAfter is the earliest TOTP step after `after` the door accepts now.
+// The door takes the current step and one either side of it, so a step
+// further ahead than the next one is waited for rather than sent early, and
+// a step at or before `after` is never sent: the door refuses a step it has
+// already consumed.
+func (c *C) totpStepAfter(after int64) int64 {
+	c.t.Helper()
+	period := int64(engine.TOTPPeriod / time.Second)
+	for {
+		cur := engine.TOTPStep(time.Now())
+		step := max(cur, after+1)
+		if step <= cur+1 {
+			return step
+		}
+		wait := time.Until(time.Unix((cur+1)*period, 0)) + 250*time.Millisecond
+		c.stepf("waited %s for the next TOTP step", wait.Round(100*time.Millisecond))
+		time.Sleep(wait)
+	}
+}
+
+// totpCode is one seed's code at one step.
+func (c *C) totpCode(secret string, step int64) string {
+	c.t.Helper()
+	code, err := engine.TOTPCode(secret, step)
+	c.requiref(err == nil, "computing a TOTP code: %v", err)
+	return code
+}
+
+// serverHooks reports the commands that stop and start the server under
+// test, and whether both are set.
+func serverHooks() (stop, start string, ok bool) {
+	stop, start = os.Getenv(envStop), os.Getenv(envStart)
+	return stop, start, stop != "" && start != ""
+}
+
+// stopServer stops the server under test and holds that it stopped: a hook
+// that returns while the server still answers would let a restart case pass
+// against a server that never went down. Its output is kept out of the
+// report unless it fails, and then only its tail. A caller defers
+// ensureServer before anything else can fail.
+func (c *C) stopServer() {
+	c.t.Helper()
+	stop, _, _ := serverHooks()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sh", "-c", stop).CombinedOutput()
+	c.requiref(err == nil, "the stop hook (%s=%q) failed: %v: %s", envStop, stop, err, tail(string(out), 20))
+	_, _, err = httpJSON(&http.Client{Timeout: 2 * time.Second}, c.r.base, "", http.MethodGet, "/healthz", nil)
+	c.requiref(err != nil, "the server still answers /healthz after the stop hook returned")
+	c.stepf("stopped the server (`%s`); `/healthz` no longer answers", envStop)
+}
+
+// startServer starts the server under test and waits for it to answer.
+func (c *C) startServer() {
+	c.t.Helper()
+	err := c.r.bootServer()
+	c.requiref(err == nil, "%v", err)
+	c.stepf("started the server (`%s`); `/healthz` answers 200", envStart)
+}
+
+// ensureServer is the deferred half of every stop: a case that fails between
+// stopping the server and starting it again must not leave the cases after it
+// without one. It reports rather than asserts, because it runs after the
+// case may already have ended.
+func (c *C) ensureServer() {
+	if status, _, err := httpJSON(c.r.hc, c.r.base, "", http.MethodGet, "/healthz", nil); err == nil && status == http.StatusOK {
+		return
+	}
+	if err := c.r.bootServer(); err != nil {
+		c.t.Errorf("restarting the server after a failed case: %v", err)
+	}
+}
+
+// bootServer runs the start hook and waits for `/healthz`. The run's client
+// drops its idle connections first: they belong to the process that exited.
+func (r *run) bootServer() error {
+	_, start, _ := serverHooks()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "sh", "-c", start).CombinedOutput(); err != nil {
+		return fmt.Errorf("the start hook (%s=%q) failed: %w: %s", envStart, start, err, tail(string(out), 20))
+	}
+	r.hc.CloseIdleConnections()
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		status, _, err := httpJSON(r.hc, r.base, "", http.MethodGet, "/healthz", nil)
+		if err == nil && status == http.StatusOK {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("the server did not answer /healthz within 90s of the start hook: %w", err)
+			}
+			return fmt.Errorf("the server did not answer /healthz within 90s of the start hook: status %d", status)
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// tail keeps the last n lines of a command's output for a failure message.
+func tail(out string, n int) string {
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // do sends one JSON exchange with the run's token and records it as a step.

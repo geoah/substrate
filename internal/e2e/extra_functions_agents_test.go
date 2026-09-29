@@ -2,9 +2,17 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
+	"sync/atomic"
+
+	"github.com/geoah/substrate/internal/egress"
 )
 
 // The 500 block: functions, triggers and agents, over the repository the
@@ -49,6 +57,17 @@ func init() {
 			"`write` are refused 403 because a direct call has no calling agent to bound their writes; "+
 			"a bare host name is a 404 naming the full identity.",
 		xfCaseHostFunctions)
+	registerCase(530, "FN-04", "A function body's egress is held to the sandbox allowlist",
+		"A body with no `permissions.network` cannot open a socket; a body with the grant reaches the run's "+
+			"loopback stub, a private address it reaches only because SUBSTRATE_SANDBOX_EGRESS_ALLOW lists "+
+			"loopback, and is refused a private address the list does not name; each networked call writes "+
+			"a run record.",
+		xfCaseFunctionEgress)
+	registerCase(540, "AGN-03", "A tool round trip completes on the second turn",
+		"The scripted model asks for the agent's function tool on its first turn; the loop runs the function, "+
+			"hands the model its answer, and the second turn's reply carries it; the thread persists the call "+
+			"and the tool row that answered it.",
+		xfCaseAgentToolRoundTrip)
 	registerCase(550, "AGN-02", "Agent chat streams ndjson",
 		"`…/agent/{name}/chat` streams one AgentEvent per line: the thread id first, the assistant's turn "+
 			"as deltas that reassemble to the whole reply, and one done carrying the settled result last. "+
@@ -324,6 +343,242 @@ func xfCaseHostFunctions(c *C) {
 			"the refusal of %s does not say whose grants bound it, or where it does work: %s", name, refusal.Error.Message)
 	}
 	c.stepf("`%s` and `%s` are both refused 403: a direct call carries no calling agent, so their writes have no ceiling and the refusal says to call an agent instead", xfHostPropose, xfHostWrite)
+}
+
+// --- FN-04 --------------------------------------------------------------
+
+// xfFetchSource fetches one URL and says whether it got there. It catches
+// every failure and returns it, so what the case reads is the sandbox's
+// refusal and not an unhandled exception.
+const xfFetchSource = `
+import urllib.request
+
+
+def main(input, host):
+    url = (input.get("args") or {}).get("url") or ""
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return {"output": {"reached": True, "body": resp.read().decode()}}
+    except Exception as e:
+        return {"output": {"reached": False, "error": type(e).__name__ + ": " + str(e)}}
+`
+
+// xfFetchDoc declares the fetching body, with a network grant or without.
+func xfFetchDoc(name string, network []string) map[string]any {
+	data := map[string]any{
+		"description": "Fetch one URL and report whether the body reached it.",
+		"arguments": []map[string]any{
+			{"name": "url", "type": "string", "required": true, "description": "the URL to fetch"},
+		},
+		"returns": []map[string]any{
+			{"name": "reached", "type": "bool", "required": true, "description": "whether the fetch got an answer"},
+			{"name": "body", "type": "string", "description": "the answer's body, when it got one"},
+			{"name": "error", "type": "string", "description": "why it got none, when it got none"},
+		},
+		"source": xfFetchSource,
+	}
+	if network != nil {
+		data["permissions"] = map[string]any{"network": network}
+	}
+	return xfFunctionDoc(name, data)
+}
+
+// xfCountingServer answers every request with one word and counts them, so
+// a case tells a fetch that arrived from one that never did.
+type xfCountingServer struct {
+	srv  *httptest.Server
+	hits atomic.Int64
+}
+
+func newXfCountingServer(ln net.Listener) *xfCountingServer {
+	s := &xfCountingServer{}
+	s.srv = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		s.hits.Add(1)
+		_, _ = io.WriteString(w, "pong")
+	}))
+	if ln != nil {
+		_ = s.srv.Listener.Close()
+		s.srv.Listener = ln
+	}
+	s.srv.Start()
+	return s
+}
+
+// xfPrivateAddress is an IPv4 address of this host that is neither loopback
+// nor public: a destination the egress classifier marks as the deployment's
+// own and the allowlist does not name. "" when the host has none.
+func xfPrivateAddress() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, a := range addrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		addr, ok := netip.AddrFromSlice(ipn.IP)
+		if !ok {
+			continue
+		}
+		addr = addr.Unmap()
+		if addr.Is4() && !addr.IsLoopback() && egress.Blocked(addr) {
+			return addr.String()
+		}
+	}
+	return ""
+}
+
+// xfFetched is the fetching body's output.
+type xfFetched struct {
+	Reached bool   `json:"reached"`
+	Body    string `json:"body"`
+	Error   string `json:"error"`
+}
+
+func xfFetch(c *C, name, target string) xfFetched {
+	c.t.Helper()
+	var out struct {
+		Output xfFetched `json:"output"`
+	}
+	status, raw := xfCall(c, name, map[string]any{"url": target}, &out)
+	c.requiref(status == http.StatusOK, "calling %s answered %d: %s", name, status, raw)
+	return out.Output
+}
+
+func xfCaseFunctionEgress(c *C) {
+	loop := newXfCountingServer(nil)
+	defer loop.srv.Close()
+	// The grant names the address the counting server really listens on:
+	// httptest falls back to ::1 where 127.0.0.1 is unavailable.
+	loopHost, _, err := net.SplitHostPort(loop.srv.Listener.Addr().String())
+	c.requiref(err == nil, "reading the counting server's address: %v", err)
+	xfApply(c, xfFetchDoc("fetchgranted", []string{loopHost}), xfFetchDoc("fetchdenied", nil))
+	runsBefore := xfRunsFor(c, xfPkg+"/fetchgranted")
+	c.stepf("declared `fetchgranted` with `permissions.network: [%s]` and `fetchdenied` with no grant; a counting server listens on %s", loopHost, loop.srv.URL)
+
+	got := xfFetch(c, "fetchdenied", loop.srv.URL)
+	c.requiref(!got.Reached && loop.hits.Load() == 0,
+		"a body with no network grant reached the loopback server (reached=%t, %d hits)", got.Reached, loop.hits.Load())
+	// seccomp answers an ungranted body's AF_INET socket with EAFNOSUPPORT.
+	c.requiref(strings.Contains(got.Error, "Address family not supported"),
+		"the ungranted body failed for another reason than a refused socket: %s", got.Error)
+	c.stepf("`fetchdenied` could not open a socket (%s) and the server counted no request", got.Error)
+
+	got = xfFetch(c, "fetchgranted", loop.srv.URL)
+	c.requiref(got.Reached && got.Body == "pong" && loop.hits.Load() == 1,
+		"the granted body did not reach the loopback server: reached=%t body %q error %q, %d hits (the server needs SUBSTRATE_SANDBOX_EGRESS_ALLOW to list loopback)",
+		got.Reached, got.Body, got.Error, loop.hits.Load())
+	c.stepf("`fetchgranted` reached the loopback server and read `pong`: loopback is private, and the allowlist names it")
+	calls := 1
+
+	// The refusal half needs a private address the allowlist does not name,
+	// on this host, to listen on. Without one the case asserts what it can
+	// and ends SKIP, because a PASS would claim a refusal nobody saw.
+	priv := xfPrivateAddress()
+	var ln net.Listener
+	if priv != "" {
+		if ln, err = net.Listen("tcp", net.JoinHostPort(priv, "0")); err != nil {
+			priv = ""
+		}
+	}
+	if priv != "" {
+		other := newXfCountingServer(ln)
+		defer other.srv.Close()
+		got = xfFetch(c, "fetchgranted", other.srv.URL)
+		calls++
+		c.requiref(!got.Reached && other.hits.Load() == 0,
+			"the granted body reached %s, a private address the allowlist does not name (reached=%t, %d hits)", other.srv.URL, got.Reached, other.hits.Load())
+		// The connect gate refuses with EACCES, which tells its refusal apart
+		// from a destination that merely did not answer.
+		c.requiref(strings.Contains(got.Error, "Permission denied"),
+			"the granted body failed to reach %s for another reason than the connect gate: %s", other.srv.URL, got.Error)
+		c.stepf("`fetchgranted` was refused %s, a private address the allowlist does not name (%s), and that server counted no request", other.srv.URL, got.Error)
+	}
+
+	c.waitFor("a run record per networked call", func() bool {
+		return xfRunsFor(c, xfPkg+"/fetchgranted") == runsBefore+calls
+	})
+	c.stepf("the %d direct calls of the networked function wrote %d run records", calls, calls)
+	if priv == "" {
+		c.skipf("this host has no non-loopback private IPv4 address to listen on, so the refusal of a private address the allowlist does not name went unasserted")
+	}
+}
+
+// --- AGN-03 -------------------------------------------------------------
+
+// xfCounterResponder asks for the word count on its first turn and reports
+// the tool's answer on its second. The number comes out of the TOOL's
+// result, so a loop that never ran the tool, or never handed its answer
+// back, shows up as the wrong reply.
+func xfCounterResponder(req llmReq) llmTurn {
+	if req.assistantTurns() == 0 {
+		text := ""
+		for _, m := range req.Messages {
+			if m.Role == "user" {
+				text = m.Content
+			}
+		}
+		return llmTurn{calls: []llmCall{{"wordcount", map[string]any{"text": text}}}}
+	}
+	out, _ := req.lastToolResult("wordcount")["output"].(map[string]any)
+	words, ok := out["words"].(float64)
+	if !ok {
+		return llmTurn{content: "The tool answered nothing I could read."}
+	}
+	return llmTurn{content: fmt.Sprintf("That text has %d words.", int(words))}
+}
+
+func xfCaseAgentToolRoundTrip(c *C) {
+	c.r.stub.respond("toolcounter", xfCounterResponder)
+	agent := xfAgentDoc("toolcounter", "storyllm", "toolcounter",
+		"Counts the words it is given with its one tool.",
+		"You count the words of the message with the wordcount tool and report the number.")
+	data := agent["data"].(map[string]any)
+	data["tools"] = []map[string]any{{"function": xfPkg + "/wordcount"}}
+	data["budgets"] = map[string]any{"maxTurns": 3, "maxToolCalls": 2, "deadlineSeconds": 60}
+	xfApply(c, xfFunctionDoc("wordcount", map[string]any{
+		"description": "Count the words in a string.",
+		"arguments": []map[string]any{
+			{"name": "text", "type": "string", "required": true, "description": "the text to count"},
+		},
+		"returns": []map[string]any{
+			{"name": "words", "type": "float", "required": true, "description": "how many words the text holds"},
+		},
+		"source": xfWordCountSource,
+	}), agent)
+	before := c.r.stub.count("toolcounter")
+
+	var res xfAgentResult
+	status, raw := c.do(http.MethodPost, xfAgentPath+url.PathEscape(xfPkg+"/toolcounter")+"/call",
+		map[string]any{"input": "one two three four five"}, &res)
+	c.requiref(status == http.StatusOK, "the agent call answered %d: %s", status, raw)
+	c.requiref(res.Status == "ok" && res.Turns == 2, "the run settled %q after %d turns, want ok after 2", res.Status, res.Turns)
+	c.requiref(res.Reply == "That text has 5 words.", "the second turn replied %q, want the tool's count carried through", res.Reply)
+	c.requiref(c.r.stub.count("toolcounter") == before+2, "the model was asked %d times, want 2", c.r.stub.count("toolcounter")-before)
+	c.stepf("turn 1 asked for `wordcount`, the loop ran it, and turn 2 replied %q: two completions, one tool call", res.Reply)
+
+	callable := "function:" + xfAuthority + ":" + xfPackage + ":wordcount"
+	var asked, answered bool
+	for _, m := range xfThreadMessages(c, res.Thread) {
+		switch m.prop("role") {
+		case "assistant":
+			calls, _ := m.Properties["toolCalls"].([]any)
+			for _, raw := range calls {
+				call, _ := raw.(map[string]any)
+				if call["name"] == "wordcount" && call["callable"] == callable {
+					asked = true
+				}
+			}
+		case "tool":
+			ok, _ := m.Properties["ok"].(bool)
+			if m.prop("name") == "wordcount" && m.prop("callable") == callable && ok && strings.Contains(m.prop("content"), "words") {
+				answered = true
+			}
+		}
+	}
+	c.requiref(asked && answered, "thread %s persists the call %t and its answer %t, want both", res.Thread, asked, answered)
+	c.stepf("thread `%s` persists the assistant's `wordcount` call and the tool row that answered it, both stamped `%s`", res.Thread, callable)
 }
 
 // --- AGN-02 -------------------------------------------------------------

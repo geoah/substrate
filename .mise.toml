@@ -232,29 +232,44 @@ description = "The live end-to-end suite: a fresh user on the dev substrate, lef
 # `up` would happily reuse a running server built before your change and hand
 # you a false pass. The test itself skips everywhere SUBSTRATE_E2E_SERVER is
 # unset, so `mise run test` and CI never touch it.
+#
+# The server's settings are EXPORTED, so the restart below and the start hook
+# the restart cases run (SUBSTRATE_E2E_START, DUR-01 and OPR-03) boot the same
+# server. Loopback egress: the story agents buy completions from a scripted
+# stub the test process hosts, and the server dials it, the embeddings queue
+# and the OAuth token endpoint through the same egress gate as any provider;
+# a function body's own dials (FN-04) pass the sandbox's gate, which has its
+# own list. A caller's own allowlist is appended, never substituted, so it
+# cannot silently close the loopback the suite needs. The invite code is set
+# here because the bare dev substrate reads none, and AUTH-02 (a wrong code is
+# refused) needs a door that does. The dispatcher tick is 1s because the cases
+# write a record and then wait for the delivery it fires, and at the 5s default
+# each of those waits was mostly the tick. The OAuth callback URL turns the
+# OAuth facility on, which OAU-01 to OAU-03 drive. The second factor follows
+# the caller: `SUBSTRATE_INSECURE_DISABLE_TOTP=false mise run test:e2e` runs
+# the suite against the enforced door, which AUTH-05 and AUTH-07 need.
 run = [
   "mise run build",
   "mise run build:cli",
-  # Loopback egress: the story agents buy completions from a scripted stub
-  # the test process hosts, and the server dials it through the same egress
-  # gate as any provider. A caller's own allowlist is appended, never
-  # substituted, so it cannot silently close the loopback the suite needs.
-  # The invite code is set here because the bare dev substrate reads none,
-  # and AUTH-02 (a wrong code is refused) needs a door that does. The
-  # dispatcher tick is 1s because the cases write a record and then wait for
-  # the delivery it fires, and at the 5s default each of those waits was
-  # mostly the tick.
-  "SUBSTRATE_INVITE_CODE=\"${SUBSTRATE_INVITE_CODE:-let-me-in}\" SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" SUBSTRATE_TRIGGER_INTERVAL=\"${SUBSTRATE_TRIGGER_INTERVAL:-1s}\" .mise/dev.sh restart",
   """
+    set -e
+    export SUBSTRATE_INVITE_CODE="${SUBSTRATE_INVITE_CODE:-let-me-in}"
+    export SUBSTRATE_EGRESS_ALLOW="127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}"
+    export SUBSTRATE_SANDBOX_EGRESS_ALLOW="127.0.0.0/8,::1/128${SUBSTRATE_SANDBOX_EGRESS_ALLOW:+,$SUBSTRATE_SANDBOX_EGRESS_ALLOW}"
+    export SUBSTRATE_TRIGGER_INTERVAL="${SUBSTRATE_TRIGGER_INTERVAL:-1s}"
+    export SUBSTRATE_OAUTH_CALLBACK_URL="${SUBSTRATE_OAUTH_CALLBACK_URL:-http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}/api/v1/oauth/callback}"
+    .mise/dev.sh restart
     SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \
-    SUBSTRATE_E2E_INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}" \
+    SUBSTRATE_E2E_INVITE="$SUBSTRATE_INVITE_CODE" \
     SUBSTRATE_E2E_DSN="$(.mise/dev.sh dsn)" \
     SUBSTRATE_E2E_CTL="$PWD/bin/substratectl" \
     SUBSTRATE_E2E_CREDENTIAL_KEY="$(cat .dev/credential.key 2>/dev/null || true)" \
+    SUBSTRATE_E2E_STOP="$PWD/.mise/dev.sh stop" \
+    SUBSTRATE_E2E_START="$PWD/.mise/dev.sh up" \
     SUBSTRATE_DATA_ROOT="$PWD/.dev/data" \
     SUBSTRATE_CREDENTIAL_KEY="$(cat .dev/credential.key 2>/dev/null || true)" \
     SUBSTRATE_E2E_REPORT_DIR="$PWD/.dev/e2e" \
-    go test -count=1 -run '^TestE2E$' -v ./internal/e2e/
+    go test -count=1 -timeout 30m -run '^TestE2E$' -v ./internal/e2e/
     """,
 ]
 
