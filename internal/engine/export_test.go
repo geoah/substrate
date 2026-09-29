@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -103,8 +104,10 @@ func IdleRepositoryPins(ctx context.Context, svc substrate.Service) ([]string, e
 // and nothing else. A copy beside an empty data root is exactly a fresh
 // install (nothing on either side), and Open on the copy runs every boot
 // step over it; what it skips is the DDL. The from-empty migration still
-// runs three times per binary: here, in TestRepositoryProvisioningAndProjections
-// and in TestAssertPoolPrincipalRejectsSuperuser, which open testdb.NewSchema.
+// runs here, in TestRepositoryProvisioningAndProjections and in
+// TestAssertPoolPrincipalRejectsSuperuser, which open testdb.NewSchema, and
+// once per embedded migration in TestEveryMigrationLeavesAFoldTheRebuildReproduces,
+// which stages a schema at each one.
 var migratedTemplate = testdb.NewTemplate("engine", func(ctx context.Context, dsn string) error {
 	root, err := os.MkdirTemp("", "substrate-template-")
 	if err != nil {
@@ -124,12 +127,53 @@ var migratedTemplate = testdb.NewTemplate("engine", func(ctx context.Context, ds
 // MigratedDSN is a fresh database of the test's own on which the shipped
 // migrations have already run, dropped when the test ends. It is what every
 // test opens, migrate_db_test.go's included (those tamper with a migrated
-// database and open it again). The two that open testdb.NewSchema and
-// migrate from empty are TestRepositoryProvisioningAndProjections and
-// TestAssertPoolPrincipalRejectsSuperuser.
+// database and open it again). The ones that open testdb.NewSchema and
+// migrate from empty are TestRepositoryProvisioningAndProjections,
+// TestAssertPoolPrincipalRejectsSuperuser and
+// TestEveryMigrationLeavesAFoldTheRebuildReproduces.
 func MigratedDSN(t *testing.T) string {
 	t.Helper()
 	return migratedTemplate.Clone(t)
+}
+
+// Migration is one SQL migration the binary embeds, by the version and name
+// schema_migrations records it under.
+type Migration struct {
+	Version int
+	Name    string
+}
+
+// Migrations lists the SQL migrations the binary embeds, in the order the
+// runner applies them.
+func Migrations() ([]Migration, error) {
+	ms, err := loadMigrations()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Migration, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, Migration{Version: m.Version, Name: m.Name})
+	}
+	return out, nil
+}
+
+// MigrateThrough runs the boot's migration runner over the schema the DSN
+// pins and stops after the migration numbered through. Each migration is
+// recorded as the boot records it, so a later Open applies only the rest.
+func MigrateThrough(ctx context.Context, dsn string, through int) error {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	return migrateThrough(ctx, db, through)
+}
+
+// FoldTables are the tables RebuildRepository clears and fills again: the
+// ones the replay writes (foldTables) and property_offers, which the rebuild
+// derives from the replayed rows (rederiveOffers).
+func FoldTables() []string {
+	return append(slices.Clone(foldTables), "property_offers")
 }
 
 // WithTestCommitFault runs fn at each durable step of a write's commit

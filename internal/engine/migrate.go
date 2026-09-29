@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,10 +63,19 @@ var ErrDatabaseOlder = errors.New("substrate/engine: the database has not applie
 
 // migrate applies every pending migration to the schema the DSN's
 // search_path pins, atomically per migration. Idempotent.
+func migrate(ctx context.Context, db *sql.DB) error {
+	return migrateThrough(ctx, db, math.MaxInt)
+}
+
+// migrateThrough is migrate stopped after the migration numbered through, so
+// the schema it leaves is the one a binary whose newest migration is that one
+// would have built. The boot passes math.MaxInt; the refold test
+// (migrationrefold_db_test.go) stages a database at each migration with a
+// lower bound.
 //
 // The advisory lock is held on one pinned connection: releasing it from a
 // different pooled connection is a silent no-op.
-func migrate(ctx context.Context, db *sql.DB) error {
+func migrateThrough(ctx context.Context, db *sql.DB, through int) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: migration conn: %w", err)
@@ -104,6 +114,9 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	for _, m := range migrations {
+		if m.Version > through {
+			break
+		}
 		if _, ok := applied[m.Version]; ok {
 			continue
 		}

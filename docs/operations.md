@@ -798,6 +798,35 @@ allowlist entry a binary before
 [decision 0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)
 stored bare, resolving each word the way that binary did.
 
+**A schema migration never changes what the fold holds.** The fold is every
+table `repository rebuild` clears and fills again from the changelog
+(`internal/engine/rebuild.go`): `records` with its derived columns `fts`,
+`orphaned_at` and `ambiguous_at`, `refs`, `former_ids`, `annotations`,
+`property_managers`, `property_offers`, and the delivery ledger
+(`trigger_cursors`, `trigger_schedule`, `trigger_failures`,
+`paged_cursors`; a rebuild brings a cursor back at its last acknowledged
+delivery, not at the scan position past it). A SQL migration changes their
+schema alone (an index, a table, a column whose default is the value the
+fold writes) and never writes a row of one: `internal/engine/fold.go` is the
+one path from the changelog into them. A change to what a row holds goes in a repository
+migration, which writes it through the changelog as ordinary record writes,
+so a rebuild replays it. A repository migration cannot repair a SQL
+migration that already edited the rows: the rows hold the new value, a
+write that changes nothing appends nothing, and the next rebuild puts the
+old value back. `TestEveryMigrationLeavesAFoldTheRebuildReproduces`
+(`internal/engine/migrationrefold_db_test.go`) holds every embedded
+migration to this: it upgrades a store one migration behind each one,
+rebuilds it, and compares every fold table, and a fixture migration that
+runs `UPDATE records` alone must fail it. The test sees only the rows its
+seeded repository holds, so a migration aimed at a shape this binary no
+longer writes, or at `trigger_failures` or `paged_cursors` (empty in the
+seed), adds such rows to the seed first. Three landed migrations predate the
+rule: `0003_orphaned_at`, `0004_property_offers_source` and
+`0006_ambiguous_at` each add a derived column empty, a row written before
+them keeps it empty until a recompute or the source's next write sets it,
+and a rebuild derives it for every row. The test exempts those three columns
+for a store older than the migration that added each, and nothing else.
+
 ## Backups
 
 **A backup is the data root plus the credential key, kept apart.** Every
