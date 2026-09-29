@@ -636,10 +636,12 @@ merge in
   that property, with its manager row;
 - a value holding a spelling some value declares as its `renamedFrom:` takes
   the new spelling;
-- a value the kind no longer admits is removed with its manager row, its
-  embedding and its sealed material: a property it no longer declares, or a
-  value its declaration refuses (a removed enum value, a changed type, a
-  tightened pattern or bound);
+- every other value is held to what a `put` naming it would store: kept in
+  that stored form where the declaration admits it, and removed with its
+  manager row, its embedding and its sealed material where it does not (a
+  property the kind no longer declares, a removed enum value, a changed type,
+  a tightened pattern or bound, a reference its pin no longer admits, a blob
+  that is gone);
 - a `required:` property with a `default:` receives the default where the
   record holds no value, managed by the actor that restored it.
 

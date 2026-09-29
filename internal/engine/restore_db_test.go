@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // tombstoneWidget deletes a widget, failing the test on a refusal.
@@ -307,6 +308,90 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	}
 	if !movedSize || !leftMood {
 		t.Fatalf("the restore's change row does not read the rename and the drop: %s", jsonOf(t, changes))
+	}
+	cvReplays(t, svc, ds)
+}
+
+// A kept value is held to what a write of it would store, not only to the
+// declaration's shape: a string retyped to a secret is material nobody sealed,
+// a secret retyped to a string is a sealed ref read as text, a reference the
+// pin no longer admits fails the registry gate a write runs, and a string
+// retyped to a datetime is stored normalized, so the restored read applies
+// back without moving the record.
+func TestRestoreHoldsAKeptValueToWhatAWriteStores(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	const gadget = cvPackage + "/gadget"
+	apply := func(props map[string]any) error {
+		docs := append(cvDocs(props), vocabulary.KindManifest(cvPackage, map[string]any{"singular": "gadget"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}))
+		_, err := ds.ApplyVocabularyDocuments(ctx, owner, docs)
+		return err
+	}
+	name := map[string]any{"type": "string"}
+	if err := apply(map[string]any{
+		"name":  name,
+		"pin":   map[string]any{"type": "string"},
+		"token": map[string]any{"type": "secret"},
+		"when":  map[string]any{"type": "string"},
+		"link":  map[string]any{"type": "reference", "kind": "any"},
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	target := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "target"}})
+	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{
+		"name": "g", "pin": "1234", "token": "shh", "when": "2026-01-01T02:00:00+02:00",
+		"link": cvWidget + "/" + target.ID,
+	}})
+	db := rawDB(t, dsn)
+	ref, _ := storedProps(t, dsn, gone.ID)["token"].(string)
+	var sealed int
+	if err := db.QueryRow(`SELECT count(*) FROM sealed WHERE ref = $1`, ref).Scan(&sealed); err != nil || sealed != 1 {
+		t.Fatalf("the secret was not sealed: %d, %v", sealed, err)
+	}
+	tombstoneWidget(t, ds, gone.ID)
+
+	// Four retypes no live record holds a value for, so none is counted.
+	if err := apply(map[string]any{
+		"name":  name,
+		"pin":   map[string]any{"type": "secret"},
+		"token": map[string]any{"type": "string"},
+		"when":  map[string]any{"type": "datetime"},
+		"link":  map[string]any{"type": "reference", "kind": gadget},
+	}); err != nil {
+		t.Fatalf("the retypes must land: %v", err)
+	}
+
+	restored := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: map[string]any{"name": "g"}})
+	for _, refused := range []string{"pin", "token", "link"} {
+		if _, still := restored.Properties[refused]; still {
+			t.Fatalf("the restored record holds %s: %v", refused, restored.Properties)
+		}
+	}
+	if restored.Properties["when"] != "2026-01-01T00:00:00Z" {
+		t.Fatalf("the restored record holds when %v, want the value a datetime write stores", restored.Properties["when"])
+	}
+	if props := storedProps(t, dsn, gone.ID); props["pin"] != nil {
+		t.Fatalf("the unsealed material stayed in the row: %v", props)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM sealed WHERE ref = $1`, ref).Scan(&sealed); err != nil || sealed != 0 {
+		t.Fatalf("the sealed material outlived its secret: %d, %v", sealed, err)
+	}
+	// The read applies back as the no-op it should be.
+	again := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: restored.Properties})
+	if again.Version != restored.Version {
+		t.Fatalf("applying the restored read back moved the record from version %d to %d: %v",
+			restored.Version, again.Version, again.Properties)
+	}
+
+	payload := restorePayload(t, dsn, gone.ID)
+	nulled, _ := payload["nulled"].([]any)
+	if len(nulled) != 3 || nulled[0] != "link" || nulled[1] != "pin" || nulled[2] != "token" {
+		t.Fatalf("the restore entry's nulled = %v, want link, pin and token", payload["nulled"])
+	}
+	if props, _ := payload["properties"].([]any); !containsAny(props, "when") {
+		t.Fatalf("the restore entry's properties = %v, want when among them", payload["properties"])
 	}
 	cvReplays(t, svc, ds)
 }

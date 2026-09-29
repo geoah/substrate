@@ -13,10 +13,12 @@ package engine
 //   - a value holding a spelling some enum value declares as its
 //     `renamedFrom` takes the new spelling, in a scalar, a list or a keyed map
 //     (remapValue);
-//   - a value the kind no longer admits, under a name it does not declare or
-//     in a shape its declaration refuses (a retype, a removed value, a
-//     tightened pattern or bound), is removed with its manager row, vectors
-//     and sealed material, as a null step removes a live record's;
+//   - every other stored value is held to what a write of it would store
+//     (admitRestored): kept in that stored form where the declaration admits
+//     it, and removed with its manager row, vectors and sealed material where
+//     it does not (an undeclared name, a retype, a removed value, a tightened
+//     pattern or bound, a reference the pin no longer admits, a blob that is
+//     gone), as a null step removes a live record's;
 //   - a required property with a default the row holds no value for receives
 //     the default, managed by the restoring hand, as a backfill fills a live
 //     record lacking it.
@@ -34,10 +36,12 @@ package engine
 // record nobody restores costs nothing and gains no history.
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // restoreShape is what a restoring put rewrote on the stored row before the
@@ -48,13 +52,17 @@ type restoreShape struct {
 	// remapped is property to old spelling to new.
 	remapped   map[string]map[string]string
 	backfilled []string
+	// coerced names the kept values the declaration's coercion stores in
+	// another form than the tombstone held (a string retyped to a datetime
+	// normalizes to UTC). No step key names them; `properties` does.
+	coerced []string
 	// nulled is each removed property with the value the tombstone held, so
 	// the sealed material behind a secret's ref goes with it.
 	nulled map[string]any
 }
 
 // names is every property the shape moved, sorted: a rename's two names, and
-// every remapped, backfilled and removed one.
+// every remapped, backfilled, coerced and removed one.
 func (s restoreShape) names() []string {
 	seen := map[string]bool{}
 	for from, to := range s.renamed {
@@ -64,6 +72,9 @@ func (s restoreShape) names() []string {
 		seen[name] = true
 	}
 	for _, name := range s.backfilled {
+		seen[name] = true
+	}
+	for _, name := range s.coerced {
 		seen[name] = true
 	}
 	for name := range s.nulled {
@@ -111,13 +122,7 @@ func (t *txn) reshapeRestored(sp *applySpec, row *erow) (restoreShape, error) {
 			continue
 		}
 		held := row.Props[name]
-		p, declared := ty.Props[name]
-		// A sensitive value is stored as a sealed ref or a digest, never as
-		// what its declaration validates, so there is nothing to hold it to.
-		if declared && p.Sensitive() {
-			continue
-		}
-		if declared && !p.IsState() {
+		if p, declared := ty.Props[name]; declared && !p.IsState() {
 			v := held
 			var moved map[string]string
 			for _, ev := range p.Values {
@@ -132,14 +137,20 @@ func (t *txn) reshapeRestored(sp *applySpec, row *erow) (restoreShape, error) {
 					moved[ev.RenamedFrom] = ev.Value
 				}
 			}
-			if _, err := coerceValue(p, v); err == nil {
-				row.Props[name] = v
+			kept, ok, err := t.admitRestored(sp, name, p, v)
+			if err != nil {
+				return s, err
+			}
+			if ok {
 				if moved != nil {
 					if s.remapped == nil {
 						s.remapped = map[string]map[string]string{}
 					}
 					s.remapped[name] = moved
+				} else if !jsonEqual(kept, held) {
+					s.coerced = append(s.coerced, name)
 				}
+				row.Props[name] = kept
 				continue
 			}
 		}
@@ -186,6 +197,51 @@ func (t *txn) reshapeRestored(sp *applySpec, row *erow) (restoreShape, error) {
 	return s, nil
 }
 
+// admitRestored answers the value a restored row keeps for one declared
+// property, remapped already: what a write naming that value would store, or
+// false where the declaration in force refuses it. The checks are the write
+// path's own, the pure coercion and the transaction's reference and blob
+// gates, so the restored record's read applies back unchanged.
+func (t *txn) admitRestored(sp *applySpec, name string, p *vocabulary.Property, v any) (any, bool, error) {
+	// A sealed ref this record owns is a secret's value and nothing else's: a
+	// property retyped away from secret would read the ref as text and orphan
+	// the material behind it.
+	if s, isText := v.(string); isText && strings.HasPrefix(s, secretRefPrefix) {
+		owned, err := t.sealedRefOf(s, sp.ref())
+		if err != nil {
+			return nil, false, err
+		}
+		if owned {
+			return v, p.Secret(), nil
+		}
+	}
+	if p.Secret() {
+		// Anything but an owned ref under a secret is material nobody sealed
+		// (a string retyped to secret), and no write stores material in the
+		// row. The empty value is the one a cleared secret leaves.
+		s, isText := v.(string)
+		return v, isText && s == "", nil
+	}
+	kept, err := coerceValue(p, v)
+	if err != nil {
+		return nil, false, nil
+	}
+	gate := map[string]any{name: kept}
+	switch {
+	case holdsReference(p):
+		err = t.validateReferences(sp.ty, gate)
+	case p.Datatype == vocabulary.DatatypeBlobRef:
+		err = t.validateBlobRefs(sp.ty, gate)
+	}
+	if errors.Is(err, substrate.ErrValidation) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return gate[name], true, nil
+}
+
 // settleRestoreShape moves the rows beside the record that follow its values,
 // once the restoring entry's record effect is folded: what a conversion does
 // for the same step on a live record (convert.go convertRecord).
@@ -200,7 +256,7 @@ func (t *txn) settleRestoreShape(ref eref, sp *applySpec, s restoreShape) error 
 			return err
 		}
 	}
-	for _, name := range sortedKeys(s.remapped) {
+	for _, name := range append(sortedKeys(s.remapped), s.coerced...) {
 		if ty.Props[name].Embed {
 			if err := t.enqueueEmbed(ref, name); err != nil {
 				return err
@@ -224,9 +280,9 @@ func (t *txn) settleRestoreShape(ref eref, sp *applySpec, s restoreShape) error 
 		if err := t.dropEmbeddings(ref, name); err != nil {
 			return err
 		}
-		// Only a ref this record owns is erased: the value's declaration is
-		// gone, so its shape and the sealed row's owner are what say it was a
-		// secret of this record.
+		// Only a ref this record owns is erased: the value's declaration may
+		// be gone, so its shape and the sealed row's owner are what say it was
+		// a secret of this record.
 		old, _ := s.nulled[name].(string)
 		if !strings.HasPrefix(old, secretRefPrefix) {
 			continue

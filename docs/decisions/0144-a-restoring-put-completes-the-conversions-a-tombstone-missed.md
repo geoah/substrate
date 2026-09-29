@@ -33,10 +33,13 @@ declares.
 Chosen: the restoring `put` completes the conversions (`internal/engine/restore.go`,
 called from `apply` for `resurrect` alone). Against the declaration in force
 it moves a value under a property's `renamedFrom:` name, respells a value
-holding an enum value's `renamedFrom:` spelling, removes a value under an
-undeclared name or in a shape the declaration's coercion refuses (a sensitive
-property is not judged, since its stored form is a ref), and fills a
-`required:` property's `default:` where the row holds no value. A name the
+holding an enum value's `renamedFrom:` spelling, holds every other value to
+what a write naming it would store, and fills a `required:` property's
+`default:` where the row holds no value. Holding a value to a write means the
+write path's own checks: the coercion (whose stored form the row keeps), the
+reference and blob gates, and for a secret a sealed ref the record owns. A
+value they refuse is removed, and so is a value under an undeclared name or a
+sealed ref under a property that is no longer a secret. A name the
 writer's `put` names is left to the merge. The manager, vector and sealed
 rows follow each step as a conversion's do. The one restoring entry carries
 the result as values in its delta, and its payload names the steps under a
@@ -64,9 +67,9 @@ record whose next full `put` is refused.
   before two renames of one name, or two respellings of one value, holds a
   name or a spelling the current declaration no longer mentions, and the
   restore removes that value rather than following the chain.
-- Bad, because a value is judged by today's coercion alone: a stored value it
-  refuses is removed, lossy and unconfirmed, although no preview counted it.
-  The old value stays in the changelog.
+- Bad, because a value is judged by today's write rules alone: a stored value
+  they refuse is removed, lossy and unconfirmed, although no preview counted
+  it. The old value stays in the changelog.
 - Bad, because a split resurrects a merged-away loser through its own path
   (`merge.go splitIf`), which neither this record nor PR 771 reshapes.
 - Bad, because a backfilled value on a restore is managed by the restoring
@@ -75,8 +78,9 @@ record whose next full `put` is refused.
 ### Confirmation
 
 `TestRestoreTakesTheSpellingARemapMovedWhileTheRecordWasATombstone`,
-`TestRestoreFillsTheDefaultARequiredPropertyGainedWhileTheRecordWasATombstone`
-and `TestRestoreRemovesADroppedPropertyAndMovesARenamedOne`
+`TestRestoreFillsTheDefaultARequiredPropertyGainedWhileTheRecordWasATombstone`,
+`TestRestoreRemovesADroppedPropertyAndMovesARenamedOne` and
+`TestRestoreHoldsAKeptValueToWhatAWriteStores`
 (`internal/engine/restore_db_test.go`) hold each step, the side rows, the
 payload keys, the values read and the identical rebuild and import. Each fails
 with the reshape disabled.
