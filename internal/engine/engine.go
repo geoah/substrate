@@ -316,6 +316,11 @@ type service struct {
 	// testMigrationHook, when set (tests only), runs inside each repository
 	// migration's transaction, with its own connection held.
 	testMigrationHook func()
+	// testGCPassHook, when set (tests only), runs after each GC pass's
+	// victim query with the number of victims it found and before the pass
+	// locks any of them (gc.go gcPass), so a test can restore a victim in
+	// that window and count the passes a sweep runs.
+	testGCPassHook func(victims int)
 	// appRole is the role every repository-scoped pool assumes; empty when the
 	// cluster would not let the engine create its roles.
 	appRole string

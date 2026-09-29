@@ -93,7 +93,8 @@ type Dataset interface {
 
 	// --- background loops and the operator's re-embed ---
 	// RunGC performs one owner-reference mark-and-collect sweep for
-	// records tombstoned with no remaining finalizers; returns collected.
+	// records tombstoned with no remaining finalizers; returns the records
+	// it purged plus the blobs it collected.
 	RunGC(ctx context.Context) (int, error)
 	// ProcessEmbedQueue drains up to batch pending embed items through the
 	// repository's own embeddings provider. A repository that names none
