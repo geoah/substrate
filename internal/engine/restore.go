@@ -23,8 +23,8 @@ package engine
 //     the default, managed by the restoring hand, as a backfill fills a live
 //     record lacking it.
 //
-// A name the writer's put names is left to the merge: the writer's value, or
-// its null, is the answer there. The declaration is the only history read, so
+// A declared name the writer's put names is left to the merge: the writer's
+// value, or its null, is the answer there. The declaration is the only history read, so
 // a name or a spelling it no longer mentions (a second rename over the
 // first) is refused and removed rather than followed.
 //
@@ -118,11 +118,16 @@ func (t *txn) reshapeRestored(sp *applySpec, row *erow) (restoreShape, error) {
 		s.renamed[from] = name
 	}
 	for _, name := range sortedKeys(row.Props) {
-		if named(name) {
+		held := row.Props[name]
+		p, declared := ty.Props[name]
+		// A declared name the put names is the put's to write. An undeclared
+		// one it can only name with a null, which the removal below performs
+		// together with the vectors and sealed material a write's delete of an
+		// undeclared name never reaches.
+		if declared && named(name) {
 			continue
 		}
-		held := row.Props[name]
-		if p, declared := ty.Props[name]; declared && !p.IsState() {
+		if declared && !p.IsState() {
 			v := held
 			var moved map[string]string
 			for _, ev := range p.Values {

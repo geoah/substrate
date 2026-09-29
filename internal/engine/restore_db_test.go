@@ -233,7 +233,14 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 		}
 		return n
 	}
+	// A second record is restored by a put that names the dropped properties
+	// with a null, which must clear what an omitted one clears.
+	cleared := mustPut(t, ds, lib, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{
+		"name": "b", "mood": "gloomy", "token": "hush",
+	}})
+	clearedRef, _ := storedProps(t, dsn, cleared.ID)["token"].(string)
 	tombstoneWidget(t, ds, gone.ID)
+	tombstoneWidget(t, ds, cleared.ID)
 
 	// `mood` and `token` are dropped, `size` is renamed `dimensions`, and
 	// `weight` is renamed `mass` and retyped, a value the tombstone's string
@@ -308,6 +315,24 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	}
 	if !movedSize || !leftMood {
 		t.Fatalf("the restore's change row does not read the rename and the drop: %s", jsonOf(t, changes))
+	}
+
+	back := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: cleared.ID, Properties: map[string]any{
+		"name": "b", "mood": nil, "token": nil,
+	}})
+	if _, still := back.Properties["mood"]; still || back.Properties["token"] != nil {
+		t.Fatalf("the restore naming the dropped properties with a null kept them: %v", back.Properties)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM embed_queue WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
+		cvWidget, cleared.ID).Scan(&queued); err != nil || queued != 0 {
+		t.Fatalf("embed queue rows left behind a nulled drop = %d, %v", queued, err)
+	}
+	var clearedSealed int
+	if err := db.QueryRow(`SELECT count(*) FROM sealed WHERE ref = $1`, clearedRef).Scan(&clearedSealed); err != nil || clearedSealed != 0 {
+		t.Fatalf("the sealed material outlived a nulled drop: %d, %v", clearedSealed, err)
+	}
+	if nulled, _ := restorePayload(t, dsn, cleared.ID)["nulled"].([]any); len(nulled) != 2 || nulled[0] != "mood" || nulled[1] != "token" {
+		t.Fatalf("the nulled restore entry's nulled = %v, want mood and token", nulled)
 	}
 	cvReplays(t, svc, ds)
 }
