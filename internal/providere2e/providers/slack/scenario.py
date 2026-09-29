@@ -40,12 +40,14 @@ WHAT IT ASSERTS, and why each one is worth a run:
    15. trait      the core `sync` trait (decision 0085): a finished walk is
                   `ok` with every stream acked against the request that drove
                   it, an injected 429 is `throttled`, an injected 401 is
-                  `erroring` with the cause, and the next run recovers
+                  `erroring` with the cause, a `missing_scope` on team.info
+                  names the needed scope, and the next run recovers
    16. backlog    with a `replies` backlog bigger than a run's budget, a new
                   message in a mirrored channel lands within that one run
    17. write      `postmessage` posts through the config's token: the form it
                   sends, its output, no record written, Slack's refusal
-                  and a `missing_scope` refusal surfaced, an apiBase off
+                  and a `missing_scope` refusal naming the needed and
+                  provided scopes surfaced, an apiBase off
                   slack.com refused unsent, and an agent calling it as a
                   tool (#712)
    18. first      a first reply posted into a mirrored message that had no
@@ -628,6 +630,21 @@ def wait_for_state(want, seconds=90):
     while time.time() < deadline:
         p = props(api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))[1] or {})
         if p.get("syncState") == want:
+            return p
+        time.sleep(2)
+    return p
+
+
+def wait_for_error(text, seconds=90):
+    """Wait for the account's `syncError` to contain `text`.
+
+    NOT `wait_for_state`: an account already erroring from an earlier run
+    matches that at once, before the run under test has stamped anything."""
+    deadline = time.time() + seconds
+    p = {}
+    while time.time() < deadline:
+        p = props(api("GET", "/api/v1/%s/%s" % (ACCOUNT_KIND, ACCOUNT_ID))[1] or {})
+        if text in str(p.get("syncError") or ""):
             return p
         time.sleep(2)
     return p
@@ -1745,7 +1762,21 @@ def main():
            "a failed run acknowledged the request it never served (%r)"
            % broke.get("syncRequestedAck"))
 
-        # RECOVERY. Both rules are spent, so the next run is an ordinary one.
+        # A token without team:read (#718). The 401 left the walk done, so
+        # this run starts a new walk at team.info, and its `missing_scope`
+        # names the scope to grant in syncError.
+        faults([{"match": "GET /api/team.info", "status": [200],
+                 "body": {"ok": False, "error": "missing_scope",
+                          "needed": "team:read", "provided": "users:read"}}])
+        sync_now()
+        scoped = wait_for_error("team.info")
+        ok(scoped.get("syncState") == "erroring"
+           and "missing_scope (needed team:read, provided users:read)"
+           in str(scoped.get("syncError") or ""),
+           "a team.info missing_scope left syncState %r and syncError %r"
+           % (scoped.get("syncState"), scoped.get("syncError")))
+
+        # RECOVERY. Every rule is spent, so the next run is an ordinary one.
         faults([])
         sync_now()
         back = wait_for_sync(broke.get("lastSyncedAt"))
@@ -1910,15 +1941,27 @@ def postmessage():
     w.faults([])
 
     # A token without chat:write: Slack answers 200 with `missing_scope` and
-    # a `needed` field. The call fails naming `missing_scope`; the body does
-    # not pass on Slack's `needed` field, so the caller is not told which
-    # scope to grant.
+    # the `needed` and `provided` scopes (#718). The refusal names both, so
+    # the caller knows which scope to grant.
     w.faults([{"match": "POST " + POST_ROUTE, "status": [200],
                "body": {"ok": False, "error": "missing_scope",
                         "needed": "chat:write", "provided": "channels:history"}}])
     st, reply = w.call(POST_FN, {"channel": channel, "text": text})
     ok(st >= 400 and "missing_scope" in error_text(reply),
        "a token without chat:write did not refuse: %s %s"
+       % (st, error_text(reply)[:300]))
+    ok("needed chat:write" in error_text(reply)
+       and "provided channels:history" in error_text(reply),
+       "the missing_scope refusal does not name the needed chat:write and "
+       "the provided channels:history: %s" % error_text(reply)[:300])
+    # A `missing_scope` body without either field still refuses, naming the
+    # error code alone.
+    w.faults([{"match": "POST " + POST_ROUTE, "status": [200],
+               "body": {"ok": False, "error": "missing_scope"}}])
+    st, reply = w.call(POST_FN, {"channel": channel, "text": text})
+    ok(st >= 400 and "missing_scope" in error_text(reply)
+       and "needed" not in error_text(reply),
+       "a missing_scope body with no needed field answered %s %s"
        % (st, error_text(reply)[:300]))
     w.faults([])
 
