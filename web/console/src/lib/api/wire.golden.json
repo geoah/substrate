@@ -363,7 +363,8 @@
   },
   "Referencing": {
     "property": false,
-    "ref": true
+    "ref": false,
+    "refs": false
   },
   "RegisterInput": {
     "inviteCode": true,

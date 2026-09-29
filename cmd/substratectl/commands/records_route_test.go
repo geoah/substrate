@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -179,6 +180,46 @@ func TestGetReferencingIsAFilterArm(t *testing.T) {
 	}
 	if _, _, err := h.run("get", "samples.substrate.reamde.dev/tasks/task", "--referencing", "p1"); err == nil {
 		t.Fatal("a bare id is not a record path and must be refused before it is sent")
+	}
+}
+
+// A repeated --referencing is one read over several targets: the list
+// carries them as filter.referencing.refs, and a record pointing at either
+// comes back.
+func TestGetReferencingRepeatedSendsRefs(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	seedProject(h)
+	h.fake.seed(&substrate.Record{
+		ID: "p2", Kind: taskKind,
+		Properties: map[string]any{"title": "Cable project", "lifecycle": "open"},
+		Version:    1, CreatedAt: testNow.Add(-72 * time.Hour), UpdatedAt: testNow.Add(-72 * time.Hour),
+	})
+	h.fake.seed(&substrate.Record{
+		ID: "t2", Kind: taskKind,
+		Properties: map[string]any{
+			"title": "Pull the cables", "lifecycle": "open",
+			"project": map[string]any{"ref": taskKind + "/p2"},
+		},
+		Version: 1, CreatedAt: testNow.Add(-time.Hour), UpdatedAt: testNow.Add(-time.Hour),
+	})
+	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task",
+		"--referencing", taskKind+"/p1", "--referencing", taskKind+"/p2", "-o", "yaml")
+	var f substrate.Filter
+	if err := json.Unmarshal([]byte(h.fake.lastQuery.Get("filter")), &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.Referencing == nil || f.Referencing.Ref != "" ||
+		!slices.Equal(f.Referencing.Refs, []string{taskKind + "/p1", taskKind + "/p2"}) {
+		t.Fatalf("filter.referencing = %+v, want refs naming both targets and no ref", f.Referencing)
+	}
+	if !strings.Contains(out, "id: t1") || !strings.Contains(out, "id: t2") ||
+		strings.Contains(out, "id: p1") || strings.Contains(out, "id: p2") {
+		t.Fatalf("only the records pointing at either target should be listed:\n%s", out)
+	}
+	if _, _, err := h.run("get", "samples.substrate.reamde.dev/tasks/task",
+		"--referencing", taskKind+"/p1", "--referencing", "p2"); err == nil {
+		t.Fatal("a bare id among several targets must be refused before it is sent")
 	}
 }
 

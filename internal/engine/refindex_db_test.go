@@ -14,7 +14,9 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -242,6 +244,169 @@ func TestTheReferencingArmWalksTheRefsIndex(t *testing.T) {
 	}
 	if got := recordIDs(page); got != "p2" {
 		t.Fatalf("referencing b answered %q, want p2", got)
+	}
+}
+
+// The list form stays on the same index: several targets of one kind are one
+// `dst = ANY` arm, targets of two kinds an OR of arms each naming dst_kind and
+// dst, and both plans walk refs_dst_idx. The fixture carries a few hundred
+// pointers at another target and fresh statistics, because on a handful of
+// unanalyzed rows the planner prices a probe of every source row through
+// refs_pkey as cheapest whatever the predicate is.
+func TestTheReferencingListWalksTheRefsIndex(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, target, pointer := refIndexDataset(t)
+	for i := range 300 {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: pointer, ID: "bulk" + strconv.Itoa(i), Properties: map[string]any{"target": "a"},
+		}); err != nil {
+			t.Fatalf("put bulk pointer %d: %v", i, err)
+		}
+	}
+	for _, table := range []string{"refs", "records"} {
+		if _, err := ds.svc.admin.ExecContext(ctx, `ANALYZE `+table); err != nil {
+			t.Fatalf("analyze %s: %v", table, err)
+		}
+	}
+	for name, tc := range map[string]struct {
+		refs []string
+		arm  string
+		want string
+	}{
+		"one kind": {
+			refs: []string{vocabulary.RecordPath(target, "b"), vocabulary.RecordPath(target, "c")},
+			arm:  "r.dst = ANY(", want: "p2,p3",
+		},
+		"two kinds": {
+			refs: []string{vocabulary.RecordPath(target, "b"), vocabulary.RecordPath(pointer, "p1")},
+			arm:  ") OR (", want: "p2",
+		},
+	} {
+		b := &builder{}
+		if _, err := ds.buildFilter(ctx, ds.db, b, substrate.Filter{
+			Kinds:       []string{pointer},
+			Referencing: &substrate.Referencing{Refs: tc.refs},
+		}); err != nil {
+			t.Fatalf("%s: build filter: %v", name, err)
+		}
+		where := strings.Join(b.where, " AND ")
+		if !strings.Contains(where, "FROM refs r") || !strings.Contains(where, tc.arm) {
+			t.Fatalf("%s: the referencing arm is not the %q shape:\n%s", name, tc.arm, where)
+		}
+		plan := explain(t, ds, "records", where, b.args)
+		if !strings.Contains(plan, "refs_dst_idx") {
+			t.Fatalf("%s: the plan does not walk refs_dst_idx:\n%s", name, plan)
+		}
+		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+			Referencing: &substrate.Referencing{Refs: tc.refs, Property: "target"},
+		}})
+		if err != nil {
+			t.Fatalf("%s: list: %v", name, err)
+		}
+		if got := recordIDs(page); got != tc.want {
+			t.Fatalf("%s: referencing %v answered %q, want %s", name, tc.refs, got, tc.want)
+		}
+	}
+}
+
+// The batched trail is every identity a pointer may spell and still resolve,
+// on read, to a target's canonical record: canonicalOf decides both halves.
+// It holds on the trails a live merge never leaves but a rebuild can, a chain
+// (the flattening UPDATE is no changelog effect) and a cycle, and across
+// kinds in one statement without a trail crossing from one kind to another.
+func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, target, pointer := refIndexDataset(t)
+	at := func(kind string, ids ...string) []eref {
+		out := make([]eref, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, eref{Kind: kind, ID: id})
+		}
+		return out
+	}
+	trails := map[eref]string{
+		{Kind: target, ID: "x"}: "y", {Kind: target, ID: "y"}: "c",
+		{Kind: target, ID: "p"}: "q", {Kind: target, ID: "q"}: "p",
+		// The same former id in another kind names another record.
+		{Kind: pointer, ID: "x"}: "p1",
+	}
+	for former, record := range trails {
+		if _, err := ds.db.ExecContext(ctx,
+			`INSERT INTO former_ids (record_kind, former_id, record_id) VALUES ($1, $2, $3)`,
+			former.Kind, former.ID, record); err != nil {
+			t.Fatalf("plant former id %s: %v", former.key(), err)
+		}
+	}
+	canonical := func(e eref) eref {
+		t.Helper()
+		c, err := ds.canonicalOf(ctx, ds.db, e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	universe := append(at(target, "a", "b", "c", "x", "y", "p", "q", "nowhere"), at(pointer, "x", "p1")...)
+	keys := func(es []eref) []string {
+		out := make([]string, 0, len(es))
+		for _, e := range es {
+			out = append(out, e.key())
+		}
+		sort.Strings(out)
+		return out
+	}
+	resolving := func(targets []eref) []string {
+		t.Helper()
+		canon := map[eref]bool{}
+		for _, e := range targets {
+			canon[canonical(e)] = true
+		}
+		var out []eref
+		for _, e := range universe {
+			if canon[e] || canon[canonical(e)] {
+				out = append(out, e)
+			}
+		}
+		return keys(out)
+	}
+	for _, targets := range [][]eref{
+		at(target, "x"), at(target, "y"), at(target, "c"), at(target, "x", "b"),
+		at(target, "p"), at(target, "q", "x", "a"), at(target, "nowhere"),
+		at(pointer, "x"), append(at(target, "x"), at(pointer, "x")...),
+	} {
+		got, err := trailIDs(ctx, ds.db, targets)
+		if err != nil {
+			t.Fatalf("trail %v: %v", keys(targets), err)
+		}
+		if want := resolving(targets); !slices.Equal(keys(got), want) {
+			t.Fatalf("trail %v = %v, want %v, every identity canonicalOf resolves to a target",
+				keys(targets), keys(got), want)
+		}
+	}
+	// End to end: a pointer stored under x, two hops from c, answers a
+	// reverse read of c.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: pointer, ID: "px", Properties: map[string]any{"target": "x"},
+	}); err != nil {
+		t.Fatalf("put the pointer at x: %v", err)
+	}
+	var dst string
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT dst FROM refs WHERE src_kind = $1 AND src = 'px' AND property = 'target'`, pointer).Scan(&dst); err != nil {
+		t.Fatalf("read the pointer's refs row: %v", err)
+	}
+	if dst != "x" {
+		t.Fatalf("the refs row holds %q; the case needs a pointer indexed under x", dst)
+	}
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+		Referencing: &substrate.Referencing{Refs: []string{vocabulary.RecordPath(target, "c")}, Property: "target"},
+	}})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if got := recordIDs(page); got != "p3,px" {
+		t.Fatalf("referencing c answered %q, want p3 and the pointer stored under x", got)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -307,6 +308,80 @@ func TestRecordsReferencingFillsMatches(t *testing.T) {
 	page = decodeJSON[substrate.Page](t, rec)
 	if len(page.Records) != 1 || page.Records[0].ID != "p2" {
 		t.Fatalf("property-narrowed page = %+v", page.Records)
+	}
+}
+
+// `referencing.refs` is several targets in one read, spelled on the wire as a
+// list beside the single `ref`: the dataset sees the list whole, a record
+// pointing at two of them is on the page once, and the list past the cap, or
+// set together with `ref`, is refused naming why.
+func TestRecordsReferencingTakesAListOfTargets(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	const work, home = personKind + "/work", personKind + "/home"
+	ds.put(&substrate.Record{ID: "work", Kind: personKind, Properties: map[string]any{"name": "Work"}})
+	ds.put(&substrate.Record{ID: "home", Kind: personKind, Properties: map[string]any{"name": "Home"}})
+	ds.put(&substrate.Record{ID: "a", Kind: personKind, Properties: map[string]any{
+		"name": "A", "manager": map[string]any{"ref": work},
+	}})
+	ds.put(&substrate.Record{ID: "b", Kind: personKind, Properties: map[string]any{
+		"name": "B", "manager": map[string]any{"ref": home},
+	}})
+	ds.put(&substrate.Record{ID: "both", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", Properties: map[string]any{
+		"text": "hi", "author": map[string]any{"ref": work}, "mentions": map[string]any{"ref": home},
+	}})
+	ds.put(&substrate.Record{ID: "none", Kind: personKind, Properties: map[string]any{"name": "None"}})
+
+	raw := `{"referencing":{"refs":["` + work + `","` + home + `"]}}`
+	rec := env.do(t, http.MethodGet, recordsPath+"?filter="+url.QueryEscape(raw), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	page := decodeJSON[substrate.Page](t, rec)
+	var ids []string
+	for _, e := range page.Records {
+		ids = append(ids, e.ID)
+	}
+	if strings.Join(ids, ",") != "a,b,both" {
+		t.Fatalf("referencing refs page = %v, want a, b and both once each", ids)
+	}
+	if got := page.Matches["samples.substrate.reamde.dev/messaging/conversationmessage/both"]; len(got) != 2 {
+		t.Fatalf("matches for the record pointing at both = %+v, want both sites", got)
+	}
+	if q := ds.lastQuery.Filter.Referencing; q == nil || q.Ref != "" || len(q.Refs) != 2 {
+		t.Fatalf("the dataset saw referencing = %+v", q)
+	}
+
+	// The list keeps the `property` narrowing the single form has.
+	raw = `{"referencing":{"refs":["` + work + `","` + home + `"],"property":"manager"}}`
+	rec = env.do(t, http.MethodGet, recordsPath+"?filter="+url.QueryEscape(raw), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if page := decodeJSON[substrate.Page](t, rec); len(page.Records) != 2 {
+		t.Fatalf("property-narrowed refs page = %+v, want a and b", page.Records)
+	}
+
+	tooMany := make([]string, substrate.MaxReferencingTargets+1)
+	for i := range tooMany {
+		tooMany[i] = personKind + "/p" + strconv.Itoa(i)
+	}
+	tooManyJSON, err := json.Marshal(tooMany)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Spelled as the wire carries them, so an empty `refs` beside `ref` is a
+	// case: a Go client's omitempty would drop it before it left.
+	for name, tc := range map[string]struct{ referencing, want string }{
+		"past the cap":       {`{"refs":` + string(tooManyJSON) + `}`, "the cap is " + strconv.Itoa(substrate.MaxReferencingTargets)},
+		"ref and refs":       {`{"ref":"` + work + `","refs":["` + home + `"]}`, "set ref or refs, not both"},
+		"ref and empty refs": {`{"ref":"` + work + `","refs":[]}`, "set ref or refs, not both"},
+		"an empty refs":      {`{"refs":[]}`, "name a target"},
+		"neither":            {`{"property":"manager"}`, "name a target"},
+	} {
+		raw := `{"referencing":` + tc.referencing + `}`
+		rec := env.do(t, http.MethodGet, recordsPath+"?filter="+url.QueryEscape(raw), tok, nil)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("%s: status = %d, want 422: %s", name, rec.Code, rec.Body.String())
+		}
+		wantMessage(t, rec, tc.want)
 	}
 }
 

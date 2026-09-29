@@ -49,7 +49,9 @@ data:
   # column did not exist. A trait pins no version of its own.
   # version 34: the query tool card names filter.purposes, which the ranked
   # read and the list both take.
-  version: 35
+  # version 36: the query tool card names referencing.refs, the reverse read
+  # over several targets in one call.
+  version: 36
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
