@@ -24,6 +24,7 @@ import (
 
 type verifier interface {
 	VerifyRepository(ctx context.Context, username string) (engine.VerifyReport, error)
+	VerifyRepositoryWith(ctx context.Context, username string, opts engine.VerifyOptions) (engine.VerifyReport, error)
 }
 
 // rawDB opens the DSN's own superuser connection: the tamperer's seat, which
@@ -166,19 +167,69 @@ func TestVerifyNamesDamageBySeq(t *testing.T) {
 	if _, err := db.Exec(`DELETE FROM changelog WHERE seq = $1`, head-2); err != nil {
 		t.Fatalf("delete an entry: %v", err)
 	}
+	seq := func(v int64) string { return strconv.FormatInt(v, 10) }
+	// The default pass reads no payload: it names the stripped checksum and
+	// the gap, and holds the edited row's stamped hash to its line, which
+	// still agree.
 	report := mustVerify(t, svc, testdb.Repository(t))
-	if report.OK {
+	if report.OK || report.Recanonicalized {
 		t.Fatalf("a damaged changelog verified: %+v", report)
 	}
-	seq := func(v int64) string { return strconv.FormatInt(v, 10) }
 	for _, want := range []string{
-		"seq " + seq(head) + ": checksum mismatch",
 		"seq " + seq(head-1) + ": no checksum",
 		"seq " + seq(head-1) + " follows " + seq(head-3) + ": the sequence has a gap",
 	} {
 		if !findingContaining(report, want) {
 			t.Errorf("no finding contains %q: %+v", want, report.Findings)
 		}
+	}
+	// Recomputing every checksum from its row finds the edit as well.
+	full, err := svc.(verifier).VerifyRepositoryWith(context.Background(), testdb.Repository(t), engine.VerifyOptions{Recanonicalize: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.OK || !full.Recanonicalized {
+		t.Fatalf("a damaged changelog verified: %+v", full)
+	}
+	for _, want := range []string{
+		"seq " + seq(head) + ": checksum mismatch",
+		"seq " + seq(head-1) + ": no checksum",
+		"seq " + seq(head-1) + " follows " + seq(head-3) + ": the sequence has a gap",
+	} {
+		if !findingContaining(full, want) {
+			t.Errorf("recanonicalized: no finding contains %q: %+v", want, full.Findings)
+		}
+	}
+}
+
+// A row whose stamped checksum is not the sum its line carries is named by
+// the default pass, which compares the two and nothing else of the row.
+func TestVerifyHoldsEveryStampedChecksumToItsLine(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithChangelogSegmentBytes(1))
+	for _, name := range []string{"one", "two", "three"} {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind:       "samples.substrate.reamde.dev/tasks/task",
+			Properties: map[string]any{"name": name},
+		})
+	}
+	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK {
+		t.Fatalf("a fresh repository does not verify: %+v", report)
+	}
+	db := rawDB(t, dsn)
+	// A hash of the right length that is not the row's, early in the
+	// history, so the cursor crosses segments to reach it and past it.
+	const victim = 3
+	if _, err := db.Exec(`UPDATE changelog SET hash = sha256(hash) WHERE seq = $1`, victim); err != nil {
+		t.Fatalf("re-stamp a row: %v", err)
+	}
+	report := mustVerify(t, svc, testdb.Repository(t))
+	want := "seq " + strconv.Itoa(victim) + ": the file's checksum is not the table's"
+	if report.OK || !findingContaining(report, want) {
+		t.Fatalf("no finding contains %q: %+v", want, report.Findings)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("one re-stamped row, %d findings: %+v", len(report.Findings), report.Findings)
 	}
 }
 

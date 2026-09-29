@@ -136,7 +136,9 @@ type OpenProgress struct {
 }
 
 // OpenWith is Open, or OpenReadOnly when opts.ReadOnly is set, with the
-// options' reuse of an earlier check and progress reports.
+// options' reuse of an earlier check and progress reports. The segments are
+// checked in parallel, as many at once as GOMAXPROCS allows, and held to each
+// other in seq order.
 func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 	list, err := Segments(dir)
 	if err != nil {
@@ -149,43 +151,24 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 	vouched := opts.Verified.finishedByName(dir)
 	l := &Log{dir: dir, repaired: !opts.ReadOnly}
 	var prevLast, checkedBytes int64
-	for i, s := range list {
+	err = inSegmentOrder(len(list), func(i int, _ *lineChecker) segmentCheck {
+		return openSegmentCheck(dir, list, i, vouched)
+	}, func(i int, c segmentCheck) error {
+		s := list[i]
 		if s.First != prevLast+1 {
-			return nil, fmt.Errorf("%w: %s starts at seq %d, the previous segment ends at %d", ErrSegmentOrder, s.Name, s.First, prevLast)
+			return fmt.Errorf("%w: %s starts at seq %d, the previous segment ends at %d", ErrSegmentOrder, s.Name, s.First, prevLast)
 		}
-		seg := segment{Segment: s, end: s.Size}
-		path := filepath.Join(dir, s.Name)
-		reused := false
-		if s.Finished {
-			if known, ok := vouched[s.Name]; ok && known.Size == s.Size && known.ModTime.Equal(s.ModTime) {
-				want, err := readSidecar(dir, s.Name)
-				if err != nil {
-					return nil, err
+		if c.err != nil {
+			return c.err
+		}
+		seg := c.seg
+		if seg.end < s.Size {
+			l.TruncatedBytes, l.TruncatedEntries = s.Size-seg.end, c.cut
+			if !opts.ReadOnly {
+				if err := truncateLocked(dir, filepath.Join(dir, s.Name), seg.end); err != nil {
+					return fmt.Errorf("changelogfile: %s: cut incomplete tail: %w", s.Name, err)
 				}
-				if want != known.digest {
-					return nil, fmt.Errorf("%w: %s", ErrSegmentDigest, s.Name)
-				}
-				seg.last, seg.digest, reused = known.last, known.digest, true
-			} else if seg, err = checkFinished(dir, seg); err != nil {
-				return nil, err
-			}
-		} else {
-			if i != len(list)-1 {
-				return nil, fmt.Errorf("%w: %s", ErrSegmentUnfinished, s.Name)
-			}
-			last, end, cut, err := scanActive(path, s.Name, s.First)
-			if err != nil {
-				return nil, err
-			}
-			seg.last, seg.end = last, end
-			if end < s.Size {
-				l.TruncatedBytes, l.TruncatedEntries = s.Size-end, cut
-				if !opts.ReadOnly {
-					if err := truncateLocked(dir, path, end); err != nil {
-						return nil, fmt.Errorf("changelogfile: %s: cut incomplete tail: %w", s.Name, err)
-					}
-					seg.Size = end
-				}
+				seg.Size = seg.end
 			}
 		}
 		prevLast = seg.last
@@ -193,14 +176,48 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 		checkedBytes += s.Size
 		if opts.Progress != nil {
 			opts.Progress(OpenProgress{
-				Segment: s.Name, Finished: s.Finished, Reused: reused,
+				Segment: s.Name, Finished: s.Finished, Reused: c.reused,
 				Segments: i + 1, TotalSegments: len(list),
 				Bytes: checkedBytes, TotalBytes: totalBytes,
 			})
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	l.head = prevLast
 	return l, nil
+}
+
+// openSegmentCheck is what an open checks of segment i of a listing: a
+// finished segment against its sidecar, unless the Verified Log vouches for
+// it, and the active one line by line. The cut of an incomplete tail is the
+// caller's, in seq order.
+func openSegmentCheck(dir string, list []Segment, i int, vouched map[string]segment) segmentCheck {
+	s := list[i]
+	seg := segment{Segment: s, end: s.Size}
+	if !s.Finished {
+		if i != len(list)-1 {
+			return segmentCheck{err: fmt.Errorf("%w: %s", ErrSegmentUnfinished, s.Name)}
+		}
+		last, end, cut, err := scanActive(filepath.Join(dir, s.Name), s.Name, s.First)
+		seg.last, seg.end = last, end
+		return segmentCheck{seg: seg, cut: cut, err: err}
+	}
+	if known, ok := vouched[s.Name]; ok && known.Size == s.Size && known.ModTime.Equal(s.ModTime) {
+		want, err := readSidecar(dir, s.Name)
+		if err != nil {
+			return segmentCheck{err: err}
+		}
+		if want != known.digest {
+			return segmentCheck{err: fmt.Errorf("%w: %s", ErrSegmentDigest, s.Name)}
+		}
+		seg.last, seg.digest = known.last, known.digest
+		return segmentCheck{seg: seg, reused: true}
+	}
+	seg, err := checkFinished(dir, seg)
+	return segmentCheck{seg: seg, err: err}
 }
 
 // checkFinished digests a finished segment and holds it to its sidecar: the
@@ -211,6 +228,11 @@ func checkFinished(dir string, seg segment) (segment, error) {
 	if err != nil {
 		return seg, err
 	}
+	return holdToSidecar(dir, seg, d)
+}
+
+// holdToSidecar is checkFinished's verdict on a digest already taken.
+func holdToSidecar(dir string, seg segment, d digest) (segment, error) {
 	want, err := readSidecar(dir, seg.Name)
 	if err != nil {
 		return seg, err
@@ -244,12 +266,12 @@ func (l *Log) finishedByName(dir string) map[string]segment {
 	return out
 }
 
-// scanActive decodes every complete line of the active segment, checking
-// checksums, that seqs run gaplessly from first and that each line's `txn`
-// fits the transaction around it. It returns the last seq of the last
-// complete transaction, the offset just past that transaction's last newline,
-// and how many complete lines lie after it: those lines and the torn line
-// after them, if any, are the incomplete tail.
+// scanActive checks every complete line of the active segment: its checksum,
+// that seqs run gaplessly from first and that each line's `txn` fits the
+// transaction around it. It returns the last seq of the last complete
+// transaction, the offset just past that transaction's last newline, and how
+// many complete lines lie after it: those lines and the torn line after
+// them, if any, are the incomplete tail.
 func scanActive(path, name string, first int64) (last, end, cut int64, err error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -257,6 +279,7 @@ func scanActive(path, name string, first int64) (last, end, cut int64, err error
 	}
 	defer func() { _ = f.Close() }()
 	lr := newLineReader(f, MaxLineBytes)
+	lc := newLineChecker()
 	expected := first
 	last = first - 1
 	var frame txnFrame
@@ -273,20 +296,20 @@ func scanActive(path, name string, first int64) (last, end, cut int64, err error
 			// the only one not held to the checksum.
 			break
 		}
-		e, _, err := Decode(line)
+		seq, txn, _, err := lc.check(line)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("changelogfile: %s: line at byte %d: %w", name, start, err)
 		}
-		if e.Seq != expected {
-			return 0, 0, 0, fmt.Errorf("%w: %s: line at byte %d has seq %d, want %d", ErrSeqGap, name, start, e.Seq, expected)
+		if seq != expected {
+			return 0, 0, 0, fmt.Errorf("%w: %s: line at byte %d has seq %d, want %d", ErrSeqGap, name, start, seq, expected)
 		}
-		ends, err := frame.next(e.Seq, e.Txn)
+		ends, err := frame.next(seq, txn)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("%s: line at byte %d: %w", name, start, err)
 		}
 		expected++
 		if ends {
-			last, end, cut = e.Seq, lr.off, 0
+			last, end, cut = seq, lr.off, 0
 		} else {
 			cut++
 		}
@@ -416,49 +439,6 @@ func (l *Log) scanSegment(seg segment, skip int64, fn func(Entry, int64) (bool, 
 	}
 }
 
-// Report is what Verify counted before it returned.
-type Report struct {
-	// Segments is the number of segment files, finished and active.
-	Segments int
-	// Entries is the number of lines Verify decoded and checked.
-	Entries int64
-	// Head is the seq of the last entry, 0 for an empty log.
-	Head int64
-	// TruncatedBytes and TruncatedEntries are the incomplete tail on the
-	// active segment, left in place: Verify changes nothing. See
-	// Log.TruncatedBytes.
-	TruncatedBytes   int64
-	TruncatedEntries int64
-}
-
-// Verify checks a changelog directory the way Open does and then walks every
-// line, verifying each checksum, without changing the directory. The error is
-// the first one met; the report holds the counts up to it.
-func Verify(dir string) (Report, error) {
-	l, err := OpenReadOnly(dir)
-	if err != nil {
-		return Report{}, err
-	}
-	return l.Verify(nil)
-}
-
-// Verify walks every line of an opened Log, verifying each checksum, the seq
-// sequence and the transaction framing, and calls progress, when it is not
-// nil, with the position after each entry. A caller that already holds the
-// Log verifies it here rather than through the package's Verify, which opens
-// the directory again and digests every finished segment a second time.
-func (l *Log) Verify(progress func(Position)) (Report, error) {
-	r := Report{Segments: len(l.segments), Head: l.head, TruncatedBytes: l.TruncatedBytes, TruncatedEntries: l.TruncatedEntries}
-	err := l.walk(func(_ Entry, pos Position) error {
-		r.Entries++
-		if progress != nil {
-			progress(pos)
-		}
-		return nil
-	})
-	return r, err
-}
-
 // lineReader yields newline-terminated lines from a stream, tracking the byte
 // offset of each so an error can name where it was found. It holds one line
 // at a time, never the file.
@@ -466,6 +446,9 @@ type lineReader struct {
 	r   *bufio.Reader
 	off int64
 	max int64
+	// acc holds a line longer than the reader's buffer, reused from one
+	// such line to the next.
+	acc []byte
 }
 
 func newLineReader(r io.Reader, maxLine int64) *lineReader {
@@ -474,14 +457,19 @@ func newLineReader(r io.Reader, maxLine int64) *lineReader {
 
 // next returns the next line without its newline and the offset it started
 // at. complete is false for a final line that has no newline (a torn tail);
-// io.EOF is returned when nothing remains.
+// io.EOF is returned when nothing remains. The line is valid until the next
+// call: it is the reader's own buffer, not a copy.
 func (lr *lineReader) next() (line []byte, start int64, complete bool, err error) {
 	start = lr.off
-	var acc []byte
+	acc := lr.acc[:0]
+	defer func() { lr.acc = acc[:0] }()
 	for {
 		chunk, err := lr.r.ReadSlice('\n')
-		acc = append(acc, chunk...)
 		lr.off += int64(len(chunk))
+		if err == nil && len(acc) == 0 && int64(len(chunk)) <= lr.max+1 {
+			return chunk[:len(chunk)-1], start, true, nil
+		}
+		acc = append(acc, chunk...)
 		if int64(len(acc)) > lr.max+1 {
 			return nil, start, false, ErrLineTooLong
 		}

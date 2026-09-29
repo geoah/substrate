@@ -1024,8 +1024,13 @@ the exec path needs nothing open at all.
   by seq, digest, ref or file name, never repairs the repository it judges
   (opening the engine still applies pending schema migrations, as every
   operator command does), and exits nonzero on any finding. It reads the
-  segment files three times (the sidecar digests, the walk, the comparison
-  with the table) and on a long history prints a progress line to stderr
+  segment files twice: once for the sidecar digests and every line's `sum`,
+  several segments at a time, and once to hold each table row's stamped
+  checksum to the `sum` its line carries. `--recanonicalize` also recomputes
+  every row's checksum from its stored columns, which reads and
+  canonicalizes every payload the table holds and takes hours on a long
+  history; only it finds a row edited in place with its checksum left
+  alone. On a long history it prints a progress line to stderr at most
   every thirty seconds naming the segment, the seq and the bytes read so
   far. It is safe beside
   a running server; a finding about the heads taken mid-write can be a
@@ -1041,9 +1046,12 @@ the exec path needs nothing open at all.
   whole `verify` first and refuses on any finding, then copies the manifest,
   every segment and sidecar, every committed sealed file and the bytes of
   every `stored` blob, each hashed against its digest on the way, and verifies
-  the copy's changelog and sealed files before writing `snapshot.json`. It
-  prints the same progress lines as `verify` while it verifies the source and
-  reads the copy back. The
+  the copy's changelog and sealed files before writing `snapshot.json`: every
+  copied finished segment is hashed against its copied sidecar and held to
+  the digest the source's verification took, so its lines are not walked a
+  second time. It prints the same progress lines as `verify` while it
+  verifies the source, and `snapshot: checking the copied changelog
+  segments` while it reads the copy back. The
   copy holds what the fold needs and nothing else: a pending upload, a
   tombstoned blob's bytes and a staged sealed file are not copied. It refuses
   a destination that already holds the repository, so a snapshot is never a

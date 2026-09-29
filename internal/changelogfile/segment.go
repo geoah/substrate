@@ -1,11 +1,12 @@
 package changelogfile
 
 import (
-	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -159,31 +160,38 @@ func fileDigest(path string) (digest, error) {
 		return digest{}, err
 	}
 	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	var d digest
-	r := bufio.NewReaderSize(f, 1<<20)
-	buf := make([]byte, 1<<20)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			h.Write(chunk)
-			for _, c := range chunk {
-				if c == '\n' {
-					d.lines++
-				}
-			}
-			d.last = chunk[n-1]
-		}
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return digest{}, err
-		}
+	d := newDigester()
+	if _, err := io.CopyBuffer(d, f, make([]byte, 1<<20)); err != nil {
+		return digest{}, err
 	}
-	d.hex = hex.EncodeToString(h.Sum(nil))
-	return d, nil
+	return d.digest(), nil
+}
+
+// digester is a digest being taken: every byte written to it is hashed and
+// its newlines counted, so a reader that tees a segment into one gets the
+// segment's digest from the same read that checks its lines.
+type digester struct {
+	h hash.Hash
+	d digest
+}
+
+func newDigester() *digester { return &digester{h: sha256.New()} }
+
+func (w *digester) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	w.h.Write(p)
+	w.d.lines += int64(bytes.Count(p, []byte{'\n'}))
+	w.d.last = p[len(p)-1]
+	return len(p), nil
+}
+
+// digest is what has been written so far.
+func (w *digester) digest() digest {
+	d := w.d
+	d.hex = hex.EncodeToString(w.h.Sum(nil))
+	return d
 }
 
 // readSidecar returns the digest a sidecar claims for segment name. A sidecar

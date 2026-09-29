@@ -21,6 +21,9 @@ type Operator interface {
 	// VerifyRepository checks a repository's files against its fold
 	// (verify.go).
 	VerifyRepository(ctx context.Context, repository string) (VerifyReport, error)
+	// VerifyRepositoryWith is VerifyRepository with its options
+	// (verify.go).
+	VerifyRepositoryWith(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, error)
 	// SnapshotRepository copies a repository's directory under destRoot
 	// (snapshot.go).
 	SnapshotRepository(ctx context.Context, repository, destRoot string) (SnapshotReport, error)

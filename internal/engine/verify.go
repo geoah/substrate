@@ -1,15 +1,16 @@
 package engine
 
 // The verification walk: the repository directory's changelog files, line by
-// line and sidecar by sidecar (changelogfile.Verify), the changelog table row
-// by row with every checksum recomputed from the stored columns, the two
-// held to each other seq by seq, both heads, the sealed files against the
-// sealed rows, the recorded recovery point against the files, every stored
-// blob's bytes against its digest, every live secret reference against the
-// sealed files and, under the credential key, every sealed file opened. It
-// MUTATES NOTHING: the files are opened read-only and the table is read
-// inside one repeatable-read transaction, so a concurrent write cannot make
-// it stitch two states into one report.
+// line and sidecar by sidecar (changelogfile.VerifyDir), the changelog table
+// row by row, its stamped checksums held to the files' seq by seq (and, with
+// VerifyOptions.Recanonicalize, recomputed from the stored columns), both
+// heads, the sealed files against the sealed rows, the recorded recovery
+// point against the files, every stored blob's bytes against its digest,
+// every live secret reference against the sealed files and, under the
+// credential key, every sealed file opened. It MUTATES NOTHING: the files
+// are opened read-only and the table is read inside one repeatable-read
+// transaction, so a concurrent write cannot make it stitch two states into
+// one report.
 
 import (
 	"bytes"
@@ -68,12 +69,32 @@ type VerifyReport struct {
 	BlobBytes int64 `json:"blobBytes"`
 	// Snapshot is the recovery point `snapshot.json` records when the
 	// directory is a snapshot or was restored from one; nil otherwise.
-	Snapshot  *RecoveryPoint `json:"snapshot,omitempty"`
-	Findings  []string       `json:"findings,omitempty"`
-	Truncated bool           `json:"truncated,omitempty"`
-	OK        bool           `json:"ok"`
-	Took      time.Duration  `json:"took"`
+	Snapshot *RecoveryPoint `json:"snapshot,omitempty"`
+	// Recanonicalized is whether every table row's checksum was recomputed
+	// from its stored columns (VerifyOptions.Recanonicalize).
+	Recanonicalized bool          `json:"recanonicalized,omitempty"`
+	Findings        []string      `json:"findings,omitempty"`
+	Truncated       bool          `json:"truncated,omitempty"`
+	OK              bool          `json:"ok"`
+	Took            time.Duration `json:"took"`
 }
+
+// VerifyOptions tunes VerifyRepositoryWith.
+type VerifyOptions struct {
+	// Recanonicalize recomputes every table row's checksum from its stored
+	// columns, the payload canonicalized, and holds it to the row's stamped
+	// hash. Without it the table pass reads no payload: it holds each row's
+	// stamped hash to the sum its line carries, which the file pass verified
+	// against the line's bytes. A row whose columns were edited in place with
+	// its hash left alone is therefore found only with it. It reads and
+	// canonicalizes every payload the table holds, which on a history of
+	// millions of entries is hours (issue 761).
+	Recanonicalize bool
+}
+
+// verifyTableBatch is the table pass's page when it reads no payload: a row
+// is a seq, a txn and 32 bytes, so a page is a round trip that moves little.
+const verifyTableBatch = 10000
 
 // RecoveryPoint is the committed point a snapshot recorded: the head seq, its
 // checksum in hex, and when the snapshot was taken.
@@ -87,12 +108,25 @@ type RecoveryPoint struct {
 // land in the report, not in the error: the error is for "could not verify"
 // (no such user, no connection), never for "verified and found damage".
 func (s *service) VerifyRepository(ctx context.Context, repository string) (VerifyReport, error) {
+	return s.VerifyRepositoryWith(ctx, repository, VerifyOptions{})
+}
+
+// VerifyRepositoryWith is VerifyRepository with its options.
+func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, error) {
+	report, _, err := s.verifyRepository(ctx, repository, opts)
+	return report, err
+}
+
+// verifyRepository is the verification, returning beside the report the
+// changelog files' Log it verified: nil when the files did not verify. A
+// snapshot holds its copy to that Log (snapshot.go).
+func (s *service) verifyRepository(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, *changelogfile.Log, error) {
 	started := time.Now()
 	repo, err := s.repositoryByID(ctx, repository)
 	if err != nil {
-		return VerifyReport{}, err
+		return VerifyReport{}, nil, err
 	}
-	report := VerifyReport{Repository: repo.ID}
+	report := VerifyReport{Repository: repo.ID, Recanonicalized: opts.Recanonicalize}
 	found := func(f string) {
 		if len(report.Findings) >= verifyFindingCap {
 			report.Truncated = true
@@ -102,18 +136,18 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 	}
 	dir, err := changelogfile.RepoDir(s.dataRoot, repo.ID)
 	if err != nil {
-		return report, err
+		return report, nil, err
 	}
 	// A bare scoped pool: the RLS-bound shape every request rides, with none
 	// of the open ladder's writes.
 	db, err := s.scopedDB(repo.scope())
 	if err != nil {
-		return VerifyReport{}, err
+		return VerifyReport{}, nil, err
 	}
 	defer func() { _ = db.Close() }()
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
-		return VerifyReport{}, err
+		return VerifyReport{}, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -123,26 +157,22 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 	// operator acts on.
 	markedHead, incomplete, err := importIncomplete(ctx, tx)
 	if err != nil {
-		return report, err
+		return report, nil, err
 	}
 	if incomplete {
 		found(fmt.Sprintf("import: the import of the repository directory has not completed (marked at file head %d): the fold is not the changelog's until the server's next boot resumes it", markedHead))
 	}
 
-	// The files first, whole: every finished segment's digest against its
-	// sidecar at the open, then every line's sum and the seq sequence in one
-	// walk of the opened Log, which the table pass below reads again rather
-	// than opening the directory a second time. A directory that does not
-	// open is one finding, and the table is still walked so the report says
-	// what the table holds.
-	log, fileErr := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
-	if fileErr == nil {
-		prog := s.progress("substrate: verifying the changelog files", "repository", repo.ID, "fileHead", log.Head())
-		var fileReport changelogfile.Report
-		fileReport, fileErr = log.Verify(prog.tick)
-		report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
-		report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
-	}
+	// The files first, whole, each segment read once: its digest against
+	// its sidecar and every line's sum, the seq sequence and the transaction
+	// frame, in parallel across segments. The Log it opens is what the table
+	// pass below reads again rather than opening the directory a second time.
+	// A directory that does not verify is one finding, and the table is
+	// still walked so the report says what the table holds.
+	prog := s.progress("substrate: verifying the changelog files", "repository", repo.ID)
+	log, fileReport, fileErr := changelogfile.VerifyDir(changelogfile.ChangelogDir(dir), changelogfile.VerifyOptions{Progress: prog.tick})
+	report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
+	report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
 	if fileErr != nil {
 		found(fmt.Sprintf("file: %v", fileErr))
 		log = nil
@@ -154,46 +184,36 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 			report.TruncatedBytes, report.TruncatedEntries))
 	}
 
-	// The table, row by row, each checksum recomputed and, where the file has
-	// the seq, compared with the line's; and the transaction frame, so a
+	// The table, row by row, its stamped checksum held to the sum the file's
+	// line carries where the file has the seq, and recomputed from the
+	// stored columns under Recanonicalize; and the transaction frame, so a
 	// `txn` the boot's writer would refuse is named here first. The file is
-	// read through one cursor across every page: a Read per page opens the
-	// page's segment again and skips to the page from byte 0, which on a
-	// history of millions of entries read each segment hundreds of times
-	// (issue 745).
-	var cur *changelogfile.Cursor
+	// read through one cursor across every page, which reads each line's sum
+	// without decoding it: the file pass above checked every line against
+	// its sum already.
+	var sums *changelogfile.SumCursor
 	if log != nil {
-		c := log.Cursor(0)
+		c := log.Sums(0)
 		defer func() { _ = c.Close() }()
-		cur = c
+		sums = c
 	}
-	prog := s.progress("substrate: verifying the changelog table against the files", "repository", repo.ID)
+	var fileSeq int64
+	var fileSum [32]byte
+	prog = s.progress("substrate: verifying the changelog table against the files", "repository", repo.ID)
 	expected := int64(1)
 	var openTxn int64
 	for {
-		page, err := scanChecksumPage(ctx, tx, expected-1, rebuildBatch)
+		var page []checksumRow
+		if opts.Recanonicalize {
+			page, err = scanChecksumPage(ctx, tx, expected-1, rebuildBatch)
+		} else {
+			page, err = scanStampPage(ctx, tx, expected-1, verifyTableBatch)
+		}
 		if err != nil {
-			return report, err
+			return report, nil, err
 		}
 		if len(page) == 0 {
 			break
-		}
-		fileSums := map[int64][32]byte{}
-		if cur != nil {
-			first, last := page[0].entry.Seq, page[len(page)-1].entry.Seq
-			entries, err := cur.Until(last)
-			if err != nil {
-				found(fmt.Sprintf("file: reading seq %d..%d: %v", first, last, err))
-				log, cur = nil, nil
-			}
-			for _, e := range entries {
-				if e.Seq < first {
-					continue
-				}
-				if _, sum, err := changelogfile.Encode(e); err == nil {
-					fileSums[e.Seq] = sum
-				}
-			}
 		}
 		for _, row := range page {
 			if row.entry.Seq != expected {
@@ -228,28 +248,37 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 				continue
 			}
 			report.HeadHash = hex.EncodeToString(row.hash)
-			_, want, err := changelogfile.Encode(row.entry.fileEntry())
-			if err != nil {
-				found(fmt.Sprintf("seq %d: payload does not canonicalize: %v", row.entry.Seq, err))
-				continue
-			}
-			if want != [32]byte(row.hash) {
-				found(fmt.Sprintf("seq %d: checksum mismatch, the stored row is not what was stamped", row.entry.Seq))
+			if opts.Recanonicalize {
+				_, want, err := changelogfile.Encode(row.entry.fileEntry())
+				if err != nil {
+					found(fmt.Sprintf("seq %d: payload does not canonicalize: %v", row.entry.Seq, err))
+					continue
+				}
+				if want != [32]byte(row.hash) {
+					found(fmt.Sprintf("seq %d: checksum mismatch, the stored row is not what was stamped", row.entry.Seq))
+				}
 			}
 			if log == nil || row.entry.Seq > log.Head() {
 				continue
 			}
-			fileSum, ok := fileSums[row.entry.Seq]
+			// The cursor reads forward past any seq the table skips.
+			for sums != nil && fileSeq < row.entry.Seq {
+				if fileSeq, fileSum, err = sums.Next(); err != nil {
+					found(fmt.Sprintf("file: reading seq %d: %v", row.entry.Seq, err))
+					log, sums = nil, nil
+				}
+			}
 			switch {
-			case !ok:
+			case sums == nil:
+			case fileSeq != row.entry.Seq:
 				found(fmt.Sprintf("seq %d: in the table and not in the file", row.entry.Seq))
 			case !bytes.Equal(fileSum[:], row.hash):
 				found(fmt.Sprintf("seq %d: the file's checksum is not the table's", row.entry.Seq))
 			}
 		}
 		pos := changelogfile.Position{Seq: report.Head}
-		if cur != nil {
-			pos = cur.Position()
+		if sums != nil {
+			pos = sums.Position()
 		}
 		prog.tick(pos)
 	}
@@ -263,7 +292,7 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 	// The sealed mirror against the sealed table, by ref.
 	rows, err := readSealedTable(ctx, tx)
 	if err != nil {
-		return report, err
+		return report, nil, err
 	}
 	files, err := changelogfile.ReadSealed(dir)
 	if err != nil {
@@ -306,10 +335,10 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 	// sealed file, are what a copy that missed a file looks like after an
 	// import, which upserts whatever files it finds.
 	if err := s.verifyBlobs(ctx, tx, db, repo, &report, found); err != nil {
-		return report, err
+		return report, nil, err
 	}
 	if err := s.verifySecretRefs(ctx, tx, db, repo, dir, seen, &report, found); err != nil {
-		return report, err
+		return report, nil, err
 	}
 	// Under the credential key, every sealed file opened: the table and the
 	// file agreeing byte for byte says nothing about whether the bytes are
@@ -318,7 +347,7 @@ func (s *service) VerifyRepository(ctx context.Context, repository string) (Veri
 
 	report.OK = len(report.Findings) == 0
 	report.Took = time.Since(started)
-	return report, nil
+	return report, log, nil
 }
 
 // verifySnapshotPoint holds the files to the recovery point `snapshot.json`
@@ -545,6 +574,29 @@ func scanChecksumPage(ctx context.Context, db dbx, after int64, limit int) ([]ch
 		r.entry.CausedBy, r.entry.CausedByOK = causedBy.Int64, causedBy.Valid
 		// NULL on a row v0.46.0 or v0.47.0 stamped: no boundary was recorded,
 		// and the line is written without one (changelogfile.LineFormat).
+		r.entry.Txn = txn.Int64
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// scanStampPage is scanChecksumPage for a reader of the stamps alone: each
+// row's seq, txn and stamped checksum, and no payload, which is most of what
+// a row weighs.
+func scanStampPage(ctx context.Context, db dbx, after int64, limit int) ([]checksumRow, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT seq, txn, hash FROM changelog WHERE seq > $1 ORDER BY seq LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []checksumRow
+	for rows.Next() {
+		var r checksumRow
+		var txn sql.NullInt64
+		if err := rows.Scan(&r.entry.Seq, &txn, &r.hash); err != nil {
+			return nil, err
+		}
 		r.entry.Txn = txn.Int64
 		out = append(out, r)
 	}

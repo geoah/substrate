@@ -499,18 +499,23 @@ which is why it is the backup unit.`,
 
 func (a *app) repositoryVerifyCommand() *cobra.Command {
 	var output string
+	var recanonicalize bool
 	cmd := &cobra.Command{
 		Use:   "verify <repository>",
 		Short: "Walk a repository's changelog files and table and check every checksum",
 		Long: `Walk a repository's changelog in both places and hold them to each other.
 
-The segment files under SUBSTRATE_DATA_ROOT are walked whole: every line's
-checksum, every finished segment's sidecar digest, the seq sequence. The table
-is walked from seq 1 to the head in one read-only snapshot: the sequence must
-be gapless, and every entry's checksum, recomputed from the stored row, must
-equal the one stamped when the entry was written and the one the file's line
-carries. Both heads must agree, and every sealed row must have its file and
-every sealed file its row.
+The segment files under SUBSTRATE_DATA_ROOT are walked whole, each segment read
+once and several at a time: every line's checksum, every finished segment's
+sidecar digest, the seq sequence. The table is walked from seq 1 to the head in
+one read-only snapshot: the sequence must be gapless, and every entry's
+stamped checksum must equal the one the file's line carries. With
+--recanonicalize every entry's checksum is also recomputed from the stored
+row and must equal the stamped one; that reads and canonicalizes every
+payload the table holds, which on a long history takes hours, and it is the
+only check that finds a row edited in place with its checksum left alone.
+Both heads must agree, and every sealed row must have its file and every
+sealed file its row.
 
 The side stores are held to the fold: every blob whose manifest says stored is
 read out of the configured blob store and hashed against its digest, and every
@@ -541,7 +546,7 @@ Exits nonzero when anything does not verify.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			report, err := svc.VerifyRepository(cmd.Context(), args[0])
+			report, err := svc.VerifyRepositoryWith(cmd.Context(), args[0], engine.VerifyOptions{Recanonicalize: recanonicalize})
 			if err != nil {
 				return err
 			}
@@ -552,6 +557,9 @@ Exits nonzero when anything does not verify.`,
 			} else {
 				fmt.Fprintf(a.out, "repository %s\n", report.Repository)
 				fmt.Fprintf(a.out, "  table:    %d entries, head %d\n", report.Entries, report.Head)
+				if report.Recanonicalized {
+					fmt.Fprintln(a.out, "  table:    every checksum recomputed from its stored row")
+				}
 				fmt.Fprintf(a.out, "  files:    head %d in %d segment(s)\n", report.FileHead, report.Segments)
 				fmt.Fprintf(a.out, "  sealed:   %d rows, %d files\n", report.SealedRows, report.SealedFiles)
 				if report.SealedOpened > 0 || os.Getenv(credentialKeyEnv) != "" {
@@ -585,6 +593,7 @@ Exits nonzero when anything does not verify.`,
 		},
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: text|json")
+	cmd.Flags().BoolVar(&recanonicalize, "recanonicalize", false, "also recompute every table row's checksum from its stored columns (reads every payload; hours on a long history)")
 	return cmd
 }
 

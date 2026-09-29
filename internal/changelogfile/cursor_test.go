@@ -131,13 +131,39 @@ func TestCursorUntilAndStartingPoints(t *testing.T) {
 	}
 }
 
-// Log.Verify reports a position after every entry, with the byte count
-// running across segments, and counts what the package's Verify counts.
+// Log.Verify and VerifyDir report a position after every segment, in seq
+// order, at the segment's last seq and with the byte count running across
+// segments, and count the same.
 func TestLogVerifyReportsPositions(t *testing.T) {
 	dir := threeSegments(t)
 	l, err := OpenReadOnly(dir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var total int64
+	for _, s := range l.segments {
+		total += s.end
+	}
+	check := func(name string, positions []Position) {
+		t.Helper()
+		want := []struct {
+			segment string
+			seq     int64
+		}{{SegmentName(1), 2}, {SegmentName(3), 4}, {SegmentName(5), 7}}
+		if len(positions) != len(want) {
+			t.Fatalf("%s: %d positions, want %d: %+v", name, len(positions), len(want), positions)
+		}
+		for i, p := range positions {
+			if p.Segment != want[i].segment || p.Seq != want[i].seq {
+				t.Errorf("%s: position %d = %+v, want %s at seq %d", name, i, p, want[i].segment, want[i].seq)
+			}
+			if i > 0 && p.Bytes <= positions[i-1].Bytes {
+				t.Errorf("%s: position %d did not move: %+v after %+v", name, i, p, positions[i-1])
+			}
+		}
+		if last := positions[len(positions)-1]; last.Bytes != total {
+			t.Errorf("%s: last position = %+v, want %d bytes", name, last, total)
+		}
 	}
 	var positions []Position
 	r, err := l.Verify(func(p Position) { positions = append(positions, p) })
@@ -147,26 +173,11 @@ func TestLogVerifyReportsPositions(t *testing.T) {
 	if r.Entries != 7 || r.Head != 7 || r.Segments != 3 {
 		t.Fatalf("report = %+v", r)
 	}
-	if len(positions) != 7 {
-		t.Fatalf("%d positions, want 7", len(positions))
-	}
-	var total int64
-	for _, s := range l.segments {
-		total += s.end
-	}
-	for i, p := range positions {
-		if p.Seq != int64(i+1) {
-			t.Errorf("position %d has seq %d", i, p.Seq)
-		}
-		if i > 0 && p.Bytes <= positions[i-1].Bytes {
-			t.Errorf("position %d did not move: %+v after %+v", i, p, positions[i-1])
-		}
-	}
-	if last := positions[6]; last.Bytes != total || last.Segment != SegmentName(5) {
-		t.Errorf("last position = %+v, want %d bytes in %s", last, total, SegmentName(5))
-	}
-	whole, err := Verify(dir)
+	check("Log.Verify", positions)
+	positions = nil
+	_, whole, err := VerifyDir(dir, VerifyOptions{Progress: func(p Position) { positions = append(positions, p) }})
 	if err != nil || whole != r {
-		t.Fatalf("Verify(dir) = %+v, %v; Log.Verify = %+v", whole, err, r)
+		t.Fatalf("VerifyDir = %+v, %v; Log.Verify = %+v", whole, err, r)
 	}
+	check("VerifyDir", positions)
 }
