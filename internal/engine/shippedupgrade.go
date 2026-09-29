@@ -62,6 +62,19 @@ type shippedUpgradeStage struct {
 	// references still resolves. Nil when the closure does not compile, and
 	// refused then carries the problems.
 	candidate *vocabulary.Registry
+	// reprojected and reprojectedFTS are the upgraded packages' kinds whose
+	// reference shape or searchable shape moved, so the boot re-derives their
+	// refs rows and their `fts` in its transaction: the apply door's
+	// classification (reprojectedKinds, reprojectedFTSKinds) over the stored
+	// registry and the candidate. The candidate, never the tree alone: it
+	// keeps every stored kind the tree stopped shipping (the boot never
+	// prunes), so such a kind compares equal and is not re-derived as if it
+	// were dropped. Only the upgraded packages are walked, and those are the
+	// seeded ones, which the loader never parks (it refuses the open), so a
+	// parked package is never re-derived here (issue 461). Empty when the
+	// candidate does not compile, which refuses the boot anyway.
+	reprojected    []string
+	reprojectedFTS []string
 	// plans is the version motion per shipped PACKAGE this repository holds as
 	// shipped vocabulary, sorted by identity. The authority row beside the
 	// packages is diffed and projected with them but is not a package, so it
@@ -88,6 +101,9 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// it has, so it is not the upgrade's business and must not be able to
 	// refuse the boot.
 	keptIdents := map[string]bool{}
+	// The meta-kinds of the declaration rows the projection writes: a
+	// declaration appended or moved forward is a row of its record type.
+	written := map[string]bool{}
 	for _, aname := range sortedKeys(shippedPackages(reg)) {
 		g, ok := reg.PackageByName(aname)
 		if !ok {
@@ -112,10 +128,12 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 				plan.Upgrade.Changes = append(plan.Upgrade.Changes, substrate.BundleUpgradeChange{
 					Kind: d.short, ID: d.id, To: d.version(),
 				})
+				written[d.typ] = true
 			case vocabulary.CompareVersions(d.version(), have.version) > 0: // the shipped declaration moved forward
 				plan.Upgrade.Changes = append(plan.Upgrade.Changes, substrate.BundleUpgradeChange{
 					Kind: d.short, ID: d.id, From: have.version, To: d.version(),
 				})
+				written[d.typ] = true
 			default:
 				st.keep[d.key()] = true // same or older than stored: never a downgrade
 				if d.typ == kindKind || d.typ == kindPackage {
@@ -194,6 +212,15 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	st.conversions = classifyConversions(current, reg, st.upgrade, keptIdents)
 	if candidate != nil {
 		st.refused = append(st.refused, renameGuards(current, candidate, st.conversions.renames)...)
+		st.reprojected = reprojectedKinds(current, candidate, st.upgrade)
+		st.reprojectedFTS = reprojectedFTSKinds(current, candidate, st.upgrade)
+		// The projection derives its own rows' refs and `fts` under the TREE's
+		// meta-kinds (projectPackages sets the tree as writeReg), while a
+		// meta-kind this repository holds ahead of the tree keeps its stored
+		// declaration in the candidate. Those rows re-derive under the
+		// candidate too, or a rebuild indexes them differently.
+		st.reprojected = unionStrings(st.reprojected, kindsShapedApart(reg, candidate, written, referenceShape))
+		st.reprojectedFTS = unionStrings(st.reprojectedFTS, kindsShapedApart(reg, candidate, written, ftsShape))
 	}
 	return st, nil
 }

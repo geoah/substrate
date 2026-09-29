@@ -239,7 +239,10 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		// the stored packages the shipped tree does not, so a converted record
 		// referencing a user kind still resolves it (shippedupgrade.go).
 		converted, err = t.convertRecords(st.candidate, st.conversions)
-		return err
+		if err != nil {
+			return err
+		}
+		return t.reprojectShipped(st)
 	})
 	if err != nil {
 		return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.ID, err)
@@ -263,6 +266,35 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	ds.reg = vocabulary.NewRegistry()
 	ds.mu.Unlock()
 	return ds.loadStoredVocabulary(ctx)
+}
+
+// reprojectShipped re-derives the refs index and the search index for the
+// kinds whose reference or searchable shape the boot upgrade moved, as the
+// apply door does (applyVocabularyBatch). Both are projections of each row
+// against its kind's declaration (refs.go, fold.go foldFTS), and a rebuild
+// derives them under the declarations it ends with, so an index left alone
+// answers for the stored declaration while a rebuilt one answers for the
+// shipped one. It runs after the conversions, so the refs read the converted
+// properties, and against the candidate, which is the closure the reload
+// after the commit publishes.
+//
+// The open-time reindex (searchindex.go) cannot undo this: it starts only
+// after the open publishes the dataset, each page takes the shared side of
+// the registry-dependency lock this transaction holds exclusively, and it
+// derives `fts` through the same rederiveFTS from the row and the published
+// registry, which is this candidate's closure by then. A row it redoes lands
+// at the same bands.
+func (t *txn) reprojectShipped(st *shippedUpgradeStage) error {
+	// syncRefsOf resolves each row's kind through declarations(), which is the
+	// live registry unless writeReg holds the candidate.
+	prev := t.writeReg
+	t.writeReg = st.candidate
+	err := t.reprojectRefs(st.reprojected)
+	t.writeReg = prev
+	if err != nil {
+		return err
+	}
+	return t.reprojectFTS(st.candidate, st.reprojectedFTS)
 }
 
 // storedDeclaration is one stored declaration as the version diff sees it: its
