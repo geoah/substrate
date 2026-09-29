@@ -261,10 +261,11 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 	if err != nil {
 		return false, err
 	}
-	tx, err := s.maint.BeginTx(ctx, nil)
+	tx, wc, err := beginWrite(ctx, s.maint)
 	if err != nil {
 		return false, err
 	}
+	defer wc.release()
 	defer func() { _ = tx.Rollback() }()
 	var payload []byte
 	var owner eref
@@ -314,7 +315,7 @@ func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref stri
 	// file is the only thing that carries it into the directory, and the row
 	// commits only once the file is written (commitSealed). It goes through
 	// the dataset, under the writer mutex every other sealed write takes.
-	if err := ds.commitSealed(tx, []sealedMirrorOp{{rec: rec}}); err != nil {
+	if err := ds.commitSealed(tx, wc, []sealedMirrorOp{{rec: rec}}); err != nil {
 		return false, err
 	}
 	return true, nil

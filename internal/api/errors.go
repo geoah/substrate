@@ -79,6 +79,10 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems ..
 	writeJSON(w, status, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: code, Message: msg, Problems: problems}})
 }
 
+// restartRetryAfter is the Retry-After on a refusal only a server restart
+// lifts (substrate.ErrRestartRequired).
+const restartRetryAfter = 30 * time.Second
+
 // writeUnavailable is the 503 emit: a transient condition the caller should
 // retry. Retry-After is mandatory on every unavailable, so it is
 // set here and cannot be forgotten at a call site. retryAfter rounds up to at
@@ -137,7 +141,7 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAuth):
 		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeAuth, Message: err.Error()}
-	case errors.Is(err, substrate.ErrUnavailable):
+	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Message: err.Error()}
 	default:
 		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Message: "internal error"}
@@ -155,7 +159,15 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 	status, p := problemFor(err)
 	if status == http.StatusServiceUnavailable {
-		writeUnavailable(w, time.Second, p.Message)
+		retryAfter := time.Second
+		if errors.Is(err, substrate.ErrRestartRequired) {
+			// An operator has to act, so the refusal is an ERROR line on
+			// every request, and a client is told to come back later than
+			// a moment's wait.
+			slog.Error("request refused until the server restarts", append(requestLogAttrs(r), "error", err)...)
+			retryAfter = restartRetryAfter
+		}
+		writeUnavailable(w, retryAfter, p.Message)
 		return
 	}
 	if status >= http.StatusInternalServerError {

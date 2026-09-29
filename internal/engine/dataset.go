@@ -108,9 +108,10 @@ type dataset struct {
 	fileErr error
 	// commitInDoubt, under writerMu, is set when a commit with prepared lines
 	// reported failure, so the table may hold a transaction the file had cut
-	// (0062), and cleared by the next prepare that meets no gap. It tells the
-	// gap that commit left, which latches, from one another process's rows
-	// left, which is caught up (repodir.go catchUpBeforePrepare).
+	// (0062), and cleared by the next prepare that meets no gap or closes
+	// it. The next prepare catches the file up either way; the flag tells
+	// the gap that commit left from one another process's rows left, for
+	// the log line (repodir.go catchUpBeforePrepare).
 	commitInDoubt bool
 	// manifest, under writerMu, is the manifest the directory holds, as the
 	// open wrote or verified it (engine.go openNew). The transaction that
@@ -390,9 +391,13 @@ func jsonSafe(v map[string]any) (map[string]any, error) {
 // --- transactions ---
 
 type txn struct {
-	ctx   context.Context
-	ds    *dataset
-	tx    *sql.Tx
+	ctx context.Context
+	ds  *dataset
+	tx  *sql.Tx
+	// wc is the context tx was begun under (beginWrite): the request's until
+	// commitAndMirror starts, the commit budget's from then on. Nil on a
+	// transaction that commits some other way.
+	wc    *writeCtx
 	actor substrate.Actor
 	// tier is the transaction's manager tier — the WRITE CONTEXT's standing
 	// against mapping recompute. Resolved once at inTx from the
@@ -536,18 +541,20 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := ds.directoryErr(); err != nil {
 		return err
 	}
-	tx, err := db.BeginTx(ctx, nil)
+	tx, wc, err := beginWrite(ctx, db)
 	if err != nil {
 		return err
 	}
+	defer wc.release()
 	// ONE rollback covers every exit, the PANIC included: a panic that unwound
 	// past here would leave the transaction open and its connection held out of
 	// an 8-connection pool until the context died, and a detached task's context
 	// outlives the request that scheduled it. Rollback after Commit reports
-	// sql.ErrTxDone and changes nothing.
+	// sql.ErrTxDone and changes nothing. It runs before wc.release, so the
+	// transaction ends here and not in database/sql's answer to the cancel.
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{
-		ctx: ctx, ds: ds, tx: tx, actor: actor, tier: ds.actorTier(actor),
+		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor, tier: ds.actorTier(actor),
 		principal: substrate.PrincipalFrom(ctx), now: nowUTC(), internal: internal,
 	}
 	// The changelog lock before anything else the transaction locks: the
@@ -628,11 +635,19 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 // yet, the caller gets the error, and every later write is refused until a
 // restart lets the boot check catch the directory up from the table; inTx's
 // after-commit work (the watch signal, the change sink, the afterCommit
-// hooks) does not run for that write, which the latch makes moot. A commit
-// that reports failure after committing (a connection lost at the answer) is
-// rolled back here like a failure and may have left the table ahead: with
-// lines, the next write's prepare meets a seq gap and latches (prepareLines);
-// without them, this path latches at once. The restart heals either way.
+// hooks) does not run for that write, which the latch makes moot.
+//
+// The request's context cancels nothing from the top of this function on
+// (beginWrite): a client that disconnects while Postgres commits would
+// otherwise have the driver abandon a COMMIT the server may already have
+// applied. A commit that reports failure after committing all the same (a
+// connection lost at the answer, the commit budget spent) is rolled back
+// here like a failure and may have left the table ahead. With lines, the
+// next write catches the file up from the table before its own prepare
+// (catchUpBeforePrepare) and nothing latches. Without them nothing in the
+// table tells, so a sealed-only transaction latches at once, and so does one
+// that publishes a registry: the registry this process serves may be behind
+// the declarations the table holds, and only the open loads them again.
 // A crash at any point leaves the two stores to agree at the next open: an
 // unfinished tail is cut whole (0057), a pending file is dropped once the
 // records are written from the table, a table ahead of the file is appended
@@ -646,6 +661,9 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 // dataset with no writer (the creation dataset) commits and mirrors nothing;
 // its directory is written from the tables afterwards.
 func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
+	if err := t.wc.detach(); err != nil {
+		return err
+	}
 	// THE LEASE AGAIN. The check at the write's door (inTx, inRawTx) is as old
 	// as the write: this transaction may have waited for a pool connection,
 	// run a body of any length, and — below — waited out another
@@ -715,15 +733,21 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		ds.abortLines(prepared)
 		ds.discardStaged(staged)
 		// A commit that errors may have committed. With lines, the next
-		// write's prepare meets the seq gap and latches then, and the flag
-		// is what tells that gap from one another process left; without them
-		// nothing would, so a sealed-only transaction latches here, whether
-		// it staged files the table may now hold or deleted rows whose files
-		// are still there, and the boot rewrites sealed/ from the table.
-		if prepared {
+		// write's catch-up appends them from the table if it did
+		// (catchUpBeforePrepare), sealed files included, and the flag names
+		// the gap it closes. Without lines nothing would, so a sealed-only
+		// transaction latches here, whether it staged files the table may
+		// now hold or deleted rows whose files are still there, and the boot
+		// rewrites sealed/ from the table. A registry the commit would have
+		// published was not, and the next write would be held to the one it
+		// replaced, so that latches too.
+		switch {
+		case t.publishReg != nil:
+			ds.latchDirectoryErr(fmt.Errorf("commit of a vocabulary change failed and may have committed: %w", err))
+			return ds.fileErr
+		case prepared:
 			ds.commitInDoubt = true
-		}
-		if !prepared && (len(staged) > 0 || len(deletes) > 0) {
+		case len(staged) > 0 || len(deletes) > 0:
 			ds.latchDirectoryErr(fmt.Errorf("commit of a sealed-only transaction failed and may have committed: %w", err))
 			return ds.fileErr
 		}
@@ -764,6 +788,95 @@ func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 	}
 	ds.reg = t.publishReg
 	return nil
+}
+
+// commitBudget bounds what a write's commit phase asks of Postgres, from the
+// top of commitAndMirror on, where the request's context no longer reaches
+// (beginWrite): the catch-up's reads and the COMMIT. When it runs out the
+// transaction's own context is canceled: a commit not yet sent rolls back,
+// and one in flight is in doubt, which the next write resolves (repodir.go
+// catchUpBeforePrepare). The wait for writerMu and the file steps take no
+// context, so the budget does not interrupt them. A commit phase takes
+// milliseconds; the budget is for a database that stopped answering.
+const commitBudget = 30 * time.Second
+
+// writeCtx is the context a write's transaction is begun under: canceled
+// with the request's until the transaction is ready to commit, and from then
+// on by the commit budget alone. database/sql rolls a transaction back when
+// the context it was begun under ends, and pgx runs the COMMIT under that
+// same context, so a request that ended mid-commit had the driver abandon a
+// COMMIT Postgres may already have applied. The directory then cut the
+// transaction's lines as if it rolled back (#516).
+type writeCtx struct {
+	req    context.Context
+	ctx    context.Context
+	cancel context.CancelFunc
+	// stop disarms the forwarding of the request's end to ctx; it reports
+	// false once that forwarding has run.
+	stop  func() bool
+	timer *time.Timer
+}
+
+// beginWrite begins a transaction on db for a write that commits through
+// commitAndMirror. The caller defers release, AFTER its deferred rollback
+// is registered so the rollback runs first. Statements take the request's
+// own context as before, so a request that ends during the body still stops
+// it.
+func beginWrite(ctx context.Context, db *sql.DB) (*sql.Tx, *writeCtx, error) {
+	wc := newWriteCtx(ctx)
+	tx, err := db.BeginTx(wc.ctx, nil)
+	if err != nil {
+		wc.release()
+		return nil, nil, err
+	}
+	return tx, wc, nil
+}
+
+// newWriteCtx is beginWrite's context, before any transaction is begun under
+// it.
+func newWriteCtx(ctx context.Context) *writeCtx {
+	txCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	wc := &writeCtx{req: ctx, ctx: txCtx, cancel: cancel}
+	wc.stop = context.AfterFunc(ctx, cancel)
+	return wc
+}
+
+// detach starts the commit phase: the request's end no longer reaches the
+// transaction, and the commit budget bounds what is left. A request that
+// ended before this point gets its error back with nothing prepared and
+// nothing in doubt, and the rollback ends the transaction. The request's
+// error is read before the forwarding is disarmed, because a cancel sets it
+// before the forwarding runs and stop would otherwise win that race.
+func (wc *writeCtx) detach() error {
+	if wc == nil {
+		return nil
+	}
+	if err := wc.req.Err(); err != nil {
+		return err
+	}
+	if !wc.stop() {
+		return wc.req.Err()
+	}
+	wc.timer = time.AfterFunc(commitBudget, wc.cancel)
+	return nil
+}
+
+// release ends the transaction's context once the write is over.
+func (wc *writeCtx) release() {
+	wc.stop()
+	if wc.timer != nil {
+		wc.timer.Stop()
+	}
+	wc.cancel()
+}
+
+// commitCtx is the context the commit phase's own reads run under: the
+// transaction's detached one where it has one.
+func (t *txn) commitCtx() context.Context {
+	if t.wc != nil {
+		return t.wc.ctx
+	}
+	return t.ctx
 }
 
 // asActor runs fn with the transaction attributed to another actor, then puts
@@ -933,15 +1046,16 @@ func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	if err := ds.svc.lease.err(); err != nil {
 		return err
 	}
-	tx, err := ds.db.BeginTx(ctx, nil)
+	tx, wc, err := beginWrite(ctx, ds.db)
 	if err != nil {
 		return err
 	}
+	defer wc.release()
 	// One rollback covers every exit, commitAndMirror's refusal of a latched
 	// directory included: a re-key holds every sealed row FOR UPDATE, and a
 	// transaction left open there would hold them until the context died.
 	defer func() { _ = tx.Rollback() }()
-	t := &txn{ctx: ctx, ds: ds, tx: tx, now: nowUTC(), internal: true}
+	t := &txn{ctx: ctx, ds: ds, tx: tx, wc: wc, now: nowUTC(), internal: true}
 	if err := fn(t); err != nil {
 		return err
 	}

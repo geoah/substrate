@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -184,10 +183,10 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		// The engine's two directory refusals (engine.ErrDirectoryWrite,
 		// engine.ErrChangelogFileBehind), as they reach this package: a write
 		// rolled back because its files could not be written is retryable and
-		// wraps ErrUnavailable; a dataset latched behind its tables is not,
-		// and is a plain error.
+		// wraps ErrUnavailable; a dataset latched behind its tables needs a
+		// restart and wraps ErrRestartRequired. Both are 503 unavailable.
 		{"directory_write_rolled_back", fmt.Errorf("%w: the repository directory could not be written, so the write was rolled back", substrate.ErrUnavailable), http.StatusServiceUnavailable, codeUnavailable},
-		{"directory_behind_latched", errors.New("substrate/engine: the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up"), http.StatusInternalServerError, codeInternal},
+		{"directory_behind_latched", fmt.Errorf("%w: the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up", substrate.ErrRestartRequired), http.StatusServiceUnavailable, codeUnavailable},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -215,6 +214,37 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 	want := []substrate.ProblemDetail{{Path: "name", Message: "required"}, {Path: "asin", Message: "malformed"}}
 	if !reflect.DeepEqual(env2.Error.ProblemDetails, want) {
 		t.Fatalf("problemDetails = %v, want %v", env2.Error.ProblemDetails, want)
+	}
+}
+
+// Issue 516: a repository latched behind its tables refuses every write until
+// the server restarts. The refusal is 503 unavailable, not the 500 internal it
+// was, with a Retry-After longer than a transient refusal's and the engine's
+// message, so the reply itself tells an operator to restart.
+func TestRESTRestartRequiredIsUnavailableNamingTheRestart(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+
+	const msg = "the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up"
+	ds.errs["Put"] = fmt.Errorf("%w: %s: repository %s: prepare seq 206..206", substrate.ErrRestartRequired, msg, fakeRepository)
+	defer delete(ds.errs, "Put")
+	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
+	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
+	if got := rec.Header().Get("Retry-After"); got != "30" {
+		t.Fatalf("Retry-After = %q, want 30", got)
+	}
+	body := decodeJSON[substrate.ErrorEnvelope](t, rec)
+	if !strings.Contains(body.Error.Message, "restart the server") || !strings.Contains(body.Error.Message, "until the server restarts") {
+		t.Fatalf("the message does not name the restart: %q", body.Error.Message)
+	}
+
+	// A transient refusal keeps its one-second Retry-After.
+	ds.errs["Put"] = fmt.Errorf("vectors: %w", substrate.ErrUnavailable)
+	rec = env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
+	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
+	if got := rec.Header().Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After on a transient refusal = %q, want 1", got)
 	}
 }
 

@@ -108,10 +108,11 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 	if err != nil {
 		return false, err
 	}
-	tx, err := ds.db.BeginTx(ctx, nil)
+	tx, wc, err := beginWrite(ctx, ds.db)
 	if err != nil {
 		return false, err
 	}
+	defer wc.release()
 	defer func() { _ = tx.Rollback() }()
 	var expiresAt sql.NullTime
 	var updated time.Time
@@ -129,7 +130,7 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 	}
 	// Outside inTx, so the file is written here, before the row commits.
 	rec := sealedRecordOf(ref, account.Kind, account.ID, payload, expiresAt, updated)
-	if err := ds.commitSealed(tx, []sealedMirrorOp{{rec: rec}}); err != nil {
+	if err := ds.commitSealed(tx, wc, []sealedMirrorOp{{rec: rec}}); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -167,10 +168,11 @@ var errCredentialGone = errors.New("substrate/engine: credential not found")
 
 // deleteCredentialsFor drops every credential a record holds — teardown.
 func (ds *dataset) deleteCredentialsFor(ctx context.Context, account eref) error {
-	tx, err := ds.db.BeginTx(ctx, nil)
+	tx, wc, err := beginWrite(ctx, ds.db)
 	if err != nil {
 		return err
 	}
+	defer wc.release()
 	defer func() { _ = tx.Rollback() }()
 	ops, err := deleteCredentialRows(ctx, tx, account)
 	if err != nil {
@@ -179,7 +181,7 @@ func (ds *dataset) deleteCredentialsFor(ctx context.Context, account eref) error
 	// Outside inTx, so the files go with the row commit here: a delete lands
 	// after the rows commit, and a failure to remove one is reported and
 	// latched, never silently left for the boot check.
-	return ds.commitSealed(tx, ops)
+	return ds.commitSealed(tx, wc, ops)
 }
 
 // deleteCredentialRows deletes every sealed row a record holds inside tx and
