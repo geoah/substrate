@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.113.0](https://github.com/geoah/substrate/compare/v0.112.0...v0.113.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **vocabulary:** a function or agent whose `permissions.writes` names `substrate.reamde.dev/core/token`, `substrate.reamde.dev/core/credential` or `substrate.reamde.dev/core/recoverykey` is refused at `POST /api/v1/vocabulary/apply`, catalog import and install with `422`, and one already stored quarantines its package at the next open; `substratectl bundle status <id>` prints the reason. Delete the entry from `permissions.writes`, then apply the package's corrected documents, the whole package, with `substratectl apply -f`: a closure that admits clears the quarantine. Installed code no longer revokes a token: a function's `delete` effect, an agent's `write` and a policy judge's accept of a proposed token delete answer `403`, and the owner revokes with `substratectl token revoke <id>` or from the console. Globs never reached these kinds, so `writes: ["*"]` is unaffected, and no shipped bundle or sample names them.
+
+### Added
+
+* **agents:** count the child chain's writes on sub-agent tool rows ([#804](https://github.com/geoah/substrate/issues/804)) ([2433223](https://github.com/geoah/substrate/commit/2433223cb78942b685e5f6d5d7222a85488d62ee)), closes [#70](https://github.com/geoah/substrate/issues/70)
+* **agents:** stamp the callable identity on llm/message tool rows ([#790](https://github.com/geoah/substrate/issues/790)) ([b614980](https://github.com/geoah/substrate/commit/b61498027966effdc9827cca0e68bf2965c02656))
+* **api:** accept a list of targets in filter.referencing.refs ([#794](https://github.com/geoah/substrate/issues/794)) ([1fcef76](https://github.com/geoah/substrate/commit/1fcef7692412282c812eb2e67cec40d0e8c8aa1f))
+* **console:** edit what an agent can see and change in the chat panel ([#814](https://github.com/geoah/substrate/issues/814)) ([1750fc2](https://github.com/geoah/substrate/commit/1750fc2f0b1b8bef4ed5ecef4fcf2622733df8c6))
+* **console:** show an agent's spend by day, week and month ([#816](https://github.com/geoah/substrate/issues/816)) ([c00cc45](https://github.com/geoah/substrate/commit/c00cc451d1a81bea3a1e16c581729885495be613))
+* **vocabulary:** store a field's default in each object a write sends ([#791](https://github.com/geoah/substrate/issues/791)) ([8eb7dcf](https://github.com/geoah/substrate/commit/8eb7dcf784ac9084f7e3df4c9457fba20e846860)), closes [#248](https://github.com/geoah/substrate/issues/248)
+* **vocabulary:** title a trigger from its optional `label` ([#789](https://github.com/geoah/substrate/issues/789)) ([8c93530](https://github.com/geoah/substrate/commit/8c93530b3bf0a8ceaa6dc21734ffb31d97bc5dce)), closes [#118](https://github.com/geoah/substrate/issues/118)
+
+
+### Fixed
+
+* **console:** ask the last-chatted agent that can declare a kind ([#805](https://github.com/geoah/substrate/issues/805)) ([8a3887e](https://github.com/geoah/substrate/commit/8a3887e0a00effe55204405dd498c846ffe18fc9))
+* **console:** match held copies to catalog entries by origin stamp ([#815](https://github.com/geoah/substrate/issues/815)) ([799b52f](https://github.com/geoah/substrate/commit/799b52fe887f817b67ca69f4a3dc955ec6aaea16)), closes [#448](https://github.com/geoah/substrate/issues/448)
+* **console:** save changes to a view without keeping its old filters ([#811](https://github.com/geoah/substrate/issues/811)) ([dbbc106](https://github.com/geoah/substrate/commit/dbbc106acf0224e3f4ab9fe62c1d9217219bf5a0))
+* **console:** say how many of a group's rows are on other pages ([#813](https://github.com/geoah/substrate/issues/813)) ([dc356af](https://github.com/geoah/substrate/commit/dc356af99761aafa04486ea13281088f9af6c389)), closes [#679](https://github.com/geoah/substrate/issues/679)
+* **engine:** build indexes on records concurrently ([#788](https://github.com/geoah/substrate/issues/788)) ([37d42e4](https://github.com/geoah/substrate/commit/37d42e46ab3bbdda44bcd86d6e0f7f678515da85)), closes [#416](https://github.com/geoah/substrate/issues/416)
+* **engine:** count and convert a kept kind whose propertytype moves ([#810](https://github.com/geoah/substrate/issues/810)) ([2842b7a](https://github.com/geoah/substrate/commit/2842b7ae1ace1de2ebb7aaa3a03e8c84d7294c9d))
+* **engine:** index a parked package's rows under its stored declaration ([#793](https://github.com/geoah/substrate/issues/793)) ([275f572](https://github.com/geoah/substrate/commit/275f572cc51bbc96e20fb04a31c851cbd526dbd3))
+* **vocabulary:** refuse core/token in function and agent writes ([#797](https://github.com/geoah/substrate/issues/797)) ([1ff1b5e](https://github.com/geoah/substrate/commit/1ff1b5edfcbddec51834d40b42de139ae687ade1)), closes [#135](https://github.com/geoah/substrate/issues/135)
+
 ## [0.112.0](https://github.com/geoah/substrate/compare/v0.111.1...v0.112.0) (2026-09-29)
 
 ### ⚠ BREAKING CHANGES
