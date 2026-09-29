@@ -709,3 +709,59 @@ func TestConstraintTightenedThroughAPropertyTypeIsRefused(t *testing.T) {
 		t.Fatalf("a refinement every row satisfies must land: %v", err)
 	}
 }
+
+// A decimal bound is the number the declaration names, so the guard counts the
+// rows the next write refuses and no others. The float64 nearest 0.01 sits
+// just above 0.01 and the one nearest 0.011 just below 0.011: counted against
+// either float64, `min: 0.01` would strand the row holding "0.01" and
+// `max: 0.011` the row holding "0.011".
+func TestDecimalBoundGuardCountsTheDeclaredNumber(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const pkg = "bounds.example.substrate.reamde.dev/rates"
+	kind := func(bounds map[string]any) map[string]any {
+		rate := map[string]any{"type": "decimal"}
+		for k, v := range bounds {
+			rate[k] = v
+		}
+		return vocabulary.KindManifest(pkg,
+			map[string]any{"singular": "fee"},
+			map[string]any{"properties": map[string]any{"rate": rate}})
+	}
+	apply := func(bounds map[string]any) error {
+		_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{kind(bounds)})
+		return err
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0), kind(nil),
+	}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	for id, rate := range map[string]string{"cent": "0.01", "more": "0.011"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/fee", ID: id, Properties: map[string]any{"rate": rate}})
+	}
+
+	if err := apply(map[string]any{"min": 0.01}); err != nil {
+		t.Fatalf("min: 0.01 over a row holding 0.01 must land: %v", err)
+	}
+	wantNarrowingGuard(t, apply(map[string]any{"min": 0.011}),
+		`property "rate" requires values >= 0.011 while 1 live records hold a smaller one`)
+	if err := apply(map[string]any{"min": 0.01, "max": 0.011}); err != nil {
+		t.Fatalf("max: 0.011 over a row holding 0.011 must land: %v", err)
+	}
+	wantNarrowingGuard(t, apply(map[string]any{"min": 0.01, "max": 0.01}),
+		`property "rate" requires values <= 0.01 while 1 live records hold a larger one`)
+
+	// The write path agrees with the counts: under the admitted declaration
+	// both held values write again, and a value just past the max does not.
+	for _, rate := range []string{"0.01", "0.011"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: pkg + "/fee", Properties: map[string]any{"rate": rate}})
+	}
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: pkg + "/fee", Properties: map[string]any{"rate": "0.0110000000000000001"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "must be <= 0.011") {
+		t.Fatalf("err = %v, want a value just past max: 0.011 refused", err)
+	}
+}

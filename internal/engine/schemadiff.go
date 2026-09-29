@@ -46,7 +46,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1339,9 +1338,9 @@ func leavesAtPath(v any, path []fieldStep) []any {
 // bound refuses: `op` is "<" against a raised `min`, ">" against a lowered
 // `max`. The comparison is the write path's, per datatype. An int or float is
 // compared as float8, which is how checkRange reads both; a decimal is compared
-// exactly as numeric against the bound's own exact value, which is how
-// coerceDecimal reads it (big.Rat.SetFloat64), and a money value is compared
-// by the number it denotes, the way coerceMoney reads it. A stored value of another JSON
+// exactly as numeric against the number the bound names (boundDigits), which
+// is how coerceDecimal reads it, and a money value is compared by the number
+// it denotes, the way coerceMoney reads it. A stored value of another JSON
 // type is not counted: the write path refuses it before any bound is read.
 func boundOutsidePath(ident string, path []fieldStep, dt vocabulary.Datatype, op string, bound float64) (string, []any) {
 	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
@@ -1360,34 +1359,25 @@ func linkBoundOutside(ident, pname, lname string, dt vocabulary.Datatype, op str
 // boundPredicate renders the comparison of the value `expr` addresses against
 // the bound, in the datatype's own arithmetic.
 func boundPredicate(expr string, dt vocabulary.Datatype, op string, bound float64, a *sqlArgs) string {
-	if dt == vocabulary.DatatypeDecimal {
+	if dt == vocabulary.DatatypeDecimal || dt == vocabulary.DatatypeMoney {
+		// The same digits checkExactRange compares against. A bound with none
+		// is one the write path never reads, so it strands nothing.
+		digits, ok := boundDigits(bound)
+		if !ok {
+			return "FALSE"
+		}
+		if dt == vocabulary.DatatypeMoney {
+			// A value of another shape reads NULL and is not counted.
+			return fmt.Sprintf("%s %s %s::numeric", moneyValueSQL(expr), op, a.add(digits))
+		}
 		// The grammar guard keeps a string the write path would refuse anyway
 		// from failing the cast, and with it the whole count.
 		return fmt.Sprintf(
 			"jsonb_typeof(%s) = 'string' AND (%s #>> '{}') ~ '^[+-]?[0-9]+(\\.[0-9]+)?$' AND (%s #>> '{}')::numeric %s %s::numeric",
-			expr, expr, expr, op, a.add(exactDecimal(bound)))
-	}
-	if dt == vocabulary.DatatypeMoney {
-		// coerceMoney compares the exact value against the bound's exact value,
-		// and so does this; a value of another shape reads NULL and is not
-		// counted.
-		return fmt.Sprintf("%s %s %s::numeric", moneyValueSQL(expr), op, a.add(exactDecimal(bound)))
+			expr, expr, expr, op, a.add(digits))
 	}
 	return fmt.Sprintf("jsonb_typeof(%s) = 'number' AND (%s #>> '{}')::float8 %s %s::float8",
 		expr, expr, op, a.add(bound))
-}
-
-// exactDecimal renders a float64 bound as the decimal digits of its exact
-// binary value, which is the number coerceDecimal compares a decimal against.
-// A float64 is a dyadic rational, so the expansion is finite. The shortest
-// spelling ("0.1") would name a different number, and a count over it could
-// admit a value the next write refuses.
-func exactDecimal(f float64) string {
-	r := new(big.Rat).SetFloat64(f)
-	if r == nil {
-		return fmt.Sprint(f)
-	}
-	return r.FloatString(r.Denom().BitLen() - 1)
 }
 
 // renamedTo reports the candidate property (if any) that declares the given

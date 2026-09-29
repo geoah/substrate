@@ -220,6 +220,36 @@ func TestRaisingAMoneyMinIsRefusedOverSmallerRows(t *testing.T) {
 	}
 }
 
+// A money bound is the number the declaration names in the currency's minor
+// unit, so a max of 100.1 sits exactly at the 100.10 EUR row, though the
+// float64 nearest 100.1 is just below it. One cent lower strands that row
+// alone, and the write path agrees with both counts.
+func TestAMoneyBoundAtAHeldAmountStrandsNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := installPricedItems(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		itemManifest(map[string]any{"type": "money", "max": 100.1}),
+	}); err != nil {
+		t.Fatalf("a max at the largest held amount must land: %v", err)
+	}
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		itemManifest(map[string]any{"type": "money", "max": 100.09}),
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires values <= 100.09 while 1 live records hold a larger one") {
+		t.Fatalf("err = %v, want the lowered max refused over the one 100.10 EUR row", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: moneyPackage + "/item", Properties: map[string]any{"name": "again", "price": moneyValue(10010, "EUR")},
+	})
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: moneyPackage + "/item", Properties: map[string]any{"name": "over", "price": moneyValue(10011, "EUR")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "must be <= 100.1") {
+		t.Fatalf("err = %v, want 100.11 EUR refused under max: 100.1", err)
+	}
+}
+
 // A declared default is a money value the write path admits, stored on a
 // create that leaves the property out.
 func TestMoneyDefaultFillsACreate(t *testing.T) {

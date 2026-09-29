@@ -3,10 +3,12 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"net/mail"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -633,18 +635,52 @@ func coerceDecimal(p *vocabulary.Property, v any) (any, error) {
 	}
 	if p.Min != nil || p.Max != nil {
 		r, _ := new(big.Rat).SetString(c)
-		if p.Min != nil {
-			if min := new(big.Rat).SetFloat64(*p.Min); min != nil && r.Cmp(min) < 0 {
-				return nil, fmt.Errorf("must be >= %v", *p.Min)
-			}
-		}
-		if p.Max != nil {
-			if max := new(big.Rat).SetFloat64(*p.Max); max != nil && r.Cmp(max) > 0 {
-				return nil, fmt.Errorf("must be <= %v", *p.Max)
-			}
+		if err := checkExactRange(p, r); err != nil {
+			return nil, err
 		}
 	}
 	return c, nil
+}
+
+// checkExactRange is checkRange for an exact value (a decimal, or the number a
+// money value denotes), held against the exact number each bound names.
+func checkExactRange(p *vocabulary.Property, r *big.Rat) error {
+	if p.Min != nil {
+		if digits, ok := boundDigits(*p.Min); ok && r.Cmp(boundRat(digits)) < 0 {
+			return fmt.Errorf("must be >= %s", digits)
+		}
+	}
+	if p.Max != nil {
+		if digits, ok := boundDigits(*p.Max); ok && r.Cmp(boundRat(digits)) > 0 {
+			return fmt.Errorf("must be <= %s", digits)
+		}
+	}
+	return nil
+}
+
+// boundDigits is the exact number a declared `min` or `max` names for a
+// decimal and for a money value: the shortest decimal that reads back as the
+// bound's float64, its digits written out. Every door hands a bound over as a
+// float64 (the YAML and JSON decodes, the jsonb read-back) and writes it back
+// out as that shortest decimal, so it is the number the author wrote whenever
+// they wrote at most 15 significant digits, and the number a read of the
+// declaration shows otherwise. The float64's binary expansion is a different
+// number: the float64 nearest 0.01 is 0.0100000000000000002081668..., and a
+// comparison against it refuses "0.01" under `min: 0.01`. The narrowing guard
+// compares against the same digits (schemadiff.go boundPredicate), so a count
+// and the next write agree. A bound that is not finite has no digits, and
+// nothing is compared against it.
+func boundDigits(f float64) (string, bool) {
+	if math.IsInf(f, 0) || math.IsNaN(f) {
+		return "", false
+	}
+	return strconv.FormatFloat(f, 'f', -1, 64), true
+}
+
+// boundRat reads the digits boundDigits wrote, which always parse.
+func boundRat(digits string) *big.Rat {
+	r, _ := new(big.Rat).SetString(digits)
+	return r
 }
 
 // canonicalDecimal holds one authored decimal to the grammar (an optional
@@ -709,16 +745,8 @@ func coerceMoney(p *vocabulary.Property, v any) (any, error) {
 		return nil, fmt.Errorf("%s is an ISO 4217 code with a minor unit, three capital letters (EUR)", vocabulary.MoneyCurrency)
 	}
 	if p.Min != nil || p.Max != nil {
-		r := moneyRat(amount, decimals)
-		if p.Min != nil {
-			if min := new(big.Rat).SetFloat64(*p.Min); min != nil && r.Cmp(min) < 0 {
-				return nil, fmt.Errorf("must be >= %v", *p.Min)
-			}
-		}
-		if p.Max != nil {
-			if max := new(big.Rat).SetFloat64(*p.Max); max != nil && r.Cmp(max) > 0 {
-				return nil, fmt.Errorf("must be <= %v", *p.Max)
-			}
+		if err := checkExactRange(p, moneyRat(amount, decimals)); err != nil {
+			return nil, err
 		}
 	}
 	return map[string]any{

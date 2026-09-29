@@ -316,7 +316,7 @@ are written and filtered the same way.
 | `text`             | long-form prose                                             |
 | `markdown`         | `text` renderers treat as Markdown                          |
 | `int`, `float`     | numbers, optional `min`/`max`; an `int` is a safe integer, refused past 2^53 - 1 in magnitude because JSON rides float64 |
-| `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded |
+| `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded; optional `min`/`max`, compared exactly (`min: 0.01` admits `"0.01"`) |
 | `money`            | an amount in a currency: `{amount: 1999, currency: EUR}` is 19.99 EUR; optional `min`/`max` on the number it denotes |
 | `bool`             | true/false                                                  |
 | `datetime`, `date` | RFC 3339 instants / civil dates; the year must fall in Postgres's storable range (4713 BC to 294276 AD) |
