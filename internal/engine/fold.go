@@ -44,8 +44,10 @@ import (
 // gap: the vocabulary apply re-derives `fts` for every row of such a kind, in
 // the apply's transaction and against the closure it publishes, and moves
 // nothing else: no `version`, no `updated_at`, no changelog entry, because the
-// record did not change, only the index over it did. Nothing else may write
-// `records` from outside this file.
+// record did not change, only the index over it did. The open-time reindex
+// (searchindex.go) writes through the same rederiveFTS when the binary's
+// indexing rules change. Nothing else may write `records` from outside this
+// file.
 
 // foldKind names one kind of effect. The values are wire values: they land in
 // the changelog's payload and a rebuild reads them back.
@@ -538,52 +540,61 @@ func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
 // is leaving. Tombstones are included because a rebuild indexes them too, and
 // a resurrecting put refolds the row anyway.
 //
-// The UPDATE touches `fts` and nothing else (see the header): the row's
-// values did not move, so neither `version` nor `updated_at` may. It runs in
-// pages, because the transaction cannot write while a cursor over `records`
-// is open, and inline, whatever the kind's size: a kind edit is rare and the
-// alternative is a live index that answers for a declaration that is gone.
+// It runs in pages, because the transaction cannot write while a cursor over
+// `records` is open, and inline, whatever the kind's size: a kind edit is rare
+// and the alternative is a live index that answers for a declaration that is
+// gone.
 func (t *txn) reprojectFTS(reg *vocabulary.Registry, kinds []string) error {
 	for _, kind := range kinds {
 		after := ""
 		for {
-			rows, err := t.query(`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id > $2 ORDER BY id LIMIT $3`,
-				kind, after, rebuildBatch)
+			rows, err := t.ds.scanRows(t.ctx, t.tx,
+				`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id > $2 ORDER BY id LIMIT $3`,
+				[]any{kind, after, rebuildBatch})
 			if err != nil {
 				return err
 			}
-			var ids, a, b, c []string
-			for rows.Next() {
-				row, err := scanRecord(rows)
-				if err != nil {
-					_ = rows.Close()
-					return err
-				}
-				bands := ftsBandsUnder(reg, row)
-				ids, a, b, c = append(ids, row.ID), append(a, bands[0]), append(b, bands[1]), append(c, bands[2])
-				after = row.ID
-			}
-			if err := rows.Err(); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			_ = rows.Close()
-			if len(ids) == 0 {
+			if len(rows) == 0 {
 				break
 			}
-			if _, err := t.exec(`
-				UPDATE records r SET fts =
-					setweight(to_tsvector('english', u.a), 'A') ||
-					setweight(to_tsvector('english', u.b), 'B') ||
-					setweight(to_tsvector('english', u.c), 'C')
-				FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, a, b, c)
-				WHERE r.kind = $1 AND r.id = u.id`, kind, ids, a, b, c); err != nil {
-				return fmt.Errorf("substrate/engine: re-derive the search index of %s: %w", kind, err)
+			if err := t.rederiveFTS(reg, kind, rows); err != nil {
+				return err
 			}
-			if len(ids) < rebuildBatch {
+			after = rows[len(rows)-1].ID
+			if len(rows) < rebuildBatch {
 				break
 			}
 		}
+	}
+	return nil
+}
+
+// rederiveFTS writes `fts` for rows, all of one kind, as ftsBandsUnder
+// derives it under reg. It is the one statement both a kind edit
+// (reprojectFTS) and the open-time reindex (searchindex.go) write the index
+// with, so the two cannot derive it differently. The UPDATE touches `fts` and
+// nothing else (see the header): the row's values did not move, so neither
+// `version` nor `updated_at` may.
+func (t *txn) rederiveFTS(reg *vocabulary.Registry, kind string, rows []*erow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(rows))
+	a := make([]string, 0, len(rows))
+	b := make([]string, 0, len(rows))
+	c := make([]string, 0, len(rows))
+	for _, row := range rows {
+		bands := ftsBandsUnder(reg, row)
+		ids, a, b, c = append(ids, row.ID), append(a, bands[0]), append(b, bands[1]), append(c, bands[2])
+	}
+	if _, err := t.exec(`
+		UPDATE records r SET fts =
+			setweight(to_tsvector('english', u.a), 'A') ||
+			setweight(to_tsvector('english', u.b), 'B') ||
+			setweight(to_tsvector('english', u.c), 'C')
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, a, b, c)
+		WHERE r.kind = $1 AND r.id = u.id`, kind, ids, a, b, c); err != nil {
+		return fmt.Errorf("substrate/engine: re-derive the search index of %s: %w", kind, err)
 	}
 	return nil
 }

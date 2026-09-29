@@ -206,9 +206,22 @@ type dataset struct {
 	// unregisterMetrics drops this pool's sql.DBStats collector on close;
 	// nil on a dataset that never registered one (creation's seed dataset).
 	unregisterMetrics func()
+
+	// reindexFrom is the search index version the open found below this
+	// binary's (searchindex.go checkSearchIndex); zero when the index is
+	// current or the process is read-only.
+	reindexFrom int
+	// reindexCancel and reindexDone own the background reindex the open
+	// started (startSearchReindex): close and a rebuild cancel it and wait for
+	// done. Both are set before the dataset is published and never after, so
+	// they are read without a lock; nil when no reindex runs.
+	reindexCancel context.CancelFunc
+	reindexDone   chan struct{}
 }
 
 func (ds *dataset) close() {
+	// Before the pool closes: the reindex writes through it.
+	ds.stopSearchReindex()
 	ds.watch.close()
 	ds.writerMu.Lock()
 	if ds.writer != nil {

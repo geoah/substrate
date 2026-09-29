@@ -384,6 +384,16 @@ on the box, through the DSN.
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
   ([the boot-time upgrade](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
+- **The search index is re-derived in the background** when the binary
+  indexes text differently from the one that indexed the repository's rows.
+  The repository serves reads and writes meanwhile, and a row keeps its old
+  index, still searchable, until the reindex reaches it. The reindex works
+  kind by kind, in transactions of 2000 rows, and logs
+  `substrate: re-derived the search index of one kind` with `kind`, `done`
+  and `total` after each kind, then `substrate: re-derived the search index`
+  once it finishes. A reindex a shutdown interrupts starts again at the next
+  open; `repository rebuild` finishes it, because the replay indexes every
+  row.
 - Persisted function bodies re-warm in the background. One that no longer
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.

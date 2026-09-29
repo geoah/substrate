@@ -62,9 +62,10 @@ import (
 //     interrupted flow is started again.
 //   - vocabulary_dialect, the STORE SHAPE's stamp, about the tables rather
 //     than about their contents.
-//   - search_index, which rule set indexed the rows (searchindex.go). The
-//     replay indexes every row under this binary's rules, which the stored
-//     version already names or the open ladder raised it to.
+//   - search_index, which rule set indexed the rows (searchindex.go). It is
+//     not cleared but rewritten: the replay indexes every row under this
+//     binary's rules, so the rebuild records this binary's version, whatever
+//     the open's reindex had reached.
 //   - repository_migrations, the ledger of the code migrations this
 //     repository has run (repomigrate.go). What a migration wrote is in the
 //     changelog and replays; the ledger says it need not run again.
@@ -125,6 +126,11 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if err := ds.directoryErr(); err != nil {
 		return report, err
 	}
+	// The replay re-derives every row's `fts` itself, so the open's reindex
+	// stops first: its pages would skip every row the replay's delete holds and
+	// then wait on each one alone. A rebuild that fails leaves the version
+	// where it was, and the next open runs the reindex again.
+	ds.stopSearchReindex()
 	// Not inTx: a rebuild is not a write with an actor and must append no
 	// entry of its own. It replays what is already there.
 	tx, err := ds.db.BeginTx(ctx, nil)
@@ -149,6 +155,10 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 		return report, err
 	}
 	if err := t.rebuild(log, &report); err != nil {
+		return report, err
+	}
+	// Every row was just folded under this binary's rules (fold.go foldFTS).
+	if err := t.markSearchIndexed(); err != nil {
 		return report, err
 	}
 	if err := tx.Commit(); err != nil {
