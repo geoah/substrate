@@ -353,6 +353,9 @@ func (h *hotProps) mentions() bool {
 // because that is the writer saying this record has no value here, which a
 // required property then refuses rather than quietly refilling.
 //
+// A field's `default:` is not this function's: it fills the objects the
+// write sends, wherever they sit, when coerceObject coerces them.
+//
 // The authored map is never mutated: it is the caller's, and a bundle's
 // function may hold it across the call.
 func withDefaults(ty *vocabulary.Kind, in map[string]any, create bool) map[string]any {
@@ -1473,7 +1476,8 @@ func (t *txn) stampTargetVersion(sp *applySpec, row *erow, target eref, accepted
 // without a default, refuses the declaration change (schemadiff.go).
 //
 // This is a kind's OWN properties; a `required:` FIELD is held to the object
-// the write stores, where the object is coerced (coerceObject, in validate.go).
+// the write stores, where the object is coerced and a field's `default:` is
+// filled (coerceObject, in validate.go).
 //
 // NO ACTOR IS EXEMPT, internal writes included, and that is the point: a record
 // the engine wrote without a required value could never be repaired, because

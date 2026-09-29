@@ -192,6 +192,8 @@ const countStateValuesQuery = `SELECT count(*) FROM records
 // every later write refuses. A kind whose default no create could store is
 // refused here, once, instead of at every create of it, and both doors run
 // this: the apply (stageVocabularyBatch) and the boot (stageShippedUpgrade).
+// A field's default is held to the same two rules at its own depth, since
+// coerceObject fills it into every object a write sends.
 func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bool) []string {
 	var problems []string
 	for aname := range touched {
@@ -202,23 +204,35 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 		for _, tn := range a.KindOrder {
 			ty := a.Kinds[tn]
 			for _, pname := range ty.PropOrder {
-				p := ty.Props[pname]
-				if p.Default == nil {
-					continue
-				}
-				if p.Required && emptyValue(p.Default) {
-					problems = append(problems, fmt.Sprintf("kind %s: property %q: default %v: a required property's default holds a value, and an empty one is what having none means",
-						ty.Identity, pname, jsonLiteral(p.Default)))
-					continue
-				}
-				if _, err := coerceValue(p, p.Default); err != nil {
-					problems = append(problems, fmt.Sprintf("kind %s: property %q: default %v: %v",
-						ty.Identity, pname, p.Default, err))
-				}
+				problems = append(problems, declaredDefaultProblems(ty.Identity, "property "+strconv.Quote(pname), "property", ty.Props[pname])...)
 			}
 		}
 	}
 	sort.Strings(problems)
+	return problems
+}
+
+// declaredDefaultProblems holds one declaration's default, and every default
+// its object fields declare, to what a write would store. subject names the
+// position the way a problem line reads it, and noun is what it is.
+func declaredDefaultProblems(ident, subject, noun string, p *vocabulary.Property) []string {
+	var problems []string
+	if p.Datatype == vocabulary.DatatypeObject {
+		for _, fname := range p.FieldOrder {
+			problems = append(problems, declaredDefaultProblems(ident, subject+" field "+strconv.Quote(fname), "field", p.Fields[fname])...)
+		}
+	}
+	switch {
+	case p.Default == nil:
+	case p.Required && emptyValue(p.Default):
+		problems = append(problems, fmt.Sprintf("kind %s: %s: default %v: a required %s's default holds a value, and an empty one is what having none means",
+			ident, subject, jsonLiteral(p.Default), noun))
+	default:
+		if _, err := coerceValue(p, p.Default); err != nil {
+			problems = append(problems, fmt.Sprintf("kind %s: %s: default %v: %v",
+				ident, subject, p.Default, err))
+		}
+	}
 	return problems
 }
 
@@ -1044,8 +1058,8 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		if !curF.Required && candF.Required {
 			q, args := fieldEmpty(ident, path, fname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("kind %s: object %q field %q becomes required while %%d live records hold an object without a value for it; backfill them first",
-					ident, label, fname),
+				format: fmt.Sprintf("kind %s: object %q field %q becomes required while %%d live records hold an object without a value for it; %s",
+					ident, label, fname, fieldBackfillHint(candF, "backfill them first")),
 				query: q, args: args,
 			})
 		}
@@ -1075,12 +1089,26 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		}
 		q, args := fieldEmpty(ident, path, fname)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("kind %s: object %q adds field %q as required while %%d live records hold an object without it; backfill or clear them first",
-				ident, label, fname),
+			format: fmt.Sprintf("kind %s: object %q adds field %q as required while %%d live records hold an object without it; %s",
+				ident, label, fname, fieldBackfillHint(candP.Fields[fname], "backfill or clear them first")),
 			query: q, args: args,
 		})
 	}
 	return out
+}
+
+// fieldBackfillHint is the remedy a field turning required names. A field's
+// `default:` fills the objects later writes send (coerceObject) and is never
+// written onto a stored object: the backfill of decision 0066 rewrites a
+// kind's own property, and nothing walks a list or a map inside a row to
+// rewrite one position of it. An author who declared the pair expecting the
+// property-level backfill is told so rather than sent to declare a default
+// they already have.
+func fieldBackfillHint(f *vocabulary.Property, otherwise string) string {
+	if f.Default == nil {
+		return otherwise
+	}
+	return "a field's default fills the objects later writes send and backfills no stored one, so write those objects with a value first"
 }
 
 // fieldEmpty counts the live rows whose object at the path holds NO VALUE for

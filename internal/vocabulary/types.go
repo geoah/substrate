@@ -209,6 +209,13 @@ type Property struct {
 	// Default backfills, because that pair is the one declaration a record
 	// without the value cannot satisfy.
 	//
+	// On an object FIELD it is the value every object a write sends stores
+	// when the object leaves the field out: a create, a put or a patch that
+	// writes the object, each item of a repeated one and each value of a keyed
+	// one (engine coerceObject). It never builds an object the write did not
+	// send, and it backfills no stored object, so a field turning required is
+	// still refused while stored objects lack it.
+	//
 	// The value is the author's literal, held to this property's own
 	// declaration at admission (checkDeclaredDefaults, in internal/engine) so a
 	// kind whose default no write could store is refused rather than stored. It
