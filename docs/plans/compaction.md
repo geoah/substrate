@@ -273,7 +273,7 @@ call, or empty content rejects the summary. A partial summary is never saved.
   `web/console/src/lib/api/agents.ts` (pinned by `wire_test.go`).
 - Console: collapsed block in the transcript; the summary text on expand.
 - `docs/agents.md` "Threads, messages, and cost" gets a paragraph, and a
-  `docs/changes/` note for the new role and provider field.
+  `BREAKING CHANGE:` footer naming the new role and provider field.
 
 ## Phases
 

@@ -19,11 +19,6 @@ yamllint = "1.37.1"
 # multi-arch image, and attaches everything to the GitHub release. The release
 # workflow runs `mise run release`, so a release is reproducible from a laptop.
 goreleaser = "2.17.1"
-# The version calculator: it reads the conventional commits since the last tag
-# and says what the next tag is. That is the whole of the version decision.
-# The `version` workflow tags main with exactly this, so `mise run version:next`
-# on a laptop answers what the next merge will release, before it releases it.
-svu = "3.4.1"
 # uv is the connector runtime: a Python function body carrying a PEP 723
 # `# /// script` block is executed through `uv run`, which provisions its
 # declared dependencies. The runner shells out to it, so it must be on PATH.
@@ -664,27 +659,13 @@ run = '.mise/imagesmoke.sh "$usage_image"'
 # Release
 # =============================================================================
 #
-# A release is a merge to main. The `version` workflow reads the conventional
-# commits since the last tag, tags the commit with what they add up to, and
-# runs `release` below against that tag. Nothing is versioned by hand and no
-# release is a decision somebody makes separately from merging.
-
-[tasks."version:current"]
-description = "The version main last released"
-run = "svu current"
-
-[tasks."version:next"]
-description = "The version the commits since that tag add up to"
-# --v0 is the whole of the pre-1.0 policy: while the current version is 0.x a
-# breaking change bumps the MINOR, because 0.x is where breaking changes are
-# expected and burning majors on them says nothing. It stops applying by
-# itself the moment this repository reaches 1.0.0, so there is no edit here to
-# remember and no second place that holds the same rule.
-#
-# Prints the current version unchanged when nothing since the tag calls for a
-# bump (docs:, chore:, ci:, refactor:), which is how the workflow knows there
-# is nothing to release.
-run = "svu next --v0"
+# A release is a merged release pull request, never a merge on its own.
+# release-please (.github/workflows/release-please.yml) keeps one pull request
+# open, `chore(release): vX.Y.Z`, holding the next CHANGELOG.md section and
+# the version the conventional commits since the last tag add up to. Merging
+# it tags that commit, and the workflow runs `release` below against the tag.
+# docs/releasing.md is the checklist run before merging it. Nothing is
+# versioned by hand.
 
 [tasks."release:check"]
 description = "Validate .goreleaser.yaml"
@@ -699,31 +680,12 @@ description = "Apply .github/rulesets/main.json and the merge buttons to the Git
 # By hand, never from CI: a token that can rewrite the ruleset can lift it.
 run = ".mise/reposettings.sh"
 
-[tasks.changelog]
-description = "Every release's upgrade notes and feat/fix commits, newest first, from docs/changes/ and git"
-# Printed, never written: a CHANGELOG file in the tree is one more thing a
-# merge has to keep true, and the tags and docs/changes/ already are the answer.
-run = ".mise/changelog.sh"
-
-[tasks."release:notes"]
-description = "Rewrite the GitHub releases whose upgrade notes differ from docs/changes/: release:notes [--dry-run] [tag...]"
-# The `release-notes` workflow runs it on every push to main that touches
-# docs/changes/; by hand it needs `gh` with write on the repository.
-run = ".mise/releasenotes.sh"
-
 [tasks.release]
-description = "Cut the release for the current tag (CI runs this)"
-# The upgrade notes go above goreleaser's commit list. The header file sits
-# outside the tree because goreleaser refuses a dirty one, and --clean empties
-# dist/. mise runs an inline script under sh, which has no pipefail; there is
-# no pipe here to need it.
-run = '''
-    set -eu
-    header="$(mktemp)"
-    trap 'rm -f "$header"' EXIT
-    .mise/changelog.sh --release "$(git describe --tags --exact-match)" >"$header"
-    goreleaser release --clean --release-header "$header"
-    '''
+description = "Build and attach the release for the current tag (CI runs this)"
+# The GitHub release and its notes exist before this runs (release-please
+# wrote them), so goreleaser attaches the artifacts and keeps the body
+# (.goreleaser.yaml's `release.mode: keep-existing`).
+run = "goreleaser release --clean"
 
 # =============================================================================
 # The pipeline

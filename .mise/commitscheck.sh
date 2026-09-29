@@ -2,19 +2,25 @@
 #
 # The pull request's titles, held to what the release reads: the PR title and
 # every commit subject on the branch are conventional commits, and a break
-# ships an upgrade note.
+# carries its upgrade steps.
 #
 # Both halves are needed because main takes both merge methods. A squash
 # lands the PR title as the one commit, a rebase lands every commit as it is,
-# and `svu` and goreleaser read whichever arrives. A subject nothing parses
-# is a release that does not happen, and a `!` with no note is a release
-# nobody can upgrade to without reading the diff.
+# and release-please reads whichever arrives to write the next CHANGELOG.md
+# section and pick the next version. A subject nothing parses is a change
+# the changelog never lists, and a break with no steps is a release nobody
+# can upgrade to without reading the diff.
 #
-# A break is a `!` before the colon, in the title or in any subject, or
-# `BREAKING CHANGE:` anywhere in any commit body (svu's rule, below). It needs a note under
-# docs/changes/ ADDED by this branch whose `type:` is `breaking`; the note's
-# shape is lint:docs's (.mise/docscheck.sh), which holds every note in the
-# tree, not only the new ones.
+# A break is a `!` before the colon, in the title or in any subject, or a
+# `BREAKING CHANGE:` footer at the start of a line in any commit body
+# (release-please's rule, and the conventional commits one). It needs that
+# footer WITH TEXT in some commit body on the branch: release-please prints
+# the text as the entry under "BREAKING CHANGES", so the text is the upgrade
+# steps, written for the person or agent who follows them literally.
+#
+# A release pull request (`chore(release): vX.Y.Z`, opened by release-please)
+# may touch CHANGELOG.md and the release-please manifest and nothing else: it
+# is the one pull request whose diff nobody reviews line by line.
 #
 # PR_TITLE is the title, from the workflow's env and never interpolated into
 # the script. Unset on a laptop, where only the commits are checked.
@@ -26,11 +32,12 @@ set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 2
 
-# The types in use, and the only ones: AGENTS.md lists the same seven. A scope
-# is a comma-separated list of lowercase names (`cli,api`).
+# The prefixes in use, and the only ones: AGENTS.md lists the same seven. A
+# scope is a comma-separated list of lowercase names (`cli,api`).
 types='feat|fix|docs|refactor|test|chore|ci'
 pattern="^(${types})(\\([a-z0-9._/,-]+\\))?!?: [^ ]"
 breaking="^(${types})(\\([a-z0-9._/,-]+\\))?!: "
+release_title='^chore\(release\): v[0-9]+\.[0-9]+\.[0-9]+$'
 
 fail=0
 flag() {
@@ -55,7 +62,7 @@ if [ -z "$base_commit" ]; then
 fi
 
 is_break=0
-
+has_steps=0
 if [ -n "${PR_TITLE:-}" ]; then
   [[ "$PR_TITLE" =~ $pattern ]] ||
     flag "the PR title '${PR_TITLE}' is not type(scope): subject, with a type of ${types//|/, }"
@@ -69,24 +76,23 @@ while IFS= read -r sha; do
   [[ "$subject" =~ $pattern ]] ||
     flag "commit ${sha:0:12} '${subject}' is not type(scope): subject; a rebase merge would land it as it is"
   [[ "$subject" =~ $breaking ]] && is_break=1
-  # svu, which computes the version, calls a commit breaking when its body
-  # holds `BREAKING CHANGE:` or `BREAKING-CHANGE:` ANYWHERE (its breakingBody
-  # regexp, case-sensitive), so this matches the same text: a footer, or the
-  # phrase quoted in prose, bumps the release either way.
-  # A here-string, not a pipe: under pipefail `git log | grep -q` reports 141
-  # when grep exits on an early match, and the break would read as absent.
+  # The footer is a LINE that starts with the token, as the conventional
+  # commits parser release-please uses reads it. The phrase quoted mid-line
+  # in prose is prose. A here-string, not a pipe: under pipefail
+  # `git log | grep -q` reports 141 when grep exits on an early match.
   body="$(git log -1 --format=%b "$sha")"
-  grep -qE 'BREAKING[ -]CHANGE:' <<<"$body" && is_break=1
+  grep -qE '^BREAKING[ -]CHANGE:' <<<"$body" && is_break=1
+  grep -qE '^BREAKING[ -]CHANGE: *[^ ]' <<<"$body" && has_steps=1
 done < <(git rev-list --no-merges "${base_commit}..HEAD")
 
-if [ "$is_break" -eq 1 ]; then
-  noted=0
-  while IFS= read -r path; do
-    [ "$(basename "$path")" = "README.md" ] && continue
-    grep -qE '^type: breaking$' "$path" && noted=1
-  done < <(git diff --name-only --diff-filter=A "$base_commit" -- 'docs/changes/*.md')
-  [ "$noted" -eq 1 ] ||
-    flag "this branch breaks something (a '!', or 'BREAKING CHANGE:' anywhere in a commit body, which svu bumps on) and adds no docs/changes/*.md with 'type: breaking'; add the note, or reword a body that only quotes the phrase"
+if [ "$is_break" -eq 1 ] && [ "$has_steps" -eq 0 ]; then
+  flag "this branch breaks something (a '!', or a 'BREAKING CHANGE:' footer) and no commit body carries 'BREAKING CHANGE: <the upgrade steps>'; add the footer with the steps a client or a deployment follows, or drop the '!'"
+fi
+
+if [ -n "${PR_TITLE:-}" ] && [[ "$PR_TITLE" =~ $release_title ]]; then
+  extra="$(git diff --name-only "${base_commit}" HEAD | grep -vxF -e CHANGELOG.md -e .release-please-manifest.json || true)"
+  [ -z "$extra" ] ||
+    flag "a release pull request may change CHANGELOG.md and .release-please-manifest.json only; this one also changes: $(tr '\n' ' ' <<<"$extra")"
 fi
 
 exit "$fail"

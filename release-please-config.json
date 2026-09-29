@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "go",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "changelog-path": "CHANGELOG.md",
+  "changelog-sections": [
+    { "type": "feat", "section": "Added" },
+    { "type": "fix", "section": "Fixed" },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "refactor", "section": "Refactoring", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "chore", "section": "Chores", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true }
+  ],
+  "pull-request-title-pattern": "chore(release): v${version}",
+  "pull-request-header": "Merging this pull request releases everything on `main` as the version in the title. It is regenerated after every merge; the checklist is in `docs/releasing.md`.",
+  "pull-request-footer": "Opened by release-please from the conventional commits since the last tag. Fix a wrong line by editing the merged pull request it came from (`BEGIN_COMMIT_OVERRIDE`, see `docs/releasing.md`), not this one.",
+  "packages": {
+    ".": {}
+  }
+}

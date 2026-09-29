@@ -1,22 +1,22 @@
 # Cuts a release: the CLI for every platform and the multi-arch image, all
-# tagged from the git tag.
+# tagged from the git tag, attached to the GitHub release release-please made.
 #
 # This file holds NO build definition — it runs `mise run release`, which runs
 # goreleaser against .goreleaser.yaml. A person can run the same thing on a
 # laptop with `mise run release:snapshot` (which builds everything and
 # publishes nothing).
 #
-# version.yml CALLS this workflow after it tags a green main, and that call is
-# the ONLY door: there is no dispatch and no `on: push: tags`, because either
-# one publishes whatever commit a tag names without asking whether ci ever
-# passed for it. The gate lives in version.yml, which refuses to tag a commit
-# with no successful ci run, so a caller added here must prove the same thing
-# before it calls.
+# release-please.yml CALLS this workflow after it tags a merged release pull
+# request, and that call is the ONLY door: there is no dispatch and no
+# `on: push: tags`, because either one publishes whatever commit a tag names
+# without asking whether ci ever passed for it. The first step below asks:
+# it looks the tagged commit's own green ci run up and refuses without one.
 #
 # Recovering a release that died halfway (the ghcr push, a flaky upload) is a
-# re-run of the version.yml run that called this, or a dispatch of it: either
-# one finds the tag already pushed and no release behind it, and calls here
-# again. Nothing has to be tagged, deleted or released by hand.
+# re-run of the release-please.yml run that called this: release-please
+# finds the tag already cut and the release already created, reports the
+# release, and calls here again. Nothing has to be tagged, deleted or
+# released by hand.
 name: release
 
 on:
@@ -27,7 +27,7 @@ on:
         required: true
         type: string
       sha:
-        description: The commit that tag was made at, and that ci passed for
+        description: The commit that tag was made at
         required: true
         type: string
 
@@ -50,22 +50,43 @@ jobs:
       # packages: write pushes the image to ghcr.
       contents: write
       packages: write
+      # To read ci's runs, which is what the gate below asks for.
+      actions: read
     steps:
+      # release-please runs after SOME green ci run on main, which may be a
+      # later commit's. The release is this commit, so this commit's own run
+      # is what has to be green. `event == push` and `head_branch == main`
+      # because a pull request run can carry a main commit's sha (a fork's
+      # pull request from its own main), and that run tested the fork.
+      - name: require a successful ci run for the tagged commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          green="$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=100" \
+            --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main")] | length')"
+          if [ "$green" -eq 0 ]; then
+            echo "no successful ci run for $SHA on main; refusing to build a release from it" >&2
+            exit 1
+          fi
+          echo "$green successful ci run(s) for $SHA" >&2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # goreleaser needs the full history to resolve the previous tag, and
           # every tag, which fetch-depth 0 brings whatever the ref is.
           fetch-depth: 0
           # The COMMIT, never the tag. A tag is a mutable pointer: ci passed
-          # for this sha and version.yml tagged this sha, and checking the tag
-          # out would build whatever it names by the time this job starts.
+          # for this sha and release-please tagged this sha, and checking the
+          # tag out would build whatever it names by the time this job starts.
           # HEAD lands in the same detached state a tag checkout produces, so
           # goreleaser sees what it always saw.
           ref: ${{ inputs.sha }}
       # The tag as fetched moments ago must still be the commit ci passed for.
-      # Failing here means somebody moved the tag between version.yml pushing
-      # it and this checkout, and the release that would go out carries a name
-      # that no longer means what it says.
+      # Failing here means somebody moved the tag between release-please
+      # pushing it and this checkout, and the release that would go out
+      # carries a name that no longer means what it says.
       - name: verify the tag is the verified commit
         env:
           TAG: ${{ inputs.tag }}

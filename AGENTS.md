@@ -443,32 +443,37 @@ first label.
 - **Every commit title is a conventional commit** —
   `type(scope): what changed`, with `!` before the colon for a break. The
   types in use here are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`,
-  `ci`. This is not style: **the title is the release**. A merge to `main`
-  that passes CI is folded into a version by these titles (`fix:` the patch,
-  `feat:` the minor, `!` the major, or the minor below 1.0.0), and that
-  version is tagged, built and published without anybody deciding to. A title
-  nothing can parse is a release that does not happen. `main` moves only
-  through a pull request, merged by squash or by rebase: a squash lands the
-  PR title as the one commit, a rebase lands every commit as it is, so the
-  PR title AND every commit subject on the branch are held, by
-  `mise run commits:check` (the `conventional commits` check). The ruleset
-  is `.github/rulesets/main.json`, applied by an admin with
-  `mise run repo:settings`. `mise run version:next` says what main would
-  release right now.
-- **A change a user has to act on ships an upgrade note.** A break, a
-  deprecation, or a feature the commit title does not explain adds one file
-  under `docs/changes/`, in the shape
-  [docs/changes/README.md](docs/changes/README.md) gives: a `type:`, one
-  heading, one exact example, and for a break or a deprecation a
-  `## What to do` an agent can follow literally. The release job puts the
-  notes above the commit list on the GitHub release, the `release-notes`
-  workflow (`mise run release:notes`) rewrites a release page whose notes
-  changed later, and `mise run changelog` renders every release. A `!` without a
-  `type: breaking` note is refused by `commits:check`; the rest is held by
-  the agent review (`.github/workflows/review.yml`, briefed by
-  `.github/review.md`), which comments and never blocks. A note is never
-  renamed or deleted once merged: the commit that added it is what places it
-  in a release.
+  `ci`. This is not style: **the title is the changelog entry and the
+  version bump**. release-please reads the titles merged since the last tag,
+  writes the next `CHANGELOG.md` section from them (`feat:` under Added,
+  `fix:` under Fixed, a break under BREAKING CHANGES) and picks the next
+  version (`fix:` the patch, `feat:` the minor, a break the minor while
+  below 1.0.0), and keeps that as one open release pull request,
+  `chore(release): vX.Y.Z`. A title nothing can parse is a change the
+  changelog never lists. `main` moves only through a pull request, merged by
+  squash or by rebase: a squash lands the PR title as the one commit, a
+  rebase lands every commit as it is, so the PR title AND every commit
+  subject on the branch are held, by `mise run commits:check` (the
+  `conventional commits` check). The ruleset is
+  `.github/rulesets/main.json`, applied by an admin with
+  `mise run repo:settings`.
+- **A merge to `main` releases nothing; merging the release pull request
+  does.** `latest` tracks `main`. A release is cut when somebody runs the
+  checklist in [docs/releasing.md](docs/releasing.md) against the open
+  `chore(release): vX.Y.Z` pull request and merges it: release-please tags
+  the merge, creates the GitHub release with the section as its body, and
+  `release.yml` builds and attaches the artifacts. Nothing is tagged by hand.
+- **A break carries its upgrade steps in a `BREAKING CHANGE:` footer.** The
+  footer's text is what release-please prints under BREAKING CHANGES, and
+  it is what a person or an agent upgrading follows literally: the command
+  or the request, in order, and what happens to a rollback. A `!` with no
+  such footer on any commit of the branch is refused by `commits:check`; a
+  feature or a fix whose title is not enough to use it says the rest in its
+  body. The rest is held by the agent review
+  (`.github/workflows/review.yml`, briefed by `.github/review.md`), which
+  comments and never blocks. A wrong line in a merged change is fixed by
+  editing the merged pull request's body (`BEGIN_COMMIT_OVERRIDE`, see
+  [docs/releasing.md](docs/releasing.md)), never `CHANGELOG.md` by hand.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
   and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs,
   the migrations, the sandbox gate, the toolchain pins and the CI scripts, `fmt:check` is Go and YAML. The console has its own pair

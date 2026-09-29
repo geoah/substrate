@@ -2,8 +2,9 @@
      lands this title as the commit and a rebase merge lands every commit on
      the branch, so both are held by the `conventional commits` check:
      `type(scope): what changed`, with `!` before the colon for a break. Types
-     in use: feat, fix, docs, refactor, test, chore, ci. Merging a green
-     `feat:` or `fix:` tags main and publishes it. -->
+     in use: feat, fix, docs, refactor, test, chore, ci. release-please
+     writes the title into the next CHANGELOG.md section; merging releases
+     nothing until the release pull request is merged. -->
 
 ## What this changes
 
@@ -30,9 +31,11 @@
 - [ ] **The API surface changed** — it is additive, or the break is stated
       here and in the title with `!`.
 - [ ] **Somebody using a substrate has to act** (a break, a deprecation, a
-      new env var or flag): a note is added under `docs/changes/`
-      ([format](../docs/changes/README.md)). A `!` without one fails the
-      `conventional commits` check.
+      new env var or flag): a commit body says what, and a break carries a
+      `BREAKING CHANGE:` footer with the steps, in order
+      ([releasing](../docs/releasing.md)). The title and that footer are what
+      release-please writes into `CHANGELOG.md`. A `!` without the footer
+      fails the `conventional commits` check.
 - [ ] **Docs affected** — the pages that describe this are updated. `docs/` is
       held to the code, not the other way round.
 - [ ] **A new word** — it is in `docs/terms.md`, and no dead word came back.

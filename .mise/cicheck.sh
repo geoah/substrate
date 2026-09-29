@@ -7,8 +7,9 @@
 # collision issue #587 describes, found only after the merge.
 #
 # .mise/commitscheck.sh is the third: it decides whether a pull request's
-# titles can be released, so a wrong pass is a release that never happens or
-# a break that ships without its note. Its scenarios are at the end.
+# titles can be read into the changelog, so a wrong pass is a change the
+# release never lists or a break that ships without its steps. Its scenarios
+# are at the end.
 #
 # Two scripts decide what the database suite runs: .mise/changescheck.sh
 # decides whether it runs at all, and .mise/shardselect.sh decides which tests
@@ -224,24 +225,32 @@ PY
 crepo="$tmp/commits"
 git init --quiet --initial-branch=main "$crepo"
 cg() { git -C "$crepo" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
-mkdir -p "$crepo/docs/changes"
-printf 'seed\n' >"$crepo/docs/changes/README.md"
+printf '# Changelog\n' >"$crepo/CHANGELOG.md"
+printf 'seed\n' >"$crepo/README.md"
 cg add -A && cg commit --quiet -m 'chore: seed'
 
-# commits <name> <expected exit> <title or -> <subject|note:type...>: each
-# `note:<type>` adds a note of that type in its own commit, every other word
-# is an empty commit with that subject.
+# commits <name> <expected exit> <title or -> <item...>: `footer:<text>` is a
+# `feat: change it` commit whose body is `BREAKING CHANGE: <text>`,
+# `file:<path>` is a `chore: touch it` commit that writes <path>, and every
+# other word is an empty commit with that subject.
 commits() {
   local name="$1" expected="$2" title="$3" item status
   shift 3
   cg checkout --quiet -b "$name" main
   for item in "$@"; do
-    if [[ "$item" == note:* ]]; then
-      printf -- '---\ntype: %s\n---\n\n# n\n' "${item#note:}" >"$crepo/docs/changes/${name}.md"
-      cg add -A && cg commit --quiet -m 'docs: add the note'
-    else
+    case "$item" in
+    footer:*)
+      cg commit --quiet --allow-empty -m 'feat: change it' -m "BREAKING CHANGE: ${item#footer:}"
+      ;;
+    file:*)
+      mkdir -p "$(dirname "$crepo/${item#file:}")"
+      printf 'x\n' >>"$crepo/${item#file:}"
+      cg add -A && cg commit --quiet -m 'chore: touch it'
+      ;;
+    *)
       cg commit --quiet --allow-empty -m "$item"
-    fi
+      ;;
+    esac
   done
   if [ "$title" = "-" ]; then
     (cd "$crepo" && env -u PR_TITLE -u GITHUB_BASE_REF -u CI COMMITS_CHECK_BASE=main "$commitscheck" 2>"$tmp/stderr")
@@ -260,32 +269,27 @@ commits bad-title 1 'Add a thing' 'feat: add a thing'
 commits unknown-type 1 'perf: faster' 'perf: faster'
 commits bad-commit 1 'fix: it' 'fix: it' 'address review'
 commits laptop-no-title 0 - 'fix: it'
-commits break-in-title-no-note 1 'feat!: drop it' 'feat: drop it'
-commits break-in-commit-no-note 1 'feat: drop it' 'feat(api)!: drop it'
-commits break-with-note 0 'feat!: drop it' 'feat!: drop it' note:breaking
-commits break-with-feature-note 1 'feat!: drop it' 'feat!: drop it' note:feature
-
-# A BREAKING CHANGE footer is a break without a `!`.
-cg checkout --quiet -b footer main
-cg commit --quiet --allow-empty -m 'feat: drop it' -m 'BREAKING CHANGE: it is gone'
-if (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='feat: drop it' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1); then
-  flag "commits footer: a BREAKING CHANGE footer with no note passed"
-fi
-cg checkout --quiet main
-
-# svu reads the phrase anywhere in a body, so a body that only quotes it in
-# prose still bumps the release; the check must agree. Lowercase is not the
-# phrase to svu, and not to the check.
+commits break-in-title-no-steps 1 'feat!: drop it' 'feat: drop it'
+commits break-in-commit-no-steps 1 'feat: drop it' 'feat(api)!: drop it'
+commits break-with-steps 0 'feat!: drop it' 'feat!: drop it' 'footer:delete every trigger without a source, then restart'
+# The footer alone is a break, and its text is the steps.
+commits footer-is-a-break-with-steps 0 'feat: drop it' 'footer:it is gone; read the new field instead'
+# A footer with no text is a break with no steps.
+commits footer-without-steps 1 'feat: drop it' 'footer:'
+# release-please reads the token at the START of a line. The phrase quoted
+# mid-line in prose is prose, and lowercase is not the token.
 cg checkout --quiet -b quoted main
-cg commit --quiet --allow-empty -m 'ci: explain it' -m 'The check refuses a BREAKING CHANGE: footer with no note.'
-if (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='ci: explain it' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1); then
-  flag "commits quoted: a body quoting 'BREAKING CHANGE:' passed, but svu bumps on it"
-fi
+cg commit --quiet --allow-empty -m 'ci: explain it' -m 'The check refuses a BREAKING CHANGE: footer with no steps.'
+(cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='ci: explain it' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1) ||
+  flag "commits quoted: a body quoting 'BREAKING CHANGE:' mid-line was read as a break"
 cg checkout --quiet -b lowercase main
-cg commit --quiet --allow-empty -m 'ci: say it softly' -m 'a breaking change: lowercase is prose'
+cg commit --quiet --allow-empty -m 'ci: say it softly' -m 'breaking change: lowercase is prose'
 (cd "$crepo" && env -u GITHUB_BASE_REF -u CI PR_TITLE='ci: say it softly' COMMITS_CHECK_BASE=main "$commitscheck" >/dev/null 2>&1) ||
-  flag "commits lowercase: a lowercase 'breaking change:' was read as a break, which svu does not"
+  flag "commits lowercase: a lowercase 'breaking change:' was read as a break"
 cg checkout --quiet main
+# The release pull request touches the changelog and the manifest only.
+commits release-pr-ok 0 'chore(release): v0.112.0' 'file:CHANGELOG.md' 'file:.release-please-manifest.json'
+commits release-pr-touches-code 1 'chore(release): v0.112.0' 'file:CHANGELOG.md' 'file:internal/x.go'
 
 
 # --- the decision number check -------------------------------------------
