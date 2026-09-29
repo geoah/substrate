@@ -27,8 +27,10 @@
 // Supervision is lazy: a crashed or timed-out process is killed — the whole
 // process GROUP, so spawned descendants die with it — and the next
 // invocation restarts it. The per-invocation timeout comes from the manifest
-// and bounds the WHOLE delivery as a context deadline threaded through every
-// host call; the dispatcher's ordinary retry-then-park absorbs the failure.
+// and bounds the WHOLE delivery, from the invoke frame on, as a context
+// deadline threaded through every host call; the restart a delivery may need
+// first has its own bound (registerBound). The dispatcher's ordinary
+// retry-then-park absorbs either failure.
 package runner
 
 import (
@@ -349,19 +351,31 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	return r.invokeOnce(ctx, spec, in, backend)
 }
 
-// invokeOnce is one attempt under its own manifest deadline: a restart's
-// register roundtrip is paid by the attempt that needed it, never out of the
-// retry's invocation budget.
+// invokeOnce is one attempt: the process start it needs (a reaped, crashed or
+// timed-out child) runs under registerBound, and the manifest deadline starts
+// after it. Under the body's own `timeout`, a restart that outlasts it fails
+// and kills the half-started process, so every later attempt starts cold and
+// fails the same way. Both bounds are paid by the attempt that needed them,
+// never out of the retry's budget.
+//
+// Each deadline carries its message as the context cause: a register that
+// runs out under a caller's context reports the caller's cause
+// (pythonProc), and a nested Call's host-call context is this invocation's.
 func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Backend) (*Result, error) {
-	ictx, cancel := context.WithTimeout(ctx, spec.timeout())
-	defer cancel()
-	p, err := r.proc(ictx, spec)
+	start := registerBound(spec)
+	sctx, scancel := context.WithTimeoutCause(ctx, start,
+		fmt.Errorf("runner: process start exceeded %s", start))
+	p, err := r.proc(sctx, spec)
+	scancel()
 	if err != nil {
 		return nil, err
 	}
 	if r.afterLookup != nil {
 		r.afterLookup(p)
 	}
+	ictx, cancel := context.WithTimeoutCause(ctx, spec.timeout(),
+		fmt.Errorf("runner: invocation exceeded %s", spec.timeout()))
+	defer cancel()
 	state := &readState{spec: spec, backend: backend}
 	resp, err := p.roundtrip(ictx, spec.timeout(),
 		frame{Op: "invoke", ID: spec.Key(), Input: &in}, state)
