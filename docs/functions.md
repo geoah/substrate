@@ -1005,8 +1005,8 @@ repository.
   the run may have spent tokens and written records: read its thread, then
   retry the delivery or forget it.
   `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one, and `DELETE
-  …/trigger/{id}/parked/{failureId}` forgets one — the two ways a parked row
-  ends. A RETRY runs the delivery and settles the row whatever the delivery
+  …/trigger/{id}/parked/{failureId}` forgets one — the two ways a hand ends
+  a parked row. A RETRY runs the delivery and settles the row whatever the delivery
   then does: effects, or a `when` that no longer matches, which is a settled
   delivery and not a reason to leave the row parked. A retry whose delivery
   fails AGAIN leaves the row parked one attempt older, carrying the new
@@ -1016,6 +1016,13 @@ repository.
   made again — the callable uninstalled, the record deleted, the work done by
   another route — and it answers `204`, or `404` when the row is already gone
   ([#579](https://github.com/geoah/substrate/issues/579)). A
+  schedule trigger's parked fire also ends without a hand: when a later
+  occurrence of the same trigger settles, every parked fire at or before it
+  is retired through the same unpark, because retrying one would repeat the
+  work the settled fire just did. A record trigger's park, a webhook
+  request's park and an agent run a stop interrupted are never retired this
+  way
+  ([decision 0141](decisions/0141-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)). A
   failure's id is the seq of the changelog entry that parked it, so it
   survives a restore ([backups](operations.md#backups)). A webhook request
   is recorded there minus what a replay does not need, from the `202` on:
