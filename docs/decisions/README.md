@@ -300,3 +300,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0139](0139-an-agent-declares-its-purpose.md) | An agent declares its purpose | accepted |
 | [0140](0140-money-is-an-integer-amount-of-its-currencys-minor-unit.md) | Money is an integer amount of its currency's minor unit | accepted |
 | [0141](0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md) | A paged drain names its cursor by hash, and a park carries it whole | accepted |
+| [0141](0141-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md) | A schedule fire that settles retires its trigger's older parked fires | accepted |
