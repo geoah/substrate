@@ -299,3 +299,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0138](0138-a-compacted-thread-keeps-its-rows-and-replays-a-summary-message-over-the-range-it-covers.md) | A compacted thread keeps its rows and replays a `summary` message over the range it covers | accepted |
 | [0139](0139-an-agent-declares-its-purpose.md) | An agent declares its purpose | accepted |
 | [0140](0140-money-is-an-integer-amount-of-its-currencys-minor-unit.md) | Money is an integer amount of its currency's minor unit | accepted |
+| [0141](0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md) | A paged drain names its cursor by hash, and a park carries it whole | accepted |
