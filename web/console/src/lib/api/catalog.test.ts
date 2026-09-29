@@ -6,8 +6,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
-  catalogItemQueryOptions,
   catalogQueryOptions,
+  heldCopyOf,
   importBundle,
   installBundle,
   landedCatalog,
@@ -16,6 +16,7 @@ import {
   rehomeAuthority,
   type CatalogItem,
 } from "./catalog"
+import type { BundleStatus } from "./types"
 
 function item(over: Partial<CatalogItem> = {}): CatalogItem {
   return {
@@ -120,20 +121,60 @@ describe("catalog reads and writes", () => {
   })
 })
 
-describe("catalogItemQueryOptions", () => {
-  it("shares the list cache and selects the entry by bundle id", () => {
-    const items = [
-      item(),
-      item({ id: "slack.example.com/slack", name: "slack" }),
-    ]
-    const opts = catalogItemQueryOptions("slack.example.com/slack")
-    expect(opts.queryKey).toEqual(catalogQueryOptions.queryKey)
-    expect(opts.select?.(items)?.name).toBe("slack")
+/** A held copy meets its catalog entry by the origin its import stamped, and
+ * by id only when it carries none: two publishers' samples of one package
+ * word both land at `<home>/<package>`, so the id names both. */
+describe("heldCopyOf", () => {
+  const HOME = "ada.example.com"
+  const tasks = (authority: string) =>
+    item({
+      id: `${authority}/tasks`,
+      name: "tasks",
+      authority,
+      package: "tasks",
+      tier: "sample",
+    })
+  const copy = (over: Partial<BundleStatus> = {}): BundleStatus => ({
+    id: `${HOME}/tasks`,
+    name: "tasks",
+    authority: HOME,
+    package: "tasks",
+    installed: true,
+    enabled: true,
+    accounts: 0,
+    functions: 0,
+    kinds: 1,
+    liveRecords: 0,
+    ...over,
   })
 
-  it("selects undefined when this repository's bundle is not a shipped closure", () => {
-    const opts = catalogItemQueryOptions("appliedonly.example.com/local")
-    expect(opts.select?.([item()])).toBeUndefined()
+  it("hands a stamped copy to the entry it names and to no other", () => {
+    const held = [copy({ origin: "z.example.com/tasks" })]
+    expect(heldCopyOf(tasks("z.example.com"), held, HOME)).toBe(held[0])
+    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBeUndefined()
+  })
+
+  it("finds a stamped copy wherever it sits", () => {
+    const held = [copy({ id: `${HOME}/todo`, origin: "a.example.com/tasks" })]
+    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBe(held[0])
+  })
+
+  it("matches an unstamped copy by the id the entry lands at", () => {
+    const held = [copy()]
+    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBe(held[0])
+  })
+
+  it("matches an unstamped copy held verbatim under the shipped id", () => {
+    const held = [
+      copy({ id: "a.example.com/tasks", authority: "a.example.com" }),
+    ]
+    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBe(held[0])
+  })
+
+  it("matches a provider by its published id", () => {
+    const held = [copy({ id: "providers.substrate.reamde.dev/google" })]
+    expect(heldCopyOf(item(), held, HOME)).toBe(held[0])
+    expect(heldCopyOf(item(), [copy()], HOME)).toBeUndefined()
   })
 })
 

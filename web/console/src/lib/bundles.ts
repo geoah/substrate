@@ -1,6 +1,6 @@
 /** The Registry page's pure fold: it merges the two reads the page makes —
  * the imported bundles' runtime status and the shipped catalog closures — into
- * one id-keyed row set, plus the small domain helpers the registry list and the
+ * one row set, plus the small domain helpers the registry list and the
  * bundle detail share (the two tier sections and the provider-copy gate).
  * Kept out of the page component modules so the pages stay component-only
  * (react-refresh) and this stays unit-testable.
@@ -14,7 +14,13 @@
  * and its id IS that package identity. */
 
 import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
-import { landedCatalog, landedId, type CatalogItem } from "@/lib/api/catalog"
+import {
+  heldCopyOf,
+  landedCatalog,
+  landedId,
+  rehomeAuthority,
+  type CatalogItem,
+} from "@/lib/api/catalog"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import type {
   BundleUpgrade,
@@ -30,9 +36,14 @@ import { displayPlural } from "@/lib/kind-names"
 import { kindHasTrait } from "@/lib/sync"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
- * catalog entry (when it is a shipped closure) folded by the id the bundle
- * has HERE. `tier` comes from the catalog (backend field). */
+ * catalog entry (when it is a shipped closure) it is a copy of. `tier` comes
+ * from the catalog (backend field). */
 export interface BundleRow {
+  /** What tells this row from every other, for list keys and lookups: the
+   * catalog entry's shipped id, which the catalog never repeats, or the id
+   * of a held bundle no entry claims. `id` is not unique: two publishers'
+   * samples of one package word both land at `<home>/<package>`. */
+  key: string
   /** The bundle's id IN THIS REPOSITORY: the package identity it owns once
    * it lands. A provider keeps its published id; an imported sample carries
    * this repository's authority, so this is not always the catalog's id. The
@@ -65,38 +76,51 @@ export interface BundleRow {
   upgrade?: BundleUpgrade
 }
 
-/** Fold the two reads into one row set, keyed by the id each bundle has here:
- * bundles this repository holds carry their runtime status, closures it has
- * not taken yet carry their catalog entry, and one in both carries both
- * (status wins the count columns). `home` is this repository's own authority,
- * which is where a sample lands. Without it an imported sample would never
- * meet its catalog entry. */
+/** Fold the two reads into one row set: each catalog entry is one row,
+ * carrying the copy this repository holds of it when there is one (status
+ * wins the count columns), and each held bundle no entry claims is a row of
+ * its own. A copy is paired with its entry by its origin stamp, and by id
+ * only when it has none (heldCopyOf). `home` is this repository's own
+ * authority, which is where a sample lands: without it an unstamped imported
+ * sample would never meet its catalog entry. */
 export function mergeBundles(
   statuses: BundleStatus[],
   catalog: CatalogItem[],
   home = ""
 ): BundleRow[] {
-  const byId = new Map<string, BundleRow>()
-  // A sample can be here under EITHER id: the import lands the rehomed one,
-  // and installing it verbatim (still a door until the providers stop
-  // requiring sample packages) lands the shipped one. The row takes whichever
-  // this repository actually holds, so a verbatim install folds onto its own
-  // catalog entry instead of showing up twice.
-  const held = new Set(statuses.map((s) => s.id))
-  for (const raw of catalog) {
-    const landed = landedId(raw, home)
-    const id = !held.has(landed) && held.has(raw.id) ? raw.id : landed
-    // The entry is REHOMED only when the row is: a closure the repository
-    // holds verbatim has its kinds under the authority the tree spells, and
-    // previewing them rehomed would link nowhere.
+  const rows: BundleRow[] = []
+  const matches = catalog.map(
+    (raw) => [raw, heldCopyOf(raw, statuses, home)] as const
+  )
+  // An unstamped copy at an id two entries land at could be either one's,
+  // and nothing says which. The server reads both entries as installed, so
+  // both rows say so; the copy pairs with neither, so no page offers to
+  // import one of them over it, and it is listed once, on its own row.
+  const claims = new Map<string, number>()
+  for (const [, copy] of matches) {
+    if (copy) claims.set(copy.id, (claims.get(copy.id) ?? 0) + 1)
+  }
+  const paired = new Set<string>()
+  for (const [raw, copy] of matches) {
+    const status = copy && claims.get(copy.id) === 1 ? copy : undefined
+    if (status) paired.add(status.id)
+    // A sample can be here under EITHER id: the import lands the rehomed
+    // one, and installing it verbatim (still a door until the providers stop
+    // requiring sample packages) lands the shipped one. The entry is REHOMED
+    // only when the row is: a closure held verbatim has its kinds under the
+    // authority the tree spells, and previewing them rehomed would link
+    // nowhere.
+    const id = copy?.id ?? landedId(raw, home)
     const item = id === raw.id ? raw : landedCatalog(raw, home)
-    byId.set(id, {
+    rows.push({
+      key: raw.id,
       id,
-      name: item.name,
-      authority: item.authority,
-      package: item.package,
+      name: status?.name ?? item.name,
+      authority: status?.authority ?? item.authority,
+      package: status?.package ?? item.package,
+      ...(status && { status }),
       catalog: item,
-      installed: item.installed,
+      installed: copy ? copy.installed : item.installed,
       tier: item.tier,
       requires: item.requires ?? [],
       requiresAtLeast: item.requiresAtLeast ?? {},
@@ -104,25 +128,28 @@ export function mergeBundles(
     })
   }
   for (const status of statuses) {
-    const existing = byId.get(status.id)
-    byId.set(status.id, {
+    if (paired.has(status.id)) continue
+    rows.push({
+      // A held bundle's id can be a catalog id too (a sample installed
+      // verbatim beside its imported copy), so the two keys never share a
+      // spelling.
+      key: `held ${status.id}`,
       id: status.id,
       name: status.name,
       authority: status.authority,
       package: status.package,
       status,
-      catalog: existing?.catalog,
       installed: status.installed,
-      tier: existing?.tier,
-      requires: existing?.requires ?? [],
-      requiresAtLeast: existing?.requiresAtLeast ?? {},
-      upgrade: existing?.upgrade,
+      requires: [],
+      requiresAtLeast: {},
     })
   }
   // Not taken first (they invite an action), then held; alpha in each.
-  return [...byId.values()].sort(
+  return rows.sort(
     (a, b) =>
-      Number(a.installed) - Number(b.installed) || a.id.localeCompare(b.id)
+      Number(a.installed) - Number(b.installed) ||
+      a.id.localeCompare(b.id) ||
+      a.key.localeCompare(b.key)
   )
 }
 
@@ -362,10 +389,36 @@ export interface RequirementNode extends Requirement {
   requires: RequirementNode[]
 }
 
+/** The row that supplies requirement `req` to `requirer`, matched on the id
+ * each row has HERE, which is what a requirement names (a sample's are
+ * rehomed by landedCatalog before they get this far). One id can name two
+ * rows, since two publishers' samples of one package word both land at
+ * `<home>/<package>`. A satisfied requirement is supplied by the copy this
+ * repository holds, which is what admission checked. A missing one, absent
+ * or held below its floor, is supplied by the entry the requirement named as
+ * shipped, before the requirer's own authority was rehomed onto this
+ * repository's: taking another publisher's sample would not satisfy it. */
+function supplierOf(
+  req: Requirement,
+  requirer: BundleRow,
+  rows: readonly BundleRow[]
+): BundleRow | undefined {
+  const at = rows.filter((r) => r.id === req.package)
+  if (at.length < 2) return at[0]
+  const held = at.find((r) => r.status)
+  const item = requirer.catalog
+  const publisher = item?.id.slice(0, item.id.lastIndexOf("/"))
+  const shipped =
+    item && publisher
+      ? rehomeAuthority(req.package, item.authority, publisher)
+      : req.package
+  const named = at.find((r) => r.catalog?.id === shipped)
+  return (req.present ? (held ?? named) : (named ?? held)) ?? at[0]
+}
+
 /** The requirement closure under one row, walked across catalog entries.
- * `byId` keys every row by the package identity it has HERE, which is what a
- * requirement names (a sample's are rehomed by landedCatalog before they get
- * this far).
+ * `rows` is every row the page folded, and each requirement's supplier is
+ * read from it (supplierOf).
  *
  * The row's OWN id starts the walk as seen, so a closure that requires its way
  * back to it stops there and is marked a cycle rather than listing the bundle
@@ -373,13 +426,13 @@ export interface RequirementNode extends Requirement {
  * say anything. */
 export function requirementTree(
   row: BundleRow,
-  byId: ReadonlyMap<string, BundleRow>,
+  rows: readonly BundleRow[],
   present: ReadonlySet<string>,
   versions: ReadonlyMap<string, number> = new Map(),
   seen: ReadonlySet<string> = new Set([row.id])
 ): RequirementNode[] {
   return requirementsOf(row, present, versions).map((req) => {
-    const supplier = byId.get(req.package)
+    const supplier = supplierOf(req, row, rows)
     const cycle = seen.has(req.package)
     const next = new Set([...seen, req.package])
     return {
@@ -388,7 +441,7 @@ export function requirementTree(
       ...(cycle && { cycle: true, cycleWith: row.id }),
       requires:
         supplier && !cycle
-          ? requirementTree(supplier, byId, present, versions, next)
+          ? requirementTree(supplier, rows, present, versions, next)
           : [],
     }
   })

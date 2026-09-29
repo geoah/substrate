@@ -6,6 +6,7 @@ import { useMemo, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CheckIcon } from "lucide-react"
 
+import { IdText } from "@/components/identity/id-text"
 import { TakeButton } from "@/components/providers/bundle-actions"
 import { Skeleton } from "@/components/ui/skeleton"
 import { joinWords } from "@/lib/agent-chat"
@@ -51,15 +52,29 @@ export function SampleList({
   const chains = useMemo(() => {
     const present = presentPackages(rows, registry.data ?? [])
     const versions = heldVersions(rows)
-    const byId = new Map(rows.map((row) => [row.id, row]))
     return new Map(
-      rows.map((row) => [row.id, requirementTree(row, byId, present, versions)])
+      rows.map((row) => [
+        row.key,
+        requirementTree(row, rows, present, versions),
+      ])
     )
   }, [rows, registry.data])
   const samples = useMemo(
     () => pick(rows, registry.data ?? []),
     [pick, rows, registry.data]
   )
+  // Two publishers' samples of one package word read alike; the shipped id
+  // is what tells them, and the Add, apart.
+  const shared = useMemo(() => {
+    const seen = new Set<string>()
+    const twice = new Set<string>()
+    for (const { row } of samples) {
+      const name = packageDisplayName(row.name)
+      if (seen.has(name)) twice.add(name)
+      seen.add(name)
+    }
+    return twice
+  }, [samples])
 
   if (catalog.isPending || statuses.isPending || registry.isPending) {
     return (
@@ -84,9 +99,10 @@ export function SampleList({
     <ul className="max-h-80 overflow-y-auto rounded-[10px] border border-border">
       {samples.map((sample) => (
         <SampleRow
-          key={sample.row.id}
+          key={sample.row.key}
           sample={sample}
-          chain={chains.get(sample.row.id) ?? []}
+          chain={chains.get(sample.row.key) ?? []}
+          showSource={shared.has(packageDisplayName(sample.row.name))}
         >
           {sample.members.map((id) => (
             <span key={id} className="inline-flex items-center gap-1.5">
@@ -102,10 +118,13 @@ export function SampleList({
 function SampleRow({
   sample: { row },
   chain,
+  showSource,
   children,
 }: {
   sample: SamplePick
   chain: RequirementNode[]
+  /** Says which shipped sample this is: another row has the same name. */
+  showSource: boolean
   children: ReactNode
 }) {
   const missing = missingChain(chain)
@@ -115,6 +134,11 @@ function SampleRow({
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="font-medium">{name}</div>
+          {showSource && row.catalog && (
+            <p className="text-[12.5px] text-faint">
+              From <IdText value={row.catalog.id} />
+            </p>
+          )}
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted-foreground">
             {children}
           </p>

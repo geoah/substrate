@@ -113,7 +113,7 @@ export function ProvidersPage() {
         <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-2.5">
           {data.providers.map((p) => (
             <ProviderCard
-              key={p.row.id}
+              key={p.row.key}
               entry={p}
               chain={data.chains(p.row)}
               technical={technical}
@@ -223,10 +223,10 @@ function OtherPackages({
   chains: (row: BundleRow) => RequirementNode[]
   pendingUpgrades: ReturnType<typeof useProviders>["pendingUpgrades"]
 }) {
-  // The row whose lossy update is being confirmed, by id: the dialog reads
+  // The row whose lossy update is being confirmed, by key: the dialog reads
   // that row's current preview, so a refetch shows the fresh plan.
   const [lossyID, setLossyID] = useState<string | null>(null)
-  const confirmLoss = useCallback((row: BundleRow) => setLossyID(row.id), [])
+  const confirmLoss = useCallback((row: BundleRow) => setLossyID(row.key), [])
   const closeLoss = useCallback(() => setLossyID(null), [])
   return (
     <section aria-labelledby="other-packages">
@@ -264,7 +264,7 @@ function OtherPackages({
             <tbody>
               {rows.map((row) => (
                 <OtherPackageRow
-                  key={row.id}
+                  key={row.key}
                   row={row}
                   chain={chains(row)}
                   onConfirmLoss={confirmLoss}
@@ -275,9 +275,9 @@ function OtherPackages({
         </div>
       )}
       <LossyUpgradeDialog
-        row={rows.find((r) => r.id === lossyID)}
+        row={rows.find((r) => r.key === lossyID)}
         name={packageDisplayName(
-          rows.find((r) => r.id === lossyID)?.package ?? ""
+          rows.find((r) => r.key === lossyID)?.package ?? ""
         )}
         onClose={closeLoss}
       />

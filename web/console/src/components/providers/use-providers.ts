@@ -163,12 +163,11 @@ export function useProviders() {
   const chains = useMemo(() => {
     const present = presentPackages(rows, kinds)
     const versions = heldVersions(rows)
-    const byId = new Map(rows.map((row) => [row.id, row]))
     const trees = new Map<string, RequirementNode[]>()
     for (const row of rows) {
-      trees.set(row.id, requirementTree(row, byId, present, versions))
+      trees.set(row.key, requirementTree(row, rows, present, versions))
     }
-    return (row: BundleRow) => trees.get(row.id) ?? []
+    return (row: BundleRow) => trees.get(row.key) ?? []
   }, [rows, kinds])
 
   const accounts = useMemo<AccountView[]>(
