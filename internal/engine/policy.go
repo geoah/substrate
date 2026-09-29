@@ -136,9 +136,11 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 }
 
 // warnActionless says once, per row and per process, that a policy carries no
-// action. validatePolicyRow refuses such a row at the write door, so it can
-// only come from a binary older than that check; loadPolicies runs per write
-// evaluation, and warning every time would bury the one line that matters.
+// action. The declaration requires `action` and validatePolicyRow refuses a
+// row without one, so it can only come from a binary older than those checks,
+// and while it lives the boot upgrade that declares `required` is withheld
+// (schemadiff.go); loadPolicies runs per write evaluation, and warning every
+// time would bury the one line that matters.
 // The id is a user-authored string from a record row, so it goes through the
 // same id-grammar filter every other logged id does (triggers.go logSafeID).
 func (ds *dataset) warnActionless(id string) {

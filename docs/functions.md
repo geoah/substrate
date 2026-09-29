@@ -896,7 +896,7 @@ data:
     callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/readinglist/fetchpage
 ```
 
-`source` takes exactly one arm:
+`source` is required and takes exactly one arm:
 
 - A **`record`** arm subscribes to the [changelog](changelog.md): the trigger owns
   a cursor and, for every committed change to a matched kind and op whose

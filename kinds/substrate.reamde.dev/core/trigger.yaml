@@ -42,7 +42,7 @@ data:
     this row.
   # `source` is one object field per arm and carries no discriminator: the
   # arm present names the source.
-  version: 19
+  version: 20
   purpose: internal
   names:
     singular: trigger
@@ -55,9 +55,12 @@ data:
         stops execution without losing the cursor
     # EXACTLY ONE ARM: the arm that is present names the source, and
     # engine/triggers.go refuses a source that carries more than one (it owns
-    # that gate, as it owns the RRULE and the CEL guard).
+    # that gate, as it owns the RRULE and the CEL guard). `required` is the
+    # declared half of the same rule: the dispatcher never runs a trigger
+    # without a source, so a write that leaves one out is refused.
     source:
       type: object
+      required: true
       description: the one source this trigger delivers from
       fields:
         record:

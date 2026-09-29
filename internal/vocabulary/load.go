@@ -1851,6 +1851,12 @@ var objectPropKeys = map[string]bool{
 	// offered it to the owner as a form (the Connections page asked a person
 	// to type a page token).
 	"writer": true,
+	// The write path holds an object to `required` exactly as it holds a
+	// scalar: a kind's own property on the merged row (checkRequiredProps), a
+	// field inside the object the write stores (coerceObject), and `{}` is no
+	// value in either place. A trigger's `source` needs it: the engine
+	// refuses a trigger without one.
+	"required": true,
 }
 
 // referencePropKeys is a reference property's own key set: `kind:` pins WHICH
@@ -1998,6 +2004,12 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			return nil
 		}
 		p.Datatype = DatatypeObject
+		p.Required = mbool(d, "required")
+		// The scalar and reference branches refuse this pair in
+		// parseReservedMarkers, which this branch does not call.
+		if p.Deprecated && p.Required {
+			l.errf("%s: a property is deprecated or required, never both: required means a form refuses to submit without it", where)
+		}
 		// A keyed object's fields describe its VALUES, so leaving them out is the
 		// one way to reach for a map of maps — refused by name rather than as a
 		// bare "object needs fields", because the author asking for it has to hear

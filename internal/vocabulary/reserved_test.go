@@ -187,7 +187,44 @@ func TestDeprecatedReserved(t *testing.T) {
     label: {type: string}
     author: {type: reference, deprecated: true, required: true}
 `, "deprecated or required, never both")
+		loadThingErr(t, `  properties:
+    spec: {type: object, deprecated: true, required: true, fields: {a: {type: string}}}
+`, "deprecated or required, never both")
 	})
+}
+
+// --- required on an object ---------------------------------------------------
+
+// Issue 464: a trigger's `source` is an object the engine refuses to run
+// without, so the declaration has to be able to say so. The key was outside
+// the object key set, which refused `required: true` as unknown and left
+// every object optional.
+func TestRequiredObjectProperty(t *testing.T) {
+	ty := loadThing(t, `  properties:
+    spec:
+      type: object
+      required: true
+      fields:
+        inner: {type: object, required: true, fields: {a: {type: string}}}
+        loose: {type: object, fields: {a: {type: string}}}
+    arm: {type: object, required: true, fields: {}}
+    optional: {type: object, fields: {a: {type: string}}}
+`)
+	for name, want := range map[string]bool{"spec": true, "arm": true, "optional": false} {
+		if got := ty.Props[name].Required; got != want {
+			t.Errorf("%s: Required = %t, want %t", name, got, want)
+		}
+	}
+	spec := ty.Props["spec"]
+	if !spec.Fields["inner"].Required || spec.Fields["loose"].Required {
+		t.Errorf("object fields: inner.Required = %t, loose.Required = %t, want true and false",
+			spec.Fields["inner"].Required, spec.Fields["loose"].Required)
+	}
+	props, _ := ty.Definition["properties"].(map[string]any)
+	stored, _ := props["spec"].(map[string]any)
+	if got, _ := stored["required"].(bool); !got {
+		t.Errorf("definition required = %v", stored["required"])
+	}
 }
 
 // --- purpose -----------------------------------------------------------------

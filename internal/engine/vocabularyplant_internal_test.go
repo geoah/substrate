@@ -22,7 +22,9 @@ import (
 // the fold, so the row and the changelog entry that describes it land together
 // and RebuildRepository reproduces exactly the planted state. Coercion is
 // deliberately skipped: the shape these tests need is one this binary's
-// declarations refuse.
+// declarations refuse. Nothing in it is specific to a declaration, so it also
+// plants a data row an older binary left behind, such as a trigger without a
+// `source` or a policy without an `action`.
 func (ds *dataset) PlantDeclarationRow(ctx context.Context, kindIdent, id string, props map[string]any) error {
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		row, err := t.loadRow(eref{Kind: kindIdent, ID: id}, true)

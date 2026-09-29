@@ -35,7 +35,7 @@ data:
     and functions it speaks for, and whether their writes land, gate into
     recordpatchrequests, or refuse. The most restrictive matching policy wins;
     no match means the write lands.
-  version: 18
+  version: 19
   purpose: internal
   names:
     singular: recordpatchpolicy
@@ -109,19 +109,16 @@ data:
           description: function references whose effects this policy speaks
             for, wherever the function runs; empty means only writes an agent
             makes, directly or through a function tool
-    # REQUIRED, and the write door is what requires it (policy.go
-    # validatePolicyRow): there is no default action, so a rule without one
-    # speaks for nothing while sitting in the list looking live.
-    #
-    # The `required:` KEY is deliberately not set yet. Adding it to a property
-    # live records may lack is a narrowing, and the boot upgrade answers a
-    # narrowing by withholding the whole package's projection — all of core,
-    # until somebody fixes the row — with the reason in a server log the
-    # repository's owner cannot read. #204 turns `required` into real
-    # enforcement together with the violator scan that makes that transition
-    # safe, and this property takes the key there.
+    # REQUIRED: there is no default action, so a rule without one speaks for
+    # nothing while sitting in the list looking live. The write path refuses
+    # a record without it for every writer, the engine's own included, and
+    # policy.go validatePolicyRow still names the three values. No `default`
+    # sits beside it, because any default would decide a rule its owner never
+    # wrote: a repository holding a row without an action takes this version
+    # once that row is given one or deleted.
     action:
       type: enum
+      required: true
       values:
         - allow
         - gate
