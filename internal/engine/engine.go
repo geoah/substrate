@@ -714,16 +714,22 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 			return nil, err
 		}
 	}
-	// The shipped vocabulary's declared indexes, ONCE PER PROCESS. A
-	// plain CREATE INDEX locks the shared records table for every repository,
-	// so it is taken here — at boot, before anything is served — and not from
-	// the open path a request drives. What arrives later (a bundle's
-	// kinds) is materialized by the schema write that admits it. A read-only
-	// process builds none: its CREATE INDEX would take that lock under the
-	// running server, and the server's own boot builds what its vocabulary
-	// declares.
+	// The shipped vocabulary's declared indexes, ONCE PER PROCESS, at boot
+	// and not from the open path a request drives. The builds are
+	// concurrent, as an apply's are (ensureIndices), so a boot beside a
+	// running server does not stall that server's writes. What arrives later
+	// (a bundle's kinds) is materialized by the schema write that admits it.
+	// A read-only process builds none: it writes nothing under the running
+	// server, and the server's own boot builds what its vocabulary declares.
+	// The scratch indexes a dead rebuild left go first (sweepScratchIndexes).
 	if !s.readOnly {
-		if err := ensureIndices(ctx, admin, reg.Kinds(), nil); err != nil {
+		if err := sweepScratchIndexes(ctx, admin); err != nil {
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
+		if err := ensureIndices(ctx, admin, reg.Kinds(), indexProgress{}); err != nil {
 			repoPool.Close()
 			_ = maint.Close()
 			_ = admin.Close()
