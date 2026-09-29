@@ -206,13 +206,16 @@ func collectChangeEffects(rows *sql.Rows, keep bool) ([]substrate.Change, [][]fo
 // One element per (kind, id), in first-touch order; a later effect on the same
 // record within the entry updates its version and deletion status, so a
 // record tombstoned and then purged in one entry reads once, deleted. A purge
-// leaves no row and so no version. Annotation, manager, former-id and resync
-// effects move no record of their own: the record they hang off is bumped or
-// rewritten by an effect beside them, or is the entry's addressed record.
+// leaves no row, so its element omits the version. Annotation, manager,
+// former-id and resync effects move no record of their own: the record they
+// hang off is bumped or rewritten by an effect beside them, or is the entry's
+// addressed record.
 //
-// An entry that recorded no record-moving effect (written before the fold
-// carried them, or a rejection that moved nothing) names its addressed record
-// with no version, deleted when the op is a delete or a collection.
+// Only a patch that wrote nothing but an annotation carries no record-moving
+// effect: a judge's policy verdict (judge.go) or an accept's conflict note
+// (write.go patchWith). It names its addressed record, live and without a
+// version, because the annotation moved none, and the client fetches it.
+// Every delete and collection entry carries the tombstone or purge this reads.
 func projectAffected(c *substrate.Change) {
 	effects, _ := c.Payload[foldPayloadKey].([]any)
 	if _, held := c.Payload[foldPayloadKey]; held {
@@ -259,10 +262,7 @@ func projectAffected(c *substrate.Change) {
 		}
 	}
 	if len(out) == 0 {
-		out = []substrate.AffectedRecord{{
-			Kind: c.Kind, ID: c.RecordID,
-			Deleted: c.Op == substrate.OpDelete || c.Op == substrate.OpGC,
-		}}
+		out = []substrate.AffectedRecord{{Kind: c.Kind, ID: c.RecordID}}
 	}
 	c.Affected = out
 }
