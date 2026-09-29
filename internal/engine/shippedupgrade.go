@@ -19,6 +19,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -104,8 +105,9 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	st := &shippedUpgradeStage{upgrade: map[string]bool{}, keep: map[string]bool{}}
 	// The kinds and package headers this upgrade will NOT rewrite, by
 	// identity: a declaration held at its stored version keeps whatever shape
-	// it has, so it is not the upgrade's business and must not be able to
-	// refuse the boot.
+	// it declares, so it is not the upgrade's business and must not be able
+	// to refuse the boot, unless a refinement it uses moves
+	// (refinedStandingKinds).
 	keptIdents := map[string]bool{}
 	// The meta-kinds of the declaration rows the projection writes: a
 	// declaration appended or moved forward is a row of its record type.
@@ -174,7 +176,8 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// upgrade of a repository that ever ran an agent is refused forever: its
 	// agent rows point at the kind the move is about to carry.
 	st.moves = classifyKindMoves(current, reg, st.upgrade, keptIdents)
-	st.narrowings = classifyNarrowingsExcept(current, reg, st.upgrade, keptIdents, movedTargets(st.moves))
+	moved := movedTargets(st.moves)
+	st.narrowings = classifyNarrowingsExcept(current, reg, st.upgrade, keptIdents, moved)
 	st.refused = append(st.refused, moveGuards(current, st.moves)...)
 
 	// The default check `/vocabulary/apply` takes, for the same reason the
@@ -217,6 +220,26 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// door has nobody to confirm them (decision 0067).
 	st.conversions = classifyConversions(current, reg, st.upgrade, keptIdents)
 	if candidate != nil {
+		// A kind whose stored declaration stands still moves where a
+		// refinement it uses moves, so it is counted, converted and held to
+		// its retirements and its defaults like a kind the projection
+		// rewrites. It is compared against the candidate, which holds its
+		// stored declaration resolved against the shipped propertytype; the
+		// tree holds its embedded twin, or nothing once the tree stops
+		// shipping it. A default the twin already refused above is the same
+		// line, and is not listed twice.
+		for _, ident := range refinedStandingKinds(current, reg, candidate, st.upgrade, keptIdents) {
+			curT, _ := current.ByIdentity(ident)
+			candT, _ := candidate.ByIdentity(ident)
+			st.narrowings = append(st.narrowings, typeNarrowings(curT, candT, moved)...)
+			st.refused = append(st.refused, kindRetirementGuards(curT, candT)...)
+			for _, line := range kindDefaultProblems(candT) {
+				if !slices.Contains(st.refused, line) {
+					st.refused = append(st.refused, line)
+				}
+			}
+			st.conversions.classifyKind(curT, candT)
+		}
 		st.refused = append(st.refused, renameGuards(current, candidate, st.conversions.renames)...)
 		st.reprojected = reprojectedKinds(current, candidate, st.upgrade)
 		st.reprojectedFTS = reprojectedFTSKinds(current, candidate, st.upgrade)
@@ -233,6 +256,88 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 		st.reprojectedFTS = unionStrings(st.reprojectedFTS, parkedFTS)
 	}
 	return st, nil
+}
+
+// refinedStandingKinds is every kind of the upgraded packages whose stored
+// declaration the boot leaves standing (held at or above its shipped version,
+// or no longer shipped, since the boot never prunes) while a propertytype it
+// refines changes shape in the candidate. The loader resolves a property's
+// `type:` against its package's propertytypes at every load, so the kind
+// takes the shipped bound or value set without its own declaration moving.
+// The apply door has no such kind: a batch replaces a package whole.
+func refinedStandingKinds(current, reg, candidate *vocabulary.Registry, upgrade, kept map[string]bool) []string {
+	var out []string
+	for _, aname := range sortedKeys(upgrade) {
+		cur, _ := current.PackageByName(aname)
+		cand, _ := candidate.PackageByName(aname)
+		if cur == nil || cand == nil {
+			continue
+		}
+		changed := map[string]bool{}
+		for name, was := range cur.PropertyTypes {
+			if now := cand.PropertyTypes[name]; now != nil && !sameRefinement(was.Prop, now.Prop) {
+				changed[name] = true
+			}
+		}
+		if len(changed) == 0 {
+			continue
+		}
+		shipped, _ := reg.PackageByName(aname)
+		for _, tn := range cur.KindOrder {
+			candT := cand.Kinds[tn]
+			if candT == nil || !refinesAny(cur.Kinds[tn].Props, changed) {
+				continue
+			}
+			// A kind the projection rewrites is classified against the tree
+			// with the rest; counting it here too would refuse it twice.
+			if shipped != nil && shipped.Kinds[tn] != nil && !kept[candT.Identity] {
+				continue
+			}
+			out = append(out, candT.Identity)
+		}
+	}
+	return out
+}
+
+// sameRefinement reports whether two declarations of one propertytype admit
+// the same values: the base, the pattern, both bounds, and the value set with
+// its renames. A label or a description moves no row.
+func sameRefinement(a, b *vocabulary.Property) bool {
+	if a.Datatype != b.Datatype || patternSource(a) != patternSource(b) ||
+		!sameBound(a.Min, b.Min) || !sameBound(a.Max, b.Max) || len(a.Values) != len(b.Values) {
+		return false
+	}
+	for i := range a.Values {
+		if a.Values[i].Value != b.Values[i].Value || a.Values[i].RenamedFrom != b.Values[i].RenamedFrom {
+			return false
+		}
+	}
+	return true
+}
+
+func patternSource(p *vocabulary.Property) string {
+	if p.Pattern == nil {
+		return ""
+	}
+	return p.Pattern.String()
+}
+
+func sameBound(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// refinesAny reports whether a property, an object field at any depth or a
+// link property refines one of the named propertytypes.
+func refinesAny(props map[string]*vocabulary.Property, names map[string]bool) bool {
+	for _, p := range props {
+		if names[p.Refined] || refinesAny(p.Fields, names) || refinesAny(p.Properties, names) {
+			return true
+		}
+	}
+	return false
 }
 
 // shippedCandidate is the registry the boot upgrade would publish: the stored
