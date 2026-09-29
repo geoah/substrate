@@ -6,7 +6,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { BotIcon, CodeIcon, LayersIcon, type LucideIcon } from "lucide-react"
 
 import { AgentRef } from "@/components/agent/agent-ref"
@@ -25,8 +25,9 @@ import {
 import { radioKeys, radioTabIndex } from "@/components/ui/segmented"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+import { lastChatAgent } from "@/lib/agent-chat"
 import { collectionMaker } from "@/lib/agent-grants"
-import { agentsQueryOptions } from "@/lib/api/agents"
+import { agentsQueryOptions, lastChatQueryOptions } from "@/lib/api/agents"
 import type { KindInfo } from "@/lib/api/types"
 import type { BundleRow } from "@/lib/bundles"
 import { cn } from "@/lib/utils"
@@ -123,18 +124,32 @@ export function AddCollectionDialog({
 /** Ask the one agent that can set a collection up, and send the request
  * rather than only writing it down: the Agents page opens a new chat with it
  * and asks at once. An agent can when its write grant covers the kind kind
- * and it holds a tool that writes (`canDeclareKinds`); when none can, the
- * dialog says so instead of handing the request to one that would refuse. */
+ * and it holds the `write` tool (`canDeclareKinds`); the one you last
+ * chatted with is asked when it can. When none can, the dialog says so
+ * instead of handing the request to one that would refuse. */
 function AskAnAgent({ onSample }: { onSample: () => void }) {
   const navigate = useNavigate()
   const [text, setText] = useState("")
   const agents = useQuery(agentsQueryOptions())
-  const maker = collectionMaker(agents.data?.records ?? [])
+  // Only a preference: when this read fails, any agent that can is asked.
+  const lastChat = useQuery(lastChatQueryOptions())
+  const maker = collectionMaker(
+    agents.data?.records ?? [],
+    lastChatAgent(lastChat.data?.records ?? [])
+  )
 
-  if (agents.isPending) {
+  if (agents.isPending || lastChat.isPending) {
     return (
       <p className="flex items-center gap-1.5 text-muted-foreground">
         <Spinner className="size-3" /> Loading your agents
+      </p>
+    )
+  }
+  // A failed read is not an answer: saying none can would be a guess.
+  if (agents.isError) {
+    return (
+      <p role="alert" className="text-destructive">
+        Your agents didn’t load: {agents.error.message}
       </p>
     )
   }
@@ -149,7 +164,8 @@ function AskAnAgent({ onSample }: { onSample: () => void }) {
           <Button onClick={onSample}>Start from a sample</Button>
           <Button
             variant="outline"
-            onClick={() => void navigate({ to: "/agents" })}
+            render={<Link to="/agents" />}
+            nativeButton={false}
           >
             Go to Agents
           </Button>
