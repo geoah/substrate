@@ -2,6 +2,10 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/gocache.sh is the sixth: it decides what a saved Go build cache entry
+# keeps, so a wrong cut is an entry that grows on every main commit until it
+# evicts the others, or one that drops what the next run needs.
+#
 # .mise/llmliveissue.sh is the fifth: it keeps the weekly `llm live` job's
 # one tracking issue, so a wrong answer is a second issue every week or a
 # failure nobody is told about. Its scenarios run against a fake gh.
@@ -33,6 +37,7 @@ shardselect="$PWD/.mise/shardselect.sh"
 commitscheck="$PWD/.mise/commitscheck.sh"
 decisionscheck="$PWD/.mise/decisionscheck.sh"
 llmliveissue="$PWD/.mise/llmliveissue.sh"
+gocache="$PWD/.mise/gocache.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -520,5 +525,51 @@ decisions merge-made 0
 decisions later 1 '0003 is already 0003-merged-in.md on merge-made, added first'
 decisions tie-aaa 0
 decisions tie-bbb 1 '0004 is already 0004-aaa.md on tie-aaa, added first'
+
+# --- the Go cache cut ------------------------------------------------------
+
+# A cache laid out the way the go command lays it out: two-hex directories of
+# entries, one entry a `go run` executable's directory, two files and a fuzz
+# corpus at the top. `age`, then a stand-in for the run (touch what the go
+# command would read or write), then `prune`: only the untouched entries go.
+gc="$tmp/go-build"
+mkdir -p "$gc/aa" "$gc/bb/exe-d" "$gc/cc/used-exe-d" "$gc/fuzz/corpus"
+for f in aa/unused-a aa/read-a aa/read-d bb/exe-d/tool cc/used-exe-d/tool README trim.txt fuzz/corpus/seed; do
+  : >"$gc/$f"
+done
+# Old before the run: what is not an entry must survive the cut by its place,
+# not by its age.
+touch -m -d '3 hours ago' "$gc/cc/used-exe-d/tool" "$gc/README" "$gc/trim.txt" "$gc/fuzz/corpus" "$gc/fuzz/corpus/seed"
+"$gocache" age "$gc" >/dev/null || flag "gocache age: exit $?"
+[ -n "$(find "$gc/aa/unused-a" -mmin +100)" ] || flag "gocache age: aa/unused-a is not older than 100 minutes"
+# The run reads two entries and an executable's directory, and writes one.
+touch "$gc/aa/read-a" "$gc/aa/read-d" "$gc/cc/used-exe-d"
+: >"$gc/cc/written-a"
+# And writes an `-a` whose output was already cached, so the go command left
+# that `-d` aged. An aged `-a` naming another aged `-d` goes with it.
+shared="dd$(printf '%062d' 0)"
+stale="de$(printf '%062d' 0)"
+mkdir -p "$gc/dd" "$gc/de" "$gc/ee" "$gc/ef"
+: >"$gc/dd/${shared}-d"
+: >"$gc/de/${stale}-d"
+touch -m -d '3 hours ago' "$gc/dd/${shared}-d" "$gc/de/${stale}-d"
+printf 'v1 ee%062d %s %20d %20d\n' 0 "$shared" 0 0 >"$gc/ee/fresh-a"
+printf 'v1 ef%062d %s %20d %20d\n' 0 "$stale" 0 0 >"$gc/ef/stale-a"
+touch -m -d '3 hours ago' "$gc/ef/stale-a"
+"$gocache" prune "$gc" >/dev/null || flag "gocache prune: exit $?"
+for gone in aa/unused-a bb/exe-d ef/stale-a "de/${stale}-d"; do
+  [ ! -e "$gc/$gone" ] || flag "gocache prune kept ${gone}, which the run never touched"
+done
+# cc/used-exe-d/tool is still three hours old, as the file inside a directory
+# the go command bumps is; the directory decides.
+for kept in aa/read-a aa/read-d cc/used-exe-d/tool cc/written-a ee/fresh-a "dd/${shared}-d" README trim.txt fuzz/corpus/seed; do
+  [ -e "$gc/$kept" ] || flag "gocache prune removed ${kept}"
+done
+"$gocache" prune "$tmp/no-such-cache" >/dev/null || flag "gocache prune on a missing directory: exit $?, expected 0"
+for bad in / relative/path; do
+  if "$gocache" prune "$bad" >/dev/null 2>&1; then
+    flag "gocache prune ${bad}: exit 0, expected a refusal"
+  fi
+done
 
 exit "$fail"

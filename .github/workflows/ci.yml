@@ -67,7 +67,13 @@
 # an entry is immutable once written, so a key of go.sum alone is saved once
 # and every later run recompiles whatever the tree gained since. A restore
 # that misses the exact key takes the newest entry with the same go.sum, then
-# the newest of any.
+# the newest of any. Around the task, `.mise/gocache.sh age` and `prune` cut
+# ~/.cache/go-build to what this run read or wrote, so a saved entry does not
+# carry every earlier commit's objects forward; the three steps that exist for
+# the save share its `if:`. The two are cache machinery like the cache steps,
+# so they live here and not in a `ci:*` task (`mise run ci` must not cut a
+# laptop's cache), and `continue-on-error`: a failed cut leaves an entry larger
+# than it needs to be, which is no reason for a red check.
 #
 # A pull request restores the Go caches and never saves them. GitHub scopes an
 # entry to the ref that wrote it, so main reads only what a push to main wrote,
@@ -171,7 +177,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-golangci-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-golangci-
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - run: mise run ci:lint:go
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -206,7 +220,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-cross-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-cross-
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - run: mise run ci:cross
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -256,8 +278,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-test-
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && steps.cache.outputs.cache-hit != 'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - if: steps.changes.outputs.go == 'true'
         run: mise run ci:go
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && steps.cache.outputs.cache-hit != 'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -347,6 +377,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-db-${{ matrix.cache }}-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-db-${{ matrix.cache }}-
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       # uv's own cache, which only this job needs: internal/providertest warms
       # a PEP 723 body for every provider closure, and uv resolves and
       # downloads each one's dependencies to run it. Its own cache entry, not
@@ -365,6 +399,10 @@ jobs:
       - if: steps.changes.outputs.go == 'true'
         run: mise run ${{ matrix.task }}
       # The first shard of each task saves; catalog 2/2 builds what 1/2 did.
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -425,8 +463,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-engine-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-engine-
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - if: steps.changes.outputs.go == 'true'
         run: mise run ci:engine
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -478,6 +524,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-providers-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-providers-
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       # The same uv cache the `go test` job keeps: the sync bodies' PEP 723
       # blocks resolve here too, once per bundle.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -488,6 +538,10 @@ jobs:
             }}
           restore-keys: ${{ runner.os }}-uv-
       - run: mise run ci:providers
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -538,7 +592,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-drill-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-drill-
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - run: mise run ci:drill
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -602,7 +664,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-coverage-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-coverage-
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - run: mise run ci:coverage
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -649,7 +719,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-race-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-race-
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - run: mise run ci:race
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -684,7 +762,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-audit-${{ hashFiles('go.sum') }}-
             ${{ runner.os }}-go-audit-
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh age ~/.cache/go-build
+        continue-on-error: true
       - run: mise run ci:audit
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        run: .mise/gocache.sh prune ~/.cache/go-build
+        continue-on-error: true
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
