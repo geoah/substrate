@@ -131,7 +131,9 @@ export function groupWords(
 /** Where a flat page's run of a group sits in the whole group, in words: the
  * page's first run began on an earlier page, its last runs on to the next.
  * Said only where the run holds fewer rows than the group's exact count, so a
- * whole group on one page says nothing. */
+ * whole group on one page says nothing. A run that fills a middle page may
+ * have begun on it or ended on it, so there only the number of the group's
+ * rows on other pages is certain. */
 export function groupRunNote(
   at: { first: boolean; last: boolean; rows: number },
   count: { value: number; capped: boolean } | undefined,
@@ -139,7 +141,11 @@ export function groupRunNote(
   hasNext: boolean
 ): string | undefined {
   if (!count || count.capped || at.rows >= count.value) return undefined
-  if (at.first && page > 1) return "continued from the previous page"
-  if (at.last && hasNext) return "continues on the next page"
+  const before = at.first && page > 1
+  const after = at.last && hasNext
+  if (before && after)
+    return `${(count.value - at.rows).toLocaleString()} more on other pages`
+  if (before) return "continued from the previous page"
+  if (after) return "continues on the next page"
   return undefined
 }

@@ -4,7 +4,8 @@
  * when the kind's metadata arrives and the view turns into a tree. Only a
  * reader's own change to the view renumbers it. The head names the
  * collection for a reader and keeps the kind reference for technical mode.
- * Saved views and the star are held through the real preference record. */
+ * Saved views and the star are held through the real preference record, and
+ * a grouped page through its heads, counts, folds and page notes. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -80,7 +81,11 @@ const offsets: (number | undefined)[] = []
 const orders: (string | undefined)[] = []
 // What the records read answers, and every filter a count was asked for.
 let pageRecords: unknown[] = []
+let pageCursor: string | undefined = "next"
 const countFilters: unknown[] = []
+// What a count answers, by the filter it was asked for.
+const EVERY_COUNT = () => 400
+let countOf: (filter: unknown) => number = EVERY_COUNT
 
 vi.mock("@/lib/api/kinds", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/kinds")>()
@@ -107,7 +112,7 @@ vi.mock("@/lib/api/records", async (importOriginal) => {
       queryFn: () => {
         offsets.push(p.offset)
         orders.push(p.orderBy)
-        return Promise.resolve({ records: pageRecords, cursor: "next" })
+        return Promise.resolve({ records: pageRecords, cursor: pageCursor })
       },
     }),
     recordCountQueryOptions: (
@@ -116,7 +121,7 @@ vi.mock("@/lib/api/records", async (importOriginal) => {
       ...actual.recordCountQueryOptions(...args),
       queryFn: () => {
         countFilters.push(args[3])
-        return Promise.resolve({ value: 400, capped: false })
+        return Promise.resolve({ value: countOf(args[3]), capped: false })
       },
     }),
   }
@@ -129,7 +134,9 @@ afterEach(() => {
   offsets.length = 0
   orders.length = 0
   pageRecords = []
+  pageCursor = "next"
   countFilters.length = 0
+  countOf = EVERY_COUNT
   localStorage.clear()
 })
 
@@ -642,5 +649,113 @@ describe("through the preference record", () => {
       name: "Remove Teams from favorites",
     })
     expect(star.getAttribute("aria-pressed")).toBe("true")
+  })
+})
+
+describe("a grouped page", () => {
+  const sized = (id: string, size?: string) => ({
+    id,
+    kind: TEAM,
+    version: 1,
+    createdAt: "2026-09-27T00:00:00Z",
+    updatedAt: "2026-09-27T00:00:00Z",
+    properties: { title: id, name: id, ...(size ? { size } : {}) },
+  })
+
+  async function renderGrouped(searchParams: string) {
+    // Each group's whole size, by the value the count narrows to: 2 small,
+    // 30 large, 5 with no size, 400 in all.
+    countOf = (filter) => {
+      const cond = (
+        filter as
+          | { properties?: Record<string, { eq?: string; exists?: boolean }> }
+          | undefined
+      )?.properties?.size
+      if (!cond) return 400
+      if (cond.exists === false) return 5
+      return cond.eq === "small" ? 2 : 30
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <NuqsTestingAdapter hasMemory searchParams={searchParams}>
+          <KindBrowsePage />
+        </NuqsTestingAdapter>
+      </QueryClientProvider>
+    )
+    await act(async () => resolveRegistry([team]))
+  }
+
+  const heads = () =>
+    [...document.querySelectorAll("th[scope=rowgroup]")].map((th) =>
+      th.textContent?.replace(/\s+/g, " ").trim()
+    )
+  const rowNames = () =>
+    [...document.querySelectorAll("tbody tr td:first-child")].map((td) =>
+      td.textContent?.trim()
+    )
+
+  it("heads one fold per value on the page with the whole group's count", async () => {
+    pageRecords = [
+      sized("a", "small"),
+      sized("b", "small"),
+      sized("c", "large"),
+      sized("d", "large"),
+    ]
+    await renderGrouped("?group=size&nest=false")
+    await waitFor(() =>
+      expect(heads()).toEqual(["Small2", "Large30continues on the next page"])
+    )
+    expect(rowNames()).toEqual(["a", "b", "c", "d"])
+
+    const fold = screen.getByRole("button", { name: "Hide Size: Small" })
+    expect(fold.getAttribute("aria-expanded")).toBe("true")
+    fireEvent.click(fold)
+    const unfold = screen.getByRole("button", { name: "Show Size: Small" })
+    expect(unfold.getAttribute("aria-expanded")).toBe("false")
+    expect(rowNames()).toEqual(["c", "d"])
+    fireEvent.click(unfold)
+    expect(rowNames()).toEqual(["a", "b", "c", "d"])
+  })
+
+  it("says in the Group menu that a page heads only its own records' groups", async () => {
+    pageRecords = [sized("a", "small")]
+    await renderGrouped("?group=size&nest=false")
+    fireEvent.click(await screen.findByRole("button", { name: /Grouped by/ }))
+    expect(
+      await screen.findByText(
+        "A page shows the groups of the records on it. Each count is the whole group."
+      )
+    ).toBeTruthy()
+  })
+
+  it("says where a group runs on from and to across pages", async () => {
+    // A middle page one group fills: it may have begun or ended here.
+    pageRecords = [sized("c", "large"), sized("d", "large")]
+    await renderGrouped("?group=size&nest=false&page=2")
+    await waitFor(() =>
+      expect(heads()).toEqual(["Large3028 more on other pages"])
+    )
+    cleanup()
+
+    pageRecords = [sized("c", "large"), sized("e")]
+    await renderGrouped("?group=size&nest=false&page=2")
+    await waitFor(() =>
+      expect(heads()).toEqual([
+        "Large30continued from the previous page",
+        "No size5continues on the next page",
+      ])
+    )
+    cleanup()
+
+    // The last page: nothing runs on.
+    pageCursor = undefined
+    pageRecords = [sized("e"), sized("f")]
+    await renderGrouped("?group=size&nest=false&page=3")
+    await waitFor(() =>
+      expect(heads()).toEqual(["No size5continued from the previous page"])
+    )
   })
 })

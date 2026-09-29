@@ -270,9 +270,13 @@ any other list.
 (`?group=`): the list is ordered by that property first and the view's own
 order inside each group, so every page is whole runs of groups, and each run
 sits under a head that names the value, counts the whole group (a bounded
-count over the view's filter narrowed to that value) and folds it. A run that
-carries on from or to another page says so. Nested, a subtree stays in its
-top-level row's group, and the tree's own reference is not offered. The groups
+count over the view's filter narrowed to that value) and folds it. A page
+heads only the groups its own records are in, which the Group menu says, so a
+value with no record on the page has no head there. A run that carries on from
+or to another page says so; a run that fills a middle page may begin or end on
+it, so it says how many of the group's records are on other pages instead.
+Nested, a subtree stays in its top-level row's group, and the tree's own
+reference is not offered. The groups
 come in the server's order: an enum or a state by its stored value, a
 reference by the path it stores, the records with none last.
 
