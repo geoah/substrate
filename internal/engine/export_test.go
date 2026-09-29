@@ -337,6 +337,18 @@ func WithSearchMatchMax(n int) Option {
 // composed the key itself would park on a lock nothing else takes.
 const AdvisoryKeySQL = advisoryKeySQL
 
+// ChangelogLockKey is the $1 of AdvisoryKeySQL for a dataset's changelog lock
+// (rows.go changelogLockKey), the first lock every write takes, for a barrier
+// test that holds it from a session of its own.
+func ChangelogLockKey(ds substrate.Dataset) string {
+	return ds.(*dataset).scope.lockKey(changelogLockKey)
+}
+
+// CommitBudget is how long a write's commit phase may take before its
+// transaction is rolled back (dataset.go commitBudget), for a test that holds
+// a write inside that phase.
+const CommitBudget = commitBudget
+
 // BreakChangelogWriter closes a dataset's changelog writer under its mutex, so
 // the next write's prepare fails the way a full disk would: the write is
 // refused before its transaction commits, neither store takes it, and the

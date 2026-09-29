@@ -418,10 +418,10 @@ func TestExportPinsAPointWhileWritesContinue(t *testing.T) {
 // own transactions, connections held. Here one write is held at its commit
 // under the mutex, seven more hold the pool's other connections behind the
 // advisory lock and a ninth waits on the pool itself; an export started then
-// completes once the held write is released, and every write lands. An export
-// that took the mutex first and asked the pool under it would hand the held
-// write's connection to the ninth writer and wait for one no writer could
-// release.
+// queues on the pool, completes once the held write is released, and every
+// write lands. An export that took the mutex first and asked the pool under
+// it would hand the held write's connection to the ninth writer and wait for
+// one no writer could release.
 func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 	t.Parallel()
 	// The gate: once armed, the first write to reach its commit blocks there
@@ -438,46 +438,118 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 	// names the wrong thing. Goexit runs this defer before that cleanup.
 	releaseGate := func() { releaseOnce.Do(func() { close(release) }) }
 	defer releaseGate()
-	_, ds, _ := newDatasetWithDSN(t, engine.WithTestCommitFault(func(stage string) error {
+	_, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(func(stage string) error {
 		if stage == engine.CommitAfterPrepare && armed.Load() && gated.CompareAndSwap(false, true) {
 			close(atCommit)
 			<-release
 		}
 		return nil
 	}))
-	ctx := context.Background()
 	head := maxSeq(t, ds)
-	stats := engine.PoolStats(ds)
+	poolMax := engine.PoolStats(ds).MaxOpenConnections
 	const writers = 9
-	if stats.MaxOpenConnections >= writers {
-		t.Fatalf("the pool allows %d connections; the test needs fewer than %d writers to fill it", stats.MaxOpenConnections, writers)
+	if poolMax >= writers {
+		t.Fatalf("the pool allows %d connections; the test needs fewer than %d writers to fill it", poolMax, writers)
 	}
 
-	armed.Store(true)
-	writeErrs := make(chan error, writers)
-	for range writers {
+	// Every writer and the export run under ctx, so a lock that is never
+	// released fails the test naming what waited on it instead of running the
+	// package to its timeout. The test's own waits end at deadline, before
+	// ctx, so a failure reports the state before the writers' cancellation
+	// unwinds it, and the deferred cancel ends ctx on the way out. A write's
+	// commit phase is past its context (dataset.go beginWrite): the deferred
+	// gate release frees the held write, and a write waiting on writerMu goes
+	// on once the holder does.
+	const budget = 60 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	deadline := time.Now().Add(budget - 5*time.Second)
+
+	// The barrier holds the changelog lock from a session outside the pool
+	// until every writer is past inTx's door, which reads the directory's
+	// latch under writerMu. Without it, a writer that reached the door after
+	// the first write took writerMu at its commit waited there with no
+	// connection, the pool never gained a waiter, and the test failed on its
+	// own setup (#529).
+	raw := rawDB(t, dsn)
+	key := engine.ChangelogLockKey(ds)
+	barrier, err := raw.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = barrier.Rollback() }()
+	if _, err := barrier.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+engine.AdvisoryKeySQL+`)`, key); err != nil {
+		t.Fatalf("take the changelog lock: %v", err)
+	}
+	// parked counts the sessions waiting on the changelog lock. Its context
+	// is its own, so the count still reads in a message written at the
+	// deadline.
+	parked := func() int {
+		qctx, qcancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer qcancel()
+		var n int
+		if err := raw.QueryRowContext(qctx, `
+			SELECT count(*) FROM pg_locks
+			WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+			  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+			  AND classid::bigint = ((`+engine.AdvisoryKeySQL+` >> 32) & 4294967295)
+			  AND objid::bigint = (`+engine.AdvisoryKeySQL+` & 4294967295)`, key).Scan(&n); err != nil {
+			t.Fatalf("count the sessions parked on the changelog lock: %v", err)
+		}
+		return n
+	}
+
+	type written struct {
+		writer int
+		err    error
+	}
+	results := make(chan written, writers)
+	waitsBefore := engine.PoolStats(ds).WaitCount
+	for i := range writers {
 		go func() {
-			_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "queued behind the export"}})
-			writeErrs <- err
+			_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "writer " + strconv.Itoa(i)}})
+			results <- written{writer: i, err: err}
 		}()
 	}
-	// These two waits are for nine goroutines to be SCHEDULED and reach the
-	// database, not for any work with a rate. Under -covermode=atomic, on a
-	// loaded runner, that took longer than the 30s they used to allow and the
-	// test failed on its own instrumentation (CI, 2026-09-19). The budget is
-	// generous on purpose: it is here to bound a hang, not to time anything.
-	const scheduled = 2 * time.Minute
+	// Until the gate opens no writer can return: one that did failed, or its
+	// commit was not the one the gate held.
+	noneReturned := func(phase string) {
+		select {
+		case r := <-results:
+			t.Fatalf("writer %d returned %s: %v (pool %+v)", r.writer, phase, r.err, engine.PoolStats(ds))
+		default:
+		}
+	}
+	waitFor := func(what string, until time.Time, cond func() bool) {
+		for !cond() {
+			if time.Now().After(until) {
+				t.Fatalf("%s did not happen in time: pool %+v, %d sessions parked on the changelog lock", what, engine.PoolStats(ds), parked())
+			}
+			noneReturned("while waiting for " + what)
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	waitFor("eight writers to park on the changelog lock and the ninth to wait on the pool", deadline, func() bool {
+		s := engine.PoolStats(ds)
+		return s.InUse == poolMax && s.WaitCount > waitsBefore && parked() == poolMax
+	})
+
+	armed.Store(true)
+	if err := barrier.Rollback(); err != nil {
+		t.Fatalf("release the changelog lock: %v", err)
+	}
 	select {
 	case <-atCommit:
-	case <-time.After(scheduled):
-		t.Fatal("no write reached its commit")
+	case r := <-results:
+		t.Fatalf("writer %d returned before any write reached its commit: %v", r.writer, r.err)
+	case <-time.After(time.Until(deadline)):
+		t.Fatalf("no write reached its commit: pool %+v, %d sessions parked on the changelog lock", engine.PoolStats(ds), parked())
 	}
-	deadline := time.Now().Add(scheduled)
-	for s := engine.PoolStats(ds); s.InUse < s.MaxOpenConnections || s.WaitCount == 0; s = engine.PoolStats(ds) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the pool never filled with a writer waiting on it: %+v", s)
-		}
-		time.Sleep(10 * time.Millisecond)
+	// The held write has writerMu and one connection, seven writers hold the
+	// others behind its changelog lock, and the ninth, with none left, waits
+	// on the pool.
+	if s, n := engine.PoolStats(ds), parked(); s.InUse != poolMax || n != poolMax-1 {
+		t.Fatalf("with one write held at its commit: pool %+v and %d sessions parked on the changelog lock, want %d in use and %d parked", s, n, poolMax, poolMax-1)
 	}
 
 	type pinned struct {
@@ -485,37 +557,61 @@ func TestExportPinsWithEveryPoolConnectionHeld(t *testing.T) {
 		err error
 	}
 	result := make(chan pinned, 1)
+	waitsBeforeExport := engine.PoolStats(ds).WaitCount
 	go func() {
 		ex, err := ds.Export(ctx)
 		result <- pinned{ex, err}
 	}()
-	// The export is queued on the pool behind the ninth writer (or, with the
-	// old order, on the mutex); the held write is released only now, so the
-	// export never had a connection to itself.
-	time.Sleep(200 * time.Millisecond)
+	// The export queues on the pool behind the ninth writer, which moves the
+	// pool's wait count. One that took writerMu first waits on the mutex
+	// instead, and the count stands still. The wait ends well inside the
+	// commit budget: past it the held write's transaction is rolled back,
+	// its connection goes to the ninth writer, and the state this test
+	// builds is gone.
+	waitFor("the export to queue on the full pool", time.Now().Add(engine.CommitBudget/2), func() bool {
+		select {
+		case r := <-result:
+			t.Fatalf("the export returned before it queued on the pool: %v", r.err)
+		default:
+		}
+		return engine.PoolStats(ds).WaitCount > waitsBeforeExport
+	})
+	// Only now is the held write released, so the export never had a
+	// connection to itself.
 	releaseGate()
+	var ex substrate.Export
 	select {
 	case r := <-result:
 		if r.err != nil {
 			t.Fatalf("export: %v", r.err)
 		}
-		if p := r.ex.Point(); p.Head < head+1 {
-			t.Fatalf("pinned head = %d, want at least the released write past %d", p.Head, head)
-		}
-		if _, err := r.ex.WriteTo(io.Discard); err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(60 * time.Second):
+		ex = r.ex
+	case <-time.After(time.Until(deadline)):
 		t.Fatalf("the export did not pin its point with the pool full: %+v", engine.PoolStats(ds))
 	}
+	if p := ex.Point(); p.Head < head+1 {
+		t.Fatalf("pinned head = %d, want at least the released write past %d", p.Head, head)
+	}
+	if _, err := ex.WriteTo(io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	finished := make([]bool, writers)
+	timeout := time.After(time.Until(deadline))
 	for range writers {
 		select {
-		case err := <-writeErrs:
-			if err != nil {
-				t.Fatalf("a write queued behind the export failed: %v", err)
+		case r := <-results:
+			if r.err != nil {
+				t.Fatalf("writer %d failed: %v", r.writer, r.err)
 			}
-		case <-time.After(60 * time.Second):
-			t.Fatal("a write queued behind the export never finished")
+			finished[r.writer] = true
+		case <-timeout:
+			var blocked []int
+			for i, done := range finished {
+				if !done {
+					blocked = append(blocked, i)
+				}
+			}
+			t.Fatalf("writers %v never finished: pool %+v, %d sessions parked on the changelog lock", blocked, engine.PoolStats(ds), parked())
 		}
 	}
 	if got := maxSeq(t, ds); got != head+writers {
