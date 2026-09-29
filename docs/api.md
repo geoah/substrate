@@ -149,6 +149,11 @@ it points at the target, `property` naming the reference and `path` locating
 a nested site (absent at the top level). A `ref` that is not a `<kind>/<id>`
 path, or whose kind is unknown, is `422 validation`.
 
+A page carries no total. [`count=1`](#counting-the-filtered-set) asks for the
+number of records pointing at the target, and that count scans every pointer
+at it, so a reader paging a record with thousands of pointers asks on its
+first page alone and carries the number forward.
+
 `refs` in place of `ref` names several targets, and the page is the records
 pointing at ANY of them: one read for "what points at me" when the owner holds
 a work address, a personal one and an alias. Each target is matched by its

@@ -385,6 +385,49 @@ func TestRecordsReferencingTakesAListOfTargets(t *testing.T) {
 	}
 }
 
+// The reverse read sizes its fan-in only when asked: a referencing page
+// without `count=1` asks the dataset for no count and answers none, and one
+// with it hands the dataset both the arm and the ask (issue #334).
+func TestRecordsReferencingCountsOnRequest(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	const target = personKind + "/p1"
+	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Properties: map[string]any{"name": "Sam"}})
+	for _, id := range []string{"p2", "p3", "p4"} {
+		ds.put(&substrate.Record{ID: id, Kind: personKind, Properties: map[string]any{
+			"name": id, "manager": map[string]any{"ref": target},
+		}})
+	}
+	f := substrate.Filter{Referencing: &substrate.Referencing{Ref: target}}
+
+	rec := env.do(t, http.MethodGet, filterPath(t, f, "first=1"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if ds.lastQuery.Count {
+		t.Fatal("a referencing page without count=1 asked the dataset for a count")
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if raw, ok := body["count"]; ok {
+		t.Fatalf("a referencing page without count=1 answered count %s", raw)
+	}
+
+	rec = env.do(t, http.MethodGet, filterPath(t, f, "first=1", "count=1"), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if q := ds.lastQuery; !q.Count || q.Filter.Referencing == nil || q.Filter.Referencing.Ref != target {
+		t.Fatalf("the dataset saw %+v, want the referencing arm and the count", q)
+	}
+	page := decodeJSON[substrate.Page](t, rec)
+	if page.Count == nil {
+		t.Fatal("a referencing page with count=1 answered no count")
+	}
+	if *page.Count != 3 {
+		t.Fatalf("count = %d, want the three pointers", *page.Count)
+	}
+}
+
 // `expand` hydrates the named reference properties one hop: the referents
 // land in `included`, keyed by record path, each once; a dangling pointer has
 // no entry.
