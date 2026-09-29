@@ -8,6 +8,7 @@ import {
   agentListing,
   agentName,
   agentPurpose,
+  callableOf,
   canChange,
   canSee,
   chatCapable,
@@ -248,6 +249,56 @@ describe("what a tool call did", () => {
     expect(resolveTool(undefined, "propose").function).toBe(
       "substrate.reamde.dev/core/propose"
     )
+  })
+
+  it("resolves a stamped callable over the agent's current names", () => {
+    // `lookup` is no alias this agent carries now; the stamp says it was
+    // the query host function.
+    expect(
+      resolveTool(
+        assistant,
+        "lookup",
+        "function:substrate.reamde.dev:core:query"
+      )
+    ).toEqual({ function: "substrate.reamde.dev/core/query" })
+    // The stamp outranks a name that now means something else.
+    expect(
+      resolveTool(assistant, "save", "function:ada.localhost:notes:archive")
+    ).toEqual({ function: "ada.localhost/notes/archive" })
+    expect(
+      resolveTool(assistant, "helper", "agent:ada.localhost:notes:titler")
+    ).toEqual({ subagent: "ada.localhost/notes/titler" })
+    // A matching entry still lends its description.
+    const described = record({
+      properties: {
+        tools: [
+          {
+            ...fn("ada.localhost/notes/savenote"),
+            name: "save",
+            description: "Saves a note",
+          },
+        ],
+      },
+    })
+    expect(
+      resolveTool(described, "save", "function:ada.localhost:notes:savenote")
+    ).toEqual({
+      function: "ada.localhost/notes/savenote",
+      description: "Saves a note",
+    })
+  })
+
+  it("spells a call's callable the way its rows are stamped", () => {
+    const stamped = "function:ada.localhost:notes:count"
+    expect(callableOf(call({ callable: stamped }), {})).toBe(stamped)
+    // A live card spells what the name resolves to the same way.
+    expect(
+      callableOf(call({ name: "save" }), resolveTool(assistant, "save"))
+    ).toBe("function:ada.localhost:notes:savenote")
+    expect(
+      callableOf(call({ name: "titler" }), resolveTool(assistant, "titler"))
+    ).toBe("agent:ada.localhost:notes:titler")
+    expect(callableOf(call({ name: "ghost" }), {})).toBe("ghost")
   })
 
   it("says a read in words: a search, a list, one record, and what it found", () => {

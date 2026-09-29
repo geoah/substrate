@@ -143,6 +143,47 @@ describe("transcriptOf", () => {
     ])
     expect(turns[0].tools).toEqual([])
   })
+
+  it("carries the stamped callable beside the alias, from either row", () => {
+    const count = "function:ada.localhost:notes:count"
+    const turns = transcriptOf([
+      row({
+        role: "assistant",
+        toolCalls: [
+          { ...call("c1", "tally", "{}"), callable: count },
+          call("c2", "size", "{}"),
+          call("c3", "ghost", "{}"),
+        ],
+      }),
+      row({ role: "tool", content: "6", toolCallId: "c1", name: "tally" }),
+      // A call row without the stamp takes the tool row's.
+      row({
+        role: "tool",
+        content: "6",
+        toolCallId: "c2",
+        name: "size",
+        callable: count,
+      }),
+      row({ role: "tool", content: "?", toolCallId: "c3", name: "ghost" }),
+      // An orphan keeps its own.
+      row({
+        role: "tool",
+        content: "6",
+        toolCallId: "gone",
+        name: "measure",
+        callable: count,
+      }),
+    ])
+    const [first, second, third] = turns[0].tools
+    expect(first).toMatchObject({ name: "tally", callable: count })
+    expect(second).toMatchObject({ name: "size", callable: count })
+    // A name the agent carried no tool for names no callable.
+    expect(third.callable).toBeUndefined()
+    expect(turns[1].tools[0]).toMatchObject({
+      name: "measure",
+      callable: count,
+    })
+  })
 })
 
 describe("toolOK", () => {
@@ -199,6 +240,20 @@ describe("proposedRequestId", () => {
 
   it("says nothing about another tool that happens to answer with an id", () => {
     expect(proposedRequestId(settled({ name: "query" }))).toBeUndefined()
+  })
+
+  it("reads the stamped callable over the alias", () => {
+    const propose = "function:substrate.reamde.dev:core:propose"
+    // An aliased propose is still the propose.
+    expect(
+      proposedRequestId(settled({ name: "file", callable: propose }))
+    ).toBe("cr7abc4def6k")
+    // Another function aliased to `propose` is not.
+    expect(
+      proposedRequestId(
+        settled({ callable: "function:ada.localhost:notes:propose" })
+      )
+    ).toBeUndefined()
   })
 
   it("says nothing when the payload carries no id", () => {

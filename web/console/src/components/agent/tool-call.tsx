@@ -2,8 +2,9 @@
  * words, and whether it worked. Opening it says what came back: the records a
  * read found, the records a write changed, a sub-agent's reply, a function's
  * output, why a call failed. A call with nothing more to say than its check
- * mark does not open. Technical mode names the function and adds the request
- * and the response verbatim.
+ * mark does not open. Technical mode names the callable in full, in the actor
+ * spelling the rows are stamped with, and adds the request and the response
+ * verbatim.
  *
  * A live card and the same card replayed off the records are one component:
  * `ToolCallView` (lib/api/transcript.ts) is filled from the stream while the
@@ -31,6 +32,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   agentName,
+  callableOf,
   resolveTool,
   toolDetails,
   toolSummary,
@@ -124,7 +126,7 @@ export function ToolCallCard({
 }) {
   const [technical] = useTechnicalDetails()
   const [open, setOpen] = useState(false)
-  const resolved = resolveTool(agent, call.name)
+  const resolved = resolveTool(agent, call.name, call.callable)
   const summary = toolSummary(call, resolved)
   const running = call.ok === undefined
   const failed = call.ok === false
@@ -166,7 +168,7 @@ export function ToolCallCard({
       )}
       {technical && (
         <span className="font-mono text-[11.5px] [overflow-wrap:anywhere] text-faint">
-          {resolved.function ?? resolved.subagent ?? call.name}
+          {callableOf(call, resolved)}
         </span>
       )}
       {opens && (

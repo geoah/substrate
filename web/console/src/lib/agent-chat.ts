@@ -5,7 +5,7 @@
  *
  * Nothing here is sent to the API: display names are the console's own. */
 
-import { agentName } from "@/lib/actor-identity"
+import { actorIdentity, agentName } from "@/lib/actor-identity"
 import { deliveryNoticeOf, type ToolCallView } from "@/lib/api/transcript"
 import {
   readReference,
@@ -523,11 +523,27 @@ export interface ResolvedTool {
   description?: string
 }
 
+/** What a call's name stands for. The row's stamped `callable` decides where
+ * the call carries one: the name is the agent's alias, which the agent may
+ * have renamed or dropped since, while the stamp names what ran. Without a
+ * stamp (a live card, an older row) the name resolves on the agent as it is
+ * declared now. */
 export function resolveTool(
   agent: SubstrateRecord | undefined,
-  name: string
+  name: string,
+  callable?: string
 ): ResolvedTool {
-  const tool = agentTools(agent).find((t) => t.name === name)
+  const tools = agentTools(agent)
+  const stamped = callable ? actorIdentity(callable) : undefined
+  if (stamped?.record && stamped.cls === "agent") {
+    return { subagent: stamped.record.id }
+  }
+  if (stamped?.record && stamped.cls === "function") {
+    const id = stamped.record.id
+    const tool = tools.find((t) => t.name === name && t.function === id)
+    return { function: id, description: tool?.description }
+  }
+  const tool = tools.find((t) => t.name === name)
   if (tool) return { function: tool.function, description: tool.description }
   const subagent = agentSubagents(agent).find(
     (id) => id.slice(id.lastIndexOf("/") + 1) === name
@@ -542,6 +558,18 @@ export function resolveTool(
     HOST_FUNCTION_ASK,
   ].find((fn) => fn.slice(fn.lastIndexOf("/") + 1) === name)
   return host && !agent ? { function: host } : {}
+}
+
+/** The callable a call named, in the actor spelling its rows are stamped
+ * with (decision 0025), so a live card and the same card replayed off the
+ * rows show one string: the stamp, else the spelling of what the name
+ * resolves to, else the name itself. */
+export function callableOf(call: ToolCallView, resolved: ResolvedTool): string {
+  if (call.callable) return call.callable
+  if (resolved.subagent) return agentActor(resolved.subagent)
+  if (resolved.function)
+    return `function:${resolved.function.split("/").join(":")}`
+  return call.name
 }
 
 /** The records a read answered with, as far as its payload names them. */
