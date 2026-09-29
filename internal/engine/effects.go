@@ -58,6 +58,10 @@ type effect struct {
 	hold *gatedWrite
 }
 
+// held reports whether the door held this effect as a request, read after
+// the apply: a create-only put over a live target was held and wrote none.
+func (ef effect) held() bool { return ef.hold != nil && ef.hold.requestID != "" }
+
 const (
 	effectPut    = "put"
 	effectPatch  = "patch"

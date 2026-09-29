@@ -1013,12 +1013,13 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	if err != nil {
 		return res, err
 	}
-	res = settledResult(advance, effectsSummary(effects), 1)
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
 		t.causedBy = ch.Seq
 		if err := t.applyEffects(tr.Callable.Caps.Emit, effects); err != nil {
 			return err
 		}
+		// After the apply, which is what settles each held effect.
+		res = settledResult(advance, effectsSummary(effects), 1)
 		return settle.settle(t, res)
 	})
 	if err != nil {
@@ -1448,11 +1449,13 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 	if err != nil {
 		return 0, err
 	}
-	res := settledResult(false, effectsSummary(effects), 1)
+	var res deliverResult
 	err = ds.inTx(ctx, actor, false, func(t *txn) error {
 		if err := t.applyEffects(tr.Callable.Caps.Emit, effects); err != nil {
 			return err
 		}
+		// After the apply, which is what settles each held effect.
+		res = settledResult(false, effectsSummary(effects), 1)
 		return settle.settle(t, res)
 	})
 	if err != nil {
@@ -1673,16 +1676,20 @@ func effectsSummary(effects []effect) map[string]int {
 	return out
 }
 
+// summaryAction reads a held effect after its transaction applied it: a
+// create-only put the door held over a live target wrote no request, so it
+// counts as the put it would have been.
 func summaryAction(ef effect) string {
-	if ef.hold != nil {
+	if ef.held() {
 		return "gate"
 	}
 	return ef.Action
 }
 
 // mergedSummary is a running summary plus one page's effects, as a new map:
-// the paged drain's cross-page effect tally, computed before the page's
-// transaction so the final page's settlement records the whole chain.
+// the paged drain's cross-page effect tally, computed in the page's
+// transaction once its effects applied, so the final page's settlement
+// records the whole chain.
 func mergedSummary(summary map[string]int, effects []effect) map[string]int {
 	out := make(map[string]int, len(summary)+1)
 	for k, v := range summary {
@@ -1805,12 +1812,14 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 			}
 		}
 
-		merged := mergedSummary(summary, effects)
+		var merged map[string]int
 		err = ds.inTx(ctx, actor, false, func(t *txn) error {
 			t.causedBy = causedBy
 			if err := t.applyEffects(emit, effects); err != nil {
 				return err
 			}
+			// After the apply, which is what settles each held effect.
+			merged = mergedSummary(summary, effects)
 			if done {
 				// Drained: drop the resume cursor — under the SAME version
 				// CAS, so a chain another dispatcher advanced is not cleared

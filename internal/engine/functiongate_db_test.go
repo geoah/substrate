@@ -119,10 +119,59 @@ func TestPolicyFunctionsArmHoldsATriggeredWrite(t *testing.T) {
 	if st := statusOf(t, ds, trigID("mirror")); st.Lag != 0 {
 		t.Fatalf("the delivery did not settle: %+v", st)
 	}
+	if summary := runEffects(t, ds); summary["gate"] == nil || summary["put"] != nil {
+		t.Fatalf("run effects: %+v, want one gate and no put", summary)
+	}
 
 	mustAccept(t, ds, req)
 	if got := mustGet(t, ds, taskType, taskID); got.Title != "held" {
 		t.Fatalf("the accepted request wrote %+v", got)
+	}
+}
+
+// runEffects reads the applied-effects summary of the one run a test's
+// deliveries left on the ledger.
+func runEffects(t *testing.T, ds substrate.Dataset) map[string]any {
+	t.Helper()
+	page, err := ds.List(context.Background(), substrate.Query{
+		Filter: substrate.Filter{Kinds: []string{triggerRunType}}, First: 10,
+	})
+	if err != nil || len(page.Records) != 1 {
+		t.Fatalf("runs: %d %v, want 1", len(page.Records), err)
+	}
+	summary, _ := page.Records[0].Properties["effects"].(map[string]any)
+	return summary
+}
+
+// TestHeldCreateOnlyPutOfALiveTargetHoldsNothing: an `ifAbsent` put is a
+// no-op when its target is live, and a gate over it stays one. No request is
+// written, the record keeps its values, and the run counts the put it was,
+// never a `gate` with no request behind it.
+func TestHeldCreateOnlyPutOfALiveTargetHoldsNothing(t *testing.T) {
+	t.Parallel()
+	ds := newFnDataset(t,
+		[]enginetest.Trigger{trigOn("minter", map[string]any{"kinds": []any{widgetType}, "ops": []any{"create"}})},
+		pyFn("minter", map[string]any{}, []any{taskType}, `
+def main(input, host):
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                         "id": "t-live", "ifAbsent": True, "properties": {"name": "minted"}}]}
+`))
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-live", Properties: map[string]any{"name": "mine"}})
+	gatePolicy(t, ds, "gate-minter", map[string]any{
+		"selector": map[string]any{"functions": []any{fnPackage + "/minter"}},
+		"action":   "gate",
+	})
+	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
+	process(t, ds)
+
+	if reqs := patchRequests(t, ds); len(reqs) != 0 {
+		t.Fatalf("a create-only put of a live target was held: %+v", reqs[0].Properties)
+	}
+	if got := mustGet(t, ds, taskType, "t-live"); got.Title != "mine" {
+		t.Fatalf("the live task moved: %+v", got)
+	}
+	if summary := runEffects(t, ds); summary["put"] == nil || summary["gate"] != nil {
+		t.Fatalf("run effects: %+v, want the put and no gate", summary)
 	}
 }
 

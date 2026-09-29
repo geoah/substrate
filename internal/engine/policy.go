@@ -545,7 +545,7 @@ func (ds *dataset) holdEffects(ctx context.Context, root *vocabulary.Function, e
 // governing policy's judge. A floor has no policy and so no judge.
 func (ds *dataset) judgeHeld(effects []effect) {
 	for _, ef := range effects {
-		if ef.hold != nil && ef.hold.requestID != "" {
+		if ef.held() {
 			ds.maybeJudge(ef.hold.requestID, ef.hold.rule)
 		}
 	}
@@ -621,6 +621,7 @@ func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, 
 // create-only put whose target is live writes nothing and answers the empty
 // id, since the put itself would have been a no-op.
 func (t *txn) putGatedRequest(gw *gatedWrite) (string, error) {
+	gw.requestID = ""
 	requestID := derivedID("gate", gw.key)
 	if gw.once {
 		stored, err := t.loadRow(eref{Kind: vocabulary.KindRecordPatchRequest, ID: requestID}, false)
