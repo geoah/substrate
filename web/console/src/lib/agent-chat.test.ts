@@ -291,7 +291,7 @@ describe("what a tool call did", () => {
   it("spells a call's callable the way its rows are stamped", () => {
     const stamped = "function:ada.localhost:notes:count"
     expect(callableOf(call({ callable: stamped }), {})).toBe(stamped)
-    // A live card spells what the name resolves to the same way.
+    // An unstamped call spells what its name resolves to the same way.
     expect(
       callableOf(call({ name: "save" }), resolveTool(assistant, "save"))
     ).toBe("function:ada.localhost:notes:savenote")

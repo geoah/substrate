@@ -299,3 +299,40 @@ func TestToolRowsOmitTheCallableForAnUnknownTool(t *testing.T) {
 		t.Fatal("the unknown tool's call names a callable")
 	}
 }
+
+// THE LIVE EVENTS CARRY THE SAME CALLABLE. A client renders a card from the
+// stream before the rows exist, and the alias alone cannot say what ran.
+func TestToolEventsCarryTheCallable(t *testing.T) {
+	t.Parallel()
+	ds, fake := provisionAliasAgents(t)
+	fake.script("aright",
+		fakeTurn{calls: []fakeCall{
+			{"size", toolArgs(t, map[string]any{"word": "gadget"})},
+			{"invented", "{}"},
+		}},
+		fakeTurn{content: "six"},
+	)
+	got := map[string][]string{}
+	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, aliasPackage+"/right", "", "measure gadget", func(ev substrate.AgentEvent) {
+		if ev.Kind == substrate.AgentEventToolStarted || ev.Kind == substrate.AgentEventToolFinished {
+			got[ev.Tool] = append(got[ev.Tool], ev.Kind+"="+ev.Callable)
+		}
+	}); err != nil {
+		t.Fatalf("chat right: %v", err)
+	}
+	want := []string{
+		substrate.AgentEventToolStarted + "=" + aliasCountCallable,
+		substrate.AgentEventToolFinished + "=" + aliasCountCallable,
+	}
+	if len(got["size"]) != 2 || got["size"][0] != want[0] || got["size"][1] != want[1] {
+		t.Fatalf("size events %v, want %v", got["size"], want)
+	}
+	if len(got["invented"]) == 0 {
+		t.Fatal("the unknown tool emitted no events")
+	}
+	for _, ev := range got["invented"] {
+		if ev != substrate.AgentEventToolStarted+"=" && ev != substrate.AgentEventToolFinished+"=" {
+			t.Fatalf("the unknown tool's event names a callable: %s", ev)
+		}
+	}
+}

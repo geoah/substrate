@@ -523,11 +523,11 @@ export interface ResolvedTool {
   description?: string
 }
 
-/** What a call's name stands for. The row's stamped `callable` decides where
- * the call carries one: the name is the agent's alias, which the agent may
- * have renamed or dropped since, while the stamp names what ran. Without a
- * stamp (a live card, an older row) the name resolves on the agent as it is
- * declared now. */
+/** What a call's name stands for. The stamped `callable` decides where the
+ * call carries one: the name is the agent's alias, which the agent may have
+ * renamed or dropped since, while the stamp names what ran. Without a stamp
+ * (a row written before it) the name resolves on the agent as it is declared
+ * now. */
 export function resolveTool(
   agent: SubstrateRecord | undefined,
   name: string,
@@ -561,8 +561,7 @@ export function resolveTool(
 }
 
 /** The callable a call named, in the actor spelling its rows are stamped
- * with (decision 0025), so a live card and the same card replayed off the
- * rows show one string: the stamp, else the spelling of what the name
+ * with (decision 0025): the stamp, else the same spelling of what the name
  * resolves to, else the name itself. */
 export function callableOf(call: ToolCallView, resolved: ResolvedTool): string {
   if (call.callable) return call.callable

@@ -291,9 +291,9 @@ the alias in the spelling the changelog's actor column uses
 `agent:<authority>:<package>:<name>` for a sub-agent. A host function is a
 function record, so `query` is `function:substrate.reamde.dev:core:query`
 whatever an agent aliased it to. Two agents that alias one function
-differently write rows that list together on `callable`, and renaming an
-alias keeps the function's history. A name the agent carries no tool for
-gets no `callable`.
+differently write tool rows that list together on `callable`, and renaming
+an alias keeps the function's history. The chat stream's tool events carry
+the same `callable`. A name the agent carries no tool for gets none.
 
 ## The decision loop
 

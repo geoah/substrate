@@ -8,6 +8,7 @@
   },
   "AgentEvent": {
     "args": false,
+    "callable": false,
     "covered": false,
     "error": false,
     "id": false,

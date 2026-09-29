@@ -23,7 +23,7 @@ vi.mock("@tanstack/react-router", () => ({
 type ChatOpts = {
   thread?: string
   message: string
-  onEvent: (event: { kind: string; thread?: string }) => void
+  onEvent: (event: AgentEvent) => void
   onError?: (error: Error) => void
   onDone?: () => void
 }
@@ -40,6 +40,7 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
   }
 })
 
+import type { AgentEvent } from "@/lib/api/agents"
 import { Conversation } from "./conversation"
 
 afterEach(() => {
@@ -150,6 +151,26 @@ describe("Conversation", () => {
     fail = false
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
+  })
+
+  it("reads a live tool call by the callable its event carries", () => {
+    mount()
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "any cups?" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    // `lookup` is the agent's alias; only the callable says it is the query
+    // host function.
+    act(() =>
+      calls[0].onEvent({
+        kind: "toolStarted",
+        id: "c1",
+        tool: "lookup",
+        callable: "function:substrate.reamde.dev:core:query",
+        args: '{"q":"cups"}',
+      })
+    )
+    expect(screen.getByText("Searched for “cups”")).toBeTruthy()
   })
 
   it("sends a handed-over question once, on open", () => {

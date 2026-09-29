@@ -702,7 +702,7 @@ func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool, out string
 	if l.in.emit == nil {
 		return
 	}
-	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, OK: ok}
+	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, Callable: l.byName[tc.Name].callable(), OK: ok}
 	if kind == substrate.AgentEventToolStarted {
 		ev.Args = tc.Arguments
 	} else {

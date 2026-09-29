@@ -32,9 +32,9 @@ export interface ToolCallView {
   name: string
   /** The callable behind the name, as the engine stamps it on the rows, in
    * the actor spelling (`function:<authority>:<package>:<name>` or
-   * `agent:<authority>:<package>:<name>`, decision 0025). Absent on a live
-   * card, on a name the agent carried no tool for, and on a row written
-   * before the stamp. */
+   * `agent:<authority>:<package>:<name>`, decision 0025); the live tool
+   * events carry the same string. Absent on a name the agent carried no tool
+   * for, and on a row written before the stamp. */
   callable?: string
   /** The arguments the model emitted, verbatim — a JSON string, usually. */
   arguments: string
@@ -191,9 +191,9 @@ const MINTED_ID = /^[a-z2-7]{12}$/
  * THE NAME IS NOT PROVENANCE. The name is the agent's alias, so an agent that
  * aliases `{function: …/propose, name: file}` would get no link from it, and
  * one that aliases some other function TO `propose` would get one on any
- * payload that looked right. A row's stamped `callable` is the identity, and
- * where the call carries one it decides; a live card and a row written before
- * the stamp have only the name.
+ * payload that looked right. The stamped `callable` is the identity, and
+ * where the call carries one it decides; a row written before the stamp has
+ * only the name.
  *
  * The rest is checked as well: the call settled ok and the payload is
  * `{"id": <minted id>}` and nothing else, which is precisely what

@@ -238,9 +238,12 @@ export interface AgentEvent {
    * may dispatch the same tool twice, so a client pairing by name settles the
    * wrong card. It is the id the transcript's tool rows carry as
    * `toolCallId`, so a live card and its replayed row are the same card.
-   * `output` rides the finished event: the dispatch's result payload. */
+   * `callable` rides both sides too: the identity behind the `tool` alias, as
+   * the rows stamp it. `output` rides the finished event: the dispatch's
+   * result payload. */
   id?: string
   tool?: string
+  callable?: string
   args?: string
   ok?: boolean
   output?: string
