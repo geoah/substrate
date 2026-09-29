@@ -30,16 +30,19 @@ restore brings a parked drain back at its last committed page.
 
 Chosen: the first. A middle page's `page` effect carries every column of the
 resume row except the cursor, which it names by `cursorSha256` and
-`cursorBytes`, the digest and length of the JSON the drain encoded; the bytes
-go to `paged_cursors` alone (`pageTx`). Every park re-states the resume row of
-the chain its failure names, cursor whole, in the park's own entry (`parkTx`,
+`cursorBytes`: the SHA-256 and byte length of the stored cursor as Postgres
+prints it (`cursor::text`), read back from the write, so one SQL query checks
+an entry against the table. The bytes go to `paged_cursors` alone (`pageTx`,
+`upsertPage`). Every park re-states the resume row of the chain its failure
+names, cursor whole, in the park's own entry (`parkTx`,
 `checkpointPagedCursor`).
 
 A replay stores the cursor an entry carries. For a cursor an entry names by
 hash, it stores the cursor `paged_cursors` held before the replay cleared it
-when that cursor has the named digest (`keepPagedCursors`), so a rebuild over
-the same database reproduces every row. Otherwise it stores JSON null: an
-import into an empty database. A drain that reads a null cursor starts the
+when that cursor has the named digest (`keepPagedCursors` copies them into a
+temporary table of the replay's transaction), so a rebuild over the same
+database reproduces every row. Otherwise, as in an import into an empty
+database, it stores JSON null. A drain that reads a null cursor starts the
 chain over: the body runs from its first page under a fresh budget and
 deadline, and the row's version stays as the fence (`loadPagedProgress`).
 
@@ -75,6 +78,9 @@ cursor with the entry's counters.
 - Bad, because an older binary keeps the spent budget of a chain it folds
   with a null cursor, so after a downgrade and an import that chain parks at
   its first middle page until its failure is forgotten.
+- Bad, because a rebuild and an import create a temporary table, so the
+  database role needs the `TEMPORARY` privilege, which Postgres grants every
+  role by default.
 - Bad, because entries written before this record keep their cursors whole.
   They replay as they did, and nothing reclaims their space.
 
