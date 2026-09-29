@@ -6,13 +6,19 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // flipInSegment edits one byte inside a line of segment first, keeping the
-// file's size and its sidecar, so only a read of the bytes can tell.
-func flipInSegment(t *testing.T, dir string, first int64) {
+// file's size and its sidecar. With keepModTime it also puts the file's
+// modification time back, so only a read of the bytes can tell.
+func flipInSegment(t *testing.T, dir string, first int64, keepModTime bool) {
 	t.Helper()
 	path := filepath.Join(dir, SegmentName(first))
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -24,6 +30,18 @@ func flipInSegment(t *testing.T, dir string, first int64) {
 	if err := os.WriteFile(path, edited, fileMode); err != nil {
 		t.Fatal(err)
 	}
+	if keepModTime {
+		if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	// A rewrite inside the filesystem's timestamp granularity would keep
+	// the time; one second on is past any of them.
+	later := info.ModTime().Add(time.Second)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // recordProgress collects every OpenProgress an open reports.
@@ -33,15 +51,16 @@ func recordProgress(got *[]OpenProgress) func(OpenProgress) {
 
 // A Log handed back as Verified vouches for its finished segments: the next
 // open reads none of their bytes. The proof is a byte flipped inside a
-// finished segment after the first open, which a plain Open refuses and the
-// vouched open does not see.
+// finished segment after the first open, with the file's size and
+// modification time kept, which a plain Open refuses and the vouched open
+// does not see.
 func TestOpenWithVerifiedReadsNoFinishedSegmentAgain(t *testing.T) {
 	dir := threeSegments(t)
 	first, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	flipInSegment(t, dir, 3)
+	flipInSegment(t, dir, 3, true)
 	if _, err := Open(dir); !errors.Is(err, ErrSegmentDigest) {
 		t.Fatalf("a plain open: err = %v, want ErrSegmentDigest", err)
 	}
@@ -85,8 +104,9 @@ func TestOpenWithVerifiedReadsNoFinishedSegmentAgain(t *testing.T) {
 
 // What the Verified Log does not vouch for is checked as Open checks it: the
 // active segment every time, a segment that finished since, a finished
-// segment whose size changed, a sidecar that no longer names the digest, and
-// every segment when the Log is over another directory.
+// segment whose size or modification time changed, a sidecar that no longer
+// names the digest, and every segment when the Log is over another
+// directory.
 func TestOpenWithVerifiedChecksWhatItDoesNotVouchFor(t *testing.T) {
 	t.Run("the active segment", func(t *testing.T) {
 		dir := threeSegments(t)
@@ -94,7 +114,7 @@ func TestOpenWithVerifiedChecksWhatItDoesNotVouchFor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		flipInSegment(t, dir, 5)
+		flipInSegment(t, dir, 5, true)
 		if _, err := OpenWith(dir, OpenOptions{Verified: first}); !errors.Is(err, ErrBadSum) {
 			t.Fatalf("err = %v, want ErrBadSum", err)
 		}
@@ -106,7 +126,7 @@ func TestOpenWithVerifiedChecksWhatItDoesNotVouchFor(t *testing.T) {
 			t.Fatal(err)
 		}
 		finish(t, dir, 5)
-		flipInSegment(t, dir, 5)
+		flipInSegment(t, dir, 5, true)
 		var progress []OpenProgress
 		if _, err := OpenWith(dir, OpenOptions{Verified: first, Progress: recordProgress(&progress)}); !errors.Is(err, ErrSegmentDigest) {
 			t.Fatalf("err = %v, want ErrSegmentDigest", err)
@@ -122,6 +142,17 @@ func TestOpenWithVerifiedChecksWhatItDoesNotVouchFor(t *testing.T) {
 			t.Fatal(err)
 		}
 		appendRaw(t, filepath.Join(dir, SegmentName(3)), []byte("\n"))
+		if _, err := OpenWith(dir, OpenOptions{Verified: first}); !errors.Is(err, ErrSegmentDigest) {
+			t.Fatalf("err = %v, want ErrSegmentDigest", err)
+		}
+	})
+	t.Run("a finished segment rewritten at the same size", func(t *testing.T) {
+		dir := threeSegments(t)
+		first, err := Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		flipInSegment(t, dir, 3, false)
 		if _, err := OpenWith(dir, OpenOptions{Verified: first}); !errors.Is(err, ErrSegmentDigest) {
 			t.Fatalf("err = %v, want ErrSegmentDigest", err)
 		}
@@ -145,7 +176,7 @@ func TestOpenWithVerifiedChecksWhatItDoesNotVouchFor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		flipInSegment(t, dir, 3)
+		flipInSegment(t, dir, 3, true)
 		var progress []OpenProgress
 		if _, err := OpenWith(dir, OpenOptions{Verified: first, Progress: recordProgress(&progress)}); !errors.Is(err, ErrSegmentDigest) {
 			t.Fatalf("err = %v, want ErrSegmentDigest", err)

@@ -101,12 +101,13 @@ type OpenOptions struct {
 	ReadOnly bool
 	// Verified is a Log this process opened earlier over the same
 	// directory. A finished segment it holds as finished, under the same
-	// name and size, is taken as checked without reading it again: a
-	// finished segment never changes, so the digest that Log checked is
-	// still its digest, and the sidecar is held to that digest instead.
-	// Every other finished segment is digested and the active segment is
-	// always scanned, so what Verified does not vouch for is checked as
-	// Open checks it. A Log over another directory vouches for nothing.
+	// name, size and modification time, is taken as checked without
+	// reading it again: a finished segment never changes, so the digest
+	// that Log checked is still its digest, and the sidecar is held to that
+	// digest instead. Every other finished segment is digested and the
+	// active segment is always scanned, so what Verified does not vouch for
+	// is checked as Open checks it. A Log over another directory vouches
+	// for nothing.
 	Verified *Log
 	// Progress, when not nil, is called after each segment is checked, in
 	// seq order.
@@ -156,7 +157,7 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 		path := filepath.Join(dir, s.Name)
 		reused := false
 		if s.Finished {
-			if known, ok := vouched[s.Name]; ok && known.Size == s.Size && known.First == s.First {
+			if known, ok := vouched[s.Name]; ok && known.Size == s.Size && known.ModTime.Equal(s.ModTime) {
 				want, err := readSidecar(dir, s.Name)
 				if err != nil {
 					return nil, err

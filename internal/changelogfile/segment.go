@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // A segment is named by the seq of its first line, zero-padded to
@@ -58,6 +59,10 @@ type Segment struct {
 	Finished bool
 	// Size is the file's length in bytes.
 	Size int64
+	// ModTime is the file's modification time, which OpenOptions.Verified
+	// holds a finished segment to beside its name and size: a same-size
+	// rewrite of a segment moves it.
+	ModTime time.Time
 }
 
 // SegmentName is the file name of the segment whose first line is seq first.
@@ -119,7 +124,7 @@ func Segments(dir string) ([]Segment, error) {
 			if err != nil {
 				return nil, err
 			}
-			byName[name] = &Segment{Name: name, First: first, Size: info.Size()}
+			byName[name] = &Segment{Name: name, First: first, Size: info.Size(), ModTime: info.ModTime()}
 		}
 	}
 	for _, name := range sidecars {
