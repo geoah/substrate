@@ -87,7 +87,10 @@ type BundleUpgrade struct {
 	// Available reports the shipped closure moves at least one stored
 	// declaration: a declaration this repository lacks, one whose shipped
 	// version is newer, or one the closure stopped shipping (which a
-	// re-install prunes).
+	// re-install prunes). It is also true, with Changes possibly empty, when
+	// the shipped version is past the stamp the package row carries: a
+	// copy's `originVersion` (decision record 0070) or a provider install's
+	// `shippedVersion` (issue #642).
 	Available bool `json:"available"`
 	// From and To are the stored and shipped versions of the bundle's owned
 	// package. Zero is the absent version: From is 0 (and omitted) when the

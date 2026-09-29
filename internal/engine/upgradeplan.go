@@ -217,14 +217,14 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	// changes are then read by CONTENT, the way the install decides them
 	// (resolveDeclarationVersions), each at the version it would land at.
 	//
-	// A provider's offer is exactly those changes. A shipped release past its
-	// `shippedVersion` that moves nothing the install would write (a bare
-	// version bump) is not offered: the preview would read `available` with
-	// nothing to show, and taking it would change no declaration. The stamp
-	// stays where it is until a release past it changes something, which is
-	// then offered. A sample copy keeps decision record 0070's rule, offered
-	// whenever the shipped version is past `originVersion`, because the
-	// re-import is also what re-stamps the copy.
+	// Either stamp offers the upgrade whenever the shipped version is past
+	// it, whatever `changes` lists (decision record 0070's rule for a copy,
+	// held here for a provider install too). A release can change what no
+	// declaration diff sees: the data records the closure ships beside its
+	// declarations (a trigger) land on install and are not in `changes`, and
+	// an unstamped provider at its shipped version is offered the same
+	// release through its header's version alone. Taking it moves the stamp,
+	// so the offer ends with the install.
 	copyMoved := stamp.origin != "" && vocabulary.CompareVersions(plan.To, copied) > 0
 	installMoved := took > 0 && vocabulary.CompareVersions(plan.To, took) > 0
 	if copyMoved || installMoved {
@@ -234,7 +234,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		}
 		plan.Changes = mergeChanges(plan.Changes, moved)
 	}
-	plan.Available = len(plan.Changes) > 0 || copyMoved
+	plan.Available = len(plan.Changes) > 0 || copyMoved || installMoved
 	if !plan.Available && edited == nil {
 		return plan, nil
 	}

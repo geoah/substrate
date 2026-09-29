@@ -32,13 +32,21 @@ func whoopShipped(t *testing.T) int64 {
 // config kind: another binary's shipped whoop.
 func whoopCatalog(t *testing.T, version int64, probe bool) *catalog.Catalog {
 	t.Helper()
-	return whoopCatalogWith(t, version, probe, false)
+	return whoopCatalogWith(t, version, whoopRelease{probe: probe})
 }
 
-// whoopCatalogWith is whoopCatalog that, when header is set, also gives the
-// package header a description: a release that changes the header alone.
-func whoopCatalogWith(t *testing.T, version int64, probe, header bool) *catalog.Catalog {
+// whoopRelease is what another binary's whoop changes beside its version:
+// probe adds a property to the config kind, header gives the package header a
+// description, and trigger disables the shipped on-connect trigger, a data
+// record no declaration diff sees.
+type whoopRelease struct {
+	probe, header, trigger bool
+}
+
+// whoopCatalogWith is whoopCatalog with the changes rel names.
+func whoopCatalogWith(t *testing.T, version int64, rel whoopRelease) *catalog.Catalog {
 	t.Helper()
+	probe, header := rel.probe, rel.header
 	root := t.TempDir()
 	dst := filepath.Join(root, whoopPackage)
 	if err := os.MkdirAll(dst, 0o750); err != nil {
@@ -58,7 +66,13 @@ func whoopCatalogWith(t *testing.T, version int64, probe, header bool) *catalog.
 		}
 	}
 	copyFile(filepath.Join(filepath.Dir(whoopDir), "authority.yaml"), filepath.Join(root, "authority.yaml"), nil)
-	copyFile(filepath.Join(whoopDir, "triggers.yaml"), filepath.Join(dst, "triggers.yaml"), nil)
+	copyFile(filepath.Join(whoopDir, "triggers.yaml"), filepath.Join(dst, "triggers.yaml"), func(doc string) string {
+		if rel.trigger {
+			doc = mustReplace(t, doc, "\n  id: whoop-on-connect\ndata:\n  properties:\n    enabled: true\n",
+				"\n  id: whoop-on-connect\ndata:\n  properties:\n    enabled: false\n")
+		}
+		return doc
+	})
 	shipped := whoopShipped(t)
 	copyFile(filepath.Join(whoopDir, "bundle.yaml"), filepath.Join(dst, "bundle.yaml"), func(doc string) string {
 		doc = mustReplace(t, doc, "\n  version: "+strconv.FormatInt(shipped, 10)+"\n", "\n  version: "+strconv.FormatInt(version, 10)+"\n")
@@ -228,25 +242,80 @@ func TestAVerbatimSampleInstallStampsNoShippedVersion(t *testing.T) {
 	}
 }
 
-// A shipped release past the stamp that bumps only the package version moves
-// no declaration the install would write, so it is not offered: `available`
-// with an empty `changes` would be an offer the preview cannot describe. The
-// stamp stays, and the next release that changes something is offered from
-// it.
-func TestAVersionOnlyReleasePastTheStampIsNotOffered(t *testing.T) {
-	ds := newDataset(t)
-	ctx := context.Background()
-	shipped := whoopShipped(t)
-	handApplyWhoop(t, ds, shipped+2, true)
-	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+// installOverHandApplied is the issue's setup with whoop: hand applies run
+// the package two versions past the shipped line, then the shipped closure is
+// installed over them. It answers the versions the install left.
+func installOverHandApplied(t *testing.T, ds substrate.Dataset) map[string]int64 {
+	t.Helper()
+	handApplyWhoop(t, ds, whoopShipped(t)+2, true)
+	c := loadCatalog(t)
+	if _, _, err := c.Install(context.Background(), substrate.ActorAPI, whoopID, ds); err != nil {
 		t.Fatalf("install over the hand-applied whoop: %v", err)
 	}
+	b, _ := c.ByID(whoopID)
+	return closureVersions(t, ds, b)
+}
 
-	if up := whoopPreview(t, whoopCatalog(t, shipped+1, false), ds); up.Available || len(up.Changes) != 0 {
-		t.Errorf("a version-only release past the stamp is offered: %+v", up)
+// takeWhoop previews rel at version past the stamp, asserts it is offered
+// from the stamp, installs it, and asserts the stamp moved to version, no
+// declaration version moved, and the offer ended.
+func takeWhoop(t *testing.T, ds substrate.Dataset, installed map[string]int64, version int64, rel whoopRelease) {
+	t.Helper()
+	ctx := context.Background()
+	shipped := whoopShipped(t)
+	next := whoopCatalogWith(t, version, rel)
+	up := whoopPreview(t, next, ds)
+	if !up.Available || up.From != shipped || up.To != version {
+		t.Fatalf("the release past the stamp previews %+v, want available %d -> %d", up, shipped, version)
 	}
-	if up := whoopPreview(t, whoopCatalog(t, shipped+2, true), ds); !up.Available || up.From != shipped || len(up.Changes) == 0 {
-		t.Errorf("the next release that changes something is not offered from the stamp: %+v", up)
+	if len(up.Changes) != 0 {
+		t.Errorf("a release that changes no declaration lists changes: %+v", up.Changes)
+	}
+	if _, _, err := next.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+		t.Fatalf("install the release: %v", err)
+	}
+	b, _ := loadCatalog(t).ByID(whoopID)
+	for decl, v := range closureVersions(t, ds, b) {
+		if v != installed[decl] {
+			t.Errorf("%s moved %d -> %d on a release that changes no declaration", decl, installed[decl], v)
+		}
+	}
+	st, err := ds.(bundleStatuser).BundleStatus(ctx, whoopID)
+	if err != nil {
+		t.Fatalf("bundle status: %v", err)
+	}
+	if st.ShippedVersion != version {
+		t.Errorf("the stamp reads %d after the install, want %d", st.ShippedVersion, version)
+	}
+	if up := whoopPreview(t, next, ds); up.Available {
+		t.Errorf("the taken release is still offered: %+v", up)
+	}
+}
+
+// A shipped release past the stamp is offered whatever it changes, as a
+// copy's release past `originVersion` is (decision record 0070) and as an
+// unstamped provider's release past its stored version is. One that bumps
+// only the package version changes no declaration: taking it moves the stamp
+// alone.
+func TestAVersionOnlyReleasePastTheStampIsOffered(t *testing.T) {
+	ds := newDataset(t)
+	installed := installOverHandApplied(t, ds)
+	takeWhoop(t, ds, installed, whoopShipped(t)+1, whoopRelease{})
+}
+
+// A release past the stamp that changes only a data record the closure ships
+// (a trigger) is invisible to any declaration diff, and is offered all the
+// same: taking it lands the trigger and moves the stamp.
+func TestATriggerOnlyReleasePastTheStampIsOfferedAndLands(t *testing.T) {
+	ds := newDataset(t)
+	installed := installOverHandApplied(t, ds)
+	takeWhoop(t, ds, installed, whoopShipped(t)+1, whoopRelease{trigger: true})
+	row, err := ds.Get(context.Background(), "substrate.reamde.dev/core/trigger", "whoop-on-connect")
+	if err != nil {
+		t.Fatalf("get the on-connect trigger: %v", err)
+	}
+	if enabled, _ := row.Properties["enabled"].(bool); enabled {
+		t.Errorf("the release's trigger change did not land: %v", row.Properties)
 	}
 }
 
@@ -292,7 +361,7 @@ func TestAHeaderChangePastTheStampIsOfferedAndLandsAtStoredPlusOne(t *testing.T)
 	}
 	installed := packageVersion(t, ds, whoopID)
 
-	next := whoopCatalogWith(t, shipped+1, false, true)
+	next := whoopCatalogWith(t, shipped+1, whoopRelease{header: true})
 	up := whoopPreview(t, next, ds)
 	if !up.Available || !namesChange(up, vocabulary.DocPackage, whoopID) {
 		t.Fatalf("a header-only change past the stamp is not offered naming the package: %+v", up)

@@ -15,7 +15,8 @@ stamp drives the offer, `upgrade.changes` lists each declaration the install
 would change at the version it lands at (stored+1), the package header
 included: a header edit (its `description`, its `retired` names) now moves
 the package to stored+1 on every door, where before it kept the stored
-version. A release that only bumps the package version is not offered. A
+version. A release past the stamp is offered even when `changes` is empty,
+since it may change only a shipped trigger; taking it moves the stamp. A
 sample installed verbatim through the same route stays editable and is not
 stamped. The bundle status
 (`GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status`) carries the
