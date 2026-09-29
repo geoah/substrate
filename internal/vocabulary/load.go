@@ -2543,6 +2543,61 @@ func (r *Registry) InstallAll(packages []*Package) error {
 	return nil
 }
 
+// UnadmittedKinds reads packages that did not admit into r as they would
+// stand beside it, by kind identity. kinds are the packages' own kinds, each
+// as it parsed plus the subject slot any mapping in r or in pkgs synthesizes
+// on it (mappingsubject.go). reshaped are the kinds of r a mapping in pkgs
+// gives a subject slot, as that slot reshapes them: a mapping lives with its
+// target, so a package that did not admit still maps from the kinds of
+// packages that did. Nothing of pkgs is resolved or checked, because a
+// reference pin, a trait binding or a bundle input is exactly what may have
+// refused them, and r is left as it was.
+//
+// A stored row of any of these kinds was indexed under this declaration while
+// the packages were live, and the engine derives the row's search bands and
+// refs rows from it alone. They must never serve a read or admit a write:
+// nothing here was admitted. A package whose identity r already holds is not
+// unadmitted and is skipped.
+func (r *Registry) UnadmittedKinds(pkgs []*Package) (kinds, reshaped map[string]*Kind) {
+	if len(pkgs) == 0 {
+		return nil, nil
+	}
+	c := r.Clone()
+	var added []*Package
+	for _, g := range pkgs {
+		if err := c.add(g); err == nil {
+			added = append(added, g)
+		}
+	}
+	// The problems are the admission's business, and it already refused.
+	c.mappingSubjectProblems()
+	kinds = map[string]*Kind{}
+	for _, g := range added {
+		for _, name := range g.KindOrder {
+			if t, ok := c.ByIdentity(g.Kinds[name].Identity); ok {
+				kinds[t.Identity] = t
+			}
+		}
+	}
+	// Only a mapping in pkgs can give a kind of r a slot r does not already
+	// give it, so its source is the one kind of r to read back.
+	for _, g := range added {
+		for _, mn := range g.MappingOrder {
+			from := g.Mappings[mn].From
+			if _, ok := r.ByIdentity(from); !ok {
+				continue
+			}
+			if ct, ok := c.ByIdentity(from); ok {
+				if reshaped == nil {
+					reshaped = map[string]*Kind{}
+				}
+				reshaped[from] = ct
+			}
+		}
+	}
+	return kinds, reshaped
+}
+
 func (r *Registry) remove(identity string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

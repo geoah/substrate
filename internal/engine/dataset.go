@@ -150,9 +150,13 @@ type dataset struct {
 	// reads (bm25.go), refreshed after statsTTL.
 	statsCache searchStatsCache
 
-	mu   sync.RWMutex
-	reg  *vocabulary.Registry
-	info substrate.RepositoryInfo
+	mu  sync.RWMutex
+	reg *vocabulary.Registry
+	// parked, under mu, is what the loader left out of reg (fold.go
+	// parkedSet): read by the fold's index derivations alone, and swapped
+	// with reg wherever reg is.
+	parked *parkedSet
+	info   substrate.RepositoryInfo
 	// beforePublish and beforeSignal, under mu, are set only by tests.
 	// beforePublish runs inside commitAndPublish, after the commit and before
 	// the swap, with mu held exclusively; beforeSignal runs after the publish
@@ -468,6 +472,12 @@ type txn struct {
 	// swaps it in under ds.mu held from before the commit, so a writer the
 	// commit wakes and a watcher the head signal wakes both read it.
 	publishReg *vocabulary.Registry
+	// writeParked is the parked set this transaction's fold derives under
+	// when it is not the dataset's (fold.go parkedSet): read beside the
+	// candidate a vocabulary apply publishes, less every package the apply
+	// touches, which the commit activates with publishReg, or beside the
+	// candidate the boot upgrade reloads. Nil otherwise.
+	writeParked *parkedSet
 	// interactionThread marks the agent loop's own ask dispatch: the ONE
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
@@ -808,6 +818,9 @@ func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 		ds.beforePublish(t)
 	}
 	ds.reg = t.publishReg
+	if t.writeParked != nil {
+		ds.parked = t.writeParked
+	}
 	return nil
 }
 

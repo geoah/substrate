@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -505,8 +506,10 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// DECLARES is not skipped: its stored rows project a declaration that is
 		// gone, and syncRefs is what removes them. A declaration that stops
 		// carrying a reference is covered by reprojectRefs, which re-derives
-		// every record of the kinds whose reference shape moved.
-		ty, _ := t.declarations().ByIdentity(row.Kind)
+		// every record of the kinds whose reference shape moved. A PARKED kind
+		// derives from its stored declaration (foldView), live and in a
+		// replay alike.
+		ty, _ := t.derivationView().ByIdentity(row.Kind)
 		if ty == nil || declaresReference(ty) {
 			if err := t.syncRefs(ref, ty, row.Props); err != nil {
 				return foldResult{}, err
@@ -534,12 +537,13 @@ func (t *txn) foldFTS(row *erow) [3]string {
 	// data document of a dropped kind is refused as unknown before it folds,
 	// and beforeGuards runs before any row moves. The branch exists for a
 	// transaction with no candidate at all, whose writeReg is nil. Keep it so.
-	return ftsBandsUnder(t.ds.registry(), row)
+	// Past the live registry the parked kinds answer (foldView).
+	return ftsBandsUnder(t.liveFoldView(), row)
 }
 
 // ftsBandsUnder computes a row's bands under one registry alone: its kind's
 // declaration where the registry holds it, the unknown-kind bands otherwise.
-func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
+func ftsBandsUnder(reg kindLookup, row *erow) [3]string {
 	if ty, ok := reg.ByIdentity(row.Kind); ok {
 		return ftsBands(ty, row)
 	}
@@ -550,6 +554,221 @@ func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
 	return [3]string{searchText(row.Title), "", searchText(row.Body)}
 }
 
+// kindLookup is what the index derivations read a declaration through: a
+// registry, or a foldView over one.
+type kindLookup interface {
+	ByIdentity(identity string) (*vocabulary.Kind, bool)
+}
+
+// PARKED KINDS (issue 461). A stored package the loader leaves out of the live
+// registry (vocabularywrite.go loadStoredVocabulary) still has rows, indexed
+// under its declaration while it was live. A replay that folded them under
+// the live registry alone would index them at the unknown-kind bands with no
+// refs rows, so the rebuild and the boot import would not reproduce the store
+// for a package nobody edited. The fold therefore derives a parked row's `fts`
+// and refs rows from the package's stored declaration, parsed with its own
+// package (vocabulary.UnadmittedKinds), live and in a replay alike.
+//
+// A mapping lives with its target, so a parked package may map from a kind
+// of a package that stayed live, and that kind carried the mapping's subject
+// slot. The slot leaves the live registry with the package while the source
+// rows still hold its value, so the fold reads such a kind reshaped by the
+// parked mapping too, and keeps the refs row the slot projects.
+//
+// foldView is the ONLY reader of a parked declaration. Every read and write
+// resolves through the registry, where a parked kind is absent and a
+// reshaped one carries no parked slot, so a parked kind stays unreadable and
+// unwritable until its package admits again.
+//
+// A stored package that does not PARSE has no kinds to derive under. Its rows
+// fold at the unknown-kind bands with no refs rows, the live rows keep what
+// they were indexed under, and the fold snapshot names the package
+// (rebuild.go FoldSnapshot) as the one divergence it expects.
+
+// parkedSet is what the loader left out of the live registry, read beside
+// one registry: the parked packages as they parsed, their kinds by identity,
+// the kinds of that registry their mappings reshape, and the identities of
+// the stored packages that do not parse, sorted. It is replaced whole, never
+// written through, and nil when nothing is parked.
+type parkedSet struct {
+	packages []*vocabulary.Package
+	kinds    map[string]*vocabulary.Kind
+	reshaped map[string]reshapedKind
+	unparsed []string
+}
+
+// reshapedKind is a kind of the registry a parked set was read beside, as a
+// parked mapping's subject slot reshapes it. It answers only for the very
+// declaration it was reshaped from: a registry holding another one (a
+// candidate that rewrote the kind, the shipped tree) reads its own.
+type reshapedKind struct {
+	from, to *vocabulary.Kind
+}
+
+// newParkedSet reads what one load left out beside reg: the packages that did
+// not admit into it and the identities of the ones that did not parse.
+func newParkedSet(reg *vocabulary.Registry, parked []*vocabulary.Package, unparsed []string) *parkedSet {
+	if len(parked) == 0 && len(unparsed) == 0 {
+		return nil
+	}
+	s := &parkedSet{packages: parked, unparsed: append([]string(nil), unparsed...)}
+	sort.Strings(s.unparsed)
+	var reshaped map[string]*vocabulary.Kind
+	s.kinds, reshaped = reg.UnadmittedKinds(parked)
+	for ident, to := range reshaped {
+		if from, ok := reg.ByIdentity(ident); ok {
+			if s.reshaped == nil {
+				s.reshaped = map[string]reshapedKind{}
+			}
+			s.reshaped[ident] = reshapedKind{from: from, to: to}
+		}
+	}
+	return s
+}
+
+// unparsedNames is the identities of the quarantine candidates that did not
+// parse.
+func unparsedNames(unparsed []quarantinedPackage) []string {
+	out := make([]string, 0, len(unparsed))
+	for _, q := range unparsed {
+		out = append(out, q.name)
+	}
+	return out
+}
+
+func (s *parkedSet) kind(identity string) (*vocabulary.Kind, bool) {
+	if s == nil {
+		return nil, false
+	}
+	ty, ok := s.kinds[identity]
+	return ty, ok
+}
+
+// reshape is ty as a parked mapping reshapes it, where the set was read beside
+// this very declaration, and ty itself otherwise.
+func (s *parkedSet) reshape(ty *vocabulary.Kind) *vocabulary.Kind {
+	if s == nil {
+		return ty
+	}
+	if r, ok := s.reshaped[ty.Identity]; ok && r.from == ty {
+		return r.to
+	}
+	return ty
+}
+
+// unparsedPackages is the sorted identities of the stored packages that do
+// not parse.
+func (s *parkedSet) unparsedPackages() []string {
+	if s == nil {
+		return nil
+	}
+	return s.unparsed
+}
+
+// unparsedOf is the unparsed packages among the named ones, sorted.
+func (s *parkedSet) unparsedOf(packages map[string]bool) []string {
+	var out []string
+	for _, name := range s.unparsedPackages() {
+		if packages[name] {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// derivedKinds names every kind whose indexes the set decides: the parked
+// kinds and the reshaped ones.
+func (s *parkedSet) derivedKinds() map[string]bool {
+	out := map[string]bool{}
+	if s == nil {
+		return out
+	}
+	for ident := range s.kinds {
+		out[ident] = true
+	}
+	for ident := range s.reshaped {
+		out[ident] = true
+	}
+	return out
+}
+
+// without is the set less the named packages, read again beside reg, and
+// never nil: a vocabulary apply re-admits every package it touches or removes
+// it, so none of them is parked from its commit on, and reg is the candidate
+// the commit publishes.
+func (s *parkedSet) without(packages map[string]bool, reg *vocabulary.Registry) *parkedSet {
+	if s == nil {
+		return &parkedSet{}
+	}
+	var keep []*vocabulary.Package
+	for _, g := range s.packages {
+		if !packages[g.Identity] {
+			keep = append(keep, g)
+		}
+	}
+	var unparsed []string
+	for _, name := range s.unparsed {
+		if !packages[name] {
+			unparsed = append(unparsed, name)
+		}
+	}
+	if out := newParkedSet(reg, keep, unparsed); out != nil {
+		return out
+	}
+	return &parkedSet{}
+}
+
+// foldView is a registry with the parked set behind it: a kind the registry
+// declares answers from the registry, reshaped where a parked mapping
+// reshapes it, a parked kind from its stored declaration, and anything else
+// is unknown.
+type foldView struct {
+	reg    kindLookup
+	parked *parkedSet
+}
+
+func (v foldView) ByIdentity(identity string) (*vocabulary.Kind, bool) {
+	if ty, ok := v.reg.ByIdentity(identity); ok {
+		return v.parked.reshape(ty), true
+	}
+	return v.parked.kind(identity)
+}
+
+// liveFoldView is the live registry and the parked set, read under one lock
+// so a publish cannot land between the two reads.
+func (ds *dataset) liveFoldView() foldView {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	return foldView{reg: ds.reg, parked: ds.parked}
+}
+
+// parkedSet is the dataset's parked set as it stands.
+func (ds *dataset) parkedSet() *parkedSet {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	return ds.parked
+}
+
+// liveFoldView is the live registry with this transaction's parked set
+// behind it: writeParked where the transaction sets one, else the dataset's.
+func (t *txn) liveFoldView() foldView {
+	v := t.ds.liveFoldView()
+	if t.writeParked != nil {
+		v.parked = t.writeParked
+	}
+	return v
+}
+
+// derivationView is declarations() with the parked kinds behind it: what the
+// fold derives a row's refs rows under.
+func (t *txn) derivationView() foldView {
+	v := t.liveFoldView()
+	if t.writeReg != nil {
+		v.reg = t.writeReg
+	}
+	return v
+}
+
 // reprojectFTS re-derives `fts` for every stored row of the named kinds, live
 // and tombstoned, under `reg`: the closure a vocabulary apply is about to
 // publish, which is also what a rebuild of the repository will fold under. It
@@ -557,13 +776,15 @@ func ftsBandsUnder(reg *vocabulary.Registry, row *erow) [3]string {
 // still in the live registry until the publish, and its rows must land at the
 // unknown-kind bands the replay computes, not the bands of a declaration that
 // is leaving. Tombstones are included because a rebuild indexes them too, and
-// a resurrecting put refolds the row anyway.
+// a resurrecting put refolds the row anyway. The apply door and the boot
+// upgrade hand it the closure with the parked set it publishes behind it
+// (foldView), which answers for no kind the closure drops.
 //
 // It runs in pages, because the transaction cannot write while a cursor over
 // `records` is open, and inline, whatever the kind's size: a kind edit is rare
 // and the alternative is a live index that answers for a declaration that is
 // gone.
-func (t *txn) reprojectFTS(reg *vocabulary.Registry, kinds []string) error {
+func (t *txn) reprojectFTS(reg kindLookup, kinds []string) error {
 	for _, kind := range kinds {
 		after := ""
 		for {
@@ -594,7 +815,7 @@ func (t *txn) reprojectFTS(reg *vocabulary.Registry, kinds []string) error {
 // with, so the two cannot derive it differently. The UPDATE touches `fts` and
 // nothing else (see the header): the row's values did not move, so neither
 // `version` nor `updated_at` may.
-func (t *txn) rederiveFTS(reg *vocabulary.Registry, kind string, rows []*erow) error {
+func (t *txn) rederiveFTS(reg kindLookup, kind string, rows []*erow) error {
 	if len(rows) == 0 {
 		return nil
 	}

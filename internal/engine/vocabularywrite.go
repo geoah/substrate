@@ -480,6 +480,10 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// the batch removes is refused as unknown. The live pointer still
 		// holds the declarations being replaced until the publish below.
 		t.writeReg = candidate
+		// The parked set this commit publishes beside the candidate: a
+		// touched package is re-admitted or removed by the batch, so none of
+		// them stays parked, and the fold's derivations here read it already.
+		t.writeParked = st.parked
 		// inTx resolved the tier against the live registry, before the
 		// candidate was set: an actor this closure declares resolves here.
 		t.tier = t.actorTier(actor)
@@ -555,10 +559,22 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// gone. The narrowing guards above have already refused every change
 		// that would strand a LIVE value, so what this reaches is the additive
 		// case and the tombstones the counts deliberately do not see.
-		if len(st.reprojected) > 0 {
-			ds.logApply("re-deriving the refs index", "kinds", len(st.reprojected))
+		//
+		// A package that did not parse leaves the parked set with no kinds to
+		// name (fold.go parkedSet), and its rows hold the indexes their
+		// declaration derived before it stopped parsing. The kinds its stored
+		// rows carry are read here and re-derive with the rest, so an
+		// uninstall lands them where a rebuild after it does.
+		unparsed, err := t.storedKindsUnder(ds.parkedSet().unparsedOf(touched))
+		if err != nil {
+			return err
 		}
-		if err := t.reprojectRefs(st.reprojected); err != nil {
+		reprojected := unionStrings(st.reprojected, unparsed)
+		reprojectedFTS := unionStrings(st.reprojectedFTS, unparsed)
+		if len(reprojected) > 0 {
+			ds.logApply("re-deriving the refs index", "kinds", len(reprojected))
+		}
+		if err := t.reprojectRefs(reprojected); err != nil {
 			return err
 		}
 		// The search index is the other projection of the row against its
@@ -567,10 +583,10 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// searchable shape this batch changes, against the candidate, so the
 		// live index and its replay agree; the rows' values do not move, so
 		// this bumps nothing and appends nothing.
-		if len(st.reprojectedFTS) > 0 {
-			ds.logApply("re-deriving the search index", "kinds", len(st.reprojectedFTS))
+		if len(reprojectedFTS) > 0 {
+			ds.logApply("re-deriving the search index", "kinds", len(reprojectedFTS))
 		}
-		if err := t.reprojectFTS(candidate, st.reprojectedFTS); err != nil {
+		if err := t.reprojectFTS(foldView{reg: candidate, parked: st.parked}, reprojectedFTS); err != nil {
 			return err
 		}
 		if b.extra != nil {
@@ -675,8 +691,11 @@ func touchedKinds(candidate *vocabulary.Registry, touched map[string]bool) []*vo
 // upgrade preview (PlanBundleUpgrade) share it, so what the preview reports
 // and what the install refuses can never disagree.
 type vocabularyStage struct {
-	candidate    *vocabulary.Registry
-	touched      map[string]bool
+	candidate *vocabulary.Registry
+	touched   map[string]bool
+	// parked is the parked set the commit publishes beside the candidate
+	// (fold.go parkedSet.without), never nil.
+	parked       *parkedSet
 	droppedTypes []string
 	// strandedMappings names the mappings another package declares FROM a kind
 	// this batch removes (record 49): uninstalling Linear while the
@@ -936,9 +955,13 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// door stores `movedFrom` and performs nothing, so nothing is passed to the
 	// conversion plan and the narrowing counts stand at full strength.
 	moveRefusals := userDoorMoveGuards(classifyKindMoves(current, candidate, touched, nil))
+	staged, parkedRefs, parkedFTS := ds.parkedReprojection(current, candidate, touched)
+	reprojected := unionStrings(reprojectedKinds(current, candidate, touched), parkedRefs)
+	reprojectedFTS := unionStrings(reprojectedFTSKinds(current, candidate, touched), parkedFTS)
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
+		parked:    staged,
 		// Refuse-with-instances, plus:
 		// Bundle upgrades additionally refuse dropping a callable — function OR
 		// agent — that live triggers still reference (bundles.go): the closure
@@ -949,8 +972,8 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
 		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
-		reprojected:      reprojectedKinds(current, candidate, touched),
-		reprojectedFTS:   reprojectedFTSKinds(current, candidate, touched),
+		reprojected:      reprojected,
+		reprojectedFTS:   reprojectedFTS,
 		// Evolution-with-data: a NARROWING definition
 		// diff — property dropped/kind-changed, enum value or state
 		// removed, required added — is classified here against the currently
@@ -2273,6 +2296,10 @@ func cappedQuarantineReason(reason string) string {
 // re-install of the offending bundle clears the mark. The same holds one step
 // earlier, for a closure that no longer PARSES (storedPackages): both
 // failures arrive here as quarantine candidates and are marked identically.
+//
+// What it leaves out is the dataset's parked set (fold.go parkedSet): a
+// parked package's rows keep deriving their `fts` and refs rows from its
+// stored declaration, so a rebuild reproduces what they hold.
 func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 	built, unparsed, err := ds.storedPackages(ctx, ds.db, nil)
 	if err != nil {
@@ -2285,17 +2312,10 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		// a hard error upstream, so this is never a quarantine cascade.
 		return fmt.Errorf("substrate/engine: repository %s holds no vocabulary — it was never seeded", ds.info.ID)
 	}
-	// Fast path: the whole stored set admits together. A binary that RELAXED
-	// a contract also clears any stale quarantine markers here.
-	good, quarantined := built, unparsed
-	if err := ds.reg.InstallAll(built); err != nil {
-		// Slow path: install the admissible subset and quarantine the rest. The
-		// failed InstallAll removed everything it added, so ds.reg is clean
-		// again.
-		var inadmissible []quarantinedPackage
-		good, inadmissible = ds.admissibleSubset(built)
-		quarantined = append(quarantined, inadmissible...)
-	}
+	// A binary that RELAXED a contract clears any stale quarantine markers
+	// below, off every package that admits.
+	good, parked, inadmissible := ds.admitStored(built)
+	quarantined := append(append([]quarantinedPackage(nil), unparsed...), inadmissible...)
 	// A SEEDED package is never quarantined, at either step (record 0077): a
 	// repository whose own meta-kinds do not admit resolves nothing, and the
 	// engine writes the llm kinds from Go constants, so serving the repository
@@ -2313,6 +2333,7 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		return fmt.Errorf("substrate/engine: repository %s: the seeded closure %s no longer admits under this binary: %s",
 			ds.info.ID, q.name, q.reason)
 	}
+	ds.setParked(newParkedSet(ds.reg, parked, unparsedNames(unparsed)))
 	if err := ds.clearGroupQuarantine(ctx, good); err != nil {
 		return err
 	}
@@ -2327,6 +2348,49 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// admitStored installs stored packages into ds.reg: all of them where they
+// admit together, else the admissible subset. What does not admit comes back
+// twice, as the parsed packages for the parked set and as a quarantine
+// candidate each. The test seam's packages (WithTestInadmissible) are refused
+// before anything installs, as a binary whose contract tightened refuses them.
+func (ds *dataset) admitStored(built []*vocabulary.Package) (good, parked []*vocabulary.Package, quarantined []quarantinedPackage) {
+	candidates := built
+	if refuse := ds.svc.testInadmissible; len(refuse) > 0 {
+		candidates = nil
+		for _, g := range built {
+			if !refuse[g.Identity] {
+				candidates = append(candidates, g)
+				continue
+			}
+			parked = append(parked, g)
+			quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: "refused by the test seam"})
+		}
+	}
+	if err := ds.reg.InstallAll(candidates); err == nil {
+		return candidates, parked, quarantined
+	}
+	// The failed InstallAll removed everything it added, so ds.reg is clean
+	// again for the subset.
+	good, inadmissible := ds.admissibleSubset(candidates)
+	admitted := make(map[string]bool, len(good))
+	for _, g := range good {
+		admitted[g.Identity] = true
+	}
+	for _, g := range candidates {
+		if !admitted[g.Identity] {
+			parked = append(parked, g)
+		}
+	}
+	return good, parked, append(quarantined, inadmissible...)
+}
+
+// setParked replaces the dataset's parked set.
+func (ds *dataset) setParked(s *parkedSet) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.parked = s
 }
 
 // admissibleSubset installs the maximal subset of built packages that admits
@@ -2874,7 +2938,7 @@ func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[strin
 // (appendReferenceShape, per property). Two declarations with the same string
 // project the same refs rows from the same stored values; an undeclared kind
 // is the empty string, because its rows project none.
-func referenceShape(reg *vocabulary.Registry, ident string) string {
+func referenceShape(reg kindLookup, ident string) string {
 	ty, ok := reg.ByIdentity(ident)
 	if !ok {
 		return ""
@@ -2900,7 +2964,7 @@ func reprojectedFTSKinds(current, candidate *vocabulary.Registry, touched map[st
 // the same bands. An undeclared kind is the empty string, distinct from every
 // declared shape, because its rows take the unknown-kind bands (foldFTS)
 // rather than a declaration's.
-func ftsShape(reg *vocabulary.Registry, ident string) string {
+func ftsShape(reg kindLookup, ident string) string {
 	ty, ok := reg.ByIdentity(ident)
 	if !ok {
 		return ""
@@ -2922,7 +2986,7 @@ func ftsShape(reg *vocabulary.Registry, ident string) string {
 
 // kindsWhoseShapeMoved walks the touched packages' kinds on both sides of the
 // apply and keeps the ones whose `shape` differs, sorted.
-func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[string]bool, shape func(*vocabulary.Registry, string) string) []string {
+func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[string]bool, shape func(kindLookup, string) string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for aname := range touched {
@@ -2947,9 +3011,30 @@ func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[s
 	return out
 }
 
+// parkedReprojection is the parked half of a registry change, the apply
+// door's and the boot upgrade's alike (fold.go parkedSet). staged is the set
+// the change publishes: the dataset's, less every package it touches, read
+// beside the candidate. refs and fts are the kinds whose indexes a parked
+// set decides on either side and whose shape the two views disagree on. The
+// registries alone do not show these moving: a parked kind is in neither,
+// and a live kind a parked mapping reshapes is the same kind in both. So an
+// uninstalled parked package's rows re-derive at the unknown-kind bands with
+// no refs rows, and a live source kind loses the slot row a parked mapping
+// projected once the slot is gone or collides with a declared property.
+func (ds *dataset) parkedReprojection(current, candidate *vocabulary.Registry, touched map[string]bool) (staged *parkedSet, refs, fts []string) {
+	parked := ds.parkedSet()
+	staged = parked.without(touched, candidate)
+	decided := parked.derivedKinds()
+	for ident := range staged.derivedKinds() {
+		decided[ident] = true
+	}
+	before, after := foldView{reg: current, parked: parked}, foldView{reg: candidate, parked: staged}
+	return staged, kindsShapedApart(before, after, decided, referenceShape), kindsShapedApart(before, after, decided, ftsShape)
+}
+
 // kindsShapedApart keeps the named kinds whose `shape` differs between two
 // registries, sorted.
-func kindsShapedApart(a, b *vocabulary.Registry, idents map[string]bool, shape func(*vocabulary.Registry, string) string) []string {
+func kindsShapedApart(a, b kindLookup, idents map[string]bool, shape func(kindLookup, string) string) []string {
 	var out []string
 	for _, ident := range sortedKeys(idents) {
 		if shape(a, ident) != shape(b, ident) {
@@ -2983,6 +3068,36 @@ func appendReferenceShape(b *strings.Builder, path string, p *vocabulary.Propert
 	for _, fn := range p.FieldOrder {
 		appendReferenceShape(b, path+"."+fn, p.Fields[fn])
 	}
+}
+
+// storedKindsUnder lists the kinds the stored rows carry, live and
+// tombstoned, under the named packages, sorted. A kind reference is its
+// package's identity, a slash and a name, so the prefix is exact.
+func (t *txn) storedKindsUnder(packages []string) ([]string, error) {
+	if len(packages) == 0 {
+		return nil, nil
+	}
+	prefixes := make([]string, 0, len(packages))
+	for _, p := range packages {
+		prefixes = append(prefixes, p+"/")
+	}
+	rows, err := t.query(`
+		SELECT DISTINCT kind FROM records
+		WHERE EXISTS (SELECT 1 FROM unnest($1::text[]) p WHERE starts_with(kind, p))
+		ORDER BY kind`, prefixes)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var kind string
+		if err := rows.Scan(&kind); err != nil {
+			return nil, err
+		}
+		out = append(out, kind)
+	}
+	return out, rows.Err()
 }
 
 // reprojectRefs re-derives the refs index for the kinds whose reference

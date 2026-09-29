@@ -325,7 +325,8 @@ func (t *txn) reindexPage(kind, after string, batch int) ([]string, error) {
 }
 
 // reindexRows locks the rows of kind named by ids, re-derives their `fts`
-// under the published registry and reports how many it wrote and which ids
+// under the published registry, with the parked kinds behind it as the fold
+// reads them (fold.go foldView), and reports how many it wrote and which ids
 // it did not lock: a row a write holds, under skipLocked, or one that is gone.
 // The caller holds the shared registry-dependency lock, so the registry read
 // here is the one every write in flight derives under.
@@ -340,7 +341,7 @@ func (t *txn) reindexRows(kind string, ids []string, skipLocked bool) (int, []st
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := t.rederiveFTS(t.ds.registry(), kind, rows); err != nil {
+	if err := t.rederiveFTS(t.liveFoldView(), kind, rows); err != nil {
 		return 0, nil, err
 	}
 	var missed []string

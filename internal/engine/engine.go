@@ -125,6 +125,12 @@ type options struct {
 	// hold the reindex there or fail the page. Tests only.
 	searchReindexBatch int
 	searchReindexHook  func(ctx context.Context, kind string) error
+	// inadmissible is the loader's test seam (export_test.go
+	// WithTestInadmissible): the stored packages it refuses as a binary
+	// whose contract tightened would, so a test parks a package without
+	// editing a stored row the changelog would then disagree with. Tests
+	// only.
+	inadmissible map[string]bool
 	// progressEvery is how often a long walk reports its position
 	// (progress.go); the test seam WithTestProgressEvery lowers it so a
 	// short history reports at all.
@@ -412,6 +418,9 @@ type service struct {
 	// searchReindexBatch. Tests only.
 	searchReindexBatch    int
 	testSearchReindexHook func(ctx context.Context, kind string) error
+	// testInadmissible is the options' loader seam (vocabularywrite.go
+	// admitStored). Tests only.
+	testInadmissible map[string]bool
 	// progressEvery is how often a long walk of a changelog reports where
 	// it is (progress.go).
 	progressEvery time.Duration
@@ -569,6 +578,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 
 		searchReindexBatch:    o.searchReindexBatch,
 		testSearchReindexHook: o.searchReindexHook,
+		testInadmissible:      o.inadmissible,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —

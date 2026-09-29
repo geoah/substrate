@@ -226,6 +226,11 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 			refused = guards
 			return nil
 		}
+		// The folds here derive beside the candidate, which is the registry
+		// the reload after the commit reads (fold.go parkedSet), so a live
+		// kind a parked mapping reshapes keeps its slot through the upgrade.
+		// A candidate that does not compile refused above.
+		t.writeParked = st.parked
 		if _, err := t.projectPackages(reg, st.upgrade, projectOpts{
 			skip: func(key string) bool { return st.keep[key] },
 		}); err != nil {
@@ -294,7 +299,7 @@ func (t *txn) reprojectShipped(st *shippedUpgradeStage) error {
 	if err != nil {
 		return err
 	}
-	return t.reprojectFTS(st.candidate, st.reprojectedFTS)
+	return t.reprojectFTS(foldView{reg: st.candidate, parked: st.parked}, st.reprojectedFTS)
 }
 
 // storedDeclaration is one stored declaration as the version diff sees it: its

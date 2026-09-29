@@ -309,8 +309,10 @@ func (t *txn) syncRefsOf(ref eref) error {
 	// go rather than being left as a projection of a declaration nothing reads.
 	// `writeReg` is what makes this correct DURING a vocabulary apply: the
 	// candidate declarations are what the committed rows must project against,
-	// and the live registry does not hold them until the publish.
-	ty, _ := t.declarations().ByIdentity(row.Kind)
+	// and the live registry does not hold them until the publish. The parked
+	// set behind them is the one the fold derives under (fold.go foldView),
+	// which during an apply is the one it publishes (writeParked).
+	ty, _ := t.derivationView().ByIdentity(row.Kind)
 	return t.syncRefs(ref, ty, row.Props)
 }
 
