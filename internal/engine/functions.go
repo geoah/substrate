@@ -64,6 +64,13 @@ var triggerRetryBackoff = []time.Duration{25 * time.Millisecond, 100 * time.Mill
 // startup; nothing is coalesced away. A var, so a test can lower it.
 var scheduleDrainPerPass = 10
 
+// supersedeBatch bounds the parked fires one settlement retires
+// (retireSupersededFires), oldest first, so its delivery entry stays far
+// under changelogfile.MaxLineBytes (one unpark is about 100 bytes) and its
+// transaction stays short; the rest retire at the next settled fire. A var,
+// so a test can lower it.
+var supersedeBatch = 1000
+
 // triggerPassBudget bounds the wall-clock one dispatcher pass spends on one
 // trigger: past it the trigger stops at the delivery in hand and the pass
 // moves on, and the next pass resumes from the cursor (or fire state) that
@@ -560,6 +567,13 @@ type settlement struct {
 	// by deliver once the guard passed on a record whose kind binds the
 	// trait, nil for every other delivery.
 	sync *syncStamp
+	// supersedes is the occurrence a schedule fire delivers, dispatched or
+	// retried, zero on every other delivery: once it settles, the trigger's
+	// parked fires at or before it retire with it (retireSupersededFires).
+	supersedes time.Time
+	// superseded is the parked fires this settlement holds in runningClaims
+	// while it retires them; release gives them back.
+	superseded map[int64]bool
 }
 
 // settle is the function path: everything in one transaction with the
@@ -594,6 +608,9 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 		if err := t.unparkTx(s.trigger, s.retire); err != nil {
 			return err
 		}
+	}
+	if err := s.retireSupersededFires(t); err != nil {
+		return err
 	}
 	if err := t.settleDelivery(s.trigger); err != nil {
 		return err
@@ -705,13 +722,115 @@ func (s *settlement) acquire(id int64) error {
 }
 
 // release gives the held claim back, once the completion, the park or the
-// retry that held it has ended.
+// retry that held it has ended, and the parked fires a settlement retired.
 func (s *settlement) release() {
-	if s == nil || s.held == 0 {
+	if s == nil {
 		return
 	}
-	s.ds.runningClaims.Delete(s.held)
-	s.held = 0
+	if s.held != 0 {
+		s.ds.runningClaims.Delete(s.held)
+		s.held = 0
+	}
+	for id := range s.superseded {
+		s.ds.runningClaims.Delete(id)
+	}
+	s.superseded = nil
+}
+
+// retireSupersededFires retires, once a schedule occurrence settles, every
+// parked fire of the same trigger at or before that occurrence (decision
+// 0142). A schedule fire carries nothing a later one does not carry again,
+// so a retry of the parked fire repeats work the settled one did: a
+// provider's scheduled sync drains whatever is due when it runs. The rows
+// are DELETED through the unpark fold a delivered retry writes, on the
+// settling delivery's own entry, so a rebuild and a restore agree:
+// trigger_failures has no state column to mark, and the fire's parked run
+// row and the changelog keep the history. A row parked by an earlier binary
+// is a row like any other and retires at the next settled fire.
+//
+// A record trigger never supersedes: each of its parks is one record's
+// change, which no delivery of another change re-delivers. Nor is a webhook
+// request's park retired (it carries its request as a payload), nor a fire
+// whose id is not an occurrence (a wake), nor an agent claim, in flight or
+// interrupted, which decision 0064 leaves to a person because its run may
+// have written records. A row a hand is retrying now is held in
+// runningClaims and keeps its retry. The rows this settlement retires are
+// held the same way until it ends, so a retry of one answers conflict
+// instead of running a fire whose row is being deleted.
+func (s *settlement) retireSupersededFires(t *txn) error {
+	if s.supersedes.IsZero() {
+		return nil
+	}
+	// Held elsewhere: every id in runningClaims but the ones this settlement
+	// took on an attempt that rolled back.
+	held := []int64{}
+	s.ds.runningClaims.Range(func(k, _ any) bool {
+		if id, ok := k.(int64); ok && !s.superseded[id] {
+			held = append(held, id)
+		}
+		return true
+	})
+	heldJSON, err := json.Marshal(held)
+	if err != nil {
+		return err
+	}
+	// A fire id is fireID's fixed-width UTC form, so under the C collation
+	// its string order is its time order and the bound sits in the query.
+	rows, err := t.query(`
+		SELECT id FROM trigger_failures
+		WHERE trigger_id = $1 AND payload IS NULL AND last_error NOT IN ($2, $3, $4, $5)
+		  AND fire_id ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+		  AND fire_id COLLATE "C" <= $6
+		  AND id NOT IN (SELECT jsonb_array_elements_text($7::jsonb)::bigint)
+		ORDER BY id LIMIT $8`,
+		s.trigger, pendingWebhookError, inFlightError, legacyInFlightError, interruptedAgentError,
+		fireID(s.supersedes), string(heldJSON), supersedeBatch)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		// A hand that took the row since the snapshot keeps it.
+		if !s.holdSuperseded(id) {
+			continue
+		}
+		if err := t.unparkTx(s.trigger, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// holdSuperseded takes the in-process claim on a parked fire this settlement
+// retires, false when another hand holds it. A settlement that rolled back
+// and settles again already holds the claims it took the first time.
+func (s *settlement) holdSuperseded(id int64) bool {
+	if s.superseded[id] {
+		return true
+	}
+	if id == s.held {
+		return false
+	}
+	if _, taken := s.ds.runningClaims.LoadOrStore(id, struct{}{}); taken {
+		return false
+	}
+	if s.superseded == nil {
+		s.superseded = map[int64]bool{}
+	}
+	s.superseded[id] = true
+	return true
 }
 
 // complete is the agent path's last transaction, after the loop settled: the
@@ -724,6 +843,9 @@ func (s *settlement) complete(t *txn, claim int64, res deliverResult) error {
 		return err
 	}
 	if err := t.unparkTx(s.trigger, claim); err != nil {
+		return err
+	}
+	if err := s.retireSupersededFires(t); err != nil {
 		return err
 	}
 	if err := t.settleDelivery(s.trigger); err != nil {
@@ -1064,6 +1186,7 @@ func (ds *dataset) fireSettlement(tr *trigger, mode, fid string, at time.Time, l
 	}
 	if lastFire != nil {
 		s.acknowledge = func(t *txn) error { return t.advanceScheduleTx(tr.ID, *lastFire, at) }
+		s.supersedes = at.UTC()
 	}
 	return s
 }
@@ -2490,6 +2613,13 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	}
 	f.Payload = json.RawMessage(payload)
 	settle := &settlement{ds: ds, trigger: tr.ID, seq: int64(f.Seq), fireID: f.FireID, retire: failureID}
+	// A retried occurrence that settles supersedes the parks at or before
+	// it, as a dispatched one does.
+	if tr.Schedule != nil && len(payload) == 0 {
+		if at, err := time.Parse(time.RFC3339, f.FireID); err == nil {
+			settle.supersedes = at.UTC()
+		}
+	}
 	// The failure is held in this process before anything runs and until the
 	// retirement or the re-park ends: a second retry of the same failure, or
 	// a retry of a claim whose dispatch is still running, answers conflict
