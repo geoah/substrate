@@ -45,26 +45,36 @@ func openSegment(dir string, seg segment, skip int64) (*segmentReader, error) {
 // inside the segment's end is damage, because open bounded the end at the
 // last complete transaction.
 func (r *segmentReader) next() (Entry, error) {
+	line, start, err := r.nextLine()
+	if err != nil {
+		return Entry{}, err
+	}
+	e, _, err := Decode(line)
+	if err != nil {
+		return Entry{}, fmt.Errorf("changelogfile: %s: line at byte %d: %w", r.seg.Name, start, err)
+	}
+	return e, nil
+}
+
+// nextLine is next without the decode: the line's bytes, valid until the
+// next call, and the offset it starts at.
+func (r *segmentReader) nextLine() ([]byte, int64, error) {
 	for {
 		line, start, complete, err := r.lr.next()
 		if errors.Is(err, io.EOF) {
-			return Entry{}, io.EOF
+			return nil, start, io.EOF
 		}
 		if err != nil {
-			return Entry{}, fmt.Errorf("changelogfile: %s: line at byte %d: %w", r.seg.Name, start, err)
+			return nil, start, fmt.Errorf("changelogfile: %s: line at byte %d: %w", r.seg.Name, start, err)
 		}
 		if !complete {
-			return Entry{}, fmt.Errorf("%w: %s: torn line at byte %d", ErrSegmentDigest, r.seg.Name, start)
+			return nil, start, fmt.Errorf("%w: %s: torn line at byte %d", ErrSegmentDigest, r.seg.Name, start)
 		}
 		if r.skip > 0 {
 			r.skip--
 			continue
 		}
-		e, _, err := Decode(line)
-		if err != nil {
-			return Entry{}, fmt.Errorf("changelogfile: %s: line at byte %d: %w", r.seg.Name, start, err)
-		}
-		return e, nil
+		return line, start, nil
 	}
 }
 

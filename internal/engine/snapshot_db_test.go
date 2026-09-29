@@ -7,6 +7,7 @@ package engine_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -354,6 +355,79 @@ func TestSnapshotDiscardsACopyThatDoesNotReadBack(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The read-back holds every copied finished segment to its copied sidecar
+// and to the digest the source's verification took, without walking its
+// lines (issue 761): a byte flipped in a copied finished segment is refused,
+// and so is one whose copied sidecar was rewritten to match it, which the
+// copy's own sidecars cannot tell.
+func TestSnapshotHoldsTheCopiedSegmentsToTheSource(t *testing.T) {
+	t.Parallel()
+	flip := func(t *testing.T, path string) {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw[len(raw)/2] ^= 0x01
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, forgeSidecar := range map[string]bool{"the sidecar left": false, "the sidecar rewritten": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			// One-byte segments: every transaction finishes one.
+			svc, ds, dsn := newDatasetWithDSN(t, engine.WithChangelogSegmentBytes(1))
+			for _, n := range []string{"one", "two"} {
+				mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": n}})
+			}
+			root, id := engine.DataRootOf(svc), repositoryIDOf(t, ds)
+			_ = svc.Close()
+			armed := true
+			operator := reopenWith(t, dsn, root, engine.WithTestSnapshotFault(func(stage, dir string) error {
+				if stage != engine.SnapshotAfterCopy || !armed {
+					return nil
+				}
+				segs, err := changelogfile.Segments(changelogfile.ChangelogDir(dir))
+				if err != nil || len(segs) < 3 || !segs[1].Finished {
+					t.Errorf("the copy holds %d segments (%v); the test wants finished ones", len(segs), err)
+					return nil
+				}
+				path := filepath.Join(changelogfile.ChangelogDir(dir), segs[1].Name)
+				flip(t, path)
+				if forgeSidecar {
+					raw, err := os.ReadFile(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					sum := sha256Hex(raw)
+					if err := os.WriteFile(changelogfile.SidecarName(path), []byte(sum+"\n"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return nil
+			}))
+			dest := t.TempDir()
+			_, err := operator.(snapshotter).SnapshotRepository(ctx, id, dest)
+			if !errors.Is(err, engine.ErrSnapshotCopyDamaged) {
+				t.Fatalf("a damaged copy was kept: %v", err)
+			}
+			nothingAt(t, dest, id)
+			armed = false
+			if _, err := operator.(snapshotter).SnapshotRepository(ctx, id, dest); err != nil {
+				t.Fatalf("the retry into the same destination: %v", err)
+			}
+		})
+	}
+}
+
+// sha256Hex is the lowercase hex SHA-256 of b, the form a sidecar holds.
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // A failure in the middle of the copy leaves nothing at the destination, not

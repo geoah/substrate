@@ -134,11 +134,12 @@ func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot s
 
 	// The whole verification, side stores and sealed files opened included:
 	// a copy of a repository that does not verify is a copy of the damage.
-	verified, err := s.VerifyRepository(ctx, repository)
+	// The changelog Log it verified is what the copy is held to below.
+	verified, srcLog, err := s.verifyRepository(ctx, repository, VerifyOptions{})
 	if err != nil {
 		return report, err
 	}
-	if !verified.OK {
+	if !verified.OK || srcLog == nil {
 		return report, fmt.Errorf("%w: %s", ErrSnapshotUnverified, strings.Join(verified.Findings, "; "))
 	}
 	report.Head, report.HeadHash = verified.Head, verified.HeadHash
@@ -161,7 +162,7 @@ func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot s
 		return report, err
 	}
 	defer func() { _ = os.RemoveAll(tmpRoot) }()
-	partial, err := s.buildSnapshot(ctx, ds, repo, tmpRoot, headHash, &report)
+	partial, err := s.buildSnapshot(ctx, ds, repo, tmpRoot, srcLog, headHash, &report)
 	if err != nil {
 		return report, err
 	}
@@ -192,7 +193,7 @@ func refuseExisting(dst string) error {
 // buildSnapshot writes the copy under tmpRoot, at `repositories/<authority>`,
 // reads it back and writes `snapshot.json` last. It returns the directory it
 // built; the caller renames it into place or removes the root.
-func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repository, tmpRoot string, headHash [32]byte, report *SnapshotReport) (string, error) {
+func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repository, tmpRoot string, srcLog *changelogfile.Log, headHash [32]byte, report *SnapshotReport) (string, error) {
 	partial, err := changelogfile.EnsureRepoDir(tmpRoot, repo.ID)
 	if err != nil {
 		return "", err
@@ -239,21 +240,25 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 		return "", err
 	}
 
-	// The copy, read back the way the source was verified, before the file
-	// that vouches for it is written: every line's checksum and every
-	// sidecar, every sealed file the source's and opened under the DEK, every
-	// blob hashed.
-	copiedLog, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(partial))
+	// The copy, read back before the file that vouches for it is written:
+	// every copied finished segment hashed against its copied sidecar and
+	// held to the digest the source's verification took, the active
+	// segment's lines checked, every sealed file the source's and opened
+	// under the DEK, every blob hashed. A finished segment whose bytes are
+	// the source's needs no walk of its lines: the verification walked the
+	// source's (issue 761).
+	copiedLog, err := changelogfile.OpenWith(changelogfile.ChangelogDir(partial), changelogfile.OpenOptions{
+		ReadOnly: true,
+		Progress: s.checkProgress(checkSnapshotCopy, repo.ID),
+	})
 	if err != nil {
 		return "", fmt.Errorf("%w: the changelog: %w", ErrSnapshotCopyDamaged, err)
 	}
-	prog := s.progress("substrate: verifying the snapshot's changelog", "repository", repo.ID, "head", report.Head)
-	copied, err := copiedLog.Verify(prog.tick)
-	if err != nil {
+	if err := copiedLog.SameAs(srcLog); err != nil {
 		return "", fmt.Errorf("%w: the changelog: %w", ErrSnapshotCopyDamaged, err)
 	}
-	if copied.Head != report.Head || copied.TruncatedBytes != 0 {
-		return "", fmt.Errorf("%w: the changelog ends at %d with %d uncommitted bytes, the source at %d", ErrSnapshotCopyDamaged, copied.Head, copied.TruncatedBytes, report.Head)
+	if copiedLog.Head() != report.Head || copiedLog.TruncatedBytes != 0 {
+		return "", fmt.Errorf("%w: the changelog ends at %d with %d uncommitted bytes, the source at %d", ErrSnapshotCopyDamaged, copiedLog.Head(), copiedLog.TruncatedBytes, report.Head)
 	}
 	if err := s.checkCopiedSealed(ds, partial, files); err != nil {
 		return "", err

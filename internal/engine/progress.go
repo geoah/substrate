@@ -71,13 +71,14 @@ func (p *progress) report(where ...any) {
 	p.log.Info(p.msg, attrs...)
 }
 
-// The two checks of a repository's changelog directory that digest its
-// finished segments, as their progress lines name them. The boot check
-// digests every one; the first open after it digests only what the boot
-// check did not (repodir.go openDirectory).
+// The checks of a changelog directory that digest its finished segments, as
+// their progress lines name them. The boot check digests every one; the
+// first open after it digests only what the boot check did not (repodir.go
+// openDirectory); a snapshot digests its copy (snapshot.go).
 const (
-	checkAtBoot = "substrate: boot check: checking the changelog segments"
-	checkAtOpen = "substrate: open: checking the changelog segments"
+	checkAtBoot       = "substrate: boot check: checking the changelog segments"
+	checkAtOpen       = "substrate: open: checking the changelog segments"
+	checkSnapshotCopy = "substrate: snapshot: checking the copied changelog segments"
 )
 
 // checkProgress is the Progress of one check of a repository's changelog
