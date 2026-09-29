@@ -657,3 +657,132 @@ func TestASealedOnlyCommitInDoubtLatchesUntilTheBootRewritesTheFile(t *testing.T
 		}
 	})
 }
+
+// leaveAt is a WithTestCommitFault hook that ends a request's context at one
+// stage, once, and lets the commit go on: the client that disconnects while
+// its write commits.
+type leaveAt struct {
+	mu     sync.Mutex
+	stage  string
+	cancel context.CancelFunc
+}
+
+func (l *leaveAt) arm(stage string, cancel context.CancelFunc) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.stage, l.cancel = stage, cancel
+}
+
+func (l *leaveAt) hook(stage string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if stage == l.stage && l.cancel != nil {
+		l.cancel()
+		l.stage, l.cancel = "", nil
+	}
+	return nil
+}
+
+// A client that disconnects while its write commits cost the repository its
+// write path: the driver abandoned a COMMIT Postgres applied, the directory
+// cut the transaction as if it rolled back, and every later write answered
+// 500 until a restart (#516). The commit phase runs under a context the
+// request no longer reaches, so the write lands in both stores, its caller
+// is answered as if it had stayed, and the next write goes through. A write
+// with changelog lines and a sealed file, and a sealed-only TOTP step, which
+// latched at once on a commit error.
+func TestAWriteWhoseClientLeavesDuringTheCommitLands(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("db test")
+	}
+	next := func(t *testing.T, ds *dataset, id string) {
+		t.Helper()
+		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+			Kind: bindingProviderKind, ID: id,
+			Properties: map[string]any{"label": id, "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-" + id},
+		}); err != nil {
+			t.Fatalf("the write after the one whose client left: %v", err)
+		}
+	}
+	whole := func(t *testing.T, s *service, ds *dataset, when string) {
+		t.Helper()
+		report, err := s.VerifyRepository(context.Background(), testdb.Repository(t))
+		if err != nil || !report.OK || report.FileHead != report.Head || report.Head != maxSeqOf(t, ds) {
+			t.Fatalf("the directory %s: %+v, %v", when, report, err)
+		}
+		noPending(t, ds.dir, when)
+	}
+	t.Run("put", func(t *testing.T) {
+		t.Parallel()
+		leave := &leaveAt{}
+		s, repo, _, _, _ := openDurabilityService(t, WithTestCommitFault(leave.hook))
+		ds, err := s.open(context.Background(), repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		head := maxSeqOf(t, ds)
+		files := len(sealedPayloads(t, ds.dir))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		leave.arm(commitAfterPrepare, cancel)
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: bindingProviderKind, ID: "left",
+			Properties: map[string]any{"label": "left", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-left"},
+		}); err != nil {
+			t.Fatalf("a write whose client left during the commit: %v, want it committed", err)
+		}
+		if ctx.Err() == nil {
+			t.Fatal("the hook did not end the request's context")
+		}
+		if got := maxSeqOf(t, ds); got <= head {
+			t.Fatalf("the table is at seq %d, was %d: the write did not commit", got, head)
+		}
+		if n := len(sealedPayloads(t, ds.dir)); n != files+1 {
+			t.Fatalf("sealed/ holds %d files, want %d: the write's file did not land", n, files+1)
+		}
+		whole(t, s, ds, "after the write whose client left")
+		next(t, ds, "after")
+		whole(t, s, ds, "after the next write")
+	})
+	t.Run("totp step", func(t *testing.T) {
+		t.Parallel()
+		leave := &leaveAt{}
+		s, repo, _, _, _ := openDurabilityService(t, WithTestCommitFault(leave.hook))
+		ds, err := s.open(context.Background(), repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mat, err := s.authMaterialOf(context.Background(), repo.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		step := mat.totp.Step + 5
+		before := sealedPayloads(t, ds.dir)[mat.totpRef]
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		leave.arm(commitAfterPrepare, cancel)
+		won, err := s.consumeTOTPStep(ctx, repo, mat.totpRef, step)
+		if err != nil || !won {
+			t.Fatalf("a TOTP step whose client left during the commit: won=%v err=%v, want it spent", won, err)
+		}
+		if ctx.Err() == nil {
+			t.Fatal("the hook did not end the request's context")
+		}
+		after, err := s.authMaterialOf(context.Background(), repo.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.totp.Step != step {
+			t.Fatalf("the table's step is %d, want %d", after.totp.Step, step)
+		}
+		if string(sealedPayloads(t, ds.dir)[mat.totpRef]) == string(before) {
+			t.Fatal("the record's file did not take the spent step")
+		}
+		whole(t, s, ds, "after the step whose client left")
+		next(t, ds, "after")
+		whole(t, s, ds, "after the next write")
+	})
+}

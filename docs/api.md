@@ -1194,7 +1194,10 @@ opened answers `unavailable`, never a masked `401`, so a store the binary
 cannot serve is diagnosable instead of looking like a bad credential; and a
 `semantic` search over a repository whose vectors have not been bought yet
 answers `unavailable` with the number of properties still queued, so an empty
-index is never mistaken for an empty match.
+index is never mistaken for an empty match. A repository that refuses writes
+until the server restarts (its directory fell behind its tables and the
+server could not repair it while running) also answers `unavailable`, with a
+30-second `Retry-After` and a message that names the restart.
 
 The same problem object appears in the [watch stream](changelog.md)'s terminal
 error frame and as an agent tool's error, so an error means the same thing

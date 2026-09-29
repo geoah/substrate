@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -39,4 +42,42 @@ func TestSplitPropsNamesTheTemporalBinding(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A write's transaction context follows the request until the commit phase
+// starts and ignores it afterwards (#516): a request that ended before
+// detach gets its own error back, and one that ends after detach leaves the
+// transaction's context live for the commit.
+func TestAWriteContextDetachesFromTheRequestAtTheCommit(t *testing.T) {
+	t.Run("ended before the commit", func(t *testing.T) {
+		req, cancel := context.WithCancel(context.Background())
+		wc := newWriteCtx(req)
+		defer wc.release()
+		cancel()
+		if err := wc.detach(); !errors.Is(err, context.Canceled) {
+			t.Fatalf("detach after the request ended: %v, want context.Canceled", err)
+		}
+		select {
+		case <-wc.ctx.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("the request's end did not reach the transaction's context before the commit")
+		}
+	})
+	t.Run("ended during the commit", func(t *testing.T) {
+		req, cancel := context.WithCancel(context.Background())
+		wc := newWriteCtx(req)
+		defer wc.release()
+		if err := wc.detach(); err != nil {
+			t.Fatalf("detach with the request live: %v", err)
+		}
+		cancel()
+		time.Sleep(10 * time.Millisecond)
+		if err := wc.ctx.Err(); err != nil {
+			t.Fatalf("the request's end reached the transaction's context during the commit: %v", err)
+		}
+		wc.release()
+		if wc.ctx.Err() == nil {
+			t.Fatal("release left the transaction's context live")
+		}
+	})
 }

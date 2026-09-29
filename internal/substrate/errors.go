@@ -68,6 +68,16 @@ var (
 	// retry, and every retry would meet the same bytes. `repository verify`
 	// reports the same damage.
 	ErrCorrupt = errors.New("substrate: stored data is corrupt")
+	// ErrRestartRequired marks a refusal only a server restart lifts: the
+	// engine holds state it cannot reconcile with the database while it
+	// runs, so it refuses rather than guess, and the boot check is the
+	// repair. A repository directory left behind its tables by a write that
+	// failed after it committed, when the in-process catch-up failed too, is
+	// the case. It is distinct from ErrUnavailable, which the same call
+	// outlives with nobody acting, so an engine caller that retries an
+	// ErrUnavailable does not loop on it. The API still answers it `503
+	// unavailable` with Retry-After, and the message names the restart.
+	ErrRestartRequired = errors.New("substrate: refused until the server restarts")
 )
 
 // ErrorEnvelope is the one body every refused request answers with.

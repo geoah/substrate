@@ -275,7 +275,14 @@ the same way and renamed into place after. A directory that cannot be written
 before the commit rolls the write back with `503 unavailable`
 (`ErrDirectoryWrite`); a crash between the commit and the newline leaves an
 unfinished transaction the next boot completes from Postgres
-([what happens at boot](operations.md#what-happens-at-boot)). A reader accepts
+([what happens at boot](operations.md#what-happens-at-boot)). Once a write is
+ready to commit, a client that disconnects no longer stops it: the commit and
+the file steps run to the end, and the server gives the Postgres side of them
+a 30-second budget of its own. A commit that reports an error after Postgres
+applied it has its lines cut, and the next write appends that transaction
+from the table before its own. Only when that repair fails does the
+repository refuse every write until a restart, with `503 unavailable` and a
+message that names the restart. A reader accepts
 exactly one kind of damage, an unfinished transaction at the end of the active
 segment: a torn last line and, before it, the complete lines that carry the
 same `txn`. It cuts them together, back to the last line that ends its

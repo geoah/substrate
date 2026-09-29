@@ -1670,12 +1670,14 @@ func TestCatchUpAppendsWholeTransactions(t *testing.T) {
 }
 
 // A commit whose answer is lost after Postgres committed (the connection
-// dropped at the reply) is treated as a failure: the prepared lines are cut
-// and the staged files discarded, so the table is one transaction ahead of
-// the directory. The next write's prepare meets that gap and latches the
-// dataset rather than refusing as retryable, and the boot catches the file
-// up from the table.
-func TestACommitInDoubtLatchesUntilTheBootCatchesUp(t *testing.T) {
+// dropped at the reply, the commit budget spent) is treated as a failure: the
+// prepared lines are cut and the staged files discarded, so the table is one
+// transaction ahead of the directory. The next write holds the changelog
+// lock the doubted commit held, so the table says the commit landed, and it
+// appends that transaction from the table before its own lines, sealed file
+// included, as the boot check would. No restart: before #516 the next write
+// latched the dataset and every write after it answered 500.
+func TestACommitInDoubtIsCaughtUpByTheNextWrite(t *testing.T) {
 	t.Parallel()
 	fault := &armedFault{}
 	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
@@ -1684,13 +1686,20 @@ func TestACommitInDoubtLatchesUntilTheBootCatchesUp(t *testing.T) {
 	head := maxSeq(t, ds)
 	root := engine.DataRootOf(svc)
 	dir := repoDirOf(t, svc, ds)
+	sealedBefore := len(sealedRefs(t, dir))
 
+	// A provider row with a secret: a changelog line and a sealed file in
+	// one transaction, so the catch-up has both halves to repair.
 	fault.arm(engine.CommitInDoubt)
-	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, ID: "doubt", Properties: map[string]any{"name": "doubt"}})
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: typeProvider, ID: "openai",
+		Properties: map[string]any{"label": "openai", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-doubted"},
+	})
 	if !errors.Is(err, errCrash) {
 		t.Fatalf("the commit did not report the seam's failure: %v", err)
 	}
-	if maxSeq(t, ds) != head+1 {
+	doubted := maxSeq(t, ds)
+	if doubted <= head {
 		t.Fatal("the write did not commit")
 	}
 	ro, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(dir))
@@ -1700,28 +1709,124 @@ func TestACommitInDoubtLatchesUntilTheBootCatchesUp(t *testing.T) {
 	if ro.Head() != head || ro.TruncatedBytes != 0 {
 		t.Fatalf("the file after the doubted commit: head %d (want %d), %d bytes of tail", ro.Head(), head, ro.TruncatedBytes)
 	}
-	// The next write finds the table ahead and latches: not a retry's error.
-	_, err = ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "next"}})
-	if !errors.Is(err, engine.ErrChangelogFileBehind) || errors.Is(err, substrate.ErrUnavailable) {
-		t.Fatalf("the write after an in-doubt commit: err = %v, want ErrChangelogFileBehind and not ErrUnavailable", err)
+	if n := len(sealedRefs(t, dir)); n != sealedBefore {
+		t.Fatalf("sealed/ holds %d files after the doubted commit, want %d", n, sealedBefore)
 	}
-	if maxSeq(t, ds) != head+1 {
-		t.Fatal("a latched write reached the table")
+
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, ID: "next", Properties: map[string]any{"name": "next"}})
+	if got := maxSeq(t, ds); got <= doubted {
+		t.Fatalf("the next write did not reach the table: head %d, was %d", got, doubted)
+	}
+	report := mustVerify(t, svc, testdb.Repository(t))
+	if !report.OK || report.FileHead != report.Head || report.Head != maxSeq(t, ds) {
+		t.Fatalf("the directory after the next write: %+v", report)
+	}
+	if n := len(sealedRefs(t, dir)); n != sealedBefore+1 {
+		t.Fatalf("sealed/ holds %d files after the catch-up, want %d: the doubted write's file is missing", n, sealedBefore+1)
+	}
+	if pending, _ := changelogfile.PendingSealed(dir); len(pending) != 0 {
+		t.Fatalf("the catch-up left staged files: %v", pending)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "after"}})
+	finalHead := maxSeq(t, ds)
+	_ = svc.Close()
+
+	// The boot finds nothing to repair.
+	svc2 := mustReopen(t, dsn, root)
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != finalHead || report.FileHead != finalHead {
+		t.Fatalf("after the boot: %+v", report)
+	}
+}
+
+// The catch-up is the repair, and the latch stands only when the repair
+// fails: a doubted commit followed by a changelog writer that cannot append,
+// or by a sealed store that cannot take the doubted write's file once its
+// line is appended, refuses the next write as ErrChangelogFileBehind. That is
+// an ErrRestartRequired (a 503 naming the restart) and never a retry's
+// ErrUnavailable, and the boot catches the directory up. A retry after the
+// sealed failure would meet no gap and skip the mirror, so that latches too.
+func TestACommitInDoubtLatchesWhenTheCatchUpFails(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		fail func(substrate.Dataset)
+	}{
+		{"changelog writer", engine.BreakChangelogWriter},
+		{"sealed store", engine.BreakSealedStore},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fault := &armedFault{}
+			svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
+			ctx := context.Background()
+			mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "before"}})
+			root := engine.DataRootOf(svc)
+			dir := repoDirOf(t, svc, ds)
+			sealedBefore := len(sealedRefs(t, dir))
+
+			fault.arm(engine.CommitInDoubt)
+			if _, err := ds.Put(ctx, owner, substrate.PutInput{
+				Kind: typeProvider, ID: "openai",
+				Properties: map[string]any{"label": "openai", "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": "sk-doubted"},
+			}); !errors.Is(err, errCrash) {
+				t.Fatalf("the commit did not report the seam's failure: %v", err)
+			}
+			doubted := maxSeq(t, ds)
+			tc.fail(ds)
+			for _, name := range []string{"next", "later"} {
+				_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": name}})
+				if !errors.Is(err, engine.ErrChangelogFileBehind) || !errors.Is(err, substrate.ErrRestartRequired) || errors.Is(err, substrate.ErrUnavailable) {
+					t.Fatalf("the %s write after a doubted commit and a failed catch-up: err = %v, want ErrChangelogFileBehind, an ErrRestartRequired and not ErrUnavailable", name, err)
+				}
+			}
+			if maxSeq(t, ds) != doubted {
+				t.Fatal("a latched write reached the table")
+			}
+			_ = svc.Close()
+
+			svc2 := mustReopen(t, dsn, root)
+			report := mustVerify(t, svc2, testdb.Repository(t))
+			if !report.OK || report.Head != doubted || report.FileHead != doubted {
+				t.Fatalf("the boot did not catch the file up: %+v", report)
+			}
+			if n := len(sealedRefs(t, dir)); n != sealedBefore+1 {
+				t.Fatalf("sealed/ holds %d files after the boot, want %d", n, sealedBefore+1)
+			}
+		})
+	}
+}
+
+// A vocabulary apply whose commit answer is lost did not publish its
+// registry, so a write the catch-up let through would be held to the
+// declarations the commit may have replaced. Nothing short of the open loads
+// them again, so the doubted apply latches at once.
+func TestAVocabularyCommitInDoubtLatchesAtOnce(t *testing.T) {
+	t.Parallel()
+	fault := &armedFault{}
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCommitFault(fault.hook))
+	ctx := context.Background()
+	root := engine.DataRootOf(svc)
+
+	fault.arm(engine.CommitInDoubt)
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, requiredNarrowingDocs(false))
+	if !errors.Is(err, engine.ErrChangelogFileBehind) || !errors.Is(err, errCrash) {
+		t.Fatalf("a vocabulary apply in doubt: err = %v, want ErrChangelogFileBehind naming the commit's error", err)
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "next"}}); !errors.Is(err, engine.ErrChangelogFileBehind) {
+		t.Fatalf("the write after a doubted apply: err = %v, want ErrChangelogFileBehind", err)
 	}
 	_ = svc.Close()
 
 	svc2 := mustReopen(t, dsn, root)
-	report := mustVerify(t, svc2, testdb.Repository(t))
-	if !report.OK || report.Head != head+1 || report.FileHead != head+1 {
+	if report := mustVerify(t, svc2, testdb.Repository(t)); !report.OK || report.Head != report.FileHead {
 		t.Fatalf("the boot did not catch the file up: %+v", report)
 	}
 	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds2.Get(ctx, taskKind, "doubt"); err != nil {
-		t.Fatalf("the committed write is not readable after the boot: %v", err)
-	}
+	mustPut(t, ds2, owner, substrate.PutInput{Kind: narrowingPackage + "/note", ID: "after", Properties: map[string]any{"name": "after"}})
 }
 
 // A boot import of a long history takes minutes and its batches and fold
