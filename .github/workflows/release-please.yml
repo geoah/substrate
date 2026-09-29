@@ -88,9 +88,13 @@ jobs:
   publish:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
+    # Every permission release.yml's job asks for, because a called workflow
+    # may not request one its caller did not grant, and GitHub refuses the
+    # whole run at startup when it does. `actions: read` is the ci-run gate.
     permissions:
       contents: write
       packages: write
+      actions: read
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
