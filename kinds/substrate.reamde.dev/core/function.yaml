@@ -18,7 +18,7 @@ data:
     invoked by a trigger or called directly. The declaration IS the record
     — a write admits it, the commit activates it, and the dispatcher reads
     the registry this row rebuilds into.
-  version: 18
+  version: 19
   purpose: internal
   names:
     singular: function
@@ -62,10 +62,19 @@ data:
     # installed package, since nothing can hand the engine a body). The four
     # host functions core ships are the agent built-ins — query, propose,
     # write, ask — and their declarations are their whole cards.
-    # The author's OBJECTIVE facts for the policy door
-    # (docs/plans/thread-interactions.md): what class of effect the body has,
-    # and a floor no policy or judge loosens. Facts, never grants — the grant
-    # stays `permissions`.
+    # The author's OBJECTIVE facts for the policy door (docs/agents.md, "The
+    # policy door"): what class of effect the body has, and a floor no policy
+    # or judge loosens. Facts, never grants — the grant stays `permissions`.
+    #
+    # `confirmation: always` is honored wherever the function runs: a trigger,
+    # a fire, a drain page, a direct call, an agent's tool call (policy.go
+    # effectVerdict). Each put, patch or delete it returns becomes a
+    # recordpatchrequest stamped with the function, and the target is left
+    # alone until the owner accepts it. The floor holds a callee's effects
+    # too: an effect is held when the function that returned it, or the root
+    # of its call chain, declares it. A merge or split cannot be held, so
+    # under the floor one is refused. An effect on a kind outside
+    # `permissions.writes` is refused before the floor is read, never held.
     effect:
       type: enum
       values:
@@ -80,8 +89,9 @@ data:
       values:
         - policy
         - always
-      description: always means the body's effects are never auto-applied,
-        whatever any policy or judge says; absent means policy
+      description: always holds each put, patch or delete the body returns
+        as a recordpatchrequest for the owner, wherever the function runs
+        and whatever any policy or judge says; absent means policy
     runtime:
       type: enum
       values:

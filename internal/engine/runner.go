@@ -769,7 +769,19 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor,
 			return failed(fmt.Errorf("%w: output: %w", substrate.ErrValidation, err))
 		}
 	}
-	outcome := substrate.FunctionCalled{Output: output, Effects: len(effects)}
+	// The policy door holds what it gates as requests, and a held effect is
+	// not counted among the applied ones the reply reports.
+	effects, err = ds.holdEffects(ctx, fn, effects, downstream)
+	if err != nil {
+		return failed(err)
+	}
+	applied := 0
+	for _, ef := range effects {
+		if ef.hold == nil {
+			applied++
+		}
+	}
+	outcome := substrate.FunctionCalled{Output: output, Effects: applied}
 	if len(effects) == 0 && !audit {
 		return output, 0, call.settle(ctx, outcome)
 	}
@@ -794,7 +806,8 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor,
 	if err != nil {
 		return failed(err)
 	}
-	return output, len(effects), nil
+	ds.judgeHeld(effects)
+	return output, applied, nil
 }
 
 // callHostFunction answers a direct call to a host function. One of them is

@@ -61,6 +61,12 @@ trigger, a host call and the call API all address it with.
 - Optional **`arguments:`** and **`returns:`** are the flat named IO: a caller's
   arguments are checked before the body runs, the returned value after.
   [Arguments and returns](#arguments-and-returns) is the whole grammar.
+- Optional **`effect`** (`read`, `write`, `external` or `irreversible`) is the
+  author's statement of what the body does, and **`confirmation`**
+  (`policy`, the default, or `always`) is a floor no policy loosens:
+  `always` holds every put, patch and delete the body returns for the
+  owner's review ([held for review](#held-for-review)). Both are facts about
+  the function, never grants.
 - **`permissions:`** is what the function is allowed to do while it runs, and
   it is the whole security boundary. Leave a grant out and what it covers is
   refused:
@@ -519,6 +525,68 @@ writes, put/patch/delete replays are idempotent by construction.
 Merge and split are replay-safe by verification instead: re-merging a loser
 already former to the winner, or re-splitting an already-tombstoned merge, is
 a verified no-op, and any other state is a conflict that parks.
+
+### Held for review
+
+A put, patch or delete can land as a `recordpatchrequest` instead of a write,
+for the owner to accept or reject. Two things hold one, and the body does not
+change for either:
+
+- a [`recordpatchpolicy`](agents.md#the-policy-door) whose `selector.functions`
+  names the function (or the root of its call chain) and whose action is
+  `gate`;
+- the function's own `confirmation: always`, which holds every such effect
+  with no policy and cites none. It also holds the effects of the functions
+  it calls, and it refuses a `merge` or `split`, which no request can carry.
+
+This holds on every path that runs the function: a trigger delivery, a
+schedule or webhook fire, each page of a drain, a direct call, and an agent's
+tool call. The engine writes the request after the body returns, under the
+function's actor and in the transaction that settles the run, with `op`
+(`create` when the target is absent, `patch` when it is live, or `delete`),
+the proposed `diff`, and `function` naming the function. The target is not
+touched until the request is accepted, and accepting it applies the diff as
+the owner. A function never writes the request itself, and installed code
+never decides one: an agent or function whose grants cover the request kind
+and the target is still refused. A create-only put (`ifAbsent`) of a live
+target holds nothing, since the put would have been a no-op.
+
+The rest of the batch applies in order, so an effect that needs a held one
+first (a patch of the record a held put creates) fails the run as it would
+with the target absent. A run's summary counts held effects as `gate`, and a
+direct call's `effects` counts only the effects that applied. A replay or a
+manual run of the same change holds the same effect as the same request, and
+writes no second one.
+
+The grant is never widened: an effect on a kind outside `permissions.writes`
+is refused before the door is read, so the delivery parks and no request is
+queued.
+
+```yaml
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: crew.example.com/bots/triage
+data:
+  authority: crew.example.com
+  package: bots
+  description: files one task per new widget, for the owner to approve
+  runtime: python
+  confirmation: always
+  permissions:
+    writes:
+      - samples.substrate.reamde.dev/tasks/task
+  source: |
+    def main(input, host):
+        tid = "t-" + input["envelope"]["change"]["id"]
+        host.effects.put("samples.substrate.reamde.dev/tasks/task", tid,
+                         properties={"name": "review " + tid})
+        return {"output": {"task": tid}}
+```
+
+Every delivery of this function leaves the task unwritten and one request
+reading `op: create` and `targetId: t-<id>`, its `function` naming
+`crew.example.com/bots/triage`. The owner accepts it by moving its `decision`
+to `accepted`, and that write creates the task.
 
 **Reporting a sync.** A function that synchronizes a provider account
 reports through the core [`sync` trait](bundles.md#the-sync-trait) on the

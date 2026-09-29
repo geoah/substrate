@@ -49,6 +49,13 @@ type effect struct {
 	// Loser rides a merge (ID is the winner); MergeID rides a split.
 	Loser   string
 	MergeID string
+	// by is the function whose body returned this effect: the root, or a
+	// callee whose effects joined the root's delivery. The policy door
+	// matches it and reads its confirmation floor.
+	by *vocabulary.Function
+	// hold is set when the policy door held this effect (holdEffects):
+	// applyEffect writes the recordpatchrequest in its place.
+	hold *gatedWrite
 }
 
 const (
@@ -96,7 +103,7 @@ func (ds *dataset) decodeEffects(fn *vocabulary.Function, values []any) ([]effec
 // writers control the ids of what they write — that is what makes replays
 // and retries idempotent by construction.
 func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) {
-	var ef effect
+	ef := effect{by: fn}
 	m, ok := v.(map[string]any)
 	if !ok {
 		return ef, fmt.Errorf("an effect is a map, got %T", v)
@@ -384,6 +391,12 @@ func yieldedConflict(ef effect, err error) error {
 // untouched. The target's type is verified — a lying effect rolls the whole
 // delivery back.
 func (t *txn) applyEffect(ef effect) error {
+	if ef.hold != nil {
+		// The policy door held it: the request lands in its place, and the
+		// target is untouched until the request is accepted.
+		_, err := t.putGatedRequest(ef.hold)
+		return err
+	}
 	switch ef.Action {
 	case effectPut:
 		// A put addressed to a former id resolves onto the canonical winner: a

@@ -2,7 +2,11 @@ package engine
 
 // The recordpatchpolicy door:
 // what happens between a BUNDLE-tier actor wanting a put/patch/delete and the
-// write landing, strictly inside the emit ceiling. Deterministic and cheap —
+// write landing, strictly inside the emit ceiling. It runs for an agent's
+// writes and for the effects a function body returns, wherever the function
+// runs; a function run no agent loop surrounds meets only the rules whose
+// `functions` arm names it, so a rule written for agents never starts
+// holding a sync. Deterministic and cheap —
 // no model call sits inside a tool call: `allow` lands the write (no policy
 // id is recorded on it), `refuse` bounces it like an emit refusal,
 // `gate` CONVERTS it into a recordpatchrequest, entered from the side into
@@ -37,6 +41,12 @@ const (
 	policyOpDelete = "delete"
 )
 
+// propHeldFunction is the request property naming the function whose
+// returned effect the door held. The engine stamps it when it holds one; it
+// is frozen with the envelope, and a bundle-tier actor never decides a
+// request carrying it (write.go), exactly as with `policy`.
+const propHeldFunction = "function"
+
 // The three door actions, most restrictive last.
 const (
 	policyAllow  = "allow"
@@ -47,15 +57,18 @@ const (
 // policyRule is one recordpatchpolicy record, parsed for the door. The judge
 // half parses beside it so one loader serves both.
 type policyRule struct {
-	id       string
-	version  int64
-	kinds    []string
-	ops      []string
-	agents   []string
-	action   string
-	judge    string
-	criteria string
-	context  string
+	id      string
+	version int64
+	kinds   []string
+	ops     []string
+	agents  []string
+	// functions names function references. A rule naming none never speaks
+	// for a function run outside an agent loop (matches).
+	functions []string
+	action    string
+	judge     string
+	criteria  string
+	context   string
 	// expandReferents hands the judge every record the diff points at, one
 	// hop, beside the envelope. Orthogonal to `context`, which dials the
 	// proposing THREAD: a policy may opt into both.
@@ -97,6 +110,7 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 			rule.kinds = stringList(sel["kinds"])
 			rule.ops = stringList(sel["ops"])
 			rule.agents = stringList(sel["agents"])
+			rule.functions = stringList(sel["functions"])
 		}
 		rule.judge = referenceID(rec.Properties["judge"])
 		rule.criteria, _ = rec.Properties["criteria"].(string)
@@ -174,6 +188,33 @@ func validatePolicyRow(reg *vocabulary.Registry, props map[string]any) error {
 		if _, err := reg.Resolve(pat); err != nil {
 			return fmt.Errorf("%w: recordpatchpolicy: selector.kinds[%d]: %w — a selector that matches no write gates nothing",
 				substrate.ErrValidation, i, err)
+		}
+	}
+	return validatePolicyFunctions(reg, stringList(sel["functions"]))
+}
+
+// validatePolicyFunctions admits `selector.functions`: each entry is the full
+// reference of a function this repository declares, because the door compares
+// against identities and a typo would admit and then hold nothing. A host
+// function is refused too: the engine runs it under the calling agent's
+// grants, so its writes are that agent's and `agents` is what matches them.
+func validatePolicyFunctions(reg *vocabulary.Registry, refs []string) error {
+	for i, ref := range refs {
+		if !vocabulary.Qualified(ref) {
+			return fmt.Errorf("%w: recordpatchpolicy: selector.functions[%d]: %q is not a function reference, `<authority>/<package>/<name>`",
+				substrate.ErrValidation, i, ref)
+		}
+		if reg == nil {
+			continue
+		}
+		fn, err := reg.ResolveFunction(ref)
+		if err != nil {
+			return fmt.Errorf("%w: recordpatchpolicy: selector.functions[%d]: %w; a selector that matches no write gates nothing",
+				substrate.ErrValidation, i, err)
+		}
+		if fn.IsHost() {
+			return fmt.Errorf("%w: recordpatchpolicy: selector.functions[%d]: %s is a built-in whose writes are the calling agent's; name the agent under `agents`",
+				substrate.ErrValidation, i, ref)
 		}
 	}
 	return nil
@@ -262,19 +303,31 @@ func stringList(v any) []string {
 // The kinds dimension is the trigger source's grammar, matched by the trigger
 // source's matcher (vocabulary.MatchTypeGlob): a kind reference, every kind
 // one authority publishes (`samples.substrate.reamde.dev/tasks/*`), or every kind
-// (`*`). Ops and agents stay exact — an agent identity has no authority half
-// to cut on, and the three ops are a closed enum where an empty list already
-// says "all of them".
-func (r *policyRule) matches(kind, op, agent string) bool {
-	in := func(list []string, v string) bool {
+// (`*`). Ops, agents and functions stay exact: an agent or function identity
+// has no authority half to cut on, and the three ops are a closed enum where
+// an empty list already says "all of them".
+//
+// agent is the agent whose loop wants the write, empty when none does.
+// functions are the functions whose run produced it: the function whose body
+// returned the effect and the root of its call chain, whose actor the write
+// lands under. A rule matches when its `functions` names any of them. A write
+// no agent wants meets only rules that name a function, so `{}` stays "every
+// agent write" and a rule written for agents never starts holding a sync.
+func (r *policyRule) matches(kind, op, agent string, functions ...string) bool {
+	in := func(list []string, vs ...string) bool {
 		if len(list) == 0 {
 			return true
 		}
 		for _, item := range list {
-			if item == v {
-				return true
+			for _, v := range vs {
+				if v != "" && item == v {
+					return true
+				}
 			}
 		}
+		return false
+	}
+	if agent == "" && len(r.functions) == 0 {
 		return false
 	}
 	kindMatches := func() bool {
@@ -288,7 +341,7 @@ func (r *policyRule) matches(kind, op, agent string) bool {
 		}
 		return false
 	}
-	return kindMatches() && in(r.ops, op) && in(r.agents, agent)
+	return kindMatches() && in(r.ops, op) && in(r.agents, agent) && in(r.functions, functions...)
 }
 
 // severity orders the actions: the most restrictive matching policy governs.
@@ -334,7 +387,7 @@ func governs(a, b *policyRule) bool {
 
 // policyVerdict evaluates the door for one bundle-tier write. The nil rule
 // with policyAllow is "no match": today's behavior, nothing to audit.
-func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (string, *policyRule, error) {
+func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string, functions ...string) (string, *policyRule, error) {
 	// The request kind is never gated or refused by policy: it IS the gate,
 	// and a policy folding it in would recurse a propose into a
 	// request-to-create-a-request.
@@ -345,6 +398,16 @@ func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (s
 	if err != nil {
 		return "", nil, err
 	}
+	action, rule := verdictOf(rules, kind, op, agent, functions...)
+	return action, rule, nil
+}
+
+// verdictOf is policyVerdict over rules already loaded, so a batch of effects
+// reads the policy records once.
+func verdictOf(rules []policyRule, kind, op, agent string, functions ...string) (string, *policyRule) {
+	if kind == vocabulary.KindRecordPatchRequest {
+		return policyAllow, nil
+	}
 	matched := make([]*policyRule, 0, len(rules))
 	// lifted holds the gates a matching allow overrides for this write
 	// (decision record 0108). Only a gate is lifted: a refuse still wins, and
@@ -352,7 +415,7 @@ func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (s
 	lifted := map[string]bool{}
 	for i := range rules {
 		rule := &rules[i]
-		if !rule.matches(kind, op, agent) {
+		if !rule.matches(kind, op, agent, functions...) {
 			continue
 		}
 		matched = append(matched, rule)
@@ -370,9 +433,122 @@ func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (s
 		}
 	}
 	if governing == nil {
+		return policyAllow, nil
+	}
+	return governing.action, governing
+}
+
+// doorOp is the door verb for an effect action. Merge and split have none,
+// because a request cannot carry them.
+func doorOp(action string) string {
+	switch action {
+	case effectPut:
+		return policyOpPut
+	case effectPatch:
+		return policyOpPatch
+	case effectDelete:
+		return policyOpDelete
+	}
+	return ""
+}
+
+// effectVerdict is the door's answer for one effect a function body returned,
+// under the agent whose loop ran the function (empty when none did). root is
+// the function the run started from; the effect's own function is ef.by. It
+// adds the declaration's floor: an effect whose function, or the root of its
+// call chain, declares `confirmation: always` is gated whatever the policies
+// say. A merge or split under that floor is refused, since no request can
+// hold it and the floor says the effect never applies by itself.
+func effectVerdict(rules []policyRule, root *vocabulary.Function, ef effect, agent string) (string, *policyRule, error) {
+	floor := confirmsAlways(root) || confirmsAlways(ef.by)
+	op := doorOp(ef.Action)
+	if op == "" {
+		if floor {
+			return "", nil, fmt.Errorf("%w: %s %s: the function declares `confirmation: always`, and a %s cannot be held as a recordpatchrequest",
+				substrate.ErrForbidden, ef.Action, ef.Type, ef.Action)
+		}
 		return policyAllow, nil, nil
 	}
-	return governing.action, governing, nil
+	verdict, rule := verdictOf(rules, ef.Type, op, agent, callableIdentity(ef.by), callableIdentity(root))
+	if verdict == policyAllow && floor && ef.Type != vocabulary.KindRecordPatchRequest {
+		// The author's floor. No policy governs it, so none is cited.
+		return policyGate, nil, nil
+	}
+	return verdict, rule, nil
+}
+
+func confirmsAlways(fn *vocabulary.Function) bool {
+	return fn != nil && fn.Confirmation == vocabulary.FunctionConfirmAlways
+}
+
+func callableIdentity(fn *vocabulary.Function) string {
+	if fn == nil {
+		return ""
+	}
+	return fn.Identity()
+}
+
+// holdEffects runs the door over the effects of one function run that no
+// agent loop surrounds: a trigger delivery, a schedule or webhook fire, one
+// page of a drain, a direct call. A refused effect fails the whole run. A
+// gated one stays in the list marked `hold`, and applyEffects writes its
+// recordpatchrequest in its place, in list order and in the transaction that
+// applies the rest, so the request commits with the run's settlement or not
+// at all. The other effects still apply: the function has returned, so there
+// is no caller left to re-plan the batch around the held one.
+//
+// key is the run's stable idempotency identity. Each held effect's request id
+// derives from it and the effect's position, so a retried delivery holds the
+// same effect as the same request.
+func (ds *dataset) holdEffects(ctx context.Context, root *vocabulary.Function, effects []effect, key string) ([]effect, error) {
+	if len(effects) == 0 {
+		return effects, nil
+	}
+	rules, err := ds.loadPolicies(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]effect, len(effects))
+	for i, ef := range effects {
+		verdict, rule, err := effectVerdict(rules, root, ef, "")
+		if err != nil {
+			return nil, err
+		}
+		switch verdict {
+		case policyRefuse:
+			return nil, fmt.Errorf("%w: policy %s refuses %s %s for function %s, nothing applied",
+				substrate.ErrForbidden, rule.id, ef.Action, ef.Type, callableIdentity(ef.by))
+		case policyGate:
+			ty, err := ds.resolveType(ef.Type)
+			if err != nil {
+				return nil, err
+			}
+			gw := &gatedWrite{
+				op: doorOp(ef.Action), kind: ty, id: ef.ID, props: ef.Properties,
+				ifVersion: ef.IfVersion, ifAbsent: ef.IfAbsent,
+				key:      fmt.Sprintf("%s/effect/%d", key, i),
+				function: callableIdentity(ef.by),
+				once:     true,
+				rule:     rule,
+			}
+			if rule != nil {
+				gw.policyID, gw.policyVersion = rule.id, rule.version
+			}
+			ef.hold = gw
+		}
+		out[i] = ef
+	}
+	return out, nil
+}
+
+// judgeHeld hands each request holdEffects produced, once committed, to the
+// governing policy's judge. A floor has no policy and so no judge.
+func (ds *dataset) judgeHeld(effects []effect) {
+	for _, ef := range effects {
+		if ef.hold != nil && ef.hold.requestID != "" {
+			ds.maybeJudge(ef.hold.requestID, ef.hold.rule)
+		}
+	}
 }
 
 // gatedWrite is one write the door held: what the conversion needs to build
@@ -388,6 +564,9 @@ type gatedWrite struct {
 	// ifVersion is the write's own CAS when it carried one; absent, the
 	// target's version at conversion anchors the diff (stampTargetVersion).
 	ifVersion *int64
+	// ifAbsent is a create-only put's marker: a live target makes the held
+	// effect the no-op the put would have been, and no request is written.
+	ifAbsent bool
 	// key is the dispatch's stable idempotency identity: the request id
 	// derives from it, so a retried delivery converts to the SAME request.
 	key string
@@ -397,18 +576,76 @@ type gatedWrite struct {
 	policyVersion int64
 	// thread is the proposing thread when a loop is running; empty otherwise.
 	thread string
+	// function is the identity of the function whose returned effect this
+	// is; empty for an agent's own write.
+	function string
+	// once makes the write create-if-absent on its derived id: set on a
+	// function's held effect, whose request commits with the run's settlement
+	// (putGatedRequest).
+	once bool
+	// rule is the governing policy, whose judge runs once the request
+	// commits; nil for a floor.
+	rule *policyRule
+	// requestID is set once the request is written.
+	requestID string
 }
 
-// convertToRequest materializes the held write as a recordpatchrequest —
-// the whole propose flow, entered from the side. Create-if-absent on the
-// derived id: a retry re-puts the identical envelope, which the immutable
-// envelope guard admits as the no-op it is. Returns the request id.
+// convertToRequest materializes the held write as a recordpatchrequest in a
+// transaction of its own: the whole propose flow, entered from the side.
+// Returns the request id.
 func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, causedBy int64, sink *[]changeEntry, gw *gatedWrite) (string, error) {
+	var requestID string
+	err := ds.inTx(ctx, actor, false, func(t *txn) error {
+		t.causedBy = causedBy
+		if sink != nil {
+			t.changeSink = sink
+		}
+		var err error
+		requestID, err = t.putGatedRequest(gw)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return requestID, nil
+}
+
+// putGatedRequest writes the held write's recordpatchrequest in this
+// transaction, under the derived id. An agent's retry re-puts the identical
+// envelope, which the immutable envelope guard admits as the no-op it is and
+// refuses when the retry wants a different write. A function's held effect
+// (`once`) is create-if-absent instead: its request commits with the run's
+// settlement, so a request already stored under the key is this effect held
+// by an earlier run of the same delivery (a replay, a manual run), perhaps
+// decided since, and writing it again could only fail the guard. A
+// create-only put whose target is live writes nothing and answers the empty
+// id, since the put itself would have been a no-op.
+func (t *txn) putGatedRequest(gw *gatedWrite) (string, error) {
 	requestID := derivedID("gate", gw.key)
+	if gw.once {
+		stored, err := t.loadRow(eref{Kind: vocabulary.KindRecordPatchRequest, ID: requestID}, false)
+		if err != nil {
+			return "", err
+		}
+		if stored != nil {
+			gw.requestID = requestID
+			return requestID, nil
+		}
+	}
 	props := map[string]any{}
 	op := gw.op
 	if op == policyOpPut || op == policyOpPatch {
-		existing, err := ds.loadRowDB(ctx, eref{Kind: gw.kind.Identity, ID: gw.id})
+		ref := eref{Kind: gw.kind.Identity, ID: gw.id}
+		if gw.id != "" {
+			// A former id resolves onto its canonical winner, as the effect
+			// itself would have (effects.go applyEffect).
+			canon, err := t.canonicalOf(ref)
+			if err != nil {
+				return "", err
+			}
+			ref = canon
+		}
+		existing, err := t.loadRow(ref, false)
 		if err != nil {
 			return "", err
 		}
@@ -419,8 +656,11 @@ func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, 
 			}
 			op = opCreate
 			props["targetKind"] = gw.kind.Identity
-			props["targetId"] = gw.id
+			props["targetId"] = ref.ID
 		} else {
+			if gw.ifAbsent {
+				return "", nil
+			}
 			op = opPatch
 			props[propTarget] = vocabulary.RecordPath(existing.Kind, existing.ID)
 		}
@@ -450,23 +690,19 @@ func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, 
 		// compares it against the stored (normalized) value.
 		props[msgRelThread] = vocabulary.RecordPath(typeThread, gw.thread)
 	}
+	if gw.function != "" {
+		props[propHeldFunction] = vocabulary.RecordPath(kindFunction, gw.function)
+	}
 	if gw.policyID != "" {
 		props["policy"] = vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, gw.policyID)
 		props["policyRevision"] = gw.policyVersion
 	}
-	err := ds.inTx(ctx, actor, false, func(t *txn) error {
-		t.causedBy = causedBy
-		if sink != nil {
-			t.changeSink = sink
-		}
-		_, err := t.put(substrate.PutInput{
-			Kind: vocabulary.KindRecordPatchRequest, ID: requestID, Properties: props,
-		})
-		return err
-	})
-	if err != nil {
+	if _, err := t.put(substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchRequest, ID: requestID, Properties: props,
+	}); err != nil {
 		return "", err
 	}
+	gw.requestID = requestID
 	return requestID, nil
 }
 

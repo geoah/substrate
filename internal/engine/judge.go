@@ -231,6 +231,11 @@ func (ds *dataset) runJudge(ctx context.Context, req *substrate.Record, rule *po
 			envelope["referents"] = referents
 		}
 	}
+	// A function's held effect names the function as its proposer. Where an
+	// agent ran that function as a tool, the thread's agent below replaces it.
+	if fn := referenceID(req.Properties[propHeldFunction]); fn != "" {
+		envelope["proposer"] = fn
+	}
 	threadID := referenceID(req.Properties["thread"])
 	if threadID != "" {
 		agentID, err := ds.threadAgent(ctx, threadID)

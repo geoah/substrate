@@ -1,8 +1,9 @@
-# the owner's rules for the space between an agent wanting a write and the
-# write landing (docs/agents.md, "The policy door"). A policy speaks for the
-# writes its selector matches, strictly INSIDE the emit ceiling: allow lands
-# them, refuse bounces them, gate converts them into recordpatchrequests the
-# owner (or, within thresholds, the policy's judge) decides. When several
+# the owner's rules for the space between an agent or a function wanting a
+# write and the write landing (docs/agents.md, "The policy door"). A policy
+# speaks for the writes its selector matches, strictly INSIDE the emit
+# ceiling: allow lands them, refuse bounces them, gate converts them into
+# recordpatchrequests the owner (or, within thresholds, the policy's judge)
+# decides. When several
 # policies match one write, the most restrictive action wins — refuse over
 # gate over allow, the composition every harness trains people on — and no
 # match means today's behavior, the write landing. Two matching rules carrying
@@ -30,10 +31,11 @@ data:
   authority: substrate.reamde.dev
   package: core
   description: >-
-    One rule for agent writes: which kinds, ops and agents it speaks for,
-    and whether their writes land, gate into recordpatchrequests, or refuse.
-    The most restrictive matching policy wins; no match means the write lands.
-  version: 17
+    One rule for the writes of agents and functions: which kinds, ops, agents
+    and functions it speaks for, and whether their writes land, gate into
+    recordpatchrequests, or refuse. The most restrictive matching policy wins;
+    no match means the write lands.
+  version: 18
   purpose: internal
   names:
     singular: recordpatchpolicy
@@ -42,9 +44,11 @@ data:
     # Which writes this policy speaks for. Empty lists match everything of
     # their dimension, so `{}` with action gate is "gate every agent write
     # policy evaluation sees", which is the three record verbs below and
-    # nothing else. A function effect's `merge` and `split` (agentloop.go
-    # dispatchFunction, whose op switch continues past them) never reach
-    # policyVerdict, so an empty selector does not cover either of them.
+    # nothing else. A function run that no agent loop surrounds (a trigger,
+    # a fire, a direct call) meets only the rules whose `functions` names it
+    # (policy.go matches), so `{}` never starts holding a sync. A function
+    # effect's `merge` and `split` (policy.go doorOp) never reach the rules,
+    # so an empty selector does not cover either of them.
     selector:
       type: object
       description: the writes this policy speaks for; empty lists match all
@@ -74,7 +78,7 @@ data:
         # trigger watches nor the op the gated request ends up carrying: a
         # gated `put` OR `patch` lands as a request with `op: create` when the
         # target is absent and `op: patch` when it is there (policy.go
-        # convertToRequest), so gating `patch` is not edit-only review. The
+        # putGatedRequest), so gating `patch` is not edit-only review. The
         # values are engine/policy.go's policyOp* constants, pinned by a test.
         ops:
           type: enum
@@ -90,6 +94,21 @@ data:
           type: string
           repeated: true
           description: agent identities; empty means every agent
+        # FUNCTION REFERENCES, matched exactly like `agents`: against the
+        # function whose body returned the effect and against the root of its
+        # call chain, whose actor (`function:<authority>:<package>:<name>`,
+        # decision record 0025) the write lands under. It covers every place
+        # the function runs: a trigger, a fire, a direct call, and an agent's
+        # tool call, where `agents` narrows it further. The write door
+        # (policy.go validatePolicyFunctions) refuses a reference this
+        # repository does not declare and a host function, whose writes are
+        # the calling agent's.
+        functions:
+          type: string
+          repeated: true
+          description: function references whose effects this policy speaks
+            for, wherever the function runs; empty means only writes an agent
+            makes, directly or through a function tool
     # REQUIRED, and the write door is what requires it (policy.go
     # validatePolicyRow): there is no default action, so a rule without one
     # speaks for nothing while sitting in the list looking live.
