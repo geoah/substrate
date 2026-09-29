@@ -118,14 +118,18 @@ type Backend interface {
 	Repository(repository string) (Store, error)
 }
 
-// ReadAll reads a stored object whole through OpenVerified, so it returns the
-// bytes of digest or an error: ErrDigestMismatch when the stored bytes hash to
-// another digest or are not size bytes long. It is what the engine's
-// non-streaming GetBlob uses, and size is what the manifest declares: an
-// object that outgrew its manifest is a corrupt store, not a bigger blob, and
-// reading it whole into memory is how a 64 MiB cap gets exceeded from the
-// outside.
+// ReadAll reads a stored object whole and returns the bytes of digest or an
+// error: ErrDigestMismatch when the stored bytes hash to another digest or
+// are not size bytes long. It is what the engine's non-streaming GetBlob
+// uses, and size is what the manifest declares: an object that outgrew its
+// manifest is a corrupt store, not a bigger blob, and reading it whole into
+// memory is how a 64 MiB cap gets exceeded from the outside. A negative size
+// is a manifest that declares none (the property is optional): the object is
+// read whole and only its hash is checked.
 func ReadAll(ctx context.Context, s Store, digest string, size int64) ([]byte, error) {
+	if size < 0 {
+		return readAllUnsized(ctx, s, digest)
+	}
 	rc, err := OpenVerified(ctx, s, digest, size)
 	if err != nil {
 		return nil, err
@@ -134,6 +138,26 @@ func ReadAll(ctx context.Context, s Store, digest string, size int64) ([]byte, e
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, err
+	}
+	return data, nil
+}
+
+// readAllUnsized is ReadAll for a manifest with no size. With no length to
+// stop at, a streaming read could only check the hash after its last byte was
+// out, so this one is whole and checks before it returns anything.
+func readAllUnsized(ctx context.Context, s Store, digest string) ([]byte, error) {
+	rc, err := s.Open(ctx, digest)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(data)
+	if got := digestPrefix + hex.EncodeToString(sum[:]); got != digest {
+		return nil, fmt.Errorf("%w: %s hashes to %s", ErrDigestMismatch, digest, got)
 	}
 	return data, nil
 }

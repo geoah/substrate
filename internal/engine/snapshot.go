@@ -19,7 +19,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -349,12 +348,11 @@ func (s *service) copyBlobs(ctx context.Context, ds *dataset, repo Repository, d
 	}
 	var total int64
 	for _, digest := range digests {
-		data, err := readBlob(ctx, store, digest)
+		// Read with no size: the snapshot copies by digest, and the hash is
+		// the check that matters for a copy.
+		data, err := blobbytes.ReadAll(ctx, store, digest, -1)
 		if err != nil {
 			return total, fmt.Errorf("substrate/engine: read blob %s: %w", digest, err)
-		}
-		if got := blobDigest(data); got != digest {
-			return total, fmt.Errorf("substrate/engine: blob %s read back as %s", digest, got)
 		}
 		if err := dest.Put(ctx, digest, int64(len(data)), bytes.NewReader(data)); err != nil {
 			return total, fmt.Errorf("substrate/engine: copy blob %s: %w", digest, err)
@@ -362,16 +360,6 @@ func (s *service) copyBlobs(ctx context.Context, ds *dataset, repo Repository, d
 		total += int64(len(data))
 	}
 	return total, nil
-}
-
-// readBlob reads one blob's bytes whole out of the store.
-func readBlob(ctx context.Context, store blobbytes.Store, digest string) ([]byte, error) {
-	rc, err := store.Open(ctx, digest)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rc.Close() }()
-	return io.ReadAll(rc)
 }
 
 // syncDirectory flushes a directory entry (the snapshot's rename) to disk.

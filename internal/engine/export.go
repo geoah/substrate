@@ -307,12 +307,9 @@ func (e *export) writeFile(tw *tar.Writer, name, src string, size int64) error {
 // is sized from the bytes; the upload cap bounds what that holds.
 func (e *export) writeBlob(tw *tar.Writer, name string, store blobbytes.Store, b storedBlob) error {
 	if b.size < 0 {
-		data, err := readBlob(e.ctx, store, b.digest)
+		data, err := blobbytes.ReadAll(e.ctx, store, b.digest, -1)
 		if err != nil {
 			return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)
-		}
-		if got := blobDigest(data); got != b.digest {
-			return fmt.Errorf("substrate/engine: blob %s read back as %s", b.digest, got)
 		}
 		return e.writeBytes(tw, name, data)
 	}

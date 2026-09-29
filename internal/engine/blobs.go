@@ -173,7 +173,7 @@ func (t *txn) authoritativeBlobMeta(digest, name, mediaType string, size int64) 
 	if ok && m.status == string(substrate.BlobStored) {
 		return m, true, nil
 	}
-	return blobRecordMeta{name: name, mediaType: mediaType, size: size}, ok, nil
+	return blobRecordMeta{name: name, mediaType: mediaType, size: size, sized: true}, ok, nil
 }
 
 // blobBytes binds the configured backend to this repository. The repository is
@@ -189,7 +189,10 @@ type blobRecordMeta struct {
 	name      string
 	mediaType string
 	size      int64
-	status    string
+	// sized is false when the manifest declares no size (the property is
+	// optional), which a read must not take for a declared 0.
+	sized  bool
+	status string
 }
 
 // blobRecord reads one live blob manifest inside the caller's transaction.
@@ -219,7 +222,7 @@ func scanBlobRecord(row *sql.Row) (blobRecordMeta, bool, error) {
 	if err != nil {
 		return m, false, err
 	}
-	m.name, m.mediaType, m.size, m.status = name.String, mime.String, size.Int64, status.String
+	m.name, m.mediaType, m.size, m.sized, m.status = name.String, mime.String, size.Int64, size.Valid, status.String
 	return m, true, nil
 }
 
@@ -383,8 +386,13 @@ func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobI
 		return nil, nil, err
 	}
 	// ReadAll hashes the bytes against the digest before it returns any, so a
-	// damaged object is refused here and never reaches a response.
-	data, err := blobbytes.ReadAll(ctx, store, digest, m.size)
+	// damaged object is refused here and never reaches a response. A manifest
+	// with no size is read with none, never held to a length of 0.
+	size := m.size
+	if !m.sized {
+		size = -1
+	}
+	data, err := blobbytes.ReadAll(ctx, store, digest, size)
 	if errors.Is(err, blobbytes.ErrNotStored) {
 		return nil, nil, notFound
 	}
@@ -395,7 +403,7 @@ func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobI
 		return nil, nil, err
 	}
 	return &substrate.BlobInfo{
-		Digest: digest, Size: m.size, Name: m.name,
+		Digest: digest, Size: int64(len(data)), Name: m.name,
 		MediaType: m.mediaType, Status: substrate.BlobStored,
 	}, data, nil
 }

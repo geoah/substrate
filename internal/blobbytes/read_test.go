@@ -182,6 +182,32 @@ func TestOpenVerifiedRefusesBytesUnderTheEmptyDigest(t *testing.T) {
 	}
 }
 
+// A manifest may declare no size. ReadAll takes a negative size for that and
+// checks the hash alone, reading whole: it still returns nothing on a
+// mismatch.
+func TestReadAllWithNoSizeChecksTheHash(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	data := []byte("no size was declared for these")
+	s, digest, file := storedOnDisk(t, data)
+	got, err := blobbytes.ReadAll(ctx, s, digest, -1)
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("ReadAll with no size = (%q, %v), want %q", got, err, data)
+	}
+	flipped := bytes.Clone(data)
+	flipped[0] ^= 0x01
+	if err := os.WriteFile(file, flipped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = blobbytes.ReadAll(ctx, s, digest, -1)
+	wantMismatch(t, err, digest, "hashes to "+digestOf(flipped))
+	if got != nil {
+		t.Fatalf("ReadAll handed out %q beside the refusal", got)
+	}
+}
+
+// The streaming reader has no size-less form: without a length it could only
+// check the hash once the last byte was out.
 func TestOpenVerifiedRefusesANegativeSize(t *testing.T) {
 	t.Parallel()
 	s, digest, _ := storedOnDisk(t, []byte("sized"))

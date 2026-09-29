@@ -181,6 +181,46 @@ func TestBlobFSReadRefusesAFlippedByte(t *testing.T) {
 	}
 }
 
+// A `stored` manifest's size is optional, and one that declares none is read
+// by its hash alone: the intact bytes come back with their own length, never
+// held to a length of 0, and a flipped byte is still refused.
+func TestBlobFSReadOfAManifestWithNoSize(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	root := engine.DataRootOf(svc)
+	data := []byte("a manifest that never said how long this is")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{}, data, "")
+	if err != nil {
+		t.Fatalf("put blob: %v", err)
+	}
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	if _, err := raw.ExecContext(ctx,
+		`UPDATE records SET props = props - 'size' WHERE id = $1 AND kind = 'substrate.reamde.dev/core/blob'`, info.Digest); err != nil {
+		t.Fatalf("strip the manifest's size: %v", err)
+	}
+
+	got, read, err := ds.GetBlob(ctx, info.Digest)
+	if err != nil || !bytes.Equal(read, data) || got.Size != int64(len(data)) {
+		t.Fatalf("the unsized blob read (%+v, %q, %v), want %d bytes %q", got, read, err, len(data), data)
+	}
+
+	flipped := bytes.Clone(data)
+	flipped[0] ^= 0x01
+	if err := os.WriteFile(objectPath(root, ds, info.Digest), flipped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, read, err = ds.GetBlob(ctx, info.Digest)
+	wantErr(t, err, substrate.ErrCorrupt, "read of a flipped byte under an unsized manifest")
+	if !strings.Contains(err.Error(), info.Digest) || read != nil {
+		t.Fatalf("the refusal (%v) does not name %s, or handed out %q", err, info.Digest, read)
+	}
+}
+
 // getBlobOverAPI is one GET /api/v1/blobs/{digest}, read whole.
 func getBlobOverAPI(t *testing.T, serverURL, secret, digest string) (int, []byte) {
 	t.Helper()
