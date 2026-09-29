@@ -591,6 +591,16 @@ inert path is seen on both sides, and a base the script cannot resolve fails
 the job rather than answering `false`. On `false` every later step is skipped
 and the job is green; a push to `main` answers `true` without diffing.
 
+Each Go job restores its build caches with `actions/cache/restore`, and only a
+push to `main` saves them, under `<os>-go-<job>-<go.sum hash>-<commit>`. A
+pull request restores the newest `main` entry with the same `go.sum`, else
+the newest of any, and saves nothing, so no pull request, a fork's included,
+writes an entry `main` reads. Before a save, `.mise/gocache.sh` cuts
+`~/.cache/go-build` to the entries that run read or wrote, so an entry does
+not grow with every commit. `lint` saves nothing and restores `go test`'s
+entry: `kinds:check` compiles Go only on a pull request that changes `kinds/`
+or `samples/`, so a push to `main` would have nothing to save.
+
 `go gate` is the check to require for the Go suite: the shard names are a
 matrix detail, and the gate fails unless `go test`, every shard and every
 `db` job succeeded. A shard runs under `-timeout 12m` inside a 15 minute job,
@@ -603,8 +613,9 @@ package and `test:db` runs the tree.
 each path-gate scenario is a throwaway git repository with the verdict it
 must give, including the unresolvable base that must fail; the shard
 partition (`.mise/shardselect.sh`) is run over a fixed list that the shards
-together must reproduce exactly once; and `ci:lint` plus `ci:lint:go` must
-cover every task in `lint` and `fmt:check`.
+together must reproduce exactly once; `ci:lint` plus `ci:lint:go` must
+cover every task in `lint` and `fmt:check`; and `.mise/gocache.sh` must
+remove exactly the cache entries a run did not touch.
 
 `mise run test` and `test:db` are untouched by the cut: each is still the
 whole suite, sequential, on one machine. `test:coverage` is the same without
