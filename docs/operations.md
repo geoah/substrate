@@ -811,6 +811,15 @@ or SIGINT during the boot ends it with `action=interrupted`, the repository
 it stopped on and the signal, so the next boot's `resuming an interrupted
 import` has its cause in the log above it.
 
+Every boot check hashes each repository's finished segments against their
+sidecars, which on a history of many gigabytes also takes minutes. After a
+segment, and at most once every 30 s, it logs `boot check: checking the
+changelog segments` at info, marked `progress=true`, with the segments and
+bytes checked so far and the directory's totals. The repository's first
+open after the boot takes those digests instead of hashing the segments
+again, and reads only the active segment and what was appended since; its
+lines say `open: checking the changelog segments`.
+
 A boot that refuses a directory names what it refused: a bad `sum`, a sidecar
 that does not match, or a DEK this host's `SUBSTRATE_CREDENTIAL_KEY` does not
 open. Move that directory out of the root, or restore it from an older copy,

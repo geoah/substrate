@@ -36,6 +36,10 @@ type segment struct {
 	// size, except on an active segment with an incomplete tail that
 	// OpenReadOnly left in place.
 	end int64
+	// digest is the hex SHA-256 a finished segment was checked against, so a
+	// later open handed this Log (OpenOptions.Verified) can hold the sidecar
+	// to it without reading the segment.
+	digest string
 }
 
 // Log is a changelog directory as Open found it: a snapshot. Head and the
@@ -80,7 +84,7 @@ type Log struct {
 // and refused with ErrLocked while another process holds it: a tail that
 // looks incomplete to a second process may be one the live writer is still
 // writing.
-func Open(dir string) (*Log, error) { return open(dir, true) }
+func Open(dir string) (*Log, error) { return OpenWith(dir, OpenOptions{}) }
 
 // OpenReadOnly reads and checks a changelog directory exactly as Open does
 // but changes nothing: an incomplete tail is counted in TruncatedBytes and
@@ -88,40 +92,83 @@ func Open(dir string) (*Log, error) { return open(dir, true) }
 // for readers that must not write, an operator's verify or an inspection of a
 // directory another process may be appending to. A Log opened this way cannot
 // back a Writer.
-func OpenReadOnly(dir string) (*Log, error) { return open(dir, false) }
+func OpenReadOnly(dir string) (*Log, error) { return OpenWith(dir, OpenOptions{ReadOnly: true}) }
 
-func open(dir string, repair bool) (*Log, error) {
+// OpenOptions tunes OpenWith.
+type OpenOptions struct {
+	// ReadOnly opens as OpenReadOnly does: an incomplete tail is counted and
+	// left in place, and the Log cannot back a Writer.
+	ReadOnly bool
+	// Verified is a Log this process opened earlier over the same
+	// directory. A finished segment it holds as finished, under the same
+	// name, size and modification time, is taken as checked without
+	// reading it again: a finished segment never changes, so the digest
+	// that Log checked is still its digest, and the sidecar is held to that
+	// digest instead. Every other finished segment is digested and the
+	// active segment is always scanned, so what Verified does not vouch for
+	// is checked as Open checks it. A Log over another directory vouches
+	// for nothing.
+	Verified *Log
+	// Progress, when not nil, is called after each segment is checked, in
+	// seq order.
+	Progress func(OpenProgress)
+}
+
+// OpenProgress is where an open is in its check of a directory. Digesting
+// every finished segment of a long history takes minutes, and the caller
+// reports it so whoever waits on the open sees it move.
+type OpenProgress struct {
+	// Segment is the segment just checked.
+	Segment string
+	// Finished is whether it is a finished segment, checked against its
+	// sidecar, rather than the active one, scanned line by line.
+	Finished bool
+	// Reused is whether OpenOptions.Verified vouched for it, so none of its
+	// bytes were read.
+	Reused bool
+	// Segments and Bytes are how many segments, and how many of their
+	// bytes, are checked so far, this one included; the totals are the
+	// directory's.
+	Segments      int
+	TotalSegments int
+	Bytes         int64
+	TotalBytes    int64
+}
+
+// OpenWith is Open, or OpenReadOnly when opts.ReadOnly is set, with the
+// options' reuse of an earlier check and progress reports.
+func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 	list, err := Segments(dir)
 	if err != nil {
 		return nil, err
 	}
-	l := &Log{dir: dir, repaired: repair}
-	var prevLast int64
+	var totalBytes int64
+	for _, s := range list {
+		totalBytes += s.Size
+	}
+	vouched := opts.Verified.finishedByName(dir)
+	l := &Log{dir: dir, repaired: !opts.ReadOnly}
+	var prevLast, checkedBytes int64
 	for i, s := range list {
 		if s.First != prevLast+1 {
 			return nil, fmt.Errorf("%w: %s starts at seq %d, the previous segment ends at %d", ErrSegmentOrder, s.Name, s.First, prevLast)
 		}
 		seg := segment{Segment: s, end: s.Size}
 		path := filepath.Join(dir, s.Name)
+		reused := false
 		if s.Finished {
-			d, err := fileDigest(path)
-			if err != nil {
+			if known, ok := vouched[s.Name]; ok && known.Size == s.Size && known.ModTime.Equal(s.ModTime) {
+				want, err := readSidecar(dir, s.Name)
+				if err != nil {
+					return nil, err
+				}
+				if want != known.digest {
+					return nil, fmt.Errorf("%w: %s", ErrSegmentDigest, s.Name)
+				}
+				seg.last, seg.digest, reused = known.last, known.digest, true
+			} else if seg, err = checkFinished(dir, seg); err != nil {
 				return nil, err
 			}
-			want, err := readSidecar(dir, s.Name)
-			if err != nil {
-				return nil, err
-			}
-			if d.hex != want {
-				return nil, fmt.Errorf("%w: %s", ErrSegmentDigest, s.Name)
-			}
-			if d.lines == 0 {
-				return nil, fmt.Errorf("%w: %s", ErrSegmentEmpty, s.Name)
-			}
-			if d.last != '\n' {
-				return nil, fmt.Errorf("%w: %s: torn final line", ErrSegmentDigest, s.Name)
-			}
-			seg.last = s.First + d.lines - 1
 		} else {
 			if i != len(list)-1 {
 				return nil, fmt.Errorf("%w: %s", ErrSegmentUnfinished, s.Name)
@@ -133,7 +180,7 @@ func open(dir string, repair bool) (*Log, error) {
 			seg.last, seg.end = last, end
 			if end < s.Size {
 				l.TruncatedBytes, l.TruncatedEntries = s.Size-end, cut
-				if repair {
+				if !opts.ReadOnly {
 					if err := truncateLocked(dir, path, end); err != nil {
 						return nil, fmt.Errorf("changelogfile: %s: cut incomplete tail: %w", s.Name, err)
 					}
@@ -143,9 +190,58 @@ func open(dir string, repair bool) (*Log, error) {
 		}
 		prevLast = seg.last
 		l.segments = append(l.segments, seg)
+		checkedBytes += s.Size
+		if opts.Progress != nil {
+			opts.Progress(OpenProgress{
+				Segment: s.Name, Finished: s.Finished, Reused: reused,
+				Segments: i + 1, TotalSegments: len(list),
+				Bytes: checkedBytes, TotalBytes: totalBytes,
+			})
+		}
 	}
 	l.head = prevLast
 	return l, nil
+}
+
+// checkFinished digests a finished segment and holds it to its sidecar: the
+// same bytes, at least one line, and a final newline. It returns the segment
+// with its last seq and its digest.
+func checkFinished(dir string, seg segment) (segment, error) {
+	d, err := fileDigest(filepath.Join(dir, seg.Name))
+	if err != nil {
+		return seg, err
+	}
+	want, err := readSidecar(dir, seg.Name)
+	if err != nil {
+		return seg, err
+	}
+	if d.hex != want {
+		return seg, fmt.Errorf("%w: %s", ErrSegmentDigest, seg.Name)
+	}
+	if d.lines == 0 {
+		return seg, fmt.Errorf("%w: %s", ErrSegmentEmpty, seg.Name)
+	}
+	if d.last != '\n' {
+		return seg, fmt.Errorf("%w: %s: torn final line", ErrSegmentDigest, seg.Name)
+	}
+	seg.last, seg.digest = seg.First+d.lines-1, d.hex
+	return seg, nil
+}
+
+// finishedByName is the finished segments a Log checked, by name, for an
+// open of dir it is handed as OpenOptions.Verified; none for a nil Log or one
+// over another directory.
+func (l *Log) finishedByName(dir string) map[string]segment {
+	if l == nil || filepath.Clean(l.dir) != filepath.Clean(dir) {
+		return nil
+	}
+	out := make(map[string]segment, len(l.segments))
+	for _, seg := range l.segments {
+		if seg.Finished && seg.digest != "" {
+			out[seg.Name] = seg
+		}
+	}
+	return out
 }
 
 // scanActive decodes every complete line of the active segment, checking
@@ -339,7 +435,7 @@ type Report struct {
 // line, verifying each checksum, without changing the directory. The error is
 // the first one met; the report holds the counts up to it.
 func Verify(dir string) (Report, error) {
-	l, err := open(dir, false)
+	l, err := OpenReadOnly(dir)
 	if err != nil {
 		return Report{}, err
 	}
