@@ -1459,3 +1459,68 @@ func TestBootUpgradeReprojectsTheIndexesOfAChangedKind(t *testing.T) {
 		t.Fatalf("the rebuilt fold is not the upgraded fold\n%s", firstDifference(before, after))
 	}
 }
+
+// The declaration rows the boot projection writes are records of the core
+// meta-kinds, and the projection derives their `fts` under the tree's
+// declaration of those kinds. A repository that holds a meta-kind ahead of the
+// tree keeps its stored declaration, so the rows re-derive under it, which is
+// what a rebuild folds them under. Binary N+1 stops indexing core/kind's
+// `description`; binary N ships core/kind as before and a newer llm/provider,
+// so its projection writes a core/kind row while the stored core/kind stands.
+func TestBootUpgradeReprojectsDeclarationRowsUnderAKeptMetaKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const (
+		kindKind = corePackage + "/kind"
+		provider = llmPackage + "/provider"
+		prose    = "      description: what this kind is for, read above its collection\n"
+	)
+	dsn := engine.MigratedDSN(t)
+	ahead := shippedTree(t)
+	patchShipped(t, coreKind(ahead, "kind.yaml"), func(doc string) string {
+		return pinVersion(t, replaceShipped(t, doc, prose, prose+"      fts: false\n"), "99")
+	})
+	svc1 := openTree(t, dsn, ahead)
+	if _, err := svc1.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create the repository: %v", err)
+	}
+	if err := svc1.Close(); err != nil {
+		t.Fatalf("close binary N+1: %v", err)
+	}
+
+	behind := shippedTree(t)
+	patchShipped(t, llmKind(behind, "provider.yaml"), func(doc string) string {
+		doc = replaceShipped(t, doc, "    One place completions are bought", "    One xylophone place completions are bought")
+		return pinVersion(t, doc, "99")
+	})
+	svc2 := openTree(t, dsn, behind)
+	defer func() { _ = svc2.Close() }()
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open on binary N: %v", err)
+	}
+	if got := mustGet(t, ds2, kindKind, provider); !strings.Contains(fmt.Sprint(got.Properties["description"]), "xylophone") {
+		t.Fatalf("the upgrade did not land: %v", got.Properties["description"])
+	}
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	var fts string
+	if err := raw.QueryRowContext(ctx, `SELECT fts::text FROM records WHERE kind = $1 AND id = $2`,
+		kindKind, provider).Scan(&fts); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(fts, "xylophon") {
+		t.Fatalf("the projected row indexes a description the stored core/kind does not: %s", fts)
+	}
+
+	before := foldOf(t, ds2)
+	if _, err := svc2.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds2); string(before) != string(after) {
+		t.Fatalf("the rebuilt fold is not the upgraded fold\n%s", firstDifference(before, after))
+	}
+}

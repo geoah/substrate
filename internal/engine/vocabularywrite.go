@@ -2690,18 +2690,23 @@ func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrat
 // in the list too: its records' rows must go with the declaration that
 // described them.
 func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[string]bool) []string {
-	sites := func(reg *vocabulary.Registry, ident string) string {
-		ty, ok := reg.ByIdentity(ident)
-		if !ok {
-			return ""
-		}
-		var b strings.Builder
-		for _, name := range ty.PropOrder {
-			appendReferenceShape(&b, name, ty.Props[name])
-		}
-		return b.String()
+	return kindsWhoseShapeMoved(current, candidate, touched, referenceShape)
+}
+
+// referenceShape writes the part of one declaration that deriveRefs reads
+// (appendReferenceShape, per property). Two declarations with the same string
+// project the same refs rows from the same stored values; an undeclared kind
+// is the empty string, because its rows project none.
+func referenceShape(reg *vocabulary.Registry, ident string) string {
+	ty, ok := reg.ByIdentity(ident)
+	if !ok {
+		return ""
 	}
-	return kindsWhoseShapeMoved(current, candidate, touched, sites)
+	var b strings.Builder
+	for _, name := range ty.PropOrder {
+		appendReferenceShape(&b, name, ty.Props[name])
+	}
+	return b.String()
 }
 
 // reprojectedFTSKinds lists the touched packages' kinds whose searchable shape
@@ -2762,6 +2767,18 @@ func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[s
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// kindsShapedApart keeps the named kinds whose `shape` differs between two
+// registries, sorted.
+func kindsShapedApart(a, b *vocabulary.Registry, idents map[string]bool, shape func(*vocabulary.Registry, string) string) []string {
+	var out []string
+	for _, ident := range sortedKeys(idents) {
+		if shape(a, ident) != shape(b, ident) {
+			out = append(out, ident)
+		}
+	}
 	return out
 }
 
