@@ -750,6 +750,7 @@ const notOnTheWire: Record<string, string> = {
   KindNav: "the sidebar's grouping of KindInfo rows",
   // transcript.ts
   ChangeStamp: "a view the console folds from llm/message records",
+  SubagentWrites: "a view the console folds from llm/message records",
   ToolCallView: "a view the console folds from llm/message records",
   TurnView: "a view the console folds from llm/message records",
   CompactionView: "a view the console folds from llm/message records",

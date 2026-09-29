@@ -20,7 +20,7 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  version: 15
+  version: 16
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -131,6 +131,41 @@ data:
         id:
           type: string
           description: the written record's id
+    # Stamped by the ENGINE on a sub-agent call's tool row when the child's
+    # run returns, whatever status it ended in, whenever the child's thread
+    # opened, `records: 0` included, so a reader tells "wrote nothing" from
+    # "a row written before the stamp". A later continuation of the child
+    # thread (a decision resume) is not counted. The count and the kinds cover the whole child chain,
+    # grandchildren included, and are the same entries the chain's own rows
+    # stamp as `changes`. Those entries are NOT copied here: the child rows
+    # already carry them, and the parent's compaction reads `changes` as the
+    # parent's own obligations.
+    subagentWrites:
+      type: object
+      description: what a sub-agent call's child chain wrote, stamped by the
+        engine; the entries themselves stay on the child thread's rows
+      fields:
+        thread:
+          type: reference
+          kind: substrate.reamde.dev/llm/thread
+          required: true
+          description: the child thread the call ran; its rows, and the threads
+            of the agents it called, stamp each write's changes
+        records:
+          type: int
+          required: true
+          min: 0
+          description: how many distinct records the child chain wrote
+        kinds:
+          type: string
+          repeated: true
+          description: the kinds the child chain wrote, in the order it first
+            wrote each, at most 20
+        moreKinds:
+          type: int
+          min: 1
+          description: how many more kinds the chain wrote past the listed
+            20; absent when every kind is listed
     # A summary row's range is two message ROW IDS, not turn ordinals: two
     # rows can share an ordinal, and replay orders by creation. The rows in
     # the range stay; replay emits the summary where `from` sat and resumes

@@ -14,14 +14,21 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({
     to,
     params,
+    search,
     children,
     ...rest
   }: {
     to: string
     params?: Record<string, string>
+    search?: Record<string, string>
     children: ReactNode
   } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <a data-to={to} data-params={JSON.stringify(params ?? {})} {...rest}>
+    <a
+      data-to={to}
+      data-params={JSON.stringify(params ?? {})}
+      data-search={JSON.stringify(search ?? {})}
+      {...rest}
+    >
       {children}
     </a>
   ),
@@ -335,6 +342,94 @@ describe("the tool line", () => {
     fireEvent.click(screen.getByRole("button", { name: /Used fetch/ }))
     expect(screen.getByText("What it returned")).toBeTruthy()
     expect(screen.getByText("<title>Example</title>")).toBeTruthy()
+  })
+
+  describe("a sub-agent chain's writes", () => {
+    const scoutCall = (over: Partial<ToolCallView> = {}) =>
+      call({
+        name: "scout",
+        callable: "agent:crew.test.dev:crew:scout",
+        arguments: '{"input":"file it"}',
+        output: '{"reply":"Filed.","thread":"th1","status":"ok"}',
+        subagentWrites: {
+          thread: "th1",
+          records: 3,
+          kinds: ["crew.test.dev/crew/task", "crew.test.dev/crew/note"],
+          moreKinds: 0,
+        },
+        ...over,
+      })
+    const links = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('a[data-to="/agents"]'))
+
+    it("says what the chain wrote in a sentence, linking the child thread once", () => {
+      const { container } = renderCard(scoutCall())
+      fireEvent.click(screen.getByRole("button", { name: /Asked Scout/ }))
+      expect(screen.getByText("Wrote 3 records across task, note")).toBeTruthy()
+      // The reply still reads, and the one link into the child thread rides
+      // the writes line.
+      expect(screen.getByText("Filed.")).toBeTruthy()
+      const found = links(container)
+      expect(found).toHaveLength(1)
+      expect(found[0].textContent).toBe("Open its conversation")
+      expect(JSON.parse(found[0].getAttribute("data-search") ?? "{}")).toEqual({
+        thread: "th1",
+      })
+    })
+
+    it("names each kind by its full reference in technical mode", () => {
+      const { container } = renderCard(
+        scoutCall({
+          subagentWrites: {
+            thread: "th1",
+            records: 30,
+            kinds: ["crew.test.dev/crew/task", "crew.test.dev/crew/note"],
+            moreKinds: 5,
+          },
+        }),
+        undefined,
+        true
+      )
+      fireEvent.click(screen.getByRole("button", { name: /Asked Scout/ }))
+      const line = links(container)[0].parentElement
+      expect(line?.textContent).toContain(
+        "Wrote 30 records across crew.test.dev/crew/task, crew.test.dev/crew/note and 5 more kinds"
+      )
+    })
+
+    it("says a chain that wrote nothing wrote nothing", () => {
+      renderCard(
+        scoutCall({
+          subagentWrites: {
+            thread: "th1",
+            records: 0,
+            kinds: [],
+            moreKinds: 0,
+          },
+        })
+      )
+      fireEvent.click(screen.getByRole("button", { name: /Asked Scout/ }))
+      expect(screen.getByText("Wrote no records")).toBeTruthy()
+    })
+
+    it("still says what a failed chain wrote, and where", () => {
+      const { container } = renderCard(
+        scoutCall({
+          ok: false,
+          output: '{"error":"llm: scripted failure 500"}',
+          subagentWrites: {
+            thread: "th1",
+            records: 1,
+            kinds: ["crew.test.dev/crew/memo"],
+            moreKinds: 0,
+          },
+        })
+      )
+      fireEvent.click(screen.getByRole("button", { name: /Asked Scout/ }))
+      expect(screen.getByText(/It didn’t work/)).toBeTruthy()
+      expect(screen.getByText("Wrote 1 record of memo")).toBeTruthy()
+      expect(links(container)).toHaveLength(1)
+    })
   })
 
   it("names the callable and shows the payloads in technical mode", () => {

@@ -13,7 +13,7 @@
  * This is pure: no queries, no components. It is where the transcript's rules
  * are tested. */
 
-import type { SubstrateRecord } from "./types"
+import { readReference, type SubstrateRecord } from "./types"
 
 /** One changelog entry a dispatch wrote, as the engine stamps it onto the
  * row's `changes` property: the seq addresses the delta in the changelog,
@@ -23,6 +23,20 @@ export interface ChangeStamp {
   op: string
   kind: string
   id: string
+}
+
+/** What a sub-agent call's child chain wrote, as the engine stamps it onto the
+ * call's tool row (`subagentWrites`): the child thread, how many distinct
+ * records the child and every agent it called wrote, and the kinds, at most 20
+ * with the rest counted. The entries themselves are on the child thread's own
+ * rows. */
+export interface SubagentWrites {
+  /** The child thread's id. */
+  thread?: string
+  records: number
+  kinds: string[]
+  /** How many kinds the chain wrote past the listed ones. */
+  moreKinds: number
 }
 
 /** One dispatched tool call, with whatever has settled about it so far. */
@@ -45,6 +59,9 @@ export interface ToolCallView {
   /** The changelog entries the dispatch wrote (engine-stamped, persisted rows
    * only — the live stream does not carry them, so they appear on handover). */
   changes?: ChangeStamp[]
+  /** A sub-agent call's summary of what its child chain wrote, on the same
+   * terms as `changes`: persisted rows only. */
+  subagentWrites?: SubagentWrites
 }
 
 /** What a compaction folded, as far as its `summary` row or its live
@@ -180,6 +197,31 @@ export function changesOf(record: SubstrateRecord): ChangeStamp[] | undefined {
     out.push({ seq, op: str(entry.op), kind, id })
   }
   return out.length ? out : undefined
+}
+
+/** The engine-stamped `subagentWrites` of a tool row, or undefined where none
+ * rode it. Read as tolerantly as `changes`: a summary without a count is
+ * dropped, and a malformed kind entry is skipped. */
+export function subagentWritesOf(
+  record: SubstrateRecord
+): SubagentWrites | undefined {
+  const raw = record.properties.subagentWrites
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return undefined
+  }
+  const entry = raw as Record<string, unknown>
+  if (typeof entry.records !== "number") return undefined
+  const path = readReference(entry.thread)?.path
+  const thread = path ? path.slice(path.lastIndexOf("/") + 1) : ""
+  const kinds = Array.isArray(entry.kinds)
+    ? entry.kinds.filter((k): k is string => typeof k === "string" && !!k)
+    : []
+  return {
+    ...(thread ? { thread } : {}),
+    records: entry.records,
+    kinds,
+    moreKinds: typeof entry.moreKinds === "number" ? entry.moreKinds : 0,
+  }
 }
 
 /** A minted record id: twelve lowercase base32 characters (`engine.newID`).
@@ -323,6 +365,8 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
       call.output = output
       call.ok = ok
       call.changes = changesOf(record)
+      const wrote = subagentWritesOf(record)
+      if (wrote) call.subagentWrites = wrote
       if (callable && !call.callable) call.callable = callable
       pending.delete(str(record.properties.toolCallId))
       continue
@@ -346,6 +390,7 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
           output,
           ok,
           changes: changesOf(record),
+          subagentWrites: subagentWritesOf(record),
         },
       ],
     })

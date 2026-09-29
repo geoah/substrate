@@ -1,7 +1,7 @@
 /** One dispatched tool call, as one compact line: what the agent did in
  * words, and whether it worked. Opening it says what came back: the records a
- * read found, the records a write changed, a sub-agent's reply, a function's
- * output, why a call failed. A call with nothing more to say than its check
+ * read found, the records a write changed, a sub-agent's reply and what its
+ * chain wrote, a function's output, why a call failed. A call with nothing more to say than its check
  * mark does not open. Technical mode names the callable in full, in the actor
  * spelling the rows are stamped with, and adds the request and the response
  * verbatim.
@@ -27,6 +27,7 @@ import { InteractionCard } from "@/components/agent/interaction-card"
 import { MessageText } from "@/components/agent/message-text"
 import { ProposalCard } from "@/components/agent/proposal-card"
 import { CodeBlock } from "@/components/code-block"
+import { KindPath } from "@/components/identity/kind-ref"
 import { RecordRef } from "@/components/identity/record-ref"
 import { Spinner } from "@/components/ui/spinner"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
@@ -36,6 +37,8 @@ import {
   resolveTool,
   toolDetails,
   toolSummary,
+  wroteParts,
+  wroteSentence,
   type ToolDetail,
 } from "@/lib/agent-chat"
 import {
@@ -69,6 +72,54 @@ function Payload({ label, raw }: { label: string; raw: string }) {
   )
 }
 
+/** The link into a sub-agent's own thread. */
+function ConversationLink({ thread }: { thread: string }) {
+  return (
+    <Link
+      to="/agents"
+      search={{ thread } as never}
+      className="text-[12px] text-faint underline-offset-2 hover:underline"
+    >
+      Open its conversation
+    </Link>
+  )
+}
+
+/** What a sub-agent's chain wrote, as one sentence: "Wrote 3 records across
+ * task, note". The kinds are words; technical mode names each by its full
+ * reference. The entries themselves are in the child thread, which the line
+ * links. */
+function WroteLine({
+  detail,
+}: {
+  detail: Extract<ToolDetail, { type: "wrote" }>
+}) {
+  const [technical] = useTechnicalDetails()
+  const { records, kinds, moreKinds, thread } = detail
+  const parts = wroteParts(records, kinds, moreKinds)
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      {technical ? (
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          {parts.lead}
+          {parts.kinds.map((kind, i) => (
+            <span key={kind}>
+              {i === 0 ? " " : ", "}
+              <KindPath reference={kind} />
+            </span>
+          ))}
+          {parts.tail}
+        </span>
+      ) : (
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          {wroteSentence(records, kinds, moreKinds)}
+        </span>
+      )}
+      {thread && <ConversationLink thread={thread} />}
+    </span>
+  )
+}
+
 /** What came back, for a reader who does not read JSON. */
 function Detail({ detail }: { detail: ToolDetail }) {
   switch (detail.type) {
@@ -91,20 +142,14 @@ function Detail({ detail }: { detail: ToolDetail }) {
       )
     case "changed":
       return <ChangesList changes={detail.changes} />
+    case "wrote":
+      return <WroteLine detail={detail} />
     case "reply":
       return (
         <div className="flex flex-col gap-1">
           <span className="flex flex-wrap items-center gap-x-2">
             <span>{agentName(detail.agent)} replied</span>
-            {detail.thread && (
-              <Link
-                to="/agents"
-                search={{ thread: detail.thread } as never}
-                className="text-[12px] text-faint underline-offset-2 hover:underline"
-              >
-                Open its conversation
-              </Link>
-            )}
+            {detail.thread && <ConversationLink thread={detail.thread} />}
           </span>
           <div className="text-foreground">
             <MessageText text={detail.text} />
