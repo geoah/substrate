@@ -142,6 +142,12 @@ func ReadAll(ctx context.Context, s Store, digest string, size int64) ([]byte, e
 	return data, nil
 }
 
+// MaxUnsizedRead bounds a read with no declared size. It is the upload cap
+// (maxBlobBody in internal/api), so no blob the server stored is longer, and
+// an object that is longer is damaged rather than a reason to hold more of it
+// in memory.
+const MaxUnsizedRead = 64 << 20
+
 // readAllUnsized is ReadAll for a manifest with no size. With no length to
 // stop at, a streaming read could only check the hash after its last byte was
 // out, so this one is whole and checks before it returns anything.
@@ -151,9 +157,12 @@ func readAllUnsized(ctx context.Context, s Store, digest string) ([]byte, error)
 		return nil, err
 	}
 	defer func() { _ = rc.Close() }()
-	data, err := io.ReadAll(rc)
+	data, err := io.ReadAll(io.LimitReader(rc, MaxUnsizedRead+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > MaxUnsizedRead {
+		return nil, fmt.Errorf("%w: %s holds more than the %d bytes any blob may", ErrDigestMismatch, digest, MaxUnsizedRead)
 	}
 	sum := sha256.Sum256(data)
 	if got := digestPrefix + hex.EncodeToString(sum[:]); got != digest {

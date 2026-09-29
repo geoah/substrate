@@ -206,6 +206,23 @@ func TestReadAllWithNoSizeChecksTheHash(t *testing.T) {
 	}
 }
 
+// A read with no size stops one byte past the longest blob the server could
+// have stored, so an object that grew on disk is refused without being held
+// whole in memory.
+func TestReadAllWithNoSizeRefusesAnObjectPastTheCap(t *testing.T) {
+	t.Parallel()
+	s, digest, file := storedOnDisk(t, []byte("about to grow"))
+	// Sparse, so the test writes no 64 MiB to disk.
+	if err := os.Truncate(file, blobbytes.MaxUnsizedRead+1); err != nil {
+		t.Fatal(err)
+	}
+	got, err := blobbytes.ReadAll(context.Background(), s, digest, -1)
+	wantMismatch(t, err, digest, "holds more than the 67108864 bytes any blob may")
+	if got != nil {
+		t.Fatalf("ReadAll handed out %d bytes beside the refusal", len(got))
+	}
+}
+
 // The streaming reader has no size-less form: without a length it could only
 // check the hash once the last byte was out.
 func TestOpenVerifiedRefusesANegativeSize(t *testing.T) {

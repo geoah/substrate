@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -42,5 +43,14 @@ func TestBlobReadOfCorruptBytesAnswers500NamingTheDigest(t *testing.T) {
 	})
 	if line := logs.at(slog.LevelError)[0]; !strings.Contains(line.attrs["error"], digest) {
 		t.Fatalf("the ERROR line does not name %s: %v", digest, line.attrs)
+	}
+}
+
+// The store bounds a read of a manifest with no size by the upload cap, so the
+// two must stay one number: a larger cap here would store blobs that read
+// back refused.
+func TestBlobUploadCapIsTheStoreReadBound(t *testing.T) {
+	if maxBlobBody != blobbytes.MaxUnsizedRead {
+		t.Fatalf("the upload cap is %d bytes, the store reads at most %d", maxBlobBody, blobbytes.MaxUnsizedRead)
 	}
 }
