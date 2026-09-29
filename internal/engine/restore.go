@@ -147,7 +147,18 @@ func (t *txn) reshapeRestored(sp *applySpec, row *erow) (restoreShape, error) {
 		if s.nulled == nil {
 			s.nulled = map[string]any{}
 		}
-		s.nulled[name] = held
+		// A renamed value the new property refuses (a rename that also
+		// retyped) never lands under the new name: what leaves the record is
+		// the old name, and nothing moved.
+		gone := name
+		for from, to := range s.renamed {
+			if to == name {
+				gone = from
+				delete(s.renamed, from)
+				break
+			}
+		}
+		s.nulled[gone] = held
 	}
 	filled := map[string]any{}
 	for _, name := range ty.PropOrder {

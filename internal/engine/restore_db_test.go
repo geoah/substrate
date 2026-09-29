@@ -208,16 +208,17 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	svc, ds, dsn := newDatasetWithDSN(t)
 	name := map[string]any{"type": "string"}
 	if err := cvApply(t, ds, map[string]any{
-		"name":  name,
-		"mood":  map[string]any{"type": "string", "embed": true},
-		"token": map[string]any{"type": "secret"},
-		"size":  map[string]any{"type": "string"},
+		"name":   name,
+		"mood":   map[string]any{"type": "string", "embed": true},
+		"token":  map[string]any{"type": "secret"},
+		"size":   map[string]any{"type": "string"},
+		"weight": map[string]any{"type": "string"},
 	}); err != nil {
 		t.Fatalf("install the package: %v", err)
 	}
 	lib := substrate.Actor("connector:library")
 	gone := mustPut(t, ds, lib, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{
-		"name": "a", "mood": "cheerful", "token": "shh", "size": "large",
+		"name": "a", "mood": "cheerful", "token": "shh", "size": "large", "weight": "heavy",
 	}})
 	db := rawDB(t, dsn)
 	ref, _ := storedProps(t, dsn, gone.ID)["token"].(string)
@@ -233,12 +234,14 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	}
 	tombstoneWidget(t, ds, gone.ID)
 
-	// `mood` and `token` are dropped and `size` is renamed `dimensions`. No
-	// live record holds any of them, so the plan has no step and needs no
-	// confirmation.
+	// `mood` and `token` are dropped, `size` is renamed `dimensions`, and
+	// `weight` is renamed `mass` and retyped, a value the tombstone's string
+	// cannot become. No live record holds any of them, so the plan has no
+	// step and needs no confirmation.
 	if err := cvApply(t, ds, map[string]any{
 		"name":       name,
 		"dimensions": map[string]any{"type": "string", "renamedFrom": "size"},
+		"mass":       map[string]any{"type": "int", "renamedFrom": "weight"},
 	}); err != nil {
 		t.Fatalf("the drop and the rename must land: %v", err)
 	}
@@ -247,7 +250,7 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	}
 
 	restored := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: map[string]any{"name": "a"}})
-	for _, dropped := range []string{"mood", "token", "size"} {
+	for _, dropped := range []string{"mood", "token", "size", "weight", "mass"} {
 		if _, still := restored.Properties[dropped]; still {
 			t.Fatalf("the restored record holds %s: %v", dropped, restored.Properties)
 		}
@@ -260,7 +263,7 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	// The dropped values leave with their manager rows, queue rows and sealed
 	// material; the renamed value keeps the manager its writer had.
 	var managers, queued int
-	if err := db.QueryRow(`SELECT count(*) FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property IN ('mood', 'token', 'size')`,
+	if err := db.QueryRow(`SELECT count(*) FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property IN ('mood', 'token', 'size', 'weight', 'mass')`,
 		cvWidget, gone.ID).Scan(&managers); err != nil || managers != 0 {
 		t.Fatalf("manager rows left behind = %d, %v", managers, err)
 	}
@@ -278,9 +281,10 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	}
 
 	payload := restorePayload(t, dsn, gone.ID)
+	// The retyped rename moved nothing: what left the record is `weight`.
 	nulled, _ := payload["nulled"].([]any)
-	if len(nulled) != 2 || nulled[0] != "mood" || nulled[1] != "token" {
-		t.Fatalf("the restore entry's nulled = %v, want mood and token", payload["nulled"])
+	if len(nulled) != 3 || nulled[0] != "mood" || nulled[1] != "token" || nulled[2] != "weight" {
+		t.Fatalf("the restore entry's nulled = %v, want mood, token and weight", payload["nulled"])
 	}
 	if renamed, _ := payload["renamed"].(map[string]any); len(renamed) != 1 || renamed["size"] != "dimensions" {
 		t.Fatalf("the restore entry's renamed = %v, want size to dimensions", payload["renamed"])
