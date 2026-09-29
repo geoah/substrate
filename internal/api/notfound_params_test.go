@@ -170,7 +170,9 @@ func TestUnknownRecordReadParamsAreRefused(t *testing.T) {
 			t.Errorf("GET record%s answered %s, want the list's %s", query, got, want)
 		}
 	}
-	// Honored by the list, not by the record read: still refused, named.
+	// Honored by the list, not by the record read: still refused, named. The
+	// read always carries annotations, so `withAnnotations=0` would be
+	// ignored as silently as `=1` is redundant.
 	for query, key := range map[string]string{
 		"?expand=manager":    "expand",
 		"?first=5":           "first",
@@ -198,6 +200,42 @@ func TestUnknownRecordReadParamsAreRefused(t *testing.T) {
 			t.Errorf("GET record%s: id = %q, want %q", query, got, id)
 		}
 	}
+}
+
+// A query string that does not parse is refused on every route that names its
+// parameters. r.URL.Query() drops the pair it cannot read, so `?filter=%ZZ`
+// listed every row and `?bogus=1;x=2` passed the name check as a clean query.
+func TestMalformedQueryStringsAreRefused(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	id := createPerson(t, env, tok)
+	seedChanges(ds, 3)
+
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, peoplePath + "/" + id + "?bogus=1;x=2"},
+		{http.MethodGet, peoplePath + "/" + id + "?bogus=%ZZ"},
+		{http.MethodGet, recordsPath + "?filter=%ZZ"},
+		{http.MethodGet, recordsPath + "?first=1;bogus=2"},
+		{http.MethodGet, recordsPath + "?q=ada&mode=%ZZ"},
+		{http.MethodGet, recordsPath + "?watch=1&from=0;x=1"},
+		{http.MethodGet, changesPath + "?ops=put;delete"},
+		{http.MethodDelete, peoplePath + "/" + id + "?ifVersion=1;purge=true"},
+	} {
+		ds.lastDeleteID = ""
+		rec := env.do(t, c.method, c.path, tok, nil)
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
+		if !strings.HasPrefix(msg, "malformed query string: ") || strings.Contains(msg, "not supported") {
+			t.Errorf("%s %s: message = %q, want the parse error alone", c.method, c.path, msg)
+		}
+		if ds.lastDeleteID != "" {
+			t.Errorf("%s %s reached the dataset", c.method, c.path)
+		}
+	}
+	// An escaped `;` and `%` are ordinary characters, not a malformed query.
+	rec := env.do(t, http.MethodGet, recordsPath+`?filter={"properties":{"name":{"eq":"A%3Bda%25"}}}`, tok, nil)
+	wantStatus(t, rec, http.StatusOK)
 }
 
 // wantNotRefused drives a WATCH request to completion: the stream would

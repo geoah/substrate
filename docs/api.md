@@ -578,9 +578,12 @@ is a `bad_request` that names it, never a silent success: `orderBy` with `q`,
 `filter.properties` with `watch=1`, a `first` misspelled `First`. A misspelled
 ordering column is refused naming the camelCase replacement, and a malformed
 filter document is refused naming the field that would not decode. The
-single-record `GET` honors no parameter at all, so any one it is sent
-(`expand`, `withEdges`, a typo) is the same `bad_request`, and `DELETE`
-refuses every parameter but `ifVersion` and `purge`.
+single-record `GET` honors no parameter at all, so once its kind resolves any
+one it is sent (`expand`, `withEdges`, a typo) is the same `bad_request`, and
+`DELETE` refuses every parameter but `ifVersion` and `purge`. A query string
+that does not parse (a `;` separator, a bad `%` escape) is a `bad_request` on
+each of these routes and `/changes`, naming the parse error, because the pair
+it drops would otherwise read as absent.
 
 ### The window read
 

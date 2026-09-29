@@ -17,6 +17,17 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k?withEdges=1
                  "message": "unknown query parameter \"withEdges\""}}
 ```
 
-The console and `substratectl get` send no parameter on this read and are
-unaffected. A client that does drops the parameter; for referents, list with
-`GET /api/v1/records?filter=…&expand=…` instead.
+A query string that does not parse, such as `?filter=%ZZ` or `?a=1;b=2`, is
+now `400 bad_request` naming the parse error on the record read, the records
+route, `DELETE` and `/changes`. Before, the unreadable pair was dropped, so
+`GET /api/v1/records?filter=%ZZ` listed every record.
+
+The console and `substratectl` send neither and are unaffected.
+
+## What to do
+
+1. Drop every query parameter from a single-record `GET`. The read already
+   carries `annotations`, so `withAnnotations=1` loses nothing.
+2. For a record's referents, list it with
+   `GET /api/v1/records?filter={"ids":[…],"kinds":[…]}&expand=…`.
+3. Percent-encode `;` and `%` inside a query value (`%3B`, `%25`).

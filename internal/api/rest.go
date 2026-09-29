@@ -245,6 +245,9 @@ var (
 // the changes feed, or a casing slip — is told the spelling that works, since
 // that guess would otherwise return the whole unfiltered feed as a filtered one.
 func unsupportedParam(r *http.Request, allowed ...string) string {
+	if bad := malformedQuery(r); bad != "" {
+		return bad
+	}
 	ok := make(map[string]bool, len(allowed))
 	for _, n := range allowed {
 		ok[n] = true
@@ -264,6 +267,17 @@ func unsupportedParam(r *http.Request, allowed ...string) string {
 		msg += " — did you mean " + strconv.Quote(alt) + "?"
 	}
 	return msg
+}
+
+// malformedQuery names the parse error of a query string that does not parse,
+// or "" when it does. r.URL.Query() drops a pair it cannot read (a `;`
+// separator, a bad `%` escape) without a word, so `?filter=%ZZ` would list
+// unfiltered rows and `?bogus=1;x=2` would pass the name check.
+func malformedQuery(r *http.Request) string {
+	if _, err := url.ParseQuery(r.URL.RawQuery); err != nil {
+		return "malformed query string: " + err.Error()
+	}
+	return ""
 }
 
 // nearestParam matches a supported parameter that differs only by casing or by
