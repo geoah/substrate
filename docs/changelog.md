@@ -241,8 +241,10 @@ Every entry carries a SHA-256 **checksum** of its own canonical line, stamped
 by the writing transaction into the `changelog.hash` column and returned on the
 wire as `hash`. The checksum covers the entry's own bytes and nothing else: it
 does not chain to the previous entry, and nothing signs it.
-`substratectl repository verify` recomputes every entry's checksum and names
-the first seq whose stored bytes no longer produce it
+`substratectl repository verify` recomputes every line's checksum from the
+segment files, holds every table row's stamped checksum to its line's, and
+names each seq that disagrees; with `--recanonicalize` it also recomputes each
+row's checksum from its stored columns
 ([running a substrate](operations.md#operator-recovery)).
 
 The Postgres `changelog` table is the live index: the change feed, the triggers

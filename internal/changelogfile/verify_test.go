@@ -280,6 +280,23 @@ func TestSameAsHoldsACopyToItsSource(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotTheSource naming %s", err, SegmentName(3))
 	}
 
+	// The active segment rewritten with other valid lines of the same
+	// lengths and seqs: it opens, and it is not the source's history.
+	other := copyOf(t)
+	e := entryAt(6)
+	e.Payload = []byte(`{"seq":6,"n":2.50}`)
+	writeLines(t, other, 5, encodeLine(t, entryAt(5)), encodeLine(t, e), encodeLine(t, entryAt(7)))
+	if fileSize(t, filepath.Join(other, SegmentName(5))) != fileSize(t, filepath.Join(src, SegmentName(5))) {
+		t.Fatal("the rewritten active segment is not the source's length; the test proves nothing")
+	}
+	otherLog, err := OpenReadOnly(other)
+	if err != nil {
+		t.Fatalf("the rewritten copy does not open: %v", err)
+	}
+	if err := otherLog.SameAs(srcLog); !errors.Is(err, ErrNotTheSource) || !strings.Contains(err.Error(), SegmentName(5)) {
+		t.Fatalf("a rewritten active segment: err = %v, want ErrNotTheSource naming %s", err, SegmentName(5))
+	}
+
 	short := copyOf(t)
 	if err := os.Remove(filepath.Join(short, SegmentName(5))); err != nil {
 		t.Fatal(err)
@@ -290,6 +307,25 @@ func TestSameAsHoldsACopyToItsSource(t *testing.T) {
 	}
 	if err := shortLog.SameAs(srcLog); !errors.Is(err, ErrNotTheSource) {
 		t.Fatalf("a copy missing its active segment: err = %v, want ErrNotTheSource", err)
+	}
+}
+
+// The cut of an incomplete tail is refused when the file moved between the
+// scan that judged the tail incomplete and the lock the cut takes: a writer
+// that committed the tail in between made it history.
+func TestTruncateLockedRefusesAFileThatMovedSinceItsScan(t *testing.T) {
+	dir := threeSegments(t)
+	path := filepath.Join(dir, SegmentName(5))
+	size := fileSize(t, path)
+	err := truncateLocked(dir, path, size-10, size-1)
+	if !errors.Is(err, ErrLogStale) {
+		t.Fatalf("err = %v, want ErrLogStale", err)
+	}
+	if got := fileSize(t, path); got != size {
+		t.Fatalf("the refused cut changed the file: %d bytes, was %d", got, size)
+	}
+	if err := truncateLocked(dir, path, size-10, size); err != nil || fileSize(t, path) != size-10 {
+		t.Fatalf("the cut of an unmoved file: %v, %d bytes", err, fileSize(t, path))
 	}
 }
 

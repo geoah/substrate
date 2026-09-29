@@ -165,7 +165,7 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 		if seg.end < s.Size {
 			l.TruncatedBytes, l.TruncatedEntries = s.Size-seg.end, c.cut
 			if !opts.ReadOnly {
-				if err := truncateLocked(dir, filepath.Join(dir, s.Name), seg.end); err != nil {
+				if err := truncateLocked(dir, filepath.Join(dir, s.Name), seg.end, s.Size); err != nil {
 					return fmt.Errorf("changelogfile: %s: cut incomplete tail: %w", s.Name, err)
 				}
 				seg.Size = seg.end
@@ -318,13 +318,24 @@ func scanActive(path, name string, first int64) (last, end, cut int64, err error
 }
 
 // truncateLocked cuts path to size bytes under the directory's writer lock, so
-// a live writer's active segment is never cut from under it.
-func truncateLocked(dir, path string, size int64) error {
+// a live writer's active segment is never cut from under it. scanned is the
+// file's length when the tail was judged incomplete: a writer that committed
+// or aborted the tail and let go of the lock between that scan and this lock
+// moved the length, and a cut at the stale offset would drop history, so a
+// file that is no longer that long is refused with ErrLogStale.
+func truncateLocked(dir, path string, size, scanned int64) error {
 	lock, err := lockDir(dir)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.release() }()
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.Size() != scanned {
+		return fmt.Errorf("%w: %s is %d bytes, %d when its tail was scanned", ErrLogStale, filepath.Base(path), info.Size(), scanned)
+	}
 	return truncateFile(path, size)
 }
 

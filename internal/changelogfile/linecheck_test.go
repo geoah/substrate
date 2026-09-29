@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,9 @@ func TestParseTailReadsWhatEncodeWrote(t *testing.T) {
 		tail, ok := parseTail(line)
 		if !ok {
 			t.Fatalf("seq %d: the tail of an encoded line does not parse: %s", e.Seq, line)
+		}
+		if !parseHead(line, tail.seqAt) {
+			t.Fatalf("seq %d: the head of an encoded line does not parse: %s", e.Seq, line[:tail.seqAt])
 		}
 		if tail.seq != e.Seq || tail.txn != e.Txn || tail.sum != sum {
 			t.Fatalf("seq %d: tail = %+v, want seq %d txn %d", e.Seq, tail, e.Seq, e.Txn)
@@ -116,6 +120,65 @@ func TestLineCheckerFallsBackToDecode(t *testing.T) {
 	changed := bytes.Replace(pretty, []byte(`"api"`), []byte(`"apj"`), 1)
 	if _, _, _, err := newLineChecker().check(changed); !errors.Is(err, ErrBadSum) {
 		t.Fatalf("a changed respelled line: err = %v, want ErrBadSum", err)
+	}
+}
+
+// restamp recomputes a line's sum over its own bytes, as a writer that
+// rewrote the line would: the cut then matches whatever the line holds.
+func restamp(t *testing.T, line []byte) []byte {
+	t.Helper()
+	tail, ok := parseTail(line)
+	if !ok {
+		t.Fatalf("no tail to restamp: %s", line)
+	}
+	cut := append(append([]byte(nil), line[:tail.sumAt]...), line[tail.tsAt:]...)
+	sum := sha256.Sum256(cut)
+	out := append([]byte(nil), line[:tail.sumAt]...)
+	out = append(out, sumKey...)
+	out = append(out, fmt.Sprintf("%x", sum)...)
+	out = append(out, `",`...)
+	return append(out, line[tail.tsAt:]...)
+}
+
+// A line whose bytes hash to its sum but whose keys are not the ones Encode
+// writes, a key a newer writer added or one written twice, is not the cut's
+// to accept: Decode refuses it, and so does the checker, with Decode's error.
+func TestLineCheckerRefusesKeysDecodeRefuses(t *testing.T) {
+	line := encodeLine(t, entryAt(8))
+	for name, c := range map[string]struct {
+		line []byte
+		want string
+	}{
+		"an unknown key": {
+			bytes.Replace(line, []byte(`,"payload":`), []byte(`,"origin":"elsewhere","payload":`), 1),
+			`unknown key "origin"`,
+		},
+		"a repeated key": {
+			bytes.Replace(line, []byte(`,"kind":`), []byte(`,"actor":"other","kind":`), 1),
+			ErrBadSum.Error(),
+		},
+		"a missing key": {
+			bytes.Replace(line, []byte(`"op":"put",`), nil, 1),
+			ErrBadSum.Error(),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			damaged := restamp(t, c.line)
+			tail, ok := parseTail(damaged)
+			if !ok {
+				t.Fatalf("the restamped line has no tail: %s", damaged)
+			}
+			if parseHead(damaged, tail.seqAt) {
+				t.Fatalf("parseHead took keys Encode does not write: %s", damaged)
+			}
+			_, _, _, err := newLineChecker().check(damaged)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+			if _, _, derr := Decode(damaged); derr == nil || derr.Error() != err.Error() {
+				t.Fatalf("check err = %v, Decode err = %v", err, derr)
+			}
+		})
 	}
 }
 

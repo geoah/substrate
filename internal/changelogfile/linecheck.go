@@ -29,10 +29,25 @@ var (
 	txnKey = []byte(`,"txn":`)
 )
 
+// The keys a canonical line opens with, in the order they sort, up to the
+// tail; `causedBy` is there only when the entry has a cause.
+var (
+	actorKey     = []byte(`{"actor":`)
+	causedByKey  = []byte(`,"causedBy":`)
+	kindKey      = []byte(`,"kind":`)
+	opKey        = []byte(`,"op":`)
+	payloadKey   = []byte(`,"payload":`)
+	principalKey = []byte(`,"principal":`)
+	recordIDKey  = []byte(`,"recordId":`)
+)
+
 // lineTail is what parseTail read off a line.
 type lineTail struct {
 	seq, txn int64
 	sum      [32]byte
+	// seqAt is the comma before `"seq"`: line[:seqAt] is every key before
+	// the tail (parseHead).
+	seqAt int
 	// sumAt and tsAt bound the `"sum":"sha256:<hex>",` pair: line[sumAt:tsAt]
 	// is what Encode inserted after hashing the rest.
 	sumAt, tsAt int
@@ -77,8 +92,128 @@ func parseTail(line []byte) (lineTail, bool) {
 	if !ok || j < len(seqKey)+1 || !bytes.Equal(line[j-len(seqKey):j], seqKey) || line[j-len(seqKey)-1] != ',' {
 		return t, false
 	}
-	t.seq, t.txn, t.sumAt, t.tsAt = seq, txn, sumAt, tsAt
+	t.seq, t.txn, t.seqAt, t.sumAt, t.tsAt = seq, txn, j-len(seqKey)-1, sumAt, tsAt
 	return t, true
+}
+
+// parseHead holds line[:end], everything before the tail, to the keys Encode
+// writes there and in its order: `actor`, `causedBy` when set, `kind`, `op`,
+// `payload`, `principal` and `recordId`, with a string, an integer, two
+// strings, one JSON value and two strings. A key Decode does not know, a
+// repeated one or a missing one fails it, and the caller decodes the line:
+// a line a newer writer added a key to is refused as Decode refuses it, even
+// though its bytes hash to its sum.
+func parseHead(line []byte, end int) bool {
+	i, ok := expect(line, 0, actorKey, true)
+	if i, ok = skipString(line, i, ok); !ok {
+		return false
+	}
+	if bytes.HasPrefix(line[i:], causedByKey) {
+		if i = skipInt(line, i+len(causedByKey)); i < 0 {
+			return false
+		}
+	}
+	i, ok = expect(line, i, kindKey, ok)
+	i, ok = skipString(line, i, ok)
+	i, ok = expect(line, i, opKey, ok)
+	i, ok = skipString(line, i, ok)
+	i, ok = expect(line, i, payloadKey, ok)
+	i, ok = skipValue(line, i, ok)
+	i, ok = expect(line, i, principalKey, ok)
+	i, ok = skipString(line, i, ok)
+	i, ok = expect(line, i, recordIDKey, ok)
+	i, ok = skipString(line, i, ok)
+	return ok && i == end
+}
+
+// expect steps over key at line[i:], when ok and the key is there.
+func expect(line []byte, i int, key []byte, ok bool) (int, bool) {
+	if !ok || i < 0 || !bytes.HasPrefix(line[i:], key) {
+		return i, false
+	}
+	return i + len(key), true
+}
+
+// skipString steps over the JSON string at line[i:], escapes included; a
+// control byte inside it, or no closing quote, fails it.
+func skipString(line []byte, i int, ok bool) (int, bool) {
+	if !ok || i >= len(line) || line[i] != '"' {
+		return i, false
+	}
+	for j := i + 1; j < len(line); j++ {
+		switch c := line[j]; {
+		case c == '\\':
+			j++
+		case c == '"':
+			return j + 1, true
+		case c < 0x20:
+			return i, false
+		}
+	}
+	return i, false
+}
+
+// skipInt steps over the integer at line[i:], -1 when there is none.
+func skipInt(line []byte, i int) int {
+	if i < len(line) && line[i] == '-' {
+		i++
+	}
+	j := i
+	for j < len(line) && line[j] >= '0' && line[j] <= '9' {
+		j++
+	}
+	if j == i {
+		return -1
+	}
+	return j
+}
+
+// skipValue steps over the JSON value at line[i:]: a string, an object or an
+// array to its matching close, or a number or literal to the byte that ends
+// it. It finds where the value ends and nothing more; whether the value is
+// canonical is what the checksum holds.
+func skipValue(line []byte, i int, ok bool) (int, bool) {
+	if !ok || i >= len(line) {
+		return i, false
+	}
+	switch line[i] {
+	case '"':
+		return skipString(line, i, true)
+	case '{', '[':
+		depth := 0
+		for j := i; j < len(line); j++ {
+			switch line[j] {
+			case '"':
+				end, ok := skipString(line, j, true)
+				if !ok {
+					return i, false
+				}
+				j = end - 1
+			case '{', '[':
+				depth++
+			case '}', ']':
+				if depth--; depth == 0 {
+					return j + 1, true
+				}
+			}
+		}
+		return i, false
+	default:
+		j := i
+		for j < len(line) && !endsScalar(line[j]) {
+			j++
+		}
+		return j, j > i
+	}
+}
+
+// endsScalar reports whether c ends a number or a literal.
+func endsScalar(c byte) bool {
+	switch c {
+	case ',', '}', ']', ' ', '\t', '\r', '\n':
+		return true
+	}
+	return false
 }
 
 // digitsBefore is the index of the first of the decimal digits that end at
@@ -118,11 +253,17 @@ func newLineChecker() *lineChecker {
 }
 
 // check verifies one line's checksum and returns its seq, txn and sum. A
-// canonical line whose bytes, with the sum pair cut out, hash to its sum is
-// verified without decoding it; every other line is decoded, and Decode's
-// verdict and error are the answer.
+// line laid out as Encode lays one out, key for key, whose bytes with the
+// sum pair cut out hash to its sum, is verified without decoding it; every
+// other line is decoded, and Decode's verdict and error are the answer.
+//
+// The cut does not re-canonicalize the payload: a line whose payload is not
+// in canonical form, with a sum recomputed over those bytes, passes here and
+// is refused by Decode. Only a writer that rewrites a line and its sum
+// together makes one, and the checksum does not hold against that writer
+// anyway (docs/changelog.md).
 func (c *lineChecker) check(line []byte) (seq, txn int64, sum [32]byte, err error) {
-	if t, ok := parseTail(line); ok && checkTxn(t.seq, t.txn) == nil {
+	if t, ok := parseTail(line); ok && parseHead(line, t.seqAt) && checkTxn(t.seq, t.txn) == nil {
 		c.h.Reset()
 		c.h.Write(line[:t.sumAt])
 		c.h.Write(line[t.tsAt:])

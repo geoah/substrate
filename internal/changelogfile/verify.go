@@ -11,6 +11,7 @@ package changelogfile
 // by lineChecker, without the round trip.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -286,12 +287,14 @@ func inSegmentOrder(n int, check func(i int, lc *lineChecker) segmentCheck, each
 }
 
 // SameAs holds l to src segment for segment: the same names and sizes, the
-// same finished state and last seqs, and the same digest for every finished
-// segment. A copy opened with OpenReadOnly has had every finished segment
-// hashed against its own sidecar and every line of its active segment
-// checked, so a copy that is also the same as the Log it was copied from is
+// same finished state and last seqs, the same digest for every finished
+// segment, and the same bytes in the active one. A copy opened with
+// OpenReadOnly has had every finished segment hashed against its own
+// sidecar, so a copy that is also the same as the Log it was copied from is
 // that Log's bytes, which is what a snapshot's read-back asks without
-// walking a line again.
+// walking a line again. The active segment has no digest to hold it to, so
+// it is compared with the source's file, which must not have moved since
+// src was opened.
 func (l *Log) SameAs(src *Log) error {
 	if len(l.segments) != len(src.segments) {
 		return fmt.Errorf("%w: %d segments, the source has %d", ErrNotTheSource, len(l.segments), len(src.segments))
@@ -305,12 +308,52 @@ func (l *Log) SameAs(src *Log) error {
 			return fmt.Errorf("%w: %s is not the source's segment", ErrNotTheSource, seg.Name)
 		case seg.Finished && seg.digest != want.digest:
 			return fmt.Errorf("%w: %s does not hash to the source's digest", ErrNotTheSource, seg.Name)
+		case !seg.Finished:
+			same, err := samePrefix(filepath.Join(l.dir, seg.Name), filepath.Join(src.dir, want.Name), seg.end)
+			if err != nil {
+				return err
+			}
+			if !same {
+				return fmt.Errorf("%w: %s does not hold the source's bytes", ErrNotTheSource, seg.Name)
+			}
 		}
 	}
 	if l.head != src.head {
 		return fmt.Errorf("%w: the head is %d, the source's is %d", ErrNotTheSource, l.head, src.head)
 	}
 	return nil
+}
+
+// samePrefix reports whether the first n bytes of the files at a and b are
+// the same.
+func samePrefix(a, b string, n int64) (bool, error) {
+	fa, err := os.Open(a)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = fa.Close() }()
+	fb, err := os.Open(b)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = fb.Close() }()
+	ra, rb := io.NewSectionReader(fa, 0, n), io.NewSectionReader(fb, 0, n)
+	bufA, bufB := make([]byte, 1<<20), make([]byte, 1<<20)
+	for {
+		na, errA := io.ReadFull(ra, bufA)
+		nb, errB := io.ReadFull(rb, bufB)
+		if na != nb || !bytes.Equal(bufA[:na], bufB[:nb]) {
+			return false, nil
+		}
+		switch {
+		case errors.Is(errA, io.EOF) || errors.Is(errA, io.ErrUnexpectedEOF):
+			return errors.Is(errB, io.EOF) || errors.Is(errB, io.ErrUnexpectedEOF), nil
+		case errA != nil:
+			return false, errA
+		case errB != nil:
+			return false, errB
+		}
+	}
 }
 
 // ErrNotTheSource is returned by SameAs for a Log that is not the one it is
