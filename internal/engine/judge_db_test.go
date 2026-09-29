@@ -150,6 +150,65 @@ func TestJudgeEscalatesBelowThresholdAndTheOwnerDecides(t *testing.T) {
 	}
 }
 
+// The judge's audit is a patch that writes only an annotation, so it moves no
+// version of the request: its event names the request alone, live and without
+// a version, and every version the request reached is named by another entry.
+func TestTheJudgesAuditNamesTheRequestWithoutAVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	gatePolicyWithJudge(t, ds, "audited-widgets", map[string]any{"autoAccept": 0.9, "autoRefuse": 0.9})
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-audited", map[string]any{"name": "wanted"})}}},
+		fakeTurn{content: "held."},
+	)
+	fake.script("vjudge",
+		fakeTurn{content: `{"verdict":"accept","confidence":0.55,"rationale":"probably fine"}`},
+	)
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	req := onlyPatchRequest(t, ds)
+	if audit := judgedAnnotation(t, ds, req.ID); audit["outcome"] != judgedEscalated {
+		t.Fatalf("audit: %+v", audit)
+	}
+	fresh, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, req.ID)
+	if err != nil {
+		t.Fatalf("get the request: %v", err)
+	}
+	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{
+		Kinds: []string{vocabulary.KindRecordPatchRequest}, RecordID: req.ID,
+	}, 100)
+	if err != nil {
+		t.Fatalf("changes: %v", err)
+	}
+	var audits int
+	var reached int64
+	for _, c := range changes {
+		if c.Payload["policyVerdict"] == nil {
+			for _, a := range c.Affected {
+				if a.ID == req.ID && a.Version > reached {
+					reached = a.Version
+				}
+			}
+			continue
+		}
+		audits++
+		if c.Op != substrate.OpPatch || len(c.Affected) != 1 {
+			t.Fatalf("the audit entry = %s naming %+v, want a patch naming the request alone", c.Op, c.Affected)
+		}
+		if a := c.Affected[0]; a.Kind != vocabulary.KindRecordPatchRequest || a.ID != req.ID || a.Version != 0 || a.Deleted {
+			t.Fatalf("the audit names %+v, want %s live and without a version", a, req.ID)
+		}
+	}
+	if audits != 1 {
+		t.Fatalf("read %d audit entries for the request, want 1", audits)
+	}
+	if reached != fresh.Version {
+		t.Fatalf("the other entries name the request up to v%d, the read says v%d", reached, fresh.Version)
+	}
+}
+
 func TestJudgeAdvisesWhenAskedTo(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
