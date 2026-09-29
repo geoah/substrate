@@ -20,7 +20,8 @@ suites are where most of the behaviour is actually pinned down.
 
 `mise run test` is the one to run before pushing. `mise run ci` is the
 pipeline as CI runs it, including the linters, the console and an image build,
-except the provider suite (`ci:providers`), which it does not run.
+except the provider suite (`ci:providers`), which it does not run, and the
+weekly live suite (`ci:llm`), which spends money.
 
 **The short suite** is everything that needs no database: the API against its
 hand-written fake (`internal/api/fake_test.go`), the CLI's commands, the
@@ -346,7 +347,9 @@ adapters still match what the providers actually accept, and that a whole agent
 chain works end to end against them — are what the **live** suite is for.
 
 It buys real completions with real keys, so it runs only when those keys are in
-the environment and **skips** otherwise. `mise run test` and CI never need one.
+the environment and **skips** otherwise. `mise run test` and the pull request
+checks never need one; the weekly `llm live` job ([in CI](#in-ci)) holds its
+own.
 
 ### What it covers
 
@@ -417,6 +420,55 @@ SUBSTRATE_TEST_ANTHROPIC_MODEL=claude-3-5-haiku-latest mise run test:llm
 ```
 
 Both halves honor the same two variables.
+
+### The spend ceilings
+
+`maxTokens` caps one answer and cannot cap a pass: a case that loops, a retry
+added to an adapter or a wire added to the table multiplies requests that each
+stay small. So each test binary holds its live cases to a request ceiling and
+a token ceiling, prompt and completion together, kept by a ledger in
+`internal/llm/livespend`:
+
+| Half | Requests | Tokens | What holds the request ceiling |
+| ---- | -------: | -----: | ------------------------------ |
+| adapter cases (`internal/llm`) | 24 | 20,000 | a meter around every client refuses the request past the ceiling before it is sent |
+| agent chain (`internal/engine`) | 14 | 20,000 | the agents' own `maxTurns` and `maxToolCalls` budgets, which the loop checks before every completion; the thread rows are booked afterwards |
+
+A run of `test:llm` therefore makes at most 38 completion requests. The
+ceiling counts completions, not HTTP attempts: the Anthropic SDK retries an
+attempt that failed on a connection error or a 408, 409, 429 or 5xx status up
+to twice inside one completion, and the ledger does not see those retries. Tokens are known only
+once an answer reports its usage, so the request that crosses the token
+ceiling is paid for; the adapter meter refuses every request after it.
+Crossing either ceiling fails the run even when every case passed. The
+adapter cases make nine requests and a measured pass booked about 1,800
+tokens, so raising a ceiling is a deliberate edit to `live_test.go` or
+`agents_live_db_test.go`. Each binary prints its spend at the end of the run,
+one row per provider.
+
+### In CI
+
+The `llm live` workflow (`.github/workflows/llm-live.yml`) runs
+`mise run ci:llm` on `main` every Monday at 06:43 UTC and on
+`workflow_dispatch`. It never runs on a pull request, and a dispatch from
+another branch or a run in a fork is skipped. It is not a merge check: a pull
+request must not reach the keys, and a provider outage must not block a merge
+its diff did not cause.
+
+`ci:llm` is `test:llm` with both keys required, so a missing secret fails the
+job instead of skipping every case and passing. It appends each binary's
+spend table to the run summary. A failed run comments on one tracking issue,
+titled ``Weekly `llm live` job fails: `mise run test:llm` is red on main``: the
+first failure opens it, a later one reopens it if it was closed, and the next
+passing run closes it (`.mise/llmliveissue.sh`).
+
+The keys are the Actions secrets `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` in
+the `llm-live` environment, whose deployment branch rule admits `main` alone.
+They are CI-only keys, used for nothing else, and the owner sets a spend cap
+on each at the provider: a project budget at OpenAI, a workspace spend limit
+at Anthropic. That cap still holds if the ceilings above have a bug. The
+environment has no required reviewers, because a reviewer rule would hold
+every scheduled run until somebody approved it.
 
 ### Why it stays out of the default suites
 
@@ -500,6 +552,10 @@ and do not block a merge.
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on
 changes, because its queries change even when the code does not.
+
+The `llm live` workflow runs `ci:llm`, the live suite against the real
+providers, weekly on `main` and on dispatch, never on a pull request, and
+`mise run ci` leaves it out; [the live tests](#in-ci) describe it.
 
 ### The database suite, cut for the runner
 
