@@ -1419,5 +1419,20 @@ func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 		t.Fatalf("the restored record holds %v, want review alone", restored.Properties)
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: restored.Properties})
+	// The restore names the state it removed, so the values read shows it
+	// leaving there, with the state the record was tombstoned in.
+	changes, err = ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{cvWidget}, RecordID: gone.ID, Values: true}, 10)
+	if err != nil {
+		t.Fatalf("the restored record's changes: %v", err)
+	}
+	var left bool
+	for _, c := range changes {
+		for _, pc := range c.Affected[0].Properties {
+			left = left || (pc.Name == "status" && pc.Before == "open" && pc.After == nil && !pc.BeforeUnknown)
+		}
+	}
+	if !left {
+		t.Fatalf("no change of the restored record shows the dropped state leaving: %s", jsonOf(t, changes))
+	}
 	cvReplays(t, svc, ds)
 }
