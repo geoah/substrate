@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
@@ -10,8 +11,8 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// A repository indexed under older rules is re-derived at its next open: the
-// search finds what the new rules index, the version is recorded, and no
+// A repository indexed under older rules is re-derived after its next open:
+// the search finds what the new rules index, the version is recorded, and no
 // record, version or changelog entry moves.
 func TestAnOpenReindexesRowsIndexedUnderOlderRules(t *testing.T) {
 	ctx := context.Background()
@@ -76,6 +77,11 @@ func TestAnOpenReindexesRowsIndexedUnderOlderRules(t *testing.T) {
 	ds2, err := svc2.Dataset(ctx, repo)
 	if err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-engine.SearchReindexDone(ds2):
+	case <-time.After(time.Minute):
+		t.Fatal("the reindex the reopen started did not finish within a minute")
 	}
 	if hits := searchIDs(t, ds2, "inbox"); len(hits) != 1 || hits[0] != "ada" {
 		t.Fatalf("after the reopen, search inbox = %v, want [ada]", hits)

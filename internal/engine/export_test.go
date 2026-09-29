@@ -198,6 +198,30 @@ func WithTestDigestHook(fn func(repository, segment string)) Option {
 	return func(o *options) { o.digestHook = fn }
 }
 
+// WithTestSearchReindex sets the open-time reindex's page size (zero keeps
+// searchReindexBatch) and a hook it runs before each page with the kind it is
+// about to re-derive (searchindex.go reindexKind). A hook that blocks holds
+// the reindex there; it should return when ctx ends, which is the dataset
+// closing. An error from it fails the page, as a database error would.
+func WithTestSearchReindex(batch int, hook func(ctx context.Context, kind string) error) Option {
+	return func(o *options) { o.searchReindexBatch, o.searchReindexHook = batch, hook }
+}
+
+// SearchReindexDone is closed when the dataset's latest reindex has returned,
+// finished or stopped; a dataset that started none returns a closed channel.
+func SearchReindexDone(ds substrate.Dataset) <-chan struct{} {
+	d := ds.(*dataset)
+	d.reindexMu.Lock()
+	done := d.reindexDone
+	d.reindexMu.Unlock()
+	if done != nil {
+		return done
+	}
+	closed := make(chan struct{})
+	close(closed)
+	return closed
+}
+
 // SeedKindsDir is the shipped SEED AUTHORITY, relative to this package — core
 // and llm together (record 0077): what every test open loads unless it brings
 // a patched tree.

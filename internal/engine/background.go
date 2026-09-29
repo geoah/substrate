@@ -96,6 +96,14 @@ func (s *service) stopBackground(timeout time.Duration) {
 	}
 }
 
+// stopping reports whether stopBackground has begun: every detached task was
+// canceled, and waited for once.
+func (b *background) stopping() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.closed
+}
+
 // spawn schedules a repository-scoped detached task (see service.spawn).
 func (ds *dataset) spawn(task string, fn func(context.Context)) bool {
 	return ds.svc.spawn(task, ds.Repository().ID, fn)

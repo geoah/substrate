@@ -66,12 +66,20 @@ func TestTheDetachedSitesGoThroughSpawn(t *testing.T) {
 	ds.maybeJudge("request1", &policyRule{id: "policy1", judge: "judge.test.dev/judge/reviewer"})
 	ds.resumeNotifiedThread("thread1", "")
 	ds.warmFunctions()
+	ds.reindexFrom = 1
+	ds.startSearchReindex()
+	select {
+	case <-ds.reindexDone:
+	default:
+		t.Fatal("a refused reindex left its done channel open: close would wait on it")
+	}
 
 	out := logs.String()
 	for site, task := range map[string]string{
 		"maybeJudge (judge.go)":                   "task=judge",
 		"resumeNotifiedThread (agentdecision.go)": `task="resume notified thread"`,
 		"warmFunctions (runner.go)":               `task="warm functions"`,
+		"startSearchReindex (searchindex.go)":     `task="reindex search"`,
 	} {
 		if !strings.Contains(out, task) {
 			t.Fatalf("%s did not go through service.spawn: no %s in the log: %s", site, task, out)

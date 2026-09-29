@@ -117,6 +117,13 @@ type options struct {
 	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
 	// with the partial directory after each copy step (snapshot.go).
 	snapshotFault func(stage, dir string) error
+	// searchReindexBatch and searchReindexHook are the open-time reindex's
+	// test seams (export_test.go WithTestSearchReindex): a page size below
+	// searchReindexBatch, so a few rows span several pages, and a hook run
+	// before each page with the kind it is about to re-derive, so a test can
+	// hold the reindex there or fail the page. Tests only.
+	searchReindexBatch int
+	searchReindexHook  func(ctx context.Context, kind string) error
 	// progressEvery is how often a long walk reports its position
 	// (progress.go); the test seam WithTestProgressEvery lowers it so a
 	// short history reports at all.
@@ -390,6 +397,11 @@ type service struct {
 	testSnapshotFault func(stage, dir string) error
 	// testInvokeHook is the options' runner seam (runner.go). Tests only.
 	testInvokeHook func(function string)
+	// searchReindexBatch and testSearchReindexHook are the options' reindex
+	// seams (searchindex.go reindexKind); a batch of zero is
+	// searchReindexBatch. Tests only.
+	searchReindexBatch    int
+	testSearchReindexHook func(ctx context.Context, kind string) error
 	// progressEvery is how often a long walk of a changelog reports where
 	// it is (progress.go).
 	progressEvery time.Duration
@@ -544,6 +556,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testInvokeHook:    o.invokeHook,
 		testDigestHook:    o.digestHook,
 		checked:           map[string]*changelogfile.Log{},
+
+		searchReindexBatch:    o.searchReindexBatch,
+		testSearchReindexHook: o.searchReindexHook,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —
@@ -966,7 +981,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.runRepositoryMigrations,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
-		ds.reindexSearch,
+		ds.checkSearchIndex,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,
 		ds.settleInterruptedSyncs,
@@ -987,6 +1002,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.close()
 		return prev, nil
 	}
+	// After the open, never inside it: the reindex takes minutes on a large
+	// repository, and every request on it waits for the open (issue 719).
+	ds.startSearchReindex()
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.
