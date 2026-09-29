@@ -1328,20 +1328,26 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		q.Filter.Kinds[i] = ty.Identity
 	}
 	if ref := q.Filter.Referencing; ref != nil {
-		// The target of a reverse read is held to the allowlist too: resolving
-		// it walks the target kind's former-id trail, and which ids became
-		// which is a fact about that kind an agent without the grant may not
-		// learn.
-		kind, _, ok := vocabulary.SplitRecordPath(ref.Ref)
-		if !ok {
-			return toolError("filter.referencing.ref must be a record path \"<kind>/<id>\""), false, 0
-		}
-		ty, err := ds.resolveType(kind)
+		// Every target of a reverse read is held to the allowlist too:
+		// resolving it walks the target kind's former-id trail, and which ids
+		// became which is a fact about that kind an agent without the grant
+		// may not learn.
+		targets, err := ref.Targets()
 		if err != nil {
 			return toolError(err.Error()), false, 0
 		}
-		if !scope.allows(ty.Identity) {
-			return toolError(kind + " is not in the reads allowlist"), false, 0
+		for _, target := range targets {
+			kind, _, ok := vocabulary.SplitRecordPath(target)
+			if !ok {
+				return toolError("filter.referencing: " + strconv.Quote(target) + " is not a record path \"<kind>/<id>\""), false, 0
+			}
+			ty, err := ds.resolveType(kind)
+			if err != nil {
+				return toolError(err.Error()), false, 0
+			}
+			if !scope.allows(ty.Identity) {
+				return toolError(kind + " is not in the reads allowlist"), false, 0
+			}
 		}
 	}
 	if raw, ok := args["orderBy"]; ok && raw != nil {

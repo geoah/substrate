@@ -149,6 +149,25 @@ it points at the target, `property` naming the reference and `path` locating
 a nested site (absent at the top level). A `ref` that is not a `<kind>/<id>`
 path, or whose kind is unknown, is `422 validation`.
 
+`refs` in place of `ref` names several targets, and the page is the records
+pointing at ANY of them: one read for "what points at me" when the owner holds
+a work address, a personal one and an alias. Each target is matched by its
+canonical and former ids as `ref` is, the targets may be of different kinds,
+and `property` narrows the same way:
+
+```http
+GET /api/v1/records?filter={"kinds":["providers.substrate.reamde.dev/google/calendarevent"],
+                            "referencing":{"refs":["providers.substrate.reamde.dev/google/emailaddress/work",
+                                                   "providers.substrate.reamde.dev/google/emailaddress/home"],
+                                           "property":"attendees"}}
+```
+
+A record pointing at two of the targets is on the page once, counted once by
+`count`, and its `matches` entry names each site it points from. `refs` takes
+at most 256 paths; a longer list, a filter setting both `ref` and `refs`, and
+a `referencing` naming neither are `422 validation`, and the message says
+which.
+
 It is the GENERAL question, and it stays paged for that reason: any record can
 be pointed at from anywhere, by any property. The narrow one — which MIRRORS
 converged on this subject — is answered inline on the single-record read, as
@@ -563,7 +582,8 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   supporting records. Any other word is `422 validation` naming the three.
   The ranked read takes it beside `kinds`; the tail refuses it.
 - `referencing` is the reverse read: the records pointing at one record,
-  `{"ref": "<kind>/<id>", "property": …}` with `property` optional
+  `{"ref": "<kind>/<id>", "property": …}` with `property` optional, or at any
+  of several, `{"refs": ["<kind>/<id>", …]}`, at most 256
   ([above](#who-points-at-a-record-referencing)).
 
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or

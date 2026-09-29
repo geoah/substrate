@@ -368,6 +368,64 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	}
 }
 
+// EVERY TARGET OF A REVERSE READ IS HELD TO THE ALLOWLIST. `referencing.refs`
+// names several targets, and each one's former-id trail is a fact about its
+// kind, so one target of a kind the agent may not read refuses the whole
+// read, while a list inside the grant answers every pointer in one call.
+func TestAgentQueryHoldsEveryReferencingTargetToTheAllowlist(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	widget := crewPackage + "/widget"
+	for id, source := range map[string]string{"w-a": "", "w-b": "", "w-from-a": "w-a", "w-from-b": "w-b"} {
+		props := map[string]any{"name": id}
+		if source != "" {
+			props["source"] = source
+		}
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: id, Properties: props}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := func(refs ...string) fakeTurn {
+		return fakeTurn{calls: []fakeCall{{"query", toolArgs(t, map[string]any{
+			"filter": map[string]any{"kinds": []any{widget}, "referencing": map[string]any{"refs": refs}},
+		})}}}
+	}
+	fake.script("lib",
+		query(vocabulary.RecordPath(widget, "w-a"), vocabulary.RecordPath(widget, "w-b")),
+		query(vocabulary.RecordPath(widget, "w-a"), "samples.substrate.reamde.dev/tasks/task/t1"),
+		fakeTurn{content: "two widgets were made from those"},
+	)
+	res, err := ds.CallAgent(ctx, crewPackage+"/librarian", "what was made from w-a or w-b")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.Status != threadOK {
+		t.Fatalf("result: %+v", res)
+	}
+	var contents []string
+	for _, m := range threadMessages(t, ds, res.Thread) {
+		if m["role"] == "tool" {
+			content, _ := m["content"].(string)
+			contents = append(contents, content)
+		}
+	}
+	if len(contents) != 2 {
+		t.Fatalf("tool rows: %v", contents)
+	}
+	if !strings.Contains(contents[0], "w-from-a") || !strings.Contains(contents[0], "w-from-b") {
+		t.Fatalf("the refs read does not carry both pointers: %s", contents[0])
+	}
+	if !strings.Contains(contents[1], "samples.substrate.reamde.dev/tasks/task is not in the reads allowlist") {
+		t.Fatalf("a target outside the grant was not refused by name: %s", contents[1])
+	}
+	// The card the model reads names the list form, or no model asks for it.
+	reqs := fake.requestsOf("lib")
+	if len(reqs) == 0 || !strings.Contains(toJSONString(t, reqs[0]["tools"]), "refs: [up to 256]") {
+		t.Fatalf("the query card does not name referencing.refs: %v", reqs)
+	}
+}
+
 // A MIS-SHAPED FILTER IS REFUSED, NOT DROPPED. `query` decoded its filter
 // leniently, so a model that wrote a predicate straight onto the filter
 // (`{"at": {"gte": …}}` instead of nesting it under `properties`) had the key

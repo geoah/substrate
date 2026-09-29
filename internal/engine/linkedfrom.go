@@ -59,7 +59,7 @@ func (ds *dataset) linkedFrom(ctx context.Context, x dbx, e *substrate.Record) (
 		return nil, err
 	}
 	b := &builder{}
-	where := referencingWhere(b, eref{Kind: e.Kind, ID: e.ID}, ids, "")
+	where := referencingWhere(b, []refTarget{{kind: e.Kind, ids: ids}}, "")
 	rows, err := x.QueryContext(ctx,
 		`SELECT r.src_kind, r.src, r.property, s.title FROM refs r `+
 			`JOIN records s ON s.kind = r.src_kind AND s.id = r.src AND s.deleted_at IS NULL `+

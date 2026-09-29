@@ -27,7 +27,7 @@ func (a *app) getCommand() *cobra.Command {
 		orderBy     string
 		after       string
 		expand      []string
-		referencing string
+		referencing []string
 		search      string
 		orphaned    bool
 		ambiguous   bool
@@ -51,6 +51,8 @@ one hop: -o yaml prints them as further documents after the page, -o json puts
 the page under "records" and the referents under "included", keyed by
 <kind>/<id>. The table formats print the page alone. --referencing <kind>/<id>
 is the reverse read: only the records of this kind that point at that one.
+Repeat it to read the records pointing at any of several targets in one list,
+each record once.
 --orphaned lists the mapping targets the engine marked: rows minted from a
 source that is now gone, with nothing above the machine tier holding a
 property on them. --ambiguous lists the mapping sources the engine marked: rows
@@ -87,13 +89,19 @@ states.`,
 					return err
 				}
 			}
-			if referencing != "" {
-				if !strings.Contains(referencing, "/") {
-					return fmt.Errorf("--referencing takes a record path, <kind>/<id>, got %q", referencing)
+			if len(referencing) > 0 {
+				for _, target := range referencing {
+					if !strings.Contains(target, "/") {
+						return fmt.Errorf("--referencing takes a record path, <kind>/<id>, got %q", target)
+					}
 				}
-				err := editFilter(q, func(f *substrate.Filter) {
-					f.Referencing = &substrate.Referencing{Ref: referencing}
-				})
+				// One target keeps the single `ref` spelling; several ride as
+				// `refs`, one read over all of them.
+				ref := &substrate.Referencing{Ref: referencing[0]}
+				if len(referencing) > 1 {
+					ref = &substrate.Referencing{Refs: referencing}
+				}
+				err := editFilter(q, func(f *substrate.Filter) { f.Referencing = ref })
 				if err != nil {
 					return err
 				}
@@ -154,7 +162,7 @@ states.`,
 	f.StringVar(&orderBy, "order-by", "", `order, e.g. "at:desc,createdAt"`)
 	f.StringVar(&after, "after", "", "opaque keyset cursor from a previous page's \"next cursor\" line; resent verbatim")
 	f.StringSliceVar(&expand, "expand", nil, "reference properties whose referents ride along (comma-separated), printed after the page in -o yaml/json")
-	f.StringVar(&referencing, "referencing", "", "only records pointing at this one, as <kind>/<id>")
+	f.StringArrayVar(&referencing, "referencing", nil, "only records pointing at this one, as <kind>/<id> (repeatable: records pointing at any of them)")
 	f.StringVar(&search, "search", "", `only records whose text matches, in the search grammar: words, "a phrase", -excluded, a OR b, prefix*`)
 	f.BoolVar(&orphaned, "orphaned", false, "only the records the engine marked orphaned: a mapping target whose sources are all gone (--orphaned=false is only the unmarked)")
 	f.BoolVar(&ambiguous, "ambiguous", false, "only the records the engine marked ambiguous: a mapping source left unlinked because its probe found several candidates (--ambiguous=false is only the unmarked)")

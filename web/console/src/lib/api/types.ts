@@ -243,7 +243,7 @@ export interface Page<T = SubstrateRecord> {
    * pointer has no entry. */
   included?: Record<string, SubstrateRecord>
   /** On a `filter.referencing` read: for each record on the page, keyed by
-   * its record path, every site at which it points at the target. */
+   * its record path, every site at which it points at a target. */
   matches?: Record<string, ReferenceSite[]>
   /** On a window read (`at` bounded on both ends): each series the expansion
    * could not read, named; the page stands without it. */
@@ -444,17 +444,19 @@ export interface RecordFilter {
   referencing?: Referencing
 }
 
-/** The target of a reverse read (`substrate.Referencing`): the records
- * holding a reference AT `ref`, a record path (`<kind>/<id>`), narrowed to
- * one reference property of the pointing records when `property` is set.
- * The page is the DISTINCT pointing records; `Page.matches` says from
- * which sites each one points. */
+/** The targets of a reverse read (`substrate.Referencing`): the records
+ * holding a reference AT `ref`, a record path (`<kind>/<id>`), or at any of
+ * `refs` (at most 256 paths, one read). Exactly one of the two is set.
+ * `property` narrows to one reference property of the pointing records.
+ * The page is the DISTINCT pointing records, a record pointing at two
+ * targets once; `Page.matches` says from which sites each one points. */
 export interface Referencing {
-  ref: string
+  ref?: string
+  refs?: string[]
   property?: string
 }
 
-/** One place a record points at the referencing target
+/** One place a record points at a referencing target
  * (`substrate.ReferenceSite`): the declared property, and the dotted address
  * of a NESTED site (`tools.fields.callable`), absent for a kind's own
  * property. */

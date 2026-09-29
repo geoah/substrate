@@ -107,8 +107,9 @@ export function triggerParkedQueryOptions(id: string) {
 
 /** The newest runs of a set of triggers, off the `triggerrun` ledger: the
  * kind in `filter.kinds`, the trigger as a `referencing` arm on the run's
- * `trigger` reference, newest first. One trigger per read, because the
- * reverse read takes one referent. */
+ * `trigger` reference, newest first. One trigger per read, so each trigger
+ * gets its own `first` newest runs; one `refs` read over every trigger would
+ * share that page among them. */
 export function triggerRunsQueryOptions(triggerId: string, first = 20) {
   return queryOptions({
     queryKey: ["triggers", "runs", triggerId, first],

@@ -158,7 +158,8 @@ const linkedRecord: Shape<LinkedRecord> = {
 
 /** The reverse read's target, and one site a record points from. */
 const referencing: Shape<Referencing> = {
-  ref: true,
+  ref: false,
+  refs: false,
   property: false,
 }
 

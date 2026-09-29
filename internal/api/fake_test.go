@@ -841,16 +841,23 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 			implementors[k] = true
 		}
 	}
-	// The reverse read matches the target by its canonical id and every
-	// former one, as the engine's refs index does.
+	// The reverse read matches each target by its canonical id and every
+	// former one, as the engine's refs index does, and refuses the target
+	// list the engine refuses.
 	var targets []string
 	if ref := q.Filter.Referencing; ref != nil {
-		targets = append(targets, ref.Ref)
-		if i := strings.LastIndex(ref.Ref, "/"); i >= 0 {
-			kind, id := ref.Ref[:i], ref.Ref[i+1:]
-			for former, canonical := range d.formers {
-				if canonical == id {
-					targets = append(targets, kind+"/"+former)
+		paths, err := ref.Targets()
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range paths {
+			targets = append(targets, path)
+			if i := strings.LastIndex(path, "/"); i >= 0 {
+				kind, id := path[:i], path[i+1:]
+				for former, canonical := range d.formers {
+					if canonical == id {
+						targets = append(targets, kind+"/"+former)
+					}
 				}
 			}
 		}

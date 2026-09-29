@@ -99,7 +99,7 @@ nothing, there are none.
 | **blob** | Content-addressed bytes whose digest is its id and whose manifest is an ordinary record. |
 | **records route** | `GET /api/v1/records`: the one read of many records, in three modes told apart by their parameters: the list (`filter`, `orderBy`, `first`, `after`, `offset`, `expand`), the ranked read (`q`) and the tail (`watch=1`). `POST` there creates one record under a server-assigned id. Decision record 0079. |
 | **record path** | `/api/v1/{authority}/{package}/{kind}/{id}`: one record's URL, which is its reference value. Decision record 0033. |
-| **referencing** | The filter arm that reads a reference backwards: the records pointing at one record, matched by its canonical and former ids. The page carries `matches` naming the property each pointed from. |
+| **referencing** | The filter arm that reads a reference backwards: the records pointing at one record (`ref`) or at any of several (`refs`), each matched by its canonical and former ids. The page carries `matches` naming the property each pointed from. |
 | **expand** | The list parameter naming reference properties whose referents come back beside the page under `included`, keyed by record path, one hop. |
 | **watch** | The ndjson tail of the records route, narrowed to a set of kinds, or of the changelog, resumable from a cursor. |
 | **feature** | A named entry in `GET /.well-known/substrate/server.json` carrying its stability and the surfaces that serve it (`rest`, the one there is), so a client reads what a deployment offers instead of probing for failures. |

@@ -11,6 +11,8 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -251,6 +253,211 @@ func TestReferencingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 	// And the stored value still spells the loser's id: nothing rewrote it.
 	if got := refPathValue(mustGet(t, ds, graphPackage+"/spoke", "s1"), "hub"); got != vocabulary.RecordPath(hub, "h2") {
 		t.Fatalf("the merge rewrote a reference value: hub = %q", got)
+	}
+}
+
+// ONE READ OVER SEVERAL TARGETS. An owner holds several addresses, and "what
+// points at me" is what points at any of them: `refs` is that read, an OR
+// over the targets, and a record pointing at two of them is one row of the
+// page, one unit of the count and one entry of `matches`.
+func TestReferencingManyTargetsIsOneRead(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	graphVocabulary(t, ds)
+	hub := graphPackage + "/hub"
+	spoke := graphPackage + "/spoke"
+	path := func(kind, id string) string { return vocabulary.RecordPath(graphPackage+"/"+kind, id) }
+
+	for _, id := range []string{"work", "home", "other"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: id})
+	}
+	for id, at := range map[string]string{"s-work": "work", "s-home": "home", "s-other": "other"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: spoke, ID: id, Properties: map[string]any{"hub": at}})
+	}
+	// One record pointing at BOTH addresses.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphPackage + "/fan", ID: "f-both", Properties: map[string]any{"hubs": []any{"work", "home"}},
+	})
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphPackage + "/nester", ID: "n-work",
+		Properties: map[string]any{"tool": map[string]any{"callable": "work"}},
+	})
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphPackage + "/loose", ID: "x-home", Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "home")},
+	})
+	// Points at a SPOKE: only a target list spanning two kinds gathers it.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphPackage + "/loose", ID: "x-spoke", Properties: map[string]any{"anything": path("spoke", "s-other")},
+	})
+
+	both := []string{vocabulary.RecordPath(hub, "work"), vocabulary.RecordPath(hub, "home")}
+	want := []string{path("fan", "f-both"), path("loose", "x-home"), path("nester", "n-work"), path("spoke", "s-home"), path("spoke", "s-work")}
+	list := func(f substrate.Filter, first int, after string) *substrate.Page {
+		t.Helper()
+		page, err := ds.List(ctx, substrate.Query{Filter: f, First: first, After: after, Count: true})
+		if err != nil {
+			t.Fatalf("list %+v: %v", f.Referencing, err)
+		}
+		return page
+	}
+	sorted := func(paths []string) string {
+		out := append([]string(nil), paths...)
+		sort.Strings(out)
+		return strings.Join(out, " ")
+	}
+
+	page := list(substrate.Filter{Referencing: &substrate.Referencing{Refs: both}}, 50, "")
+	if got := sorted(pathsOf(page)); got != sorted(want) {
+		t.Fatalf("refs over both addresses = %s\nwant %s", got, sorted(want))
+	}
+	if page.Count == nil || *page.Count != int64(len(want)) {
+		t.Fatalf("count = %v, want %d: the record pointing at both counts once", page.Count, len(want))
+	}
+	if sites := page.Matches[path("fan", "f-both")]; len(sites) != 1 || sites[0].Property != "hubs" {
+		t.Fatalf("the record pointing at both matches %+v, want the one hubs site", sites)
+	}
+	for _, p := range want {
+		if len(page.Matches[p]) == 0 {
+			t.Fatalf("%s is on the page without its match: %+v", p, page.Matches)
+		}
+	}
+
+	// A walk in pages of two sees each record exactly once.
+	seen := map[string]int{}
+	after := ""
+	for pages := 0; ; pages++ {
+		if pages > 10 {
+			t.Fatal("the cursor never terminated")
+		}
+		page := list(substrate.Filter{Referencing: &substrate.Referencing{Refs: both}}, 2, after)
+		for _, p := range pathsOf(page) {
+			seen[p]++
+		}
+		if page.Cursor == "" {
+			break
+		}
+		after = page.Cursor
+	}
+	for _, p := range want {
+		if seen[p] != 1 {
+			t.Errorf("the paged walk returned %s %d times", p, seen[p])
+		}
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("the paged walk saw %v, want %v", seen, want)
+	}
+
+	// The same narrowing the single form takes: one property, one source kind.
+	page = list(substrate.Filter{Referencing: &substrate.Referencing{Refs: both, Property: "hub"}}, 50, "")
+	if got := sorted(pathsOf(page)); got != sorted([]string{path("spoke", "s-home"), path("spoke", "s-work")}) {
+		t.Fatalf("refs narrowed to hub = %s, want the two spokes", got)
+	}
+	page = list(substrate.Filter{Kinds: []string{graphPackage + "/fan"}, Referencing: &substrate.Referencing{Refs: both}}, 50, "")
+	if got := sorted(pathsOf(page)); got != path("fan", "f-both") {
+		t.Fatalf("refs narrowed to the fan kind = %s", got)
+	}
+
+	// Order and repetition in the list do not change the answer.
+	repeated := []string{both[1], both[0], both[1]}
+	if got := sorted(pathsOf(list(substrate.Filter{Referencing: &substrate.Referencing{Refs: repeated}}, 50, ""))); got != sorted(want) {
+		t.Fatalf("refs %v = %s, want %s", repeated, got, sorted(want))
+	}
+
+	// Targets of two kinds are one read too.
+	mixed := []string{vocabulary.RecordPath(hub, "other"), path("spoke", "s-other")}
+	page = list(substrate.Filter{Referencing: &substrate.Referencing{Refs: mixed}}, 50, "")
+	if got := sorted(pathsOf(page)); got != sorted([]string{path("loose", "x-spoke"), path("spoke", "s-other")}) {
+		t.Fatalf("refs across a hub and a spoke = %s", got)
+	}
+}
+
+// A former id of one address still counts: the list resolves each target's
+// trail as the single form does, whether it names the canonical id or the
+// discarded one.
+func TestReferencingManyTargetsFollowsAFormerID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	graphVocabulary(t, ds)
+	hub := graphPackage + "/hub"
+	spoke := graphPackage + "/spoke"
+
+	for _, id := range []string{"work", "home", "old-home"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: id})
+	}
+	for id, at := range map[string]string{"s-work": "work", "s-home": "home", "s-old": "old-home"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: spoke, ID: id, Properties: map[string]any{"hub": at}})
+	}
+	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: hub, Winner: "home", Loser: "old-home"}); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	for name, refs := range map[string][]string{
+		"the canonical ids": {vocabulary.RecordPath(hub, "work"), vocabulary.RecordPath(hub, "home")},
+		"a former id":       {vocabulary.RecordPath(hub, "work"), vocabulary.RecordPath(hub, "old-home")},
+	} {
+		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+			Kinds: []string{spoke}, Referencing: &substrate.Referencing{Refs: refs},
+		}})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := pathsOf(page)
+		sort.Strings(got)
+		if strings.Join(got, " ") != strings.Join([]string{
+			vocabulary.RecordPath(spoke, "s-home"), vocabulary.RecordPath(spoke, "s-old"), vocabulary.RecordPath(spoke, "s-work"),
+		}, " ") {
+			t.Fatalf("%s: refs = %v, want every spoke, the one written under the former id included", name, got)
+		}
+	}
+}
+
+// The target list is bounded, and a list that names no target, or names
+// targets in both spellings at once, is refused rather than read as some
+// other question.
+func TestReferencingRefusesATargetListPastTheCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	graphVocabulary(t, ds)
+	hub := graphPackage + "/hub"
+	mustPut(t, ds, owner, substrate.PutInput{Kind: hub, ID: "h0"})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphPackage + "/spoke", ID: "s0", Properties: map[string]any{"hub": "h0"}})
+
+	atCap := make([]string, substrate.MaxReferencingTargets)
+	for i := range atCap {
+		atCap[i] = vocabulary.RecordPath(hub, "h"+strconv.Itoa(i))
+	}
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Referencing: &substrate.Referencing{Refs: atCap}}})
+	if err != nil {
+		t.Fatalf("a list AT the cap must be read: %v", err)
+	}
+	if len(page.Records) != 1 || page.Records[0].ID != "s0" {
+		t.Fatalf("refs at the cap = %v", pathsOf(page))
+	}
+
+	for name, tc := range map[string]struct {
+		ref  substrate.Referencing
+		want string
+	}{
+		"past the cap": {
+			substrate.Referencing{Refs: append(atCap, vocabulary.RecordPath(hub, "one-more"))},
+			"the cap is " + strconv.Itoa(substrate.MaxReferencingTargets),
+		},
+		"ref and refs": {
+			substrate.Referencing{Ref: atCap[0], Refs: atCap[1:2]}, "set ref or refs, not both",
+		},
+		"ref and an empty refs": {
+			substrate.Referencing{Ref: atCap[0], Refs: []string{}}, "set ref or refs, not both",
+		},
+		"no target": {substrate.Referencing{Property: "hub"}, "name a target"},
+		"a bare id": {substrate.Referencing{Refs: []string{atCap[0], "h1"}}, "referencing.refs[1]"},
+	} {
+		_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Referencing: &tc.ref}})
+		wantErr(t, err, substrate.ErrValidation, name)
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: the refusal %q does not say %q", name, err, tc.want)
+		}
 	}
 }
 

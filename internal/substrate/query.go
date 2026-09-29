@@ -2,6 +2,7 @@ package substrate
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/geoah/substrate/internal/strictjson"
@@ -72,22 +73,52 @@ type Filter struct {
 	// mark is a reading taken at the source's last write, so it clears on the
 	// write that links it (docs/projection.md, decision 0103).
 	Ambiguous *bool `json:"ambiguous,omitempty"`
-	// Referencing narrows to the records holding a reference AT one record:
-	// the reverse read, as a predicate over the refs index rather than a
-	// sub-resource of its own. The target is matched by its canonical id and
-	// every former id, so a pointer written before a merge still counts.
+	// Referencing narrows to the records holding a reference AT one record,
+	// or at any of several: the reverse read, as a predicate over the refs
+	// index rather than a sub-resource of its own. Each target is matched by
+	// its canonical id and every former id, so a pointer written before a
+	// merge still counts.
 	Referencing *Referencing `json:"referencing,omitempty"`
 }
 
-// Referencing names the target of a reverse read. Ref is the target's record
-// path, "<kind>/<id>"; Property, when set, narrows to one reference property
-// of the pointing records.
+// MaxReferencingTargets bounds Referencing.Refs. Each target costs a
+// former-id lookup and widens the refs predicate, so a longer list is
+// refused rather than served slowly.
+const MaxReferencingTargets = 256
+
+// Referencing names the targets of a reverse read. Ref is one target's
+// record path, "<kind>/<id>"; Refs is several, matched as an OR, so one read
+// answers for every record pointing at any of them and a record pointing at
+// two comes back once. Exactly one of the two is set. Property, when set,
+// narrows to one reference property of the pointing records.
 type Referencing struct {
-	Ref      string `json:"ref"`
-	Property string `json:"property,omitempty"`
+	Ref      string   `json:"ref,omitempty"`
+	Refs     []string `json:"refs,omitempty"`
+	Property string   `json:"property,omitempty"`
 }
 
-// ReferenceSite is one place a record points at the referencing target: the
+// Targets returns the record paths the reverse read names: Ref alone, or Refs
+// as given. Both set, neither set, or more Refs than MaxReferencingTargets is
+// a validation error, the same answer on every door that takes a filter. A
+// Refs that is present but empty counts as set: `{"ref": x, "refs": []}` is
+// two spellings at once, not the single form. An empty Ref is the string's
+// zero value and reads as absent, as every omitempty field of the filter does.
+func (r *Referencing) Targets() ([]string, error) {
+	switch {
+	case r.Ref != "" && r.Refs != nil:
+		return nil, fmt.Errorf("%w: referencing: set ref or refs, not both", ErrValidation)
+	case r.Ref != "":
+		return []string{r.Ref}, nil
+	case len(r.Refs) == 0:
+		return nil, fmt.Errorf(`%w: referencing: name a target, ref "<kind>/<id>" or refs, a list of them`, ErrValidation)
+	case len(r.Refs) > MaxReferencingTargets:
+		return nil, fmt.Errorf("%w: referencing.refs names %d targets; the cap is %d",
+			ErrValidation, len(r.Refs), MaxReferencingTargets)
+	}
+	return r.Refs, nil
+}
+
+// ReferenceSite is one place a record points at a referencing target: the
 // declared property, and the dotted address of a nested site
 // ("tools.fields.callable"), empty for a kind's own property.
 type ReferenceSite struct {
@@ -190,7 +221,7 @@ type Page struct {
 	// no entry; the row's own reference value still says where it pointed.
 	Included map[string]*Record `json:"included,omitempty"`
 	// Matches is set on a Filter.Referencing read: for each record on the
-	// page, keyed by its record path, every site at which it points at the
+	// page, keyed by its record path, every site at which it points at a
 	// target. One source can point from two sites, so a page of distinct
 	// records needs this beside it to say which properties matched.
 	Matches map[string][]ReferenceSite `json:"matches,omitempty"`

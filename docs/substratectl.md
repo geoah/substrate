@@ -107,7 +107,10 @@ cursor a page printed. `--expand prop1,prop2` carries the referents of those ref
 properties back with the page (as further `---` documents in `-o yaml`, under
 an `included` key in `-o json`; the table prints the page alone), and
 `--referencing <kind>/<id>` is the reverse read: only the records of the kind
-that point at that one. `--orphaned` lists the
+that point at that one. Repeat it to list the records pointing at any of
+several in one read, each record once
+(`--referencing <kind>/<id> --referencing <kind>/<id>` sends
+`referencing.refs`). `--orphaned` lists the
 [orphaned mapping targets](projection.md#when-the-last-source-goes-the-orphan-mark)
 of that kind — rows minted from a source that is now gone, with nothing above
 the machine tier holding a property (`--orphaned=false` is the complement).

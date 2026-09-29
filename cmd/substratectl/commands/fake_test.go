@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -897,13 +898,17 @@ func refValue(v any) (string, bool) {
 }
 
 // pointsAt reports whether any of e's reference properties (or the one
-// named) holds the target.
+// named) holds a target, `ref` or any of `refs`.
 func pointsAt(e *substrate.Record, target *substrate.Referencing) bool {
+	targets, err := target.Targets()
+	if err != nil {
+		return false
+	}
 	for name, v := range e.Properties {
 		if target.Property != "" && name != target.Property {
 			continue
 		}
-		if ref, ok := refValue(v); ok && ref == target.Ref {
+		if ref, ok := refValue(v); ok && slices.Contains(targets, ref) {
 			return true
 		}
 	}
