@@ -97,11 +97,16 @@ export function lastChatQueryOptions() {
   })
 }
 
-/** How many of one agent's runs its page reads. */
-export const AGENT_RUNS_WINDOW = 50
+/** How many of one agent's runs its page reads: the wire's page cap
+ * (`substrate.Query.First`), so every figure on the page comes from one
+ * read and the page says where that read stopped. */
+export const AGENT_RUNS_WINDOW = 500
 
-/** One agent's runs, newest first: every thread it ran, whatever started it
- * (a chat, a trigger, another agent, a judgement). */
+/** One agent's runs, most recently active first: every thread it ran,
+ * whatever started it (a chat, a trigger, another agent, a judgement).
+ * Ordered by `updatedAt`, which every settle moves, so an old chat that went
+ * on today is inside the read, and a read that reaches back past a moment
+ * holds every run active since it. */
 export function agentRunsQueryOptions(agentId: string) {
   return queryOptions({
     ...recordsQueryOptions({
@@ -116,7 +121,7 @@ export function agentRunsQueryOptions(agentId: string) {
           },
         },
       },
-      orderBy: "startedAt:desc",
+      orderBy: "updatedAt:desc",
     }),
     enabled: Boolean(agentId),
   })
