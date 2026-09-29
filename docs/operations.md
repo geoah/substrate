@@ -629,10 +629,29 @@ repair is to run that release or a later one, or to restore the database from
 the copy taken before the upgrade. This is the database's own downgrade
 refusal, beside the two per-repository ones above, and it closes the rollback
 even when no repository was written: a new binary that carries a migration
-applies it at its first boot. The operator commands that open the engine run
-the same runner, so an older `substratectl repository verify`, `repository
-rebuild`, `repository reembed` or `user reset` refuses the same database;
-`repository list` and `inspect` read the tables directly and do not.
+applies it at its first boot. The operator commands that open the engine
+refuse the same database: `repository rebuild`, `repository
+rotate-generation`, `repository snapshot` and `user reset` run the same
+runner, and `repository verify` and `repository reembed` read the same table
+(below). `repository list` and `inspect` read the tables directly and do not.
+
+**A read-only operator command applies no migration.** `repository verify`
+and `repository reembed` run beside a live server, and a newer `substratectl`
+that migrated that server's database would close its rollback. So they read
+`schema_migrations` and apply nothing: a database missing a migration they
+carry is refused, naming each one, and a database holding one they do not
+carry is refused as the boot refuses it. The refusal reads:
+
+```text
+substrate/engine: the database has not applied migrations this binary carries:
+1 migration(s) pending, 10 (0010_records_matching), and this process opened the
+database read-only; open it once with a process that writes (the server's boot
+applies them), or run the substratectl of the release the server runs
+```
+
+Run the `substratectl` of the release the server runs. The writing commands
+need the server stopped and apply pending migrations as its boot would, so
+run them with the server's release too.
 
 **A migration this binary does not recognize stops the boot too.** The same
 read compares the recorded hashes against the files the binary carries. A
@@ -960,7 +979,7 @@ anything without them.
 **Four of them run beside a live server; four need it stopped; one takes no
 database.** `repository list` and `repository inspect` read the tables
 directly; `repository verify` and `repository reembed` open the engine
-read-only, so they run no boot check and append nothing: `verify` reports an unfinished final transaction or a table
+read-only, so they apply no migration, run no boot check and append nothing: `verify` reports an unfinished final transaction or a table
 ahead of its file as a finding instead of repairing it, and `reembed` writes
 queue rows, which are not changelog entries. `repository rebuild`,
 `repository rotate-generation`, `repository snapshot` and `user reset` open the
@@ -1022,8 +1041,9 @@ the exec path needs nothing open at all.
   point is printed and the entry it names must be in the files with the
   recorded checksum. It reports the head `(seq, checksum)` or every finding
   by seq, digest, ref or file name, never repairs the repository it judges
-  (opening the engine still applies pending schema migrations, as every
-  operator command does), and exits nonzero on any finding. It reads the
+  (and applies no migration: see
+  [upgrading the binary](#upgrading-the-binary)), and exits nonzero on any
+  finding. It reads the
   segment files twice: once for the sidecar digests and every line's `sum`,
   several segments at a time, and once to hold each table row's stamped
   checksum to the `sum` its line carries. `--recanonicalize` also recomputes

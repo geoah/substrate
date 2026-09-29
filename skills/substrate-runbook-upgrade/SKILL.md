@@ -45,11 +45,14 @@ is the backup taken in step 5.
 
 ## Run operator commands with the server's own binary
 
-The operator commands (`substratectl repository …`, `substratectl user
-reset`) open the engine, and opening the engine applies the schema
-migrations the CLI carries. A `substratectl` newer than the server therefore
-migrates the database under the old server and closes the rollback before
-the backup exists. An older one refuses a database the new server migrated.
+The writing operator commands (`substratectl repository rebuild`,
+`rotate-generation`, `snapshot`, `substratectl user reset`) open the engine
+the way the server does, and that open applies the schema migrations the CLI
+carries. A `substratectl` newer than the server therefore migrates the
+database and closes the rollback before the backup exists. `repository
+verify` and `repository reembed` open read-only and apply nothing: a newer
+one refuses a database it would migrate, naming the migrations it carries.
+An older one of any of them refuses a database the new server migrated.
 `repository list` and `repository inspect` read the tables directly and are
 safe with any version.
 

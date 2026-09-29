@@ -104,6 +104,13 @@ func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {
 	if len(pending) == 0 {
 		return nil
 	}
+	// A read-only process REFUSES a pending migration rather than reading
+	// through it, as checkMigrated refuses a pending schema migration. It may
+	// not run one: that appends to a directory another process writes. And
+	// it may not read past one: the rows a migration rewrites are the ones
+	// the stored vocabulary load may refuse or read another way, so a verify
+	// or a reembed over them would judge a repository the writer does not
+	// serve.
 	if ds.svc.readOnly {
 		names := make([]string, 0, len(pending))
 		for _, m := range pending {

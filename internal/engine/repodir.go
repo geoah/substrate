@@ -59,9 +59,9 @@ package engine
 // with ErrChangelogLocked instead of appending seqs the server is about to
 // append too. The boot check's own writers are opened and closed inside
 // reconcileDir, so a server never holds a lock against itself. A process that
-// must run beside the server opens with WithDirectoryReadOnly: no boot check,
-// no writer, every inTx write refused, and a verify that reports rather than
-// repairs.
+// must run beside the server opens with WithDirectoryReadOnly: no migration,
+// no boot check, no writer, every inTx write refused, and a verify that
+// reports rather than repairs.
 
 import (
 	"bytes"

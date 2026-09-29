@@ -307,6 +307,59 @@ func TestRepositoryMigrationsRefuseADivergentLedger(t *testing.T) {
 	}
 }
 
+// A read-only process runs no repository migration and reads past none, as it
+// applies no schema migration: a repository whose ledger lacks the ones this
+// binary carries is refused at its open, naming them, and the ledger stays
+// empty. The next open by a process that writes runs them.
+func TestAReadOnlyOpenRefusesARepositoryWithAPendingMigration(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	root := t.TempDir()
+	repo := testdb.Repository(t)
+	svc := rmOpen(t, dsn, root)
+	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	if _, err := svc.Dataset(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	_ = svc.Close()
+	rmClearLedger(t, dsn, repo)
+	raw, err := engine.OpenScopedDB(dsn, repo, engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+
+	ro, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(root), engine.WithDirectoryReadOnly())
+	if err != nil {
+		t.Fatalf("read-only open: %v", err)
+	}
+	_, err = ro.Dataset(ctx, repo)
+	_ = ro.Close()
+	if !errors.Is(err, substrate.ErrUnavailable) {
+		t.Fatalf("a read-only open of a repository with pending migrations = %v, want ErrUnavailable", err)
+	}
+	for _, want := range []string{"1 (qualify_bare_declaration_names)", "2 (qualify_bare_selector_kinds)", "read-only"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	if got := rmLedger(t, raw); len(got) != 0 {
+		t.Fatalf("a read-only open wrote the ledger: %v", got)
+	}
+
+	svc2 := rmOpen(t, dsn, root)
+	t.Cleanup(func() { _ = svc2.Close() })
+	if _, err := svc2.Dataset(ctx, repo); err != nil {
+		t.Fatalf("the writer's open after the refusal: %v", err)
+	}
+	if got := rmLedger(t, raw); len(got) != 2 {
+		t.Fatalf("the writer's open left the ledger %v, want both migrations", got)
+	}
+}
+
 // THE IMPORT PATH. A repository directory from another installation is folded
 // at boot under whatever of its closure this binary admits, and its ledger
 // stays behind in the source database, so the migration runs at the imported

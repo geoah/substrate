@@ -61,12 +61,16 @@ func (a *app) dsn() (string, error) {
 	return "", fmt.Errorf("no database URL: pass --dsn or set %s — the operator commands act on the box's Postgres directly, never over HTTP", dsnEnv)
 }
 
-// openEngineReadOnly opens the engine BESIDE a running server: no boot check,
-// no changelog writer, every write refused (engine.WithDirectoryReadOnly). It
-// is what `repository verify` and `reembed` ride, because both must be safe
-// against a live server and neither appends to a repository. Whatever
-// credential key the environment holds is used; its absence is not fatal
-// here, since nothing sealed is written.
+// openEngineReadOnly opens the engine BESIDE a running server
+// (engine.WithDirectoryReadOnly): no schema or repository migration, no boot
+// check, no changelog writer, every changelog write refused. It is what
+// `repository verify` and `reembed` ride, because both must be safe against a
+// live server and neither appends to a repository. A substratectl whose
+// migrations differ from the database's refuses: newer, because applying them
+// would close the running server's rollback (engine.ErrDatabaseOlder); older,
+// as the server's boot refuses (engine.ErrDatabaseNewer). Whatever credential
+// key the environment holds is used; its absence is not fatal here, since
+// nothing sealed is written.
 func (a *app) openEngineReadOnly(ctx context.Context) (engine.Operator, error) {
 	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), true)
 }
