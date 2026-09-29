@@ -480,7 +480,7 @@ and do not block a merge.
 | Job | Task | Is | Required |
 | --- | ---- | -- | -------- |
 | conventional commits | `commits:check` (in `pr.yml`) | the PR title and every commit subject are conventional commits, a break carries a `BREAKING CHANGE:` footer with its steps, and a release pull request touches only the changelog ([releasing](releasing.md)) | yes |
-| lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the three diff guards: the `kinds/` and `samples/` version bump (`kinds:check`), the write-once files (`frozen:check`), and a decision number another live branch took first (`decisions:check`) | yes |
+| lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the three diff guards: the `kinds/` and `samples/` version bump and new kind names (`kinds:check`), the write-once files (`frozen:check`), and a decision number another live branch took first (`decisions:check`) | yes |
 | lint go | `ci:lint:go` | golangci-lint and the Go formatting check | yes |
 | console | `ci:console` | typecheck, lint, format, build | yes |
 | console test | `ci:console:test` | the console's vitest suite | yes |

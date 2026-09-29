@@ -24,6 +24,8 @@
 //     and head may not declare a kind, property, enum value or state a
 //     retirement names. The boot upgrade refuses both at every repository's
 //     open; this refuses them before the tree ships.
+//   - a kind id head adds carries no dead word from docs/terms.md and keeps
+//     the stem of the family it ends like (names.go).
 //
 // Comment-only edits decode to identical data and pass free.
 //
@@ -31,11 +33,12 @@
 // <authority>/<package>/ and samples/ holds <package>/, and a package
 // directory is any directory holding manifests.
 //
-// Usage: vocabularydiff <base-dir> <head-dir>
+// Usage: vocabularydiff [-terms docs/terms.md] <base-dir> <head-dir>
 package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -52,29 +55,46 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: vocabularydiff <base-dir> <head-dir>")
+	terms := flag.String("terms", "docs/terms.md", "the page whose dead words a new kind id may not carry")
+	flag.Parse()
+	if flag.NArg() != 2 {
+		fmt.Fprintln(os.Stderr, "usage: vocabularydiff [-terms docs/terms.md] <base-dir> <head-dir>")
 		os.Exit(2)
 	}
-	base, err := loadTree(os.Args[1])
+	md, err := os.ReadFile(*terms)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vocabularydiff: %v\n", err)
+		os.Exit(2)
+	}
+	vocab, err := parseTerms(string(md))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vocabularydiff: %s: %v\n", *terms, err)
+		os.Exit(2)
+	}
+	base, err := loadTree(flag.Arg(0))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vocabularydiff: base tree: %v\n", err)
 		os.Exit(2)
 	}
-	head, err := loadTree(os.Args[2])
+	head, err := loadTree(flag.Arg(1))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vocabularydiff: head tree: %v\n", err)
 		os.Exit(2)
 	}
-	violations := diffTrees(base, head)
-	if len(violations) == 0 {
-		return
-	}
-	for _, v := range violations {
+	versions := diffTrees(base, head)
+	names := nameViolations(base, head, vocab)
+	for _, v := range append(versions, names...) {
 		fmt.Fprintln(os.Stderr, v)
 	}
-	fmt.Fprintf(os.Stderr, "\nvocabularydiff: %d violation(s). A changed declaration ships a changed version: bump the kind's own `data.version`, or the package's `data.version` in its bundle.yaml (see CLAUDE.md).\n", len(violations))
-	os.Exit(1)
+	if len(versions) > 0 {
+		fmt.Fprintf(os.Stderr, "\nvocabularydiff: %d violation(s). A changed declaration ships a changed version: bump the kind's own `data.version`, or the package's `data.version` in its bundle.yaml (see CLAUDE.md).\n", len(versions))
+	}
+	if len(names) > 0 {
+		fmt.Fprintf(os.Stderr, "\nvocabularydiff: %d naming violation(s). A new kind id carries no dead word from %s, and a name that ends like a family's member starts with the family's stem or with the kind it belongs to (cmd/vocabularydiff/names.go).\n", len(names), *terms)
+	}
+	if len(versions)+len(names) > 0 {
+		os.Exit(1)
+	}
 }
 
 // decl is one schema document as the diff sees it: its manifest kind (the
