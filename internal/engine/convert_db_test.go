@@ -1244,7 +1244,10 @@ func TestStateEntryEntersEveryRecordThatPredatesTheMachine(t *testing.T) {
 // transition writes is written by the transition and never by the drop.
 // (`notifies:` is the other declared transition effect; only the seeded kinds
 // may declare it, and they reach a drop only through the boot upgrade, which
-// refuses a lossy step.)
+// refuses a lossy step.) A second machine, `review`, stays declared: the drop
+// leaves it alone, and the change values read lists only the state that moved.
+// A record tombstoned before the drop is not converted, and a put restoring it
+// afterwards comes back without the dropped state.
 func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1258,8 +1261,17 @@ func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 			map[string]any{"from": "standing", "to": "handled", "stamps": map[string]any{"handledAt": "now"}},
 		},
 	}
-	if err := cvApply(t, ds, map[string]any{"name": name, "handledAt": handledAt, "status": status}); err != nil {
+	review := map[string]any{
+		"type": "state", "states": []any{"pending", "approved"}, "initial": "pending",
+		"transitions": []any{map[string]any{"from": "pending", "to": "approved"}},
+	}
+	kept := map[string]any{"name": name, "handledAt": handledAt, "review": review}
+	if err := cvApply(t, ds, map[string]any{"name": name, "handledAt": handledAt, "status": status, "review": review}); err != nil {
 		t.Fatalf("install the package: %v", err)
+	}
+	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "d"}})
+	if _, err := ds.Delete(ctx, owner, cvWidget, gone.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("tombstone %s: %v", gone.ID, err)
 	}
 	open := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "a"}})
 	standing := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "b"}})
@@ -1273,7 +1285,7 @@ func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 		t.Fatalf("fixture: open=%v standing=%v handled=%v", open.Properties, standing.Properties, handled.Properties)
 	}
 
-	docs := cvDocs(map[string]any{"name": name, "handledAt": handledAt})
+	docs := cvDocs(kept)
 	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
 	if err != nil {
 		t.Fatalf("plan: %v", err)
@@ -1286,7 +1298,7 @@ func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 	}
 	// Unconfirmed, the drop refuses as lossy, naming the step with its count
 	// and the hash a confirmation carries.
-	wantLossyRefusal(t, ds, cvApply(t, ds, map[string]any{"name": name, "handledAt": handledAt}), open,
+	wantLossyRefusal(t, ds, cvApply(t, ds, kept), open,
 		`property "status" dropped, its value removed from 3 live records`,
 		"planHash "+plan.PlanHash)
 
@@ -1316,14 +1328,14 @@ func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 			t.Fatalf("%s was not rewritten under the new declaration: version %d -> %d, kindVersion %d (want %d)",
 				r.ID, r.Version, got.Version, got.KindVersion, want)
 		}
-		if got.Properties["name"] != r.Properties["name"] {
+		if got.Properties["name"] != r.Properties["name"] || got.Properties["review"] != "pending" {
 			t.Fatalf("%s lost a property the drop does not touch: %v", r.ID, got.Properties)
 		}
 	}
 	db := rawDB(t, dsn)
 	var holding int
-	if err := db.QueryRow(`SELECT count(*) FROM records WHERE kind = $1 AND states ? 'status'`, cvWidget).Scan(&holding); err != nil || holding != 0 {
-		t.Fatalf("records still holding the state in the states column = %d, %v", holding, err)
+	if err := db.QueryRow(`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND states ? 'status'`, cvWidget).Scan(&holding); err != nil || holding != 0 {
+		t.Fatalf("live records still holding the state in the states column = %d, %v", holding, err)
 	}
 	// No transition ran: the records that never reached `handled` carry no
 	// stamp, and the one that did keeps the stamp its own transition wrote.
@@ -1379,13 +1391,33 @@ func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 	// The value-annotated change feed shows the state leaving: the fold
 	// carries the states column whole, so the removal is read off the
 	// entry's `nulled` names, with the before the record's last transition
-	// left.
-	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{cvWidget}, RecordID: handled.ID, Values: true}, 1)
-	if err != nil || len(changes) != 1 || len(changes[0].Affected) == 0 {
-		t.Fatalf("the drop's change row = %+v, %v", changes, err)
+	// left. `review` rides the same whole column on the drop and on the
+	// transition before it, unmoved, and is listed on neither.
+	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{cvWidget}, RecordID: handled.ID, Values: true}, 2)
+	if err != nil || len(changes) != 2 || len(changes[0].Affected) == 0 || len(changes[1].Affected) == 0 {
+		t.Fatalf("the drop's change rows = %+v, %v", changes, err)
 	}
 	if got := jsonOf(t, changes[0].Affected[0].Properties); got != `[{"name":"status","before":"handled"}]` {
 		t.Fatalf("the drop's change reads %s, want status leaving handled", got)
 	}
+	var moved []string
+	for _, pc := range changes[1].Affected[0].Properties {
+		moved = append(moved, pc.Name)
+		if pc.Name == "status" && (pc.Before != "standing" || pc.After != "handled") {
+			t.Fatalf("the transition reads %s, want standing to handled", jsonOf(t, pc))
+		}
+	}
+	if strings.Join(moved, ",") != "handledAt,status" {
+		t.Fatalf("the transition lists %v, want the stamp and the state it moved", moved)
+	}
+
+	// A record tombstoned before the drop was not converted, and a put that
+	// restores it comes back holding only the machines the kind declares, so
+	// its read applies back unchanged.
+	restored := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: map[string]any{"name": "d"}})
+	if _, still := restored.Properties["status"]; still || restored.Properties["review"] != "pending" {
+		t.Fatalf("the restored record holds %v, want review alone", restored.Properties)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: restored.Properties})
 	cvReplays(t, svc, ds)
 }

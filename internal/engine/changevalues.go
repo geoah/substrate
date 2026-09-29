@@ -48,6 +48,11 @@ type valueAt struct {
 	// title, a declared body, the three instants) or the machine states: none
 	// of them can hold a sensitive datatype, so none is redacted.
 	column bool
+	// state marks a machine's state read off the states column, which the
+	// fold carries whole: every machine a record holds is in the delta,
+	// moved or not, so a state whose before is its after moved nothing
+	// (unmovedStates).
+	state bool
 }
 
 // recordChange is what one entry did to one record, composed across the
@@ -177,7 +182,7 @@ func movedBy(ty *vocabulary.Kind, d *rowDelta, into map[string]valueAt) {
 	column(substrate.PropDueAt, d.DueAt)
 	if d.States != nil {
 		for name, state := range *d.States {
-			into[name] = valueAt{value: state, present: true, column: true}
+			into[name] = valueAt{value: state, present: true, column: true, state: true}
 		}
 	}
 }
@@ -316,6 +321,13 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 	reg := ds.registry()
 	walks := map[eref]*recordWalk{}
 	var order []*recordWalk
+	// The affected records that list a machine state, and which names are
+	// states there: the walk may find some of them unmoved (unmovedStates).
+	type statedRecord struct {
+		a      *substrate.AffectedRecord
+		states map[string]bool
+	}
+	var stated []statedRecord
 	for i := range changes {
 		c := &changes[i]
 		for j := range c.Affected {
@@ -340,13 +352,21 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 				}
 			}
 			props := make([]substrate.PropertyChange, 0, len(rc.moved))
+			var states map[string]bool
 			for _, name := range sortedKeys(rc.moved) {
 				if gone[name] {
 					continue
 				}
 				pc := substrate.PropertyChange{Name: name, RenamedFrom: renamed[name]}
-				if v := rc.moved[name]; v.present {
+				v := rc.moved[name]
+				if v.present {
 					pc.After = v.render(ty, name)
+				}
+				if v.state {
+					if states == nil {
+						states = map[string]bool{}
+					}
+					states[name] = true
 				}
 				props = append(props, pc)
 			}
@@ -354,6 +374,9 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			if rc.created {
 				// Nothing precedes a creation: every before is absent.
 				continue
+			}
+			if states != nil {
+				stated = append(stated, statedRecord{a: a, states: states})
 			}
 			w := walks[ref]
 			if w == nil {
@@ -398,9 +421,36 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 	if err != nil {
 		return err
 	}
-	return runWalks(order, budget-spent, func(active []*recordWalk, limit int) ([][]earlierEntry, error) {
+	if err := runWalks(order, budget-spent, func(active []*recordWalk, limit int) ([][]earlierEntry, error) {
 		return ds.walkRound(ctx, active, limit)
-	})
+	}); err != nil {
+		return err
+	}
+	for _, s := range stated {
+		s.a.Properties = unmovedStates(s.a.Properties, s.states)
+	}
+	return nil
+}
+
+// unmovedStates drops the machine states an entry listed without moving
+// them. The fold carries the states column whole (rowDelta.States), so an
+// entry that moves one machine, or that clears a dropped one (convert.go),
+// lists every other machine the record holds too; once the walk has found
+// its before, a state whose before is its after moved nothing. states names
+// the entries read off the states column. It runs after the walk, which
+// holds pointers into the list it rewrites. A state whose before is unknown
+// stays: nothing says it did not move.
+func unmovedStates(props []substrate.PropertyChange, states map[string]bool) []substrate.PropertyChange {
+	var out []substrate.PropertyChange
+	for _, pc := range props {
+		before, had := pc.Before.(string)
+		after, has := pc.After.(string)
+		if states[pc.Name] && had && has && before == after && !pc.BeforeUnknown {
+			continue
+		}
+		out = append(out, pc)
+	}
+	return out
 }
 
 // runWalks steps every walk through the rounds read returns until each is
