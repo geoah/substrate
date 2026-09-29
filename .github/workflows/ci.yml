@@ -61,12 +61,28 @@
 # note there. A cache that does not pay for its restore is a slower CI with
 # extra moving parts, so measure cold against warm before adding another.
 #
-# Keys are per-job on purpose. A cache entry is immutable once written, so two
-# jobs sharing one key means whichever finishes first wins and the other
-# uploads nothing; the lint job's golangci-lint build cache and the test job's
-# `go test` build cache are different working sets anyway. The engine shards
-# are the one deliberate exception: they build the same test binary, so any
-# shard's upload serves every other.
+# Each Go job restores its cache (actions/cache/restore) before its task and
+# saves it (actions/cache/save) after, and only a push to main saves. The key
+# is `<os>-go-<job>-<go.sum hash>-<commit>`, and the commit must stay in it:
+# an entry is immutable once written, so a key of go.sum alone is saved once
+# and every later run recompiles whatever the tree gained since. A restore
+# that misses the exact key takes the newest entry with the same go.sum, then
+# the newest of any.
+#
+# A pull request restores the Go caches and never saves them. GitHub scopes an
+# entry to the ref that wrote it, so main reads only what a push to main wrote,
+# whatever a pull request or a fork runs. One main commit's entries are about
+# 4 GB of the repository's 10 GB, so an entry per pull request commit would
+# evict main's. (The uv cache below still saves on a pull request: its key is
+# its inputs, so it never goes stale, and an entry is 1 MB.)
+# Every restore reads the newest main entry, so an older commit's entries stop
+# being read, and GitHub evicts the least recently used first.
+#
+# Keys are per-job on purpose: two jobs on one key race to write it, the loser's
+# working set is never saved, and the working sets differ (golangci-lint's
+# analysis cache, four foreign GOARCHes, -race and -cover objects). The engine
+# shards and the two catalog halves are the exception: each group builds one
+# test binary, so its first shard saves for the others.
 name: ci
 
 on:
@@ -109,17 +125,28 @@ jobs:
           version: 2026.9.2
           install_args: go golangci-lint yamlfmt yamllint shellcheck ruff
             lychee goreleaser uv
-      # golangci-lint typechecks the module, so it wants the same module and
-      # build caches `go test` does, plus its own analysis cache.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # kinds:check compiles cmd/vocabularydiff. golangci-lint runs in `lint
+      # go`, so this entry has no analysis cache and a key of its own.
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-            ~/.cache/golangci-lint
-          key: ${{ runner.os }}-go-lint-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-lint-
+          key: ${{ runner.os }}-go-lint-${{ hashFiles('go.sum') }}-${{ github.sha
+            }}
+          restore-keys: |
+            ${{ runner.os }}-go-lint-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-lint-
       - run: mise run ci:lint
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   lint-go:
     name: lint go
@@ -133,16 +160,31 @@ jobs:
           version: 2026.9.2
           install_args: go golangci-lint
       # golangci-lint typechecks the module, so it wants the same module and
-      # build caches `go test` does, plus its own analysis cache.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # build caches `go test` does, plus its own analysis cache. The key is
+      # `go-golangci-`, not `go-lint-go-`: `lint`'s restore key `go-lint-`
+      # would match that.
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
             ~/.cache/golangci-lint
-          key: ${{ runner.os }}-go-lint-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-lint-
+          key: ${{ runner.os }}-go-golangci-${{ hashFiles('go.sum') }}-${{
+            github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-go-golangci-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-golangci-
       - run: mise run ci:lint:go
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   cross:
     name: cross compile
@@ -157,14 +199,26 @@ jobs:
           install_args: go
       # Its own key: this job's working set is four foreign GOARCHes, which the
       # test job's cache never holds and would only evict.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-cross-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-cross-
+          key: ${{ runner.os }}-go-cross-${{ hashFiles('go.sum') }}-${{ github.sha
+            }}
+          restore-keys: |
+            ${{ runner.os }}-go-cross-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-cross-
       - run: mise run ci:cross
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   changes:
     name: changes
@@ -195,19 +249,33 @@ jobs:
           version: 2026.9.2
           install_args: go uv
       - if: steps.changes.outputs.go == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-test-
+          key: ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}-${{ github.sha
+            }}
+          restore-keys: |
+            ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-test-
       - if: steps.changes.outputs.go == 'true'
         run: mise run ci:go
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   # The database packages outside the engine, split in two so neither waits
   # on the other: catalog alone is half of their time. `-p 1` inside each,
-  # because the packages of one run share the one database.
+  # because the packages of one run share the one database. `cache` names the
+  # Go cache entry: the catalog halves build one test binary and `rest` builds
+  # others, so each task keeps its own.
   db:
     name: db ${{ matrix.part }}
     runs-on: ubuntu-latest
@@ -218,14 +286,17 @@ jobs:
         include:
           - part: catalog 1/2
             task: "ci:db:catalog"
+            cache: catalog
             shard: 1
             shards: 2
           - part: catalog 2/2
             task: "ci:db:catalog"
+            cache: catalog
             shard: 2
             shards: 2
           - part: rest
             task: "ci:db:rest"
+            cache: rest
             shard: 1
             shards: 1
     # The database suites start their own pgvector container through
@@ -269,13 +340,17 @@ jobs:
           version: 2026.9.2
           install_args: go uv
       - if: steps.changes.outputs.go == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-db-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-db-
+          key: ${{ runner.os }}-go-db-${{ matrix.cache }}-${{ hashFiles('go.sum')
+            }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-go-db-${{ matrix.cache }}-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-db-${{ matrix.cache }}-
       # uv's own cache, which only this job needs: internal/providertest warms
       # a PEP 723 body for every provider closure, and uv resolves and
       # downloads each one's dependencies to run it. Its own cache entry, not
@@ -293,6 +368,15 @@ jobs:
           restore-keys: ${{ runner.os }}-uv-
       - if: steps.changes.outputs.go == 'true'
         run: mise run ${{ matrix.task }}
+      # The first shard of each task saves; catalog 2/2 builds what 1/2 did.
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   engine:
     name: engine ${{ matrix.shard }}/${{ strategy.job-total }}
@@ -332,17 +416,29 @@ jobs:
           version: 2026.9.2
           install_args: go
       # One key for every shard: they all build the one engine test binary, so
-      # the first to finish uploads what the rest would have.
+      # shard 1 saves for the rest.
       - if: steps.changes.outputs.go == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-engine-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-engine-
+          key: ${{ runner.os }}-go-engine-${{ hashFiles('go.sum') }}-${{ github.sha
+            }}
+          restore-keys: |
+            ${{ runner.os }}-go-engine-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-engine-
       - if: steps.changes.outputs.go == 'true'
         run: mise run ci:engine
+      - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
+          && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   providers:
     name: providers e2e
@@ -375,13 +471,17 @@ jobs:
         with:
           experimental: true
           version: 2026.9.2
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-providers-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-providers-
+          key: ${{ runner.os }}-go-providers-${{ hashFiles('go.sum') }}-${{
+            github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-go-providers-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-providers-
       # The same uv cache the `go test` job keeps: the sync bodies' PEP 723
       # blocks resolve here too, once per bundle.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -392,6 +492,14 @@ jobs:
             }}
           restore-keys: ${{ runner.os }}-uv-
       - run: mise run ci:providers
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   # Not in `go gate`: one serial scenario past the required budget (ci:drill).
   drill:
@@ -423,14 +531,26 @@ jobs:
           experimental: true
           version: 2026.9.2
           install_args: go
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-drill-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-drill-
+          key: ${{ runner.os }}-go-drill-${{ hashFiles('go.sum') }}-${{ github.sha
+            }}
+          restore-keys: |
+            ${{ runner.os }}-go-drill-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-drill-
       - run: mise run ci:drill
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   gate:
     name: go gate
@@ -475,14 +595,26 @@ jobs:
           version: 2026.9.2
       # Its own key: -covermode=atomic instruments every package, so the
       # objects `go test` and the shards cache are of no use here.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-coverage-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-coverage-
+          key: ${{ runner.os }}-go-coverage-${{ hashFiles('go.sum') }}-${{
+            github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-go-coverage-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-coverage-
       - run: mise run ci:coverage
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
       # The profile, kept as an artifact rather than sent to a coverage
       # service. There is no threshold and no badge on purpose (see
       # `test:coverage` in .mise.toml): this is here so a reviewer asking "is
@@ -510,14 +642,26 @@ jobs:
           install_args: go uv
       # Its own key: -race builds a differently-instrumented object for every
       # package, so sharing the `go test` job's cache would only evict it.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-race-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-race-
+          key: ${{ runner.os }}-go-race-${{ hashFiles('go.sum') }}-${{ github.sha
+            }}
+          restore-keys: |
+            ${{ runner.os }}-go-race-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-race-
       - run: mise run ci:race
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   audit:
     name: audit
@@ -533,14 +677,26 @@ jobs:
         with:
           experimental: true
           version: 2026.9.2
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-audit-${{ hashFiles('go.sum') }}
-          restore-keys: ${{ runner.os }}-go-audit-
+          key: ${{ runner.os }}-go-audit-${{ hashFiles('go.sum') }}-${{ github.sha
+            }}
+          restore-keys: |
+            ${{ runner.os }}-go-audit-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-audit-
       - run: mise run ci:audit
+      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
+          'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   console:
     name: console
