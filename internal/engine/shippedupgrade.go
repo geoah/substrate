@@ -19,6 +19,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -221,15 +222,22 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	if candidate != nil {
 		// A kind whose stored declaration stands still moves where a
 		// refinement it uses moves, so it is counted, converted and held to
-		// its retirements like a kind the projection rewrites. It is compared
-		// against the candidate, which holds its stored declaration resolved
-		// against the shipped propertytype; the tree holds its embedded twin,
-		// or nothing once the tree stops shipping it.
+		// its retirements and its defaults like a kind the projection
+		// rewrites. It is compared against the candidate, which holds its
+		// stored declaration resolved against the shipped propertytype; the
+		// tree holds its embedded twin, or nothing once the tree stops
+		// shipping it. A default the twin already refused above is the same
+		// line, and is not listed twice.
 		for _, ident := range refinedStandingKinds(current, reg, candidate, st.upgrade, keptIdents) {
 			curT, _ := current.ByIdentity(ident)
 			candT, _ := candidate.ByIdentity(ident)
 			st.narrowings = append(st.narrowings, typeNarrowings(curT, candT, moved)...)
 			st.refused = append(st.refused, kindRetirementGuards(curT, candT)...)
+			for _, line := range kindDefaultProblems(candT) {
+				if !slices.Contains(st.refused, line) {
+					st.refused = append(st.refused, line)
+				}
+			}
 			st.conversions.classifyKind(curT, candT)
 		}
 		st.refused = append(st.refused, renameGuards(current, candidate, st.conversions.renames)...)

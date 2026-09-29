@@ -202,13 +202,19 @@ func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bo
 			continue
 		}
 		for _, tn := range a.KindOrder {
-			ty := a.Kinds[tn]
-			for _, pname := range ty.PropOrder {
-				problems = append(problems, declaredDefaultProblems(ty.Identity, "property "+strconv.Quote(pname), "property", ty.Props[pname])...)
-			}
+			problems = append(problems, kindDefaultProblems(a.Kinds[tn])...)
 		}
 	}
 	sort.Strings(problems)
+	return problems
+}
+
+// kindDefaultProblems is checkDeclaredDefaults for one kind.
+func kindDefaultProblems(ty *vocabulary.Kind) []string {
+	var problems []string
+	for _, pname := range ty.PropOrder {
+		problems = append(problems, declaredDefaultProblems(ty.Identity, "property "+strconv.Quote(pname), "property", ty.Props[pname])...)
+	}
 	return problems
 }
 
