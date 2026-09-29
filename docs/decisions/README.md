@@ -301,3 +301,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0140](0140-money-is-an-integer-amount-of-its-currencys-minor-unit.md) | Money is an integer amount of its currency's minor unit | accepted |
 | [0141](0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md) | A paged drain names its cursor by hash, and a park carries it whole | accepted |
 | [0142](0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md) | A schedule fire that settles retires its trigger's older parked fires | accepted |
+| [0143](0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md) | A token has full access to its repository, and a login token does not expire | accepted |
