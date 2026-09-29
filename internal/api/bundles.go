@@ -334,12 +334,20 @@ func (h *handler) writeOAuthReturnPage(w http.ResponseWriter, o oauthOutcome) {
 		link = `<p><a href="` + template.HTMLEscapeString(base) + `">Return to the console</a></p>`
 	}
 
+	// The page's one inline script runs by a per-response NONCE, not by a
+	// route exemption: this response replaces the console policy with one
+	// that allows no source at all except a script carrying this nonce, so a
+	// script that reached the markup any other way does not run here either.
+	// The nonce is fresh per response: a fixed one is public, and markup
+	// injected into the page could simply carry it.
+	nonce := scriptNonce()
+
 	page := `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Substrate — connection</title></head>
 <body>
 <p>` + template.HTMLEscapeString(heading) + `</p>` + link + `
-<script>
+<script nonce="` + nonce + `">
 (function(){
   var msg = ` + string(msgJSON) + `;
   try { if (window.opener) { window.opener.postMessage(msg, ` + string(originJSON) + `); } } catch (e) {}
@@ -350,7 +358,17 @@ func (h *handler) writeOAuthReturnPage(w http.ResponseWriter, o oauthOutcome) {
 </body>
 </html>`
 
+	w.Header().Set("Content-Security-Policy", oauthReturnPolicy(nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(page))
+}
+
+// oauthReturnPolicy is the return page's Content-Security-Policy: nothing
+// loads, nothing frames it, and the one script that runs is the one carrying
+// nonce. It needs no style, image or connect source, because the page is its
+// markup and one postMessage.
+func oauthReturnPolicy(nonce string) string {
+	return "default-src 'none'; script-src 'nonce-" + nonce + "'; base-uri 'none'; " +
+		"form-action 'none'; frame-ancestors 'none'"
 }

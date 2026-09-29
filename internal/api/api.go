@@ -124,7 +124,10 @@ func New(cfg Config) http.Handler {
 	// which is what the rate limiter keys on, and no other handler reads
 	// RemoteAddr. Anything that needs a client address behind a proxy has to
 	// name which proxies it trusts first.
-	r.Use(httpMetrics, peerAddress, middleware.RequestID, middleware.Recoverer)
+	//
+	// securityHeaders is first so that every response carries them, the
+	// router's own 404 and 405 and a recovered panic's 500 among them.
+	r.Use(securityHeaders, httpMetrics, peerAddress, middleware.RequestID, middleware.Recoverer)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -148,16 +151,30 @@ func New(cfg Config) http.Handler {
 	// segment: registration has none yet, and everything after it takes one
 	// from the token. The console owns the GET side of these paths — its
 	// /login and /register pages — which is why an unmatched METHOD here falls
-	// through to the SPA below.
-	r.Post("/register/enroll", h.postRegisterBegin)
-	r.Post("/register", h.postRegister)
-	r.Post("/login", h.postLogin)
-	// The credential changes carry the password-factor rule: both current
-	// factors in the body, a bearer token refused. They are
-	// unauthenticated in the bearer sense on purpose.
-	r.Post("/password", h.postPassword)
-	r.Post("/totp/enroll", h.postTOTPBegin)
-	r.Post("/totp", h.postTOTP)
+	// through to the SPA below. Every route in this group takes or hands back
+	// a credential (a password, a TOTP seed, a bearer secret, the recovery
+	// key), so none of its responses may be stored.
+	r.Group(func(r chi.Router) {
+		r.Use(noStore)
+		r.Post("/register/enroll", h.postRegisterBegin)
+		r.Post("/register", h.postRegister)
+		r.Post("/login", h.postLogin)
+		// The credential changes carry the password-factor rule: both current
+		// factors in the body, a bearer token refused. They are
+		// unauthenticated in the bearer sense on purpose.
+		r.Post("/password", h.postPassword)
+		r.Post("/totp/enroll", h.postTOTPBegin)
+		r.Post("/totp", h.postTOTP)
+		// Tokens: minting and revoking need a token already, so these sit
+		// behind the ordinary bearer check. Revoking is a record delete either
+		// way — the same write the generic surface performs.
+		r.Group(func(r chi.Router) {
+			r.Use(h.requireAuth)
+			r.Post("/tokens", h.postMintToken)
+			r.Get("/tokens", h.getTokens)
+			r.Delete("/tokens/{id}", h.deleteToken)
+		})
+	})
 	// The public webhook door (decision 0045), beside the other bearer-less
 	// routes and outside /api so no kind can shadow it. The path names the
 	// repository's authority and the trigger; the trigger's own key, when it
@@ -165,15 +182,6 @@ func New(cfg Config) http.Handler {
 	// bearer header). A GET falls through to the SPA like /login does.
 	r.Post("/webhooks/{authority}/{trigger}", h.postWebhook)
 	r.Post("/webhooks/{authority}/{trigger}/{key}", h.postWebhook)
-	// Tokens: minting and revoking need a token already, so these sit behind
-	// the ordinary bearer check. Revoking is a record delete either way — the
-	// same write the generic surface performs.
-	r.Group(func(r chi.Router) {
-		r.Use(h.requireAuth)
-		r.Post("/tokens", h.postMintToken)
-		r.Get("/tokens", h.getTokens)
-		r.Delete("/tokens/{id}", h.deleteToken)
-	})
 
 	r.Route("/api/"+APIVersion, h.mountResources)
 
@@ -227,8 +235,22 @@ func (h *handler) mountResources(r chi.Router) {
 		// The OAuth callback carries no bearer: the provider redirects the
 		// browser here, and the HMAC-signed state IS the authentication. It
 		// sits at the version root, not under an authority, so no kind can
-		// shadow it.
-		r.Get("/oauth/callback", h.getOAuthCallback)
+		// shadow it. The state and the code are one-time, and the page names
+		// the connected record, so no copy of it may be stored.
+		r.With(noStore).Get("/oauth/callback", h.getOAuthCallback)
+
+		// The two bearer routes whose answer is itself a secret. noStore
+		// wraps the bearer check, so its 401 is not stored either.
+		r.Group(func(r chi.Router) {
+			r.Use(noStore, h.requireAuth)
+			// The owner's recovery export: the repository directory as of
+			// one committed point, as a tar (decision 0069).
+			r.Get(exportRoute, h.getExport)
+			// The host OAuth facility's authenticated half: start a connect
+			// flow for an account record. The consent URL it answers carries
+			// the signed state, which is that flow's credential.
+			r.Post("/oauth/start", h.postOAuthStart)
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(h.requireAuth)
@@ -257,9 +279,6 @@ func (h *handler) mountResources(r chi.Router) {
 			// The boot upgrade's preview: what this binary would move in the
 			// shipped packages here, and the guard lines it refused on.
 			r.Get("/vocabulary/upgrade", h.getVocabularyUpgrade)
-			// The owner's recovery export: the repository directory as of
-			// one committed point, as a tar (decision 0069).
-			r.Get(exportRoute, h.getExport)
 			// Merge joins two records of one kind; split reverses a merge.
 			// Creating the command record performs the operation, so these are
 			// actions, not the recordmerge/recordsplit collections.
@@ -277,9 +296,6 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get("/catalog/{id}", h.getCatalogItem)
 			r.Post("/catalog/{id}/install", h.postCatalogInstall)
 			r.Post("/catalog/{id}/import", h.postCatalogImport)
-			// The host OAuth facility's authenticated half: start a connect flow
-			// for an account record.
-			r.Post("/oauth/start", h.postOAuthStart)
 			// The content-addressed blob store: store bytes under their digest,
 			// stream them back, both repository-scoped. A blob's manifest is an
 			// ordinary `blob` record under /substrate.reamde.dev/core/blob.

@@ -38,7 +38,6 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment",
 		map[string]string{"filename": fmt.Sprintf("%s-%d.tar", point.Authority, point.Head)}))
-	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	// The headers reach the client before the first blob is read, so a
 	// client opens its output file against a 200 and a mid-stream failure
