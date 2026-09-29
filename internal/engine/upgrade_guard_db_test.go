@@ -1346,3 +1346,116 @@ func TestBootUpgradeEntersAShippedStateMachine(t *testing.T) {
 		}
 	}
 }
+
+// replaceShipped rewrites one fragment of a shipped document and fails when
+// the fragment is gone, so a tree edit cannot pass by matching nothing.
+func replaceShipped(t *testing.T, doc, from, to string) string {
+	t.Helper()
+	if !strings.Contains(doc, from) {
+		t.Fatalf("the shipped document no longer holds %q", from)
+	}
+	return strings.Replace(doc, from, to, 1)
+}
+
+// The boot upgrade re-derives the two projections of a row against its
+// declaration, `fts` and `refs`, for the shipped kinds whose searchable or
+// reference shape it moved, as `/vocabulary/apply` does (issue 422). Binary N
+// ships llm/provider with a `note` it does not index and a `peer` reference,
+// and a `widget` kind; binary N+1 indexes `note`, drops `peer` and stops
+// shipping `widget`. The live indexes must be what a rebuild folds under the
+// upgraded declarations: `note` is searchable, the tombstone holding `peer`
+// keeps no row for it, and `widget`, still declared because the boot never
+// prunes, keeps the bands its stored declaration gives it.
+func TestBootUpgradeReprojectsTheIndexesOfAChangedKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const (
+		provider = llmPackage + "/provider"
+		widget   = llmPackage + "/widget"
+		note     = "    note:\n      type: string\n"
+		noFTS    = "      fts: false\n"
+		peer     = "    peer:\n      type: reference\n      kind: " + provider + "\n"
+	)
+	dsn := engine.MigratedDSN(t)
+	tree := shippedTree(t)
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
+		return replaceShipped(t, doc, "  properties:\n", "  properties:\n"+note+noFTS+peer)
+	})
+	addShippedKind(t, tree, llmPackage, "widget")
+
+	// Binary N writes the rows: one whose `note` is not indexed, a tombstone
+	// holding `peer`, and a widget indexed under its own declaration.
+	svc1 := openTree(t, dsn, tree)
+	if _, err := svc1.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create the repository: %v", err)
+	}
+	ds1, err := svc1.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the dataset: %v", err)
+	}
+	mustPut(t, ds1, owner, substrate.PutInput{
+		Kind: provider, ID: "hub", Properties: map[string]any{"label": "the hub", "wire": "openai"},
+	})
+	mustPut(t, ds1, owner, substrate.PutInput{
+		Kind: provider, ID: "noted", Properties: map[string]any{"label": "noted", "wire": "openai", "note": "zanzibar"},
+	})
+	mustPut(t, ds1, owner, substrate.PutInput{
+		Kind: provider, ID: "gone", Properties: map[string]any{"label": "gone", "wire": "openai", "peer": "hub"},
+	})
+	if _, err := ds1.Delete(ctx, owner, provider, "gone", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	mustPut(t, ds1, owner, substrate.PutInput{
+		Kind: widget, ID: "w1", Properties: map[string]any{"note": "quixotic"},
+	})
+	if got := searchIDs(t, ds1, "zanzibar"); len(got) != 0 {
+		t.Fatalf("binary N indexed a note it declares `fts: false`: %v", got)
+	}
+	if err := svc1.Close(); err != nil {
+		t.Fatalf("close binary N: %v", err)
+	}
+
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
+		doc = replaceShipped(t, doc, note+noFTS, note)
+		doc = replaceShipped(t, doc, peer, "")
+		return pinVersion(t, doc, "99")
+	})
+	if err := os.Remove(filepath.Join(tree, llmPackage, "widget.yaml")); err != nil {
+		t.Fatalf("stop shipping the widget: %v", err)
+	}
+
+	svc2 := openTree(t, dsn, tree)
+	defer func() { _ = svc2.Close() }()
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open on binary N+1: %v", err)
+	}
+	if _, declared := declaredProps(t, ds2, provider)["peer"]; declared {
+		t.Fatal("the upgrade did not land: llm/provider still declares `peer`")
+	}
+	if _, err := ds2.KindByRef(ctx, widget); err != nil {
+		t.Fatalf("the boot upgrade pruned a kind the tree stopped shipping: %v", err)
+	}
+	if got := searchIDs(t, ds2, "zanzibar"); len(got) != 1 || got[0] != "noted" {
+		t.Fatalf("the newly indexed note is not searchable after the upgrade: %v", got)
+	}
+	if got := searchIDs(t, ds2, "quixotic"); len(got) != 1 || got[0] != "w1" {
+		t.Fatalf("the kept widget lost its declared bands: %v", got)
+	}
+	raw, err := engine.OpenScopedDB(dsn, testdb.Repository(t), engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	if got := refRows(t, raw, provider, "gone"); len(got) != 0 {
+		t.Fatalf("the tombstone keeps refs rows for a reference the upgrade dropped: %+v", got)
+	}
+
+	before := foldOf(t, ds2)
+	if _, err := svc2.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds2); string(before) != string(after) {
+		t.Fatalf("the rebuilt fold is not the upgraded fold\n%s", firstDifference(before, after))
+	}
+}
