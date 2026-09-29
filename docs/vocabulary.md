@@ -415,7 +415,10 @@ clears it, while a patch that never mentions it is not. An empty value is no
 value: `""`, `[]` and `{}` are refused exactly as an absent property is. On a
 declared object's `fields:` the same rule holds against the object the write
 stores, since an object value is written whole. A required reference is no
-different: every write leaves the record carrying one, or it is refused.
+different: every write leaves the record carrying one, or it is refused. An
+`object` property takes `required:` too, on a kind's own property and on a
+field, and `{}` does not satisfy it: core's `trigger` requires its `source`
+this way.
 
 A `default:` beside it is what a create that does not name the property stores,
 materialized into the row and the changelog entry at the write. It is a

@@ -9,6 +9,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -201,14 +202,15 @@ func TestPolicySelectorKindsGlobCoversAnAuthority(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "is not a kind reference") {
 		t.Fatalf("a selector spelled `crew.*` admitted: %v", err)
 	}
-	// A rule with no action speaks for nothing, so it never lands.
+	// A rule with no action speaks for nothing, so it never lands: the
+	// declaration requires `action` (issue 464).
 	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-actionless",
 		Properties: map[string]any{
 			"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "`action` is required") {
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "props.action") {
 		t.Fatalf("an actionless policy admitted: %v", err)
 	}
 }
@@ -281,20 +283,27 @@ func TestPolicyGovernanceStaysWithTheRuleThatReachesTheOwner(t *testing.T) {
 	}
 }
 
-// A POLICY ROW WITH NO ACTION. The write door refuses one, so the fixture
-// plants it the way the engine's own machinery writes; evaluation skips it and
-// says so once, not once per agent write.
+// A POLICY ROW WITH NO ACTION. The declaration requires `action` for every
+// writer, the engine's own writes included, so such a row is one a binary
+// older than that left behind; the fixture plants it through the fold.
+// Evaluation skips it and says so once, not once per agent write.
 func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 	ctx := context.Background()
 	var logs syncBuffer
 	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	selector := map[string]any{"kinds": []any{"*"}}
 	if err := ds.inTx(ctx, substrate.ActorAPI, true, func(tx *txn) error {
 		_, err := tx.put(substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
-			Properties: map[string]any{"selector": map[string]any{"kinds": []any{"*"}}},
+			Properties: map[string]any{"selector": selector},
 		})
 		return err
-	}); err != nil {
+	}); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "props.action") {
+		t.Fatalf("an internal write of a policy with no action admitted: %v", err)
+	}
+	putPolicy(t, ds, "noaction", map[string]any{"selector": selector, "action": "gate"})
+	if err := ds.PlantDeclarationRow(ctx, vocabulary.KindRecordPatchPolicy, "noaction",
+		map[string]any{"selector": selector}); err != nil {
 		t.Fatalf("plant the row: %v", err)
 	}
 	for i := range 2 {
@@ -312,7 +321,7 @@ func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
 		Properties: map[string]any{"criteria": "anything"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "`action` is required") {
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "props.action") {
 		t.Fatalf("a write that left the row actionless admitted: %v", err)
 	}
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
