@@ -22,7 +22,7 @@ func TestClosingADatasetAfterTheShutdownDrainDoesNotWaitForTheReindex(t *testing
 		reindexDone: make(chan struct{}),
 	}
 	started := time.Now()
-	ds.stopSearchReindex()
+	ds.stopSearchReindex(true)
 	if took := time.Since(started); took > backgroundDrainTimeout/2 {
 		t.Fatalf("closing the dataset waited %s for a reindex the shutdown already waited for", took)
 	}

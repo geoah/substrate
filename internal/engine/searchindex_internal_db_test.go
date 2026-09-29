@@ -357,6 +357,45 @@ func TestARebuildStopsTheSearchReindexAndRecordsTheVersion(t *testing.T) {
 	}
 }
 
+// A rebuild that fails after it stopped the reindex starts it again, so the
+// index is not left half re-derived until the next restart.
+func TestAFailedRebuildStartsTheSearchReindexAgain(t *testing.T) {
+	t.Parallel()
+	dsn, root, repo := staleSearchIndex(t)
+
+	// The rebuild's own context ends as the rebuild stops the reindex, so the
+	// rebuild fails at its first statement after the stop.
+	rebuildCtx, failRebuild := context.WithCancel(context.Background())
+	defer failRebuild()
+	reached := make(chan struct{})
+	var pages atomic.Int32
+	hook := func(ctx context.Context, kind string) error {
+		if pages.Add(1) != 2 {
+			return nil
+		}
+		close(reached)
+		<-ctx.Done()
+		failRebuild()
+		return ctx.Err()
+	}
+	svc, ds := openReindexing(t, dsn, root, repo, WithTestSearchReindex(reindexPage, hook))
+	select {
+	case <-reached:
+	case <-time.After(time.Minute):
+		t.Fatal("the reindex never reached its second page")
+	}
+	if _, err := svc.(*service).RebuildRepository(rebuildCtx, repo); err == nil {
+		t.Fatal("the rebuild succeeded on a canceled context")
+	}
+	waitReindex(t, ds)
+	if v := searchIndexVersionOf(t, ds); v != searchIndexVersion {
+		t.Fatalf("after the failed rebuild the reindex recorded version %d, want %d", v, searchIndexVersion)
+	}
+	if stale := underivedRows(t, ds); len(stale) != 0 {
+		t.Fatalf("rows whose fts is not a fresh derivation after the restarted reindex: %v", stale)
+	}
+}
+
 // A row a write holds when its page comes is skipped rather than waited on,
 // and redone alone once the write lets go; the version waits for it.
 func TestTheSearchReindexRedoesARowAWriteHeld(t *testing.T) {

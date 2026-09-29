@@ -207,11 +207,14 @@ func WithTestSearchReindex(batch int, hook func(ctx context.Context, kind string
 	return func(o *options) { o.searchReindexBatch, o.searchReindexHook = batch, hook }
 }
 
-// SearchReindexDone is closed when the reindex the dataset's open started has
-// returned, finished or stopped; a dataset whose open started none returns a
-// closed channel.
+// SearchReindexDone is closed when the dataset's latest reindex has returned,
+// finished or stopped; a dataset that started none returns a closed channel.
 func SearchReindexDone(ds substrate.Dataset) <-chan struct{} {
-	if done := ds.(*dataset).reindexDone; done != nil {
+	d := ds.(*dataset)
+	d.reindexMu.Lock()
+	done := d.reindexDone
+	d.reindexMu.Unlock()
+	if done != nil {
 		return done
 	}
 	closed := make(chan struct{})

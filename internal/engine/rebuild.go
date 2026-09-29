@@ -129,8 +129,15 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	// The replay re-derives every row's `fts` itself, so the open's reindex
 	// stops first: its pages would skip every row the replay's delete holds and
 	// then wait on each one alone. A rebuild that fails leaves the version
-	// where it was, and the next open runs the reindex again.
-	ds.stopSearchReindex()
+	// where it was and starts the reindex again, after the rollback below has
+	// released the rows.
+	ds.stopSearchReindex(false)
+	rebuilt := false
+	defer func() {
+		if !rebuilt {
+			ds.startSearchReindex()
+		}
+	}()
 	// Not inTx: a rebuild is not a write with an actor and must append no
 	// entry of its own. It replays what is already there.
 	tx, err := ds.db.BeginTx(ctx, nil)
@@ -164,6 +171,7 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if err := tx.Commit(); err != nil {
 		return report, err
 	}
+	rebuilt = true
 	report.Took = time.Since(started)
 	return report, nil
 }

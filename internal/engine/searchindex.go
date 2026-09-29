@@ -44,12 +44,21 @@ func (ds *dataset) checkSearchIndex(ctx context.Context) error {
 
 // startSearchReindex starts the reindex checkSearchIndex asked for in a
 // goroutine the dataset owns: close cancels it and waits for it, and so does
-// a rebuild, which re-derives every row itself. It is called once, as the
-// open publishes the dataset, and sets the two fields close reads before the
-// dataset is visible to anybody else.
+// a rebuild, which re-derives every row itself. The open calls it as it
+// publishes the dataset, and a rebuild that failed calls it again. It starts
+// nothing once the dataset closed, or while an earlier run has not returned.
 func (ds *dataset) startSearchReindex() {
-	if ds.reindexFrom == 0 {
+	ds.reindexMu.Lock()
+	defer ds.reindexMu.Unlock()
+	if ds.reindexFrom == 0 || ds.reindexClosed {
 		return
+	}
+	if ds.reindexDone != nil {
+		select {
+		case <-ds.reindexDone:
+		default:
+			return
+		}
 	}
 	from := ds.reindexFrom
 	ctx, cancel := context.WithCancel(context.Background())
@@ -74,14 +83,21 @@ func (ds *dataset) startSearchReindex() {
 // (reindexStep).
 const searchReindexMaxPause = time.Minute
 
-// stopSearchReindex cancels the open's reindex and waits for it to return,
+// stopSearchReindex cancels the running reindex and waits for it to return,
 // up to the drain budget the service's own shutdown gives a detached task.
-// A dataset whose open started none returns at once.
-func (ds *dataset) stopSearchReindex() {
-	if ds.reindexCancel == nil {
+// final is the dataset closing: no reindex starts after it. A dataset whose
+// open started none returns at once.
+func (ds *dataset) stopSearchReindex(final bool) {
+	ds.reindexMu.Lock()
+	if final {
+		ds.reindexClosed = true
+	}
+	cancel, done := ds.reindexCancel, ds.reindexDone
+	ds.reindexMu.Unlock()
+	if cancel == nil {
 		return
 	}
-	ds.reindexCancel()
+	cancel()
 	// The service's shutdown already waited its one budget for every detached
 	// task, this one included, and said so if any outlived it. Waiting again
 	// here, once per repository it closes, would multiply that budget.
@@ -91,7 +107,7 @@ func (ds *dataset) stopSearchReindex() {
 	timer := time.NewTimer(backgroundDrainTimeout)
 	defer timer.Stop()
 	select {
-	case <-ds.reindexDone:
+	case <-done:
 	case <-timer.C:
 		ds.svc.log.Error("substrate: the search index re-derivation did not stop within the drain budget",
 			"repository", logSafeID(ds.scope.Repository), "timeout", backgroundDrainTimeout)

@@ -211,17 +211,20 @@ type dataset struct {
 	// binary's (searchindex.go checkSearchIndex); zero when the index is
 	// current or the process is read-only.
 	reindexFrom int
-	// reindexCancel and reindexDone own the background reindex the open
-	// started (startSearchReindex): close and a rebuild cancel it and wait for
-	// done. Both are set before the dataset is published and never after, so
-	// they are read without a lock; nil when no reindex runs.
+	// reindexMu guards the background reindex's handles (startSearchReindex):
+	// reindexCancel and reindexDone name the latest run, nil before the
+	// first; close and a rebuild cancel it and wait for done, and a rebuild
+	// that fails starts it again. reindexClosed is set by close, after which
+	// nothing starts one.
+	reindexMu     sync.Mutex
 	reindexCancel context.CancelFunc
 	reindexDone   chan struct{}
+	reindexClosed bool
 }
 
 func (ds *dataset) close() {
 	// Before the pool closes: the reindex writes through it.
-	ds.stopSearchReindex()
+	ds.stopSearchReindex(true)
 	ds.watch.close()
 	ds.writerMu.Lock()
 	if ds.writer != nil {
