@@ -38,7 +38,11 @@ import (
 //	                   outside the ledger is the scan position past rows that
 //	                   matched nothing (functions.go advanceCursor): a replay
 //	                   leaves the cursor at the last acknowledged delivery and
-//	                   the next pass re-reads rows that deliver nothing.
+//	                   the next pass re-reads rows that deliver nothing. A
+//	                   resume row's cursor comes back only where an entry
+//	                   carries it whole (decision 0141): a parked drain's does,
+//	                   from the park's entry, and a drain that stopped between
+//	                   pages comes back with a null one and starts over.
 //
 // property_offers is neither replayed nor kept: it is recompute's projection
 // of what each live source offers each target (mapping.go syncOffers), the
@@ -523,6 +527,9 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"trigger_failures": `SELECT to_jsonb(f) - 'repository' FROM (
 				SELECT id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at, payload
 				FROM trigger_failures ORDER BY id) f`,
+		// A resume row whose last page named its cursor by hash comes
+		// back with a null cursor (decision 0141), so a drain that stopped
+		// between pages is the one row a rebuild does not reproduce.
 		"paged_cursors": `SELECT to_jsonb(p) - 'repository' FROM (
 				SELECT chain, cursor, pages, version, effects, bytes, started_at, trigger_id, kind, identity, updated_at
 				FROM paged_cursors ORDER BY chain) p`,

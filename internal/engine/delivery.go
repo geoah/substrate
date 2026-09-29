@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +35,17 @@ import (
 // parked failure carrying pendingWebhookError from before the 202 until its
 // fire settles, and the fire is that row's retry (webhooks.go admitWebhook,
 // fireWebhook, resumeWebhooks; decision 0068).
+//
+// One column is carried whole only where a restore needs it: a paged drain's
+// cursor (decision 0141). A provider cursor runs to hundreds of kilobytes and
+// a drain writes one per page, so a middle page's `page` effect names the
+// cursor by its SHA-256 and byte size and the bytes stay in `paged_cursors`.
+// A park re-states the chain's row with the cursor whole (parkTx), because a
+// parked failure is the handle a retry resumes from and a park is rare where
+// pages are not. A replay therefore brings a parked drain back at its last
+// committed page, and a drain that stopped between pages without parking (a
+// crash, a shutdown) back with no position: its next delivery starts the
+// body over from its first page under a fresh budget.
 //
 // One position is deliberately not in the ledger: the SCAN position a record
 // trigger moves past rows that did not match its source (functions.go
@@ -107,7 +120,7 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 			    effects = EXCLUDED.effects, bytes = EXCLUDED.bytes, started_at = EXCLUDED.started_at,
 			    trigger_id = EXCLUDED.trigger_id, kind = EXCLUDED.kind, identity = EXCLUDED.identity,
 			    updated_at = EXCLUDED.updated_at`,
-			p.Chain, rawOrNull(p.Cursor), int64(p.Pages), int64(p.Version), int64(p.Effects), int64(p.Bytes),
+			p.Chain, p.storedCursor(), int64(p.Pages), int64(p.Version), int64(p.Effects), int64(p.Bytes),
 			p.StartedAt.UTC(), op.ID, p.Kind, p.Identity, t.now)
 		return true, err
 	case foldUnpage:
@@ -242,8 +255,51 @@ func (t *txn) setScheduleTx(triggerID string, at time.Time) error {
 // parkTx records a parked failure, whole. A fresh park takes its id from
 // reserveSeq, the seq of the delivery entry the caller appends next; a retry
 // that fails again writes the same id with the new attempt count and error.
+// The same entry re-states the resume row of the paged chain the failure
+// names, cursor included (checkpointPagedCursor).
 func (t *txn) parkTx(triggerID string, f foldFailure) error {
-	_, err := t.fold(foldOp{Kind: foldPark, Ref: typeTrigger, ID: triggerID, Failure: &f})
+	if _, err := t.fold(foldOp{Kind: foldPark, Ref: typeTrigger, ID: triggerID, Failure: &f}); err != nil {
+		return err
+	}
+	return t.checkpointPagedCursor(triggerID, f)
+}
+
+// checkpointPagedCursor re-states, cursor whole, the resume row of the paged
+// chain a parked failure names. A middle page names its cursor by hash alone
+// (pageTx), so without this a restore would bring a parked drain back with
+// no position and its retry would start the body over. A failure whose
+// delivery holds no resume row re-states nothing, which is every park but a
+// paged drain's.
+func (t *txn) checkpointPagedCursor(triggerID string, f foldFailure) error {
+	var chain string
+	switch {
+	case f.FireID != "":
+		chain = t.ds.fireChainKey(triggerID, f.FireID)
+	case f.Seq > 0:
+		chain = t.ds.recordChainKey(triggerID, int64(f.Seq))
+	default:
+		return nil
+	}
+	if err := t.lockChangelog(); err != nil {
+		return err
+	}
+	row := foldPageRow{Chain: chain}
+	var cursor []byte
+	var version, pages, effects, bytes int64
+	err := t.row(`
+		SELECT cursor, version, pages, effects, bytes, started_at, kind, identity
+		FROM paged_cursors WHERE chain = $1 AND trigger_id = $2 FOR UPDATE`, chain, triggerID).
+		Scan(&cursor, &version, &pages, &effects, &bytes, &row.StartedAt, &row.Kind, &row.Identity)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	row.Cursor = cursor
+	row.Version, row.Pages, row.Effects, row.Bytes = foldInt(version), foldInt(pages), foldInt(effects), foldInt(bytes)
+	row.StartedAt = row.StartedAt.UTC()
+	_, err = t.fold(foldOp{Kind: foldPage, Ref: typeTrigger, ID: triggerID, Page: &row})
 	return err
 }
 
@@ -348,8 +404,10 @@ func (t *txn) claimPagedCursor(chain string, owner pagedOwner, cursor any, pages
 // advancePagedCursor moves an OWNED chain to the next page under its version
 // swap: the row is read FOR UPDATE, matched to the exact version this drain
 // last saw, and rewritten one version up. A missed swap is errCursorMoved.
-func (t *txn) advancePagedCursor(chain string, version int64, cursor any, pages, effects, bytes int64) error {
-	owner, have, startedAt, err := t.lockPagedCursor(chain)
+// startedAt is the drain's: the row's own, except for a chain the drain
+// started over (functions.go loadPagedProgress), whose budget restarts.
+func (t *txn) advancePagedCursor(chain string, version int64, cursor any, pages, effects, bytes int64, startedAt time.Time) error {
+	owner, have, err := t.lockPagedCursor(chain)
 	if err != nil {
 		return err
 	}
@@ -363,7 +421,7 @@ func (t *txn) advancePagedCursor(chain string, version int64, cursor any, pages,
 // the version this drain owns, so a chain a concurrent dispatcher advanced is
 // never cleared under it.
 func (t *txn) clearPagedCursorCAS(chain string, version int64) error {
-	owner, have, _, err := t.lockPagedCursor(chain)
+	owner, have, err := t.lockPagedCursor(chain)
 	if err != nil {
 		return err
 	}
@@ -373,35 +431,39 @@ func (t *txn) clearPagedCursorCAS(chain string, version int64) error {
 	return t.unpageTx(owner.triggerID, chain)
 }
 
-// lockPagedCursor reads a chain's row FOR UPDATE: its owner, version and
-// start. An absent row is errCursorMoved, since every caller owns a row.
-func (t *txn) lockPagedCursor(chain string) (pagedOwner, int64, time.Time, error) {
+// lockPagedCursor reads a chain's row FOR UPDATE: its owner and version. An
+// absent row is errCursorMoved, since every caller owns a row.
+func (t *txn) lockPagedCursor(chain string) (pagedOwner, int64, error) {
 	var owner pagedOwner
 	var version int64
-	var startedAt time.Time
 	if err := t.lockChangelog(); err != nil {
-		return owner, 0, time.Time{}, err
+		return owner, 0, err
 	}
 	err := t.row(`
-		SELECT trigger_id, kind, identity, version, started_at FROM paged_cursors WHERE chain = $1 FOR UPDATE`, chain).
-		Scan(&owner.triggerID, &owner.kind, &owner.identity, &version, &startedAt)
+		SELECT trigger_id, kind, identity, version FROM paged_cursors WHERE chain = $1 FOR UPDATE`, chain).
+		Scan(&owner.triggerID, &owner.kind, &owner.identity, &version)
 	if errors.Is(err, sql.ErrNoRows) {
-		return owner, 0, time.Time{}, errCursorMoved
+		return owner, 0, errCursorMoved
 	}
 	if err != nil {
-		return owner, 0, time.Time{}, err
+		return owner, 0, err
 	}
-	return owner, version, startedAt.UTC(), nil
+	return owner, version, nil
 }
 
-// pageTx records a paged drain's resume row, whole.
+// pageTx records a middle page's resume row: whole in paged_cursors, and on
+// the delivery entry with the cursor named by the SHA-256 and byte length of
+// its JSON rather than carried (decision 0141). The entry stays a few hundred
+// bytes however large the cursor grows.
 func (t *txn) pageTx(owner pagedOwner, chain string, cursor any, version, pages, effects, bytes int64, startedAt time.Time) error {
 	raw, err := json.Marshal(cursor)
 	if err != nil {
 		return fmt.Errorf("paged cursor: %w", err)
 	}
+	sum := sha256.Sum256(raw)
 	_, err = t.fold(foldOp{Kind: foldPage, Ref: typeTrigger, ID: owner.triggerID, Page: &foldPageRow{
-		Chain: chain, Cursor: raw, Version: foldInt(version), Pages: foldInt(pages),
+		Chain: chain, CursorSHA256: hex.EncodeToString(sum[:]), CursorBytes: foldInt(len(raw)), staged: raw,
+		Version: foldInt(version), Pages: foldInt(pages),
 		Effects: foldInt(effects), Bytes: foldInt(bytes), StartedAt: startedAt.UTC(),
 		Kind: owner.kind, Identity: owner.identity,
 	}})

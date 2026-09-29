@@ -84,7 +84,9 @@ const (
 	foldPark foldKind = "park"
 	// foldUnpark retires a parked failure by its id (Failure.ID).
 	foldUnpark foldKind = "unpark"
-	// foldPage writes a paged drain's resume row, whole, by its chain (Page).
+	// foldPage writes a paged drain's resume row by its chain (Page). The
+	// cursor rides the entry whole only on a park's checkpoint and on entries
+	// written before decision 0141; a middle page names it by hash.
 	foldPage foldKind = "page"
 	// foldUnpage drops a paged drain's resume row (Page.Chain).
 	foldUnpage foldKind = "unpage"
@@ -283,16 +285,45 @@ type foldFailure struct {
 // compare-and-swap version and the cumulative budget counters, plus the
 // lifecycle owner beside the trigger in Ref and ID. StartedAt is the chain's
 // first page, carried because the drain deadline is measured from it.
+//
+// The cursor is carried one of two ways (decision 0141). A middle page names
+// it by CursorSHA256 and CursorBytes, the digest and length of the JSON the
+// drain encoded, and hands the bytes to the live write in `staged`, which is
+// never encoded: a provider cursor runs to hundreds of kilobytes and a drain
+// writes one per page, so the entry would otherwise copy it every page. A
+// park's checkpoint (delivery.go checkpointPagedCursor), and every entry
+// written before 0141, carries it whole in Cursor. A replay restores the
+// cursor only from Cursor; a page that named it by hash restores the row with
+// a null cursor, which the drain reads as a chain with no position
+// (functions.go loadPagedProgress).
 type foldPageRow struct {
-	Chain     string          `json:"chain"`
-	Cursor    json.RawMessage `json:"cursor,omitempty"`
-	Version   foldInt         `json:"version,omitempty"`
-	Pages     foldInt         `json:"pages,omitempty"`
-	Effects   foldInt         `json:"effects,omitempty"`
-	Bytes     foldInt         `json:"bytes,omitempty"`
-	StartedAt time.Time       `json:"startedAt,omitzero"`
-	Kind      string          `json:"kind,omitempty"`
-	Identity  string          `json:"identity,omitempty"`
+	Chain        string          `json:"chain"`
+	Cursor       json.RawMessage `json:"cursor,omitempty"`
+	CursorSHA256 string          `json:"cursorSha256,omitempty"`
+	CursorBytes  foldInt         `json:"cursorBytes,omitempty"`
+	Version      foldInt         `json:"version,omitempty"`
+	Pages        foldInt         `json:"pages,omitempty"`
+	Effects      foldInt         `json:"effects,omitempty"`
+	Bytes        foldInt         `json:"bytes,omitempty"`
+	StartedAt    time.Time       `json:"startedAt,omitzero"`
+	Kind         string          `json:"kind,omitempty"`
+	Identity     string          `json:"identity,omitempty"`
+
+	staged json.RawMessage
+}
+
+// storedCursor is the cursor a page effect writes to paged_cursors: the bytes
+// a live middle page staged, else the cursor the entry carries whole, else
+// JSON null, where the entry named the cursor by hash and a replay has no
+// bytes to restore.
+func (p *foldPageRow) storedCursor() []byte {
+	switch {
+	case len(p.staged) > 0:
+		return p.staged
+	case len(p.Cursor) > 0:
+		return p.Cursor
+	}
+	return []byte(`null`)
 }
 
 func (op foldOp) ref() eref { return eref{Kind: op.Ref, ID: op.ID} }

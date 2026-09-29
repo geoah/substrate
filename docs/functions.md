@@ -633,7 +633,10 @@ every put and get that uses it.
 the causal chain, every re-invocation carrying the delivery's original causal
 depth, and each page's effects commit with its cursor, so a backfill of any
 length costs one depth and a crash mid-drain resumes from the last committed
-page.
+page. The cursor is kept in the database, not the changelog, until a park: a
+drain that parked resumes after a restore, and one that stopped between pages
+starts over from its first page, so a body keys its effects to survive a
+repeated page.
 
 **`host.config()` resolves the callable's configuration.** It carries the
 owning `bundle`, which is its package identity, the bundle's

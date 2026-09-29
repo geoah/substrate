@@ -56,6 +56,52 @@ func TestALedgerEffectDecodesFromTheFileSpelling(t *testing.T) {
 	}
 }
 
+// A middle page's effect encodes the digest and length of its cursor and never
+// the bytes it hands the live write, and it decodes from the file's spelling
+// of the length. What the fold stores is the staged cursor live, the carried
+// one on replay, and JSON null where the entry named the cursor by hash.
+func TestAMiddlePageNamesItsCursorWithoutCarryingIt(t *testing.T) {
+	t.Parallel()
+	const cursor = `{"pending":["a-very-long-provider-cursor"]}`
+	live := foldPageRow{Chain: "c", CursorSHA256: strings.Repeat("ab", 32), CursorBytes: foldInt(len(cursor)), staged: json.RawMessage(cursor)}
+	raw, err := json.Marshal([]foldOp{{Kind: foldPage, Ref: typeTrigger, ID: "on-x", Page: &live}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "a-very-long-provider-cursor") || !strings.Contains(string(raw), `"cursorSha256":"abab`) {
+		t.Fatalf("the encoded page effect is %s, want the digest and not the cursor", raw)
+	}
+	if got := string(live.storedCursor()); got != cursor {
+		t.Fatalf("the live write stores %s, want the staged cursor", got)
+	}
+
+	for _, spelling := range []string{`44`, `4.4E1`} {
+		payload := `{"fold":[{"kind":"page","ref":"` + typeTrigger + `","id":"on-x","page":{"chain":"c","cursorSha256":"abab",` +
+			`"cursorBytes":` + spelling + `,"version":2,"pages":2,"startedAt":"2026-09-08T10:00:00Z","kind":"record","identity":"7"}}]}`
+		dec := json.NewDecoder(strings.NewReader(payload))
+		dec.UseNumber()
+		var decoded map[string]any
+		if err := dec.Decode(&decoded); err != nil {
+			t.Fatal(err)
+		}
+		ops, err := foldOpsOf(substrate.Change{Seq: 1, Op: substrate.OpDelivery, Payload: decoded})
+		if err != nil || len(ops) != 1 || ops[0].Page == nil {
+			t.Fatalf("spelling %s decoded as %+v (%v)", spelling, ops, err)
+		}
+		if p := ops[0].Page; p.CursorBytes != 44 || p.CursorSHA256 != "abab" || len(p.Cursor) != 0 {
+			t.Fatalf("spelling %s: page %+v", spelling, p)
+		}
+		if got := string(ops[0].Page.storedCursor()); got != `null` {
+			t.Fatalf("spelling %s: a replay stores %s, want null", spelling, got)
+		}
+	}
+
+	whole := foldPageRow{Chain: "c", Cursor: json.RawMessage(`7`)}
+	if got := string(whole.storedCursor()); got != `7` {
+		t.Fatalf("a page effect carrying its cursor stores %s, want 7", got)
+	}
+}
+
 // A cursor seq of 0 (a replay from the start) survives the round trip: the
 // field is a pointer so omitempty cannot drop it.
 func TestACursorResetToZeroIsCarried(t *testing.T) {
