@@ -71,6 +71,37 @@ describe("ViewTabs", () => {
     expect(props.onSave).toHaveBeenCalledWith("Urgent")
   })
 
+  it("renames the chosen view, refusing another view's name", async () => {
+    const props = draw({ active: "v1" })
+    fireEvent.click(
+      screen.getByRole("button", { name: "More for the “Open” view" })
+    )
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }))
+    const name = screen.getByLabelText("Name") as HTMLInputElement
+    expect(name.value).toBe("Open")
+    fireEvent.change(name, { target: { value: "mine" } })
+    expect(
+      screen.getByText("There is already a view called “Mine”.")
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }))
+    expect(props.onRename).not.toHaveBeenCalled()
+    fireEvent.change(name, { target: { value: " Still open " } })
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }))
+    expect(props.onRename).toHaveBeenCalledWith(OPEN, "Still open")
+  })
+
+  it("deletes the chosen view only once the reader confirms", async () => {
+    const props = draw({ active: "v2" })
+    fireEvent.click(
+      screen.getByRole("button", { name: "More for the “Mine” view" })
+    )
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete…" }))
+    expect(screen.getByText("Delete the “Mine” view?")).toBeTruthy()
+    expect(props.onDelete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    expect(props.onDelete).toHaveBeenCalledWith(MINE)
+  })
+
   it("refuses to save what a saved view already shows, naming it", () => {
     const props = draw({ active: "v2" })
     fireEvent.click(screen.getByRole("button", { name: "Save view" }))

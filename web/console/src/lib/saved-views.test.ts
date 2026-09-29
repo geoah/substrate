@@ -82,6 +82,29 @@ describe("saved views", () => {
     ).toBe(true)
   })
 
+  it("replaces a view with what the page shows, forgetting what it dropped", () => {
+    const old: SavedView = {
+      id: "v",
+      collection: TASK,
+      name: "Open",
+      filter: ["status~eq~open"],
+      sort: "dueAt:asc",
+      nest: false,
+      group: "project",
+      columns: ["title", "updatedAt"],
+      hidden: ["prop:priority"],
+    }
+    const replaced = viewFromState(old, state(), DEFAULT_SORT)
+    expect(replaced).toEqual({
+      id: "v",
+      collection: TASK,
+      name: "Open",
+      columns: ["title", "prop:status", "prop:priority", "updatedAt"],
+      hidden: [],
+    })
+    expect(viewMatches(replaced, state(), DEFAULT_SORT)).toBe(true)
+  })
+
   it("matches what the page shows, and lets go when it changes", () => {
     const view: SavedView = {
       id: "v",
