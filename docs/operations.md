@@ -23,8 +23,9 @@ backup and recovery procedures. A substrate on your own machine is
   intermediary from compressing them. A proxy that ignores both turns a
   streamed chat reply into one block at the end.
 - **A TLS terminator** in front of it for anyone beyond loopback. The server
-  speaks plain HTTP only, and exposing it remotely without TLS is unsupported:
-  see [TLS and the reverse proxy](#tls-and-the-reverse-proxy).
+  speaks plain HTTP only, listens on `127.0.0.1` unless told otherwise, and
+  exposing it remotely without TLS is unsupported: see
+  [TLS and the reverse proxy](#tls-and-the-reverse-proxy).
 - **Nothing else.** Search, the change feed, the function runner, and the OAuth
   facility are all in the one process; the image also carries `python3` and
   `uv`, because [functions](functions.md) run as child processes of the
@@ -76,6 +77,8 @@ boot.
 | ------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                 | required                               | The one Postgres holding every repository.                                                                |
 | `PORT`                         | `8080`                                 | The port served.                                                                                          |
+| `SUBSTRATE_BIND_ADDRESS`       | `127.0.0.1`                            | The interface the port is served on. Any address that is not loopback (`0.0.0.0`, empty, a LAN address) refuses the boot, naming the address, unless `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT` is set. The image sets `0.0.0.0`. See [TLS and the reverse proxy](#tls-and-the-reverse-proxy). |
+| `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT` | `false`                          | Admits a non-loopback `SUBSTRATE_BIND_ADDRESS`. It states that only a TLS terminator or a loopback port mapping reaches the port; the server serves plain HTTP either way, and the boot warns with the address. The image and `compose.yaml` set it. |
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration asks for no code) | Gates registration. **Set it before anyone else can reach the port.** See below.                            |
@@ -331,10 +334,29 @@ The server speaks plain HTTP and never terminates TLS. Login and registration
 send the password and the TOTP code in the request body and answer with a
 bearer secret, the TOTP enrollment seed and the recovery key; every other API
 request carries the bearer token. Serving the port to anyone beyond loopback
-without TLS in front of it is unsupported. The binary listens on every
-interface, so the host's firewall or network must keep the port reachable by
-the proxy alone; `compose.yaml` publishes it on `127.0.0.1` unless
-`BIND_ADDRESS` says otherwise.
+without TLS in front of it is unsupported.
+
+The binary listens on `127.0.0.1` (`SUBSTRATE_BIND_ADDRESS`) and refuses to
+start on any other address, every interface included, unless
+`SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true` says that only a TLS terminator or a
+loopback port mapping reaches it:
+
+```
+SUBSTRATE_BIND_ADDRESS is "0.0.0.0", so the server would listen on 0.0.0.0:8080, which is not loopback, and it speaks plain HTTP: ...
+```
+
+The published image and `compose.yaml` set both, `SUBSTRATE_BIND_ADDRESS=0.0.0.0`
+and `SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true`, because a container's own
+loopback is out of reach of its port mapping, and the mapping is what decides
+who reaches the port: `compose.yaml` publishes it on the host's `127.0.0.1`
+unless `BIND_ADDRESS` says otherwise, and a Kubernetes Service answers inside
+the cluster. A `docker run` of the image publishes what `-p` says:
+`-p 127.0.0.1:8080:8080` keeps the port on the host's loopback, and a bare
+`-p 8080:8080` publishes it on every host interface in cleartext, which is
+the unsupported case the image cannot see. The boot warns every time the setting admits a non-loopback
+address, naming the address, because the server cannot see what is in front
+of it. A proxy on another host is the same case: bind the interface it
+reaches, set the escape, and keep every other peer off the port.
 
 The supported path is [Caddy](https://caddyserver.com) on the same host,
 proxying to the substrate on loopback:

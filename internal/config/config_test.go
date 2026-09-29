@@ -165,3 +165,74 @@ func TestTriggerIntervalRefusesZeroAndNegative(t *testing.T) {
 		t.Fatalf("a one-second tick was refused: %v", err)
 	}
 }
+
+// The server speaks plain HTTP, so where it listens is the one thing it can
+// check about who reads its traffic. A loopback address needs nothing; every
+// other one, every interface included, is refused with a message naming the
+// address and the setting that admits it, and admitted once that setting is
+// on.
+func TestListenAddressAdmitsLoopbackAndRefusesTheRestUnlessCleartextIsAllowed(t *testing.T) {
+	t.Parallel()
+	for host, want := range map[string]string{
+		"127.0.0.1": "127.0.0.1:8080",
+		"127.0.0.2": "127.0.0.2:8080",
+		"::1":       "[::1]:8080",
+		"[::1]":     "[::1]:8080",
+		"localhost": "127.0.0.1:8080",
+		"LocalHost": "127.0.0.1:8080",
+	} {
+		got, err := (Config{BindAddress: host, Port: "8080"}).ListenAddress()
+		if err != nil || got != want {
+			t.Errorf("ListenAddress(%q) = %q, %v; want %q with no setting", host, got, err, want)
+		}
+	}
+
+	for host, want := range map[string]string{
+		"0.0.0.0":               "0.0.0.0:8080",
+		"":                      ":8080",
+		"::":                    "[::]:8080",
+		"192.0.2.10":            "192.0.2.10:8080",
+		"substrate.example.com": "substrate.example.com:8080",
+	} {
+		_, err := (Config{BindAddress: host, Port: "8080"}).ListenAddress()
+		if err == nil {
+			t.Errorf("ListenAddress(%q) admitted a non-loopback bind with no setting", host)
+			continue
+		}
+		for _, named := range []string{"SUBSTRATE_BIND_ADDRESS", "SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true", want} {
+			if !strings.Contains(err.Error(), named) {
+				t.Errorf("ListenAddress(%q) refusal does not name %q: %v", host, named, err)
+			}
+		}
+
+		got, err := (Config{BindAddress: host, Port: "8080", InsecureAllowCleartext: true}).ListenAddress()
+		if err != nil || got != want {
+			t.Errorf("ListenAddress(%q) with SUBSTRATE_INSECURE_ALLOW_CLEARTEXT = %q, %v; want %q", host, got, err, want)
+		}
+	}
+}
+
+// Unset, the bind is loopback and the escape is off: the default is the one
+// that needs nothing in front of it. Setenv, so not parallel.
+func TestLoadBindsLoopbackByDefault(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/substrate")
+	t.Setenv("SUBSTRATE_DATA_ROOT", t.TempDir())
+	t.Setenv("PORT", "8080")
+	// Present-but-empty is not unset: the Unsetenv makes both absent, the
+	// shape a fresh environment has, and t.Setenv restores them afterwards.
+	t.Setenv("SUBSTRATE_BIND_ADDRESS", "")
+	t.Setenv("SUBSTRATE_INSECURE_ALLOW_CLEARTEXT", "")
+	_ = os.Unsetenv("SUBSTRATE_BIND_ADDRESS")
+	_ = os.Unsetenv("SUBSTRATE_INSECURE_ALLOW_CLEARTEXT")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.BindAddress != "127.0.0.1" || c.InsecureAllowCleartext {
+		t.Fatalf("defaults: SUBSTRATE_BIND_ADDRESS = %q, SUBSTRATE_INSECURE_ALLOW_CLEARTEXT = %v; want 127.0.0.1 and false",
+			c.BindAddress, c.InsecureAllowCleartext)
+	}
+	if addr, err := c.ListenAddress(); err != nil || addr != "127.0.0.1:8080" {
+		t.Fatalf("default ListenAddress = %q, %v; want 127.0.0.1:8080", addr, err)
+	}
+}

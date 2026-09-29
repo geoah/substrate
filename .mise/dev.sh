@@ -350,8 +350,10 @@ totp_note() {
 urls() {
 	echo "  http://localhost:${PORT}"
 	# The tailnet address, when there is one: this is how the box is reached
-	# from another machine. The server binds every interface, so the only thing
-	# to print is the address the tailnet already assigned.
+	# from another machine. Both starts bind every interface
+	# (SUBSTRATE_BIND_ADDRESS=0.0.0.0, admitted by
+	# SUBSTRATE_INSECURE_ALLOW_CLEARTEXT, a dev box's escape like the TOTP
+	# one), so the only thing to print is the address the tailnet assigned.
 	local ip
 	if command -v tailscale >/dev/null 2>&1 && ip="$(tailscale ip -4 2>/dev/null | head -1)" && [ -n "$ip" ]; then
 		echo "  http://${ip}:${PORT}  (tailnet)"
@@ -408,6 +410,8 @@ server_start() {
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
+		"SUBSTRATE_BIND_ADDRESS=0.0.0.0" \
+		"SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true" \
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
@@ -474,6 +478,8 @@ cmd_run() {
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
+		"SUBSTRATE_BIND_ADDRESS=0.0.0.0" \
+		"SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true" \
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"SUBSTRATE_DATA_ROOT=${DATA_ROOT}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \

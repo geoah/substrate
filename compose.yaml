@@ -22,7 +22,11 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      # Bound to localhost by default; set BIND_ADDRESS=0.0.0.0 to expose.
+      # Published on the host's loopback by default. The server speaks plain
+      # HTTP, so BIND_ADDRESS=0.0.0.0 exposes passwords and tokens to the
+      # network unless a TLS terminator is what the network reaches: a proxy
+      # on this host reaches 127.0.0.1 and needs no change here
+      # (docs/operations.md, "TLS and the reverse proxy").
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
     depends_on:
       postgres:
@@ -84,6 +88,13 @@ services:
         exec /usr/local/bin/substrate
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-substrate}?sslmode=disable
+      # Every interface of the container, because the ports line above decides
+      # who reaches it: the host's loopback unless BIND_ADDRESS says otherwise.
+      # The binary refuses a non-loopback bind unless the second line says the
+      # deployment accounts for the cleartext, which the port mapping does. The
+      # image sets both; they are repeated so this file says what it runs.
+      SUBSTRATE_BIND_ADDRESS: 0.0.0.0
+      SUBSTRATE_INSECURE_ALLOW_CLEARTEXT: "true"
       # THIS IS A LAPTOP. Two settings below make it one, and both are what to
       # change before anyone else can reach the port (see BIND_ADDRESS).
       #

@@ -171,14 +171,29 @@ ENV HOME=/home/substrate
 COPY --from=artifacts /out/substrate /usr/local/bin/substrate
 COPY --from=artifacts /out/substratectl /usr/local/bin/substratectl
 COPY --from=artifacts /web /web
+# The binary binds loopback unless told otherwise, and a container's loopback
+# is unreachable from the port mapping, so the image binds every interface of
+# the container and says so with SUBSTRATE_INSECURE_ALLOW_CLEARTEXT. What
+# reaches that interface is the runtime's decision: compose.yaml publishes the
+# port on the host's loopback, a Kubernetes Service answers inside the
+# cluster. The server still speaks plain HTTP, so publishing the port beyond
+# a host's loopback needs a TLS terminator in front (docs/operations.md, "TLS
+# and the reverse proxy"). Go opens 0.0.0.0 as its dual-stack wildcard, the
+# socket the old ":8080" was, so IPv6 still reaches it where the host has it.
 ENV WEB_DIR=/web \
-    PORT=8080
+    PORT=8080 \
+    SUBSTRATE_BIND_ADDRESS=0.0.0.0 \
+    SUBSTRATE_INSECURE_ALLOW_CLEARTEXT=true
 EXPOSE 8080
 
-# Shell form, so a PORT override is the port probed. busybox wget is in the
-# base image; nothing else here is a shell dependency.
+# Shell form, so a PORT or SUBSTRATE_BIND_ADDRESS override is what is probed:
+# every interface is probed on 127.0.0.1, and an IPv6 literal inside
+# brackets. busybox wget is in the base image; nothing else here is a shell
+# dependency.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT}/healthz" || exit 1
+    CMD host="${SUBSTRATE_BIND_ADDRESS#[}"; host="${host%]}"; \
+        case "$host" in ""|0.0.0.0|::|localhost) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac; \
+        wget -q -O /dev/null "http://${host}:${PORT}/healthz" || exit 1
 
 USER substrate
 ENTRYPOINT ["/usr/local/bin/substrate"]
