@@ -14,14 +14,17 @@ they stand on 2026-09-29
 ([#138](https://github.com/geoah/substrate/issues/138)). A token is a record
 of `substrate.reamde.dev/core/token` with a `label`, the SHA-256 of its secret
 and an optional `expiresAt`; the kind declares no `scopes`. `Authenticate`
-finds the token record by that hash and hands back the dataset of the
-repository holding it, and nothing else is checked. `Login` mints with
+checks the secret's shape, finds the live token record by that hash, refuses
+it past its `expiresAt`, and hands back the dataset of the repository holding
+it. No scope, role or ACL check follows. `Login` mints with
 `ds.MintToken(ctx, label, nil)` and registration with
 `t.mintToken(label, nil)`, so every session token has no `expiresAt`.
 
-Both facts were stated only in the docs and a kind comment. A scoped-token or
-session-expiry design had no record to supersede, and could change a default
-that the console, `substratectl` and every script already depend on.
+Both facts were stated in `docs/auth.md` and in comments (the token kind,
+`TokenInfo`, `internal/api/core.go`, `internal/engine/write.go`), and in no
+decision record. A scoped-token or session-expiry design had no record to
+supersede, and could change a default that the console, `substratectl` and
+every script already depend on.
 
 ## Considered Options
 
@@ -57,18 +60,20 @@ live records lack the value.
 
 What bounds a token today is the password-factor rule: `/password`,
 `/totp/enroll` and `/totp` refuse a bearer token and demand both factors, so
-a leaked token reaches the data and never the account. The generic record API
-may only delete a token record, and the seeded `core` package is not writable
-by a token.
+a leaked token cannot change the password or the second factor. It can still
+mint more tokens through `POST /tokens` and delete any token record. The
+generic record API may only delete a token record, and the seeded `core`
+package is not writable by a token.
 
 Login tokens stay open-ended because a default expiry would sign the console
 out on a schedule (it drops its session on a `401`) and break every context
 `substratectl login` stored, with nothing gained while every token has full
-access: a stolen token that expires in 30 days is 30 days of the whole
-repository. Revocation is the control that works now. `DELETE /tokens/{id}`,
-the generic `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, the
-console's sign-out, `substratectl logout` and `substratectl token revoke` all
-delete the record, and no row means no access. An owner who wants a token to
+access: a stolen token that expires in 30 days can mint an open-ended one
+through `POST /tokens` before it lapses. Revocation is the control that works
+now. `DELETE /tokens/{id}`, the generic
+`DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, the console's sign-out,
+`substratectl logout` and `substratectl token revoke` all delete the record,
+and no row means no access. An owner who wants a token to
 lapse sets `expiresAt` at mint, and `Authenticate` refuses it after that
 instant.
 
@@ -82,22 +87,25 @@ instant.
 - Bad, because a bearer token is arbitrary code execution:
   `POST /api/v1/vocabulary/apply` can declare a function and
   `POST /api/v1/substrate.reamde.dev/core/function/{name}/call` runs it, inside
-  the function sandbox, with the repository's data in reach.
+  the function sandbox, with whatever grants that same holder declared.
 - Bad, because a leaked login token never stops working on its own, and a
-  password change does not end it. The owner has to find it and delete it,
-  and the token record keeps no last-used stamp to help.
+  password change does not end it. The holder can also mint new tokens and
+  revoke the owner's, so recovering from a leak means deleting every token
+  minted since, not only the leaked one, and the token record keeps no
+  last-used stamp to help.
 
 ### Confirmation
 
-`TestTokenLookupScopesTheRequest` (internal/engine) holds that the hash lookup
-alone picks the repository, `TestLoginMintsATokenAndSpendsTheCode` that a
-login mints an ordinary token record, `TestTokenExpiryIsServerEnforced` and
-`TestExpiredTokenRejected` (internal/api) that an opt-in expiry is enforced,
-`TestCredentialChangesRefuseABearerTokenAlone` (internal/api) the
-password-factor rule, and `TestLogoutRevokesTheStoredTokenAndForgetsIt`
-(cmd/substratectl) that logout deletes the record. No test asserts that a
-login token has no `expiresAt` or that the token kind declares no `scopes`;
-those two halves are held by review only.
+In internal/engine, `TestTokenLookupScopesTheRequest` holds that the hash
+lookup alone picks the repository, `TestLoginMintsATokenAndSpendsTheCode` that
+a login mints an ordinary token record, and `TestTokenExpiryIsServerEnforced`
+that an opt-in expiry is enforced. In internal/api,
+`TestExpiredTokenRejected` holds the same expiry at the HTTP door and
+`TestCredentialChangesRefuseABearerTokenAlone` the password-factor rule. In
+cmd/substratectl, `TestLogoutRevokesTheStoredTokenAndForgetsIt` holds that
+logout deletes the record. No test asserts that a login token has no
+`expiresAt` or that the token kind declares no `scopes`; those two halves are
+held by review only.
 
 ## More Information
 
