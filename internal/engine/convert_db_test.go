@@ -1231,3 +1231,208 @@ func TestStateEntryEntersEveryRecordThatPredatesTheMachine(t *testing.T) {
 	// without reading the declaration that entered them.
 	cvReplays(t, svc, ds)
 }
+
+// Dropping a state property is the null step too (#627). Every record of a
+// kind with a machine holds a state, because a create enters `initial`, and
+// no write clears one, so the counted refusal this replaced fired on every
+// kind with records and named a migration nobody could run. Now the drop is
+// lossy and confirmed like any other: the refusal names the step, its count
+// and the hash to confirm; the hash binds the records holding the state; the
+// confirmed apply removes the state from every live record as one `patch`
+// entry each; and a replay reproduces the removal. The drop moves no record
+// to any state, so nothing a transition does happens: the stamp the fixture's
+// transition writes is written by the transition and never by the drop.
+// (`notifies:` is the other declared transition effect; only the seeded kinds
+// may declare it, and they reach a drop only through the boot upgrade, which
+// refuses a lossy step.) A second machine, `review`, stays declared: the drop
+// leaves it alone, and the change values read lists only the state that moved.
+// A record tombstoned before the drop is not converted, and a put restoring it
+// afterwards comes back without the dropped state.
+func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	name := map[string]any{"type": "string"}
+	handledAt := map[string]any{"type": "datetime"}
+	status := map[string]any{
+		"type": "state", "states": []any{"open", "standing", "handled"}, "initial": "open",
+		"transitions": []any{
+			map[string]any{"from": "open", "to": "standing"},
+			map[string]any{"from": "standing", "to": "handled", "stamps": map[string]any{"handledAt": "now"}},
+		},
+	}
+	review := map[string]any{
+		"type": "state", "states": []any{"pending", "approved"}, "initial": "pending",
+		"transitions": []any{map[string]any{"from": "pending", "to": "approved"}},
+	}
+	kept := map[string]any{"name": name, "handledAt": handledAt, "review": review}
+	if err := cvApply(t, ds, map[string]any{"name": name, "handledAt": handledAt, "status": status, "review": review}); err != nil {
+		t.Fatalf("install the package: %v", err)
+	}
+	gone := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "d"}})
+	if _, err := ds.Delete(ctx, owner, cvWidget, gone.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("tombstone %s: %v", gone.ID, err)
+	}
+	open := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "a"}})
+	standing := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "b"}})
+	standing = mustPatch(t, ds, owner, cvWidget, standing.ID, substrate.PatchInput{Properties: map[string]any{"status": "standing"}})
+	handled := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "c"}})
+	handled = mustPatch(t, ds, owner, cvWidget, handled.ID, substrate.PatchInput{Properties: map[string]any{"status": "standing"}})
+	handled = mustPatch(t, ds, owner, cvWidget, handled.ID, substrate.PatchInput{Properties: map[string]any{"status": "handled"}})
+	// The control: in this fixture a transition does write its stamp.
+	stamped, _ := handled.Properties["handledAt"].(string)
+	if open.Properties["status"] != "open" || standing.Properties["status"] != "standing" || stamped == "" {
+		t.Fatalf("fixture: open=%v standing=%v handled=%v", open.Properties, standing.Properties, handled.Properties)
+	}
+
+	docs := cvDocs(kept)
+	plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !plan.Lossy || plan.Work != 3 || len(plan.Steps) != 1 || plan.PlanHash == "" {
+		t.Fatalf("plan = %+v (want one lossy step over 3 records)", plan)
+	}
+	if s := plan.Steps[0]; s.Step != substrate.StepNull || s.Kind != cvWidget || s.Property != "status" || s.Records != 3 || !s.Lossy {
+		t.Fatalf("step = %+v", s)
+	}
+	// Unconfirmed, the drop refuses as lossy, naming the step with its count
+	// and the hash a confirmation carries.
+	wantLossyRefusal(t, ds, cvApply(t, ds, kept), open,
+		`property "status" dropped, its value removed from 3 live records`,
+		"planHash "+plan.PlanHash)
+
+	// The hash binds the records holding the state: a write to one of them
+	// refuses the confirmation read before it.
+	standing = mustPatch(t, ds, owner, cvWidget, standing.ID, substrate.PatchInput{Properties: map[string]any{"name": "b2"}})
+	stale := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	_, err = ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &stale})
+	wantStaleRefusal(t, ds, err, standing, "the confirmation is for another plan", "was written since the preview")
+
+	if plan, err = ds.PlanVocabularyApply(ctx, owner, docs); err != nil {
+		t.Fatalf("plan again: %v", err)
+	}
+	head := maxSeq(t, ds)
+	confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+	if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+		t.Fatalf("the confirmed drop must land: %v", err)
+	}
+
+	want := kindVersion(t, ds, cvWidget)
+	for _, r := range []*substrate.Record{open, standing, handled} {
+		got := mustGet(t, ds, cvWidget, r.ID)
+		if _, still := got.Properties["status"]; still {
+			t.Fatalf("%s still holds the dropped state: %v", r.ID, got.Properties)
+		}
+		if got.Version == r.Version || got.KindVersion != want {
+			t.Fatalf("%s was not rewritten under the new declaration: version %d -> %d, kindVersion %d (want %d)",
+				r.ID, r.Version, got.Version, got.KindVersion, want)
+		}
+		if got.Properties["name"] != r.Properties["name"] || got.Properties["review"] != "pending" {
+			t.Fatalf("%s lost a property the drop does not touch: %v", r.ID, got.Properties)
+		}
+	}
+	db := rawDB(t, dsn)
+	var holding int
+	if err := db.QueryRow(`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND states ? 'status'`, cvWidget).Scan(&holding); err != nil || holding != 0 {
+		t.Fatalf("live records still holding the state in the states column = %d, %v", holding, err)
+	}
+	// No transition ran: the records that never reached `handled` carry no
+	// stamp, and the one that did keeps the stamp its own transition wrote.
+	for _, r := range []*substrate.Record{open, standing} {
+		if got := mustGet(t, ds, cvWidget, r.ID); got.Properties["handledAt"] != nil {
+			t.Fatalf("the drop stamped %s like a transition: %v", r.ID, got.Properties)
+		}
+	}
+	if got := mustGet(t, ds, cvWidget, handled.ID); got.Properties["handledAt"] != stamped {
+		t.Fatalf("the drop moved the stamp: %v, want %q", got.Properties["handledAt"], stamped)
+	}
+	// The whole apply wrote one entry per record for the kind, a patch that
+	// names the state and says the step removed it, and nothing else.
+	rows, err := db.Query(`SELECT op, payload->'properties', payload->'nulled' FROM changelog WHERE seq > $1 AND kind = $2`, head, cvWidget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var entries int
+	for rows.Next() {
+		var op string
+		var props, nulled []byte
+		if err := rows.Scan(&op, &props, &nulled); err != nil {
+			t.Fatal(err)
+		}
+		if op != "patch" || string(props) != `["status"]` || string(nulled) != `["status"]` {
+			t.Fatalf("entry = %s properties=%s nulled=%s, want a patch nulling status alone", op, props, nulled)
+		}
+		entries++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if entries != 3 {
+		t.Fatalf("the drop wrote %d record entries, want 3", entries)
+	}
+	// The state is undeclared now, and a prune spends no name (decision
+	// 0055): the kind retires nothing it was not told to.
+	if _, err := ds.Patch(ctx, owner, cvWidget, open.ID, substrate.PatchInput{Properties: map[string]any{"status": "standing"}}); err == nil {
+		t.Fatal("the dropped state property must be undeclared once the null landed")
+	}
+	ty, err := ds.KindByRef(ctx, cvWidget)
+	if err != nil {
+		t.Fatalf("the kind: %v", err)
+	}
+	if retired, has := ty.Definition["retired"]; has {
+		t.Fatalf("the drop retired names nobody retired: %v", retired)
+	}
+	// Admitting the same declaration again has nothing left to clear.
+	if again, err := ds.PlanVocabularyApply(ctx, owner, docs); err != nil || len(again.Steps) != 0 {
+		t.Fatalf("plan after the drop = %+v, %v", again, err)
+	}
+	// The value-annotated change feed shows the state leaving: the fold
+	// carries the states column whole, so the removal is read off the
+	// entry's `nulled` names, with the before the record's last transition
+	// left. `review` rides the same whole column on the drop and on the
+	// transition before it, unmoved, and is listed on neither.
+	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{cvWidget}, RecordID: handled.ID, Values: true}, 2)
+	if err != nil || len(changes) != 2 || len(changes[0].Affected) == 0 || len(changes[1].Affected) == 0 {
+		t.Fatalf("the drop's change rows = %+v, %v", changes, err)
+	}
+	if got := jsonOf(t, changes[0].Affected[0].Properties); got != `[{"name":"status","before":"handled"}]` {
+		t.Fatalf("the drop's change reads %s, want status leaving handled", got)
+	}
+	var moved []string
+	for _, pc := range changes[1].Affected[0].Properties {
+		moved = append(moved, pc.Name)
+		if pc.Name == "status" && (pc.Before != "standing" || pc.After != "handled") {
+			t.Fatalf("the transition reads %s, want standing to handled", jsonOf(t, pc))
+		}
+	}
+	if strings.Join(moved, ",") != "handledAt,status" {
+		t.Fatalf("the transition lists %v, want the stamp and the state it moved", moved)
+	}
+
+	// A record tombstoned before the drop was not converted, and a put that
+	// restores it comes back holding only the machines the kind declares, so
+	// its read applies back unchanged.
+	restored := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: map[string]any{"name": "d"}})
+	if _, still := restored.Properties["status"]; still || restored.Properties["review"] != "pending" {
+		t.Fatalf("the restored record holds %v, want review alone", restored.Properties)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: restored.Properties})
+	// The restore names the state it removed, so the values read shows it
+	// leaving there, with the state the record was tombstoned in.
+	changes, err = ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{cvWidget}, RecordID: gone.ID, Values: true}, 10)
+	if err != nil {
+		t.Fatalf("the restored record's changes: %v", err)
+	}
+	var left bool
+	for _, c := range changes {
+		for _, pc := range c.Affected[0].Properties {
+			left = left || (pc.Name == "status" && pc.Before == "open" && pc.After == nil && !pc.BeforeUnknown)
+		}
+	}
+	if !left {
+		t.Fatalf("no change of the restored record shows the dropped state leaving: %s", jsonOf(t, changes))
+	}
+	cvReplays(t, svc, ds)
+}

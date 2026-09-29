@@ -188,7 +188,7 @@ const (
 	// the value entry).
 	StepRemap = "remap"
 	// StepNull removes a dropped property's value from every record carrying
-	// it. Always lossy.
+	// it, a dropped state property's state included. Always lossy.
 	StepNull = "null"
 )
 

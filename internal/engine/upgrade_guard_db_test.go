@@ -1524,3 +1524,71 @@ func TestBootUpgradeReprojectsDeclarationRowsUnderAKeptMetaKind(t *testing.T) {
 		t.Fatalf("the rebuilt fold is not the upgraded fold\n%s", firstDifference(before, after))
 	}
 }
+
+// A shipped kind dropping a state property is classified at the boot door as
+// the apply door classifies it (#627): the lossy null step, never a counted
+// narrowing of its own. The boot has nobody to confirm a lossy step, so it
+// refuses, the open succeeds on the stored declaration, the records keep
+// their state, and the preview names the step.
+func TestBootUpgradeRefusesAShippedStatePropertyDrop(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := seededRepository(t)
+	const provider = "substrate.reamde.dev/llm/provider"
+	// Binary N ships a machine on llm/provider, and the rows enter it.
+	withMachine := shippedTree(t)
+	patchShipped(t, llmKind(withMachine, "provider.yaml"), func(doc string) string {
+		const from = "  properties:\n    label:\n"
+		if !strings.Contains(doc, from) {
+			t.Fatal("llm/provider no longer opens its properties with `label`")
+		}
+		doc = strings.Replace(doc, from, "  properties:\n"+
+			"    attention:\n"+
+			"      type: state\n"+
+			"      states:\n"+
+			"        - quiet\n"+
+			"        - raised\n"+
+			"      initial: quiet\n"+
+			"      transitions:\n"+
+			"        - from: quiet\n"+
+			"          to: raised\n"+
+			"    label:\n", 1)
+		return pinVersion(t, doc, "99")
+	})
+	if err := openMoved(t, dsn, withMachine); err != nil {
+		t.Fatalf("binary N must land its machine: %v", err)
+	}
+	// Binary N+1 ships the kind without it.
+	dropped := shippedTree(t)
+	patchShipped(t, llmKind(dropped, "provider.yaml"), func(doc string) string {
+		return pinVersion(t, doc, "100")
+	})
+	refused := openRefused(t, dsn, dropped)
+	wantRefusedUpgrade(t, refused, `property "attention" dropped, its value removed from`, "never runs a lossy step")
+	if strings.Contains(refused, "resolve them first") {
+		t.Fatalf("the boot refused the drop as a narrowing, not as the null step: %s", refused)
+	}
+
+	svc := openTree(t, dsn, dropped)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if got := mustGet(t, ds, provider, "guarded"); got.Properties["attention"] != "quiet" {
+		t.Fatalf("the refused drop cleared the state anyway: %v", got.Properties)
+	}
+	plans, err := ds.PlanShippedUpgrade(ctx)
+	if err != nil {
+		t.Fatalf("plan the shipped upgrade: %v", err)
+	}
+	var planned bool
+	for _, p := range plans {
+		for _, s := range p.Upgrade.Steps {
+			planned = planned || (s.Step == substrate.StepNull && s.Kind == provider && s.Property == "attention" && s.Records > 0 && s.Lossy)
+		}
+	}
+	if !planned {
+		t.Fatalf("the preview does not name the state drop as a lossy null step: %+v", plans)
+	}
+}
