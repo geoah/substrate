@@ -74,6 +74,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
 
 import { ConnectedSection } from "./connected"
 import { countWords } from "./record-model"
+import { request } from "@/lib/api/http"
 import {
   ConsolePreferencesContext,
   type ConsolePreferencesContextValue,
@@ -192,6 +193,17 @@ describe("ConnectedSection", () => {
     expect(meta.className).toMatch(/shrink-0/)
     expect(meta.className).toMatch(/whitespace-nowrap/)
     expect(within(meta).getByText(/Open|Done/)).toBeTruthy()
+  })
+
+  it("reads the fan-in without asking the server to count it", async () => {
+    renderSection()
+    await screen.findByText("Tasks")
+    const reads = vi
+      .mocked(request)
+      .mock.calls.map(([, path]) => new URL(path, "http://console.test"))
+      .filter((url) => url.searchParams.get("filter")?.includes("referencing"))
+    expect(reads.length).toBeGreaterThan(0)
+    for (const url of reads) expect(url.searchParams.has("count")).toBe(false)
   })
 
   it("says a count that did not reach the end in words", async () => {

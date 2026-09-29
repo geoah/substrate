@@ -15,7 +15,7 @@ import (
 func TestClosingTheRepositoryPoolGivesUpOnAHeldConnection(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	pool, err := openRepositoryPool(ctx, MigratedDSN(t), "", MinRepositoryConnections)
+	pool, err := openRepositoryPool(ctx, MigratedDSN(t), "", MinRepositoryConnections, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

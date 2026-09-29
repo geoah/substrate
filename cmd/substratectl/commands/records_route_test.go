@@ -175,6 +175,11 @@ func TestGetReferencingIsAFilterArm(t *testing.T) {
 	if f.Referencing == nil || f.Referencing.Ref != taskKind+"/p1" || len(f.Kinds) != 1 {
 		t.Fatalf("filter = %+v", f)
 	}
+	// The listing prints no total, so it does not pay for one: a count is a
+	// scan of every pointer at the target (issue #334).
+	if h.fake.lastQuery.Has("count") {
+		t.Fatalf("the reverse read asked for a count it never prints: %v", h.fake.lastQuery)
+	}
 	if !strings.Contains(out, "t1 ") || strings.Contains(out, "p1 ") {
 		t.Fatalf("only the pointing record should be listed:\n%s", out)
 	}

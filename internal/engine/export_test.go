@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -217,6 +218,14 @@ func WithTestInadmissible(packages ...string) Option {
 			o.inadmissible[p] = true
 		}
 	}
+}
+
+// WithTestQueryTracer installs tr on the repository pool every dataset of the
+// service draws from, so it sees each statement a read or a write sends, the
+// background work of every open repository's included. The pool calls tr from
+// every connection at once, so it must be safe for concurrent use.
+func WithTestQueryTracer(tr pgx.QueryTracer) Option {
+	return func(o *options) { o.queryTracer = tr }
 }
 
 // SearchReindexDone is closed when the dataset's latest reindex has returned,

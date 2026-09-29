@@ -155,7 +155,8 @@ const repositoryConnIdle = 5 * time.Minute
 // refused every client). Its connections carry the role and nothing else;
 // the repository setting is written by scopedConnector each time one is
 // handed to a repository, and nothing but scopedConnector acquires from it.
-func openRepositoryPool(ctx context.Context, dsn, role string, maxConns int) (*pgxpool.Pool, error) {
+// tracer is a test's (WithTestQueryTracer); nil is the production pool.
+func openRepositoryPool(ctx context.Context, dsn, role string, maxConns int, tracer pgx.QueryTracer) (*pgxpool.Pool, error) {
 	if maxConns < MinRepositoryConnections {
 		return nil, fmt.Errorf("substrate/engine: the repository pool's cap is %d: it must be at least %d, so each repository gets two connections", maxConns, MinRepositoryConnections)
 	}
@@ -166,6 +167,7 @@ func openRepositoryPool(ctx context.Context, dsn, role string, maxConns int) (*p
 	cfg.MaxConns = int32(min(maxConns, 1<<30)) //nolint:gosec // bounded just above
 	cfg.MinConns = 0
 	cfg.MaxConnIdleTime = repositoryConnIdle
+	cfg.ConnConfig.Tracer = tracer
 	// A released connection is unpinned before it is idle, so no idle
 	// connection carries the last repository's setting. scopedConnector pins
 	// every acquisition anyway; this is the second wall, and it costs one

@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
@@ -149,6 +150,11 @@ type options struct {
 	// clock when nil. A test that spends one window's codes advances it
 	// instead of sleeping through a real 30 second step.
 	now func() time.Time
+	// queryTracer sees every statement the shared repository pool sends
+	// (export_test.go WithTestQueryTracer), so a test can assert which
+	// statements a read ran and not only what it answered. Tests only; nil
+	// traces nothing.
+	queryTracer pgx.QueryTracer
 }
 
 // Option configures Open.
@@ -664,7 +670,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if repoConns == 0 {
 		repoConns = DefaultRepositoryConnections
 	}
-	repoPool, err := openRepositoryPool(ctx, dsn, s.appRole, repoConns)
+	repoPool, err := openRepositoryPool(ctx, dsn, s.appRole, repoConns, o.queryTracer)
 	if err != nil {
 		_ = maint.Close()
 		_ = admin.Close()

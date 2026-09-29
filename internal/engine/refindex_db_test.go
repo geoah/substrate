@@ -14,11 +14,15 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
@@ -29,10 +33,10 @@ const refIndexPackage = "refindex.test.dev/refindex"
 
 // refIndexDataset declares a target kind and a pointer kind holding one
 // scalar and one repeated reference at it, and plants three pointers.
-func refIndexDataset(t *testing.T) (*dataset, string, string) {
+func refIndexDataset(t *testing.T, opts ...Option) (*dataset, string, string) {
 	t.Helper()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
+	ds := openInternalDataset(t, opts...)
 	target := refIndexPackage + "/target"
 	pointer := refIndexPackage + "/pointer"
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
@@ -408,6 +412,132 @@ func TestReferencingTrailIsEveryIDResolvingToATarget(t *testing.T) {
 	if got := recordIDs(page); got != "p3,px" {
 		t.Fatalf("referencing c answered %q, want p3 and the pointer stored under x", got)
 	}
+}
+
+// A HOT TARGET'S REVERSE READ COUNTS ONLY ON THE PAGE THAT ASKS (issue #334).
+// A page is an index-ordered walk of refs_dst_idx that stops at `first`; the
+// size of the match set is a count(*) over every pointer, so it runs on a page
+// that asked `count` (record 0134) and on no other. The tracer is what makes
+// "runs no count" an assertion: a page's answer alone cannot tell a count
+// never run from one run and dropped.
+func TestAHotTargetsReferencingPageCountsOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	statements := &statementLog{}
+	ds, target, pointer := refIndexDataset(t, WithTestQueryTracer(statements))
+	// p2 already points at b; a few thousand more make it hot. One transaction
+	// per batch, through the ordinary put.
+	const hot, batch = 2000, 500
+	for from := 0; from < hot; from += batch {
+		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+			for i := from; i < from+batch; i++ {
+				if _, err := tx.put(substrate.PutInput{
+					Kind: pointer, ID: fmt.Sprintf("h%04d", i),
+					Properties: map[string]any{"target": "b"},
+				}); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("plant pointers from %d: %v", from, err)
+		}
+	}
+	// Statistics, as a live table has them: planned against the empty tables
+	// the fixture started from, the first pages nest a loop over every
+	// pointer and take seconds each until autovacuum catches up.
+	if _, err := ds.svc.admin.ExecContext(ctx, `ANALYZE records, refs`); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	const want = hot + 1
+	f := substrate.Filter{Referencing: &substrate.Referencing{Ref: vocabulary.RecordPath(target, "b")}}
+
+	// walk pages through the whole fan-in, asking `count` on its first page
+	// alone when countFirst. It answers the rows it read, the first page's
+	// count and how many count statements the walk sent.
+	walk := func(countFirst bool) (rows int, count *int64, counts int) {
+		t.Helper()
+		statements.take()
+		q := substrate.Query{Filter: f, First: 500, Count: countFirst}
+		for n := 0; ; n++ {
+			page, err := ds.List(ctx, q)
+			if err != nil {
+				t.Fatalf("page %d: %v", n, err)
+			}
+			if n == 0 {
+				count = page.Count
+			} else if page.Count != nil {
+				t.Fatalf("page %d answered count %d without asking", n, *page.Count)
+			}
+			rows += len(page.Records)
+			if page.Cursor == "" {
+				break
+			}
+			q.Count, q.After = false, page.Cursor
+		}
+		return rows, count, referencingCounts(statements.take())
+	}
+
+	rows, count, counts := walk(false)
+	if rows != want {
+		t.Fatalf("the walk read %d rows, want %d", rows, want)
+	}
+	if count != nil {
+		t.Fatalf("a first page that did not ask answered count %d", *count)
+	}
+	if counts != 0 {
+		t.Fatalf("a walk of %d rows that never asked ran %d count statements, want none", rows, counts)
+	}
+
+	rows, count, counts = walk(true)
+	if rows != want {
+		t.Fatalf("the counted walk read %d rows, want %d", rows, want)
+	}
+	if count == nil || *count != want {
+		t.Fatalf("the first page's count = %v, want %d", count, want)
+	}
+	if counts != 1 {
+		t.Fatalf("a walk that asked on its first page ran %d count statements, want 1", counts)
+	}
+}
+
+// statementLog is a pgx tracer that keeps the text of every statement the
+// pool sends until take.
+type statementLog struct {
+	mu   sync.Mutex
+	sqls []string
+}
+
+func (l *statementLog) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.sqls = append(l.sqls, d.SQL)
+	return ctx
+}
+
+func (l *statementLog) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+// take returns the statements sent since the last take and forgets them.
+func (l *statementLog) take() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := l.sqls
+	l.sqls = nil
+	return out
+}
+
+// referencingCounts is how many of sqls are the list's count over a
+// referencing filter: countSQL's count(*) carrying condReferencing's EXISTS.
+// The background work sharing the pool never sends that pair.
+func referencingCounts(sqls []string) int {
+	n := 0
+	for _, s := range sqls {
+		if strings.HasPrefix(s, "SELECT count(*) FROM records WHERE ") &&
+			strings.Contains(s, "FROM refs r WHERE r.src_kind = records.kind") {
+			n++
+		}
+	}
+	return n
 }
 
 // A declaration that already indexes exactly the reference's expression is
