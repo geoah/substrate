@@ -169,10 +169,10 @@ Without `gh`, the same bodies are at
 in the `body` field of each entry.
 
 **How to read a section.** It opens with `⚠ BREAKING CHANGES`, one entry
-per break with its steps written to be followed literally, then `Added` and
-`Fixed`. Releases before 2026-09-29 also carry an `Upgrade notes` block: the
-older note format, with a `What to do` under each break. Treat each break
-entry and each note as a note below. For each one, decide:
+per break with its steps as sub-bullets, written to be followed literally,
+then `Added` and `Fixed`. Releases before v0.70.0 are not listed: a database
+from before it cannot be upgraded in place (below). Each break entry is a
+note below. For each one, decide:
 
 1. **Does it apply?** Check it against the step 1 inventory. A note about a
    provider the user never installed does not apply. Record why you skipped

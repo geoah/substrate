@@ -124,9 +124,11 @@ is how `main` takes every pull request.
 `## [X.Y.Z](compare link) (date)` heading per release. release-please writes
 it and inserts each new section above the previous one; nobody edits it by
 hand. The file was folded on 2026-09-29 from the tags, the `feat:` and
-`fix:` subjects between them, and the upgrade notes that used to live as one
-file per change under `docs/changes/`: a release before that date carries
-those notes under an `Upgrade notes` heading, in their original words.
+`fix:` subjects between them, and the breaking notes that used to live as
+one file per change under `docs/changes/`: each is a `**Breaking:**` entry
+with its steps as sub-bullets. Releases before v0.70.0 are not listed, since
+no database from before it can be upgraded in place. One line per change is
+the rule; the file stays short because a release is a section, not a page.
 
 ## Setup and recovery
 

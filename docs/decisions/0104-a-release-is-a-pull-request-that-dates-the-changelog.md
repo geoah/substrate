@@ -56,9 +56,11 @@ The changelog is release-please's: one `CHANGELOG.md` at the root, a
 carries its upgrade steps in a `BREAKING CHANGE:` footer on a commit of the
 branch, and that text is the entry; `commits:check` refuses a `!` without
 one. A wrong line is fixed by editing the merged pull request's body
-(`BEGIN_COMMIT_OVERRIDE`), never the file. The fragments under
-`docs/changes/` were folded into the file under the version each shipped in,
-and every version keeps its `feat:` and `fix:` subjects as lines.
+(`BEGIN_COMMIT_OVERRIDE`), never the file. The breaking notes under
+`docs/changes/` were folded into the file as entries with their steps under
+the version each shipped in, every version since v0.70.0 keeps its `feat:`
+and `fix:` subjects as lines, and nothing before v0.70.0 is listed: one line
+per change, so the file stays a list and not a book.
 
 The hand-run script was rejected because release-please already does the
 same and keeps the pull request current without anybody running anything:
