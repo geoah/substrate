@@ -1592,3 +1592,136 @@ func TestBootUpgradeRefusesAShippedStatePropertyDrop(t *testing.T) {
 		t.Fatalf("the preview does not name the state drop as a lossy null step: %+v", plans)
 	}
 }
+
+// shipRefinedGizmo ships a core propertytype `code` with the given data lines
+// and a core kind `gizmo` whose one property refines it. A propertytype
+// declares no version of its own and takes its package's, while gizmo pins 1:
+// a core bump moves the refinement forward and holds the kind at its stored
+// version, the shape where the kind re-resolves its `type:` against a
+// declaration the boot rewrote without rewriting the kind.
+func shipRefinedGizmo(t *testing.T, tree, refinement string) {
+	t.Helper()
+	docs := map[string]string{
+		"code.yaml": "kind: substrate.reamde.dev/core/propertytype\nmetadata:\n  id: " + corePackage + "/code\ndata:\n" +
+			"  authority: substrate.reamde.dev\n  package: core\n" + refinement,
+		"gizmo.yaml": "kind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + corePackage + "/gizmo\ndata:\n" +
+			"  authority: substrate.reamde.dev\n  package: core\n  version: 1\n" +
+			"  names:\n    singular: gizmo\n  displayTemplate: \"{code}\"\n" +
+			"  properties:\n    code:\n      type: code\n",
+	}
+	for file, doc := range docs {
+		if err := os.WriteFile(filepath.Join(tree, corePackage, file), []byte(doc), 0o600); err != nil {
+			t.Fatalf("ship %s: %v", file, err)
+		}
+	}
+}
+
+// gizmoRepository creates a repository under a tree shipping the refinement
+// and writes one gizmo per entry, id to code.
+func gizmoRepository(t *testing.T, refinement string, codes map[string]string) (dsn string) {
+	t.Helper()
+	ctx := context.Background()
+	dsn = engine.MigratedDSN(t)
+	tree := shippedTree(t)
+	shipRefinedGizmo(t, tree, refinement)
+	svc := openTree(t, dsn, tree)
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create the repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the dataset: %v", err)
+	}
+	for id, code := range codes {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: corePackage + "/gizmo", ID: id, Properties: map[string]any{"code": code},
+		})
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("close binary N: %v", err)
+	}
+	return dsn
+}
+
+// A kind the boot holds at its stored version still takes the shape of a
+// refinement the boot rewrites: the stored kind re-resolves `type:` against
+// the shipped propertytype at the next load. A tightened pattern there is
+// counted over the kept kind's rows and refused like a pattern on the kind
+// itself; landing it would leave the stranded row refused on its next write.
+func TestBootUpgradeRefusesATightenedRefinementOfAKeptKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const gizmo = corePackage + "/gizmo"
+	dsn := gizmoRepository(t, "  base: string\n  pattern: \"^[a-z]+$\"\n",
+		map[string]string{"long": "abc", "short": "ab"})
+
+	tightened := shippedTree(t)
+	shipRefinedGizmo(t, tightened, "  base: string\n  pattern: \"^[a-z]{1,2}$\"\n")
+	refused := openMovedRefused(t, dsn, tightened)
+	wantRefusedUpgrade(t, refused,
+		`kind `+gizmo+`: property "code" changes its pattern to ^[a-z]{1,2}$ while 1 live records hold a value it refuses`)
+	if n := strings.Count(refused, `property "code" changes its pattern`); n != 1 {
+		t.Fatalf("the refinement is counted %d times, want once: %s", n, refused)
+	}
+
+	// The stored refinement stands, so the value the tightened one refuses is
+	// still writable.
+	svc := openTree(t, dsn, tightened)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: gizmo, ID: "again", Properties: map[string]any{"code": "abcd"},
+	})
+}
+
+// A value the shipped propertytype renames with `renamedFrom` is remapped on
+// the kept kind's rows in the boot's transaction (decision 0066), as a rename
+// on the kind itself would be, and a rebuild folds the same rows.
+func TestBootUpgradeRemapsARenamedRefinementValueOfAKeptKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const gizmo = corePackage + "/gizmo"
+	dsn := gizmoRepository(t,
+		"  base: enum\n  values:\n    - value: bronze\n    - value: silver\n",
+		map[string]string{"old": "bronze", "kept": "silver"})
+
+	renamed := shippedTree(t)
+	shipRefinedGizmo(t, renamed,
+		"  base: enum\n  values:\n    - value: copper\n      renamedFrom: bronze\n    - value: silver\n")
+	if refused := openMovedRefused(t, dsn, renamed); refused != "" {
+		t.Fatalf("a lossless remap on a kept kind must land at open: %s", refused)
+	}
+
+	svc := openTree(t, dsn, renamed)
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	kind := mustGet(t, ds, "substrate.reamde.dev/core/kind", gizmo)
+	if v, _ := vocabulary.VersionValue(kind.Properties["version"]); v != 1 {
+		t.Fatalf("gizmo is stored at version %d, want the kept 1", v)
+	}
+	if got := mustGet(t, ds, gizmo, "old"); got.Properties["code"] != "copper" {
+		t.Fatalf("the boot did not remap the kept kind's row: %v", got.Properties)
+	}
+	if got := mustGet(t, ds, gizmo, "kept"); got.Properties["code"] != "silver" {
+		t.Fatalf("the boot rewrote a row no step touched: %v", got.Properties)
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: gizmo, ID: "stale", Properties: map[string]any{"code": "bronze"},
+	}); err == nil {
+		t.Fatal("the old spelling must be undeclared once the remap landed")
+	}
+
+	before := foldOf(t, ds)
+	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := foldOf(t, ds); string(before) != string(after) {
+		t.Fatalf("the rebuilt fold is not the upgraded fold\n%s", firstDifference(before, after))
+	}
+}

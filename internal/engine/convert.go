@@ -177,9 +177,10 @@ func (p conversionPlan) empty() bool {
 
 // classifyConversions lists the conversions a batch declares against the
 // stored declarations. It walks the kinds classifyNarrowingsExcept walks and
-// skips the same ones, so a kind the boot upgrade holds at its stored version
-// converts nothing. A `renamedFrom` naming a property or a value no stored
-// declaration had is not a conversion: it is stored and does nothing.
+// skips the same ones; a kind the boot upgrade holds at its stored version
+// converts only where a refinement it uses moves (refinedStandingKinds). A
+// `renamedFrom` naming a property or a value no stored declaration had is not
+// a conversion: it is stored and does nothing.
 func classifyConversions(current, candidate *vocabulary.Registry, touched, skip map[string]bool) conversionPlan {
 	var plan conversionPlan
 	for _, aname := range sortedKeys(touched) {
@@ -193,67 +194,72 @@ func classifyConversions(current, candidate *vocabulary.Registry, touched, skip 
 			if candT == nil || skip[candT.Identity] {
 				continue
 			}
-			curT := cur.Kinds[tn]
-			for _, pname := range curT.PropOrder {
-				if candT.Props[pname] != nil {
-					continue
-				}
-				curP := curT.Props[pname]
-				if to := renamedTo(candT, pname); to != "" {
-					plan.renames = append(plan.renames, propertyRename{kind: candT, from: pname, to: to})
-					continue
-				}
-				if nullable(curT, curP) {
-					plan.nulls = append(plan.nulls, propertyNull{kind: candT, prop: pname, secret: curP.Secret(), state: curP.IsState()})
-				}
-			}
-			for _, pname := range candT.PropOrder {
-				candP := candT.Props[pname]
-				// The stored declaration the candidate property answers to: the
-				// same name, or on a rename the old one, whose rows the rename
-				// moves under this name before any other step reads them.
-				curP := curT.Props[pname]
-				if curP == nil && candP.RenamedFrom != "" && curT.Props[candP.RenamedFrom] != nil {
-					curP = curT.Props[candP.RenamedFrom]
-				}
-				if candP.Required && !candP.IsState() && backfillable(candT, candP) && (curP == nil || !curP.Required) {
-					plan.backfills = append(plan.backfills, propertyBackfill{kind: candT, prop: pname})
-				}
-				// EVERY machine the candidate declares, not only the ones this
-				// diff adds: a record outside a declared machine is a record
-				// no transition can move (write.go reads the absent state as
-				// "" and every transition out of it is undeclared), so it is
-				// entered wherever it is found. A machine the stored
-				// declaration already had costs one count and no step, and a
-				// repository stranded by a binary before this one is repaired
-				// the next time its declaration is admitted (decision 0082).
-				if candP.IsState() && candP.Machine != nil {
-					plan.entries = append(plan.entries, stateEntry{kind: candT, prop: pname, initial: candP.Machine.Initial})
-				}
-				if curP == nil || curP.IsState() || candP.IsState() {
-					continue
-				}
-				// A container or datatype flip is a kind change (schemadiff.go
-				// propertyNarrowings), classified by the values it strands; a
-				// value set is compared only within one shape.
-				if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed {
-					continue
-				}
-				// Whether a remap collapses a distinction is decided over the
-				// live records, not here (wire): the loader cannot see the
-				// stored side, and a target the stored list still declares is
-				// lossy only while some record holds it.
-				for _, old := range removedStrings(curP.ValueStrings(), candP.ValueStrings()) {
-					to := valueRenamedTo(candP, old)
-					if to == "" {
-						continue // stranded: the narrowing counts it
-					}
-					plan.remaps = append(plan.remaps, enumRemap{kind: candT, prop: pname, from: old, to: to})
-				}
-			}
+			plan.classifyKind(cur.Kinds[tn], candT)
 		}
 	}
 	return plan
+}
+
+// classifyKind adds one kind's conversions to the plan: curT as stored, candT
+// as the candidate declares it.
+func (p *conversionPlan) classifyKind(curT, candT *vocabulary.Kind) {
+	for _, pname := range curT.PropOrder {
+		if candT.Props[pname] != nil {
+			continue
+		}
+		curP := curT.Props[pname]
+		if to := renamedTo(candT, pname); to != "" {
+			p.renames = append(p.renames, propertyRename{kind: candT, from: pname, to: to})
+			continue
+		}
+		if nullable(curT, curP) {
+			p.nulls = append(p.nulls, propertyNull{kind: candT, prop: pname, secret: curP.Secret(), state: curP.IsState()})
+		}
+	}
+	for _, pname := range candT.PropOrder {
+		candP := candT.Props[pname]
+		// The stored declaration the candidate property answers to: the
+		// same name, or on a rename the old one, whose rows the rename
+		// moves under this name before any other step reads them.
+		curP := curT.Props[pname]
+		if curP == nil && candP.RenamedFrom != "" && curT.Props[candP.RenamedFrom] != nil {
+			curP = curT.Props[candP.RenamedFrom]
+		}
+		if candP.Required && !candP.IsState() && backfillable(candT, candP) && (curP == nil || !curP.Required) {
+			p.backfills = append(p.backfills, propertyBackfill{kind: candT, prop: pname})
+		}
+		// EVERY machine the candidate declares, not only the ones this
+		// diff adds: a record outside a declared machine is a record
+		// no transition can move (write.go reads the absent state as
+		// "" and every transition out of it is undeclared), so it is
+		// entered wherever it is found. A machine the stored
+		// declaration already had costs one count and no step, and a
+		// repository stranded by a binary before this one is repaired
+		// the next time its declaration is admitted (decision 0082).
+		if candP.IsState() && candP.Machine != nil {
+			p.entries = append(p.entries, stateEntry{kind: candT, prop: pname, initial: candP.Machine.Initial})
+		}
+		if curP == nil || curP.IsState() || candP.IsState() {
+			continue
+		}
+		// A container or datatype flip is a kind change (schemadiff.go
+		// propertyNarrowings), classified by the values it strands; a
+		// value set is compared only within one shape.
+		if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed {
+			continue
+		}
+		// Whether a remap collapses a distinction is decided over the
+		// live records, not here (wire): the loader cannot see the
+		// stored side, and a target the stored list still declares is
+		// lossy only while some record holds it.
+		for _, old := range removedStrings(curP.ValueStrings(), candP.ValueStrings()) {
+			to := valueRenamedTo(candP, old)
+			if to == "" {
+				continue // stranded: the narrowing counts it
+			}
+			p.remaps = append(p.remaps, enumRemap{kind: candT, prop: pname, from: old, to: to})
+		}
+	}
 }
 
 // backfillable reports whether admitting p as required strands nothing because
