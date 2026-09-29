@@ -121,6 +121,10 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusConflict, substrate.ErrorPayload{Code: codeParked, Message: err.Error()}
 	case errors.Is(err, substrate.ErrFunctionFault):
 		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeFunctionFailed, Message: err.Error()}
+	case errors.Is(err, substrate.ErrCorrupt):
+		// The message names the damaged digest, which the caller addressed
+		// itself, so it is said back instead of masked.
+		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Message: err.Error()}
 	case errors.Is(err, substrate.ErrNotFound):
 		return http.StatusNotFound, substrate.ErrorPayload{Code: codeNotFound, Message: err.Error()}
 	case errors.Is(err, substrate.ErrConflict):

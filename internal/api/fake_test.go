@@ -1324,6 +1324,9 @@ func (d *fakeDataset) PutBlob(context.Context, substrate.Actor, substrate.BlobUp
 }
 
 func (d *fakeDataset) GetBlob(_ context.Context, digest string) (*substrate.BlobInfo, []byte, error) {
+	if err := d.fail("GetBlob"); err != nil {
+		return nil, nil, err
+	}
 	return nil, nil, noSuch("blob", digest)
 }
 

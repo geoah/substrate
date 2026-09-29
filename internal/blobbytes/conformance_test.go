@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -72,6 +73,31 @@ func conformance(t *testing.T, open openStore) {
 		}
 		if got := read(t, s, digest, len(data)); string(got) != string(data) {
 			t.Fatalf("read back %q, stored %q", got, data)
+		}
+	})
+
+	// Put does not re-check the digest, so this is how a backend comes to
+	// hold other bytes under a digest; every read that serves bytes goes
+	// through ReadAll or OpenVerified, whichever backend is behind them, and
+	// both refuse what does not hash to the digest.
+	t.Run("a read refuses bytes that do not hash to the digest", func(t *testing.T) {
+		s := open(t, "repomismatch.example.com")
+		digest := digestOf([]byte("the bytes the digest names"))
+		other := []byte("other bytes, the same size")
+		if err := s.Put(ctx, digest, int64(len(other)), strings.NewReader(string(other))); err != nil {
+			t.Fatalf("put: %v", err)
+		}
+		if got, err := blobbytes.ReadAll(ctx, s, digest, int64(len(other))); !errors.Is(err, blobbytes.ErrDigestMismatch) || got != nil {
+			t.Fatalf("ReadAll = (%q, %v), want nothing and ErrDigestMismatch", got, err)
+		}
+		rc, err := blobbytes.OpenVerified(ctx, s, digest, int64(len(other)))
+		if err != nil {
+			t.Fatalf("open verified: %v", err)
+		}
+		defer func() { _ = rc.Close() }()
+		got, err := io.ReadAll(rc)
+		if !errors.Is(err, blobbytes.ErrDigestMismatch) || len(got) >= len(other) {
+			t.Fatalf("the streaming read gave out %d of %d bytes and %v, want a strict prefix and ErrDigestMismatch", len(got), len(other), err)
 		}
 	})
 

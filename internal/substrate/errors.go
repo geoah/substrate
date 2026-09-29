@@ -59,6 +59,15 @@ var (
 	// has bought them), so "no vectors yet" never reads as "no matches". It is
 	// distinct from ErrValidation, which needs the caller to change something.
 	ErrUnavailable = errors.New("substrate: not available yet")
+	// ErrCorrupt marks stored data that fails its own check: a blob whose
+	// bytes no longer hash to the digest that names them, or no longer have
+	// the size its manifest declares. The damage is the store's, and no
+	// request the caller can make repairs it, so the API answers 500
+	// `internal` with the message, which names the digest, rather than the
+	// masked "internal error"; a 409 would tell the client to re-read and
+	// retry, and every retry would meet the same bytes. `repository verify`
+	// reports the same damage.
+	ErrCorrupt = errors.New("substrate: stored data is corrupt")
 )
 
 // ErrorEnvelope is the one body every refused request answers with.

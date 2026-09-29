@@ -238,6 +238,14 @@ Deleting works the same way in reverse: the manifest is tombstoned, then the
 object is deleted, and an object left behind by a failure is reaped by a later
 sweep that lists the store.
 
+**A read hashes the bytes it serves.** `GET /api/v1/blobs/{digest}` and the
+export check every blob's SHA-256 against its digest, so a blob damaged on
+disk (a flipped bit, a truncated or replaced file) is refused, never served:
+the read answers `500` naming the digest and logs `request failed` with the
+same message ([the API](api.md#blobs)). `repository verify` finds every
+damaged blob without waiting for a read. The digest is the file name, so the
+repair is copying that one file back from a backup.
+
 **The bytes follow the data root.** A server pointed at a data root the bytes
 are not in serves a 404 for every blob, and a 404 reads like a deletion. Move
 `<data root>/repositories/` whole, with the server stopped.

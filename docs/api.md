@@ -1092,6 +1092,40 @@ Status codes follow the write: a create is `201`, an update or replace is
 `200`, consistently across `POST /api/v1/records` and `PUT` at the record
 path.
 
+## Blobs
+
+A blob is bytes addressed by their SHA-256. `PUT /api/v1/blobs` stores the
+request body and answers `201` with the manifest, whose `digest`
+(`blob-sha256-<hex>`) is the blob's address; `PUT /api/v1/blobs/{digest}`
+does the same and answers `400` when the body does not hash to the digest.
+`GET /api/v1/blobs/{digest}` answers `200` with the bytes, the manifest's
+media type as `Content-Type` and the digest as `ETag`
+([the blob store](operations.md#the-blob-store)).
+
+**A read hashes what it serves.** The server reads the whole blob and checks
+its SHA-256 and its size against the digest and the manifest before it sends
+the status line, so stored bytes that fail the check are never served. The
+read answers `500` with code `internal` and a message naming the digest, and
+the server logs one ERROR line, `request failed`, carrying the same message:
+
+```json
+{"error": {"code": "internal", "message": "substrate: stored data is corrupt: blobbytes: the stored bytes do not match their digest: blob-sha256-4f2a… hashes to blob-sha256-9c01…"}}
+```
+
+It is a `500` and not a `409`: the damage is in the server's store and no
+request the client can make repairs it, while `conflict` tells a client to
+re-read and retry. [`repository verify`](operations.md#operator-recovery)
+lists every damaged blob.
+
+The export (`GET /api/v1/export`) streams blob bytes into its tar after its
+`200` is sent. It hashes each blob as it copies and holds back the blob's last
+chunk until the digest checks. On a mismatch the server cuts the connection:
+the handler aborts with `http.ErrAbortHandler`, which closes an HTTP/1.1
+connection before the chunked body's terminator and resets an HTTP/2 stream.
+It logs `export aborted mid-stream` naming the digest. The client sees a
+failed transfer and an archive with no `snapshot.json`, never a complete
+`200`.
+
 ## Webhooks
 
 `POST /webhooks/{authority}/{trigger}` is the one route that takes a body and
