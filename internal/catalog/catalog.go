@@ -107,6 +107,9 @@ type Catalog struct {
 	// half-built or malformed example never bricks the catalog, but the
 	// operator changelog should say it was dropped.
 	warnings []string
+	// plans is the upgrade previews Upgrade reuses while the repository's
+	// changelog head has not moved (plancache.go).
+	plans planCache
 }
 
 // Load parses every shipped PACKAGE directory in the given roots. A package
@@ -608,20 +611,32 @@ func install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, v
 // edited when its stored digest is no longer `originDigest`, which the
 // re-import would discard (BundleUpgrade.DiscardsEdits). `held` is ignored
 // for a provider.
+//
+// The preview is reused while ds's changelog head has not moved since it was
+// counted (planCache), so a listing read twice stages each closure once. The
+// cached plan is the whole plan, hash and changelog seq included, and the
+// doors never read it: they recompute the plan inside their transaction and
+// admit a confirmation against that (decision 0067).
 func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset, held *substrate.BundleStatus) (*substrate.BundleUpgrade, error) {
 	b, ok := c.byID[id]
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
+	// The gate is `held`, which the cache key does not carry, so it runs
+	// before the cache is asked.
+	if b.Tier == substrate.TierSample && (held == nil || held.Origin != b.ID || ds.Repository().Authority == "") {
+		return nil, nil
+	}
+	return c.plans.plan(ctx, ds, b.ID, func() (*substrate.BundleUpgrade, error) {
+		return b.planUpgrade(ctx, ds)
+	})
+}
+
+// planUpgrade counts the preview Upgrade answers, uncached.
+func (b *Bundle) planUpgrade(ctx context.Context, ds substrate.Dataset) (*substrate.BundleUpgrade, error) {
 	var vocabularyDocs []map[string]any
 	if b.Tier == substrate.TierSample {
-		if held == nil || held.Origin != b.ID {
-			return nil, nil
-		}
 		home := ds.Repository().Authority
-		if home == "" {
-			return nil, nil
-		}
 		// The same closure Import lands: the suggested mappings this
 		// repository can resolve, rehomed. A closure that still names the
 		// placeholder afterwards is one Import refuses, so it blocks here.
