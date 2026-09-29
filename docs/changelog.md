@@ -47,6 +47,9 @@ paged-drain page or accepted webhook request, appended in the transaction
 that commits the effects it acknowledges
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md),
 [0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)).
+A paged-drain page names the drain's cursor by `cursorSha256` and
+`cursorBytes` instead of carrying it, and a park carries it whole
+([0141](decisions/0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md)).
 Every read here skips those rows, and a resume cursor still moves past them.
 
 Beneath the wire row, the stored entry also carries the write's **values** as

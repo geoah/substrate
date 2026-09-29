@@ -903,7 +903,13 @@ which matched nothing under the source that scanned them, so nothing is
 delivered twice and nothing an older source skipped is delivered late; a schedule trigger comes back at the occurrence it last fired
 and fires the ones it missed, oldest first, at most ten per pass; a parked
 failure keeps the id `…/parked` listed, so a saved retry still names it, and
-a parked drain resumes from its last committed page. On an import of a newer
+a parked drain resumes from its last committed page. A paged drain that stopped
+between pages without parking (a crash, or a shutdown mid-drain) starts over
+from its first page: a middle page's entry names the cursor by its SHA-256 and
+leaves the bytes in the database, and only a park carries them into the
+directory
+([decision 0141](decisions/0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md)).
+On an import of a newer
 directory over an older database dump the entries fold over the dump's rows,
 so the triggers land where the directory says, not where the dump did.
 
@@ -1064,8 +1070,10 @@ the exec path needs nothing open at all.
   a hit the rebuilt repository does not, or miss one it does. It does not
   touch blobs or sealed files, which were never in the changelog. It replays the delivery ledger with the rest of the
   fold: each trigger's cursor lands at the last delivery it acknowledged, its
-  parked failures and a paged drain's resume row come back, and the next pass
-  re-reads the rows after the cursor, which deliver nothing. OAuth flows in
+  parked failures and a parked drain's resume row come back, and the next pass
+  re-reads the rows after the cursor, which deliver nothing. A drain that
+  stopped between pages without parking keeps the cursor the database holds,
+  because its last page entry names that cursor's SHA-256. OAuth flows in
   flight are left alone. On a long history it prints a progress line to
   stderr every thirty seconds, as `verify` does. Stop the server
   first: it opens the repository as its changelog writer and refuses while

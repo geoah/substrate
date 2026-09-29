@@ -532,7 +532,7 @@ func TestPagedCursorOwnershipCAS(t *testing.T) {
 
 	advance := func(from int64) error {
 		return motion(func(tx *txn) error {
-			return tx.advancePagedCursor(chain, from, 2, 2, 2, 2)
+			return tx.advancePagedCursor(chain, from, 2, 2, 2, 2, nowUTC())
 		})
 	}
 	// Two dispatchers both read version 1 and both try to advance from it: one

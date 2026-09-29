@@ -489,6 +489,11 @@ type txn struct {
 	// seqLocked records that this transaction already holds the changelog's
 	// ordering lock (taken once, on the first append).
 	seqLocked bool
+	// keptCursors marks a replay that copied the resume cursors paged_cursors
+	// held into pg_temp.substrate_kept_cursors before it cleared the table
+	// (rebuild.go keepPagedCursors): a page entry that names its cursor by
+	// hash is folded back with the kept cursor whose digest it names.
+	keptCursors bool
 	// internal writes bypass the system-type guard.
 	internal bool
 	// writeReg is the registry this transaction's writes are held to when it
