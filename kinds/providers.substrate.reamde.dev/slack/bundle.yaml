@@ -151,7 +151,7 @@ data:
   # 17, #718: a `missing_scope` refusal names the `needed` and `provided`
   # scopes Slack sends beside it, in `postmessage`'s error and in the
   # sync's `syncError`, so the caller knows which scope to grant.
-  version: 17
+  version: 18
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the

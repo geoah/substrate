@@ -10,7 +10,7 @@ import (
 
 // Template is a parsed display_template: literal text interleaved with
 // tokens. A token is a pipe-separated list of alternatives, the first
-// non-empty one rendering ({name|participants}). An alternative is a
+// non-blank one rendering ({name|participants}). An alternative is a
 // property name, a reference property's name (renders the referents' titles), a
 // dotted reference.property (renders the first referent's property), a LIST
 // path ({emails[]} the first value of a repeated property, {names[].displayName}
@@ -321,8 +321,11 @@ func isSeparatorRune(r rune) bool {
 	return unicode.IsPunct(r) || unicode.IsSymbol(r)
 }
 
-// resolve renders one token: the first alternative with a value, or "".
+// resolve renders one token: the first alternative with a value, or "". A
+// value of whitespace alone is no value: Render trims the title, so taking it
+// would render an empty title where a later alternative had text.
 func (p TemplatePart) resolve(r Resolver) string {
+	blank := func(v string) bool { return strings.TrimSpace(v) == "" }
 	for _, alt := range p.Alts {
 		var v string
 		switch {
@@ -342,7 +345,7 @@ func (p TemplatePart) resolve(r Resolver) string {
 			// silently change what its shipped template rendered.
 			if !r.Declares(alt.Derived) {
 				v = r.Derived(alt.Derived)
-			} else if v = r.Prop(alt.Derived); v == "" {
+			} else if v = r.Prop(alt.Derived); blank(v) {
 				v = r.Reference(alt.Derived, "")
 			}
 		case alt.List && alt.Ref != "":
@@ -354,11 +357,11 @@ func (p TemplatePart) resolve(r Resolver) string {
 		default:
 			// A bare identifier is a property's own value or, failing that,
 			// the titles a reference property names ("{name|participants}").
-			if v = r.Prop(alt.Prop); v == "" {
+			if v = r.Prop(alt.Prop); blank(v) {
 				v = r.Reference(alt.Prop, "")
 			}
 		}
-		if v != "" {
+		if !blank(v) {
 			return v
 		}
 	}

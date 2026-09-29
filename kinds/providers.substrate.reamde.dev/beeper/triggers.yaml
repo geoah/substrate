@@ -30,6 +30,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Beeper messages first sync
     source:
       record:
         kinds: [providers.substrate.reamde.dev/beeper/account]
@@ -53,6 +54,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Beeper messages scheduled sync
     source:
       schedule:
         recurrence: FREQ=MINUTELY;INTERVAL=15
@@ -92,6 +94,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Beeper messages sync now
     source:
       record:
         kinds: [providers.substrate.reamde.dev/beeper/account]

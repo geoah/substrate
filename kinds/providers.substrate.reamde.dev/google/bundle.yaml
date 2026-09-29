@@ -239,7 +239,7 @@ data:
   #
   # 39: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
-  version: 39
+  version: 40
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:

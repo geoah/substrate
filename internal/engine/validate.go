@@ -1079,10 +1079,10 @@ func (r *titleResolver) Reference(name, prop string) string {
 // repeated reference.
 //
 // THE FIRST ENTRY THAT RENDERS SOMETHING, not entry zero: a provider's array
-// carries the items it carries, and an entry whose field is missing or empty
-// would otherwise title a record with nothing while the next entry held the
-// name. An empty list renders "", which is what hands the token's next
-// alternative its turn.
+// carries the items it carries, and an entry whose field is missing, empty or
+// whitespace alone would otherwise title a record with nothing while the next
+// entry held the name. An empty list renders "", which is what hands the
+// token's next alternative its turn.
 func (r *titleResolver) First(name, field string) string {
 	p, ok := r.ty.Prop(name)
 	if !ok || !p.Repeated || p.Sensitive() {
@@ -1091,7 +1091,7 @@ func (r *titleResolver) First(name, field string) string {
 	if p.Datatype == vocabulary.DatatypeReference {
 		refs := referenceTargets(r.row.Props[name])
 		for _, ref := range refs {
-			if s := r.referenceProp(ref, field); s != "" {
+			if s := r.referenceProp(ref, field); strings.TrimSpace(s) != "" {
 				return s
 			}
 		}
@@ -1100,13 +1100,13 @@ func (r *titleResolver) First(name, field string) string {
 	items, _ := r.row.Props[name].([]any)
 	for _, item := range items {
 		if field == "" && p.Datatype == vocabulary.DatatypeMoney {
-			if s := vocabulary.FormatMoney(item); s != "" {
+			if s := vocabulary.FormatMoney(item); strings.TrimSpace(s) != "" {
 				return s
 			}
 			continue
 		}
 		if field == "" {
-			if s := scalarString(item); s != "" {
+			if s := scalarString(item); strings.TrimSpace(s) != "" {
 				return s
 			}
 			continue
@@ -1115,7 +1115,7 @@ func (r *titleResolver) First(name, field string) string {
 		if !ok {
 			continue
 		}
-		if s := scalarString(m[field]); s != "" {
+		if s := scalarString(m[field]); strings.TrimSpace(s) != "" {
 			return s
 		}
 	}

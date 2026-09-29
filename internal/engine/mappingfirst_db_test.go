@@ -125,6 +125,19 @@ func TestFirstOfAListTitlesTheRecord(t *testing.T) {
 	if sparse.Title != "Nina Example" {
 		t.Fatalf("title = %q, want the first entry that renders", sparse.Title)
 	}
+	// An entry of whitespace alone renders nothing either, so the next entry
+	// titles the record rather than the token falling through past it.
+	spaced := mustPut(t, ds, book, substrate.PutInput{
+		Kind: typeVerbatimContact, ID: "c5",
+		Properties: map[string]any{
+			"resourceName":   "people/c5",
+			"names":          gnames("  ", "Ada Example"),
+			"emailAddresses": gaddresses("ada@example.com"),
+		},
+	})
+	if spaced.Title != "Ada Example" {
+		t.Fatalf("title = %q, want the first entry that is not whitespace", spaced.Title)
+	}
 	// An empty list falls through to the next alternative — the repeated
 	// SCALAR form, and then the bare property.
 	nick := mustPut(t, ds, book, substrate.PutInput{

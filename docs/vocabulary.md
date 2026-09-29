@@ -235,9 +235,9 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   subscript — `{names[0].displayName}` is refused, because an index promises an
   order a provider array does not have — and the entry taken is the first that
   renders anything, so an entry missing the field does not title a record with
-  nothing. An empty list, an absent property and a missing referent all render
-  nothing and hand the next alternative its turn, which is what lets a mirror
-  whose provider sends arrays title itself
+  nothing. An empty list, an absent property, a value of whitespace alone and a
+  missing referent all render nothing and hand the next alternative its turn,
+  which is what lets a mirror whose provider sends arrays title itself
   ([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
   A state property renders the state the record is in (`{status}` is `open`),
   an instant renders as the RFC 3339 value a read returns, and a declared
