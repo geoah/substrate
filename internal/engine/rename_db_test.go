@@ -444,12 +444,14 @@ func TestRenameRefusesADestinationTheStoredKindDeclares(t *testing.T) {
 
 // The destination must be empty on every LIVE record, not only undeclared: a
 // record tombstoned while `dimensions` was declared, and restored after the
-// declaration dropped it, carries the value undeclared, and the move would
-// replace it. The guard counts, as every narrowing does.
+// declaration dropped it by a binary before decision 0144, carries the value
+// undeclared, and the move would replace it. The guard counts, as every
+// narrowing does. A restore now removes the value, so the row is written as
+// the earlier restore left it.
 func TestRenameRefusesADestinationALiveRecordCarries(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	_, ds, dsn := newDatasetWithDSN(t)
 	// No mapping in this package: a mapped target's ids are server-assigned,
 	// and the restore below puts at the record's own id.
 	closure := func(props map[string]any) []map[string]any {
@@ -470,16 +472,24 @@ func TestRenameRefusesADestinationALiveRecordCarries(t *testing.T) {
 	if _, err := ds.Delete(ctx, owner, rnGizmo, both.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone the record: %v", err)
 	}
-	// A tombstone is not counted, so the drop lands; the restore brings the
-	// value back under a name the kind no longer declares.
+	// A tombstone is not counted, so the drop lands, and the restore removes
+	// the value the kind no longer declares.
 	if err := rnApply(t, ds, closure(rnBaseProps())); err != nil {
 		t.Fatalf("dropping dimensions with the only holder tombstoned must land: %v", err)
 	}
 	restored := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: rnGizmo, ID: both.ID, Properties: map[string]any{"note": "back"},
 	})
+	if _, still := restored.Properties["dimensions"]; still || restored.Properties["size"] != "big" {
+		t.Fatalf("the restore kept an undeclared value or lost a declared one: %v", restored.Properties)
+	}
+	if _, err := rawDB(t, dsn).Exec(`UPDATE records SET props = props || '{"dimensions": "wide"}'::jsonb WHERE kind = $1 AND id = $2`,
+		rnGizmo, both.ID); err != nil {
+		t.Fatalf("write the row an earlier restore left: %v", err)
+	}
+	restored = mustGet(t, ds, rnGizmo, both.ID)
 	if restored.Properties["dimensions"] != "wide" {
-		t.Fatalf("the restore did not revive the undeclared value the test needs: %v", restored.Properties)
+		t.Fatalf("the fixture did not land the undeclared value: %v", restored.Properties)
 	}
 
 	err := rnApply(t, ds, closure(rnRenamedProps()))

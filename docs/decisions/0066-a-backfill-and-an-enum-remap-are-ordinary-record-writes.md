@@ -1,5 +1,6 @@
 ---
 status: accepted
+amended-by: 0144
 date: 2026-09-08
 decision-makers: George Antoniadis (via the issue-385 agent session)
 ---
