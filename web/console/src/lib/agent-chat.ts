@@ -13,11 +13,12 @@ import {
   type SubstrateRecord,
 } from "@/lib/api/types"
 import {
+  HOST_FUNCTION_ASK,
   HOST_FUNCTION_PROPOSE,
   HOST_FUNCTION_QUERY,
   HOST_FUNCTION_WRITE,
-  RECORD_PATCH_REQUEST_KIND,
   TOOL_FUNCTION_FIELD,
+  isToolOwnedKind,
   valueIdentity,
 } from "@/lib/agent-grants"
 import type { ChangeOp, Decision } from "@/lib/changerequests"
@@ -32,9 +33,8 @@ import {
 } from "@/lib/record-schema"
 import { kindPatternWords, toolName } from "@/lib/tools"
 
-/** The `ask` host function: it writes nothing but a question, so it carries no
- * grant and agent-grants does not name it. */
-export const HOST_FUNCTION_ASK = "substrate.reamde.dev/core/ask"
+/** The `ask` host function, named with the other three in agent-grants. */
+export { HOST_FUNCTION_ASK }
 
 const AGENT_KIND = "substrate.reamde.dev/core/agent"
 const FUNCTION_PREFIX = "substrate.reamde.dev/core/function/"
@@ -458,7 +458,7 @@ export function canSee(agent: SubstrateRecord): string | undefined {
 export function canChange(agent: SubstrateRecord): string {
   const tools = agentTools(agent).map((t) => t.function)
   const writes = grantKinds(permissionsOf(agent).writes).filter(
-    (k) => k !== RECORD_PATCH_REQUEST_KIND
+    (k) => !isToolOwnedKind(k)
   )
   const writesItself = tools.includes(HOST_FUNCTION_WRITE) && writes.length > 0
   const proposes = tools.includes(HOST_FUNCTION_PROPOSE)

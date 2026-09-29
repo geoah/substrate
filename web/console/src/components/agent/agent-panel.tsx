@@ -1,13 +1,15 @@
-/** About this agent: who it is, what it runs on, what it can see and change,
- * which tools it reaches for, and the way to edit it. Everything is read off
- * the agent record, its llm provider row and the write policies that name
- * it; technical mode adds the references and the declaration itself. */
+/** About this agent: who it is, what it runs on, what it can see and change
+ * (edited here, by collection, as on its page), which tools it reaches for,
+ * and the way to edit it. Everything is read off the agent record, its llm
+ * provider row and the write policies that name it; technical mode adds the
+ * references and the declaration itself. */
 
 import { Link } from "@tanstack/react-router"
 import { BotIcon, GaugeIcon, PencilIcon, WrenchIcon } from "lucide-react"
 
 import { AgentManifest } from "@/components/agent/agent-manifest"
 import { AllowRules } from "@/components/agent/always-allow"
+import { GrantsEditor } from "@/components/agent/grants-editor"
 import { AddKeyButton } from "@/components/agent/model-key-dialog"
 import { AgentMark } from "@/components/agent/agent-mark"
 import { IdText } from "@/components/identity/id-text"
@@ -18,8 +20,6 @@ import {
   agentProviderId,
   agentSubagents,
   agentTools,
-  canChange,
-  canSee,
   providerName,
   toolRoute,
 } from "@/lib/agent-chat"
@@ -81,7 +81,6 @@ export function AgentPanel({
       : ""
   const tools = agentTools(agent)
   const subagents = agentSubagents(agent)
-  const sees = canSee(agent)
   const allowed = standingAllows(policies, agent.id)
 
   return (
@@ -111,12 +110,7 @@ export function AgentPanel({
         )}
       </section>
 
-      <Section label="Can see">
-        <p>{sees ?? "Nothing. It can’t look things up in your data."}</p>
-      </Section>
-      <Section label="Can change">
-        <p>{canChange(agent)}</p>
-      </Section>
+      <GrantsEditor agent={agent} layout="stacked" />
       {allowed.length > 0 && (
         <Section label="Always allowed">
           <AllowRules agent={agent.id} rules={allowed} />

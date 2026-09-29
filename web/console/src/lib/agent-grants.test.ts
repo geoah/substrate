@@ -10,16 +10,23 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  ALL_KINDS,
+  HOST_FUNCTION_ASK,
   HOST_FUNCTION_PROPOSE,
   HOST_FUNCTION_QUERY,
   HOST_FUNCTION_WRITE,
+  LLM_INTERACTION_KIND,
   RECORD_PATCH_REQUEST_KIND,
   canDeclareKinds,
   collectionMaker,
+  grantCovers,
   grantEditProblem,
   grantHints,
   grantKindsOf,
+  grantNarrowing,
+  grantOffers,
   hostToolsOf,
+  nextGrant,
   patternCovers,
   permissionsWith,
 } from "./agent-grants"
@@ -253,6 +260,25 @@ describe("grantHints", () => {
     ).toEqual([])
   })
 
+  it("ask needs the interaction kind covered by the write grant", () => {
+    const unpaid = grantHints(
+      agent({
+        ...tools(HOST_FUNCTION_ASK),
+        permissions: { writes: [WIDGET] },
+      })
+    )
+    expect(unpaid).toHaveLength(1)
+    expect(unpaid[0].function).toBe(HOST_FUNCTION_ASK)
+    expect(unpaid[0].message).toContain(LLM_INTERACTION_KIND)
+    for (const writes of [[LLM_INTERACTION_KIND], ["*"]]) {
+      expect(
+        grantHints(
+          agent({ ...tools(HOST_FUNCTION_ASK), permissions: { writes } })
+        )
+      ).toEqual([])
+    }
+  })
+
   it("write needs a non-empty write grant, whatever it names", () => {
     const unpaid = grantHints(agent(tools(HOST_FUNCTION_WRITE)))
     expect(unpaid).toHaveLength(1)
@@ -288,6 +314,7 @@ describe("editing the grants", () => {
   const KIND = "substrate.reamde.dev/core/kind/"
   const TASK = "samples.substrate.reamde.dev/tasks/task"
   const PERSON = "samples.substrate.reamde.dev/people/person"
+  const TOKEN = "substrate.reamde.dev/core/token"
   const tool = (fn: string) => ({
     function: { ref: `substrate.reamde.dev/core/function/${fn}` },
   })
@@ -336,6 +363,77 @@ describe("editing the grants", () => {
     expect(grantEditProblem(writer, "writes", [])).toMatch(
       /needs to be able to change/
     )
+  })
+
+  // The shipped `substrate` agent proposes and asks under `writes: ["*"]`:
+  // the glob is what pays for both, so narrowing it must name each tool's
+  // kind or the loader refuses the whole agent.
+  it("names a tool's own kind when a glob that covered it goes", () => {
+    const proposer = {
+      tools: [tool(HOST_FUNCTION_PROPOSE), tool(HOST_FUNCTION_ASK)],
+      permissions: { writes: [{ ref: `${KIND}*` }] },
+    }
+    expect(grantHints(proposer)).toEqual([])
+    expect(permissionsWith(proposer, "writes", [TASK]).writes).toEqual([
+      `${KIND}${TASK}`,
+      `${KIND}${RECORD_PATCH_REQUEST_KIND}`,
+      `${KIND}${LLM_INTERACTION_KIND}`,
+    ])
+    // Even dropping every collection leaves both tools paid for.
+    expect(
+      grantHints({
+        ...proposer,
+        permissions: permissionsWith(proposer, "writes", []),
+      })
+    ).toEqual([])
+    // Still covered: nothing extra is named.
+    expect(permissionsWith(proposer, "writes", ["*"]).writes).toEqual([
+      `${KIND}*`,
+    ])
+    // Without propose the glob's coverage was incidental and goes with it.
+    const writer = {
+      tools: [tool(HOST_FUNCTION_WRITE)],
+      permissions: { writes: [{ ref: `${KIND}*` }] },
+    }
+    expect(permissionsWith(writer, "writes", [TASK]).writes).toEqual([
+      `${KIND}${TASK}`,
+    ])
+  })
+
+  it("picking All your data replaces what it covers, and a pick under it narrows to the pick", () => {
+    expect(nextGrant([TASK, PERSON], [ALL_KINDS, TASK, PERSON])).toEqual([
+      ALL_KINDS,
+    ])
+    // An auth kind is named on its own: no glob reaches it, so it stays.
+    expect(nextGrant([TOKEN], [ALL_KINDS, TOKEN])).toEqual([ALL_KINDS, TOKEN])
+    expect(nextGrant([ALL_KINDS], [ALL_KINDS, PERSON])).toEqual([PERSON])
+    expect(nextGrant([ALL_KINDS], [ALL_KINDS, TOKEN])).toEqual([
+      ALL_KINDS,
+      TOKEN,
+    ])
+    // A pick appends; the held order stands whatever order the list is in.
+    expect(nextGrant([TASK], [PERSON, TASK])).toEqual([TASK, PERSON])
+  })
+
+  it("says what an edit takes away, and nothing for one that only adds", () => {
+    expect(grantNarrowing([TASK], [TASK, PERSON])).toEqual([])
+    expect(grantNarrowing([TASK, PERSON], [TASK])).toEqual([PERSON])
+    expect(grantNarrowing([ALL_KINDS, TASK], [ALL_KINDS])).toEqual([])
+    expect(grantNarrowing([ALL_KINDS], [PERSON])).toEqual([ALL_KINDS])
+    expect(
+      grantNarrowing(["samples.substrate.reamde.dev/*"], [ALL_KINDS])
+    ).toEqual([])
+    // `*` does not reach the auth kinds, so dropping one named is a loss.
+    expect(grantNarrowing([ALL_KINDS, TOKEN], [ALL_KINDS])).toEqual([TOKEN])
+  })
+
+  it("never offers a write grant a kind the loader refuses there", () => {
+    expect(grantOffers("writes", TOKEN)).toBe(false)
+    expect(grantOffers("writes", RECORD_PATCH_REQUEST_KIND)).toBe(false)
+    expect(grantOffers("writes", TASK)).toBe(true)
+    expect(grantOffers("reads", TOKEN)).toBe(true)
+    expect(grantCovers(ALL_KINDS, TOKEN)).toBe(false)
+    expect(grantCovers(TOKEN, TOKEN)).toBe(true)
   })
 })
 
