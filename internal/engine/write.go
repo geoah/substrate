@@ -2845,6 +2845,14 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	if !t.internal && systemKinds[ty.Identity] && ty.Identity != kindToken {
 		return nil, fmt.Errorf("%w: %s records are managed by the substrate", substrate.ErrForbidden, ty.Identity)
 	}
+	// Revoking is the owner's alone, whatever a grant names: the loader refuses
+	// the token kind in `permissions.writes`, and this holds a declaration that
+	// predates that refusal, and every other bundle-tier hand (a policy judge's
+	// accept, the agent write built-in), to the same answer.
+	if !t.internal && ty.Identity == kindToken && t.tier != substrate.TierOwner {
+		return nil, fmt.Errorf("%w: only the owner may revoke a %s: tokens are the owner's alone, and %s writes at the %s tier",
+			substrate.ErrForbidden, ty.Identity, t.actor, t.tier)
+	}
 	// Bundle lifecycle holds deletes too: read-only when uninstalled, frozen
 	// config/accounts when disabled (engine/bundles.go); purge is internal.
 	if err := t.checkBundleDelete(ty); err != nil {

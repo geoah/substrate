@@ -289,12 +289,40 @@ func ValidTypeGlob(pat string) bool {
 // AuthKinds are the four core kinds a GLOB never reaches. They hold the
 // repository's own auth material, so `*` means "everything the owner has",
 // not "everything, including the keys to the substrate". An entry that spells
-// one out still grants it: the carve-out is on the glob, not on the kind.
+// one out still grants it: the carve-out is on the glob, not on the kind. The
+// exception is a `writes` entry naming one of ownerOnlyKinds, which the loader
+// refuses.
 var AuthKinds = map[string]bool{
 	CoreKind("token"):       true,
 	CoreKind("credential"):  true,
 	CoreKind("secret"):      true,
 	CoreKind("recoverykey"): true,
+}
+
+// ownerOnlyKinds are the auth kinds a `permissions.writes` entry may not name
+// even spelled out, each with the reason its refusal gives. The engine refuses
+// every non-internal put and patch of all three and a token delete below the
+// owner tier (engine/write.go softDeleteIf), so such a grant could only ever
+// revoke the owner's sign-in or promise a write nothing honors. `secret` is
+// absent on purpose: it is a bundle's own configuration, which the owner
+// fills through the ordinary surface.
+var ownerOnlyKinds = map[string]string{
+	CoreKind("token"):       "tokens are the owner's alone, and no function or agent may revoke or write one",
+	CoreKind("credential"):  "the login credential is the owner's alone, and only the auth endpoints write it",
+	CoreKind("recoverykey"): "the recovery key is the owner's alone, and only registration writes it",
+}
+
+// writesEntryProblem is grantEntryProblem for a `permissions.writes` entry:
+// the grammar, then the owner-only kinds. Reads are not held to the second
+// half: a read of a token shows its label and a digest, never the secret.
+func writesEntryProblem(entry string) string {
+	if problem := grantEntryProblem(entry); problem != "" {
+		return problem
+	}
+	if why, owned := ownerOnlyKinds[entry]; owned {
+		return "is refused: " + why
+	}
+	return ""
 }
 
 // IsTypeGlob reports whether a grant entry is a pattern rather than one kind.
@@ -839,7 +867,7 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 		return nil
 	}
 	for i, t := range ReferentIDs(mslice(perms, "writes"), CoreKind(DocKind)) {
-		if problem := grantEntryProblem(t); problem != "" {
+		if problem := writesEntryProblem(t); problem != "" {
 			l.errf("%s: data.permissions.writes[%d]: %q %s", where, i, t, problem)
 			continue
 		}

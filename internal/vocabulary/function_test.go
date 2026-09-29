@@ -684,6 +684,52 @@ func TestGrantGlobNeverMatchesAuthKinds(t *testing.T) {
 	}
 }
 
+// TestWritesRefuseTheOwnersAuthKinds: a function's or an agent's
+// `permissions.writes` may not name the token, the login credential or the
+// recovery key even spelled out, and the refusal names the kind and says whose
+// it is. A glob over core still loads, since a glob never reaches them.
+func TestWritesRefuseTheOwnersAuthKinds(t *testing.T) {
+	owned := map[string]string{
+		"substrate.reamde.dev/core/token":       "tokens are the owner's alone",
+		"substrate.reamde.dev/core/credential":  "the login credential is the owner's alone",
+		"substrate.reamde.dev/core/recoverykey": "the recovery key is the owner's alone",
+	}
+	for kind, why := range owned {
+		want := `data.permissions.writes[1]: "` + kind + `" is refused: ` + why
+		t.Run("function "+kind, func(t *testing.T) {
+			_, err := loadFnAuthority(t, `  description: d
+  runtime: python
+  permissions:
+    writes: [fn.example.com/fn/gadget, `+kind+`]
+  source: "def main(input, host): return {}"
+`)
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("want %q, got: %v", want, err)
+			}
+		})
+		t.Run("agent "+kind, func(t *testing.T) {
+			_, err := loadAgAuthority(t, agAuthority(`  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  permissions:
+    writes: [ag.example.com/ag/widget, `+kind+`]
+`))
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("want %q, got: %v", want, err)
+			}
+		})
+	}
+	if _, err := loadFnAuthority(t, `  description: d
+  runtime: python
+  permissions:
+    writes: ["substrate.reamde.dev/core/*"]
+  source: "def main(input, host): return {}"
+`); err != nil {
+		t.Fatalf("a glob over core must still load: %v", err)
+	}
+}
+
 // TestGrantSubsumesIsAPrefixLattice covers the ordering effectiveEmit narrows
 // a sub-agent's ceiling by (record 0080).
 func TestGrantSubsumesIsAPrefixLattice(t *testing.T) {

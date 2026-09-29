@@ -423,7 +423,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 		return nil
 	}
 	for i, t := range ReferentIDs(mslice(perms, "writes"), CoreKind(DocKind)) {
-		if problem := grantEntryProblem(t); problem != "" {
+		if problem := writesEntryProblem(t); problem != "" {
 			l.errf("%s: data.permissions.writes[%d]: %q %s", where, i, t, problem)
 			continue
 		}

@@ -134,7 +134,7 @@ GET    /tokens        # → 200 {"items": [ … ]} — metadata only, never a ha
 DELETE /tokens/{id}   # revoke
 ```
 
-Four things follow from a token being a record:
+Five things follow from a token being a record:
 
 - **A token has full access to its repository.** There are no scopes, no
   roles, no ACLs, and no actor set on the token. Authentication is a hash
@@ -146,6 +146,15 @@ Four things follow from a token being a record:
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
   `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from
   `substratectl token revoke`.
+- **Only the owner revokes a token.** The engine refuses a token delete from
+  installed code with `403 forbidden`, whatever its grant names: a
+  function's `delete` effect, an agent's `write` built-in, and a policy
+  judge's accept of a proposed delete all run at the bundle tier. A judged
+  proposal escalates to the owner's review instead, and the owner's own
+  accept revokes. The loader refuses a function or agent whose
+  `permissions.writes` names `substrate.reamde.dev/core/token`, `/credential`
+  or `/recoverykey`, and a stored one quarantines its package at the next
+  open.
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted. Login and registration mint theirs

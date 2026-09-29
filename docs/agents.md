@@ -127,8 +127,10 @@ data:
   `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
   `/recoverykey`.** Those four are granted only by an entry that spells one
   out, so `*` means everything the owner has rather than everything including
-  the keys to the substrate. `permissions.call` takes no glob: it names
-  functions, not kinds.
+  the keys to the substrate. In `writes`, only `/secret` may be spelled out:
+  the loader refuses `/token`, `/credential` and `/recoverykey` there, because
+  they are the owner's alone ([auth](auth.md#tokens)). `permissions.call`
+  takes no glob: it names functions, not kinds.
 - optional **`hiddenFromChat:`**, the chat-surface withholding: `true` keeps the
   agent off the console's chat list and makes the chat API refuse it, while
   sub-agent calls, the call API and triggers still dispatch it. An
