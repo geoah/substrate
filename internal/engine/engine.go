@@ -121,6 +121,11 @@ type options struct {
 	// (progress.go); the test seam WithTestProgressEvery lowers it so a
 	// short history reports at all.
 	progressEvery time.Duration
+	// digestHook is the directory check's test seam (export_test.go
+	// WithTestDigestHook): run with each finished segment an open of a
+	// repository's changelog directory reads and digests, and not with one
+	// an earlier check vouched for. Tests only.
+	digestHook func(repository, segment string)
 	// invokeHook is the runner's test seam (seams.go WithTestInvokeHook): a
 	// hook run with a function's identity as its body is about to be invoked
 	// (runner.go runCallableRaw), so a test can act while the body runs.
@@ -388,6 +393,17 @@ type service struct {
 	// progressEvery is how often a long walk of a changelog reports where
 	// it is (progress.go).
 	progressEvery time.Duration
+	// testDigestHook is the options' directory check seam (progress.go
+	// checkProgress). Tests only.
+	testDigestHook func(repository, segment string)
+
+	// checkedMu guards checked: the changelog Log the boot check (or a
+	// creation, or a boot import) opened for each repository, kept for that
+	// repository's first open. Its finished segments are digested already,
+	// and a finished segment never changes, so the first open reads none of
+	// them again (repodir.go openDirectory, issue 761).
+	checkedMu sync.Mutex
+	checked   map[string]*changelogfile.Log
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -526,6 +542,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testSnapshotFault: o.snapshotFault,
 		progressEvery:     o.progressEvery,
 		testInvokeHook:    o.invokeHook,
+		testDigestHook:    o.digestHook,
+		checked:           map[string]*changelogfile.Log{},
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —

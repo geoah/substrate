@@ -173,6 +173,9 @@ type reconcileOutcome struct {
 	// from the active segment: its bytes, and the complete lines among them.
 	TruncatedBytes   int64
 	TruncatedEntries int64
+	// checked is the Log the reconcile last opened over the directory, kept
+	// for the repository's first open (keepChecked).
+	checked *changelogfile.Log
 }
 
 // repositoryDir is the repository's directory under the data root, created
@@ -184,6 +187,32 @@ func (s *service) repositoryDir(id string) (string, error) {
 // writerOptions is the one WriterOptions every writer in this process uses.
 func (s *service) writerOptions() changelogfile.WriterOptions {
 	return changelogfile.WriterOptions{SegmentBytes: s.segmentBytes}
+}
+
+// keepChecked keeps the Log a reconcile of repository id checked, for the
+// repository's first open to take. Digesting a long history's finished
+// segments takes minutes, the first open is what every request for the
+// repository waits on, and a finished segment never changes, so the open
+// takes the digests this Log checked rather than reading every segment again
+// (issue 761). What was appended since the Log was opened is checked at the
+// open as usual.
+func (s *service) keepChecked(id string, l *changelogfile.Log) {
+	if l == nil {
+		return
+	}
+	s.checkedMu.Lock()
+	defer s.checkedMu.Unlock()
+	s.checked[id] = l
+}
+
+// takeChecked hands out, once, the Log kept for repository id; nil when none
+// was kept or it was taken already.
+func (s *service) takeChecked(id string) *changelogfile.Log {
+	s.checkedMu.Lock()
+	defer s.checkedMu.Unlock()
+	l := s.checked[id]
+	delete(s.checked, id)
+	return l
 }
 
 // reconcileRepositories is the boot check: every `repositories` row against
@@ -312,6 +341,7 @@ func (s *service) reconcileRow(ctx context.Context, repo Repository, allowImport
 	if _, err := s.ensureManifest(ctx, dir, repo, ds.db); err != nil {
 		return out, err
 	}
+	s.keepChecked(repo.ID, out.checked)
 	return out, nil
 }
 
@@ -337,10 +367,13 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 	if err != nil {
 		return err
 	}
-	log, err := changelogfile.Open(changelogfile.ChangelogDir(ds.dir))
+	log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), changelogfile.OpenOptions{
+		Progress: ds.svc.checkProgress(checkAtBoot, ds.info.ID),
+	})
 	if err != nil {
 		return directoryOpenErr(err)
 	}
+	out.checked = log
 	out.TruncatedBytes, out.TruncatedEntries = log.TruncatedBytes, log.TruncatedEntries
 	fileHead := log.Head()
 	if err := compareTails(ctx, ds.db, log, min(tableHead, fileHead)); err != nil {
@@ -389,9 +422,15 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		return importIncompleteErr(ds.info.ID, markedHead)
 	}
 	if out.Action == reconcileCaughtUp {
-		if log, err = changelogfile.Open(changelogfile.ChangelogDir(ds.dir)); err != nil {
+		// The segments the first Log checked are still the ones it checked;
+		// only what the catch-up wrote is read again.
+		if log, err = changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), changelogfile.OpenOptions{
+			Verified: log,
+			Progress: ds.svc.checkProgress(checkAtBoot, ds.info.ID),
+		}); err != nil {
 			return directoryOpenErr(err)
 		}
+		out.checked = log
 	}
 	if err := ds.completeImport(ctx, log, markedHead); err != nil {
 		return err
@@ -1211,14 +1250,21 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The boot check's Log, when this is the first open since it: its
+	// finished segments are not read again, the active one is.
+	opts := changelogfile.OpenOptions{
+		ReadOnly: ds.svc.readOnly,
+		Verified: ds.svc.takeChecked(ds.info.ID),
+		Progress: ds.svc.checkProgress(checkAtOpen, ds.info.ID),
+	}
 	if ds.svc.readOnly {
-		log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
+		log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), opts)
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
 		return compareTails(ctx, ds.db, log, min(tableHead, log.Head()))
 	}
-	log, err := changelogfile.Open(changelogfile.ChangelogDir(ds.dir))
+	log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), opts)
 	if err != nil {
 		return directoryOpenErr(err)
 	}

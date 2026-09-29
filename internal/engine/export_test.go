@@ -190,6 +190,14 @@ func WithTestProgressEvery(every time.Duration) Option {
 	return func(o *options) { o.progressEvery = every }
 }
 
+// WithTestDigestHook runs fn with each finished changelog segment a check
+// of a repository's directory reads and digests, at the boot check and at
+// open (progress.go checkProgress), and not with one an earlier check
+// vouched for. It can run on more than one goroutine at once.
+func WithTestDigestHook(fn func(repository, segment string)) Option {
+	return func(o *options) { o.digestHook = fn }
+}
+
 // SeedKindsDir is the shipped SEED AUTHORITY, relative to this package — core
 // and llm together (record 0077): what every test open loads unless it brings
 // a patched tree.

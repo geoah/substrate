@@ -54,12 +54,45 @@ func (s *service) progress(msg string, attrs ...any) *progress {
 
 // tick reports pos if an interval has passed since the last report.
 func (p *progress) tick(pos changelogfile.Position) {
+	p.report("segment", pos.Segment, "seq", pos.Seq, "bytes", pos.Bytes)
+}
+
+// report logs where the walk is, given as attrs, if an interval has passed
+// since the last report.
+func (p *progress) report(where ...any) {
 	if time.Since(p.last) < p.every {
 		return
 	}
 	p.last = time.Now()
-	attrs := make([]any, 0, len(p.attrs)+8)
+	attrs := make([]any, 0, len(p.attrs)+len(where)+2)
 	attrs = append(attrs, p.attrs...)
-	attrs = append(attrs, "segment", pos.Segment, "seq", pos.Seq, "bytes", pos.Bytes, ProgressKey, true)
+	attrs = append(attrs, where...)
+	attrs = append(attrs, ProgressKey, true)
 	p.log.Info(p.msg, attrs...)
+}
+
+// The two checks of a repository's changelog directory that digest its
+// finished segments, as their progress lines name them. The boot check
+// digests every one; the first open after it digests only what the boot
+// check did not (repodir.go openDirectory).
+const (
+	checkAtBoot = "substrate: boot check: checking the changelog segments"
+	checkAtOpen = "substrate: open: checking the changelog segments"
+)
+
+// checkProgress is the Progress of one check of a repository's changelog
+// directory (changelogfile.OpenOptions). Digesting every finished segment of
+// a long history takes minutes, so it reports once per interval how many of
+// the directory's segments and bytes are checked (issue 761). It is also
+// where the digest test seam sees each finished segment that was read.
+func (s *service) checkProgress(msg, repository string) func(changelogfile.OpenProgress) {
+	p := s.progress(msg, "repository", repository)
+	return func(op changelogfile.OpenProgress) {
+		if op.Finished && !op.Reused && s.testDigestHook != nil {
+			s.testDigestHook(repository, op.Segment)
+		}
+		p.report("segment", op.Segment,
+			"segments", op.Segments, "totalSegments", op.TotalSegments,
+			"bytes", op.Bytes, "totalBytes", op.TotalBytes)
+	}
 }

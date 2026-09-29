@@ -370,6 +370,10 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 		ds.close()
 	}
 	s.mu.Unlock()
+	// And the Log a reconcile kept for its first open: it vouches for
+	// segments this erase removes, which a repository created again under
+	// the same name must not inherit.
+	s.takeChecked(id)
 
 	dir, err := changelogfile.RepoDir(s.dataRoot, id)
 	if err != nil {
