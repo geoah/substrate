@@ -1376,5 +1376,16 @@ func TestNullStepClearsADroppedStatePropertyOnConfirmation(t *testing.T) {
 	if again, err := ds.PlanVocabularyApply(ctx, owner, docs); err != nil || len(again.Steps) != 0 {
 		t.Fatalf("plan after the drop = %+v, %v", again, err)
 	}
+	// The value-annotated change feed shows the state leaving: the fold
+	// carries the states column whole, so the removal is read off the
+	// entry's `nulled` names, with the before the record's last transition
+	// left.
+	changes, err := ds.ChangesBefore(ctx, 0, substrate.ChangeFilter{Kinds: []string{cvWidget}, RecordID: handled.ID, Values: true}, 1)
+	if err != nil || len(changes) != 1 || len(changes[0].Affected) == 0 {
+		t.Fatalf("the drop's change row = %+v, %v", changes, err)
+	}
+	if got := jsonOf(t, changes[0].Affected[0].Properties); got != `[{"name":"status","before":"handled"}]` {
+		t.Fatalf("the drop's change reads %s, want status leaving handled", got)
+	}
 	cvReplays(t, svc, ds)
 }

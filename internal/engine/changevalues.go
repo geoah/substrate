@@ -70,9 +70,15 @@ type recordChange struct {
 // composeRecordChange reads what an entry's effects did to ref, in the public
 // property names a record read renders (recordOf): the property map, the
 // title where the kind does not render it from a template, a declared body,
-// the three instants, and the machine states.
-func composeRecordChange(ty *vocabulary.Kind, ops []foldOp, ref eref) recordChange {
+// the three instants, and the machine states. nulled is what the entry's
+// payload says an apply's null step removed from ref (nulledOf): the one way
+// to see a state that left the record, because the fold carries the states
+// column whole and a removed key is simply absent from it.
+func composeRecordChange(ty *vocabulary.Kind, ops []foldOp, nulled []string, ref eref) recordChange {
 	rc := recordChange{moved: map[string]valueAt{}}
+	// The last states column the entry wrote to ref: a nulled name it does
+	// not hold is a state the entry cleared.
+	var states *map[string]string
 	for _, op := range ops {
 		if op.ref() != ref {
 			continue
@@ -99,10 +105,45 @@ func composeRecordChange(ty *vocabulary.Kind, ops []foldOp, ref eref) recordChan
 			if op.Delta.Created {
 				rc.created = true
 			}
+			if op.Delta.States != nil {
+				states = op.Delta.States
+			}
 			movedBy(ty, op.Delta, rc.moved)
 		}
 	}
+	if states != nil {
+		for _, name := range nulled {
+			if _, moved := rc.moved[name]; moved {
+				continue // a value the delta cleared or set by name already
+			}
+			if _, held := (*states)[name]; !held {
+				rc.moved[name] = valueAt{column: true}
+			}
+		}
+	}
 	return rc
+}
+
+// nulledOf answers the names an apply's null step removed from ref in the
+// entry it rewrote the record with (convert.go convertRecord writes them to
+// the payload). The rewrite is one entry per record, addressed to it, so only
+// the addressed record's names are read, as renamesOf reads renames.
+func nulledOf(payload map[string]any, recordID, kind string, ref eref) []string {
+	if recordID != ref.ID || kind != ref.Kind {
+		return nil
+	}
+	var out []string
+	switch names := payload[payloadNulled].(type) {
+	case []any:
+		for _, n := range names {
+			if s, ok := n.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+	case []string:
+		out = append(out, names...)
+	}
+	return out
 }
 
 // movedBy records a delta's changes under their public names.
@@ -284,7 +325,7 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			if !ok {
 				continue
 			}
-			rc := composeRecordChange(ty, effects[i], ref)
+			rc := composeRecordChange(ty, effects[i], nulledOf(c.Payload, c.RecordID, c.Kind, ref), ref)
 			if len(rc.moved) == 0 {
 				continue
 			}
@@ -337,8 +378,11 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 	}
 	for i := range changes {
 		for _, w := range order {
-			if composeRecordChange(w.ty, effects[i], w.ref).touched {
-				w.known[changes[i].Seq] = earlierEntry{seq: changes[i].Seq, ops: effects[i], fromPage: true}
+			if composeRecordChange(w.ty, effects[i], nil, w.ref).touched {
+				w.known[changes[i].Seq] = earlierEntry{
+					seq: changes[i].Seq, ops: effects[i], fromPage: true,
+					nulled: nulledOf(changes[i].Payload, changes[i].RecordID, changes[i].Kind, w.ref),
+				}
 			}
 		}
 	}
@@ -398,6 +442,9 @@ type earlierEntry struct {
 	ops      []foldOp
 	opaque   bool
 	fromPage bool
+	// nulled is what the entry's null step removed from the walk's record
+	// (nulledOf), read off its payload.
+	nulled []string
 }
 
 // earlierOf decodes one changelog row a walk read back.
@@ -421,6 +468,7 @@ func (w *recordWalk) earlierOf(seq int64, recordID, kind string, raw []byte) ear
 	if _, named := payload["properties"]; named && e.ops == nil && recordID == w.ref.ID && kind == w.ref.Kind {
 		e.opaque = true
 	}
+	e.nulled = nulledOf(payload, recordID, kind, w.ref)
 	return e
 }
 
@@ -622,7 +670,7 @@ func (w *recordWalk) visit(e earlierEntry) {
 		w.forget()
 		w.expect = 0
 	} else {
-		rc = composeRecordChange(w.ty, e.ops, w.ref)
+		rc = composeRecordChange(w.ty, e.ops, e.nulled, w.ref)
 	}
 	if rc.touched {
 		gap := w.expect > 0 && rc.last > 0 && rc.last != w.expect

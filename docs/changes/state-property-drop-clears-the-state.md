@@ -21,5 +21,7 @@ substratectl apply --allow-data-loss -f note.yaml
 ```
 
 Without the flag the apply is refused with the `lossy` code, naming the step
-and the `planHash` to confirm. The shipped boot upgrade still refuses such a
-drop, because it never runs a lossy step.
+and the `planHash` to confirm. On `GET /api/v1/changes?values=1` each
+record's drop entry lists the state with its `before` and no `after`. The
+shipped boot upgrade still refuses such a drop, because it never runs a lossy
+step.

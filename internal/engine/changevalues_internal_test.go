@@ -221,7 +221,7 @@ func TestATemplatedTitleIsNotAChangeOfItsOwn(t *testing.T) {
 	rc := composeRecordChange(ty, []foldOp{{
 		Kind: foldRecord, Ref: cvRef.Kind, ID: cvRef.ID,
 		Delta: &rowDelta{Set: map[string]any{"name": "B"}, Title: ptrTo("B")},
-	}}, cvRef)
+	}}, nil, cvRef)
 	if _, derived := rc.moved[substrate.PropTitle]; derived {
 		t.Fatalf("a templated title is its own change: %+v", rc.moved)
 	}

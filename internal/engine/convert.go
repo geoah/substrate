@@ -968,6 +968,12 @@ func (t *txn) convertKind(kc *kindConversion) (int64, error) {
 // (changevalues.go renamesOf).
 const payloadRenamed = "renamed"
 
+// payloadNulled is the key of a rewrite entry's nulled names: descriptive for
+// the fold, and the one place a change read learns that a STATE left the
+// record, since the fold carries the states column whole (changevalues.go
+// nulledOf).
+const payloadNulled = "nulled"
+
 // convertRecord rewrites one record: every step that finds something to move
 // on it lands in a single record effect, renames first, then backfills, then
 // remaps, then nulls. It reports false when the record is gone or no step
@@ -1154,7 +1160,7 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	}
 	if len(nulledNames) > 0 {
 		sort.Strings(nulledNames)
-		payload["nulled"] = nulledNames
+		payload[payloadNulled] = nulledNames
 	}
 	// One entry per record, as a patch: the record's properties changed, and
 	// the step keys say the apply moved them rather than a writer.
