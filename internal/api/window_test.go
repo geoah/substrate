@@ -320,6 +320,9 @@ func TestGetComputedOccurrence(t *testing.T) {
 	if !got.Computed || got.Properties["at"] != "2026-07-02T06:00:00Z" || got.Properties["originalAt"] != "2026-07-02T06:00:00Z" {
 		t.Fatalf("computed GET = %+v", got)
 	}
+	// A query parameter is refused at a computed id as at a stored one (#335).
+	wantErrorCode(t, env.do(t, http.MethodGet, doseKindPath+"levo_20260702T060000Z?bogus=1", tok, nil),
+		http.StatusBadRequest, codeBadRequest)
 	// The exdated slot, the overridden slot (its override is a stored row
 	// under its own id, served by the ordinary path) and a slot off the rule.
 	for _, id := range []string{"levo_20260703T060000Z", "levo_20260702T070000Z", "nosuch_20260702T060000Z"} {

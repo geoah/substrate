@@ -95,6 +95,10 @@ func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if bad := unsupportedParam(r, getParams...); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
 	// The path carries the whole record reference — the kind, then the id —
 	// so the read is kind-scoped by construction.
 	ent, err := ds.Get(r.Context(), ti.Identity, addr.id)
@@ -218,6 +222,11 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 // set is a bad_request naming the key — never silence, because a
 // silently ignored parameter returns UNFILTERED rows that look filtered.
 var (
+	// getParams is a single-record read's grammar: empty. The read does not
+	// expand, page or filter, so any parameter (`expand`, a stale
+	// `withEdges`, a typo) is one it would ignore, and the refusal is the
+	// only way the caller learns that.
+	getParams []string
 	// deleteParams is a record delete's grammar: the version precondition
 	// and the purge flag.
 	deleteParams = []string{"ifVersion", "purge"}

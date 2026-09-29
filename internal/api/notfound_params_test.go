@@ -152,6 +152,54 @@ func TestSupportedListParamsStillWork(t *testing.T) {
 	wantNotRefused(t, env, recordsOf(t, personKind, "watch=1", "from=1", "generation="+generation), tok)
 }
 
+// A single-record GET honors no query parameter, so every one is refused by
+// name with the body the list answers (#335). It was a silent 200 before: a
+// client sending a stale `withEdges` or an `expand` the read never runs got
+// the bare record back and could not tell.
+func TestUnknownRecordReadParamsAreRefused(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	id := createPerson(t, env, tok)
+
+	// Refused on the list too, so the two bodies must match byte for byte.
+	for _, query := range []string{"?withEdges=1", "?bogus=1", "?limit=5"} {
+		rec := env.do(t, http.MethodGet, peoplePath+"/"+id+query, tok, nil)
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		list := env.do(t, http.MethodGet, recordsPath+query, tok, nil)
+		if got, want := rec.Body.String(), list.Body.String(); got != want {
+			t.Errorf("GET record%s answered %s, want the list's %s", query, got, want)
+		}
+	}
+	// Honored by the list, not by the record read: still refused, named.
+	for query, key := range map[string]string{
+		"?expand=manager":    "expand",
+		"?first=5":           "first",
+		"?withAnnotations=1": "withAnnotations",
+	} {
+		rec := env.do(t, http.MethodGet, peoplePath+"/"+id+query, tok, nil)
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `"`+key+`"`) {
+			t.Errorf("GET record%s: message = %q, want %q named", query, msg, key)
+		}
+	}
+	// The refusal runs before the read, so a missing id is refused, not
+	// answered 404 (TestGetComputedOccurrence holds a computed id to it).
+	rec := env.do(t, http.MethodGet, peoplePath+"/nope?bogus=1", tok, nil)
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+	// The kind is resolved first, as on DELETE: an unknown kind is still 404.
+	rec = env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets/"+id+"?bogus=1", tok, nil)
+	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+
+	// With no parameter the read answers as before, an empty query included.
+	for _, query := range []string{"", "?"} {
+		rec := env.do(t, http.MethodGet, peoplePath+"/"+id+query, tok, nil)
+		wantStatus(t, rec, http.StatusOK)
+		if got := decodeJSON[substrate.Record](t, rec).ID; got != id {
+			t.Errorf("GET record%s: id = %q, want %q", query, got, id)
+		}
+	}
+}
+
 // wantNotRefused drives a WATCH request to completion: the stream would
 // otherwise never end, so the request context is canceled up front — the
 // parameter check runs long before any streaming, so a refusal still surfaces.
