@@ -174,7 +174,7 @@ func (ds *dataset) deleteCredentialsFor(ctx context.Context, account eref) error
 	}
 	defer wc.release()
 	defer func() { _ = tx.Rollback() }()
-	ops, err := deleteCredentialRows(ctx, tx, account)
+	ops, err := deleteSealedRowsOf(ctx, tx, account)
 	if err != nil {
 		return err
 	}
@@ -184,13 +184,26 @@ func (ds *dataset) deleteCredentialsFor(ctx context.Context, account eref) error
 	return ds.commitSealed(tx, wc, ops)
 }
 
-// deleteCredentialRows deletes every sealed row a record holds inside tx and
+// dropSealedOf erases every sealed row a record owns inside the transaction,
+// and its file after the commit (commitAndMirror). The purge (hardDelete) and
+// the kind move call it; the OAuth teardown erases through the same
+// deleteSealedRowsOf outside inTx.
+func (t *txn) dropSealedOf(owner eref) error {
+	ops, err := deleteSealedRowsOf(t.ctx, t.tx, owner)
+	if err != nil {
+		return err
+	}
+	t.sealedMirror = append(t.sealedMirror, ops...)
+	return nil
+}
+
+// deleteSealedRowsOf deletes every sealed row a record owns inside tx and
 // returns the file deletes that follow the commit.
-func deleteCredentialRows(ctx context.Context, tx *sql.Tx, account eref) ([]sealedMirrorOp, error) {
+func deleteSealedRowsOf(ctx context.Context, tx *sql.Tx, account eref) ([]sealedMirrorOp, error) {
 	rows, err := tx.QueryContext(ctx, `DELETE FROM sealed WHERE record_kind = $1 AND record_id = $2 RETURNING ref`,
 		account.Kind, account.ID)
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: delete credentials: %w", err)
+		return nil, fmt.Errorf("substrate/engine: delete the sealed rows of %s %s: %w", account.Kind, account.ID, err)
 	}
 	defer func() { _ = rows.Close() }()
 	var ops []sealedMirrorOp
@@ -344,9 +357,32 @@ func deriveCredentialKey(key string) ([]byte, error) {
 // row a DIFFERENT property of the record owns is refused, so two properties
 // cannot share one sealed row (#233).
 //
-// A record hard-deleted outside the OAuth teardown path may orphan its
-// sealed rows; an orphan is encrypted material addressed by nothing.
-// Erasure-on-delete beyond the OAuth teardown is future work, not a leak.
+// A record's sealed rows end with the record. A delete tombstones it and
+// keeps them, so a restore reads its secrets again; the purge (hardDelete,
+// from the GC sweep or `?purge=true`) erases them through dropSealedOf, as
+// the kind move does, and the OAuth teardown through the deleteSealedRowsOf
+// under it. A row its owner does not hold is an
+// ORPHAN (sealedUnheld): nothing reads it, `repository verify` names it, and
+// the GC sweep erases it (gc.go sweepUnheldSealed), which is how rows purged
+// before #236 leave.
+//
+// Erasure removes the row from the live table and the file from sealed/, and
+// nothing more. The ciphertext stays in Postgres's dead tuples until VACUUM,
+// in the WAL until its segment is recycled, on any replica, and in every
+// backup or snapshot of the directory taken before it (#235); each of those
+// copies still opens under the repository's DEK, which nothing rotates (#237).
+
+// sealedUnheld is the SQL predicate over a sealed row `s` (its ref,
+// record_kind and record_id columns) that makes it an orphan: no record at
+// its owner's kind and id, live or tombstoned, holds the ref anywhere in its
+// properties. The owner is the one holder that counts because every writer
+// stores the ref on the owner in the transaction that inserts the row, and
+// the payload is bound to the owner (0023). Verify and the GC sweep read the
+// same predicate, so every orphan row verify names is one the sweep erases.
+const sealedUnheld = `NOT EXISTS (
+	SELECT 1 FROM records r
+	WHERE r.kind = s.record_kind AND r.id = s.record_id
+	  AND jsonb_path_exists(r.props, '$.** ? (@ == $ref)', jsonb_build_object('ref', s.ref)))`
 
 // secretRefPrefix namespaces the refs storeSecretProps mints, so a generic
 // reader recognizes a resolvable ref without probing the store for every

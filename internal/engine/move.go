@@ -674,40 +674,6 @@ func (t *txn) putMovedRow(m *kindMove, to eref, props, labels, annotations map[s
 	return err
 }
 
-// dropSealedOf removes a record's sealed rows. The move opened each one and
-// re-sealed its plaintext under the new owner, so what stays here is a payload
-// bound by AAD to a record that no longer exists.
-func (t *txn) dropSealedOf(ref eref) error {
-	rows, err := t.query(`SELECT ref FROM sealed WHERE record_kind = $1 AND record_id = $2 ORDER BY ref`,
-		ref.Kind, ref.ID)
-	if err != nil {
-		return err
-	}
-	var refs []string
-	for rows.Next() {
-		var r string
-		if err := rows.Scan(&r); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		refs = append(refs, r)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	for _, r := range refs {
-		if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, r); err != nil {
-			return err
-		}
-		t.mirrorSealedDelete(r)
-	}
-	return nil
-}
-
 // repointRecord rewrites one source record's reference values and appends the
 // patch that says so. The rewritten values go through the ordinary reference
 // validation, so a repoint that would land outside its own declaration's pin

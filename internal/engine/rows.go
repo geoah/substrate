@@ -685,12 +685,20 @@ func (t *txn) enqueueEmbed(ref eref, property string) error {
 // (mapping.go afterTombstone) never did, and the purge is the last moment the
 // source is there to say which subject that was. Where the tombstone already
 // recomputed, the live set is unchanged and this writes nothing.
+//
+// The record's sealed rows and their files go here too (#236): a tombstone
+// keeps them so a restore gets its secrets back, and the purge is where they
+// end. The erasure is here and not in applyPurge because a rebuild replays
+// every purge and keeps the sealed table (rebuild.go): a replayed purge of an
+// id that was later written again would erase the live record's material.
 func (t *txn) hardDelete(ref eref) error {
 	if err := t.recomputeSubjectsOf(ref); err != nil {
 		return err
 	}
-	_, err := t.fold(foldOp{Kind: foldPurge, Ref: ref.Kind, ID: ref.ID})
-	return err
+	if _, err := t.fold(foldOp{Kind: foldPurge, Ref: ref.Kind, ID: ref.ID}); err != nil {
+		return err
+	}
+	return t.dropSealedOf(ref)
 }
 
 func (t *txn) applyPurge(ref eref) error {

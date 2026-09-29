@@ -46,6 +46,13 @@ func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 	if err != nil {
 		return collected, err
 	}
+	// Sealed rows no record holds, after the fixpoint: a purge above erased
+	// its own record's rows already, so what is left predates #236 or came in
+	// with an imported copy. They are material, not records, so they are not
+	// counted as collected.
+	if _, err := ds.sweepUnheldSealed(ctx); err != nil {
+		return collected + blobs, err
+	}
 	// Idempotency keys past their retention window go with the same sweep
 	// (idempotency.go). They are request bookkeeping, not records, so they
 	// are not counted as collected.
@@ -53,6 +60,70 @@ func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 		return collected + blobs, err
 	}
 	return collected + blobs, nil
+}
+
+// sweepUnheldSealed erases every sealed row its owner does not hold
+// (credentials.go sealedUnheld), with the row's file under sealed/. Since
+// #236 the purge erases its own record's rows, so what this finds are rows a
+// purge left before that and rows an imported copy of such a directory
+// carries. It runs on every sweep rather than once at boot because the GC
+// pass is already the erasure schedule and needs no marker to say it ran. A
+// sweep with nothing to erase costs one read of the sealed table. The delete
+// runs under inTx's changelog lock, which every write that inserts a sealed
+// row holds until it has stored the ref on the owner, so the sweep never
+// sees a row between the insert and that write.
+func (ds *dataset) sweepUnheldSealed(ctx context.Context) (int, error) {
+	var found bool
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM sealed s WHERE `+sealedUnheld+`)`).Scan(&found); err != nil {
+		return 0, err
+	}
+	if !found {
+		return 0, nil
+	}
+	erased := 0
+	for {
+		n := 0
+		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			rows, err := t.query(`
+				DELETE FROM sealed WHERE ref IN (
+					SELECT s.ref FROM sealed s WHERE `+sealedUnheld+` ORDER BY s.ref LIMIT $1)
+				RETURNING ref`, gcBatch)
+			if err != nil {
+				return err
+			}
+			var refs []string
+			for rows.Next() {
+				var ref string
+				if err := rows.Scan(&ref); err != nil {
+					_ = rows.Close()
+					return err
+				}
+				refs = append(refs, ref)
+			}
+			if err := rows.Err(); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			_ = rows.Close()
+			for _, ref := range refs {
+				t.mirrorSealedDelete(ref)
+			}
+			n = len(refs)
+			return nil
+		})
+		if err != nil {
+			return erased, err
+		}
+		erased += n
+		if n > 0 {
+			ds.svc.log.Info("substrate: gc erased sealed rows no record holds",
+				"repository", ds.scope.Repository, "rows", n)
+		}
+		if n < gcBatch {
+			return erased, nil
+		}
+	}
 }
 
 func (ds *dataset) gcPass(ctx context.Context) (int, error) {

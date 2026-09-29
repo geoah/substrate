@@ -325,11 +325,23 @@ func TestACrashBetweenTheSealedStageAndTheCommitRestoresTheOldPayload(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	account := eref{Kind: bindingProviderKind, ID: "acked"}
-	putProviderSecret(t, ds, account.ID, "sk-acked")
+	putProviderSecret(t, ds, "acked", "sk-acked")
+	// The credential's record holds its ref, written in the transaction that
+	// stores the token as the OAuth callback writes `tokenRef`, so the verify
+	// below meets a held row and not an orphan.
+	account := eref{Kind: bindingProviderKind, ID: "oauth-acked"}
 	const credRef = "cred-acked"
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
-		return tx.putCredential(credRef, account, &oauth2.Token{AccessToken: "first", RefreshToken: "r", Expiry: nowUTC().Add(time.Hour)})
+		if err := tx.putCredential(credRef, account, &oauth2.Token{AccessToken: "first", RefreshToken: "r", Expiry: nowUTC().Add(time.Hour)}); err != nil {
+			return err
+		}
+		_, err := tx.put(substrate.PutInput{
+			Kind: account.Kind, ID: account.ID,
+			Properties: map[string]any{
+				"label": account.ID, "wire": "openai", "baseURL": "https://llm.example.com/v1", "apiKey": credRef,
+			},
+		})
+		return err
 	}); err != nil {
 		t.Fatalf("put credential: %v", err)
 	}
