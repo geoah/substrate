@@ -16,6 +16,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"hash"
+	"time"
 )
 
 // The keys a canonical line ends with, in the order they sort: `seq`, `sum`,
@@ -51,6 +52,8 @@ type lineTail struct {
 	// sumAt and tsAt bound the `"sum":"sha256:<hex>",` pair: line[sumAt:tsAt]
 	// is what Encode inserted after hashing the rest.
 	sumAt, tsAt int
+	// ts is the timestamp's text, between its quotes.
+	ts []byte
 }
 
 // parseTail reads seq, sum and txn off the end of a line laid out as Encode
@@ -93,6 +96,7 @@ func parseTail(line []byte) (lineTail, bool) {
 		return t, false
 	}
 	t.seq, t.txn, t.seqAt, t.sumAt, t.tsAt = seq, txn, j-len(seqKey)-1, sumAt, tsAt
+	t.ts = line[open+1 : comma-1]
 	return t, true
 }
 
@@ -253,17 +257,20 @@ func newLineChecker() *lineChecker {
 }
 
 // check verifies one line's checksum and returns its seq, txn and sum. A
-// line laid out as Encode lays one out, key for key, whose bytes with the
-// sum pair cut out hash to its sum, is verified without decoding it; every
-// other line is decoded, and Decode's verdict and error are the answer.
+// line laid out as Encode lays one out, key for key, with a timestamp in
+// TSFormat, whose bytes with the sum pair cut out hash to its sum, is
+// verified without decoding it; every other line is decoded, and Decode's
+// verdict and error are the answer.
 //
-// The cut does not re-canonicalize the payload: a line whose payload is not
-// in canonical form, with a sum recomputed over those bytes, passes here and
-// is refused by Decode. Only a writer that rewrites a line and its sum
-// together makes one, and the checksum does not hold against that writer
-// anyway (docs/changelog.md).
+// The cut holds the bytes to the sum and does not decode the values: a line
+// rewritten with a payload that is not canonical JSON, or a string with an
+// escape Go would not write, and its sum recomputed over those bytes, passes
+// here and is refused by Decode. Only a writer that rewrites a line and its
+// sum together makes one: this binary's writer hashes what it encoded, and
+// the checksum is not held against a writer that rewrites both: nothing
+// signs it (docs/changelog.md), so it catches corruption, not tampering.
 func (c *lineChecker) check(line []byte) (seq, txn int64, sum [32]byte, err error) {
-	if t, ok := parseTail(line); ok && parseHead(line, t.seqAt) && checkTxn(t.seq, t.txn) == nil {
+	if t, ok := parseTail(line); ok && parseHead(line, t.seqAt) && checkTxn(t.seq, t.txn) == nil && validTS(t.ts) {
 		c.h.Reset()
 		c.h.Write(line[:t.sumAt])
 		c.h.Write(line[t.tsAt:])
@@ -277,6 +284,16 @@ func (c *lineChecker) check(line []byte) (seq, txn int64, sum [32]byte, err erro
 		return 0, 0, sum, err
 	}
 	return e.Seq, e.Txn, sum, nil
+}
+
+// validTS reports whether ts, a timestamp's text with no escape in it,
+// parses as Decode parses it.
+func validTS(ts []byte) bool {
+	if bytes.IndexByte(ts, '\\') >= 0 {
+		return false
+	}
+	_, err := time.Parse(TSFormat, string(ts))
+	return err == nil
 }
 
 // lineSum reads a line's seq and sum without verifying either: from the tail

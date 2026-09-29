@@ -141,9 +141,10 @@ func restamp(t *testing.T, line []byte) []byte {
 }
 
 // A line whose bytes hash to its sum but whose keys are not the ones Encode
-// writes, a key a newer writer added or one written twice, is not the cut's
-// to accept: Decode refuses it, and so does the checker, with Decode's error.
-func TestLineCheckerRefusesKeysDecodeRefuses(t *testing.T) {
+// writes (a key a newer writer added, one written twice, one missing), or
+// whose timestamp does not parse, is not the cut's to accept: Decode refuses
+// it, and so does the checker, with Decode's error.
+func TestLineCheckerRefusesWhatDecodeRefuses(t *testing.T) {
 	line := encodeLine(t, entryAt(8))
 	for name, c := range map[string]struct {
 		line []byte
@@ -161,15 +162,15 @@ func TestLineCheckerRefusesKeysDecodeRefuses(t *testing.T) {
 			bytes.Replace(line, []byte(`"op":"put",`), nil, 1),
 			ErrBadSum.Error(),
 		},
+		"a timestamp that does not parse": {
+			bytes.Replace(line, []byte(`"ts":"2026-09-`), []byte(`"ts":"2026-99-`), 1),
+			"decode ts",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			damaged := restamp(t, c.line)
-			tail, ok := parseTail(damaged)
-			if !ok {
+			if _, ok := parseTail(damaged); !ok {
 				t.Fatalf("the restamped line has no tail: %s", damaged)
-			}
-			if parseHead(damaged, tail.seqAt) {
-				t.Fatalf("parseHead took keys Encode does not write: %s", damaged)
 			}
 			_, _, _, err := newLineChecker().check(damaged)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
