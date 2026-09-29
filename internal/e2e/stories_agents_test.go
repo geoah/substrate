@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -444,10 +445,23 @@ func ctlEnv() (ctl, dsn string) {
 // runner has it (rebuild refuses a repository whose sealed secrets it
 // cannot open; verify only warns).
 func ctlRun(ctl, dsn string, args ...string) (string, error) {
+	return ctlRunInput(ctl, dsn, "", args...)
+}
+
+// ctlRunInput is ctlRun with stdin: a command that reads a secret takes it
+// through its `--*-stdin` flag, never an argument.
+func ctlRunInput(ctl, dsn, stdin string, args ...string) (string, error) {
 	full := append([]string{"--dsn", dsn}, args...)
-	cmd := exec.Command(ctl, full...)
-	if key := os.Getenv("SUBSTRATE_E2E_CREDENTIAL_KEY"); key != "" {
+	// Bounded: an operator command waiting on a lock the server holds must
+	// fail the case, not hang the run.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ctl, full...)
+	if key := os.Getenv(envCredKey); key != "" {
 		cmd.Env = append(os.Environ(), "SUBSTRATE_CREDENTIAL_KEY="+key)
+	}
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err

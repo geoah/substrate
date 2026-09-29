@@ -16,7 +16,7 @@ suites are where most of the behaviour is actually pinned down.
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |
 | Console | `mise run console:test` | pnpm | seconds |
 | Live | `mise run test:llm` | provider keys, money | ~1 minute |
-| End-to-end | `mise run test:e2e` | Docker; leaves data | ~2 minutes |
+| End-to-end | `mise run test:e2e` | Docker; leaves data | ~3 minutes |
 
 `mise run test` is the one to run before pushing. `mise run ci` is the
 pipeline as CI runs it, including the linters, the console and an image build,
@@ -508,9 +508,18 @@ The suite reads its whole environment from those variables, so it runs against
 any substrate, not only the dev one: `SUBSTRATE_E2E_SERVER` is the base URL,
 `SUBSTRATE_E2E_INVITE` the invite code (default `let-me-in`),
 `SUBSTRATE_E2E_DSN` and `SUBSTRATE_E2E_CTL` the operator hat
-([two hats](substratectl.md#two-hats)) the `dsn` cases need, `SUBSTRATE_E2E_CREDENTIAL_KEY` the key those commands read, and
+([two hats](substratectl.md#two-hats)) the `dsn` cases need, `SUBSTRATE_E2E_CREDENTIAL_KEY` the key those commands read,
+`SUBSTRATE_E2E_STOP` and `SUBSTRATE_E2E_START` the shell commands that stop and
+start the server (the task passes `.mise/dev.sh stop` and `.mise/dev.sh up`),
+which the two cases that restart it run, and
 `SUBSTRATE_E2E_REPORT_DIR` where the report lands. Point them at a throwaway
-server of your own when the shared dev stack is somebody else's.
+server of your own when the shared dev stack is somebody else's; the server
+then needs what the task gives the dev one, which CASES.md lists under its
+preconditions.
+
+`SUBSTRATE_INSECURE_DISABLE_TOTP=false mise run test:e2e` runs the same suite
+against the enforced door, which is the only door the two cases that prove a
+live TOTP code run on.
 
 `SUBSTRATE_E2E_TIMEOUT` bounds one exchange and defaults to 30s. Raise it on
 a loaded machine: a write this client abandons can wedge the repository
@@ -520,7 +529,9 @@ after it then fails for a reason that is not the code's.
 A case a unit suite already pins is not in the list: `internal/api` against
 its fake, `internal/engine` against a real Postgres, and
 `internal/testenv`'s conformance table over a real socket hold those, and
-CASES.md holds what only a live server shows.
+CASES.md holds what only a live server shows. The one overlap is ERR-04, which
+asks the shipped binary for every published error code the conformance table
+asks the in-process engine for.
 
 ## What CI runs
 

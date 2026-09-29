@@ -1,12 +1,15 @@
 package e2e
 
-// The door, the tokens and the isolation between two repositories: CASES.md
-// rows AUTH-02, TOK-03, ISO-01 and ISO-02, orders 100-199.
+// The door, the credential changes, the tokens and the isolation between two
+// repositories: AUTH-02, AUTH-05, AUTH-06, AUTH-07, TOK-03, ISO-01 and
+// ISO-02, orders 100-199.
 //
 // These run after the stories, over the repository they left. Everything here
-// either refuses or reads, with two exceptions that add and leave: TOK-03
-// mints a token (it ends revoked) and ISO-01 registers a second user. The
-// story graph is never touched.
+// either refuses or reads, with four exceptions that add and leave: AUTH-05
+// registers a throwaway user whose seed AUTH-07 swaps, AUTH-06 changes the
+// run's own password (the report prints the new one), TOK-03 mints a token
+// (it ends revoked) and ISO-01 registers a second user. The story graph is
+// never touched.
 
 import (
 	"encoding/json"
@@ -15,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/geoah/substrate/internal/engine"
 )
 
 // xaCoreKindPrefix is what every kind a FRESH repository is seeded with
@@ -43,11 +48,36 @@ var xaSecond struct {
 	token    string
 }
 
+// xaTOTPUser is the throwaway user AUTH-05 registers through the enforced
+// door and AUTH-07 swaps the seed of, so the run's own seed never moves. The
+// last step each seed consumed rides along: the door refuses a step it has
+// already seen.
+var xaTOTPUser struct {
+	repository string
+	secret     string
+	lastStep   int64
+}
+
 func init() {
 	registerCase(100, "AUTH-02", "A wrong invite code is refused at the door",
 		"Both halves of the registration gesture refuse an invite code that is not the configured one, "+
 			"with a 401 `auth` that names the code and nothing about the username.",
 		xaCaseInviteCode)
+	registerCase(105, "AUTH-05", "Registration proves a live code, and that code is spent",
+		"Against the enforced door a registration enrolls a seed and commits with one live code from it: a code "+
+			"from another seed is refused 401, the right one registers, the same code cannot also log in, and "+
+			"the next step's code does.",
+		xaCaseTOTPRegistration)
+	registerCase(108, "AUTH-07", "Swapping the second factor retires the old seed",
+		"`/totp/enroll` issues a candidate seed only against both current factors and refuses a bearer 403; "+
+			"`/totp` refuses a candidate code that does not match, then swaps with a proven one, after which a code "+
+			"from the old seed is refused and a code from the new one logs in.",
+		xaCaseTOTPSwap)
+	registerCase(120, "AUTH-06", "A password change takes both factors and retires the old password",
+		"`/password` refuses a bearer token 403, changes the password when the body carries the current "+
+			"factors, and afterwards the old password is a 401 while the new one logs in; the run's token "+
+			"survives the change.",
+		xaCasePasswordChange)
 	registerCase(150, "TOK-03", "Tokens are records, and deleting the record revokes",
 		"`DELETE /api/v1/substrate.reamde.dev/core/token/{id}` tombstones the token record and the secret "+
 			"stops authenticating, the same revocation `DELETE /tokens/{id}` performs.",
@@ -310,4 +340,231 @@ func xaCaseCatalogIsolation(c *C) {
 		"the second user's catalog says `%s` is installed; nobody installed it there", tasksBundleID)
 	c.stepf("one catalog, two repositories: `%s` is installed=true for `%s` and installed=false for `%s`",
 		tasksBundleID, c.r.repository, xaSecond.username)
+}
+
+// --- AUTH-05 ---------------------------------------------------------------
+
+// xaEnrollment is what `/register/enroll` and `/totp/enroll` hand back: a
+// seed and its otpauth URI, written nowhere until a code from it commits.
+type xaEnrollment struct {
+	TOTPSecret string `json:"totpSecret"`
+	URI        string `json:"otpauthUri"`
+}
+
+// xaRequireRefusal holds a credential refusal to its status and code. The
+// body is kept in the message only when the answer is not a 2xx, since a 2xx
+// from these doors carries a secret.
+func xaRequireRefusal(c *C, what string, status int, raw []byte, wantStatus int, wantCode string) xaError {
+	c.t.Helper()
+	c.requiref(status == wantStatus, "%s answered %d, want %d%s", what, status, wantStatus, redacted(status, raw))
+	e := xaErrorOf(c, raw)
+	c.requiref(e.Error.Code == wantCode, "%s was refused with code %q, want `%s`: %s", what, e.Error.Code, wantCode, raw)
+	return e
+}
+
+// xaCaseTOTPRegistration registers a throwaway user through the enforced
+// door the way an authenticator app would, and proves the code that
+// committed the registration is spent by it.
+func xaCaseTOTPRegistration(c *C) {
+	r := c.r
+	if !xaTOTPRequired(c) {
+		c.skipf("discovery reports `registration.totpRequired: false`: this door verifies no code, so there is no live code to prove (the enforced door is `mise run dev:totp`)")
+		return
+	}
+	name := xaName("xatotp")
+
+	var enr xaEnrollment
+	c.paceAuth()
+	status, raw := c.doAs("", http.MethodPost, "/register/enroll",
+		map[string]any{"inviteCode": r.invite, "repository": name}, &enr)
+	c.requiref(status == http.StatusOK, "`/register/enroll` answered %d, want 200%s", status, redacted(status, raw))
+	c.requiref(enr.TOTPSecret != "" && strings.HasPrefix(enr.URI, "otpauth://totp/"),
+		"the enrollment carries no seed or no `otpauth://totp/` URI")
+	c.stepf("`/register/enroll` issued a seed and its `otpauth://totp/` URI for `%s`", name)
+
+	// A code from ANOTHER seed: the commit proves THIS enrollment landed in an
+	// authenticator, not merely that six digits were sent.
+	other, err := engine.NewTOTPSecret()
+	c.requiref(err == nil, "minting a second seed: %v", err)
+	step := c.totpStepAfter(0)
+	reg := map[string]any{
+		"inviteCode": r.invite, "repository": name, "password": r.password,
+		"totpSecret": enr.TOTPSecret, "totpCode": c.totpCode(other, step),
+	}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/register", reg, nil)
+	xaRequireRefusal(c, "`/register` with a code from another seed", status, raw, http.StatusUnauthorized, "auth")
+	c.stepf("`/register` with a live code from a DIFFERENT seed was refused 401 `auth`: the commit proves the enrollment it names")
+
+	reg["totpCode"] = c.totpCode(enr.TOTPSecret, step)
+	var out struct {
+		Secret     string `json:"secret"`
+		Repository string `json:"repository"`
+	}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/register", reg, &out)
+	c.requiref(status == http.StatusCreated, "`/register` with the enrollment's own code answered %d, want 201%s", status, redacted(status, raw))
+	c.requiref(strings.HasPrefix(out.Secret, "substrate_tok_") && out.Repository != "", "the registration minted no token or echoed no repository")
+	status, _ = c.doAs(out.Secret, http.MethodGet, "/tokens", nil, nil)
+	c.requiref(status == http.StatusOK, "the registration's token answered %d on GET /tokens, want 200", status)
+	c.stepf("`/register` with a live code from the enrolled seed created `%s` and its first token authenticates", out.Repository)
+
+	// The step that committed the registration is stored as consumed, so the
+	// same code cannot also log in.
+	login := map[string]any{"repository": name, "password": r.password, "totpCode": reg["totpCode"], "label": "xa-totp"}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login", login, nil)
+	xaRequireRefusal(c, "`/login` with the code that registered", status, raw, http.StatusUnauthorized, "auth")
+	c.stepf("`/login` with the very code that registered was refused 401: registration spent that step")
+
+	next := c.totpStepAfter(step)
+	login["totpCode"] = c.totpCode(enr.TOTPSecret, next)
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login", login, nil)
+	c.requiref(status == http.StatusCreated, "`/login` with the next step's code answered %d, want 201%s", status, redacted(status, raw))
+	xaTOTPUser.repository, xaTOTPUser.secret, xaTOTPUser.lastStep = name, enr.TOTPSecret, next
+	c.stepf("`/login` with the next step's code minted a token: the seed works, only the spent step did not")
+}
+
+// --- AUTH-07 ---------------------------------------------------------------
+
+// xaCaseTOTPSwap re-enrolls AUTH-05's user onto a new seed and proves the old
+// one is retired by presenting a code the old seed would still have accepted.
+func xaCaseTOTPSwap(c *C) {
+	r := c.r
+	if xaTOTPUser.repository == "" {
+		c.skipf("AUTH-05 registered no user through the enforced door, so there is no seed to swap")
+		return
+	}
+	u := &xaTOTPUser
+
+	// The password-factor rule: a bearer token is not evidence for a factor
+	// change, whoever's token it is.
+	c.paceAuth()
+	status, raw := c.doAs(r.token, http.MethodPost, "/totp/enroll", map[string]any{"repository": u.repository}, nil)
+	e := xaRequireRefusal(c, "`/totp/enroll` with a bearer and no factors", status, raw, http.StatusForbidden, "forbidden")
+	c.requiref(strings.Contains(e.Error.Message, "a bearer token is not accepted"),
+		"the 403 does not say a bearer is not accepted: %s", e.Error.Message)
+	c.stepf("`/totp/enroll` with a bearer token and no factors was refused 403 `forbidden`: a token never changes a factor")
+
+	enrollStep := c.totpStepAfter(u.lastStep)
+	var cand xaEnrollment
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/totp/enroll", map[string]any{
+		"repository": u.repository, "password": r.password, "totpCode": c.totpCode(u.secret, enrollStep),
+	}, &cand)
+	c.requiref(status == http.StatusOK, "`/totp/enroll` with both factors answered %d, want 200%s", status, redacted(status, raw))
+	u.lastStep = enrollStep
+	c.requiref(cand.TOTPSecret != "" && cand.TOTPSecret != u.secret, "the candidate seed is empty or the seed already enrolled")
+	c.stepf("`/totp/enroll` with both current factors issued a candidate seed; nothing is swapped until a code from it is proven")
+
+	// A candidate "proven" with a code it did not produce is refused before
+	// the current factors are spent: the swap cannot land on a seed nobody
+	// holds.
+	swapStep := c.totpStepAfter(u.lastStep)
+	swap := map[string]any{
+		"repository": u.repository, "password": r.password,
+		"totpCode":      c.totpCode(u.secret, swapStep),
+		"newTotpSecret": cand.TOTPSecret,
+		"newTotpCode":   c.totpCode(u.secret, c.totpStepAfter(0)),
+	}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/totp", swap, nil)
+	xaRequireRefusal(c, "`/totp` with a candidate code from the old seed", status, raw, http.StatusUnauthorized, "auth")
+	c.stepf("`/totp` whose candidate code came from the OLD seed was refused 401: the new seed must be proven")
+
+	proven := c.totpStepAfter(0)
+	swap["newTotpCode"] = c.totpCode(cand.TOTPSecret, proven)
+	var out struct {
+		Repository string `json:"repository"`
+	}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/totp", swap, &out)
+	c.requiref(status == http.StatusOK, "`/totp` with both factors and a proven candidate answered %d, want 200%s", status, redacted(status, raw))
+	c.requiref(out.Repository != "", "the swap echoed no repository: %s", raw)
+	oldSecret, oldLast := u.secret, swapStep
+	u.secret, u.lastStep = cand.TOTPSecret, proven
+	c.stepf("`/totp` with both current factors and a live code from the candidate swapped the seed")
+
+	// A code the OLD seed would have accepted (a step after the last one it
+	// spent) is refused now, so the refusal is the swap's and not the step's.
+	stale := c.totpStepAfter(oldLast)
+	login := map[string]any{"repository": u.repository, "password": r.password, "totpCode": c.totpCode(oldSecret, stale), "label": "xa-totp-swap"}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login", login, nil)
+	xaRequireRefusal(c, "`/login` with a fresh code from the old seed", status, raw, http.StatusUnauthorized, "auth")
+	c.stepf("`/login` with an unspent code from the old seed was refused 401: the old seed is retired")
+
+	fresh := c.totpStepAfter(u.lastStep)
+	login["totpCode"] = c.totpCode(u.secret, fresh)
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login", login, nil)
+	c.requiref(status == http.StatusCreated, "`/login` with a code from the new seed answered %d, want 201%s", status, redacted(status, raw))
+	u.lastStep = fresh
+	c.stepf("`/login` with a code from the new seed minted a token")
+}
+
+// --- AUTH-06 ---------------------------------------------------------------
+
+// xaCasePasswordChange changes the RUN's own password, so the report prints
+// the new one and every later login uses it.
+func xaCasePasswordChange(c *C) {
+	r := c.r
+	_, totp := xaDoor(c)
+	newPassword := "e2e-changed-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+
+	// The password-factor rule: a bearer with no factors in the body is
+	// refused as a whole idea, 403 and not 401.
+	c.paceAuth()
+	status, raw := c.doAs(r.token, http.MethodPost, "/password",
+		map[string]any{"repository": r.repository, "newPassword": newPassword}, nil)
+	e := xaRequireRefusal(c, "`/password` with a bearer and no factors", status, raw, http.StatusForbidden, "forbidden")
+	c.requiref(strings.Contains(e.Error.Message, "a bearer token is not accepted"),
+		"the 403 does not say a bearer is not accepted: %s", e.Error.Message)
+	c.stepf("`/password` with the run's bearer token and no factors was refused 403 `forbidden`")
+
+	body := map[string]any{"repository": r.repository, "password": r.password, "newPassword": newPassword}
+	if totp {
+		body["totpCode"] = r.nextTOTPCode(c)
+	}
+	var out struct {
+		Repository string `json:"repository"`
+	}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/password", body, &out)
+	c.requiref(status == http.StatusOK, "`/password` with the current factors answered %d, want 200%s", status, redacted(status, raw))
+	c.requiref(out.Repository == r.authority, "the change echoed repository %q, want %q", out.Repository, r.authority)
+	oldPassword := r.password
+	r.password, r.rep.Password = newPassword, newPassword
+	c.stepf("`/password` with the current factors changed the password of `%s`", r.authority)
+
+	// On the enforced door the old-password attempt carries a live, unspent
+	// code, so the password is the only thing wrong with it; a refused login
+	// spends nothing, and the same code then carries the new password in.
+	login := map[string]any{"repository": r.repository, "password": oldPassword, "label": "xa-password"}
+	var step int64
+	if totp {
+		step = c.totpStepAfter(r.lastStep)
+		login["totpCode"] = c.totpCode(r.totpSecret, step)
+	}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login", login, nil)
+	xaRequireRefusal(c, "`/login` with the old password", status, raw, http.StatusUnauthorized, "auth")
+	c.stepf("`/login` with the old password was refused 401")
+
+	login["password"] = newPassword
+	var minted struct {
+		Secret string `json:"secret"`
+	}
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login", login, &minted)
+	c.requiref(status == http.StatusCreated, "`/login` with the new password answered %d, want 201%s", status, redacted(status, raw))
+	if totp {
+		r.lastStep = step
+	}
+	status, _ = c.doAs(minted.Secret, http.MethodGet, "/tokens", nil, nil)
+	c.requiref(status == http.StatusOK, "the new password's token answered %d on GET /tokens, want 200", status)
+	status, _ = c.do(http.MethodGet, "/tokens", nil, nil)
+	c.requiref(status == http.StatusOK, "the run's token answered %d after the password change, want 200", status)
+	c.stepf("`/login` with the new password minted a token that authenticates, and the run's own token still answers")
 }
