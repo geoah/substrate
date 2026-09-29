@@ -115,6 +115,22 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 			plan.From = copied
 		}
 	}
+	// A provider install's stamp is the same measure (issue
+	// #642): the version the install TOOK. Over a package a hand apply ran
+	// past the shipped line, the install lands at stored+1, above the shipped
+	// number, and a diff against the stored versions would hide every next
+	// shipped closure until one passed them. Without either stamp (a package
+	// installed before the stamp existed, or declared by hand) the stored
+	// version stands.
+	var took int64
+	if stamp.origin == "" {
+		if took, err = stampedVersionOf(bundlePackage, propPackageShippedVersion, stamp.rawShipped); err != nil {
+			return plan, err
+		}
+		if took > 0 {
+			plan.From = took
+		}
+	}
 	var edited *editedCopy
 	if stamp.origin != "" && stamp.digest != "" {
 		current, err := ds.packageClosureDigest(ctx, ds.db, bundlePackage)
@@ -196,10 +212,29 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 			Kind: vocabularyRecordKinds[typ], ID: id, From: s.version,
 		})
 	}
-	plan.Available = len(plan.Changes) > 0
-	if stamp.origin != "" && vocabulary.CompareVersions(plan.To, copied) > 0 {
-		plan.Available = true
+	// A stamp that drives the offer means the stored versions ran ahead of
+	// the shipped ones, so the version diff above sees none of the moves. The
+	// changes are then read by CONTENT, the way the install decides them
+	// (resolveDeclarationVersions), each at the version it would land at.
+	//
+	// Either stamp offers the upgrade whenever the shipped version is past
+	// it, whatever `changes` lists (decision record 0070's rule for a copy,
+	// held here for a provider install too). A release can change what no
+	// declaration diff sees: the data records the closure ships beside its
+	// declarations (a trigger) land on install and are not in `changes`, and
+	// an unstamped provider at its shipped version is offered the same
+	// release through its header's version alone. Taking it moves the stamp,
+	// so the offer ends with the install.
+	copyMoved := stamp.origin != "" && vocabulary.CompareVersions(plan.To, copied) > 0
+	installMoved := took > 0 && vocabulary.CompareVersions(plan.To, took) > 0
+	if copyMoved || installMoved {
+		moved, err := ds.contentChanges(ctx, docs, stored)
+		if err != nil {
+			return plan, err
+		}
+		plan.Changes = mergeChanges(plan.Changes, moved)
 	}
+	plan.Available = len(plan.Changes) > 0 || copyMoved || installMoved
 	if !plan.Available && edited == nil {
 		return plan, nil
 	}
@@ -242,4 +277,94 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 		plan.Blockers = append(plan.Blockers, line)
 	}
 	return plan, nil
+}
+
+// contentChanges is what installing docs would move, decided the way the
+// install decides it: the batch's versions resolved against the stored rows
+// (resolveDeclarationVersions, over the canonical data), and every
+// declaration whose version would change listed with the stored version and
+// the one it lands at. A declaration new here is listed at the version it
+// lands at too: an unpinned one rides its package, and over stored versions
+// that ran ahead the package lands at its stored version or stored+1, never
+// at the shipped number the version diff reads. It writes nothing and never
+// touches docs.
+//
+// The stored version is read off the rows (stored, storedDeclarations), not
+// off the stored documents: only a kind, a package and an authority carry
+// `version` in their document data, while every row carries it.
+func (ds *dataset) contentChanges(ctx context.Context, docs []vocabulary.Document, stored map[string]storedDeclaration) ([]substrate.BundleUpgradeChange, error) {
+	touched := map[string]bool{}
+	for _, d := range docs {
+		touched[d.DeclaredPackage()] = true
+	}
+	existing, err := ds.vocabularyDocumentRows(ctx, ds.db, touched)
+	if err != nil {
+		return nil, err
+	}
+	b := vocabularyBatch{docs: append([]vocabulary.Document(nil), docs...)}
+	carryRetirements(&b, existing)
+	resolveDeclarationVersions(&b, existing, declarationCanonicalizer(ds.registry()))
+	packageVersion := map[string]int64{}
+	for _, d := range b.docs {
+		if d.Kind == vocabulary.DocPackage {
+			packageVersion[d.ID], _ = vocabulary.VersionValue(d.Data["version"])
+		}
+	}
+	versionOf := func(d vocabulary.Document) int64 {
+		switch d.Kind {
+		case vocabulary.DocKind, vocabulary.DocPackage, vocabulary.DocAuthority:
+			if v, _ := vocabulary.VersionValue(d.Data["version"]); v > 0 {
+				return v
+			}
+		}
+		// Everything else, and a kind with no pin, rides its package.
+		if v := packageVersion[d.DeclaredPackage()]; v > 0 {
+			return v
+		}
+		v, _ := vocabulary.VersionValue(existing[vocabulary.DocPackage+"\x00"+d.DeclaredPackage()].Data["version"])
+		return v
+	}
+	var out []substrate.BundleUpgradeChange
+	for _, d := range b.docs {
+		ident, known := schemaKindRef(d.Kind)
+		if !known {
+			continue
+		}
+		row, has := stored[ident+"\x00"+d.ID]
+		if !has {
+			out = append(out, substrate.BundleUpgradeChange{Kind: d.Kind, ID: d.ID, To: versionOf(d)})
+			continue
+		}
+		from := row.version
+		if to := versionOf(d); to != from {
+			out = append(out, substrate.BundleUpgradeChange{Kind: d.Kind, ID: d.ID, From: from, To: to})
+		}
+	}
+	return out, nil
+}
+
+// mergeChanges folds the content-read moves into the version diff, one per
+// declaration. A declaration both list takes the content entry, which is the
+// version the install lands it at; a prune only the version diff lists stays
+// as it is.
+func mergeChanges(diffed, moved []substrate.BundleUpgradeChange) []substrate.BundleUpgradeChange {
+	byKey := make(map[string]substrate.BundleUpgradeChange, len(moved))
+	for _, c := range moved {
+		byKey[c.Kind+"\x00"+c.ID] = c
+	}
+	out := make([]substrate.BundleUpgradeChange, 0, len(diffed))
+	for _, c := range diffed {
+		key := c.Kind + "\x00" + c.ID
+		if m, ok := byKey[key]; ok {
+			c = m
+			delete(byKey, key)
+		}
+		out = append(out, c)
+	}
+	for _, c := range moved {
+		if _, left := byKey[c.Kind+"\x00"+c.ID]; left {
+			out = append(out, c)
+		}
+	}
+	return out
 }

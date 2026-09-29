@@ -793,13 +793,13 @@ func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus
 func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT b.id, COALESCE(g.props->>$3, ''),
-		       COALESCE(g.props->>$5, ''), g.props->$6, COALESCE(g.props->>$7, '')
+		       COALESCE(g.props->>$5, ''), g.props->$6, COALESCE(g.props->>$7, ''), g.props->$8
 		FROM records g
 		JOIN records b ON b.kind = $2 AND b.deleted_at IS NULL AND b.id = g.id
 		WHERE g.kind = $1 AND g.deleted_at IS NULL AND (g.props ? $4) AND g.props->>$4 = 'true'
 		ORDER BY g.id`,
 		kindPackage, kindBundle, propPackageQuarantineReason, propPackageQuarantined,
-		propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest)
+		propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest, propPackageShippedVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -807,17 +807,16 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 	// the closure digest, and a read made while the rows hold their
 	// connection needs a second one from the shared pool.
 	type quarantinedRow struct {
-		st             substrate.BundleStatus
-		origin, digest string
-		rawVersion     []byte
+		st    substrate.BundleStatus
+		stamp originStamp
 	}
 	var found []quarantinedRow
 	func() {
 		defer func() { _ = rows.Close() }()
 		for rows.Next() {
-			var id, reason, origin, digest string
-			var rawVersion []byte
-			if err = rows.Scan(&id, &reason, &origin, &rawVersion, &digest); err != nil {
+			var id, reason string
+			var stamp originStamp
+			if err = rows.Scan(&id, &reason, &stamp.origin, &stamp.rawVersion, &stamp.digest, &stamp.rawShipped); err != nil {
 				return
 			}
 			authority, name := vocabulary.SplitPackageRef(id)
@@ -827,7 +826,7 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 					Installed: false, Enabled: false,
 					Quarantined: true, QuarantineReason: reason,
 				},
-				origin: origin, digest: digest, rawVersion: rawVersion,
+				stamp: stamp,
 			})
 		}
 		err = rows.Err()
@@ -838,7 +837,7 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 	out := make([]substrate.BundleStatus, 0, len(found))
 	for _, r := range found {
 		st := r.st
-		if err := ds.applyOriginStamp(ctx, &st, r.origin, r.rawVersion, r.digest); err != nil {
+		if err := ds.applyOriginStamp(ctx, &st, r.stamp); err != nil {
 			return nil, err
 		}
 		out = append(out, st)
@@ -847,15 +846,17 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 }
 
 // packageOrigin reads the provenance a SAMPLE import stamped on the package
-// row (vocabularywrite.go stampOrigin) onto the status. A row with no origin
-// (a provider, a hand apply, a copy imported before the stamp) leaves all
-// three zero.
+// row (vocabularywrite.go stampOrigin) onto the status, and the shipped
+// version a PROVIDER install stamped (stampShipped). A row with no origin (a
+// provider, a hand apply, a copy imported before the stamp) leaves the three
+// origin fields zero; a row no provider install stamped leaves
+// ShippedVersion zero.
 func (ds *dataset) packageOrigin(ctx context.Context, pkg string, st *substrate.BundleStatus) error {
 	stamp, err := ds.packageStamp(ctx, ds.db, pkg)
 	if err != nil {
 		return err
 	}
-	return ds.applyOriginStamp(ctx, st, stamp.origin, stamp.rawVersion, stamp.digest)
+	return ds.applyOriginStamp(ctx, st, stamp)
 }
 
 // originStamp is the provenance one package row carries, as stored: the
@@ -865,6 +866,9 @@ type originStamp struct {
 	origin     string
 	rawVersion []byte
 	digest     string
+	// rawShipped is the `shippedVersion` a provider install stamped, as
+	// jsonb bytes (stampedVersionOf decodes it); empty on every other row.
+	rawShipped []byte
 }
 
 // packageStamp reads the stamp off one package row. The bundle status, the
@@ -873,10 +877,10 @@ type originStamp struct {
 func (ds *dataset) packageStamp(ctx context.Context, q dbx, pkg string) (originStamp, error) {
 	var s originStamp
 	err := q.QueryRowContext(ctx, `
-		SELECT COALESCE(props->>$3, ''), props->$4, COALESCE(props->>$5, '')
+		SELECT COALESCE(props->>$3, ''), props->$4, COALESCE(props->>$5, ''), props->$6
 		FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
-		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest,
-	).Scan(&s.origin, &s.rawVersion, &s.digest)
+		kindPackage, pkg, propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest, propPackageShippedVersion,
+	).Scan(&s.origin, &s.rawVersion, &s.digest, &s.rawShipped)
 	if errors.Is(err, sql.ErrNoRows) {
 		return originStamp{}, nil
 	}
@@ -890,21 +894,27 @@ func (ds *dataset) packageStamp(ctx context.Context, q dbx, pkg string) (originS
 // Modified by recomputing the closure digest from the stored declarations:
 // equal means the copy is what the import landed, anything else means a
 // declaration was edited, added or removed since. An empty origin is no
-// stamp, and leaves the status untouched.
-func (ds *dataset) applyOriginStamp(ctx context.Context, st *substrate.BundleStatus, origin string, rawVersion []byte, digest string) error {
-	if origin == "" {
-		return nil
-	}
-	version, err := originVersionOf(st.ID, rawVersion)
+// origin stamp and leaves the origin fields untouched; the shipped version a
+// provider install stamped is read either way.
+func (ds *dataset) applyOriginStamp(ctx context.Context, st *substrate.BundleStatus, s originStamp) error {
+	shipped, err := stampedVersionOf(st.ID, propPackageShippedVersion, s.rawShipped)
 	if err != nil {
 		return err
 	}
-	st.Origin, st.OriginVersion = origin, version
+	st.ShippedVersion = shipped
+	if s.origin == "" {
+		return nil
+	}
+	version, err := originVersionOf(st.ID, s.rawVersion)
+	if err != nil {
+		return err
+	}
+	st.Origin, st.OriginVersion = s.origin, version
 	current, err := ds.packageClosureDigest(ctx, ds.db, st.ID)
 	if err != nil {
 		return err
 	}
-	st.Modified = digest == "" || current != digest
+	st.Modified = s.digest == "" || current != s.digest
 	return nil
 }
 
@@ -913,19 +923,25 @@ func (ds *dataset) applyOriginStamp(ctx context.Context, st *substrate.BundleSta
 // every other declaration version agree on what an integer is. An absent
 // value is zero; a value that is not an integer is a corrupt row, reported.
 func originVersionOf(pkg string, raw []byte) (int64, error) {
+	return stampedVersionOf(pkg, propPackageOriginVersion, raw)
+}
+
+// stampedVersionOf reads one stamped version property (`originVersion`,
+// `shippedVersion`) off its jsonb value, as originVersionOf describes.
+func stampedVersionOf(pkg, prop string, raw []byte) (int64, error) {
 	if len(raw) == 0 {
 		return 0, nil
 	}
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
-		return 0, fmt.Errorf("substrate/engine: %s: decode %s: %w", pkg, propPackageOriginVersion, err)
+		return 0, fmt.Errorf("substrate/engine: %s: decode %s: %w", pkg, prop, err)
 	}
 	if v == nil {
 		return 0, nil
 	}
 	n, ok := vocabulary.VersionValue(v)
 	if !ok {
-		return 0, fmt.Errorf("substrate/engine: %s: %s is not an integer: %v", pkg, propPackageOriginVersion, v)
+		return 0, fmt.Errorf("substrate/engine: %s: %s is not an integer: %v", pkg, prop, v)
 	}
 	return n, nil
 }

@@ -70,6 +70,7 @@
     "quarantineReason": false,
     "quarantined": false,
     "setup": false,
+    "shippedVersion": false,
     "version": false
   },
   "BundleUninstalled": {

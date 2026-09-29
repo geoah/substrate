@@ -1168,6 +1168,19 @@ describe("ProviderPage", () => {
   })
 
   describe("the header", () => {
+    it("shows the stored version and the shipped version it was installed from in technical mode", async () => {
+      serve({ statuses: [status({ version: 36, shippedVersion: 33 })] })
+      renderPage(<ProviderPage />, true)
+      await screen.findByText("Google", { selector: "h1" })
+      const header = document.querySelector(
+        '[data-slot="page-header"]'
+      ) as HTMLElement
+      expect(within(header).getByText("version 36")).toBeTruthy()
+      expect(
+        within(header).getByText("installed from shipped version 33")
+      ).toBeTruthy()
+    })
+
     it("pauses the provider after saying what stops", async () => {
       renderPage(<ProviderPage />)
       await screen.findByText("Google", { selector: "h1" })

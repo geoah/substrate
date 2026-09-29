@@ -514,6 +514,7 @@ const bundleStatus: Shape<BundleStatus> = {
   origin: false,
   originVersion: false,
   modified: false,
+  shippedVersion: false,
 }
 
 const inputStatus: Shape<InputStatus> = {

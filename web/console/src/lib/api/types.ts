@@ -1098,6 +1098,12 @@ export interface BundleStatus {
   /** True when the copy's declarations no longer match what the import
    * landed: something edited, added or removed since. */
   modified?: boolean
+  /** The shipped package version the last PROVIDER install took. The upgrade
+   * preview measures the next shipped closure from it, not from `version`,
+   * which the API moves to stored+1 on every change and so may sit above the
+   * shipped line. Absent on a sample, on a hand-applied closure and on a
+   * provider installed before the stamp existed. */
+  shippedVersion?: number
 }
 
 /** What an uninstall answers. The bundle has no status afterwards, so the
