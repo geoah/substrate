@@ -26,7 +26,7 @@ GET    /api/v1/records?filter&orderBy&first&after|offset&expand&withAnnotations&
 GET    /api/v1/records?q&mode&filter&first                                  # the ranked read
 GET    /api/v1/records?watch=1&filter&from&generation                       # the tail
 POST   /api/v1/records                            # create; the body names `kind`, the server assigns the id
-GET    /api/v1/{authority}/{package}/{kind}/{id}
+GET    /api/v1/{authority}/{package}/{kind}/{id}  # takes no query parameter
 PUT    /api/v1/{authority}/{package}/{kind}/{id}  # upsert at the given id
 PATCH  /api/v1/{authority}/{package}/{kind}/{id}  # patch, including state transitions
 DELETE /api/v1/{authority}/{package}/{kind}/{id}  # soft delete; ?ifVersion= guards it, ?purge=true collects it now
@@ -577,7 +577,13 @@ A parameter or a filter arm a given [mode](#the-records-route) does not honor
 is a `bad_request` that names it, never a silent success: `orderBy` with `q`,
 `filter.properties` with `watch=1`, a `first` misspelled `First`. A misspelled
 ordering column is refused naming the camelCase replacement, and a malformed
-filter document is refused naming the field that would not decode.
+filter document is refused naming the field that would not decode. The
+single-record `GET` honors no parameter at all, so once its kind resolves any
+one it is sent (`expand`, `withEdges`, a typo) is the same `bad_request`, and
+`DELETE` refuses every parameter but `ifVersion` and `purge`. A query string
+that does not parse (a `;` separator, a bad `%` escape) is a `bad_request` on
+each of these routes and `/changes`, naming the parse error, because the pair
+it drops would otherwise read as absent.
 
 ### The window read
 
@@ -1169,7 +1175,7 @@ The code set is closed. The client-error codes:
 
 | Code           | HTTP | When                                                                                             |
 | -------------- | ---- | ------------------------------------------------------------------------------------------------ |
-| `bad_request`  | 400  | A malformed request, an unknown field, or an unsupported list parameter.                         |
+| `bad_request`  | 400  | A malformed request, an unknown field, or an unsupported query parameter.                        |
 | `validation`   | 422  | An undeclared property, a malformed value, a type mismatch, or a `mustExist` reference naming a record that does not exist — a value in the body, addressed by `problemDetails[].path`. |
 | `conflict`     | 409  | A version check failed (`ifVersion`); re-read and retry. Also the accept of a change request whose change no longer applies, whatever the cause ([the patch request sibling](projection.md#the-patch-request-sibling)) — the message says which, and only an `ifVersion` says "version conflict". |
 | `parked`       | 409  | A retry of a parked delivery (`POST …/parked/{failureId}/retry`) ran and failed again: the row stays parked one attempt older, and the message names the new error's first line ([functions](functions.md#triggers)). |

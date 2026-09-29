@@ -49,6 +49,11 @@ var (
 func (h *handler) getRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
+	// Before the mode switch, so the mode's suffix never lands on it.
+	if bad := malformedQuery(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
 	v := r.URL.Query()
 	switch {
 	case v.Get("watch") == "1":

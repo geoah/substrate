@@ -152,6 +152,92 @@ func TestSupportedListParamsStillWork(t *testing.T) {
 	wantNotRefused(t, env, recordsOf(t, personKind, "watch=1", "from=1", "generation="+generation), tok)
 }
 
+// A single-record GET honors no query parameter, so every one is refused by
+// name with the body the list answers (#335). It was a silent 200 before: a
+// client sending a stale `withEdges` or an `expand` the read never runs got
+// the bare record back and could not tell.
+func TestUnknownRecordReadParamsAreRefused(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	id := createPerson(t, env, tok)
+
+	// Refused on the list too, so the two bodies must match byte for byte.
+	for _, query := range []string{"?withEdges=1", "?bogus=1", "?limit=5"} {
+		rec := env.do(t, http.MethodGet, peoplePath+"/"+id+query, tok, nil)
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		list := env.do(t, http.MethodGet, recordsPath+query, tok, nil)
+		if got, want := rec.Body.String(), list.Body.String(); got != want {
+			t.Errorf("GET record%s answered %s, want the list's %s", query, got, want)
+		}
+	}
+	// Honored by the list, not by the record read: still refused, named. The
+	// read always carries annotations, so `withAnnotations=0` would be
+	// ignored as silently as `=1` is redundant.
+	for query, key := range map[string]string{
+		"?expand=manager":    "expand",
+		"?first=5":           "first",
+		"?withAnnotations=1": "withAnnotations",
+	} {
+		rec := env.do(t, http.MethodGet, peoplePath+"/"+id+query, tok, nil)
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `"`+key+`"`) {
+			t.Errorf("GET record%s: message = %q, want %q named", query, msg, key)
+		}
+	}
+	// The refusal runs before the read, so a missing id is refused, not
+	// answered 404 (TestGetComputedOccurrence holds a computed id to it).
+	rec := env.do(t, http.MethodGet, peoplePath+"/nope?bogus=1", tok, nil)
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+	// The kind is resolved first, as on DELETE: an unknown kind is still 404.
+	rec = env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets/"+id+"?bogus=1", tok, nil)
+	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+
+	// With no parameter the read answers as before, an empty query included.
+	for _, query := range []string{"", "?"} {
+		rec := env.do(t, http.MethodGet, peoplePath+"/"+id+query, tok, nil)
+		wantStatus(t, rec, http.StatusOK)
+		if got := decodeJSON[substrate.Record](t, rec).ID; got != id {
+			t.Errorf("GET record%s: id = %q, want %q", query, got, id)
+		}
+	}
+}
+
+// A query string that does not parse is refused on every route that names its
+// parameters. r.URL.Query() drops the pair it cannot read, so `?filter=%ZZ`
+// listed every row and `?bogus=1;x=2` passed the name check as a clean query.
+func TestMalformedQueryStringsAreRefused(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	id := createPerson(t, env, tok)
+	seedChanges(ds, 3)
+
+	for _, c := range []struct{ method, path string }{
+		{http.MethodGet, peoplePath + "/" + id + "?bogus=1;x=2"},
+		{http.MethodGet, peoplePath + "/" + id + "?bogus=%ZZ"},
+		{http.MethodGet, recordsPath + "?filter=%ZZ"},
+		{http.MethodGet, recordsPath + "?first=1;bogus=2"},
+		{http.MethodGet, recordsPath + "?q=ada&mode=%ZZ"},
+		{http.MethodGet, recordsPath + "?watch=1&from=0;x=1"},
+		{http.MethodGet, changesPath + "?ops=put;delete"},
+		{http.MethodDelete, peoplePath + "/" + id + "?ifVersion=1;purge=true"},
+	} {
+		ds.lastDeleteID = ""
+		rec := env.do(t, c.method, c.path, tok, nil)
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
+		if !strings.HasPrefix(msg, "malformed query string: ") || strings.Contains(msg, "not supported") {
+			t.Errorf("%s %s: message = %q, want the parse error alone", c.method, c.path, msg)
+		}
+		if ds.lastDeleteID != "" {
+			t.Errorf("%s %s reached the dataset", c.method, c.path)
+		}
+	}
+	// An escaped `;` and `%` are ordinary characters, not a malformed query.
+	rec := env.do(t, http.MethodGet, recordsPath+`?filter={"properties":{"name":{"eq":"A%3Bda%25"}}}`, tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+}
+
 // wantNotRefused drives a WATCH request to completion: the stream would
 // otherwise never end, so the request context is canceled up front — the
 // parameter check runs long before any streaming, so a refusal still surfaces.
