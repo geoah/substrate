@@ -33,40 +33,48 @@ resume row except the cursor, which it names by `cursorSha256` and
 `cursorBytes`, the digest and length of the JSON the drain encoded; the bytes
 go to `paged_cursors` alone (`pageTx`). Every park re-states the resume row of
 the chain its failure names, cursor whole, in the park's own entry (`parkTx`,
-`checkpointPagedCursor`). A replay stores the cursor an entry carries and JSON
-null for one it names by hash. A drain that reads a null cursor starts the
+`checkpointPagedCursor`).
+
+A replay stores the cursor an entry carries. For a cursor an entry names by
+hash, it stores the cursor `paged_cursors` held before the replay cleared it
+when that cursor has the named digest (`keepPagedCursors`), so a rebuild over
+the same database reproduces every row. Otherwise it stores JSON null: an
+import into an empty database. A drain that reads a null cursor starts the
 chain over: the body runs from its first page under a fresh budget and
 deadline, and the row's version stays as the fence (`loadPagedProgress`).
 
 A page entry is a few hundred bytes whatever the cursor holds, so a drain of N
 pages appends N small entries. The park's copy keeps 0064's promise where it
 matters: a parked failure is the handle a retry resumes from, and parks are
-rare where pages are not. Without the copy, every restore restarts every
-parked drain. A delta is as large as the cursor on a chain's first page and on
-any page that queues a long list, and its replay needs every earlier page of
-the chain. The blob store writes a `core/blob` manifest record per page, which
-the public feed serves, and a collection for every superseded cursor, and it
-still writes the bytes once a page.
+rare where pages are not. Without the copy, every import restarts every parked
+drain. A delta is as large as the cursor on a chain's first page and on any
+page that queues a long list, and its replay needs every earlier page of the
+chain. The blob store writes a `core/blob` manifest record per page, which the
+public feed serves, and a collection for every superseded cursor, and it still
+writes the bytes once a page.
 
-An older binary reads a hash-only page as a page with no cursor and stores
-JSON null, the same row this binary's replay stores, so the changelog dialect
-stays at 1.
+The changelog dialect stays at 1. An older binary reads a hash-only page as a
+page with no cursor and folds the same row this binary's import folds, a null
+cursor with the entry's counters.
 
 ### Consequences
 
 - Good, because a page entry no longer grows with the cursor.
 - Good, because a parked drain still resumes from its last committed page
-  after a rebuild or an import.
-- Bad, because a drain that stopped between pages without parking (a crash, a
-  shutdown mid-drain) starts over from its first page after a rebuild or an
-  import, and repeats the pages it had committed. A paged body keys its
-  effects so a repeated page writes nothing new.
-- Bad, because a rebuild no longer reproduces that row exactly: its cursor
-  comes back null.
+  after an import, and a rebuild changes no resume row.
+- Bad, because after an import into an empty database, a drain that stopped
+  between pages without parking (a crash, a shutdown mid-drain) starts over
+  from its first page and runs the pages it had committed again, against the
+  repository as it is now. A page that deleted a record a later write
+  restored deletes it again. A paged body keys its effects so a repeated page
+  writes nothing new.
 - Bad, because a park copies the cursor into the changelog, and every retry
   that parks again copies it again.
 - Bad, because a body that pages with no cursor gets a fresh budget on each
   retry by hand, where the budget used to span retries.
+- Bad, because an older binary keeps the spent budget of a chain it folds
+  with a null cursor, so after a downgrade and an import that chain parks at
+  its first middle page until its failure is forgotten.
 - Bad, because entries written before this record keep their cursors whole.
   They replay as they did, and nothing reclaims their space.
 
@@ -75,16 +83,15 @@ stays at 1.
 `TestAPageEntryStaysSmallAsItsCursorGrows` (internal/engine) drains a cursor
 past 200 KB and holds each page's entry under 2 KB in the table and the
 segment file, with the hash naming the stored cursor and the park carrying it.
-`TestARebuildResumesAParkedDrainAndStartsAnInterruptedOneOver` rebuilds over a
-parked chain, an interrupted one and an entry in the old shape, and asserts
-each row and what the next delivery does.
-`TestAMiddlePageNamesItsCursorWithoutCarryingIt` holds the encoding.
-`TestARestoredRepositoryResumesItsDeliveries` and `TestReleaseAcceptanceDrill`
-still resume a parked drain after an import.
+`TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver` writes a
+parked chain, an interrupted one and an entry in the old shape, shows a
+rebuild reproduces the fold, and shows what an import brings back and what
+the next deliveries do. `TestAMiddlePageNamesItsCursorWithoutCarryingIt`
+holds the encoding. `TestARestoredRepositoryResumesItsDeliveries` and
+`TestReleaseAcceptanceDrill` still resume a parked drain after an import.
 
 ## More Information
 
 This amends the `page` effect of 0064; the rest of 0064 stands. Reopen if an
-interrupted drain's restart costs too much: a rebuild over the same database
-could keep the row's cursor where it matches the hash the ledger recorded,
-which needs no change to the entry.
+interrupted drain's restart after an import costs too much: the cursor would
+then have to reach the repository directory between parks.
