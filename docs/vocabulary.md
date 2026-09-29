@@ -368,9 +368,13 @@ once. The narrowing diffs that refuse:
   admits. A `secret` is stored sealed, so its values cannot be matched: any
   pattern change on a secret property refuses while a record holds one
 - raising or adding `min:`, and lowering or adding `max:`, while records hold
-  a number outside the new bound; a `decimal` is compared against the bound's
-  float64 value, as `coerceDecimal` compares it, and a `money` value by the
-  number it denotes, as `coerceMoney` compares it
+  a number outside the new bound. A `decimal`, and the number a `money` value
+  denotes, are compared exactly against the number the bound names, as
+  `coerceDecimal` and `coerceMoney` compare them, so `min: 0.01` admits
+  `"0.01"`. That number is the shortest decimal that reads back as the
+  bound's float64, which is how every door carries a bound and how a read of
+  the kind writes it back: the digits you wrote when they are at most 15
+  significant ones
 - every one of those inside an object property's declared `fields:`, at each
   level the dialect nests: a dropped field, a field whose datatype or container
   changed, a field's removed enum value, a field's tightened keys, a field's

@@ -157,8 +157,7 @@ func TestCoerceMoneyIsAnAmountAndACurrency(t *testing.T) {
 		}
 	}
 	// The bound is on the number, so the currency's minor unit decides it:
-	// 10 EUR cents sits just below a max of 0.1 (compared at its exact binary
-	// value, as a decimal's is), and 10 yen is far above it.
+	// 10 EUR cents sits exactly at a max of 0.1, and 10 yen is far above it.
 	zero, dime := 0.0, 0.1
 	bounded := &vocabulary.Property{Name: "price", Datatype: vocabulary.DatatypeMoney, Min: &zero, Max: &dime}
 	if _, err := coerceScalar(bounded, money(-1, "EUR")); err == nil || !strings.Contains(err.Error(), ">= 0") {
@@ -175,6 +174,52 @@ func TestCoerceMoneyIsAnAmountAndACurrency(t *testing.T) {
 	}
 	if _, err := coerceScalar(bounded, money(10, "JPY")); err == nil || !strings.Contains(err.Error(), "<= 0.1") {
 		t.Fatalf("10 JPY: got %v, want the bound named", err)
+	}
+}
+
+// A decimal's or a money value's bound is the number the declaration names,
+// compared exactly. The float64 nearest 0.01 sits just above 0.01 and the one
+// nearest 0.3 just below 0.3, so a comparison against either float64 refuses a
+// value AT the bound, or admits one a digit past it far down the fraction.
+func TestExactBoundsCompareTheDeclaredNumber(t *testing.T) {
+	cent, point3, mil := 0.01, 0.3, 0.001
+	decimal := func(min, max *float64) *vocabulary.Property {
+		return &vocabulary.Property{Name: "rate", Datatype: vocabulary.DatatypeDecimal, Min: min, Max: max}
+	}
+	money := func(min, max *float64) *vocabulary.Property {
+		return &vocabulary.Property{Name: "price", Datatype: vocabulary.DatatypeMoney, Min: min, Max: max}
+	}
+	price := func(amount int64, currency string) map[string]any {
+		return map[string]any{"amount": amount, "currency": currency}
+	}
+	for _, tc := range []struct {
+		name string
+		p    *vocabulary.Property
+		in   any
+		want string // the refusal's words; empty admits
+	}{
+		{"min: 0.01 admits 0.01", decimal(&cent, nil), "0.01", ""},
+		{"min: 0.01 admits 0.0100", decimal(&cent, nil), "0.0100", ""},
+		{"min: 0.01 refuses just below it", decimal(&cent, nil), "0.009999999999999999", "must be >= 0.01"},
+		{"max: 0.01 admits 0.01", decimal(nil, &cent), "0.01", ""},
+		{"max: 0.01 refuses just above it", decimal(nil, &cent), "0.0100000000000000001", "must be <= 0.01"},
+		{"max: 0.3 admits 0.3", decimal(nil, &point3), "0.3", ""},
+		{"max: 0.3 refuses just above it", decimal(nil, &point3), "0.30000000000000001", "must be <= 0.3"},
+		{"min: 0.3 refuses just below it", decimal(&point3, nil), "0.29999999999999999", "must be >= 0.3"},
+		{"min: 0.01 admits one EUR cent", money(&cent, nil), price(1, "EUR"), ""},
+		{"min: 0.01 refuses zero EUR", money(&cent, nil), price(0, "EUR"), "must be >= 0.01"},
+		{"max: 0.3 admits 0.30 EUR", money(nil, &point3), price(30, "EUR"), ""},
+		{"max: 0.3 refuses 0.31 EUR", money(nil, &point3), price(31, "EUR"), "must be <= 0.3"},
+		{"min: 0.001 admits one KWD fils", money(&mil, nil), price(1, "KWD"), ""},
+		{"min: 0.001 refuses zero KWD", money(&mil, nil), price(0, "KWD"), "must be >= 0.001"},
+	} {
+		_, err := coerceScalar(tc.p, tc.in)
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: %v", tc.name, err)
+		case tc.want != "" && (err == nil || err.Error() != tc.want):
+			t.Errorf("%s: got %v, want %q", tc.name, err, tc.want)
+		}
 	}
 }
 
