@@ -164,8 +164,9 @@ output applies back unchanged.
   declarations of one package` line per package with its `index` among the
   batch's `packages`, and `committed` or `ended with an error` with the time
   it `took`. A step that can run long logs only when it has work: waiting
-  for the batch ahead, preparing function bodies, building an index, and
-  each walk over stored records.
+  for the batch ahead, preparing function bodies, waiting for another
+  session's index builds, building an index, and each walk over stored
+  records.
 - `patch <kind> <id>` edits in place: `--state status=done` for
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a

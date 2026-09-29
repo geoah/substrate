@@ -441,16 +441,20 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 	// statement Postgres refuses is an admission failure, and an admission
 	// failure must land nothing (the definitions themselves were checked at
 	// staging). It ran after the commit once, so a refused index came back as
-	// an error from an apply that had already published. CREATE INDEX cannot
-	// run inside the transaction either: it runs on the admin pool, and it
-	// takes a SHARE lock on `records` that the transaction's own row writes
-	// conflict with. An index built for a batch the guards below then refuse
-	// is harmless: IF NOT EXISTS finds it next time, and nothing reads it
-	// until its kind lands.
-	building := func(kind, index string) {
-		ds.logApply("building an index", "kind", logSafeID(kind), "index", logSafeID(index))
+	// an error from an apply that had already published. The build cannot run
+	// inside the transaction either: it runs on the admin pool, it is
+	// concurrent, and Postgres refuses a concurrent build inside a
+	// transaction. It also waits for every write in flight on `records`,
+	// which would include this transaction's own. An index built for a batch
+	// the guards below then refuse is harmless: its comment matches next
+	// time, and nothing reads it until its kind lands.
+	progress := indexProgress{
+		building: func(kind, index string) {
+			ds.logApply("building an index", "kind", logSafeID(kind), "index", logSafeID(index))
+		},
+		waiting: func() { ds.logApply("waiting for another session's index builds") },
 	}
-	if err := ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched), building); err != nil {
+	if err := ensureIndices(ctx, ds.svc.admin, touchedKinds(candidate, touched), progress); err != nil {
 		return nil, err
 	}
 

@@ -236,13 +236,19 @@ const registrationLockKeySQL = `hashtext(current_schema() || '|register|' || $1)
 // connection and no number of them can wait on each other for a second. The
 // unlock runs on a context of its own, since the creation it ends may have
 // failed because the caller's died, and a connection whose unlock failed is
-// discarded rather than returned to the pool still holding the lock.
+// discarded rather than returned to the pool still holding the lock. The
+// second registrant polls for the lock (lockAdvisory) rather than blocking
+// on it: the creation holding it imports a sample, the import may build an
+// index, and that concurrent build waits out the snapshot a blocked
+// registrant would keep for as long as it waits.
 func (s *service) lockRegistration(ctx context.Context, authority string) (*sql.Conn, func(), error) {
 	conn, err := s.maint.Conn(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("substrate/engine: registration lock for %s: %w", authority, err)
 	}
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(`+registrationLockKeySQL+`)`, authority); err != nil {
+	if err := lockAdvisory(ctx, conn, registrationLockKeySQL, []any{authority}, nil); err != nil {
+		// A round trip that failed may have been granted the lock first.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		_ = conn.Close()
 		return nil, nil, fmt.Errorf("substrate/engine: registration lock for %s: %w", authority, err)
 	}
