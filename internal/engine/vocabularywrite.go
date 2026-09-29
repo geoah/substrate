@@ -574,7 +574,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if len(st.reprojectedFTS) > 0 {
 			ds.logApply("re-deriving the search index", "kinds", len(st.reprojectedFTS))
 		}
-		if err := t.reprojectFTS(candidate, st.reprojectedFTS); err != nil {
+		if err := t.reprojectFTS(foldView{reg: candidate, parked: st.parked}, st.reprojectedFTS); err != nil {
 			return err
 		}
 		if b.extra != nil {
@@ -943,26 +943,9 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// door stores `movedFrom` and performs nothing, so nothing is passed to the
 	// conversion plan and the narrowing counts stand at full strength.
 	moveRefusals := userDoorMoveGuards(classifyKindMoves(current, candidate, touched, nil))
-	// The parked set the commit publishes (fold.go parkedSet): this one less
-	// every package the batch touches, read beside the candidate. A kind whose
-	// indexes a parked set decides on either side (a parked kind, or a live
-	// one a parked mapping reshapes) derived its rows under the old view, and
-	// the registries alone do not show it moving: a parked kind is in
-	// neither, and a reshaped one is the same kind in both. Such a kind
-	// re-derives where the two views disagree, so an uninstalled parked
-	// package's rows land at the unknown-kind bands with no refs rows, and a
-	// live source kind loses the slot row the package's mapping projected.
-	parked := ds.parkedSet()
-	staged := parked.without(touched, candidate)
-	decided := parked.derivedKinds()
-	for ident := range staged.derivedKinds() {
-		decided[ident] = true
-	}
-	before, after := foldView{reg: current, parked: parked}, foldView{reg: candidate, parked: staged}
-	reprojected := unionStrings(reprojectedKinds(current, candidate, touched),
-		kindsShapedApart(before, after, decided, referenceShape))
-	reprojectedFTS := unionStrings(reprojectedFTSKinds(current, candidate, touched),
-		kindsShapedApart(before, after, decided, ftsShape))
+	staged, parkedRefs, parkedFTS := ds.parkedReprojection(current, candidate, touched)
+	reprojected := unionStrings(reprojectedKinds(current, candidate, touched), parkedRefs)
+	reprojectedFTS := unionStrings(reprojectedFTSKinds(current, candidate, touched), parkedFTS)
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
@@ -3014,6 +2997,27 @@ func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[s
 	}
 	sort.Strings(out)
 	return out
+}
+
+// parkedReprojection is the parked half of a registry change, the apply
+// door's and the boot upgrade's alike (fold.go parkedSet). staged is the set
+// the change publishes: the dataset's, less every package it touches, read
+// beside the candidate. refs and fts are the kinds whose indexes a parked
+// set decides on either side and whose shape the two views disagree on. The
+// registries alone do not show these moving: a parked kind is in neither,
+// and a live kind a parked mapping reshapes is the same kind in both. So an
+// uninstalled parked package's rows re-derive at the unknown-kind bands with
+// no refs rows, and a live source kind loses the slot row a parked mapping
+// projected once the slot is gone or collides with a declared property.
+func (ds *dataset) parkedReprojection(current, candidate *vocabulary.Registry, touched map[string]bool) (staged *parkedSet, refs, fts []string) {
+	parked := ds.parkedSet()
+	staged = parked.without(touched, candidate)
+	decided := parked.derivedKinds()
+	for ident := range staged.derivedKinds() {
+		decided[ident] = true
+	}
+	before, after := foldView{reg: current, parked: parked}, foldView{reg: candidate, parked: staged}
+	return staged, kindsShapedApart(before, after, decided, referenceShape), kindsShapedApart(before, after, decided, ftsShape)
 }
 
 // kindsShapedApart keeps the named kinds whose `shape` differs between two

@@ -436,3 +436,84 @@ func TestTheSnapshotNamesAPackageThatDoesNotParse(t *testing.T) {
 		t.Fatal("the snapshot still names the package after a re-apply stored a declaration that parses")
 	}
 }
+
+// TestABootUpgradeReindexesASourceKindAParkedMappingReshapes: a parked
+// mapping from a SEEDED kind keeps that kind's slot row, until a shipped
+// upgrade declares an ordinary property under the slot's name. The parked
+// mapping's slot then collides and is gone from the parked view, so the boot
+// re-derives the source rows without it, which is what a rebuild after the
+// upgrade folds.
+func TestABootUpgradeReindexesASourceKindAParkedMappingReshapes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const provider = llmPackage + "/provider"
+	dsn := engine.MigratedDSN(t)
+	tree := shippedTree(t)
+	open := pfOpener(t, dsn, t.TempDir())
+
+	svc := open(engine.WithKindsDir(tree))
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := pfMappedDocs()
+	docs[len(docs)-1] = vocabulary.MappingManifest(pfPackage, "sourcecard", map[string]any{
+		"from": provider, "to": pfCard, "property": "card",
+	})
+	if _, err := ds.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pfPackage)), docs, nil,
+		substrate.BundleInstall{}); err != nil {
+		t.Fatalf("install the mapping closure: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: provider, ID: "hub", Properties: map[string]any{"label": "the hub", "wire": "openai"},
+	})
+	slotRows := func(snap []byte) int {
+		t.Helper()
+		var s struct {
+			Refs []struct {
+				SrcKind  string `json:"src_kind"`
+				Property string `json:"property"`
+			} `json:"refs"`
+		}
+		if err := json.Unmarshal(snap, &s); err != nil {
+			t.Fatalf("read the snapshot: %v", err)
+		}
+		n := 0
+		for _, r := range s.Refs {
+			if r.SrcKind == provider && r.Property == "card" {
+				n++
+			}
+		}
+		return n
+	}
+	if n := slotRows(foldOf(t, ds)); n != 1 {
+		t.Fatalf("the provider holds %d slot rows while the mapping is live, want 1", n)
+	}
+	_ = svc.Close()
+
+	patchShipped(t, llmKind(tree, "provider.yaml"), func(doc string) string {
+		doc = replaceShipped(t, doc, "  properties:\n", "  properties:\n    card:\n      type: string\n")
+		return pinVersion(t, doc, "99")
+	})
+	svc2 := open(engine.WithKindsDir(tree), engine.WithTestInadmissible(pfPackage))
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the upgrade with the package parked: %v", err)
+	}
+	if _, declared := declaredProps(t, ds2, provider)["card"]; !declared {
+		t.Fatal("the upgrade did not land: llm/provider does not declare `card`")
+	}
+	upgraded := foldOf(t, ds2)
+	if n := slotRows(upgraded); n != 0 {
+		t.Fatalf("the provider holds %d slot rows after the upgrade declared `card` a string, want 0", n)
+	}
+	if _, err := svc2.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if rebuilt := foldOf(t, ds2); string(rebuilt) != string(upgraded) {
+		t.Fatalf("the rebuilt fold is not the upgraded fold\n%s", firstDifference(upgraded, rebuilt))
+	}
+}

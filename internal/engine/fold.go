@@ -765,13 +765,15 @@ func (t *txn) derivationView() foldView {
 // still in the live registry until the publish, and its rows must land at the
 // unknown-kind bands the replay computes, not the bands of a declaration that
 // is leaving. Tombstones are included because a rebuild indexes them too, and
-// a resurrecting put refolds the row anyway.
+// a resurrecting put refolds the row anyway. The apply door and the boot
+// upgrade hand it the closure with the parked set it publishes behind it
+// (foldView), which answers for no kind the closure drops.
 //
 // It runs in pages, because the transaction cannot write while a cursor over
 // `records` is open, and inline, whatever the kind's size: a kind edit is rare
 // and the alternative is a live index that answers for a declaration that is
 // gone.
-func (t *txn) reprojectFTS(reg *vocabulary.Registry, kinds []string) error {
+func (t *txn) reprojectFTS(reg kindLookup, kinds []string) error {
 	for _, kind := range kinds {
 		after := ""
 		for {

@@ -70,11 +70,17 @@ type shippedUpgradeStage struct {
 	// keeps every stored kind the tree stopped shipping (the boot never
 	// prunes), so such a kind compares equal and is not re-derived as if it
 	// were dropped. Only the upgraded packages are walked, and those are the
-	// seeded ones, which the loader never parks (it refuses the open), so a
-	// parked package is never re-derived here (issue 461). Empty when the
-	// candidate does not compile, which refuses the boot anyway.
+	// seeded ones, which the loader never parks (it refuses the open). A kind
+	// a parked set decides joins them where the parked view moves
+	// (parkedReprojection): a live source kind whose parked mapping slot now
+	// collides with a shipped property. Empty when the candidate does not
+	// compile, which refuses the boot anyway.
 	reprojected    []string
 	reprojectedFTS []string
+	// parked is the parked set read beside the candidate (fold.go
+	// parkedSet): what the boot's transaction derives under, and what the
+	// reload after it reads again. Nil when the candidate does not compile.
+	parked *parkedSet
 	// plans is the version motion per shipped PACKAGE this repository holds as
 	// shipped vocabulary, sorted by identity. The authority row beside the
 	// packages is diffed and projected with them but is not a package, so it
@@ -221,6 +227,10 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 		// candidate too, or a rebuild indexes them differently.
 		st.reprojected = unionStrings(st.reprojected, kindsShapedApart(reg, candidate, written, referenceShape))
 		st.reprojectedFTS = unionStrings(st.reprojectedFTS, kindsShapedApart(reg, candidate, written, ftsShape))
+		var parkedRefs, parkedFTS []string
+		st.parked, parkedRefs, parkedFTS = ds.parkedReprojection(current, candidate, st.upgrade)
+		st.reprojected = unionStrings(st.reprojected, parkedRefs)
+		st.reprojectedFTS = unionStrings(st.reprojectedFTS, parkedFTS)
 	}
 	return st, nil
 }
