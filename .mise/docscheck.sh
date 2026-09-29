@@ -12,7 +12,9 @@
 # Scope is docs/*.md, README.md and each skill under skills/: the pages a
 # reader is handed, and the runbooks their agents follow. AGENTS.md is the
 # working guide and speaks to a different audience, so it is not held to the
-# reader-facing vocabulary.
+# reader-facing vocabulary. Two rules read wider and say so where they run:
+# the descriptions in the kind documents under kinds/ and samples/, and the
+# URL shapes in the package READMEs.
 # No `-e`: every rule below runs and reports, so one pass names everything
 # wrong rather than the first thing wrong.
 set -uo pipefail
@@ -61,10 +63,173 @@ grep_docs() {
 # are the reading pass's, not this script's.
 #
 # terms.md itself is exempt: it names the dead words on purpose, to retire them.
-dead='entit(y|ies)|tenants?|relationships?|singletons?|config[ -]?[Tt]ype|edges?|integrations?'
+#
+# The list is two halves because the description rule below lets a provider
+# keep the second: `entity` and `integration` are words upstream APIs use for
+# their own things.
+dead_substrate='tenants?|relationships?|singletons?|config[ -]?[Tt]ypes?|edges?'
+dead="${dead_substrate}|entit(y|ies)|integrations?"
 if grep_docs -rniE "\b(${dead})\b" | grep -v '^docs/terms.md:'; then
   flag "a dead word survives; docs/terms.md names the live one"
 fi
+
+# --- the words a kind's description may not use -------------------------
+#
+# A `description:` in a kind document is the help text under a field in the
+# console's forms, or the text above a kind's records, so its reader has no
+# page open beside it. Two lists, each held where its words can only be
+# wrong:
+#
+# - Machinery words, in the seeded packages (kinds/substrate.reamde.dev/).
+#   There `body` meant the function's code and `host` meant the substrate,
+#   and neither said so (#49); `trip` and `touch` are the same shorthand, for
+#   a request and for a read or a write. The HTTP sense of `body` and the
+#   network sense of `host` have plainer spellings there (the headers that
+#   describe a request's content, a hostname), so they are refused too.
+#   A sample or a provider describes the user's data and an upstream service,
+#   where the words are honest: a message body, a meeting host, a WHOOP body
+#   measurement.
+# - The dead words the rule above refuses, in every package under kinds/ and
+#   samples/. A provider keeps `entity` and `integration`: its descriptions
+#   quote the upstream API's own reference for its fields (an HTTP entity
+#   tag, Linear's entities, a Notion integration token), and there the words
+#   name the upstream's things, never a substrate term.
+#
+# A code span is dropped before the match: it spells an identifier the way the
+# code does (the `host` runtime, Gmail's `MessagePart.body`), and an
+# identifier is not prose. Only the description scalar is read, in the forms
+# yamlfmt writes (inline, plain over several lines, quoted, folded); a
+# comment, every other key, and a block scalar or quoted scalar under another
+# key (a function's Python `source`) are skipped. The reader is awk, not a
+# YAML parser: a form beyond those is a scalar it does not see.
+
+# description_words prints `file:line: word` for every whole word the regex
+# names inside a description scalar, case-insensitively, and exits like grep:
+# 0 for a hit, 1 for none, above that for an error. The regex is a lowercase
+# alternation; the word boundary is checked by hand because POSIX awk has no
+# `\b`.
+description_words() {
+  local words="$1"
+  shift
+  awk -v words="$words" -v q="'" '
+    function indent(s) { match(s, /^ */); return RLENGTH }
+    function strip_code(text,   out, i) {
+      out = ""
+      while ((i = index(text, "`")) > 0) {
+        if (!incode) out = out substr(text, 1, i - 1) " "
+        incode = !incode
+        text = substr(text, i + 1)
+      }
+      if (!incode) out = out text
+      return out
+    }
+    function check(text,   t, w, after) {
+      t = tolower(strip_code(text))
+      while (match(t, pattern)) {
+        w = substr(t, RSTART, RLENGTH)
+        after = substr(t, RSTART + RLENGTH, 1)
+        t = substr(t, RSTART + RLENGTH)
+        if (after ~ /[a-z0-9_]/) {
+          sub(/^[a-z0-9_]+/, "", t)
+          continue
+        }
+        sub(/^[^a-z]/, "", w)
+        printf "%s:%d: %s\n", FILENAME, FNR, w
+        found = 1
+      }
+    }
+    function block_scalar(v) { return v ~ /^[|>][-+0-9]*([ \t]+#.*)?$/ }
+    function quoted(v) { return substr(v, 1, 1) == "\"" || substr(v, 1, 1) == q }
+    function opens_quote(v,   n) {
+      n = length(v)
+      return quoted(v) && (n == 1 || substr(v, n, 1) != substr(v, 1, 1))
+    }
+    function start(v) {
+      mode = quoted(v) ? "quoted" : "plain"
+      if (mode == "plain") sub(/[ \t]+#.*$/, "", v)
+      check(v)
+    }
+    BEGIN { pattern = "(^|[^a-z0-9_])(" words ")" }
+    FNR == 1 { mode = "" }
+    {
+      ind = indent($0)
+      text = substr($0, ind + 1)
+      if (mode != "") {
+        if (text == "") next
+        if (ind <= keycol) mode = ""
+        else if (mode == "skip") next
+        else if (mode == "pending") {
+          # A key under an empty `description:` is a property NAMED
+          # description, not the start of a scalar.
+          if (text ~ /^#/ || text ~ /^(- +)?[^ :#][^ :]*:( |$)/) mode = ""
+          else { start(text); next }
+        } else if (mode == "plain") {
+          # A comment line ends a plain scalar; what follows is not its text.
+          if (text ~ /^#/) { mode = "skip"; next }
+          sub(/[ \t]+#.*$/, "", text)
+          check(text)
+          next
+        } else {
+          check(text)
+          next
+        }
+      }
+      if (text == "" || text ~ /^#/) next
+      col = ind
+      while (match(text, /^- +/)) { col += RLENGTH; text = substr(text, RLENGTH + 1) }
+      if (block_scalar(text)) { mode = "skip"; keycol = col - 1; next }
+      if (!match(text, /^[^ :#][^ :]*:( |$)/)) next
+      key = substr(text, 1, RLENGTH)
+      sub(/:( )?$/, "", key)
+      value = substr(text, RLENGTH + 1)
+      sub(/^[ \t]+/, "", value)
+      keycol = col
+      if (key != "description") {
+        if (block_scalar(value) || opens_quote(value)) mode = "skip"
+        next
+      }
+      incode = 0
+      if (block_scalar(value)) mode = "block"
+      else if (value == "" || value ~ /^#/) mode = "pending"
+      else start(value)
+    }
+    END { exit found ? 0 : 1 }
+  ' "$@"
+}
+
+# refuse_description_words holds every YAML document under the given
+# directories to one word list. An empty list of documents is refused: a rule
+# over no files checks nothing and passes, the one outcome worse than failing.
+refuse_description_words() {
+  local scope="$1" words="$2" file
+  shift 2
+  local docs=()
+  if [ "$#" -gt 0 ]; then
+    while IFS= read -r file; do
+      docs+=("$file")
+    done < <(find "$@" -name '*.yaml' -type f | sort)
+  fi
+  if [ "${#docs[@]}" -eq 0 ]; then
+    flag "no YAML under ${scope}; refusing to pass without checking the descriptions"
+    return
+  fi
+  description_words "$words" "${docs[@]}"
+  case $? in
+  0) flag "a description in ${scope} uses a refused word; name the thing itself (the function's code, the substrate) or the live word docs/terms.md gives" ;;
+  1) ;;
+  *) flag "awk failed reading the descriptions in ${scope}; the rule checked nothing" ;;
+  esac
+}
+
+provider_dirs=()
+for dir in kinds/*/; do
+  [ "$dir" = "kinds/substrate.reamde.dev/" ] || provider_dirs+=("${dir%/}")
+done
+refuse_description_words kinds/substrate.reamde.dev "body|host|trip|touch|${dead}" \
+  kinds/substrate.reamde.dev
+refuse_description_words "the providers under kinds/" "$dead_substrate" \
+  ${provider_dirs[@]+"${provider_dirs[@]}"}
+refuse_description_words samples/ "$dead" samples
 
 # --- the envelope keys the server refuses -------------------------------
 #

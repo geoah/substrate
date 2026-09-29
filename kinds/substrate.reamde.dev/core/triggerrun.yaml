@@ -20,7 +20,7 @@ data:
     runs are kept until their failure is retried away; the rest are pruned
     to the newest few per trigger. A direct call of a networked function writes
     one with mode call and no trigger, never pruned.
-  version: 19
+  version: 20
   purpose: internal
   names:
     singular: triggerrun
@@ -95,7 +95,7 @@ data:
         - failed
       description: ok (effects applied or nothing to do), skipped (the when
         guard said no), parked (retried out, the retry handle kept), or failed
-        (a call whose body failed; nothing applied)
+        (the callable ran and failed; nothing applied)
     attempt:
       type: int
       required: true
@@ -144,5 +144,5 @@ data:
     pages:
       type: int
       min: 2
-      description: committed pages for a paged (backfill) delivery; absent
-        for a single-shot body, the durable per-chain progress lives in paged_cursors
+      description: how many pages a paged (backfill) delivery committed; absent
+        when the delivery took one page

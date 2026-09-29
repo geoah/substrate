@@ -15,10 +15,11 @@ data:
   package: core
   description: >-
     One declared function: a callable reaction to the substrate's own changes,
-    invoked by a trigger or called directly. The declaration IS the record
-    — a write admits it, the commit activates it, and the dispatcher reads
-    the registry this row rebuilds into.
-  version: 19
+    invoked by a trigger or called directly. Its code is the Python in `source`,
+    or built into the substrate on the `host` runtime. The declaration IS
+    the record — a write admits it, the commit activates it, and the dispatcher
+    reads the registry this row rebuilds into.
+  version: 20
   purpose: internal
   names:
     singular: function
@@ -89,17 +90,17 @@ data:
       values:
         - policy
         - always
-      description: always holds each put, patch or delete the body returns
-        as a recordpatchrequest for the owner, wherever the function runs
-        and whatever any policy or judge says; absent means policy
+      description: with `always`, the substrate holds every put, patch or
+        delete the function's code returns as a recordpatchrequest, wherever
+        it runs and whatever a policy or judge says; absent means `policy`
     runtime:
       type: enum
       values:
         - python
         - host
       required: true
-      description: the language the inline body is written in, or host for
-        a built-in
+      description: "`python` for code written in `source`, or `host` for a
+        function built into the substrate"
     # NEVER FTS-indexed: a body is up to 256 KiB of code, and indexing it would
     # make every function the top hit for every identifier it mentions. The
     # property name is the BODY's, so a function row carries no `source` origin
@@ -113,7 +114,8 @@ data:
     source:
       type: text
       fts: false
-      description: the inline body, on an inline runtime
+      description: the function's code, required on the `python` runtime and
+        refused on `host`
     timeout:
       type: duration
       description: the inline run's wall-clock bound, an ISO 8601 duration
@@ -158,7 +160,7 @@ data:
     returns:
       type: object
       repeated: true
-      description: the named values the body returns
+      description: the named values the function's code returns
       fields:
         name:
           type: string
@@ -180,7 +182,8 @@ data:
           description: a list of the declared type
         required:
           type: bool
-          description: the body always returns it
+          description: the function's code must return it, and output without
+            it fails the call
         description:
           type: string
           description: what the value carries, as the model reads it
@@ -252,9 +255,10 @@ data:
         network:
           type: string
           repeated: true
-          description: the destinations it may reach, each a host, host:port
-            or CIDR (no scheme, path or glob); any entry grants network access,
-            and enforcement is all-or-nothing today
+          description: the destinations it may reach, each a hostname or IP
+            address with an optional port, or a CIDR range (no scheme, path
+            or glob); any entry grants network access, and enforcement is
+            all-or-nothing today
         mutations:
           type: enum
           repeated: true

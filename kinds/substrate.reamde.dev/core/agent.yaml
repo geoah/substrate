@@ -16,11 +16,11 @@ data:
   authority: substrate.reamde.dev
   package: core
   description: >-
-    One declared agent: a callable whose body is an LLM loop, dispatched like
+    One declared agent: a callable that runs an LLM loop, dispatched like
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 20
+  version: 21
   purpose: internal
   names:
     singular: agent

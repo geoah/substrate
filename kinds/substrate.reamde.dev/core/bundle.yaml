@@ -66,8 +66,10 @@ data:
           type: enum
           values:
             - functions
-          description: the consumer the resolved record is handed to; absent
-            means a host facility reads it
+          description: who receives the resolved record; with `functions`,
+            the substrate passes it, secrets included, to every function the
+            bundle runs, and absent, only a substrate facility such as the
+            OAuth flow reads it
         description:
           type: string
           description: what the input is for

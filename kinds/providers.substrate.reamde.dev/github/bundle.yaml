@@ -94,7 +94,10 @@ data:
   #
   # 30: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
-  version: 31
+  #
+  # 32: the issue descriptions say "references" where they said "edges"
+  # and "relationship", which docs/terms.md retired. Text only.
+  version: 32
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -1809,7 +1812,7 @@ data:
       displayName: Sub-issues
       description: GitHub's `sub_issues_summary` — how many sub-issues the
         issue has and how many are done. The COUNTS; `subIssues` holds the
-        edges
+        references
     issueDependenciesSummary:
       type: object
       fields:
@@ -1820,7 +1823,7 @@ data:
       displayName: Dependencies
       description: GitHub's `issue_dependencies_summary` — how many issues
         block this one and how many it blocks. The COUNTS; `blockedBy` and
-        `blocking` hold the edges
+        `blocking` hold the references
     issueFieldValues:
       type: object
       repeated: true
@@ -1927,8 +1930,8 @@ data:
       type: reference
       kind: providers.substrate.reamde.dev/github/issue
       displayName: Parent issue
-      description: the issue this one is a sub-issue of, from `parent_issue_url`
-        — a relationship address, not navigation
+      description: the issue this one is a sub-issue of, resolved from the
+        API address in `parent_issue_url`
     subIssues:
       type: reference
       kind: providers.substrate.reamde.dev/github/issue
@@ -1936,7 +1939,7 @@ data:
       mustExist: true
       displayName: Sub-issues
       description: the issues broken out of this one, in GitHub's order, from
-        `GET .../issues/{n}/sub_issues` — the EDGES that `subIssuesSummary`
+        `GET .../issues/{n}/sub_issues` — the REFERENCES that `subIssuesSummary`
         can only count
     blockedBy:
       type: reference
@@ -1945,7 +1948,7 @@ data:
       mustExist: true
       displayName: Blocked by
       description: the issues that block this one, from `GET .../issues/{n}/dependencies/blocked_by`
-        — the edges `issueDependenciesSummary.blockedBy` can only count
+        — the references `issueDependenciesSummary.blockedBy` can only count
     blocking:
       type: reference
       kind: providers.substrate.reamde.dev/github/issue
@@ -2465,8 +2468,8 @@ data:
       type: reference
       kind: providers.substrate.reamde.dev/github/issue
       displayName: Parent issue
-      description: the issue this one is a sub-issue of, from `parent_issue_url`
-        — a relationship address, not navigation
+      description: the issue this one is a sub-issue of, resolved from the
+        API address in `parent_issue_url`
     user:
       type: reference
       kind: providers.substrate.reamde.dev/github/user
