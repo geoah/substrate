@@ -22,6 +22,9 @@ backup and recovery procedures. A substrate on your own machine is
   ingress honor, and `Cache-Control: no-store, no-transform`, which stops an
   intermediary from compressing them. A proxy that ignores both turns a
   streamed chat reply into one block at the end.
+- **A TLS terminator** in front of it for anyone beyond loopback. The server
+  speaks plain HTTP only, and exposing it remotely without TLS is unsupported:
+  see [TLS and the reverse proxy](#tls-and-the-reverse-proxy).
 - **Nothing else.** Search, the change feed, the function runner, and the OAuth
   facility are all in the one process; the image also carries `python3` and
   `uv`, because [functions](functions.md) run as child processes of the
@@ -321,6 +324,68 @@ or not the code is set ([users and tokens](auth.md)).
 
 There is no admin user and no operator password. Everything privileged happens
 on the box, through the DSN.
+
+## TLS and the reverse proxy
+
+The server speaks plain HTTP and never terminates TLS. Login and registration
+send the password and the TOTP code in the request body and answer with a
+bearer secret, the TOTP enrollment seed and the recovery key; every other API
+request carries the bearer token. Serving the port to anyone beyond loopback
+without TLS in front of it is unsupported. The binary listens on every
+interface, so the host's firewall or network must keep the port reachable by
+the proxy alone; `compose.yaml` publishes it on `127.0.0.1` unless
+`BIND_ADDRESS` says otherwise.
+
+The supported path is [Caddy](https://caddyserver.com) on the same host,
+proxying to the substrate on loopback:
+
+```
+substrate.example.com {
+	respond /metrics 404
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+Caddy obtains and renews the certificate for `substrate.example.com`,
+redirects plain HTTP to HTTPS, refuses `/metrics` from outside, and passes
+every other request through. What the substrate needs from the proxy, and what
+it trusts:
+
+- **The original `Host` header.** At registration and login a bare repository
+  label is completed under the host the request reached (`ada` becomes
+  `ada.substrate.example.com`), so a proxy that rewrites `Host` to its
+  upstream's address registers and looks up the wrong repository. Caddy passes
+  `Host` through unchanged; nginx rewrites it unless the location sets
+  `proxy_set_header Host $host;`. Caddy routes only requests for
+  `substrate.example.com` to this block, so the completion always uses the
+  deployment's own name.
+- **Unbuffered streams.** The agent chat and `watch=1` answer with no
+  `Content-Length` and write lines as they happen; Caddy flushes a response
+  with no `Content-Length` to the client as it arrives, so nothing needs
+  setting.
+- **No forwarded header is read.** The server ignores `X-Forwarded-For`,
+  `X-Forwarded-Proto`, `X-Real-IP` and `Forwarded` (the `RealIP` comment in
+  `internal/api/api.go` says why: a header anyone can send cannot name the
+  caller), so there is no trusted-proxy list to configure. The auth rate
+  limiter keys on the transport peer, which behind the proxy is the proxy for
+  every caller, so its per-address bucket becomes one bucket per repository
+  name. The per-repository and substrate-wide buckets pace exactly as they
+  would without a proxy.
+- **HTTPS in the settings that name the deployment.** `SUBSTRATE_CONSOLE_URL`
+  is `https://substrate.example.com` and `SUBSTRATE_OAUTH_CALLBACK_URL` is
+  `https://substrate.example.com/api/v1/oauth/callback`. The OAuth return page
+  posts its result only to the console URL's origin, and an `http://` origin
+  never matches a console served over HTTPS.
+- **The browser headers pass through untouched.** Every response carries
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains`, a
+  `Content-Security-Policy` with `frame-ancestors 'none'`,
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`; every response of the authentication
+  routes, the token routes, the OAuth start and callback and `GET
+  /api/v1/export` carries `Cache-Control: no-store`. The server sets them
+  itself, so the proxy adds nothing and must replace none. A browser honors
+  HSTS only when it arrives over HTTPS, which is why the header is harmless on
+  a loopback laptop.
 
 ## What happens at boot
 
