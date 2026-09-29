@@ -571,7 +571,9 @@ clearing the property would leave it. The old values stay in the changelog,
 where a rebuild replays the removal as the write it was. A `type: state`
 property drops the same way: its state is removed from every live record, as
 the same `null` step. The drop is not a transition, so it writes no stamp and
-runs no `onEnter` effect or `notifies:` resume. A mapping whose `where:`
+runs no `onEnter` effect or `notifies:` resume. A record that was a tombstone
+at the drop keeps its state until a put restores it, and the restored record
+holds only the machines the kind still declares. A mapping whose `where:`
 names the dropped property refuses the apply, and a trigger's `when:` guard
 that reads it finds no key and evaluates false. A drop retires no name;
 `retired:` does that ([Retiring a name](#retiring-a-name)).

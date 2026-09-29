@@ -857,6 +857,16 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// `notifies:` — what the marked thread is told below.
 	var notify *resolutionNote
 	if create || sp.resurrect {
+		// The same history holds a state for a machine the kind no longer
+		// declares: a state property dropped while the record was a
+		// tombstone, which the drop's null step does not reach (it converts
+		// live records, convert.go). Left, it would read back as an
+		// undeclared property that no write can clear.
+		for name := range row.States {
+			if _, declared := sp.ty.Machines[name]; !declared {
+				delete(row.States, name)
+			}
+		}
 		for _, name := range sortedKeys(sp.ty.Machines) {
 			m := sp.ty.Machines[name]
 			initial := m.Initial
