@@ -73,16 +73,19 @@
 # entry to the ref that wrote it, so main reads only what a push to main wrote,
 # whatever a pull request or a fork runs. One main commit's entries are about
 # 4 GB of the repository's 10 GB, so an entry per pull request commit would
-# evict main's. (The uv cache below still saves on a pull request: its key is
-# its inputs, so it never goes stale, and an entry is 1 MB.)
-# Every restore reads the newest main entry, so an older commit's entries stop
-# being read, and GitHub evicts the least recently used first.
+# evict main's. Every restore reads the newest main entry, so an older commit's
+# entries stop being read, and GitHub evicts the least recently used first.
+# (The uv cache below still saves on a pull request: its key is its inputs, so
+# it never goes stale, and an entry is 1 MB.)
 #
 # Keys are per-job on purpose: two jobs on one key race to write it, the loser's
 # working set is never saved, and the working sets differ (golangci-lint's
 # analysis cache, four foreign GOARCHes, -race and -cover objects). The engine
 # shards and the two catalog halves are the exception: each group builds one
-# test binary, so its first shard saves for the others.
+# test binary, so its first shard saves for the others. `lint` saves nothing
+# and reads `go test`'s entry, see the note there. No job's key may start with
+# another's prefix: a restore key matches by prefix, so a `go-lint-go-` key
+# would be restored by a `go-lint-` restore key.
 name: ci
 
 on:
@@ -125,28 +128,23 @@ jobs:
           version: 2026.9.2
           install_args: go golangci-lint yamlfmt yamllint shellcheck ruff
             lychee goreleaser uv
-      # kinds:check compiles cmd/vocabularydiff. golangci-lint runs in `lint
-      # go`, so this entry has no analysis cache and a key of its own.
-      - id: cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # kinds:check compiles cmd/vocabularydiff only on a pull request that
+      # changes kinds/ or samples/, so a push to main builds nothing this job
+      # could save. It restores `go test`'s entry, which holds every package
+      # vocabularydiff imports, and saves nothing. The paths must stay
+      # `go test`'s: a different list is a different cache version and never
+      # matches.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-lint-${{ hashFiles('go.sum') }}-${{ github.sha
+          key: ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}-${{ github.sha
             }}
           restore-keys: |
-            ${{ runner.os }}-go-lint-${{ hashFiles('go.sum') }}-
-            ${{ runner.os }}-go-lint-
+            ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}-
+            ${{ runner.os }}-go-test-
       - run: mise run ci:lint
-      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
-          'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ steps.cache.outputs.cache-primary-key }}
 
   lint-go:
     name: lint go
@@ -160,9 +158,7 @@ jobs:
           version: 2026.9.2
           install_args: go golangci-lint
       # golangci-lint typechecks the module, so it wants the same module and
-      # build caches `go test` does, plus its own analysis cache. The key is
-      # `go-golangci-`, not `go-lint-go-`: `lint`'s restore key `go-lint-`
-      # would match that.
+      # build caches `go test` does, plus its own analysis cache.
       - id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
