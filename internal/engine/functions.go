@@ -761,25 +761,39 @@ func (s *settlement) retireSupersededFires(t *txn) error {
 	if s.supersedes.IsZero() {
 		return nil
 	}
+	// Held elsewhere: every id in runningClaims but the ones this settlement
+	// took on an attempt that rolled back.
+	held := []int64{}
+	s.ds.runningClaims.Range(func(k, _ any) bool {
+		if id, ok := k.(int64); ok && !s.superseded[id] {
+			held = append(held, id)
+		}
+		return true
+	})
+	heldJSON, err := json.Marshal(held)
+	if err != nil {
+		return err
+	}
+	// A fire id is fireID's fixed-width UTC form, so under the C collation
+	// its string order is its time order and the bound sits in the query.
 	rows, err := t.query(`
-		SELECT id, fire_id FROM trigger_failures
-		WHERE trigger_id = $1 AND fire_id <> '' AND payload IS NULL AND last_error NOT IN ($2, $3, $4, $5)
-		ORDER BY id`,
-		s.trigger, pendingWebhookError, inFlightError, legacyInFlightError, interruptedAgentError)
+		SELECT id FROM trigger_failures
+		WHERE trigger_id = $1 AND payload IS NULL AND last_error NOT IN ($2, $3, $4, $5)
+		  AND fire_id ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+		  AND fire_id COLLATE "C" <= $6
+		  AND id NOT IN (SELECT jsonb_array_elements_text($7::jsonb)::bigint)
+		ORDER BY id LIMIT $8`,
+		s.trigger, pendingWebhookError, inFlightError, legacyInFlightError, interruptedAgentError,
+		fireID(s.supersedes), string(heldJSON), supersedeBatch)
 	if err != nil {
 		return err
 	}
 	var ids []int64
 	for rows.Next() {
 		var id int64
-		var fid string
-		if err := rows.Scan(&id, &fid); err != nil {
+		if err := rows.Scan(&id); err != nil {
 			_ = rows.Close()
 			return err
-		}
-		at, perr := time.Parse(time.RFC3339, fid)
-		if perr != nil || at.After(s.supersedes) {
-			continue
 		}
 		ids = append(ids, id)
 	}
@@ -787,18 +801,14 @@ func (s *settlement) retireSupersededFires(t *txn) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	retired := 0
 	for _, id := range ids {
-		if retired == supersedeBatch {
-			break
-		}
+		// A hand that took the row since the snapshot keeps it.
 		if !s.holdSuperseded(id) {
 			continue
 		}
 		if err := t.unparkTx(s.trigger, id); err != nil {
 			return err
 		}
-		retired++
 	}
 	return nil
 }
