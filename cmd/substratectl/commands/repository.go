@@ -271,7 +271,8 @@ a gateway swapped behind an unchanged provider row and model name, which
 nothing stored can tell apart.
 
 It runs beside a live server: the engine opens read-only against the data
-root, and the queue rows it writes are not changelog entries.`,
+root and applies no migration, and the queue rows it writes are not changelog
+entries.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := a.openEngineReadOnly(cmd.Context())
@@ -529,11 +530,12 @@ the files with the recorded checksum.
 It never repairs or touches the repository it judges, and it runs beside a live
 server: the engine opens read-only against the data root, so an incomplete
 final transaction or a table ahead of its file is reported as a finding, never
-cut or caught up
-(opening the engine still applies any pending schema migration, as every
-operator command does). Against a server that is mid-write a finding about the
-heads, or about a blob the sweep collected a moment ago, can be a write in
-flight; run it again before believing it.
+cut or caught up. The read-only open applies no migration either: a database
+missing one this binary carries, or holding one it does not carry, is refused
+by name, so run the substratectl of the release the server runs. Against a
+server that is mid-write a finding about the heads, or about a blob the sweep
+collected a moment ago, can be a write in flight; run it again before
+believing it.
 
 The checksum catches corruption, not tampering: whoever holds the disk can
 rewrite a line and its checksum together.

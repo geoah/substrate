@@ -131,3 +131,35 @@ func TestCheckRecordedNamesEveryDivergenceAtOnce(t *testing.T) {
 		t.Fatalf("the error names a migration that matches: %v", err)
 	}
 }
+
+// A read-only open applies nothing, so what the runner would apply is what it
+// refuses: every migration the binary carries and the database has not
+// recorded, by version and name, and none of the ones it has.
+func TestCheckPendingNamesEveryMigrationTheDatabaseLacks(t *testing.T) {
+	t.Parallel()
+	migrations := []migration{
+		{Version: 1, Name: "0001_init", SHA256: "aaa"},
+		{Version: 2, Name: "0002_next", SHA256: "bbb"},
+		{Version: 3, Name: "0003_third", SHA256: "ccc"},
+	}
+	if err := checkPending(migrations, rows(map[int]string{1: "aaa", 2: "bbb", 3: "ccc"})); err != nil {
+		t.Fatalf("a database with every migration applied was refused: %v", err)
+	}
+	err := checkPending(migrations, rows(map[int]string{1: "aaa"}))
+	if !errors.Is(err, ErrDatabaseOlder) {
+		t.Fatalf("two pending migrations were not refused as ErrDatabaseOlder: %v", err)
+	}
+	for _, want := range []string{"2 (0002_next)", "3 (0003_third)", "read-only"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "0001_init") {
+		t.Fatalf("the refusal names a migration the database applied: %v", err)
+	}
+	// A database no binary migrated has recorded nothing, not even the table.
+	err = checkPending(migrations, map[int]recorded{})
+	if !errors.Is(err, ErrDatabaseOlder) || !strings.Contains(err.Error(), "1 (0001_init)") {
+		t.Fatalf("an empty database was not refused naming 0001: %v", err)
+	}
+}

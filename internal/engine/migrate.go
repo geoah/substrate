@@ -45,9 +45,20 @@ type recorded struct {
 // newer binary migrated the database. Every boot step after the runner writes
 // to the schema (the orphan sweep, the declared indexes, the data root
 // import), so the open refuses before applying or serving anything. The
-// operator commands that open the engine (verify, rebuild, reembed, user
-// reset) run the same runner and refuse the same way.
+// operator commands that open the engine refuse the same way: the writing
+// ones (rebuild, rotate-generation, snapshot, user reset) run the same
+// runner, and the read-only ones (verify, reembed) read the same rows
+// (checkMigrated).
 var ErrDatabaseNewer = errors.New("substrate/engine: the database applied migrations this binary does not carry")
+
+// ErrDatabaseOlder is the read-only open's refusal of a database this binary
+// would migrate: schema_migrations lacks a migration the binary carries. A
+// read-only process (WithDirectoryReadOnly) runs beside a live server, so
+// applying the migration would move that server's database past the release
+// the server runs and close its rollback. The open refuses instead, and the
+// process that writes (the server's boot, or a writing operator command with
+// the server stopped) applies it.
+var ErrDatabaseOlder = errors.New("substrate/engine: the database has not applied migrations this binary carries")
 
 // migrate applies every pending migration to the schema the DSN's
 // search_path pins, atomically per migration. Idempotent.
@@ -101,6 +112,58 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// checkMigrated is migrate for a read-only open: it reads what the database
+// recorded, refuses every divergence migrate refuses, and refuses a migration
+// still pending instead of applying it (checkPending). It takes no lock and
+// writes nothing, not even the schema_migrations table, so a database no
+// binary migrated has every migration pending. Without the lock it can read a
+// boot's run half way; each migration commits with its row, so what it sees
+// is a prefix, and it refuses that as pending.
+func checkMigrated(ctx context.Context, db *sql.DB) error {
+	migrations, err := loadMigrations()
+	if err != nil {
+		return err
+	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: migration conn: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	var exists bool
+	if err := conn.QueryRowContext(ctx, `SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&exists); err != nil {
+		return fmt.Errorf("substrate/engine: look for schema_migrations: %w", err)
+	}
+	applied := map[int]recorded{}
+	if exists {
+		if applied, err = appliedMigrations(ctx, conn); err != nil {
+			return err
+		}
+	}
+	if err := checkRecorded(migrations, applied); err != nil {
+		return err
+	}
+	return checkPending(migrations, applied)
+}
+
+// checkPending refuses every migration this binary carries that the database
+// has not applied, naming each by version and name (ErrDatabaseOlder). Only a
+// read-only open asks: every other open applies them.
+func checkPending(migrations []migration, applied map[int]recorded) error {
+	var pending []string
+	for _, m := range migrations {
+		if _, ok := applied[m.Version]; !ok {
+			pending = append(pending, fmt.Sprintf("%d (%s)", m.Version, m.Name))
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %d migration(s) pending, %s, and this process opened the database read-only; "+
+		"open it once with a process that writes (the server's boot applies them), "+
+		"or run the substratectl of the release the server runs",
+		ErrDatabaseOlder, len(pending), strings.Join(pending, ", "))
 }
 
 // checkRecorded compares what the database recorded against what this binary

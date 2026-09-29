@@ -84,7 +84,8 @@ type options struct {
 	// (WithInsecureDisableTOTP). Dev/test only; never the production default.
 	insecureDisableTOTP bool
 	// dirReadOnly opens the service beside a running server
-	// (WithDirectoryReadOnly): no boot check, no writer, no write.
+	// (WithDirectoryReadOnly): no migration, no boot check, no writer, no
+	// write.
 	dirReadOnly bool
 	// skipWriterLease opens without the per-repository writer lease
 	// (export_test.go WithTestSkipWriterLease), so a test can be a second
@@ -226,10 +227,14 @@ func WithOrphanCollection(grace time.Duration) Option {
 }
 
 // WithDirectoryReadOnly opens the service as a second process beside a running
-// server: the operator hat's `repository verify` and `reembed`. Open runs no
-// boot check and no orphan sweep, a dataset opens no changelog writer and
-// refuses every inTx write with ErrDirectoryReadOnly, and VerifyRepository
-// reports an incomplete tail or a table ahead of its file as findings instead of
+// server: the operator hat's `repository verify` and `reembed`. Open applies
+// no schema migration: it refuses a database missing one this binary carries
+// (ErrDatabaseOlder) as it refuses one a newer binary migrated
+// (ErrDatabaseNewer). It builds no declared index and runs no boot check and
+// no orphan sweep. A dataset runs no repository migration and refuses a
+// repository with one pending, opens no changelog writer and refuses every
+// inTx write with ErrDirectoryReadOnly, and VerifyRepository reports an
+// incomplete tail or a table ahead of its file as findings instead of
 // repairing them. Without this option a second process on the same data root
 // is a second writer, and the server's running writer refuses it with
 // ErrChangelogLocked at the first repository it opens for writing.
@@ -612,7 +617,16 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	}
 	// The DDL runs as the DSN's own user: the bound roles own nothing and may
 	// not create. The grants inside it hand the tables to the two roles.
-	if err := migrate(ctx, admin); err != nil {
+	//
+	// A read-only process applies none (checkMigrated): it runs beside a live
+	// server, and a newer binary migrating that server's database would close
+	// the server's rollback. It refuses a database it would migrate, as the
+	// runner refuses one a newer binary migrated.
+	schemaGate := migrate
+	if s.readOnly {
+		schemaGate = checkMigrated
+	}
+	if err := schemaGate(ctx, admin); err != nil {
 		_ = admin.Close()
 		return nil, err
 	}
@@ -699,12 +713,17 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// plain CREATE INDEX locks the shared records table for every repository,
 	// so it is taken here — at boot, before anything is served — and not from
 	// the open path a request drives. What arrives later (a bundle's
-	// kinds) is materialized by the schema write that admits it.
-	if err := ensureIndices(ctx, admin, reg.Kinds()); err != nil {
-		repoPool.Close()
-		_ = maint.Close()
-		_ = admin.Close()
-		return nil, err
+	// kinds) is materialized by the schema write that admits it. A read-only
+	// process builds none: its CREATE INDEX would take that lock under the
+	// running server, and the server's own boot builds what its vocabulary
+	// declares.
+	if !s.readOnly {
+		if err := ensureIndices(ctx, admin, reg.Kinds()); err != nil {
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
 	}
 	// FAIL CLOSED on the credential key itself: a key that does not open what
 	// this database already holds is refused HERE, not discovered one
