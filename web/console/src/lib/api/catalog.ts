@@ -59,14 +59,35 @@ export const shippedUpgradesQueryOptions = queryOptions({
 /** The id a catalog entry has in a repository whose own authority is `home`:
  * a provider keeps the id it publishes, a SAMPLE takes this repository's
  * authority with the sample's package (decision records 0047 and 0048). This
- * is the id the bundle STATUS carries once it lands, so it is how a stored
- * bundle finds its shipped closure again. */
+ * is the id the bundle STATUS carries once it lands. Two entries can share
+ * it, so it finds a stored bundle's shipped closure only for a copy with no
+ * origin stamp (heldCopyOf). */
 export function landedId(
   item: Pick<CatalogItem, "id" | "tier" | "package">,
   home: string
 ): string {
   if (item.tier !== "sample" || !home) return item.id
   return `${home}/${item.package}`
+}
+
+/** The bundle this repository holds that IS catalog entry `item`, or
+ * undefined: the server's rule (api `installedSet.copyOf`), so a row and the
+ * entry's `installed` flag agree. A copy stamped with an origin belongs to the
+ * entry it names and to no other, because two publishers' samples of one
+ * package word both land at `<home>/<package>` and the id alone would hand
+ * one copy to both. Only an unstamped copy (a provider, a sample installed
+ * verbatim, or one imported before the stamp existed) is matched by id: the
+ * landed id first, then the shipped one. */
+export function heldCopyOf(
+  item: Pick<CatalogItem, "id" | "tier" | "package">,
+  statuses: readonly BundleStatus[],
+  home: string
+): BundleStatus | undefined {
+  const stamped = statuses.find((s) => s.origin === item.id)
+  if (stamped) return stamped
+  const at = (id: string) => statuses.find((s) => s.id === id)
+  const copy = at(landedId(item, home)) ?? at(item.id)
+  return copy?.origin ? undefined : copy
 }
 
 /** What can continue a DNS-style name: the boundary the server's rehoming
@@ -174,23 +195,6 @@ function rekey(
   return Object.fromEntries(
     Object.entries(map).map(([k, v]) => [key(k), value(v)])
   )
-}
-
-/** One catalog entry by the id it has HERE, sharing the list's cache (the same
- * `["catalog"]` query, selected down) and rehomed the way it landed. Returns
- * undefined when this repository's bundle is not a shipped closure: a bundle
- * applied by hand has no catalog entry, and the caller falls back to what the
- * registry alone knows. */
-export function catalogItemQueryOptions(id: string, home = "") {
-  return queryOptions({
-    queryKey: catalogQueryOptions.queryKey,
-    queryFn: catalogQueryOptions.queryFn,
-    staleTime: 60_000,
-    select: (items: CatalogItem[]) => {
-      const found = items.find((i) => landedId(i, home) === id)
-      return found && landedCatalog(found, home)
-    },
-  })
 }
 
 /** ONE catalog entry, read fresh from the server rather than from the list's

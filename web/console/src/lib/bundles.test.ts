@@ -187,6 +187,227 @@ describe("mergeBundles", () => {
     expect(rows[0].installed).toBe(true)
   })
 
+  describe("two publishers' samples of one package word", () => {
+    // Both land at ada.example.com/tasks. The copy's origin stamp says which
+    // one it is; the id alone would hand it to the later entry.
+    const HOME = "ada.example.com"
+    const tasks = (authority: string, kind: string, over = {}) =>
+      catalog({
+        id: `${authority}/tasks`,
+        name: "tasks",
+        authority,
+        package: "tasks",
+        description: `Tasks as ${authority} ships them.`,
+        tier: "sample",
+        closure: {
+          traits: null,
+          triggers: null,
+          functions: null,
+          agents: null,
+          mappings: null,
+          records: null,
+          kinds: [`${authority}/tasks/${kind}`],
+        },
+        ...over,
+      })
+    const copy = (origin?: string) =>
+      status({
+        id: `${HOME}/tasks`,
+        name: "tasks",
+        authority: HOME,
+        package: "tasks",
+        inputs: undefined,
+        ...(origin && { origin }),
+      })
+    const UPGRADE: BundleUpgrade = {
+      available: true,
+      from: 1,
+      to: 2,
+      work: 1,
+      lossy: false,
+    }
+
+    it.each([
+      ["the earlier", "a.example.com", "z.example.com"],
+      ["the later", "z.example.com", "a.example.com"],
+    ])(
+      "pairs a copy stamped with %s entry to it and lists the other as its own row",
+      (_, stamped, other) => {
+        const kinds = { "a.example.com": "task", "z.example.com": "todo" }
+        const rows = mergeBundles(
+          [copy(`${stamped}/tasks`)],
+          [
+            tasks("a.example.com", "task", {
+              installed: stamped === "a.example.com",
+              upgrade: stamped === "a.example.com" ? UPGRADE : undefined,
+            }),
+            tasks("z.example.com", "todo", {
+              installed: stamped === "z.example.com",
+              upgrade: stamped === "z.example.com" ? UPGRADE : undefined,
+            }),
+          ],
+          HOME
+        )
+        expect(rows).toHaveLength(2)
+        const held = rows.find((r) => r.status)!
+        const offered = rows.find((r) => !r.status)!
+        expect(held.key).toBe(`${stamped}/tasks`)
+        expect(held.id).toBe(`${HOME}/tasks`)
+        expect(held.installed).toBe(true)
+        expect(held.catalog?.id).toBe(`${stamped}/tasks`)
+        expect(held.catalog?.description).toBe(
+          `Tasks as ${stamped} ships them.`
+        )
+        expect(held.catalog?.closure.kinds).toEqual([
+          `${HOME}/tasks/${kinds[stamped as keyof typeof kinds]}`,
+        ])
+        expect(held.upgrade).toEqual(UPGRADE)
+        expect(offered.key).toBe(`${other}/tasks`)
+        expect(offered.installed).toBe(false)
+        expect(offered.catalog?.id).toBe(`${other}/tasks`)
+        expect(offered.catalog?.closure.kinds).toEqual([
+          `${HOME}/tasks/${kinds[other as keyof typeof kinds]}`,
+        ])
+        expect(offered.upgrade).toBeUndefined()
+        expect(bundleSections(rows).samples).toHaveLength(2)
+      }
+    )
+
+    it("still pairs an unstamped copy by the id it landed at", () => {
+      const rows = mergeBundles(
+        [copy()],
+        [tasks("a.example.com", "task", { installed: true })],
+        HOME
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0].status?.id).toBe(`${HOME}/tasks`)
+      expect(rows[0].catalog?.id).toBe("a.example.com/tasks")
+      expect(rows[0].installed).toBe(true)
+    })
+
+    it("pairs an unstamped copy either entry could claim with neither", () => {
+      // Taken before the stamp existed: the id is all there is. Both entries
+      // read as installed, as the server reports them, so neither offers an
+      // import over the copy, and the copy is listed once with no entry, so
+      // its own page offers no "Add again" of the wrong sample.
+      const rows = mergeBundles(
+        [copy()],
+        [
+          tasks("a.example.com", "task", { installed: true }),
+          tasks("z.example.com", "todo", { installed: true }),
+        ],
+        HOME
+      )
+      expect(rows.map((r) => [r.key, r.installed, Boolean(r.status)])).toEqual([
+        ["a.example.com/tasks", true, false],
+        [`held ${HOME}/tasks`, true, true],
+        ["z.example.com/tasks", true, false],
+      ])
+      const own = rows.find((r) => r.status)!
+      expect(own.catalog).toBeUndefined()
+      expect(own.tier).toBeUndefined()
+    })
+
+    it("supplies a missing requirement from its own publisher and a met one from the held copy", () => {
+      const pebble = (authority: string, over: Partial<CatalogItem> = {}) =>
+        catalog({
+          id: `${authority}/pebble`,
+          name: "pebble",
+          authority,
+          package: "pebble",
+          tier: "sample",
+          requires: [`${authority}/tasks`],
+          ...over,
+        })
+      const both = [
+        tasks("a.example.com", "task"),
+        tasks("z.example.com", "todo"),
+      ]
+      const planOf = (rows: ReturnType<typeof mergeBundles>, key: string) => {
+        const row = rows.find((r) => r.key === key)!
+        const tree = requirementTree(
+          row,
+          rows,
+          presentPackages(rows),
+          heldVersions(rows)
+        )
+        return { tree, plan: importPlan(row, tree) }
+      }
+
+      // Nothing held. a's tasks is the first row at the id, and z's pebble
+      // needs z's.
+      const offered = mergeBundles([], [pebble("z.example.com"), ...both], HOME)
+      expect(
+        planOf(offered, "z.example.com/pebble").plan.bundles.map((b) => b.key)
+      ).toEqual(["z.example.com/tasks", "z.example.com/pebble"])
+
+      // z's copy is held and meets a's pebble's requirement: it is the
+      // supplier, and nothing is taken for it.
+      const met = mergeBundles(
+        [copy("z.example.com/tasks")],
+        [pebble("a.example.com"), ...both],
+        HOME
+      )
+      const { tree } = planOf(met, "a.example.com/pebble")
+      expect(tree[0].present).toBe(true)
+      expect(tree[0].row?.key).toBe("z.example.com/tasks")
+
+      // Held below a's floor: taking z's sample again would not meet it.
+      const low = mergeBundles(
+        [{ ...copy("z.example.com/tasks"), version: 3 }],
+        [
+          pebble("a.example.com", {
+            requiresAtLeast: { "a.example.com/tasks": 7 },
+          }),
+          ...both,
+        ],
+        HOME
+      )
+      expect(
+        planOf(low, "a.example.com/pebble").plan.bundles.map((b) => b.key)
+      ).toEqual(["a.example.com/tasks", "a.example.com/pebble"])
+    })
+  })
+
+  it("lists a sample installed verbatim beside its imported copy as two rows", () => {
+    const rows = mergeBundles(
+      [
+        status({
+          id: "ada.example.com/tasks",
+          name: "tasks",
+          authority: "ada.example.com",
+          package: "tasks",
+          origin: "samples.substrate.reamde.dev/tasks",
+        }),
+        status({
+          id: "samples.substrate.reamde.dev/tasks",
+          name: "tasks",
+          authority: "samples.substrate.reamde.dev",
+          package: "tasks",
+        }),
+      ],
+      [
+        catalog({
+          id: "samples.substrate.reamde.dev/tasks",
+          name: "tasks",
+          authority: "samples.substrate.reamde.dev",
+          package: "tasks",
+          tier: "sample",
+          installed: true,
+        }),
+      ],
+      "ada.example.com"
+    )
+    expect(rows.map((r) => [r.key, r.id, r.tier])).toEqual([
+      ["samples.substrate.reamde.dev/tasks", "ada.example.com/tasks", "sample"],
+      [
+        "held samples.substrate.reamde.dev/tasks",
+        "samples.substrate.reamde.dev/tasks",
+        undefined,
+      ],
+    ])
+  })
+
   it("folds a VERBATIM-installed sample onto its own catalog row", () => {
     // The sample was installed rather than imported, so it is held under the
     // SHIPPED id. Keying the row by the rehomed id alone showed it twice: once
@@ -1218,11 +1439,10 @@ describe("the requirement chain: what one button has to take", () => {
       }),
     ]
   )
-  const byId = new Map(rows.map((r) => [r.id, r]))
-  const pebble = byId.get("s.example.com/pebble")!
+  const pebble = rows.find((r) => r.id === "s.example.com/pebble")!
 
   it("walks the chain the wire does not carry, and names each supplier", () => {
-    const tree = requirementTree(pebble, byId, new Set())
+    const tree = requirementTree(pebble, rows, new Set())
     expect(tree.map((n) => n.package)).toEqual(["s.example.com/tasks"])
     expect(tree[0].row?.name).toBe("tasks")
     expect(tree[0].requires.map((n) => n.package)).toEqual([
@@ -1232,7 +1452,7 @@ describe("the requirement chain: what one button has to take", () => {
   })
 
   it("orders the missing ones leaves first, each once", () => {
-    const chain = missingChain(requirementTree(pebble, byId, new Set()))
+    const chain = missingChain(requirementTree(pebble, rows, new Set()))
     expect(chain.map((n) => n.package)).toEqual([
       "s.example.com/people",
       "s.example.com/scheduling",
@@ -1242,7 +1462,7 @@ describe("the requirement chain: what one button has to take", () => {
 
   it("drops what this repository already holds", () => {
     const chain = missingChain(
-      requirementTree(pebble, byId, new Set(["s.example.com/people"]))
+      requirementTree(pebble, rows, new Set(["s.example.com/people"]))
     )
     expect(chain.map((n) => n.package)).toEqual([
       "s.example.com/scheduling",
@@ -1263,11 +1483,10 @@ describe("the requirement chain: what one button has to take", () => {
         catalog({ id: "s.example.com/tasks", tier: "sample" }),
       ]
     )
-    const map = new Map(floored.map((r) => [r.id, r]))
     const chain = missingChain(
       requirementTree(
-        map.get("s.example.com/pebble")!,
-        map,
+        floored.find((r) => r.id === "s.example.com/pebble")!,
+        floored,
         new Set(["s.example.com/tasks"]),
         new Map([["s.example.com/tasks", 3]])
       )
@@ -1285,9 +1504,8 @@ describe("the requirement chain: what one button has to take", () => {
         catalog({ id: "a.example.com/two", requires: ["a.example.com/one"] }),
       ]
     )
-    const map = new Map(cyclic.map((r) => [r.id, r]))
-    const one = map.get("a.example.com/one")!
-    const tree = requirementTree(one, map, new Set())
+    const one = cyclic.find((r) => r.id === "a.example.com/one")!
+    const tree = requirementTree(one, cyclic, new Set())
     // The walk stops where it comes back round, and says so.
     expect(tree[0].requires[0].cycle).toBe(true)
     const plan = importPlan(one, tree)
@@ -1298,7 +1516,7 @@ describe("the requirement chain: what one button has to take", () => {
   })
 
   it("plans the chain leaves first with the bundle last, and only once", () => {
-    const plan = importPlan(pebble, requirementTree(pebble, byId, new Set()))
+    const plan = importPlan(pebble, requirementTree(pebble, rows, new Set()))
     expect(plan.refusal).toBe("")
     expect(plan.bundles.map((b) => b.id)).toEqual([
       "s.example.com/people",
@@ -1321,9 +1539,8 @@ describe("the requirement chain: what one button has to take", () => {
         catalog({ id: "s.example.com/tasks", tier: "sample" }),
       ]
     )
-    const map = new Map(rows.map((r) => [r.id, r]))
-    const row = map.get("s.example.com/pebble")!
-    const plan = importPlan(row, requirementTree(row, map, new Set()))
+    const row = rows.find((r) => r.id === "s.example.com/pebble")!
+    const plan = importPlan(row, requirementTree(row, rows, new Set()))
     // Nothing is imported: landing tasks and then refusing on the bundle the
     // reader actually asked for is a half-done job.
     expect(plan.bundles).toEqual([])

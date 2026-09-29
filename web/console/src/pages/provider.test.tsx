@@ -1368,6 +1368,53 @@ describe("ProviderPage", () => {
       )
     })
 
+    it("reads the entry the copy's origin names, not another publisher's sample of the same word", async () => {
+      // Both land at ada.example.com/people. The other one comes later in
+      // the catalog, so reading the entry by that id alone takes it.
+      const OTHER: CatalogItem = {
+        ...PEOPLE,
+        id: "z.example.com/people",
+        authority: "z.example.com",
+        description: "People as z.example.com ships them.",
+        installed: false,
+        suggestedMappings: [
+          {
+            ...PEOPLE.suggestedMappings![0],
+            id: "z.example.com/people/googlecontactperson",
+            to: "z.example.com/people/person",
+          },
+        ],
+      }
+      params = { authority: HOME, pkg: "people" }
+      serve({
+        statuses: [status(), PEOPLE_STATUS],
+        catalog: [
+          CATALOG,
+          {
+            ...PEOPLE,
+            installed: true,
+            upgrade: { available: true, from: 7, to: 8, work: 1, lossy: false },
+          },
+          OTHER,
+        ],
+      })
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("One record per human.")).toBeTruthy()
+      expect(screen.queryByText("People as z.example.com ships them.")).toBe(
+        null
+      )
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      await waitFor(() =>
+        expect(
+          calls("POST")
+            .filter((c) => c.url.startsWith(`${CATALOG_PATH}/`))
+            .map((c) => c.url.slice(CATALOG_PATH.length + 1))
+        ).toEqual([
+          `${encodeURIComponent("samples.substrate.reamde.dev/people")}/import`,
+        ])
+      )
+    })
+
     it("says so when nothing is called that", async () => {
       params = { authority: HOME, pkg: "nothing" }
       renderPage(<ProviderPage />)

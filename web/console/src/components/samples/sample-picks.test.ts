@@ -32,6 +32,7 @@ function sample(
     },
   } as CatalogItem
   return {
+    key: catalog.id,
     id: `${HOME}/${pkg}`,
     name: pkg,
     authority: HOME,

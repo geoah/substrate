@@ -155,7 +155,7 @@ export function TakeButton({
         }
         if (
           needsConfirmation(fresh.upgrade) &&
-          !consented.current.has(bundle.id)
+          !consented.current.has(bundle.key)
         ) {
           throw new NeedsConsent(bundle)
         }
@@ -230,7 +230,7 @@ export function TakeButton({
       return
     }
     const replaces = plan.bundles.filter(
-      (b) => needsConfirmation(b.upgrade) && !consented.current.has(b.id)
+      (b) => needsConfirmation(b.upgrade) && !consented.current.has(b.key)
     )
     if (replaces.length) setAsking(replaces)
     else taking.mutate()
@@ -268,7 +268,7 @@ export function TakeButton({
           confirm={word}
           pending={taking.isPending}
           onConfirm={() => {
-            for (const b of asking) consented.current.add(b.id)
+            for (const b of asking) consented.current.add(b.key)
             setAsking(null)
             taking.mutate()
           }}
@@ -376,7 +376,7 @@ export function LossyUpgradeDialog({
   const [staleFor, setStaleFor] = useState<string | null>(null)
   const upgrade = row?.upgrade
   const called = name ?? row?.name
-  const stale = row !== undefined && staleFor === row.id
+  const stale = row !== undefined && staleFor === row.key
   const upgrading = useMutation({
     mutationFn: () => {
       if (!row || !needsConfirmation(upgrade)) {
@@ -405,7 +405,7 @@ export function LossyUpgradeDialog({
         error instanceof ApiError &&
         (error.status === 409 || error.code === "lossy")
       ) {
-        setStaleFor(row?.id ?? null)
+        setStaleFor(row?.key ?? null)
         void queryClient.invalidateQueries({
           queryKey: catalogQueryOptions.queryKey,
         })

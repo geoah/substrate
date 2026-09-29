@@ -2,21 +2,26 @@
  * from a status, and the verbs POST to the computed lifecycle endpoints under
  * the bundle's owned-authority id. */
 
+import { QueryClient } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   ACCOUNT_CONFIG_TRAIT,
   bindBundleInput,
   bundleState,
+  bundleStatusesQueryOptions,
   parseSubstrateOAuthMessage,
   purgeBundle,
   runBundleVerb,
+  seedBundleStatus,
   setupCount,
   startOAuth,
   SUBSTRATE_OAUTH_SOURCE,
   traitRecordsQueryOptions,
   type BundleStatus,
 } from "./bundles"
+import { catalogQueryOptions } from "./catalog"
+import type { CatalogItem } from "./types"
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
   return {
@@ -86,6 +91,92 @@ describe("setupCount", () => {
         })
       )
     ).toBe(2)
+  })
+})
+
+/** A fresh status lands in the caches at once, and the catalog entry it
+ * marks installed is the one the copy came from: an imported sample's id is
+ * its repository's, and another publisher's sample of the same word lands at
+ * that id too. */
+describe("seedBundleStatus", () => {
+  const entry = (authority: string): CatalogItem => ({
+    id: `${authority}/tasks`,
+    name: "tasks",
+    authority,
+    package: "tasks",
+    description: "",
+    version: 1,
+    tier: "sample",
+    installed: false,
+    closure: {
+      kinds: null,
+      traits: null,
+      functions: null,
+      agents: null,
+      mappings: null,
+      records: null,
+      triggers: null,
+    },
+  })
+
+  it("marks the entry the copy's origin names, and no other", () => {
+    const client = new QueryClient()
+    client.setQueryData(bundleStatusesQueryOptions.queryKey, [])
+    client.setQueryData(catalogQueryOptions.queryKey, [
+      entry("a.example.com"),
+      entry("z.example.com"),
+    ])
+    const copy = status({
+      id: "ada.example.com/tasks",
+      name: "tasks",
+      authority: "ada.example.com",
+      package: "tasks",
+      origin: "z.example.com/tasks",
+    })
+    seedBundleStatus(client, copy)
+    expect(
+      client
+        .getQueryData<CatalogItem[]>(catalogQueryOptions.queryKey)
+        ?.map((i) => [i.id, i.installed])
+    ).toEqual([
+      ["a.example.com/tasks", false],
+      ["z.example.com/tasks", true],
+    ])
+    expect(client.getQueryData(bundleStatusesQueryOptions.queryKey)).toEqual([
+      copy,
+    ])
+  })
+
+  it("clears the entry whose copy an import of the other one replaced", () => {
+    const held = (origin: string) =>
+      status({
+        id: "ada.example.com/tasks",
+        name: "tasks",
+        authority: "ada.example.com",
+        package: "tasks",
+        origin,
+      })
+    const client = new QueryClient()
+    client.setQueryData(bundleStatusesQueryOptions.queryKey, [
+      held("a.example.com/tasks"),
+    ])
+    client.setQueryData(catalogQueryOptions.queryKey, [
+      {
+        ...entry("a.example.com"),
+        installed: true,
+        upgrade: { available: true, from: 1, to: 2, work: 1, lossy: false },
+      },
+      entry("z.example.com"),
+    ])
+    seedBundleStatus(client, held("z.example.com/tasks"))
+    expect(
+      client
+        .getQueryData<CatalogItem[]>(catalogQueryOptions.queryKey)
+        ?.map((i) => [i.id, i.installed, i.upgrade])
+    ).toEqual([
+      ["a.example.com/tasks", false, undefined],
+      ["z.example.com/tasks", true, undefined],
+    ])
   })
 })
 
