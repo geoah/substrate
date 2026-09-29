@@ -81,8 +81,11 @@ one element per record, in the order the entry touched them.
 - `kind` and `id` are the record's full identity, the same pair a `GET
   /api/v1/{kind}/{id}` takes.
 - `version` is the version the record reached in this entry, the number a
-  read of the record returns until its next change. It is absent on a purge
-  (a `gc` entry: the record has no version afterwards).
+  read of the record returns until its next change. It is absent in two
+  cases: a purge (a `gc` entry: the record has no version afterwards), and a
+  `patch` that wrote only an annotation, which moves no version (a judge's
+  policy verdict on a patch request, or the conflict note an accept that
+  lost leaves on its request).
 - `deleted` is `true` when the entry tombstoned or purged the record. A read
   of a tombstoned record still answers, with `deletedAt` set; a purged one is
   `not_found`.
@@ -90,9 +93,8 @@ one element per record, in the order the entry touched them.
 The list holds the addressed record and any other the entry moved: a `merge`
 names the winner and the tombstoned loser, a `split` the loser and the
 rewritten winner, a `gc` entry the record it purged and, under
-`reason: owner_collected`, each record the cascade tombstoned. An entry that
-recorded no record effect names its addressed `(kind, recordId)` with no
-version.
+`reason: owner_collected`, each record the cascade tombstoned. An
+annotation-only `patch` names its addressed `(kind, recordId)` alone.
 
 What the event promises: a client that fetches each affected record as the
 stream names it, and drops the ones the stream says are deleted, holds a

@@ -25,11 +25,10 @@ const (
 
 // Change is one changelog row — the ordered, resumable record of every
 // committed write. Payload carries op-specific detail (the diff for a
-// patch, the moved sets for a merge, the dropped write for a precedence
-// rejection). Affected is the public event: every record the entry moved,
-// with the version each reached, so a client keeps a current copy by
-// fetching each one (decision 0061). The stored replay effects never reach
-// the wire: a storage spelling is not a contract.
+// patch, the moved sets for a merge). Affected is the public event: every
+// record the entry moved, with the version each reached, so a client keeps a
+// current copy by fetching each one (decision 0061). The stored replay
+// effects never reach the wire: a storage spelling is not a contract.
 type Change struct {
 	Seq      int64          `json:"seq"`
 	TS       time.Time      `json:"ts"`
@@ -141,8 +140,10 @@ type ChangeRunPage struct {
 // AffectedRecord is one record a change moved, as the public event names it.
 // Version is the version the record reached in this entry, the same number a
 // read of the record returns until its next change, so a client whose copy
-// already carries it or a later one need not fetch; it is absent on a purge,
-// where the record has no version afterwards. Deleted is true when the entry
+// already carries it or a later one need not fetch. It is absent on a purge,
+// where the record has no version afterwards, and on a patch that wrote only
+// an annotation (a judge's policy verdict, an accept's conflict note), where
+// the record's version did not move. Deleted is true when the entry
 // tombstoned or purged the record; a fetch then answers the tombstone or
 // `not_found`, and a client keeping a copy drops it either way.
 type AffectedRecord struct {

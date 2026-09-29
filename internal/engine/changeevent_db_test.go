@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The public change event (decision 0061): every row a client reads names the
@@ -114,61 +114,50 @@ func TestChangesNameEachAffectedRecordWithItsVersion(t *testing.T) {
 	}
 }
 
-// A row written before the effects carried a version, or with no effects at
-// all, still names its addressed record: the client fetches, which is always
-// safe.
-func TestAnEntryWithoutEffectsStillNamesItsRecord(t *testing.T) {
+// A patch that wrote only an annotation moves no record's version: an accept
+// that lost leaves its conflict note on the request and nothing else. The
+// event names the request alone, live and without a version, so a client
+// fetches it and reads the note.
+func TestAnAnnotationOnlyPatchNamesItsRecordWithoutAVersion(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, dsn := newDatasetWithDSN(t)
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "Ada"}})
-	if _, err := ds.Delete(ctx, owner, a.Kind, a.ID, substrate.DeleteInput{}); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	// Strip the effects off every entry of the record, in the table and the
-	// segment file alike: the shape of an entry written before the fold
-	// carried effects.
-	n := rewriteChangelogEntries(t, svc, dsn, ds, func(e *changelogfile.Entry) bool {
-		if e.Kind != a.Kind || e.RecordID != a.ID {
-			return false
-		}
-		var payload map[string]any
-		if err := json.Unmarshal(e.Payload, &payload); err != nil {
-			t.Fatalf("decode seq %d: %v", e.Seq, err)
-		}
-		if _, held := payload["fold"]; !held {
-			return false
-		}
-		delete(payload, "fold")
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			t.Fatalf("encode seq %d: %v", e.Seq, err)
-		}
-		e.Payload = raw
-		return true
+	_, ds := newDataset(t)
+
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Draft", "description": "already here"},
 	})
-	if n != 2 {
-		t.Fatalf("stripped %d entries, want the put and the delete", n)
+	req := mustPut(t, ds, engram, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/recordpatchrequest",
+		Properties: map[string]any{
+			"diff":   map[string]any{"properties": map[string]any{"description": "already here"}},
+			"target": vocabulary.RecordPath(task.Kind, task.ID),
+		},
+	})
+	head := maxSeq(t, ds)
+	if _, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
+		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(req.Version),
+	}); !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("accept of a diff that changes nothing = %v, want a conflict", err)
 	}
-	var sawDelete bool
-	for _, c := range changesSince(t, ds, 0) {
-		if c.Kind != a.Kind {
-			continue
-		}
-		if len(c.Affected) != 1 || c.Affected[0].Kind != a.Kind || c.Affected[0].ID != a.ID || c.Affected[0].Version != 0 {
-			t.Fatalf("seq %d (%s) affected = %+v, want the addressed record with no version", c.Seq, c.Op, c.Affected)
-		}
-		if c.Op == substrate.OpDelete {
-			sawDelete = true
-			if !c.Affected[0].Deleted {
-				t.Fatalf("the delete's event does not say deleted: %+v", c.Affected)
-			}
-		} else if c.Affected[0].Deleted {
-			t.Fatalf("seq %d (%s) says deleted: %+v", c.Seq, c.Op, c.Affected)
-		}
+	after := mustGet(t, ds, req.Kind, req.ID)
+	if after.Version != req.Version || after.Annotations["substrate/conflict"] == nil {
+		t.Fatalf("request after the lost accept = v%d %v, want v%d with a conflict note", after.Version, after.Annotations, req.Version)
 	}
-	if !sawDelete {
-		t.Fatal("the delete entry was not read back")
+
+	wrote := changesSince(t, ds, head)
+	wantNoFold(t, wrote)
+	if len(wrote) != 1 {
+		t.Fatalf("the lost accept wrote %d entries, want the conflict note alone: %+v", len(wrote), wrote)
+	}
+	c := wrote[0]
+	if c.Op != substrate.OpPatch || c.Kind != req.Kind || c.RecordID != req.ID || c.Payload["conflict"] == nil {
+		t.Fatalf("the conflict note's entry = %s %s %s %v", c.Op, c.Kind, c.RecordID, c.Payload)
+	}
+	if len(c.Affected) != 1 {
+		t.Fatalf("the conflict note names %+v, want the request alone", c.Affected)
+	}
+	if a := c.Affected[0]; a.Kind != req.Kind || a.ID != req.ID || a.Version != 0 || a.Deleted {
+		t.Fatalf("the conflict note names %+v, want %s live and without a version", a, req.ID)
 	}
 }
 
