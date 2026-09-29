@@ -559,10 +559,22 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// gone. The narrowing guards above have already refused every change
 		// that would strand a LIVE value, so what this reaches is the additive
 		// case and the tombstones the counts deliberately do not see.
-		if len(st.reprojected) > 0 {
-			ds.logApply("re-deriving the refs index", "kinds", len(st.reprojected))
+		//
+		// A package that did not parse leaves the parked set with no kinds to
+		// name (fold.go parkedSet), and its rows hold the indexes their
+		// declaration derived before it stopped parsing. The kinds its stored
+		// rows carry are read here and re-derive with the rest, so an
+		// uninstall lands them where a rebuild after it does.
+		unparsed, err := t.storedKindsUnder(ds.parkedSet().unparsedOf(touched))
+		if err != nil {
+			return err
 		}
-		if err := t.reprojectRefs(st.reprojected); err != nil {
+		reprojected := unionStrings(st.reprojected, unparsed)
+		reprojectedFTS := unionStrings(st.reprojectedFTS, unparsed)
+		if len(reprojected) > 0 {
+			ds.logApply("re-deriving the refs index", "kinds", len(reprojected))
+		}
+		if err := t.reprojectRefs(reprojected); err != nil {
 			return err
 		}
 		// The search index is the other projection of the row against its
@@ -571,10 +583,10 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// searchable shape this batch changes, against the candidate, so the
 		// live index and its replay agree; the rows' values do not move, so
 		// this bumps nothing and appends nothing.
-		if len(st.reprojectedFTS) > 0 {
-			ds.logApply("re-deriving the search index", "kinds", len(st.reprojectedFTS))
+		if len(reprojectedFTS) > 0 {
+			ds.logApply("re-deriving the search index", "kinds", len(reprojectedFTS))
 		}
-		if err := t.reprojectFTS(foldView{reg: candidate, parked: st.parked}, st.reprojectedFTS); err != nil {
+		if err := t.reprojectFTS(foldView{reg: candidate, parked: st.parked}, reprojectedFTS); err != nil {
 			return err
 		}
 		if b.extra != nil {
@@ -3056,6 +3068,36 @@ func appendReferenceShape(b *strings.Builder, path string, p *vocabulary.Propert
 	for _, fn := range p.FieldOrder {
 		appendReferenceShape(b, path+"."+fn, p.Fields[fn])
 	}
+}
+
+// storedKindsUnder lists the kinds the stored rows carry, live and
+// tombstoned, under the named packages, sorted. A kind reference is its
+// package's identity, a slash and a name, so the prefix is exact.
+func (t *txn) storedKindsUnder(packages []string) ([]string, error) {
+	if len(packages) == 0 {
+		return nil, nil
+	}
+	prefixes := make([]string, 0, len(packages))
+	for _, p := range packages {
+		prefixes = append(prefixes, p+"/")
+	}
+	rows, err := t.query(`
+		SELECT DISTINCT kind FROM records
+		WHERE EXISTS (SELECT 1 FROM unnest($1::text[]) p WHERE starts_with(kind, p))
+		ORDER BY kind`, prefixes)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var kind string
+		if err := rows.Scan(&kind); err != nil {
+			return nil, err
+		}
+		out = append(out, kind)
+	}
+	return out, rows.Err()
 }
 
 // reprojectRefs re-derives the refs index for the kinds whose reference

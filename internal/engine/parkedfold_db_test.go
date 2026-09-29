@@ -517,3 +517,133 @@ func TestABootUpgradeReindexesASourceKindAParkedMappingReshapes(t *testing.T) {
 		t.Fatalf("the rebuilt fold is not the upgraded fold\n%s", firstDifference(upgraded, rebuilt))
 	}
 }
+
+const (
+	pfLegacy      = "parkedfold.bundles.substrate.reamde.dev/legacy"
+	pfLegacyMemo  = pfLegacy + "/memo"
+	pfLegacyAgent = pfLegacy + "/summarizer"
+)
+
+// pfLegacyDocs is a bundle closure with an agent a test can age into a shape
+// the loader no longer parses, beside a kind whose rows index a text property
+// and hold a reference.
+func pfLegacyDocs() []map[string]any {
+	return []map[string]any{
+		vocabulary.PackageManifest(pfLegacy, 0),
+		vocabulary.ActorManifest(pfLegacy, vocabulary.PackageActor(pfLegacy)),
+		vocabulary.BundleManifest(pfLegacy, map[string]any{
+			"description": "a bundle whose agent a later binary does not parse",
+			"installs":    []any{pfLegacyMemo, pfLegacyAgent},
+		}),
+		vocabulary.KindManifest(pfLegacy, map[string]any{"singular": "memo"},
+			map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
+				"name":   map[string]any{"type": "string"},
+				"remark": map[string]any{"type": "text"},
+				"peer":   map[string]any{"type": "reference", "kind": pfLegacyMemo},
+			}}),
+		vocabulary.AgentManifest(pfLegacy, "summarizer", map[string]any{
+			"description": "summarizes what it is handed",
+			"prompt":      "You summarize.",
+			"provider":    "default",
+			"model":       "anthropic/claude-haiku-4-5",
+		}),
+	}
+}
+
+// TestUninstallingAnUnparsedPackageReindexesItsRows: a package whose stored
+// declaration no longer parses leaves the parked set with no kinds to name,
+// and the snapshot names it as the divergence a rebuild may show. Its
+// uninstall re-derives the rows stored under it at the unknown-kind bands
+// with no refs rows, so the snapshot stops naming it and a rebuild agrees.
+func TestUninstallingAnUnparsedPackageReindexesItsRows(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := pfOpener(t, dsn, t.TempDir())
+
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.InstallBundleClosure(ctx, substrate.BundleActor(vocabulary.SplitPackageRef(pfLegacy)), pfLegacyDocs(), nil,
+		substrate.BundleInstall{}); err != nil {
+		t.Fatalf("install the legacy closure: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfLegacyMemo, ID: "one", Properties: map[string]any{
+		"name": "one", "remark": "about wombats",
+	}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: pfLegacyMemo, ID: "two", Properties: map[string]any{
+		"name": "two", "remark": "about numbats", "peer": pfLegacyMemo + "/one",
+	}})
+	_ = svc.Close()
+	if _, err := rawDB(t, dsn).ExecContext(ctx,
+		`UPDATE records SET props = (props - 'provider' - 'model') || '{"llm": "cheap"}'::jsonb
+		 WHERE kind = $1 AND id = $2`, kindAgentID, pfLegacyAgent); err != nil {
+		t.Fatalf("fabricate the pre-refactor agent declaration: %v", err)
+	}
+
+	svc2 := open()
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if !strings.Contains(string(foldOf(t, ds2)), `"unparsed_packages"`) {
+		t.Fatal("the snapshot does not name the package that no longer parses")
+	}
+	if err := ds2.UninstallBundle(ctx, pfLegacy); err != nil {
+		t.Fatalf("uninstall the unparsed package: %v", err)
+	}
+	uninstalled := foldOf(t, ds2)
+	if strings.Contains(string(uninstalled), `"unparsed_packages"`) {
+		t.Fatal("the snapshot still names the uninstalled package")
+	}
+	var s struct {
+		FTS []struct {
+			Kind string `json:"kind"`
+			ID   string `json:"id"`
+			FTS  string `json:"fts"`
+		} `json:"fts"`
+		Refs []struct {
+			SrcKind string `json:"src_kind"`
+		} `json:"refs"`
+	}
+	if err := json.Unmarshal(uninstalled, &s); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range s.FTS {
+		if r.Kind == pfLegacyMemo && strings.Contains(r.FTS, "bat") {
+			t.Fatalf("memo %s still indexes its remark after the uninstall: %q", r.ID, r.FTS)
+		}
+	}
+	for _, r := range s.Refs {
+		if r.SrcKind == pfLegacyMemo {
+			t.Fatal("a memo still holds a refs row after the uninstall")
+		}
+	}
+	if _, err := svc2.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	// The indexes alone: the fabricated agent row was written past the
+	// changelog, so the rebuild restores the row the changelog holds and the
+	// `records` section differs by that row whatever the indexes do.
+	rebuilt := foldOf(t, ds2)
+	for _, section := range []string{"fts", "refs"} {
+		if a, b := pfSection(t, uninstalled, section), pfSection(t, rebuilt, section); a != b {
+			t.Fatalf("the rebuilt %s after the uninstall is not the live one\n%s", section, firstByteDifference([]byte(a), []byte(b)))
+		}
+	}
+}
+
+// pfSection is one section of a fold snapshot, as its JSON.
+func pfSection(t *testing.T, snap []byte, name string) string {
+	t.Helper()
+	var s map[string]json.RawMessage
+	if err := json.Unmarshal(snap, &s); err != nil {
+		t.Fatalf("read the snapshot: %v", err)
+	}
+	return string(s[name])
+}

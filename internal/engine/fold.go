@@ -665,6 +665,17 @@ func (s *parkedSet) unparsedPackages() []string {
 	return s.unparsed
 }
 
+// unparsedOf is the unparsed packages among the named ones, sorted.
+func (s *parkedSet) unparsedOf(packages map[string]bool) []string {
+	var out []string
+	for _, name := range s.unparsedPackages() {
+		if packages[name] {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // derivedKinds names every kind whose indexes the set decides: the parked
 // kinds and the reshaped ones.
 func (s *parkedSet) derivedKinds() map[string]bool {
