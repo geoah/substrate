@@ -147,7 +147,8 @@ stamp is offered even when `changes` is empty, because it can change a data
 record the closure ships (a trigger) that no declaration diff lists; taking
 it lands those records and moves the stamp. A package installed before the
 stamp existed is measured from its stored version until its next install,
-and a sample installed verbatim is never stamped, because it stays editable
+and so is one applied by hand after an uninstall, which clears the stamp;
+a sample installed verbatim is never stamped, because it stays editable
 and nothing would record its edits. A SAMPLE is previewed as the import door would land it, rehomed onto
 the repository's own authority, and only through the origin stamp its import
 left on the copy

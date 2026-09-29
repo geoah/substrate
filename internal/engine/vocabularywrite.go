@@ -1844,6 +1844,29 @@ func (t *txn) stampShipped(reg *vocabulary.Registry, projecting map[string]bool,
 	return nil
 }
 
+// clearShippedStamp removes `shippedVersion` from a package row the prune is
+// about to tombstone. A put onto a tombstone restores its properties
+// (write.go, resurrect), and only an install batch writes the stamp, so a
+// stamp left on the tombstone would outlive the install that took it. It is
+// cleared by writing the row in this transaction, as the bundle bindings are,
+// so the delta rides the changelog and a rebuild replays it.
+func (t *txn) clearShippedStamp(ref eref) error {
+	row, err := t.loadRow(ref, true)
+	if err != nil {
+		return err
+	}
+	if row == nil || row.Props[propPackageShippedVersion] == nil {
+		return nil
+	}
+	was := t.internal
+	t.internal = true
+	defer func() { t.internal = was }()
+	if _, err := t.patch(ref, substrate.PatchInput{Properties: map[string]any{propPackageShippedVersion: nil}}); err != nil {
+		return fmt.Errorf("substrate/engine: clear the shipped version of %s: %w", ref.ID, err)
+	}
+	return nil
+}
+
 // closureDigest fingerprints the declarations of package pkg as DOCUMENTS:
 // each one as its loader-admitted data minus `version`, keyed by kind and id
 // and sorted, so a kind, trait, property type, mapping, function, agent,
@@ -1966,6 +1989,15 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 				if err := t.writeBindings(ref, map[string]any{}); err != nil {
 					return fmt.Errorf("substrate/engine: clear bundle bindings: %w", err)
 				}
+			}
+		}
+		if s.typ == kindPackage {
+			// The same holds for a provider install's `shippedVersion`: a hand
+			// apply of the package after an uninstall restores the tombstone,
+			// and a stamp left on it would have the upgrade preview measure
+			// the user's package from a shipped version it never took.
+			if err := t.clearShippedStamp(ref); err != nil {
+				return err
 			}
 		}
 		if _, err := t.softDelete(ref); err != nil {

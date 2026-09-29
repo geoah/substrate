@@ -319,6 +319,42 @@ func TestATriggerOnlyReleasePastTheStampIsOfferedAndLands(t *testing.T) {
 	}
 }
 
+// An uninstall ends the install that took the stamp. A put onto the
+// tombstoned package row restores its properties, so the uninstall clears
+// the stamp first: the same closure applied by hand afterwards is the
+// user's package, measured from its stored version, not from a shipped
+// version it never took.
+func TestAnUninstallClearsTheShippedVersion(t *testing.T) {
+	ds := newDataset(t)
+	ctx := context.Background()
+	shipped := whoopShipped(t)
+	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+		t.Fatalf("install whoop: %v", err)
+	}
+	if err := ds.(bundleLifecycler).UninstallBundle(ctx, whoopID); err != nil {
+		t.Fatalf("uninstall whoop: %v", err)
+	}
+	handApplyWhoop(t, ds, shipped+2, false)
+
+	row, err := ds.Get(ctx, kindPackageRef, whoopID)
+	if err != nil {
+		t.Fatalf("get the package row: %v", err)
+	}
+	if v, held := row.Properties["shippedVersion"]; held && v != nil {
+		t.Errorf("the hand-applied package kept the uninstalled provider's stamp %v", v)
+	}
+	st, err := ds.(bundleStatuser).BundleStatus(ctx, whoopID)
+	if err != nil {
+		t.Fatalf("bundle status: %v", err)
+	}
+	if st.ShippedVersion != 0 {
+		t.Errorf("the status reads shippedVersion %d on a hand-applied package", st.ShippedVersion)
+	}
+	if up := whoopPreview(t, whoopCatalog(t, shipped+1, true), ds); up.Available || up.From != shipped+2 {
+		t.Errorf("the hand-applied whoop at %d is measured from the old stamp: %+v", shipped+2, up)
+	}
+}
+
 // The package header is a declaration like any other (the version rule in
 // CLAUDE.md): an apply that changes only its description lands it at
 // stored+1, and the same apply again keeps it.
