@@ -507,10 +507,9 @@ tombstone keeps them, so a restore reads its secrets again. Each sweep also
 erases every sealed row that no record, live or tombstoned, holds the ref of:
 the rows purges in earlier releases left behind, and any an imported copy
 carries. `repository verify` names each such row or file as an orphan. The
-erasure covers the live table and the directory only. The ciphertext stays
-in Postgres's dead tuples until `VACUUM`, in the WAL until its segment is
-recycled, on any replica, and in every backup or snapshot taken before the
-purge, and each of those copies still opens under the repository's key.
+erasure covers the live table and the directory only, so every earlier copy
+that held the record's secrets keeps their ciphertext
+([a rotated or deleted secret stays in older backups](#a-rotated-or-deleted-secret-stays-in-older-backups)).
 
 The trigger dispatcher runs each repository's pass in a goroutine of its own,
 at most 8 at once. The cap bounds the function runner processes and the
@@ -1073,6 +1072,28 @@ a restore; it is for a row re-pointed at another model.
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 directory, on the backup host and in the dump alike. The substrate does not
 encrypt the storage under it; do that yourself.
+
+### A rotated or deleted secret stays in older backups
+
+Rotating or deleting a secret does not remove it from a backup, snapshot or
+export taken while it was current, so a credential that leaked must be
+revoked at the provider that issued it as well as rotated here. A new value
+written to a secret-typed property, a cleared one, a password or TOTP change,
+a [purge](#what-happens-at-boot) and the OAuth teardown of a deleted
+connected account each delete the old row from the `sealed` table and its
+file from `sealed/`, and change no other copy. The ciphertext can stay in
+Postgres's dead tuples and WAL, on the primary and on any replica, until
+Postgres reclaims them (`VACUUM` or page pruning for a tuple, recycling for
+a WAL segment), which the substrate does not control. It stays in any WAL
+archive, and in every database dump and copy of the directory taken while it
+was current (an `rsync` mirror keeps it until its next run). Each of those
+still opens under the repository's DEK, which a rotation does not change.
+Restoring one of the directory copies brings the old value back as the
+property's current value: an `llm/provider` row restored from a week-old copy
+holds the leaked `apiKey` again, and every agent that names the row uses it.
+Only the OAuth teardown reaches the provider: it asks the provider to revoke
+the account's tokens, best effort, where the provider's bundle declares a
+revocation endpoint.
 
 ## Operator recovery
 

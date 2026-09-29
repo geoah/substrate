@@ -1673,7 +1673,13 @@ func (t *txn) actorMayWriteProp(writer string) bool {
 //     a delta nor steals the property's manager attribution;
 //   - any other accepted value stores under a fresh ref, and the ref it
 //     replaces is DELETED: rotation erases material rather than retiring it
-//     into an immutable log. An accepted deletion erases the same way.
+//     into the append-only changelog. An accepted deletion erases the same
+//     way. The erasure removes the live `sealed` row and its file under
+//     sealed/ and nothing else: dead tuples and the WAL, on the primary and
+//     on any replica, keep its ciphertext until Postgres reclaims them, and
+//     every dump or copy of the directory taken while the old value was
+//     current keeps it for as long as the copy exists, still opening under
+//     the repository's unchanged DEK (docs/operations.md).
 //
 // Returns the accepted list with the no-op names pruned.
 func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *erow, accepted []string) ([]string, error) {

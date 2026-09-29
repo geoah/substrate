@@ -733,6 +733,11 @@ data:
 EOF
 ```
 
+A key that leaked is revoked at its provider as well: the write replaces the
+sealed key here, and every backup taken while the old key was current still
+holds it
+([what older backups keep](operations.md#a-rotated-or-deleted-secret-stays-in-older-backups)).
+
 ### Testing a provider
 
 Point an agent at the row and run it once. The smallest agent that proves a
