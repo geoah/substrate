@@ -333,6 +333,35 @@ func TestARetriedScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T)
 	}
 }
 
+// One settlement retires at most supersedeBatch parks, oldest first, and the
+// next settled fire retires the rest. Package-level, like withScheduleDrain:
+// no t.Parallel.
+func TestASettledScheduleFireRetiresItsOlderParksInBatches(t *testing.T) {
+	prev := supersedeBatch
+	supersedeBatch = 2
+	defer func() { supersedeBatch = prev }()
+	s := nowUTC().Add(-150 * time.Minute).Truncate(time.Minute)
+	s1, s2 := s.Add(time.Hour), s.Add(2*time.Hour)
+	ds := supersedeDataset(t, s, "update")
+	rewindSchedule(t, ds, supersedeSync, s.Add(-time.Minute))
+	processOnce(t, ds)
+	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s), fireID(s1), fireID(s2)}) {
+		t.Fatalf("%s parked %v, want three occurrences", supersedeSync, got)
+	}
+
+	setJobSync(t, ds, supersedeOK)
+	rewindSchedule(t, ds, supersedeSync, s1)
+	processOnce(t, ds)
+	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s2)}) {
+		t.Fatalf("%s parked %v after one settled fire, want the batch of two oldest retired", supersedeSync, got)
+	}
+	rewindSchedule(t, ds, supersedeSync, s1)
+	processOnce(t, ds)
+	if got := parkedFires(t, ds, supersedeSync); len(got) != 0 {
+		t.Fatalf("%s parked %v after the next settled fire, want none", supersedeSync, got)
+	}
+}
+
 // An agent's schedule fire settles in the thread's own transaction
 // (settlement.complete), and it retires the older parks the same way.
 func TestAnAgentScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {

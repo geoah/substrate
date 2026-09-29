@@ -47,6 +47,8 @@ A settling fire is a dispatched occurrence or a parked one retried by hand;
 either retires the parks at or before its occurrence and none after it. The
 rows are deleted through the same unpark fold a delivered retry writes, on
 the settling fire's own delivery entry, so a rebuild and a restore agree.
+One settlement retires at most 1000, oldest first, so the entry stays far
+under the changelog's line cap; the rest go at the next settled fire.
 `trigger_failures` has no state column to mark, and the parked run rows and
 the changelog keep the history. A row a hand is retrying at that moment
 keeps its retry.

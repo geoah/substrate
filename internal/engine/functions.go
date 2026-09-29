@@ -64,6 +64,13 @@ var triggerRetryBackoff = []time.Duration{25 * time.Millisecond, 100 * time.Mill
 // startup; nothing is coalesced away. A var, so a test can lower it.
 var scheduleDrainPerPass = 10
 
+// supersedeBatch bounds the parked fires one settlement retires
+// (retireSupersededFires), oldest first, so its delivery entry stays far
+// under changelogfile.MaxLineBytes (one unpark is about 100 bytes) and its
+// transaction stays short; the rest retire at the next settled fire. A var,
+// so a test can lower it.
+var supersedeBatch = 1000
+
 // triggerPassBudget bounds the wall-clock one dispatcher pass spends on one
 // trigger: past it the trigger stops at the delivery in hand and the pass
 // moves on, and the next pass resumes from the cursor (or fire state) that
@@ -780,13 +787,18 @@ func (s *settlement) retireSupersededFires(t *txn) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	retired := 0
 	for _, id := range ids {
+		if retired == supersedeBatch {
+			break
+		}
 		if !s.holdSuperseded(id) {
 			continue
 		}
 		if err := t.unparkTx(s.trigger, id); err != nil {
 			return err
 		}
+		retired++
 	}
 	return nil
 }
