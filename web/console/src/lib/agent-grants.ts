@@ -272,32 +272,27 @@ export function patternCovers(pattern: string, kind: string): boolean {
 }
 
 /** Whether an agent can declare a kind, which is what setting up a
- * collection is: its write grant covers the kind kind, and it holds a tool
- * that writes (`write`, or `propose` to suggest it). */
+ * collection is: it holds the `write` tool and its write grant covers the
+ * kind kind. `propose` does not count: accepting a proposal writes through
+ * the record path, which refuses a kind record (a system kind), so a
+ * proposed kind never lands. */
 export function canDeclareKinds(properties: Record<string, unknown>): boolean {
-  const tools = hostToolsOf(properties)
-  if (
-    !tools.includes(HOST_FUNCTION_WRITE) &&
-    !tools.includes(HOST_FUNCTION_PROPOSE)
-  ) {
-    return false
-  }
+  if (!hostToolsOf(properties).includes(HOST_FUNCTION_WRITE)) return false
   return identitiesOf(permissionsOf(properties).writes).some((p) =>
     patternCovers(p, KIND_KIND)
   )
 }
 
 /** The agent Add a collection hands a request to: one a person can chat with
- * that can declare kinds, one that writes itself before one that only
- * suggests, else the first. Undefined when none can. */
+ * that can declare kinds. The one they last talked to (`lastTalkedTo`, an
+ * agent id) when it can, else the first that can. Undefined when none can:
+ * an agent that cannot declare a kind is never chosen, however recently it
+ * was talked to. */
 export function collectionMaker<
   T extends { id: string; properties: Record<string, unknown> },
->(agents: T[]): T | undefined {
+>(agents: T[], lastTalkedTo?: string): T | undefined {
   const able = agents.filter(
     (a) => a.properties.hiddenFromChat !== true && canDeclareKinds(a.properties)
   )
-  return (
-    able.find((a) => hostToolsOf(a.properties).includes(HOST_FUNCTION_WRITE)) ??
-    able[0]
-  )
+  return able.find((a) => a.id === lastTalkedTo) ?? able[0]
 }

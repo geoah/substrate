@@ -17,6 +17,7 @@ import {
   examplePrompts,
   groupByDay,
   judgeVerdictOf,
+  lastChatAgent,
   openingMessages,
   propertyLabel,
   proposedHeading,
@@ -115,6 +116,27 @@ describe("names", () => {
       "scribe"
     )
     expect(threadAgentId(record({}))).toBeUndefined()
+  })
+
+  it("reads who you last chatted with off the newest chat, not a trigger's run", () => {
+    const thread = (mode: string, agent: string) =>
+      record({
+        properties: {
+          mode,
+          agent: { ref: `substrate.reamde.dev/core/agent/${agent}` },
+        },
+      })
+    expect(
+      lastChatAgent([
+        thread("record", "ada.localhost/notes/titler"),
+        thread("chat", "ada.localhost/llm/substrate"),
+        thread("chat", "ada.localhost/llm/substrateEditor"),
+      ])
+    ).toBe("ada.localhost/llm/substrate")
+    expect(
+      lastChatAgent([thread("schedule", "ada.localhost/notes/titler")])
+    ).toBeUndefined()
+    expect(lastChatAgent([])).toBeUndefined()
   })
 
   it("keeps an agent that only works for other agents off the chat", () => {

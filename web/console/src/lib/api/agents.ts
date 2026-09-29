@@ -83,6 +83,20 @@ export function conversationsQueryOptions(first = CHAT_LIST_WINDOW) {
   })
 }
 
+/** The newest chat a person had, with whichever agent. Its own read, not the
+ * chat list's first row: that list mixes in every trigger's and schedule's
+ * runs, and a hundred of them would push the last chat out of its window. */
+export function lastChatQueryOptions() {
+  return recordsQueryOptions({
+    authority: CORE_AUTHORITY,
+    package: LLM_PACKAGE_NAME,
+    name: "thread",
+    first: 1,
+    filter: { properties: { mode: { eq: "chat" } } },
+    orderBy: "startedAt:desc",
+  })
+}
+
 /** How many of one agent's runs its page reads. */
 export const AGENT_RUNS_WINDOW = 50
 

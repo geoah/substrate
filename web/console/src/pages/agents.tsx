@@ -260,11 +260,18 @@ export function AgentsPage() {
           pickable={talkable.map((a) => a.id)}
           onPickAgent={(next) => void setSearch({ agent: next, prompt: null })}
           keylessProvider={hasKey === false ? providerId : undefined}
+          // Sent once the agent and the provider rows are read, so a keyless
+          // provider holds the question instead of sending it into a
+          // refusal. Waiting for a known key would hold it forever where the
+          // agent names a provider row that is not there, or the provider
+          // read failed; sent, a refusal is shown and the question stays in
+          // the composer.
           autoSend={
             search.send === "1" &&
             !threadId &&
             Boolean(search.prompt) &&
-            hasKey !== undefined
+            Boolean(agent) &&
+            !providers.isPending
           }
           onAutoSent={() =>
             void setSearch({ send: null }, { history: "replace" })

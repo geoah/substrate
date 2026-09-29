@@ -378,6 +378,13 @@ describe("who can set up a collection", () => {
         permissions: writes("samples.substrate.reamde.dev/notes/note"),
       })
     ).toBe(false)
+    // An accepted proposal cannot land a kind record, so propose is no way in.
+    expect(
+      canDeclareKinds({
+        tools: [tool(HOST_FUNCTION_PROPOSE)],
+        permissions: writes("*"),
+      })
+    ).toBe(false)
   })
 
   it("hands the request to one that writes itself, never to one hidden from chat", () => {
@@ -396,7 +403,33 @@ describe("who can set up a collection", () => {
         agent("c", HOST_FUNCTION_WRITE),
       ])?.id
     ).toBe("c")
-    expect(collectionMaker([agent("a", HOST_FUNCTION_PROPOSE)])?.id).toBe("a")
+    // Last talked to, but it only proposes: the one that writes is asked.
+    expect(
+      collectionMaker(
+        [agent("a", HOST_FUNCTION_PROPOSE), agent("c", HOST_FUNCTION_WRITE)],
+        "a"
+      )?.id
+    ).toBe("c")
+    expect(collectionMaker([agent("a", HOST_FUNCTION_PROPOSE)])).toBeUndefined()
     expect(collectionMaker([agent("q", HOST_FUNCTION_QUERY)])).toBeUndefined()
+  })
+
+  it("keeps to the agent you last talked to only when it can declare a kind", () => {
+    const agent = (id: string, kinds: string[]) => ({
+      id,
+      properties: {
+        tools: [tool(HOST_FUNCTION_WRITE)],
+        permissions: writes(...kinds),
+      },
+    })
+    const titler = agent("titler", ["samples.substrate.reamde.dev/notes/note"])
+    const builder = agent("builder", ["*"])
+    const editor = agent("editor", ["substrate.reamde.dev/core/*"])
+    // The last one talked to cannot: the one that can is chosen instead.
+    expect(collectionMaker([titler, builder], "titler")?.id).toBe("builder")
+    // Both can: the last one talked to wins over the first.
+    expect(collectionMaker([builder, editor], "editor")?.id).toBe("editor")
+    // None can: nobody, however recently talked to.
+    expect(collectionMaker([titler], "titler")).toBeUndefined()
   })
 })

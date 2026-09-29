@@ -62,6 +62,14 @@ export function threadAgentId(thread: SubstrateRecord): string | undefined {
   return split ? undefined : held
 }
 
+/** The agent the person last chatted with: the agent of the first `chat`
+ * thread in a newest-first list. A run a trigger, a schedule or the call API
+ * started is nobody's conversation, so it does not count. */
+export function lastChatAgent(threads: SubstrateRecord[]): string | undefined {
+  const chat = threads.find((t) => t.properties.mode === "chat")
+  return chat ? threadAgentId(chat) : undefined
+}
+
 /** Whether an agent belongs on the chat surface. A `hiddenFromChat` agent is
  * callable only by other agents (the chat API refuses it too), so it is listed
  * as working on its own rather than offered a conversation. */
