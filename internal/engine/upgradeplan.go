@@ -283,8 +283,11 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 // install decides it: the batch's versions resolved against the stored rows
 // (resolveDeclarationVersions, over the canonical data), and every
 // declaration whose version would change listed with the stored version and
-// the one it lands at. A declaration new here is left to the version diff,
-// which already lists it. It writes nothing and never touches docs.
+// the one it lands at. A declaration new here is listed at the version it
+// lands at too: an unpinned one rides its package, and over stored versions
+// that ran ahead the package lands at its stored version or stored+1, never
+// at the shipped number the version diff reads. It writes nothing and never
+// touches docs.
 //
 // The stored version is read off the rows (stored, storedDeclarations), not
 // off the stored documents: only a kind, a package and an authority carry
@@ -324,8 +327,12 @@ func (ds *dataset) contentChanges(ctx context.Context, docs []vocabulary.Documen
 	var out []substrate.BundleUpgradeChange
 	for _, d := range b.docs {
 		ident, known := schemaKindRef(d.Kind)
+		if !known {
+			continue
+		}
 		row, has := stored[ident+"\x00"+d.ID]
-		if !known || !has {
+		if !has {
+			out = append(out, substrate.BundleUpgradeChange{Kind: d.Kind, ID: d.ID, To: versionOf(d)})
 			continue
 		}
 		from := row.version
@@ -336,18 +343,28 @@ func (ds *dataset) contentChanges(ctx context.Context, docs []vocabulary.Documen
 	return out, nil
 }
 
-// mergeChanges adds the moves the version diff did not list, one per
-// declaration: a declaration both list keeps the version diff's entry.
+// mergeChanges folds the content-read moves into the version diff, one per
+// declaration. A declaration both list takes the content entry, which is the
+// version the install lands it at; a prune only the version diff lists stays
+// as it is.
 func mergeChanges(diffed, moved []substrate.BundleUpgradeChange) []substrate.BundleUpgradeChange {
-	seen := map[string]bool{}
+	byKey := make(map[string]substrate.BundleUpgradeChange, len(moved))
+	for _, c := range moved {
+		byKey[c.Kind+"\x00"+c.ID] = c
+	}
+	out := make([]substrate.BundleUpgradeChange, 0, len(diffed))
 	for _, c := range diffed {
-		seen[c.Kind+"\x00"+c.ID] = true
+		key := c.Kind + "\x00" + c.ID
+		if m, ok := byKey[key]; ok {
+			c = m
+			delete(byKey, key)
+		}
+		out = append(out, c)
 	}
 	for _, c := range moved {
-		if !seen[c.Kind+"\x00"+c.ID] {
-			seen[c.Kind+"\x00"+c.ID] = true
-			diffed = append(diffed, c)
+		if _, left := byKey[c.Kind+"\x00"+c.ID]; left {
+			out = append(out, c)
 		}
 	}
-	return diffed
+	return out
 }

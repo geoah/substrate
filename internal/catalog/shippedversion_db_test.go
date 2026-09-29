@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/catalog"
@@ -37,11 +38,15 @@ func whoopCatalog(t *testing.T, version int64, probe bool) *catalog.Catalog {
 
 // whoopRelease is what another binary's whoop changes beside its version:
 // probe adds a property to the config kind, header gives the package header a
-// description, and trigger disables the shipped on-connect trigger, a data
-// record no declaration diff sees.
+// description, trigger disables the shipped on-connect trigger, a data record
+// no declaration diff sees, and kind adds whoopNewKind, unpinned, to the
+// closure.
 type whoopRelease struct {
-	probe, header, trigger bool
+	probe, header, trigger, kind bool
 }
+
+// whoopNewKind is the kind a whoopRelease with kind set adds.
+const whoopNewKind = whoopID + "/probe"
 
 // whoopCatalogWith is whoopCatalog with the changes rel names.
 func whoopCatalogWith(t *testing.T, version int64, rel whoopRelease) *catalog.Catalog {
@@ -85,6 +90,14 @@ func whoopCatalogWith(t *testing.T, version int64, rel whoopRelease) *catalog.Ca
 			// The first kind-level property block is the config kind's.
 			doc = mustReplace(t, doc, "\n  properties:\n",
 				"\n  properties:\n    probe:\n      type: string\n      description: a property the other binary added\n")
+		}
+		if rel.kind {
+			// `installs:` names exactly the package's schema members.
+			doc = mustReplace(t, doc, "\n  installs:\n", "\n  installs:\n    - "+whoopNewKind+"\n")
+			doc = strings.TrimRight(doc, "\n") + "\n---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: " + whoopNewKind +
+				"\ndata:\n  authority: " + whoopAuthority + "\n  package: " + whoopPackage +
+				"\n  description: a kind the other binary added\n  purpose: internal\n  names:\n    singular: probe\n" +
+				"  properties:\n    note:\n      type: string\n      description: a note\n"
 		}
 		return doc
 	})
@@ -316,6 +329,39 @@ func TestATriggerOnlyReleasePastTheStampIsOfferedAndLands(t *testing.T) {
 	}
 	if enabled, _ := row.Properties["enabled"].(bool); enabled {
 		t.Errorf("the release's trigger change did not land: %v", row.Properties)
+	}
+}
+
+// A release past the stamp that adds an unpinned kind over stored versions
+// that ran ahead: the new kind rides the package, which the install lands at
+// stored+1 and not at the shipped number, so the preview lists every
+// declaration at the version the install then gives it.
+func TestANewKindPastTheStampPreviewsTheVersionItLandsAt(t *testing.T) {
+	ds := newDataset(t)
+	ctx := context.Background()
+	shipped := whoopShipped(t)
+	installOverHandApplied(t, ds)
+
+	next := whoopCatalogWith(t, shipped+1, whoopRelease{kind: true})
+	up := whoopPreview(t, next, ds)
+	if !up.Available || !namesChange(up, vocabulary.DocKind, whoopNewKind) {
+		t.Fatalf("the release adding %s is not offered naming it: %+v", whoopNewKind, up)
+	}
+	if _, _, err := next.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+		t.Fatalf("install the release: %v", err)
+	}
+	b, _ := next.ByID(whoopID)
+	after := closureVersions(t, ds, b)
+	for _, ch := range up.Changes {
+		if ch.Kind != vocabulary.DocKind && ch.Kind != vocabulary.DocPackage {
+			continue
+		}
+		if got := after[ch.Kind+" "+ch.ID]; got != ch.To {
+			t.Errorf("%s %s previews landing at %d, the install landed it at %d", ch.Kind, ch.ID, ch.To, got)
+		}
+	}
+	if got := after["kind "+whoopNewKind]; got <= shipped+1 {
+		t.Errorf("the new kind landed at %d, want it riding the stored package past the shipped %d", got, shipped+1)
 	}
 }
 
