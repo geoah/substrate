@@ -3,13 +3,13 @@
  *
  * An agent's grants live under ONE `permissions` object: what it may read
  * (`permissions.reads`) and what it may write (`permissions.writes`), the same
- * grouping a function's five take. Three of the host functions are gated by
+ * grouping a function's five take. Each of the four host functions is gated by
  * one of them, and the loader makes each a LOAD error rather than a dispatch
  * surprise (`internal/vocabulary/agent.go`, the switch over `t.Builtin`):
- * `query` reads within `permissions.reads` and needs it, `propose` writes one
- * kind and needs it in `permissions.writes`, `write` writes whatever the agent
- * may write and needs a non-empty `permissions.writes`. `ask` needs none: it
- * writes nothing but a question.
+ * `query` reads within `permissions.reads` and needs it, `propose` and `ask`
+ * each write one kind and need it covered by `permissions.writes`, `write`
+ * writes whatever the agent may write and needs a non-empty
+ * `permissions.writes`.
  *
  * The loader remains the enforcement. This is the same question asked early, so
  * the editor can say what is missing while the answer is still one control
@@ -24,11 +24,31 @@ import { readReference } from "@/lib/api/types"
 export const HOST_FUNCTION_QUERY = "substrate.reamde.dev/core/query"
 export const HOST_FUNCTION_WRITE = "substrate.reamde.dev/core/write"
 export const HOST_FUNCTION_PROPOSE = "substrate.reamde.dev/core/propose"
+export const HOST_FUNCTION_ASK = "substrate.reamde.dev/core/ask"
 
 /** The request kind `propose` lands, and the one an agent's write permission
  * must name before it may call the tool (`vocabulary.KindRecordPatchRequest`). */
 export const RECORD_PATCH_REQUEST_KIND =
   "substrate.reamde.dev/core/recordpatchrequest"
+
+/** The question kind `ask` lands (`vocabulary.KindLLMInteraction`), and the
+ * spelling before record 0077 moved it, which the loader still accepts on a
+ * stored grant the boot upgrade has not rewritten yet. */
+export const LLM_INTERACTION_KIND = "substrate.reamde.dev/llm/interaction"
+const LLM_INTERACTION_KIND_PRE_MOVE = "substrate.reamde.dev/core/llminteraction"
+
+/** The kinds a host tool writes on its own account: the write grant must
+ * cover one of each tool's, or the loader refuses the agent. These are the
+ * tool's grant, not a collection the person picks, so the editor neither
+ * lists nor offers them and carries them through every edit. */
+const TOOL_OWN_KINDS: ReadonlyArray<{ tool: string; kinds: string[] }> = [
+  { tool: HOST_FUNCTION_PROPOSE, kinds: [RECORD_PATCH_REQUEST_KIND] },
+  {
+    tool: HOST_FUNCTION_ASK,
+    kinds: [LLM_INTERACTION_KIND, LLM_INTERACTION_KIND_PRE_MOVE],
+  },
+]
+const TOOL_OWNED = new Set(TOOL_OWN_KINDS.flatMap((t) => t.kinds))
 
 /** The field one `tools:` entry names its function under. Not `callable`: an
  * entry admits only a function (a sub-agent is named on `subagents:`), and
@@ -97,6 +117,7 @@ export function hostToolsOf(properties: Record<string, unknown>): string[] {
     HOST_FUNCTION_QUERY,
     HOST_FUNCTION_WRITE,
     HOST_FUNCTION_PROPOSE,
+    HOST_FUNCTION_ASK,
   ]
   const out: string[] = []
   const tools = Array.isArray(properties.tools) ? properties.tools : []
@@ -155,12 +176,23 @@ export function grantHints(
           })
         }
         break
+      // Covered, not named: the loader asks `EmitAllows`, so a `*` write
+      // grant pays for propose and ask the way it pays for any other kind.
       case HOST_FUNCTION_PROPOSE:
-        if (!writes.includes(RECORD_PATCH_REQUEST_KIND)) {
+        if (!writesCoverToolKinds(writes, named)) {
           hints.push({
             function: named,
             property: WRITES_GRANT,
             message: `propose writes a change request, so data.${WRITES_GRANT} must name ${RECORD_PATCH_REQUEST_KIND}.`,
+          })
+        }
+        break
+      case HOST_FUNCTION_ASK:
+        if (!writesCoverToolKinds(writes, named)) {
+          hints.push({
+            function: named,
+            property: WRITES_GRANT,
+            message: `ask writes an interaction, so data.${WRITES_GRANT} must name ${LLM_INTERACTION_KIND}.`,
           })
         }
         break
@@ -178,23 +210,36 @@ export function grantHints(
   return hints
 }
 
+/** Whether a write grant covers one of the kinds a host tool writes on its
+ * own account (any grant covers a tool that has none). */
+function writesCoverToolKinds(writes: string[], tool: string): boolean {
+  const own = TOOL_OWN_KINDS.find((t) => t.tool === tool)
+  if (!own) return true
+  return own.kinds.some((kind) => writes.some((p) => grantCovers(p, kind)))
+}
+
 // ── editing the grants ──────────────────────────────────────────────────────
 
 /** The two grants the console edits: what an agent may see and change. */
 export type GrantSide = "reads" | "writes"
 
+/** Whether a write grant entry is a tool's own grant (the change-request
+ * kind `propose` lands, the interaction kind `ask` lands) rather than a
+ * collection the person picks. */
+export function isToolOwnedKind(kind: string): boolean {
+  return TOOL_OWNED.has(kind)
+}
+
 /** The kinds (identities or globs) one grant names, in order. On `writes`
- * the change-request kind is left out: it is `propose`'s own grant, not a
- * collection the person picks, and an edit carries it through untouched. */
+ * the tools' own kinds are left out (`isToolOwnedKind`): an edit carries
+ * them through untouched. */
 export function grantKindsOf(
   properties: Record<string, unknown>,
   side: GrantSide
 ): string[] {
   const permissions = permissionsOf(properties)
   if (side === "writes") {
-    return identitiesOf(permissions.writes).filter(
-      (k) => k !== RECORD_PATCH_REQUEST_KIND
-    )
+    return identitiesOf(permissions.writes).filter((k) => !isToolOwnedKind(k))
   }
   const reads = permissions.reads
   if (!reads || typeof reads !== "object" || Array.isArray(reads)) return []
@@ -210,8 +255,10 @@ function grantEntry(identity: string): string {
 /** The whole `permissions` object after one grant is set to `kinds`: the
  * other grant, read budgets and anything else it holds ride along. An empty
  * read grant is no grant (its `kinds` is required where it appears), so it
- * leaves `reads` out; the change-request kind stays on `writes` wherever it
- * was. */
+ * leaves `reads` out. A tool's own kind stays on `writes` wherever it was
+ * named, and is named when the agent holds the tool and a glob the edit
+ * drops was what covered it: the loader refuses `propose` or `ask` without
+ * it. */
 export function permissionsWith(
   properties: Record<string, unknown>,
   side: GrantSide,
@@ -228,13 +275,21 @@ export function permissionsWith(
     else permissions.reads = { ...reads, kinds: kinds.map(grantEntry) }
     return permissions
   }
-  const proposes = identitiesOf(permissions.writes).includes(
-    RECORD_PATCH_REQUEST_KIND
-  )
+  const before = identitiesOf(permissions.writes)
   const writes = [
-    ...kinds.filter((k) => k !== RECORD_PATCH_REQUEST_KIND),
-    ...(proposes ? [RECORD_PATCH_REQUEST_KIND] : []),
+    ...kinds.filter((k) => !isToolOwnedKind(k)),
+    ...before.filter(isToolOwnedKind),
   ]
+  const tools = hostToolsOf(properties)
+  for (const { tool, kinds: own } of TOOL_OWN_KINDS) {
+    if (!tools.includes(tool)) continue
+    if (
+      writesCoverToolKinds(before, tool) &&
+      !writesCoverToolKinds(writes, tool)
+    ) {
+      writes.push(own[0])
+    }
+  }
   if (writes.length === 0) delete permissions.writes
   else permissions.writes = writes.map(grantEntry)
   return permissions
@@ -262,10 +317,92 @@ export function grantEditProblem(
   return undefined
 }
 
+/** The grant entry that is every kind: "All your data". */
+export const ALL_KINDS = "*"
+
+/** The auth kinds no glob reaches: a grant that means one names it
+ * (`vocabulary.AuthKinds`, record 0080). */
+export const AUTH_KINDS: ReadonlySet<string> = new Set([
+  "substrate.reamde.dev/core/token",
+  "substrate.reamde.dev/core/credential",
+  "substrate.reamde.dev/core/secret",
+  "substrate.reamde.dev/core/recoverykey",
+])
+
+/** The auth kinds a write grant may not name even spelled out: the loader
+ * refuses the whole agent (`vocabulary.ownerOnlyKinds`). */
+export const OWNER_ONLY_KINDS: ReadonlySet<string> = new Set([
+  "substrate.reamde.dev/core/token",
+  "substrate.reamde.dev/core/credential",
+  "substrate.reamde.dev/core/recoverykey",
+])
+
+/** Whether a grant entry is a glob rather than one kind. */
+export function isGrantGlob(entry: string): boolean {
+  return entry === ALL_KINDS || entry.endsWith("/*")
+}
+
+/** Whether one grant entry reaches a kind: `patternCovers` less the auth
+ * kinds, which no glob reaches (`vocabulary.GrantMatches`). */
+export function grantCovers(pattern: string, kind: string): boolean {
+  if (isGrantGlob(pattern) && AUTH_KINDS.has(kind)) return false
+  return patternCovers(pattern, kind)
+}
+
+/** Whether every kind `inner` grants, `outer` grants too; `inner` may be a
+ * glob itself (`vocabulary.GrantSubsumes`). */
+function grantSubsumes(outer: string, inner: string): boolean {
+  if (outer === inner) return true
+  if (!isGrantGlob(inner)) return grantCovers(outer, inner)
+  if (outer === ALL_KINDS) return true
+  return outer.endsWith("/*") && inner.startsWith(outer.slice(0, -1))
+}
+
+/** The entries a grant ends with when the picker hands back `picked` over
+ * `held`, in the order held (a pick appends, so the stored list does not
+ * reshuffle). Picking "All your data" drops what it already covers (an auth
+ * kind named on its own stays). Picking one collection while "All your
+ * data" is held narrows the grant to that collection: one the glob covers
+ * adds nothing, so the pick can only mean "just this". */
+export function nextGrant(held: string[], chosen: string[]): string[] {
+  const added = chosen.filter((k) => !held.includes(k))
+  const picked = [...held.filter((k) => chosen.includes(k)), ...added]
+  if (added.includes(ALL_KINDS)) {
+    return [
+      ALL_KINDS,
+      ...picked.filter((k) => k !== ALL_KINDS && !grantSubsumes(ALL_KINDS, k)),
+    ]
+  }
+  if (
+    held.includes(ALL_KINDS) &&
+    picked.includes(ALL_KINDS) &&
+    added.some((k) => grantSubsumes(ALL_KINDS, k))
+  ) {
+    return picked.filter((k) => k !== ALL_KINDS)
+  }
+  return picked
+}
+
+/** The entries of `held` that `next` no longer covers: what an edit takes
+ * away. Empty for an edit that only adds, or that drops an entry another
+ * one still covers. */
+export function grantNarrowing(held: string[], next: string[]): string[] {
+  return held.filter((k) => !next.some((n) => grantSubsumes(n, k)))
+}
+
+/** Whether a kind belongs among one grant's choices. A write grant never
+ * offers the owner-only kinds (the loader refuses them) or a tool's own kind
+ * (which `permissionsWith` carries through). */
+export function grantOffers(side: GrantSide, kind: string): boolean {
+  if (side === "reads") return true
+  return !OWNER_ONLY_KINDS.has(kind) && !isToolOwnedKind(kind)
+}
+
 // ── who can set up a collection ─────────────────────────────────────────────
 
 /** Whether one grant pattern covers a kind: the kind itself, a
- * `<authority>/<package>/*` or `<authority>/*` over it, or `*`. */
+ * `<authority>/<package>/*` or `<authority>/*` over it, or `*`. The auth
+ * carve-out is `grantCovers`'. */
 export function patternCovers(pattern: string, kind: string): boolean {
   if (pattern === "*" || pattern === kind) return true
   return pattern.endsWith("/*") && kind.startsWith(pattern.slice(0, -1))
