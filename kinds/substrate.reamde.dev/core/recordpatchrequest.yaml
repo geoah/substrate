@@ -12,7 +12,7 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
-  version: 18
+  version: 19
   purpose: internal
   names:
     singular: recordpatchrequest
@@ -41,7 +41,7 @@ data:
     # agent called (`put`, `patch`, `delete`) and then resolves it against the
     # target: for `put` and `patch` alike a target that is not LIVE (absent or
     # tombstoned) converts to `create` and a live one to `patch` (policy.go
-    # convertToRequest), so a selector naming either verb is what produces a
+    # putGatedRequest), so a selector naming either verb is what produces a
     # request reading `op: create`. `create` here also is not a trigger's `create`: this one
     # mints a record and CONFLICTS on a divergent collision, where `put`
     # overwrites. docs/changelog.md#change-verbs holds the three vocabularies
@@ -117,6 +117,17 @@ data:
       inverseDescription: the change requests this thread's propose calls
         landed
       description: the thread whose propose call created this request
+    # Stamped by the ENGINE when it held an effect a function returned: by a
+    # policy whose `functions` or `agents` matched it, or by the function's
+    # own `confirmation: always`, which cites no policy. Frozen with the
+    # envelope, and like `policy` it keeps installed code from deciding the
+    # request (write.go): only the owner, or the governing policy's judge,
+    # does. Absent on a request anybody wrote directly.
+    function:
+      type: reference
+      kind: substrate.reamde.dev/core/function
+      description: the function whose returned effect the engine held as this
+        request, where one did
     # Stamped by the decision transitions below; managed because nothing else
     # writes it: the envelope is frozen once proposed, and the decision is
     # the one move it ever makes.

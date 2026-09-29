@@ -661,10 +661,19 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	// covers the target may accept its own request, because it could have
 	// written the target directly and nothing escalates (the ceiling test's
 	// documented contract, core_db_test.go).
+	//
+	// A request the door held for a FUNCTION carries `function` (policy.go
+	// putGatedRequest), and is held the same way: the author's
+	// `confirmation: always` floor cites no policy, and a floor any agent
+	// with the right writes could accept would be no floor.
 	if ty.Identity == vocabulary.KindRecordPatchRequest && t.tier == substrate.TierBundle {
 		if _, deciding := states[propDecision]; deciding && !t.policyDecision {
 			if _, gated := existing.Props["policy"]; gated {
 				return nil, fmt.Errorf("%w: a policy gated this request — its judge or the owner decides it, never installed code",
+					substrate.ErrForbidden)
+			}
+			if _, held := existing.Props[propHeldFunction]; held {
+				return nil, fmt.Errorf("%w: the engine held this request for function review; the owner decides it, never installed code",
 					substrate.ErrForbidden)
 			}
 		}
@@ -1882,7 +1891,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 // `adjustedDiff` is frozen the same way, except on the one write admitAdjustedDiff
 // admitted it on (adjusting): the owner's accept.
 func guardImmutableEnvelope(sp *applySpec, adjusting bool) error {
-	for _, name := range []string{"op", "targetKind", "targetId", "diff", propAdjustedDiff, propIfVersion, "policy", "policyRevision", msgRelThread} {
+	for _, name := range []string{"op", "targetKind", "targetId", "diff", propAdjustedDiff, propIfVersion, "policy", "policyRevision", msgRelThread, propHeldFunction} {
 		next, named := sp.props[name]
 		if !named {
 			continue

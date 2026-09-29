@@ -769,9 +769,13 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor,
 			return failed(fmt.Errorf("%w: output: %w", substrate.ErrValidation, err))
 		}
 	}
-	outcome := substrate.FunctionCalled{Output: output, Effects: len(effects)}
+	// The policy door holds what it gates as requests.
+	effects, err = ds.holdEffects(ctx, fn, effects, downstream)
+	if err != nil {
+		return failed(err)
+	}
 	if len(effects) == 0 && !audit {
-		return output, 0, call.settle(ctx, outcome)
+		return output, 0, call.settle(ctx, substrate.FunctionCalled{Output: output})
 	}
 	// An audited call with no effects still commits: its run row. The body
 	// has run, so the request's cancellation no longer applies, as in settle.
@@ -780,10 +784,21 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor,
 		txCtx = context.WithoutCancel(ctx)
 	}
 	actor := substrate.Actor(fn.Actor())
+	var outcome substrate.FunctionCalled
 	err = ds.inTx(txCtx, actor, false, func(t *txn) error {
 		if err := t.applyEffects(fn.Caps.Emit, effects); err != nil {
 			return err
 		}
+		// Counted after the apply, which is what settles each held effect: a
+		// held one is a request, not among the applied effects the reply
+		// reports.
+		applied := 0
+		for _, ef := range effects {
+			if !ef.held() {
+				applied++
+			}
+		}
+		outcome = substrate.FunctionCalled{Output: output, Effects: applied}
 		if audit {
 			if err := t.putSystemRun(run.succeeded(output, effects), false); err != nil {
 				return err
@@ -794,7 +809,8 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor,
 	if err != nil {
 		return failed(err)
 	}
-	return output, len(effects), nil
+	ds.judgeHeld(effects)
+	return output, outcome.Effects, nil
 }
 
 // callHostFunction answers a direct call to a host function. One of them is

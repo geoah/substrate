@@ -600,6 +600,9 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	if req.Properties["policy"] != nil {
 		t.Fatalf("a floor cited a policy: %v", req.Properties["policy"])
 	}
+	if got := storedReferencePath(req.Properties["function"]); got != vocabulary.RecordPath(kindFunction, crewPackage+"/burn") {
+		t.Fatalf("request function = %v", got)
+	}
 	if got := storedReferencePath(req.Properties["thread"]); got != vocabulary.RecordPath(typeThread, res.Thread) {
 		t.Fatalf("request thread = %v", got)
 	}
@@ -611,6 +614,55 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	}
 	if got, err := ds.Get(ctx, taskKind, "t-burned"); err != nil || got.Properties["name"] != "burned" {
 		t.Fatalf("the accepted effect did not land: %+v %v", got, err)
+	}
+}
+
+// TestPolicyFunctionsArmGatesAToolCallsEffects: a gate naming a function
+// holds that function's effects when an agent runs it as a tool too, with
+// the thread, the policy and the function on the request. The same rule does
+// not speak for the agent's own direct writes, which name no function.
+func TestPolicyFunctionsArmGatesAToolCallsEffects(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	policy := putPolicy(t, ds, "gate-annotate", map[string]any{
+		"selector": map[string]any{"functions": []any{crewPackage + "/annotate"}},
+		"action":   "gate",
+	})
+	fake.script("budget",
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-gated"}`}}},
+		fakeTurn{content: "held."},
+	)
+	res, err := ds.CallAgent(ctx, crewPackage+"/budgeter", "annotate one")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if _, err := ds.Get(ctx, taskKind, "t-gated"); err == nil {
+		t.Fatal("a gated tool effect landed")
+	}
+	req := onlyPatchRequest(t, ds)
+	if req.Properties["op"] != "create" || req.Properties["targetId"] != "t-gated" {
+		t.Fatalf("request: %+v", req.Properties)
+	}
+	if got := storedReferencePath(req.Properties["function"]); got != vocabulary.RecordPath(kindFunction, crewPackage+"/annotate") {
+		t.Fatalf("request function = %v", got)
+	}
+	if got := storedReferencePath(req.Properties["policy"]); got != vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, policy.ID) {
+		t.Fatalf("request policy = %v", got)
+	}
+	if got := storedReferencePath(req.Properties["thread"]); got != vocabulary.RecordPath(typeThread, res.Thread) {
+		t.Fatalf("request thread = %v", got)
+	}
+
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", crewPackage+"/widget", "w-direct", map[string]any{"name": "direct"})}}},
+		fakeTurn{content: "wrote it."},
+	)
+	if _, err := ds.CallAgent(ctx, crewPackage+"/editor", "make a widget"); err != nil {
+		t.Fatalf("editor call: %v", err)
+	}
+	if _, err := ds.Get(ctx, crewPackage+"/widget", "w-direct"); err != nil {
+		t.Fatalf("a function-only gate held an agent's own write: %v", err)
 	}
 }
 

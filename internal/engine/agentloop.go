@@ -1582,41 +1582,34 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 				ef.Action, ef.ID, ef.Type, l.ag.Identity())), false
 		}
 	}
-	// The policy door, per write effect, plus the declaration's own floor
+	// The policy door, per effect, matched on this agent and on the function
+	// whose body returned the effect, plus the declaration's own floor
 	// (`confirmation: always` gates whatever any policy says). Effects are
 	// all-or-nothing, so ONE gated or refused effect holds the whole batch:
 	// half-applying around a gate would lie about what the function did. The
 	// gated effect's request is materialized before the refusal, and the
 	// message names it.
+	rules, err := l.ds.loadPolicies(ctx)
+	if err != nil {
+		return toolError(err.Error()), false
+	}
+	noop := map[int]bool{}
 	for i, ef := range effects {
-		var op string
-		switch ef.Action {
-		case effectPut:
-			op = policyOpPut
-		case "patch":
-			op = policyOpPatch
-		case "delete":
-			op = policyOpDelete
-		default:
+		verdict, rule, err := effectVerdict(rules, fn, ef, l.ag.Identity())
+		if err != nil {
+			return toolError(err.Error()), false
+		}
+		op := doorOp(ef.Action)
+		if op == "" {
 			continue
 		}
 		ty, err := l.ds.resolveType(ef.Type)
 		if err != nil {
 			return toolError(err.Error()), false
 		}
-		verdict, rule, err := l.ds.policyVerdict(ctx, ty.Identity, op, l.ag.Identity())
-		if err != nil {
-			return toolError(err.Error()), false
-		}
 		policyID, policyVersion := "", int64(0)
 		if rule != nil {
 			policyID, policyVersion = rule.id, rule.version
-		}
-		if verdict == policyAllow && fn.Confirmation == vocabulary.FunctionConfirmAlways &&
-			ty.Identity != vocabulary.KindRecordPatchRequest {
-			// The author's floor: this function's writes are never
-			// auto-applied, whatever the owner's policies say.
-			verdict, policyID, policyVersion = policyGate, "", 0
 		}
 		switch verdict {
 		case policyRefuse:
@@ -1625,20 +1618,37 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 		case policyGate:
 			l.gateOrdinal++
 			gw := &gatedWrite{
-				op: op, kind: ty, id: ef.ID, props: ef.Properties, ifVersion: ef.IfVersion,
+				op: op, kind: ty, id: ef.ID, props: ef.Properties,
+				ifVersion: ef.IfVersion, ifAbsent: ef.IfAbsent,
 				key:      fmt.Sprintf("%s/effect/%d/gate/%d", key, i, l.gateOrdinal),
 				policyID: policyID, policyVersion: policyVersion,
-				thread: l.threadID,
+				thread:   l.threadID,
+				function: callableIdentity(ef.by),
 			}
 			requestID, gerr := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &l.dispatchChanges, gw)
 			if gerr != nil {
 				return toolError(gerr.Error()), false
+			}
+			if requestID == "" {
+				// A create-only put of a live target: the no-op it would
+				// have been, so it neither applies nor holds the batch.
+				noop[i] = true
+				continue
 			}
 			l.in.tally.effects["gate"]++
 			l.ds.maybeJudge(requestID, rule)
 			return toolError(heldForReview(requestID, fmt.Sprintf(
 				"effect %s %s is held and the batch did not apply — effects are all-or-nothing", op, ty.Identity)).Error()), false
 		}
+	}
+	if len(noop) > 0 {
+		kept := make([]effect, 0, len(effects)-len(noop))
+		for i, ef := range effects {
+			if !noop[i] {
+				kept = append(kept, ef)
+			}
+		}
+		effects = kept
 	}
 	if len(effects) > 0 {
 		err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {

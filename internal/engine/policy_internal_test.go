@@ -6,6 +6,8 @@ package engine
 import (
 	"errors"
 	"testing"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // TestPolicySelectorKindsTakeTheTriggerGlob: `selector.kinds` is the trigger
@@ -49,6 +51,87 @@ func TestPolicySelectorOpsAndAgentsStayExact(t *testing.T) {
 	rule := policyRule{ops: []string{"*"}, agents: []string{"*"}, action: policyGate}
 	if rule.matches("k", policyOpPut, "crew.test.dev/crew/editor") {
 		t.Fatal("a literal * matched an op and an agent")
+	}
+}
+
+// TestPolicySelectorFunctionsArm: `functions` matches the function whose body
+// returned the effect or the root of its call chain, exactly, wherever the
+// function runs. A rule naming no function speaks for agent writes alone, so
+// a write no agent wants (a trigger's, a call's) meets only rules that name
+// its function.
+func TestPolicySelectorFunctionsArm(t *testing.T) {
+	t.Parallel()
+	const (
+		fn    = "crew.test.dev/crew/annotate"
+		other = "crew.test.dev/crew/measure"
+		agent = "crew.test.dev/crew/editor"
+	)
+	named := policyRule{functions: []string{fn}, action: policyGate}
+	empty := policyRule{action: policyGate}
+	narrowed := policyRule{functions: []string{fn}, agents: []string{agent}, action: policyGate}
+	cases := []struct {
+		name      string
+		rule      policyRule
+		agent     string
+		functions []string
+		want      bool
+	}{
+		{"named, a trigger run", named, "", []string{fn}, true},
+		{"named, a callee under the root", named, "", []string{other, fn}, true},
+		{"named, another function", named, "", []string{other}, false},
+		{"named, an agent's tool call", named, agent, []string{fn}, true},
+		{"named, an agent's own write", named, agent, nil, false},
+		{"empty, a trigger run", empty, "", []string{fn}, false},
+		{"empty, an agent's tool call", empty, agent, []string{fn}, true},
+		{"empty, an agent's own write", empty, agent, nil, true},
+		{"narrowed, a trigger run", narrowed, "", []string{fn}, false},
+		{"narrowed, that agent's tool call", narrowed, agent, []string{fn}, true},
+		{"a literal *", policyRule{functions: []string{"*"}, action: policyGate}, "", []string{fn}, false},
+	}
+	for _, c := range cases {
+		if got := c.rule.matches("k", policyOpPut, c.agent, c.functions...); got != c.want {
+			t.Fatalf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestEffectVerdictReadsTheConfirmationFloor: `confirmation: always` on the
+// function that returned an effect, or on the root of its call chain, gates
+// the effect with no policy. A proposal of its own (the request kind) is
+// exempt, and a merge under the floor is refused because no request can
+// carry it.
+func TestEffectVerdictReadsTheConfirmationFloor(t *testing.T) {
+	t.Parallel()
+	floored := &vocabulary.Function{Package: "crew.test.dev/crew", Name: "burn", Confirmation: vocabulary.FunctionConfirmAlways}
+	plain := &vocabulary.Function{Package: "crew.test.dev/crew", Name: "annotate"}
+	put := func(by *vocabulary.Function, kind string) effect {
+		return effect{Action: effectPut, Type: kind, ID: "x", by: by}
+	}
+	cases := []struct {
+		name string
+		root *vocabulary.Function
+		ef   effect
+		want string
+	}{
+		{"no floor", plain, put(plain, "k"), policyAllow},
+		{"the root's floor", floored, put(floored, "k"), policyGate},
+		{"the root's floor over a callee", floored, put(plain, "k"), policyGate},
+		{"a callee's floor under a plain root", plain, put(floored, "k"), policyGate},
+		{"a proposal of its own", floored, put(floored, vocabulary.KindRecordPatchRequest), policyAllow},
+	}
+	for _, c := range cases {
+		got, rule, err := effectVerdict(nil, c.root, c.ef, "")
+		if err != nil || got != c.want || rule != nil {
+			t.Fatalf("%s: %q %v %v, want %q", c.name, got, rule, err, c.want)
+		}
+	}
+	merge := effect{Action: effectMerge, Type: "k", ID: "x", Loser: "y", by: floored}
+	if _, _, err := effectVerdict(nil, floored, merge, ""); err == nil {
+		t.Fatal("a merge under the floor was admitted")
+	}
+	merge.by = plain
+	if got, _, err := effectVerdict(nil, plain, merge, ""); err != nil || got != policyAllow {
+		t.Fatalf("a merge with no floor: %q %v", got, err)
 	}
 }
 

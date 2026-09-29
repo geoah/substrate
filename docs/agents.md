@@ -332,7 +332,7 @@ the accept refuses. An owner's acceptance stays unbounded.
 ## The policy door
 
 Inside the emit ceiling, a `recordpatchpolicy` record says what happens to an
-agent's put, patch or delete before it lands: `allow` lands it, `refuse`
+agent's or a function's put, patch or delete before it lands: `allow` lands it, `refuse`
 bounces it, and `gate` converts it into a `recordpatchrequest` for the owner
 to decide. Policies are the owner's hand alone: a bundle-tier actor cannot
 write the kind, and policy never runs for owner or machine writes. When
@@ -367,6 +367,48 @@ data:
         - crew.example.com/bots/taskbot
     action: gate
 ```
+
+**`functions` gates what a function writes.** It lists function references,
+matched exactly against the function whose body returned the effect and
+against the root of its call chain, whose actor
+(`function:<authority>:<package>:<name>`,
+[0025](decisions/0025-an-actor-carries-the-full-authority.md)) the write lands
+under. The rule covers the function wherever it runs: a trigger delivery, a
+schedule or webhook fire, each page of a drain, a direct call, and an agent's
+tool call, where `agents` can narrow it further. A run that no agent loop
+surrounds meets only the rules whose `functions` names it, so a rule without
+the arm, `{}` included, keeps speaking for agent writes alone and never starts
+holding a sync. The write door refuses a reference the repository does not
+declare, and a host function, whose writes are the calling agent's.
+
+```yaml
+kind: substrate.reamde.dev/core/recordpatchpolicy
+metadata:
+  id: gate-triage
+data:
+  properties:
+    selector:
+      functions:
+        - crew.example.com/bots/triage
+      kinds:
+        - samples.substrate.reamde.dev/tasks/task
+    action: gate
+```
+
+A gated function effect becomes a `recordpatchrequest` after the body has
+returned, written by the function's actor in the transaction that settles the
+run, and stamped with `function` and, where a rule governed, `policy`. Nothing
+reaches the target until the request is accepted. The other effects of the
+batch still apply, in order, since no caller is left to re-plan around the
+held one; an effect that needs the held one first fails the run the way it
+would with the target absent. A refused effect fails the run, so a delivery
+parks and a direct call answers `forbidden`. The reply of a direct call counts
+the applied effects alone. A function's own `confirmation: always` holds its
+effects the same way with no policy at all
+([functions](functions.md#held-for-review)). Neither route widens the grant: an
+effect outside `permissions.writes` is refused before the door is read, never
+queued. Installed code never decides a request carrying `policy` or
+`function`; the owner does, or the governing policy's judge.
 
 **An allow outranks a gate only by naming it.** "This agent may do this
 without asking me" is an `allow` whose `overrides` names the gate it answers
