@@ -14,10 +14,12 @@ they stand on 2026-09-29
 ([#138](https://github.com/geoah/substrate/issues/138)). A token is a record
 of `substrate.reamde.dev/core/token` with a `label`, the SHA-256 of its secret
 and an optional `expiresAt`; the kind declares no `scopes`. `Authenticate`
-checks the secret's shape, finds the live token record by that hash, refuses
-it past its `expiresAt`, and hands back the dataset of the repository holding
-it. No scope, role or ACL check follows. `Login` mints with
-`ds.MintToken(ctx, label, nil)` and registration with
+checks the secret's prefix and hex encoding, finds the live token record by
+that hash, refuses it past its `expiresAt`, and hands back the dataset of the
+repository holding it. No scope, role or ACL check follows: the token adds no
+restriction of its own, and the write path's rules (system kinds, `writer:`
+properties, bundle lifecycle) bind its writes as they bind every write.
+`Login` mints with `ds.MintToken(ctx, label, nil)` and registration with
 `t.mintToken(label, nil)`, so every session token has no `expiresAt`.
 
 Both facts were stated in `docs/auth.md` and in comments (the token kind,
@@ -44,7 +46,7 @@ On login expiry:
 ## Decision Outcome
 
 Chosen: a token has full access to its repository, the absence of `scopes` is
-what means full access, and a login token stays open-ended.
+what means full access, and a login or registration token stays open-ended.
 
 Full access holds because a repository is single-user: one name, one password
 and TOTP, no sharing and no roles. A narrower token would protect the owner
@@ -62,8 +64,8 @@ What bounds a token today is the password-factor rule: `/password`,
 `/totp/enroll` and `/totp` refuse a bearer token and demand both factors, so
 a leaked token cannot change the password or the second factor. It can still
 mint more tokens through `POST /tokens` and delete any token record. The
-generic record API may only delete a token record, and the seeded `core`
-package is not writable by a token.
+generic record API may only delete a token record, and a token may not write
+the declarations of the seeded `core` package.
 
 Login tokens stay open-ended because a default expiry would sign the console
 out on a schedule (it drops its session on a `401`) and break every context
@@ -73,9 +75,9 @@ through `POST /tokens` before it lapses. Revocation is the control that works
 now. `DELETE /tokens/{id}`, the generic
 `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, the console's sign-out,
 `substratectl logout` and `substratectl token revoke` all delete the record,
-and no row means no access. An owner who wants a token to
-lapse sets `expiresAt` at mint, and `Authenticate` refuses it after that
-instant.
+and no live row means no access. An owner who wants a token to lapse sets
+`expiresAt` at mint, and `Authenticate` refuses it after that instant; the
+record stays, listed, until somebody deletes it.
 
 ### Consequences
 
@@ -113,9 +115,9 @@ This is the record a scoped-token or session-expiry design supersedes. That
 design meets three facts. Authentication writes nothing
 (`TestAuthenticationWritesNothing`), so an expiry renewed on use would append
 to the changelog on every request. The token kind is in the seeded `core`
-package, so `scopes` ships as a core version bump. `POST /tokens` decodes its
-body strictly, so a `scopes` field is refused with `400` today and no stored
-token holds one.
+package and pins its own `version`, so `scopes` ships as a bump of that
+version. `POST /tokens` decodes its body strictly, so a `scopes` field is
+refused with `400` today and no stored token holds one.
 
 A function's or agent's kind grant is a separate thing, and
 [0080](0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)
