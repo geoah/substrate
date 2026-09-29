@@ -3151,13 +3151,25 @@ def assert_drain_bounds_itself():
     note("config.drainBudgetMs = 1 for this case")
     try:
         _drive(ON_REQUEST, "the bounded-drain case")
-        owed, acct = 0, {}
-        for _ in range(36):
+        # The dispatcher writes `running` before each record-sourced delivery
+        # and replaces it when the delivery settles. While the budget is one
+        # millisecond the streams keep firing: gmail and drive start no walk
+        # and acknowledge no request, so every other stream's write to the
+        # account delivers them again. A read that says `running` is inside
+        # one of those deliveries and says nothing about how the bounded
+        # fire ended, so the state is read once a delivery has settled.
+        owed, acct, running = 0, {}, 0
+        for _ in range(180):
             acct = props(one(KIND["account"], ACCOUNT))
             owed = _pending_now(acct)
-            if owed:
+            if owed and acct.get("syncState") != "running":
                 break
-            time.sleep(5)
+            running += int(acct.get("syncState") == "running")
+            time.sleep(1)
+        check(acct.get("syncState") != "running",
+              "the account still said `running` after 180 s of reads (%d of "
+              "them `running`), so no settled delivery was ever read"
+              % running)
         check(owed > 0,
               "no stream reported pending work with a one-millisecond drain "
               "budget: syncProgress is %r and the three statuses are %s. A "
@@ -3170,14 +3182,29 @@ def assert_drain_bounds_itself():
               "the account says %r while it is merely bounded — a drain that "
               "stopped on its own budget is `ok` with work pending (or "
               "`throttled` behind a rate limit), never `erroring`" % state)
+        # Each stream's own entry as well: a healthy delivery that settles
+        # later writes the account-level `ok` over another stream's
+        # `erroring`, so the rollup alone can hide a stream that failed.
+        streams = _streams(acct)
+        failing = []
+        for stream in STREAMS:
+            said = str((streams.get(stream) or {}).get("state") or "")
+            if said not in ("ok", "throttled"):
+                failing.append("%s %r (%s)" % (
+                    stream, said, acct.get(stream + "SyncStatus")))
+        check(not failing,
+              "a stream says it failed while it is merely bounded: %s, and "
+              "the account says %r. A drain that stopped on its own budget is "
+              "`ok` with work pending, never `erroring`"
+              % (", ".join(failing), state))
         parked = [t for t in _google_triggers() if int(t.get("parked") or 0)]
         check(not parked,
               "%d google trigger(s) hold parked deliveries after a bounded "
               "fire: %s — the whole point of the self-limit is that the chain "
               "stops itself before the engine has to"
               % (len(parked), [(t.get("id"), t.get("parked")) for t in parked]))
-        note("bounded: %d unit(s) of work owed, syncState %s, nothing parked"
-             % (owed, state))
+        note("bounded: %d unit(s) of work owed, syncState %s, nothing parked "
+             "(%d read(s) said `running` first)" % (owed, state, running))
     finally:
         api("/api/v1/" + KIND["config"] + "/" + cid, "PATCH",
             {"properties": {"drainBudgetMs": None}})
@@ -3201,6 +3228,37 @@ def assert_drain_bounds_itself():
     note("the remainder was picked up: %s"
          % ", ".join("%s %s" % (s, acct.get(s + "SyncStatus"))
                      for s in STREAMS))
+
+    # The parked read above ran while the one-millisecond fire was still
+    # delivering, so a delivery could park after it. The count is final only
+    # once the dispatcher has consumed every write: no lag, nothing pending
+    # or in flight, on two polls a second apart.
+    quiet, items = 0, []
+    for _ in range(180):
+        items = _google_triggers()
+        busy = [(t.get("id"), t.get("lag") or 0, t.get("pending") or 0,
+                 t.get("inFlight") or 0) for t in items
+                if t.get("lag") or t.get("pending") or t.get("inFlight")]
+        quiet = 0 if busy else quiet + 1
+        if quiet >= 2:
+            break
+        time.sleep(1)
+    check(quiet >= 2,
+          "the google triggers still had work 180 s after the resumption, so "
+          "the parked count is not final: %s (id, lag, pending, inFlight)"
+          % busy)
+    missing = sorted(set(ON_REQUEST)
+                     - {str(t.get("id") or "") for t in items})
+    check(not missing,
+          "trigger status does not list %s, so a quiet reply says nothing "
+          "about their deliveries" % ", ".join(missing))
+    parked = [(t.get("id"), t.get("parked"), t.get("lastParkedError"))
+              for t in items if int(t.get("parked") or 0)]
+    check(not parked,
+          "%d google trigger(s) parked a delivery during the bounded fire or "
+          "its resumption: %s. The self-limit exists so the chain stops "
+          "itself before the engine has to" % (len(parked), parked))
+    note("the triggers went quiet with nothing parked")
 
 
 def assert_sync_request_is_acknowledged():
