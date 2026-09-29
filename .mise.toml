@@ -395,7 +395,7 @@ exit $status
 # base, not the files, so it is only meaningful where there is a change to
 # judge. `ci:lint` names it; a laptop runs it when it wants that answer.
 [tasks."kinds:check"]
-description = "Refuse a kinds/ or samples/ change that does not bump a declaration version"
+description = "Refuse a kinds/ or samples/ change that skips a version bump, or a new kind named with a dead word or off its family's stem"
 run = ".mise/kindscheck.sh"
 
 # `frozen:check` is the same shape as `kinds:check` and not in `lint` for the
@@ -706,7 +706,8 @@ description = "CI job `lint`: every linter and formatter check but Go's, the rel
 # added to `lint` and to neither job fails there.
 # The three diff guards ride here because they need a base branch and `lint`
 # does not have one: `kinds:check` holds a changed declaration to a version
-# bump, `frozen:check` holds the files this tree writes once, and
+# bump and a new kind's name to docs/terms.md and its family, `frozen:check`
+# holds the files this tree writes once, and
 # `decisions:check` holds a decision number against the other branches.
 depends = [
   "fmt:yaml:check",

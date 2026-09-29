@@ -6,6 +6,7 @@ pages and the code disagree, the code is right.
 Dead words, and what replaced them: **entity** → record, **group** → authority,
 **type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
+**integration** → provider, **configType** and **singleton** → input,
 **relationship** and **edge** → reference, **plural** → the kind's name, the
 third segment of its reference (decision 0033), as an address; a plural
 display form is the kind's declared `label` (decision 0117), **incoming** → the

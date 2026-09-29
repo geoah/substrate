@@ -16,6 +16,11 @@
 # upgrade offer all key on `version`. A definition that changes under an unmoved
 # version is an upgrade no repository will ever receive, silently.
 #
+# The same diff holds the NAME of every kind it adds (a rename adds one): no
+# dead word from docs/terms.md, and the stem of the family it ends like
+# (cmd/vocabularydiff/names.go). The loader sees one declaration and cannot
+# judge either.
+#
 # KINDS_CHECK_BASE overrides the base commit, for trying the check by hand:
 #   KINDS_CHECK_BASE=HEAD~1 mise run kinds:check
 set -euo pipefail
@@ -60,6 +65,6 @@ for tree in kinds samples; do
   if git rev-parse --verify --quiet "$base_commit:$tree" >/dev/null; then
     git archive "$base_commit" "$tree" | tar -x -C "$tmp"
   fi
-  go run ./cmd/vocabularydiff "$tmp/$tree" "$tree" || status=1
+  go run ./cmd/vocabularydiff -terms docs/terms.md "$tmp/$tree" "$tree" || status=1
 done
 exit "$status"
