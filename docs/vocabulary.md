@@ -464,16 +464,15 @@ beside the two property names, so a rebuild replays the rename as values and
 never reads the declaration
 ([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
 Each rewritten record moves its `version`, and a record that did not carry the
-old name is left alone. So is a tombstoned one: it keeps the old name, and a
-put that restores it revives the value under a name the kind no longer
-declares, exactly as a dropped property does; move it by hand or leave the
-record dead. What travels with the value:
+old name is left alone. So is a tombstoned one: it keeps the old name until a
+put restores it, and that put moves the value to the new name
+([Restoring a tombstone](#restoring-a-tombstone)). What travels with the value:
 the property's manager row (who last wrote it, at which tier), the offer rows a
 mapping wrote onto it, and the embeddings of an `embed: true` property, which
 are rekeyed and re-enqueued under the new name so no vector is bought twice. A
 secret moves as its sealed reference. The key stays on the stored declaration
-afterwards; nothing acts on it again, because no live record carries the old
-name.
+afterwards, and the one thing that acts on it again is a put restoring a
+record tombstoned before the rename.
 
 A rename moves values and changes nothing else about them. Whatever else the
 new declaration changes is classified against the old one and counted under
@@ -576,8 +575,9 @@ where a rebuild replays the removal as the write it was. A `type: state`
 property drops the same way: its state is removed from every live record, as
 the same `null` step. The drop is not a transition, so it writes no stamp and
 runs no `onEnter` effect or `notifies:` resume. A record that was a tombstone
-at the drop keeps its state until a put restores it, and the restored record
-holds only the machines the kind still declares. A mapping whose `where:`
+at the drop keeps its values and its state until a put restores it, and the
+restored record holds only the properties and machines the kind still
+declares. A mapping whose `where:`
 names the dropped property refuses the apply, and a trigger's `when:` guard
 that reads it finds no key and evaluates false. A drop retires no name;
 `retired:` does that ([Retiring a name](#retiring-a-name)).
@@ -618,10 +618,45 @@ because the key means a value the record was missing was filled in.
 A converted record is a source write like any other, so the
 records a mapping from its kind projects onto follow it in the same
 transaction, offer rows included. A tombstoned record is neither counted nor
-converted, as for a rename: a put that restores it revives the old spelling.
+converted; the put that restores it is
+([Restoring a tombstone](#restoring-a-tombstone)).
 The cost is the same count a rename has, and the same replay guarantee: a
 rebuild and an import reproduce the converted records from the changelog
 alone.
+
+### Restoring a tombstone
+
+A conversion rewrites live records alone, so a record deleted before an apply
+keeps the shape it was deleted in. The `put` that restores it rewrites that
+shape into the one the kind declares now, before the put's own properties
+merge in
+([decision 0144](decisions/0144-a-restoring-put-completes-the-conversions-a-tombstone-missed.md)):
+
+- a value under a name some property declares as its `renamedFrom:` moves to
+  that property, with its manager row;
+- a value holding a spelling some value declares as its `renamedFrom:` takes
+  the new spelling;
+- a value the kind no longer admits is removed with its manager row, its
+  embedding and its sealed material: a property it no longer declares, or a
+  value its declaration refuses (a removed enum value, a changed type, a
+  tightened pattern or bound);
+- a `required:` property with a `default:` receives the default where the
+  record holds no value, managed by the actor that restored it.
+
+A property the put names is the put's: its value, or its `null`, stands. The
+declaration is the only history read, so a name or a spelling it no longer
+mentions (a second rename over the first) is removed rather than followed.
+With `status` declared as above and a record deleted while it held `active`:
+
+```bash
+substratectl apply -f widget.yaml   # a put onto the tombstone, without `status`
+substratectl get <authority>/shop/widget w1 -o yaml   # status: working
+```
+
+The restoring entry names each step under the keys a conversion uses
+(`renamed`, `remapped`, `backfilled`, `nulled`), and its delta carries the
+values, so a rebuild replays the restored row without reading a declaration.
+A record nobody restores is never rewritten.
 
 ## Retiring a name
 

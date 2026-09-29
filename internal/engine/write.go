@@ -811,6 +811,18 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		srcMappings = nil
 	}
 
+	// A put onto a tombstone brings the stored properties back, and no
+	// conversion reached them while the record was deleted: they are
+	// rewritten into the shape the kind declares now before the merge, so
+	// the record returns as the apply would have left it (restore.go).
+	var shape restoreShape
+	if sp.resurrect {
+		var err error
+		if shape, err = t.reshapeRestored(sp, row); err != nil {
+			return nil, err
+		}
+	}
+
 	// A blob-ref must name a known blob: the shape passed
 	// coercion, the existence gate is here inside the transaction.
 	if err := t.validateBlobRefs(sp.ty, sp.props); err != nil {
@@ -1223,6 +1235,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// A write that changed nothing writes no changelog row: re-syncing
 	// identical data must stay silent.
 	if changed {
+		// The manager, vector and sealed rows follow what the restore
+		// rewrote, as a conversion's follow a live record's (restore.go).
+		if err := t.settleRestoreShape(sp.ref(), sp, shape); err != nil {
+			return nil, err
+		}
 		// The manager ledger, per accepted property: a delete clears the row
 		// (release — record 51), a recompute credits the WINNING SOURCE's
 		// actor at the MACHINE tier (attribution never pins — the machine's
@@ -1273,12 +1290,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if sp.resurrect {
 			payload["restored"] = true
 		}
-		if len(undeclaredStates) > 0 {
-			payload[payloadNulled] = undeclaredStates
-		}
-		if len(accepted) > 0 {
-			payload["properties"] = accepted
-		}
+		shape.annotate(payload, accepted, undeclaredStates)
 		if len(managers) > 0 {
 			payload["managers"] = managers
 		}
