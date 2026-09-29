@@ -100,13 +100,19 @@ export function newViewId(existing: readonly SavedView[]): string {
 
 /** The view the page shows now, under a name. The default sort and an open
  * tree are left out, so the view keeps meaning "the default" if the default
- * ever moves. */
+ * ever moves. Only the id, collection and name are taken from `base`: a view
+ * being replaced passes itself, and a filter, sort, tree switch or grouping it
+ * held that the page no longer shows must not survive the replace. */
 export function viewFromState(
   base: { id: string; collection: string; name: string },
   state: ViewState,
   defaultSort: string
 ): SavedView {
-  const view: SavedView = { ...base, name: base.name.trim() }
+  const view: SavedView = {
+    id: base.id,
+    collection: base.collection,
+    name: base.name.trim(),
+  }
   if (state.filter.length) view.filter = [...state.filter]
   if (state.sort !== defaultSort) view.sort = state.sort
   view.columns = [...state.columns]

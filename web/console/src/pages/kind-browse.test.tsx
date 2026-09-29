@@ -3,7 +3,8 @@
  * at `?page=2` before the registry has loaded must not fall back to page one
  * when the kind's metadata arrives and the view turns into a tree. Only a
  * reader's own change to the view renumbers it. The head names the
- * collection for a reader and keeps the kind reference for technical mode. */
+ * collection for a reader and keeps the kind reference for technical mode.
+ * Saved views and the star are held through the real preference record. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -16,8 +17,17 @@ import {
 } from "@testing-library/react"
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
 import type { ReactNode } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest"
 
+import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo } from "@/lib/api/types"
 import {
@@ -328,5 +338,309 @@ describe("views, grouping and the star", () => {
     expect(
       screen.getByRole("button", { name: "More for the “Sized” view" })
     ).toBeTruthy()
+  })
+})
+
+/** The same page under the real preference provider, over a stubbed wire:
+ * what a saved view, a rename, a delete and the star write is the
+ * `consolepreference` record itself, the one the sidebar reads. */
+describe("through the preference record", () => {
+  const PREFERENCE: KindInfo = {
+    identity: "substrate.reamde.dev/core/consolepreference",
+    name: "consolepreference",
+    authority: "substrate.reamde.dev",
+    package: "core",
+    version: 3,
+    source: "builtin",
+    description: "",
+    definition: {
+      authority: "substrate.reamde.dev",
+      package: "core",
+      properties: {
+        collapsed: { type: "string", repeated: true },
+        favorites: { type: "string", repeated: true },
+        views: { type: "object", repeated: true },
+      },
+    },
+  }
+
+  let stored: Record<string, unknown> = {}
+  let version = 1
+  const writes: Record<string, unknown>[] = []
+
+  beforeAll(() => {
+    // `SidebarProvider`, inside the preference provider, asks whether the
+    // viewport is a phone; jsdom has no media queries.
+    window.matchMedia = (media: string) =>
+      ({
+        media,
+        matches: false,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      }) as MediaQueryList
+  })
+
+  beforeEach(() => {
+    stored = {}
+    version = 1
+    writes.length = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (!String(url).endsWith("/consolepreference/navigation"))
+          return new Response("{}", { status: 404 })
+        if (init?.method === "PUT") {
+          const body = JSON.parse(String(init.body))
+          writes.push(body.properties)
+          stored = body.properties
+          version++
+        }
+        return new Response(
+          JSON.stringify({
+            id: "navigation",
+            kind: PREFERENCE.identity,
+            version,
+            properties: stored,
+          }),
+          { status: 200 }
+        )
+      })
+    )
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  async function renderPage(searchParams: string) {
+    const urls: URLSearchParams[] = []
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = render(
+      <QueryClientProvider client={client}>
+        <ConsolePreferencesProvider>
+          <NuqsTestingAdapter
+            hasMemory
+            searchParams={searchParams}
+            onUrlUpdate={(e) => urls.push(e.searchParams)}
+          >
+            <KindBrowsePage />
+          </NuqsTestingAdapter>
+        </ConsolePreferencesProvider>
+      </QueryClientProvider>
+    )
+    await waitFor(async () => {
+      await act(async () => resolveRegistry([team, PREFERENCE]))
+      expect(view.container.querySelector("[data-slot=page-header]")).not.toBe(
+        null
+      )
+    })
+    return { url: () => urls[urls.length - 1] }
+  }
+
+  const sized = (id: string, size: string) => ({
+    id,
+    kind: TEAM,
+    version: 1,
+    createdAt: "2026-09-27T00:00:00Z",
+    updatedAt: "2026-09-27T00:00:00Z",
+    properties: { name: id, size },
+  })
+  const headers = () =>
+    screen.getAllByRole("columnheader").map((th) => th.textContent?.trim())
+  const tabs = () => screen.getByRole("group", { name: "Views" })
+  const pressedTabs = () =>
+    [...tabs().querySelectorAll("[aria-pressed=true]")].map(
+      (b) => b.textContent
+    )
+  async function press(name: string | RegExp) {
+    const button = await screen.findByRole("button", { name })
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(false)
+    )
+    fireEvent.click(button)
+  }
+  async function moveColumn(label: string, direction: "up" | "down") {
+    await press(/Configure columns/)
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Move ${label} ${direction}` })
+    )
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    })
+  }
+
+  it("saves the view to the record, and picking it again restores filter, sort and columns", async () => {
+    pageRecords = [sized("a", "small"), sized("b", "small")]
+    const page = await renderPage(
+      "?filter=size~eq~small&sort=size:asc&nest=false"
+    )
+    await waitFor(() =>
+      expect(headers()).toEqual(["Name", "Size", "Name", "Updated"])
+    )
+    await moveColumn("Updated", "up")
+    const savedHeaders = ["Name", "Size", "Updated", "Name"]
+    await waitFor(() => expect(headers()).toEqual(savedHeaders))
+
+    await press("Save view")
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Small ones" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(writes).toHaveLength(1))
+    const [view] = writes[0].views as Record<string, unknown>[]
+    expect(view).toEqual({
+      id: expect.any(String),
+      collection: TEAM,
+      name: "Small ones",
+      filter: ["size~eq~small"],
+      sort: "size:asc",
+      columns: expect.arrayContaining(["prop:name", "updatedAt"]),
+      hidden: [],
+      nest: false,
+    })
+    const columns = view.columns as string[]
+    expect(columns.indexOf("updatedAt")).toBeLessThan(
+      columns.indexOf("prop:name")
+    )
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small ones"]))
+
+    // All is the collection as it opens: no filter, the default order.
+    fireEvent.click(screen.getByRole("button", { name: "All" }))
+    await waitFor(() => expect(pressedTabs()).toEqual(["All"]))
+    expect(page.url().get("filter")).toBeNull()
+    expect(page.url().get("sort")).toBeNull()
+    // The columns are the reader's own, so All leaves them; move one back.
+    await moveColumn("Updated", "down")
+    await waitFor(() =>
+      expect(headers()).toEqual(["Name", "Size", "Name", "Updated"])
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Small ones" }))
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small ones"]))
+    expect(page.url().get("filter")).toBe("size~eq~small")
+    expect(page.url().get("sort")).toBe("size:asc")
+    expect(page.url().get("nest")).toBe("false")
+    await waitFor(() => expect(headers()).toEqual(savedHeaders))
+
+    // Another browser: nothing but the record. The view is there, and
+    // picking it shows the same filter, sort, nesting and columns.
+    cleanup()
+    localStorage.clear()
+    const other = await renderPage("")
+    await waitFor(() => expect(pressedTabs()).toEqual(["All"]))
+    expect(headers()).toEqual(["Name", "Size", "Name", "Updated"])
+    await press("Small ones")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small ones"]))
+    expect(other.url().get("filter")).toBe("size~eq~small")
+    expect(other.url().get("sort")).toBe("size:asc")
+    expect(other.url().get("nest")).toBe("false")
+    await waitFor(() => expect(headers()).toEqual(savedHeaders))
+  })
+
+  it("renames and deletes a saved view on the record", async () => {
+    stored = {
+      favorites: [],
+      views: [
+        {
+          id: "v1",
+          collection: TEAM,
+          name: "Small ones",
+          filter: ["size~eq~small"],
+        },
+      ],
+    }
+    await renderPage("?filter=size~eq~small")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small ones"]))
+
+    await press("More for the “Small ones” view")
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }))
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Little" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }))
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0].views).toEqual([
+      {
+        id: "v1",
+        collection: TEAM,
+        name: "Little",
+        filter: ["size~eq~small"],
+      },
+    ])
+    await waitFor(() => expect(pressedTabs()).toEqual(["Little"]))
+
+    await press("More for the “Little” view")
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete…" }))
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await waitFor(() => expect(writes).toHaveLength(2))
+    expect(writes[1].views).toEqual([])
+    await waitFor(() => expect(tabs().textContent).not.toContain("Little"))
+  })
+
+  it("saves changes to a view as the page shows them, a cleared filter included", async () => {
+    stored = {
+      favorites: [],
+      views: [
+        {
+          id: "v1",
+          collection: TEAM,
+          name: "Small ones",
+          filter: ["size~eq~small"],
+          sort: "size:asc",
+        },
+      ],
+    }
+    const page = await renderPage("?filter=size~eq~small&sort=size:asc")
+    await press("Small ones")
+    // No row matches, so the empty grid offers to clear the filter.
+    await press("Clear filters")
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small ones, changed"]))
+    expect(page.url().get("sort")).toBe("size:asc")
+
+    await press("More for the “Small ones” view")
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Save changes to this view…",
+      })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(writes).toHaveLength(1))
+    const [view] = writes[0].views as Record<string, unknown>[]
+    expect(view).toEqual({
+      id: "v1",
+      collection: TEAM,
+      name: "Small ones",
+      sort: "size:asc",
+      columns: expect.any(Array),
+      hidden: [],
+    })
+    await waitFor(() => expect(pressedTabs()).toEqual(["Small ones"]))
+  })
+
+  it("stars and unstars the collection in the favorites the sidebar lists", async () => {
+    await renderPage("")
+    await press("Add Teams to favorites")
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0].favorites).toEqual([TEAM])
+    const star = await screen.findByRole("button", {
+      name: "Remove Teams from favorites",
+    })
+    expect(star.getAttribute("aria-pressed")).toBe("true")
+    await press("Remove Teams from favorites")
+    await waitFor(() => expect(writes).toHaveLength(2))
+    expect(writes[1].favorites).toEqual([])
+  })
+
+  it("presses the star for a collection the sidebar starred", async () => {
+    stored = { favorites: [TEAM] }
+    await renderPage("")
+    const star = await screen.findByRole("button", {
+      name: "Remove Teams from favorites",
+    })
+    expect(star.getAttribute("aria-pressed")).toBe("true")
   })
 })
