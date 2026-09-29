@@ -15,10 +15,8 @@ package engine
 import (
 	"archive/tar"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -294,13 +292,14 @@ func (e *export) writeFile(tw *tar.Writer, name, src string, size int64) error {
 	return err
 }
 
-// writeBlob streams one stored blob out of the store into the archive,
-// hashing it on the way: the header takes the size the manifest declares, so
-// nothing is held in memory but the copy buffer, and the digest is checked
-// once the bytes are through. A store that answers other bytes fails the
-// export here, which ends the stream, so a restore never holds a blob that is
-// not its digest's; the archive is already committed to the entry by then, so
-// the failure is the export's and not a shorter archive.
+// writeBlob streams one stored blob out of the store into the archive through
+// blobbytes.OpenVerified: the header takes the size the manifest declares, so
+// nothing is held in memory but the copy buffer, and the reader holds the
+// blob's last chunk back until the digest checks. A store that answers other
+// bytes fails the export here with the entry still short, which ends the
+// stream, so a restore never holds a blob that is not its digest's; the
+// archive is already committed to the entry by then, so the failure is the
+// export's and not a shorter archive.
 //
 // A `stored` manifest that declares no size (verify passes one: it hashes
 // the bytes and compares the size only when the manifest claims one) is read
@@ -317,7 +316,7 @@ func (e *export) writeBlob(tw *tar.Writer, name string, store blobbytes.Store, b
 		}
 		return e.writeBytes(tw, name, data)
 	}
-	rc, err := store.Open(e.ctx, b.digest)
+	rc, err := blobbytes.OpenVerified(e.ctx, store, b.digest, b.size)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: read blob %s: %w", b.digest, err)
 	}
@@ -325,18 +324,8 @@ func (e *export) writeBlob(tw *tar.Writer, name string, store blobbytes.Store, b
 	if err := e.header(tw, name, b.size); err != nil {
 		return err
 	}
-	h := sha256.New()
-	// One byte past the declared size tells a longer object from an exact
-	// one; the tar writer refuses the overrun, and the message names the blob.
-	n, err := io.CopyN(tw, io.TeeReader(rc, h), b.size)
-	if err != nil {
+	if n, err := io.Copy(tw, rc); err != nil {
 		return fmt.Errorf("substrate/engine: blob %s: %d of %d bytes copied: %w", b.digest, n, b.size, err)
-	}
-	if extra, err := io.ReadFull(rc, make([]byte, 1)); extra > 0 || (err != nil && !errors.Is(err, io.EOF)) {
-		return fmt.Errorf("substrate/engine: blob %s holds more than the %d bytes its manifest declares", b.digest, b.size)
-	}
-	if got := substrate.BlobDigestPrefix + hex.EncodeToString(h.Sum(nil)); got != b.digest {
-		return fmt.Errorf("substrate/engine: blob %s read back as %s", b.digest, got)
 	}
 	return nil
 }

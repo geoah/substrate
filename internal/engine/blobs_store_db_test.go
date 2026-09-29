@@ -6,17 +6,22 @@ package engine_test
 // bytes are missing, and that whatever a crash does leave is collectable.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/api"
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -92,6 +97,108 @@ func TestBlobFSRoundTrip(t *testing.T) {
 	if again.Name != "notes.txt" {
 		t.Fatalf("a second upload renamed the blob to %q", again.Name)
 	}
+}
+
+// One byte flipped in the store, the length unchanged, is a blob only the hash
+// can tell from its digest's. Every read that serves the bytes refuses it,
+// naming the digest: the engine's read, the API's `GET /blobs/{digest}` (a
+// 500 whose body names the digest, and no byte of the blob) and the export,
+// which stops before the blob's last byte. `repository verify` reports it.
+func TestBlobFSReadRefusesAFlippedByte(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t)
+	_, _, secret := registerUser(t, svc, "ada.example.com")
+	ds, err := svc.Dataset(ctx, "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := engine.DataRootOf(svc)
+	srv := httptest.NewServer(api.New(api.Config{Service: svc}))
+	defer srv.Close()
+
+	data := []byte("bytes a disk fault flips one bit of")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, data, "")
+	if err != nil {
+		t.Fatalf("put blob: %v", err)
+	}
+	// Before the damage the read keeps its size and its bytes.
+	status, body := getBlobOverAPI(t, srv.URL, secret, info.Digest)
+	if status != http.StatusOK || !bytes.Equal(body, data) {
+		t.Fatalf("the intact blob read %d %q, want 200 %q", status, body, data)
+	}
+	got, read, err := ds.GetBlob(ctx, info.Digest)
+	if err != nil || !bytes.Equal(read, data) || got.Size != int64(len(data)) {
+		t.Fatalf("the intact blob read (%v, %q, %v), want %d bytes %q", got, read, err, len(data), data)
+	}
+
+	flipped := bytes.Clone(data)
+	flipped[len(flipped)/2] ^= 0x01
+	if err := os.WriteFile(objectPath(root, ds, info.Digest), flipped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, read, err = ds.GetBlob(ctx, info.Digest)
+	wantErr(t, err, substrate.ErrCorrupt, "read of a flipped byte")
+	if !strings.Contains(err.Error(), info.Digest) || !strings.Contains(err.Error(), "hashes to "+blobDigestOf(flipped)) {
+		t.Fatalf("the refusal does not name the digest and what the bytes hash to: %v", err)
+	}
+	if read != nil {
+		t.Fatalf("a refused read handed out %q", read)
+	}
+
+	status, body = getBlobOverAPI(t, srv.URL, secret, info.Digest)
+	if status != http.StatusInternalServerError {
+		t.Fatalf("GET of the flipped blob answered %d, want 500: %s", status, body)
+	}
+	var env substrate.ErrorEnvelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("the 500 is not a problem body: %v: %s", err, body)
+	}
+	if env.Error.Code != "internal" || !strings.Contains(env.Error.Message, info.Digest) {
+		t.Fatalf("the problem body = %+v, want code internal naming %s", env.Error, info.Digest)
+	}
+	if bytes.Contains(body, flipped) {
+		t.Fatalf("the 500 carried the damaged bytes: %s", body)
+	}
+
+	ex, err := ds.Export(ctx)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	var archive bytes.Buffer
+	_, err = ex.WriteTo(&archive)
+	if !errors.Is(err, blobbytes.ErrDigestMismatch) || !strings.Contains(err.Error(), info.Digest) {
+		t.Fatalf("the export of a flipped blob ended with %v, want a digest mismatch naming %s", err, info.Digest)
+	}
+	if bytes.Contains(archive.Bytes(), flipped) {
+		t.Fatal("the export wrote the damaged blob whole before it failed")
+	}
+
+	report := mustVerify(t, svc, ds.Repository().ID)
+	if report.OK || !findingContaining(report, "blob "+info.Digest+": the stored bytes hash to "+blobDigestOf(flipped)) {
+		t.Fatalf("verify did not report the flipped blob: %+v", report)
+	}
+}
+
+// getBlobOverAPI is one GET /api/v1/blobs/{digest}, read whole.
+func getBlobOverAPI(t *testing.T, serverURL, secret, digest string) (int, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, serverURL+"/api/v1/blobs/"+digest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+secret)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET the blob: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read the blob response: %v", err)
+	}
+	return resp.StatusCode, body
 }
 
 func TestBlobFSIsRepositoryScoped(t *testing.T) {

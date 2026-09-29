@@ -382,9 +382,14 @@ func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobI
 	if err != nil {
 		return nil, nil, err
 	}
+	// ReadAll hashes the bytes against the digest before it returns any, so a
+	// damaged object is refused here and never reaches a response.
 	data, err := blobbytes.ReadAll(ctx, store, digest, m.size)
 	if errors.Is(err, blobbytes.ErrNotStored) {
 		return nil, nil, notFound
+	}
+	if errors.Is(err, blobbytes.ErrDigestMismatch) {
+		return nil, nil, fmt.Errorf("%w: %w", substrate.ErrCorrupt, err)
 	}
 	if err != nil {
 		return nil, nil, err
