@@ -139,14 +139,18 @@ Four things follow from a token being a record:
 - **A token has full access to its repository.** There are no scopes, no
   roles, no ACLs, and no actor set on the token. Authentication is a hash
   lookup that finds the token record, and the repository holding that record
-  _is_ the request's scope.
+  _is_ the request's scope. A later `scopes` property would be optional, and
+  a token without it keeps full access
+  ([0143](decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md)).
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
   `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from
   `substratectl token revoke`.
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
-  without one lives until it is deleted.
+  without one lives until it is deleted. Login and registration mint theirs
+  without one, so a session lasts until it is signed out
+  ([0143](decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md)).
 - **They list and read like anything else.**
   `GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/core/token"]}`
   is an ordinary list, and every mint and revocation is a row in the

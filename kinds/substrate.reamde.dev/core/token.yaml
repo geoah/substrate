@@ -17,7 +17,9 @@ data:
   # A token has FULL ACCESS to its repository: no scopes, no actor set, no
   # roles. What it carries is what it is — a label, the SHA-256
   # of a high-entropy secret shown once at mint, and an optional expiry.
-  # Sessions ARE these records: login mints one.
+  # Sessions ARE these records: login mints one, with no expiresAt. A later
+  # `scopes` property is optional and its absence keeps full access
+  # (decision record 0143).
   #
   # Minting is the auth endpoints' (attributed to the substrate) and the
   # generic surface refuses writes to this kind — but REVOKING is an ordinary
