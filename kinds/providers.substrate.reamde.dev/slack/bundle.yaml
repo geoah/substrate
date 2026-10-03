@@ -151,7 +151,15 @@ data:
   # 17, #718: a `missing_scope` refusal names the `needed` and `provided`
   # scopes Slack sends beside it, in `postmessage`'s error and in the
   # sync's `syncError`, so the caller knows which scope to grant.
-  version: 18
+  #
+  # 18, #789: every shipped trigger carries a `label`.
+  #
+  # 19: the thread walk takes threads the radar saw with a new reply
+  # (`streamCursors.newReplies`) before watch re-checks (`threads`), and
+  # never queues one thread twice. `message` gains the optional
+  # `latestReplyAt` datetime, the instant of `latest_reply`. Widening only:
+  # no default, no rewrite of stored rows, which take it at their next write.
+  version: 19
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -1795,6 +1803,12 @@ data:
       description: >-
         `latest_reply` — the newest reply in this thread. On a thread parent.
         The thread walk descends only where this is newer than the cursor
+    latestReplyAt:
+      type: datetime
+      displayName: Latest reply at
+      description: >-
+        `latest_reply` as an instant: when the newest reply in this thread
+        was posted. On a thread parent, and known before the reply is fetched
     parentUser:
       type: reference
       kind: providers.substrate.reamde.dev/slack/user
@@ -3016,6 +3030,12 @@ data:
     # ever seen. Newest first, because an old silent thread is the one that can
     # be dropped.
     WATCH_MAX = 200
+    # The two thread queues, in the order `replies` drains them. `newReplies`
+    # holds threads the radar saw with a reply newer than the replies cursor;
+    # `threads` holds watch re-checks and retries, most of which find nothing.
+    # One FIFO let a full walk's watch re-checks (1,506 on the owner's
+    # account) sit ahead of every thread known to have a new reply.
+    THREAD_QUEUES = ("newReplies", "threads")
     # How far behind its stored cursor an incremental history walk starts
     # (#711). A message's FIRST reply never appears in `conversations.history`
     # and never touches the watch, which holds only parents seen WITH replies;
@@ -3196,8 +3216,8 @@ data:
         if not isinstance(cur, dict):
             return 0
         n = sum(len(cur.get(k) or []) for k in
-                ("queue", "info", "threads", "hydrate", "files", "bots",
-                 "rosters"))
+                ("queue", "info", "newReplies", "threads", "hydrate", "files",
+                 "bots", "rosters"))
         n += sum(1 for k in ("work", "reply", "roster") if cur.get(k))
         if cur.get("cursor") or (cur.get("phase") or "done") != "done":
             n += 1
@@ -3214,8 +3234,8 @@ data:
         if not isinstance(cur, dict):
             return ""
         bits = []
-        for k in ("queue", "info", "threads", "hydrate", "files", "bots",
-                  "rosters"):
+        for k in ("queue", "info", "newReplies", "threads", "hydrate", "files",
+                  "bots", "rosters"):
             if cur.get(k):
                 bits.append("%s x%d" % (k, len(cur[k])))
         for k in ("work", "reply", "roster"):
@@ -3257,8 +3277,8 @@ data:
                    "replies", "hydrate", "files", "bots", "members")
     # Every queue `_pending()` counts, attributed to the stream that drains it.
     QUEUE_STREAM = {"queue": "messages", "info": "conversations",
-                    "threads": "messages", "hydrate": "messages",
-                    "files": "messages", "bots": "messages",
+                    "newReplies": "messages", "threads": "messages",
+                    "hydrate": "messages", "files": "messages", "bots": "messages",
                     "rosters": "conversations"}
     WORK_STREAM = {"work": "messages", "reply": "messages",
                    "roster": "conversations"}
@@ -4279,6 +4299,11 @@ data:
         if msg.get("latest_reply"):
             props["latestReply"] = _msg_ref(host, aid, team, channel,
                                             msg["latest_reply"])
+            # The instant beside the reference: the reply row exists only
+            # once its thread is walked, and the walk can be hours behind.
+            at_reply = _ts_iso(msg["latest_reply"])
+            if at_reply:
+                props["latestReplyAt"] = at_reply
         # `reply_users` is ONE array of TWO namespaces: Slack documents that it
         # can hold bot ids, and a B… id is not a user. A reference pins one kind,
         # so the array is split by the namespace Slack itself encodes in the
@@ -5174,42 +5199,86 @@ data:
         patch["threadWatch"] = watch or None
         _state_patch(host, aid, team, cid, patch)
         threads = list(resume.get("threads") or [])
+        known = list(resume.get("newReplies") or [])
+        walking = (resume.get("reply") or {}).get("thread")
         # A refused thread counts as queued, so neither the radar nor the
         # watch queues it again.
-        queued = {ts for _c, ts in threads if _c == cid} | {
-            ts for ts in list(work["threads"]) + list(watch)
-            if _refused(resume, "thread", [cid, ts])}
+        refused = {ts for ts in list(work["threads"]) + list(watch)
+                   if _refused(resume, "thread", [cid, ts])}
+        queued = {ts for _c, ts in known if _c == cid} | refused
+        # A thread the radar found has a reply this conversation has not
+        # taken, so it joins `newReplies`, which drains before the watch
+        # re-checks in `threads` (most of which find nothing). One already
+        # waiting in `threads` moves over; the one being walked stays put.
+        promoted = set()
         for ts in work["threads"]:
-            if ts not in queued:
-                queued.add(ts)
-                threads.append([cid, ts])
+            if ts in queued or [cid, ts] == walking:
+                continue
+            queued.add(ts)
+            promoted.add(ts)
+            known.append([cid, ts])
+        if promoted:
+            threads = [t for t in threads
+                       if not (t[0] == cid and t[1] in promoted)]
+        queued |= {ts for _c, ts in threads if _c == cid}
         if work["oldest"] and rewatch:
             # An INCREMENTAL walk: re-check every watched thread, not only the
             # parents this window happened to return. Not on the history-first
             # pass, which runs every resumed run: re-queueing up to WATCH_MAX
             # threads per conversation each time would refill the `replies`
-            # backlog as fast as it drains.
+            # backlog as fast as it drains. A thread already in either queue
+            # is not queued twice, so the backlog holds at most WATCH_MAX
+            # threads per conversation.
             for ts in watch:
                 if ts not in queued:
                     queued.add(ts)
                     threads.append([cid, ts])
         _ = is_im
-        return dict(resume, queue=queue[1:], work=None, threads=threads)
+        return dict(resume, queue=queue[1:], work=None, threads=threads,
+                    newReplies=known)
+
+
+    def _unique_threads(known, threads):
+        """Both thread queues with every [channel, ts] held once, in order: a
+        thread in `newReplies` leaves `threads`. A state stored before the
+        history walk checked both queues can hold a thread twice, and a retry
+        re-queues a thread the walk may have queued again."""
+        seen = set()
+        out = []
+        for q in (known, threads):
+            kept = []
+            for t in q:
+                k = tuple(t)
+                if k not in seen:
+                    seen.add(k)
+                    kept.append(list(t))
+            out.append(kept)
+        return out[0], out[1]
 
 
     def _phase_replies(host, base, token, resume):
         aid, team = resume["account"], resume["team"]
-        threads = list(resume.get("threads") or [])
         inflight = (resume.get("reply") or {}).get("thread")
-        while threads and list(threads[0]) != inflight \
-                and _refused(resume, "thread", threads[0], threads[0][0]):
-            threads = threads[1:]
-        if not threads:
-            return dict(resume, phase="hydrate", threads=[])
+        queues = {}
+        for name in THREAD_QUEUES:
+            q = list(resume.get(name) or [])
+            while q and list(q[0]) != inflight \
+                    and _refused(resume, "thread", q[0], q[0][0]):
+                q = q[1:]
+            queues[name] = q
+        resume = dict(resume, **queues)
+        # A thread already part-walked finishes first, whichever queue holds
+        # it; otherwise `newReplies` drains before `threads`.
+        key = next((n for n in THREAD_QUEUES
+                    if queues[n] and list(queues[n][0]) == inflight), None) \
+            or next((n for n in THREAD_QUEUES if queues[n]), None)
+        if key is None:
+            return dict(resume, phase="hydrate")
+        threads = queues[key]
         cid, parent_ts = threads[0]
         ceid, _seid, state = _sync_state(host, aid, team, cid)
         if not (host.records.get(CONV_TYPE, ceid) or {}):
-            return dict(resume, threads=threads[1:], reply=None)
+            return dict(resume, reply=None, **{key: threads[1:]})
         work = resume.get("reply") or {}
         if work.get("thread") != [cid, parent_ts]:
             work = {"thread": [cid, parent_ts], "cursor": "", "max": "", "seen": ""}
@@ -5232,7 +5301,7 @@ data:
             _state_patch(host, aid, team, cid,
                          {"historyStatus": str(getattr(e, "error", e))[:REASON_MAX]})
             return _failed(resume, "thread", [cid, parent_ts], e,
-                           threads=threads[1:], reply=None)
+                           reply=None, **{key: threads[1:]})
         domain = resume.get("domain") or ""
         msgs = body.get("messages") or []
         # conversations.replies answers with the PARENT first and its replies
@@ -5249,15 +5318,14 @@ data:
                       files=_files, bots=_bots)
         nxt = _cursor_of(body)
         if nxt:
-            return dict(resume, reply=dict(work, cursor=nxt), threads=threads)
+            return dict(resume, reply=dict(work, cursor=nxt))
         if body.get("has_more") and work["max"] and work["max"] != work.get("seen"):
             # `has_more` with no cursor: continue by window from the newest reply
             # this page carried, which is where the next page starts.
-            return dict(resume, threads=threads,
-                        reply=dict(work, cursor="", seen=work["max"]))
+            return dict(resume, reply=dict(work, cursor="", seen=work["max"]))
         if work["max"] and work["max"] > (state.get("repliesTs") or ""):
             _state_patch(host, aid, team, cid, {"repliesTs": work["max"]})
-        return dict(resume, threads=threads[1:], reply=None)
+        return dict(resume, reply=None, **{key: threads[1:]})
 
 
     def _phase_hydrate(host, base, token, resume):
@@ -5594,7 +5662,7 @@ data:
         roster and a whole walk's info and history. The replies are messages,
         so they drain first."""
         return (resume.get("phase") in ("hydrate", "files", "bots", "members")
-                and bool(resume.get("threads")))
+                and any(resume.get(n) for n in THREAD_QUEUES))
 
 
     def _phase_threads_first(host, base, token, resume):
@@ -5643,6 +5711,7 @@ data:
             "refusedUnder": resume.get("refusedUnder"),
             "queue": list(resume.get("queue") or []),
             "info": list(resume.get("info") or []),
+            "newReplies": [list(t) for t in (resume.get("newReplies") or [])],
             "threads": [list(t) for t in (resume.get("threads") or [])],
             "hydrate": list(resume.get("hydrate") or []),
             # T-021: the files and bots still to read from their own endpoints.
@@ -5831,6 +5900,9 @@ data:
                                        connector.get("version") or ""),
             "queue": list(stored.get("queue") or []),
             "info": list(stored.get("info") or []),
+            # A state stored before `newReplies` existed has `threads` alone,
+            # and that queue drains as it was.
+            "newReplies": [list(t) for t in (stored.get("newReplies") or [])],
             "threads": [list(t) for t in (stored.get("threads") or [])],
             "hydrate": list(stored.get("hydrate") or []),
             "files": list(stored.get("files") or []),
@@ -5908,6 +5980,8 @@ data:
                 cursor["info"].append(ident)
             elif kind == "history":
                 cursor["queue"].append(ident)
+        cursor["newReplies"], cursor["threads"] = _unique_threads(
+            cursor["newReplies"], cursor["threads"])
         return {"more": host.page.more(cursor)}
 ---
 # ---- function: postmessage -------------------------------------------------

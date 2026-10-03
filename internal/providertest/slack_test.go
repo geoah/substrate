@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -43,14 +44,24 @@ type fakeSlack struct {
 	users    []map[string]any
 	channels []map[string]any
 	history  map[string][]map[string]any
-	refuse   map[string]string
-	calls    map[string]int
-	order    []string
+	// replies maps "<channel> <thread ts>" to the conversations.replies
+	// page for that thread; a thread with no entry answers an empty page.
+	replies map[string][]map[string]any
+	refuse  map[string]string
+	calls   map[string]int
+	order   []string
+	// threads is every conversations.replies call, "<channel> <thread ts>",
+	// in order.
+	threads []string
 }
 
 func newFakeSlack(t *testing.T) *fakeSlack {
 	t.Helper()
-	f := &fakeSlack{history: map[string][]map[string]any{}, refuse: map[string]string{}}
+	f := &fakeSlack{
+		history: map[string][]map[string]any{},
+		replies: map[string][]map[string]any{},
+		refuse:  map[string]string{},
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
@@ -102,7 +113,13 @@ func newFakeSlack(t *testing.T) *fakeSlack {
 				"messages": f.history[q.Get("channel")],
 			})
 		case "conversations.replies":
-			writeJSON(w, map[string]any{"ok": true, "has_more": false, "messages": []any{}})
+			thread := q.Get("channel") + " " + q.Get("ts")
+			f.threads = append(f.threads, thread)
+			msgs := f.replies[thread]
+			if msgs == nil {
+				msgs = []map[string]any{}
+			}
+			writeJSON(w, map[string]any{"ok": true, "has_more": false, "messages": msgs})
 		case "conversations.members":
 			writeJSON(w, map[string]any{"ok": true, "members": []any{slackOwner}})
 		case "users.info":
@@ -136,6 +153,14 @@ func (f *fakeSlack) callOrder() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.order)
+}
+
+// threadOrder is every conversations.replies call so far, "<channel> <thread
+// ts>", in order.
+func (f *fakeSlack) threadOrder() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.threads)
 }
 
 // slackUser is a whole users.list member.
@@ -532,5 +557,149 @@ func TestSlackDrainSharesOneConnection(t *testing.T) {
 	}
 	if n := f.connections(); n != 1 {
 		t.Fatalf("the drain's %d calls opened %d connections, want them all on one", calls, n)
+	}
+}
+
+// slackParent is a thread parent with one reply, posted at latestReply.
+func slackParent(ts, latestReply string) map[string]any {
+	m := slackMessage(ts, slackOwner)
+	m["thread_ts"] = ts
+	m["reply_count"] = 1
+	m["reply_users_count"] = 1
+	m["reply_users"] = []any{slackOwner}
+	m["latest_reply"] = latestReply
+	return m
+}
+
+// slackReply is one reply in the thread under parent.
+func slackReply(ts, parent string) map[string]any {
+	m := slackMessage(ts, slackOwner)
+	m["thread_ts"] = parent
+	m["parent_user_id"] = slackOwner
+	return m
+}
+
+// slackMessageRow is the live message row with this ts.
+func slackMessageRow(t *testing.T, ds substrate.Dataset, ts string) *substrate.Record {
+	t.Helper()
+	for _, r := range listLive(t, ds, slackPackage+"/message") {
+		if r.Properties["ts"] == ts {
+			return r
+		}
+	}
+	t.Fatalf("no message row with ts %s", ts)
+	return nil
+}
+
+// TestSlackNewRepliesDrainBeforeWatchedThreads: a resumed walk holding a
+// backlog of watch re-checks in `threads`, stored before `newReplies`
+// existed, meets a thread with a new reply on its history-first pass. That
+// thread is walked before any watch re-check, and the old backlog still
+// drains. The unfixed body appended it behind the backlog, which is how a
+// thread with a known new reply sat at position 1,105 of 1,506.
+func TestSlackNewRepliesDrainBeforeWatchedThreads(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, _ := slackDataset(t)
+	f := newFakeSlack(t)
+	f.channels = []map[string]any{slackChannel("C1"), slackChannel("C2")}
+	f.history["C1"] = []map[string]any{slackMessage("1700000000.000100", slackOwner)}
+	f.history["C2"] = []map[string]any{slackMessage("1700000500.000100", slackOwner)}
+	slackSetup(t, ds, f)
+	slackRun(t, ds, f, nil)
+	if p := slackCursors(t, ds)["phase"]; p != "done" {
+		t.Fatalf("the first walk did not finish: phase %v", p)
+	}
+
+	// C2's message takes its first reply.
+	const parent, reply = "1700000500.000100", "1700000600.000200"
+	f.history["C2"] = []map[string]any{slackParent(parent, reply)}
+	f.replies["C2 "+parent] = []map[string]any{slackParent(parent, reply), slackReply(reply, parent)}
+	watch := make([]any, 0, 40)
+	for i := range 40 {
+		watch = append(watch, []any{"C1", fmt.Sprintf("1690000000.%06d", i)})
+	}
+	before := len(f.threadOrder())
+	slackRun(t, ds, f, map[string]any{"streamCursors": map[string]any{
+		"phase": "replies", "cursor": "", "threads": watch, "convs": []any{"C1", "C2"},
+		"fresh": []any{}, "cold": false,
+	}})
+	calls := f.threadOrder()[before:]
+	if len(calls) == 0 || calls[0] != "C2 "+parent {
+		t.Fatalf("conversations.replies calls were %v: want the thread with a new reply (C2 %s) first", calls, parent)
+	}
+	if len(calls) != 41 {
+		t.Fatalf("conversations.replies was called %d times, want 41: the new thread and all 40 stored re-checks", len(calls))
+	}
+	cur := slackCursors(t, ds)
+	for _, k := range []string{"newReplies", "threads"} {
+		if left, _ := cur[k].([]any); len(left) != 0 {
+			t.Fatalf("streamCursors.%s = %v after the run, want empty", k, left)
+		}
+	}
+	slackMessageRow(t, ds, reply)
+}
+
+// TestSlackThreadIsQueuedOnce: a stored queue that holds one thread twice,
+// and a thread the radar finds again while it waits as a watch re-check,
+// each cost one conversations.replies call. The thread with a new reply
+// moves ahead of the re-check that was queued before it.
+func TestSlackThreadIsQueuedOnce(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, _ := slackDataset(t)
+	f := newFakeSlack(t)
+	f.channels = []map[string]any{slackChannel("C1")}
+	// `old` replied long before `hot`, so only `hot` is newer than the
+	// replies cursor less its margin: the radar finds `hot`, the watch `old`.
+	const old, oldReply = "1700000000.000100", "1700000001.000100"
+	const hot, hotReply = "1700050000.000100", "1700050001.000100"
+	f.history["C1"] = []map[string]any{slackParent(hot, hotReply), slackParent(old, oldReply)}
+	f.replies["C1 "+old] = []map[string]any{slackParent(old, oldReply), slackReply(oldReply, old)}
+	f.replies["C1 "+hot] = []map[string]any{slackParent(hot, hotReply), slackReply(hotReply, hot)}
+	slackSetup(t, ds, f)
+	slackRun(t, ds, f, nil)
+	if p := slackCursors(t, ds)["phase"]; p != "done" {
+		t.Fatalf("the first walk did not finish: phase %v", p)
+	}
+
+	before := len(f.threadOrder())
+	slackRun(t, ds, f, map[string]any{"streamCursors": map[string]any{
+		"phase": "history", "cursor": "", "queue": []any{"C1"}, "convs": []any{"C1"},
+		"fresh": []any{}, "cold": false,
+		"threads": []any{[]any{"C1", old}, []any{"C1", old}, []any{"C1", hot}},
+	}})
+	calls := f.threadOrder()[before:]
+	if want := []string{"C1 " + hot, "C1 " + old}; !slices.Equal(calls, want) {
+		t.Fatalf("conversations.replies calls were %v, want %v: each thread once, the new reply first", calls, want)
+	}
+}
+
+// TestSlackParentCarriesLatestReplyAt: a thread parent records when its
+// newest reply was posted, from `latest_reply`, at the exact microsecond.
+func TestSlackParentCarriesLatestReplyAt(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, _ := slackDataset(t)
+	f := newFakeSlack(t)
+	f.channels = []map[string]any{slackChannel("C1")}
+	const parent, reply = "1700000000.000100", "1700000600.123456"
+	f.history["C1"] = []map[string]any{slackParent(parent, reply), slackMessage("1690000000.000100", slackOwner)}
+	// The thread answers an empty page, so the reply row is never written
+	// and the instant comes from the parent as history lists it.
+	slackSetup(t, ds, f)
+	slackRun(t, ds, f, nil)
+
+	row := slackMessageRow(t, ds, parent)
+	raw, _ := row.Properties["latestReplyAt"].(string)
+	got, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		t.Fatalf("latestReplyAt = %v on the parent: %v", row.Properties["latestReplyAt"], err)
+	}
+	if want := time.Unix(1700000600, 123456000); !got.Equal(want) {
+		t.Fatalf("latestReplyAt = %s, want %s", got.UTC().Format(time.RFC3339Nano), want.UTC().Format(time.RFC3339Nano))
+	}
+	if _, ok := slackMessageRow(t, ds, "1690000000.000100").Properties["latestReplyAt"]; ok {
+		t.Fatal("a message with no replies carries latestReplyAt")
 	}
 }
