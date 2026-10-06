@@ -636,9 +636,8 @@ gateway and no host key: the server takes no LLM configuration at all, and
 the provider clients ignore the host's `ANTHROPIC_*` variables and profile
 files, so nothing process-wide can travel to a repository-chosen endpoint. An
 `openai` or `azure` row that names no `baseURL` refuses to resolve, and every
-wire requires
-the row's own `apiKey`. Only `anthropic` may leave `baseURL` empty, for its
-official endpoint.
+wire requires the row's own `apiKey`. Only `anthropic` may leave `baseURL`
+empty, for its official endpoint.
 
 **One row buys the embeddings.** A row that declares `embedModel` is the
 repository's embeddings provider, and only one row may declare it. Because only
