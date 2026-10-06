@@ -241,7 +241,7 @@ confirms it. One package per run: an input carrying several package documents
 is refused, because one request names one origin.
 
 `substratectl bundle list` / `status` report a [bundle](bundles.md)'s computed
-state, and `disable` / `enable` / `uninstall` / `purge` move it through its
+state, including why a quarantined bundle was quarantined, and `disable` / `enable` / `uninstall` / `purge` move it through its
 lifecycle; install and upgrade are `substratectl apply` of the closure, and
 `connect <authority>/<package>/<kind>/<id>` starts the host
 [OAuth flow](bundles.md#the-oauth-facility) for the account record the path

@@ -775,7 +775,7 @@ func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus
 		}
 		out = append(out, st)
 	}
-	quarantined, err := ds.quarantinedBundleStatuses(ctx)
+	quarantined, err := ds.quarantinedBundleStatuses(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -789,17 +789,20 @@ func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus
 // 0047), so the two rows join on the id and nothing has to parse a property.
 // The origin stamp rides the same read: a quarantined copy is exactly the one
 // whose owner has to decide whether to re-import it, so it says where it came
-// from and whether it was edited.
-func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
+// from and whether it was edited. A non-empty pkg narrows the read to that
+// one package, so the single-bundle status and the listing report a
+// quarantined package from the same query and cannot disagree.
+func (ds *dataset) quarantinedBundleStatuses(ctx context.Context, pkg string) ([]substrate.BundleStatus, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT b.id, COALESCE(g.props->>$3, ''),
 		       COALESCE(g.props->>$5, ''), g.props->$6, COALESCE(g.props->>$7, ''), g.props->$8
 		FROM records g
 		JOIN records b ON b.kind = $2 AND b.deleted_at IS NULL AND b.id = g.id
 		WHERE g.kind = $1 AND g.deleted_at IS NULL AND (g.props ? $4) AND g.props->>$4 = 'true'
+		  AND ($9 = '' OR g.id = $9)
 		ORDER BY g.id`,
 		kindPackage, kindBundle, propPackageQuarantineReason, propPackageQuarantined,
-		propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest, propPackageShippedVersion)
+		propPackageOrigin, propPackageOriginVersion, propPackageOriginDigest, propPackageShippedVersion, pkg)
 	if err != nil {
 		return nil, err
 	}
@@ -946,13 +949,27 @@ func stampedVersionOf(pkg, prop string, raw []byte) (int64, error) {
 	return n, nil
 }
 
-// BundleStatus computes one bundle's runtime state.
+// BundleStatus computes one bundle's runtime state. A package quarantined at
+// repository-open is absent from the live registry, so it is read from its
+// stored rows exactly as BundleStatuses lists it: that answer, with its
+// reason, is what an operator needs to act on the quarantine. An id that is
+// neither live nor quarantined is not found.
 func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.BundleStatus, error) {
 	b, err := ds.bundleByID(id)
-	if err != nil {
+	if err == nil {
+		return ds.bundleStatus(ctx, b)
+	}
+	if !errors.Is(err, substrate.ErrNotFound) {
 		return substrate.BundleStatus{}, err
 	}
-	return ds.bundleStatus(ctx, b)
+	quarantined, qerr := ds.quarantinedBundleStatuses(ctx, id)
+	if qerr != nil {
+		return substrate.BundleStatus{}, qerr
+	}
+	if len(quarantined) == 0 {
+		return substrate.BundleStatus{}, err
+	}
+	return quarantined[0], nil
 }
 
 func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (substrate.BundleStatus, error) {
