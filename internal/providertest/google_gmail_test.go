@@ -9,6 +9,7 @@ package providertest
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -310,4 +311,208 @@ func TestGoogleGmailScheduledRunServesEveryAccount(t *testing.T) {
 	if len(callsA) < 2 || callsA[1] != "history:5000" {
 		t.Fatalf("second run acct-a calls = %v, want the delta from 5000", callsA)
 	}
+}
+
+// slowGmail is one mailbox whose history delta names a few messages, one of
+// which answers `messages.get?format=full` only after `slowFor`, past the
+// body's socket timeout, and a metadata read of it at once; and one whose
+// body is `bigBody` bytes of HTML. It logs the format of every get.
+type slowGmail struct {
+	fakeAPI
+	historyID string
+	ids       []string
+	slow      string
+	slowFor   time.Duration
+	big       string
+	bigBody   int
+
+	mu   sync.Mutex
+	gets []string
+}
+
+func (f *slowGmail) start(t *testing.T) {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/gmail/v1/users/me/profile", func(w http.ResponseWriter, r *http.Request) {
+		if !bearer(w, r) {
+			return
+		}
+		writeJSON(w, map[string]any{"emailAddress": "slow@example.com", "historyId": f.historyID})
+	})
+	mux.HandleFunc("/gmail/v1/users/me/labels", func(w http.ResponseWriter, r *http.Request) {
+		if !bearer(w, r) {
+			return
+		}
+		writeJSON(w, map[string]any{"labels": []any{}})
+	})
+	mux.HandleFunc("/gmail/v1/users/me/history", func(w http.ResponseWriter, r *http.Request) {
+		if !bearer(w, r) {
+			return
+		}
+		var records []any
+		for _, id := range f.ids {
+			records = append(records, map[string]any{
+				"id": f.historyID,
+				"messagesAdded": []any{map[string]any{
+					"message": map[string]any{"id": id, "threadId": "t-" + id},
+				}},
+			})
+		}
+		writeJSON(w, map[string]any{"history": records, "historyId": f.historyID})
+	})
+	mux.HandleFunc("/gmail/v1/users/me/messages/", func(w http.ResponseWriter, r *http.Request) {
+		if !bearer(w, r) {
+			return
+		}
+		id := strings.TrimPrefix(r.URL.Path, "/gmail/v1/users/me/messages/")
+		format := r.URL.Query().Get("format")
+		f.mu.Lock()
+		f.gets = append(f.gets, id+":"+format)
+		f.mu.Unlock()
+		if id == f.slow && format == "full" {
+			select {
+			case <-time.After(f.slowFor):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		msg := gmailMessage(id, "slow")
+		if format == "metadata" {
+			// Gmail's metadata read: the headers, no body.
+			payload := msg["payload"].(map[string]any)
+			delete(payload, "body")
+		} else if id == f.big {
+			html := "<html><body>" + strings.Repeat("<p>a paragraph of the large message</p>", f.bigBody/40) + "</body></html>"
+			msg["payload"] = map[string]any{
+				"mimeType": "text/html",
+				"headers":  msg["payload"].(map[string]any)["headers"],
+				"body":     map[string]any{"data": b64url(html), "size": len(html)},
+			}
+		}
+		writeJSON(w, msg)
+	})
+	f.serve(t, mux)
+}
+
+func (f *slowGmail) getsOf() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.gets...)
+}
+
+// TestGoogleGmailASlowMessageDoesNotHoldTheAccount is the 2026-10-04
+// production finding: one `messages.get` past the body's socket timeout put
+// every hourly fire past its minute, with nothing persisted, no message id
+// in the log and the status still `ok`. Now a fire whose fetch times out
+// returns well inside the minute with the messages before it stored, the
+// slow one and the rest parked on the account with the failure counted, and
+// the fire after the third failure reads it with `format=metadata` and
+// moves on; a message with a 5 MB body is stored inside the same bound.
+func TestGoogleGmailASlowMessageDoesNotHoldTheAccount(t *testing.T) {
+	requirePython(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	install(t, ds, googleDir, nil)
+
+	fake := &slowGmail{
+		historyID: "9000", ids: []string{"s-first", "s-big", "s-slow", "s-last"},
+		slow: "s-slow", slowFor: 30 * time.Second, big: "s-big", bigBody: 5 << 20,
+	}
+	fake.start(t)
+	mustPut(t, ds, substrate.PutInput{
+		Kind: googleAccountType, ID: "acct-slow", Properties: map[string]any{"enabledGmail": true},
+	})
+	base := map[string]any{
+		"enabledGmail": true, "syncFrequency": "hourly", "backfillDepth": "all",
+		"gmailLastSyncedAt": ago(3 * time.Hour), "gmailBackfillAnchorAt": ago(48 * time.Hour),
+		"gmailHistoryId": "8000",
+	}
+	config := func(props map[string]any) map[string]any {
+		cfg := stepConfig(googleAccountType, "acct-slow", props)
+		cfg["inputs"] = map[string]any{"client": map[string]any{
+			"properties": map[string]any{"apiBase": fake.ts.URL},
+		}}
+		return cfg
+	}
+	// The slow message has failed twice already: this fire's full read is
+	// the third failure, and the next fire reads it thin.
+	props := syncProps(base)
+	props["gmailBackfillResume"] = map[string]any{"fetching": "s-slow", "fetchFailures": 2}
+
+	s := newStepper(t, ds, googleGmailSyncFn, config(props))
+	began := time.Now()
+	effects := s.drainApplying(nil)
+	took := time.Since(began)
+	if took > 60*time.Second {
+		t.Fatalf("the fire took %s, past the function's minute", took)
+	}
+	if took < fake.slowFor-10*time.Second {
+		t.Fatalf("the fire took %s; the slow fetch should have run to the body's socket timeout", took)
+	}
+	mirrored := gmailMessageIDs(t, ds)
+	for _, id := range []string{"s-first", "s-big", "s-last"} {
+		if !mirrored[id] {
+			t.Fatalf("message %s is not mirrored after the first fire; gets %v, mirrored %v", id, fake.getsOf(), mirrored)
+		}
+	}
+	if mirrored["s-slow"] {
+		t.Fatalf("the slow message was mirrored by a fetch that timed out; gets %v", fake.getsOf())
+	}
+	stamp := stampOf(effects, "acct-slow")
+	if stamp == nil {
+		t.Fatal("the account was never stamped")
+	}
+	resume, _ := stamp["gmailBackfillResume"].(map[string]any)
+	if resume["fetching"] != "s-slow" || fmt.Sprint(resume["fetchFailures"]) != "3" {
+		t.Fatalf("resume = %v, want the slow message held with its third failure", resume)
+	}
+	if pending, _ := resume["pending"].([]any); len(pending) != 1 || pending[0] != "s-slow" {
+		t.Fatalf("resume = %v, want the slow message alone pending", resume)
+	}
+	if stamp["gmailHistoryId"] != nil {
+		t.Fatalf("the watermark moved past a message that was not stored: %v", stamp)
+	}
+	status := fmt.Sprint(stamp["gmailSyncStatus"])
+	if !strings.Contains(status, "1 pending") || !strings.Contains(status, "s-slow failed 3 fetch") {
+		t.Fatalf("gmailSyncStatus = %q, want the pending count and the deferred message", status)
+	}
+
+	// The next fire: the thin read lands the message with its headers and
+	// no body, the pending list empties, and the watermark advances.
+	row := mustGet(t, ds, googleAccountType, "acct-slow")
+	next := syncProps(base)
+	next["gmailBackfillResume"] = row.Properties["gmailBackfillResume"]
+	s2 := newStepper(t, ds, googleGmailSyncFn, config(next))
+	began = time.Now()
+	effects = s2.drainApplying(nil)
+	if took := time.Since(began); took > 15*time.Second {
+		t.Fatalf("the second fire took %s; the thin read should be immediate", took)
+	}
+	gets := fake.getsOf()
+	if !slices.Contains(gets, "s-slow:metadata") {
+		t.Fatalf("no metadata read of the slow message; gets %v", gets)
+	}
+	slow := mustGet(t, ds, googleGmailMsgType, message(t, ds, "s-slow"))
+	if slow.Properties["subject"] != "subject s-slow" || slow.Properties["body"] != nil || slow.Properties["payload"] != nil {
+		t.Fatalf("the thin row = %v, want its subject and no body or payload", slow.Properties)
+	}
+	stamp = stampOf(effects, "acct-slow")
+	if stamp == nil || stamp["gmailHistoryId"] != "9000" {
+		t.Fatalf("second stamp = %v, want the watermark at 9000", stamp)
+	}
+	if resume, _ := stamp["gmailBackfillResume"].(map[string]any); len(resume) != 0 {
+		t.Fatalf("second resume = %v, want nothing owed", resume)
+	}
+}
+
+// message is the row id of a mirrored Gmail message.
+func message(t *testing.T, ds substrate.Dataset, id string) string {
+	t.Helper()
+	for _, row := range listLive(t, ds, googleGmailMsgType) {
+		if row.Properties["messageId"] == id {
+			return row.ID
+		}
+	}
+	t.Fatalf("message %s is not mirrored", id)
+	return ""
 }

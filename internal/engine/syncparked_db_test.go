@@ -135,6 +135,37 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	if st.LastParkedAt == nil || st.LastParkedAt.Before(startsAt) {
 		t.Fatalf("lastParkedAt = %v, want the park's instant", st.LastParkedAt)
 	}
+	// A sync whose fires parked after its last completed run is not `ok`,
+	// whatever the record last stamped: a fire the runner kills stamps
+	// nothing, so the parks are the only evidence of the runs since
+	// (parkedSyncState).
+	if st.State != substrate.SyncStateErroring || !strings.Contains(st.Error, "upstream returned HTTP 500") ||
+		st.ErrorAt == nil || !st.ErrorAt.Equal(*st.LastParkedAt) || st.Message != st.Error {
+		t.Fatalf("state = %q, error = %q at %v, message = %q; want erroring with the park's reason and instant",
+			st.State, st.Error, st.ErrorAt, st.Message)
+	}
+	// A run that completes after the park is the newer word: the record's
+	// own `ok` stands, the park still counted beside it.
+	later := st.LastParkedAt.Add(time.Minute)
+	actor := substrate.Actor(vocabulary.PackageActor(pkg))
+	if err := ds.inTx(ctx, actor, false, func(t *txn) error {
+		return t.asSyncWriter(actor, func() error {
+			_, err := t.patch(eref{Kind: jobKind, ID: "inbox"}, substrate.PatchInput{Properties: map[string]any{
+				"syncState": "ok", "lastSyncedAt": later.Format(time.RFC3339Nano),
+			}})
+			return err
+		})
+	}); err != nil {
+		t.Fatalf("stamp a later completed run: %v", err)
+	}
+	statuses, err = ds.SyncStatuses(ctx)
+	if err != nil {
+		t.Fatalf("sync statuses: %v", err)
+	}
+	if st = statuses[0]; st.State != "ok" || st.Parked != 1 || st.Error != "" {
+		t.Fatalf("after a later completed run: state = %q, parked = %d, error = %q; want ok with the park still counted",
+			st.State, st.Parked, st.Error)
+	}
 
 	triggers, err := ds.TriggerStatuses(ctx)
 	if err != nil {

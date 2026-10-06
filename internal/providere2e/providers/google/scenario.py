@@ -3119,6 +3119,86 @@ def _pending_now(acct):
     return owed
 
 
+_SLOW_MESSAGE = "2d8813x9d3a9e007"
+
+
+def _wait_account(predicate, seconds, what):
+    """Poll the account until predicate(props) holds, or fail naming what."""
+    acct = {}
+    for _ in range(int(seconds / 5)):
+        acct = props(one(KIND["account"], ACCOUNT))
+        if predicate(acct):
+            return acct
+        time.sleep(5)
+    raise Failed("%s within %ds: resume %r, gmail status %r"
+                 % (what, seconds, acct.get("gmailBackfillResume"),
+                    acct.get("gmailSyncStatus")))
+
+
+def assert_slow_message_does_not_hold_the_account():
+    """ONE SLOW MESSAGE DOES NOT HOLD THE ACCOUNT (2026-10-04).
+
+    A `messages.get` that outlived the body's socket timeout put every
+    hourly gmail fire past its minute, with nothing persisted, no message id
+    in the log and the status still `ok`. The mock answers one message's
+    full read 25 s late, past the body's 20 s socket timeout; the fire must
+    still end inside its minute, name the message as deferred on the
+    account's resume with the failure counted, and the next fire, with the
+    mock answering at once, must fetch it and clear the debt.
+
+    `_drive` fires the on-request trigger twice, once through the stamped
+    change and once by hand, so the mock delays two full reads: each fire
+    defers the message, and the state is read while it holds. The wait is a
+    poll for that state, not `wait_until_quiet`: a fire that ends owed moves
+    no `LastSyncedAt`, so the quiet wait returns before the delayed fetch
+    has even timed out.
+    """
+    step("a slow message is deferred, counted and fetched on the next fire")
+    mock("/__mock/faults", "POST", {"rules": [{
+        "match": "GET /gmail/v1/users/me/messages/" + _SLOW_MESSAGE,
+        "contains": "format=full", "status": [0, 0], "delaySeconds": 25}]})
+    try:
+        _drive(("google-gmail-on-request",), "the fire that meets the slow message")
+        acct = _wait_account(
+            lambda a: (a.get("gmailBackfillResume") or {}).get("fetching") == _SLOW_MESSAGE,
+            180, "the slow message was not deferred on the account")
+        held = acct.get("gmailBackfillResume") or {}
+        delayed = [e for e in (mock("/__mock/requests") or {}).get("requests") or []
+                   if str(e.get("match") or "") == "delay"
+                   and _SLOW_MESSAGE in str(e.get("path") or "")]
+        check(1 <= len(delayed) <= 2,
+              "the mock delayed %s %d time(s), want one or two" % (_SLOW_MESSAGE, len(delayed)))
+        check(1 <= int(held.get("fetchFailures") or 0) <= 2,
+              "the slow message is not held with its failures counted: resume %r, "
+              "status %r" % (held, acct.get("gmailSyncStatus")))
+        check(_SLOW_MESSAGE in [str(m) for m in (held.get("pending") or [])],
+              "the slow message is not pending for the next fire: %r" % held)
+        check("pending" in str(acct.get("gmailSyncStatus") or "")
+              and _SLOW_MESSAGE in str(acct.get("gmailSyncStatus") or ""),
+              "gmailSyncStatus does not name the pending count and the "
+              "deferred message: %r" % acct.get("gmailSyncStatus"))
+        note("deferred: %s" % acct.get("gmailSyncStatus"))
+        # Both fires done before the mock is cleared, so neither fetches the
+        # message at once and clears the debt behind the assertions above.
+        _wait_account(lambda a: len([e for e in (mock("/__mock/requests") or {}).get("requests") or []
+                                     if str(e.get("match") or "") == "delay"]) >= 2
+                      or a.get("gmailSyncRequestedAck") == a.get("syncRequestedAt"),
+                      120, "the fires that met the slow message did not settle")
+    finally:
+        mock("/__mock/faults", "DELETE")
+    wait_until_quiet(120)
+    _drive(("google-gmail-on-request",), "the fire that fetches the deferred message")
+    acct = _wait_account(
+        lambda a: not (a.get("gmailBackfillResume") or {}).get("fetching")
+        and not (a.get("gmailBackfillResume") or {}).get("pending")
+        and a.get("gmailSyncRequestedAck") == a.get("syncRequestedAt"),
+        180, "the deferred message is still owed after the mock answered")
+    check(one(KIND["gmailmessage"], message_id(_SLOW_MESSAGE)) is not None,
+          "message %s is not mirrored after the second fire" % _SLOW_MESSAGE)
+    wait_until_quiet(120)
+    note("the next fire fetched it: %s" % acct.get("gmailSyncStatus"))
+
+
 def assert_drain_bounds_itself():
     """The parked-drain fix: a fire STOPS ITSELF and says what is left.
 
@@ -3550,6 +3630,7 @@ def main():
         # purpose: an acknowledgement is only legible while every stream can
         # still answer one.
         if not SKIP_SECOND:
+            assert_slow_message_does_not_hold_the_account()
             assert_drain_bounds_itself()
             assert_sync_request_is_acknowledged()
         assert_failure_matrix(got)
