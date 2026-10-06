@@ -4,10 +4,11 @@ package engine
 // deliveries each take seconds, sitting on a backlog, used to drain to head
 // inside one dispatcher pass, so every trigger after it, schedules included,
 // waited for the whole backlog. The pass now gives each trigger a wall-clock
-// budget and fires the due schedules before any record trigger runs: one pass
-// fires the schedule and leaves the slow trigger's backlog part-drained, and
-// later passes finish it with every row delivered once and the cursor moving
-// only past delivered rows.
+// budget and fires the due schedules in a lane beside the record triggers
+// (decision 0147, schedulelane_db_test.go): one pass fires the schedule and
+// leaves the slow trigger's backlog part-drained, and later passes finish it
+// with every row delivered once and the cursor moving only past delivered
+// rows.
 
 import (
 	"context"
@@ -65,8 +66,8 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("install functions: %v", err)
 	}
-	// Ids chosen so the slow trigger sorts first: the old walk reached the
-	// schedule only once the slow trigger's drain returned.
+	// Ids chosen so the slow trigger sorts first: a walk in id order would
+	// reach the schedule only once the slow trigger's drain returned.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger, ID: "a-slow",
 		Properties: map[string]any{
@@ -129,19 +130,6 @@ def main(input, host):
 	slow := countPrefixed("slow-")
 	if slow == 0 || slow >= widgets {
 		t.Fatalf("the slow trigger delivered %d of %d widgets in one pass: the pass did not move on at its budget", slow, widgets)
-	}
-	// The schedule fired before the slow trigger's first delivery, although
-	// the slow trigger sorts first: schedules go ahead of record triggers.
-	var fireSeq, firstSlowSeq int64
-	if err := ds.db.QueryRowContext(ctx, `
-		SELECT
-		  (SELECT min(seq) FROM changelog WHERE kind = $1 AND record_id LIKE 'fire-%'),
-		  (SELECT min(seq) FROM changelog WHERE kind = $1 AND record_id LIKE 'slow-%')`,
-		"samples.substrate.reamde.dev/tasks/task").Scan(&fireSeq, &firstSlowSeq); err != nil {
-		t.Fatal(err)
-	}
-	if fireSeq > firstSlowSeq {
-		t.Fatalf("the schedule's fire landed at seq %d, after the slow trigger's first delivery at %d: the due schedule waited behind the record trigger", fireSeq, firstSlowSeq)
 	}
 	if head := maxSeqOf(t, ds); cursorOf("a-slow") >= head {
 		t.Fatalf("the slow trigger's cursor is at head %d after a part-drained pass", head)
