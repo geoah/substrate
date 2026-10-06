@@ -1210,6 +1210,12 @@ The thread walk descends into a parent whose `latest_reply` is newer than
 `repliesTs` less a 30-minute margin, and an incremental walk re-asks every
 watched thread: an incremental history page never returns a parent more than
 a day older than `latestTs`, so a reply to one would otherwise be invisible.
+The two go on separate queues in `streamCursors`: `newReplies` for parents
+known to have a new reply, `threads` for watch re-checks and retries, and the
+walk drains `newReplies` first. A thread already on either queue is not
+queued again. A parent's `latestReplyAt` is the instant of its
+`latest_reply`, so a reader can see a thread has a newer reply before the
+walk has fetched it.
 The day of overlap is what finds a FIRST reply: Slack never lists it in
 `conversations.history` and the watch holds only parents seen with replies,
 so the re-read parent's `reply_count` is the one place it shows. A first
