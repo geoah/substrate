@@ -464,6 +464,11 @@ type agentLoop struct {
 // budget leaves a readable trace; the delivery machinery around it stays
 // at-least-once (a retried delivery is a fresh thread).
 func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) (*substrate.AgentResult, error) {
+	// Counted for the whole loop, the model's turns and the tools it calls,
+	// so the background digest of a changelog yields to it
+	// (segmentdigest.go).
+	ds.svc.invocationStarted()
+	defer ds.svc.invocationEnded()
 	provider, err := ds.resolveProvider(ctx, ag.Provider)
 	if err != nil {
 		return nil, err

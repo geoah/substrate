@@ -89,7 +89,14 @@ const (
 // where the digest test seam sees each finished segment whose bytes were
 // hashed.
 func (s *service) checkProgress(msg, repository string) func(changelogfile.OpenProgress) {
+	return s.checkProgressEvery(msg, repository, s.progressEvery)
+}
+
+// checkProgressEvery is checkProgress reporting at most once per `every`:
+// the background digest reports rarer than a check somebody waits on.
+func (s *service) checkProgressEvery(msg, repository string, every time.Duration) func(changelogfile.OpenProgress) {
 	p := s.progress(msg, "repository", repository)
+	p.every = every
 	return func(op changelogfile.OpenProgress) {
 		if op.Digested && s.testDigestHook != nil {
 			s.testDigestHook(repository, op.Segment)

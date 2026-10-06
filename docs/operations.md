@@ -87,6 +87,7 @@ boot.
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory every repository's files live under: `repositories/<authority>/` with the manifest, the changelog segments, the sealed store's files and (on the `fs` blob store) the blob bytes. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_CHANGELOG_SEGMENT_BYTES` | `268435456`                       | The size past which the active changelog segment rotates: the writer fsyncs, writes the finished file's `.sha256` sidecar and opens the next segment. At least 1 MiB. |
 | `SUBSTRATE_REPOSITORY_CONNECTIONS` | `16`                            | The Postgres connections every repository of the process shares, however many repositories it has opened. One repository takes at most half of them, and never more than eight, so two busy repositories cannot take the whole pool. A process holds at most this cap plus 12 more: 4 for the admin pool, 5 for the maintenance pool, 2 for repository migrations running at once (each dials a connection of its own) and 1 for a commit-time catch-up after a foreign writer. The default therefore holds a process to 16 + 12 = 28. Keep the cap plus 12, for every process on the database, under the cluster's `max_connections`. At least 4; a lower value refuses the boot, naming the variable. |
+| `SUBSTRATE_DIGEST_BYTES_PER_SECOND` | `8388608`                        | The most bytes per second the process hashes of its repositories' finished changelog segments behind their opens, over every repository together ([what happens at boot](#what-happens-at-boot)). Hashing is one core busy for as long as the bytes last, so the default, 8 MiB, keeps it under half a core on a four-core arm64 box, where a 27 GB history takes about an hour; the digests also pause while any function or agent runs, whatever the cap. `0` removes the cap; a negative value, or one above `0` and below `65536`, refuses the boot, naming the variable. |
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
 | `SUBSTRATE_ORPHAN_GRACE`       | — (unset: nothing is collected)        | Turns the GC sweep's **orphan collection** on, and sets the window a marked record waits out first (`168h`, `720h`). A mapping target with no live source, nothing above the machine tier holding a property, and nothing live pointing at it is tombstoned once its mark is older than this. Unset or `0` collects nothing, which is the default: the mark is derived either way and `filter.orphaned` lists it. See [collecting orphaned mapping targets](#collecting-orphaned-mapping-targets). |
 | `SUBSTRATE_TRIGGER_INTERVAL`   | `5s`                                   | How often the trigger dispatcher checks every repository for a delivery due, so the longest a record write waits for the trigger it fires. Each tick lists the repositories and runs one pass per idle repository, at most eight passes at once; a host with many repositories may want a slower tick, a test suite that waits on deliveries a faster one. Zero or negative refuses the boot, naming the variable. |
@@ -1069,9 +1070,17 @@ even when it is finished, since no segment after it says where it ends. After a 
 directory's totals; the repository's first open after the boot logs `open:
 checking the changelog segments` the same way. Once a repository is open,
 the server hashes its finished segments in the background, one at a time,
-logging `digesting the changelog segments the open did not read` as it goes
-and `every finished changelog segment matches its sidecar` when done. Every
-line a read returns is still held to its own `sum` meanwhile. A segment that
+logging `digesting the finished changelog segments behind the open` with the
+segments, the bytes and the rate cap when it starts, `digesting the
+changelog segments the open did not read` as progress at most every five
+minutes, and `every finished changelog segment matches its sidecar` with
+`took` and the time it spent `paused` when done. The digest yields to real
+work: the process hashes at most `SUBSTRATE_DIGEST_BYTES_PER_SECOND` bytes a
+second over every repository it has open (8 MiB by default), and every
+digest pauses within a megabyte while any function body or agent loop runs
+in the process, so a function beside it runs as it would alone. A digest a stop interrupts logs `the changelog segment digest stopped
+before it finished`, and the next open digests the rest again. Every line a
+read returns is still held to its own `sum` meanwhile. A segment that
 does not match its sidecar is logged at error (`a finished changelog segment
 does not match its sidecar; refusing writes`) and every later write to the
 repository answers `500 internal` naming the segment, until the directory is

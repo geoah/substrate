@@ -89,7 +89,7 @@ func TestTrustSidecarsLeavesTheDigestToDigestUnread(t *testing.T) {
 		if _, err := l.Read(4, 1); !errors.Is(err, ErrBadSum) {
 			t.Fatalf("a read of the damaged line: err = %v, want ErrBadSum", err)
 		}
-		err = l.DigestUnread(context.Background(), nil)
+		err = l.DigestUnread(context.Background(), DigestOptions{})
 		if !errors.Is(err, ErrSegmentDigest) || !strings.Contains(err.Error(), SegmentName(4)) {
 			t.Fatalf("digest: err = %v, want ErrSegmentDigest naming %s", err, SegmentName(4))
 		}
@@ -101,7 +101,7 @@ func TestTrustSidecarsLeavesTheDigestToDigestUnread(t *testing.T) {
 			t.Fatal(err)
 		}
 		var progress []OpenProgress
-		if err := l.DigestUnread(context.Background(), recordProgress(&progress)); err != nil {
+		if err := l.DigestUnread(context.Background(), DigestOptions{Progress: recordProgress(&progress)}); err != nil {
 			t.Fatalf("digest: %v", err)
 		}
 		if len(progress) != 2 || !progress[1].Digested || progress[1].Segments != 2 || progress[1].Bytes != progress[1].TotalBytes {
@@ -121,7 +121,7 @@ func TestTrustSidecarsLeavesTheDigestToDigestUnread(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		if err := l.DigestUnread(ctx, nil); !errors.Is(err, context.Canceled) {
+		if err := l.DigestUnread(ctx, DigestOptions{}); !errors.Is(err, context.Canceled) {
 			t.Fatalf("err = %v, want context.Canceled", err)
 		}
 	})
@@ -210,7 +210,7 @@ func TestTrustSidecarsFindsALongLastLine(t *testing.T) {
 	if l.Head() != 3 || l.Unread() != 1 {
 		t.Fatalf("head %d with %d unread, want 3 with 1", l.Head(), l.Unread())
 	}
-	if err := l.DigestUnread(context.Background(), nil); err != nil {
+	if err := l.DigestUnread(context.Background(), DigestOptions{}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -394,4 +394,39 @@ func mustSidecar(t *testing.T, dir string, first int64) string {
 		t.Fatal(err)
 	}
 	return d
+}
+
+// The digest paces each read as its caller says: the pace hook sees every
+// read's bytes, their sum is the segments' bytes, and an error from it stops
+// the digest with that error before the next read.
+func TestDigestUnreadPacesEachRead(t *testing.T) {
+	dir := threeLineSegments(t)
+	l, err := OpenWith(dir, OpenOptions{TrustSidecars: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reads []int
+	err = l.DigestUnread(context.Background(), DigestOptions{Pace: func(_ context.Context, n int) error {
+		reads = append(reads, n)
+		return nil
+	}})
+	if err != nil {
+		t.Fatalf("digest: %v", err)
+	}
+	var total int64
+	for _, n := range reads {
+		total += int64(n)
+	}
+	if len(reads) < 2 || total != l.UnreadBytes() {
+		t.Fatalf("the pace saw %d reads of %d bytes, want at least one per segment summing to %d", len(reads), total, l.UnreadBytes())
+	}
+	stop := errors.New("stop here")
+	calls := 0
+	err = l.DigestUnread(context.Background(), DigestOptions{Pace: func(context.Context, int) error {
+		calls++
+		return stop
+	}})
+	if !errors.Is(err, stop) || calls != 1 {
+		t.Fatalf("digest: err = %v after %d pace calls, want the pace's error after its first", err, calls)
+	}
 }

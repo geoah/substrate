@@ -138,28 +138,50 @@ func (l *Log) Unread() int {
 	return n
 }
 
+// DigestOptions tunes DigestUnread.
+type DigestOptions struct {
+	// Progress, when not nil, is called after each segment.
+	Progress func(OpenProgress)
+	// Pace, when not nil, is called after each read of a segment's bytes
+	// with how many were read, before the next read. It may block, which is
+	// how a caller holds the digest to a rate or pauses it while the process
+	// has other work, and it returns ctx's error once ctx is done, which
+	// stops the digest with that error.
+	Pace func(ctx context.Context, n int) error
+}
+
+// UnreadBytes is how many bytes the segments DigestUnread would read hold.
+func (l *Log) UnreadBytes() int64 {
+	var total int64
+	for _, seg := range l.segments {
+		if seg.unread {
+			total += seg.Size
+		}
+	}
+	return total
+}
+
 // DigestUnread hashes every finished segment the open took on its sidecar's
 // word and holds it to that sidecar as Open would have: the same digest, as
 // many lines as its seqs span, and a final newline. It reads one segment at a
-// time, so it can run beside the writer without starving it, stops at the
-// first segment that does not match with ErrSegmentDigest naming it, and
-// stops with ctx's error once ctx is done. progress, when not nil, is called
-// after each segment. The Log is not changed: a segment it took on its
+// time, a megabyte at a time, pacing each read as opts.Pace says, so it can
+// run beside the writer without starving it; it stops at the first segment
+// that does not match with ErrSegmentDigest naming it, and with ctx's error
+// once ctx is done. The Log is not changed: a segment it took on its
 // sidecar's word stays so for any later open handed it as Verified.
-func (l *Log) DigestUnread(ctx context.Context, progress func(OpenProgress)) error {
-	var total, done int64
+func (l *Log) DigestUnread(ctx context.Context, opts DigestOptions) error {
+	total, done := l.UnreadBytes(), int64(0)
 	pending := make([]segment, 0, len(l.segments))
 	for _, seg := range l.segments {
 		if seg.unread {
 			pending = append(pending, seg)
-			total += seg.Size
 		}
 	}
 	for i, seg := range pending {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		d, err := fileDigestContext(ctx, filepath.Join(l.dir, seg.Name))
+		d, err := fileDigestContext(ctx, filepath.Join(l.dir, seg.Name), opts.Pace)
 		if err != nil {
 			return err
 		}
@@ -172,8 +194,8 @@ func (l *Log) DigestUnread(ctx context.Context, progress func(OpenProgress)) err
 			return fmt.Errorf("%w: %s holds %d lines, its seqs span %d", ErrSegmentDigest, seg.Name, d.lines, seg.last-seg.First+1)
 		}
 		done += seg.Size
-		if progress != nil {
-			progress(OpenProgress{
+		if opts.Progress != nil {
+			opts.Progress(OpenProgress{
 				Segment: seg.Name, Finished: true, Digested: true,
 				Segments: i + 1, TotalSegments: len(pending),
 				Bytes: done, TotalBytes: total,
@@ -200,33 +222,45 @@ func (l *Log) KnownHead() (int64, [32]byte) {
 	return head, sum
 }
 
+// digestReadBytes is the most one read of a segment under digest takes
+// before the pace is consulted: what a pause lets through after it is asked
+// for.
+const digestReadBytes = 1 << 20
+
 // fileDigestContext is fileDigest, stopping with ctx's error once ctx is
-// done.
-func fileDigestContext(ctx context.Context, path string) (digest, error) {
+// done, and pacing each read as pace says when it is not nil.
+func fileDigestContext(ctx context.Context, path string, pace func(context.Context, int) error) (digest, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return digest{}, err
 	}
 	defer func() { _ = f.Close() }()
 	d := newDigester()
-	if _, err := io.CopyBuffer(d, ctxReader{ctx: ctx, r: f}, make([]byte, 1<<20)); err != nil {
+	if _, err := io.CopyBuffer(d, ctxReader{ctx: ctx, r: f, pace: pace}, make([]byte, digestReadBytes)); err != nil {
 		return digest{}, err
 	}
 	return d.digest(), nil
 }
 
 // ctxReader is a reader that fails with its context's error once the
-// context is done.
+// context is done, and paces each read as pace says.
 type ctxReader struct {
-	ctx context.Context
-	r   io.Reader
+	ctx  context.Context
+	r    io.Reader
+	pace func(context.Context, int) error
 }
 
 func (r ctxReader) Read(p []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
 	}
-	return r.r.Read(p)
+	n, err := r.r.Read(p)
+	if n > 0 && r.pace != nil {
+		if perr := r.pace(r.ctx, n); perr != nil {
+			return n, perr
+		}
+	}
+	return n, err
 }
 
 // ReadSidecar returns the digest the sidecar of segment name in dir holds,
