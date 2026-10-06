@@ -5,8 +5,9 @@ package engine_test
 // again, while each request for the repository waited on it: 6.5 minutes
 // twice on a 16 GB history (issues 761 and 825). Neither digests one now:
 // both read each finished segment's first and last lines and take the rest
-// on its sidecar's word, and the server digests each segment once, after the
-// open, saying where it is while it reads.
+// on its sidecar's word (the last segment listed excepted), and the server
+// digests each of the rest once, after the open, saying where it is while it
+// reads.
 
 import (
 	"context"
@@ -113,8 +114,11 @@ func TestTheServerDigestsEachSegmentOnceAfterTheOpen(t *testing.T) {
 				engine.WithTestProgressEvery(0),
 				engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
 				engine.WithTestDigestHook(counter.hook))
-			if atBoot := counter.snapshot(); len(atBoot) != 0 {
-				t.Fatalf("the boot check digested %v; it reads each finished segment's first and last lines alone", atBoot)
+			// The last segment listed has no next one to hold its end to, so
+			// the boot digests it whole; every other one it reads at its
+			// first and last lines.
+			if atBoot := counter.snapshot(); len(atBoot) > 1 {
+				t.Fatalf("the boot check digested %v; it digests only the last segment listed", atBoot)
 			}
 			if _, err := svc2.Dataset(context.Background(), id); err != nil {
 				t.Fatalf("the first open: %v", err)
@@ -169,8 +173,15 @@ func TestTheServerDigestsEachSegmentOnceAfterTheOpen(t *testing.T) {
 				if got, want := attrOf(last, "bytes"), attrOf(last, "totalBytes"); got == "" || got != want {
 					t.Errorf("the last %q line is at byte %s of %s: %s", msg, got, want, last)
 				}
-				if n, err := strconv.Atoi(attrOf(last, "totalSegments")); err != nil || n < len(finished)-1 {
-					t.Errorf("the last %q line counts %s segments, the directory has at least %d: %s", msg, attrOf(last, "totalSegments"), len(finished)-1, last)
+				// The background digest leaves out the segments that were
+				// last when the boot and the open listed them: each digested
+				// those whole.
+				floor := len(finished) - 1
+				if strings.Contains(msg, "did not read") {
+					floor = len(finished) - 2
+				}
+				if n, err := strconv.Atoi(attrOf(last, "totalSegments")); err != nil || n < floor {
+					t.Errorf("the last %q line counts %s segments, the directory has at least %d: %s", msg, attrOf(last, "totalSegments"), floor, last)
 				}
 			}
 		})

@@ -913,9 +913,13 @@ until the next one is taken from it.
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-10-06 --base /srv/substrate-backup/2026-09-08
 ```
 
-A linked file is read only when its base was written, so damage to the
-base after that is carried into every snapshot that links it, and hard links
-share one file between them. To check a snapshot's every byte, restore it
+The `changelog` table is compared with the files only from the end of
+what the base holds; the rows below it were compared when the base was
+taken. Run `repository verify` beside the running server before the stop to
+compare them all. A linked file is read only when its base was written, so
+damage to the base after that is carried into every snapshot that links it,
+and hard links share one file between them. A restore still finds such
+damage: the boot import reads every line against its `sum`. To check a snapshot's every byte, restore it
 into a scratch server with an empty database and run `repository verify`
 there, with the key. A filesystem snapshot (ZFS, LVM, a cloud volume) of the
 stopped data root and database volume is an equally good backup, taken in
@@ -1028,7 +1032,8 @@ gigabytes held the boot for minutes. The boot check reads each finished
 segment's first and last lines, which carry checksums of their own, name
 the seqs the segment starts and ends at, and catch a segment cut short or
 torn, and takes the rest on the word of its `.sha256` sidecar. It reads the
-active segment whole, as before. After a segment, and at most once every
+active segment whole, as before, and digests the last segment listed whole
+even when it is finished, since no segment after it says where it ends. After a segment, and at most once every
 30 s, it logs `boot check: checking the changelog segments` at info, marked
 `progress=true`, with the segments and bytes checked so far and the
 directory's totals; the repository's first open after the boot logs `open:

@@ -180,12 +180,13 @@ type segmentCheck struct {
 }
 
 // verifySegment checks segment i of a listing in one read, or a finished
-// one known vouches for at its first and last lines.
+// one known vouches for, other than the last, at its first and last lines.
 func verifySegment(dir string, list []Segment, i int, lc *lineChecker, known map[string]KnownSegment) segmentCheck {
 	s := list[i]
 	seg := segment{Segment: s, end: s.Size}
 	path := filepath.Join(dir, s.Name)
-	if k, ok := known[s.Name]; ok && s.Finished {
+	// The last segment listed is checked whole, as an open checks it.
+	if k, ok := known[s.Name]; ok && s.Finished && i != len(list)-1 {
 		seg, err := checkKnown(dir, seg, k, lc)
 		return segmentCheck{seg: seg, err: err}
 	}

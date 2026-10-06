@@ -172,21 +172,7 @@ func TestSnapshotWithABaseCarriesTheBasesBytes(t *testing.T) {
 	}
 	_ = operator.Close()
 
-	// A byte flipped in a middle line of the source's first segment.
-	seg := finishedOf(t, srcDir)[0]
-	path := filepath.Join(changelogfile.ChangelogDir(srcDir), seg.Name)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := bytes.SplitAfter(raw, []byte("\n"))
-	if len(lines) < 4 {
-		t.Fatalf("segment %s holds %d lines; the test wants a middle one", seg.Name, len(lines)-1)
-	}
-	lines[1] = bytes.Replace(lines[1], []byte(`"actor":"`), []byte(`"actoR":"`), 1)
-	if err := os.WriteFile(path, bytes.Join(lines, nil), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	damageMiddleLine(t, srcDir)
 
 	operator = reopenWith(t, dsn, root, engine.WithChangelogSegmentBytes(segmentBytes), engine.WithTestOperator())
 	if _, err := operator.(baseSnapshotter).SnapshotRepositoryWith(ctx, id, filepath.Join(backups, "full"), engine.SnapshotOptions{}); !errors.Is(err, engine.ErrSnapshotUnverified) {
@@ -250,19 +236,7 @@ func TestADamagedSegmentFoundAfterTheOpenRefusesWrites(t *testing.T) {
 	_ = svc.Close()
 
 	seg := finishedOf(t, dir)[0]
-	path := filepath.Join(changelogfile.ChangelogDir(dir), seg.Name)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := bytes.SplitAfter(raw, []byte("\n"))
-	if len(lines) < 4 {
-		t.Fatalf("segment %s holds %d lines; the test wants a middle one", seg.Name, len(lines)-1)
-	}
-	lines[1] = bytes.Replace(lines[1], []byte(`"actor":"`), []byte(`"actoR":"`), 1)
-	if err := os.WriteFile(path, bytes.Join(lines, nil), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	damageMiddleLine(t, dir)
 
 	svc2 := reopenWith(t, dsn, root, engine.WithChangelogSegmentBytes(segmentBytes))
 	ds2, err := svc2.Dataset(ctx, id)
@@ -285,5 +259,54 @@ func TestADamagedSegmentFoundAfterTheOpenRefusesWrites(t *testing.T) {
 			t.Fatal("the digest behind the open never found the damaged segment")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// An export hashes every finished segment it streams against its sidecar,
+// since an extracted export can be a snapshot's base, which links its
+// segments unread: a segment damaged between its first and last lines fails
+// the export instead of landing in an archive that looks complete.
+func TestExportRefusesAFinishedSegmentThatDoesNotMatchItsSidecar(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithChangelogSegmentBytes(segmentBytes))
+	putTasks(t, ds, "task", 30)
+	root, id := engine.DataRootOf(svc), repositoryIDOf(t, ds)
+	dir := repoDirOf(t, svc, ds)
+	_ = svc.Close()
+	damageMiddleLine(t, dir)
+
+	svc2 := reopenWith(t, dsn, root, engine.WithChangelogSegmentBytes(segmentBytes), engine.WithTestOperator())
+	ds2, err := svc2.Dataset(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, err := ds2.Export(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if _, err := ex.WriteTo(&buf); !errors.Is(err, changelogfile.ErrSegmentDigest) {
+		t.Fatalf("an export over a damaged segment: err = %v, want ErrSegmentDigest", err)
+	}
+}
+
+// damageMiddleLine flips a byte in a middle line of the repository's first
+// finished segment, keeping its size and its sidecar.
+func damageMiddleLine(t *testing.T, repoDir string) {
+	t.Helper()
+	seg := finishedOf(t, repoDir)[0]
+	path := filepath.Join(changelogfile.ChangelogDir(repoDir), seg.Name)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.SplitAfter(raw, []byte("\n"))
+	if len(lines) < 4 {
+		t.Fatalf("segment %s holds %d lines; the test wants a middle one", seg.Name, len(lines)-1)
+	}
+	lines[1] = bytes.Replace(lines[1], []byte(`"actor":"`), []byte(`"actoR":"`), 1)
+	if err := os.WriteFile(path, bytes.Join(lines, nil), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

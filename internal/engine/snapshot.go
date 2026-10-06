@@ -60,10 +60,14 @@ type SnapshotReport struct {
 	// LinkedSegments and LinkedBlobs are how many segments and blobs are
 	// hard links to its files rather than copies; BlobBytes counts the
 	// copied blobs' bytes alone.
-	Base           string        `json:"base,omitempty"`
-	LinkedSegments int           `json:"linkedSegments,omitempty"`
-	LinkedBlobs    int           `json:"linkedBlobs,omitempty"`
-	Took           time.Duration `json:"took"`
+	Base           string `json:"base,omitempty"`
+	LinkedSegments int    `json:"linkedSegments,omitempty"`
+	LinkedBlobs    int    `json:"linkedBlobs,omitempty"`
+	// KnownHead is the seq ending the run of segments the base holds as the
+	// source does (VerifyReport.KnownHead): the table was compared with the
+	// files from it on, and below it only when the base was taken.
+	KnownHead int64         `json:"knownHead,omitempty"`
+	Took      time.Duration `json:"took"`
 }
 
 // SnapshotOptions tunes SnapshotRepositoryWith.
@@ -192,7 +196,7 @@ func (s *service) SnapshotRepositoryWith(ctx context.Context, repository, destRo
 	if !verified.OK || srcLog == nil {
 		return report, fmt.Errorf("%w: %s", ErrSnapshotUnverified, strings.Join(verified.Findings, "; "))
 	}
-	report.Head, report.HeadHash = verified.Head, verified.HeadHash
+	report.Head, report.HeadHash, report.KnownHead = verified.Head, verified.HeadHash, verified.KnownHead
 	var headHash [32]byte
 	if verified.HeadHash != "" {
 		sum, err := hex.DecodeString(verified.HeadHash)

@@ -50,7 +50,8 @@ back as without a base. A file the filesystem refuses to link is copied from
 the source and read back. The open, the boot check and the operator's open
 read each finished segment's first and last lines: each line holds its own
 sum, the first is the seq the name says, the last ends a transaction, and
-the contiguity check sees the seq it ends at. The server then digests those
+the contiguity check sees the seq it ends at. The last segment listed is
+digested whole, finished or not, because no next segment holds its end. The server then digests those
 segments one at a time behind the open; a segment that does not match its
 sidecar latches the repository's writes refused (`ErrChangelogDamaged`, a
 corrupt-data error). `repository verify` still reads every byte.
@@ -71,11 +72,15 @@ segment.
 - Good, because the snapshot's on-disk format, `snapshot.json` and the
   restore are unchanged.
 - Bad, because a linked segment is the base's bytes, read when the base was
-  taken and never since. Damage to the base after that, or a base that was
-  never a verified snapshot (an extracted export carries `snapshot.json`
-  too), is carried into the new snapshot unread. `repository verify` on a
-  scratch server restored from a snapshot reads every byte, and is how an
-  operator checks one.
+  taken and never since. Damage to the base after that is carried into the
+  new snapshot unread, and found only when a restore's import reads every
+  line. An extracted export carries `snapshot.json` too and can be a base,
+  so the export now hashes every finished segment against its sidecar as it
+  streams it; its bytes are not read back after extraction, as a
+  snapshot's are.
+- Bad, because with a base the snapshot compares the `changelog` table with
+  the files only past what the base holds. `repository verify` beside the
+  running server compares them all.
 - Bad, because hard links share one inode across snapshots: damage to the
   file is damage to every snapshot that links it.
 - Bad, because a server now serves, and for a while appends to, a
@@ -87,7 +92,8 @@ segment.
 `TestSnapshotWithABaseLinksWhatTheBaseHolds`,
 `TestSnapshotWithABaseCarriesTheBasesBytes`,
 `TestSnapshotRefusesABaseThatIsNotASnapshot`,
-`TestADamagedSegmentFoundAfterTheOpenRefusesWrites` and
+`TestADamagedSegmentFoundAfterTheOpenRefusesWrites`,
+`TestExportRefusesAFinishedSegmentThatDoesNotMatchItsSidecar` and
 `TestTheServerDigestsEachSegmentOnceAfterTheOpen` in `internal/engine`, and
 the `TrustSidecars`, `Known`, `SharedFinished` and `CopyChangelogFrom` tests
 in `internal/changelogfile`.

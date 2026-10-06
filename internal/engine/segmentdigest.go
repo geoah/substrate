@@ -14,9 +14,11 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -52,10 +54,15 @@ func (ds *dataset) startSegmentDigest() {
 		began := time.Now()
 		err := log.DigestUnread(ctx, ds.svc.checkProgress(checkInBackground, id))
 		switch {
+		case errors.Is(err, changelogfile.ErrSegmentDigest):
+			ds.latchDamaged(err)
 		case ctx.Err() != nil:
 			// Closed or shutting down: the next open digests them again.
 		case err != nil:
-			ds.latchDamaged(err)
+			// A read that failed (an I/O error) proves no damage: logged,
+			// and the next open digests again.
+			ds.svc.log.Warn("substrate: the changelog segment digest stopped",
+				"repository", id, "error", err)
 		default:
 			ds.svc.log.Info("substrate: every finished changelog segment matches its sidecar",
 				"repository", id, "segments", log.Unread(), "took", time.Since(began).Round(time.Millisecond))

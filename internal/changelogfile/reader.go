@@ -243,11 +243,16 @@ func openSegmentCheck(dir string, list []Segment, i int, vouched map[string]segm
 		seg.unread, seg.known, seg.lastSum = known.unread, known.known, known.lastSum
 		return segmentCheck{seg: seg, reused: true}
 	}
-	if known, ok := opts.Known[s.Name]; ok {
+	// The last segment listed is digested whole even when it is finished:
+	// no segment after it says where it ends, so a finished segment that
+	// lost its last transactions with its sidecar kept would pass its first
+	// and last lines and open as a shorter history.
+	last := i == len(list)-1
+	if known, ok := opts.Known[s.Name]; ok && !last {
 		seg, err := checkKnown(dir, seg, known, lc)
 		return segmentCheck{seg: seg, err: err}
 	}
-	if opts.TrustSidecars {
+	if opts.TrustSidecars && !last {
 		want, err := readSidecar(dir, s.Name)
 		if err != nil {
 			return segmentCheck{err: err}

@@ -359,3 +359,39 @@ func TestCopyChangelogFromLinksTheKnownSegments(t *testing.T) {
 		t.Fatalf("the copy is not the source: %v", err)
 	}
 }
+
+// The last segment listed has no next one to hold its end to, so a finished
+// last segment is digested whole: one that lost its last transaction with
+// its sidecar kept would otherwise open as a shorter history.
+func TestTrustSidecarsDigestsAFinishedLastSegment(t *testing.T) {
+	dir := t.TempDir()
+	writeLines(t, dir, 1, encodeLine(t, entryAt(1)), encodeLine(t, entryAt(2)))
+	finish(t, dir, 1)
+	writeLines(t, dir, 3, encodeLine(t, entryAt(3)), encodeLine(t, entryAt(4)), encodeLine(t, entryAt(5)))
+	finish(t, dir, 3)
+	l, err := OpenWith(dir, OpenOptions{TrustSidecars: true, ReadOnly: true})
+	if err != nil || l.Head() != 5 || l.Unread() != 1 {
+		t.Fatalf("open: head %d with %d unread, %v; want 5 with the first segment alone unread", l.Head(), l.Unread(), err)
+	}
+	editSegment(t, dir, 3, func(raw []byte) []byte {
+		lines := bytes.SplitAfter(raw, []byte("\n"))
+		return bytes.Join(lines[:2], nil)
+	})
+	for name, opts := range map[string]OpenOptions{
+		"trusting the sidecars": {TrustSidecars: true, ReadOnly: true},
+		"known":                 {Known: map[string]KnownSegment{SegmentName(3): {Size: fileSize(t, filepath.Join(dir, SegmentName(3))), Digest: mustSidecar(t, dir, 3)}}, ReadOnly: true},
+	} {
+		if _, err := OpenWith(dir, opts); !errors.Is(err, ErrSegmentDigest) {
+			t.Errorf("%s: err = %v, want ErrSegmentDigest", name, err)
+		}
+	}
+}
+
+func mustSidecar(t *testing.T, dir string, first int64) string {
+	t.Helper()
+	d, err := ReadSidecar(dir, SegmentName(first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}

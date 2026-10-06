@@ -7,12 +7,15 @@ package changelogfile
 // own sidecar's word (OpenOptions.TrustSidecars), which leaves the digest
 // owed to Log.DigestUnread, or on a digest the caller vouches for
 // (OpenOptions.Known), which a snapshot's base was given when it was written.
-// Either way the open reads the segment's first and last lines: they hold the
-// name to the seq the segment starts at, give the seq it ends at for the
-// contiguity check, carry checksums of their own, and catch a segment cut
-// short or torn. A damaged byte between them is what only the digest finds.
+// Either way the open reads the segment's first and last lines: they hold
+// the name to the seq the segment starts at, give the seq it ends at for the
+// contiguity check against the next segment, carry checksums of their own,
+// and catch a segment torn at its end. The last segment listed has no next
+// segment to hold its end to, so it is digested whole even when finished. A
+// damaged byte between the two lines is what only the digest finds.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -103,22 +106,21 @@ func lastLine(f *os.File, size int64) ([]byte, error) {
 		return nil, nil
 	}
 	end := size - 1
-	for window := int64(endLineWindow); ; window *= 2 {
+	for window := int64(endLineWindow); ; window = min(2*window, MaxLineBytes+1) {
 		start := max(end-window, 0)
 		buf := make([]byte, end-start)
 		if _, err := f.ReadAt(buf, start); err != nil && !errors.Is(err, io.EOF) {
 			return nil, err
 		}
-		for i := len(buf) - 1; i >= 0; i-- {
-			if buf[i] == '\n' {
-				return buf[i+1:], nil
-			}
+		line := buf
+		if i := bytes.LastIndexByte(buf, '\n'); i >= 0 {
+			line = buf[i+1:]
 		}
-		if start == 0 {
-			return buf, nil
-		}
-		if end-start > MaxLineBytes {
+		if int64(len(line)) > MaxLineBytes {
 			return nil, ErrLineTooLong
+		}
+		if len(line) < len(buf) || start == 0 {
+			return line, nil
 		}
 	}
 }
@@ -226,6 +228,10 @@ func (r ctxReader) Read(p []byte) (int, error) {
 	}
 	return r.r.Read(p)
 }
+
+// ReadSidecar returns the digest the sidecar of segment name in dir holds,
+// refusing one that is not a digest with ErrSegmentDigest.
+func ReadSidecar(dir, name string) (string, error) { return readSidecar(dir, name) }
 
 // SharedFinished is the run of finished segments from seq 1 that the
 // changelog directory dir holds exactly as the changelog directory base

@@ -371,10 +371,11 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 	if err != nil {
 		return err
 	}
-	// Every finished segment on its sidecar's word, its first and last lines read: a
-	// finished segment never changes, and digesting a long history's held the
-	// boot for minutes (issue 825). The first open after this takes the Log,
-	// and the server digests them behind it (segmentdigest.go).
+	// Every finished segment on its sidecar's word, its first and last lines
+	// read, the last segment listed excepted: a finished segment never
+	// changes, and digesting every one of a long history held up the boot
+	// for minutes (issue 825). The first open after this takes the Log, and
+	// the server digests the segments behind it (segmentdigest.go).
 	log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), changelogfile.OpenOptions{
 		TrustSidecars: true,
 		Progress:      ds.svc.checkProgress(checkAtBoot, ds.info.ID),

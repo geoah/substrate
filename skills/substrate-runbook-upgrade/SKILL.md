@@ -291,7 +291,10 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… \
 
 The output names the base and how many segments and blobs it linked. A
 snapshot that linked nothing from a base it was given read everything: check
-that the base is the previous snapshot of the same repository.
+that the base is the previous snapshot of the same repository. With a base,
+the snapshot compares the database's changelog table with the files only
+past what the base holds, so run `repository verify` beside the running
+server in step 4, before the stop; it reads every byte and takes no lock.
 
 A database dump is optional. The snapshot alone restores: the boot imports
 it into an empty database (see "When it goes wrong"). A dump makes the

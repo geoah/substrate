@@ -89,7 +89,9 @@ those bytes when it was taken. Only what was written since is verified and
 copied, so a snapshot of a long history takes as long as its newest writes
 do. The new snapshot is still a whole directory: deleting the base later
 leaves it intact. A file the filesystem refuses to link is copied and read
-back as without --base. 'repository verify' on a scratch server restored
+back as without --base. The changelog table is compared with the files only
+from the end of what the base holds: the rows below it were compared when
+the base was taken, and 'repository verify' compares them all. 'repository verify' on a scratch server restored
 from a snapshot still reads every byte.
 
   SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
@@ -130,6 +132,7 @@ from a snapshot still reads every byte.
 			fmt.Fprintf(a.out, "  point:     seq %d, checksum %s\n", report.Head, report.HeadHash)
 			if report.Base != "" {
 				fmt.Fprintf(a.out, "  base:      %s\n", report.Base)
+				fmt.Fprintf(a.out, "  table:     compared with the files from seq %d; below it, when the base was taken\n", report.KnownHead)
 			}
 			fmt.Fprintf(a.out, "  changelog: %d segment(s), %d linked from the base\n", report.Segments, report.LinkedSegments)
 			fmt.Fprintf(a.out, "  sealed:    %d file(s), every one opened under %s\n", report.SealedFiles, credentialKeyEnv)

@@ -1150,7 +1150,8 @@ lists every damaged blob.
 
 The export (`GET /api/v1/export`) streams blob bytes into its tar after its
 `200` is sent. It hashes each blob as it copies and holds back the blob's last
-chunk until the digest checks. On a mismatch the server cuts the connection:
+chunk until the digest checks, and does the same for each finished changelog
+segment against its `.sha256` sidecar. On a mismatch the server cuts the connection:
 the handler aborts with `http.ErrAbortHandler`, which closes an HTTP/1.1
 connection before the chunked body's terminator and resets an HTTP/2 stream.
 It logs `export aborted mid-stream` naming the digest. The client sees a
