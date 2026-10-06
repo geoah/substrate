@@ -183,7 +183,11 @@ The server takes no LLM endpoint, no key and no embedding model. Completions
 and embeddings alike are bought through a repository's own
 [`llm/provider`](agents.md#providers) records, which carry the wire, the
 endpoint, the key and (for embeddings) the model. The process holds no bearer,
-so no host-wide key can reach a repository-chosen endpoint.
+so no host-wide key can reach a repository-chosen endpoint. The provider
+clients read nothing from the host either: `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` and
+Anthropic profile files are ignored, so setting one on the server changes no
+request.
 
 Three consequences an operator meets:
 

@@ -632,9 +632,11 @@ block stays a map.
 These two stay lists because each row's key is a value with a name of its own.
 
 **Every row carries its own endpoint and its own key.** There is no host
-gateway and no host key: the server takes no LLM configuration at all, so
-nothing process-wide can travel to a repository-chosen endpoint. An `openai` or
-`azure` row that names no `baseURL` refuses to resolve, and every wire requires
+gateway and no host key: the server takes no LLM configuration at all, and
+the provider clients ignore the host's `ANTHROPIC_*` variables and profile
+files, so nothing process-wide can travel to a repository-chosen endpoint. An
+`openai` or `azure` row that names no `baseURL` refuses to resolve, and every
+wire requires
 the row's own `apiKey`. Only `anthropic` may leave `baseURL` empty, for its
 official endpoint.
 
