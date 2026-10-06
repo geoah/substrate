@@ -53,6 +53,9 @@ export function MarkdownEditor({
     editor.setEditable(live, false)
     editor.setOptions({
       editorProps: {
+        // Tiptap puts `role="textbox"` under these attributes whether or not
+        // the editor is editable, and ProseMirror cannot unset one, so the
+        // read-only view names its own role or reads as an input.
         attributes: live
           ? {
               role: "textbox",
@@ -60,7 +63,7 @@ export function MarkdownEditor({
               "aria-label": label,
               class: "outline-none",
             }
-          : { "aria-label": label, class: "outline-none" },
+          : { role: "document", "aria-label": label, class: "outline-none" },
       },
     })
     if (live && autoFocus) editor.commands.focus("end")
