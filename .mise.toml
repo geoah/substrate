@@ -757,7 +757,7 @@ depends = ["cross"]
 description = "CI job `changes`: does this PR touch anything a Go test reads? go=true|false"
 # The first job of the workflow. Its answer gates `ci:go` and `ci:engine`, so
 # a PR that edits only docs/, the console or a linter config gets its lint,
-# console, cross and audit jobs and no database suite. A push runs everything.
+# console and cross jobs and no database suite. A push runs everything.
 run = ".mise/changescheck.sh"
 
 [tasks."ci:go"]

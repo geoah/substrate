@@ -67,7 +67,8 @@ the configuration, not something to hand-patch.
 answer changes without the tree changing, because it asks a vulnerability
 database what is known today: green this morning, red this afternoon, same
 commit. It also needs the network, and `lint` is something a laptop can run on
-a plane. It has its own CI job for the same reason.
+a plane. It has its own CI workflow, `audit.yml`, for the same reason, and
+because a red `ci` run on `main` holds back `latest` and every release.
 
 **The YAML is formatted too.** `kinds/` and `samples/` are the contract as
 files, so their shape is held the way Go's is: `mise run fmt` writes it, `mise run fmt:check` fails

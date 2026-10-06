@@ -557,12 +557,17 @@ and do not block a merge.
 | race | `ci:race` | the short suite under `-race` | no |
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | no |
 | image builds | `ci:image` | the image builds from a clean tree and boots | no |
-| audit | `ci:audit` | govulncheck and pnpm audit | no |
 | changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites | no |
 | coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only |
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on
-changes, because its queries change even when the code does not.
+changes, because its queries change even when the code does not. So does
+`audit` (`ci:audit`: govulncheck and pnpm audit), in `audit.yml`, for the
+same reason: an advisory published today turns a commit red that was green
+yesterday. It is not part of `ci`, because `latest.yml`, `release-please.yml`
+and `release.yml` wait for a successful `ci` run on `main`, and an advisory
+with no patched version yet would hold back the `latest` image and every
+release.
 
 The `llm live` workflow runs `ci:llm`, the live suite against the real
 providers, weekly on `main` and on dispatch, never on a pull request, and

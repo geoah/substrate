@@ -20,8 +20,10 @@
 # minute plus GitHub's own scheduling for its verdict. Everything else runs on
 # the same pull request and on main and is not required: `providers e2e` (nine
 # minutes), `acceptance drill` (one serial scenario), `race`, `cross compile`,
-# `image builds and boots`, `audit`. A required job that grows past a minute is
-# cut (more shards, a split job), not left to slow every merge.
+# `image builds and boots`. A required job that grows past a minute is cut
+# (more shards, a split job), not left to slow every merge. `audit` is not
+# here: it runs in audit.yml, because this workflow's conclusion is what
+# latest.yml, release-please.yml and release.yml wait for.
 #
 # The Go jobs gate themselves. Each one's first step is .mise/changescheck.sh:
 # does the diff touch anything a Go test reads? On a docs-only, console-only or
@@ -100,10 +102,14 @@ on:
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Pull requests only. A push run on main is the one release-please.yml and
-  # release.yml ask for before they tag and build a release commit, and a
-  # cancelled run is a release that waits for somebody to re-run it by hand.
+  # A pull request's runs share its ref, so a new push cancels the old run. A
+  # push to main gets a group of its own, its commit: a push run on main is
+  # what release-please.yml and release.yml ask for before they tag and build
+  # a release commit, and one group for all of main would still drop runs.
+  # `cancel-in-progress: false` does not keep them, because a group holds one
+  # running and one PENDING run, and a third push cancels the pending one.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha
+    }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -727,49 +733,6 @@ jobs:
         run: .mise/gocache.sh age ~/.cache/go-build
         continue-on-error: true
       - run: mise run ci:race
-      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
-          'true'
-        run: .mise/gocache.sh prune ~/.cache/go-build
-        continue-on-error: true
-      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
-          'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ steps.cache.outputs.cache-primary-key }}
-
-  audit:
-    name: audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # The one job allowed to fail for a reason that is not in the diff: it asks
-    # a vulnerability database what is known TODAY, so the same commit can be
-    # green this morning and red this afternoon. That is the point of it, and
-    # it is why it is not part of `lint`.
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
-        with:
-          experimental: true
-          version: 2026.9.2
-      - id: cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-audit-${{ hashFiles('go.sum') }}-${{ github.sha
-            }}
-          restore-keys: |
-            ${{ runner.os }}-go-audit-${{ hashFiles('go.sum') }}-
-            ${{ runner.os }}-go-audit-
-      - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
-          'true'
-        run: .mise/gocache.sh age ~/.cache/go-build
-        continue-on-error: true
-      - run: mise run ci:audit
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         run: .mise/gocache.sh prune ~/.cache/go-build
