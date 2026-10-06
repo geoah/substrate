@@ -379,6 +379,8 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	state := &readState{spec: spec, backend: backend}
 	resp, err := p.roundtrip(ictx, spec.timeout(),
 		frame{Op: "invoke", ID: spec.Key(), Input: &in}, state)
+	// Every line the body wrote has reached the backend already, through
+	// state.log, whichever way the exchange ended.
 	if state.tripped != nil {
 		return nil, state.tripped
 	}
@@ -388,7 +390,7 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	if !resp.OK {
 		return nil, fmt.Errorf("runner: %s", resp.Error)
 	}
-	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: resp.Logs, More: resp.More}, nil
+	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: state.logs, More: resp.More}, nil
 }
 
 // proc returns the live process for one installation, starting it if needed.
@@ -414,6 +416,7 @@ const (
 	frameKindResponse = "response"
 	frameKindCall     = "call"
 	frameKindReply    = "reply"
+	frameKindLog      = "log"
 )
 
 // frame is one parent → child request line.
@@ -427,11 +430,10 @@ type frame struct {
 
 // response is a child's final line for one request.
 type response struct {
-	OK      bool     `json:"ok"`
-	Error   string   `json:"error"`
-	Output  any      `json:"output"`
-	Effects []any    `json:"effects"`
-	Logs    []string `json:"logs"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error"`
+	Output  any    `json:"output"`
+	Effects []any  `json:"effects"`
 	// More, present, is the paged-checkpoint continuation (protocol.go): this
 	// page is done, re-invoke with More.Cursor. Absent means drained.
 	More *Continuation `json:"more"`
@@ -851,13 +853,24 @@ func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, st
 				p.kill()
 				return nil, fmt.Errorf("runner: undecodable frame from child: %w", err)
 			}
-			if head.ReqID != f.ReqID || (head.Kind != frameKindResponse && head.Kind != frameKindCall) {
+			if head.ReqID != f.ReqID || (head.Kind != frameKindResponse && head.Kind != frameKindCall && head.Kind != frameKindLog) {
 				// A response for a request nobody is waiting on, or a frame
 				// with no kind: the stream is desynchronized and anything
 				// read from here on could pair with the wrong delivery.
 				p.kill()
 				return nil, fmt.Errorf("runner: protocol desync: kind %q reqId %d during request %d",
 					head.Kind, head.ReqID, f.ReqID)
+			}
+			if head.Kind == frameKindLog {
+				var entry struct {
+					Line string `json:"line"`
+				}
+				if err := json.Unmarshal(line, &entry); err != nil {
+					p.kill()
+					return nil, fmt.Errorf("runner: undecodable log frame from child: %w", err)
+				}
+				state.log(entry.Line)
+				continue
 			}
 			if head.Kind == frameKindCall {
 				var call hostCall
@@ -924,6 +937,20 @@ type readState struct {
 	calls   int
 	rows    int
 	tripped error
+	// logs is every line the body has written so far, in order.
+	logs []string
+}
+
+// log takes one line of the body's log off the wire and hands it on at once.
+// A nil state is a register roundtrip, which has no body running to log.
+func (s *readState) log(line string) {
+	if s == nil {
+		return
+	}
+	s.logs = append(s.logs, line)
+	if s.backend != nil {
+		s.backend.Log(line)
+	}
 }
 
 // serve answers one host call. Every failure becomes an error frame the body

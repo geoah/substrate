@@ -1,6 +1,6 @@
 # The shared runner's Python host: one long-lived child process hosting
 # every installed `runtime: python` function body. Speaks the runner's
-# JSON-lines protocol, version 5 (one frame per line; functions/runner's
+# JSON-lines protocol, version 6 (one frame per line; functions/runner's
 # protocol.go is the contract):
 #
 #   parent -> host   {"op": "register", "reqId": N, "id": <key>, "source": <inline body>}
@@ -12,10 +12,11 @@
 #   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
+#   host -> parent   {"kind": "log", "reqId": N, "line": "..."}   (no answer)
 #
 # The protocol stream is the ORIGINAL stdout, dup'd at startup and private to
 # this file: sys.stdout is rebound so a body's print() lands in the current
-# invocation's capped logs, never on the wire, and sys.stdin is rebound to
+# invocation's capped logs, never raw on the wire, and sys.stdin is rebound to
 # /dev/null so a body's input() cannot eat protocol frames. Inline source is
 # exec'd at registration into its own module namespace, keyed by the
 # installation (repository + function + hash), so no state is shared across
@@ -28,6 +29,7 @@ import json
 import os
 import re
 import sys
+import threading
 import traceback
 
 MAX_LOG_LINES = 200
@@ -47,11 +49,15 @@ FUNCS = {}
 
 
 class Logs:
-    """One invocation's capped log sink."""
+    """One invocation's capped log sink. Every line it keeps goes to the parent
+    as a `log` frame the moment it is written, not with the response: the
+    runner kills a body at its timeout, and the lines a killed body wrote are
+    what says where its time went. `req_id` None keeps the lines here only."""
 
-    def __init__(self):
+    def __init__(self, req_id=None):
         self.lines = []
         self.dropped = 0
+        self.req_id = req_id
 
     def add(self, msg):
         s = str(msg)
@@ -61,6 +67,16 @@ class Logs:
             self.dropped += 1
             return
         self.lines.append(s)
+        self._send(s)
+
+    def close(self):
+        """The count of the lines past the cap, as the invocation's last line."""
+        if self.dropped:
+            self._send("... %d more log lines dropped" % self.dropped)
+
+    def _send(self, line):
+        if self.req_id is not None:
+            send(self.req_id, {"line": line}, kind="log")
 
     def out(self):
         if self.dropped:
@@ -70,8 +86,9 @@ class Logs:
 
 class StdoutCapture:
     """sys.stdout for the whole host: body prints land in the CURRENT
-    invocation's logs (prefixed so they read as what they are), never on the
-    protocol stream. Outside an invocation, writes are dropped."""
+    invocation's logs (prefixed so they read as what they are), which frame
+    them, never raw on the protocol stream. Outside an invocation, writes are
+    dropped."""
 
     def __init__(self):
         self.logs = None
@@ -116,6 +133,11 @@ def _bootstrap():
         sys.path.append(mod_dir)
 
 
+# One frame per line, whole: a body that logs from a thread of its own while
+# its main thread writes a host call must not interleave the two.
+SEND_LOCK = threading.Lock()
+
+
 def send(req_id, obj, kind="response"):
     obj["kind"] = kind
     obj["reqId"] = req_id
@@ -138,8 +160,9 @@ def send(req_id, obj, kind="response"):
             "error": "response frame of %d bytes exceeds the %d byte cap"
                      % (len(data), MAX_FRAME_BYTES),
         })
-    PROTO_OUT.write(data + "\n")
-    PROTO_OUT.flush()
+    with SEND_LOCK:
+        PROTO_OUT.write(data + "\n")
+        PROTO_OUT.flush()
 
 
 class HostError(Exception):
@@ -687,19 +710,19 @@ def invoke(req, req_id):
     if fn is None:
         return {"ok": False, "error": "unregistered function " + str(req["id"])}
     inp = req.get("input") or {}
-    logs = Logs()
+    logs = Logs(req_id)
     host = Host(inp, req_id, logs)
     CAPTURE.logs = logs
     try:
         out = fn(inp, host) or {}
     except HostError as e:
-        return {"ok": False, "error": str(e), "logs": logs.out()}
+        return {"ok": False, "error": str(e)}
     except Exception:
         tb = traceback.format_exc(limit=3)
-        return {"ok": False, "error": tb.strip().splitlines()[-1] + "\n" + tb,
-                "logs": logs.out()}
+        return {"ok": False, "error": tb.strip().splitlines()[-1] + "\n" + tb}
     finally:
         CAPTURE.logs = None
+        logs.close()
     # The return-path rule: ONE mode per invocation. A body either returns an
     # explicit effect list OR stages on the builder — never both. The two apply
     # orders are unrelated (returned-first, then staged), so mixing can reverse
@@ -711,8 +734,7 @@ def invoke(req, req_id):
     if not isinstance(returned, (list, type(None))):
         return {"ok": False,
                 "error": "the returned `effects` is a list of effects, got %s"
-                         % type(returned).__name__,
-                "logs": logs.out()}
+                         % type(returned).__name__}
     returned = list(returned or [])
     staged = host.effects._staged
     if returned and staged:
@@ -720,11 +742,9 @@ def invoke(req, req_id):
                 "error": "a body returns an explicit `effects` list OR stages on "
                          "host.effects — not both (%d returned, %d staged); the two "
                          "apply orders are unrelated and can self-conflict under CAS"
-                         % (len(returned), len(staged)),
-                "logs": logs.out()}
+                         % (len(returned), len(staged))}
     effects = returned + staged
-    resp = {"ok": True, "effects": effects,
-            "output": out.get("output"), "logs": logs.out()}
+    resp = {"ok": True, "effects": effects, "output": out.get("output")}
     # The paged-checkpoint continuation: a body returns {"more": {"cursor": X}}
     # to mean "commit this page, then re-invoke me with X on input['resume']".
     # Absent (or None) means drained — the ordinary single-shot completion.
@@ -748,7 +768,7 @@ def main():
             elif op == "deregister":
                 resp = deregister(req)
             elif op == "describe":
-                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 5}
+                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 6}
             elif op == "invoke":
                 resp = invoke(req, req_id)
             else:

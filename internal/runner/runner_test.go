@@ -37,6 +37,16 @@ type fakeBackend struct {
 	aliases map[string]string
 	// orderBys is every list's sort, in call order.
 	orderBys [][]substrate.Order
+	// logs is every line Log received, in order, and logged the instant of
+	// each, so a test can tell a line that arrived while the body ran from
+	// one that came with its end.
+	logs   []string
+	logged []time.Time
+}
+
+func (f *fakeBackend) Log(line string) {
+	f.logs = append(f.logs, line)
+	f.logged = append(f.logged, time.Now())
 }
 
 func (f *fakeBackend) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
@@ -407,6 +417,65 @@ def main(input, host):
 	}
 	if len(res.Logs) != 1 || !strings.Contains(res.Logs[0], "EVIL") || !strings.HasPrefix(res.Logs[0], "[stdout]") {
 		t.Fatalf("the print did not land in logs: %v", res.Logs)
+	}
+}
+
+// TestPythonLogLinesArriveWhileTheBodyRuns: a body's lines, its prints
+// included, reach the backend as it writes them, so a body the runner kills at
+// its timeout has still said where it was. Protocol version 5 carried them on
+// the response, which a killed body never sends.
+func TestPythonLogLinesArriveWhileTheBodyRuns(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "stall.g.test",
+		Runtime: "python",
+		Source: `
+import time
+def main(input, host):
+    host.log("before the sleep")
+    print("printed before the sleep")
+    time.sleep(30)
+    host.log("after the sleep")
+    return {}
+`,
+		TimeoutMs: 1500,
+	}
+	backend := widgetBackend()
+	if _, err := r.Invoke(context.Background(), spec, testInput(), backend); err == nil ||
+		!strings.Contains(err.Error(), "invocation exceeded") {
+		t.Fatalf("err = %v, want the timeout", err)
+	}
+	want := []string{"before the sleep", "[stdout] printed before the sleep"}
+	if !reflect.DeepEqual(backend.logs, want) {
+		t.Fatalf("the backend got %q, want %q", backend.logs, want)
+	}
+}
+
+// TestPythonLogLinesPastTheCapAreCounted: past MAX_LOG_LINES a body's lines
+// are dropped, and the count of them is the invocation's last line.
+func TestPythonLogLinesPastTheCapAreCounted(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "chatty.g.test",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    for i in range(250):
+        host.log("line %d" % i)
+    return {}
+`,
+		TimeoutMs: 5000,
+	}
+	backend := widgetBackend()
+	res, err := r.Invoke(context.Background(), spec, testInput(), backend)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if len(backend.logs) != 201 || backend.logs[199] != "line 199" || backend.logs[200] != "... 50 more log lines dropped" {
+		t.Fatalf("the backend got %d lines ending %q", len(backend.logs), backend.logs[len(backend.logs)-1])
+	}
+	if !reflect.DeepEqual(res.Logs, backend.logs) {
+		t.Fatalf("the result's logs differ from what the backend was handed")
 	}
 }
 
