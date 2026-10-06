@@ -145,5 +145,13 @@ A run that never happened (a dropped `workflow_run` event) or died after
 `ci` went green is replayed with a `workflow_dispatch` of `release-please`;
 it refreshes an open pull request, tags a merged one that was not, and
 leaves a tagged one alone. A release whose artifacts failed to upload is
-replayed by re-running the `release-please` run that called `release.yml`:
-goreleaser replaces the artifacts it had uploaded and keeps the body.
+replayed with "Re-run failed jobs" on the `release-please` run that called
+`release.yml`: goreleaser replaces the artifacts it had uploaded and keeps
+the body. "Re-run all jobs" does nothing useful there, because release-please
+finds its pull request already tagged and skips the build.
+
+The workflow tags nothing until the merged release pull request's own commit
+has a green `ci` run on `main`, so a release never goes public without its
+artifacts. A run that finds that commit's suite still running, or red, holds
+the release and says so in its log. The commit's run going green, by itself
+or by a re-run of a flaky job, starts the run that cuts the release.

@@ -31,10 +31,9 @@ on:
 
 concurrency:
   # One build at a time, so two of them cannot push the one moving tag in an
-  # order nobody chose. Successive pushes to main arrive here in commit order
-  # (ci cancels its own older run on main, so an older run only reports success
-  # by finishing before the newer one starts), but a re-run of an ancient ci
-  # run arrives whenever a person clicks it.
+  # order nobody chose. ci runs every push to main to the end, so an older
+  # commit's run can finish after a newer one's, and a re-run of an ancient ci
+  # run arrives whenever a person clicks it. The `tip` job below skips both.
   #
   # NOT cancel-in-progress: arrival order is what a cancellation would act on,
   # and that re-run is an arrival for a commit two releases back. It would

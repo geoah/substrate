@@ -12,11 +12,13 @@
 # without asking whether ci ever passed for it. The first step below asks:
 # it looks the tagged commit's own green ci run up and refuses without one.
 #
-# Recovering a release that died halfway (the ghcr push, a flaky upload) is a
-# re-run of the release-please.yml run that called this: release-please
-# finds the tag already cut and the release already created, reports the
-# release, and calls here again. Nothing has to be tagged, deleted or
-# released by hand.
+# Recovering a release that died halfway (the ghcr push, a flaky upload) is
+# "Re-run failed jobs" on the release-please.yml run that called this: the
+# release-please job keeps its outputs and this job runs again with the same
+# tag and commit. NOT "Re-run all jobs": release-please would run again, find
+# its pull request already labeled `autorelease: tagged`, report no new
+# release, and skip this call. Nothing has to be tagged, deleted or released
+# by hand.
 name: release
 
 on:
