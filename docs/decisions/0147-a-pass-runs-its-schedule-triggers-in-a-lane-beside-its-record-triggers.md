@@ -36,8 +36,12 @@ schedule triggers, and the record lane never waits for a fire.
 
 The invariants hold without new locks. A trigger has one source arm, so it
 runs in one lane, and each lane delivers one at a time: no trigger has two
-deliveries in flight from the dispatcher. The dispatcher still runs one pass
-per repository, and the pass returns only after both lanes end. Fire states,
+deliveries in flight from the dispatcher, and the schedule lane skips a
+trigger the record lane runs that pass, in case its source changed mid-pass.
+The dispatcher still runs one pass per repository, and the pass returns only
+after both lanes end, a panic in the record lane included. A trigger behind
+on missed occurrences still fires at most ten per pass, however many times
+the lane looks. Fire states,
 cursors, claims, coalescing and the retiring of parked fires
 ([0142](0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md))
 are unchanged, and deliveries of two triggers of one repository already ran
@@ -67,7 +71,9 @@ every delivery spends the budget, an hourly occurrence due mid-pass starts
 within a second of its due time while every widget is still delivered once
 per trigger; and a schedule due every second whose fire takes 1.2 s runs its
 occurrences oldest first, each once, never two at once, while a record
-trigger drains beside it.
+trigger drains beside it. A pass whose record delivery panics stops its
+schedule lane before it returns, and a lane that looks many times in one
+pass fires no more missed occurrences than one pass allows.
 
 ## More Information
 

@@ -317,3 +317,76 @@ func TestAScheduleLaneRunsOneFireOfATriggerAtATime(t *testing.T) {
 		t.Fatalf("the record trigger wrote %d ok runs beside the busy lane, want %d", got, widgets)
 	}
 }
+
+func TestAPanickedPassStopsItsScheduleLane(t *testing.T) {
+	// A record delivery panics in the first pass, under a recover like the
+	// dispatcher's. The occurrence falls due after that pass has returned:
+	// a lane the pass left behind would fire it with no pass running.
+	defer withScheduleLanePoll(50 * time.Millisecond)()
+	ds := laneDataset(t, 0, 0, 1, 2)
+	due := time.Now().UTC().Add(1500 * time.Millisecond).Truncate(time.Second).Add(time.Second)
+	putLaneSchedule(t, ds, "b-hourly", "FREQ=HOURLY", due)
+	var once sync.Once
+	ds.mu.Lock()
+	ds.deliveryFault = func(*txn) error {
+		once.Do(func() { panic("record delivery panicked") })
+		return nil
+	}
+	ds.mu.Unlock()
+
+	recovered := func() (r any) {
+		defer func() { r = recover() }()
+		_, _ = ds.ProcessTriggers(context.Background())
+		return nil
+	}()
+	if recovered == nil {
+		t.Fatal("the pass returned without the record delivery's panic")
+	}
+	if time.Now().After(due) {
+		t.Fatalf("the pass returned after the due time %s: too late to tell a leaked lane apart", due)
+	}
+	time.Sleep(time.Until(due) + time.Second)
+	if runs := okRuns(t, ds, "b-hourly"); len(runs) != 0 {
+		t.Fatalf("the occurrence fired %d times after the panicked pass returned: its schedule lane kept running", len(runs))
+	}
+
+	// The next pass fires it, once.
+	processOnce(t, ds)
+	if runs := okRuns(t, ds, "b-hourly"); len(runs) != 1 || runs[0].fireID != fireID(due) {
+		t.Fatalf("ok runs %+v after the next pass, want the one occurrence %s", runs, fireID(due))
+	}
+}
+
+func TestAScheduleLaneFiresAtMostOnePassOfMissedOccurrences(t *testing.T) {
+	// Thirty occurrences are overdue and a pass may fire three. The record
+	// lane runs long enough for the schedule lane to look many times; it
+	// still fires three in the pass, not three a look.
+	const drain = 3
+	defer withScheduleDrain(drain)()
+	defer withScheduleLanePoll(50 * time.Millisecond)()
+	ds := laneDataset(t, 300*time.Millisecond, 0, 1, 5)
+	startsAt := time.Now().UTC().Add(-30 * time.Hour).Truncate(time.Hour)
+	putLaneSchedule(t, ds, "b-hourly", "FREQ=HOURLY", startsAt)
+	processOnce(t, ds) // initializes the fire state: nothing due yet
+	rewindSchedule(t, ds, "b-hourly", startsAt.Add(-time.Minute))
+	// Widgets written now give the record lane a fresh backlog to drain.
+	for i := range 5 {
+		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+			Kind: lanePkg + "/widget", Properties: map[string]any{"name": fmt.Sprintf("late%d", i)},
+		}); err != nil {
+			t.Fatalf("put widget: %v", err)
+		}
+	}
+
+	began := time.Now()
+	processOnce(t, ds)
+	if took := time.Since(began); took < 10*scheduleLanePoll {
+		t.Fatalf("the pass took %s, too short for the lane to look again", took)
+	}
+	if runs := okRuns(t, ds, "b-hourly"); len(runs) != drain {
+		t.Fatalf("one pass fired %d occurrences, want %d", len(runs), drain)
+	}
+	if got, want := firedAtOf(t, ds, "b-hourly"), startsAt.Add((drain-1)*time.Hour); !got.Equal(want) {
+		t.Fatalf("fire state %s after one pass, want the third occurrence %s", got, want)
+	}
+}

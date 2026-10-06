@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/geoah/substrate/internal/metrics"
@@ -60,12 +61,11 @@ const (
 // bounded evaluation plus one transaction.
 var triggerRetryBackoff = []time.Duration{25 * time.Millisecond, 100 * time.Millisecond}
 
-// scheduleDrainPerPass bounds the occurrences one look of the schedule lane
-// fires for one schedule trigger, oldest first; a long pass looks every
-// scheduleLanePoll. A trigger that was down, disabled or restored fires
-// every occurrence it missed, but over several looks rather than in one
-// burst at startup; nothing is coalesced away. A var, so a test can lower
-// it.
+// scheduleDrainPerPass bounds the occurrences one pass fires for one schedule
+// trigger, oldest first, over every look of its schedule lane. A trigger
+// that was down, disabled or restored fires every occurrence it missed, but
+// over passes rather than in one burst at startup; nothing is coalesced
+// away. A var, so a test can lower it.
 var scheduleDrainPerPass = 10
 
 // supersedeBatch bounds the parked fires one settlement retires
@@ -250,8 +250,18 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 			}
 			scheduled <- res
 		}()
-		res.ran, res.errs = ds.scheduleLane(ctx, schedules, recordsDone)
+		res.ran, res.errs = ds.scheduleLane(ctx, schedules, recordLaneIDs(records), recordsDone)
 	}()
+	// The pass ends only once the lane has stopped and its fire in hand has
+	// settled, a panic in the record lane included: the dispatcher starts
+	// this repository's next pass, and shutdown stops waiting, on this
+	// return, and a lane left behind would fire the same triggers as the
+	// next pass's.
+	stopLane := sync.OnceValue(func() laneResult {
+		close(recordsDone)
+		return <-scheduled
+	})
+	defer stopLane()
 
 	total := 0
 	var errs []error
@@ -265,12 +275,17 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 			errs = append(errs, fmt.Errorf("trigger %s: %w", lt.ID, perr))
 		}
 	}
-	close(recordsDone)
-	// The pass ends only once the fire in hand settles: the dispatcher
-	// starts this repository's next pass on that return, and shutdown waits
-	// on it.
-	res := <-scheduled
+	res := stopLane()
 	return total + res.ran, errors.Join(append(errs, res.errs...)...)
+}
+
+// recordLaneIDs is the set of the record lane's triggers.
+func recordLaneIDs(records []loadedTrigger) map[string]bool {
+	ids := make(map[string]bool, len(records))
+	for _, lt := range records {
+		ids[lt.ID] = true
+	}
+	return ids
 }
 
 // scheduleLanePoll is how often the schedule lane looks for a due
@@ -284,16 +299,26 @@ var scheduleLanePoll = 5 * time.Second
 
 // scheduleLane is a pass's schedule lane: the due occurrences of every
 // schedule trigger in first, then of every enabled schedule trigger the
-// rows hold at each poll, until recordsDone closes or ctx ends. A trigger
-// whose delivery fails on every look reports its latest error once.
-func (ds *dataset) scheduleLane(ctx context.Context, first []loadedTrigger, recordsDone <-chan struct{}) (int, []error) {
+// rows hold at each poll, until recordsDone closes or ctx ends. Each
+// trigger fires at most scheduleDrainPerPass occurrences over the whole
+// pass, however many looks it lasts, so a trigger far behind catches up at
+// the rate one pass allows. A trigger the record lane runs this pass is
+// skipped, so one whose source changed mid-pass never runs in both lanes. A
+// trigger whose delivery fails on every look reports its latest error once.
+func (ds *dataset) scheduleLane(ctx context.Context, first []loadedTrigger, records map[string]bool, recordsDone <-chan struct{}) (int, []error) {
 	total := 0
 	failed := map[string]error{}
 	var order []string
+	fired := map[string]int{}
 	schedules := first
 	for {
 		for _, lt := range schedules {
-			n, err := ds.processScheduleTrigger(ctx, lt, newPassDeadline())
+			left := scheduleDrainPerPass - fired[lt.ID]
+			if records[lt.ID] || left <= 0 {
+				continue
+			}
+			n, f, err := ds.processScheduleTrigger(ctx, lt, newPassDeadline(), left)
+			fired[lt.ID] += f
 			total += n
 			if n > 0 {
 				metrics.TriggerDeliveries.WithLabelValues(lt.ID).Add(float64(n))
@@ -1257,25 +1282,25 @@ func (ds *dataset) skipClaimed(ctx context.Context, s *settlement, run runRecord
 // --- schedule-sourced delivery ----------------------------------------------------
 
 // processScheduleTrigger fires the occurrences due since the last one the
-// trigger acknowledged, oldest first and at most scheduleDrainPerPass of
-// them, stopping early once the deadline is spent: each fire advances the
+// trigger acknowledged, oldest first and at most limit of them, stopping
+// early once the deadline is spent. It returns the deliveries that applied
+// effects and the occurrences it dispatched: each fire advances the
 // fire state to its occurrence, so a pass that stops early (an error, a lost
 // swap, the budget) leaves the rest due for the next. Parked fires of the
 // trigger do not hold a due one back: every occurrence is dispatched, and
 // one that settles retires the parks at or before it (retireSupersededFires).
-func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline) (int, error) {
+func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline, limit int) (ran, fired int, err error) {
 	lastFire, err := ds.ensureScheduleState(ctx, lt.ID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	due, err := lt.Schedule.dueFires(lt.CreatedAt, lastFire, nowUTC(), scheduleDrainPerPass)
+	due, err := lt.Schedule.dueFires(lt.CreatedAt, lastFire, nowUTC(), limit)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	ran := 0
 	for i, at := range due {
 		if i > 0 && deadline.spent() {
-			return ran, nil
+			return ran, fired, nil
 		}
 		// The schedule lane runs its triggers one after another, so an
 		// occurrence waits for the fires ahead of it and for the lane's next
@@ -1289,17 +1314,18 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
 		done()
 		ran += n
+		fired++
 		if errors.Is(err, errCallableGone) {
 			ds.svc.log.Warn("substrate: trigger names a callable that no longer resolves — it is skipped, its fire state stands still",
 				"trigger", lt.ID, "callable", lt.CallableID)
-			return ran, nil
+			return ran, fired, nil
 		}
 		if err != nil {
-			return ran, err
+			return ran, fired, err
 		}
 		lastFire = at
 	}
-	return ran, nil
+	return ran, fired, nil
 }
 
 // scheduleLateAfter is how far past its occurrence a schedule fire may begin
@@ -2745,7 +2771,8 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 	case tr.Record != nil:
 		return ds.processRecordTrigger(ctx, tr, passDeadline{})
 	case tr.Schedule != nil:
-		return ds.processScheduleTrigger(ctx, loadedTrigger{trigger: tr, CreatedAt: createdAt}, passDeadline{})
+		ran, _, err := ds.processScheduleTrigger(ctx, loadedTrigger{trigger: tr, CreatedAt: createdAt}, passDeadline{}, scheduleDrainPerPass)
+		return ran, err
 	}
 	return 0, nil
 }

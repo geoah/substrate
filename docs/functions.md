@@ -920,9 +920,8 @@ data:
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
   guard. Every occurrence fires once, oldest first: a trigger that missed
   occurrences (the server down, the trigger disabled, a repository restored
-  to an older fire state) catches up at most ten each time the dispatcher
-  looks (at a pass's start, then every 5 seconds while the pass lasts), and
-  none is coalesced away.
+  to an older fire state) catches up at most ten per dispatcher pass, however
+  long the pass lasts, and none is coalesced away.
   The trigger's optional `arguments` property is a map of named arguments
   each fire, and each retry of a parked one, hands a function as
   `input["args"]`, so one function serves several schedules. The map is
