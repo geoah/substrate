@@ -105,7 +105,8 @@ dockers_v2:
     # No `latest` here: the tip-of-main build (.mise.toml's `image:latest`,
     # run by .github/workflows/latest.yml) already owns that tag, and a
     # release racing it for the same name is worse than a release with no
-    # `latest` at all.
+    # `latest` at all. No `stable` either: release.yml moves it after this
+    # push, and only to the newest release (.mise/imagestable.sh).
     #
     # Both spellings of the release. The git tag, the releases page and the
     # `server.version` a running deployment reports all say `v0.85.0`, and a

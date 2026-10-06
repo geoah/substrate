@@ -33,8 +33,8 @@ Merging the pull request is the release. The next run tags the merge commit
 label to `autorelease: tagged`, and calls `.github/workflows/release.yml`,
 which checks that the tagged commit's own `ci` run was green and then runs
 `mise run release`: goreleaser builds the CLI archives and the multi-arch
-image and attaches them to that release
-([the published image](operations.md#the-published-image)).
+image and attaches them to that release, then points the `stable` image tag
+at the new version ([the published image](operations.md#the-published-image)).
 
 ## Cutting a release
 
