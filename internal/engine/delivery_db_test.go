@@ -299,8 +299,10 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	}
 	// The schedule initialized at creation, so nothing was due; rewind it to
 	// before its anchor so four occurrences are overdue, of which one pass
-	// fires the oldest. The same pass scans the other triggers past the
-	// entries the park and the fire wrote.
+	// fires the oldest. The fire runs in the schedule lane, beside the record
+	// triggers, so their scan may pass its entries in this pass or the next:
+	// the record triggers run once more, alone, to scan past the entries the
+	// park and the fire wrote without firing the next occurrence.
 	if _, err := d.db.ExecContext(ctx, `UPDATE trigger_schedule SET fired_at = $2 WHERE trigger_id = $1`,
 		ledgerHourly, startsAt.Add(-time.Minute)); err != nil {
 		t.Fatal(err)
@@ -308,6 +310,7 @@ func TestARestoredRepositoryResumesItsDeliveries(t *testing.T) {
 	if _, err := d.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
+	processRecordTriggers(t, d)
 	if got := firedAtOf(t, d, ledgerHourly); !got.Equal(startsAt) {
 		t.Fatalf("fire state %s, want the oldest occurrence %s", got, startsAt)
 	}
@@ -1313,5 +1316,21 @@ func TestAParkedMultipartWebhookKeepsItsPartValuesOutOfTheLedger(t *testing.T) {
 	}
 	if left := failureIDs(t, d, ledgerHook); len(left) != 0 {
 		t.Fatalf("failures after the retry: %v", left)
+	}
+}
+
+// processRecordTriggers runs every runnable record trigger once, the record
+// lane of a pass without its schedule lane.
+func processRecordTriggers(t *testing.T, ds *dataset) {
+	t.Helper()
+	triggers, err := ds.loadTriggers(context.Background())
+	if err != nil {
+		t.Fatalf("load triggers: %v", err)
+	}
+	_, records := ds.dispatchable(triggers, false)
+	for _, lt := range records {
+		if _, err := ds.processRecordTrigger(context.Background(), lt.trigger, newPassDeadline()); err != nil {
+			t.Fatalf("process %s: %v", lt.ID, err)
+		}
 	}
 }

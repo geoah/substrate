@@ -920,8 +920,9 @@ data:
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
   guard. Every occurrence fires once, oldest first: a trigger that missed
   occurrences (the server down, the trigger disabled, a repository restored
-  to an older fire state) catches up at most ten per dispatcher pass, and none
-  is coalesced away.
+  to an older fire state) catches up at most ten each time the dispatcher
+  looks (at a pass's start, then every 5 seconds while the pass lasts), and
+  none is coalesced away.
   The trigger's optional `arguments` property is a map of named arguments
   each fire, and each retry of a parked one, hands a function as
   `input["args"]`, so one function serves several schedules. The map is
@@ -978,20 +979,29 @@ disappeared in that window skips the delivery with its cursor standing still,
 exactly as one that was already gone when the pass loaded
 ([#576](https://github.com/geoah/substrate/issues/576)).
 
-**A pass fires schedules first and gives each trigger a budget.** One
-dispatcher pass over a repository fires every due schedule occurrence before
-any record trigger runs, then walks the record triggers in id order. Each
-trigger gets 30 seconds of the pass: past that it stops after the delivery in
-hand and the pass moves on, and the next pass resumes from its cursor. A
+**A pass runs schedules beside the record triggers and gives each trigger a
+budget.** One dispatcher pass over a repository has two lanes that run at the
+same time. The record lane walks the record triggers in id order. The
+schedule lane fires every due schedule occurrence, then looks again every 5
+seconds until the record lane is done, so an occurrence that falls due while
+record backlogs drain starts within about 5 seconds, behind only the fires of
+the repository's other schedule triggers
+([decision 0147](decisions/0147-a-pass-runs-its-schedule-triggers-in-a-lane-beside-its-record-triggers.md)).
+Each lane delivers one at a time, so a trigger never has two deliveries in
+flight from the dispatcher, and a pass runs at most two at once: a schedule
+fire can run while a record trigger delivers, and two invocations of one
+function can overlap
+([two invocations over one record](#two-invocations-over-one-record)). Each
+trigger gets 30 seconds of its lane: past that it stops after the delivery in
+hand and the lane moves on, and the next pass resumes from its cursor. A
 record trigger with a slow callable and a long backlog therefore takes many
-passes to drain, and a due schedule waits at most one pass, never the backlog
+passes to drain, and holds back neither the schedules nor, for longer than its
+30 seconds, the record triggers after it
 ([#638](https://github.com/geoah/substrate/issues/638)). The budget is per
 trigger and the pass as a whole has none: a trigger can overrun its 30
-seconds by the one delivery in hand, and a repository with many slow
-schedules spends up to 30 seconds on each before its first record trigger
-runs. The cursor still
-moves only past rows that were delivered or matched nothing. A `wake` runs
-without the budget and drains to head.
+seconds by the one delivery in hand. The cursor still moves only past rows
+that were delivered or matched nothing. A `wake` runs without the budget and
+drains to head.
 
 **A record trigger reads only the kinds it names.** The dispatcher's
 changelog read asks Postgres for the entries of the source's kinds past the

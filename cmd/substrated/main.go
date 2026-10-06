@@ -44,8 +44,10 @@ const (
 	// once. A pass takes a connection per statement or transaction and none
 	// while a function body runs, but each pass has a runner process or a
 	// transaction in flight most of the time, so a host with hundreds of
-	// repositories must not run hundreds of passes side by side. Eight bounds
-	// the dispatcher to eight runner processes and eight transactions.
+	// repositories must not run hundreds of passes side by side. A pass runs
+	// its record triggers and its schedule triggers in two lanes, each one
+	// delivery at a time (decision 0147), so eight bounds the dispatcher to
+	// sixteen runner processes and sixteen transactions.
 	triggerDispatchPasses = 8
 )
 
@@ -423,11 +425,12 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 // queued one at once rather than on the next tick, so with passes that
 // return quickly every repository still gets a pass per tick, however many
 // repositories there are. A repository never has two passes running or
-// queued, so its triggers keep their one-at-a-time delivery order and no two
-// passes race one repository's cursors. What bounds a slot's hold is the
-// engine's per-trigger budget (triggerPassBudget): a pass runs about the sum
-// of its triggers' budgets, overrunning by at most one delivery per trigger,
-// each bounded by the runner's timeout.
+// queued, so a trigger never has two deliveries in flight from the
+// dispatcher and no two passes race one repository's cursors. What bounds a
+// slot's hold is the engine's per-trigger budget (triggerPassBudget): a pass
+// runs about the sum of its record triggers' budgets, overrunning by at most
+// one delivery per trigger, each bounded by the runner's timeout; its
+// schedule triggers run in a lane beside them.
 //
 // THE LONGEST WAIT GOES FIRST. A queue filled in listing order would put the
 // oldest repositories ahead on every tick, and the newest would starve behind
