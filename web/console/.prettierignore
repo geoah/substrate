@@ -15,3 +15,7 @@ yarn.lock
 # Prettier reformatting it would put the two generators in a loop: the Go test
 # rewrites it, this rewrites it back, and neither check is ever green.
 src/lib/api/wire.golden.json
+
+# Copied verbatim from the shadcn package below its header; left unformatted
+# so a re-copy is a clean diff.
+src/shadcn.css
