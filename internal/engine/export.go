@@ -15,6 +15,7 @@ package engine
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -210,10 +211,11 @@ func (e *export) write(tw *tar.Writer) error {
 	}
 	srcChangelog := changelogfile.ChangelogDir(e.ds.dir)
 	for _, name := range e.finished {
-		for _, file := range []string{name, changelogfile.SidecarName(name)} {
-			if err := e.writeFile(tw, path.Join(changelog, file), filepath.Join(srcChangelog, file), -1); err != nil {
-				return err
-			}
+		if err := e.writeSegment(tw, path.Join(changelog, name), srcChangelog, name); err != nil {
+			return err
+		}
+		if err := e.writeFile(tw, path.Join(changelog, changelogfile.SidecarName(name)), filepath.Join(srcChangelog, changelogfile.SidecarName(name)), -1); err != nil {
+			return err
 		}
 	}
 	if e.active != "" {
@@ -289,6 +291,53 @@ func (e *export) writeFile(tw *tar.Writer, name, src string, size int64) error {
 		return err
 	}
 	_, err = io.CopyN(tw, f, size)
+	return err
+}
+
+// segmentTail is how much of a finished segment writeSegment holds back
+// until the segment's digest checks.
+const segmentTail = 1 << 20
+
+// writeSegment streams one finished segment into the archive and hashes it
+// on the way, holding its last segmentTail bytes back until the digest is
+// the sidecar's. The open took the segment on its sidecar's word
+// (segmentdigest.go), and an extracted export can be a later snapshot's base
+// (decision 0146), which links its segments without reading them, so the
+// export is where these bytes are checked: one that does not match fails the
+// export with the entry still short, which ends the stream, as a blob that
+// is not its digest's does.
+func (e *export) writeSegment(tw *tar.Writer, name, dir, segment string) error {
+	want, err := changelogfile.ReadSidecar(dir, segment)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(filepath.Join(dir, segment))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	size := info.Size()
+	if err := e.header(tw, name, size); err != nil {
+		return err
+	}
+	h := sha256.New()
+	head := size - min(size, segmentTail)
+	if _, err := io.CopyN(io.MultiWriter(tw, h), f, head); err != nil {
+		return err
+	}
+	tail := make([]byte, size-head)
+	if _, err := io.ReadFull(f, tail); err != nil {
+		return err
+	}
+	h.Write(tail)
+	if got := hex.EncodeToString(h.Sum(nil)); got != want {
+		return fmt.Errorf("%w: %s", changelogfile.ErrSegmentDigest, segment)
+	}
+	_, err = tw.Write(tail)
 	return err
 }
 

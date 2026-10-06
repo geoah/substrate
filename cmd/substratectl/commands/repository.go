@@ -47,7 +47,7 @@ func (a *app) repositoryCommand() *cobra.Command {
 }
 
 func (a *app) repositorySnapshotCommand() *cobra.Command {
-	var output string
+	var output, base string
 	cmd := &cobra.Command{
 		Use:   "snapshot <repository> <destination root>",
 		Short: "Write a verified copy of a repository's directory that records the point it holds",
@@ -80,7 +80,22 @@ opens the repository first while the snapshot runs meets the same lock. Run it
 with the binary the server runs, as with 'rebuild': the open stamps the
 repository with this binary's dialects, which an older server then refuses.
 
-  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08`,
+With --base, pass the destination root of an earlier snapshot of the same
+repository, on the same filesystem as the new one. Every finished changelog
+segment the base holds under the same name, size and sidecar digest, and
+every blob the base's snapshot.json lists, becomes a hard link to the base's
+file instead of a copy, and is not read again: the base's own checks read
+those bytes when it was taken. Only what was written since is verified and
+copied, so a snapshot of a long history takes as long as its newest writes
+do. The new snapshot is still a whole directory: deleting the base later
+leaves it intact. A file the filesystem refuses to link is copied and read
+back as without --base. The changelog table is compared with the files only
+from the end of what the base holds: the rows below it were compared when
+the base was taken, and 'repository verify' compares them all. 'repository verify' on a scratch server restored
+from a snapshot still reads every byte.
+
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
+  SUBSTRATE_CREDENTIAL_KEY=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-10-06 --base /srv/substrate-backup/2026-09-08`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output != "" && output != "text" && output != "json" {
@@ -95,12 +110,17 @@ repository with this binary's dialects, which an older server then refuses.
 			if err != nil {
 				return err
 			}
+			if base != "" {
+				if base, err = filepath.Abs(base); err != nil {
+					return err
+				}
+			}
 			svc, err := a.openEngineWrite(cmd.Context())
 			if err != nil {
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			report, err := svc.SnapshotRepository(cmd.Context(), args[0], dest)
+			report, err := svc.SnapshotRepositoryWith(cmd.Context(), args[0], dest, engine.SnapshotOptions{Base: base})
 			if err != nil {
 				return lockHint(err)
 			}
@@ -110,14 +130,20 @@ repository with this binary's dialects, which an older server then refuses.
 			fmt.Fprintf(a.out, "repository %s snapshot written\n", report.Repository)
 			fmt.Fprintf(a.out, "  directory: %s\n", report.Directory)
 			fmt.Fprintf(a.out, "  point:     seq %d, checksum %s\n", report.Head, report.HeadHash)
-			fmt.Fprintf(a.out, "  changelog: %d segment(s)\n", report.Segments)
+			if report.Base != "" {
+				fmt.Fprintf(a.out, "  base:      %s\n", report.Base)
+				fmt.Fprintf(a.out, "  table:     compared with the files from seq %d; below it, when the base was taken\n", report.KnownHead)
+			}
+			fmt.Fprintf(a.out, "  changelog: %d segment(s), %d linked from the base\n", report.Segments, report.LinkedSegments)
 			fmt.Fprintf(a.out, "  sealed:    %d file(s), every one opened under %s\n", report.SealedFiles, credentialKeyEnv)
-			fmt.Fprintf(a.out, "  blobs:     %d copied (%d bytes), each hashed against its digest\n", report.Blobs, report.BlobBytes)
+			fmt.Fprintf(a.out, "  blobs:     %d copied (%d bytes), each hashed against its digest, and %d linked from the base\n",
+				report.Blobs-report.LinkedBlobs, report.BlobBytes, report.LinkedBlobs)
 			fmt.Fprintf(a.out, "  took:      %s\n", report.Took.Round(time.Millisecond))
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: text|json")
+	cmd.Flags().StringVar(&base, "base", "", "destination root of an earlier snapshot of the repository: link what it holds instead of copying it")
 	return cmd
 }
 

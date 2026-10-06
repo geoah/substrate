@@ -78,11 +78,16 @@ type VerifyReport struct {
 	Snapshot *RecoveryPoint `json:"snapshot,omitempty"`
 	// Recanonicalized is whether every table row's checksum was recomputed
 	// from its stored columns (VerifyOptions.Recanonicalize).
-	Recanonicalized bool          `json:"recanonicalized,omitempty"`
-	Findings        []string      `json:"findings,omitempty"`
-	Truncated       bool          `json:"truncated,omitempty"`
-	OK              bool          `json:"ok"`
-	Took            time.Duration `json:"took"`
+	Recanonicalized bool `json:"recanonicalized,omitempty"`
+	// KnownHead is a snapshot's: the seq ending the run of finished segments
+	// its base holds as this directory does. Those segments were read at
+	// their first and last lines, and the table was compared with the files
+	// at KnownHead and above it; Entries counts the rows above it.
+	KnownHead int64         `json:"knownHead,omitempty"`
+	Findings  []string      `json:"findings,omitempty"`
+	Truncated bool          `json:"truncated,omitempty"`
+	OK        bool          `json:"ok"`
+	Took      time.Duration `json:"took"`
 }
 
 // VerifyOptions tunes VerifyRepositoryWith.
@@ -96,6 +101,15 @@ type VerifyOptions struct {
 	// canonicalizes every payload the table holds, which on a history of
 	// millions of entries is hours (issue 761).
 	Recanonicalize bool
+
+	// known and knownBlobs are a snapshot's base (snapshot.go): the finished
+	// segments it holds as this directory does, read at their first and
+	// last lines alone, and the blobs it holds bytes for, not read at all.
+	// The table is then compared with the files only above the run of known
+	// segments, at the seq that ends it and past it. A verify of its own
+	// sets neither.
+	known      map[string]changelogfile.KnownSegment
+	knownBlobs map[string]bool
 }
 
 // verifyTableBatch is the table pass's page when it reads no payload: a row
@@ -176,7 +190,7 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 	// A directory that does not verify is one finding, and the table is
 	// still walked so the report says what the table holds.
 	prog := s.progress("substrate: verifying the changelog files", "repository", repo.ID)
-	log, fileReport, fileErr := changelogfile.VerifyDir(changelogfile.ChangelogDir(dir), changelogfile.VerifyOptions{Progress: prog.tick})
+	log, fileReport, fileErr := changelogfile.VerifyDir(changelogfile.ChangelogDir(dir), changelogfile.VerifyOptions{Progress: prog.tick, Known: opts.known})
 	report.FileHead, report.Segments = fileReport.Head, fileReport.Segments
 	report.TruncatedBytes, report.TruncatedEntries = fileReport.TruncatedBytes, fileReport.TruncatedEntries
 	if fileErr != nil {
@@ -197,16 +211,40 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 	// read through one cursor across every page, which reads each line's sum
 	// without decoding it: the file pass above checked every line against
 	// its sum already.
+	//
+	// Under a snapshot's base the rows at or below the run of known segments
+	// are not read: the base was compared with the table when it was taken,
+	// and the row at the seq that ends the run is held to that line's sum,
+	// so the rows above it continue the history the base holds.
+	expected := int64(1)
+	var knownSum [32]byte
+	if log != nil {
+		report.KnownHead, knownSum = log.KnownHead()
+	}
+	if report.KnownHead > 0 {
+		var hash []byte
+		err := tx.QueryRowContext(ctx, `SELECT hash FROM changelog WHERE seq = $1`, report.KnownHead).Scan(&hash)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			found(fmt.Sprintf("seq %d: in the file and not in the table", report.KnownHead))
+		case err != nil:
+			return report, nil, err
+		case !bytes.Equal(hash, knownSum[:]):
+			found(fmt.Sprintf("seq %d: the file's checksum is not the table's", report.KnownHead))
+		}
+		expected = report.KnownHead + 1
+		report.Head = report.KnownHead
+		report.HeadHash = hex.EncodeToString(knownSum[:])
+	}
 	var sums *changelogfile.SumCursor
 	if log != nil {
-		c := log.Sums(0)
+		c := log.Sums(expected - 1)
 		defer func() { _ = c.Close() }()
 		sums = c
 	}
-	var fileSeq int64
+	fileSeq := expected - 1
 	var fileSum [32]byte
 	prog = s.progress("substrate: verifying the changelog table against the files", "repository", repo.ID)
-	expected := int64(1)
 	var openTxn int64
 	for {
 		var page []checksumRow
@@ -343,7 +381,7 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 	// missing or not its digest's, and a live secret reference with no
 	// sealed file, are what a copy that missed a file looks like after an
 	// import, which upserts whatever files it finds.
-	if err := s.verifyBlobs(ctx, tx, db, repo, &report, found); err != nil {
+	if err := s.verifyBlobs(ctx, tx, db, repo, opts, &report, found); err != nil {
 		return report, nil, err
 	}
 	if err := s.verifySecretRefs(ctx, tx, db, repo, dir, seen, &report, found); err != nil {
@@ -423,7 +461,7 @@ func storedBlobs(ctx context.Context, q dbx) ([]storedBlob, error) {
 // verifyBlobs reads every `stored` blob's bytes out of the store and hashes
 // them against the digest that names them. A store that cannot be reached at
 // all is one finding and ends the walk, not one finding per blob.
-func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, report *VerifyReport, found func(string)) error {
+func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repository, opts VerifyOptions, report *VerifyReport, found func(string)) error {
 	blobs, err := storedBlobs(ctx, tx)
 	if err != nil {
 		return err
@@ -437,6 +475,9 @@ func (s *service) verifyBlobs(ctx context.Context, tx dbx, db *sql.DB, repo Repo
 	}
 	for _, b := range blobs {
 		report.Blobs++
+		if opts.knownBlobs[b.digest] {
+			continue
+		}
 		n, digest, err := hashBlob(ctx, store, b.digest)
 		switch {
 		case errors.Is(err, blobbytes.ErrNotStored):

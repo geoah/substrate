@@ -298,7 +298,10 @@ the transaction again from the table, and a restore from a copy of the
 directory loses that transaction whole, never in part. A bad `sum`, a seq
 that does not follow the previous one, a line whose `txn` does not fit the
 transaction around it, or a finished segment whose sidecar does not match is
-a named refusal, not a repair.
+a named refusal, not a repair. An open reads a finished segment's first and
+last lines and the server hashes the rest after the open, so a sidecar that
+does not match refuses the repository's writes rather than its boot
+([decision 0146](decisions/0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md)).
 
 Every line carries `txn`; one without it is the same named refusal
 ([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).

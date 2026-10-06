@@ -12,6 +12,16 @@ package engine
 // temporary root beside the destination and renamed into place only once
 // `snapshot.json` is durable, so a failure leaves nothing at the destination
 // and the boot never lists a partial.
+//
+// Handed an earlier snapshot of the same repository as its base, it copies
+// only what changed since. A finished segment the base holds under the same
+// name, size and sidecar digest, and a blob the base's `snapshot.json` lists,
+// is a hard link to the base's file: the same bytes, which the base's own
+// checks read when it was written, so neither the source's file nor the
+// base's is read again, and the table is compared with the files only past
+// them. What the base does not hold is checked and copied as a full snapshot
+// checks and copies it. The copy is still a whole directory: deleting the
+// base leaves it intact (decision 0146).
 
 import (
 	"bytes"
@@ -43,10 +53,31 @@ type SnapshotReport struct {
 	// BlobStore is the layout the copy's blob bytes are written for, which is
 	// the one backend. Blobs and BlobBytes are the `stored` manifests' bytes
 	// copied into the directory.
-	BlobStore string        `json:"blobStore"`
-	Blobs     int           `json:"blobs"`
-	BlobBytes int64         `json:"blobBytes"`
+	BlobStore string `json:"blobStore"`
+	Blobs     int    `json:"blobs"`
+	BlobBytes int64  `json:"blobBytes"`
+	// Base is the base's directory when the snapshot took one, and
+	// LinkedSegments and LinkedBlobs are how many segments and blobs are
+	// hard links to its files rather than copies; BlobBytes counts the
+	// copied blobs' bytes alone.
+	Base           string `json:"base,omitempty"`
+	LinkedSegments int    `json:"linkedSegments,omitempty"`
+	LinkedBlobs    int    `json:"linkedBlobs,omitempty"`
+	// KnownHead is the seq ending the run of segments the base holds as the
+	// source does (VerifyReport.KnownHead): the table was compared with the
+	// files from it on, and below it only when the base was taken.
+	KnownHead int64         `json:"knownHead,omitempty"`
 	Took      time.Duration `json:"took"`
+}
+
+// SnapshotOptions tunes SnapshotRepositoryWith.
+type SnapshotOptions struct {
+	// Base is the destination root of an earlier snapshot of the same
+	// repository: `<Base>/repositories/<authority>/snapshot.json` must be
+	// there. It must be on the destination's filesystem for its files to be
+	// linked; a file the filesystem refuses to link is copied from the
+	// source and read back, as without a base.
+	Base string
 }
 
 var (
@@ -66,6 +97,10 @@ var (
 	// sealed file that is not the source's or does not open, a blob whose
 	// bytes do not hash to its digest. Nothing is left at the destination.
 	ErrSnapshotCopyDamaged = errors.New("substrate/engine: the copy does not read back as the source, so it was discarded")
+	// ErrSnapshotBase is the refusal of a base that is not a snapshot of
+	// this repository: no `snapshot.json`, or a manifest of another
+	// authority.
+	ErrSnapshotBase = errors.New("substrate/engine: the base is not a snapshot of this repository")
 )
 
 // The stages the snapshot's test seam reports (export_test.go): after the
@@ -102,6 +137,12 @@ const snapshotPartialPrefix = ".incoming-snapshot-"
 // into place. A failure anywhere removes the temporary root, so the
 // destination holds either the finished copy or nothing.
 func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot string) (SnapshotReport, error) {
+	return s.SnapshotRepositoryWith(ctx, repository, destRoot, SnapshotOptions{})
+}
+
+// SnapshotRepositoryWith is SnapshotRepository with its options: with a
+// Base, what the base holds is linked rather than read and copied.
+func (s *service) SnapshotRepositoryWith(ctx context.Context, repository, destRoot string, opts SnapshotOptions) (SnapshotReport, error) {
 	started := time.Now()
 	if s.readOnly {
 		return SnapshotReport{}, ErrDirectoryReadOnly
@@ -124,6 +165,13 @@ func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot s
 	if err := refuseExisting(dst); err != nil {
 		return report, err
 	}
+	var base string
+	if opts.Base != "" {
+		if base, err = snapshotBase(opts.Base, repo.ID); err != nil {
+			return report, err
+		}
+		report.Base = base
+	}
 	ds, err := s.open(ctx, repo)
 	if err != nil {
 		return report, err
@@ -131,18 +179,24 @@ func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot s
 	if err := ds.directoryErr(); err != nil {
 		return report, err
 	}
+	shared, err := baseShares(ctx, ds, base)
+	if err != nil {
+		return report, err
+	}
 
 	// The whole verification, side stores and sealed files opened included:
 	// a copy of a repository that does not verify is a copy of the damage.
-	// The changelog Log it verified is what the copy is held to below.
-	verified, srcLog, err := s.verifyRepository(ctx, repository, VerifyOptions{})
+	// What the base holds was verified when the base was taken, and is read
+	// at its first and last lines alone. The changelog Log it verified is
+	// what the copy is held to below.
+	verified, srcLog, err := s.verifyRepository(ctx, repository, VerifyOptions{known: shared.segments, knownBlobs: shared.blobs})
 	if err != nil {
 		return report, err
 	}
 	if !verified.OK || srcLog == nil {
 		return report, fmt.Errorf("%w: %s", ErrSnapshotUnverified, strings.Join(verified.Findings, "; "))
 	}
-	report.Head, report.HeadHash = verified.Head, verified.HeadHash
+	report.Head, report.HeadHash, report.KnownHead = verified.Head, verified.HeadHash, verified.KnownHead
 	var headHash [32]byte
 	if verified.HeadHash != "" {
 		sum, err := hex.DecodeString(verified.HeadHash)
@@ -162,7 +216,7 @@ func (s *service) SnapshotRepository(ctx context.Context, repository, destRoot s
 		return report, err
 	}
 	defer func() { _ = os.RemoveAll(tmpRoot) }()
-	partial, err := s.buildSnapshot(ctx, ds, repo, tmpRoot, srcLog, headHash, &report)
+	partial, err := s.buildSnapshot(ctx, ds, repo, tmpRoot, srcLog, headHash, shared, &report)
 	if err != nil {
 		return report, err
 	}
@@ -193,14 +247,23 @@ func refuseExisting(dst string) error {
 // buildSnapshot writes the copy under tmpRoot, at `repositories/<authority>`,
 // reads it back and writes `snapshot.json` last. It returns the directory it
 // built; the caller renames it into place or removes the root.
-func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repository, tmpRoot string, srcLog *changelogfile.Log, headHash [32]byte, report *SnapshotReport) (string, error) {
+func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repository, tmpRoot string, srcLog *changelogfile.Log, headHash [32]byte, shared baseShare, report *SnapshotReport) (string, error) {
 	partial, err := changelogfile.EnsureRepoDir(tmpRoot, repo.ID)
 	if err != nil {
 		return "", err
 	}
 	src := ds.dir
-	if report.Segments, err = changelogfile.CopyChangelog(src, partial); err != nil {
+	copied, err := changelogfile.CopyChangelogFrom(src, partial, shared.dir, shared.segments)
+	if err != nil {
 		return "", fmt.Errorf("substrate/engine: copy the changelog: %w", err)
+	}
+	report.Segments, report.LinkedSegments = copied.Segments, len(copied.Linked)
+	// The read-back takes a linked segment as the base's: its bytes are the
+	// base's file. A segment the filesystem would not link was copied and is
+	// digested like any other.
+	linked := make(map[string]changelogfile.KnownSegment, len(copied.Linked))
+	for name := range copied.Linked {
+		linked[name] = shared.segments[name]
 	}
 	if err := s.snapshotFault(snapshotAfterChangelog, partial); err != nil {
 		return "", err
@@ -225,7 +288,18 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 		digests = append(digests, b.digest)
 	}
 	report.Blobs = len(blobs)
-	if report.BlobBytes, err = s.copyBlobs(ctx, ds, repo, tmpRoot, digests); err != nil {
+	linkedBlobs, err := linkBlobs(shared, partial, digests)
+	if err != nil {
+		return "", err
+	}
+	report.LinkedBlobs = len(linkedBlobs)
+	toCopy := make([]string, 0, len(digests)-len(linkedBlobs))
+	for _, d := range digests {
+		if !linkedBlobs[d] {
+			toCopy = append(toCopy, d)
+		}
+	}
+	if report.BlobBytes, err = s.copyBlobs(ctx, ds, repo, tmpRoot, toCopy); err != nil {
 		return "", err
 	}
 
@@ -244,11 +318,13 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 	// every copied finished segment hashed against its copied sidecar and
 	// held to the digest the source's verification took, the active
 	// segment's lines checked, every sealed file the source's and opened
-	// under the DEK, every blob hashed. A finished segment whose bytes are
-	// the source's needs no walk of its lines: the verification walked the
-	// source's (issue 761).
+	// under the DEK, every copied blob hashed. A finished segment whose
+	// bytes are the source's needs no walk of its lines: the verification
+	// walked the source's (issue 761). A linked segment or blob is the
+	// base's file and is not read.
 	copiedLog, err := changelogfile.OpenWith(changelogfile.ChangelogDir(partial), changelogfile.OpenOptions{
 		ReadOnly: true,
+		Known:    linked,
 		Progress: s.checkProgress(checkSnapshotCopy, repo.ID),
 	})
 	if err != nil {
@@ -263,7 +339,7 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 	if err := s.checkCopiedSealed(ds, partial, files); err != nil {
 		return "", err
 	}
-	if err := checkCopiedBlobs(ctx, tmpRoot, repo, digests); err != nil {
+	if err := checkCopiedBlobs(ctx, tmpRoot, repo, toCopy); err != nil {
 		return "", err
 	}
 	if err := changelogfile.WriteSnapshot(partial, changelogfile.Snapshot{
@@ -375,4 +451,107 @@ func syncDirectory(dir string) error {
 	}
 	defer func() { _ = d.Close() }()
 	return d.Sync()
+}
+
+// snapshotBase resolves an earlier snapshot root to the repository's
+// directory in it, refusing one that holds no finished snapshot of the
+// repository.
+func snapshotBase(root, repository string) (string, error) {
+	if !filepath.IsAbs(root) {
+		return "", fmt.Errorf("%w: %q is not an absolute path", ErrSnapshotBase, root)
+	}
+	dir, err := changelogfile.RepoDir(root, repository)
+	if err != nil {
+		return "", err
+	}
+	if _, err := changelogfile.ReadSnapshot(dir); err != nil {
+		return "", fmt.Errorf("%w: %s: %w", ErrSnapshotBase, dir, err)
+	}
+	if _, err := changelogfile.ReadManifest(dir); err != nil {
+		return "", fmt.Errorf("%w: %s: %w", ErrSnapshotBase, dir, err)
+	}
+	return dir, nil
+}
+
+// baseShare is what a snapshot's base holds as the repository does: its
+// directory, the run of finished segments with the same name, size and
+// sidecar digest (changelogfile.SharedFinished), and the stored blobs its
+// snapshot.json lists whose file there has the size the manifest declares.
+// The zero value is no base.
+type baseShare struct {
+	dir      string
+	segments map[string]changelogfile.KnownSegment
+	blobs    map[string]bool
+}
+
+// baseShares reads what the base at dir holds as ds's directory does, from
+// sidecars, file sizes and the base's snapshot.json: no segment or blob byte.
+func baseShares(ctx context.Context, ds *dataset, dir string) (baseShare, error) {
+	if dir == "" {
+		return baseShare{}, nil
+	}
+	// The repository's own directory is never its base, whatever it
+	// carries: a restored one keeps the snapshot.json it came back with,
+	// and what it wrote since nothing checked.
+	if a, err := os.Stat(dir); err == nil {
+		if b, err := os.Stat(ds.dir); err == nil && os.SameFile(a, b) {
+			return baseShare{}, fmt.Errorf("%w: %s is the repository's own directory", ErrSnapshotBase, dir)
+		}
+	}
+	snap, err := changelogfile.ReadSnapshot(dir)
+	if err != nil {
+		return baseShare{}, err
+	}
+	segments, err := changelogfile.SharedFinished(changelogfile.ChangelogDir(ds.dir), changelogfile.ChangelogDir(dir), snap.Head)
+	if err != nil {
+		return baseShare{}, fmt.Errorf("substrate/engine: compare the changelog with the base: %w", err)
+	}
+	listed := make(map[string]bool, len(snap.Blobs))
+	for _, d := range snap.Blobs {
+		listed[d] = true
+	}
+	stored, err := storedBlobs(ctx, ds.db)
+	if err != nil {
+		return baseShare{}, err
+	}
+	blobs := map[string]bool{}
+	for _, b := range stored {
+		if !listed[b.digest] {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(changelogfile.BlobsDir(dir), b.digest))
+		if err != nil || !info.Mode().IsRegular() || (b.size >= 0 && info.Size() != b.size) {
+			continue
+		}
+		blobs[b.digest] = true
+	}
+	return baseShare{dir: dir, segments: segments, blobs: blobs}, nil
+}
+
+// linkBlobs hard-links every listed digest the base holds into the copy's
+// blobs/, and returns the ones it linked: a blob the filesystem refuses to
+// link is left for copyBlobs to copy and checkCopiedBlobs to hash.
+func linkBlobs(shared baseShare, partial string, digests []string) (map[string]bool, error) {
+	linked := map[string]bool{}
+	if len(shared.blobs) == 0 {
+		return linked, nil
+	}
+	dst := changelogfile.BlobsDir(partial)
+	if err := os.MkdirAll(dst, 0o700); err != nil {
+		return nil, err
+	}
+	for _, d := range digests {
+		if !shared.blobs[d] {
+			continue
+		}
+		if os.Link(filepath.Join(changelogfile.BlobsDir(shared.dir), d), filepath.Join(dst, d)) == nil {
+			linked[d] = true
+		}
+	}
+	if len(linked) > 0 {
+		if err := syncDirectory(dst); err != nil {
+			return nil, err
+		}
+	}
+	return linked, nil
 }

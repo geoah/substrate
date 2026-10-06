@@ -27,6 +27,10 @@ type Operator interface {
 	// SnapshotRepository copies a repository's directory under destRoot
 	// (snapshot.go).
 	SnapshotRepository(ctx context.Context, repository, destRoot string) (SnapshotReport, error)
+	// SnapshotRepositoryWith is SnapshotRepository with its options, an
+	// earlier snapshot to take the unchanged segments and blobs from
+	// (snapshot.go).
+	SnapshotRepositoryWith(ctx context.Context, repository, destRoot string, opts SnapshotOptions) (SnapshotReport, error)
 	// RotateHistoryGeneration mints a new history generation
 	// (historygeneration.go).
 	RotateHistoryGeneration(ctx context.Context, repository string) (RotateReport, error)

@@ -1,11 +1,13 @@
 package engine_test
 
-// The boot check digests every finished segment of a repository's changelog,
-// and the repository's first open used to digest every one of them again
-// while each request for the repository waited on it: 6.5 minutes twice on
-// a 16 GB history (issue 761). The first open now takes the boot check's
-// Log, so across the two each finished segment is read once, and both say
-// where they are while they read.
+// The boot check digested every finished segment of a repository's
+// changelog, and the repository's first open digested every one of them
+// again, while each request for the repository waited on it: 6.5 minutes
+// twice on a 16 GB history (issues 761 and 825). Neither digests one now:
+// both read each finished segment's first and last lines and take the rest
+// on its sidecar's word (the last segment listed excepted), and the server
+// digests each of the rest once, after the open, saying where it is while it
+// reads.
 
 import (
 	"context"
@@ -17,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
@@ -62,7 +65,7 @@ func finishedSegments(t *testing.T, dir string) []string {
 	return names
 }
 
-func TestTheFirstOpenDigestsNoSegmentTheBootCheckDid(t *testing.T) {
+func TestTheServerDigestsEachSegmentOnceAfterTheOpen(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -111,18 +114,39 @@ func TestTheFirstOpenDigestsNoSegmentTheBootCheckDid(t *testing.T) {
 				engine.WithTestProgressEvery(0),
 				engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
 				engine.WithTestDigestHook(counter.hook))
-			atBoot := counter.snapshot()
-			if len(atBoot) == 0 {
-				t.Fatal("the boot check digested no segment; the test proves nothing")
+			// The last segment listed has no next one to hold its end to, so
+			// the boot digests it whole; every other one it reads at its
+			// first and last lines.
+			if atBoot := counter.snapshot(); len(atBoot) > 1 {
+				t.Fatalf("the boot check digested %v; it digests only the last segment listed", atBoot)
 			}
 			if _, err := svc2.Dataset(context.Background(), id); err != nil {
 				t.Fatalf("the first open: %v", err)
 			}
+			// The digest runs behind the open: wait for every finished
+			// segment, then hold each to one read.
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				total := counter.snapshot()
+				done := true
+				for _, name := range finished {
+					if total[name] == 0 {
+						done = false
+					}
+				}
+				if done || time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			deadline = time.Now().Add(30 * time.Second)
+			for !strings.Contains(logs.String(), "every finished changelog segment matches its sidecar") && time.Now().Before(deadline) {
+				time.Sleep(20 * time.Millisecond)
+			}
 			total := counter.snapshot()
 			for _, name := range finished {
 				if n := total[name]; n != 1 {
-					t.Errorf("segment %s was digested %d times across the boot check (%d) and the first open, want once",
-						name, n, atBoot[name])
+					t.Errorf("segment %s was digested %d times, want once, after the open", name, n)
 				}
 			}
 
@@ -130,6 +154,7 @@ func TestTheFirstOpenDigestsNoSegmentTheBootCheckDid(t *testing.T) {
 			for _, msg := range []string{
 				"substrate: boot check: checking the changelog segments",
 				"substrate: open: checking the changelog segments",
+				"substrate: digesting the changelog segments the open did not read",
 			} {
 				lines := linesWith(out, `msg="`+msg+`"`)
 				if len(lines) == 0 {
@@ -148,8 +173,15 @@ func TestTheFirstOpenDigestsNoSegmentTheBootCheckDid(t *testing.T) {
 				if got, want := attrOf(last, "bytes"), attrOf(last, "totalBytes"); got == "" || got != want {
 					t.Errorf("the last %q line is at byte %s of %s: %s", msg, got, want, last)
 				}
-				if n, err := strconv.Atoi(attrOf(last, "totalSegments")); err != nil || n < len(finished)-1 {
-					t.Errorf("the last %q line counts %s segments, the directory has at least %d: %s", msg, attrOf(last, "totalSegments"), len(finished)-1, last)
+				// The background digest leaves out the segments that were
+				// last when the boot and the open listed them: each digested
+				// those whole.
+				floor := len(finished) - 1
+				if strings.Contains(msg, "did not read") {
+					floor = len(finished) - 2
+				}
+				if n, err := strconv.Atoi(attrOf(last, "totalSegments")); err != nil || n < floor {
+					t.Errorf("the last %q line counts %s segments, the directory has at least %d: %s", msg, attrOf(last, "totalSegments"), floor, last)
 				}
 			}
 		})

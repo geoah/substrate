@@ -106,8 +106,18 @@ type dataset struct {
 	sealed sealedStore
 	// fileErr, under writerMu, is the latched refusal after a step that runs
 	// after the commit failed (ErrChangelogFileBehind): the directory is
-	// behind the tables and only the boot check repairs it.
+	// behind the tables and only the boot check repairs it. A finished
+	// segment the background digest found damaged latches it too
+	// (ErrChangelogDamaged).
 	fileErr error
+	// unread is the Log openDirectory opened the writer over, whose finished
+	// segments taken on their sidecars' word the server digests after the
+	// open; digestCancel and digestDone, under digestMu, are that digest's
+	// (segmentdigest.go).
+	unread       *changelogfile.Log
+	digestMu     sync.Mutex
+	digestCancel context.CancelFunc
+	digestDone   chan struct{}
 	// commitInDoubt, under writerMu, is set when a commit with prepared lines
 	// reported failure, so the table may hold a transaction the file had cut
 	// (0062), and cleared by the next prepare that meets no gap or closes
@@ -236,6 +246,7 @@ type dataset struct {
 func (ds *dataset) close() {
 	// Before the pool closes: the reindex writes through it.
 	ds.stopSearchReindex(true)
+	ds.stopSegmentDigest()
 	ds.watch.close()
 	ds.writerMu.Lock()
 	if ds.writer != nil {
