@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -141,6 +142,13 @@ type options struct {
 	// repository's changelog directory reads and digests, and not with one
 	// an earlier check vouched for. Tests only.
 	digestHook func(repository, segment string)
+	// digestPaceHook is the background digest's test seam (export_test.go
+	// WithTestDigestPaceHook): run after each read the digest paces, with
+	// the repository and the bytes read so far. Tests only.
+	digestPaceHook func(repository string, bytes int64)
+	// digestBytesPerSecond caps the background digest's rate
+	// (WithDigestBytesPerSecond); zero is no cap.
+	digestBytesPerSecond int64
 	// operator is OpenOperator's: a substratectl process, which digests no
 	// changelog segment in the background (segmentdigest.go). Its commands
 	// end in seconds or read every line themselves, and the snapshot holds
@@ -211,6 +219,13 @@ func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = r
 // (SUBSTRATE_CHANGELOG_SEGMENT_BYTES). changelogfile.DefaultSegmentBytes
 // when not given or not positive.
 func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.segmentBytes = n } }
+
+// WithDigestBytesPerSecond caps the rate at which the process hashes the
+// finished changelog segments behind its opens, over every repository it
+// has open (SUBSTRATE_DIGEST_BYTES_PER_SECOND, segmentdigest.go). Zero is
+// no cap; not given is DefaultDigestBytesPerSecond. The digests also pause
+// while any function body or agent loop runs, whatever the cap.
+func WithDigestBytesPerSecond(n int64) Option { return func(o *options) { o.digestBytesPerSecond = n } }
 
 // WithRepositoryConnections caps the Postgres connections every repository
 // of the process shares (SUBSTRATE_REPOSITORY_CONNECTIONS). One repository
@@ -451,6 +466,16 @@ type service struct {
 	// (segmentdigest.go): the server's, not an operator's or a read-only
 	// process's.
 	digestUnread bool
+	// digestBucket is the token bucket every repository's background digest
+	// draws from (segmentdigest.go digestPacer), at the configured bytes
+	// per second for the whole process; zero is no cap.
+	digestBucket digestBucket
+	// invocations counts the function bodies and agent loops in flight in
+	// this process, nested ones included (segmentdigest.go
+	// invocationStarted): what the background digest yields to.
+	invocations atomic.Int64
+	// testDigestPaceHook is the options' digest pace hook. Tests only.
+	testDigestPaceHook func(repository string, bytes int64)
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -475,7 +500,7 @@ func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, er
 }
 
 func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
-	o := options{log: slog.Default(), now: nowUTC, progressEvery: progressEvery}
+	o := options{log: slog.Default(), now: nowUTC, progressEvery: progressEvery, digestBytesPerSecond: DefaultDigestBytesPerSecond}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -592,6 +617,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testDigestHook:    o.digestHook,
 		checked:           map[string]*changelogfile.Log{},
 		digestUnread:      !o.operator && !o.dirReadOnly,
+
+		digestBucket:       digestBucket{rate: o.digestBytesPerSecond},
+		testDigestPaceHook: o.digestPaceHook,
 
 		searchReindexBatch:    o.searchReindexBatch,
 		testSearchReindexHook: o.searchReindexHook,

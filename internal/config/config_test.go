@@ -166,6 +166,30 @@ func TestTriggerIntervalRefusesZeroAndNegative(t *testing.T) {
 	}
 }
 
+// The digest's rate cap is bytes per second: zero removes it, and a
+// negative value or one under the floor (a unit mistake) is refused naming
+// the variable.
+func TestDigestBytesPerSecondRefusesANegativeOrTinyCap(t *testing.T) {
+	t.Parallel()
+	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second}
+	for _, n := range []int64{-1, 8, MinDigestBytesPerSecond - 1} {
+		refused := base
+		refused.DigestBytesPerSecond = n
+		if err := refused.Validate(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_DIGEST_BYTES_PER_SECOND") {
+			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_DIGEST_BYTES_PER_SECOND", n, err)
+		}
+	}
+	for _, n := range []int64{0, MinDigestBytesPerSecond, 8 << 20} {
+		ok := base
+		ok.DigestBytesPerSecond = n
+		if err := ok.Validate(); err != nil {
+			t.Fatalf("a cap of %d was refused: %v", n, err)
+		}
+	}
+}
+
 // The server speaks plain HTTP, so where it listens is the one thing it can
 // check about who reads its traffic. A loopback address needs nothing; every
 // other one, every interface included, is refused with a message naming the

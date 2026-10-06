@@ -245,6 +245,30 @@ func WithTestDigestHook(fn func(repository, segment string)) Option {
 	return func(o *options) { o.digestHook = fn }
 }
 
+// WithTestDigestPaceHook runs fn after each read the background digest
+// paces (segmentdigest.go digestPacer), with the repository and the bytes
+// read so far, so a test can say how far the digest moved while something
+// else ran.
+func WithTestDigestPaceHook(fn func(repository string, bytes int64)) Option {
+	return func(o *options) { o.digestPaceHook = fn }
+}
+
+// SegmentDigestDone is closed when the dataset's background digest of its
+// changelog segments has returned, finished or stopped; a dataset whose open
+// started none returns a closed channel.
+func SegmentDigestDone(ds substrate.Dataset) <-chan struct{} {
+	d := ds.(*dataset)
+	d.digestMu.Lock()
+	done := d.digestDone
+	d.digestMu.Unlock()
+	if done != nil {
+		return done
+	}
+	closed := make(chan struct{})
+	close(closed)
+	return closed
+}
+
 // WithTestOperator opens the service as OpenOperator opens substratectl's:
 // no repository's open digests its changelog segments in the background, so
 // a test that damages the source a snapshot reads sees the snapshot's own

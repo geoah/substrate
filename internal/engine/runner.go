@@ -185,9 +185,17 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	if hook := ds.svc.testInvokeHook; hook != nil {
 		hook(fn.Identity())
 	}
-	res, err := runner.Shared.Invoke(ctx, ds.runnerSpec(fn), in, &callBackend{
-		inv: inv, fn: fn, key: in.IdempotencyKey, causalDepth: in.CausalDepth,
-	})
+	// Counted while the body runs, so the background digest of a changelog
+	// yields to it (segmentdigest.go); deferred, so a panic a recoverer
+	// upstream contains does not leave the count raised and every digest
+	// paused for the life of the process.
+	res, err := func() (*runner.Result, error) {
+		ds.svc.invocationStarted()
+		defer ds.svc.invocationEnded()
+		return runner.Shared.Invoke(ctx, ds.runnerSpec(fn), in, &callBackend{
+			inv: inv, fn: fn, key: in.IdempotencyKey, causalDepth: in.CausalDepth,
+		})
+	}()
 	if err != nil {
 		return nil, nil, nil, inv.scrub.err(fmt.Errorf("run: %w", err))
 	}

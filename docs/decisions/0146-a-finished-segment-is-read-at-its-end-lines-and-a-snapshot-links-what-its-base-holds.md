@@ -56,6 +56,23 @@ segments one at a time behind the open; a segment that does not match its
 sidecar latches the repository's writes refused (`ErrChangelogDamaged`, a
 corrupt-data error). `repository verify` still reads every byte.
 
+The digest behind the open yields to the work the server is for. On a
+four-core arm64 box a 27 GB history took 2.3 cores for ten minutes after the
+open (2026-10-06): a function that takes 5 s alone took 45 s beside it and
+met its deadline, and a scheduled sync parked. So the process hashes at most
+`SUBSTRATE_DIGEST_BYTES_PER_SECOND` bytes a second over every repository it
+has open, 8 MiB by default, which on that box is under half a core and makes
+the 27 GB about an hour, and every digest pauses, within one megabyte read,
+while any function body or agent loop runs in the process, going on when the
+last of them returns. The bound the
+engine's tests hold: while a digest is in progress, the median latency of a
+function invocation stays within twice its median with no digest running
+plus 250 ms, and the digest reads no more than two megabytes during an
+invocation. A cap alone would not do: a Pi's one core of hashing beside a
+one-core Python body is the contention that doubled the function's time,
+and the pause is what removes it; the cap is what keeps the digest from
+taking the box while nothing else runs.
+
 It beat the filesystem because it works on any POSIX filesystem with hard
 links, and it beat the running-server pre-stage because a base is a finished
 snapshot: no new state, no new file format, and a snapshot taken with a base
@@ -85,7 +102,15 @@ segment.
   file is damage to every snapshot that links it.
 - Bad, because a server now serves, and for a while appends to, a
   repository whose finished segment is damaged between its first and last lines, until the
-  digest behind the open reaches it. Before, the boot refused it.
+  digest behind the open reaches it. Before, the boot refused it. The pace
+  lengthens that while: about an hour for 27 GB at the default cap, and
+  longer on a server that runs functions or agents most of the time, since
+  an agent loop holds every digest paused for its whole run. The digest
+  keeps no record of the segments it has read, so a stop before it
+  finishes starts it from the first segment at the next open; a server
+  restarted more often than its history takes to hash never finishes it,
+  and a marker per digested segment is the fix if that is ever a
+  deployment.
 
 ### Confirmation
 
@@ -94,7 +119,9 @@ segment.
 `TestSnapshotRefusesABaseThatIsNotASnapshot`,
 `TestADamagedSegmentFoundAfterTheOpenRefusesWrites`,
 `TestExportRefusesAFinishedSegmentThatDoesNotMatchItsSidecar` and
-`TestTheServerDigestsEachSegmentOnceAfterTheOpen` in `internal/engine`, and
+`TestTheServerDigestsEachSegmentOnceAfterTheOpen`,
+`TestTheDigestPausesWhileAnInvocationRuns` and
+`TestAnInvocationIsNotSlowedByTheDigest` in `internal/engine`, and
 the `TrustSidecars`, `Known`, `SharedFinished` and `CopyChangelogFrom` tests
 in `internal/changelogfile`.
 

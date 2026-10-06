@@ -161,6 +161,7 @@ func run() error {
 		engine.WithCredentialKey(cfg.CredentialKey),
 		engine.WithBlobStore(blobs),
 		engine.WithConversionCeiling(cfg.ConversionCeiling),
+		engine.WithDigestBytesPerSecond(cfg.DigestBytesPerSecond),
 		engine.WithRepositoryConnections(cfg.RepositoryConnections),
 		engine.WithOrphanCollection(cfg.OrphanGrace),
 	}
