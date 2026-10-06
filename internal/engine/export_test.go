@@ -348,9 +348,12 @@ var ErrSealedStoreBroken = errors.New("engine test: the sealed store is broken")
 type brokenSealedStore struct{}
 
 func (brokenSealedStore) Write(string, changelogfile.SealedRecord) error { return ErrSealedStoreBroken }
+
 func (brokenSealedStore) Stage(string, changelogfile.SealedRecord) error { return ErrSealedStoreBroken }
-func (brokenSealedStore) Commit(string, string) error                    { return ErrSealedStoreBroken }
-func (brokenSealedStore) Delete(string, string) error                    { return ErrSealedStoreBroken }
+
+func (brokenSealedStore) Commit(string, string) error { return ErrSealedStoreBroken }
+
+func (brokenSealedStore) Delete(string, string) error { return ErrSealedStoreBroken }
 
 // BreakSealedStoreAfterStage replaces a dataset's sealed-file writer with one
 // whose Stage writes the pending file and then fails, the shape of a rename

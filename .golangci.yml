@@ -76,7 +76,11 @@ formatters:
   settings:
     gofumpt:
       module-path: github.com/geoah/substrate
-      extra-rules: true
+      # Only the rule `extra-rules: true` meant before gofumpt 0.11. That key
+      # now also turns on clothe-returns and balance-calls, which would
+      # reformat files no change touched.
+      extra:
+        group-params: true
     goimports:
       local-prefixes:
         - github.com/geoah/substrate
