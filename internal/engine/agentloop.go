@@ -476,6 +476,12 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	if err != nil {
 		return nil, fmt.Errorf("%w: agent %s: %w", substrate.ErrValidation, ag.Identity(), err)
 	}
+	ds.mu.RLock()
+	wrap := ds.wrapLLMClient
+	ds.mu.RUnlock()
+	if wrap != nil {
+		client = wrap(provider.wire, client)
+	}
 	if in.tally == nil {
 		in.tally = &agentTally{effects: map[string]int{}}
 	}

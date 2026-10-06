@@ -5,9 +5,9 @@
 // liveMaxTokens in internal/llm bounds one answer and cannot bound a pass: a
 // case that loops, a retry added to an adapter or a wire added to the table
 // multiplies requests that each stay small. The ledger counts the whole pass.
-// The adapter suite (internal/llm) charges every request before it is sent
-// and records its usage after; the agent chain (internal/engine) books the
-// thread rows it wrote, because the engine builds its own clients.
+// Both halves charge every request before it is sent and record its usage
+// after: the adapter suite (internal/llm) around the clients it builds, the
+// agent chain (internal/engine) around every client the agent loop builds.
 //
 // It imports nothing from internal/llm: that package's own tests use it, and
 // an import back would be a cycle.

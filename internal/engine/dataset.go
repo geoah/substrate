@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -170,6 +171,11 @@ type dataset struct {
 	// after the effects applied and before the cursor moves, so a test can
 	// fail the write there and show that neither committed.
 	deliveryFault func(t *txn) error
+	// wrapLLMClient, under mu, is set only by tests: every agent loop's
+	// client passes through it before its first completion (agentloop.go
+	// runAgent). The engine builds its clients from provider rows, so this is
+	// the one place the live chain can meter a completion before it is sent.
+	wrapLLMClient func(wire llm.Wire, c llm.Client) llm.Client
 	// exporting is the repository's one export slot (export.go): set by
 	// Export when it pins a point, cleared when WriteTo returns, so a second
 	// export is refused while one streams.
