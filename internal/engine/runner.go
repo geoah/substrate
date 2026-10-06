@@ -185,6 +185,10 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	if hook := ds.svc.testInvokeHook; hook != nil {
 		hook(fn.Identity())
 	}
+	backend, err := newCallBackend(inv, fn, in.IdempotencyKey, in.CausalDepth)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	// Counted while the body runs, so the background digest of a changelog
 	// yields to it (segmentdigest.go); deferred, so a panic a recoverer
 	// upstream contains does not leave the count raised and every digest
@@ -192,15 +196,12 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	res, err := func() (*runner.Result, error) {
 		ds.svc.invocationStarted()
 		defer ds.svc.invocationEnded()
-		return runner.Shared.Invoke(ctx, ds.runnerSpec(fn), in, &callBackend{
-			inv: inv, fn: fn, key: in.IdempotencyKey, causalDepth: in.CausalDepth,
-		})
+		return runner.Shared.Invoke(ctx, ds.runnerSpec(fn), in, backend)
 	}()
 	if err != nil {
-		return nil, nil, nil, inv.scrub.err(fmt.Errorf("run: %w", err))
-	}
-	for _, line := range res.Logs {
-		ds.svc.log.Info("substrate: function log", "function", fn.Identity(), "line", inv.scrub.text(line))
+		err = inv.scrub.err(fmt.Errorf("run: %w", err))
+		backend.failed(err)
+		return nil, nil, nil, err
 	}
 	// The returned effects are ADDRESSED data the outbound scrubber cannot
 	// redact in place: an injected secret copied into a property value, id or
@@ -282,6 +283,36 @@ type callBackend struct {
 	fn          *vocabulary.Function
 	key         string
 	causalDepth int
+	// id names this one invocation in the server log: a delivery's key is
+	// shared by every page of a paged chain and every retry, and the lines
+	// of two of them must not read as one.
+	id string
+}
+
+// newCallBackend is the backend for one invocation of fn, under a fresh
+// invocation id.
+func newCallBackend(inv *invocation, fn *vocabulary.Function, key string, causalDepth int) (*callBackend, error) {
+	id, err := newID()
+	if err != nil {
+		return nil, err
+	}
+	return &callBackend{inv: inv, fn: fn, key: key, causalDepth: causalDepth, id: id}, nil
+}
+
+// Log writes one line of the body's log to the server log as the runner reads
+// it, with the function and the invocation it came from, and scrubbed of
+// every value the invocation injected. A body the runner kills at its timeout
+// has already said, here, where it was.
+func (b *callBackend) Log(line string) {
+	b.inv.ds.svc.log.Info("substrate: function log", "function", b.fn.Identity(),
+		"invocation", b.id, "delivery", b.key, "line", b.inv.scrub.text(line))
+}
+
+// failed records that the invocation ended in err, under the same invocation
+// id as its log lines, so the last of them is followed by why it stopped.
+func (b *callBackend) failed(err error) {
+	b.inv.ds.svc.log.Warn("substrate: function invocation failed", "function", b.fn.Identity(),
+		"invocation", b.id, "delivery", b.key, "error", err)
 }
 
 func (b *callBackend) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
@@ -399,6 +430,11 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 		return nil, fmt.Errorf("call %s: config: %w", target.Identity(), err)
 	}
 	b.inv.scrub.add(secrets...)
+	callee, err := newCallBackend(b.inv, target, key, depth)
+	if err != nil {
+		b.inv.effects = b.inv.effects[:mark]
+		return nil, err
+	}
 	res, err := runner.Shared.Invoke(ctx, ds.runnerSpec(target), runner.Input{
 		Mode:           runner.ModeCall,
 		Args:           args,
@@ -406,13 +442,12 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 		CausalDepth:    depth,
 		CallDepth:      len(b.inv.stack) - 1,
 		IdempotencyKey: key,
-	}, &callBackend{inv: b.inv, fn: target, key: key, causalDepth: depth})
+	}, callee)
 	if err != nil {
 		b.inv.effects = b.inv.effects[:mark]
-		return nil, b.inv.scrub.err(fmt.Errorf("call %s: %w", target.Identity(), err))
-	}
-	for _, line := range res.Logs {
-		ds.svc.log.Info("substrate: function log", "function", target.Identity(), "line", b.inv.scrub.text(line))
+		err = b.inv.scrub.err(fmt.Errorf("call %s: %w", target.Identity(), err))
+		callee.failed(err)
+		return nil, err
 	}
 	// The callee's effects face the same addressed-data gate as the root's
 	//: a secret copied into an id, relation or property value is

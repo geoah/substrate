@@ -9,7 +9,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The invoke protocol (version 5), pinned so a later transport swap (Connect
+// The invoke protocol (version 6), pinned so a later transport swap (Connect
 // Describe/Invoke on a local socket) is mechanical — the frames below map
 // 1:1 onto RPCs and the host-call frames onto a bidirectional stream.
 //
@@ -24,9 +24,16 @@ import (
 //	                 {"op": "deregister", "reqId": N, "id": <key>}                   (python host only)
 //	                 {"op": "describe", "reqId": N}
 //	                 {"op": "invoke", "reqId": N, "id": <key>, "input": Input}
-//	child → parent   {"kind": "response", "reqId": N, "ok": true, "output": ..., "effects": [...], "more": {"cursor": ...}?, "logs": [...]}
-//	                 {"kind": "response", "reqId": N, "ok": false, "error": "...", "logs": [...]}
-//	                 {"kind": "response", "reqId": N, "ok": true, "functions": [...], "protocol": 5}   (describe)
+//	child → parent   {"kind": "response", "reqId": N, "ok": true, "output": ..., "effects": [...], "more": {"cursor": ...}?}
+//	                 {"kind": "response", "reqId": N, "ok": false, "error": "..."}
+//	                 {"kind": "response", "reqId": N, "ok": true, "functions": [...], "protocol": 6}   (describe)
+//	                 {"kind": "log", "reqId": N, "line": "..."}   (during an invoke, unanswered)
+//
+// A body's log lines travel as `log` frames, one per line, written the moment
+// the body writes the line, and the parent hands each to Backend.Log as it
+// reads it. Version 5 carried them on the response, so a body the runner
+// killed at its timeout lost every line it had written, and with them the
+// only account of where its time went.
 //
 // A response's optional `more` is the PAGED-CHECKPOINT continuation: it means
 // "this page is done — commit its effects, then re-invoke me with this
@@ -57,7 +64,7 @@ import (
 // One frame per line, JSON. The protocol stream is the child's ORIGINAL
 // stdout, which the host detaches from user code before any body runs: it dups
 // fd 1 for itself and rebinds sys.stdout into the invocation's capped logs (and
-// sys.stdin to /dev/null). A body's print therefore lands in logs, never on the
+// sys.stdin to /dev/null). A body's print therefore lands in logs, never raw on the
 // wire. Child stderr is captured by the parent into a capped ring buffer
 // surfaced on failures. The child caps its response frames and changelog lines
 // below the parent's scanner ceiling; a frame over the ceiling is a scanner
@@ -69,7 +76,7 @@ import (
 // built it, and one SDK shipping inside this binary cannot. hostpy_test.go is
 // what refuses them drifting, so the frames a reader trusts stay the frames
 // the child serves.
-const ProtocolVersion = 5
+const ProtocolVersion = 6
 
 // The invocation modes.
 const (
@@ -137,8 +144,9 @@ type Budgets struct {
 }
 
 // Result is a completed invocation: the output value, the raw effect values
-// (the engine decodes them against the capability envelope), the body's changelog
-// lines and — for a paged body — the continuation.
+// (the engine decodes them against the capability envelope), the body's log
+// lines (each already handed to Backend.Log as it arrived) and — for a paged
+// body — the continuation.
 type Result struct {
 	Output  any
 	Effects []any
@@ -171,12 +179,16 @@ type Continuation struct {
 // it a reads capability declared in one spelling would refuse a body that asks
 // in the other. An unknown name comes back unchanged, so it fails the
 // allowlist exactly as an undeclared kind does.
+// Log takes one line of the body's log as the runner reads it, while the body
+// is still running, so whatever it records survives a body that never
+// returns.
 type Backend interface {
 	Get(ctx context.Context, typ, id string) (*substrate.Record, error)
 	List(ctx context.Context, q substrate.Query) (*substrate.Page, error)
 	Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error)
 	Call(ctx context.Context, function string, args any) (any, error)
 	ResolveKind(name string) string
+	Log(line string)
 }
 
 // The deterministic trip reasons: retrying reproduces them, so the

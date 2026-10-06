@@ -738,9 +738,13 @@ ships no settings, and one setting's own key is absent when nobody has written
 its value at all, so a body that needs one refuses in its own words
 ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
 
-**Two ceilings.** `host.log(msg)` records a line on the invocation's run
-record, truncated at 4096 characters and capped at 200 lines per invocation
-with the remainder counted rather than kept. One message between a body and the
+**Two ceilings.** `host.log(msg)` and `print` write a line to the server log
+the moment the body writes it, as `substrate: function log` with the function,
+an `invocation` id and the `delivery` key, so a body the runner kills at its
+`timeout` has still said where it was; the kill itself follows as `substrate:
+function invocation failed` under the same `invocation`. A line is truncated at
+4096 characters, and an invocation keeps 200 of them, with the rest counted in
+one last line rather than kept. One message between a body and the
 runner is a single JSON line capped at **8 MiB**, and a response that would
 exceed it is replaced by a clear error rather than a truncated frame, which is
 the real reason a body that walks a provider pages instead of returning
