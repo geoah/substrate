@@ -1,5 +1,6 @@
 # Cuts a release: the CLI for every platform and the multi-arch image, all
-# tagged from the git tag, attached to the GitHub release release-please made.
+# tagged from the git tag, attached to the GitHub release release-please made,
+# and `stable` moved to that image when it is the newest release.
 #
 # This file holds NO build definition — it runs `mise run release`, which runs
 # goreleaser against .goreleaser.yaml. A person can run the same thing on a
@@ -116,3 +117,9 @@ jobs:
       - run: mise run release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # After goreleaser, so the release's own tags are pushed before `stable`
+      # names them. The script leaves `stable` alone unless this tag is the
+      # newest release, which keeps the re-run above from moving it back.
+      - run: mise run image:stable "$TAG"
+        env:
+          TAG: ${{ inputs.tag }}
