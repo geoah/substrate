@@ -37,6 +37,12 @@ type anthropicClient struct {
 
 func newAnthropic(cfg Config) *anthropicClient {
 	opts := []option.RequestOption{
+		// Everything the client sends comes from the provider row. Without
+		// this the SDK starts from the host's environment and config files
+		// (ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, ANTHROPIC_CUSTOM_HEADERS,
+		// profiles), and a host bearer token would ride along to a
+		// repository-chosen base URL beside the row's key.
+		option.WithoutEnvironmentDefaults(),
 		option.WithAPIKey(cfg.APIKey),
 		// The base URL is a repository-chosen address, so the dial is confined
 		// to public destinations (issue #241).

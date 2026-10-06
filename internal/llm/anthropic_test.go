@@ -501,3 +501,46 @@ func mustJSON(v any) string {
 	out, _ := json.Marshal(v)
 	return string(out)
 }
+
+// The host's Anthropic environment never reaches a request: a bearer token
+// there would go to whatever base URL the provider row names, and a header
+// there would ride on every repository's calls. Not parallel: t.Setenv.
+func TestAnthropicIgnoresTheHostEnvironment(t *testing.T) {
+	ok := func(w http.ResponseWriter, _ map[string]any) {
+		jsonBody(w, map[string]any{
+			"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+			"content": []any{map[string]any{"type": "text", "text": "ok"}},
+			"usage":   map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	}
+	call := func(t *testing.T) http.Header {
+		t.Helper()
+		s := newAnthropicServer(t, ok)
+		if _, err := s.client(t, nil).Complete(context.Background(), Request{
+			Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		}, nil); err != nil {
+			t.Fatalf("complete: %v", err)
+		}
+		if s.key != "sk-test" {
+			t.Fatalf("X-Api-Key = %q, want the row's key", s.key)
+		}
+		return s.hdr
+	}
+	t.Run("auth token", func(t *testing.T) {
+		t.Setenv("ANTHROPIC_API_KEY", "")
+		t.Setenv("ANTHROPIC_AUTH_TOKEN", "host-bearer")
+		if got := call(t).Get("Authorization"); got != "" {
+			t.Fatalf("Authorization = %q, want none: the host's token reached the request", got)
+		}
+	})
+	t.Run("custom headers", func(t *testing.T) {
+		t.Setenv("ANTHROPIC_API_KEY", "")
+		t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+		t.Setenv("ANTHROPIC_PROFILE", "")
+		t.Setenv("ANTHROPIC_CONFIG_DIR", t.TempDir())
+		t.Setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Host-Header: leaked")
+		if got := call(t).Get("X-Host-Header"); got != "" {
+			t.Fatalf("X-Host-Header = %q, want none: the host's header reached the request", got)
+		}
+	})
+}
