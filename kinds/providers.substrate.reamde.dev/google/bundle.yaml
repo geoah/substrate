@@ -251,7 +251,17 @@ data:
   # `fetchFailures`, and the thread reads a clock cut as a third,
   # `rethread`. The hydrate batch is fifteen messages, the invocation cap
   # twenty. ADDITIVE.
-  version: 41
+  #
+  # 42: EVERY UNIT OF `syncgmail`'s WORK IS ON THE INVOCATION'S CLOCK, not
+  # only its fetches: a history page's emptied threads, each message's html
+  # flatten, each message's attachment reconcile and each swept row read
+  # the same clock before they start, and what does not fit rides on the
+  # cursor to the next invocation. One flatten stops at three seconds and
+  # says so in the body; the payloads one invocation stages stop at 5 MB,
+  # under the runner's 8 MiB response frame; the host reads stop at 200,
+  # under the function's read budget. Each invocation logs its phase
+  # timings. Source only.
+  version: 42
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -7695,18 +7705,38 @@ data:
     HYDRATE = 15
     SWEEP_PAGE = 200
     THREAD_READS = 15    # threads.get per invocation, 10 quota units each
-    # ONE CALL'S SOCKET TIMEOUT, AND THE BATCH'S CLOCK AGAINST IT. The
-    # function's `timeout: PT1M` is a wall on ONE invocation, and a batch of
-    # fetches that may each take FETCH_TIMEOUT walked straight through it: on
-    # 2026-10-04 one slow or large message put every hourly fire of two
-    # accounts past 60 s on the same delta for two days, with nothing
-    # persisted, no message id in the log and the status still `ok`, because
-    # the clock was read only between two batches. No fetch starts after
-    # HYDRATE_SECONDS of the invocation (`_fetch_allowed`), so the last one to
-    # start ends inside the minute with room to stage and stamp.
+    # ONE INVOCATION'S CLOCK, AND EVERY UNIT OF WORK UNDER IT. The function's
+    # `timeout: PT1M` is a wall on ONE invocation, and a body the runner kills
+    # there loses every effect it staged. A clock read only before each fetch
+    # (#860) still let a fire die at the wall with nothing persisted: the
+    # history page's per-thread reads, the html flattening after the fetches
+    # and the per-message attachment reads ran unmetered, and on an arm board
+    # each is several times slower than where it was measured. So every unit
+    # reads the same clock before it starts, and what does not fit rides on
+    # the cursor to the next invocation:
+    #   - a network call starts only with FETCH_TIMEOUT + STAGE_SECONDS left,
+    #     and a message fetch with FLATTEN_SECONDS more, for its own flatten;
+    #   - one message's flatten stops at FLATTEN_SECONDS (`_flatten`);
+    #   - a host read (a thread's survivors, a message's attachment rows, a
+    #     swept row) starts only with STAGE_SECONDS left.
+    # INVOCATION_SECONDS leaves the rest of the minute to encode the response
+    # and hand it over.
     FETCH_TIMEOUT = 20
     FETCH_CHUNK = 65536
-    HYDRATE_SECONDS = 35
+    INVOCATION_SECONDS = 45
+    FLATTEN_SECONDS = 3
+    STAGE_SECONDS = 5
+    # The base64 `data` the message rows of ONE invocation may carry. The
+    # runner refuses a response frame past 8 MiB (host.py MAX_FRAME_BYTES) and
+    # keeps nothing of it, and fifteen messages of 600 KB html are 12 MB: once
+    # the staged payloads reach this, no fetch starts and the rest ride on.
+    FRAME_PAYLOAD_MAX = 5000000
+    # Host reads one invocation may start. The engine counts them against
+    # `budgets.calls` (256, above) and fails the whole delivery at the first
+    # one past it, so a history page that empties more threads than that
+    # could never complete; the margin is the reads a unit makes beyond
+    # its own (`_live` per 200 ids, a second page of attachment rows).
+    READ_CALLS = 200
     # Full fetches of ONE message that may fail (a timeout, a connection
     # error, a truncated body, a 5xx) before it is read with
     # `format=metadata`, which carries the headers and no body; and as many
@@ -7886,13 +7916,18 @@ data:
     HTML_MAX = 600000
     HTML_CHUNK = 65536
     # The cap on the SOURCE the flattener reads, so the passes before the
-    # parser (the comment cut, the data: cut, the tag-strip) are bounded too.
-    # It bounds only the DERIVED `body`; the exact html is on `payload`.
-    HTML_SOURCE_MAX = 4000000
+    # parser (the comment cut, the tag-strip) are bounded too, and by bytes,
+    # since FLATTEN_SECONDS stops only the parser. It bounds only the DERIVED
+    # `body`; the exact html is on `payload`.
+    HTML_SOURCE_MAX = 1000000
     MAX_LABEL = 500  # a link label is a phrase; see _close_link
     # Below this a parse that ran out of budget produced a preheader, not a
     # body, and the tag-strip over the whole source reads better.
     MIN_BODY = 200
+    # What a body the flatten clock stopped ends with: the reading index is
+    # short, and the reader is told so and told where the letter is.
+    FLATTEN_NOTE = ("\n\n[This body is cut short: flattening the message's html "
+                    "took too long. The full html is in `payload`.]")
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -8012,14 +8047,27 @@ data:
         with _OPENER.open(req, timeout=FETCH_TIMEOUT) as resp:
             chunks = []
             while True:
+                left = FETCH_TIMEOUT - (_clock() - began)
+                if left <= 0:
+                    raise TimeoutError("the call outlived %ds while its body was still arriving"
+                                       % FETCH_TIMEOUT)
+                # A read that blocks is bounded by what is left of the call,
+                # not by a fresh FETCH_TIMEOUT of its own.
+                _read_timeout(resp, left)
                 chunk = resp.read(FETCH_CHUNK)
                 if not chunk:
                     break
                 chunks.append(chunk)
-                if _clock() - began > FETCH_TIMEOUT:
-                    raise TimeoutError("the call outlived %ds while its body was still arriving"
-                                       % FETCH_TIMEOUT)
             return _json.loads(b"".join(chunks).decode("utf-8"))
+
+
+    def _read_timeout(resp, seconds):
+        sock = getattr(getattr(getattr(resp, "fp", None), "raw", None), "_sock", None)
+        if sock is not None:
+            try:
+                sock.settimeout(max(0.1, seconds))
+            except OSError:
+                pass
 
 
     def _status(e):
@@ -8743,6 +8791,10 @@ data:
             if not href.lower().startswith(URL_SCHEMES):
                 self.parts.append(raw if not label else lead + label + trail)
                 return
+            # The destination is output too: a page of links with one-letter
+            # labels otherwise never reaches the feed's stop signal, and is
+            # parsed to the last byte of the work ceiling.
+            self.chars += len(href)
             if not label:
                 # An anchor around a spacer or an image with no `alt`. A
                 # newsletter of image tiles would otherwise store a wall of
@@ -8801,18 +8853,24 @@ data:
         return "\n".join(lines).strip()
 
 
-    def _flatten(source, host, mid):
+    def _flatten(source, host, mid, deadline=None):
+        """The html as markdown, or as much of it as `deadline` allows. A
+        flatten the clock stopped answers what it read and ends with
+        FLATTEN_NOTE, so the reader knows the body is short and where the
+        rest is; the tag-strip, which reads the whole source, is not run."""
         # The data: cut runs BEFORE the source cap: a single embedded photo
         # can be larger than the cap on its own, and slicing first would
         # leave the letter under it outside the slice and base64 inside it.
-        source = _RE_DATA_URI.sub(r"\1", source)[:HTML_SOURCE_MAX]
+        # Eight times the cap is room for the photos; the passes stay
+        # bounded by bytes whatever the part holds.
+        source = _RE_DATA_URI.sub(r"\1", source[:HTML_SOURCE_MAX * 8])[:HTML_SOURCE_MAX]
         # The comment cut feeds the PARSER only. The tag-strip below reads
         # the source with its comments, so a `<!--` inside a script string,
         # which the cut cannot see is quoted, takes the parse down with it
         # but not the letter.
         markup = _RE_COMMENT.sub(" ", source)
         parser = _Flatten()
-        text, failure, read = "", "", 0
+        text, failure, read, stopped = "", "", 0, False
         try:
             # Fed in chunks so the read STOPS at a body rather than at a byte
             # offset: HTMLParser buffers a tag split across two feeds, so no
@@ -8820,6 +8878,9 @@ data:
             # property's cap, because collapsing layout whitespace shortens
             # what was read and the body must still be able to fill it.
             for cut in range(0, min(len(markup), HTML_MAX), HTML_CHUNK):
+                if deadline is not None and _clock() >= deadline:
+                    stopped = True
+                    break
                 parser.feed(markup[cut:cut + HTML_CHUNK])
                 read = min(cut + HTML_CHUNK, len(markup))
                 if parser.chars > BODY_MAX * 4:
@@ -8828,6 +8889,12 @@ data:
             text = parser.text()
         except Exception as exc:  # a parser defect must not park the drain
             failure = repr(exc)
+        if stopped:
+            if host is not None:
+                host.log("google-gmail: message %s: flattening its html stopped "
+                         "after %ds at byte %d of %d" % (mid, FLATTEN_SECONDS, read,
+                                                         len(markup)))
+            return _cut(text, BODY_MAX - len(FLATTEN_NOTE)) + FLATTEN_NOTE
         # A parse that reached the END of the source is the body, however
         # short: a two-line mail is a two-line mail.
         if text and read >= len(markup):
@@ -8850,7 +8917,7 @@ data:
         return stripped
 
 
-    def _body(payload, host, mid):
+    def _body(payload, host, mid, deadline=None):
         """THE DERIVED READING INDEX, and nothing more.
 
         Not the source and never presented as it: the exact encoded bytes of
@@ -8865,16 +8932,25 @@ data:
         if joined.strip():
             body, flattened = joined, False
         elif html:
-            body, flattened = _flatten("\n".join(h for h in html if h), host, mid), True
+            body, flattened = _flatten("\n".join(h for h in html if h), host, mid,
+                                       deadline), True
         else:
             return ""
         body = body.strip()
         if len(body) <= BODY_MAX:
             return body
-        body = body[:BODY_MAX]
         if not flattened:
             # A `[` in a text/plain body is a `[`, not a link this wrote.
+            return body[:BODY_MAX]
+        return _cut(body, BODY_MAX)
+
+
+    def _cut(body, limit):
+        """A flattened body cut to `limit` characters, never inside a link."""
+        body = body.strip()
+        if len(body) <= limit:
             return body
+        body = body[:limit]
         # The cap is a character count and the flattened body is markdown, so
         # the cut can land inside a `[label](url)` and store half a
         # destination. The last `](` is where the last span this wrote turns
@@ -8951,7 +9027,7 @@ data:
     # planning one hydrate batch
     # --------------------------------------------------------------------------
 
-    def _plan(host, aid, msgs, thin=()):
+    def _plan(host, aid, msgs, thin=(), deadline=None):
         """Turn a hydrate batch into ORDERED write intents.
 
         `thin` names the messages read with `format=metadata` after their full
@@ -9047,13 +9123,24 @@ data:
                     entries, rows = _addrs(_values(lines, header))
                     props[name] = entries or None
                     addresses.extend(rows)
+            kept = 0
             if full:
-                props["body"] = _body(payload, host, mid) or None
+                props["body"] = _body(payload, host, mid, deadline) or None
                 _attachments(payload, (), atts)
+                kept = _kept_bytes(props["payload"])
             threads.add(tid)
             records.append({"id": mid, "threadId": tid, "props": props,
-                            "attachments": atts, "hasPayload": full})
+                            "attachments": atts, "hasPayload": full,
+                            "bytes": kept})
         return sorted(set(addresses)), threads, records, skipped
+
+
+    def _kept_bytes(tree):
+        """The base64 `data` a stored payload tree carries, which is what a
+        message row costs the response frame."""
+        inv = []
+        _inventory(tree, (), inv)
+        return sum(size for _, size, _ in inv)
 
 
     # --------------------------------------------------------------------------
@@ -9089,8 +9176,14 @@ data:
         contract: a key present with `None` is a field the authoritative read
         says the message does not have, and deletes; a key ABSENT is a field
         this read knew nothing about, and is left alone.
+
+        Answers how many of `records`, in order, it staged. A message read
+        with its payload costs a host read to reconcile its attachment rows,
+        so the clock is read before each one, and the caller carries the rest.
         """
-        for rec in records:
+        for n, rec in enumerate(records):
+            if rec["hasPayload"] and not _host_allowed():
+                return n
             mref = _message_id(host, aid, rec["id"])
             tref = _thread_id(host, aid, rec["threadId"])
             props = dict(rec["props"])
@@ -9130,6 +9223,7 @@ data:
                     row[field] = att.get(field) if field in att else None
                 batch.put(ATTACHMENT_TYPE, aref, properties=row)
             _reconcile_attachments(host, batch, mref, wanted)
+        return len(records)
 
 
     def _reconcile_attachments(host, batch, mref, wanted):
@@ -9142,6 +9236,7 @@ data:
         """
         after = None
         while True:
+            _read()
             page = host.records.list(ATTACHMENT_TYPE,
                                      where={"message": {"eq": mref}},
                                      first=SWEEP_PAGE, after=after)
@@ -9264,6 +9359,7 @@ data:
         ids = sorted({i for i in ids if i})
         for start in range(0, len(ids), 200):
             chunk = ids[start:start + 200]
+            _read()
             page = host.list(filter={"kinds": list(types), "ids": chunk},
                              first=len(types) * len(chunk))
             for ent in page.get("records") or []:
@@ -9289,17 +9385,26 @@ data:
         thread whose messages are all gone. `alive` is the set of threads this
         same history page also ADDED to, which the hydrate behind us re-reads.
 
+        Each thread costs two host reads, one filtered by a reference, so the
+        clock and the read count are checked before each, and the threads
+        left unjudged are answered in the same shape for the caller to carry.
+
         The query is by the `thread` REFERENCE, which is the relation Gmail's
         `threadId` became. Version 18 asked for a `threadId` property this kind
         no longer declares, and the filter failed the whole history page after
         the message deletes were already staged (Codex §4.4.3).
         """
+        owed = {}
         for tid in sorted(dropped):
             if not tid or tid in alive:
                 continue
-            gone = dropped[tid]
+            if owed or not _host_allowed(2):
+                owed[tid] = sorted(dropped[tid])
+                continue
+            gone = set(dropped[tid])
             tref = _thread_id(host, aid, tid)
             limit = min(len(gone) + 1, SWEEP_PAGE)
+            _read()
             page = host.records.list(MESSAGE_TYPE,
                                      where={"account": {"eq": aid},
                                             "thread": {"eq": tref}},
@@ -9313,6 +9418,7 @@ data:
             live = _live(host, (THREAD_TYPE,), [tref])
             if ("%s|%s" % (THREAD_TYPE, tref)) in live:
                 batch.delete(THREAD_TYPE, tref)
+        return owed
 
 
 
@@ -9496,24 +9602,62 @@ data:
     # invocation, and the chain's clock (`_out_of_time`) is cumulative over
     # every invocation of the chain, so neither sees the other: a batch of
     # fetches has to watch both.
-    _INVOCATION = {"startTs": 0.0}
+    _INVOCATION = {"startTs": 0.0, "reads": 0}
+    _PHASES = {}
 
 
     def _invocation_begin():
         _INVOCATION["startTs"] = _clock()
+        _INVOCATION["reads"] = 0
+        _PHASES.clear()
 
 
-    def _fetch_allowed(cur):
-        """May one more API call start now?
+    def _read():
+        """Count one host read against READ_CALLS."""
+        _INVOCATION["reads"] += 1
 
-        Not past HYDRATE_SECONDS of this invocation, so a call that then takes
-        the whole FETCH_TIMEOUT still ends inside the function's minute, and
-        not once the chain's clock is spent.
-        """
+
+    def _timed(name, began, count=1):
+        """Add one unit of a phase to this invocation's timings."""
+        entry = _PHASES.setdefault(name, [0.0, 0])
+        entry[0] += _clock() - began
+        entry[1] += count
+
+
+    def _phase_line():
+        """This invocation's timings, `phase seconds/units` in the order the
+        phases ran, so a log line says where the minute went."""
+        total = _clock() - float(_INVOCATION["startTs"] or _clock())
+        parts = ["%s %.2fs/%d" % (k, v[0], v[1]) for k, v in _PHASES.items()]
+        return "%.2fs (%s)" % (total, ", ".join(parts) or "no work")
+
+
+    def _left():
+        """The seconds of INVOCATION_SECONDS this invocation has not spent."""
         started = float(_INVOCATION["startTs"] or 0)
-        if started and _clock() - started >= HYDRATE_SECONDS:
-            return False
-        return not _out_of_time(cur)
+        if not started:
+            return float(INVOCATION_SECONDS)
+        return INVOCATION_SECONDS - (_clock() - started)
+
+
+    def _call_allowed(after=0):
+        """May one more network call start, with `after` seconds of work owed
+        behind it? A call that then takes the whole FETCH_TIMEOUT still leaves
+        STAGE_SECONDS to stage and stamp."""
+        return _left() >= FETCH_TIMEOUT + STAGE_SECONDS + after
+
+
+    def _fetch_allowed(cur, after=0):
+        """`_call_allowed`, and not once the chain's clock is spent."""
+        return _call_allowed(after) and not _out_of_time(cur)
+
+
+    def _host_allowed(reads=1):
+        """May a unit of work making `reads` host reads start? A read filtered
+        by a reference is a query over the whole kind, so each one is on the
+        clock, and READ_CALLS is a count the engine trips the delivery past."""
+        return _left() >= STAGE_SECONDS and \
+            _INVOCATION["reads"] + reads <= READ_CALLS
 
 
     def _trait_begin(cur):
@@ -9916,6 +10060,7 @@ data:
         # What the complete listing did not name is gone.
         after, dropped = "", 0
         for _ in range(20):
+            _read()
             page = host.records.list(LABEL_TYPE, where={"account": {"eq": aid}},
                                      first=200, after=after or None)
             for ent in page.get("records") or []:
@@ -10130,8 +10275,10 @@ data:
         params = _list_params(cur)
         if cur.get("pageToken"):
             params["pageToken"] = cur["pageToken"]
+        began = _clock()
         try:
             resp = _get(base, token, "/gmail/v1/users/me/messages", params)
+            _timed("list", began)
         except urllib.error.HTTPError as e:
             if not cur.get("pageToken") or not _bad_page_token(e):
                 raise
@@ -10173,8 +10320,10 @@ data:
         params = {"startHistoryId": cur.get("historyId") or "", "maxResults": 500}
         if cur.get("pageToken"):
             params["pageToken"] = cur["pageToken"]
+        began = _clock()
         try:
             resp = _get(base, token, "/gmail/v1/users/me/history", params)
+            _timed("history", began)
         except urllib.error.HTTPError as e:
             if _status(e) == 400 and cur.get("pageToken") and _bad_page_token(e):
                 # A stored history page token went stale between runs. The
@@ -10211,6 +10360,8 @@ data:
                             "floor": _floor(props, anchor),
                             "generation": uuid.uuid4().hex, "sweep": True,
                             "seen": [], "seenOverflow": False})
+                if not _call_allowed():
+                    return {"more": host.page.more(cur)}
                 return _backfill(host, batch, aid, acct, base, token, cur)
         touched, dropped, threads, alive = [], set(), {}, set()
         for h in resp.get("history") or []:
@@ -10236,8 +10387,16 @@ data:
                     if tid:
                         alive.add(tid)
         if dropped:
+            began = _clock()
             _drop(host, batch, aid, sorted(dropped))
-            _retract_threads(host, batch, aid, threads, alive)
+            judged = len(threads)
+            owed = _retract_threads(host, batch, aid, threads, alive)
+            _timed("retract", began, judged - len(owed))
+            if owed:
+                # What the clock left unjudged is judged at the top of the
+                # next invocation (`_drain`), against the rows this page's
+                # deletes have by then removed.
+                cur["retract"] = owed
             # The same carry as the hydrate's (T-048): a thread this delta says
             # survived is re-read below, and its membership was read before the
             # deletion this page is applying. Without the carry that re-read
@@ -10358,30 +10517,29 @@ data:
         fetched = set(str(m) for m in (cur.get("fetched") or ()))
         queue = [m for m in pending if m not in deferred and m not in fetched]
         batch_ids, rest = queue[:HYDRATE], queue[HYDRATE:]
-        msgs, vanished, thin, unfetched = [], [], set(), []
+        vanished, unfetched, addresses, tids, records = [], [], set(), set(), []
         skipped = int(cur.get("skipped") or 0)
+        payload = 0
         for i, mid in enumerate(batch_ids):
-            if not _fetch_allowed(cur):
-                # THE CLOCK, INSIDE THE BATCH. What was fetched is staged
-                # below; the rest ride on the cursor, and the next invocation
-                # or the next fire carries on from exactly here.
+            # THE CLOCK AND THE FRAME, INSIDE THE BATCH. A fetch starts only
+            # with time left for the call and the flatten behind it, and only
+            # while the payloads read so far fit the response frame. What was
+            # read is staged below; the rest ride on the cursor, and the next
+            # invocation or the next fire carries on from exactly here.
+            why = ""
+            if not _fetch_allowed(cur, FLATTEN_SECONDS):
+                why = "the hydrate clock is spent"
+            elif payload >= FRAME_PAYLOAD_MAX:
+                why = "the response frame is full"
+            if why:
                 unfetched = batch_ids[i:]
-                host.log("google-gmail: the hydrate clock is spent for %s with %d "
-                         "of %d message(s) fetched; the rest ride on"
-                         % (aid, i, len(batch_ids)))
+                host.log("google-gmail: %s for %s with %d of %d message(s) "
+                         "fetched; the rest ride on" % (why, aid, i, len(batch_ids)))
                 break
+            began = _clock()
             msg, outcome = _fetch_message(host, base, token, aid, mid, cur)
-            if outcome != "deferred" and len(fetched) < FETCHED_MAX:
-                fetched.add(mid)
-            if outcome == "gone":
-                # Gone between the listing and the fetch: retract whatever is
-                # there and count it, so the stamp says "ok (N skipped)".
-                host.log("google-gmail: message %s vanished for %s" % (mid, aid))
-                vanished.append(mid)
-                skipped += 1
-            elif outcome == "skipped":
-                skipped += 1
-            elif outcome == "deferred":
+            _timed("fetch", began)
+            if outcome == "deferred":
                 # The batch stops at a fetch that failed: an upstream that
                 # answers every fetch with a 503 would otherwise be walked
                 # id by id inside the chain's clock, five quota units each.
@@ -10390,36 +10548,44 @@ data:
                 deferred.append(mid)
                 unfetched = batch_ids[i + 1:]
                 break
-            else:
-                if outcome == "thin":
-                    thin.add(mid)
-                msgs.append(msg)
-        addresses, tids, records, incomplete = _plan(host, aid, msgs, thin)
-        skipped += incomplete
-        # THE SWEEP'S FENCE IS RAISED BY WHAT THIS WALK ACTUALLY SAW (T-003).
-        # `runHistoryId` is the profile read at the START of the run, and it is
-        # NOT the top of the mailbox: every message that arrived between that
-        # read and this listing carries a higher `historyId`, and so does every
-        # row an earlier, differently-cut pull wrote. `_sweep_messages` skipped
-        # anything above the fence as "a competing run's", which made those rows
-        # permanently unsweepable — 47 of the 147 hydrated messages in the
-        # owner's own noodles pull sit above its profile recording. The high
-        # water mark of this walk's OWN reads is the honest fence: a row above
-        # THAT was written by something this snapshot cannot account for.
-        for msg in msgs:
-            if isinstance(msg, dict) and msg.get("historyId"):
-                if _digits(msg["historyId"]) > _digits(cur.get("maxHistoryId")):
-                    cur["maxHistoryId"] = str(msg["historyId"])
+            if outcome in ("ok", "thin") and _left() < FLATTEN_SECONDS + STAGE_SECONDS:
+                # A fetch that took most of the clock: its message is read
+                # again by the next invocation rather than flattened short.
+                unfetched = batch_ids[i:]
+                host.log("google-gmail: the hydrate clock is spent for %s after "
+                         "fetching message %s; it is fetched again next" % (aid, mid))
+                break
+            if len(fetched) < FETCHED_MAX:
+                fetched.add(mid)
+            if outcome == "gone":
+                # Gone between the listing and the fetch: retract whatever is
+                # there and count it, so the stamp says "ok (N skipped)".
+                host.log("google-gmail: message %s vanished for %s" % (mid, aid))
+                vanished.append(mid)
+                skipped += 1
+                continue
+            if outcome == "skipped":
+                skipped += 1
+                continue
+            # The message's own CPU, on the same clock, right after its
+            # fetch: the html flatten stops at FLATTEN_SECONDS (`_flatten`).
+            began = _clock()
+            found, threads_of, planned, incomplete = _plan(
+                host, aid, [msg], {mid} if outcome == "thin" else (),
+                deadline=_clock() + FLATTEN_SECONDS)
+            _timed("flatten", began)
+            addresses.update(found)
+            tids |= threads_of
+            records.extend(planned)
+            skipped += incomplete
+            payload += sum(rec["bytes"] for rec in planned)
         seen_ids = set(cur.get("seen") or ())
         # THE WRITE ORDER, and it is the whole of Codex §4.4.5: the address hub
         # rows, then the THIN thread identities the messages reference, then the
         # messages, then the authoritative Thread rows whose `messages` array
         # points back at them.
-        _stage_addresses(host, batch, aid, addresses)
-        # A thread a deletion left behind is re-read here too, so its membership
-        # is never left naming a message that is gone.
-        rethread = [t for t in (cur.get("rethread") or []) if t not in tids]
-        wanted = sorted(tids) + rethread
+        began = _clock()
+        _stage_addresses(host, batch, aid, sorted(addresses))
         _stage_thin_threads(host, batch, aid, tids, seen_ids)
         # WHAT THIS WALK HAS RETRACTED, carried on the cursor across its pages:
         # a message 404'd on one page can be named by a `threads.get` on the
@@ -10431,9 +10597,38 @@ data:
             _drop(host, batch, aid, vanished)
             gone |= set(vanished)
             cur["gone"] = sorted(gone)[:GONE_MAX]
-        _stage_messages(host, batch, aid, records, seen_ids)
+        staged = records[:_stage_messages(host, batch, aid, records, seen_ids)]
+        _timed("stage", began, len(staged))
+        if len(staged) < len(records):
+            # Read and flattened, but the clock ran out before their
+            # attachment rows could be reconciled: fetched again next.
+            late = [rec["id"] for rec in records[len(staged):]]
+            fetched -= set(late)
+            unfetched = late + unfetched
+            host.log("google-gmail: the stage clock is spent for %s with %d of "
+                     "%d message(s) staged; the rest ride on"
+                     % (aid, len(staged), len(records)))
+        # THE SWEEP'S FENCE IS RAISED BY WHAT THIS WALK ACTUALLY SAW (T-003).
+        # `runHistoryId` is the profile read at the START of the run, and it is
+        # NOT the top of the mailbox: every message that arrived between that
+        # read and this listing carries a higher `historyId`, and so does every
+        # row an earlier, differently-cut pull wrote. `_sweep_messages` skipped
+        # anything above the fence as "a competing run's", which made those rows
+        # permanently unsweepable — 47 of the 147 hydrated messages in the
+        # owner's own noodles pull sit above its profile recording. The high
+        # water mark of this walk's OWN reads is the honest fence: a row above
+        # THAT was written by something this snapshot cannot account for.
+        for rec in staged:
+            history_id = rec["props"].get("historyId")
+            if history_id and _digits(history_id) > _digits(cur.get("maxHistoryId")):
+                cur["maxHistoryId"] = str(history_id)
+        # A thread a deletion left behind is re-read here too, so its membership
+        # is never left naming a message that is gone.
+        read_tids = {rec["threadId"] for rec in staged}
+        rethread = [t for t in (cur.get("rethread") or []) if t not in read_tids]
+        wanted = sorted(read_tids) + rethread
         reads = {}
-        hydrated = {rec["id"] for rec in records}
+        hydrated = {rec["id"] for rec in staged}
         to_read, unread, cut = wanted[:THREAD_READS], wanted[THREAD_READS:], []
         for i, tid in enumerate(to_read):
             if not _fetch_allowed(cur):
@@ -10443,7 +10638,9 @@ data:
                 cut = to_read[i:]
                 unread = cut + unread
                 break
+            began = _clock()
             thread = _thread_read(host, base, token, tid, cur)
+            _timed("threads", began)
             if thread is not None:
                 reads[tid] = thread
         _stage_threads(host, batch, aid, reads, hydrated, seen_ids, gone)
@@ -10464,7 +10661,7 @@ data:
         cur["deferred"] = deferred
         cur["fetched"] = sorted(fetched)
         cur["skipped"] = skipped
-        cur["records"] = int(cur.get("records") or 0) + len(records)
+        cur["records"] = int(cur.get("records") or 0) + len(staged)
         if not cur["pending"] and not cur["rethread"]:
             cur["phase"] = cur.get("back") or "finish"
         return {"more": host.page.more(cur)}
@@ -10513,6 +10710,7 @@ data:
         floor = cur.get("floor") or ""
         if floor:
             where["at"] = {"gte": floor}
+        _read()
         page = host.records.list(MESSAGE_TYPE, where=where, first=SWEEP_PAGE,
                                  after=cur.get("after") or None)
         fence = max(_digits(cur.get("runHistoryId")),
@@ -10527,10 +10725,20 @@ data:
         stale = list(cur.get("stale") or [])
         fenced = int(cur.get("sweepFenced") or 0)
         retracted = int(cur.get("sweepRetracted") or 0)
+        # The rows of THIS page already judged by an invocation the clock
+        # cut: the page is listed again from the same cursor, and what was
+        # retracted is gone from it by then, but what was kept is not.
+        judged = set(cur.get("sweepJudged") or ())
+        cut = False
         for ent in page.get("records") or []:
             rid = str(ent.get("id") or "")
-            if not rid or rid in seen:
+            if not rid or rid in seen or rid in judged:
                 continue
+            if not _host_allowed():
+                cut = True
+                break
+            judged.add(rid)
+            _read()
             row = (host.records.get(MESSAGE_TYPE, rid) or {}).get("properties") or {}
             if fence and _digits(row.get("historyId")) > fence:
                 fenced += 1
@@ -10552,6 +10760,10 @@ data:
         cur["stale"] = stale
         cur["sweepFenced"] = fenced
         cur["sweepRetracted"] = retracted
+        if cut:
+            cur["sweepJudged"] = sorted(judged)
+            return True
+        cur["sweepJudged"] = []
         cur["after"] = page.get("cursor") or ""
         if not cur["after"]:
             host.log("google-gmail: sweep %s done — %d retracted, %d kept behind "
@@ -10578,15 +10790,19 @@ data:
                          "window — the rest keep their rows until a later sweep"
                          % (aid, STALE_MAX))
             return False
-        tref = stale[0]
-        cur["stale"] = stale[1:]
-        page = host.records.list(MESSAGE_TYPE,
-                                 where={"account": {"eq": aid},
-                                        "thread": {"eq": tref}}, first=1)
-        if not (page.get("records") or []):
-            live = _live(host, (THREAD_TYPE,), [tref])
-            if ("%s|%s" % (THREAD_TYPE, tref)) in live:
-                batch.delete(THREAD_TYPE, tref)
+        # As many threads as the clock allows, each one host read filtered
+        # by a reference and maybe a second to prove the row is there.
+        while stale and _host_allowed(2):
+            tref = stale.pop(0)
+            _read()
+            page = host.records.list(MESSAGE_TYPE,
+                                     where={"account": {"eq": aid},
+                                            "thread": {"eq": tref}}, first=1)
+            if not (page.get("records") or []):
+                live = _live(host, (THREAD_TYPE,), [tref])
+                if ("%s|%s" % (THREAD_TYPE, tref)) in live:
+                    batch.delete(THREAD_TYPE, tref)
+        cur["stale"] = stale
         return True
 
 
@@ -10708,17 +10924,39 @@ data:
                 host.log("google-gmail: the drain's invocation budget is spent "
                          "before %s — it syncs on the next run" % aid)
                 return {}
+            began = _clock()
             cur = _plan_account(host, aid, props, base, token, cur)
+            _timed("profile", began)
             # The labels, before the first message that references one. Only on a
             # run that actually begins an account's walk — a resumed page must not
             # spend a call re-reading a listing it already reconciled.
             if not (cur.get("resume") or {}).get("sweep"):
+                began = _clock()
                 _sync_labels(host, batch, aid, base, token)
+                _timed("labels", began)
             phase = cur["phase"]
+        if cur.get("retract"):
+            # The emptied threads a history page's clock left unjudged, before
+            # anything else this invocation does, and alone in it if they
+            # take the whole clock.
+            owed = cur.pop("retract")
+            began = _clock()
+            left = _retract_threads(host, batch, aid, owed, set())
+            _timed("retract", began, len(owed) - len(left))
+            if left:
+                cur["retract"] = left
+                return {"more": host.page.more(cur)}
         if phase == "finish" and cur.get("delta"):
             # The delta ahead of a held walk drained: the walk carries on here.
             _end_delta(cur)
             phase = cur["phase"]
+        # A phase that starts with a network call starts it in a fresh
+        # invocation once this one's clock cannot fit the call, and a sweep
+        # does the same for its first host read.
+        if (phase in ("backfill", "history") and not _call_allowed()) or \
+                (phase == "hydrate" and not _call_allowed(FLATTEN_SECONDS)) or \
+                (phase in ("sweepmessages", "sweepthreads") and not _host_allowed()):
+            return {"more": host.page.more(cur)}
         if phase == "hydrate":
             owed = cur.get("pending") or cur.get("rethread")
             if owed and (_out_of_time(cur) or not _fetchable(cur)):
@@ -10741,7 +10979,10 @@ data:
         if phase == "history":
             return _history(host, batch, aid, acct, base, token, cur)
         if phase == "sweepmessages":
-            if _sweep_messages(host, batch, aid, cur):
+            began = _clock()
+            more = _sweep_messages(host, batch, aid, cur)
+            _timed("sweep", began)
+            if more:
                 return {"more": host.page.more(cur)}
             cur["phase"] = "sweepthreads"
             return {"more": host.page.more(cur)}
@@ -10858,6 +11099,8 @@ data:
                 return {"more": host.page.more(
                     _carry_trait(cur, _fresh(rest, int(cur.get("calls") or 0))))}
             return {}
+        host.log("google-gmail: %s invocation %d ended in phase %s after %s"
+                 % (aid, int(cur.get("calls") or 0), cur.get("phase"), _phase_line()))
         batch.flush(host)
         return out
 ---
