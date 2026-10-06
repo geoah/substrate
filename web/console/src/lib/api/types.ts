@@ -606,9 +606,12 @@ export interface TriggerStatus {
   webhookPath?: string
   /** Deliveries the trigger gave up on, `inFlight` rows excluded. */
   parked: number
+  /** Accepted webhook requests whose fire has not settled; on a schedule
+   * trigger, the due occurrences no dispatcher pass has reached yet. */
   pending: number
   /** Rows the server is delivering right now: an agent run's claim or a
-   * retry by hand. Listed under `…/parked` with `running` set. */
+   * retry by hand, listed under `…/parked` with `running` set; on a
+   * schedule trigger, also the due occurrence the dispatcher is running. */
   inFlight: number
   /** The newest parked delivery's error, its first line cut at 500 bytes,
    * and when it parked; both absent while `parked` is 0. */

@@ -1147,7 +1147,9 @@ func (ds *dataset) skipClaimed(ctx context.Context, s *settlement, run runRecord
 // trigger acknowledged, oldest first and at most scheduleDrainPerPass of
 // them, stopping early once the deadline is spent: each fire advances the
 // fire state to its occurrence, so a pass that stops early (an error, a lost
-// swap, the budget) leaves the rest due for the next.
+// swap, the budget) leaves the rest due for the next. Parked fires of the
+// trigger do not hold a due one back: every occurrence is dispatched, and
+// one that settles retires the parks at or before it (retireSupersededFires).
 func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline) (int, error) {
 	lastFire, err := ds.ensureScheduleState(ctx, lt.ID)
 	if err != nil {
@@ -1162,7 +1164,16 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		if i > 0 && deadline.spent() {
 			return ran, nil
 		}
+		// One repository's pass runs its triggers one after another, so an
+		// occurrence waits for every delivery ahead of it; the log line is
+		// where an operator meets that wait before the fire settles.
+		if late := nowUTC().Sub(at); late > scheduleLateAfter {
+			ds.svc.log.Info("substrate: schedule fire dispatched late",
+				"trigger", lt.ID, "fire", fireID(at), "late", late.Round(time.Second))
+		}
+		done := ds.startFire(lt.ID, fireID(at))
 		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
+		done()
 		ran += n
 		if errors.Is(err, errCallableGone) {
 			ds.svc.log.Warn("substrate: trigger names a callable that no longer resolves — it is skipped, its fire state stands still",
@@ -1175,6 +1186,65 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		lastFire = at
 	}
 	return ran, nil
+}
+
+// scheduleLateAfter is how far past its occurrence a schedule fire may begin
+// before processScheduleTrigger logs it as late.
+const scheduleLateAfter = time.Minute
+
+// scheduleOwedCap bounds the occurrences a status read counts for one
+// schedule trigger, so a trigger far behind costs a status read no more than
+// a few passes' worth.
+const scheduleOwedCap = 100
+
+// fireKey names one schedule occurrence of one trigger in dataset.firing.
+func fireKey(triggerID, fid string) string { return triggerID + "\x00" + fid }
+
+// startFire marks one schedule occurrence as being delivered by this
+// process until the returned func runs. A count, not a set: a wake by hand
+// and the dispatcher may both reach one occurrence, and the fire state's
+// compare-and-swap lets one of them through.
+func (ds *dataset) startFire(triggerID, fid string) func() {
+	key := fireKey(triggerID, fid)
+	ds.firingMu.Lock()
+	if ds.firing == nil {
+		ds.firing = map[string]int{}
+	}
+	ds.firing[key]++
+	ds.firingMu.Unlock()
+	return func() {
+		ds.firingMu.Lock()
+		if ds.firing[key]--; ds.firing[key] <= 0 {
+			delete(ds.firing, key)
+		}
+		ds.firingMu.Unlock()
+	}
+}
+
+// isFiring reports whether this process is delivering the occurrence now.
+func (ds *dataset) isFiring(triggerID, fid string) bool {
+	ds.firingMu.Lock()
+	defer ds.firingMu.Unlock()
+	return ds.firing[fireKey(triggerID, fid)] > 0
+}
+
+// owedFires counts a schedule trigger's occurrences that are due and not yet
+// settled or parked past: the ones this process is delivering now (inFlight)
+// and the rest (pending), which wait for a dispatcher pass to reach them.
+// At most scheduleOwedCap are counted.
+func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inFlight int64, err error) {
+	due, err := lt.Schedule.dueFires(lt.CreatedAt, lastFire, nowUTC(), scheduleOwedCap)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, at := range due {
+		if ds.isFiring(lt.ID, fireID(at)) {
+			inFlight++
+		} else {
+			pending++
+		}
+	}
+	return pending, inFlight, nil
 }
 
 // fireSettlement settles a dispatched fire: for a schedule occurrence the
@@ -2350,7 +2420,9 @@ func (ds *dataset) causalDepth(ctx context.Context, seq int64) (int, error) {
 // fire has not settled (webhooks.go pendingWebhookError) is counted as
 // pending, not parked: a healthy door is not a trigger giving up. A row this
 // process is delivering now (presentFailure) is counted as in flight, not
-// parked, for the same reason.
+// parked, for the same reason. A schedule occurrence that is due and not yet
+// settled or parked past counts the same way: in flight while this process
+// delivers it, pending while it waits for a dispatcher pass to reach it.
 func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStatus, error) {
 	var head int64
 	if err := ds.db.QueryRowContext(ctx,
@@ -2370,6 +2442,7 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 		st := substrate.TriggerStatus{
 			ID: lt.ID, Callable: lt.CallableID, Enabled: lt.Enabled, Head: head,
 		}
+		var owedPending, owedInFlight int64
 		if lt.Err != nil {
 			st.Error = lt.Err.Error()
 		} else if !lt.runnable() {
@@ -2407,6 +2480,14 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			} else if !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}
+			// The occurrences due and not yet settled: a trigger the
+			// dispatcher skips (disabled, unparseable, unresolvable) owes
+			// none it is going to run, and its Error or Enabled says why.
+			if st.LastFire != nil && lt.Enabled && st.Error == "" {
+				if owedPending, owedInFlight, err = ds.owedFires(lt, *st.LastFire); err != nil {
+					return nil, err
+				}
+			}
 		case lt.Webhook:
 			st.Kind = substrate.TriggerKindWebhook
 			st.WebhookPath = webhookPath(ds.Repository().Authority, lt.ID)
@@ -2422,6 +2503,8 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			FROM f`, lt.ID, pendingWebhookError, running).Scan(&st.Parked, &st.Pending, &st.InFlight); err != nil {
 			return nil, err
 		}
+		st.Pending += owedPending
+		st.InFlight += owedInFlight
 		if st.Parked > 0 {
 			var lastErr string
 			var at time.Time
