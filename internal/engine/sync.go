@@ -413,6 +413,7 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 			}
 			if st.Parked > 0 {
 				st.LastParkedError, st.LastParkedAt = parkedReason(latest.lastError, latest.at)
+				parkedSyncState(&st)
 			}
 			st.Triggers = append([]substrate.TriggerStatus{}, onKind...)
 			out = append(out, st)
@@ -423,6 +424,29 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 		}
 	}
 	return out, nil
+}
+
+// parkedSyncState makes a status whose deliveries parked after its last
+// completed run say so: `erroring`, with the newest park's reason as its
+// error and message. A fire the runner kills stamps nothing, so the
+// record's own state is only what its last completed run said, and the
+// parks are the only evidence of the fires since. A park older than the
+// last completed run, or than the error the record itself holds, changes
+// nothing: the record's word is the newer.
+func parkedSyncState(st *substrate.SyncStatus) {
+	if st.LastParkedAt == nil {
+		return
+	}
+	if st.LastSyncedAt != nil && !st.LastParkedAt.After(*st.LastSyncedAt) {
+		return
+	}
+	own := st.State == substrate.SyncStateErroring || st.State == substrate.SyncStateThrottled
+	if own && st.ErrorAt != nil && !st.LastParkedAt.After(*st.ErrorAt) {
+		return
+	}
+	st.State = substrate.SyncStateErroring
+	st.Error, st.ErrorAt = "the sync's deliveries are parked: "+st.LastParkedError, st.LastParkedAt
+	st.Message = st.Error
 }
 
 // syncParkGroup is the parked deliveries of one record, or of none (the

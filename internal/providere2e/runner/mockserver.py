@@ -136,12 +136,19 @@ One rule:
                                                     normally — which is how a
                                                     retry test ends in success.
      "headers": {"Retry-After": "1"},               optional
-     "body":    {"message": "rate limited"}}        optional; the default body
+     "body":    {"message": "rate limited"},        optional; the default body
                                                     names the rule and the status
+     "delaySeconds": 25}                            optional: wait this long
+                                                    before answering each
+                                                    matching request, the
+                                                    served recording included
+                                                    (a `0` status with a delay
+                                                    is a slow upstream)
 
 Rules are tried in order and the FIRST match wins. An injected response is
 logged in `/__mock/requests` with `"match": "fault"` and the rule that fired,
-so a scenario asserts the failure happened rather than assuming it.
+and a delayed pass with `"match": "delay"` and the seconds, so a scenario
+asserts the failure or the slowness happened rather than assuming it.
 """
 
 from __future__ import annotations
@@ -155,6 +162,7 @@ import pathlib
 import re
 import sys
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -360,13 +368,16 @@ class Mock:
                         "status": [s for s in status],
                         "headers": dict(r.get("headers") or {}),
                         "body": r.get("body"),
+                        "delaySeconds": float(r.get("delaySeconds") or 0),
                         "fired": 0})
         with self.lock:
             self.faults = out
         return out
 
     def fault_for(self, method: str, path: str, query: str, body: bytes):
-        """The next injected response for this request, or None.
+        """The next injected response for this request, or None, and the
+        seconds to wait before answering, which a `0` status keeps too: a
+        slow upstream serves the recording late.
 
         Consumes one status from the FIRST rule that matches. A rule whose
         queue is empty matches nothing, so a matrix always ends with the
@@ -380,14 +391,15 @@ class Mock:
                     continue
                 status = rule["status"].pop(0)
                 rule["fired"] += 1
+                delay = float(rule.get("delaySeconds") or 0)
                 if status in (0, "pass", "", None):
-                    return None
+                    return None, delay
                 out = rule["body"]
                 if out is None:
                     out = {"error": "injected", "status": int(status),
                            "rule": rule["match"]}
-                return int(status), dict(rule["headers"]), out, rule["match"]
-        return None
+                return (int(status), dict(rule["headers"]), out, rule["match"]), delay
+        return None, 0.0
 
     def read(self, name: str):
         f = self.dir / name
@@ -474,7 +486,21 @@ class Handler(BaseHTTPRequestHandler):
         # An injected failure outranks everything below it — including the
         # OAuth stub, because "the token endpoint answered 401" is a case a
         # provider has to survive too.
-        fault = self.mock.fault_for(self.command, path, query, body)
+        fault, delay = self.mock.fault_for(self.command, path, query, body)
+        if delay > 0:
+            if fault is None:
+                # A delayed pass is logged like an injected failure, so a
+                # scenario can assert the upstream was slow rather than
+                # assume it: BEFORE the sleep, because the client that gave
+                # up on the request reads the log while this thread sleeps.
+                with self.mock.lock:
+                    self.mock.requests.append({
+                        "method": self.command, "path": path, "query": query,
+                        "match": "delay", "delaySeconds": delay,
+                        **_logged_body(body),
+                    })
+                self.note("delay", path, int(delay))
+            time.sleep(delay)
         if fault is not None:
             status, headers, out, rule = fault
             with self.mock.lock:

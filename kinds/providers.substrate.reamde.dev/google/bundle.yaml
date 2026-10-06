@@ -239,7 +239,19 @@ data:
   #
   # 39: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
-  version: 40
+  #
+  # 41: ONE SLOW OR LARGE MESSAGE NO LONGER HOLDS AN ACCOUNT. `syncgmail`
+  # reads a clock before every fetch inside a hydrate batch, not only
+  # between batches, so an invocation hands back inside its minute with
+  # what it fetched staged and the rest on the account; it names each
+  # message in the log before fetching it; a message whose full fetch fails
+  # three fires running is read with `format=metadata`, and skipped with
+  # its reason after three failed metadata reads. The count rides on
+  # `gmailBackfillResume` as two new optional fields, `fetching` and
+  # `fetchFailures`, and the thread reads a clock cut as a third,
+  # `rethread`. The hydrate batch is fifteen messages, the invocation cap
+  # twenty. ADDITIVE.
+  version: 41
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -1027,6 +1039,22 @@ data:
           type: bool
           description: whether that delta's start was too old to serve, so
             the walk runs without one until it completes
+        fetching:
+          type: string
+          description: the message id whose `messages.get` failed on the last
+            fire, held with its count so the next fire reads it with `format=metadata`
+            once the full reads have failed three times
+        fetchFailures:
+          type: int
+          min: 0
+          description: how many fetches of `fetching` have failed in a row,
+            full reads first and metadata reads after the third; absent or
+            0 when the last fetch succeeded
+        rethread:
+          type: string
+          repeated: true
+          description: the thread ids a hydrate batch's clock left unread,
+            so the next fire reads them before the walk moves on
     gmailLastSyncedAt:
       type: datetime
       writer: connector
@@ -7637,6 +7665,7 @@ data:
     import base64
     import codecs
     import datetime as _dt
+    import http.client
     import json as _json
     import re
     import urllib.error
@@ -7660,9 +7689,37 @@ data:
     LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1", "0.0.0.0")
 
     LIST_PAGE = 100      # ids per messages.list page (5 quota units)
-    HYDRATE = 25         # messages.get per invocation, 5 quota units each
+    # messages.get per invocation, 5 quota units each. Fifteen, not
+    # twenty-five: the batch is bounded by the clock below as well, and a
+    # smaller batch leaves less listed and unfetched when the clock cuts it.
+    HYDRATE = 15
     SWEEP_PAGE = 200
-    THREAD_READS = 25    # threads.get per invocation, 10 quota units each
+    THREAD_READS = 15    # threads.get per invocation, 10 quota units each
+    # ONE CALL'S SOCKET TIMEOUT, AND THE BATCH'S CLOCK AGAINST IT. The
+    # function's `timeout: PT1M` is a wall on ONE invocation, and a batch of
+    # fetches that may each take FETCH_TIMEOUT walked straight through it: on
+    # 2026-10-04 one slow or large message put every hourly fire of two
+    # accounts past 60 s on the same delta for two days, with nothing
+    # persisted, no message id in the log and the status still `ok`, because
+    # the clock was read only between two batches. No fetch starts after
+    # HYDRATE_SECONDS of the invocation (`_fetch_allowed`), so the last one to
+    # start ends inside the minute with room to stage and stamp.
+    FETCH_TIMEOUT = 20
+    FETCH_CHUNK = 65536
+    HYDRATE_SECONDS = 35
+    # Full fetches of ONE message that may fail (a timeout, a connection
+    # error, a truncated body, a 5xx) before it is read with
+    # `format=metadata`, which carries the headers and no body; and as many
+    # metadata reads again before the message is skipped with its reason in
+    # the log, since one failed metadata read is as transient as a failed
+    # full one. The count rides on the account's resume (`fetching`,
+    # `fetchFailures`), so one message never holds an account across fires
+    # (`_fetch_message`).
+    FETCH_ATTEMPTS = 3
+    # Message ids one run remembers as fetched, so a walk resumed behind a
+    # history delta does not read the delta's messages a second time. Past
+    # the cap the rest are forgotten, which costs a re-read and nothing else.
+    FETCHED_MAX = 2000
     # threads.get is the ONLY authority for a Thread's snippet, historyId and
     # membership, and a mailbox — or a recording set — may not answer it. After
     # this many consecutive failures the call is given up on FOR THE RUN and
@@ -7690,16 +7747,17 @@ data:
     # committed page (functions.go drainDeadline), and it refuses a middle
     # page BEFORE committing it — so a chain that keeps asking for one more
     # page is cut off with nothing persisted and the next run restarts from
-    # page one, forever. 20 list pages x (1 list + 4 hydrates) is ~100
-    # invocations and would never finish; ~12 leaves the resume state
-    # committed well inside the deadline, and every run makes real progress.
+    # page one, forever. 20 list pages x (1 list + 7 hydrates) is ~160
+    # invocations and would never finish; 20 is two list pages a run, with
+    # the resume state committed well inside the deadline, and the clock
+    # below is what binds first against the real API.
     #
     # PER ACCOUNT. A scheduled fire walks every due account in one chain, and a
     # count shared across them let the first (a long backfill) spend all of it,
     # so the next met `_spent` at `plan` and went unstamped on every run (#651).
     # The clock below stays the chain's; each account gets an even share of what
     # is left of it when its walk begins (`_share_begin`).
-    MAX_CALLS = 12
+    MAX_CALLS = 20
     # AND THE SAME BOUND IN SECONDS. The invocation count alone was not a bound
     # at all: `_spent` is consulted at a LIST boundary, and the hydrates between
     # two listings can each take a second against the real API, so every hourly
@@ -7716,12 +7774,12 @@ data:
     # past it the set is still parked — dropping the tail would lose those
     # messages, and no token can re-derive them — and the run says so in the log.
     PENDING_HOLD_MAX = 1000
-    # Reserved before a LIST call: the four hydrate invocations the page it is
-    # about to fetch will need, plus the one that stamps. A page listed with no
-    # budget left to hydrate it is a page whose ids the sweep would then read as
-    # absent — so the budget is checked BEFORE the fetch, never in the middle of
-    # draining one (Codex §4.4.7).
-    CALL_RESERVE = 5
+    # Reserved before a LIST call: the seven hydrate invocations the page it
+    # is about to fetch will need, plus the one that stamps. A page listed
+    # with no budget left to hydrate it is a page whose ids the sweep would
+    # then read as absent — so the budget is checked BEFORE the fetch, never
+    # in the middle of draining one (Codex §4.4.7).
+    CALL_RESERVE = 8
     BODY_MAX = 8000
     REASON_MAX = 200
     BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365}
@@ -7943,8 +8001,25 @@ data:
                 % (parts.scheme, parts.hostname or "?", GMAIL_HOST))
         req = urllib.request.Request(url, headers={
             "Authorization": "Bearer " + token, "Accept": "application/json"})
-        with _OPENER.open(req, timeout=20) as resp:
-            return _json.loads(resp.read().decode("utf-8"))
+        # ONE CALL'S WALL CLOCK, not only its socket's. urllib's timeout is
+        # per socket operation, so a body that keeps trickling bytes never
+        # trips it, and a large message on a slow path could carry the
+        # invocation past its minute. The body is read in chunks against
+        # the instant the call began, and a call that outlives FETCH_TIMEOUT
+        # raises the same TimeoutError a stalled socket does, which defers
+        # the message (`_fetch_message`).
+        began = _clock()
+        with _OPENER.open(req, timeout=FETCH_TIMEOUT) as resp:
+            chunks = []
+            while True:
+                chunk = resp.read(FETCH_CHUNK)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if _clock() - began > FETCH_TIMEOUT:
+                    raise TimeoutError("the call outlived %ds while its body was still arriving"
+                                       % FETCH_TIMEOUT)
+            return _json.loads(b"".join(chunks).decode("utf-8"))
 
 
     def _status(e):
@@ -8876,8 +8951,15 @@ data:
     # planning one hydrate batch
     # --------------------------------------------------------------------------
 
-    def _plan(host, aid, msgs):
+    def _plan(host, aid, msgs, thin=()):
         """Turn a hydrate batch into ORDERED write intents.
+
+        `thin` names the messages read with `format=metadata` after their full
+        reads kept failing (`_fetch_message`): their headers are decoded like
+        any other's, and nothing the body would have carried is written, so
+        the payload tree, the MIME type, the body and the parts are left as
+        they were, and no attachment is reconciled against a read that did not
+        see the parts.
 
         PRESENCE IS PRESERVED. Version 18 built a complete property map out of
         `.get` defaults, so any thinner read erased a fuller row. Here a
@@ -8925,7 +9007,8 @@ data:
             # --- everything the payload carries -------------------------------
             payload = msg.get("payload")
             atts = []
-            if isinstance(payload, dict):
+            full = isinstance(payload, dict) and mid not in thin
+            if full:
                 keep, kept, dropped = _keep(payload)
                 if dropped:
                     host.log("google-gmail: message %s carries more than %d bytes "
@@ -8933,10 +9016,11 @@ data:
                              "and size without their `data`"
                              % (mid, PAYLOAD_MAX, dropped))
                 props["payload"] = _tree(payload, (), keep)
-                lines = _header_lines(payload)
-                props["headers"] = lines or None
                 props["mimeType"] = (str(payload["mimeType"])
                                      if "mimeType" in payload else None)
+            if isinstance(payload, dict):
+                lines = _header_lines(payload)
+                props["headers"] = lines or None
                 subject = _values(lines, "subject")
                 props["subject"] = subject[0] if subject else None
                 dates = _values(lines, "date")
@@ -8958,17 +9042,17 @@ data:
                 parents = _msgids(_values(lines, "in-reply-to"))
                 props["inReplyTo"] = parents[0] if parents else None
                 props["references"] = _msgids(_values(lines, "references")) or None
-                props["body"] = _body(payload, host, mid) or None
                 for name, header in (("from", "from"), ("to", "to"), ("cc", "cc"),
                                      ("bcc", "bcc"), ("replyTo", "reply-to")):
                     entries, rows = _addrs(_values(lines, header))
                     props[name] = entries or None
                     addresses.extend(rows)
+            if full:
+                props["body"] = _body(payload, host, mid) or None
                 _attachments(payload, (), atts)
             threads.add(tid)
             records.append({"id": mid, "threadId": tid, "props": props,
-                            "attachments": atts,
-                            "hasPayload": isinstance(payload, dict)})
+                            "attachments": atts, "hasPayload": full})
         return sorted(set(addresses)), threads, records, skipped
 
 
@@ -9089,7 +9173,7 @@ data:
         path = "/gmail/v1/users/me/threads/" + urllib.parse.quote(tid, safe="")
         try:
             thread = _get(base, token, path, {"format": "minimal"})
-        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+        except (urllib.error.HTTPError, OSError, http.client.HTTPException, ValueError) as e:
             misses = int(cur.get("threadMisses") or 0) + 1
             cur["threadMisses"] = misses
             if misses >= THREAD_FAILURES:
@@ -9408,6 +9492,30 @@ data:
         return _dt.datetime.now(_dt.timezone.utc).timestamp()
 
 
+    # THIS INVOCATION's clock. The function's own `timeout` is a wall on one
+    # invocation, and the chain's clock (`_out_of_time`) is cumulative over
+    # every invocation of the chain, so neither sees the other: a batch of
+    # fetches has to watch both.
+    _INVOCATION = {"startTs": 0.0}
+
+
+    def _invocation_begin():
+        _INVOCATION["startTs"] = _clock()
+
+
+    def _fetch_allowed(cur):
+        """May one more API call start now?
+
+        Not past HYDRATE_SECONDS of this invocation, so a call that then takes
+        the whole FETCH_TIMEOUT still ends inside the function's minute, and
+        not once the chain's clock is spent.
+        """
+        started = float(_INVOCATION["startTs"] or 0)
+        if started and _clock() - started >= HYDRATE_SECONDS:
+            return False
+        return not _out_of_time(cur)
+
+
     def _trait_begin(cur):
         """Stamp when THIS account's walk began, once per account in the chain."""
         if not cur.get("traitStartTs"):
@@ -9589,7 +9697,8 @@ data:
                 "after": "", "sweep": False, "resume": {}, "records": 0,
                 "skipped": 0, "calls": calls, "seen": [], "seenOverflow": False,
                 "rethread": [], "stale": [], "staleOverflow": False,
-                "threadMisses": 0, "threadsOff": False}
+                "threadMisses": 0, "threadsOff": False,
+                "deferred": [], "fetched": [], "fetching": "", "fetchFailures": 0}
 
 
     def _spent(cur, reserve=0):
@@ -9668,9 +9777,9 @@ data:
         cur["back"] = "finish"
 
 
-    def _hold_pending(host, aid, cur):
+    def _hold_pending(host, aid, cur, why="the drain's budget is spent"):
         """Stop in the MIDDLE of a page's hydrates and persist the message ids it
-        listed but did not fetch.
+        listed but did not fetch, and the message a fetch keeps failing on.
 
         The other two holds stop at a PAGE boundary, where the page token is the
         whole of what is owed. This one stops between two hydrate batches, and
@@ -9700,10 +9809,13 @@ data:
             historyId=cur.get("runHistoryId") or held.get("historyId") or "",
             maxHistoryId=cur.get("maxHistoryId") or held.get("maxHistoryId") or "",
             sweep=bool(cur.get("sweep")) or bool(held.get("sweep")),
-            seen=seen, seenOverflow=overflow))
-        host.log("google-gmail: the drain's budget is spent inside %s with %d "
-                 "message(s) listed and not fetched — they ride on the account "
-                 "and the next run hydrates them first" % (aid, len(pending)))
+            seen=seen, seenOverflow=overflow,
+            rethread=[str(t) for t in (cur.get("rethread") or []) if t][:STALE_MAX],
+            fetching=str(cur.get("fetching") or ""),
+            fetchFailures=int(cur.get("fetchFailures") or 0) or None))
+        host.log("google-gmail: %s inside %s with %d message(s) listed and not "
+                 "fetched — they ride on the account and the next run hydrates "
+                 "them first" % (why, aid, len(pending)))
         cur["resume"] = held
         cur["pending"] = []
         cur["pageToken"] = ""
@@ -9824,14 +9936,16 @@ data:
         The delta a resumed walk runs first (`deltaHistoryId`, `deltaToken`,
         `deltaOff`) rides on `deltaState` until the walk completes.
         """
-        if held.get("pending"):
+        if held.get("pending") or held.get("rethread"):
             # An earlier fire stopped between two hydrate batches: fetch exactly
-            # the ids it listed and never reached, and only then carry on where it
-            # was — its page token, its window, its generation, its watermark.
-            # BEFORE the page-token branch, because both may be held at once and
-            # the unfetched ids are the older debt.
+            # the ids it listed and never reached, read the threads its clock
+            # cut, and only then carry on where it was — its page token, its
+            # window, its generation, its watermark. BEFORE the page-token
+            # branch, because both may be held at once and the unfetched ids
+            # are the older debt.
             cur.update({"phase": "hydrate",
-                        "pending": [str(m) for m in held["pending"] if m],
+                        "pending": [str(m) for m in (held.get("pending") or []) if m],
+                        "rethread": [str(t) for t in (held.get("rethread") or []) if t],
                         "back": str(held.get("back") or "finish"),
                         "pageToken": held.get("pageToken") or "",
                         "floor": held.get("floor") or "",
@@ -9917,7 +10031,11 @@ data:
                 held = {}
         if not isinstance(held, dict):
             held = {}
-        if held.get("pageToken") or (held.get("pending")
+        # The message a fetch keeps failing on, whatever path this run takes
+        # to it: the count is the account's, not the walk's.
+        cur["fetching"] = str(held.get("fetching") or "")
+        cur["fetchFailures"] = int(held.get("fetchFailures") or 0)
+        if held.get("pageToken") or ((held.get("pending") or held.get("rethread"))
                                      and held.get("back") != "history"):
             _resume_walk(cur, held)
             # NEW MAIL FIRST. A resumed walk reads OLDER mail only: what arrived
@@ -9936,7 +10054,7 @@ data:
                             "pageToken": str(held.get("deltaToken") or ""),
                             "pending": [], "back": "finish"})
             return cur
-        if held.get("pending"):
+        if held.get("pending") or held.get("rethread"):
             _resume_walk(cur, held)
             return cur
         if held.get("historyToken") and held.get("historyId"):
@@ -10159,24 +10277,124 @@ data:
         return {"more": host.page.more(cur)}
 
 
+    def _fetch_message(host, base, token, aid, mid, cur):
+        """One `messages.get`, named in the log BEFORE the call, so a fire that
+        dies mid-fetch says which message it was on.
+
+        Answers (message, outcome). `ok` and `thin` carry the resource, from a
+        full read or from the `format=metadata` read a message gets once its
+        full reads have failed FETCH_ATTEMPTS times. `gone` is a 404: retract
+        it. `deferred` is a timeout, a connection error or a 5xx: the id rides
+        on the account for the next fire. `skipped` is the metadata read
+        failing too: logged with the reason, counted, and let go. Any other
+        HTTP error raises as before, because a 401 or a 403 is the account's
+        and not the message's.
+
+        ONE SUSPECT AT A TIME. `fetching` and `fetchFailures` on the cursor
+        name the earliest deferred message still owed and how many of its full
+        reads have failed; a second message deferred while the first is owed
+        waits its turn, and the pair clears when the suspect is fetched, gone
+        or skipped. Two messages failing in turn therefore cannot keep each
+        other's count from reaching FETCH_ATTEMPTS.
+        """
+        suspect = str(cur.get("fetching") or "")
+        failures = int(cur.get("fetchFailures") or 0) if suspect == mid else 0
+        thin = failures >= FETCH_ATTEMPTS
+        host.log("google-gmail: fetching message %s for %s%s"
+                 % (mid, aid, (" with format=metadata after %d failed full fetches"
+                               % failures) if thin else ""))
+        path = "/gmail/v1/users/me/messages/" + urllib.parse.quote(mid, safe="")
+        try:
+            msg = _get(base, token, path, {"format": "metadata" if thin else "full"})
+        except urllib.error.HTTPError as e:
+            if _status(e) == 404:
+                if suspect == mid:
+                    cur["fetching"], cur["fetchFailures"] = "", 0
+                return None, "gone"
+            if _status(e) < 500:
+                raise
+            reason = _reason(e)
+        except (OSError, http.client.HTTPException, ValueError) as e:
+            # A read timeout, a connection reset or refused, a body the
+            # upstream cut short (IncompleteRead, or JSON that ends early):
+            # this message's for now, and the account's only if it keeps
+            # happening (the next list or profile call raises on its own).
+            reason = _reason(e)
+        else:
+            if suspect == mid:
+                cur["fetching"], cur["fetchFailures"] = "", 0
+            return msg, "thin" if thin else "ok"
+        if failures + 1 >= 2 * FETCH_ATTEMPTS:
+            host.log("google-gmail: message %s is skipped for %s after %d failed "
+                     "fetches, the last %d with format=metadata: %s"
+                     % (mid, aid, failures + 1, FETCH_ATTEMPTS, reason))
+            cur["fetching"], cur["fetchFailures"] = "", 0
+            return None, "skipped"
+        if suspect in ("", mid):
+            cur["fetching"], cur["fetchFailures"] = mid, failures + 1
+        host.log("google-gmail: message %s is deferred for %s after failed fetch "
+                 "%d of %d%s: %s" % (mid, aid, failures + 1, 2 * FETCH_ATTEMPTS,
+                                     " (metadata)" if thin else "", reason))
+        return None, "deferred"
+
+
+    def _fetchable(cur):
+        """Does the cursor hold a pending id this run has not deferred, or a
+        thread read the clock cut that the next invocation can make?"""
+        if cur.get("rethread"):
+            return True
+        deferred = set(str(m) for m in (cur.get("deferred") or ()))
+        return any(str(m) not in deferred for m in (cur.get("pending") or []) if m)
+
+
     def _hydrate(host, batch, aid, base, token, cur):
-        pending = list(cur.get("pending") or [])
-        batch_ids, rest = pending[:HYDRATE], pending[HYDRATE:]
-        msgs, vanished = [], []
+        pending = [str(m) for m in (cur.get("pending") or []) if m]
+        # The ids a fetch deferred EARLIER IN THIS RUN wait for the next fire,
+        # and the ids this run has fetched already (a held walk's pending
+        # behind the delta that just read them) are done; the rest are fetched
+        # in listing order, at most HYDRATE of them.
+        was_deferred = set(str(m) for m in (cur.get("deferred") or ()))
+        deferred = [m for m in pending if m in was_deferred]
+        fetched = set(str(m) for m in (cur.get("fetched") or ()))
+        queue = [m for m in pending if m not in deferred and m not in fetched]
+        batch_ids, rest = queue[:HYDRATE], queue[HYDRATE:]
+        msgs, vanished, thin, unfetched = [], [], set(), []
         skipped = int(cur.get("skipped") or 0)
-        for mid in batch_ids:
-            path = "/gmail/v1/users/me/messages/" + urllib.parse.quote(mid, safe="")
-            try:
-                msgs.append(_get(base, token, path, {"format": "full"}))
-            except urllib.error.HTTPError as e:
-                if _status(e) != 404:
-                    raise
+        for i, mid in enumerate(batch_ids):
+            if not _fetch_allowed(cur):
+                # THE CLOCK, INSIDE THE BATCH. What was fetched is staged
+                # below; the rest ride on the cursor, and the next invocation
+                # or the next fire carries on from exactly here.
+                unfetched = batch_ids[i:]
+                host.log("google-gmail: the hydrate clock is spent for %s with %d "
+                         "of %d message(s) fetched; the rest ride on"
+                         % (aid, i, len(batch_ids)))
+                break
+            msg, outcome = _fetch_message(host, base, token, aid, mid, cur)
+            if outcome != "deferred" and len(fetched) < FETCHED_MAX:
+                fetched.add(mid)
+            if outcome == "gone":
                 # Gone between the listing and the fetch: retract whatever is
                 # there and count it, so the stamp says "ok (N skipped)".
                 host.log("google-gmail: message %s vanished for %s" % (mid, aid))
                 vanished.append(mid)
                 skipped += 1
-        addresses, tids, records, incomplete = _plan(host, aid, msgs)
+            elif outcome == "skipped":
+                skipped += 1
+            elif outcome == "deferred":
+                # The batch stops at a fetch that failed: an upstream that
+                # answers every fetch with a 503 would otherwise be walked
+                # id by id inside the chain's clock, five quota units each.
+                # What was fetched is staged; the rest ride on, and the next
+                # invocation carries on past this id.
+                deferred.append(mid)
+                unfetched = batch_ids[i + 1:]
+                break
+            else:
+                if outcome == "thin":
+                    thin.add(mid)
+                msgs.append(msg)
+        addresses, tids, records, incomplete = _plan(host, aid, msgs, thin)
         skipped += incomplete
         # THE SWEEP'S FENCE IS RAISED BY WHAT THIS WALK ACTUALLY SAW (T-003).
         # `runHistoryId` is the profile read at the START of the run, and it is
@@ -10216,13 +10434,20 @@ data:
         _stage_messages(host, batch, aid, records, seen_ids)
         reads = {}
         hydrated = {rec["id"] for rec in records}
-        for tid in wanted[:THREAD_READS]:
+        to_read, unread, cut = wanted[:THREAD_READS], wanted[THREAD_READS:], []
+        for i, tid in enumerate(to_read):
+            if not _fetch_allowed(cur):
+                # The clock again: the threads not read ride on `rethread`,
+                # so the next invocation reads them rather than leaving them
+                # thin for good.
+                cut = to_read[i:]
+                unread = cut + unread
+                break
             thread = _thread_read(host, base, token, tid, cur)
             if thread is not None:
                 reads[tid] = thread
-        unread = wanted[THREAD_READS:]
         _stage_threads(host, batch, aid, reads, hydrated, seen_ids, gone)
-        cur["rethread"] = [t for t in unread if t in rethread]
+        cur["rethread"] = [t for t in unread if t in rethread or t in cut]
         # The ids this windowed re-read wrote, back onto the cursor: the sweep
         # mark the engine cannot yet hold as a label (README, ask 1).
         if len(seen_ids) <= SEEN_MAX:
@@ -10230,10 +10455,17 @@ data:
         else:
             cur["seen"] = []
             cur["seenOverflow"] = True
-        cur["pending"] = rest
+        # The unfetched first, in listing order, then the deferred: a
+        # cursor whose every id is deferred is held for the next fire by
+        # `_drain`, which reads `_fetchable`. A thread read the clock cut
+        # keeps the phase here too, so the next invocation makes it before
+        # the walk moves on.
+        cur["pending"] = unfetched + rest + deferred
+        cur["deferred"] = deferred
+        cur["fetched"] = sorted(fetched)
         cur["skipped"] = skipped
         cur["records"] = int(cur.get("records") or 0) + len(records)
-        if not rest:
+        if not cur["pending"] and not cur["rethread"]:
             cur["phase"] = cur.get("back") or "finish"
         return {"more": host.page.more(cur)}
 
@@ -10372,10 +10604,18 @@ data:
             # ends with it: a completed walk stamps `gmailHistoryId` itself.
             resume = dict(resume, **(cur.get("deltaState") or {}))
         owed = bool(resume.get("pageToken") or resume.get("historyToken")
-                    or resume.get("sweep") or resume.get("pending"))
+                    or resume.get("sweep") or resume.get("pending")
+                    or resume.get("rethread"))
         # What the next fire picks up, as a COUNT: the messages parked mid-page
         # where there are any, and otherwise the one walk that is owed.
         owes = len(resume.get("pending") or []) or (1 if owed else 0)
+        # A message whose fetches keep failing is named in the sentence, so
+        # a reader of `sync status` sees why the pending count stands still
+        # before the metadata read gets past it.
+        deferred = ""
+        if resume.get("fetching") and int(resume.get("fetchFailures") or 0) > 0:
+            deferred = ", message %s failed %d fetch(es)" % (
+                resume["fetching"], int(resume["fetchFailures"]))
         stamp = _ack(props, {}, "gmail")
         # A COMPLETED RUN CLEARS THE 429 WALL. It only got here by calling Google
         # successfully, so whatever `Retry-After` was outstanding is spent.
@@ -10394,7 +10634,7 @@ data:
             # (tools/e2e.py `pending_work`) and the contacts and calendar streams
             # both spell it that way, so a bounded gmail walk was the one
             # hand-back nothing came back for.
-            stamp["gmailSyncStatus"] = "%s (%d pending)" % (status, owes)
+            stamp["gmailSyncStatus"] = "%s (%d pending%s)" % (status, owes, deferred)
         else:
             now = _iso(_now())
             stamp["gmailLastSyncedAt"] = now
@@ -10480,15 +10720,20 @@ data:
             _end_delta(cur)
             phase = cur["phase"]
         if phase == "hydrate":
-            if cur.get("pending") and _out_of_time(cur):
+            owed = cur.get("pending") or cur.get("rethread")
+            if owed and (_out_of_time(cur) or not _fetchable(cur)):
+                # OUT OF TIME BETWEEN TWO HYDRATE BATCHES, or every id left is
+                # one a fetch deferred this run. The invocation counter never
+                # saw the first coming, since it is checked at a list
+                # boundary, and continuing here is what walked the chain
+                # past the engine's deadline every hour. The ids ride on the
+                # account and this fire ends cleanly, `ok` with the rest
+                # counted as pending.
+                why = ("the drain's budget is spent" if _out_of_time(cur)
+                       else "every listed message left is deferred to the next fire")
                 if cur.get("delta"):
                     _end_delta(cur)
-                # OUT OF TIME BETWEEN TWO HYDRATE BATCHES. The invocation counter
-                # never saw this coming — it is checked at a list boundary — and
-                # continuing here is what walked the chain past the engine's
-                # deadline every hour. The ids ride on the account and this fire
-                # ends cleanly, `ok` with the rest counted as pending.
-                _hold_pending(host, aid, cur)
+                _hold_pending(host, aid, cur, why)
                 return _stamp(host, batch, aid, acct, cur)
             return _hydrate(host, batch, aid, base, token, cur)
         if phase == "backfill":
@@ -10520,6 +10765,7 @@ data:
 
 
     def main(input, host):
+        _invocation_begin()
         cfg = input.get("config") or {}
         accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
         # The paged-checkpoint wrapper: host.page.resume() is the opaque cursor
