@@ -10,6 +10,8 @@ package engine_test
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -383,6 +385,74 @@ func TestAStoredTokenGrantQuarantinesItsPackage(t *testing.T) {
 	}
 	if _, _, err := svc2.Authenticate(ctx, secret); err != nil {
 		t.Fatalf("the owner's token must still sign in: %v", err)
+	}
+}
+
+// `substratectl bundle status <id>` is how an operator reads why a package was
+// quarantined, so the single-bundle read answers for a quarantined package
+// with the same status the listing carries, reason included, and still
+// answers not found for an id that is neither live nor quarantined.
+func TestBundleStatusReportsAQuarantinedPackage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := engine.MigratedDSN(t)
+	open := func() substrate.Service {
+		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsDir(engine.SeedKindsDir))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, trDocs()); err != nil {
+		t.Fatalf("install the bundle: %v", err)
+	}
+	row := mustGet(t, ds, "substrate.reamde.dev/core/function", trFunction)
+	props := map[string]any{}
+	for k, v := range row.Properties {
+		props[k] = v
+	}
+	props["permissions"] = map[string]any{"writes": []any{trNoteKind, trToken}}
+	if err := planter(t, ds).PlantDeclarationRow(ctx, "substrate.reamde.dev/core/function", trFunction, props); err != nil {
+		t.Fatalf("plant the token grant: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the repository: %v", err)
+	}
+	listed := bundleStatusFor(t, ds2, trPackage)
+	if !listed.Quarantined {
+		t.Fatalf("the package must be quarantined for this test to mean anything: %+v", listed)
+	}
+
+	st, err := ds2.BundleStatus(ctx, trPackage)
+	if err != nil {
+		t.Fatalf("bundle status of a quarantined package: %v", err)
+	}
+	if !st.Quarantined || st.Installed || st.Enabled {
+		t.Fatalf("bundle status must report the quarantine: %+v", st)
+	}
+	if want := `"` + trToken + `" is refused`; !strings.Contains(st.QuarantineReason, want) {
+		t.Fatalf("bundle status must carry the quarantine reason: want %q in %q", want, st.QuarantineReason)
+	}
+	if !reflect.DeepEqual(st, listed) {
+		t.Fatalf("bundle status and the listing disagree on a quarantined package:\nstatus:  %+v\nlisting: %+v", st, listed)
+	}
+
+	if _, err := ds2.BundleStatus(ctx, "nowhere.substrate.reamde.dev/absent"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("an id neither live nor quarantined must be not found, got %v", err)
 	}
 }
 

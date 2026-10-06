@@ -263,7 +263,8 @@ has returned nor commit behind it.
 An installed closure that stops admitting under a newer binary is
 [quarantined](vocabulary.md#quarantine), exactly as the shipped vocabulary is,
 rather than allowed to brick the repository. On a bundle that means its status
-reports `installed: false` beside the `quarantined`/`quarantineReason` pair;
+reports `installed: false` beside the `quarantined`/`quarantineReason` pair,
+in the list and in the one-bundle status alike;
 re-installing it clears the marker, and uninstall still works on one, resolved
 straight from its stored rows.
 

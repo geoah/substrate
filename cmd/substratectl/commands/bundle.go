@@ -73,7 +73,17 @@ func (a *app) bundleListCommand() *cobra.Command {
 				fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%d\t%d\t%d\t%d\n",
 					b.ID, b.Installed, b.Enabled, setupSummary(b), b.Accounts, b.Functions, b.Kinds, b.LiveRecords)
 			}
-			return tw.Flush()
+			if err := tw.Flush(); err != nil {
+				return err
+			}
+			// A reason is a sentence, too long for a column, so each
+			// quarantined bundle gets its own line under the table.
+			for _, b := range res.Items {
+				if b.Quarantined {
+					fmt.Fprintf(a.out, "quarantined: %s: %s\n", b.ID, b.QuarantineReason)
+				}
+			}
+			return nil
 		},
 	}
 }
