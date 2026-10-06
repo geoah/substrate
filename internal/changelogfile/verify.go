@@ -29,8 +29,12 @@ type Report struct {
 	Segments int
 	// Entries is the number of lines checked: every line on success, the
 	// lines of the segments before the first error and of its own segment
-	// before it otherwise.
+	// before it otherwise. The lines of a segment VerifyOptions.Known vouched
+	// for are not checked and not counted.
 	Entries int64
+	// Known is how many finished segments VerifyOptions.Known vouched for,
+	// read at their first and last lines alone.
+	Known int
 	// Head is the seq of the last entry, 0 for an empty log; on an error,
 	// the last seq of the segments before the one it is in.
 	Head int64
@@ -55,6 +59,11 @@ type VerifyOptions struct {
 	// seq order, with the segment, its last seq and the bytes checked so
 	// far. It is called on the goroutine that called VerifyDir.
 	Progress func(Position)
+	// Known vouches for finished segments as OpenOptions.Known does: one
+	// whose size and sidecar are the Known ones is held to them and read at
+	// its first and last lines, not line by line. The verification is then
+	// of everything else; a snapshot hands the segments its base holds.
+	Known map[string]KnownSegment
 }
 
 // VerifyDir checks a changelog directory: every finished segment hashes to
@@ -78,7 +87,7 @@ func VerifyDir(dir string, opts VerifyOptions) (*Log, Report, error) {
 	l := &Log{dir: dir}
 	var prevLast, checked int64
 	err = inSegmentOrder(len(list), func(i int, lc *lineChecker) segmentCheck {
-		return verifySegment(dir, list, i, lc)
+		return verifySegment(dir, list, i, lc, opts.Known)
 	}, func(i int, c segmentCheck) error {
 		s := list[i]
 		if s.First != prevLast+1 {
@@ -87,6 +96,9 @@ func VerifyDir(dir string, opts VerifyOptions) (*Log, Report, error) {
 		rep.Entries += c.lines
 		if c.err != nil {
 			return c.err
+		}
+		if c.seg.known {
+			rep.Known++
 		}
 		prevLast = c.seg.last
 		checked += s.Size
@@ -167,11 +179,16 @@ type segmentCheck struct {
 	err    error
 }
 
-// verifySegment checks segment i of a listing in one read.
-func verifySegment(dir string, list []Segment, i int, lc *lineChecker) segmentCheck {
+// verifySegment checks segment i of a listing in one read, or a finished
+// one known vouches for at its first and last lines.
+func verifySegment(dir string, list []Segment, i int, lc *lineChecker, known map[string]KnownSegment) segmentCheck {
 	s := list[i]
 	seg := segment{Segment: s, end: s.Size}
 	path := filepath.Join(dir, s.Name)
+	if k, ok := known[s.Name]; ok && s.Finished {
+		seg, err := checkKnown(dir, seg, k, lc)
+		return segmentCheck{seg: seg, err: err}
+	}
 	if !s.Finished {
 		if i != len(list)-1 {
 			return segmentCheck{seg: seg, err: fmt.Errorf("%w: %s", ErrSegmentUnfinished, s.Name)}

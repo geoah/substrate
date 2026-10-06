@@ -71,10 +71,11 @@ func (p *progress) report(where ...any) {
 	p.log.Info(p.msg, attrs...)
 }
 
-// The checks of a changelog directory that digest its finished segments, as
-// their progress lines name them. The boot check digests every one; the
-// first open after it digests only what the boot check did not (repodir.go
-// openDirectory); a snapshot digests its copy (snapshot.go).
+// The checks of a changelog directory, as their progress lines name them.
+// The boot check and the first open after it read each finished segment's
+// first and last lines and take the rest on its sidecar's word (repodir.go);
+// the server digests those segments after the open (segmentdigest.go); a
+// snapshot digests what it copied (snapshot.go).
 const (
 	checkAtBoot       = "substrate: boot check: checking the changelog segments"
 	checkAtOpen       = "substrate: open: checking the changelog segments"
@@ -85,11 +86,12 @@ const (
 // directory (changelogfile.OpenOptions). Digesting every finished segment of
 // a long history takes minutes, so it reports once per interval how many of
 // the directory's segments and bytes are checked (issue 761). It is also
-// where the digest test seam sees each finished segment that was read.
+// where the digest test seam sees each finished segment whose bytes were
+// hashed.
 func (s *service) checkProgress(msg, repository string) func(changelogfile.OpenProgress) {
 	p := s.progress(msg, "repository", repository)
 	return func(op changelogfile.OpenProgress) {
-		if op.Finished && !op.Reused && s.testDigestHook != nil {
+		if op.Digested && s.testDigestHook != nil {
 			s.testDigestHook(repository, op.Segment)
 		}
 		p.report("segment", op.Segment,

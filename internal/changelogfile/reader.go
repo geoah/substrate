@@ -40,6 +40,15 @@ type segment struct {
 	// later open handed this Log (OpenOptions.Verified) can hold the sidecar
 	// to it without reading the segment.
 	digest string
+	// unread is a finished segment taken on its sidecar's word
+	// (OpenOptions.TrustSidecars): digest is the sidecar's claim, which no
+	// read of the bytes has held them to yet (Log.DigestUnread).
+	unread bool
+	// known is a finished segment taken on the digest the caller vouched for
+	// (OpenOptions.Known), and lastSum is its last line's sum, so a caller
+	// can start comparing lines after the run of them (Log.KnownHead).
+	known   bool
+	lastSum [32]byte
 }
 
 // Log is a changelog directory as Open found it: a snapshot. Head and the
@@ -109,6 +118,17 @@ type OpenOptions struct {
 	// is checked as Open checks it. A Log over another directory vouches
 	// for nothing.
 	Verified *Log
+	// Known vouches for finished segments by name: a segment of that name
+	// whose size is the Known size and whose sidecar holds the Known digest
+	// is taken as checked, reading only its first and last lines (unread.go).
+	// Any other size or digest under a Known name is ErrSegmentDigest. A
+	// snapshot hands the segments its base holds (SharedFinished).
+	Known map[string]KnownSegment
+	// TrustSidecars takes every finished segment neither Verified nor Known
+	// vouches for on its own sidecar's word, reading only its first and last
+	// lines, and leaves the digest owed: Log.DigestUnread reads them. Without
+	// it every such segment is digested before the open returns.
+	TrustSidecars bool
 	// Progress, when not nil, is called after each segment is checked, in
 	// seq order.
 	Progress func(OpenProgress)
@@ -126,6 +146,10 @@ type OpenProgress struct {
 	// Reused is whether OpenOptions.Verified vouched for it, so none of its
 	// bytes were read.
 	Reused bool
+	// Digested is whether every byte of a finished segment was hashed here,
+	// rather than its first and last lines alone (OpenOptions.Known and
+	// TrustSidecars) or nothing (Reused).
+	Digested bool
 	// Segments and Bytes are how many segments, and how many of their
 	// bytes, are checked so far, this one included; the totals are the
 	// directory's.
@@ -151,8 +175,8 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 	vouched := opts.Verified.finishedByName(dir)
 	l := &Log{dir: dir, repaired: !opts.ReadOnly}
 	var prevLast, checkedBytes int64
-	err = inSegmentOrder(len(list), func(i int, _ *lineChecker) segmentCheck {
-		return openSegmentCheck(dir, list, i, vouched)
+	err = inSegmentOrder(len(list), func(i int, lc *lineChecker) segmentCheck {
+		return openSegmentCheck(dir, list, i, vouched, opts, lc)
 	}, func(i int, c segmentCheck) error {
 		s := list[i]
 		if s.First != prevLast+1 {
@@ -177,6 +201,7 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 		if opts.Progress != nil {
 			opts.Progress(OpenProgress{
 				Segment: s.Name, Finished: s.Finished, Reused: c.reused,
+				Digested: s.Finished && !c.reused && !seg.unread && !seg.known,
 				Segments: i + 1, TotalSegments: len(list),
 				Bytes: checkedBytes, TotalBytes: totalBytes,
 			})
@@ -192,9 +217,10 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 
 // openSegmentCheck is what an open checks of segment i of a listing: a
 // finished segment against its sidecar, unless the Verified Log vouches for
-// it, and the active one line by line. The cut of an incomplete tail is the
+// it, opts.Known holds its digest or opts.TrustSidecars takes the sidecar's
+// word, and the active one line by line. The cut of an incomplete tail is the
 // caller's, in seq order.
-func openSegmentCheck(dir string, list []Segment, i int, vouched map[string]segment) segmentCheck {
+func openSegmentCheck(dir string, list []Segment, i int, vouched map[string]segment, opts OpenOptions, lc *lineChecker) segmentCheck {
 	s := list[i]
 	seg := segment{Segment: s, end: s.Size}
 	if !s.Finished {
@@ -214,10 +240,39 @@ func openSegmentCheck(dir string, list []Segment, i int, vouched map[string]segm
 			return segmentCheck{err: fmt.Errorf("%w: %s", ErrSegmentDigest, s.Name)}
 		}
 		seg.last, seg.digest = known.last, known.digest
+		seg.unread, seg.known, seg.lastSum = known.unread, known.known, known.lastSum
 		return segmentCheck{seg: seg, reused: true}
+	}
+	if known, ok := opts.Known[s.Name]; ok {
+		seg, err := checkKnown(dir, seg, known, lc)
+		return segmentCheck{seg: seg, err: err}
+	}
+	if opts.TrustSidecars {
+		want, err := readSidecar(dir, s.Name)
+		if err != nil {
+			return segmentCheck{err: err}
+		}
+		seg, err := checkEndLines(dir, seg, lc)
+		seg.digest, seg.unread = want, true
+		return segmentCheck{seg: seg, err: err}
 	}
 	seg, err := checkFinished(dir, seg)
 	return segmentCheck{seg: seg, err: err}
+}
+
+// checkKnown holds a finished segment to the size and digest a caller
+// vouched for and reads its first and last lines (checkEndLines).
+func checkKnown(dir string, seg segment, known KnownSegment, lc *lineChecker) (segment, error) {
+	want, err := readSidecar(dir, seg.Name)
+	if err != nil {
+		return seg, err
+	}
+	if want != known.Digest || seg.Size != known.Size {
+		return seg, fmt.Errorf("%w: %s is not the segment the caller vouched for", ErrSegmentDigest, seg.Name)
+	}
+	seg, err = checkEndLines(dir, seg, lc)
+	seg.digest, seg.known = known.Digest, true
+	return seg, err
 }
 
 // checkFinished digests a finished segment and holds it to its sidecar: the

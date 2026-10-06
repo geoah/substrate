@@ -271,16 +271,45 @@ them stopped until step 6. Then take a snapshot of every repository with the
 old server's `substratectl`. `repository snapshot` verifies the repository
 before it copies anything, reads the copy back, and records the point it
 holds. It refuses a destination that already holds the repository, so use a
-fresh directory per upgrade. Dump the database beside it as well, as a
-private file that exists only once the dump succeeded:
+fresh directory per upgrade.
+
+Pass the previous upgrade's snapshot root as `--base`. The snapshot then
+hard-links every finished changelog segment and blob that snapshot holds
+unchanged, and verifies and copies only what was written since: seconds to
+a few minutes for a history of tens of gigabytes, where a snapshot without
+a base reads and copies every byte, which takes hours. The base must be on
+the same filesystem as the new snapshot, and it must be a snapshot this
+command wrote. Keep the newest snapshot: it is the next upgrade's base.
+The first snapshot has no base and is the slow one; if the operator has
+never taken one, say so in the plan and give it its own window.
 
 ```bash
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… \
-  substratectl repository snapshot <repository> /srv/substrate-backup/<date>    # once per repository
+  substratectl repository snapshot <repository> /srv/substrate-backup/<date> \
+    --base /srv/substrate-backup/<previous date>    # once per repository; omit --base the first time
+```
+
+The output names the base and how many segments and blobs it linked. A
+snapshot that linked nothing from a base it was given read everything: check
+that the base is the previous snapshot of the same repository.
+
+A database dump is optional. The snapshot alone restores: the boot imports
+it into an empty database (see "When it goes wrong"). A dump makes the
+restore faster and costs downtime now, since it reads the whole database.
+Take one when the window allows it, as a private file that exists only once
+the dump succeeded:
+
+```bash
 ( umask 077
   pg_dump "$DATABASE_URL" > /srv/substrate-backup/<date>.sql.tmp &&
     mv /srv/substrate-backup/<date>.sql.tmp /srv/substrate-backup/<date>.sql )
 ```
+
+Where the data root and the database sit on a filesystem with snapshots
+(ZFS, LVM, a cloud volume), a snapshot of both volumes taken while the
+server is stopped is an equally good backup and takes seconds. Use it in
+place of the dump, or of both, when the operator prefers it; say which in
+the plan.
 
 On the compose deployment the server runs as uid 65532 and Postgres
 publishes no port, so the snapshot runs in a one-off container of the same
@@ -289,10 +318,10 @@ image with a directory that uid owns mounted in, and the dump runs in the
 
 ```bash
 docker compose stop substrate
-sudo install -d -m 700 -o 65532 -g 65532 ./substrate-backup-<date>
-docker compose run --rm -v "$PWD/substrate-backup-<date>:/backup" --entrypoint /bin/sh substrate -c \
-  'SUBSTRATE_CREDENTIAL_KEY="${SUBSTRATE_CREDENTIAL_KEY:-$(cat /keys/credential.key)}" exec substratectl repository snapshot <repository> /backup'
-( umask 077
+sudo install -d -m 700 -o 65532 -g 65532 ./substrate-backups    # once; every snapshot lands under it, so each links the last
+docker compose run --rm -v "$PWD/substrate-backups:/backup" --entrypoint /bin/sh substrate -c \
+  'SUBSTRATE_CREDENTIAL_KEY="${SUBSTRATE_CREDENTIAL_KEY:-$(cat /keys/credential.key)}" exec substratectl repository snapshot <repository> /backup/<date> --base /backup/<previous date>'
+( umask 077    # the optional dump
   docker compose exec -T postgres sh -c 'pg_dump -U postgres "$POSTGRES_DB"' > ./substrate-backup-<date>.sql.tmp &&
     mv ./substrate-backup-<date>.sql.tmp ./substrate-backup-<date>.sql )
 ```
@@ -347,6 +376,7 @@ refusal by editing tables or files:
 | the API answers `503 unavailable` with `Retry-After` for one repository | that repository's open was refused; the server log names it and why | fix what the log names, then restart |
 | `REFUSED to upgrade a repository's shipped vocabulary`, with the guard lines under `refused` | the seeded packages stay at their stored version; the lines name the kind, the property and the records to rewrite | rewrite those records, then restart the server |
 | `function body failed to prepare at repository open` | that function's deliveries park; the repository still serves | re-apply a working function (a provider's arrives with its upgrade in step 8), then retry the parked deliveries |
+| `a finished changelog segment does not match its sidecar; refusing writes`, minutes after the boot | the server's digest behind the open found a segment whose bytes on disk are damaged; reads go on, writes answer `500` | stop and show the user; the fix is the restore below, from the step 5 snapshot |
 
 ## Step 7: Verify
 

@@ -235,12 +235,22 @@ func WithTestProgressEvery(every time.Duration) Option {
 	return func(o *options) { o.progressEvery = every }
 }
 
-// WithTestDigestHook runs fn with each finished changelog segment a check
-// of a repository's directory reads and digests, at the boot check and at
-// open (progress.go checkProgress), and not with one an earlier check
-// vouched for. It can run on more than one goroutine at once.
+// WithTestDigestHook runs fn with each finished changelog segment whose
+// bytes a check of a repository's directory hashes: the server's digest
+// behind the open (segmentdigest.go), a snapshot's read-back of what it
+// copied, and an open of segments no earlier check and no sidecar vouched
+// for (progress.go checkProgress). It can run on more than one goroutine at
+// once.
 func WithTestDigestHook(fn func(repository, segment string)) Option {
 	return func(o *options) { o.digestHook = fn }
+}
+
+// WithTestOperator opens the service as OpenOperator opens substratectl's:
+// no repository's open digests its changelog segments in the background, so
+// a test that damages the source a snapshot reads sees the snapshot's own
+// checks and not a latch the digest set first.
+func WithTestOperator() Option {
+	return func(o *options) { o.operator = true }
 }
 
 // WithTestSearchReindex sets the open-time reindex's page size (zero keeps

@@ -189,6 +189,55 @@ func CopyChangelog(src, dst string) (int, error) {
 	return len(segments), nil
 }
 
+// CopyReport is what CopyChangelogFrom wrote.
+type CopyReport struct {
+	// Segments is how many segments the copy holds.
+	Segments int
+	// Linked names the segments that are hard links to the base's file, the
+	// same bytes on disk: no byte of them was read or written.
+	Linked map[string]bool
+}
+
+// CopyChangelogFrom is CopyChangelog with a base: every segment known
+// vouches for (SharedFinished of src and base) is a hard link to the base
+// repository directory's file instead of a copy, with its sidecar written
+// from the known digest, so a copy of a long history beside an earlier one
+// writes only what was appended since. A segment the filesystem refuses to
+// link (another filesystem, no hard links) is copied from src as
+// CopyChangelog copies it, and is not in Linked: the caller reads a copied
+// segment back and needs not read a linked one, whose bytes are the base's.
+func CopyChangelogFrom(src, dst, base string, known map[string]KnownSegment) (CopyReport, error) {
+	srcDir, dstDir, baseDir := ChangelogDir(src), ChangelogDir(dst), ChangelogDir(base)
+	segments, err := Segments(srcDir)
+	if err != nil {
+		return CopyReport{}, err
+	}
+	if err := os.MkdirAll(dstDir, dirMode); err != nil {
+		return CopyReport{}, err
+	}
+	report := CopyReport{Segments: len(segments), Linked: map[string]bool{}}
+	for _, seg := range segments {
+		if k, ok := known[seg.Name]; ok && seg.Finished {
+			if os.Link(filepath.Join(baseDir, seg.Name), filepath.Join(dstDir, seg.Name)) == nil {
+				if err := writeSidecar(dstDir, seg.Name, k.Digest); err != nil {
+					return report, err
+				}
+				report.Linked[seg.Name] = true
+				continue
+			}
+		}
+		if err := copyFile(srcDir, dstDir, seg.Name); err != nil {
+			return report, err
+		}
+		if seg.Finished {
+			if err := copyFile(srcDir, dstDir, sidecarName(seg.Name)); err != nil {
+				return report, err
+			}
+		}
+	}
+	return report, syncDir(dstDir)
+}
+
 // copyFile streams <srcDir>/<name> to <dstDir>/<name> the way writeFileAtomic
 // writes: a temporary file, an fsync, a rename, a directory fsync.
 func copyFile(srcDir, dstDir, name string) error {

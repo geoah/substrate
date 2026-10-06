@@ -371,8 +371,13 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 	if err != nil {
 		return err
 	}
+	// Every finished segment on its sidecar's word, its first and last lines read: a
+	// finished segment never changes, and digesting a long history's held the
+	// boot for minutes (issue 825). The first open after this takes the Log,
+	// and the server digests them behind it (segmentdigest.go).
 	log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), changelogfile.OpenOptions{
-		Progress: ds.svc.checkProgress(checkAtBoot, ds.info.ID),
+		TrustSidecars: true,
+		Progress:      ds.svc.checkProgress(checkAtBoot, ds.info.ID),
 	})
 	if err != nil {
 		return directoryOpenErr(err)
@@ -429,8 +434,9 @@ func (ds *dataset) reconcileDir(ctx context.Context, out *reconcileOutcome, allo
 		// The segments the first Log checked are still the ones it checked;
 		// only what the catch-up wrote is read again.
 		if log, err = changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), changelogfile.OpenOptions{
-			Verified: log,
-			Progress: ds.svc.checkProgress(checkAtBoot, ds.info.ID),
+			Verified:      log,
+			TrustSidecars: true,
+			Progress:      ds.svc.checkProgress(checkAtBoot, ds.info.ID),
 		}); err != nil {
 			return directoryOpenErr(err)
 		}
@@ -1255,11 +1261,14 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 		return err
 	}
 	// The boot check's Log, when this is the first open since it: its
-	// finished segments are not read again, the active one is.
+	// finished segments are not read again, the active one is. Any other
+	// finished segment is taken on its sidecar's word, as the boot check
+	// takes them, and the server digests them after the open (openNew).
 	opts := changelogfile.OpenOptions{
-		ReadOnly: ds.svc.readOnly,
-		Verified: ds.svc.takeChecked(ds.info.ID),
-		Progress: ds.svc.checkProgress(checkAtOpen, ds.info.ID),
+		ReadOnly:      ds.svc.readOnly,
+		Verified:      ds.svc.takeChecked(ds.info.ID),
+		TrustSidecars: true,
+		Progress:      ds.svc.checkProgress(checkAtOpen, ds.info.ID),
 	}
 	if ds.svc.readOnly {
 		log, err := changelogfile.OpenWith(changelogfile.ChangelogDir(ds.dir), opts)
@@ -1283,6 +1292,7 @@ func (ds *dataset) openDirectory(ctx context.Context) error {
 		return writerErr(err)
 	}
 	ds.writer = w
+	ds.unread = log
 	if tableHead > log.Head() {
 		n, err := appendFromTable(ctx, ds.db, w, log.Head(), ds.svc.catchUpBatch)
 		if err != nil {

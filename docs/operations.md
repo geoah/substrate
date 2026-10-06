@@ -461,10 +461,13 @@ it trusts:
   dies in between leaves the row, and the next boot check resumes the import
   from the table's head: no entry is inserted twice and nothing is appended.
   Until then a read-only open of the repository refuses; a seq present in
-  both with different checksums, a line whose `sum` does not verify or a
-  finished segment whose sidecar does not match **refuses the boot**, naming
-  the repository and the seq or the file, and repairs nothing (one refusal an
-  operator reads, rather than a repository half-open beside the others); a
+  both with different checksums, a line whose `sum` does not verify, or a
+  finished segment whose first or last line is not what its name and its
+  neighbours say **refuses the boot**, naming the repository and the seq or
+  the file, and repairs nothing (one refusal an operator reads, rather than a
+  repository half-open beside the others). A finished segment whose bytes do
+  not match its sidecar is found after the open instead, and refuses the
+  repository's writes (below); a
   row with no directory has its directory written out from the tables, once,
   which is how a repository whose directory was moved away gets one back. A
   directory under `repositories/` named by an authority (`ada.example.com`)
@@ -678,10 +681,11 @@ in an env var, a default or the boot is listed there; the
 section as its body. [Releasing](releasing.md) says how a section is written
 and how a release is cut.
 
-**Take a backup before you deploy** ([backups](#backups): the data root and a
-database dump, together). An upgrade that applies a schema migration closes
-the rollback for the whole database, and the copy you take beforehand is the
-only way back.
+**Take a backup before you deploy** ([backups](#backups): a snapshot of each
+repository, taken with `--base` of the previous upgrade's so it costs only
+what was written since, and a database dump if the downtime allows one). An
+upgrade that applies a schema migration closes the rollback for the whole
+database, and the copy you take beforehand is the only way back.
 
 **Each repository carries two dialect stamps, and each refuses a binary that
 is behind it.** The
@@ -889,6 +893,34 @@ point and checks that the entry it names is in the files with that checksum
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-09-08
 ```
 
+**A snapshot with a base copies only what changed.** Pass the destination
+root of an earlier snapshot of the same repository as `--base`, on the same
+filesystem. Every finished segment the base holds under the same name, size
+and sidecar digest, up to the head the base recorded, and every blob the
+base's `snapshot.json` lists, becomes a hard link to the base's file. Neither
+the source's file nor the base's is read again: the base's own checks read
+those bytes when it was taken. The rest (the segments written since, the
+active segment, the sealed files, the new blobs, the manifest) is verified,
+copied and read back as a snapshot without a base does it. The new snapshot
+is a whole directory, so deleting the base later leaves it intact, and it
+can be the next one's base. A file the filesystem refuses to link is copied
+and read back. A snapshot of a 50 GB history taken a day after its base
+costs the bytes of that day, which makes a snapshot before every upgrade a
+matter of seconds once the first one exists. Keep each upgrade's snapshot
+until the next one is taken from it.
+
+```
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository snapshot ada.example.com /srv/substrate-backup/2026-10-06 --base /srv/substrate-backup/2026-09-08
+```
+
+A linked file is read only when its base was written, so damage to the
+base after that is carried into every snapshot that links it, and hard links
+share one file between them. To check a snapshot's every byte, restore it
+into a scratch server with an empty database and run `repository verify`
+there, with the key. A filesystem snapshot (ZFS, LVM, a cloud volume) of the
+stopped data root and database volume is an equally good backup, taken in
+seconds, where the deployment has one.
+
 **An owner downloads the same snapshot from a running server.**
 `GET /api/v1/export` streams the repository as a tar laid out as a data root,
 `snapshot.json` last
@@ -932,10 +964,12 @@ so losing the host key leaves the sealed files inert only for a user who also
 lost the recovery key.
 
 **A database dump is optional, and it is not a restore.** The tables hold
-nothing the directory lacks except the runtime state named below. Take one beside the
-copy before an upgrade, because a dump plus the matching directory is the
-fastest way back to a known state, but a fresh database and the directory are
-enough.
+nothing the directory lacks except the runtime state named below. A dump
+plus the matching directory is the fastest way back to a known state, but a
+fresh database and the directory are enough: the boot imports the directory.
+A dump reads the whole database, so skip it when the upgrade's downtime
+matters more than the restore's; the import of a long history takes longer
+than restoring a dump.
 
 **Restore.** Stop the server. Copy the repository directories into a fresh
 server's data root (an export extracts straight into it), set the same
@@ -988,19 +1022,31 @@ or SIGINT during the boot ends it with `action=interrupted`, the repository
 it stopped on and the signal, so the next boot's `resuming an interrupted
 import` has its cause in the log above it.
 
-Every boot check hashes each repository's finished segments against their
-sidecars, which on a history of many gigabytes also takes minutes. After a
-segment, and at most once every 30 s, it logs `boot check: checking the
-changelog segments` at info, marked `progress=true`, with the segments and
-bytes checked so far and the directory's totals. The repository's first
-open after the boot takes those digests instead of hashing the segments
-again, and reads only the active segment and what was appended since; its
-lines say `open: checking the changelog segments`.
+The boot check does not hash a finished segment before it serves. A
+finished segment never changes, and hashing every one of a history of many
+gigabytes held the boot for minutes. The boot check reads each finished
+segment's first and last lines, which carry checksums of their own, name
+the seqs the segment starts and ends at, and catch a segment cut short or
+torn, and takes the rest on the word of its `.sha256` sidecar. It reads the
+active segment whole, as before. After a segment, and at most once every
+30 s, it logs `boot check: checking the changelog segments` at info, marked
+`progress=true`, with the segments and bytes checked so far and the
+directory's totals; the repository's first open after the boot logs `open:
+checking the changelog segments` the same way. Once a repository is open,
+the server hashes its finished segments in the background, one at a time,
+logging `digesting the changelog segments the open did not read` as it goes
+and `every finished changelog segment matches its sidecar` when done. Every
+line a read returns is still held to its own `sum` meanwhile. A segment that
+does not match its sidecar is logged at error (`a finished changelog segment
+does not match its sidecar; refusing writes`) and every later write to the
+repository answers `500 internal` naming the segment, until the directory is
+restored from a backup ([decision
+0146](decisions/0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md)).
 
-A boot that refuses a directory names what it refused: a bad `sum`, a sidecar
-that does not match, or a DEK this host's `SUBSTRATE_CREDENTIAL_KEY` does not
-open. Move that directory out of the root, or restore it from an older copy,
-and boot again.
+A boot that refuses a directory names what it refused: a bad `sum`, a
+segment that does not start or end where its neighbours say, or a DEK this
+host's `SUBSTRATE_CREDENTIAL_KEY` does not open. Move that directory out of
+the root, or restore it from an older copy, and boot again.
 
 ### Restore without the credential key
 
@@ -1234,7 +1280,10 @@ the exec path needs nothing open at all.
   the digest the source's verification took, so its lines are not walked a
   second time. It prints the same progress lines as `verify` while it
   verifies the source, and `snapshot: checking the copied changelog
-  segments` while it reads the copy back. The
+  segments` while it reads the copy back. With `--base <earlier snapshot
+  root>` it links what the base holds instead of reading and copying it
+  ([backups](#backups)), and prints how many segments and blobs it linked.
+  The
   copy holds what the fold needs and nothing else: a pending upload, a
   tombstoned blob's bytes and a staged sealed file are not copied. It refuses
   a destination that already holds the repository, so a snapshot is never a

@@ -141,6 +141,11 @@ type options struct {
 	// repository's changelog directory reads and digests, and not with one
 	// an earlier check vouched for. Tests only.
 	digestHook func(repository, segment string)
+	// operator is OpenOperator's: a substratectl process, which digests no
+	// changelog segment in the background (segmentdigest.go). Its commands
+	// end in seconds or read every line themselves, and the snapshot holds
+	// what it copies to the checks it runs.
+	operator bool
 	// invokeHook is the runner's test seam (seams.go WithTestInvokeHook): a
 	// hook run with a function's identity as its body is about to be invoked
 	// (runner.go runCallableRaw), so a test can act while the body runs.
@@ -441,6 +446,11 @@ type service struct {
 	// them again (repodir.go openDirectory, issue 761).
 	checkedMu sync.Mutex
 	checked   map[string]*changelogfile.Log
+	// digestUnread is whether a repository's open digests, in the
+	// background, the finished segments it took on their sidecars' word
+	// (segmentdigest.go): the server's, not an operator's or a read-only
+	// process's.
+	digestUnread bool
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -457,7 +467,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 // OpenOperator opens the engine the way Open does and returns it with the
 // operator hat's methods (operator.go). Only substratectl calls it.
 func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, error) {
-	s, err := open(ctx, dsn, opts...)
+	s, err := open(ctx, dsn, append(opts, func(o *options) { o.operator = true })...)
 	if err != nil {
 		return nil, err
 	}
@@ -581,6 +591,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testInvokeHook:    o.invokeHook,
 		testDigestHook:    o.digestHook,
 		checked:           map[string]*changelogfile.Log{},
+		digestUnread:      !o.operator && !o.dirReadOnly,
 
 		searchReindexBatch:    o.searchReindexBatch,
 		testSearchReindexHook: o.searchReindexHook,
@@ -1051,6 +1062,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// After the open, never inside it: the reindex takes minutes on a large
 	// repository, and every request on it waits for the open (issue 719).
 	ds.startSearchReindex()
+	ds.startSegmentDigest()
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.
