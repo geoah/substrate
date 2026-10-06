@@ -16,11 +16,13 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/llm/livespend"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -31,20 +33,24 @@ const (
 	liveAnthropicModel = "claude-haiku-4-5"
 )
 
-// The chain's budgets. The engine builds its own clients, so this case cannot
-// meter them the way internal/llm's live cases are metered; the hard request
-// cap is the agents' own budgets, which the loop checks before every
-// completion. The conductor takes at most liveConductorTurns completions and
-// liveConductorToolCalls tool calls, and each tool call may be a speller run of
-// liveSpellerTurns completions. Neither provider row declares a contextWindow,
-// so compaction, the one completion outside a turn, never runs. The thread
-// rows are booked afterwards and held to both ceilings.
+// The chain's budgets. A meter on every client the loop builds
+// (dataset.wrapLLMClient) charges the ledger before each completion and
+// records its usage after, so the request past liveChainMaxRequests, and every
+// request after the booked tokens pass liveChainTokenCeiling, is refused and
+// never sent. The agents' own budgets sit under that: the conductor takes at
+// most liveConductorTurns completions and liveConductorToolCalls tool calls,
+// and each tool call may be a speller run of liveSpellerTurns completions.
+// Neither provider row declares a contextWindow, so compaction, the one
+// completion outside a turn, never runs. liveChainMaxTokens caps each answer,
+// so the completion that crosses the token ceiling overshoots it by at most
+// its own prompt and that many output tokens.
 const (
 	liveConductorTurns     = 6
 	liveConductorToolCalls = 4
 	liveSpellerTurns       = 2
 	liveChainMaxRequests   = liveConductorTurns + liveConductorToolCalls*liveSpellerTurns
 	liveChainTokenCeiling  = 20_000
+	liveChainMaxTokens     = 256
 )
 
 // liveAgentModel reads the same override variables internal/llm's live suite
@@ -70,27 +76,76 @@ func liveKeys(t *testing.T) (string, string) {
 	return openaiKey, anthropicKey
 }
 
-// liveChainSpend books the chain's thread rows into a ledger, prints its
-// summary for the CI run summary, and fails the test past either ceiling. The
-// conductor's row carries the whole chain's tokens, because the root absorbs
-// the tally, so the Anthropic share is the root's less every speller's.
-func liveChainSpend(t *testing.T, ds *dataset) {
+// chainMeter is internal/llm's live meter on the engine's side of the
+// package boundary: it charges the ledger before every completion and records
+// the usage after, so a refused completion never reaches the wire. It counts
+// completions; the retries the Anthropic SDK makes inside one happen below it.
+type chainMeter struct {
+	wire   string
+	ledger *livespend.Ledger
+	llm.Client
+}
+
+func (m chainMeter) Complete(ctx context.Context, req llm.Request, onDelta func(string)) (*llm.Result, error) {
+	if err := m.ledger.Charge(m.wire); err != nil {
+		return nil, err
+	}
+	res, err := m.Client.Complete(ctx, req, onDelta)
+	if res != nil && res.Usage != nil {
+		m.ledger.Record(m.wire, res.Usage.PromptTokens, res.Usage.CompletionTokens)
+	}
+	return res, err
+}
+
+// meterAgents puts every client the dataset's agent loops build, sub-agents
+// included, behind the ledger, booked under its wire's name.
+func meterAgents(ds *dataset, ledger *livespend.Ledger) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.wrapLLMClient = func(wire llm.Wire, c llm.Client) llm.Client {
+		return chainMeter{string(wire), ledger, c}
+	}
+}
+
+// liveChainSpend prints the ledger's summary for the CI run summary and fails
+// the test past either ceiling.
+func liveChainSpend(t *testing.T, ledger *livespend.Ledger) {
 	t.Helper()
-	ledger := livespend.New("agent chain (internal/engine)", liveChainMaxRequests, liveChainTokenCeiling)
-	var turns, prompt, completion int
-	for _, th := range agentThreadsOf(t, ds, "speller") {
-		turns += intProp(th, "turns")
-		prompt += intProp(th, "promptTokens")
-		completion += intProp(th, "completionTokens")
-	}
-	ledger.Book("openai", turns, prompt, completion)
-	for _, th := range agentThreadsOf(t, ds, "conductor") {
-		ledger.Book("anthropic", intProp(th, "turns"),
-			intProp(th, "promptTokens")-prompt, intProp(th, "completionTokens")-completion)
-	}
 	fmt.Print(ledger.Summary())
 	if err := ledger.Err(); err != nil {
 		t.Error(err)
+	}
+}
+
+// The meter, driven through a scripted endpoint: once a completion books more
+// tokens than the ceiling, the loop's next completion is refused before it is
+// sent, and the run ends on that refusal.
+func TestAgentChainMeterRefusesTheCompletionPastTheTokenCeiling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	ledger := livespend.New("test", 10, 100)
+	meterAgents(ds, ledger)
+	// The first turn books 205 tokens against a ceiling of 100 and calls a
+	// tool, so the loop wants a second turn; scripted, it would settle the
+	// thread ok.
+	fake.script("budget",
+		fakeTurn{calls: []fakeCall{{"annotate", `{"id":"t-m1"}`}}, promptTokens: 200},
+		fakeTurn{content: "done"},
+	)
+	_, err := ds.CallAgent(ctx, crewPackage+"/budgeter", "go")
+	if !errors.Is(err, livespend.ErrOverBudget) {
+		t.Fatalf("call past the token ceiling: %v, want ErrOverBudget", err)
+	}
+	if got := len(fake.requestsOf("budget")); got != 1 {
+		t.Fatalf("the endpoint saw %d completions, want 1: the refused one was sent", got)
+	}
+	threads := agentThreadsOf(t, ds, "budgeter")
+	if len(threads) != 1 || threads[0]["status"] != threadError {
+		t.Fatalf("threads: %+v", threads)
+	}
+	if err := ledger.Err(); !errors.Is(err, livespend.ErrOverBudget) {
+		t.Fatalf("ledger: %v, want ErrOverBudget", err)
 	}
 }
 
@@ -155,6 +210,7 @@ def main(input, host):
 			"model":       openaiModel,
 			"description": "Spells a number in English words.",
 			"prompt":      "You are given a number. Reply with only that number spelled in English words. Nothing else.",
+			"params":      map[string]any{"maxTokens": liveChainMaxTokens},
 			"budgets":     map[string]any{"maxTurns": liveSpellerTurns, "deadlineSeconds": 60},
 		}),
 		vocabulary.AgentManifest(crewPackage, "conductor", map[string]any{
@@ -170,6 +226,7 @@ def main(input, host):
 			}, "\n"),
 			"tools":     []any{map[string]any{"function": crewPackage + "/add"}},
 			"subagents": []any{crewPackage + "/speller"},
+			"params":    map[string]any{"maxTokens": liveChainMaxTokens},
 			"budgets": map[string]any{
 				"maxTurns": liveConductorTurns, "maxToolCalls": liveConductorToolCalls,
 				"depth": 3, "deadlineSeconds": 120,
@@ -180,9 +237,11 @@ def main(input, host):
 		t.Fatalf("install the live crew: %v", err)
 	}
 
+	ledger := livespend.New("agent chain (internal/engine)", liveChainMaxRequests, liveChainTokenCeiling)
+	meterAgents(ds, ledger)
 	res, err := ds.CallAgent(ctx, crewPackage+"/conductor", "Run the procedure.")
 	// Before any assertion, so a failing chain still prints what it spent.
-	liveChainSpend(t, ds)
+	liveChainSpend(t, ledger)
 	if err != nil {
 		t.Fatalf("call the conductor: %v", err)
 	}

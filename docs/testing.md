@@ -432,14 +432,15 @@ a token ceiling, prompt and completion together, kept by a ledger in
 | Half | Requests | Tokens | What holds the request ceiling |
 | ---- | -------: | -----: | ------------------------------ |
 | adapter cases (`internal/llm`) | 24 | 20,000 | a meter around every client refuses the request past the ceiling before it is sent |
-| agent chain (`internal/engine`) | 14 | 20,000 | the agents' own `maxTurns` and `maxToolCalls` budgets, which the loop checks before every completion; the thread rows are booked afterwards |
+| agent chain (`internal/engine`) | 14 | 20,000 | a meter around every client the agent loop builds, sub-agents included, refuses the request past the ceiling before it is sent; the agents' own `maxTurns` and `maxToolCalls` budgets sit under it |
 
 A run of `test:llm` therefore makes at most 38 completion requests. The
 ceiling counts completions, not HTTP attempts: the Anthropic SDK retries an
 attempt that failed on a connection error or a 408, 409, 429 or 5xx status up
 to twice inside one completion, and the ledger does not see those retries. Tokens are known only
 once an answer reports its usage, so the request that crosses the token
-ceiling is paid for; the adapter meter refuses every request after it.
+ceiling is paid for; both meters refuse every request after it, and
+`maxTokens` keeps that request's answer to 256 tokens.
 Crossing either ceiling fails the run even when every case passed. The
 adapter cases make nine requests and a measured pass booked about 1,800
 tokens, so raising a ceiling is a deliberate edit to `live_test.go` or
