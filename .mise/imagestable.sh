@@ -47,8 +47,34 @@ if [ "$tag" != "$newest" ]; then
   exit 0
 fi
 
+# What `stable` names right now, read from the registry just before the write.
+# The tags above can be stale by the time a run gets here: a run by hand that
+# read them before a newer release was cut would otherwise move `stable` back
+# after that release moved it forward. This refuses to move it backwards,
+# which leaves only the gap between this read and the write. release.yml runs
+# one release at a time, so only a run by hand can overlap one.
+current=""
+if inspect="$(docker buildx imagetools inspect "$image:stable" --format '{{json .Image}}' 2>&1)"; then
+  current="$(jq -r '[.[]][0].config.Labels["org.opencontainers.image.version"] // ""' <<<"$inspect")"
+elif ! grep -q 'not found' <<<"$inspect"; then
+  echo "could not read $image:stable, so cannot tell whether $tag is newer: $inspect" >&2
+  exit 1
+fi
+want="${tag#v}"
+if [ -n "$current" ]; then
+  if [[ ! "${current#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "$image:stable reports version '$current', which is not a release; refusing to guess" >&2
+    exit 1
+  fi
+  higher="$(printf '%s\n%s\n' "${current#v}" "$want" | sort -V | tail -n 1)"
+  if [ "$higher" != "$want" ]; then
+    echo "$image:stable already names $current, newer than $tag; stable stays where it is" >&2
+    exit 0
+  fi
+fi
+
 if [ -n "${DRY_RUN:-}" ]; then
-  echo "would point $image:stable at $image:$tag" >&2
+  echo "would point $image:stable (now ${current:-unset}) at $image:$tag" >&2
   exit 0
 fi
 
