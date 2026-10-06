@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -384,6 +386,29 @@ func loadAnnotations(ctx context.Context, x dbx, ref eref) (map[string]any, erro
 type builder struct {
 	args  []any
 	where []string
+	// overRecords says the clauses filter the records table itself, under
+	// that name, whose committed rows the refs index projects (refs.go). Only
+	// then may a reference filter be answered from refs: a where over a row
+	// not yet written (mappingwhere.go) has no refs rows to find.
+	overRecords bool
+	// viaRefs says a reference filter was answered from refs, which only a
+	// plan made for its values can drive well (planWithValues).
+	viaRefs bool
+}
+
+// planWithValues makes the rest of a read's transaction plan each statement
+// for the values bound to it when the filter answered a reference from refs.
+// The connection caches its prepared statements, and Postgres moves a
+// statement it has run five times to a generic plan, which prices every
+// `dst = $n` alike: with an account's pointer and a thread's in one filter it
+// drove from the account's thousands of rows rather than the thread's one,
+// 57 ms a read against 0.2 ms. SET LOCAL ends with the transaction.
+func planWithValues(ctx context.Context, tx *sql.Tx, b *builder) error {
+	if !b.viaRefs {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `SET LOCAL plan_cache_mode = force_custom_plan`)
+	return err
 }
 
 func (b *builder) arg(v any) string {
@@ -427,9 +452,12 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	b := &builder{}
+	b := &builder{overRecords: true}
 	types, err := ds.buildFilter(ctx, tx, b, q.Filter)
 	if err != nil {
+		return nil, err
+	}
+	if err := planWithValues(ctx, tx, b); err != nil {
 		return nil, err
 	}
 	expand, err := ds.expandProperties(types, q.Expand)
@@ -847,13 +875,12 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
 	}
 	// A reference value is the object holding a path under `ref`, or the bare
-	// path string a pre-0044 row still holds. A scalar one filters by EQUALITY
-	// on the path expression its kind's reference index is built on
-	// (indices.go), a repeated one by CONTAINMENT, which reaches inside the
-	// array and is the one jsonb operator `records_props_idx` indexes; either
-	// way a lookup by pointer is index-backed without a per-kind declaration.
+	// path string a pre-0044 row still holds. A scalar one on a list filters
+	// through refs (condReference says why), elsewhere by EQUALITY on the path
+	// expression its kind's reference index is built on (indices.go); a
+	// repeated one by CONTAINMENT, which reaches inside the array.
 	if shapes := ds.referenceShapes(types, name); len(shapes) > 0 {
-		return ds.condReference(ctx, x, b, name, shapes, c)
+		return ds.condReference(ctx, x, b, types, name, shapes, c)
 	}
 	if c.Match != "" {
 		if err := ds.matchRefusal(types, name); err != nil {
@@ -1026,6 +1053,54 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 	return out
 }
 
+// scalarReferenceKinds is the identities of the candidate kinds (every
+// loaded kind when the filter names none) that declare `name` a single
+// top-level reference, sorted.
+func (ds *dataset) scalarReferenceKinds(types []*vocabulary.Kind, name string) []string {
+	if len(types) == 0 {
+		types = ds.registry().Kinds()
+	}
+	var out []string
+	for _, t := range types {
+		if p, ok := t.Prop(name); ok && scalarReference(p) {
+			out = append(out, t.Identity)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// refsPending reports whether the background re-derivation still owes the
+// refs rows of `property` for one of these kinds (reprojection.go): until it
+// finishes, a stored row's refs rows may follow its previous declaration, and
+// only the row's own properties say where it points.
+func refsPending(ctx context.Context, x dbx, kinds []string, property string) (bool, error) {
+	var pending bool
+	err := x.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM index_reprojections
+		WHERE kind = ANY($1::text[]) AND refs AND (refs_properties IS NULL OR $2 = ANY(refs_properties)))`,
+		kinds, property).Scan(&pending)
+	return pending, err
+}
+
+// refTargetsOf groups record paths by kind, kinds in order, for
+// referencingWhere. A value that is not a record path has no refs row to
+// find, so it answers false and the caller keeps the path expression.
+func refTargetsOf(paths []string) ([]refTarget, bool) {
+	byKind := map[string][]string{}
+	for _, path := range paths {
+		kind, id, ok := vocabulary.SplitRecordPath(path)
+		if !ok {
+			return nil, false
+		}
+		byKind[kind] = append(byKind[kind], id)
+	}
+	out := make([]refTarget, 0, len(byKind))
+	for _, kind := range slices.Sorted(maps.Keys(byKind)) {
+		out = append(out, refTarget{kind: kind, ids: byKind[kind]})
+	}
+	return out, true
+}
+
 // scalarReference reports whether a reference declaration holds ONE path at
 // its property — neither a repeated list nor a keyed map — which is the shape
 // referencePathSQL reads and the kind's reference index (indices.go) is built
@@ -1125,7 +1200,7 @@ func referenceValue(name string, p *vocabulary.Property, path string) ([]string,
 // answers are admitted: it names a record or it does not, so equality,
 // membership and presence are the whole grammar — an ordering or a prefix over
 // a record path would be comparing its spelling, not the thing.
-func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
+func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
 	// A SLICE, not a map: two violated predicates in one filter must name the
 	// same one every time, or the error depends on map iteration order.
 	for _, p := range []struct {
@@ -1148,6 +1223,24 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, name st
 	// The trail is read once per distinct PATH: several shapes completing one
 	// bare id the same way share the read.
 	trail := map[string][]string{}
+	// A SCALAR reference is answered from the refs index where it can be.
+	// Row level security holds every records read to its repository, and a
+	// clause it cannot prove leakproof runs only on the rows that policy
+	// admits: `->` and `->>` on jsonb are not leakproof, so the path
+	// expression below never reaches its own index (indices.go) and the
+	// filter reads, and detoasts, every row of the kind. On a mailbox mirror
+	// that is every stored message, payloads included, once per filter: a
+	// Gmail history page's per-thread reads took a fire past its minute. The
+	// refs columns are plain text, equality on them is leakproof, and
+	// refs_dst_idx serves the target.
+	viaRefs, scalarKinds := false, ds.scalarReferenceKinds(types, name)
+	if b.overRecords && len(scalarKinds) > 0 {
+		pending, err := refsPending(ctx, x, scalarKinds, name)
+		if err != nil {
+			return err
+		}
+		viaRefs = !pending
+	}
 	probeAll := func(values []any) (string, error) {
 		var scalar []string
 		seen := map[string]bool{}
@@ -1183,8 +1276,9 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, name st
 				}
 			}
 		}
-		// A SCALAR reference compares the path the row points at, read the
-		// way every reader reads it (referencePathSQL: the `{ref}` object's
+		// Off refs (a where over an unwritten row, or a re-derivation still
+		// owed), a SCALAR reference compares the path the row points at, read
+		// the way every reader reads it (referencePathSQL: the `{ref}` object's
 		// path, or the bare string a pre-0044 row holds), against ONE bound
 		// text[] — the expression the kind's reference index is built on
 		// (indices.go referenceIndexStatements), so the planner has exact
@@ -1201,7 +1295,18 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, name st
 		// reaches inside one.
 		clauses := repeated
 		if len(scalar) > 0 {
-			clauses = append([]string{referencePathSQL("props", name) + ` = ANY(` + b.textArray(scalar) + `)`}, clauses...)
+			var clause string
+			if targets, ok := refTargetsOf(scalar); viaRefs && ok {
+				// The site a single top-level reference derives (refs.go
+				// deriveRefs): (name, "", 0), from a kind declaring it so.
+				b.viaRefs = true
+				clause = `EXISTS (SELECT 1 FROM refs r WHERE r.src_kind = records.kind AND r.src = records.id` +
+					` AND r.src_kind = ANY(` + b.textArray(scalarKinds) + `) AND r.path = '' AND r.ord = 0 AND ` +
+					referencingWhere(b, targets, name) + `)`
+			} else {
+				clause = referencePathSQL("props", name) + ` = ANY(` + b.textArray(scalar) + `)`
+			}
+			clauses = append([]string{clause}, clauses...)
 		}
 		return `(` + strings.Join(clauses, " OR ") + `)`, nil
 	}

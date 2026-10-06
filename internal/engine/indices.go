@@ -410,7 +410,11 @@ func indexStatement(t *vocabulary.Kind, name string, exprs []string) indexStmt {
 // could not estimate it: a two-dozen-value `in` on a 100k-row repository is
 // priced at tens of thousands of rows for a handful, and runs as a parallel
 // seq scan measured in tens of seconds. A btree on the expression carries exact
-// statistics and answers the list in one probe per value.
+// statistics and answers the read in one probe per value where nothing stands
+// between the clause and the index. Under row level security something does:
+// `->` is not leakproof, so a list by pointer reads refs instead
+// (query.go condReference), and this index serves the reference ordering and
+// the reads that cannot use refs.
 //
 // Named by (kind, "ref", property) — a different part list from a declared
 // index's (kind, ordinal), so the two cannot collide — and reconciled by the

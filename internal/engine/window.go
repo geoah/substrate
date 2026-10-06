@@ -66,9 +66,12 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 	}
 	// One builder per query: a builder numbers its arguments as it renders,
 	// and a query handed arguments it never references is a Postgres error.
-	rb := &builder{}
+	rb := &builder{overRecords: true}
 	types, err := ds.buildFilter(ctx, tx, rb, base)
 	if err != nil {
+		return nil, err
+	}
+	if err := planWithValues(ctx, tx, rb); err != nil {
 		return nil, err
 	}
 	temporal, atKinds, dueKinds, err := ds.temporalKinds(types)
@@ -133,7 +136,7 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 
 	// --- the series: every candidate, whole.
 	if len(seriesKinds) > 0 {
-		sb := &builder{}
+		sb := &builder{overRecords: true}
 		if _, err := ds.buildFilter(ctx, tx, sb, base); err != nil {
 			return nil, err
 		}
