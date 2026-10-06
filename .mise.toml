@@ -677,8 +677,24 @@ run = '.mise/imagestable.sh "$usage_tag"'
 description = "Boot an image under compose.yaml against a throwaway Postgres and check it serves: image:smoke <ref>"
 # What `ci:image` runs over the image it built, offered for any ref: a
 # published one before pointing a box at it, or a local build.
+#
+# A ref that names a registry host is pulled first, and a failed pull fails
+# the task. compose boots whatever copy of the tag the box already has, so
+# without the pull `image:smoke ghcr.io/geoah/substrate:latest` (the release
+# checklist's step) tested a weeks-old `latest` and reported on it. A local
+# build under a registry name (ci:image's `$IMAGE:ci`) goes through
+# .mise/imagesmoke.sh directly, which never pulls.
 usage = 'arg "<image>" help="The image ref to boot, local or in a registry"'
-run = '.mise/imagesmoke.sh "$usage_image"'
+run = '''
+    set -eu
+    first="${usage_image%%/*}"
+    if [ "$first" != "$usage_image" ]; then
+      case "$first" in
+        *.* | *:* | localhost) docker pull "$usage_image" ;;
+      esac
+    fi
+    .mise/imagesmoke.sh "$usage_image"
+    '''
 
 # =============================================================================
 # Release
