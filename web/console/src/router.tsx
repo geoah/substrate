@@ -7,6 +7,7 @@ import {
   createRouter,
   redirect,
 } from "@tanstack/react-router"
+import { NuqsAdapter } from "nuqs/adapters/tanstack-router"
 
 import { AppShell } from "@/components/app-shell"
 import { PageError } from "@/components/page-error"
@@ -396,6 +397,11 @@ export const router = createRouter({
   // Record ids carry `@` (calendar/email-derived ids); leaving it raw in the
   // URL keeps the address bar honest to the id the API stores.
   pathParamsAllowedCharacters: ["@"],
+  // nuqs's TanStack Router adapter reads the router from context (since
+  // nuqs 2.10 its history spy calls useRouter), so it has to render inside
+  // the router. Mounted around RouterProvider it got a null router and the
+  // console rendered a blank page.
+  InnerWrap: ({ children }) => <NuqsAdapter>{children}</NuqsAdapter>,
 })
 
 declare module "@tanstack/react-router" {
