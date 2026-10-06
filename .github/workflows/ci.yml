@@ -101,7 +101,10 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Pull requests only. A push run on main is the one release-please.yml and
+  # release.yml ask for before they tag and build a release commit, and a
+  # cancelled run is a release that waits for somebody to re-run it by hand.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
