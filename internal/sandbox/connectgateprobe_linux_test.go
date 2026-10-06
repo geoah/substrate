@@ -26,10 +26,10 @@ import (
 // Both directions are reproducible from a macOS laptop, and the first is the
 // stock-container failure this file exists for:
 //
-//	docker run --rm -v "$PWD":/src -w /src golang:1.26-alpine \
+//	docker run --rm -v "$PWD":/src -w /src golang:1.27-alpine \
 //	  go test ./internal/sandbox/...                      # gate MISSING
 //	docker run --rm --cap-add SYS_PTRACE -v "$PWD":/src -w /src \
-//	  golang:1.26-alpine go test ./internal/sandbox/...   # gate PRESENT
+//	  golang:1.27-alpine go test ./internal/sandbox/...   # gate PRESENT
 
 // The probe's three answers are exclusive, and its refusal has to name the
 // call the boot line prints: a gate refused by nothing sends an operator

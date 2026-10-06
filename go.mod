@@ -1,6 +1,6 @@
 module github.com/geoah/substrate
 
-go 1.26.6
+go 1.27.1
 
 require (
 	filippo.io/age v1.3.2

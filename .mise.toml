@@ -1,10 +1,10 @@
 [tools]
-go = "1.26.6"
+go = "1.27.1"
 # Held to the Dockerfile's web stage by `lint:toolchain`: this is the node the
 # console is TESTED on, so it is the node the image builds it on.
 node = "26.2.0"
 pnpm = "9.14.2"
-golangci-lint = "2.12.2"
+golangci-lint = "2.14.0"
 # The YAML formatter. The vocabulary IS YAML — `kinds/` and `samples/` are the contract as
 # files — so its shape is reviewed as often as Go is, and `fmt:check` fails on
 # it the same way. Config is .yamlfmt.
