@@ -226,11 +226,14 @@ is ever written back to Google.
   or `people:listDirectoryPeople` per invocation, mirrors each `Person`, walks
   `contactGroups.list`, and stores a People sync token per endpoint.
   `syncgmail` reads one `messages.list` or `history.list` page, or hydrates
-  one batch of up to 15 `messages.get`, per invocation; it reads a clock
-  before every fetch, hands the rest of a batch to the next invocation or
-  fire once 35 s of the invocation are spent, and reads a message whose full
-  fetch has failed three fires running with `format=metadata` (headers, no
-  body) so one message cannot hold the account. `synccalendar` reads one
+  one batch of up to 15 `messages.get`, per invocation. Every unit of its
+  work reads one invocation clock before it starts (a fetch, a message's html
+  flatten, a host read for a thread, an attachment set or a swept row), and
+  what does not fit in 45 s, in 5 MB of staged payloads or in 200 host reads
+  goes to the next invocation. One message's flatten stops after 3 s and the
+  body says it was cut. A message whose full fetch has failed three fires
+  running is read with `format=metadata` (headers, no body), so one message
+  cannot hold the account. Each invocation logs how long each phase took. `synccalendar` reads one
   `calendarList` page, or one events page of one calendar, per invocation.
   `syncdrive` reads one `files.list` page, one `changes.list` page, or one
   batch of eight `files.export` calls, per invocation. All four write an
