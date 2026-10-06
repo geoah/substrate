@@ -154,6 +154,12 @@ type dataset struct {
 	// loop returns (agentloop.go runAgent). A `running` thread outside it
 	// whose lease expired has no loop left to settle it (settleLostThreads).
 	runningThreads sync.Map
+	// firing counts the schedule occurrences this process is delivering now,
+	// keyed by fireKey (functions.go startFire). A function fire writes no
+	// row until it settles or parks, so without it a status read shows an
+	// occurrence the pass is running as neither pending nor in flight.
+	firingMu sync.Mutex
+	firing   map[string]int
 	// resumingWebhooks is set while a dispatcher pass's resume of pending
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
