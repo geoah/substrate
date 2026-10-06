@@ -306,7 +306,7 @@ func TestAnInterruptedSearchReindexCompletesAtTheNextOpen(t *testing.T) {
 
 	ro, rods := openReindexing(t, dsn, root, repo, WithDirectoryReadOnly())
 	waitReindex(t, rods)
-	if rods.reindexCancel != nil {
+	if rods.reindex.cancel != nil {
 		t.Fatal("a read-only open started a reindex")
 	}
 	if v := searchIndexVersionOf(t, rods); v != 1 {

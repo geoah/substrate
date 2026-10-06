@@ -126,6 +126,10 @@ type options struct {
 	// hold the reindex there or fail the page. Tests only.
 	searchReindexBatch int
 	searchReindexHook  func(ctx context.Context, kind string) error
+	// reprojectionHook is the background index re-derivation's test seam
+	// (export_test.go WithTestReprojectionHook): a hook run before each
+	// page with the kind it is about to re-derive. Tests only.
+	reprojectionHook func(ctx context.Context, kind string) error
 	// inadmissible is the loader's test seam (export_test.go
 	// WithTestInadmissible): the stored packages it refuses as a binary
 	// whose contract tightened would, so a test parks a package without
@@ -429,6 +433,9 @@ type service struct {
 	// searchReindexBatch. Tests only.
 	searchReindexBatch    int
 	testSearchReindexHook func(ctx context.Context, kind string) error
+	// testReprojectionHook is the options' reprojection hook
+	// (reprojection.go reprojectKind). Tests only.
+	testReprojectionHook func(ctx context.Context, kind string) error
 	// testInadmissible is the options' loader seam (vocabularywrite.go
 	// admitStored). Tests only.
 	testInadmissible map[string]bool
@@ -595,6 +602,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 
 		searchReindexBatch:    o.searchReindexBatch,
 		testSearchReindexHook: o.searchReindexHook,
+		testReprojectionHook:  o.reprojectionHook,
 		testInadmissible:      o.inadmissible,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
@@ -1039,6 +1047,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.checkSearchIndex,
+		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,
 		ds.settleInterruptedSyncs,
@@ -1059,9 +1068,11 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.close()
 		return prev, nil
 	}
-	// After the open, never inside it: the reindex takes minutes on a large
-	// repository, and every request on it waits for the open (issue 719).
+	// After the open, never inside it: the reindex and the reprojection take
+	// minutes on a large repository, and every request on it waits for the
+	// open (issue 719).
 	ds.startSearchReindex()
+	ds.startIndexReprojection()
 	ds.startSegmentDigest()
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and

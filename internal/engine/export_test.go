@@ -282,19 +282,26 @@ func WithTestQueryTracer(tr pgx.QueryTracer) Option {
 	return func(o *options) { o.queryTracer = tr }
 }
 
+// WithTestReprojectionHook sets a hook the background index re-derivation
+// runs before each page with the kind it is about to re-derive
+// (reprojection.go reprojectKind). A hook that blocks holds the pass there;
+// it should return when ctx ends, which is the dataset closing. An error
+// from it fails the page, as a database error would.
+func WithTestReprojectionHook(hook func(ctx context.Context, kind string) error) Option {
+	return func(o *options) { o.reprojectionHook = hook }
+}
+
+// IndexReprojectionDone is closed when the dataset's latest background index
+// re-derivation has returned, finished or stopped; a dataset that started
+// none returns a closed channel.
+func IndexReprojectionDone(ds substrate.Dataset) <-chan struct{} {
+	return ds.(*dataset).reproject.finished()
+}
+
 // SearchReindexDone is closed when the dataset's latest reindex has returned,
 // finished or stopped; a dataset that started none returns a closed channel.
 func SearchReindexDone(ds substrate.Dataset) <-chan struct{} {
-	d := ds.(*dataset)
-	d.reindexMu.Lock()
-	done := d.reindexDone
-	d.reindexMu.Unlock()
-	if done != nil {
-		return done
-	}
-	closed := make(chan struct{})
-	close(closed)
-	return closed
+	return ds.(*dataset).reindex.finished()
 }
 
 // SeedKindsDir is the shipped SEED AUTHORITY, relative to this package — core

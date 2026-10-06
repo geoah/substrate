@@ -15,12 +15,10 @@ func TestClosingADatasetAfterTheShutdownDrainDoesNotWaitForTheReindex(t *testing
 	svc := &service{bg: newBackground(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	svc.stopBackground(time.Second)
 	canceled := false
-	ds := &dataset{
-		svc:           svc,
-		reindexCancel: func() { canceled = true },
-		// Never closed: the reindex outlived the shutdown's budget.
-		reindexDone: make(chan struct{}),
-	}
+	ds := &dataset{svc: svc}
+	ds.reindex.cancel = func() { canceled = true }
+	// Never closed: the reindex outlived the shutdown's budget.
+	ds.reindex.done = make(chan struct{})
 	started := time.Now()
 	ds.stopSearchReindex(true)
 	if took := time.Since(started); took > backgroundDrainTimeout/2 {

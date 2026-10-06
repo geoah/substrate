@@ -88,7 +88,12 @@ auditable in the [changelog](changelog.md):
   incremental integer, ordered as plain integers; 0 is the absent version
   and orders below everything. A package whose stored rows belong to
   somebody else here is skipped whole: the upgrade never seizes a name it
-  does not already own.
+  does not already own. The transaction re-derives no stored record's
+  indexes: a kind whose reference sites or `fts` flags moved has the rows
+  that carry a moved property re-derived behind the open
+  ([operations](operations.md#what-happens-at-boot)), as the search index
+  is when its rules change. The conversions a shipped declaration declares
+  (below) still rewrite the records they name inside it.
 - **An install, which is a copy.** Installing a bundle writes that
   bundle's manifests into the repository's changelog under
   `bundle:<authority>:<package>`

@@ -2945,7 +2945,7 @@ func referenceShape(reg kindLookup, ident string) string {
 	}
 	var b strings.Builder
 	for _, name := range ty.PropOrder {
-		appendReferenceShape(&b, name, ty.Props[name])
+		b.WriteString(propertyReferenceShape(name, ty.Props[name]))
 	}
 	return b.String()
 }
@@ -2972,11 +2972,7 @@ func ftsShape(reg kindLookup, ident string) string {
 	var b strings.Builder
 	b.WriteString("declared;")
 	for _, name := range ty.PropOrder {
-		p := ty.Props[name]
-		if !p.FTS || p.Sensitive() {
-			continue
-		}
-		fmt.Fprintf(&b, "%s|%v;", name, vocabulary.IsLongText(p.Datatype))
+		b.WriteString(propertyFTSShape(name, ty.Props[name]))
 	}
 	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() {
 		b.WriteString("body")
@@ -3022,14 +3018,21 @@ func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[s
 // no refs rows, and a live source kind loses the slot row a parked mapping
 // projected once the slot is gone or collides with a declared property.
 func (ds *dataset) parkedReprojection(current, candidate *vocabulary.Registry, touched map[string]bool) (staged *parkedSet, refs, fts []string) {
+	staged, before, after, decided := ds.parkedViews(current, candidate, touched)
+	return staged, kindsShapedApart(before, after, decided, referenceShape), kindsShapedApart(before, after, decided, ftsShape)
+}
+
+// parkedViews is parkedReprojection's reading: the staged parked set, the
+// fold's view before and after the change, and the kinds a parked set
+// decides on either side, which the two views are compared over.
+func (ds *dataset) parkedViews(current, candidate *vocabulary.Registry, touched map[string]bool) (staged *parkedSet, before, after foldView, decided map[string]bool) {
 	parked := ds.parkedSet()
 	staged = parked.without(touched, candidate)
-	decided := parked.derivedKinds()
+	decided = parked.derivedKinds()
 	for ident := range staged.derivedKinds() {
 		decided[ident] = true
 	}
-	before, after := foldView{reg: current, parked: parked}, foldView{reg: candidate, parked: staged}
-	return staged, kindsShapedApart(before, after, decided, referenceShape), kindsShapedApart(before, after, decided, ftsShape)
+	return staged, foldView{reg: current, parked: parked}, foldView{reg: candidate, parked: staged}, decided
 }
 
 // kindsShapedApart keeps the named kinds whose `shape` differs between two

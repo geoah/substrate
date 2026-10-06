@@ -42,76 +42,25 @@ func (ds *dataset) checkSearchIndex(ctx context.Context) error {
 	return nil
 }
 
-// startSearchReindex starts the reindex checkSearchIndex asked for in a
-// goroutine the dataset owns: close cancels it and waits for it, and so does
-// a rebuild, which re-derives every row itself. The open calls it as it
-// publishes the dataset, and a rebuild that failed calls it again. It starts
-// nothing once the dataset closed, or while an earlier run has not returned.
+// startSearchReindex starts the reindex checkSearchIndex asked for
+// (backgroundPass): the open calls it as it publishes the dataset, and a
+// rebuild that failed calls it again.
 func (ds *dataset) startSearchReindex() {
-	ds.reindexMu.Lock()
-	defer ds.reindexMu.Unlock()
-	if ds.reindexFrom == 0 || ds.reindexClosed {
+	if ds.reindexFrom == 0 {
 		return
 	}
-	if ds.reindexDone != nil {
-		select {
-		case <-ds.reindexDone:
-		default:
-			return
-		}
-	}
 	from := ds.reindexFrom
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	ds.reindexCancel, ds.reindexDone = cancel, done
-	started := ds.spawn("reindex search", func(bg context.Context) {
-		defer close(done)
-		defer cancel()
-		// The service's shutdown cancels it too: Close drains the detached
-		// tasks before it closes any dataset.
-		stop := context.AfterFunc(bg, cancel)
-		defer stop()
-		ds.reindexSearch(ctx, from)
-	})
-	if !started {
-		cancel()
-		close(done)
-	}
+	ds.reindex.start(ds, "reindex search", func(ctx context.Context) { ds.reindexSearch(ctx, from) })
 }
 
 // searchReindexMaxPause caps the pause between tries of a step that failed
 // (reindexStep).
 const searchReindexMaxPause = time.Minute
 
-// stopSearchReindex cancels the running reindex and waits for it to return,
-// up to the drain budget the service's own shutdown gives a detached task.
-// final is the dataset closing: no reindex starts after it. A dataset whose
-// open started none returns at once.
+// stopSearchReindex cancels the running reindex and waits for it to return;
+// final is the dataset closing.
 func (ds *dataset) stopSearchReindex(final bool) {
-	ds.reindexMu.Lock()
-	if final {
-		ds.reindexClosed = true
-	}
-	cancel, done := ds.reindexCancel, ds.reindexDone
-	ds.reindexMu.Unlock()
-	if cancel == nil {
-		return
-	}
-	cancel()
-	// The service's shutdown already waited its one budget for every detached
-	// task, this one included, and said so if any outlived it. Waiting again
-	// here, once per repository it closes, would multiply that budget.
-	if ds.svc.bg.stopping() {
-		return
-	}
-	timer := time.NewTimer(backgroundDrainTimeout)
-	defer timer.Stop()
-	select {
-	case <-done:
-	case <-timer.C:
-		ds.svc.log.Error("substrate: the search index re-derivation did not stop within the drain budget",
-			"repository", logSafeID(ds.scope.Repository), "timeout", backgroundDrainTimeout)
-	}
+	ds.reindex.stop(ds, final, "the search index re-derivation")
 }
 
 // reindexSearch re-derives every row's `fts`, live and tombstoned, under this
@@ -189,30 +138,9 @@ func (ds *dataset) reindexSearch(ctx context.Context, from int) {
 		"took", time.Since(started).Round(time.Millisecond))
 }
 
-// reindexStep runs one step of the reindex until it succeeds or ctx ends,
-// pausing between tries from a second up to searchReindexMaxPause, and
-// returns an error only for ctx. Every step is safe to run again: a page
-// that failed rolled back, and one redone lands at the same bands. A step
-// that can never succeed logs its error at every try, which is how an
-// operator hears of it.
+// reindexStep is retryStep (reprojection.go) for the reindex.
 func (ds *dataset) reindexStep(ctx context.Context, step string, fn func() error) error {
-	pause := time.Second
-	for {
-		err := fn()
-		if err == nil || ctx.Err() != nil {
-			return ctx.Err()
-		}
-		ds.svc.log.Error("substrate: a search index re-derivation step failed; trying it again",
-			"repository", logSafeID(ds.scope.Repository), "step", step, "retry_in", pause, "error", err)
-		timer := time.NewTimer(pause)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-		}
-		pause = min(2*pause, searchReindexMaxPause)
-	}
+	return ds.retryStep(ctx, "search index re-derivation", step, fn)
 }
 
 // searchReindexPlan names every kind with a stored row, in order, and counts

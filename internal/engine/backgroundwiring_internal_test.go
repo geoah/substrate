@@ -69,7 +69,7 @@ func TestTheDetachedSitesGoThroughSpawn(t *testing.T) {
 	ds.reindexFrom = 1
 	ds.startSearchReindex()
 	select {
-	case <-ds.reindexDone:
+	case <-ds.reindex.done:
 	default:
 		t.Fatal("a refused reindex left its done channel open: close would wait on it")
 	}

@@ -1433,6 +1433,13 @@ func TestBootUpgradeReprojectsTheIndexesOfAChangedKind(t *testing.T) {
 	if _, declared := declaredProps(t, ds2, provider)["peer"]; declared {
 		t.Fatal("the upgrade did not land: llm/provider still declares `peer`")
 	}
+	// A data kind's rows re-derive behind the open (reprojection.go), so the
+	// index is asked once the pass has returned.
+	select {
+	case <-engine.IndexReprojectionDone(ds2):
+	case <-time.After(time.Minute):
+		t.Fatal("the index re-derivation behind the open did not return within a minute")
+	}
 	if _, err := ds2.KindByRef(ctx, widget); err != nil {
 		t.Fatalf("the boot upgrade pruned a kind the tree stopped shipping: %v", err)
 	}

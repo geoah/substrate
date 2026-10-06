@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -505,6 +506,13 @@ func TestABootUpgradeReindexesASourceKindAParkedMappingReshapes(t *testing.T) {
 	}
 	if _, declared := declaredProps(t, ds2, provider)["card"]; !declared {
 		t.Fatal("the upgrade did not land: llm/provider does not declare `card`")
+	}
+	// The provider's rows re-derive behind the open (reprojection.go), so
+	// the fold is read once the pass has returned.
+	select {
+	case <-engine.IndexReprojectionDone(ds2):
+	case <-time.After(time.Minute):
+		t.Fatal("the index re-derivation behind the open did not return within a minute")
 	}
 	upgraded := foldOf(t, ds2)
 	if n := slotRows(upgraded); n != 0 {

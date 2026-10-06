@@ -785,8 +785,11 @@ func (t *txn) derivationView() foldView {
 // and the alternative is a live index that answers for a declaration that is
 // gone.
 func (t *txn) reprojectFTS(reg kindLookup, kinds []string) error {
+	prog := t.ds.svc.progress("substrate: re-deriving the search index of one kind",
+		"repository", logSafeID(t.ds.scope.Repository))
 	for _, kind := range kinds {
 		after := ""
+		done := 0
 		for {
 			rows, err := t.ds.scanRows(t.ctx, t.tx,
 				`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id > $2 ORDER BY id LIMIT $3`,
@@ -800,6 +803,8 @@ func (t *txn) reprojectFTS(reg kindLookup, kinds []string) error {
 			if err := t.rederiveFTS(reg, kind, rows); err != nil {
 				return err
 			}
+			done += len(rows)
+			prog.report("kind", kind, "rows", done)
 			after = rows[len(rows)-1].ID
 			if len(rows) < rebuildBatch {
 				break

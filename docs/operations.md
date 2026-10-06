@@ -480,6 +480,36 @@ it trusts:
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
   ([the boot-time upgrade](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
+  It logs `substrate: upgrading a repository's shipped vocabulary from the
+  embedded tree` once its guards have passed, with the packages and the
+  kinds whose indexes it reshapes, and `substrate: upgraded a repository's
+  shipped vocabulary from the embedded tree` after the transaction, with
+  `took`; a refused upgrade logs `REFUSED` instead. Every request on the
+  repository waits for the open, so the transaction re-derives no stored
+  record's indexes: a shipped kind whose reference sites or `fts` flags
+  moved is re-derived behind the open, below. The conversions a shipped
+  declaration declares (a rename, a backfill, a remap) still rewrite the
+  records they name inside the transaction, under
+  `SUBSTRATE_CONVERSION_CEILING`.
+- **A reshaped kind's indexes are re-derived in the background** when a
+  boot upgrade moves a reference site or an `fts` flag of a shipped kind.
+  The upgrade's transaction records the kind and the properties that moved;
+  once the open has published the repository, a pass re-derives the refs
+  rows and `fts` of the rows that carry one of those properties, in
+  transactions of 500 rows, and leaves every other row alone, since a row
+  carrying none of them derives the same rows under either declaration. It
+  logs `substrate: re-deriving the indexes of the kinds a declaration change
+  reshaped` with the kinds, `substrate: re-deriving the indexes of a
+  reshaped kind` as progress with `rows` and `elapsed`, `substrate:
+  re-derived the indexes of one kind` after each kind, and `substrate:
+  re-derived the indexes of the kinds a declaration change reshaped` with
+  `rows` and `took` at the end. A transaction that fails logs `substrate: a
+  background index re-derivation step failed; trying it again` and is tried
+  again after a pause of up to a minute. Each page records the id it ended
+  at, so a pass a shutdown interrupts resumes there at the next open, and
+  `repository rebuild` finishes it, because the replay derives every row. Until the pass reaches a row, a reverse read through a
+  moved reference site and a search over a moved `fts` flag answer for the
+  previous declaration of that row.
 - **The search index is re-derived in the background** when the binary
   indexes text differently from the one that indexed the repository's rows.
   The repository serves reads and writes meanwhile, and a row keeps its old
