@@ -54,6 +54,11 @@ import (
 // replayed (rederiveOffers); a row's updated_at is its source record's, so the
 // derived table is the live one exactly.
 //
+// index_reprojections is cleared too (reprojection.go): it is the work a
+// declaration change left for the pass behind the open, the re-derivation of
+// some kinds' refs rows and `fts` under the published declarations, and the
+// replay has just derived every row under them.
+//
 // Everything else survives the rebuild, and each for a stated reason:
 //
 //   - sealed, A SIDE STORE: its payloads were never in the changelog and
@@ -138,10 +143,14 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	// where it was and starts the reindex again, after the rollback below has
 	// released the rows.
 	ds.stopSearchReindex(false)
+	// The background reprojection (reprojection.go) stops for the same
+	// reason: the replay derives every row's refs rows and `fts` itself.
+	ds.stopIndexReprojection(false)
 	rebuilt := false
 	defer func() {
 		if !rebuilt {
 			ds.startSearchReindex()
+			ds.startIndexReprojection()
 		}
 	}()
 	// Not inTx: a rebuild is not a write with an actor and must append no
@@ -172,6 +181,10 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	}
 	// Every row was just folded under this binary's rules (fold.go foldFTS).
 	if err := t.markSearchIndexed(); err != nil {
+		return report, err
+	}
+	// And under the published declarations, so no kind owes a re-derivation.
+	if _, err := t.exec(`DELETE FROM index_reprojections`); err != nil {
 		return report, err
 	}
 	if err := tx.Commit(); err != nil {

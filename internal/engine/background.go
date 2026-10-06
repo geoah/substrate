@@ -108,3 +108,93 @@ func (b *background) stopping() bool {
 func (ds *dataset) spawn(task string, fn func(context.Context)) bool {
 	return ds.svc.spawn(task, ds.Repository().ID, fn)
 }
+
+// backgroundPass is the handle of one pass a dataset owns and runs behind
+// the open, over its own pool: the search reindex (searchindex.go) and the
+// index reprojection (reprojection.go). It names the latest run's cancel and
+// done, nil before the first; close and a rebuild cancel the run and wait
+// for done, and a rebuild that fails starts the pass again. closed is set
+// by the dataset closing, after which nothing starts.
+type backgroundPass struct {
+	mu     sync.Mutex
+	cancel context.CancelFunc
+	done   chan struct{}
+	closed bool
+}
+
+// start runs fn as a detached task of the dataset, unless the pass is closed
+// or an earlier run has not returned. fn's context ends when the pass is
+// stopped or the service shuts down, which cancels every detached task
+// before it closes any dataset.
+func (p *backgroundPass) start(ds *dataset, task string, fn func(ctx context.Context)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return
+	}
+	if p.done != nil {
+		select {
+		case <-p.done:
+		default:
+			return
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	p.cancel, p.done = cancel, done
+	started := ds.spawn(task, func(bg context.Context) {
+		defer close(done)
+		defer cancel()
+		stop := context.AfterFunc(bg, cancel)
+		defer stop()
+		fn(ctx)
+	})
+	if !started {
+		cancel()
+		close(done)
+	}
+}
+
+// stop cancels the running pass and waits for it to return, up to the drain
+// budget the service's own shutdown gives a detached task. final is the
+// dataset closing: nothing starts after it. The service's shutdown already
+// waited its one budget for every detached task and said so if any outlived
+// it; waiting again there, once per repository it closes, would multiply
+// that budget. what names the pass in the line logged otherwise.
+func (p *backgroundPass) stop(ds *dataset, final bool, what string) {
+	p.mu.Lock()
+	if final {
+		p.closed = true
+	}
+	cancel, done := p.cancel, p.done
+	p.mu.Unlock()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	if ds.svc.bg.stopping() {
+		return
+	}
+	timer := time.NewTimer(backgroundDrainTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		ds.svc.log.Error("substrate: "+what+" did not stop within the drain budget",
+			"repository", logSafeID(ds.scope.Repository), "timeout", backgroundDrainTimeout)
+	}
+}
+
+// finished is closed when the latest run has returned, finished or stopped;
+// a pass that never started answers a closed channel.
+func (p *backgroundPass) finished() <-chan struct{} {
+	p.mu.Lock()
+	done := p.done
+	p.mu.Unlock()
+	if done != nil {
+		return done
+	}
+	closed := make(chan struct{})
+	close(closed)
+	return closed
+}

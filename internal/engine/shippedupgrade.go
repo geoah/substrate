@@ -63,21 +63,22 @@ type shippedUpgradeStage struct {
 	// references still resolves. Nil when the closure does not compile, and
 	// refused then carries the problems.
 	candidate *vocabulary.Registry
-	// reprojected and reprojectedFTS are the upgraded packages' kinds whose
-	// reference shape or searchable shape moved, so the boot re-derives their
-	// refs rows and their `fts` in its transaction: the apply door's
-	// classification (reprojectedKinds, reprojectedFTSKinds) over the stored
-	// registry and the candidate. The candidate, never the tree alone: it
-	// keeps every stored kind the tree stopped shipping (the boot never
+	// reprojections are the upgraded packages' kinds whose reference shape
+	// or searchable shape moved, each with the properties that moved: the
+	// apply door's classification (referenceShape, ftsShape) over the stored
+	// registry and the candidate, per property (reprojection.go
+	// movedProperties). The boot re-derives the declaration rows among them
+	// in its transaction and leaves the data kinds to the pass behind the
+	// open (seed.go reprojectShipped). The candidate, never the tree alone:
+	// it keeps every stored kind the tree stopped shipping (the boot never
 	// prunes), so such a kind compares equal and is not re-derived as if it
 	// were dropped. Only the upgraded packages are walked, and those are the
 	// seeded ones, which the loader never parks (it refuses the open). A kind
 	// a parked set decides joins them where the parked view moves
-	// (parkedReprojection): a live source kind whose parked mapping slot now
+	// (parkedViews): a live source kind whose parked mapping slot now
 	// collides with a shipped property. Empty when the candidate does not
 	// compile, which refuses the boot anyway.
-	reprojected    []string
-	reprojectedFTS []string
+	reprojections reprojectionSet
 	// parked is the parked set read beside the candidate (fold.go
 	// parkedSet): what the boot's transaction derives under, and what the
 	// reload after it reads again. Nil when the candidate does not compile.
@@ -241,19 +242,18 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 			st.conversions.classifyKind(curT, candT)
 		}
 		st.refused = append(st.refused, renameGuards(current, candidate, st.conversions.renames)...)
-		st.reprojected = reprojectedKinds(current, candidate, st.upgrade)
-		st.reprojectedFTS = reprojectedFTSKinds(current, candidate, st.upgrade)
+		st.reprojections = reprojectionSet{}
+		st.reprojections.addMoved(current, candidate, kindsOfPackages(current, candidate, st.upgrade))
 		// The projection derives its own rows' refs and `fts` under the TREE's
 		// meta-kinds (projectPackages sets the tree as writeReg), while a
 		// meta-kind this repository holds ahead of the tree keeps its stored
 		// declaration in the candidate. Those rows re-derive under the
 		// candidate too, or a rebuild indexes them differently.
-		st.reprojected = unionStrings(st.reprojected, kindsShapedApart(reg, candidate, written, referenceShape))
-		st.reprojectedFTS = unionStrings(st.reprojectedFTS, kindsShapedApart(reg, candidate, written, ftsShape))
-		var parkedRefs, parkedFTS []string
-		st.parked, parkedRefs, parkedFTS = ds.parkedReprojection(current, candidate, st.upgrade)
-		st.reprojected = unionStrings(st.reprojected, parkedRefs)
-		st.reprojectedFTS = unionStrings(st.reprojectedFTS, parkedFTS)
+		st.reprojections.addMoved(reg, candidate, written)
+		var before, after foldView
+		var decided map[string]bool
+		st.parked, before, after, decided = ds.parkedViews(current, candidate, st.upgrade)
+		st.reprojections.addMoved(before, after, decided)
 	}
 	return st, nil
 }

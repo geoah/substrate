@@ -230,22 +230,24 @@ type dataset struct {
 
 	// reindexFrom is the search index version the open found below this
 	// binary's (searchindex.go checkSearchIndex); zero when the index is
-	// current or the process is read-only.
+	// current or the process is read-only. reindex is the pass that brings
+	// it up to date behind the open.
 	reindexFrom int
-	// reindexMu guards the background reindex's handles (startSearchReindex):
-	// reindexCancel and reindexDone name the latest run, nil before the
-	// first; close and a rebuild cancel it and wait for done, and a rebuild
-	// that fails starts it again. reindexClosed is set by close, after which
-	// nothing starts one.
-	reindexMu     sync.Mutex
-	reindexCancel context.CancelFunc
-	reindexDone   chan struct{}
-	reindexClosed bool
+	reindex     backgroundPass
+
+	// reprojectPending is whether the open found index re-derivations owed
+	// (reprojection.go checkIndexReprojections): the kinds a declaration
+	// change reshaped and left for the pass behind the open, which is
+	// reproject.
+	reprojectPending bool
+	reproject        backgroundPass
 }
 
 func (ds *dataset) close() {
-	// Before the pool closes: the reindex writes through it.
+	// Before the pool closes: the reindex and the reprojection write
+	// through it.
 	ds.stopSearchReindex(true)
+	ds.stopIndexReprojection(true)
 	ds.stopSegmentDigest()
 	ds.watch.close()
 	ds.writerMu.Lock()

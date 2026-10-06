@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -212,8 +213,10 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// notwithstanding: the log line and `GET /api/v1/vocabulary/upgrade` are
 	// the same list (st.guards), and an operator resolving a refusal wants
 	// the whole of it, not one reason per restart.
+	started := time.Now()
 	var refused []string
 	var converted int64
+	var background []indexReprojection
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
@@ -226,6 +229,14 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 			refused = guards
 			return nil
 		}
+		// Said once the guards have passed and before the first write, with
+		// the kinds whose indexes move: the transaction holds the
+		// registry-dependency lock exclusively, every request on the
+		// repository waits on the open, and the line after it (`upgraded`)
+		// is what says the wait ended. A refused upgrade logs its own line
+		// instead.
+		ds.svc.log.Info("substrate: upgrading a repository's shipped vocabulary from the embedded tree",
+			"repository", ds.info.ID, "packages", sortedKeys(st.upgrade), "reshapedKinds", st.reprojections.kinds())
 		// The folds here derive beside the candidate, which is the registry
 		// the reload after the commit reads (fold.go parkedSet), so a live
 		// kind a parked mapping reshapes keeps its slot through the upgrade.
@@ -247,7 +258,8 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return t.reprojectShipped(st)
+		background, err = t.reprojectShipped(st)
+		return err
 	})
 	if err != nil {
 		return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.ID, err)
@@ -261,8 +273,13 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 			"repository", ds.info.ID, "refused", strings.Join(refused, "; "))
 		return nil
 	}
+	owed := make([]string, 0, len(background))
+	for _, r := range background {
+		owed = append(owed, r.kind)
+	}
 	ds.svc.log.Info("substrate: upgraded a repository's shipped vocabulary from the embedded tree",
-		"repository", ds.info.ID, "packages", sortedKeys(st.upgrade), "convertedRecords", converted)
+		"repository", ds.info.ID, "packages", sortedKeys(st.upgrade), "convertedRecords", converted,
+		"reprojectingBehindTheOpen", owed, "took", time.Since(started).Round(time.Millisecond))
 
 	// The rows moved, so the live registry is rebuilt from them — the same
 	// read every open does, so an upgraded repository and a freshly opened one
@@ -274,32 +291,57 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 }
 
 // reprojectShipped re-derives the refs index and the search index for the
-// kinds whose reference or searchable shape the boot upgrade moved, as the
-// apply door does (applyVocabularyBatch). Both are projections of each row
-// against its kind's declaration (refs.go, fold.go foldFTS), and a rebuild
-// derives them under the declarations it ends with, so an index left alone
-// answers for the stored declaration while a rebuilt one answers for the
-// shipped one. It runs after the conversions, so the refs read the converted
-// properties, and against the candidate, which is the closure the reload
-// after the commit publishes.
+// kinds whose reference or searchable shape the boot upgrade moved. Both are
+// projections of each row against its kind's declaration (refs.go, fold.go
+// foldFTS), and a rebuild derives them under the declarations it ends with,
+// so an index left alone answers for the stored declaration while a rebuilt
+// one answers for the shipped one. It runs after the conversions, so the
+// refs read the converted properties, and against the candidate, which is
+// the closure the reload after the commit publishes.
 //
-// The open-time reindex (searchindex.go) cannot undo this: it starts only
+// Only the DECLARATION ROWS re-derive here, as many rows as the repository
+// declares: the meta-kinds (vocabularyRecordKinds), whose rows this very
+// transaction writes under the tree's declaration of them. Every other
+// reshaped kind holds as many rows as the user has records of it, and its
+// re-derivation is requested for the pass behind the open
+// (reprojection.go), which re-derives the rows carrying a moved property
+// under the published registry, this candidate's closure by then. It
+// answers the kinds it requested, for the log line.
+//
+// The open-time reindex (searchindex.go) cannot undo either: it starts only
 // after the open publishes the dataset, each page takes the shared side of
 // the registry-dependency lock this transaction holds exclusively, and it
 // derives `fts` through the same rederiveFTS from the row and the published
-// registry, which is this candidate's closure by then. A row it redoes lands
-// at the same bands.
-func (t *txn) reprojectShipped(st *shippedUpgradeStage) error {
+// registry. A row it redoes lands at the same bands.
+func (t *txn) reprojectShipped(st *shippedUpgradeStage) ([]indexReprojection, error) {
+	var inlineRefs, inlineFTS []string
+	var background []indexReprojection
+	for _, kind := range st.reprojections.kinds() {
+		r := st.reprojections[kind]
+		if _, declaration := vocabularyRecordKinds[kind]; !declaration {
+			background = append(background, *r)
+			continue
+		}
+		if r.refs.moved {
+			inlineRefs = append(inlineRefs, kind)
+		}
+		if r.fts.moved {
+			inlineFTS = append(inlineFTS, kind)
+		}
+	}
 	// syncRefsOf resolves each row's kind through declarations(), which is the
 	// live registry unless writeReg holds the candidate.
 	prev := t.writeReg
 	t.writeReg = st.candidate
-	err := t.reprojectRefs(st.reprojected)
+	err := t.reprojectRefs(inlineRefs)
 	t.writeReg = prev
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return t.reprojectFTS(foldView{reg: st.candidate, parked: st.parked}, st.reprojectedFTS)
+	if err := t.reprojectFTS(foldView{reg: st.candidate, parked: st.parked}, inlineFTS); err != nil {
+		return nil, err
+	}
+	return background, t.requestReprojections(background)
 }
 
 // storedDeclaration is one stored declaration as the version diff sees it: its

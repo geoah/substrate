@@ -297,6 +297,48 @@ func (t *txn) syncRefs(ref eref, ty *vocabulary.Kind, props map[string]any) erro
 	return nil
 }
 
+// syncRefsOfRows is syncRefs for a page of rows of one kind, in two
+// statements: one DELETE of every row's refs rows and one INSERT of what
+// they derive. The pass behind the open re-derives a kind of many rows this
+// way (reprojection.go reprojectRows), because a statement per row is what
+// made the boot upgrade's inline re-derivation take minutes; a row's own
+// write still re-derives itself alone. ty may be nil for a kind the registry
+// no longer declares: its rows derive nothing, and their stale rows go.
+func (t *txn) syncRefsOfRows(kind string, ty *vocabulary.Kind, rows []*erow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(rows))
+	var src, property, path, dstKind, dst, props []string
+	var ord []int64
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+		for _, r := range deriveRefs(ty, row.Props) {
+			raw, err := json.Marshal(nonNilMap(r.Props))
+			if err != nil {
+				return err
+			}
+			src, property, path, ord = append(src, row.ID), append(property, r.Property), append(path, r.Path), append(ord, int64(r.Ord))
+			dstKind, dst, props = append(dstKind, r.Dst.Kind), append(dst, r.Dst.ID), append(props, string(raw))
+		}
+	}
+	if _, err := t.exec(`DELETE FROM refs WHERE src_kind = $1 AND src = ANY($2::text[])`, kind, ids); err != nil {
+		return fmt.Errorf("substrate/engine: refs of %d rows of %s: %w", len(rows), kind, err)
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	if _, err := t.exec(`
+		INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst, props)
+		SELECT $1, u.src, u.property, u.path, u.ord::integer, u.dst_kind, u.dst, u.props::jsonb
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::bigint[], $6::text[], $7::text[], $8::text[])
+		     AS u(src, property, path, ord, dst_kind, dst, props)`,
+		kind, src, property, path, ord, dstKind, dst, props); err != nil {
+		return fmt.Errorf("substrate/engine: refs of %d rows of %s: %w", len(rows), kind, err)
+	}
+	return nil
+}
+
 // syncRefsOf re-derives one record's rows from what is STORED, resolving the
 // kind itself. The door for every caller that changed a record without holding
 // its coerced property map: the vocabulary projection, and the rebuild.
@@ -361,10 +403,16 @@ func (t *txn) syncRefsOfKind(ident string) error {
 		return err
 	}
 	_ = rows.Close()
-	for _, id := range ids {
+	// One row at a time, so the walk says where it is: a kind of many rows
+	// takes minutes here, and the registry-dependency lock the caller holds
+	// has every write on the repository waiting.
+	prog := t.ds.svc.progress("substrate: re-deriving the refs index of one kind",
+		"repository", logSafeID(t.ds.scope.Repository), "kind", ident, "total", len(ids))
+	for i, id := range ids {
 		if err := t.syncRefsOf(eref{Kind: ident, ID: id}); err != nil {
 			return err
 		}
+		prog.report("rows", i+1)
 	}
 	return nil
 }
