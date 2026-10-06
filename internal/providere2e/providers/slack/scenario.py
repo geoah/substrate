@@ -500,8 +500,8 @@ def pending(p):
     cur = p.get("streamCursors") or {}
     if not isinstance(cur, dict):
         return False
-    if any(cur.get(k) for k in ("queue", "info", "threads", "hydrate",
-                                "files", "bots", "rosters")):
+    if any(cur.get(k) for k in ("queue", "info", "newReplies", "threads",
+                                "hydrate", "files", "bots", "rosters")):
         return True
     if any(cur.get(k) for k in ("work", "reply", "roster")):
         return True
@@ -1836,24 +1836,29 @@ def main():
             faults([history(parents), replies])
             one = run_once()
             first = one.get("streamCursors") or {}
-            ok(first.get("phase") == "replies"
-               and len(first.get("threads") or []) > 300,
+
+            def backlog(cur):
+                # Both thread queues: the radar's `newReplies` and the
+                # watch's `threads`. These parents all carry a new reply.
+                return (len(cur.get("newReplies") or [])
+                        + len(cur.get("threads") or []))
+
+            ok(first.get("phase") == "replies" and backlog(first) > 300,
                "the first run did not leave a replies backlog bigger than one "
                "run (phase %r, %d threads), so this proves nothing"
-               % (first.get("phase"), len(first.get("threads") or [])))
+               % (first.get("phase"), backlog(first)))
             # Run two: resumes the backlog, with a new message waiting.
             faults([history([{"type": "message", "user": owner, "text": text,
                               "ts": new_ts}]), replies])
             two = run_once()
             left = two.get("streamCursors") or {}
-            ok(left.get("phase") == "replies" and left.get("threads"),
+            ok(left.get("phase") == "replies" and backlog(left),
                "the second run did not stop in the backlog (phase %r, %d "
                "threads left), so this proves nothing"
-               % (left.get("phase"), len(left.get("threads") or [])))
-            ok(len(left.get("threads") or []) < len(first.get("threads") or []),
+               % (left.get("phase"), backlog(left)))
+            ok(backlog(left) < backlog(first),
                "the second run spent nothing on the backlog: %d threads before, "
-               "%d after" % (len(first.get("threads") or []),
-                             len(left.get("threads") or [])))
+               "%d after" % (backlog(first), backlog(left)))
             conv_row = {v: k for k, v in conv_cid.items()}.get(cid)
             landed = [r for r in records(MESSAGE)
                       if props(r).get("ts") == new_ts
@@ -1862,8 +1867,7 @@ def main():
                        "after one run with a replies backlog (%s)"
                % (new_ts, cid, two.get("syncStatus")))
             note("backlog: %d threads after run one, %d after run two; new "
-                 "message %s" % (len(first.get("threads") or []),
-                                 len(left.get("threads") or []),
+                 "message %s" % (backlog(first), backlog(left),
                                  "landed" if landed else "MISSING"))
             faults([replies])
             drained = wait_for_sync(two.get("lastSyncedAt"), seconds=600)
