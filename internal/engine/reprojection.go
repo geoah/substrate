@@ -24,11 +24,12 @@ package engine
 // side only names no property, and every row is re-derived.
 //
 // The request rows are written in the upgrade's own transaction and each
-// page records the id it ended at, so a shutdown leaves the rest for the
-// next open to find and resume. A write that lands on a row meanwhile
-// re-derives that row under the published declaration itself, and a
-// rebuild re-derives every row, so neither is undone by the pass: a page
-// derives exactly what the write path derives, from the row as it locks it.
+// page records the id a restart resumes after, never past a row the pass
+// has yet to re-derive, so a shutdown leaves the rest for the next open to
+// find and resume. A write that lands on a row meanwhile re-derives that
+// row under the published declaration itself, and a rebuild re-derives
+// every row, so neither is undone by the pass: a page derives exactly what
+// the write path derives, from the row as it locks it.
 
 import (
 	"context"
@@ -105,8 +106,8 @@ func (f indexFilter) stored() any {
 type indexReprojection struct {
 	kind      string
 	refs, fts indexFilter
-	// after is the id the last committed page ended at, empty before the
-	// first; the pass resumes after it.
+	// after is the id the last committed page recorded (resumeMark), empty
+	// before the first; the pass resumes after it.
 	after string
 	// requestedAt is the stored row's, read by the pass so that a page or
 	// the finish writes the request it read and not one widened since.
@@ -375,7 +376,7 @@ func (ds *dataset) stopIndexReprojection(final bool) {
 //
 // A step that fails is tried again after a pause (retryStep), so a passing
 // database error costs a pause and not the rest of the pass. Each page
-// records the id it ended at on the request, and the request is deleted
+// records on the request the id to resume after, and the request is deleted
 // after the kind's last row, so a pass the close stops is resumed by the
 // next open where it was. A row redone twice lands at the same rows.
 //
@@ -453,16 +454,22 @@ func (ds *dataset) reprojectIndexes(ctx context.Context) {
 }
 
 // reprojectKind re-derives one kind's owed rows from where the request says
-// the last page ended: its pages first, then the rows a write held when
-// their page came, and reports the rows it wrote to advanced as it goes. It
-// returns an error only when ctx ends.
+// to resume: its pages first, then the rows a write held when their page
+// came, and reports the rows it wrote to advanced as it goes. It returns an
+// error only when ctx ends.
+//
+// The held rows live in memory alone, so the id a page records never passes
+// the first of them (resumeMark): a shutdown before their retry leaves the
+// next open to read them again. Their retry waits for the lock, so a pass
+// never re-reads a row it skipped and a held lock cannot loop it.
 func (ds *dataset) reprojectKind(ctx context.Context, p indexReprojection, advanced func(rows int)) (int, error) {
 	redone := 0
 	var held []string
-	after := p.after
+	after, resume := p.after, p.after
 	for {
 		var page, missed []string
 		var n int
+		var mark string
 		if err := ds.retryStep(ctx, reprojectionPass, "page of "+p.kind, func() error {
 			if hook := ds.svc.testReprojectionHook; hook != nil {
 				if err := hook(ctx, p.kind); err != nil {
@@ -481,7 +488,8 @@ func (ds *dataset) reprojectKind(ctx context.Context, p indexReprojection, advan
 				if n, missed, err = t.reprojectRows(p, page, true); err != nil {
 					return err
 				}
-				return t.advanceReprojection(p, page[len(page)-1])
+				mark = resumeMark(resume, page, missed, len(held) > 0)
+				return t.advanceReprojection(p, mark)
 			})
 		}); err != nil {
 			return redone, err
@@ -491,7 +499,7 @@ func (ds *dataset) reprojectKind(ctx context.Context, p indexReprojection, advan
 		}
 		redone += n
 		held = append(held, missed...)
-		after = page[len(page)-1]
+		after, resume = page[len(page)-1], mark
 		advanced(n)
 		if len(page) < reprojectionBatch {
 			break
@@ -515,6 +523,24 @@ func (ds *dataset) reprojectKind(ctx context.Context, p indexReprojection, advan
 		advanced(n)
 	}
 	return redone, nil
+}
+
+// resumeMark is the id a page records for the next open to resume after:
+// the page's last id while no row is held, the id before the page's first
+// missed row (or resume, where that row opens the page) when the page holds
+// one, and resume unchanged once an earlier page held one. missed is in
+// page order, as reprojectRows reports it.
+func resumeMark(resume string, page, missed []string, holding bool) string {
+	switch {
+	case holding:
+		return resume
+	case len(missed) == 0:
+		return page[len(page)-1]
+	}
+	if i := slices.Index(page, missed[0]); i > 0 {
+		return page[i-1]
+	}
+	return resume
 }
 
 // reprojectionPage plans one page on the pool: the ids of the next batch
@@ -596,8 +622,9 @@ func (t *txn) reprojectRows(p indexReprojection, ids []string, skipLocked bool) 
 }
 
 // advanceReprojection records, in the page's own transaction, the id the
-// page ended at, on the request the pass read; a request widened since
-// (requested_at moved) starts over from the first id and is left alone.
+// next open resumes after (resumeMark), on the request the pass read; a
+// request widened since (requested_at moved) starts over from the first id
+// and is left alone.
 func (t *txn) advanceReprojection(p indexReprojection, after string) error {
 	_, err := t.exec(`UPDATE index_reprojections SET after_id = $3 WHERE kind = $1 AND requested_at = $2`,
 		p.kind, p.requestedAt, after)

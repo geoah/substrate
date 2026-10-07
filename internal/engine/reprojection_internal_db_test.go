@@ -457,6 +457,95 @@ func TestAnInterruptedReprojectionResumesAtTheNextOpen(t *testing.T) {
 	}
 }
 
+// A row a write holds when its page comes is skipped and kept in memory for a
+// retry after the kind's pages. A shutdown before that retry loses the list,
+// so the page's recorded id must not pass the held row: the next open reads
+// it again and re-derives its `fts` (issue #868).
+func TestARowSkippedForALockIsRederivedAfterARestart(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root, repo := MigratedDSN(t), t.TempDir(), testdb.Repository(t)
+
+	tree := reprojTree(t)
+	patchProvider(t, tree, reprojNote, "99")
+	svc1 := openReprojTree(t, dsn, root, tree)
+	if _, err := svc1.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	d1, err := svc1.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds1 := d1.(*dataset)
+	noted, _ := plantProviders(t, ds1, 7, true, false)
+	const heldID = "p00003"
+	if strings.Join(noted, ",") != "p00000,p00003,p00006" {
+		t.Fatalf("planted notes on %v, want p00000, p00003 and p00006", noted)
+	}
+	// Stand for an `fts` derived under a declaration that did not index
+	// `note`, and the request the upgrade to one that does writes.
+	if _, err := ds1.db.ExecContext(ctx, `UPDATE records SET fts = ''::tsvector WHERE kind = $1`, reprojProvider); err != nil {
+		t.Fatal(err)
+	}
+	if err := ds1.inRawTx(ctx, func(tx *txn) error {
+		return tx.requestReprojections([]indexReprojection{{
+			kind: reprojProvider, fts: indexFilter{moved: true, properties: []string{"note"}},
+		}})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := ds1.pendingReprojections(ctx)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending reprojections = %v, %v; want the one requested", pending, err)
+	}
+
+	lock, err := ds1.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Rollback() }()
+	if _, err := lock.ExecContext(ctx, `SELECT 1 FROM records WHERE kind = $1 AND id = $2 FOR UPDATE`, reprojProvider, heldID); err != nil {
+		t.Fatal(err)
+	}
+	// The first page commits, then the process stops before the held row's
+	// retry.
+	pass, cancel := context.WithCancel(ctx)
+	defer cancel()
+	redone, err := ds1.reprojectKind(pass, pending[0], func(int) { cancel() })
+	if err == nil {
+		t.Fatal("the interrupted pass finished the kind; want it stopped before the held row's retry")
+	}
+	stopped, err := ds1.pendingReprojections(ctx)
+	if err != nil || len(stopped) != 1 {
+		t.Fatalf("pending reprojections after the stop = %v, %v; want the one requested", stopped, err)
+	}
+	t.Logf("interrupted pass: redone=%d, persisted after_id=%q", redone, stopped[0].after)
+	if stopped[0].after >= heldID {
+		t.Errorf("the page recorded after_id %q, past the held row %s", stopped[0].after, heldID)
+	}
+	if err := lock.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	svc2 := openReprojTree(t, dsn, root, tree)
+	defer func() { _ = svc2.Close() }()
+	d2, err := svc2.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds2 := d2.(*dataset)
+	waitReprojection(t, ds2)
+	if pending := pendingReprojectionsOf(t, ds2); len(pending) != 0 {
+		t.Errorf("the pass left %v owed", pending)
+	}
+	if got := indexedRows(t, ds2, "zanzibar"); got != len(noted) {
+		t.Errorf("after the restart the index holds %d noted rows, want %d", got, len(noted))
+	}
+}
+
 // reprojLog is a log sink the test reads while the service's own goroutines
 // may still write to it.
 type reprojLog struct {
