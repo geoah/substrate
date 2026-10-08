@@ -43,10 +43,12 @@ layer, and it fails closed.
 built by the tree's one `Dockerfile` on both paths. `latest` is the tip of
 `main` after a green `ci` run, and reports its version the way `git describe`
 spells it (`v0.85.0-4-g1a2b3c4`); a release is tagged `v0.85.0`, `0.85.0`,
-`0.85` and `0`, and reports `v0.85.0`. `stable` is the newest release: the
-release workflow moves it to each new version, and never to a prerelease or
-back to an older one. `GET /.well-known/substrate/server.json` says which one
-is running. `compose.yaml` builds from the tree; to run a
+`0.85`, `v0` and `0`, and reports `v0.85.0`. `v0` is the newest v0.x
+release: the release workflow moves it to each new version, and never to a
+prerelease or back to an older one, and once v1.0.0 ships `v1` moves the same
+way while `v0` stays at the last v0.x. `stable` is a tag an earlier release
+left at v0.113.0; it is not moved again. `GET
+/.well-known/substrate/server.json` says which one is running. `compose.yaml` builds from the tree; to run a
 published image instead, replace its `build: .` with
 `image: ghcr.io/geoah/substrate:0.85.0`.
 

@@ -33,8 +33,9 @@ Merging the pull request is the release. The next run tags the merge commit
 label to `autorelease: tagged`, and calls `.github/workflows/release.yml`,
 which checks that the tagged commit's own `ci` run was green and then runs
 `mise run release`: goreleaser builds the CLI archives and the multi-arch
-image and attaches them to that release, then points the `stable` image tag
-at the new version ([the published image](operations.md#the-published-image)).
+image and attaches them to that release, then points the `v0` image tag at
+the new version when it is the newest v0.x
+([the published image](operations.md#the-published-image)).
 
 ## Cutting a release
 
@@ -147,7 +148,12 @@ it refreshes an open pull request, tags a merged one that was not, and
 leaves a tagged one alone. A release whose artifacts failed to upload is
 replayed with "Re-run failed jobs" on the `release-please` run that called
 `release.yml`: goreleaser replaces the artifacts it had uploaded and keeps
-the body. "Re-run all jobs" does nothing useful there, because release-please
+the body. A re-run of a release before v0.114.0 runs that release's own
+`.goreleaser.yaml`, which pushed the bare `0` tag with every build, so it
+moves `0` back to that release; `mise run image:major <newest v0.x tag>` from
+a checkout of `main` (any commit from v0.114.0 on has the task) puts `0` and
+`v0` back on the newest v0.x. `v0` itself is never
+moved by a re-run. "Re-run all jobs" does nothing useful there, because release-please
 finds its pull request already tagged and skips the build.
 
 The workflow tags nothing until the merged release pull request's own commit

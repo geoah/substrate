@@ -666,12 +666,12 @@ run = '''
 description = "Build and push $IMAGE:latest — the tip of main, never a release"
 run = "TAG=latest mise run image:push"
 
-[tasks."image:stable"]
-description = "Point $IMAGE:stable at a release's image if it is the newest release: image:stable <tag>"
+[tasks."image:major"]
+description = "Point $IMAGE:v<major> and $IMAGE:<major> at a release's image if it is the newest of its line: image:major <tag>"
 # release.yml runs this after goreleaser. Not a goreleaser tag, because a
-# re-run of an older release would move `stable` back; the script says why.
+# re-run of an older release would move `v0` back; the script says why.
 usage = 'arg "<tag>" help="The release tag, vX.Y.Z"'
-run = '.mise/imagestable.sh "$usage_tag"'
+run = '.mise/imagemajor.sh "$usage_tag"'
 
 [tasks."image:smoke"]
 description = "Boot an image under compose.yaml against a throwaway Postgres and check it serves: image:smoke <ref>"
