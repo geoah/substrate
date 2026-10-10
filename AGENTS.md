@@ -197,6 +197,7 @@ bin/substratectl get kind <ref> -o yaml      # one kind's definition
 bin/substratectl get <authority>/tasks/task           # list one kind: GET /api/v1/records with the kind in filter.kinds
 bin/substratectl get <authority>/tasks/task <id> -o yaml  # one record, apply-able envelope; a bare `task` is refused
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
+bin/substratectl validate -f record.yaml     # the server's declaration checks, offline; --partial accepts what needs the repository
 bin/substratectl watch                       # resumable change stream
 bin/substratectl sync status                 # every connected account's sync state, joined with its triggers (the core `sync` trait)
 bin/substratectl export                      # the recovery export: a tar of the repository directory as of one committed point
