@@ -99,6 +99,9 @@ func cvEntries(t *testing.T, dsn string, head int64, key string) int {
 func cvReplays(t *testing.T, svc substrate.Service, ds substrate.Dataset) {
 	t.Helper()
 	ctx := context.Background()
+	// The search index of a reshaped kind's rows is re-derived behind the
+	// apply's commit, so the fold is read once that pass is done.
+	engine.DrainIndexReprojection(t, ds)
 	before := foldOf(t, ds)
 	rb, ok := svc.(rebuilder)
 	if !ok {
@@ -932,6 +935,76 @@ func TestNullStepRemovesADroppedPropertyOnConfirmation(t *testing.T) {
 		t.Fatal("the dropped property must be undeclared once the null landed")
 	}
 	cvReplays(t, svc, ds)
+}
+
+// A confirmed drop of a kind's LAST reference site takes the rows it derived
+// with it, in the apply's transaction. The null step rewrites the record under
+// a declaration that names no reference at all, which the fold does not
+// re-derive refs for, and the property is gone from the row, so no later
+// selection by property finds it either: the rows would answer reverse reads
+// and narrowing counts for a pointer no record holds, and a rebuild derives
+// none. A nested reference inside a dropped object is the same case.
+func TestAConfirmedDropOfTheLastReferenceSiteRemovesItsRefsRows(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		prop  map[string]any
+		value func(target string) any
+	}{
+		{
+			"reference",
+			map[string]any{"type": "reference", "kind": cvWidget},
+			func(target string) any { return target },
+		},
+		{"nested", map[string]any{"type": "object", "fields": map[string]any{
+			"callable": map[string]any{"type": "reference", "kind": cvWidget},
+		}}, func(target string) any { return map[string]any{"callable": target} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			svc, ds, dsn := newDatasetWithDSN(t)
+			if err := cvApply(t, ds, map[string]any{
+				"name": map[string]any{"type": "string"},
+				"link": tc.prop,
+			}); err != nil {
+				t.Fatalf("install the package: %v", err)
+			}
+			target := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"name": "target"}})
+			holder := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{
+				"name": "holder", "link": tc.value(target.ID),
+			}})
+			db := rawDB(t, dsn)
+			refsOf := func() int {
+				t.Helper()
+				var n int
+				if err := db.QueryRow(`SELECT count(*) FROM refs WHERE src_kind = $1 AND src = $2`, cvWidget, holder.ID).Scan(&n); err != nil {
+					t.Fatal(err)
+				}
+				return n
+			}
+			if n := refsOf(); n != 1 {
+				t.Fatalf("the holder derived %d refs rows, want 1", n)
+			}
+
+			docs := cvDocs(map[string]any{"name": map[string]any{"type": "string"}})
+			plan, err := ds.PlanVocabularyApply(ctx, owner, docs)
+			if err != nil {
+				t.Fatalf("plan: %v", err)
+			}
+			confirm := substrate.ConversionConfirm{PlanHash: plan.PlanHash, ChangelogSeq: plan.ChangelogSeq}
+			if _, err := ds.ApplyVocabularyDocumentsWith(ctx, owner, docs, substrate.VocabularyApply{Confirm: &confirm}); err != nil {
+				t.Fatalf("the confirmed drop must land: %v", err)
+			}
+			if got := mustGet(t, ds, cvWidget, holder.ID); got.Properties["link"] != nil {
+				t.Fatalf("the null step left the value: %+v", got.Properties)
+			}
+			if n := refsOf(); n != 0 {
+				t.Fatalf("the confirmed drop left %d refs rows of the holder, want none", n)
+			}
+			cvReplays(t, svc, ds)
+		})
+	}
 }
 
 // The install door runs a lossless plan with no confirmation, refuses a lossy

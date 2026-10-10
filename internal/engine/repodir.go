@@ -1356,6 +1356,7 @@ const (
 	commitBeforeManifest = "before-manifest"
 	commitAfterManifest  = "after-manifest"
 	commitAfterPrepare   = "after the sealed files are staged and the changelog lines are prepared"
+	commitUnpublished    = "the commit reported failure after committing, before the registry published"
 	commitInDoubt        = "the commit reported failure after committing"
 	commitAfterCommit    = "after the transaction committed"
 )

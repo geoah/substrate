@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -284,8 +285,8 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 		t.Fatalf("the drain bought %d embeddings for text whose vectors moved with it", emb.calls)
 	}
 	// `fts` follows the value: the rewritten row indexes it under the new
-	// declaration at the fold, and the apply re-derives the kind's index
-	// whole (reprojectFTS), so lexical search still finds it.
+	// declaration at the fold, inside the apply's transaction, so lexical
+	// search finds it before the pass behind the commit has run.
 	if hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "big", Mode: substrate.SearchLexical})); err != nil || len(hits) != 1 || hits[0].Record.ID != full.ID {
 		t.Fatalf("lexical search for the renamed fts value = %v, %v", hits, err)
 	}
@@ -316,7 +317,9 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 	}
 
 	// A fresh replay reproduces the renamed records: the rename is values in
-	// the changelog, never a fold-time conversion.
+	// the changelog, never a fold-time conversion. The fold is read once the
+	// pass behind the commit owes nothing.
+	engine.DrainIndexReprojection(t, ds)
 	before := foldOf(t, ds)
 	rb, ok := svc.(rebuilder)
 	if !ok {

@@ -92,7 +92,9 @@ auditable in the [changelog](changelog.md):
   indexes: a kind whose reference sites or `fts` flags moved has the rows
   that carry a moved property re-derived behind the open
   ([operations](operations.md#what-happens-at-boot)), as the search index
-  is when its rules change. The conversions a shipped declaration declares
+  is when its rules change. An apply and a provider upgrade leave the
+  search index of those rows to the same pass, behind their commit
+  ([admission](#admission)). The conversions a shipped declaration declares
   (below) still rewrite the records they name inside it.
 - **An install, which is a copy.** Installing a bundle writes that
   bundle's manifests into the repository's changelog under
@@ -204,6 +206,22 @@ writes: a data write holds it shared from kind resolution to commit, an apply
 holds it exclusive, so no write lands a value against a declaration the apply
 is replacing. The committed registry publishes after the commit and before
 watchers are signaled, so a watcher woken by a kind's entry resolves the kind.
+
+A batch that moves a kind's reference sites or `fts` flags (an apply, an
+install, a provider upgrade) re-derives the indexes of the stored rows that
+carry a property whose declaration moved, since every other row derives the
+same indexes under either declaration. Every row of the kind re-derives
+instead where the change reaches all of them: the kind is declared on one
+side of the batch only (new, or dropped, as an uninstall drops a parked
+package's kinds), its body's `fts` flag moves, the order of its indexed
+properties moves, or its rows belong to a package that does not parse. The
+refs rows are re-derived inside the transaction, so a reverse read is
+current when the batch answers. The search index is re-derived after the
+commit, by the background pass the boot upgrade uses
+([operations](operations.md#what-happens-at-boot)), so the batch does not
+hold the registry lock for it. Until the pass reaches a row, a search
+answers for the declaration the batch replaced; a row written after the
+commit is indexed under the new one.
 
 The loader's rules are hard errors, never warnings. The load-bearing ones:
 

@@ -365,13 +365,17 @@ func droppedCallableGuards(q sqlReader, dropped []droppedCallable) ([]string, er
 // WHY EVERY DATA WRITE AND NOT ONLY A TRIGGER (#321). A write derives two
 // things from the declaration it resolved: the row's properties, and the refs
 // index rows those properties project to (refs.go deriveRefs). A vocabulary
-// apply reprojects the index for the kinds whose reference declarations moved,
-// reading the rows COMMITTED at that moment. Without the barrier a data write
-// could resolve the old declaration, be missed by the reprojection because it
-// had not committed yet, and then commit `records.props` carrying a reference
-// with no row in `refs`: a pointer no reverse read can see, and nothing says
-// so. Under it the write either commits before the apply and is reprojected, or
-// waits and re-derives against the new declaration.
+// apply re-derives the index for the rows that carry a property whose
+// reference declaration moved, reading the rows COMMITTED at that moment.
+// Without the barrier a data write could resolve the old declaration, be
+// missed by the re-derivation because it had not committed yet, and then
+// commit `records.props` carrying a reference with no row in `refs`: a
+// pointer no reverse read can see, and nothing says so. Under it the write
+// either commits before the apply and is re-derived, or waits and derives
+// against the new declaration. The search index of the same rows is
+// re-derived after the commit by the pass behind it (reprojection.go), whose
+// pages take the shared side and derive each row as they lock it, so a write
+// that races a page derives its own row under the published declaration.
 //
 // The lock is also what keeps trigger and policy admission from validating
 // against a registry the apply is about to replace, which is what it was

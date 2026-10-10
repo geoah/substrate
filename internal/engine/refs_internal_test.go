@@ -235,7 +235,7 @@ func TestDeriveRefsOfAnUnknownKindIsEmpty(t *testing.T) {
 // THE FINGERPRINT SEES EVERY NODE a nested pointer is addressed through. A
 // container or datatype change on an ANCESTOR moves (or removes) the address
 // deriveRefs computes, so two declarations that differ there must not
-// fingerprint the same: reprojectedKinds is what decides whether a stored
+// fingerprint the same: movedProperties is what decides whether a stored
 // record's rows are re-derived at all.
 func TestReferenceShapeSeesTheContainersAboveAReference(t *testing.T) {
 	t.Parallel()

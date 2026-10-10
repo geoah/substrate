@@ -654,7 +654,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 
 	// The barrier stands in for the vocabulary apply: it holds the
 	// registry-dependency lock EXCLUSIVE, as vocabularywrite.go does from the
-	// top of its transaction through reprojectRefs and commit.
+	// top of its transaction through rederiveMovedRefs and commit.
 	barrier, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

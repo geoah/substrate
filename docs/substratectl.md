@@ -173,7 +173,10 @@ output applies back unchanged.
   it `took`. A step that can run long logs only when it has work: waiting
   for the batch ahead, preparing function bodies, waiting for another
   session's index builds, building an index, and each walk over stored
-  records.
+  records. A batch that moves a kind's `fts` flags logs `requesting the
+  search index re-derivation behind the commit`, and the search index of
+  that kind's stored rows catches up after `committed`
+  ([operations](operations.md#what-happens-at-boot)).
 - `validate -f FILE` checks the same files offline, with no server and no
   token. Declarations go through the loader the server runs on a
   vocabulary apply, built as packages the repository owns, so a

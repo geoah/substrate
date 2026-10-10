@@ -12,6 +12,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -105,6 +106,9 @@ func TestARecordCarriesTheKindVersionThatWroteIt(t *testing.T) {
 
 	// The changelog carries every stamp as a value, so the rebuild reproduces
 	// the fold, the column included, and reads back the same three answers.
+	// The fold is read once the search index the second declaration reshaped
+	// has been re-derived behind its commit.
+	engine.DrainIndexReprojection(t, ds)
 	before := foldOf(t, ds)
 	rb, ok := svc.(rebuilder)
 	if !ok {

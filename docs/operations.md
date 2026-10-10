@@ -593,6 +593,24 @@ it trusts:
   `repository rebuild` finishes it, because the replay derives every row. Until the pass reaches a row, a reverse read through a
   moved reference site and a search over a moved `fts` flag answer for the
   previous declaration of that row.
+
+  A `POST …/vocabulary/apply` and a provider upgrade (the catalog's install
+  over an older version) use the same pass for the search index alone. Their
+  transaction holds the registry lock every write waits on, so it
+  re-derives only the refs rows of the rows carrying a moved reference
+  property, logging `substrate: vocabulary apply: re-deriving the refs
+  index`, and records the `fts` half for the pass, logging `substrate:
+  vocabulary apply: requesting the search index re-derivation behind the
+  commit` with `kinds`. The pass starts once the batch has committed and
+  logs the lines above. A reverse read is current when the batch answers;
+  until the pass reaches a row, a search over a moved `fts` flag answers
+  for the declaration the batch replaced. A batch whose commit answer was
+  lost leaves the repository refusing writes until restart, and may leave
+  this process serving the declarations it replaced, so the pass stops
+  there without touching a request, logging `substrate: the index
+  re-derivation stopped before it finished; the next open resumes it` with
+  the `error`, and the next open, which loads the committed declarations,
+  re-derives the rows.
 - **The search index is re-derived in the background** when the binary
   indexes text differently from the one that indexed the repository's rows.
   The repository serves reads and writes meanwhile, and a row keeps its old

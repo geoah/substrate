@@ -437,6 +437,16 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 
 	// The transaction: rows + changelog together, all or none.
 	written := map[string]*substrate.Record{}
+	// requested is whether the transaction asked the pass behind the commit
+	// for a search index re-derivation. The pass starts whatever the
+	// transaction's outcome: a commit that errors may have committed, and a
+	// pass that finds nothing owed returns.
+	requested := false
+	defer func() {
+		if requested {
+			ds.kickIndexReprojection()
+		}
+	}()
 	err = ds.inTx(ctx, actor, true, func(t *txn) error {
 		// The registry-dependency barrier's EXCLUSIVE side (wave-3 review
 		// #11): trigger admission holds the shared side from callable
@@ -528,43 +538,54 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if _, err := t.convertRecords(candidate, st.conversions); err != nil {
 			return err
 		}
-		// The refs index is the reverse projection of stored reference values
-		// against the DECLARATION (refs.go), so a declaration that adds, drops
-		// or re-points one changes what the same stored properties project to.
-		// Re-derived here, in the apply's own transaction, against the candidate
-		// closure: an index left alone would answer for a declaration that is
-		// gone. The narrowing guards above have already refused every change
-		// that would strand a LIVE value, so what this reaches is the additive
-		// case and the tombstones the counts deliberately do not see.
+		// The refs index and `fts` are projections of stored values against
+		// the DECLARATION (refs.go, fold.go foldFTS), so a declaration that
+		// moves a reference site or an `fts` flag changes what the same stored
+		// properties derive to, and a rebuild derives them under the
+		// declarations it ends with. The narrowing guards above have already
+		// refused every change that would strand a LIVE value, so what this
+		// reaches is the additive case and the tombstones the counts
+		// deliberately do not see.
 		//
 		// A package that did not parse leaves the parked set with no kinds to
 		// name (fold.go parkedSet), and its rows hold the indexes their
 		// declaration derived before it stopped parsing. The kinds its stored
-		// rows carry are read here and re-derive with the rest, so an
-		// uninstall lands them where a rebuild after it does.
+		// rows carry are read here and re-derive every row, so an uninstall
+		// lands them where a rebuild after it does.
 		unparsed, err := t.storedKindsUnder(ds.parkedSet().unparsedOf(touched))
 		if err != nil {
 			return err
 		}
-		reprojected := unionStrings(st.reprojected, unparsed)
-		reprojectedFTS := unionStrings(st.reprojectedFTS, unparsed)
-		if len(reprojected) > 0 {
-			ds.logApply("re-deriving the refs index", "kinds", len(reprojected))
+		reshaped := st.reprojections.withEveryRow(unparsed).list()
+		// The refs rows re-derive HERE, in the apply's own transaction and
+		// against the candidate, because this transaction reads them next
+		// (linkUnpointedSources, recomputeMappingTargets) and the next
+		// apply's narrowing guards count through them.
+		refsKinds := 0
+		for _, r := range reshaped {
+			if r.refs.moved {
+				refsKinds++
+			}
 		}
-		if err := t.reprojectRefs(reprojected); err != nil {
+		if refsKinds > 0 {
+			ds.logApply("re-deriving the refs index", "kinds", refsKinds)
+		}
+		if err := t.rederiveMovedRefs(reshaped); err != nil {
 			return err
 		}
-		// The search index is the other projection of the row against its
-		// declaration (fold.go foldFTS), and a rebuild derives it under the
-		// declarations it ends with. Re-derived here for the kinds whose
-		// searchable shape this batch changes, against the candidate, so the
-		// live index and its replay agree; the rows' values do not move, so
-		// this bumps nothing and appends nothing.
-		if len(reprojectedFTS) > 0 {
-			ds.logApply("re-deriving the search index", "kinds", len(reprojectedFTS))
-		}
-		if err := t.reprojectFTS(foldView{reg: candidate, parked: st.parked}, reprojectedFTS); err != nil {
+		// `fts` re-derives BEHIND THE COMMIT, in the pass the boot upgrade
+		// leaves its reshaped kinds to (reprojection.go): a kind of many rows
+		// takes minutes, and this transaction holds the registry lock every
+		// write waits on. The request commits with the declarations, and
+		// until the pass reaches a row, a search answers for the declaration
+		// the batch replaced.
+		owed, err := t.requestMovedFTS(reshaped)
+		if err != nil {
 			return err
+		}
+		if len(owed) > 0 {
+			requested = true
+			ds.logApply("requesting the search index re-derivation behind the commit", "kinds", len(owed))
 		}
 		if b.extra != nil {
 			if err := b.extra(t); err != nil {
@@ -684,18 +705,15 @@ type vocabularyStage struct {
 	// retired name refuses whether or not a row exists.
 	retirements      []string
 	droppedCallables []droppedCallable
-	// reprojected names the kinds whose REFERENCE declarations moved, so the
-	// refs index is re-derived for their records in the apply's transaction
-	// (refs.go). It is the kinds the change can be SEEN through, not every
-	// touched kind: a declaration whose reference sites are identical projects
-	// the same rows it already holds.
-	reprojected []string
-	// reprojectedFTS names the kinds whose SEARCHABLE shape moved (ftsShape),
-	// so `fts` is re-derived for their rows in the same transaction
-	// (fold.go reprojectFTS). Same rule as reprojected: the kinds the change
-	// can be seen through, dropped kinds included.
-	reprojectedFTS []string
-	narrowings     []narrowing
+	// reprojections names the kinds whose reference sites or `fts` flags
+	// moved, dropped kinds included, with the properties that moved, index
+	// by index (reprojection.go movedProperties), compared the way the boot
+	// upgrade compares them. A row carrying none of those properties derives
+	// the same refs rows and bands under either declaration, so only the
+	// rows carrying one re-derive: their refs rows in the apply's
+	// transaction, their `fts` in the pass behind the commit.
+	reprojections reprojectionSet
+	narrowings    []narrowing
 	// conversions are the record rewrites the candidate declares (a rename, a
 	// backfill, a remap, a null: convert.go), performed inside the transaction
 	// after the projection and admitted by admitConversion once the guards
@@ -923,9 +941,17 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	// door stores `movedFrom` and performs nothing, so nothing is passed to the
 	// conversion plan and the narrowing counts stand at full strength.
 	moveRefusals := userDoorMoveGuards(classifyKindMoves(current, candidate, touched, nil))
-	staged, parkedRefs, parkedFTS := ds.parkedReprojection(current, candidate, touched)
-	reprojected := unionStrings(reprojectedKinds(current, candidate, touched), parkedRefs)
-	reprojectedFTS := unionStrings(reprojectedFTSKinds(current, candidate, touched), parkedFTS)
+	// The kinds the touched packages declare on either side, then the kinds
+	// a parked set decides on either side, compared as the fold derives them
+	// (parkedViews): the registries alone do not show those moving, because
+	// a parked kind is in neither and a live kind a parked mapping reshapes
+	// is the same kind in both. A kind one view declares and the other does
+	// not re-derives every row, so an uninstalled parked package's rows land
+	// at the unknown-kind bands with no refs rows.
+	staged, before, after, decided := ds.parkedViews(current, candidate, touched)
+	reprojections := reprojectionSet{}
+	reprojections.addMoved(current, candidate, kindsOfPackages(current, candidate, touched))
+	reprojections.addMoved(before, after, decided)
 	return &vocabularyStage{
 		candidate: candidate,
 		touched:   touched,
@@ -940,8 +966,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
 		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
-		reprojected:      reprojected,
-		reprojectedFTS:   reprojectedFTS,
+		reprojections:    reprojections,
 		// Evolution-with-data: a NARROWING definition
 		// diff — property dropped/kind-changed, enum value or state
 		// removed, required added — is classified here against the currently
@@ -2894,15 +2919,6 @@ func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrat
 	return nil
 }
 
-// reprojectedKinds lists the touched packages' kinds whose reference
-// declarations differ between the stored closure and the candidate — added,
-// dropped, re-shaped or given link data. A kind the candidate drops entirely is
-// in the list too: its records' rows must go with the declaration that
-// described them.
-func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[string]bool) []string {
-	return kindsWhoseShapeMoved(current, candidate, touched, referenceShape)
-}
-
 // referenceShape writes the part of one declaration that deriveRefs reads
 // (appendReferenceShape, per property). Two declarations with the same string
 // project the same refs rows from the same stored values; an undeclared kind
@@ -2917,14 +2933,6 @@ func referenceShape(reg kindLookup, ident string) string {
 		b.WriteString(propertyReferenceShape(name, ty.Props[name]))
 	}
 	return b.String()
-}
-
-// reprojectedFTSKinds lists the touched packages' kinds whose searchable shape
-// differs between the stored closure and the candidate (ftsShape), the kinds
-// the candidate drops included: their rows index under the unknown-kind bands
-// from the publish on, which is what a rebuild computes for them.
-func reprojectedFTSKinds(current, candidate *vocabulary.Registry, touched map[string]bool) []string {
-	return kindsWhoseShapeMoved(current, candidate, touched, ftsShape)
 }
 
 // ftsShape writes the part of one declaration that ftsBands reads: which
@@ -2949,51 +2957,12 @@ func ftsShape(reg kindLookup, ident string) string {
 	return b.String()
 }
 
-// kindsWhoseShapeMoved walks the touched packages' kinds on both sides of the
-// apply and keeps the ones whose `shape` differs, sorted.
-func kindsWhoseShapeMoved(current, candidate *vocabulary.Registry, touched map[string]bool, shape func(kindLookup, string) string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for aname := range touched {
-		for _, reg := range []*vocabulary.Registry{current, candidate} {
-			g, ok := reg.PackageByName(aname)
-			if !ok || g == nil {
-				continue
-			}
-			for _, tn := range g.KindOrder {
-				ident := g.Kinds[tn].Identity
-				if seen[ident] {
-					continue
-				}
-				seen[ident] = true
-				if shape(current, ident) != shape(candidate, ident) {
-					out = append(out, ident)
-				}
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// parkedReprojection is the parked half of a registry change, the apply
-// door's and the boot upgrade's alike (fold.go parkedSet). staged is the set
-// the change publishes: the dataset's, less every package it touches, read
-// beside the candidate. refs and fts are the kinds whose indexes a parked
-// set decides on either side and whose shape the two views disagree on. The
-// registries alone do not show these moving: a parked kind is in neither,
-// and a live kind a parked mapping reshapes is the same kind in both. So an
-// uninstalled parked package's rows re-derive at the unknown-kind bands with
-// no refs rows, and a live source kind loses the slot row a parked mapping
-// projected once the slot is gone or collides with a declared property.
-func (ds *dataset) parkedReprojection(current, candidate *vocabulary.Registry, touched map[string]bool) (staged *parkedSet, refs, fts []string) {
-	staged, before, after, decided := ds.parkedViews(current, candidate, touched)
-	return staged, kindsShapedApart(before, after, decided, referenceShape), kindsShapedApart(before, after, decided, ftsShape)
-}
-
-// parkedViews is parkedReprojection's reading: the staged parked set, the
-// fold's view before and after the change, and the kinds a parked set
-// decides on either side, which the two views are compared over.
+// parkedViews is the parked half of a registry change, the apply door's and
+// the boot upgrade's alike (fold.go parkedSet): the staged parked set the
+// change publishes (the dataset's, less every package it touches, read
+// beside the candidate), the fold's view before and after the change, and
+// the kinds a parked set decides on either side, which the two views are
+// compared over (reprojectionSet.addMoved).
 func (ds *dataset) parkedViews(current, candidate *vocabulary.Registry, touched map[string]bool) (staged *parkedSet, before, after foldView, decided map[string]bool) {
 	parked := ds.parkedSet()
 	staged = parked.without(touched, candidate)
@@ -3002,18 +2971,6 @@ func (ds *dataset) parkedViews(current, candidate *vocabulary.Registry, touched 
 		decided[ident] = true
 	}
 	return staged, foldView{reg: current, parked: parked}, foldView{reg: candidate, parked: staged}, decided
-}
-
-// kindsShapedApart keeps the named kinds whose `shape` differs between two
-// registries, sorted.
-func kindsShapedApart(a, b kindLookup, idents map[string]bool, shape func(kindLookup, string) string) []string {
-	var out []string
-	for _, ident := range sortedKeys(idents) {
-		if shape(a, ident) != shape(b, ident) {
-			out = append(out, ident)
-		}
-	}
-	return out
 }
 
 // appendReferenceShape writes the part of one declaration that the refs
@@ -3072,11 +3029,14 @@ func (t *txn) storedKindsUnder(packages []string) ([]string, error) {
 	return out, rows.Err()
 }
 
-// reprojectRefs re-derives the refs index for the kinds whose reference
-// declarations moved. It runs inside the apply's transaction, whose
-// declarations are the candidate closure: the candidate is what the committed
-// rows must project against, and the live registry does not hold it until the
-// publish.
+// reprojectRefs re-derives the refs index for every stored row of the named
+// kinds: the boot upgrade's meta-kinds, as few rows as the repository
+// declares, and every kind once in repository migration 0001, which runs once
+// per repository. Each row's kind resolves through
+// declarations(), the candidate where the caller sets writeReg: the candidate
+// is what the committed rows must project against, and the live registry
+// does not hold it until the publish. The apply door re-derives only the
+// rows carrying a moved property (rederiveMovedRefs).
 func (t *txn) reprojectRefs(kinds []string) error {
 	for _, ident := range kinds {
 		if err := t.syncRefsOfKind(ident); err != nil {

@@ -120,12 +120,18 @@ type backgroundPass struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	closed bool
+	// rerun is a start that came while a run was in flight. The run calls
+	// fn again when it sees it (again), because work written after fn
+	// planned its last step is work that run would otherwise return
+	// without, a vocabulary apply's request behind the commit most of all.
+	rerun bool
 }
 
-// start runs fn as a detached task of the dataset, unless the pass is closed
-// or an earlier run has not returned. fn's context ends when the pass is
-// stopped or the service shuts down, which cancels every detached task
-// before it closes any dataset.
+// start runs fn as a detached task of the dataset, unless the pass is
+// closed. Where an earlier run has not returned it starts nothing and has
+// that run call fn once more before it returns. fn's context ends when the
+// pass is stopped or the service shuts down, which cancels every detached
+// task before it closes any dataset.
 func (p *backgroundPass) start(ds *dataset, task string, fn func(ctx context.Context)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -136,23 +142,54 @@ func (p *backgroundPass) start(ds *dataset, task string, fn func(ctx context.Con
 		select {
 		case <-p.done:
 		default:
+			p.rerun = true
 			return
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	p.cancel, p.done = cancel, done
+	p.cancel, p.done, p.rerun = cancel, done, false
 	started := ds.spawn(task, func(bg context.Context) {
-		defer close(done)
 		defer cancel()
 		stop := context.AfterFunc(bg, cancel)
 		defer stop()
-		fn(ctx)
+		ended := false
+		defer func() {
+			// fn panicked: done still closes, so a stop does not wait out
+			// its budget on a run that is gone.
+			if !ended {
+				close(done)
+			}
+		}()
+		for {
+			fn(ctx)
+			if !p.again(ctx, done) {
+				ended = true
+				return
+			}
+		}
 	})
 	if !started {
 		cancel()
 		close(done)
 	}
+}
+
+// again reports whether a start came while the run that owns done was in
+// flight, and clears it. A stopped run does not go again. When it answers
+// no it closes done under the same lock, so a start after it finds the run
+// over and begins a new one, rather than setting rerun on a run that has
+// already looked.
+func (p *backgroundPass) again(ctx context.Context, done chan struct{}) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.rerun && ctx.Err() == nil {
+		p.rerun = false
+		return true
+	}
+	p.rerun = false
+	close(done)
+	return false
 }
 
 // stop cancels the running pass and waits for it to return, up to the drain

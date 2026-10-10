@@ -177,7 +177,7 @@ func FoldTables() []string {
 }
 
 // WithTestCommitFault runs fn at each durable step of a write's commit
-// (dataset.go commitAndMirror), five stages. Around the manifest write that
+// (dataset.go commitAndMirror), six stages. Around the manifest write that
 // precedes the first append in a new changelog dialect (repodir.go
 // writeManifestBeforeCommit): CommitBeforeManifest just before the write,
 // where an error stands for the write failing, and CommitAfterManifest once
@@ -190,7 +190,9 @@ func FoldTables() []string {
 // dying at that step, so the directory is left exactly as the crash would
 // leave it. CommitInDoubt is not a crash: the hook's error is taken as the
 // commit's answer after Postgres committed, the shape of a connection lost at
-// the answer, and the write's error path runs.
+// the answer, and the write's error path runs. CommitUnpublished is the same
+// for a write that publishes a registry, taken before the registry swaps, so
+// the process keeps serving the declarations the commit replaced.
 func WithTestCommitFault(fn func(stage string) error) Option {
 	return func(o *options) { o.commitFault = fn }
 }
@@ -216,6 +218,7 @@ const (
 	CommitBeforeManifest = commitBeforeManifest
 	CommitAfterManifest  = commitAfterManifest
 	CommitAfterPrepare   = commitAfterPrepare
+	CommitUnpublished    = commitUnpublished
 	CommitInDoubt        = commitInDoubt
 	CommitAfterCommit    = commitAfterCommit
 )
@@ -320,6 +323,36 @@ func WithTestReprojectionHook(hook func(ctx context.Context, kind string) error)
 // none returns a closed channel.
 func IndexReprojectionDone(ds substrate.Dataset) <-chan struct{} {
 	return ds.(*dataset).reproject.finished()
+}
+
+// DrainIndexReprojection waits until the repository owes no index
+// re-derivation: no row is left in `index_reprojections`, which the pass
+// deletes only after a kind's last page has committed. It reads the table
+// rather than IndexReprojectionDone, because a vocabulary apply writes a
+// request after the open and a run that finished before it closed the
+// channel already. A request still owed after a minute fails the test: the
+// pass was never started for it, or it cannot finish.
+func DrainIndexReprojection(t testing.TB, ds substrate.Dataset) {
+	t.Helper()
+	d := ds.(*dataset)
+	deadline := time.Now().Add(time.Minute)
+	for {
+		pending, err := d.pendingReprojections(context.Background())
+		if err != nil {
+			t.Fatalf("read the index re-derivations owed: %v", err)
+		}
+		if len(pending) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			kinds := make([]string, 0, len(pending))
+			for _, p := range pending {
+				kinds = append(kinds, p.kind)
+			}
+			t.Fatalf("the index re-derivation still owes %v after a minute", kinds)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // SearchReindexDone is closed when the dataset's latest reindex has returned,
