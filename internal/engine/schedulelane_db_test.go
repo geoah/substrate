@@ -13,6 +13,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -38,10 +39,10 @@ func withScheduleLanePoll(d time.Duration) func() {
 // sleeps `fire` per fire, and `widgets` widgets each record trigger owes.
 // Every record delivery mints a task of its own, so the tasks count the
 // deliveries.
-func laneDataset(t *testing.T, slow, fire time.Duration, records, widgets int) *dataset {
+func laneDataset(t *testing.T, slow, fire time.Duration, records, widgets int, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	ds := openCursorDataset(t)
+	ds := openCursorDataset(t, opts...)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.FunctionManifest(lanePkg, "slow", map[string]any{
 			"description": "one slow fetch per widget",
@@ -348,12 +349,34 @@ func TestAScheduleLaneRunsOneFireOfATriggerAtATime(t *testing.T) {
 	}
 }
 
+// panickingLog is a slog handler that panics on the record lane's line for
+// a contained panic, so the panic leaves passRecordTrigger's own recover and
+// unwinds the pass, the way any panic outside a delivery still would.
+type panickingLog struct{ slog.Handler }
+
+func (h panickingLog) Handle(ctx context.Context, r slog.Record) error {
+	if strings.HasPrefix(r.Message, "substrate: a record trigger's delivery panicked") {
+		panic("the log handler panicked")
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
+func (h panickingLog) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return panickingLog{h.Handler.WithAttrs(attrs)}
+}
+
+func (h panickingLog) WithGroup(name string) slog.Handler {
+	return panickingLog{h.Handler.WithGroup(name)}
+}
+
 func TestAPanickedPassStopsItsScheduleLane(t *testing.T) {
-	// A record delivery panics in the first pass, under a recover like the
-	// dispatcher's. The occurrence falls due after that pass has returned:
-	// a lane the pass left behind would fire it with no pass running.
+	// A record delivery panics in the first pass, and the log line that
+	// reports its containment panics too, so a panic unwinds the pass to a
+	// recover like the dispatcher's. The occurrence falls due after that
+	// pass has returned: a lane the pass left behind would fire it with no
+	// pass running.
 	defer withScheduleLanePoll(50 * time.Millisecond)()
-	ds := laneDataset(t, 0, 0, 1, 2)
+	ds := laneDataset(t, 0, 0, 1, 2, WithLogger(slog.New(panickingLog{slog.Default().Handler()})))
 	due := time.Now().UTC().Add(1500 * time.Millisecond).Truncate(time.Second).Add(time.Second)
 	putLaneSchedule(t, ds, "b-hourly", "FREQ=HOURLY", due)
 	var once sync.Once
@@ -369,8 +392,8 @@ func TestAPanickedPassStopsItsScheduleLane(t *testing.T) {
 		_, _ = ds.ProcessTriggers(context.Background())
 		return nil
 	}()
-	if recovered == nil {
-		t.Fatal("the pass returned without the record delivery's panic")
+	if recovered != "the log handler panicked" {
+		t.Fatalf("the pass ended with %v, want the log handler's panic", recovered)
 	}
 	if held := len(ds.svc.deliverySlots); held != 0 {
 		t.Fatalf("%d delivery slots still held after the panicked pass returned", held)

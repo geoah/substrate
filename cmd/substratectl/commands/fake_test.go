@@ -1218,9 +1218,11 @@ func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request)
 // handleTriggerStatus answers the computed per-trigger status table.
 func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	passed, delivered := testNow.Add(-5*time.Second), testNow.Add(-3*time.Minute)
 	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.TriggerStatus{{
 		ID: "classify-page", Kind: substrate.TriggerKindRecord,
 		Callable: "web.substrate.reamde.dev/web/classify", Enabled: true, Cursor: 41, Head: 41,
+		LastPassAt: &passed, LastDeliveredAt: &delivered,
 	}}})
 }
 

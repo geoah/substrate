@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -43,8 +44,13 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Per-trigger kind, callable, cursor, lag, last fire, parked, pending and in-flight counts, and webhook path",
-		Args:  cobra.NoArgs,
+		Short: "Per-trigger kind, callable, cursor, lag, last fire, last pass, last delivery, parked, pending and in-flight counts, and webhook path",
+		Long: `List every trigger's delivery state. LASTPASS is how long ago a
+dispatcher pass of the server process last reached the trigger, and
+LASTDELIVERED how long ago a delivery of it last settled (ran, skipped or
+parked past). The server keeps both in memory: a restart clears them, and a
+webhook trigger shows neither.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
 			if err != nil {
@@ -56,14 +62,17 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 			}
 			return printList(a, output, res.Items, func() error {
 				tw := newTable(a.out)
-				fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tPENDING\tINFLIGHT\tWEBHOOK\tERROR")
-				for _, t := range res.Items {
-					lastFire := ""
-					if t.LastFire != nil {
-						lastFire = humanAge(a.now(), *t.LastFire)
+				fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tLASTPASS\tLASTDELIVERED\tPARKED\tPENDING\tINFLIGHT\tWEBHOOK\tERROR")
+				age := func(at *time.Time) string {
+					if at == nil {
+						return ""
 					}
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%d\t%d\t%d\t%s\t%s\n",
-						t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, lastFire, t.Parked, t.Pending, t.InFlight, t.WebhookPath, truncate(t.Error, 60))
+					return humanAge(a.now(), *at)
+				}
+				for _, t := range res.Items {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\n",
+						t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, age(t.LastFire), age(t.LastPassAt), age(t.LastDeliveredAt),
+						t.Parked, t.Pending, t.InFlight, t.WebhookPath, truncate(t.Error, 60))
 				}
 				return tw.Flush()
 			})

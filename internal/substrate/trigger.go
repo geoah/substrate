@@ -47,14 +47,26 @@ type TriggerStatus struct {
 	// fire has not settled: listed there too, with `lastError` saying so,
 	// and not a failure. InFlight counts the rows the server is delivering
 	// right now (an agent run's claim, a retry by hand): listed there with
-	// `running` set, and not counted as parked. On a schedule trigger both
-	// also count the occurrences that are due and not yet settled or parked
-	// past, at most 100: InFlight the one the dispatcher is running, Pending
-	// the ones waiting for a pass to reach them. Those are not listed under
+	// `running` set, and not counted as parked. On a record trigger InFlight
+	// also counts the deliveries a pass or a wake is running now, an agent
+	// delivery's claim counted once. On a schedule trigger both also count
+	// the occurrences that are due and not yet settled or parked past, at
+	// most 100: InFlight the one the dispatcher is running, Pending the ones
+	// waiting for a pass to reach them. Those are not listed under
 	// `…/parked`.
 	Parked   int64 `json:"parked"`
 	Pending  int64 `json:"pending"`
 	InFlight int64 `json:"inFlight"`
+	// LastPassAt is when a dispatcher pass last reached a record or schedule
+	// trigger: its turn among the record triggers, or a look for due
+	// occurrences. LastDeliveredAt is when a delivery of it last settled
+	// (ran, skipped or parked past), a wake's and a hand retry's included;
+	// a fire that lost its fire state to another dispatcher settled nothing.
+	// Neither is stored: the server process keeps both in memory, so a
+	// restart clears them, each is absent until that process reaches the
+	// trigger, and a webhook trigger carries neither.
+	LastPassAt      *time.Time `json:"lastPassAt,omitempty"`
+	LastDeliveredAt *time.Time `json:"lastDeliveredAt,omitempty"`
 	// LastParkedError is the newest parked delivery's error: its first line,
 	// cut at 500 bytes, so a list says why without reading `…/parked`.
 	// LastParkedAt is when that delivery parked. Both are absent while

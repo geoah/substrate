@@ -165,6 +165,13 @@ type dataset struct {
 	// occurrence the pass is running as neither pending nor in flight.
 	firingMu sync.Mutex
 	firing   map[string]int
+	// activity, under activityMu, is what this process saw of each
+	// trigger's dispatch, by trigger id (functions.go triggerActivity):
+	// when a pass last reached it, when a delivery of it last settled, and
+	// the record deliveries of it running now. Memory only, so a restart
+	// clears it and another process's passes never show in it.
+	activityMu sync.Mutex
+	activity   map[string]*triggerActivity
 	// resumingWebhooks is set while a dispatcher pass's resume of pending
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.

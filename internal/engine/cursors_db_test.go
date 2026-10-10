@@ -90,12 +90,12 @@ func TestTriggerCursorSwapLosesToReplay(t *testing.T) {
 
 // openCursorDataset provisions a repository with one widget type, one mirror
 // function and its default trigger.
-func openCursorDataset(t *testing.T) *dataset {
+func openCursorDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	const pkg = "widgets.test.dev/widgets"
 	widgetType := pkg + "/widget"
-	d := openInternalDataset(t)
+	d := openInternalDataset(t, opts...)
 	if err := enginetest.Install(ctx, d, substrate.ActorAPI, enginetest.Manifest{
 		Name: "widgets", Authority: pkg,
 		Manifests: []map[string]any{

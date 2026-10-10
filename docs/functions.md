@@ -1073,9 +1073,16 @@ resource). No path carries a repository segment: the bearer token implies the
 repository.
 
 - `GET …/trigger/status` is the one collection-level verb: every trigger's
-  kind, callable, cursor, head, lag, last fire, parked count and pending count
-  (accepted webhook requests whose fire has not settled) in a single answer.
-  There is no per-trigger `status`.
+  kind, callable, cursor, head, lag, last fire, parked count, pending count
+  (accepted webhook requests whose fire has not settled) and in-flight count
+  (deliveries the server runs now, a record trigger's included) in a single
+  answer. `lastPassAt` is when a dispatcher pass last reached a record or
+  schedule trigger, and `lastDeliveredAt` when a delivery of it last settled
+  (ran, skipped or parked past). The server process keeps those two in
+  memory, not in the database, so a restart clears them and a webhook
+  trigger carries neither. A trigger with lag and an old `lastPassAt` is one
+  no pass reaches. `substratectl trigger status` prints them as `LASTPASS`
+  and `LASTDELIVERED`. There is no per-trigger `status`.
 - `POST …/trigger/{id}/replay` takes `{"from": seq}` and resets a
   record-sourced trigger's cursor for a retrospective run.
 - `POST …/trigger/{id}/run` takes `{"kind": …, "id": …}`, both required, and

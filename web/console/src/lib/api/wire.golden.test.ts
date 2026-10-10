@@ -605,6 +605,8 @@ const triggerStatus: Shape<TriggerStatus> = {
   parked: true,
   pending: true,
   inFlight: true,
+  lastPassAt: false,
+  lastDeliveredAt: false,
   lastParkedError: false,
   lastParkedAt: false,
   error: false,

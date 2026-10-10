@@ -83,6 +83,36 @@ func TestTriggerParkedNamesTheStream(t *testing.T) {
 	}
 }
 
+// Status prints how long ago the server's dispatcher last reached each
+// trigger and last settled a delivery of it, so a trigger with lag that no
+// pass reaches is visible from the table.
+func TestTriggerStatusPrintsTheLastPassAndDelivery(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	out, _ := h.mustRun("trigger", "status")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("trigger status output = %q, want a header and one row", out)
+	}
+	// The table is aligned, and an empty cell (LASTFIRE here) is blank, so a
+	// cell is read at its header's offset.
+	header, row := lines[0], lines[1]
+	col := func(name string) string {
+		at := strings.Index(header, " "+name+" ")
+		if at < 0 || at+1 >= len(row) {
+			t.Fatalf("no %s column in %q", name, out)
+		}
+		cell, _, _ := strings.Cut(row[at+1:], " ")
+		return cell
+	}
+	if got := col("LASTPASS"); got != "5s" {
+		t.Errorf("LASTPASS = %q, want 5s", got)
+	}
+	if got := col("LASTDELIVERED"); got != "3m" {
+		t.Errorf("LASTDELIVERED = %q, want 3m", got)
+	}
+}
+
 // Every trigger verb rides the ONE path. Trigger records are substrate.reamde.dev/core's
 // and a resource's operational verbs live at the resource, so the
 // verbs hang off core; the retired automation.substrate.reamde.dev spelling is gone, not

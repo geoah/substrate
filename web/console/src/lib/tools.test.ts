@@ -673,4 +673,25 @@ describe("triggerProgress", () => {
       "not fired yet",
     ])
   })
+  it("says when the server last delivered the trigger and last reached it", () => {
+    const now = Date.parse("2026-09-25T12:00:00Z")
+    expect(
+      triggerProgress(
+        {
+          ...base,
+          kind: "record",
+          cursor: 1234,
+          lag: 6,
+          lastDeliveredAt: "2026-09-25T11:55:00Z",
+          lastPassAt: "2026-09-25T11:59:50Z",
+        },
+        now
+      )
+    ).toEqual([
+      "cursor #1234 of #1240",
+      "6 behind",
+      "last delivered 5 min ago",
+      "last pass just now",
+    ])
+  })
 })
