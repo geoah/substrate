@@ -652,6 +652,17 @@ that starts more than a minute after its occurrence logs
 `schedule fire dispatched late` with the trigger and the delay. The other
 four loops still walk repositories one after another.
 
+Writes to one repository run one at a time: each holds the repository's
+changelog lock from its start to its commit. An owner's put, patch or delete of
+a data record through the API or the console goes ahead of queued background
+writes such as function effects, agent writes and syncs; every other write,
+an owner's blob upload or vocabulary apply included, queues with the
+background writes. A queued background write becomes eligible to go ahead of
+pending owner writes once 8 owner writes have started since it queued or it
+has waited 2 seconds, and even then it waits for the background write admitted
+before it to take the lock. Priority never shortens the transaction already
+holding the lock.
+
 ### Collecting orphaned mapping targets
 
 A record minted from a mapping's source outlives that source: delete the last
