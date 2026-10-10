@@ -342,7 +342,18 @@ export function streamChat(opts: {
         opts.onError?.(new ApiError("auth", "session expired", 401))
         return
       }
-      if (!res.ok || !res.body) throw envelopeError(res.status, undefined)
+      if (!res.ok) {
+        // A refusal before the run started (an agent at its spend cap, a
+        // running turn) is an error envelope, and its message says why.
+        let body: unknown
+        try {
+          body = await res.json()
+        } catch {
+          body = undefined
+        }
+        throw envelopeError(res.status, body)
+      }
+      if (!res.body) throw envelopeError(res.status, undefined)
 
       // A post-200 loop failure arrives as an `error` event (or, from an older
       // server, a `done` with text and no result). Either routes to onError and

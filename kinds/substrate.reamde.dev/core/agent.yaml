@@ -20,7 +20,7 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  version: 21
+  version: 22
   purpose: internal
   names:
     singular: agent
@@ -160,6 +160,20 @@ data:
           min: 1
           max: 3
           description: how deep the sub-agent chain below may go
+        # Not a bound on one invocation like the four above: the engine holds
+        # the agent's next run once the rolling window's spend reaches it
+        # (decision 0149). Spend is each root run's recorded cost, its
+        # sub-agents' included. At the cap the agent's triggers hold their
+        # deliveries and a chat or a direct call is refused, until the
+        # window's spend falls under the cap or the cap is raised. Absent is
+        # no cap; 0 holds every run.
+        spendCentsPerDay:
+          type: int
+          min: 0
+          description: >-
+            the most this agent's runs may spend in a rolling 24 hours, in
+            US cents; a sub-agent runs under its caller's cap, and its own
+            is not enforced
     # When a continued thread's history is folded into a summary row. The
     # trigger needs the model's contextWindow from the provider row's pricing
     # entry, so a model without one never compacts whatever this says.

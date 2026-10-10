@@ -54,10 +54,18 @@ func (h *handler) postAgentChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, codeInternal, "streaming unsupported")
 		return
 	}
-	setStreamHeaders(w)
-	w.WriteHeader(http.StatusOK)
+	// The status line waits for the first event: a refusal before the loop
+	// opens a thread (a spend cap, a hidden agent, a running turn) answers
+	// with its own status and code, which a 200 sent up front would turn
+	// into an error event a client cannot classify.
+	started := false
 	enc := json.NewEncoder(w)
 	emit := func(ev substrate.AgentEvent) {
+		if !started {
+			started = true
+			setStreamHeaders(w)
+			w.WriteHeader(http.StatusOK)
+		}
 		if err := enc.Encode(ev); err != nil {
 			return
 		}
@@ -66,6 +74,10 @@ func (h *handler) postAgentChat(w http.ResponseWriter, r *http.Request) {
 	_, err := ds.ChatAgent(r.Context(), ActorFrom(r.Context()),
 		pathParam(r, "name"), req.Thread, req.Message, emit)
 	if err != nil {
+		if !started {
+			writeSubstrateError(w, r, err)
+			return
+		}
 		// The 200 status line is already gone, so the failure travels as its
 		// own error event — never a done with only text, which a client cannot
 		// tell from a successful (if empty) settle.

@@ -192,13 +192,24 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 // raised on, a header a decoder quoted) is sender-controlled text and never
 // enters the log.
 func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure) {
+	// An agent at a spend cap leaves the request pending, unclaimed: the
+	// next pass's resume fires it once the cap clears (spend.go).
+	ctx, held, err := ds.holdAgentDelivery(ctx, tr)
+	if err != nil {
+		ds.svc.log.Error("substrate: webhook fire could not read the spend cap, the entry stays pending",
+			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
+		return
+	}
+	if held {
+		return
+	}
 	var envelope map[string]any
 	if err := json.Unmarshal(row.Payload, &envelope); err != nil {
 		ds.svc.log.Error("substrate: webhook fire cannot read its recorded request, the entry stays pending",
 			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
 		return
 	}
-	_, _, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
+	_, _, err = ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
 	if err == nil {
 		return
 	}

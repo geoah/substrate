@@ -624,6 +624,11 @@ export interface TriggerStatus {
    * and when it parked; both absent while `parked` is 0. */
   lastParkedError?: string
   lastParkedAt?: string
+  /** Why the dispatcher holds this agent trigger's deliveries: the spend cap
+   * reached and the spend so far. Nothing is claimed or parked while held;
+   * the next pass after the spend falls under the cap, or the cap is raised,
+   * delivers. Absent while not held. */
+  held?: string
   /** Names a trigger the dispatcher cannot run: an unparseable row or a
    * callable that no longer resolves. */
   error?: string

@@ -114,6 +114,9 @@ const (
 	MaxAgentDeadlineSec     = 600
 	DefaultAgentDepth       = 3
 	MaxAgentDepth           = 3
+	// MaxAgentSpendCentsPerDay is the largest whole number an `int` property
+	// holds exactly (decision 0012).
+	MaxAgentSpendCentsPerDay = 1<<53 - 1
 	// AgentPromptMaxBytes bounds the inline prompt, like a function's source.
 	AgentPromptMaxBytes = 64 << 10
 )
@@ -215,6 +218,11 @@ type AgentBudgets struct {
 	MaxToolCalls    int
 	DeadlineSeconds int
 	Depth           int
+	// SpendCentsPerDay caps what the agent's root runs may spend in a rolling
+	// 24 hours, in US cents (decision 0149); nil is no cap and 0 holds every
+	// run. It is not a bound on one invocation: the engine holds the next
+	// run once the window's spend reaches it.
+	SpendCentsPerDay *int
 }
 
 // AgentCompaction is `data.compaction` parsed. A thread compacts when its
@@ -281,6 +289,7 @@ var agentPermissionKeys = map[string]bool{"reads": true, "writes": true}
 
 var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
+	"spendCentsPerDay": true,
 }
 
 var agentCompactionKeys = map[string]bool{
@@ -669,6 +678,15 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 	if a.Budgets.Depth, ok = l.boundedInt(where+": data.budgets.depth", budgets, "depth",
 		DefaultAgentDepth, MaxAgentDepth); !ok {
 		return false
+	}
+	// Absent is no cap, which is not the same as 0: a zero cap holds every run.
+	if v, capped := budgets["spendCentsPerDay"]; capped && v != nil {
+		cents, ok := l.boundedIntFrom(where+": data.budgets.spendCentsPerDay", budgets, "spendCentsPerDay",
+			0, 0, MaxAgentSpendCentsPerDay)
+		if !ok {
+			return false
+		}
+		a.Budgets.SpendCentsPerDay = &cents
 	}
 	return true
 }

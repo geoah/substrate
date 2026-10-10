@@ -1082,7 +1082,9 @@ repository.
   memory, not in the database, so a restart clears them and a webhook
   trigger carries neither. A trigger with lag and an old `lastPassAt` is one
   no pass reaches. `substratectl trigger status` prints them as `LASTPASS`
-  and `LASTDELIVERED`. There is no per-trigger `status`.
+  and `LASTDELIVERED`. An agent trigger whose deliveries wait at a spend cap
+  carries `held` ([the daily spend cap](agents.md#the-daily-spend-cap)),
+  printed as `HELD`. There is no per-trigger `status`.
 - `POST …/trigger/{id}/replay` takes `{"from": seq}` and resets a
   record-sourced trigger's cursor for a retrospective run.
 - `POST …/trigger/{id}/run` takes `{"kind": …, "id": …}`, both required, and

@@ -386,6 +386,57 @@ export function agentLimits(agent: SubstrateRecord): AgentLimit[] {
   return out
 }
 
+// ── the daily spend cap ─────────────────────────────────────────────────────
+
+/** The agent's `budgets.spendCentsPerDay`, in US cents, or undefined when it
+ * declares no cap. 0 is a cap: it holds every run. */
+export function agentSpendCap(agent: SubstrateRecord): number | undefined {
+  const cents = num(bag(agent.properties.budgets).spendCentsPerDay)
+  return cents !== undefined && cents >= 0 ? cents : undefined
+}
+
+export interface CapSpend {
+  /** What the runs counted against the cap recorded, in US dollars. */
+  usd: number
+  /** False when the read stopped before the window began, so a run that
+   * finished in it may be missing: the figure is then a floor. */
+  complete: boolean
+  /** Runs nobody asked for that are going now. The server counts what they
+   * have spent so far against the cap; their rows carry it only once they
+   * settle. */
+  running: number
+}
+
+/** What counts against the agent's cap, counted the way the server counts
+ * it (`engine/spend.go`): the recorded cost of every run nobody asked for
+ * whose `finishedAt` falls in the last 24 hours. A run another agent asked
+ * for counts against the asking agent's cap, inside that agent's run. */
+export function capWindowSpend(
+  threads: SubstrateRecord[],
+  { now = Date.now(), truncated = false } = {}
+): CapSpend {
+  const from = now - DAY
+  let reached = Infinity
+  let usd = 0
+  let running = 0
+  for (const thread of threads) {
+    const active = runActiveAt(thread)
+    if (Number.isFinite(active)) reached = Math.min(reached, active)
+    if (askedByAgent(thread)) continue
+    if (runStatus(thread) === "running") running++
+    const end = thread.properties.finishedAt
+    if (typeof end === "string" && Date.parse(end) >= from) {
+      usd += runCost(thread) ?? 0
+    }
+  }
+  return { usd, complete: !truncated || reached < from, running }
+}
+
+/** A cap in cents as dollars, to the cent: "$1.50", "$0.00". */
+export function capWords(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
 // ── the policies, in words ──────────────────────────────────────────────────
 
 function selectorOf(policy: SubstrateRecord): Record<string, unknown> {

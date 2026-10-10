@@ -102,7 +102,9 @@ data:
 - **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
   `maxToolCalls` (default 32, max 256), `deadlineSeconds` (default 120, max
-  600), and `depth` (default 3, max 3).
+  600), and `depth` (default 3, max 3). Its optional `spendCentsPerDay` caps
+  what the agent's runs may spend in a rolling 24 hours, in US cents: absent
+  is no cap, and 0 holds every run ([the daily spend cap](#the-daily-spend-cap)).
 - optional **`compaction:`** bounds a thread's replayed history:
   `enabled` (default `true`), `reserveTokens` (default 16384, max 1000000)
   and `keepRecentTokens` (default 20000, max 1000000)
@@ -604,6 +606,63 @@ a panic leaves exactly that. The sweep reruns nothing: where the run's
 delivery was left claimed, the claim lists as interrupted and waits for a
 hand to retry or forget it
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+
+### The daily spend cap
+
+Two optional caps stop agent runs once they have spent a set amount in a
+rolling 24 hours, both in US cents
+([decision 0149](decisions/0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md)):
+
+- an agent's own `budgets.spendCentsPerDay`, over the runs it starts;
+- the repository's, over every agent's runs: a core `setting` record with the
+  id `substrate.reamde.dev/llm/spendCentsPerDay`. Nothing seeds it, so a
+  repository has no cap until it holds that record with a value. The write
+  refuses a `type` other than `int` and a value that is not a whole number of
+  cents from 0 to 2^53-1; an empty value is no cap. The console has no control
+  for it yet ([#914](https://github.com/geoah/substrate/issues/914)), so it is
+  written with `substratectl apply` or the record API:
+
+  ```yaml
+  kind: substrate.reamde.dev/core/setting
+  metadata:
+    id: substrate.reamde.dev/llm/spendCentsPerDay
+  data:
+    properties:
+      displayName: Daily agent spend cap
+      type: int
+      value: "2000"
+  ```
+
+Spend is what the threads recorded: the `costUSD` of every root thread whose
+`finishedAt` falls inside the window, times 100, plus what runs still going
+have spent so far. A root thread's cost includes its sub-agents', so a run
+counts against the cap of the agent that started it; a sub-agent's own cap is
+not enforced. A model the provider row has no price for counts 0. A continued
+chat counts its whole thread once its last turn finishes in the window. A run
+that ends without its thread settling (a stop, a failed write, a panic, a
+thread deleted under it) keeps what it charged counted for the window, because
+no thread row carries it. That part lives in the server's memory and does not
+survive a restart. A deleted thread stays tombstoned, and garbage collection
+leaves it, until its last settle leaves the window, because its row is what
+the spend counts.
+
+At a cap, nothing new starts. A trigger of that agent is **held**: the
+dispatcher does not claim the delivery, so the cursor or the schedule's fire
+state stays where it is, no run row and no parked failure are written, and
+`GET …/trigger/status` carries `held`, naming the cap and the spend so far
+(`substratectl trigger status` prints it in its `HELD` column). An accepted
+webhook request stays pending. A chat, a direct call, and a hand's wake, run or
+retry are refused with `403` and the same text, before a thread opens. The
+next dispatcher pass after the window's spend falls under the cap, or after the
+cap is raised, delivers what was held; a hand's entry reads a raised cap at
+once. A function whose body runs an agent meets the refusal as an error inside
+its body, and its delivery parks as any failure does.
+
+The cap does not stop a run already going: a run admitted under the cap runs to
+its end, bounded by its own `maxTurns` and deadline, and a model call is
+charged only when it returns, so an admission made while another run's call is
+in flight cannot see that call's cost. Spend can therefore pass a cap by what
+the runs going at that moment spend before they finish.
 
 ## Providers
 

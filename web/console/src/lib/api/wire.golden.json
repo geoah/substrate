@@ -499,6 +499,7 @@
     "enabled": true,
     "error": false,
     "head": true,
+    "held": false,
     "id": true,
     "inFlight": true,
     "kind": true,

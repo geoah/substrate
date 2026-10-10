@@ -136,11 +136,21 @@ func (ds *dataset) sweepUnheldSealed(ctx context.Context) (int, error) {
 
 // gcPass purges up to gcBatch collectable tombstones and reports how many it
 // purged and whether the victim query filled its batch.
+//
+// A tombstoned llm/thread whose finishedAt is inside the spend window is not
+// collectable until it leaves the window: its row is the durable copy of what
+// the run cost, which the spend cap counts (spend.go), and the in-memory
+// ledger keeps a settled run only for minutes. The filter is in the victim
+// query, so a held row never fills a batch and the sweep cannot spin on it.
+// The CASE keeps the timestamp cast off every other kind's props.
 func (ds *dataset) gcPass(ctx context.Context) (int, bool, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, kind FROM records
 		WHERE deleted_at IS NOT NULL AND cardinality(finalizers) = 0
-		ORDER BY deleted_at LIMIT $1`, gcBatch)
+		  AND NOT CASE WHEN kind = $2
+		    THEN coalesce((props->>'finishedAt')::timestamptz >= $3::timestamptz, false)
+		    ELSE false END
+		ORDER BY deleted_at LIMIT $1`, gcBatch, typeThread, ds.spend.clock().UTC().Add(-spendWindow))
 	if err != nil {
 		return 0, false, err
 	}

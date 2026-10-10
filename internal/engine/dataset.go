@@ -179,6 +179,10 @@ type dataset struct {
 	// statsCache holds the collection statistics the lexical arm's BM25F
 	// reads (bm25.go), refreshed after statsTTL.
 	statsCache searchStatsCache
+	// spend is the spend cap's bookkeeping (spend.go): the cached read of
+	// the window's settled spend and the repository cap, what running agent
+	// chains have charged, and which triggers are held.
+	spend spendLedger
 
 	mu  sync.RWMutex
 	reg *vocabulary.Registry
