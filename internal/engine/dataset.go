@@ -101,6 +101,11 @@ type dataset struct {
 	// the order RebuildRepository takes them too.
 	writer   *changelogfile.Writer
 	writerMu sync.Mutex
+	// gate orders the writers that go through inTx into the changelog lock,
+	// an owner's write ahead of waiting background writers (writegate.go).
+	// It is given back once the changelog lock is held, so it comes before
+	// that lock and writerMu in the lock order and is never held with them.
+	gate writeGate
 	// sealed is the sealed directory's writer, nil for the files themselves;
 	// a test seam sets one that fails (repodir.go sealedStore).
 	sealed sealedStore
@@ -598,6 +603,16 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := ds.directoryErr(); err != nil {
 		return err
 	}
+	// The write gate before the pool connection (writegate.go): a background
+	// writer waits there holding nothing while an owner write is on its way
+	// to the changelog lock, and one background writer at a time goes on to
+	// it. The pass is given back once the lock is held, and on every exit
+	// before that.
+	pass, err := ds.gate.enter(ctx, ds.ownerFirst(actor, internal))
+	if err != nil {
+		return err
+	}
+	defer pass()
 	tx, wc, err := beginWrite(ctx, db)
 	if err != nil {
 		return err
@@ -626,6 +641,7 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := t.lockKey(changelogLockKey); err != nil {
 		return err
 	}
+	pass()
 	t.seqLocked = true
 	if err := fn(t); err != nil {
 		return err
