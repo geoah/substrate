@@ -2,6 +2,15 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/releasegate.sh is the eighth: it decides whether a release-please run
+# may tag, so a wrong pass is a public release whose commit ci never passed.
+# Its scenarios run against a fake gh, at the end.
+#
+# .mise/imagemain.sh is the seventh: it pushes one image tag per main commit
+# and points `latest` at main's tip, so a wrong answer is a tag that names two
+# different builds, or a `latest` moved back to an older commit. Its scenarios
+# run against a fake docker and a fake mise, at the end.
+#
 # .mise/gocache.sh is the sixth: it decides what a saved Go build cache entry
 # keeps, so a wrong cut is an entry that grows on every main commit until it
 # evicts the others, or one that drops what the next run needs.
@@ -38,6 +47,8 @@ commitscheck="$PWD/.mise/commitscheck.sh"
 decisionscheck="$PWD/.mise/decisionscheck.sh"
 llmliveissue="$PWD/.mise/llmliveissue.sh"
 gocache="$PWD/.mise/gocache.sh"
+imagemain="$PWD/.mise/imagemain.sh"
+releasegate="$PWD/.mise/releasegate.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -571,5 +582,191 @@ for bad in / relative/path; do
     flag "gocache prune ${bad}: exit 0, expected a refusal"
   fi
 done
+
+# --- the main images ---------------------------------------------------------
+
+# .mise/imagemain.sh runs in a checkout whose origin is a local bare
+# repository, so the tip it reads and the ancestry it checks are real git. A
+# fake docker answers `imagetools inspect` from FAKE_PUBLISHED (the refs the
+# registry holds, one per line), with ghcr.io's `ERROR: <ref>: not found` for
+# any other ref, or fails with FAKE_INSPECT_ERROR when that is set; a fake
+# mise stands in for the build. Both log every call, in order. The image
+# repository is under `.invalid`, so a real docker reached by mistake fails
+# instead of pushing.
+imgbin="$tmp/imgbin"
+mkdir -p "$imgbin"
+cat >"$imgbin/docker" <<'FAKE'
+#!/usr/bin/env bash
+printf 'docker %s\n' "$*" >>"$FAKE_LOG"
+if [ "$1 $2 $3" = "buildx imagetools inspect" ]; then
+  if [ -n "${FAKE_INSPECT_ERROR:-}" ]; then
+    printf '%s\n' "$FAKE_INSPECT_ERROR" >&2
+    exit 1
+  fi
+  if grep -qxF -- "$4" <<<"${FAKE_PUBLISHED:-}"; then
+    printf 'Name: %s\n' "$4"
+    exit 0
+  fi
+  printf 'ERROR: %s: not found\n' "$4" >&2
+  exit 1
+fi
+FAKE
+cat >"$imgbin/mise" <<'FAKE'
+#!/usr/bin/env bash
+printf 'TAG=%s mise %s\n' "${TAG:-}" "$*" >>"$FAKE_LOG"
+FAKE
+chmod +x "$imgbin/docker" "$imgbin/mise"
+
+img=registry.invalid/substrate
+iorigin="$tmp/image-origin.git"
+iwork="$tmp/image-work"
+git init --quiet --bare --initial-branch=main "$iorigin"
+git init --quiet --initial-branch=main "$iwork"
+ig() { git -C "$iwork" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=false "$@"; }
+printf 'seed\n' >"$iwork/README.md"
+printf 'ignored/\n' >"$iwork/.gitignore"
+ig add -A && ig commit --quiet -m 'chore: seed'
+ig remote add origin "$iorigin"
+ig push --quiet origin main
+first="$(ig rev-parse HEAD)"
+
+# images <name> <expected exit> <subcommand> <expected calls> [VAR=value...]:
+# the script run in the checkout with the fakes first on PATH and exactly the
+# fake registry the scenario names.
+images() {
+  local name="$1" expected="$2" sub="$3" want="$4" status got
+  shift 4
+  : >"$tmp/image.log"
+  (cd "$iwork" && env -u FAKE_PUBLISHED -u FAKE_INSPECT_ERROR -u TAG \
+    PATH="$imgbin:$PATH" FAKE_LOG="$tmp/image.log" IMAGE="$img" "$@" \
+    "$imagemain" "$sub" >/dev/null 2>"$tmp/stderr")
+  status=$?
+  [ "$status" -eq "$expected" ] ||
+    flag "image ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+  got="$(cat "$tmp/image.log")"
+  [ "$got" = "$want" ] || flag "image ${name}: called '${got}', expected '${want}'"
+}
+inspected() { printf 'docker buildx imagetools inspect %s:main-%s' "$img" "${1:0:12}"; }
+down='ERROR: failed to do request: dial tcp: connection refused'
+# What docker prints when the configured credential helper is missing: it
+# says "not found" without being the registry's answer about the tag. The
+# `$PATH` is docker's own text, not an expansion.
+# shellcheck disable=SC2016
+nocreds='ERROR: error getting credentials - err: exec: "docker-credential-pass": executable file not found in $PATH, out: ``'
+
+# A commit with no tag is built once, under its own name.
+images push-new 0 push "$(inspected "$first")
+TAG=main-${first:0:12} mise run image:push"
+# A tag the registry has is never built again.
+images push-published 0 push "$(inspected "$first")" FAKE_PUBLISHED="$img:main-${first:0:12}"
+# An outage or a credential failure is a failure, never "not published".
+images push-registry-down 2 push "$(inspected "$first")" FAKE_INSPECT_ERROR="$down"
+images push-no-credentials 2 push "$(inspected "$first")" FAKE_INSPECT_ERROR="$nocreds"
+# An uncommitted change would ship in an image named for the commit.
+printf 'edit\n' >>"$iwork/README.md"
+images push-dirty 1 push ""
+ig checkout --quiet -- README.md
+# So would an untracked source file, which is in the build context.
+printf 'package main\n' >"$iwork/extra.go"
+images push-untracked 1 push ""
+rm "$iwork/extra.go"
+# A file .gitignore names does not refuse the run.
+mkdir -p "$iwork/ignored"
+printf 'cache\n' >"$iwork/ignored/cache"
+images push-ignored 0 push "$(inspected "$first")
+TAG=main-${first:0:12} mise run image:push"
+rm -r "$iwork/ignored"
+# A commit origin's main does not hold gets no main- tag.
+ig commit --quiet --allow-empty -m 'chore: not pushed'
+images push-off-main 1 push ""
+ig reset --quiet --hard "$first"
+
+# main moves past the checkout, as when an older commit's ci run finishes
+# after the tip's, or an old run is re-run.
+ig commit --quiet --allow-empty -m 'chore: next'
+second="$(ig rev-parse HEAD)"
+ig push --quiet origin main
+ig reset --quiet --hard "$first"
+
+# An older commit on main still gets its own tag.
+images push-older 0 push "$(inspected "$first")
+TAG=main-${first:0:12} mise run image:push"
+# latest names the tip's image, read from origin, not the checkout's commit.
+images latest-tip 0 latest "$(inspected "$second")
+docker buildx imagetools create --tag $img:latest $img:main-${second:0:12}" \
+  FAKE_PUBLISHED="$(printf '%s\n%s' "$img:main-${first:0:12}" "$img:main-${second:0:12}")"
+# A tip with no image yet leaves latest alone, though the checkout's image is
+# published.
+images latest-unpublished 0 latest "$(inspected "$second")" FAKE_PUBLISHED="$img:main-${first:0:12}"
+images latest-registry-down 2 latest "$(inspected "$second")" FAKE_INSPECT_ERROR="$down"
+images latest-no-credentials 2 latest "$(inspected "$second")" FAKE_INSPECT_ERROR="$nocreds"
+images unknown-subcommand 2 promote ""
+
+# --- the release gate --------------------------------------------------------
+
+# .mise/releasegate.sh decides whether a release-please run may tag. A fake gh
+# answers the merged release pull request lookup with FAKE_GH_MERGED (merge
+# commits, one per line) and each ci-runs lookup with 1 when its head_sha is
+# in FAKE_GH_GREEN, else 0; FAKE_GH_FAIL makes every call fail. It logs
+# "<command> <subcommand>" and, for an api call, the sha it asked about.
+gatebin="$tmp/gatebin"
+mkdir -p "$gatebin"
+cat >"$gatebin/gh" <<'FAKE'
+#!/usr/bin/env bash
+if [ "$1" = api ]; then
+  sha="${2#*head_sha=}"
+  sha="${sha%%&*}"
+  printf 'api %s\n' "$sha" >>"$FAKE_LOG"
+else
+  printf '%s %s\n' "$1" "$2" >>"$FAKE_LOG"
+fi
+[ -z "${FAKE_GH_FAIL:-}" ] || exit 1
+if [ "$1 $2" = "pr list" ]; then
+  printf '%s\n' "${FAKE_GH_MERGED:-}" | sed '/^$/d'
+elif [ "$1" = api ]; then
+  if grep -qxF -- "$sha" <<<"${FAKE_GH_GREEN:-}"; then echo 1; else echo 0; fi
+fi
+FAKE
+chmod +x "$gatebin/gh"
+
+# gate <name> <expected exit> <event> <expected output line> <expected calls>
+# [VAR=value...]: the output line is what lands in GITHUB_OUTPUT, empty for
+# none.
+gate() {
+  local name="$1" expected="$2" event="$3" want="$4" calls="$5" status got
+  shift 5
+  : >"$tmp/gate.log"
+  : >"$tmp/gate.out"
+  env -u FAKE_GH_MERGED -u FAKE_GH_GREEN -u FAKE_GH_FAIL \
+    PATH="$gatebin:$PATH" FAKE_LOG="$tmp/gate.log" GITHUB_OUTPUT="$tmp/gate.out" \
+    GITHUB_REPOSITORY="-/-" EVENT_NAME="$event" "$@" \
+    "$releasegate" >/dev/null 2>"$tmp/stderr"
+  status=$?
+  [ "$status" -eq "$expected" ] ||
+    flag "release gate ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+  got="$(cat "$tmp/gate.out")"
+  [ "$got" = "$want" ] || flag "release gate ${name}: wrote '${got}', expected '${want}'"
+  got="$(cat "$tmp/gate.log")"
+  [ "$got" = "$calls" ] || flag "release gate ${name}: called '${got}', expected '${calls}'"
+}
+
+# A push run never tags, even with a merged release whose commit is green:
+# the release pull request could merge between this read and
+# release-please's own.
+gate push-nothing-pending 0 push hold=true ""
+gate push-release-green 0 push hold=true "" FAKE_GH_MERGED=aaa FAKE_GH_GREEN=aaa
+# A ci completion with no release waiting holds, for the same gap.
+gate run-nothing-pending 0 workflow_run hold=true "pr list"
+gate run-release-green 0 workflow_run hold=false "$(printf 'pr list\napi aaa')" \
+  FAKE_GH_MERGED=aaa FAKE_GH_GREEN=aaa
+gate run-release-red 0 workflow_run hold=true "$(printf 'pr list\napi aaa')" FAKE_GH_MERGED=aaa
+gate run-one-of-two-green 0 workflow_run hold=true "$(printf 'pr list\napi aaa\napi bbb')" \
+  FAKE_GH_MERGED="$(printf 'aaa\nbbb')" FAKE_GH_GREEN=aaa
+gate dispatch-release-green 0 workflow_dispatch hold=false "$(printf 'pr list\napi aaa')" \
+  FAKE_GH_MERGED=aaa FAKE_GH_GREEN=aaa
+# A failed lookup fails the step and writes no answer, so the action never
+# reads an empty `skip-github-release`.
+gate run-gh-fails 1 workflow_run "" "pr list" FAKE_GH_FAIL=1
+gate unknown-event 2 pull_request "" ""
 
 exit "$fail"

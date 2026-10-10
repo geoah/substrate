@@ -642,9 +642,10 @@ run = "pnpm fmt:check"
 
 [tasks."image:push"]
 description = "Build multi-arch and push. TAG=<tag> (default: dev)"
-# Two callers: a person pushing a one-off, and the `latest` workflow pushing
-# the tip of main. Releases do NOT come through here — they go through
-# goreleaser (`release` below), which versions from the git tag.
+# Two callers: a person pushing a one-off, and `image:main`, which the
+# `latest` workflow runs for every green commit on main. Releases do NOT come
+# through here: they go through goreleaser (`release` below), which versions
+# from the git tag.
 #
 # The build args are what makes the pushed image able to say which build it
 # is: .dockerignore drops .git, so the toolchain inside the build records
@@ -652,19 +653,33 @@ description = "Build multi-arch and push. TAG=<tag> (default: dev)"
 # is the honest name for something that is NOT a release, because
 # `v0.2.0-4-g1a2b3c4` reads as four commits past v0.2.0; `--always` keeps it a
 # bare sha in a checkout with no tags at all, so nothing here fails for want
-# of a version.
+# of a version. The same two values go on the image as OCI labels, as
+# goreleaser labels a release, so a registry read says which commit an image
+# holds without pulling it and running `substratectl version`.
 run = '''
     set -e
+    version="$(git describe --tags --always --dirty)"
+    commit="$(git rev-parse HEAD)"
     docker buildx build --platform linux/amd64,linux/arm64 \
       --provenance=false --sbom=false \
-      --build-arg "VERSION=$(git describe --tags --always --dirty)" \
-      --build-arg "COMMIT=$(git rev-parse HEAD)" \
+      --build-arg "VERSION=$version" \
+      --build-arg "COMMIT=$commit" \
+      --label "org.opencontainers.image.version=$version" \
+      --label "org.opencontainers.image.revision=$commit" \
       -t "$IMAGE:${TAG:-dev}" --push .
     '''
 
+[tasks."image:main"]
+description = "Build and push $IMAGE:main-<sha12> for HEAD, a commit on main, unless the registry already has that tag"
+# The `latest` workflow runs this for every commit on main whose ci run went
+# green. The tag is pushed once and never written again; the script says why.
+run = ".mise/imagemain.sh push"
+
 [tasks."image:latest"]
-description = "Build and push $IMAGE:latest — the tip of main, never a release"
-run = "TAG=latest mise run image:push"
+description = "Point $IMAGE:latest at the image of main's tip, if it is published; never a build of its own"
+# The `latest` workflow runs this after `image:main`. The tip is read from the
+# remote, not from the checkout; the script says why.
+run = ".mise/imagemain.sh latest"
 
 [tasks."image:major"]
 description = "Point $IMAGE:v<major> and $IMAGE:<major> at a release's image if it is the newest of its line: image:major <tag>"

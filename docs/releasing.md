@@ -22,15 +22,19 @@ the conventional commits merged since the last tag:
 | `…!: …` or a footer          | ⚠ BREAKING CHANGES | minor                  |
 | `docs`, `refactor`, `test`, `chore`, `ci` | none  | none                   |
 
-The workflow `.github/workflows/release-please.yml` runs after every green
-`ci` run on `main` and regenerates the pull request, so it always lists what
-merging it would release. Nothing to release (only `docs:` and `chore:`
+The workflow `.github/workflows/release-please.yml` regenerates the pull
+request on every push to `main`, without waiting for `ci`, so it always
+lists what merging it would release. A push run never tags. The workflow
+runs again after every green `ci` run on `main`, and only that run (or a
+dispatch) can cut a release. Nothing to release (only `docs:` and `chore:`
 since the tag) means no pull request. `release-please-config.json` holds the
 rules above.
 
-Merging the pull request is the release. The next run tags the merge commit
-`vX.Y.Z`, creates the GitHub release with the section as its body, swaps the
-label to `autorelease: tagged`, and calls `.github/workflows/release.yml`,
+Merging the pull request is the release. Once the merge commit's own `ci`
+run on `main` is green, the workflow run that completion starts tags the
+merge commit `vX.Y.Z`, creates the GitHub release with the section as its
+body, swaps the label to `autorelease: tagged`, and calls
+`.github/workflows/release.yml`,
 which checks that the tagged commit's own `ci` run was green and then runs
 `mise run release`: goreleaser builds the CLI archives and the multi-arch
 image and attaches them to that release, then points the `v0` image tag at
@@ -142,11 +146,11 @@ no bypass on the ruleset; `main` still moves only through a pull request
 that passed them. The two `autorelease:` labels are in `.github/labels.yml`,
 which the labels sync holds the repository to.
 
-A run that never happened (a dropped `workflow_run` event) or died after
-`ci` went green is replayed with a `workflow_dispatch` of `release-please`;
-it refreshes an open pull request, tags a merged one that was not, and
-leaves a tagged one alone. A release whose artifacts failed to upload is
-replayed with "Re-run failed jobs" on the `release-please` run that called
+A run that never happened (a dropped `push` or `workflow_run` event) or died
+is replayed with a `workflow_dispatch` of `release-please`; it refreshes an
+open pull request, tags a merged one whose commit passed `ci` and was not
+tagged, and leaves a tagged one alone. A release whose artifacts failed to
+upload is replayed with "Re-run failed jobs" on the `release-please` run that called
 `release.yml`: goreleaser replaces the artifacts it had uploaded and keeps
 the body. A re-run of a release before v0.114.0 runs that release's own
 `.goreleaser.yaml`, which pushed the bare `0` tag with every build, so it
