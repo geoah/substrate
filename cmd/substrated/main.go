@@ -45,9 +45,11 @@ const (
 	// while a function body runs, but each pass has a runner process or a
 	// transaction in flight most of the time, so a host with hundreds of
 	// repositories must not run hundreds of passes side by side. A pass runs
-	// its record triggers and its schedule triggers in two lanes, each one
-	// delivery at a time (decision 0147), so eight bounds the dispatcher to
-	// sixteen runner processes and sixteen transactions.
+	// its record triggers one at a time and its schedule triggers up to
+	// SUBSTRATE_TRIGGER_LANE_WORKERS at once (decisions 0147 and 0150), and
+	// every delivery of every pass holds one of the engine's
+	// TriggerDeliverySlots, so the dispatcher runs at most sixteen runner
+	// processes and sixteen transactions, as eight passes of two lanes did.
 	triggerDispatchPasses = 8
 )
 
@@ -166,6 +168,7 @@ func run() error {
 		engine.WithDigestBytesPerSecond(cfg.DigestBytesPerSecond),
 		engine.WithRepositoryConnections(cfg.RepositoryConnections),
 		engine.WithOrphanCollection(cfg.OrphanGrace),
+		engine.WithTriggerLaneWorkers(cfg.TriggerLaneWorkers),
 	}
 	if cfg.OrphanGrace > 0 {
 		// Loud, and at boot: this deployment DELETES records the sweep finds

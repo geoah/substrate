@@ -203,15 +203,16 @@ func declinedDelivery(err error) bool {
 
 // ProcessTriggers runs one dispatcher pass in two lanes that run side by
 // side (decision 0147). The record lane walks every enabled record trigger
-// in id order, each draining its backlog for at most triggerPassBudget. The
-// schedule lane fires every enabled schedule trigger's due occurrences, then
-// looks again every scheduleLanePoll until the record lane is done, so a
-// fire that falls due while a record backlog drains starts within one poll
-// instead of after the whole walk. Each lane delivers one at a time, so a
-// trigger never has two deliveries in flight from one pass and the pass
-// runs at most two at once. It returns the number of deliveries that
-// applied effects. Only infrastructure errors surface; eval and effect
-// errors park.
+// in id order, one at a time, each draining its backlog for at most
+// triggerPassBudget. The schedule lane fires every enabled schedule
+// trigger's due occurrences, up to laneWorkers triggers at once and one fire
+// per trigger at a time (decision 0150), then looks again every
+// scheduleLanePoll until the record lane is done, so a fire that falls due
+// while a record backlog drains starts within one poll instead of after the
+// whole walk. A trigger never has two deliveries in flight from one pass,
+// and every delivery the pass runs holds one of the process's
+// TriggerDeliverySlots. It returns the number of deliveries that applied
+// effects. Only infrastructure errors surface; eval and effect errors park.
 func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	// The whole pass is one observation, whatever it drained or fired.
 	start := time.Now()
@@ -266,7 +267,17 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	total := 0
 	var errs []error
 	for _, lt := range records {
-		n, perr := ds.processRecordTrigger(ctx, lt.trigger, newPassDeadline())
+		release, err := ds.svc.takeDeliverySlot(ctx, nil)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("trigger %s: %w", lt.ID, err))
+			break
+		}
+		// The slot is given back on a panic too: the dispatcher contains the
+		// pass's panic and the process goes on with the slots it has.
+		n, perr := func() (int, error) {
+			defer release()
+			return ds.processRecordTrigger(ctx, lt.trigger, newPassDeadline())
+		}()
 		total += n
 		if n > 0 {
 			metrics.TriggerDeliveries.WithLabelValues(lt.ID).Add(float64(n))
@@ -290,46 +301,165 @@ func recordLaneIDs(records []loadedTrigger) map[string]bool {
 
 // scheduleLanePoll is how often the schedule lane looks for a due
 // occurrence while the record lane still runs, so it bounds how late a fire
-// starts behind a record backlog: one poll, plus the fires of the
-// repository's other schedule triggers ahead of it. Each look reads the
-// trigger rows again, which is what an idle repository's pass costs every
-// dispatcher tick, so a trigger written mid-pass fires on time too. A var
-// only so a test can lower it.
+// starts behind a record backlog: one poll, plus a wait for a free worker
+// while laneWorkers of the repository's other schedule triggers fire. Each
+// look reads the trigger rows again, which is what an idle repository's
+// pass costs every dispatcher tick, so a trigger written mid-pass fires on
+// time too. A var only so a test can lower it.
 var scheduleLanePoll = 5 * time.Second
+
+// scheduleLaneWorkers is how many schedule fires one pass's schedule lane
+// runs at once when WithTriggerLaneWorkers does not say
+// (SUBSTRATE_TRIGGER_LANE_WORKERS). Each runs a different trigger, so a
+// slow sync does not delay the next one due in the same repository.
+var scheduleLaneWorkers = 4
+
+// TriggerDeliverySlots is how many deliveries the dispatcher runs at once
+// over every repository of the process: each record trigger's walk and each
+// schedule fire holds one for as long as it runs (takeDeliverySlot). It is
+// the ceiling the dispatcher's eight passes of two lanes held before a lane
+// ran fires in parallel, so a host with many busy repositories runs no more
+// runner processes and transactions than it did (decision 0150).
+const TriggerDeliverySlots = 16
+
+// takeDeliverySlot waits for one of the process's TriggerDeliverySlots and
+// returns the func that gives it back. It gives up when ctx ends or stop
+// closes, whichever is first; a nil stop never closes.
+func (s *service) takeDeliverySlot(ctx context.Context, stop <-chan struct{}) (release func(), err error) {
+	select {
+	case s.deliverySlots <- struct{}{}:
+		return func() { <-s.deliverySlots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-stop:
+		return nil, errLaneStopped
+	}
+}
+
+// errLaneStopped is takeDeliverySlot's answer when the record lane finished
+// while the schedule lane waited for a slot: the lane stops launching, and
+// the trigger it waited for fires at the next pass.
+var errLaneStopped = errors.New("schedule lane stopped")
 
 // scheduleLane is a pass's schedule lane: the due occurrences of every
 // schedule trigger in first, then of every enabled schedule trigger the
-// rows hold at each poll, until recordsDone closes or ctx ends. Each
-// trigger fires at most scheduleDrainPerPass occurrences over the whole
-// pass, however many looks it lasts, so a trigger far behind catches up at
-// the rate one pass allows. A trigger the record lane runs this pass is
-// skipped, so one whose source changed mid-pass never runs in both lanes. A
-// trigger whose delivery fails on every look reports its latest error once.
+// rows hold at each poll, until recordsDone closes or ctx ends. The first
+// round runs whole even when recordsDone is already closed, which is how a
+// repository with no record triggers fires its schedules at all.
+//
+// Each trigger's fires run in a worker goroutine, at most laneWorkers at
+// once and each holding a delivery slot, and a trigger with a worker
+// running gets no second one, so its occurrences still fire oldest first
+// and one at a time. Each trigger fires at most scheduleDrainPerPass
+// occurrences over the whole pass, however many looks it lasts, so a
+// trigger far behind catches up at the rate one pass allows. A trigger the
+// record lane runs this pass is skipped, so one whose source changed
+// mid-pass never runs in both lanes. A trigger whose delivery fails on
+// every look reports its latest error once. The lane returns only after
+// every worker it started has ended.
 func (ds *dataset) scheduleLane(ctx context.Context, first []loadedTrigger, records map[string]bool, recordsDone <-chan struct{}) (int, []error) {
-	total := 0
-	failed := map[string]error{}
-	var order []string
-	fired := map[string]int{}
-	schedules := first
-	for {
+	var (
+		wg sync.WaitGroup
+		// mu guards everything below it: the workers write it as they end,
+		// and the lane reads it before it starts one.
+		mu     sync.Mutex
+		total  int
+		failed = map[string]error{}
+		order  []string
+		fired  = map[string]int{}
+		busy   = map[string]bool{}
+	)
+	// fail records a trigger's latest error; the caller holds mu.
+	fail := func(id string, err error) {
+		if _, seen := failed[id]; !seen {
+			order = append(order, id)
+		}
+		failed[id] = err
+	}
+	// A panic in the lane's own code unwinds through this join, so the
+	// pass's recover never reports the lane done while a worker still runs.
+	defer wg.Wait()
+	workers := make(chan struct{}, ds.svc.laneWorkers)
+	// launch starts a worker for each trigger in schedules that has fires
+	// left and none running, waiting for a free worker and a delivery slot.
+	// It reports false once ctx ends or stop closes; a nil stop never
+	// closes.
+	launch := func(schedules []loadedTrigger, stop <-chan struct{}) bool {
 		for _, lt := range schedules {
+			mu.Lock()
 			left := scheduleDrainPerPass - fired[lt.ID]
-			if records[lt.ID] || left <= 0 {
+			running := busy[lt.ID]
+			mu.Unlock()
+			if records[lt.ID] || left <= 0 || running {
 				continue
 			}
-			n, f, err := ds.processScheduleTrigger(ctx, lt, newPassDeadline(), left)
-			fired[lt.ID] += f
-			total += n
-			if n > 0 {
-				metrics.TriggerDeliveries.WithLabelValues(lt.ID).Add(float64(n))
+			select {
+			case workers <- struct{}{}:
+			case <-ctx.Done():
+				return false
+			case <-stop:
+				return false
 			}
+			release, err := ds.svc.takeDeliverySlot(ctx, stop)
 			if err != nil {
-				if _, seen := failed[lt.ID]; !seen {
-					order = append(order, lt.ID)
-				}
-				failed[lt.ID] = err
+				<-workers
+				return false
 			}
+			// Checked again with both held: a select picks at random among
+			// its ready cases, so either wait above may have taken its token
+			// after ctx ended or stop closed.
+			if ctx.Err() != nil || closed(stop) {
+				release()
+				<-workers
+				return false
+			}
+			mu.Lock()
+			busy[lt.ID] = true
+			mu.Unlock()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() {
+					// The pass's recover does not reach this goroutine, so
+					// each worker carries its own, and a trigger that
+					// panicked fires no more this pass.
+					r := recover()
+					mu.Lock()
+					if r != nil {
+						ds.svc.log.Error("substrate: a schedule fire panicked and was contained; this pass fires the trigger no more",
+							"repository", ds.Repository().ID, "trigger", lt.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+						fired[lt.ID] = scheduleDrainPerPass
+						fail(lt.ID, fmt.Errorf("schedule fire panicked: %v", r))
+					}
+					delete(busy, lt.ID)
+					mu.Unlock()
+					release()
+					<-workers
+				}()
+				n, f, err := ds.processScheduleTrigger(ctx, lt, newPassDeadline(), left)
+				if n > 0 {
+					metrics.TriggerDeliveries.WithLabelValues(lt.ID).Add(float64(n))
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				fired[lt.ID] += f
+				total += n
+				if err != nil {
+					fail(lt.ID, err)
+				}
+			}()
 		}
+		return true
+	}
+	schedules := first
+	// The first round does not watch recordsDone: a repository with no
+	// record triggers has closed it before the lane starts.
+	var stop <-chan struct{}
+	for {
+		if !launch(schedules, stop) {
+			break
+		}
+		stop = recordsDone
 		timer := time.NewTimer(scheduleLanePoll)
 		select {
 		case <-recordsDone:
@@ -342,12 +472,16 @@ func (ds *dataset) scheduleLane(ctx context.Context, first []loadedTrigger, reco
 		}
 		triggers, err := ds.loadTriggers(ctx)
 		if err != nil {
-			order = append(order, "")
-			failed[""] = err
+			mu.Lock()
+			fail("", err)
+			mu.Unlock()
 			break
 		}
 		schedules, _ = ds.dispatchable(triggers, false)
 	}
+	// Joined here as well as deferred: the errors below are read only once
+	// every worker has written its own.
+	wg.Wait()
 	errs := make([]error, 0, len(order))
 	for _, id := range order {
 		if id == "" {
@@ -1302,17 +1436,21 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		if i > 0 && deadline.spent() {
 			return ran, fired, nil
 		}
-		// The schedule lane runs its triggers one after another, so an
-		// occurrence waits for the fires ahead of it and for the lane's next
-		// look; the log line is where an operator meets that wait before the
-		// fire settles.
+		// An occurrence waits for the lane's next look, for a free lane
+		// worker and for a delivery slot (scheduleLane); the log line is
+		// where an operator meets that wait before the fire settles.
 		if late := nowUTC().Sub(at); late > scheduleLateAfter {
 			ds.svc.log.Info("substrate: schedule fire dispatched late",
 				"trigger", lt.ID, "fire", fireID(at), "late", late.Round(time.Second))
 		}
-		done := ds.startFire(lt.ID, fireID(at))
-		n, err := ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
-		done()
+		// done runs on a panic too: the lane contains a fire's panic, and a
+		// count left raised would show the occurrence in flight until the
+		// process restarts.
+		n, err := func() (int, error) {
+			done := ds.startFire(lt.ID, fireID(at))
+			defer done()
+			return ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
+		}()
 		ran += n
 		fired++
 		if errors.Is(err, errCallableGone) {

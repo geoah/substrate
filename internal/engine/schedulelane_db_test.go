@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -41,29 +42,18 @@ func laneDataset(t *testing.T, slow, fire time.Duration, records, widgets int) *
 	t.Helper()
 	ctx := context.Background()
 	ds := openCursorDataset(t)
-	body := func(sleep time.Duration, id string) string {
-		return fmt.Sprintf(`
-import time
-
-def main(input, host):
-    time.sleep(%f)
-    env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
-                         "id": %s, "properties": {"name": "lane"}}]}
-`, sleep.Seconds(), id)
-	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.FunctionManifest(lanePkg, "slow", map[string]any{
 			"description": "one slow fetch per widget",
 			"runtime":     vocabulary.RuntimePython,
 			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
-			"source":      body(slow, `"slow-" + env["change"]["id"] + "-" + str(time.time_ns())`),
+			"source":      laneBody(slow, `"slow-" + env["change"]["id"] + "-" + str(time.time_ns())`),
 		}),
 		vocabulary.FunctionManifest(lanePkg, "sync", map[string]any{
 			"description": "one slow sync per fire",
 			"runtime":     vocabulary.RuntimePython,
 			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
-			"source":      body(fire, `"fire-" + env["fire"]["id"]`),
+			"source":      laneBody(fire, `"fire-" + env["fire"]["id"]`),
 		}),
 	}); err != nil {
 		t.Fatalf("install functions: %v", err)
@@ -91,8 +81,48 @@ def main(input, host):
 	return ds
 }
 
+// laneBody is a function body that sleeps `sleep` and puts the task whose
+// id the Python expression `id` computes.
+func laneBody(sleep time.Duration, id string) string {
+	return fmt.Sprintf(`
+import time
+
+def main(input, host):
+    time.sleep(%f)
+    env = input["envelope"]
+    return {"effects": [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                         "id": %s, "properties": {"name": "lane"}}]}
+`, sleep.Seconds(), id)
+}
+
+// installLaneSyncs installs one schedule function per name, each a callable
+// of its own, so its fires run in a runner process of its own, and each
+// sleeping `fire` per fire.
+func installLaneSyncs(t *testing.T, ds *dataset, names []string, fire time.Duration) {
+	t.Helper()
+	docs := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		docs = append(docs, vocabulary.FunctionManifest(lanePkg, name, map[string]any{
+			"description": "one slow sync per fire",
+			"runtime":     vocabulary.RuntimePython,
+			"permissions": map[string]any{"writes": []any{"samples.substrate.reamde.dev/tasks/task"}},
+			"source":      laneBody(fire, fmt.Sprintf(`"fire-%s-" + env["fire"]["id"]`, name)),
+		}))
+	}
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+		t.Fatalf("install schedule functions: %v", err)
+	}
+}
+
 // putLaneSchedule writes the schedule trigger `id` on the sync function.
 func putLaneSchedule(t *testing.T, ds *dataset, id, recurrence string, startsAt time.Time) {
+	t.Helper()
+	putLaneScheduleOn(t, ds, id, "sync", recurrence, startsAt)
+}
+
+// putLaneScheduleOn writes the schedule trigger `id` on the function
+// `callable` of the lane package.
+func putLaneScheduleOn(t *testing.T, ds *dataset, id, callable, recurrence string, startsAt time.Time) {
 	t.Helper()
 	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
 		Kind: typeTrigger, ID: id,
@@ -100,7 +130,7 @@ func putLaneSchedule(t *testing.T, ds *dataset, id, recurrence string, startsAt 
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": recurrence, "timezone": "UTC", "startsAt": startsAt.Format(time.RFC3339),
 			}},
-			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", lanePkg+"/sync"),
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", lanePkg+"/"+callable),
 		},
 	}); err != nil {
 		t.Fatalf("put schedule trigger: %v", err)
@@ -342,6 +372,9 @@ func TestAPanickedPassStopsItsScheduleLane(t *testing.T) {
 	if recovered == nil {
 		t.Fatal("the pass returned without the record delivery's panic")
 	}
+	if held := len(ds.svc.deliverySlots); held != 0 {
+		t.Fatalf("%d delivery slots still held after the panicked pass returned", held)
+	}
 	if time.Now().After(due) {
 		t.Fatalf("the pass returned after the due time %s: too late to tell a leaked lane apart", due)
 	}
@@ -388,5 +421,142 @@ func TestAScheduleLaneFiresAtMostOnePassOfMissedOccurrences(t *testing.T) {
 	}
 	if got, want := firedAtOf(t, ds, "b-hourly"), startsAt.Add((drain-1)*time.Hour); !got.Equal(want) {
 		t.Fatalf("fire state %s after one pass, want the third occurrence %s", got, want)
+	}
+}
+
+// waitPast sleeps until a little past at, failing the test if at is already
+// behind: a fixture that took longer than its margin measures nothing.
+func waitPast(t *testing.T, at time.Time) {
+	t.Helper()
+	if time.Now().After(at) {
+		t.Fatalf("the fixture finished after the due time %s: too late to measure", at)
+	}
+	time.Sleep(time.Until(at) + 50*time.Millisecond)
+}
+
+func TestAScheduleLaneStartsTheDueFiresOfSeveralTriggersTogether(t *testing.T) {
+	// Five schedule triggers, each on a callable of its own whose fire takes
+	// 1.2 s, fall due at one instant (#883). One at a time, the last would
+	// start about 4.8 s after the first. The lane runs four at once and
+	// starts the fifth as one ends, about 1.2 s in, so all five start within
+	// 3 s, and never more than four run at once.
+	const fire = 1200 * time.Millisecond
+	const bound = 3 * time.Second
+	names := []string{"synca", "syncb", "syncc", "syncd", "synce"}
+	ds := laneDataset(t, 0, 0, 0, 0)
+	installLaneSyncs(t, ds, names, fire)
+	due := time.Now().UTC().Add(2500 * time.Millisecond).Truncate(time.Second).Add(time.Second)
+	for _, name := range names {
+		putLaneScheduleOn(t, ds, "b-"+name, name, "FREQ=HOURLY", due)
+	}
+	processOnce(t, ds) // initializes every fire state: nothing is due yet
+	waitPast(t, due)
+	processOnce(t, ds)
+
+	var runs []laneRun
+	for _, name := range names {
+		got := okRuns(t, ds, "b-"+name)
+		if len(got) != 1 || got[0].fireID != fireID(due) {
+			t.Fatalf("b-%s ok runs %+v, want the one occurrence %s", name, got, fireID(due))
+		}
+		runs = append(runs, got[0])
+	}
+	slices.SortFunc(runs, func(a, b laneRun) int { return a.started.Compare(b.started) })
+	spread := runs[len(runs)-1].started.Sub(runs[0].started)
+	t.Logf("the five fires started within %s of each other", spread.Round(time.Millisecond))
+	if spread > bound {
+		t.Fatalf("the five fires started %s apart, want within %s: %+v", spread, bound, runs)
+	}
+	for _, r := range runs {
+		running := 0
+		for _, o := range runs {
+			if !o.started.After(r.started) && o.finished.After(r.started) {
+				running++
+			}
+		}
+		if running > scheduleLaneWorkers {
+			t.Fatalf("%d fires ran at once when %s started, want at most %d: %+v", running, r.fireID, scheduleLaneWorkers, runs)
+		}
+	}
+}
+
+func TestAScheduleOnlyRepositoryFiresEveryDueTrigger(t *testing.T) {
+	// No record triggers, so the record lane is done before the schedule
+	// lane starts. The lane still runs its first round whole: six triggers,
+	// more than it runs at once, each fire their due occurrence in the one
+	// pass, and the pass returns only once every fire has settled.
+	const triggers = 6
+	ds := laneDataset(t, 0, 200*time.Millisecond, 0, 0)
+	due := time.Now().UTC().Add(2500 * time.Millisecond).Truncate(time.Second).Add(time.Second)
+	for i := range triggers {
+		putLaneSchedule(t, ds, fmt.Sprintf("b-hourly-%d", i), "FREQ=HOURLY", due)
+	}
+	processOnce(t, ds) // initializes every fire state: nothing is due yet
+	waitPast(t, due)
+	processOnce(t, ds)
+
+	for i := range triggers {
+		id := fmt.Sprintf("b-hourly-%d", i)
+		if runs := okRuns(t, ds, id); len(runs) != 1 || runs[0].fireID != fireID(due) {
+			t.Fatalf("%s ok runs %+v when the pass returned, want the one occurrence %s", id, runs, fireID(due))
+		}
+	}
+	if held := len(ds.svc.deliverySlots); held != 0 {
+		t.Fatalf("%d delivery slots still held after the pass returned", held)
+	}
+}
+
+func TestAPanickedScheduleFireIsContainedToItsTrigger(t *testing.T) {
+	// One of two due fires panics in its settlement, in a worker the pass's
+	// recover does not reach. The worker's own recover contains it: the pass
+	// returns an error naming the panic instead of panicking, the other
+	// fire settles in the same pass, every delivery slot is given back, no
+	// occurrence is left counted as in flight, and the next pass fires the
+	// occurrence the panic interrupted.
+	ds := laneDataset(t, 0, 0, 0, 0)
+	installLaneSyncs(t, ds, []string{"synca", "syncb"}, 0)
+	due := time.Now().UTC().Add(2500 * time.Millisecond).Truncate(time.Second).Add(time.Second)
+	putLaneScheduleOn(t, ds, "b-synca", "synca", "FREQ=HOURLY", due)
+	putLaneScheduleOn(t, ds, "b-syncb", "syncb", "FREQ=HOURLY", due)
+	processOnce(t, ds) // initializes both fire states: nothing is due yet
+	var once sync.Once
+	ds.mu.Lock()
+	ds.deliveryFault = func(*txn) error {
+		once.Do(func() { panic("schedule fire panicked") })
+		return nil
+	}
+	ds.mu.Unlock()
+	waitPast(t, due)
+
+	var passErr error
+	recovered := func() (r any) {
+		defer func() { r = recover() }()
+		_, passErr = ds.ProcessTriggers(context.Background())
+		return nil
+	}()
+	if recovered != nil {
+		t.Fatalf("the pass panicked: %v", recovered)
+	}
+	if passErr == nil || !strings.Contains(passErr.Error(), "schedule fire panicked") {
+		t.Fatalf("the pass returned %v, want the contained panic", passErr)
+	}
+	if held := len(ds.svc.deliverySlots); held != 0 {
+		t.Fatalf("%d delivery slots still held after the pass returned", held)
+	}
+	for _, id := range []string{"b-synca", "b-syncb"} {
+		if ds.isFiring(id, fireID(due)) {
+			t.Fatalf("%s's occurrence %s is still counted as in flight after the pass returned", id, fireID(due))
+		}
+	}
+	a, b := okRuns(t, ds, "b-synca"), okRuns(t, ds, "b-syncb")
+	if len(a)+len(b) != 1 {
+		t.Fatalf("ok runs %+v and %+v beside the panic, want the other trigger's one fire", a, b)
+	}
+
+	processOnce(t, ds)
+	for _, id := range []string{"b-synca", "b-syncb"} {
+		if runs := okRuns(t, ds, id); len(runs) != 1 || runs[0].fireID != fireID(due) {
+			t.Fatalf("%s ok runs %+v after the next pass, want the one occurrence %s", id, runs, fireID(due))
+		}
 	}
 }

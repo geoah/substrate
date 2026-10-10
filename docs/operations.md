@@ -103,6 +103,7 @@ boot.
 | `SUBSTRATE_CONVERSION_CEILING` | `10000`                                | The most live records one declaration change (a vocabulary apply, a provider upgrade, the boot upgrade) may rewrite in its transaction ([vocabulary evolution](vocabulary.md#backfilling-and-remapping)). A plan above it is refused and the previews list the refusal; `0` removes the ceiling. |
 | `SUBSTRATE_ORPHAN_GRACE`       | — (unset: nothing is collected)        | Turns the GC sweep's **orphan collection** on, and sets the window a marked record waits out first (`168h`, `720h`). A mapping target with no live source, nothing above the machine tier holding a property, and nothing live pointing at it is tombstoned once its mark is older than this. Unset or `0` collects nothing, which is the default: the mark is derived either way and `filter.orphaned` lists it. See [collecting orphaned mapping targets](#collecting-orphaned-mapping-targets). |
 | `SUBSTRATE_TRIGGER_INTERVAL`   | `5s`                                   | How often the trigger dispatcher checks every repository for a delivery due, so the longest a record write waits for the trigger it fires. Each tick lists the repositories and runs one pass per idle repository, at most eight passes at once; a host with many repositories may want a slower tick, a test suite that waits on deliveries a faster one. Zero or negative refuses the boot, naming the variable. |
+| `SUBSTRATE_TRIGGER_LANE_WORKERS` | `4`                                  | How many due schedule fires one repository's dispatcher pass runs at once, each of a different trigger, so syncs due at the same minute start together instead of one after another. Every delivery the dispatcher runs also holds one of 16 process-wide slots, so raising this does not raise what the process runs at once ([what happens at boot](#what-happens-at-boot)). `1` fires one schedule at a time; below `1` or above `16` refuses the boot, naming the variable. |
 | `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; a copied directory moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}` and the Go runtime. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
@@ -646,11 +647,20 @@ trigger gets 30 seconds before the pass moves on, plus the one delivery in
 hand ([how a pass walks triggers](functions.md#triggers)). There is no bound
 on the pass as a whole, so a repository with many backlogged or slow record
 triggers holds its slot for roughly 30 seconds per trigger. Its schedule
-triggers do not wait for that walk: they fire in a lane beside it, so a slot
-can hold two runner processes, and the dispatcher at most sixteen. A fire
-that starts more than a minute after its occurrence logs
-`schedule fire dispatched late` with the trigger and the delay. The other
-four loops still walk repositories one after another.
+triggers do not wait for that walk: they fire in a lane beside it, up to
+`SUBSTRATE_TRIGGER_LANE_WORKERS` (4) triggers at once, one fire per trigger
+at a time
+([decision 0150](decisions/0150-a-schedule-lane-fires-its-due-triggers-in-parallel-one-fire-per-trigger.md)).
+Every delivery of every pass, each record trigger's turn and each schedule
+fire, holds one of 16 process-wide delivery slots, so the dispatcher runs at
+most sixteen runner processes and sixteen transactions however many passes
+and lanes are busy; a delivery that finds every slot held waits for one. A
+wake, a retry by hand and a webhook fire take no slot. Schedule triggers that
+name the same Python function still fire one after another, because the
+runner keeps one process per function. A fire that starts more than a
+minute after its occurrence logs `schedule fire dispatched late` with the
+trigger and the delay. The other four loops still walk repositories one
+after another.
 
 ### Collecting orphaned mapping targets
 
