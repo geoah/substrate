@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-29
 decision-makers: George Antoniadis
+amended-by: 0151
 ---
 
 # 0142. A schedule fire that settles retires its trigger's older parked fires

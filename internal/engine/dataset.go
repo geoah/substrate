@@ -176,6 +176,13 @@ type dataset struct {
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
 	resumingWebhooks atomic.Bool
+	// interruptedRerun is where this open's one walk over the agent
+	// deliveries the last stop interrupted stands (agents.go
+	// rerunInterruptedAgentRuns): rerunNotStarted until a dispatcher pass
+	// starts it, rerunWalking while it runs, rerunWalked once it returned.
+	// Once per open, because only the open-time sweep parks a delivery as
+	// interrupted at one attempt.
+	interruptedRerun atomic.Int32
 	// statsCache holds the collection statistics the lexical arm's BM25F
 	// reads (bm25.go), refreshed after statsTTL.
 	statsCache searchStatsCache

@@ -369,10 +369,28 @@ const inFlightError = "delivery in flight: an agent run is running it now"
 const legacyInFlightError = "delivery in flight: an agent run a restart interrupted stays here, retried by hand"
 
 // interruptedAgentError is the error an agent delivery's claim carries once
-// its run is known to be dead. Nothing reruns it by itself (decision 0064):
-// the run may have spent tokens and written records, so a person decides.
-const interruptedAgentError = "interrupted: the server stopped during this agent run, and nothing reruns it by itself; " +
+// its run is known to be dead. The first dispatcher pass of an open that
+// finds its trigger running reruns it once (rerunInterruptedAgentRuns,
+// decision 0151); a person may retry or forget it before that.
+const interruptedAgentError = "interrupted: the server stopped during this agent run, " +
+	"and the first trigger pass after a restart reruns it once if its trigger runs; " +
+	"read its thread, then retry this delivery to run the agent now, or forget it"
+
+// legacyInterruptedAgentError is the text interruptedAgentError carried
+// before the rerun (decision 0151). Only the open-time sweep reads it, and
+// rewrites it to interruptedAgentError, so a run an earlier binary parked is
+// rerun like one this binary parked.
+const legacyInterruptedAgentError = "interrupted: the server stopped during this agent run, and nothing reruns it by itself; " +
 	"read its thread, then retry this delivery to run the agent again, or forget it"
+
+// rerunAgentError is the error an interrupted agent delivery carries, at
+// attempt 2, from just before its one rerun starts: it is written in a ledger
+// entry of its own before anything runs (markRerun), so a stop during the
+// rerun leaves a row the next open neither rewrites nor reruns. A rerun that
+// settles retires the row, and one that fails rewrites it with its error.
+const rerunAgentError = "interrupted: the server stopped during this agent run, " +
+	"and the first trigger pass after the restart started it once more; nothing reruns it again by itself; " +
+	"read its threads, then retry this delivery to run the agent again, or forget it"
 
 // errClaimedElsewhere is a dispatch finding a claim it did not write on the
 // delivery it is about to run: another dispatch (a replayed pass under a

@@ -863,8 +863,9 @@ a retry does not repeat them, a trigger delivery claims itself in the
 transaction that opens the thread, as an agent trigger does before its loop:
 the cursor or fire state moves there, and the delivery is listed under the
 trigger's failures as in flight until the body settles. A second dispatch of
-the change finds the claim and runs no agent, and a crash leaves the claim to
-retry by hand. A guarded write that yields its version race after the thread
+the change finds the claim and runs no agent, and a crash leaves the claim,
+which the first trigger pass after the restart reruns once: the body runs
+again from its start, and its agent under a fresh thread. A guarded write that yields its version race after the thread
 opened settles as a skip, and the skip retires the claim. A delivery that fails
 after the thread opened parks on that attempt, also when the dispatcher is
 stopping. A call under an
@@ -1045,7 +1046,8 @@ is the function body.
   and no crash leaves effects with no record of the delivery. An
   [agent](agents.md) delivery claims the cursor before its loop runs and
   completes the claim after: a crash mid-loop leaves the delivery parked under
-  `…/parked` as interrupted, to retry by hand, and never redelivers by itself.
+  `…/parked` as interrupted, the first trigger pass after the restart reruns
+  it once, and a run interrupted twice waits for a hand.
   External consumers get an at-least-once floor, made safe by the same id
   composition.
 - **No loops.** Every function-authored write records the change that caused
@@ -1106,16 +1108,36 @@ repository.
   dispatcher's next pass over the repository (an operator's process never
   does), and a fire that fails parks the same entry. An agent
   callable's fire claims that entry before its loop, so one interrupted
-  mid-loop waits under `…/parked` for a hand like every agent delivery.
+  mid-loop is parked as interrupted and rerun once, like every agent
+  delivery (next item).
 - `GET …/trigger/{id}/parked` lists the deliveries the trigger gave up on,
   and the agent runs it is delivering right now: those carry `running: true`,
   a retry of one answers `409`, and the trigger's status counts them as
   `inFlight`, not `parked`. A server that starts finds every agent run the
   last one left unfinished: it settles each `running` thread to `error` with
   the reason `interrupted: the server stopped during the run`, and parks its
-  delivery with an error that says so. Nothing reruns it by itself, because
-  the run may have spent tokens and written records: read its thread, then
-  retry the delivery or forget it.
+  delivery at attempt 1 with an error that says so. The server's first
+  trigger dispatcher pass over the repository then reruns each such delivery
+  once, through the same path as a retry by hand, and logs one line per
+  delivery naming the trigger, the failure id, the callable it ran and the
+  outcome as one word (`ok`, `parked`, `canceled`, `running`, `retired`,
+  `held`, `capped`, `unavailable` or `error`). Like a retry by hand, the rerun runs the
+  trigger as it stands then, callable and arguments included: a trigger
+  edited to another callable since the claim reruns the delivery on the new
+  one. A function body that runs an agent runs again from its start. This
+  covers a row an earlier binary parked as interrupted and a claim a live
+  process lost (a canceled request, a panic), whatever their age. Before the rerun
+  starts, the row is rewritten to attempt 2 with an error saying it was
+  started once more, so a server that stops again during the rerun leaves a
+  row no later start reruns. A run interrupted twice waits under `…/parked`
+  for a hand, because each run may have spent tokens and written records:
+  read its threads, then retry the delivery or forget it. The rerun skips a
+  delivery a hand is already retrying, and a retry by hand of one the rerun
+  is running answers `409`. A disabled trigger, one whose callable does not
+  resolve, or one whose agent is at a spend cap keeps its interrupted
+  delivery parked for a hand or the next start, and an operator's process (`repository rebuild`, `user reset`)
+  reruns nothing
+  ([decision 0151](decisions/0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md)).
   `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one, and `DELETE
   …/trigger/{id}/parked/{failureId}` forgets one — the two ways a hand ends
   a parked row. A RETRY runs the delivery and settles the row whatever the delivery

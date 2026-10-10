@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-26
 decision-makers: George Antoniadis (via the issue-635 agent session)
+amended-by: 0151
 ---
 
 # 0121. A function body runs an agent under `permissions.agents`
