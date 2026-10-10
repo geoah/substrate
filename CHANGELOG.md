@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.114.0](https://github.com/geoah/substrate/compare/v0.113.0...v0.114.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **release:** the `stable` image tag is no longer moved. It stays at v0.113.0, so a deployment that pulls `ghcr.io/geoah/substrate:stable` receives no release after it. Pull `ghcr.io/geoah/substrate:v0` instead: it names the newest v0.x release (v0.113.0 today) and moves with each one, never to a prerelease or back to an older release. Once v1.0.0 ships, `v1` moves the same way and `v0` stays at the last v0.x. The bare `0` tag now moves under the same rule. In compose.yaml, replace `image: ghcr.io/geoah/substrate:stable` with `image: ghcr.io/geoah/substrate:v0`. A deployment that pins a version changes nothing. To roll a deployment back from what `v0` names, pin the version it ran, for example `ghcr.io/geoah/substrate:v0.113.0`; `stable` names that same v0.113.0 image and nothing newer.
+
+### Added
+
+* **agents:** cap daily spend per agent and repository, hold at the cap ([#911](https://github.com/geoah/substrate/issues/911)) ([a489383](https://github.com/geoah/substrate/commit/a48938367c875136a345f3e7a64001ee072d6ff2)), closes [#880](https://github.com/geoah/substrate/issues/880)
+* **cli:** add validate -f, the server's declaration checks offline ([#899](https://github.com/geoah/substrate/issues/899)) ([20d57f1](https://github.com/geoah/substrate/commit/20d57f1e8669e8d7b99969e07df742112c573836))
+* **cli:** print trigger, sync and bundle lists as JSON or YAML ([#894](https://github.com/geoah/substrate/issues/894)) ([0bba595](https://github.com/geoah/substrate/commit/0bba59562fa9ffa840defd893e0ba184c1b462b6)), closes [#889](https://github.com/geoah/substrate/issues/889)
+* **core:** add an alert kind the engine raises and resolves ([#910](https://github.com/geoah/substrate/issues/910)) ([c87c12e](https://github.com/geoah/substrate/commit/c87c12e63df27e44445a3363f06cfe299637342e))
+* **engine:** alert when a trigger's every run has failed for a window ([#912](https://github.com/geoah/substrate/issues/912)) ([74f1e4e](https://github.com/geoah/substrate/commit/74f1e4e0e9fe308ce8d49c2aeaa2f7750eb78fb8))
+* **engine:** rerun an interrupted agent delivery once after a restart ([#900](https://github.com/geoah/substrate/issues/900)) ([ff151f2](https://github.com/geoah/substrate/commit/ff151f25840dca47be334b76c50be2880eeb2585))
+* **engine:** run due schedule fires in parallel, one per trigger ([#902](https://github.com/geoah/substrate/issues/902)) ([58a89c2](https://github.com/geoah/substrate/commit/58a89c2db46ae8ba15318697ecc2a6ec2e0a982a)), closes [#883](https://github.com/geoah/substrate/issues/883)
+* **release:** tag the newest v0.x release image `v0`, drop `stable` ([#877](https://github.com/geoah/substrate/issues/877)) ([08a3bd0](https://github.com/geoah/substrate/commit/08a3bd0cf90c4143c348c9122d7ace485ff7545d))
+
+
+### Fixed
+
+* **agents:** end a run at its deadline as overbudget, after a last turn ([#896](https://github.com/geoah/substrate/issues/896)) ([997967b](https://github.com/geoah/substrate/commit/997967b5f3fc70dad02595a5810b6a4a16ff4571)), closes [#882](https://github.com/geoah/substrate/issues/882)
+* **egress:** name the gate and its allowlist variable on a refusal ([#895](https://github.com/geoah/substrate/issues/895)) ([225492d](https://github.com/geoah/substrate/commit/225492d63415d0db67c91d8171a7e9e8f8443e92)), closes [#886](https://github.com/geoah/substrate/issues/886)
+* **engine:** contain a panicking record trigger and stamp its last pass ([#908](https://github.com/geoah/substrate/issues/908)) ([6f86b41](https://github.com/geoah/substrate/commit/6f86b417df3564fb0bac99ec4021b42d2718a564))
+* **engine:** decode a write tool input sent as a JSON string ([#903](https://github.com/geoah/substrate/issues/903)) ([993f02a](https://github.com/geoah/substrate/commit/993f02af4eb209a2f15c8559c7d5bc4771112bf3))
+* **engine:** let an owner's write go ahead of waiting background writers ([#905](https://github.com/geoah/substrate/issues/905)) ([efbc1b4](https://github.com/geoah/substrate/commit/efbc1b45d09f5b6e5c7d404cc020800c1386ea08)), closes [#893](https://github.com/geoah/substrate/issues/893)
+* **engine:** re-derive a row the index pass skipped before a restart ([#876](https://github.com/geoah/substrate/issues/876)) ([df50f2c](https://github.com/geoah/substrate/commit/df50f2c2421d6a52c5d13d6e017458e2ab5d2e56)), closes [#868](https://github.com/geoah/substrate/issues/868)
+* **engine:** re-derive only moved rows on apply, search index later ([#904](https://github.com/geoah/substrate/issues/904)) ([5c4b874](https://github.com/geoah/substrate/commit/5c4b87493bbaf682ba345fef2d8b38ff32485b27)), closes [#888](https://github.com/geoah/substrate/issues/888)
+* **engine:** stop refreshing a credential refused with invalid_grant ([#909](https://github.com/geoah/substrate/issues/909)) ([b90f208](https://github.com/geoah/substrate/commit/b90f20854616cbebf00db5b7094076061ec85f82))
+* **sandbox:** list each missing layer and its reason when DEGRADED ([#898](https://github.com/geoah/substrate/issues/898)) ([5eb39de](https://github.com/geoah/substrate/commit/5eb39de7df60b3ac341617869e56e940c8be480b))
+* **sync:** mark only the parked delivery's stream as erroring ([#901](https://github.com/geoah/substrate/issues/901)) ([9222afd](https://github.com/geoah/substrate/commit/9222afddf841a85c7ed2e9a0a8665a637f4a372c))
+
 ## [0.113.0](https://github.com/geoah/substrate/compare/v0.112.1...v0.113.0) (2026-10-07)
 
 
