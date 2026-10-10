@@ -549,6 +549,21 @@ by model id, never a table in code. The loop terminates on the final tool-free
 reply, any budget, or its deadline; over-budget is a settled outcome (thread
 `overbudget` with a reason), never a park.
 
+A deadline that passes, inside a model call included, settles the run's one
+thread `overbudget` with reason `deadline exceeded`. A trigger delivery is
+then not retried, a direct call answers 200 with that status, the reason and
+the counters instead of an error, and a calling agent gets a successful tool
+result with status `overbudget`, possibly with an empty reply. A sub-agent cut
+off by its caller's deadline still fails as an error, because the caller's
+context is gone. When a turn starts with under a fifth of the run's time left
+(at most 60 s), the loop sends the model a message, never stored, saying this
+is its last turn and to record what it has. That turn may go one turn and one
+tool call past `maxTurns` and `maxToolCalls`, and the run then settles `ok` if
+its reply calls no tool, else with reason `deadline exceeded after a last
+turn`. The last turn is best effort: a model call that crosses both the
+reserve and the deadline never gets the message, and a sub-agent's reserve
+comes from its own `deadlineSeconds`, not its caller's.
+
 **A long thread compacts**
 ([decision 0138](decisions/0138-a-compacted-thread-keeps-its-rows-and-replays-a-summary-message-over-the-range-it-covers.md)).
 When a chat or resumed thread's context passes its model's `contextWindow`
