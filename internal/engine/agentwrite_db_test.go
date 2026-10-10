@@ -500,3 +500,63 @@ func TestAgentQueryBoundedOnAtComputesOccurrences(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentWriteTakesAnInputEncodedAsAString(t *testing.T) {
+	t.Parallel()
+	// A model that encodes `input` twice, as a string holding the object,
+	// writes the same record as one that sends the object. The string is
+	// decoded as strictly: an unknown key inside it is still refused, and a
+	// string that holds no object is refused naming the shape.
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	fake.script("edit",
+		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
+			"op": "put", "kind": crewPackage + "/widget", "id": "w-twice",
+			"input": ` {"properties": {"name": "twice"}}`,
+		})}}},
+		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
+			"op": "put", "kind": crewPackage + "/widget", "id": "w-flat",
+			"input": `{"name": "flat"}`,
+		})}}},
+		fakeTurn{calls: []fakeCall{{"write", toolArgs(t, map[string]any{
+			"op": "put", "kind": crewPackage + "/widget", "id": "w-word",
+			"input": "name=word",
+		})}}},
+		fakeTurn{content: "done"},
+	)
+	res, err := ds.CallAgent(ctx, crewPackage+"/editor", "make widgets")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.Effects != 1 {
+		t.Fatalf("effects: %+v", res)
+	}
+	e, err := ds.Get(ctx, crewPackage+"/widget", "w-twice")
+	if err != nil {
+		t.Fatalf("the string-encoded put did not land: %v", err)
+	}
+	if e.Properties["name"] != "twice" {
+		t.Fatalf("widget props: %+v", e.Properties)
+	}
+	var refusals []string
+	for _, m := range threadMessages(t, ds, res.Thread) {
+		if m["role"] == "tool" && m["ok"] != true {
+			content, _ := m["content"].(string)
+			refusals = append(refusals, content)
+		}
+	}
+	if len(refusals) != 2 {
+		t.Fatalf("refusals: %v", refusals)
+	}
+	if !strings.Contains(refusals[0], `unknown field \"name\"`) {
+		t.Fatalf("the strict decode did not refuse the flat key: %s", refusals[0])
+	}
+	if !strings.Contains(refusals[1], "input must be an object") {
+		t.Fatalf("the plain string refusal does not name the shape: %s", refusals[1])
+	}
+	for _, id := range []string{"w-flat", "w-word"} {
+		if _, err := ds.Get(ctx, crewPackage+"/widget", id); !errors.Is(err, substrate.ErrNotFound) {
+			t.Fatalf("the refused put %s landed: %v", id, err)
+		}
+	}
+}
