@@ -3,8 +3,14 @@
 package sandbox
 
 import (
+	"bytes"
+	"fmt"
+	"log/slog"
 	"net/netip"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -37,6 +43,112 @@ func TestConnectGateAllowDest(t *testing.T) {
 		if got != c.allow {
 			t.Errorf("allowDest(%s, %d) = %v, want %v", c.addr, c.port, got, c.allow)
 		}
+	}
+}
+
+// A policy refusal names the sandbox's connect gate and the variable that
+// would admit the destination, in the record the runner reads and in one WARN
+// line per destination. A reader sees only the refusals after its own mark,
+// which keeps a refusal recorded before an exchange out of that exchange's
+// error.
+func TestConnectGateRefusalNamesItsAllowlistVariable(t *testing.T) {
+	logs := &syncBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	g := &connectGate{}
+	mark := g.RefusalMark()
+	g.refuse(42, netip.MustParseAddrPort("10.0.0.7:5432"))
+	got := g.RefusedSince(mark)
+	const want = "the sandbox's connect gate refused 10.0.0.7:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7"
+	if len(got) != 1 || got[0].String() != want {
+		t.Fatalf("RefusedSince = %v, want one refusal reading %q", got, want)
+	}
+	line := waitForLog(t, logs, "destination=10.0.0.7:5432")
+	for _, part := range []string{
+		"level=WARN",
+		`msg="egress blocked by the sandbox's connect gate"`,
+		"SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7",
+	} {
+		if !strings.Contains(line, part) {
+			t.Fatalf("the refusal's log line lacks %q:\n%s", part, line)
+		}
+	}
+
+	// The same destination again: recorded for the reader whose mark is
+	// before it, not logged a second time.
+	mark = g.RefusalMark()
+	g.refuse(42, netip.MustParseAddrPort("10.0.0.7:5432"))
+	if got := g.RefusedSince(mark); len(got) != 1 {
+		t.Fatalf("RefusedSince after the repeat = %v, want the one repeat", got)
+	}
+	if got := g.RefusedSince(g.RefusalMark()); len(got) != 0 {
+		t.Fatalf("RefusedSince(the newest mark) = %v, want none", got)
+	}
+
+	// An IPv4-mapped destination names its IPv4 address, the form the
+	// allowlist matches. Its line is also the sentinel for the repeat above:
+	// one goroutine writes the queue in order, so once this line is out, a
+	// second line for the repeat would be out too.
+	mark = g.RefusalMark()
+	g.refuse(42, netip.MustParseAddrPort("[::ffff:10.0.0.8]:443"))
+	if got := g.RefusedSince(mark); len(got) != 1 || !strings.HasSuffix(got[0].String(), "SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.8") {
+		t.Fatalf("RefusedSince for a mapped address = %v, want it to name 10.0.0.8", got)
+	}
+	all := waitForLog(t, logs, "destination=10.0.0.8:443")
+	if n := strings.Count(all, "destination=10.0.0.7:5432"); n != 1 {
+		t.Fatalf("a repeated destination logged %d lines, want 1:\n%s", n, all)
+	}
+
+	// A body looping on refused connects grows neither the record nor the set
+	// of logged destinations.
+	for i := range 200 {
+		g.refuse(42, netip.MustParseAddrPort(fmt.Sprintf("10.0.%d.%d:80", i/250, i%250+1)))
+	}
+	if n := len(g.RefusedSince(0)); n > maxRefusals {
+		t.Fatalf("the record holds %d refusals, want at most %d", n, maxRefusals)
+	}
+	g.refusalMu.Lock()
+	warned := len(g.warned)
+	g.refusalMu.Unlock()
+	if warned > maxWarned {
+		t.Fatalf("the gate warned about %d destinations, want at most %d", warned, maxWarned)
+	}
+}
+
+// syncBuffer is a log sink the warning goroutine writes while a test reads.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// waitForLog returns the log once it holds want. The warning is written by
+// another goroutine, so it may land after refuse returns.
+func waitForLog(t *testing.T, logs *syncBuffer, want string) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := logs.String()
+		if strings.Contains(got, want) {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no log line with %q within 5s:\n%s", want, got)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

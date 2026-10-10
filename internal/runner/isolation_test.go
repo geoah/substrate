@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -61,13 +62,13 @@ func requireConnectGate(t *testing.T, r *Runner) {
 	}
 }
 
-// Ten cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly ten must reach that guard: a kernel
-// or image change that turns them into skips cannot leave a green build
-// behind, and an eleventh case cannot be added, or one of the ten removed,
-// without this number moving with it.
+// Thirteen cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly thirteen must reach that guard: a
+// kernel or image change that turns them into skips cannot leave a green build
+// behind, and a fourteenth case cannot be added, or one of the thirteen
+// removed, without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 10))
+	os.Exit(sandboxtest.Run(m, 13))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
@@ -713,6 +714,180 @@ def main(input, host):
 	// time out, or be unreachable, but the gate itself let it through.
 	if got, _ := out["public"].(string); got == eacces {
 		t.Errorf("the gate refused a public address: %v", out["public"])
+	}
+}
+
+// The body sees only EACCES from the connect gate, and the server's own dials
+// obey a different variable, so a failed call names the gate and the variable
+// that would admit the destination, on the error's first line (the line the
+// sync status and parked views show). The gate serves every invocation of one
+// process, so the second invocation below, which fails without connecting,
+// must not inherit the first one's refusal, recorded before it began.
+func TestAConnectRefusalIsNamedInTheFailedCallsError(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+	requireConnectGate(t, r)
+
+	const probe = `
+import socket
+def main(input, host):
+    if input["args"]["dial"]:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        s.connect(("10.0.0.7", 5432))
+    raise RuntimeError("failed without a connect")
+`
+	spec := Spec{
+		Repository: "t1", Function: "refusal.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	const note = "the sandbox's connect gate refused 10.0.0.7:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7"
+
+	in := testInput()
+	in.Args = map[string]any{"dial": true}
+	_, err := r.Invoke(context.Background(), spec, in, nil)
+	if err == nil {
+		t.Fatal("a body whose connect was refused returned no error")
+	}
+	first, _, _ := strings.Cut(err.Error(), "\n")
+	if !strings.Contains(first, note) {
+		t.Fatalf("the call error's first line does not name the gate and its variable:\n got: %q\nwant: %q", first, note)
+	}
+	// The body's own answer is unchanged: EACCES, errno 13.
+	if !strings.Contains(err.Error(), "[Errno 13]") {
+		t.Fatalf("the body did not see EACCES from the gate: %v", err)
+	}
+
+	in.Args = map[string]any{"dial": false}
+	_, err = r.Invoke(context.Background(), spec, in, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed without a connect") {
+		t.Fatalf("second invocation = %v, want the body's own error", err)
+	}
+	if strings.Contains(err.Error(), "connect gate") {
+		t.Fatalf("an invocation that made no connect carries an earlier invocation's refusal: %v", err)
+	}
+}
+
+// The note names the refusals the body PROCESS drew during the exchange, not
+// the ones the exchange's own code drew: proc.mu serializes exchanges, not a
+// body's threads. A thread the first call leaves running, released by the
+// second call so it connects after the second call's mark, puts its refusal
+// on the second call's error. This pins the documented contract; exact
+// attribution to the code that connected is not attempted.
+func TestALeftoverThreadsRefusalLandsInTheExchangeItFallsIn(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+	requireConnectGate(t, r)
+
+	const probe = `
+import socket, threading
+go = threading.Event()
+done = threading.Event()
+def late_dial():
+    go.wait()
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect(("10.0.0.9", 5432))
+    except OSError:
+        pass
+    done.set()
+def main(input, host):
+    if input["args"]["start"]:
+        threading.Thread(target=late_dial, daemon=True).start()
+        return {"output": "started"}
+    go.set()
+    done.wait(10)
+    raise RuntimeError("second call")
+`
+	spec := Spec{
+		Repository: "t1", Function: "leftover.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+
+	in := testInput()
+	in.Args = map[string]any{"start": true}
+	if _, err := r.Invoke(context.Background(), spec, in, nil); err != nil {
+		t.Fatalf("first invocation: %v", err)
+	}
+
+	in.Args = map[string]any{"start": false}
+	_, err := r.Invoke(context.Background(), spec, in, nil)
+	if err == nil || !strings.Contains(err.Error(), "second call") {
+		t.Fatalf("second invocation = %v, want the body's own error", err)
+	}
+	const note = "the sandbox's connect gate refused 10.0.0.9:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.9"
+	if first, _, _ := strings.Cut(err.Error(), "\n"); !strings.Contains(first, note) {
+		t.Fatalf("a refusal drawn during the second exchange by the first call's thread is not on its error:\n got: %q\nwant: %q", first, note)
+	}
+}
+
+// stalledHandler is a slog handler whose every write blocks until release
+// closes: a log pipe nobody drains.
+type stalledHandler struct{ release <-chan struct{} }
+
+func (h stalledHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h stalledHandler) Handle(context.Context, slog.Record) error {
+	<-h.release
+	return nil
+}
+
+func (h stalledHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h stalledHandler) WithGroup(string) slog.Handler      { return h }
+
+// The gate records a refusal before it answers the body, and warns the
+// operator about it. A warning written on the supervisor's goroutine would let
+// a stalled log handler hold the seccomp reply, and the kill on a timeout
+// waits for that same supervisor, so the body would never be answered and
+// never be torn down. With the handler stalled, the body still gets EACCES and
+// the process, its gate included, still closes.
+func TestAStalledLogHandlerDoesNotHoldTheConnectGate(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+	requireConnectGate(t, r)
+
+	release := make(chan struct{})
+	prev := slog.Default()
+	slog.SetDefault(slog.New(stalledHandler{release: release}))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	t.Cleanup(func() { close(release) }) // runs first: unblock before restoring
+
+	const probe = `
+import socket
+def main(input, host):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect(("10.0.0.10", 5432))
+`
+	spec := Spec{
+		Repository: "t1", Function: "stalledlog.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 5000, Network: []string{"api.example.com"},
+	}
+
+	invoked := make(chan error, 1)
+	go func() {
+		_, err := r.Invoke(context.Background(), spec, testInput(), nil)
+		invoked <- err
+	}()
+	select {
+	case err := <-invoked:
+		if err == nil || !strings.Contains(err.Error(), "[Errno 13]") {
+			t.Fatalf("invocation = %v, want the body's EACCES from the gate", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the invocation did not return within 15s: a stalled log handler held the connect gate")
+	}
+
+	// Reconcile retires the process: its kill closes the gate, and Close
+	// waits for the supervisor goroutine to stop.
+	closed := make(chan struct{})
+	go func() {
+		r.Reconcile(context.Background(), "t1", nil)
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the process's gate did not close within 15s with the log handler stalled")
 	}
 }
 

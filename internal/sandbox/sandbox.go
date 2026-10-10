@@ -257,18 +257,59 @@ type Confiner struct {
 	pending sync.Map
 }
 
-// noopCloser is what Serve returns when a command has no connect gate.
-type noopCloser struct{}
+// Gate is a served connect gate: the closer that stops it, and its record of
+// the connects it refused by policy. One gate serves every invocation a body
+// process runs, so a caller takes RefusalMark before an exchange and reads
+// RefusedSince after it to learn which refusals the body process drew in
+// between. That is not attribution to the exchange: a thread an earlier
+// invocation left running can connect in the window, and its refusal is read
+// with the rest.
+type Gate interface {
+	io.Closer
+	// RefusalMark is the sequence number of the newest policy refusal so
+	// far, zero before the first.
+	RefusalMark() uint64
+	// RefusedSince returns the policy refusals recorded after mark, one per
+	// destination, oldest first. The gate keeps only its newest few, so a
+	// body that loops on a refused connect cannot grow the record.
+	RefusedSince(mark uint64) []Refusal
+}
 
-func (noopCloser) Close() error { return nil }
+// Refusal is one connect the connect gate refused by policy: a well-formed
+// destination in a range egress.Blocked marks as the deployment's own, which no
+// SUBSTRATE_SANDBOX_EGRESS_ALLOW prefix covers. A connect refused because its
+// target could not be read or parsed is not a Refusal: that one says nothing
+// about the allowlist.
+type Refusal struct {
+	// Addr is the destination, IPv4-mapped addresses unmapped, so its address
+	// is the value the allowlist takes.
+	Addr netip.AddrPort
+}
+
+// String names the gate and the variable that would admit the destination.
+// The server's own dials obey SUBSTRATE_EGRESS_ALLOW instead, and an operator
+// who sets the wrong one restarts the server for nothing (issue #886).
+func (r Refusal) String() string {
+	return fmt.Sprintf("the sandbox's connect gate refused %s; allow it with %s=%s", r.Addr, egressAllowVar, r.Addr.Addr())
+}
+
+// egressAllowVar is the operator's allowlist for a network body's connects.
+const egressAllowVar = "SUBSTRATE_SANDBOX_EGRESS_ALLOW"
+
+// noopGate is what Serve returns when a command has no connect gate.
+type noopGate struct{}
+
+func (noopGate) Close() error                  { return nil }
+func (noopGate) RefusalMark() uint64           { return 0 }
+func (noopGate) RefusedSince(uint64) []Refusal { return nil }
 
 // Serve starts the connect-destination supervisor for a command Wrap set up,
 // and must be called AFTER the command has started: the stub sends the seccomp
 // listener descriptor back during startup, and Serve receives it and services
-// notifications until the returned closer is closed (or the body exits). A
+// notifications until the returned gate is closed (or the body exits). A
 // command with no connect gate (no network, or a platform without the filter)
-// returns a no-op closer. The caller closes it when the child is torn down.
-func (c *Confiner) Serve(cmd *exec.Cmd) (io.Closer, error) { return c.serve(cmd) }
+// returns a no-op gate. The caller closes it when the child is torn down.
+func (c *Confiner) Serve(cmd *exec.Cmd) (Gate, error) { return c.serve(cmd) }
 
 // Mode is the configured mode.
 func (c *Confiner) Mode() Mode { return c.mode }

@@ -1,6 +1,7 @@
 package egress
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -44,6 +45,27 @@ func TestGuard(t *testing.T) {
 	}
 }
 
+// The server's dial gate and a function body's connect gate read two
+// variables, so a refusal names its gate and the variable that would admit the
+// address, written as the value to set. An IPv4-mapped dial names the IPv4
+// address, which is the form the allowlist matches.
+func TestGuardNamesTheGateAndItsVariable(t *testing.T) {
+	const want = "egress blocked by the server's dial gate: 10.0.0.7:4000; allow it with SUBSTRATE_EGRESS_ALLOW=10.0.0.7"
+	for _, address := range []string{"10.0.0.7:4000", "[::ffff:10.0.0.7]:4000"} {
+		err := guard(address, nil)
+		var blocked *BlockedError
+		if !errors.As(err, &blocked) {
+			t.Fatalf("guard(%q) = %v, want a *BlockedError", address, err)
+		}
+		if blocked.Var != "SUBSTRATE_EGRESS_ALLOW" {
+			t.Fatalf("guard(%q) names variable %q, want SUBSTRATE_EGRESS_ALLOW", address, blocked.Var)
+		}
+		if got := err.Error(); got != want {
+			t.Fatalf("guard(%q) error = %q, want %q", address, got, want)
+		}
+	}
+}
+
 func TestParseAllow(t *testing.T) {
 	got := parseAllow(" 127.0.0.0/8 , 10.0.0.5 , , garbage , ::1 ")
 	want := map[string]bool{
@@ -80,6 +102,15 @@ func TestTransportGatesLoopback(t *testing.T) {
 		t.Fatal("a loopback dial returned no error: the gate did not fire")
 	} else if !strings.Contains(err.Error(), "egress blocked") {
 		t.Fatalf("loopback dial error = %v, want it to name egress blocked", err)
+	} else if !strings.Contains(err.Error(), "SUBSTRATE_EGRESS_ALLOW=127.0.0.1") {
+		t.Fatalf("loopback dial error = %v, want it to name SUBSTRATE_EGRESS_ALLOW=127.0.0.1", err)
+	} else {
+		// The client wraps the refusal in a *url.Error around a *net.OpError;
+		// a caller still reaches the typed refusal through both.
+		var refusal *BlockedError
+		if !errors.As(err, &refusal) || refusal.Gate != dialGate {
+			t.Fatalf("loopback dial error = %v (%T), want a *BlockedError from the dial gate", err, err)
+		}
 	}
 
 	allowed := &http.Client{Transport: newTransport([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")})}
