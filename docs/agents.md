@@ -232,8 +232,9 @@ entry could name only a function.
   merging and never pruning; omit `id` to mint one), `patch` (change an
   existing record) or `delete` (tombstone one), `input` is
   `{properties, labels, annotations}` decoded through the same strict path a
-  REST body takes, and `ifVersion` holds the write to the version the model
-  read. It requires a non-empty `permissions.writes` (a load error otherwise).
+  REST body takes (an object encoded as a JSON string is decoded the same
+  way, since models send one with long prose values), and `ifVersion` holds
+  the write to the version the model read. It requires a non-empty `permissions.writes` (a load error otherwise).
   Every written kind is held to the agent's **effective** emit before the
   write applies, so a sub-agent's ceiling narrows it like any other effect,
   and the [policy door](#the-policy-door) runs for each write exactly as it

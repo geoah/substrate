@@ -2077,7 +2077,8 @@ func (ds *dataset) packageDocumentRows(ctx context.Context, q dbx, pkg string) (
 // to see its own writes and because a second connection taken while the
 // transaction holds one can wait forever on a saturated shared pool.
 func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, q dbx, authorities map[string]bool, where string, extra ...any) (map[string]vocabulary.Document, error) {
-	args := make([]any, 0, len(vocabularyKindRefs)+len(extra))
+	// The capacity names the kind list alone; append grows it for extra.
+	args := make([]any, 0, len(vocabularyKindRefs))
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
 		args = append(args, ident)

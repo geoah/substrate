@@ -58,9 +58,9 @@ func runWriteTool(ctx context.Context, actor substrate.Actor, target substrate.D
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	raw, _ := json.Marshal(args["input"])
-	if args["input"] == nil {
-		raw = []byte("{}")
+	raw, err := writeInputBytes(args["input"])
+	if err != nil {
+		return toolError(err.Error()), false
 	}
 	var e *substrate.Record
 	switch op {
@@ -98,6 +98,26 @@ func runWriteTool(ctx context.Context, actor substrate.Actor, target substrate.D
 		return toolError(err.Error()), false
 	}
 	return toolJSON(map[string]any{"record": e}), true
+}
+
+// writeInputBytes is the JSON the strict decoder reads for `input`: `{}` when
+// absent, the object as sent, and the object INSIDE a string when the model
+// encoded it twice. Models do that with long prose values: on 2026-10-09 four
+// recap runs sent `"input": "{\"properties\": …}"` three times each, were
+// refused each time, and spent their last turns probing with test values
+// that stayed on the record. The string is decoded as strictly as an object.
+// Any other string is refused naming the shape.
+func writeInputBytes(v any) ([]byte, error) {
+	switch in := v.(type) {
+	case nil:
+		return []byte("{}"), nil
+	case string:
+		if s := strings.TrimSpace(in); strings.HasPrefix(s, "{") {
+			return []byte(s), nil
+		}
+		return nil, fmt.Errorf("input must be an object, e.g. {\"properties\": {…}}, not a string")
+	}
+	return json.Marshal(v)
 }
 
 // versionArg reads an optional version precondition: nil when absent, the
