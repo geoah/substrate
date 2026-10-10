@@ -9,6 +9,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -111,6 +113,61 @@ func printJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// printList writes a listing command's rows: the table by default, or the
+// rows alone as one JSON array or YAML sequence, the shape `kinds`, `token
+// list` and `catalog` print. A nil slice prints as `[]`, so an empty listing
+// still parses as a list.
+func printList[T any](a *app, output string, items []T, table func() error) error {
+	if items == nil {
+		items = []T{}
+	}
+	return printAs(a, output, items, table)
+}
+
+func printAs(a *app, output string, v any, human func() error) error {
+	switch output {
+	case "", "table":
+		return human()
+	case "json":
+		return printJSON(a.out, v)
+	case "yaml":
+		return printYAML(a.out, v)
+	}
+	return fmt.Errorf("unknown output format %q: use table, json or yaml", output)
+}
+
+// printYAML encodes v through its JSON form, so -o yaml carries the keys -o
+// json does: yaml.v3 alone names a field after its lowercased Go name
+// (`liverecords`). The JSON is parsed as a YAML node rather than into a map,
+// which keeps the wire's key order and every number's digits.
+func printYAML(w io.Writer, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return fmt.Errorf("encode yaml: %w", err)
+	}
+	blockStyle(&doc)
+	out, err := marshalDocument(&doc)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(out)
+	return err
+}
+
+// blockStyle drops the flow and quoting styles a JSON parse leaves on every
+// node. The encoder still quotes a string that would otherwise read as
+// another type ("true", "41", a timestamp), because the node keeps its tag.
+func blockStyle(n *yaml.Node) {
+	n.Style = 0
+	for _, c := range n.Content {
+		blockStyle(c)
+	}
 }
 
 // printDocuments writes records as apply-able YAML documents.
