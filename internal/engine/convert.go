@@ -150,6 +150,10 @@ type propertyNull struct {
 	prop   string
 	secret bool
 	state  bool
+	// reference is whether the stored declaration held a reference site at
+	// or below the property, so a row losing its value loses refs rows too
+	// (convertRecord).
+	reference bool
 }
 
 // conversionPlan is every conversion a batch declares, classified against the
@@ -213,7 +217,9 @@ func (p *conversionPlan) classifyKind(curT, candT *vocabulary.Kind) {
 			continue
 		}
 		if nullable(curT, curP) {
-			p.nulls = append(p.nulls, propertyNull{kind: candT, prop: pname, secret: curP.Secret(), state: curP.IsState()})
+			p.nulls = append(p.nulls, propertyNull{
+				kind: candT, prop: pname, secret: curP.Secret(), state: curP.IsState(), reference: holdsReference(curP),
+			})
 		}
 	}
 	for _, pname := range candT.PropOrder {
@@ -1091,6 +1097,19 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	if !res.changed {
 		return false, nil
 	}
+	// The fold re-derives a row's refs rows only under a declaration that
+	// names a reference site (foldRecordOp), so a null that removed the
+	// kind's last one leaves the rows the stored declaration derived, and the
+	// property is gone from the row, so no selection by property finds it
+	// later. They go here, before the subjects recompute below or any later
+	// step of the transaction reads them, as a rebuild derives none.
+	if nulledReference(nulled) {
+		if ty, _ := t.derivationView().ByIdentity(ref.Kind); ty != nil && !declaresReference(ty) {
+			if err := t.syncRefs(ref, ty, row.Props); err != nil {
+				return false, err
+			}
+		}
+	}
 
 	for _, r := range kc.renames {
 		if renamed[r.from] == "" {
@@ -1179,6 +1198,17 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	// target would hold a value the candidate no longer admits, and a rebuild
 	// (which derives from the sources) would disagree with the live fold.
 	return true, t.recomputeSubjectsOf(ref)
+}
+
+// nulledReference reports whether a record's nulls removed a value its stored
+// declaration derived refs rows from.
+func nulledReference(nulled []propertyNull) bool {
+	for _, n := range nulled {
+		if n.reference {
+			return true
+		}
+	}
+	return false
 }
 
 // dropEmbeddings removes a property's vectors and its queue row: the property

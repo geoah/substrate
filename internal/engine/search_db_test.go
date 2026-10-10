@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -394,10 +395,10 @@ func idsOfHits(hits []string) []string {
 }
 
 // TestAKindEditReindexesItsRowsAndTheRebuildAgrees: flipping a property's
-// `fts` flag changes what the kind's existing records index, live, in the
-// apply that flips it, and a rebuild lands on the same index. The records
-// themselves did not change, so their version and updated_at stand and the
-// changelog carries nothing about them.
+// `fts` flag changes what the kind's existing records index, live, once the
+// pass behind the apply's commit has re-derived them, and a rebuild lands on
+// the same index. The records themselves did not change, so their version
+// and updated_at stand and the changelog carries nothing about them.
 func TestAKindEditReindexesItsRowsAndTheRebuildAgrees(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -428,6 +429,7 @@ func TestAKindEditReindexesItsRowsAndTheRebuildAgrees(t *testing.T) {
 	rb := svc.(rebuilder)
 	rebuildAgrees := func(when string, wantIDs []string) {
 		t.Helper()
+		engine.DrainIndexReprojection(t, ds)
 		live := lexicalHits(t, ds, "quokka")
 		if got := idsOfHits(live); !reflect.DeepEqual(got, wantIDs) {
 			t.Fatalf("%s: search finds %v, want %v", when, got, wantIDs)
@@ -472,8 +474,9 @@ func TestAKindEditReindexesItsRowsAndTheRebuildAgrees(t *testing.T) {
 // TestARebuildAgreesAfterAnUninstallLeavesTombstones: a package uninstall
 // drops its kinds, and the tombstoned rows of a dropped kind index under the
 // unknown-kind bands from then on (fold.go foldFTS), because that is what a
-// replay without the declaration computes for them. The uninstall re-indexes
-// them so the fold before and after a rebuild is the same document.
+// replay without the declaration computes for them. The pass behind the
+// uninstall's commit re-indexes them, so once it has run the fold before and
+// after a rebuild is the same document.
 func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -506,6 +509,7 @@ func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 		t.Fatalf("uninstall: %v", err)
 	}
 
+	engine.DrainIndexReprojection(t, ds)
 	before := foldOf(t, ds)
 	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)

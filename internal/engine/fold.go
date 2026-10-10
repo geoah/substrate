@@ -41,14 +41,16 @@ import (
 // declaration in force, and a replay reads the declarations it ends under, so
 // a kind edit that changes what its records index (a property's `fts` flag,
 // its datatype family, its position, the kind dropped) leaves the live rows
-// indexed under a declaration the replay never sees. reprojectFTS closes that
-// gap: the vocabulary apply re-derives `fts` for every row of such a kind, in
-// the apply's transaction and against the closure it publishes, and moves
-// nothing else: no `version`, no `updated_at`, no changelog entry, because the
-// record did not change, only the index over it did. The open-time reindex
-// (searchindex.go) writes through the same rederiveFTS when the binary's
-// indexing rules change. Nothing else may write `records` from outside this
-// file.
+// indexed under a declaration the replay never sees. rederiveFTS closes that
+// gap: the background pass (reprojection.go) re-derives `fts` for the rows of
+// such a kind that carry a moved property, after the commit of the vocabulary
+// apply or the boot upgrade that requested it and under the registry that
+// commit published, and moves nothing else: no `version`, no `updated_at`, no
+// changelog entry, because the record did not change, only the index over it
+// did. The boot upgrade's declaration rows re-derive in its own transaction
+// (reprojectFTS), and the open-time reindex (searchindex.go) writes through
+// the same rederiveFTS when the binary's indexing rules change. Nothing else
+// may write `records` from outside this file.
 
 // foldKind names one kind of effect. The values are wire values: they land in
 // the changelog's payload and a rebuild reads them back.
@@ -505,8 +507,10 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// calendar), whose kinds point at nothing. A kind this binary no longer
 		// DECLARES is not skipped: its stored rows project a declaration that is
 		// gone, and syncRefs is what removes them. A declaration that stops
-		// carrying a reference is covered by reprojectRefs, which re-derives
-		// every record of the kinds whose reference shape moved. A PARKED kind
+		// carrying a reference is covered by the apply's rederiveMovedRefs,
+		// which re-derives the records that carry a property whose reference
+		// shape moved, and by the pass behind the open for the boot upgrade
+		// (reprojection.go). A PARKED kind
 		// derives from its stored declaration (foldView), live and in a
 		// replay alike.
 		ty, _ := t.derivationView().ByIdentity(row.Kind)
@@ -770,20 +774,22 @@ func (t *txn) derivationView() foldView {
 }
 
 // reprojectFTS re-derives `fts` for every stored row of the named kinds, live
-// and tombstoned, under `reg`: the closure a vocabulary apply is about to
-// publish, which is also what a rebuild of the repository will fold under. It
-// reads `reg` ALONE, not through declarations(): a kind the closure drops is
-// still in the live registry until the publish, and its rows must land at the
-// unknown-kind bands the replay computes, not the bands of a declaration that
-// is leaving. Tombstones are included because a rebuild indexes them too, and
-// a resurrecting put refolds the row anyway. The apply door and the boot
-// upgrade hand it the closure with the parked set it publishes behind it
-// (foldView), which answers for no kind the closure drops.
+// and tombstoned, under `reg`: the closure the caller's transaction is about
+// to publish, which is also what a rebuild of the repository will fold under.
+// It reads `reg` ALONE, not through declarations(): a kind the closure drops
+// is still in the live registry until the publish, and its rows must land at
+// the unknown-kind bands the replay computes, not the bands of a declaration
+// that is leaving. Tombstones are included because a rebuild indexes them
+// too, and a resurrecting put refolds the row anyway. The boot upgrade hands
+// it the closure with the parked set it publishes behind it (foldView), which
+// answers for no kind the closure drops.
 //
 // It runs in pages, because the transaction cannot write while a cursor over
-// `records` is open, and inline, whatever the kind's size: a kind edit is rare
-// and the alternative is a live index that answers for a declaration that is
-// gone.
+// `records` is open, and inline: its callers are the boot upgrade, for its
+// meta-kinds, which hold as many rows as the repository has declarations, and
+// repository migration 0001, which runs once per repository. A vocabulary
+// apply leaves its reshaped kinds to the background pass behind its commit
+// (reprojection.go), which holds no lock across a kind.
 func (t *txn) reprojectFTS(reg kindLookup, kinds []string) error {
 	prog := t.ds.svc.progress("substrate: re-deriving the search index of one kind",
 		"repository", logSafeID(t.ds.scope.Repository))

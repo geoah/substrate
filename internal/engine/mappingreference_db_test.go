@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -172,6 +173,9 @@ func TestMappedReferenceRebuildsAfterItsPersonMoves(t *testing.T) {
 			tc.move(t, f)
 			assertTicketBacksCard(t, mustGet(t, f.ds, card.Kind, card.ID))
 
+			// The fixture's applies leave the search index of a reshaped
+			// kind to the pass behind their commit.
+			engine.DrainIndexReprojection(t, f.ds)
 			before := foldOf(t, f.ds)
 			if _, err := f.svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
 				t.Fatalf("rebuild: %v", err)

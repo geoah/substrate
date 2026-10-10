@@ -11,7 +11,11 @@ package engine
 // for its open, so the open may do nothing per stored row: the boot upgrade
 // re-derives only the declaration rows in its transaction and records every
 // other reshaped kind in `index_reprojections` for the pass this file runs
-// once the open has published the dataset.
+// once the open has published the dataset. A vocabulary apply holds the
+// registry lock every write waits on, so it re-derives in its transaction
+// only the refs rows of the rows carrying a moved property, which the same
+// transaction reads next, and records the `fts` half here for the pass it
+// starts after its commit (kickIndexReprojection).
 //
 // Both derivations are PER TOP-LEVEL PROPERTY: deriveRefs walks each
 // declared property's value on its own and ftsBands reads each declared
@@ -23,7 +27,8 @@ package engine
 // open-time search reindex does (searchindex.go). A kind declared on one
 // side only names no property, and every row is re-derived.
 //
-// The request rows are written in the upgrade's own transaction and each
+// The request rows are written in the transaction that moves the
+// declarations, the upgrade's or the apply's, and each
 // page records the id a restart resumes after, never past a row the pass
 // has yet to re-derive, so a shutdown leaves the rest for the next open to
 // find and resume. A write that lands on a row meanwhile re-derives that
@@ -33,6 +38,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -161,6 +167,30 @@ func filterOf(props []string, every, moved bool) indexFilter {
 
 // kinds lists the set's kinds, sorted, for a log line.
 func (s reprojectionSet) kinds() []string { return sortedKeys(s) }
+
+// list is the set's requests, sorted by kind.
+func (s reprojectionSet) list() []indexReprojection {
+	out := make([]indexReprojection, 0, len(s))
+	for _, kind := range s.kinds() {
+		out = append(out, *s[kind])
+	}
+	return out
+}
+
+// withEveryRow is a copy of the set in which each named kind re-derives
+// both indexes for every row, for kinds no declaration describes on either
+// side, such as the rows of a package that does not parse.
+func (s reprojectionSet) withEveryRow(kinds []string) reprojectionSet {
+	out := make(reprojectionSet, len(s)+len(kinds))
+	for kind, r := range s {
+		out.add(kind, r.refs, r.fts)
+	}
+	every := indexFilter{moved: true, every: true}
+	for _, kind := range kinds {
+		out.add(kind, every, every)
+	}
+	return out
+}
 
 // movedProperties reports whether one kind's shape (kindShape, the
 // comparison the apply door classifies with) differs between two registries
@@ -293,6 +323,78 @@ func (t *txn) requestReprojections(rs []indexReprojection) error {
 	return nil
 }
 
+// rederiveMovedRefs is the vocabulary apply's refs re-derivation, inside its
+// transaction and against the candidate (derivationView): for each kind
+// whose reference shape moved, the stored rows, live and tombstoned, that
+// carry a moved property, or every row where the request says so, in pages
+// of reprojectionBatch, each page's refs rows replaced whole
+// (syncRefsOfRows). A row carrying none of the moved properties derives the
+// same rows under either declaration and is not read. Its progress line is
+// the one a walk of many rows needs, because every write on the repository
+// waits on the registry lock this transaction holds.
+func (t *txn) rederiveMovedRefs(rs []indexReprojection) error {
+	view := t.derivationView()
+	prog := t.ds.svc.progress("substrate: re-deriving the refs index of one kind",
+		"repository", logSafeID(t.ds.scope.Repository))
+	for _, r := range rs {
+		if !r.refs.moved {
+			continue
+		}
+		ty, _ := view.ByIdentity(r.kind)
+		after, done := "", 0
+		for {
+			rows, err := t.ds.scanRows(t.ctx, t.tx, `SELECT `+recordCols+` FROM records
+				WHERE kind = $1 AND id > $2 AND ($3::boolean OR props ?| $4::text[])
+				ORDER BY id LIMIT $5`,
+				[]any{r.kind, after, r.refs.every, r.refs.properties, reprojectionBatch})
+			if err != nil {
+				return err
+			}
+			if len(rows) == 0 {
+				break
+			}
+			if err := t.syncRefsOfRows(r.kind, ty, rows); err != nil {
+				return err
+			}
+			done += len(rows)
+			prog.report("kind", r.kind, "rows", done)
+			after = rows[len(rows)-1].ID
+			if len(rows) < reprojectionBatch {
+				break
+			}
+		}
+	}
+	return nil
+}
+
+// requestMovedFTS writes the pass's `fts` work for each kind of rs whose
+// searchable shape moved and that holds a stored row, in the vocabulary
+// apply's transaction, and answers the kinds it requested. The refs half is
+// not requested: the apply re-derived it already (rederiveMovedRefs). A kind
+// with no row is owed nothing: the apply holds the registry lock every data
+// write takes from resolving its kind to its commit, so no row is on its
+// way, and a row written after the commit derives under the published
+// declaration.
+func (t *txn) requestMovedFTS(rs []indexReprojection) ([]string, error) {
+	var owed []indexReprojection
+	var kinds []string
+	for _, r := range rs {
+		if !r.fts.moved {
+			continue
+		}
+		var stored bool
+		if err := t.row(`SELECT EXISTS (SELECT 1 FROM records WHERE kind = $1)`, r.kind).Scan(&stored); err != nil {
+			return nil, fmt.Errorf("substrate/engine: read whether %s holds a row: %w", r.kind, err)
+		}
+		if !stored {
+			continue
+		}
+		owed = append(owed, indexReprojection{kind: r.kind, fts: r.fts})
+		kinds = append(kinds, r.kind)
+	}
+	return kinds, t.requestReprojections(owed)
+}
+
 // mergedProperties is the SQL that widens one index's stored property list
 // by a new request's: the new one where the index had not moved, the stored
 // one where it does not move now, NULL (every row) where either is, and the
@@ -347,18 +449,28 @@ func (ds *dataset) checkIndexReprojections(ctx context.Context) error {
 	if err := ds.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM index_reprojections)`).Scan(&pending); err != nil {
 		return fmt.Errorf("substrate/engine: repository %s: read the index re-derivations owed: %w", ds.info.ID, err)
 	}
-	ds.reprojectPending = pending
+	ds.reprojectPending.Store(pending)
 	return nil
 }
 
-// startIndexReprojection starts the pass checkIndexReprojections found owed
-// (backgroundPass). The open calls it as it publishes the dataset, and a
-// rebuild that failed calls it again.
+// startIndexReprojection starts the pass checkIndexReprojections found owed,
+// or a vocabulary apply requested since (backgroundPass). The open calls it
+// as it publishes the dataset, and a rebuild that failed calls it again.
 func (ds *dataset) startIndexReprojection() {
-	if !ds.reprojectPending {
+	if !ds.reprojectPending.Load() {
 		return
 	}
 	ds.reproject.start(ds, "re-derive the indexes", ds.reprojectIndexes)
+}
+
+// kickIndexReprojection starts the pass for a request a vocabulary apply
+// wrote after the open, or, where a run is in flight, has it plan again
+// before it returns (backgroundPass.start): a run that read the requests
+// before the apply committed would otherwise return without the new one,
+// and nothing would start it before the next open.
+func (ds *dataset) kickIndexReprojection() {
+	ds.reprojectPending.Store(true)
+	ds.startIndexReprojection()
 }
 
 // stopIndexReprojection cancels the running pass and waits for it to
@@ -397,20 +509,23 @@ func (ds *dataset) reprojectIndexes(ctx context.Context) {
 	repo := logSafeID(ds.scope.Repository)
 	var done int64
 	kinds := 0
-	stopped := func() {
-		ds.svc.log.Info("substrate: the index re-derivation stopped before it finished; the next open resumes it",
-			"repository", repo, "kinds", kinds, "rows", done, "elapsed", time.Since(started).Round(time.Millisecond))
+	stopped := func(err error) {
+		attrs := []any{"repository", repo, "kinds", kinds, "rows", done, "elapsed", time.Since(started).Round(time.Millisecond)}
+		if errors.Is(err, errRegistryUnsettled) {
+			attrs = append(attrs, "error", err)
+		}
+		ds.svc.log.Info("substrate: the index re-derivation stopped before it finished; the next open resumes it", attrs...)
 	}
 	prog := ds.svc.progress("substrate: re-deriving the indexes of a reshaped kind", "repository", repo)
 	announced := false
 	for {
 		var pending []indexReprojection
-		if ds.retryStep(ctx, reprojectionPass, "plan", func() error {
+		if err := ds.retryStep(ctx, reprojectionPass, "plan", func() error {
 			var err error
 			pending, err = ds.pendingReprojections(ctx)
 			return err
-		}) != nil {
-			stopped()
+		}); err != nil {
+			stopped(err)
 			return
 		}
 		if len(pending) == 0 {
@@ -431,13 +546,18 @@ func (ds *dataset) reprojectIndexes(ctx context.Context) {
 				prog.report("kind", p.kind, "rows", done, "elapsed", time.Since(started).Round(time.Millisecond))
 			})
 			if err != nil {
-				stopped()
+				stopped(err)
 				return
 			}
-			if ds.retryStep(ctx, reprojectionPass, "finish "+p.kind, func() error {
-				return ds.inRawTx(ctx, func(t *txn) error { return t.finishReprojection(p) })
-			}) != nil {
-				stopped()
+			if err := ds.retryStep(ctx, reprojectionPass, "finish "+p.kind, func() error {
+				return ds.inRawTx(ctx, func(t *txn) error {
+					if err := t.lockSettledRegistry(); err != nil {
+						return err
+					}
+					return t.finishReprojection(p)
+				})
+			}); err != nil {
+				stopped(err)
 				return
 			}
 			kinds++
@@ -456,7 +576,8 @@ func (ds *dataset) reprojectIndexes(ctx context.Context) {
 // reprojectKind re-derives one kind's owed rows from where the request says
 // to resume: its pages first, then the rows a write held when their page
 // came, and reports the rows it wrote to advanced as it goes. It returns an
-// error only when ctx ends.
+// error only when ctx ends or the repository refuses writes until restart
+// (lockSettledRegistry).
 //
 // The held rows live in memory alone, so the id a page records never passes
 // the first of them (resumeMark): a shutdown before their retry leaves the
@@ -481,7 +602,7 @@ func (ds *dataset) reprojectKind(ctx context.Context, p indexReprojection, advan
 				return err
 			}
 			return ds.inRawTx(ctx, func(t *txn) error {
-				if err := t.lockRegistryDepShared(); err != nil {
+				if err := t.lockSettledRegistry(); err != nil {
 					return err
 				}
 				var err error
@@ -509,7 +630,7 @@ func (ds *dataset) reprojectKind(ctx context.Context, p indexReprojection, advan
 		var n int
 		if err := ds.retryStep(ctx, reprojectionPass, "held row of "+p.kind, func() error {
 			return ds.inRawTx(ctx, func(t *txn) error {
-				if err := t.lockRegistryDepShared(); err != nil {
+				if err := t.lockSettledRegistry(); err != nil {
 					return err
 				}
 				var err error
@@ -638,18 +759,46 @@ func (t *txn) finishReprojection(p indexReprojection) error {
 	return err
 }
 
+// errRegistryUnsettled is a pass step's refusal while the repository
+// refuses writes until restart (directoryErr). That is the state a
+// vocabulary commit whose answer was lost leaves: it may have committed its
+// declarations and its re-derivation request while this process still
+// serves the registry it replaced, so a page would derive under the wrong
+// declarations and the finish would delete the request the next open needs.
+var errRegistryUnsettled = errors.New("substrate/engine: the repository refuses writes until restart, so the registry it serves may be behind the committed declarations")
+
+// lockSettledRegistry takes the shared registry-dependency lock a pass step
+// works under, then refuses the step while the directory latch is set
+// (errRegistryUnsettled). The latch is read under writerMu, which a commit
+// that publishes a registry holds from before its COMMIT until it has
+// published or latched, so a step that read a request that commit wrote
+// finds the registry published or the latch set, never between the two.
+func (t *txn) lockSettledRegistry() error {
+	if err := t.lockRegistryDepShared(); err != nil {
+		return err
+	}
+	if err := t.ds.directoryErr(); err != nil {
+		return fmt.Errorf("%w: %w", errRegistryUnsettled, err)
+	}
+	return nil
+}
+
 // retryStep runs one step of a background pass until it succeeds or ctx
 // ends, pausing between tries from a second up to searchReindexMaxPause,
-// and returns an error only for ctx. Every step is safe to run again: a page
-// that failed rolled back, and one redone lands at the same rows. A step
-// that can never succeed logs its error at every try, which is how an
-// operator hears of it.
+// and returns an error only for ctx, or for a step lockSettledRegistry
+// refused, which no pause cures before a restart. Every step is safe to run
+// again: a page that failed rolled back, and one redone lands at the same
+// rows. A step that can never succeed logs its error at every try, which is
+// how an operator hears of it.
 func (ds *dataset) retryStep(ctx context.Context, pass, step string, fn func() error) error {
 	pause := time.Second
 	for {
 		err := fn()
 		if err == nil || ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if errors.Is(err, errRegistryUnsettled) {
+			return err
 		}
 		ds.svc.log.Error("substrate: a "+pass+" step failed; trying it again",
 			"repository", logSafeID(ds.scope.Repository), "step", step, "retry_in", pause, "error", err)

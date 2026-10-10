@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -143,5 +144,51 @@ func TestStopBackgroundGivesUpAfterItsBudget(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "shutdown budget") {
 		t.Fatalf("the exhausted budget was not logged: %s", logs.String())
+	}
+}
+
+// A START WHILE A PASS RUNS HAS THE RUN CALL fn ONCE MORE. A vocabulary
+// apply starts the index re-derivation after its commit, and a run that
+// planned its last step before that commit would otherwise return without
+// the apply's request, which nothing then starts before the next open. Two
+// starts in flight are one more call, and a start after the run returned
+// begins a new run.
+func TestAStartWhileAPassRunsCallsItsFunctionAgain(t *testing.T) {
+	t.Parallel()
+	var logs syncBuffer
+	ds := &dataset{svc: backgroundService(&logs)}
+	var p backgroundPass
+	var calls atomic.Int32
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fn := func(context.Context) {
+		if calls.Add(1) == 1 {
+			entered <- struct{}{}
+			<-release
+		}
+	}
+	wait := func(what string) {
+		t.Helper()
+		select {
+		case <-p.finished():
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: the pass did not return", what)
+		}
+	}
+
+	p.start(ds, "pass", fn)
+	<-entered
+	p.start(ds, "pass", fn)
+	p.start(ds, "pass", fn)
+	close(release)
+	wait("the first run")
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("a run started twice while in flight called fn %d times, want 2", n)
+	}
+
+	p.start(ds, "pass", fn)
+	wait("the second run")
+	if n := calls.Load(); n != 3 {
+		t.Fatalf("a start after the run returned called fn %d times in all, want 3", n)
 	}
 }

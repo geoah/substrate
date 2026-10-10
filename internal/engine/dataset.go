@@ -253,11 +253,12 @@ type dataset struct {
 	reindexFrom int
 	reindex     backgroundPass
 
-	// reprojectPending is whether the open found index re-derivations owed
-	// (reprojection.go checkIndexReprojections): the kinds a declaration
-	// change reshaped and left for the pass behind the open, which is
-	// reproject.
-	reprojectPending bool
+	// reprojectPending is whether index re-derivations were owed at the open
+	// (reprojection.go checkIndexReprojections) or requested since by a
+	// vocabulary apply (kickIndexReprojection): the kinds a declaration
+	// change reshaped and left for the pass behind the open or the commit,
+	// which is reproject. An apply sets it while a rebuild may read it.
+	reprojectPending atomic.Bool
 	reproject        backgroundPass
 }
 
@@ -861,6 +862,12 @@ func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// The seam for a commit whose answer was lost after Postgres committed,
+	// with the registry not yet published: the error path in commitAndMirror
+	// runs as it would for a real one.
+	if err := ds.svc.commitFault(commitUnpublished); err != nil {
 		return err
 	}
 	if ds.beforePublish != nil {

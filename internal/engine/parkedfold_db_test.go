@@ -232,8 +232,8 @@ func TestAParkedPackageRebuildsAndImportsToTheSameFold(t *testing.T) {
 // TestUninstallingAParkedPackageReindexesItsRows: a parked package's rows
 // derive their indexes from its stored declaration only while it is stored.
 // The uninstall removes the declaration and leaves the rows, so it re-derives
-// them at the unknown-kind bands with no refs rows, which is what a rebuild
-// after it computes.
+// them with no refs rows in its transaction and at the unknown-kind bands
+// behind its commit, which is what a rebuild after it computes.
 func TestUninstallingAParkedPackageReindexesItsRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -252,6 +252,10 @@ func TestUninstallingAParkedPackageReindexesItsRows(t *testing.T) {
 	if err := ds2.UninstallBundle(ctx, pfPackage); err != nil {
 		t.Fatalf("uninstall the parked package: %v", err)
 	}
+	if _, refs := pfIndexes(t, foldOf(t, ds2)); refs != 0 {
+		t.Fatalf("the uninstall's transaction left %d refs rows, want none", refs)
+	}
+	engine.DrainIndexReprojection(t, ds2)
 	before := foldOf(t, ds2)
 	fts, refs := pfIndexes(t, before)
 	if len(fts) != 3 || strings.Contains(fts["first"], "wombat") || refs != 0 {
@@ -371,10 +375,11 @@ func TestAParkedMappingKeepsTheSlotRowOfALiveSourceKind(t *testing.T) {
 	if err := ds2.UninstallBundle(ctx, pfPackage); err != nil {
 		t.Fatalf("uninstall the parked package: %v", err)
 	}
-	uninstalled := foldOf(t, ds2)
-	if n := pfSlotRows(t, uninstalled); n != 0 {
+	if n := pfSlotRows(t, foldOf(t, ds2)); n != 0 {
 		t.Fatalf("the source holds %d slot rows after its mapping was uninstalled, want 0", n)
 	}
+	engine.DrainIndexReprojection(t, ds2)
+	uninstalled := foldOf(t, ds2)
 	if _, err := rb.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild after the uninstall: %v", err)
 	}
@@ -561,8 +566,9 @@ func pfLegacyDocs() []map[string]any {
 // TestUninstallingAnUnparsedPackageReindexesItsRows: a package whose stored
 // declaration no longer parses leaves the parked set with no kinds to name,
 // and the snapshot names it as the divergence a rebuild may show. Its
-// uninstall re-derives the rows stored under it at the unknown-kind bands
-// with no refs rows, so the snapshot stops naming it and a rebuild agrees.
+// uninstall re-derives the rows stored under it with no refs rows, and at
+// the unknown-kind bands behind its commit, so the snapshot stops naming it
+// and a rebuild agrees.
 func TestUninstallingAnUnparsedPackageReindexesItsRows(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -605,6 +611,7 @@ func TestUninstallingAnUnparsedPackageReindexesItsRows(t *testing.T) {
 	if err := ds2.UninstallBundle(ctx, pfLegacy); err != nil {
 		t.Fatalf("uninstall the unparsed package: %v", err)
 	}
+	engine.DrainIndexReprojection(t, ds2)
 	uninstalled := foldOf(t, ds2)
 	if strings.Contains(string(uninstalled), `"unparsed_packages"`) {
 		t.Fatal("the snapshot still names the uninstalled package")

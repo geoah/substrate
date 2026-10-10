@@ -49,8 +49,8 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 	applied := func(docs ...map[string]any) []string { t.Helper(); return logged(false, docs...) }
 
 	// Two packages: the crate's declared index, the lock, one line per
-	// package in package order, the search index of the three new kinds, the
-	// end.
+	// package in package order, the end. The three new kinds hold no row, so
+	// no search index re-derivation is owed for them.
 	lines := applied(
 		vocabulary.PackageManifest(shop, 0),
 		widget(label),
@@ -66,15 +66,16 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 		[]string{applyLog + `holding the registry lock, checking the batch against the stored records"`, "documents=5", "packages=2"},
 		[]string{applyLog + `writing the declarations of one package"`, "package=" + depot, "declarations=2", "index=1", "packages=2"},
 		[]string{applyLog + `writing the declarations of one package"`, "package=" + shop, "declarations=3", "index=2", "packages=2"},
-		[]string{applyLog + `re-deriving the search index"`, "kinds=3"},
 		[]string{applyLog + `committed"`, "took="},
 	)
 
 	// A backfill walks the stored widgets after the declarations are
 	// written, and says so before it starts, so the log does not go quiet
-	// after the last package line; the new property moves the widget's
-	// search index too.
+	// after the last package line. The new property moves the widget's
+	// search index too, which the apply leaves to the pass behind its
+	// commit, and that pass logs as it does behind an open.
 	mustPut(t, ds, owner, substrate.PutInput{Kind: shop + "/widget", Properties: map[string]any{"label": "a"}})
+	before := len(logs.String())
 	lines = applied(widget(map[string]any{
 		"label": map[string]any{"type": "string"},
 		"mood":  map[string]any{"type": "string", "required": true, "default": "neutral"},
@@ -83,9 +84,22 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 		[]string{applyLog + `holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
 		[]string{applyLog + `writing the declarations of one package"`, "package=" + shop, "index=1", "packages=1"},
 		[]string{applyLog + `rewriting records for the declared conversions"`},
-		[]string{applyLog + `re-deriving the search index"`, "kinds=1"},
+		[]string{applyLog + `requesting the search index re-derivation behind the commit"`, "kinds=1"},
 		[]string{applyLog + `committed"`, "took="},
 	)
+	// The pass deletes the request before it logs the kind, so the log is
+	// read once the run has returned.
+	engine.DrainIndexReprojection(t, ds)
+	select {
+	case <-engine.IndexReprojectionDone(ds):
+	case <-time.After(time.Minute):
+		t.Fatal("the pass behind the commit did not return within a minute")
+	}
+	pass := linesWith(logs.String()[before:], `msg="substrate: re-derived the indexes of one kind"`)
+	if len(pass) != 1 || !strings.Contains(pass[0], "kind="+shop+"/widget") || !strings.Contains(pass[0], "fts=true") ||
+		!strings.Contains(pass[0], "refs=false") {
+		t.Fatalf("the pass behind the commit logged %q, want one line for the widget's search index", pass)
+	}
 
 	// A batch the guards refuse inside the transaction (dropping a property
 	// a live widget holds) says it ended with an error, and nothing more.
@@ -103,7 +117,7 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 
 	// A batch behind another says it is waiting before it waits.
 	release := engine.HoldVocabularyWrites(ds)
-	before := len(logs.String())
+	before = len(logs.String())
 	done := make(chan error, 1)
 	go func() {
 		_, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{widget(map[string]any{
