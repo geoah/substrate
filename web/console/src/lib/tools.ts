@@ -1250,7 +1250,8 @@ export function isoDurationWords(value: unknown): string | undefined {
 
 /** Where a trigger stands in the changelog, for technical mode: a record
  * source's cursor against the head and how far behind it is, the last fire
- * of a schedule or webhook, and what is parked or pending. */
+ * of a schedule or webhook, when the server last delivered it and last
+ * reached it in a pass, and what is parked or pending. */
 export function triggerProgress(status: TriggerStatus, now?: number): string[] {
   const out: string[] = []
   if (status.kind === "record") {
@@ -1265,6 +1266,10 @@ export function triggerProgress(status: TriggerStatus, now?: number): string[] {
   } else {
     out.push("not fired yet")
   }
+  if (status.lastDeliveredAt)
+    out.push(`last delivered ${agoWords(status.lastDeliveredAt, now)}`)
+  if (status.lastPassAt)
+    out.push(`last pass ${agoWords(status.lastPassAt, now)}`)
   if (status.pending > 0) out.push(`${status.pending} pending`)
   if (status.parked > 0) out.push(`${status.parked} parked`)
   if (status.error) out.push(status.error)

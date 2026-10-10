@@ -503,9 +503,11 @@
     "inFlight": true,
     "kind": true,
     "lag": false,
+    "lastDeliveredAt": false,
     "lastFire": false,
     "lastParkedAt": false,
     "lastParkedError": false,
+    "lastPassAt": false,
     "parked": true,
     "pending": true,
     "webhookPath": false

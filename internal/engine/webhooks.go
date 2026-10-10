@@ -198,7 +198,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
 		return
 	}
-	_, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
+	_, _, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
 	if err == nil {
 		return
 	}

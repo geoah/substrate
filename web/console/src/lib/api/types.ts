@@ -610,9 +610,16 @@ export interface TriggerStatus {
    * trigger, the due occurrences no dispatcher pass has reached yet. */
   pending: number
   /** Rows the server is delivering right now: an agent run's claim or a
-   * retry by hand, listed under `…/parked` with `running` set; on a
+   * retry by hand, listed under `…/parked` with `running` set; on a record
+   * trigger, also the deliveries a pass or a wake is running; on a
    * schedule trigger, also the due occurrence the dispatcher is running. */
   inFlight: number
+  /** When a dispatcher pass last reached a record or schedule trigger, and
+   * when a delivery of it last settled (ran, skipped or parked past), a
+   * hand retry's included. Kept in the server's memory, not stored: a
+   * restart clears both, and a webhook trigger carries neither. */
+  lastPassAt?: string
+  lastDeliveredAt?: string
   /** The newest parked delivery's error, its first line cut at 500 bytes,
    * and when it parked; both absent while `parked` is 0. */
   lastParkedError?: string
