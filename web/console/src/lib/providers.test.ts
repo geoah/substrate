@@ -632,6 +632,7 @@ describe("tools", () => {
       pending: 0,
       inFlight: 0,
       lastFire,
+      health: "ok",
     })
     expect(
       toolActivity(
@@ -662,6 +663,7 @@ describe("tools", () => {
       inFlight: 0,
       lastParkedError,
       lastParkedAt,
+      health: "ok",
     })
     expect(
       toolActivity(

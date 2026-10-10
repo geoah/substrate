@@ -200,14 +200,17 @@ func TestStatusReadsCarryTheLatestParkedReason(t *testing.T) {
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 	at := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
+	since, lastOK := at.Add(-2*time.Hour), at.Add(-3*time.Hour)
 	scheduled := substrate.TriggerStatus{
 		ID: "github-scheduled", Kind: substrate.TriggerKindSchedule, Enabled: true,
 		Parked: 93, LastParkedError: "RuntimeError: GitHub answered 401", LastParkedAt: &at,
+		Health: substrate.HealthFailing, FailingSince: &since, LastOkAt: &lastOK,
 	}
 	ds.triggerStatuses = []substrate.TriggerStatus{scheduled}
 	ds.syncStatuses = []substrate.SyncStatus{{
 		Kind: "providers.substrate.reamde.dev/github/account", ID: "geoah", State: substrate.SyncStateOK,
 		Parked: 93, LastParkedError: "RuntimeError: GitHub answered 401", LastParkedAt: &at,
+		Health: substrate.HealthFailing, FailingSince: &since, LastOkAt: &lastOK,
 		Triggers: []substrate.TriggerStatus{},
 	}}
 
@@ -219,6 +222,9 @@ func TestStatusReadsCarryTheLatestParkedReason(t *testing.T) {
 				Parked          int64  `json:"parked"`
 				LastParkedError string `json:"lastParkedError"`
 				LastParkedAt    string `json:"lastParkedAt"`
+				Health          string `json:"health"`
+				FailingSince    string `json:"failingSince"`
+				LastOkAt        string `json:"lastOkAt"`
 			} `json:"items"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -231,6 +237,47 @@ func TestStatusReadsCarryTheLatestParkedReason(t *testing.T) {
 		if got.Parked != 93 || got.LastParkedError != "RuntimeError: GitHub answered 401" || got.LastParkedAt != "2026-09-27T09:00:00Z" {
 			t.Fatalf("%s: item = %+v, want the count, the reason and when", path, got)
 		}
+		if got.Health != substrate.HealthFailing || got.FailingSince != "2026-09-27T07:00:00Z" || got.LastOkAt != "2026-09-27T06:00:00Z" {
+			t.Fatalf("%s: item = %+v, want failing since 07:00, last ok 06:00", path, got)
+		}
+	}
+}
+
+// TestStatusReadsCarryHealth: a healthy row says `ok` and leaves
+// failingSince out, and a row that never delivered leaves lastOkAt out too.
+func TestStatusReadsCarryHealth(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	lastOK := time.Date(2026, 9, 27, 6, 0, 0, 0, time.UTC)
+	ds.triggerStatuses = []substrate.TriggerStatus{
+		{ID: "delivered", Kind: substrate.TriggerKindRecord, Enabled: true, Health: substrate.HealthOK, LastOkAt: &lastOK},
+		{ID: "never", Kind: substrate.TriggerKindRecord, Enabled: true, Health: substrate.HealthOK},
+	}
+	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/trigger/status", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("items = %s, want two", rec.Body.String())
+	}
+	for _, item := range body.Items {
+		if item["health"] != substrate.HealthOK {
+			t.Fatalf("%v: health = %v, want ok", item["id"], item["health"])
+		}
+		if _, ok := item["failingSince"]; ok {
+			t.Fatalf("%v: a healthy row carries failingSince %v", item["id"], item["failingSince"])
+		}
+	}
+	if body.Items[0]["lastOkAt"] != "2026-09-27T06:00:00Z" {
+		t.Fatalf("delivered: lastOkAt = %v", body.Items[0]["lastOkAt"])
+	}
+	if _, ok := body.Items[1]["lastOkAt"]; ok {
+		t.Fatalf("never: a trigger that never delivered carries lastOkAt %v", body.Items[1]["lastOkAt"])
 	}
 }
 

@@ -89,10 +89,11 @@ however many parked deliveries it covers, and the deliveries themselves are
 listed on the trigger, as before. With no alert open, Home is what 0130
 describes.
 
-Deriving health at read time was rejected: retention prunes an ok run after
-twenty newer ones, a hand retry that delivers writes no run row
-([0091](0091-a-parked-delivery-is-retried-or-forgotten.md)), and a read-time
-answer gives a notifier nothing to trigger on.
+Deriving health at read time was rejected: read-time health gives a
+notifier nothing to trigger on. The run rows the dispatcher reads health from
+are complete since
+[0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md):
+a hand retry writes a run row, and the newest ok run outlives retention.
 
 ### Consequences
 

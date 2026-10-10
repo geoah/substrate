@@ -611,6 +611,9 @@ const triggerStatus: Shape<TriggerStatus> = {
   lastParkedAt: false,
   held: false,
   error: false,
+  health: true,
+  failingSince: false,
+  lastOkAt: false,
 }
 const triggerFailure: Shape<TriggerFailure> = {
   id: true,
@@ -643,6 +646,9 @@ const syncStatus: Shape<SyncStatus> = {
   parked: true,
   lastParkedError: false,
   lastParkedAt: false,
+  health: true,
+  failingSince: false,
+  lastOkAt: false,
   triggers: true,
 }
 const syncProgress: Shape<SyncProgress> = {

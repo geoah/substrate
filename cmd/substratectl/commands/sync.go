@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,7 +36,7 @@ func (a *app) syncStatusCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Per-account sync state, message, last run, request, streams, parked and lagging triggers, and the newest parked run's reason",
+		Short: "Per-account sync state, health, message, last run, request, streams, parked and lagging triggers, and the newest parked run's reason",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -48,7 +49,7 @@ func (a *app) syncStatusCommand() *cobra.Command {
 			}
 			return printList(a, output, res.Items, func() error {
 				tw := newTable(a.out)
-				fmt.Fprintln(tw, "KIND\tID\tSTATE\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE\tLAST PARKED")
+				fmt.Fprintln(tw, "KIND\tID\tSTATE\tHEALTH\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE\tLAST PARKED")
 				for _, s := range res.Items {
 					last := ""
 					if s.LastSyncedAt != nil {
@@ -67,8 +68,8 @@ func (a *app) syncStatusCommand() *cobra.Command {
 					// One line per account: a message carrying a newline would
 					// break the table.
 					message, _, _ = strings.Cut(message, "\n")
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
-						s.Kind, s.ID, s.State, s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60), a.lastParked(s))
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
+						s.Kind, s.ID, s.State, a.health(s.Health, s.FailingSince), s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60), a.lastParked(s))
 				}
 				return tw.Flush()
 			})
@@ -76,6 +77,16 @@ func (a *app) syncStatusCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: table|json|yaml")
 	return cmd
+}
+
+// health renders a status's health as one cell: `ok`, or `failing` and how
+// long it has failed, from the failing alert's firstSeenAt. A server that
+// reports no health leaves the cell empty.
+func (a *app) health(health string, since *time.Time) string {
+	if health != substrate.HealthFailing || since == nil {
+		return health
+	}
+	return health + " " + humanAge(a.now(), *since)
 }
 
 // lastParked renders the newest parked delivery as its age and its reason:

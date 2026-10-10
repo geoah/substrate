@@ -314,6 +314,7 @@ const TRIGGER_STATUSES: TriggerStatus[] = [
     parked: 0,
     pending: 0,
     inFlight: 0,
+    health: "ok",
   },
 ]
 
@@ -347,6 +348,7 @@ const SYNC_STATUSES: SyncStatus[] = [
     state: "erroring",
     paused: false,
     parked: 1,
+    health: "ok",
     triggers: [],
   },
 ]

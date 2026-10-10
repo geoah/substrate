@@ -48,8 +48,13 @@ func supersedeFunction(name, source string) map[string]any {
 // at startsAt, hourly.
 func supersedeDataset(t *testing.T, startsAt time.Time, ops ...any) *dataset {
 	t.Helper()
+	return supersedeDatasetOn(t, openInternalDataset(t), startsAt, ops...)
+}
+
+// supersedeDatasetOn is supersedeDataset on a dataset the caller opened.
+func supersedeDatasetOn(t *testing.T, ds *dataset, startsAt time.Time, ops ...any) *dataset {
+	t.Helper()
 	ctx := context.Background()
-	ds := openInternalDataset(t)
 	connector := func(typ string) map[string]any {
 		return map[string]any{"type": typ, "writer": "connector", "fts": false}
 	}

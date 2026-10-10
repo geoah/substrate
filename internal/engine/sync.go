@@ -447,6 +447,7 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 				parkedSyncState(&st)
 				parkedStreamStates(&st, byStream[row.ID], byStream[""])
 			}
+			syncHealth(&st, byID, triggerIDs)
 			st.Triggers = append([]substrate.TriggerStatus{}, onKind...)
 			out = append(out, st)
 		}

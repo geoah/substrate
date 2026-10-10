@@ -183,6 +183,9 @@ type dataset struct {
 	// Once per open, because only the open-time sweep parks a delivery as
 	// interrupted at one attempt.
 	interruptedRerun atomic.Int32
+	// healthReadAt is when a pass last read the triggers' health, in Unix
+	// nanoseconds on the health clock (health.go healthDue).
+	healthReadAt atomic.Int64
 	// statsCache holds the collection statistics the lexical arm's BM25F
 	// reads (bm25.go), refreshed after statsTTL.
 	statsCache searchStatsCache

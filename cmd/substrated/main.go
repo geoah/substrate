@@ -169,6 +169,7 @@ func run() error {
 		engine.WithRepositoryConnections(cfg.RepositoryConnections),
 		engine.WithOrphanCollection(cfg.OrphanGrace),
 		engine.WithTriggerLaneWorkers(cfg.TriggerLaneWorkers),
+		engine.WithHealthFailingAfter(cfg.HealthFailingAfter),
 	}
 	if cfg.OrphanGrace > 0 {
 		// Loud, and at boot: this deployment DELETES records the sweep finds

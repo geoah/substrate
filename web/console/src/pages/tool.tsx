@@ -39,6 +39,7 @@ import { OriginMark } from "@/components/identity/origin-mark"
 import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
 import { AlertsPanel } from "@/components/alerts/alerts-panel"
+import { FailingBadge } from "@/components/alerts/failing-badge"
 import { RunIO } from "@/components/tools/run-io"
 import { ToolTile } from "@/components/tools/tool-marks"
 import { TryIt } from "@/components/tools/try-it"
@@ -316,6 +317,7 @@ function ToolDoc({
         </Callout>
       ) : null}
 
+      <FailingBadge callables={[tool.ref]} />
       <AlertsPanel refs={[`${FUNCTION_KIND}/${tool.ref}`]} />
 
       <Section

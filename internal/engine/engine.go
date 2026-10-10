@@ -66,6 +66,10 @@ type options struct {
 	// laneWorkers is how many schedule fires one pass runs at once
 	// (WithTriggerLaneWorkers); scheduleLaneWorkers when zero.
 	laneWorkers int
+	// healthFailingAfter is how long a trigger's deliveries must all have
+	// parked before its failing alert opens (WithHealthFailingAfter); zero or
+	// less is DefaultHealthFailingAfter.
+	healthFailingAfter time.Duration
 	// catchUpBatch is the page size of the boot's table-to-file catch-up
 	// (appendFromTable); rebuildBatch when not positive. Only a test sets it
 	// (export_test.go), to put a transaction across a page boundary.
@@ -166,6 +170,9 @@ type options struct {
 	// (runner.go runCallableRaw), so a test can act while the body runs.
 	// Inert unless set.
 	invokeHook func(function string)
+	// healthNow is the clock the failing-trigger read measures a park's age
+	// on (seams.go WithTestHealthClock); the wall clock when nil.
+	healthNow func() time.Time
 	// now is the TOTP verifier's clock (seams.go WithTestTOTPClock); the wall
 	// clock when nil. A test that spends one window's codes advances it
 	// instead of sleeping through a real 30 second step.
@@ -272,6 +279,14 @@ func WithOrphanCollection(grace time.Duration) Option {
 // configuration does, and so does one above TriggerDeliverySlots, because
 // no pass could ever run more than the process does.
 func WithTriggerLaneWorkers(n int) Option { return func(o *options) { o.laneWorkers = n } }
+
+// WithHealthFailingAfter sets how long every delivery of a trigger must have
+// parked, since its newest ok run, before the dispatcher opens the trigger's
+// `trigger.failing/<trigger id>` alert (SUBSTRATE_HEALTH_FAILING_AFTER,
+// health.go). Zero or less, or not given, is DefaultHealthFailingAfter.
+func WithHealthFailingAfter(d time.Duration) Option {
+	return func(o *options) { o.healthFailingAfter = d }
+}
 
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open applies
@@ -405,6 +420,10 @@ type service struct {
 	// dispatcher never has more than TriggerDeliverySlots in flight however
 	// many passes run.
 	deliverySlots chan struct{}
+	// healthFailingAfter is the failing window (health.go), always positive.
+	healthFailingAfter time.Duration
+	// healthNow is the failing-trigger read's clock (health.go), never nil.
+	healthNow func() time.Time
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
 	// valuesBudget is what one change read's before values may read.
@@ -574,6 +593,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.valuesBudget <= 0 {
 		o.valuesBudget = valuesBudget
 	}
+	if o.healthFailingAfter <= 0 {
+		o.healthFailingAfter = DefaultHealthFailingAfter
+	}
+	if o.healthNow == nil {
+		o.healthNow = time.Now
+	}
 	if !o.searchMatchMaxSet {
 		o.searchMatchMax = -1
 	}
@@ -629,19 +654,21 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 
 		searchMatchMax: o.searchMatchMax,
 
-		conversionCeiling: o.conversionCeiling,
-		orphanGrace:       o.orphanGrace,
-		laneWorkers:       o.laneWorkers,
-		deliverySlots:     make(chan struct{}, TriggerDeliverySlots),
-		totpDisabled:      o.insecureDisableTOTP,
-		now:               o.now,
-		readOnly:          o.dirReadOnly,
-		seedLLMSample:     o.seedLLMSample,
-		seedLLMProviders:  o.seedLLMProviders,
-		log:               o.log,
-		bg:                newBackground(),
-		datasets:          map[string]*dataset{},
-		opening:           map[string]chan struct{}{},
+		conversionCeiling:  o.conversionCeiling,
+		orphanGrace:        o.orphanGrace,
+		healthFailingAfter: o.healthFailingAfter,
+		healthNow:          o.healthNow,
+		laneWorkers:        o.laneWorkers,
+		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
+		totpDisabled:       o.insecureDisableTOTP,
+		now:                o.now,
+		readOnly:           o.dirReadOnly,
+		seedLLMSample:      o.seedLLMSample,
+		seedLLMProviders:   o.seedLLMProviders,
+		log:                o.log,
+		bg:                 newBackground(),
+		datasets:           map[string]*dataset{},
+		opening:            map[string]chan struct{}{},
 
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,

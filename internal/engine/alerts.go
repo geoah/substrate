@@ -49,6 +49,11 @@ type alertRaise struct {
 	// raised the alert.
 	about []string
 	count int64
+	// since, when set, is when the problem began, written as firstSeenAt
+	// when the alert opens: a failing trigger's oldest park, which the pass
+	// that raises the alert sees a window later. Zero is the write's own
+	// moment.
+	since time.Time
 }
 
 // alertID is the record id of the alert keyed key. A key inside the record id
@@ -124,6 +129,9 @@ func (t *txn) raiseAlert(actor substrate.Actor, a alertRaise) error {
 	}
 	if !open {
 		props["firstSeenAt"] = now
+		if !a.since.IsZero() {
+			props["firstSeenAt"] = a.since.UTC().Format(time.RFC3339Nano)
+		}
 	}
 	if a.detail != "" {
 		props["detail"] = a.detail
