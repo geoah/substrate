@@ -44,12 +44,13 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Per-trigger kind, callable, cursor, lag, last fire, last pass, last delivery, parked, pending and in-flight counts, and webhook path",
+		Short: "Per-trigger kind, callable, cursor, lag, last fire, last pass, last delivery, parked, pending and in-flight counts, webhook path, and why an agent trigger is held",
 		Long: `List every trigger's delivery state. LASTPASS is how long ago a
 dispatcher pass of the server process last reached the trigger, and
 LASTDELIVERED how long ago a delivery of it last settled (ran, skipped or
 parked past). The server keeps both in memory: a restart clears them, and a
-webhook trigger shows neither.`,
+webhook trigger shows neither. HELD says why an agent trigger's deliveries
+wait at a spend cap: the cap and the spend so far.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -62,7 +63,9 @@ webhook trigger shows neither.`,
 			}
 			return printList(a, output, res.Items, func() error {
 				tw := newTable(a.out)
-				fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tLASTPASS\tLASTDELIVERED\tPARKED\tPENDING\tINFLIGHT\tWEBHOOK\tERROR")
+				// HELD is last and whole: it names the cap and the spend so
+				// far, and a cut would drop exactly the numbers it is there for.
+				fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tLASTPASS\tLASTDELIVERED\tPARKED\tPENDING\tINFLIGHT\tWEBHOOK\tERROR\tHELD")
 				age := func(at *time.Time) string {
 					if at == nil {
 						return ""
@@ -70,9 +73,9 @@ webhook trigger shows neither.`,
 					return humanAge(a.now(), *at)
 				}
 				for _, t := range res.Items {
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\n",
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\t%s\n",
 						t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, age(t.LastFire), age(t.LastPassAt), age(t.LastDeliveredAt),
-						t.Parked, t.Pending, t.InFlight, t.WebhookPath, truncate(t.Error, 60))
+						t.Parked, t.Pending, t.InFlight, t.WebhookPath, truncate(t.Error, 60), t.Held)
 				}
 				return tw.Flush()
 			})

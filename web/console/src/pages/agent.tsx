@@ -51,6 +51,9 @@ import { standingAllows } from "@/lib/agent-rules"
 import {
   STATUS_WORDS,
   agentLimits,
+  agentSpendCap,
+  capWindowSpend,
+  capWords,
   costWords,
   durationWords,
   failureGroups,
@@ -69,6 +72,7 @@ import {
   runUnpriced,
   tokenWords,
   type AgentLimit,
+  type CapSpend,
   type FailureGroup,
   type GroupTotals,
   type PeriodTotals,
@@ -167,6 +171,7 @@ export function AgentPage() {
   const subagents = agentSubagents(record)
   const hidden = record.properties.hiddenFromChat === true
   const agentKind = registry.data?.find((k) => k.identity === AGENT_KIND)
+  const spendCap = agentSpendCap(record)
 
   return (
     <DocPage>
@@ -304,6 +309,23 @@ export function AgentPage() {
         limits={agentLimits(record)}
         specs={agentKind ? propSpecsByName(agentKind) : []}
       />
+
+      {spendCap !== undefined && (
+        <>
+          <SectionHead
+            title="Daily spend cap"
+            hint="what its runs may spend in any 24 hours"
+          />
+          <SpendCap
+            cap={spendCap}
+            spend={
+              runs.isSuccess
+                ? capWindowSpend(threads, { truncated })
+                : undefined
+            }
+          />
+        </>
+      )}
 
       <SectionHead
         title="Always allowed"
@@ -448,6 +470,58 @@ function Limits({
         )
       })}
     </dl>
+  )
+}
+
+/** The agent's cap beside what counts against it now, from the runs the page
+ * read. At the cap the server holds its runs; the trigger status says so too,
+ * and counts what running runs have spent, which their rows do not carry
+ * until they settle. */
+function SpendCap({ cap, spend }: { cap: number; spend?: CapSpend }) {
+  const reached = spend !== undefined && spend.usd * 100 >= cap
+  return (
+    <>
+      <Facts
+        rows={[
+          ["Cap", `${capWords(cap)} in any 24 hours`],
+          [
+            "Spent in the last 24 hours",
+            spend === undefined ? (
+              <EmptyValue>Its runs didn’t load</EmptyValue>
+            ) : (
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="tabular-nums">
+                  {!spend.complete && (
+                    <span className="text-faint">at least </span>
+                  )}
+                  {costWords(spend.usd)}
+                </span>
+                {reached && <Pill tone="warn">At the cap</Pill>}
+              </span>
+            ),
+          ],
+        ]}
+      />
+      <div className="mt-2 flex flex-col gap-0.5 text-[12.5px] text-faint">
+        {reached && (
+          <p>
+            Its triggers hold their deliveries, and a chat with it is refused,
+            until its spend falls under the cap or you raise it. A held delivery
+            waits and runs then.
+          </p>
+        )}
+        <p>
+          Counts the cost each run it started recorded when it finished,
+          including the agents it asked.
+        </p>
+        {spend !== undefined && spend.running > 0 && (
+          <p>
+            A run still going counts against the cap as it spends, and shows
+            here once it finishes.
+          </p>
+        )}
+      </div>
+    </>
   )
 }
 

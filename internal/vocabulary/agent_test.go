@@ -499,3 +499,42 @@ func TestAgentCompaction(t *testing.T) {
 		}
 	}
 }
+
+// budgets.spendCentsPerDay is optional and absence is not zero: an absent cap
+// is no cap, 0 is a cap that holds every run, and a negative or fractional
+// amount is refused.
+func TestAgentSpendCapIsOptionalAndZeroIsACap(t *testing.T) {
+	agent := func(budgets string) string {
+		return `  description: classifies widgets
+  prompt: You classify widgets.
+  provider: default
+  model: claude-opus-5
+  budgets: ` + budgets + "\n"
+	}
+	for _, tc := range []struct {
+		budgets string
+		want    *int
+	}{
+		{budgets: `{maxTurns: 4}`, want: nil},
+		{budgets: `{spendCentsPerDay: 0}`, want: new(0)},
+		{budgets: `{spendCentsPerDay: 500, maxTurns: 4}`, want: new(500)},
+	} {
+		r, err := loadAgAuthority(t, agAuthority(agent(tc.budgets)))
+		if err != nil {
+			t.Fatalf("%s: load: %v", tc.budgets, err)
+		}
+		ag, err := r.ResolveAgent("ag.example.com/ag/classifier")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := ag.Budgets.SpendCentsPerDay
+		if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+			t.Fatalf("%s: spendCentsPerDay %v, want %v", tc.budgets, got, tc.want)
+		}
+	}
+	for _, bad := range []string{`{spendCentsPerDay: -1}`, `{spendCentsPerDay: 2.5}`, `{spendCentsPerDay: lots}`} {
+		if _, err := loadAgAuthority(t, agAuthority(agent(bad))); err == nil || !strings.Contains(err.Error(), "spendCentsPerDay") {
+			t.Errorf("%s: loaded, or refused without naming the key: %v", bad, err)
+		}
+	}
+}

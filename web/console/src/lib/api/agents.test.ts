@@ -147,6 +147,31 @@ describe("streamChat post-200 failures", () => {
     expect(r.events[1]).toMatchObject({ tokensBefore: 900, covered: 6 })
   })
 
+  it("says a refusal before the run started in the server's words", async () => {
+    const message =
+      "substrate: operation not allowed here: spend cap reached: agent a spent 512 of its 500 cents in the last 24 hours (budgets.spendCentsPerDay)"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: { code: "guard", message } }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          })
+      )
+    )
+    const error = await new Promise<string>((resolve) => {
+      streamChat({
+        agent: "a",
+        message: "hi",
+        onEvent: () => {},
+        onError: (e) => resolve(e.message),
+        onDone: () => resolve("settled"),
+      })
+    })
+    expect(error).toBe(message)
+  })
+
   it("settles onDone on a clean run carrying a result", async () => {
     const r = await runStream([
       '{"kind":"thread","thread":"t-1"}',

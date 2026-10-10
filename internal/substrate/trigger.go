@@ -73,6 +73,14 @@ type TriggerStatus struct {
 	// Parked is 0.
 	LastParkedError string     `json:"lastParkedError,omitempty"`
 	LastParkedAt    *time.Time `json:"lastParkedAt,omitempty"`
+	// Held says why the dispatcher holds an agent trigger's deliveries: the
+	// spend cap reached (the agent's `budgets.spendCentsPerDay` or the
+	// repository's `substrate.reamde.dev/llm/spendCentsPerDay` setting) and
+	// the spend so far. A held delivery is not claimed, so the cursor or
+	// fire state stays and nothing parks; the next dispatcher pass after the
+	// spend falls under the cap, or the cap is raised, delivers it. Absent
+	// while the trigger is not held.
+	Held string `json:"held,omitempty"`
 	// Error names a trigger the dispatcher cannot run: an unparseable row or
 	// a callable that no longer resolves.
 	Error string `json:"error,omitempty"`

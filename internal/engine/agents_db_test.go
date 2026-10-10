@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -1231,6 +1232,10 @@ func chatWhileTheThreadIsDeleted(t *testing.T, collect bool) {
 		t.Fatalf("delete the thread: %v", err)
 	}
 	if collect {
+		// GC keeps a thread whose settle is inside the spend window
+		// (gc.go gcPass); this one's first turn settled a moment ago, so the
+		// ledger's clock moves past the window for it to be collectable.
+		ds.spend.now = func() time.Time { return time.Now().Add(spendWindow + time.Hour) }
 		if _, err := ds.RunGC(ctx); err != nil {
 			close(release)
 			t.Fatalf("gc: %v", err)

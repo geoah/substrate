@@ -86,6 +86,11 @@ func (t *txn) guardSettingWrite(sp *applySpec) error {
 		return nil
 	}
 	value := settingEffective(sp, propSettingValue)
+	if sp.id == spendSettingID {
+		if err := guardSpendCapSetting(sp, value); err != nil {
+			return err
+		}
+	}
 	if value == "" {
 		return nil
 	}
@@ -115,6 +120,26 @@ func (t *txn) guardSettingWrite(sp *applySpec) error {
 			return fmt.Errorf("%w: setting %s: value %q is not one of %v, and the setting's type is enum",
 				substrate.ErrValidation, propSettingValue, value, admitted)
 		}
+	}
+	return nil
+}
+
+// guardSpendCapSetting holds the repository's spend cap to what the engine
+// reads it as (spend.go): its `type` is int and a value is a whole number of
+// cents from 0 to the largest integer an `int` holds exactly. It is the one
+// setting the engine itself reads, by id, and a value it could not read
+// would hold every agent run. An empty value is no cap and stays admitted.
+func guardSpendCapSetting(sp *applySpec, value string) error {
+	if typ := settingEffective(sp, propSettingType); typ != settingTypeInt {
+		return fmt.Errorf("%w: setting %s: type %q, and the spend cap is a whole number of US cents: set type int",
+			substrate.ErrValidation, spendSettingID, typ)
+	}
+	if value == "" {
+		return nil
+	}
+	if _, ok := parseSpendCents(value); !ok {
+		return fmt.Errorf("%w: setting %s: value %q is not a whole number of cents from 0 to %d",
+			substrate.ErrValidation, spendSettingID, value, vocabulary.MaxAgentSpendCentsPerDay)
 	}
 	return nil
 }

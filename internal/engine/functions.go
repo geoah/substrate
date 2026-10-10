@@ -227,6 +227,9 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	// The webhook requests the door recorded and nothing fired: a stop after
 	// the 202 or mid-fire, a restore, a trigger that runs again. Detached,
 	// so a slow fire does not hold the pass (webhooks.go resumeWebhooks).
+	// The spend caps are read again once per pass, so a raised cap or a
+	// window that rolled on resumes a held trigger at the next pass.
+	ds.spend.expire()
 	ds.resumeWebhooks()
 	triggers, err := ds.loadTriggers(ctx)
 	if err != nil {
@@ -596,7 +599,17 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 			if i > 0 && deadline.spent() {
 				return ran, nil
 			}
-			n, next, err := ds.deliverWithRetry(ctx, tr, ch, cursor)
+			// An agent at a spend cap holds the walk here, before the claim
+			// and before the trailing scan advance below: the cursor stays
+			// on the row still owed, and no run row or park is written.
+			dctx, held, err := ds.holdAgentDelivery(ctx, tr)
+			if err != nil {
+				return ran, err
+			}
+			if held {
+				return ran, nil
+			}
+			n, next, err := ds.deliverWithRetry(dctx, tr, ch, cursor)
 			ran += n
 			if errors.Is(err, errCursorMoved) {
 				ds.logYield(tr.ID, "delivery", ch.Seq)
@@ -1514,6 +1527,16 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		if i > 0 && deadline.spent() {
 			return ran, fired, nil
 		}
+		// As in processRecordTrigger: a hold stops the walk before the fire
+		// is claimed, so the fire state stays and the occurrence is still
+		// due at the next pass.
+		dctx, held, err := ds.holdAgentDelivery(ctx, lt.trigger)
+		if err != nil {
+			return ran, fired, err
+		}
+		if held {
+			return ran, fired, nil
+		}
 		// An occurrence waits for the lane's next look, for a free lane
 		// worker and for a delivery slot (scheduleLane); the log line is
 		// where an operator meets that wait before the fire settles.
@@ -1527,7 +1550,7 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		n, settled, err := func() (int, bool, error) {
 			done := ds.startFire(lt.ID, fireID(at))
 			defer done()
-			return ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
+			return ds.deliverFire(dctx, lt.trigger, runner.ModeSchedule, fireID(at), at, &lastFire, nil, nil)
 		}()
 		ran += n
 		fired++
@@ -2924,7 +2947,8 @@ func (ds *dataset) causalDepth(ctx context.Context, seq int64) (int, error) {
 
 // TriggerStatuses computes per-trigger delivery state: nothing is stored on
 // the trigger record itself — status derives from the cursor (or fire
-// state), the head and the parked count. An admitted webhook request whose
+// state), the head and the parked count, and an agent trigger's hold from
+// the spend caps. An admitted webhook request whose
 // fire has not settled (webhooks.go pendingWebhookError) is counted as
 // pending, not parked: a healthy door is not a trigger giving up. A row this
 // process is delivering now (presentFailure) is counted as in flight, not
@@ -2950,6 +2974,9 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 	if err != nil {
 		return nil, err
 	}
+	// The repository cap is read again once per status read, as a hand's
+	// entry reads it, so a raised cap reads as such before the next pass.
+	ds.spend.expireCap()
 	out := make([]substrate.TriggerStatus, 0, len(triggers))
 	for _, lt := range triggers {
 		st := substrate.TriggerStatus{
@@ -3030,6 +3057,13 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 		}
 		st.Pending += owedPending
 		st.InFlight += owedInFlight + int64(delivering)
+		// The same check the dispatcher makes before it claims a delivery,
+		// so the status says held exactly when the next delivery would be.
+		if lt.Agent != nil && lt.Enabled && st.Error == "" {
+			if st.Held, err = ds.spendHold(ctx, lt.Agent); err != nil {
+				return nil, err
+			}
+		}
 		if st.Parked > 0 {
 			var lastErr string
 			var at time.Time
@@ -3145,6 +3179,14 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 	}
 	if !tr.runnable() {
 		return 0, fmt.Errorf("%w: trigger %s: callable %s does not resolve", substrate.ErrValidation, id, tr.CallableID)
+	}
+	// A hand's wake of an agent at a spend cap is told so, rather than
+	// answered with nothing ran (a record or schedule walk) or a parked fire
+	// (a webhook's, whose loop would refuse after the claim).
+	if tr.Agent != nil {
+		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent); err != nil {
+			return 0, err
+		}
 	}
 	switch {
 	case tr.Webhook:
@@ -3264,6 +3306,14 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 		return 0, err
 	}
 	f.Payload = json.RawMessage(payload)
+	// Before the hold below and before anything runs: an agent at a spend cap
+	// refuses the retry and leaves the row exactly as it was, where a refusal
+	// from inside the loop would re-park it one attempt older.
+	if tr.Agent != nil {
+		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent); err != nil {
+			return 0, err
+		}
+	}
 	settle := &settlement{ds: ds, trigger: tr.ID, seq: int64(f.Seq), fireID: f.FireID, retire: failureID}
 	// A retried occurrence that settles supersedes the parks at or before
 	// it, as a dispatched one does.

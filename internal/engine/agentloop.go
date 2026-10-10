@@ -172,6 +172,10 @@ type agentTally struct {
 	completion int
 	cost       float64
 	effects    map[string]int
+	// spend is the root run's spend, keyed by the root thread (spend.go):
+	// every charge on the chain counts against the root agent's cap while
+	// the chain runs. nil until the root's thread opens.
+	spend *spendRun
 	// changes is every changelog entry a dispatch on the chain committed, in
 	// commit order: exactly the entries the chain's tool rows stamp as
 	// `changes`, appended where each row is stamped. A sub-agent call
@@ -483,6 +487,12 @@ type agentLoop struct {
 	measured     bool
 	// leaseAt is the lease this run last wrote on the thread row.
 	leaseAt time.Time
+	// openCost is the thread's costUSD when this run opened it: 0 for a new
+	// thread, the stored total for a continued one.
+	openCost float64
+	// spend is the root run's spend (spend.go), set on the root loop alone:
+	// a settle of this loop that commits the thread row tells it so at once.
+	spend *spendRun
 
 	// own counters (the thread row's); the tally aggregates across the chain
 	turns      int
@@ -499,6 +509,16 @@ type agentLoop struct {
 // budget leaves a readable trace; the delivery machinery around it stays
 // at-least-once (a retried delivery is a fresh thread).
 func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) (*substrate.AgentResult, error) {
+	root := in.tally == nil
+	// A root run the dispatcher or a hand's entry did not already check meets
+	// the spend caps here, before a thread opens (spend.go): a sub-agent runs
+	// under its root's cap, which its caller was admitted against.
+	if root && !spendAdmitted(ctx, ag) {
+		var err error
+		if ctx, err = ds.refuseAtSpendCap(ctx, ag); err != nil {
+			return nil, err
+		}
+	}
 	// Counted for the whole loop, the model's turns and the tools it calls,
 	// so the background digest of a changelog yields to it
 	// (segmentdigest.go).
@@ -522,7 +542,7 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	if wrap != nil {
 		client = wrap(provider.wire, client)
 	}
-	if in.tally == nil {
+	if root {
 		in.tally = &agentTally{effects: map[string]int{}}
 	}
 	in.callStack = append(slices.Clone(in.callStack), agentStackKey(ag.Identity()))
@@ -547,6 +567,17 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	messages, err := l.openThread(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if root {
+		// The run's charges count against the caps from its first one. A
+		// settle that commits the thread row moves them onto it (settle);
+		// when the loop returns by any other path, a panic included, they
+		// stay counted for the window, because no row will carry them
+		// (spend.go).
+		run := ds.spend.open(ag.Identity(), l.threadID, l.openCost)
+		in.tally.spend = run
+		l.spend = run
+		defer ds.spend.finish(run)
 	}
 	ds.runningThreads.Store(l.threadID, l)
 	defer ds.runningThreads.CompareAndDelete(l.threadID, l)
@@ -826,6 +857,7 @@ func (l *agentLoop) charge(usage *llm.Usage) {
 	l.in.tally.prompt += usage.PromptTokens
 	l.in.tally.completion += usage.CompletionTokens
 	l.in.tally.cost += turnCost
+	l.ds.spend.charge(l.in.tally.spend, turnCost)
 }
 
 func (l *agentLoop) event(ev substrate.AgentEvent) {
@@ -995,6 +1027,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		}
 		l.threadID = l.in.threadID
 		l.leaseAt = l.leaseUntil()
+		l.openCost, _ = anyFloat(row.Props["costUSD"])
 		_, err = t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
 			"status": threadRunning, "leaseUntil": l.leaseAt.Format(time.RFC3339Nano),
 		}})
@@ -1073,7 +1106,12 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
 		prompt, completion, cost = l.in.tally.prompt, l.in.tally.completion, l.in.tally.cost
 	}
-	return l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	// What the row carries once this commits, for the root's spend: only a
+	// patch that committed puts the chain's cost on a row (spend.go).
+	var patched bool
+	var lifetime float64
+	err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+		patched = false
 		t.causedBy = l.in.causedBy
 		// The shared registry-dependency lock before the row lock below, the
 		// order every put takes (changelog < registry-dep < subject-type <
@@ -1124,12 +1162,19 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 			if _, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: props}); err != nil {
 				return err
 			}
+			patched, lifetime = true, baseCost+cost
 		}
 		if then != nil {
 			return then(t)
 		}
 		return nil
 	})
+	if err == nil && patched {
+		// At once, before the resolution re-check and the done event, so no
+		// check reads a committed thread as a run still going.
+		l.ds.spend.commit(l.spend, lifetime)
+	}
+	return err
 }
 
 func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substrate.PutInput) error {

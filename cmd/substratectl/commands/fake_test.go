@@ -1235,7 +1235,11 @@ func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, e)
 }
 
-// handleTriggerStatus answers the computed per-trigger status table.
+// fakeHeldText is what the fake's held agent trigger reports.
+const fakeHeldText = "spend cap reached: agent samples.substrate.reamde.dev/llm/dailyrollup spent 512 of its 500 cents in the last 24 hours (budgets.spendCentsPerDay)"
+
+// handleTriggerStatus answers the computed per-trigger status table: a
+// function trigger in step, and an agent trigger held at its spend cap.
 func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	passed, delivered := testNow.Add(-5*time.Second), testNow.Add(-3*time.Minute)
@@ -1243,6 +1247,10 @@ func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Reque
 		ID: "classify-page", Kind: substrate.TriggerKindRecord,
 		Callable: "web.substrate.reamde.dev/web/classify", Enabled: true, Cursor: 41, Head: 41,
 		LastPassAt: &passed, LastDeliveredAt: &delivered,
+	}, {
+		ID: "daily-rollup", Kind: substrate.TriggerKindSchedule,
+		Callable: "samples.substrate.reamde.dev/llm/dailyrollup", Enabled: true, Head: 41, Pending: 1,
+		Held: fakeHeldText,
 	}}})
 }
 

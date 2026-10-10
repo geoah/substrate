@@ -609,6 +609,7 @@ const triggerStatus: Shape<TriggerStatus> = {
   lastDeliveredAt: false,
   lastParkedError: false,
   lastParkedAt: false,
+  held: false,
   error: false,
 }
 const triggerFailure: Shape<TriggerFailure> = {

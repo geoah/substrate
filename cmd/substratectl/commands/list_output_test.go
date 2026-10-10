@@ -82,7 +82,7 @@ func TestListingCommandsPrintJSON(t *testing.T) {
 		{[]string{"trigger", "status"}, func(t *testing.T, out string) {
 			var got []substrate.TriggerStatus
 			mustUnmarshal(t, out, &got)
-			if len(got) != 1 || got[0].ID != "classify-page" || got[0].Cursor != 41 {
+			if len(got) != 2 || got[0].ID != "classify-page" || got[0].Cursor != 41 || got[1].Held != fakeHeldText {
 				t.Errorf("trigger status = %+v", got)
 			}
 		}},

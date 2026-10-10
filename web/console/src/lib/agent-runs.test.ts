@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest"
 
 import {
   agentLimits,
+  agentSpendCap,
   askedByAgent,
+  capWindowSpend,
+  capWords,
   costWords,
   durationWords,
   failureGroups,
@@ -272,6 +275,66 @@ describe("agent runs", () => {
       "budgets.maxToolCalls",
       "budgets.deadlineSeconds",
     ])
+  })
+
+  it("reads the daily spend cap, and counts against it what finished in the last 24 hours", () => {
+    expect(agentSpendCap(rec({}))).toBeUndefined()
+    expect(agentSpendCap(rec({ budgets: { maxTurns: 4 } }))).toBeUndefined()
+    // 0 is a cap, and holds every run.
+    expect(agentSpendCap(rec({ budgets: { spendCentsPerDay: 0 } }))).toBe(0)
+    expect(agentSpendCap(rec({ budgets: { spendCentsPerDay: 250 } }))).toBe(250)
+
+    const now = Date.parse("2026-10-10T12:00:00Z")
+    const at = (hours: number) =>
+      new Date(now - hours * 3_600_000).toISOString()
+    const spend = capWindowSpend(
+      [
+        // Started before the window and finished in it: counts.
+        rec({
+          mode: "schedule",
+          status: "ok",
+          startedAt: at(30),
+          finishedAt: at(2),
+          costUSD: 0.5,
+        }),
+        // Finished before the window: does not.
+        rec({
+          mode: "schedule",
+          status: "ok",
+          startedAt: at(27),
+          finishedAt: at(25),
+          costUSD: 4,
+        }),
+        // Asked by another agent: on the asking agent's run and cap.
+        rec({
+          mode: "subagent",
+          status: "ok",
+          startedAt: at(1),
+          finishedAt: at(1),
+          costUSD: 2,
+        }),
+        // Going now: the server counts it, its row does not carry it yet.
+        rec({ mode: "chat", status: "running", startedAt: at(0.1) }),
+      ],
+      { now }
+    )
+    expect(spend).toEqual({ usd: 0.5, complete: true, running: 1 })
+    // A read that stopped inside the window makes the figure a floor.
+    const floor = capWindowSpend(
+      [
+        rec({
+          mode: "chat",
+          status: "ok",
+          startedAt: at(3),
+          finishedAt: at(3),
+          costUSD: 1,
+        }),
+      ],
+      { now, truncated: true }
+    )
+    expect(floor.complete).toBe(false)
+    expect(capWords(150)).toBe("$1.50")
+    expect(capWords(0)).toBe("$0.00")
   })
 
   it("says a policy as a sentence about the agent", () => {

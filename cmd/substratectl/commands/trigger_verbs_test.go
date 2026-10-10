@@ -91,8 +91,8 @@ func TestTriggerStatusPrintsTheLastPassAndDelivery(t *testing.T) {
 	h.writeConfig()
 	out, _ := h.mustRun("trigger", "status")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("trigger status output = %q, want a header and one row", out)
+	if len(lines) != 3 || !strings.HasPrefix(lines[1], "classify-page ") {
+		t.Fatalf("trigger status output = %q, want a header, then classify-page and daily-rollup", out)
 	}
 	// The table is aligned, and an empty cell (LASTFIRE here) is blank, so a
 	// cell is read at its header's offset.
@@ -263,4 +263,29 @@ func sortedSet(m map[string]bool) []string {
 		}
 	}
 	return out
+}
+
+// A held agent trigger's reason prints whole in the HELD column: the cap and
+// the spend so far are the numbers an owner reads it for.
+func TestTriggerStatusShowsWhyAnAgentTriggerIsHeld(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+
+	out, _ := h.mustRun("trigger", "status")
+	header, _, _ := strings.Cut(out, "\n")
+	if !strings.HasSuffix(strings.TrimSpace(header), "HELD") {
+		t.Fatalf("header %q does not end in HELD", header)
+	}
+	var held string
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.HasPrefix(line, "daily-rollup") {
+			held = line
+		}
+		if strings.HasPrefix(line, "classify-page") && strings.Contains(line, "spend cap") {
+			t.Errorf("a trigger that is not held reads held: %q", line)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(held), fakeHeldText) {
+		t.Fatalf("the held trigger's row does not end in its reason:\n%s", out)
+	}
 }

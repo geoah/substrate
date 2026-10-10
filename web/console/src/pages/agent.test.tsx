@@ -427,6 +427,37 @@ describe("AgentPage", () => {
     expect(text).toMatch(/Calls.*16the default/)
   })
 
+  it("shows a declared daily spend cap beside what its finished runs spent in the last 24 hours", async () => {
+    // Without a cap there is nothing to show.
+    mount()
+    await screen.findByRole("table", { name: "What it spent" })
+    expect(screen.queryByText("Daily spend cap")).toBeNull()
+    cleanup()
+
+    const base = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url, init) => {
+      if (String(url) !== AGENT_PATH) return base(url, init)
+      return jsonResponse(200, {
+        ...AGENT,
+        properties: {
+          ...AGENT.properties,
+          budgets: { maxTurns: 16, spendCentsPerDay: 1 },
+        },
+      })
+    })
+    mount()
+    await screen.findByText("Daily spend cap")
+    const value = (label: string) =>
+      screen.getByText(label).nextElementSibling?.textContent ?? ""
+    expect(value("Cap")).toBe("$0.01 in any 24 hours")
+    // The chat it started (1.2 cents, 2 hours ago) counts; the run another
+    // agent asked it for is on that agent's cap.
+    await waitFor(() =>
+      expect(value("Spent in the last 24 hours")).toBe("$0.012At the cap")
+    )
+    expect(screen.getByText(/^Its triggers hold their deliveries/)).toBeTruthy()
+  })
+
   it("never shows a run that recorded no cost as free, and marks a span longer than a run may work", async () => {
     THREADS = [
       thread("t-unpriced", {
