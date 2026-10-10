@@ -59,9 +59,36 @@ func guard(address string, allow []netip.Prefix) error {
 		}
 	}
 	if Blocked(addr) {
-		return fmt.Errorf("egress blocked: %s", address)
+		return &BlockedError{Gate: dialGate, Var: allowVar, Addr: netip.AddrPortFrom(addr, ap.Port())}
 	}
 	return nil
+}
+
+// dialGate and allowVar are what a refusal names. The server's dials and a
+// function body's dials are refused by two gates read from two variables, and
+// an operator who sets the wrong one restarts the server for nothing (issue
+// #886), so the refusal carries both.
+const (
+	dialGate = "the server's dial gate"
+	allowVar = "SUBSTRATE_EGRESS_ALLOW"
+)
+
+// BlockedError is guard's refusal of a destination Blocked marks as the
+// deployment's own. The dialer wraps it in a *net.OpError, so a caller finds it
+// with errors.As.
+type BlockedError struct {
+	// Gate names the gate that refused the dial.
+	Gate string
+	// Var is the environment variable whose allowlist would admit Addr.
+	Var string
+	// Addr is the resolved destination, IPv4-mapped addresses unmapped, so
+	// its address is the value the allowlist takes.
+	Addr netip.AddrPort
+}
+
+// Error keeps the "egress blocked" prefix every caller and test matches on.
+func (e *BlockedError) Error() string {
+	return fmt.Sprintf("egress blocked by %s: %s; allow it with %s=%s", e.Gate, e.Addr, e.Var, e.Addr.Addr())
 }
 
 // operatorAllow reads SUBSTRATE_EGRESS_ALLOW, the operator's escape from the
@@ -73,7 +100,7 @@ func guard(address string, allow []netip.Prefix) error {
 // SUBSTRATE_SANDBOX_EGRESS_ALLOW, the same escape for a network function body;
 // the two are separate variables because the two gates are separate planes.
 func operatorAllow() []netip.Prefix {
-	return parseAllow(os.Getenv("SUBSTRATE_EGRESS_ALLOW"))
+	return parseAllow(os.Getenv(allowVar))
 }
 
 // parseAllow turns the comma-separated allowlist into prefixes, dropping a token

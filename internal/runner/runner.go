@@ -493,17 +493,17 @@ type proc struct {
 	gate atomic.Pointer[gateRef]
 }
 
-// gateRef boxes the connect-gate closer so it can be published atomically.
-type gateRef struct{ c io.Closer }
+// gateRef boxes the connect gate so it can be published atomically.
+type gateRef struct{ g sandbox.Gate }
 
 // setGate publishes the connect gate. If the process was already killed (the
 // reader raced ahead), it closes the gate at once rather than leaving it
 // serving a dead body.
-func (p *proc) setGate(c io.Closer) {
-	if c == nil {
+func (p *proc) setGate(g sandbox.Gate) {
+	if g == nil {
 		return
 	}
-	p.gate.Store(&gateRef{c})
+	p.gate.Store(&gateRef{g})
 	if p.killed.Load() {
 		p.closeGate()
 	}
@@ -513,9 +513,56 @@ func (p *proc) setGate(c io.Closer) {
 // gate is set: the closer is idempotent and a missing gate is a no-op.
 func (p *proc) closeGate() {
 	if r := p.gate.Load(); r != nil {
-		_ = r.c.Close()
+		_ = r.g.Close()
 	}
 }
+
+// refusalMark is the connect gate's refusal sequence so far, zero with no
+// gate. A closed gate still answers: its record outlives the body.
+func (p *proc) refusalMark() uint64 {
+	if r := p.gate.Load(); r != nil {
+		return r.g.RefusalMark()
+	}
+	return 0
+}
+
+// refusalNote is the connect gate's policy refusals after mark, as the text a
+// failed exchange's error carries, or "" when there were none. The body only
+// sees EACCES, so this note is where the operator learns which variable to
+// set.
+func (p *proc) refusalNote(mark uint64) string {
+	r := p.gate.Load()
+	if r == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, ref := range r.g.RefusedSince(mark) {
+		b.WriteString("; ")
+		b.WriteString(ref.String())
+	}
+	return b.String()
+}
+
+// onFirstLine puts note at the end of msg's first line. A body's error is its
+// exception's last line followed by the traceback, and the sync status and
+// parked views show the first line alone.
+func onFirstLine(msg, note string) string {
+	if i := strings.IndexByte(msg, '\n'); i >= 0 {
+		return msg[:i] + note + msg[i:]
+	}
+	return msg + note
+}
+
+// refusedError is an exchange's error with the connect gate's refusals on its
+// first line. It unwraps to the original, so errChildGone and a context error
+// still match errors.Is.
+type refusedError struct {
+	err  error
+	note string
+}
+
+func (e *refusedError) Error() string { return onFirstLine(e.err.Error(), e.note) }
+func (e *refusedError) Unwrap() error { return e.err }
 
 // capBuf is a concurrency-safe ring buffer keeping the LAST cap bytes.
 type capBuf struct {
@@ -810,9 +857,31 @@ var errChildGone = errors.New("runner: child gone before the request was written
 // context deadline (the invocation timeout) or a torn pipe. The error rides
 // the dispatcher's ordinary retry-then-park, except errChildGone, which
 // Invoke absorbs with one restart.
+//
+// A failed exchange carries the connect gate's policy refusals the body process
+// drew during the exchange. The gate serves every exchange the process runs, so
+// the mark is taken under proc.mu, which leaves out a refusal recorded before
+// the exchange began. proc.mu serializes exchanges, not the body's threads: a
+// thread an earlier invocation left running that is refused during this
+// exchange lands in this exchange's note.
 func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, state *readState) (*response, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	mark := p.refusalMark()
+	resp, err := p.exchange(ctx, timeout, f, state)
+	if note := p.refusalNote(mark); note != "" {
+		switch {
+		case err != nil:
+			err = &refusedError{err: err, note: note}
+		case !resp.OK:
+			resp.Error = onFirstLine(resp.Error, note)
+		}
+	}
+	return resp, err
+}
+
+// exchange is roundtrip's body, run under proc.mu.
+func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, state *readState) (*response, error) {
 	// The sweep, Reconcile and a sibling roundtrip all kill under proc.mu, so
 	// a process that is alive here is not retired by any of them until this
 	// exchange ends. One that is not alive was retired in the lookup-and-use

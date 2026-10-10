@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -243,10 +244,10 @@ func classifyProbe(call string, err error) (bool, string, error) {
 
 // serve is the linux half of Confiner.Serve: it receives the listener
 // descriptor for cmd and starts the supervisor.
-func (c *Confiner) serve(cmd *exec.Cmd) (io.Closer, error) {
+func (c *Confiner) serve(cmd *exec.Cmd) (Gate, error) {
 	v, ok := c.pending.LoadAndDelete(cmd)
 	if !ok {
-		return noopCloser{}, nil
+		return noopGate{}, nil
 	}
 	g := v.(*pendingGate)
 	// The child holds its own dup of the socket; drop the parent's copy of the
@@ -318,9 +319,32 @@ type connectGate struct {
 	done      chan struct{}
 	resolvers []netip.Addr
 	once      sync.Once
+
+	// refusalMu guards the record of policy refusals. The gate serves every
+	// invocation of one body process, so each refusal carries a sequence
+	// number and a reader takes only those after its own mark.
+	refusalMu  sync.Mutex
+	refusalSeq uint64
+	refusals   []seqRefusal // the newest maxRefusals, oldest first
+	// warned holds the destinations already logged, so a body that loops on a
+	// refused connect writes one line per destination, not one per connect.
+	warned map[netip.AddrPort]struct{}
 }
 
-func startConnectGate(lfd int, resolvers []netip.Addr) (io.Closer, error) {
+// seqRefusal is a Refusal with its place in the gate's sequence.
+type seqRefusal struct {
+	seq uint64
+	Refusal
+}
+
+// maxRefusals and maxWarned bound the refusal record and the set of logged
+// destinations, so neither grows with what a body does.
+const (
+	maxRefusals = 8
+	maxWarned   = 64
+)
+
+func startConnectGate(lfd int, resolvers []netip.Addr) (Gate, error) {
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
 		_ = unix.Close(lfd)
@@ -389,7 +413,8 @@ func (g *connectGate) handleOne() bool {
 type verdict int
 
 const (
-	verdictDeny    verdict = iota // refuse with EACCES
+	verdictDeny    verdict = iota // refuse with EACCES: the target could not be read or parsed
+	verdictRefuse                 // refuse with EACCES and record it: an INET destination the policy does not allow
 	verdictPass                   // let the kernel run it: a non-INET family
 	verdictConnect                // an allowed INET destination: emulate it
 )
@@ -411,6 +436,11 @@ func (g *connectGate) service(n *seccompNotif) bool {
 		return g.send(&seccompNotifResp{ID: n.ID, Flags: uint32(unix.SECCOMP_USER_NOTIF_FLAG_CONTINUE)})
 	case verdictConnect:
 		return g.emulateConnect(n, family, dest)
+	case verdictRefuse:
+		// Recorded before the body is answered, so a runner that reads the
+		// record after the body's response sees this refusal.
+		g.refuse(n.Pid, dest)
+		return g.send(denyResp(n.ID, unix.EACCES))
 	default:
 		return g.send(denyResp(n.ID, unix.EACCES))
 	}
@@ -418,8 +448,10 @@ func (g *connectGate) service(n *seccompNotif) bool {
 
 // classify reads the connect target from the body's memory and decides. The
 // read is trustworthy only while the target is still blocked in this
-// notification, which ID_VALID confirms; anything it cannot read, parse or
-// allow is a deny.
+// notification, which ID_VALID confirms; anything it cannot read or parse is a
+// deny, and a destination the policy does not allow is a refusal. Both answer
+// EACCES; only a refusal names the allowlist, because only a refusal is one
+// SUBSTRATE_SANDBOX_EGRESS_ALLOW could lift.
 //
 // SAFETY: treating every non-INET family as verdictPass is safe only because
 // the main seccomp socket-domain allowlist (seccomp_linux.go, buildFilter)
@@ -453,7 +485,7 @@ func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort) {
 		copy(a[:], buf[4:8])
 		addr := netip.AddrFrom4(a)
 		if !g.allowDest(addr, port) {
-			return verdictDeny, family, netip.AddrPort{}
+			return verdictRefuse, family, netip.AddrPortFrom(addr, port)
 		}
 		return verdictConnect, family, netip.AddrPortFrom(addr, port)
 	case unix.AF_INET6:
@@ -465,7 +497,7 @@ func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort) {
 		copy(a[:], buf[8:24])
 		addr := netip.AddrFrom16(a)
 		if !g.allowDest(addr, port) {
-			return verdictDeny, family, netip.AddrPort{}
+			return verdictRefuse, family, netip.AddrPortFrom(addr, port)
 		}
 		return verdictConnect, family, netip.AddrPortFrom(addr, port)
 	default:
@@ -824,7 +856,7 @@ func (g *connectGate) allowDest(addr netip.Addr, port uint16) bool {
 // private range. Parsed once, at first use, so a process that sets the variable
 // before it starts a body (every real one) is read correctly.
 var egressAllow = sync.OnceValue(func() []netip.Prefix {
-	raw := strings.TrimSpace(os.Getenv("SUBSTRATE_SANDBOX_EGRESS_ALLOW"))
+	raw := strings.TrimSpace(os.Getenv(egressAllowVar))
 	if raw == "" {
 		return nil
 	}
@@ -844,6 +876,86 @@ var egressAllow = sync.OnceValue(func() []netip.Prefix {
 	}
 	return out
 })
+
+// refuse records one policy refusal and queues a warning for the operator,
+// naming the gate and the variable that would admit the destination: the
+// server's own dials obey SUBSTRATE_EGRESS_ALLOW instead (issue #886). The
+// warning is queued once per destination per gate, and at most maxWarned
+// times.
+func (g *connectGate) refuse(pid uint32, dest netip.AddrPort) {
+	dest = netip.AddrPortFrom(dest.Addr().Unmap(), dest.Port())
+	g.refusalMu.Lock()
+	g.refusalSeq++
+	g.refusals = append(g.refusals, seqRefusal{seq: g.refusalSeq, Refusal: Refusal{Addr: dest}})
+	if len(g.refusals) > maxRefusals {
+		g.refusals = g.refusals[len(g.refusals)-maxRefusals:]
+	}
+	_, seen := g.warned[dest]
+	warn := !seen && len(g.warned) < maxWarned
+	if warn {
+		if g.warned == nil {
+			g.warned = map[netip.AddrPort]struct{}{}
+		}
+		g.warned[dest] = struct{}{}
+	}
+	g.refusalMu.Unlock()
+	if warn {
+		warnRefusal(refusalWarning{pid: pid, dest: dest})
+	}
+}
+
+type refusalWarning struct {
+	pid  uint32
+	dest netip.AddrPort
+}
+
+// refusalWarnings feeds the one goroutine that writes the gates' WARN lines.
+// The supervisor never waits on a log handler: refuse runs before the body is
+// answered, a stalled handler or stderr pipe would hold the seccomp reply, and
+// Close waits for the supervisor, so a body's timeout could never complete. A
+// full queue drops the line; the failed call's error still names the refusal.
+var (
+	refusalWarnings = make(chan refusalWarning, maxWarned)
+	startWarner     sync.Once
+)
+
+func warnRefusal(w refusalWarning) {
+	startWarner.Do(func() {
+		go func() {
+			for line := range refusalWarnings {
+				slog.Warn("egress blocked by the sandbox's connect gate",
+					"destination", line.dest.String(),
+					"allow", egressAllowVar+"="+line.dest.Addr().String(),
+					"pid", line.pid)
+			}
+		}()
+	})
+	select {
+	case refusalWarnings <- w:
+	default:
+	}
+}
+
+func (g *connectGate) RefusalMark() uint64 {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	return g.refusalSeq
+}
+
+func (g *connectGate) RefusedSince(mark uint64) []Refusal {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	var out []Refusal
+	seen := map[netip.AddrPort]bool{}
+	for _, r := range g.refusals {
+		if r.seq <= mark || seen[r.Addr] {
+			continue
+		}
+		seen[r.Addr] = true
+		out = append(out, r.Refusal)
+	}
+	return out
+}
 
 func (g *connectGate) isResolver(addr netip.Addr) bool {
 	a := addr.Unmap()

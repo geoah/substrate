@@ -419,8 +419,13 @@ unprivileged, none requiring a container runtime:
   where the substrate's Postgres sits, and allows the rest
   ([0035](decisions/0035-a-network-body-connect-is-filtered-by-destination.md)).
   A local provider (a loopback Ollama) is re-permitted by listing its address in
-  `SUBSTRATE_SANDBOX_EGRESS_ALLOW`. Holding a body to the *specific hosts* it
-  declared is not done yet; what is enforced is "the internet, not the
+  `SUBSTRATE_SANDBOX_EGRESS_ALLOW`. The body sees `EACCES`, and a call that then
+  fails names the gate and the value to set on its error's first line:
+  `the sandbox's connect gate refused 10.0.0.7:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7`.
+  The server's own dials (an `llm/provider` row's `baseURL`) obey
+  `SUBSTRATE_EGRESS_ALLOW` instead, and fail with
+  `egress blocked by the server's dial gate`. Holding a body to the *specific
+  hosts* it declared is not done yet; what is enforced is "the internet, not the
   deployment's own network". The supervisor half of that fine layer is the one
   piece of the sandbox that needs something from the deployment: it reads the
   destination with `process_vm_readv(2)` and duplicates the body's socket with
