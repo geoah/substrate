@@ -54,7 +54,8 @@ closure. connect starts the host OAuth flow for an account record.`,
 }
 
 func (a *app) bundleListCommand() *cobra.Command {
-	return &cobra.Command{
+	var output string
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Every installed bundle's lifecycle, configuration state and counts",
 		Args:  cobra.NoArgs,
@@ -67,29 +68,41 @@ func (a *app) bundleListCommand() *cobra.Command {
 			if err := cl.do(cmd.Context(), http.MethodGet, bundlePath("status"), nil, nil, &res); err != nil {
 				return err
 			}
-			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tINSTALLED\tENABLED\tSETUP\tACCOUNTS\tFUNCTIONS\tKINDS\tRECORDS")
-			for _, b := range res.Items {
-				fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%d\t%d\t%d\t%d\n",
-					b.ID, b.Installed, b.Enabled, setupSummary(b), b.Accounts, b.Functions, b.Kinds, b.LiveRecords)
-			}
-			if err := tw.Flush(); err != nil {
+			err = printList(a, output, res.Items, func() error {
+				tw := newTable(a.out)
+				fmt.Fprintln(tw, "ID\tINSTALLED\tENABLED\tSETUP\tACCOUNTS\tFUNCTIONS\tKINDS\tRECORDS")
+				for _, b := range res.Items {
+					fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%d\t%d\t%d\t%d\n",
+						b.ID, b.Installed, b.Enabled, setupSummary(b), b.Accounts, b.Functions, b.Kinds, b.LiveRecords)
+				}
+				return tw.Flush()
+			})
+			if err != nil {
 				return err
 			}
 			// A reason is a sentence, too long for a column, so each
-			// quarantined bundle gets its own line under the table.
+			// quarantined bundle gets its own line under the table. Under -o
+			// json or yaml the lines go to stderr, so stdout stays one
+			// document.
+			notes := a.out
+			if output == "json" || output == "yaml" {
+				notes = a.errOut
+			}
 			for _, b := range res.Items {
 				if b.Quarantined {
-					fmt.Fprintf(a.out, "quarantined: %s: %s\n", b.ID, b.QuarantineReason)
+					fmt.Fprintf(notes, "quarantined: %s: %s\n", b.ID, b.QuarantineReason)
 				}
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: table|json|yaml")
+	return cmd
 }
 
 func (a *app) bundleStatusCommand() *cobra.Command {
-	return &cobra.Command{
+	var output string
+	cmd := &cobra.Command{
 		Use:   "status <id>",
 		Short: "One bundle's computed runtime state",
 		Args:  cobra.ExactArgs(1),
@@ -102,10 +115,14 @@ func (a *app) bundleStatusCommand() *cobra.Command {
 			if err := cl.do(cmd.Context(), http.MethodGet, bundlePath(args[0], "status"), nil, nil, &st); err != nil {
 				return err
 			}
-			printBundleStatus(a, st)
-			return nil
+			return printAs(a, output, st, func() error {
+				printBundleStatus(a, st)
+				return nil
+			})
 		},
 	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: json|yaml, one object (default: one field per line)")
+	return cmd
 }
 
 func printBundleStatus(a *app, st substrate.BundleStatus) {

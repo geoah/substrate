@@ -236,11 +236,20 @@ func codeForStatus(status int) string {
 	return ""
 }
 
+// truncate cuts s to n characters, not bytes: a byte cut can split a
+// multi-byte character and leave invalid UTF-8 in a table cell.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	runes := 0
+	for i := range s {
+		if runes == n {
+			return s[:i] + "…"
+		}
+		runes++
+	}
+	return s
 }
 
 // --- typed calls ---
