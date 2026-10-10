@@ -65,6 +65,75 @@ func TestSchemaApplyBatchAllOrNone(t *testing.T) {
 	}
 }
 
+// The refusal a vocabulary apply answers carries exactly the problems
+// vocabulary.BuildEachPackage reports for the same documents, in its order:
+// each package's sorted, the packages in name order. That is what
+// `substratectl validate` prints offline (issue 887), so a refusal there
+// reads the same as the server's 422. The `kind` problem sorts after the
+// beta agent's when every problem is sorted together, so an admission that
+// built all packages in one call would fail here.
+func TestSchemaApplyRefusesWithTheOfflineCheckProblems(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	long := strings.Repeat("a", 229)
+	alpha, beta := swAuthority+"/alpha", swAuthority+"/beta"
+	agent := func(pkg, name string) map[string]any {
+		authority, word := vocabulary.SplitPackageRef(pkg)
+		return map[string]any{
+			"kind":     vocabulary.CoreKind(vocabulary.DocAgent),
+			"metadata": map[string]any{"id": pkg + "/" + name},
+			"data": map[string]any{
+				"authority": authority, "package": word, "description": long,
+				"prompt": "Summarize the notes.", "provider": "openai", "model": "gpt-5-mini",
+			},
+		}
+	}
+	batch := func() []map[string]any {
+		return []map[string]any{
+			vocabulary.PackageManifest(alpha, 0),
+			vocabulary.KindManifest(alpha, map[string]any{"singular": "note"}, map[string]any{"properties": map[string]any{
+				"name": map[string]any{"type": "string", "description": long},
+			}}),
+			agent(alpha, "reflector"),
+			vocabulary.PackageManifest(beta, 0),
+			agent(beta, "reflector"),
+		}
+	}
+
+	_, err := ds.ApplyVocabularyDocuments(ctx, owner, batch())
+	var got *substrate.ValidationError
+	if !asValidationErr(err, &got) {
+		t.Fatalf("want the loader's problem list, got %v", err)
+	}
+	docs, err := vocabulary.ParseDocuments(batch())
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	_, err = vocabulary.BuildEachPackage(docs, func(string) string { return vocabulary.SourceInstalled })
+	var want *substrate.ValidationError
+	if !asValidationErr(err, &want) {
+		t.Fatalf("the offline check must refuse the same batch, got %v", err)
+	}
+	if !reflect.DeepEqual(got.Problems, want.Problems) {
+		t.Fatalf("apply problems:\n%s\noffline problems:\n%s", strings.Join(got.Problems, "\n"), strings.Join(want.Problems, "\n"))
+	}
+	wantOrder := []string{
+		"agent " + alpha + "/reflector: data.description: one short sentence (at most 200 chars), got 229",
+		"kind " + alpha + "/note: data.properties.name.description: one short sentence (at most 200 chars), got 229",
+		"agent " + beta + "/reflector: data.description: one short sentence (at most 200 chars), got 229",
+	}
+	at := 0
+	for _, p := range got.Problems {
+		if at < len(wantOrder) && p == wantOrder[at] {
+			at++
+		}
+	}
+	if at != len(wantOrder) {
+		t.Fatalf("problems out of package order, want %q in this order among:\n%s", wantOrder, strings.Join(got.Problems, "\n"))
+	}
+}
+
 func asValidationErr(err error, target **substrate.ValidationError) bool {
 	for err != nil {
 		if ve, ok := err.(*substrate.ValidationError); ok {

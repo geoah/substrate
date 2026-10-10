@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -48,24 +47,6 @@ const (
 	// server fault, so it is never the masked 500 it once was.
 	codeParked = "parked" // 409 — the retried delivery failed again and stays parked
 )
-
-// problemDetails derives the structured siblings from the engine's problem
-// strings. A string without a ": " separator keeps its whole text as the
-// message and an empty path, so a malformed problem never drops silently.
-func problemDetails(problems []string) []substrate.ProblemDetail {
-	if len(problems) == 0 {
-		return nil
-	}
-	out := make([]substrate.ProblemDetail, len(problems))
-	for i, p := range problems {
-		if path, msg, ok := strings.Cut(p, ": "); ok {
-			out[i] = substrate.ProblemDetail{Path: path, Message: msg}
-		} else {
-			out[i] = substrate.ProblemDetail{Message: p}
-		}
-	}
-	return out
-}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -118,7 +99,7 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
 	switch {
 	case errors.As(err, &ve):
-		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems, ProblemDetails: problemDetails(ve.Problems)}
+		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
 	case errors.Is(err, substrate.ErrValidation):
 		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error()}
 	case errors.Is(err, substrate.ErrParked):

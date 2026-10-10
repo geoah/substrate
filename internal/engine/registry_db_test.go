@@ -120,7 +120,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 		}
 	}
 	ds.mu.Unlock()
-	docs, err := parseVocabularyDocs(gizmo(map[string]any{"name": map[string]any{"type": "string"}}))
+	docs, err := vocabulary.ParseDocuments(gizmo(map[string]any{"name": map[string]any{"type": "string"}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 	// The apply touches an unrelated package, so the only thing between the
 	// bind and its commit is the registry-dependency lock the apply holds.
 	bound := make(chan error, 1)
-	docs, err := parseVocabularyDocs([]map[string]any{
+	docs, err := vocabulary.ParseDocuments([]map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
 			map[string]any{"singular": "lamp"},
@@ -354,7 +354,7 @@ func TestAChangedIndexDefinitionRebuildsTheStaleOrdinalIndex(t *testing.T) {
 
 	// The first apply builds the [name] index and then fails inside its
 	// transaction, so the index stays and the kind does not land.
-	docs, err := parseVocabularyDocs(meter("name"))
+	docs, err := vocabulary.ParseDocuments(meter("name"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 	}
 
 	deleted := make(chan error, 1)
-	docs, err := parseVocabularyDocs(token(map[string]any{
+	docs, err := vocabulary.ParseDocuments(token(map[string]any{
 		"name": map[string]any{"type": "string"},
 		"note": map[string]any{"type": "string"},
 	}))
@@ -548,7 +548,7 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 	}
 
 	split := make(chan error, 1)
-	docs, err := parseVocabularyDocs(badge(map[string]any{
+	docs, err := vocabulary.ParseDocuments(badge(map[string]any{
 		"name": map[string]any{"type": "string"},
 		"note": map[string]any{"type": "string"},
 	}))

@@ -146,29 +146,6 @@ type vocabularyBatch struct {
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
 
-// parseVocabularyDocs parses raw envelope maps into documents, every
-// document's problems collected into one ValidationError.
-func parseVocabularyDocs(raw []map[string]any) ([]vocabulary.Document, error) {
-	var docs []vocabulary.Document
-	var problems []string
-	for _, r := range raw {
-		d, err := vocabulary.DocumentFromMap(r)
-		if err != nil {
-			var ve *substrate.ValidationError
-			if errors.As(err, &ve) {
-				problems = append(problems, ve.Problems...)
-				continue
-			}
-			return nil, err
-		}
-		docs = append(docs, d)
-	}
-	if len(problems) > 0 {
-		return nil, &substrate.ValidationError{Problems: problems}
-	}
-	return docs, nil
-}
-
 // ApplyVocabularyDocuments is the batch apply verb: every document admitted or
 // none, one transaction, activation on commit. Documents wear the same
 // kind/metadata/data envelope the loader has always parsed. A batch whose
@@ -185,7 +162,7 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
-	docs, err := parseVocabularyDocs(raw)
+	docs, err := vocabulary.ParseDocuments(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +208,7 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if len(raw) == 0 {
 		return plan, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
-	docs, err := parseVocabularyDocs(raw)
+	docs, err := vocabulary.ParseDocuments(raw)
 	if err != nil {
 		return plan, err
 	}
@@ -312,7 +289,7 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if len(vocabularyDocs) == 0 {
 		return nil, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
 	}
-	docs, err := parseVocabularyDocs(vocabularyDocs)
+	docs, err := vocabulary.ParseDocuments(vocabularyDocs)
 	if err != nil {
 		return nil, err
 	}
@@ -861,13 +838,13 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	for g := range touched {
 		candidate.Remove(g)
 	}
-	byPackage := map[string][]vocabulary.Document{}
+	mergedDocs := make([]vocabulary.Document, 0, len(merged))
 	for _, d := range merged {
-		g := d.DeclaredPackage()
-		byPackage[g] = append(byPackage[g], d)
+		mergedDocs = append(mergedDocs, d)
 	}
-	var rebuilt []*vocabulary.Package
-	for _, aname := range sortedKeys(byPackage) {
+	// One BuildPackages per package, the problems collected in the order
+	// `substratectl validate` prints them offline (vocabulary.BuildEachPackage).
+	rebuilt, err := vocabulary.BuildEachPackage(mergedDocs, func(aname string) string {
 		// An authority is rebuilt with the ORIGIN ITS STORED ROWS CLAIM, exactly as
 		// storedPackages builds it at open. Two things read the origin — the row
 		// the projection writes back, and the one loader rule keyed on it
@@ -901,19 +878,10 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 				source = vocabulary.SourcePublished
 			}
 		}
-		gs, err := vocabulary.BuildPackages(byPackage[aname], source)
-		if err != nil {
-			var ve *substrate.ValidationError
-			if errors.As(err, &ve) {
-				problems = append(problems, ve.Problems...)
-				continue
-			}
-			return nil, err
-		}
-		rebuilt = append(rebuilt, gs...)
-	}
-	if len(problems) > 0 {
-		return nil, &substrate.ValidationError{Problems: problems}
+		return source
+	})
+	if err != nil {
+		return nil, err
 	}
 	if err := candidate.InstallAll(rebuilt); err != nil {
 		return nil, err

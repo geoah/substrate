@@ -54,7 +54,7 @@ func (ds *dataset) PlantDeclarationRow(ctx context.Context, kindIdent, id string
 // short name ("kind"), as deleteVocabularyRecord builds it, and removePackage
 // the package identity the removed declaration lives in.
 func (ds *dataset) ApplyVocabularyWithRemoval(ctx context.Context, actor substrate.Actor, docs []map[string]any, removeShort, removeID, removePackage string) error {
-	parsed, err := parseVocabularyDocs(docs)
+	parsed, err := vocabulary.ParseDocuments(docs)
 	if err != nil {
 		return err
 	}

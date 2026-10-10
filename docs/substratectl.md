@@ -13,6 +13,7 @@ substratectl kinds                        # every declared kind
 substratectl get task                    # list a collection
 substratectl get task t9 -o yaml         # one record, apply-able envelope
 substratectl apply -f task.yaml           # put: merge, never prune
+substratectl validate -f task.yaml        # the server's checks, offline
 substratectl patch task t9 --state status=done
 substratectl watch                        # resumable change stream
 substratectl export                       # the recovery export, a tar of the repository directory
@@ -173,6 +174,24 @@ output applies back unchanged.
   for the batch ahead, preparing function bodies, waiting for another
   session's index builds, building an index, and each walk over stored
   records.
+- `validate -f FILE` checks the same files offline, with no server and no
+  token. Declarations go through the loader the server runs on a
+  vocabulary apply, built as packages the repository owns, so a
+  description over its limit (an agent's 200 characters, a kind's 400, a
+  function's 1000) is refused with the problem line the server's `422`
+  carries. A package that builds is then resolved against the other
+  packages among the files and the `core` and `llm` packages the binary
+  ships. Record documents get the envelope checks `apply` makes before it
+  sends them. Three cases need the repository, and `validate` lists each
+  one it meets: a package whose package document is not among the files
+  (its members are checked under a placeholder header), a declaration
+  naming neither `data.authority` nor `data.package` (apply completes it
+  from the stored declaration), and a reference into a package neither
+  among the files nor shipped (that reference is not resolved, and every
+  other problem is still refused). Any of them exits non-zero unless
+  `--partial` is passed. Files declaring into a seeded package (`core`,
+  `llm`) are refused, since apply is refused one too. Declared defaults and
+  record properties are checked by the server only.
 - `patch <kind> <id>` edits in place: `--state status=done` for
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a

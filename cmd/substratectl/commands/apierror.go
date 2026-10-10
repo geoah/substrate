@@ -33,6 +33,9 @@ type apiError struct {
 	Path       string
 	// Hint, when set, replaces the status-derived next action.
 	Hint string
+	// Headline, when set, replaces the code-derived headline: `validate`
+	// renders the server's validator offline, where no write was sent.
+	Headline string
 }
 
 func (e *apiError) Error() string {
@@ -48,6 +51,9 @@ func (e *apiError) Error() string {
 
 // headline turns the envelope code into a human sentence.
 func (e *apiError) headline() string {
+	if e.Headline != "" {
+		return e.Headline
+	}
 	switch e.Code {
 	case "validation":
 		return "the substrate rejected this write as invalid"
