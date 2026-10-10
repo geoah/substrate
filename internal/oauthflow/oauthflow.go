@@ -251,10 +251,33 @@ func sanitizeTokenError(err error) error {
 	if re.Response != nil {
 		status = re.Response.StatusCode
 	}
-	if code := sanitizeErrorCode(re.ErrorCode); code != "" {
-		return fmt.Errorf("provider answered %d, error code %q", status, code)
+	return &TokenError{Status: status, Code: sanitizeErrorCode(re.ErrorCode)}
+}
+
+// TokenError is a token endpoint's refusal as sanitizeTokenError bounds it:
+// the HTTP status and the sanitized RFC 6749 error code, empty when the
+// provider sent none. Its text is the one the facility stores as an account's
+// refresh failure reason.
+type TokenError struct {
+	Status int
+	Code   string
+}
+
+func (e *TokenError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("provider answered %d, error code %q", e.Status, e.Code)
 	}
-	return fmt.Errorf("provider answered %d", status)
+	return fmt.Sprintf("provider answered %d", e.Status)
+}
+
+// GrantRefused reports whether err is the token endpoint answering
+// `invalid_grant` (RFC 6749 section 5.2): the grant itself is invalid,
+// expired or revoked, so the same request cannot succeed again and only a new
+// consent replaces it. Every other failure (a transport error, a 5xx,
+// `invalid_client`) may pass.
+func GrantRefused(err error) bool {
+	var te *TokenError
+	return errors.As(err, &te) && te.Code == "invalid_grant"
 }
 
 // sanitizeErrorCode keeps only [a-z0-9_-] (case-folded), bounded to 40

@@ -70,8 +70,9 @@ func oauthWrites(ty *vocabulary.Kind, name string) bool {
 // noteTokenRefresh stamps one refresh's outcome onto the account: a failure
 // writes `erroring` with its reason and when, a success writes `connected` and
 // clears both. It writes nothing when the row already says so, because the
-// loop retries an erroring account every pass and each write is a changelog
-// entry; `tokenErrorAt` is therefore when the current reason first appeared.
+// loop retries an account erroring for any reason but `invalid_grant` every
+// pass, an invocation can refresh on demand as often, and each write is a
+// changelog entry; `tokenErrorAt` is therefore when the current reason first appeared.
 // The reason is the flow package's text, which carries the HTTP status and
 // the RFC 6749 code and never the provider's description, a token or the
 // client secret.
@@ -686,9 +687,24 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 		ep := oauthEndpointsFor(meta, clientID, clientSecret, nil)
 		fresh, err := ds.svc.oauth.Refresh(ctx, ep, tok)
 		if err != nil {
+			ds.noteTokenRefresh(ctx, account, err)
+			// `invalid_grant` is final for this refresh token, and only a
+			// reconnect replaces it: retrying it every pass would call the
+			// provider once a minute for nothing. A parked credential leaves
+			// the work list, so the refusal is logged once, here.
+			if oauthflow.GrantRefused(err) && ctx.Err() == nil {
+				parked, perr := ds.parkRefusedCredential(ctx, ref, account, seen)
+				if perr != nil {
+					return n, perr
+				}
+				if parked {
+					ds.svc.log.Warn("substrate: oauth refresh refused with invalid_grant; the refresh loop skips this credential until the account reconnects",
+						"record", account.ID, "error", err)
+				}
+				continue
+			}
 			ds.svc.log.Warn("substrate: oauth refresh failed — the account needs a reconnect if this persists",
 				"record", account.ID, "error", err)
-			ds.noteTokenRefresh(ctx, account, err)
 			continue
 		}
 		// Update-only, compare-and-swap on the generation this pass read: a

@@ -418,7 +418,11 @@ marks `tokenStatus: erroring` when that fails, and skips disabled bundles.
 Beside `erroring` it writes `tokenError` (the provider's HTTP status and RFC
 6749 error code, never its description) and `tokenErrorAt`, on an account kind
 that declares both `writer: oauth`; a good refresh or a reconnect clears them.
-An invocation that refreshes a token on the spot reports a failure the same way.
+A provider that answers `invalid_grant` has rejected the refresh token itself,
+so the loop stops refreshing that credential until a reconnect stores a new
+one; every other failure is retried on the next pass.
+An invocation that refreshes a token on the spot reports a failure the same way,
+and keeps trying whatever the loop does.
 Deleting a connected account revokes best-effort against the declared
 `revocationEndpoint`, deletes the stored credential, and only then releases the
 record. A function never sees any of it — its injected config carries a

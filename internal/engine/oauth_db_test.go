@@ -40,6 +40,11 @@ type fakeProvider struct {
 	// refuseRefresh answers every refresh with an RFC 6749 `invalid_grant`
 	// whose description echoes the client secret, as a provider may.
 	refuseRefresh bool
+	// unavailable answers every refresh with a 503 and no RFC 6749 code: a
+	// failure that may pass.
+	unavailable bool
+	// refreshCalls counts every refresh request, answered or refused.
+	refreshCalls int
 }
 
 func newFakeProvider(t *testing.T) *fakeProvider {
@@ -64,6 +69,11 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 			out["access_token"] = "at-1"
 			out["refresh_token"] = "rt-1"
 		case "refresh_token":
+			p.refreshCalls++
+			if p.unavailable {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			if p.refuseRefresh {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
@@ -380,25 +390,26 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 		}
 	}
 
-	// The central loop.
+	// The central loop. An `invalid_grant` parks the credential there
+	// (TestOAuthRefreshParksAnInvalidGrantUntilReconnect), so the repeats
+	// below are on-demand refreshes an invocation makes.
 	refuse(true)
 	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 0 {
 		t.Fatalf("refused refresh: %d %v", n, err)
 	}
 	first := wantFailure("after a refused loop refresh")
-	// The loop retries an erroring account every pass; the same reason is
-	// not written again.
-	if _, err := ds.RefreshOAuthTokens(ctx); err != nil {
-		t.Fatalf("second refused refresh: %v", err)
+	// The same reason is not written again.
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+		t.Fatalf("call: %v", err)
 	}
 	if again := mustGet(t, ds, account.Kind, account.ID); again.Version != first.Version {
 		t.Fatalf("a repeated failure rewrote the account: version %d, then %d", first.Version, again.Version)
 	}
 	refuse(false)
-	if n, err := ds.RefreshOAuthTokens(ctx); err != nil || n != 1 {
-		t.Fatalf("good refresh: %d %v", n, err)
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+		t.Fatalf("call: %v", err)
 	}
-	wantCleared("after a good loop refresh")
+	wantCleared("after a good on-demand refresh")
 
 	// The on-demand refresh an invocation makes: the stored token expires
 	// inside the inline window, so the config resolution refreshes it.
@@ -411,6 +422,57 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	// A reconnect clears it.
 	connectOAuthAccount(t, svc, ds, account)
 	wantCleared("after a reconnect")
+}
+
+// A refresh the provider refuses with `invalid_grant` parks the credential:
+// the loop's next passes make no provider call, the new credential a reconnect
+// writes is refreshed again, and a failure that may pass (a 503) is still
+// retried every pass.
+func TestOAuthRefreshParksAnInvalidGrantUntilReconnect(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, p, account := installOAuthBundle(t)
+	p.expiresIn = 120 // inside the 10m refresh window, outside the 1m inline one
+	connectOAuthAccount(t, svc, ds, account)
+	provider := func(refuse, unavailable bool) {
+		p.mu.Lock()
+		p.refuseRefresh, p.unavailable = refuse, unavailable
+		p.mu.Unlock()
+	}
+	pass := func(when string, wantRefreshed, wantCalls int) {
+		t.Helper()
+		n, err := ds.RefreshOAuthTokens(ctx)
+		if err != nil || n != wantRefreshed {
+			t.Fatalf("%s: refreshed %d (%v), want %d", when, n, err, wantRefreshed)
+		}
+		p.mu.Lock()
+		calls := p.refreshCalls
+		p.mu.Unlock()
+		if calls != wantCalls {
+			t.Fatalf("%s: %d provider refresh calls, want %d", when, calls, wantCalls)
+		}
+	}
+
+	provider(true, false)
+	pass("the refused pass", 0, 1)
+	if got := mustGet(t, ds, account.Kind, account.ID); got.Properties["tokenStatus"] != "erroring" {
+		t.Fatalf("tokenStatus = %v, want erroring", got.Properties["tokenStatus"])
+	}
+	pass("the pass after invalid_grant", 0, 1)
+	pass("a later pass", 0, 1)
+
+	provider(false, false)
+	connectOAuthAccount(t, svc, ds, account)
+	pass("the pass after a reconnect", 1, 2)
+	if got := mustGet(t, ds, account.Kind, account.ID); got.Properties["tokenStatus"] != "connected" {
+		t.Fatalf("tokenStatus = %v, want connected", got.Properties["tokenStatus"])
+	}
+
+	provider(false, true)
+	pass("the unavailable pass", 0, 3)
+	pass("the pass after a 503", 0, 4)
+	provider(false, false)
+	pass("the pass after the provider recovers", 1, 5)
 }
 
 // Deleting a connected account rides the finalizer flow: the facility
