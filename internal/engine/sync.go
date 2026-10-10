@@ -336,8 +336,9 @@ func (ds *dataset) settleInterruptedSyncs(ctx context.Context) error {
 // SyncStatuses reads every `sync`-trait record's synchronization: the
 // trait's properties off the row, joined with the status of each record
 // trigger whose source names the record's kind, and the parked deliveries
-// of its sync with the newest one's reason. The triggers half is the same
-// computation TriggerStatuses answers, done once for the whole list.
+// of its sync with the newest one's reason, on the account and on the
+// stream each parked trigger's callable declares. The triggers half is the
+// same computation TriggerStatuses answers, done once for the whole list.
 func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, error) {
 	var kinds []*vocabulary.Kind
 	for _, ty := range ds.registry().Kinds() {
@@ -361,10 +362,16 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 	if err != nil {
 		return nil, err
 	}
+	reg := ds.registry()
 	for _, ty := range kinds {
 		var onKind []substrate.TriggerStatus
 		var triggerIDs []string
 		callables := map[string]bool{}
+		// streamOf is the stream each trigger's CURRENT callable declares. A
+		// park row names a trigger, never a function, so an edit that points
+		// a trigger at another callable relabels the trigger's older parks
+		// with the new callable's stream.
+		streamOf := map[string]string{}
 		for _, lt := range triggers {
 			if lt.Record == nil || lt.Err != nil {
 				continue
@@ -376,6 +383,7 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 					}
 					triggerIDs = append(triggerIDs, lt.ID)
 					callables[lt.CallableID] = true
+					streamOf[lt.ID] = triggerStream(reg, lt.trigger)
 					break
 				}
 			}
@@ -383,17 +391,38 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 		// A schedule or webhook trigger names no kind, but one that fires a
 		// callable the kind's record triggers fire runs the same sync: a
 		// provider's hourly tick syncs every due account. Its parks carry no
-		// record, so they count on every record of the kind.
+		// record, so they count on every record of the kind: one slow
+		// account's park reads as `erroring` on every account of the
+		// provider, and on the callable's stream of every account that
+		// lists it, until each completes a later run (parkedSyncState,
+		// parkedStreamStates).
 		for _, lt := range triggers {
 			if lt.Record == nil && lt.Err == nil && callables[lt.CallableID] {
 				triggerIDs = append(triggerIDs, lt.ID)
+				streamOf[lt.ID] = triggerStream(reg, lt.trigger)
 			}
 		}
 		parks, err := ds.syncParks(ctx, triggerIDs)
 		if err != nil {
 			return nil, err
 		}
-		shared := parks[""]
+		// byRecord is every park of a record summed, the "" key holding the
+		// parks that named none; byStream is the newest park per record and
+		// stream, for the triggers whose callable declares a stream.
+		byRecord := map[string]syncParkGroup{}
+		byStream := map[string]map[string]syncParkGroup{}
+		for k, g := range parks {
+			byRecord[k.record] = byRecord[k.record].add(g)
+			stream := streamOf[k.trigger]
+			if stream == "" {
+				continue
+			}
+			if byStream[k.record] == nil {
+				byStream[k.record] = map[string]syncParkGroup{}
+			}
+			byStream[k.record][stream] = byStream[k.record][stream].add(g)
+		}
+		shared := byRecord[""]
 		rows, err := ds.db.QueryContext(ctx, `SELECT `+recordCols+` FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, ty.Identity)
 		if err != nil {
 			return nil, err
@@ -405,8 +434,10 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 				return nil, err
 			}
 			st := syncStatusOf(row)
-			own := parks[row.ID]
+			own := byRecord[row.ID]
 			st.Parked = own.count + shared.count
+			// The account's own park wins a tie with a shared one: a park
+			// that named this record is the surer word about it.
 			latest := own
 			if shared.at.After(latest.at) {
 				latest = shared
@@ -414,6 +445,7 @@ func (ds *dataset) SyncStatuses(ctx context.Context) ([]substrate.SyncStatus, er
 			if st.Parked > 0 {
 				st.LastParkedError, st.LastParkedAt = parkedReason(latest.lastError, latest.at)
 				parkedSyncState(&st)
+				parkedStreamStates(&st, byStream[row.ID], byStream[""])
 			}
 			st.Triggers = append([]substrate.TriggerStatus{}, onKind...)
 			out = append(out, st)
@@ -449,19 +481,92 @@ func parkedSyncState(st *substrate.SyncStatus) {
 	st.Message = st.Error
 }
 
-// syncParkGroup is the parked deliveries of one record, or of none (the
-// "" key): how many there are, and the newest one's error and instant.
+// parkedStreamStates marks each stream whose newest park is later than the
+// stream's own last completed run (`lastAt`) as `erroring`, with the park's
+// reason as its message, and leaves every other stream as the body stamped
+// it. own is the parks that named this record, shared the parks that named
+// none (a schedule fire), each keyed by the stream of the trigger's
+// callable; a callable that declares no stream is in neither, and marks the
+// account alone. A stream the record does not list yet is added for a park
+// that named the record, which ran for this account; a shared park marks
+// only a stream the record already lists, because a fire that named no
+// account may never have run that stream for this one.
+func parkedStreamStates(st *substrate.SyncStatus, own, shared map[string]syncParkGroup) {
+	newest := make(map[string]syncParkGroup, len(own)+len(shared))
+	for name, g := range own {
+		newest[name] = g
+	}
+	for name, g := range shared {
+		_, listed := st.Streams[name]
+		if _, named := newest[name]; listed || named {
+			newest[name] = newest[name].add(g)
+		}
+	}
+	for name, g := range newest {
+		s := st.Streams[name]
+		if s.LastAt != nil && !g.at.After(*s.LastAt) {
+			continue
+		}
+		if st.Streams == nil {
+			st.Streams = map[string]substrate.SyncStream{}
+		}
+		s.State = substrate.SyncStateErroring
+		s.Message, _ = parkedReason(g.lastError, g.at)
+		st.Streams[name] = s
+	}
+}
+
+// syncParkGroup is the parked deliveries of one (record, trigger) pair, or a
+// sum of such groups: how many there are, and the newest one's error,
+// instant and row id.
 type syncParkGroup struct {
 	count     int64
 	lastError string
 	at        time.Time
+	id        int64
+}
+
+// add sums two groups and keeps the newer one's error: the later park, the
+// higher row id on a tie, so a sum read out of a map is the same on every
+// read.
+func (g syncParkGroup) add(o syncParkGroup) syncParkGroup {
+	sum := g
+	if o.count > 0 && (g.count == 0 || o.at.After(g.at) || (o.at.Equal(g.at) && o.id > g.id)) {
+		sum = o
+	}
+	sum.count = g.count + o.count
+	return sum
+}
+
+// syncParkKey is the pair a park is grouped by: the record it named ("" for
+// a fire that named none) and the trigger that parked it.
+type syncParkKey struct {
+	record  string
+	trigger string
+}
+
+// triggerStream is the sync stream a trigger's callable declares, resolved
+// against the registry so a trigger whose bundle is blocked still names its
+// stream. An agent declares none.
+func triggerStream(reg *vocabulary.Registry, tr *trigger) string {
+	if tr.Callable != nil {
+		return tr.Callable.Stream
+	}
+	if tr.CallableKind == callableKindAgent {
+		return ""
+	}
+	if fn, err := reg.ResolveFunction(tr.CallableID); err == nil {
+		return fn.Stream
+	}
+	return ""
 }
 
 // syncParks groups the parked deliveries of the given triggers by the record
-// they name, in one query. A webhook request still settling is pending, not
-// parked, and is left out, as TriggerStatuses leaves it out of `parked`.
-func (ds *dataset) syncParks(ctx context.Context, triggerIDs []string) (map[string]syncParkGroup, error) {
-	out := map[string]syncParkGroup{}
+// they name and the trigger that parked them, in one query. A webhook
+// request still settling is pending, not parked, and is left out, as
+// TriggerStatuses leaves it out of `parked`.
+func (ds *dataset) syncParks(ctx context.Context, triggerIDs []string) (map[syncParkKey]syncParkGroup, error) {
+	out := map[syncParkKey]syncParkGroup{}
 	if len(triggerIDs) == 0 {
 		return out, nil
 	}
@@ -476,23 +581,24 @@ func (ds *dataset) syncParks(ctx context.Context, triggerIDs []string) (map[stri
 		return nil, err
 	}
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (record_id) record_id, count(*) OVER (PARTITION BY record_id), last_error, parked_at
+		SELECT DISTINCT ON (record_id, trigger_id) record_id, trigger_id,
+		       count(*) OVER (PARTITION BY record_id, trigger_id), last_error, parked_at, id
 		FROM trigger_failures
 		WHERE trigger_id IN (SELECT jsonb_array_elements_text($1::jsonb)) AND last_error <> $2
 		  AND id NOT IN (SELECT jsonb_array_elements_text($3::jsonb)::bigint)
-		ORDER BY record_id, parked_at DESC, id DESC`, ids, pendingWebhookError, running)
+		ORDER BY record_id, trigger_id, parked_at DESC, id DESC`, ids, pendingWebhookError, running)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var id string
+		var k syncParkKey
 		var g syncParkGroup
-		if err := rows.Scan(&id, &g.count, &g.lastError, &g.at); err != nil {
+		if err := rows.Scan(&k.record, &k.trigger, &g.count, &g.lastError, &g.at, &g.id); err != nil {
 			return nil, err
 		}
 		g.lastError = heldError(g.lastError)
-		out[id] = g
+		out[k] = g
 	}
 	return out, rows.Err()
 }

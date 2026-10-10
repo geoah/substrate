@@ -603,7 +603,14 @@ count when a later fire of the same trigger settles, which retires them
 ([functions](functions.md#driving-triggers));
 `substratectl sync status` prints the same, and the console renders it on
 each provider's page, with a Sync section on the record page of any binding
-kind.
+kind. A function that keeps one stream declares it as `stream: <name>`, the
+key its code writes under `syncStreams`, and a park of a trigger that fires
+it also marks that stream `erroring`, with the park's first error line as
+its `message`, while the park is newer than the stream's `lastAt` (a
+scheduled park marks the stream on every account that lists it). A function
+without `stream`, such as Slack's and Beeper's, which keep several streams in
+one body, leaves the streams as the body wrote them and marks the account
+alone.
 
 **Migrating a bundle.** Bind the trait, declare the twelve properties with
 their writers, add the `syncStreams`/`syncState`/`syncMessage`/`syncRequestedAck`

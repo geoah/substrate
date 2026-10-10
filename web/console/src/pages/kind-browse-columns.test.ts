@@ -61,6 +61,7 @@ describe("the columns a kind opens without", () => {
       "arguments",
       "effect",
       "confirmation",
+      "stream",
     ]) {
       expect(hidden).toContain(propertyColumnId(name))
     }

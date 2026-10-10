@@ -80,6 +80,10 @@ type TriggerFailure struct {
 	Attempts  int       `json:"attempts"`
 	LastError string    `json:"lastError"`
 	ParkedAt  time.Time `json:"parkedAt"`
+	// Stream is the sync stream the trigger's CURRENT callable declares (a
+	// function's `stream`): the stream `sync status` marks erroring for
+	// this park. Absent when the callable declares none.
+	Stream string `json:"stream,omitempty"`
 	// Running is set while the server is delivering this row: an agent run
 	// that holds it as its claim, or a retry by hand. A retry of a running
 	// row answers conflict.

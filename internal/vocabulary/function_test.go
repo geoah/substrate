@@ -118,6 +118,7 @@ func TestFunctionLoads(t *testing.T) {
 	r, err := loadFnAuthority(t, `  description: mirrors widgets into gadgets
   runtime: python
   timeout: PT0.25S
+  stream: widgets
   arguments:
     - {name: name, type: string, required: true}
     - {name: count, type: float}
@@ -156,6 +157,9 @@ func TestFunctionLoads(t *testing.T) {
 	}
 	if fn.Timeout != 250*time.Millisecond {
 		t.Fatalf("timeout: %s", fn.Timeout)
+	}
+	if fn.Stream != "widgets" {
+		t.Fatalf("stream: %q", fn.Stream)
 	}
 	if fn.Input == nil || fn.Output == nil {
 		t.Fatal("input/output schemas lost")
@@ -259,6 +263,16 @@ func TestFunctionLoadErrors(t *testing.T) {
   source: "def main(input, host): return {}"
 `,
 			want: "python, host",
+		},
+		"stream is a non-empty string": {
+			data: `  description: d
+  runtime: python
+  stream: [contacts, gmail]
+  permissions:
+    writes: [fn.example.com/fn/gadget]
+  source: "def main(input, host): return {}"
+`,
+			want: "data.stream: a non-empty string",
 		},
 		// The go runtime was removed (issue 495), so the value is retired: the
 		// error says so instead of listing the enum, because the author did not
@@ -562,6 +576,9 @@ func TestFunctionDefaults(t *testing.T) {
 	}
 	if fn.Timeout != vocabulary.DefaultRunTimeout {
 		t.Fatalf("default timeout: %s", fn.Timeout)
+	}
+	if fn.Stream != "" {
+		t.Fatalf("undeclared stream: %q", fn.Stream)
 	}
 	if fn.Input != nil || fn.Output != nil {
 		t.Fatal("undeclared input/output must stay nil")

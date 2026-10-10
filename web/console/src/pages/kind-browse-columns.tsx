@@ -108,6 +108,7 @@ const DEFAULT_HIDDEN: Record<string, string[]> = {
     "permissions",
     "effect",
     "confirmation",
+    "stream",
   ],
 }
 

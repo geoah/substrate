@@ -618,6 +618,7 @@ const triggerFailure: Shape<TriggerFailure> = {
   attempts: true,
   lastError: true,
   parkedAt: true,
+  stream: false,
   running: false,
 }
 const syncStatus: Shape<SyncStatus> = {

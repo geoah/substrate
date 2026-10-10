@@ -183,13 +183,15 @@ each error, cut to 80 characters; -o json and -o yaml carry the whole error.`,
 			}
 			return printList(a, output, parked, func() error {
 				tw := newTable(a.out)
-				fmt.Fprintln(tw, "ID\tSEQ\tFIRE\tRECORD\tATTEMPTS\tPARKED\tRUNNING\tERROR")
+				// STREAM is the sync stream the trigger's callable declares,
+				// the one `sync status` marks erroring for these parks.
+				fmt.Fprintln(tw, "ID\tSEQ\tFIRE\tRECORD\tSTREAM\tATTEMPTS\tPARKED\tRUNNING\tERROR")
 				for _, f := range parked {
 					// One line per delivery: a traceback's newlines would
 					// break the table.
 					reason, _, _ := strings.Cut(f.LastError, "\n")
-					fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%d\t%s\t%t\t%s\n",
-						f.ID, f.Seq, f.FireID, f.RecordID, f.Attempts, humanAge(a.now(), f.ParkedAt), f.Running, truncate(reason, 80))
+					fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%s\t%d\t%s\t%t\t%s\n",
+						f.ID, f.Seq, f.FireID, f.RecordID, f.Stream, f.Attempts, humanAge(a.now(), f.ParkedAt), f.Running, truncate(reason, 80))
 				}
 				return tw.Flush()
 			})
