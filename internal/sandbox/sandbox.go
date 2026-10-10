@@ -63,6 +63,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // Mode is how hard the sandbox insists.
@@ -154,8 +155,17 @@ type Report struct {
 	OS string
 	// LandlockABI is the kernel's Landlock ABI version, 0 when unavailable.
 	LandlockABI int
+	// LandlockErr says why LandlockABI is 0, and what fixes it. A kernel built
+	// without Landlock and one that left it out of the lsm= list answer with
+	// different errnos and need different fixes, and only the probe sees the
+	// errno, so the probe writes the sentence.
+	LandlockErr string
 	// Seccomp reports whether an unprivileged filter installs.
 	Seccomp bool
+	// SeccompErr says why Seccomp is false, and what fixes it: a build with no
+	// syscall table for its architecture, a profile that denies seccomp(2), or
+	// a kernel without it.
+	SeccompErr string
 	// ConnectGate reports whether this process may service the connect gate's
 	// notifications AGAINST A CHILD: pidfd_getfd(2) to duplicate the body's
 	// socket and process_vm_readv(2) to read the sockaddr it passed. Both are
@@ -171,6 +181,11 @@ type Report struct {
 	// because "the kernel says no" and "we could not ask" are different states
 	// and only the first one has a remedy.
 	ConnectGateErr string
+	// ConnectGateErrno is the errno behind ConnectGateErr. EPERM and EACCES
+	// are a profile refusing the calls, which a capability fixes; ENOSYS is a
+	// kernel without them, which only a newer kernel fixes. Missing names the
+	// fix from this, so the two never get each other's advice.
+	ConnectGateErrno syscall.Errno
 	// Err carries the probe failure, if the probe itself could not run.
 	Err error
 }
@@ -178,9 +193,20 @@ type Report struct {
 // ConnectGateRemedy is the one thing an operator can do about a gate the
 // kernel will not let this process service. It is a const rather than prose in
 // three places because the boot line, the refusal and the docs must not drift.
-const ConnectGateRemedy = "give the container CAP_SYS_PTRACE in its bounding set " +
+const ConnectGateRemedy = connectGateFix + " " +
 	"(compose: `cap_add: [SYS_PTRACE]`; Kubernetes: `securityContext.capabilities.add`), " +
 	"because the default seccomp profile gates pidfd_getfd(2) and process_vm_readv(2) on that capability"
+
+// connectGateFix is the remedy's first clause, the form Missing uses for a
+// refusal: the gate's boot line carries the whole remedy in its own attribute,
+// and a message that repeated it would bury the other missing layers.
+const connectGateFix = "give the container CAP_SYS_PTRACE in its bounding set"
+
+// connectGateKernelFix is the fix for a kernel that does not implement one of
+// the gate's calls. Linux 5.9 is where the last of them arrived
+// (SECCOMP_IOCTL_NOTIF_ADDFD), after pidfd_open (5.3) and pidfd_getfd (5.6).
+const connectGateKernelFix = "this kernel is too old for the gate, which needs Linux 5.9 or newer: " +
+	"upgrade the kernel, because no capability adds a syscall"
 
 // MinLandlockABI is the ABI at which the filesystem layer is COMPLETE enough
 // to be called enforced.
@@ -213,6 +239,73 @@ func (r Report) Degraded(mode Mode) bool {
 		return false
 	}
 	return !r.FS() || !r.Seccomp || !r.ConnectGate
+}
+
+// The layer names that Missing prefixes each entry with. The filesystem and
+// syscall layers carry the facility's name because that is the word an
+// operator searches a kernel config for.
+const (
+	layerFS      = "filesystem (Landlock)"
+	layerSeccomp = "syscall filter (seccomp)"
+	layerGate    = "connect gate"
+)
+
+// Missing lists each layer the mode asks for that this platform did not give,
+// one entry per layer, each naming the layer, why it is missing and, where
+// one is known, the fix. It is empty exactly when Degraded is false, so a
+// boot line that says DEGRADED always has something to name, and String
+// stays the one-line summary beside it.
+func (r Report) Missing(mode Mode) []string {
+	if !r.Degraded(mode) {
+		return nil
+	}
+	if !r.Supported() {
+		fix := "run function bodies on Linux"
+		return []string{
+			layerFS + ": " + r.OS + " has no Landlock: " + fix,
+			layerSeccomp + ": " + r.OS + " has no seccomp: " + fix,
+			layerGate + ": " + r.OS + " has no seccomp to route connect(2) through: " + fix,
+		}
+	}
+	var out []string
+	switch {
+	case r.LandlockABI == 0:
+		out = append(out, layerFS+": "+orUnavailable(r.LandlockErr))
+	case r.LandlockABI < MinLandlockABI:
+		out = append(out, fmt.Sprintf("%s: ABI v%d does not mediate truncate(2), so a body can still empty "+
+			"any file this uid may write: run Linux 6.2 or newer for ABI v%d", layerFS, r.LandlockABI, MinLandlockABI))
+	}
+	if !r.Seccomp {
+		out = append(out, layerSeccomp+": "+orUnavailable(r.SeccompErr))
+	}
+	if !r.ConnectGate {
+		switch {
+		case r.ConnectGateErr != "":
+			entry := layerGate + ": " + r.ConnectGateErr
+			switch r.ConnectGateErrno {
+			case syscall.EPERM, syscall.EACCES:
+				entry += ": " + connectGateFix
+			case syscall.ENOSYS:
+				entry += ": " + connectGateKernelFix
+			}
+			out = append(out, entry)
+		case r.Err != nil:
+			out = append(out, layerGate+": not probed: "+r.Err.Error())
+		default:
+			out = append(out, layerGate+": unavailable")
+		}
+	}
+	return out
+}
+
+// orUnavailable stands in for a reason a hand-built Report left empty: the
+// probe always writes one, and an entry with no reason at all would read as a
+// bug in the line rather than in the kernel.
+func orUnavailable(reason string) string {
+	if reason == "" {
+		return "unavailable"
+	}
+	return reason
 }
 
 // String is the one line an operator reads at boot.

@@ -35,19 +35,24 @@ import (
 // call the boot line prints: a gate refused by nothing sends an operator
 // looking for a kernel setting that is not the problem.
 func TestConnectGateProbeAnswers(t *testing.T) {
-	ok, refused, err := connectGateAvailable()
+	ok, refused, errno, err := connectGateAvailable()
 	// A run under `docker run` is the point of this case, and the two
 	// directions are otherwise indistinguishable from a pass.
-	t.Logf("connect gate available=%v refused=%q err=%v", ok, refused, err)
+	t.Logf("connect gate available=%v refused=%q errno=%d err=%v", ok, refused, errno, err)
 
 	switch {
 	case ok:
-		if refused != "" || err != nil {
-			t.Fatalf("an available gate carries a refusal (%q) or an error (%v)", refused, err)
+		if refused != "" || errno != 0 || err != nil {
+			t.Fatalf("an available gate carries a refusal (%q, errno %d) or an error (%v)", refused, errno, err)
 		}
 	case refused != "":
 		if err != nil {
 			t.Fatalf("a kernel refusal (%q) must not also be a probe failure: %v", refused, err)
+		}
+		// The errno is what picks the fix (a capability or a kernel), so a
+		// refusal without one of the three would get no advice at all.
+		if errno != unix.EPERM && errno != unix.EACCES && errno != unix.ENOSYS {
+			t.Fatalf("a refusal (%q) carries errno %d, want EPERM, EACCES or ENOSYS", refused, errno)
 		}
 		named := false
 		for _, call := range []string{"pidfd_open", "pidfd_getfd", "process_vm_readv"} {
@@ -74,7 +79,7 @@ func TestConnectGateProbeIsNotWiderThanTheProfile(t *testing.T) {
 	if selfSyscallsPermitted() {
 		t.Skip("this host permits the gate syscalls against itself: nothing to bound here")
 	}
-	ok, _, _ := connectGateAvailable()
+	ok, _, _, _ := connectGateAvailable()
 	if ok {
 		t.Fatal("the probe reports a working gate on a host that refuses the syscalls against its own process")
 	}

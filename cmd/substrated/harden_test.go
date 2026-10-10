@@ -129,6 +129,101 @@ func TestBootLineWhenTheConnectGateCannotBeServiced(t *testing.T) {
 	}
 }
 
+// Every DEGRADED branch names each missing layer and why, in a `missing`
+// attribute and in the message, because "this kernel does not offer every
+// layer" alone left a Raspberry Pi operator with nothing to enable. The
+// connect-gate branch included: it runs first, so it must also name the other
+// missing layers, which before this it left to the summary.
+func TestBootLineNamesEachMissingLayer(t *testing.T) {
+	const (
+		notBuilt = "not supported by this kernel: build it with CONFIG_SECURITY_LANDLOCK=y and add landlock to its lsm= list"
+		noTable  = "no syscall table for riscv64 in this build: run the linux/amd64 or linux/arm64 build"
+	)
+	for _, tc := range []struct {
+		name    string
+		report  sandbox.Report
+		want    []string // in the message and in `missing`
+		notWant []string
+	}{
+		{
+			// The Raspberry Pi kernel: Landlock is not built, everything else is there.
+			name:    "landlock not built",
+			report:  sandbox.Report{OS: "linux", LandlockErr: notBuilt, Seccomp: true, ConnectGate: true},
+			want:    []string{"filesystem (Landlock): " + notBuilt},
+			notWant: []string{"syscall filter", "connect gate:"},
+		},
+		{
+			name:   "old landlock ABI and no syscall table",
+			report: sandbox.Report{OS: "linux", LandlockABI: 2, SeccompErr: noTable, ConnectGate: true},
+			want: []string{
+				"filesystem (Landlock): ABI v2 does not mediate truncate(2)",
+				"run Linux 6.2 or newer",
+				"syscall filter (seccomp): " + noTable,
+			},
+			notWant: []string{"connect gate:"},
+		},
+		{
+			name: "connect gate refused and landlock not built",
+			report: sandbox.Report{
+				OS: "linux", LandlockErr: notBuilt, Seccomp: true,
+				ConnectGateErr: "pidfd_getfd: operation not permitted",
+			},
+			want: []string{
+				"filesystem (Landlock): " + notBuilt,
+				"connect gate: pidfd_getfd: operation not permitted",
+			},
+			notWant: []string{"syscall filter"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			level, msg, attrs := sandboxReport(sandbox.ModeBestEffort, tc.report)
+			if level != slog.LevelError || !strings.Contains(msg, "DEGRADED") {
+				t.Fatalf("level = %v, message = %q: want an ERROR that says DEGRADED", level, msg)
+			}
+			missing := attr(attrs, "missing")
+			for _, want := range tc.want {
+				if !strings.Contains(missing, want) {
+					t.Fatalf("missing = %q, want it to name %q", missing, want)
+				}
+				if !strings.Contains(msg, want) {
+					t.Fatalf("message = %q, want it to name %q", msg, want)
+				}
+			}
+			for _, not := range tc.notWant {
+				if strings.Contains(missing, not) {
+					t.Fatalf("missing = %q names %q, which this kernel has", missing, not)
+				}
+			}
+			// The summary stays beside the list, unchanged.
+			if attr(attrs, "kernel") != tc.report.String() {
+				t.Fatalf("kernel = %q, want the report's summary %q", attr(attrs, "kernel"), tc.report.String())
+			}
+		})
+	}
+
+	// The gate branch keeps its refusal and its capability advice beside the
+	// list: the list adds to that line, it does not replace it.
+	_, msg, attrs := sandboxReport(sandbox.ModeBestEffort, sandbox.Report{
+		OS: "linux", LandlockErr: notBuilt, Seccomp: true,
+		ConnectGateErr: "pidfd_getfd: operation not permitted",
+	})
+	if !strings.Contains(msg, "REFUSED") || !strings.Contains(attr(attrs, "advice"), "CAP_SYS_PTRACE") ||
+		!strings.Contains(attr(attrs, "refused"), "pidfd_getfd") {
+		t.Fatalf("the gate branch lost its refusal or its advice: %q %v", msg, attrs)
+	}
+
+	// Nothing is missing on the lines that are not degradations.
+	full := sandbox.Report{OS: "linux", LandlockABI: 4, Seccomp: true, ConnectGate: true}
+	for name, line := range map[string]sandbox.Report{"active": full, "darwin": {OS: "darwin"}} {
+		if _, _, attrs := sandboxReport(sandbox.ModeBestEffort, line); attr(attrs, "missing") != "" {
+			t.Fatalf("%s line carries missing = %q", name, attr(attrs, "missing"))
+		}
+	}
+	if _, _, attrs := sandboxReport(sandbox.ModeOff, sandbox.Report{OS: "linux"}); attr(attrs, "missing") != "" {
+		t.Fatalf("off line carries missing = %q", attr(attrs, "missing"))
+	}
+}
+
 // The trust line is read by the same person for the same reason: a store that
 // does not exist fails every network body, silently, and only on some hosts.
 // All four branches are asserted here because the interesting one — an

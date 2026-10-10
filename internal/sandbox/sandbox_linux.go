@@ -130,9 +130,11 @@ func probe() Report {
 	abi, err := landlockABI()
 	if err == nil {
 		r.LandlockABI = abi
+	} else {
+		r.LandlockErr = err.Error()
 	}
-	r.Seccomp = seccompAvailable()
-	r.ConnectGate, r.ConnectGateErr, r.Err = connectGateAvailable()
+	r.Seccomp, r.SeccompErr = seccompAvailable()
+	r.ConnectGate, r.ConnectGateErr, r.ConnectGateErrno, r.Err = connectGateAvailable()
 	return r
 }
 
