@@ -554,8 +554,9 @@ func TestADeliveryCommitsEffectsCursorAndRunTogether(t *testing.T) {
 	}
 	parkedHead := maxSeqOf(t, ds)
 
-	// The retry: the effect, the unpark and the resolve of the park's alert
-	// (decision 0148), and nothing else, one transaction.
+	// The retry: the effect, the unpark, the resolve of the park's alert
+	// (decision 0148) and the retry's run (decision 0152), and nothing else,
+	// one transaction.
 	ds.mu.Lock()
 	ds.deliveryFault = nil
 	ds.mu.Unlock()
@@ -568,8 +569,8 @@ func TestADeliveryCommitsEffectsCursorAndRunTogether(t *testing.T) {
 	if left, err := ds.TriggerFailures(ctx, triggerID); err != nil || len(left) != 0 {
 		t.Fatalf("failures after the retry: %+v (%v)", left, err)
 	}
-	if groups, rows := txnGroups(t, ds, parkedHead); groups != 1 || rows != 3 {
-		t.Fatalf("the retry wrote %d rows in %d transaction groups, want 3 rows in 1", rows, groups)
+	if groups, rows := txnGroups(t, ds, parkedHead); groups != 1 || rows != 4 {
+		t.Fatalf("the retry wrote %d rows in %d transaction groups, want 4 rows in 1", rows, groups)
 	}
 
 	// A dispatched delivery: the effect, the delivery entry and the run
@@ -759,8 +760,8 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 		t.Fatalf("a second pass redelivered the claimed change: %d threads", got)
 	}
 
-	// Retried by hand once the completion can land: the claim retires. A
-	// retry mints no run record, like a manual run.
+	// Retried by hand once the completion can land: the claim retires, and
+	// the retry writes its one ok run (decision 0152).
 	ds.mu.Lock()
 	ds.deliveryFault = nil
 	ds.mu.Unlock()
@@ -769,6 +770,9 @@ func TestAnAgentDeliveryIsClaimedBeforeItsLoopAndCompletedAfter(t *testing.T) {
 	}
 	if left, err := ds.TriggerFailures(ctx, tr.ID); err != nil || len(left) != 0 {
 		t.Fatalf("failures after the retry: %+v (%v)", left, err)
+	}
+	if n := okRuns(); n != 1 {
+		t.Fatalf("%d OK run records after the retry, want its one", n)
 	}
 	if got := len(agentThreadsOf(t, ds, "keeper")); got != 4 {
 		t.Fatalf("keeper threads after the retry: %d, want 4", got)

@@ -297,6 +297,14 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 		}
 	}
 	res := stopLane()
+	// After both lanes, so the pass's own parks and settlements are in the
+	// runs it reads. Best effort, like the sweep: a failed read raises
+	// nothing this pass and blocks no delivery.
+	if ctx.Err() == nil {
+		if err := ds.raiseFailingAlerts(ctx, triggers); err != nil {
+			ds.svc.log.Warn("substrate: raising failing-trigger alerts", "error", err)
+		}
+	}
 	return total + res.ran, errors.Join(append(errs, res.errs...)...)
 }
 
@@ -887,7 +895,7 @@ type settlement struct {
 	// mid-loop leaves a claim for a hand and not a pending entry the next
 	// open would run again; nil everywhere else.
 	pending *foldFailure
-	// record writes the run record; nil on a retry.
+	// record writes the run record, mode manual on a retry (decision 0152).
 	record func(t *txn, res deliverResult) error
 	// started is when the dispatch began the delivery; zero on a retry,
 	// which measures from its own start.
@@ -951,6 +959,13 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 	}
 	if err := s.settleAlert(t, retired); err != nil {
 		return err
+	}
+	// A retry whose guard no longer matches settles here as a skip, which
+	// says nothing about whether the callable works.
+	if !res.skipped {
+		if err := t.resolveFailingAlert(s.trigger); err != nil {
+			return err
+		}
 	}
 	if s.record != nil {
 		if err := s.record(t, res); err != nil {
@@ -1216,6 +1231,9 @@ func (s *settlement) complete(t *txn, claim int64, res deliverResult) error {
 		return err
 	}
 	if err := s.settleAlert(t, retired); err != nil {
+		return err
+	}
+	if err := t.resolveFailingAlert(s.trigger); err != nil {
 		return err
 	}
 	if s.record != nil {
@@ -2238,14 +2256,25 @@ func (t *txn) putSystemRun(r runRecord, prune bool) error {
 
 // pruneRuns enforces the retention: the newest runRetention non-parked runs
 // per trigger stay, older ones tombstone. Parked runs are exempt — failures
-// are kept.
+// are kept — and so is the trigger's newest ok run, however old: it is where
+// the trigger's health counts its failures from (health.go, decision 0152),
+// and twenty skips must not erase it.
 func (t *txn) pruneRuns(triggerID string) error {
+	trigger := referencePathSQL("props", "trigger")
 	rows, err := t.query(`
-		SELECT id FROM records
-		WHERE kind = $1 AND deleted_at IS NULL
-		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' <> $3
-		ORDER BY created_at DESC, id DESC OFFSET $4`,
-		typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention)
+		SELECT id FROM (
+			SELECT id FROM records
+			WHERE kind = $1 AND deleted_at IS NULL
+			  AND `+trigger+` = $2 AND props->>'status' <> $3
+			ORDER BY created_at DESC, id DESC OFFSET $4
+		) old
+		WHERE id IS DISTINCT FROM (
+			SELECT id FROM records
+			WHERE kind = $1 AND deleted_at IS NULL
+			  AND `+trigger+` = $2 AND props->>'status' = $5
+			ORDER BY created_at DESC, id DESC LIMIT 1
+		)`,
+		typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention, runStatusOK)
 	if err != nil {
 		return err
 	}
@@ -2984,11 +3013,16 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 	// The repository cap is read again once per status read, as a hand's
 	// entry reads it, so a raised cap reads as such before the next pass.
 	ds.spend.expireCap()
+	health, err := ds.readTriggerHealth(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]substrate.TriggerStatus, 0, len(triggers))
 	for _, lt := range triggers {
 		st := substrate.TriggerStatus{
 			ID: lt.ID, Callable: lt.CallableID, Enabled: lt.Enabled, Head: head,
 		}
+		health.apply(&st)
 		var owedPending, owedInFlight int64
 		lastPass, lastDelivered, delivering, claims := ds.activityOf(lt.ID)
 		if !lastPass.IsZero() {
@@ -3362,6 +3396,21 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 		return 0, fmt.Errorf("substrate/engine: trigger %s failure %d retried without its hold", tr.ID, failureID)
 	}
 	settle.seq, settle.fireID, settle.retire = int64(f.Seq), f.FireID, failureID
+	// The retry, a hand's or the rerun of an interrupted agent delivery
+	// (decision 0151), writes its run as a dispatch does, mode manual, in the
+	// transaction that settles it (decision 0152): ok, or skipped when the
+	// guard no longer matches. Trigger health reads the newest ok run, and a
+	// retry that delivered is one.
+	started := nowUTC()
+	settle.attempt = int(f.Attempts) + 1
+	settle.record = func(t *txn, res deliverResult) error {
+		run := retryRun(tr, f, settle.attempt, started)
+		run.status, run.effects, run.pages = runStatusOK, res.effects, res.pages
+		if res.skipped {
+			run.status, run.errMsg = runStatusSkipped, res.reason
+		}
+		return t.putSystemRun(run, true)
+	}
 	payload := []byte(f.Payload)
 	// A retried occurrence that settles supersedes the parks at or before
 	// it, as a dispatched one does.
@@ -3438,6 +3487,13 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 			if err := t.settleDelivery(tr.ID); err != nil {
 				return err
 			}
+			// The failed attempt's run, parked like a dispatched one: a
+			// sighting of the failure the trigger's health counts.
+			run := retryRun(tr, f, int(f.Attempts), started)
+			run.status, run.errMsg = runStatusParked, derr.Error()
+			if err := t.putRun(run); err != nil {
+				return err
+			}
 			// A delivery that fails again is the problem recurring: an alert
 			// the owner resolved by hand reopens.
 			if err := t.raiseParkedAlert(tr, record, derr); err != nil {
@@ -3459,6 +3515,16 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 	}
 	ds.markRetried(tr)
 	return n, nil
+}
+
+// retryRun is the run record of a hand retry of the parked delivery f,
+// before its status: mode manual, naming the change or fire it re-ran.
+func retryRun(tr *trigger, f foldFailure, attempt int, started time.Time) runRecord {
+	return runRecord{
+		trigger: tr.ID, callable: tr.callablePath(), mode: runner.ModeManual,
+		seq: int64(f.Seq), fireID: f.FireID, recordID: f.RecordID,
+		attempt: attempt, startedAt: started,
+	}
 }
 
 // markRetried stamps a hand retry that settled as the trigger's last

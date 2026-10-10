@@ -54,6 +54,13 @@ type SyncStatus struct {
 	// absent while Parked is 0.
 	LastParkedError string     `json:"lastParkedError,omitempty"`
 	LastParkedAt    *time.Time `json:"lastParkedAt,omitempty"`
+	// Health is `failing` when any trigger whose parks Parked counts is
+	// failing (TriggerStatus.Health), and `ok` otherwise. FailingSince is the
+	// oldest of those triggers' FailingSince, absent while Health is `ok`;
+	// LastOkAt is the newest of their LastOkAt.
+	Health       string     `json:"health"`
+	FailingSince *time.Time `json:"failingSince,omitempty"`
+	LastOkAt     *time.Time `json:"lastOkAt,omitempty"`
 	// Triggers is every trigger whose record source matches the kind, with
 	// its cursor, lag, parked and pending counts; a schedule trigger that
 	// fires the same callable is not tied to a kind and is not here, though

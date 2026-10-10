@@ -46,6 +46,7 @@ import {
 import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
 import { AlertsPanel } from "@/components/alerts/alerts-panel"
+import { FailingBadge } from "@/components/alerts/failing-badge"
 import {
   ProviderLogo,
   StandingPill,
@@ -272,12 +273,20 @@ function ProviderDoc({
       {notice}
       <ProviderProblems entry={entry} chain={chain} className="mt-6" />
       {installed && (
-        <AlertsPanel
-          refs={callablePaths(
-            row.catalog?.closure.functions ?? [],
-            row.catalog?.closure.agents ?? []
-          )}
-        />
+        <>
+          <FailingBadge
+            callables={[
+              ...(row.catalog?.closure.functions ?? []),
+              ...(row.catalog?.closure.agents ?? []),
+            ]}
+          />
+          <AlertsPanel
+            refs={callablePaths(
+              row.catalog?.closure.functions ?? [],
+              row.catalog?.closure.agents ?? []
+            )}
+          />
+        </>
       )}
 
       <SectionHead

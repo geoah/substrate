@@ -28,6 +28,14 @@ func WithTestTOTPClock(now func() time.Time) Option {
 	return func(o *options) { o.now = now }
 }
 
+// WithTestHealthClock is the clock the dispatcher's failing-trigger read
+// measures a park's age on (health.go), and nothing else: the run rows and
+// every other record timestamp stay on the wall clock. A test advances it
+// past the window instead of sleeping through one.
+func WithTestHealthClock(now func() time.Time) Option {
+	return func(o *options) { o.healthNow = now }
+}
+
 // TOTPPeriod is the verifier's step, for a test that moves its clock one.
 const TOTPPeriod = totpPeriod
 

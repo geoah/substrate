@@ -47,7 +47,7 @@ func TestValidateCredentialKey(t *testing.T) {
 		t.Fatalf("ValidateCredentialKey rejected base64 of 32 bytes: %v", err)
 	}
 	data := Data{Root: t.TempDir(), ChangelogSegmentBytes: MinChangelogSegmentBytes}
-	if err := (Config{CredentialKey: good, Data: data, RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4}).Validate(); err != nil {
+	if err := (Config{CredentialKey: good, Data: data, RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("Config.Validate rejected a good key: %v", err)
 	}
 	if err := (Config{CredentialKey: "", Data: data}).Validate(); err == nil {
@@ -144,7 +144,7 @@ func TestRepositoryConnectionsRefusesACapUnderTheFloor(t *testing.T) {
 			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_REPOSITORY_CONNECTIONS", n, err)
 		}
 	}
-	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4}).Validate(); err != nil {
+	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("the floor itself was refused: %v", err)
 	}
 }
@@ -161,7 +161,7 @@ func TestTriggerIntervalRefusesZeroAndNegative(t *testing.T) {
 			t.Fatalf("a tick of %s: err = %v, want a refusal naming SUBSTRATE_TRIGGER_INTERVAL", d, err)
 		}
 	}
-	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4}).Validate(); err != nil {
+	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("a one-second tick was refused: %v", err)
 	}
 }
@@ -173,7 +173,7 @@ func TestTriggerLaneWorkersRefusesZeroAndAboveTheProcessCeiling(t *testing.T) {
 	t.Parallel()
 	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second}
+	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, HealthFailingAfter: time.Hour}
 	for _, n := range []int{-1, 0, MaxTriggerLaneWorkers + 1} {
 		refused := base
 		refused.TriggerLaneWorkers = n
@@ -190,6 +190,28 @@ func TestTriggerLaneWorkersRefusesZeroAndAboveTheProcessCeiling(t *testing.T) {
 	}
 }
 
+// The failing window is a duration the dispatcher compares a park's age
+// against, so zero would open the alert on the first park and a negative one
+// means nothing: Validate refuses both and names the variable.
+func TestHealthFailingAfterRefusesZeroAndNegative(t *testing.T) {
+	t.Parallel()
+	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4}
+	for _, d := range []time.Duration{0, -time.Minute} {
+		refused := base
+		refused.HealthFailingAfter = d
+		if err := refused.Validate(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_HEALTH_FAILING_AFTER") {
+			t.Fatalf("a window of %s: err = %v, want a refusal naming SUBSTRATE_HEALTH_FAILING_AFTER", d, err)
+		}
+	}
+	ok := base
+	ok.HealthFailingAfter = 15 * time.Minute
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("a 15 minute window was refused: %v", err)
+	}
+}
+
 // The digest's rate cap is bytes per second: zero removes it, and a
 // negative value or one under the floor (a unit mistake) is refused naming
 // the variable.
@@ -197,7 +219,7 @@ func TestDigestBytesPerSecondRefusesANegativeOrTinyCap(t *testing.T) {
 	t.Parallel()
 	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4}
+	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}
 	for _, n := range []int64{-1, 8, MinDigestBytesPerSecond - 1} {
 		refused := base
 		refused.DigestBytesPerSecond = n

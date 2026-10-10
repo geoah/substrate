@@ -632,6 +632,16 @@ export interface TriggerStatus {
   /** Names a trigger the dispatcher cannot run: an unparseable row or a
    * callable that no longer resolves. */
   error?: string
+  /** `failing` while the trigger's `trigger.failing/<id>` alert is open:
+   * every delivery since its newest ok run parked, for longer than the
+   * server's window. `ok` otherwise; the next ok delivery clears it. */
+  health: string
+  /** The open failing alert's firstSeenAt, the oldest of those parks;
+   * absent while `health` is `ok`. */
+  failingSince?: string
+  /** When the trigger's newest ok run finished, dispatched or retried by
+   * hand; absent when it never delivered. */
+  lastOkAt?: string
 }
 
 /** One parked delivery (`substrate.TriggerFailure`): what the trigger gave up
@@ -697,6 +707,11 @@ export interface SyncStatus {
    * bytes, and when it parked; both absent while `parked` is 0. */
   lastParkedError?: string
   lastParkedAt?: string
+  /** `failing` when any trigger whose parks `parked` counts is failing;
+   * `failingSince` is the oldest of theirs, `lastOkAt` the newest. */
+  health: string
+  failingSince?: string
+  lastOkAt?: string
   /** The record triggers on the kind; a schedule trigger firing the same
    * callable is not tied to a kind and is not here, though its parks count
    * in `parked`. */

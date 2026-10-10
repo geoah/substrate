@@ -24,6 +24,12 @@ const (
 	TriggerKindWebhook  = "webhook"
 )
 
+// The words a status row's Health carries.
+const (
+	HealthOK      = "ok"
+	HealthFailing = "failing"
+)
+
 // TriggerStatus is one trigger's delivery bookkeeping, computed on read:
 // its cursor (record sources), the changelog head, the lag between them, the
 // last fire (schedule sources), how many parked failures it holds and how
@@ -84,6 +90,19 @@ type TriggerStatus struct {
 	// Error names a trigger the dispatcher cannot run: an unparseable row or
 	// a callable that no longer resolves.
 	Error string `json:"error,omitempty"`
+	// Health is `failing` while the trigger's `trigger.failing/<id>` alert
+	// (a core/alert record) is open, and `ok` otherwise. The dispatcher opens
+	// that alert once every delivery since the trigger's newest ok run has
+	// parked for longer than SUBSTRATE_HEALTH_FAILING_AFTER, and the next ok
+	// delivery, dispatched or retried by hand, resolves it. FailingSince is
+	// the open alert's firstSeenAt, the oldest of those parks; absent while
+	// Health is `ok`.
+	Health       string     `json:"health"`
+	FailingSince *time.Time `json:"failingSince,omitempty"`
+	// LastOkAt is when the trigger's newest ok run finished, dispatched or
+	// retried by hand; retention keeps that run however old. Absent when the
+	// trigger never delivered.
+	LastOkAt *time.Time `json:"lastOkAt,omitempty"`
 }
 
 // TriggerFailure is one parked delivery: the trigger gave up on this

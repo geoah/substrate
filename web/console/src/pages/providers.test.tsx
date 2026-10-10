@@ -461,6 +461,7 @@ describe("ProvidersPage", () => {
           parked: 2,
           pending: 0,
           inFlight: 0,
+          health: "ok",
         },
         {
           id: "linear-issues-scheduled",
@@ -471,6 +472,7 @@ describe("ProvidersPage", () => {
           parked: 5,
           pending: 0,
           inFlight: 0,
+          health: "ok",
         },
       ],
     })

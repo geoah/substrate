@@ -1239,18 +1239,22 @@ func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request)
 const fakeHeldText = "spend cap reached: agent samples.substrate.reamde.dev/llm/dailyrollup spent 512 of its 500 cents in the last 24 hours (budgets.spendCentsPerDay)"
 
 // handleTriggerStatus answers the computed per-trigger status table: a
-// function trigger in step, and an agent trigger held at its spend cap.
+// function trigger whose deliveries have all failed for three hours, and an
+// agent trigger held at its spend cap.
 func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	passed, delivered := testNow.Add(-5*time.Second), testNow.Add(-3*time.Minute)
+	failing, lastOK := testNow.Add(-3*time.Hour), testNow.Add(-4*time.Hour)
 	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.TriggerStatus{{
 		ID: "classify-page", Kind: substrate.TriggerKindRecord,
 		Callable: "web.substrate.reamde.dev/web/classify", Enabled: true, Cursor: 41, Head: 41,
 		LastPassAt: &passed, LastDeliveredAt: &delivered,
+		Health: substrate.HealthFailing, FailingSince: &failing, LastOkAt: &lastOK,
 	}, {
 		ID: "daily-rollup", Kind: substrate.TriggerKindSchedule,
 		Callable: "samples.substrate.reamde.dev/llm/dailyrollup", Enabled: true, Head: 41, Pending: 1,
-		Held: fakeHeldText,
+		Held:   fakeHeldText,
+		Health: substrate.HealthOK,
 	}}})
 }
 
@@ -1303,7 +1307,8 @@ func (f *fakeSubstrate) handleSyncStatus(w http.ResponseWriter, r *http.Request)
 			"contacts": {State: substrate.SyncStateOK},
 		},
 		Parked: 1, LastParkedError: "RuntimeError: contacts: HTTP 500\nTraceback (most recent call last):", LastParkedAt: &synced,
-		Triggers: []substrate.TriggerStatus{{ID: "google-gmail-on-connect", Kind: substrate.TriggerKindRecord, Parked: 3, Lag: 2}},
+		Health:   substrate.HealthOK,
+		Triggers: []substrate.TriggerStatus{{ID: "google-gmail-on-connect", Kind: substrate.TriggerKindRecord, Parked: 3, Lag: 2, Health: substrate.HealthOK}},
 	}}})
 }
 

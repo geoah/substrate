@@ -1179,9 +1179,14 @@ the status (`ok`, `skipped` or `parked`), the attempt count and the
 applied-effects summary. The callable lands twice from the one value —
 `callableRef`, a reference at the function or agent record, which is what
 `filter.referencing` follows to read every run of one callable, and
-`callable`, the deprecated bare id of that record. Parked runs are kept; the
-newest twenty non-parked runs per trigger stay and older ones tombstone. A
-manual run, a parked retry and a host call mint nothing.
+`callable`, the deprecated bare id of that record. A retry by hand of a
+parked delivery writes one too, mode `manual`, in the transaction that
+settles it: `ok`, `skipped` when the guard no longer matches, or `parked`
+with the new error and attempt when it fails again
+([decision 0152](decisions/0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md)).
+Parked runs are kept; the newest twenty non-parked runs per trigger stay, and
+so does the trigger's newest `ok` run however old, and older ones tombstone.
+A manual run and a host call mint nothing.
 
 **A trigger whose deliveries park has one open alert.** The transaction that
 parks a delivery, including the open-time park of an agent run a stop
@@ -1205,6 +1210,25 @@ code always fails parks once instead of feeding itself
 ([decision 0148](decisions/0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md)). `substratectl alerts` lists the open
 alerts, and the console shows them on the provider's, agent's and tool's
 pages.
+
+**A trigger whose every delivery fails for an hour reads `failing`.** A
+dispatcher pass reads each enabled trigger's run rows, at most once a minute,
+and opens a second alert, keyed `trigger.failing/<trigger id>` at level
+`error`, when the trigger has parked runs since its newest `ok` run and the
+oldest of them is older than `SUBSTRATE_HEALTH_FAILING_AFTER` (`1h` by
+default). A run a retry by hand writes counts like a dispatched one, and a
+skipped run neither starts nor ends the streak. `count` is those parked runs,
+`detail` the newest one's error, `firstSeenAt` the oldest one's time, and
+`about` the trigger and its callable; a later refresh of the open alert counts
+from its `firstSeenAt`. The next `ok` delivery of the trigger, dispatched or
+retried by hand, resolves it in the transaction that settles the delivery.
+While it is open, `trigger status` and `sync status` read `health: failing`
+with `failingSince` set to its `firstSeenAt`; `lastOkAt` is the newest `ok`
+run. Only parks after the alert's last resolve reopen it, so the owner who
+resolves it by hand silences it until a delivery parks again and that park
+outlives the window. Forgetting parked deliveries is not a recovery: without
+an `ok` delivery the owner resolves the alert by hand, and a disabled trigger
+raises no new one.
 
 **A direct call of a networked function writes a run row.** A call through
 the call API of a function that declares `permissions.network`, or whose

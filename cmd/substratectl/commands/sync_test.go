@@ -3,6 +3,7 @@ package commands
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // `sync status` is one table over the synchronization read: the account's
@@ -15,8 +16,7 @@ func TestSyncStatusRendersTheAccountLine(t *testing.T) {
 	h.writeConfig()
 
 	out, _ := h.mustRun("sync", "status")
-	if !strings.Contains(out, "KIND\tID\tSTATE\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE") &&
-		!strings.Contains(out, "KIND") {
+	if !strings.Contains(out, "KIND") || !strings.Contains(out, "HEALTH") {
 		t.Fatalf("no header: %q", out)
 	}
 	for _, want := range []string{
@@ -62,5 +62,48 @@ func TestSyncStatusNamesTheLatestParkedReason(t *testing.T) {
 	}
 	if strings.Contains(out, "Traceback") {
 		t.Errorf("the parked reason carries the traceback:\n%s", out)
+	}
+}
+
+// HEALTH reads `ok`, or `failing` with how long the failing alert has been
+// open, on both status tables; a server that reports no health leaves the
+// cell empty rather than inventing a word.
+func TestStatusTablesShowHealth(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+
+	out, _ := h.mustRun("trigger", "status")
+	if !strings.Contains(out, "HEALTH") {
+		t.Fatalf("trigger status has no HEALTH column:\n%s", out)
+	}
+	if !strings.Contains(out, "failing 3h") {
+		t.Errorf("trigger status does not say the trigger has failed for 3h:\n%s", out)
+	}
+	out, _ = h.mustRun("sync", "status")
+	line := ""
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "george-work") {
+			line = l
+		}
+	}
+	if fields := strings.Fields(line); len(fields) < 4 || fields[3] != "ok" {
+		t.Errorf("sync status HEALTH is not ok on %q", line)
+	}
+
+	a := &app{now: func() time.Time { return testNow }}
+	since := testNow.Add(-26 * time.Hour)
+	for _, tc := range []struct {
+		health string
+		since  *time.Time
+		want   string
+	}{
+		{"ok", nil, "ok"},
+		{"failing", &since, "failing 1d"},
+		{"failing", nil, "failing"},
+		{"", nil, ""},
+	} {
+		if got := a.health(tc.health, tc.since); got != tc.want {
+			t.Errorf("health(%q, %v) = %q, want %q", tc.health, tc.since, got, tc.want)
+		}
 	}
 }

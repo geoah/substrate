@@ -476,9 +476,9 @@ func TestWebhookPendingEntryRetiredByAHandIsNotResumed(t *testing.T) {
 	if writes != 1 {
 		t.Fatalf("the echo was written %d times, want once", writes)
 	}
-	// A retry mints no run record, and the pass minted none either.
-	if n := okRunsAfterClose(t, dsn, fid); n != 0 {
-		t.Fatalf("OK runs under %s = %d, want none", fid, n)
+	// The retry minted its one ok run (decision 0152), and the pass none.
+	if n := okRunsAfterClose(t, dsn, fid); n != 1 {
+		t.Fatalf("OK runs under %s = %d, want the retry's one", fid, n)
 	}
 }
 

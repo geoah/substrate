@@ -104,6 +104,13 @@ type Config struct {
 	// which fires one schedule at a time, to MaxTriggerLaneWorkers.
 	TriggerLaneWorkers int `envconfig:"SUBSTRATE_TRIGGER_LANE_WORKERS" default:"4"`
 
+	// HealthFailingAfter is how long every delivery of a trigger must have
+	// parked, since its newest ok run, before the dispatcher opens the
+	// trigger's `trigger.failing/<trigger id>` alert and its status reads
+	// `failing`. The next ok delivery resolves the alert whatever the window.
+	// One hour by default; zero or negative is refused.
+	HealthFailingAfter time.Duration `envconfig:"SUBSTRATE_HEALTH_FAILING_AFTER" default:"1h"`
+
 	// InsecureDisableTOTP takes the SECOND FACTOR OFF the whole door: login,
 	// registration and the credential changes ask for a repository and a
 	// password and nothing else. It exists for a local substrate you wipe
@@ -188,6 +195,9 @@ func (c Config) Validate() error {
 	}
 	if c.TriggerLaneWorkers < 1 || c.TriggerLaneWorkers > MaxTriggerLaneWorkers {
 		return fmt.Errorf("SUBSTRATE_TRIGGER_LANE_WORKERS is %d: it is how many schedule fires one repository's dispatcher pass runs at once, so it is at least 1 and at most %d, the deliveries the whole process runs at once (4 is the default)", c.TriggerLaneWorkers, MaxTriggerLaneWorkers)
+	}
+	if c.HealthFailingAfter <= 0 {
+		return fmt.Errorf("SUBSTRATE_HEALTH_FAILING_AFTER is %s: it is how long every delivery of a trigger must have parked before the trigger reads failing and its alert opens, and it must be a positive duration (1h is the default)", c.HealthFailingAfter)
 	}
 	return ValidateCredentialKey(c.CredentialKey)
 }

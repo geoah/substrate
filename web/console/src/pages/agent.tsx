@@ -29,6 +29,7 @@ import { DocPage } from "@/components/identity/page-layout"
 import { Pill, type PillTone } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
 import { AlertsPanel } from "@/components/alerts/alerts-panel"
+import { FailingBadge } from "@/components/alerts/failing-badge"
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -246,6 +247,7 @@ export function AgentPage() {
         </div>
       )}
 
+      <FailingBadge callables={[id]} />
       <AlertsPanel refs={[`${AGENT_KIND}/${id}`]} />
 
       <SectionHead
