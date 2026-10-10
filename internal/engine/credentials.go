@@ -136,6 +136,46 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 	return true, nil
 }
 
+// parkRefusedCredential takes a credential off the refresh loop's work list
+// after its provider refused the refresh token with `invalid_grant`: it
+// clears the row's expires_at, the column expiringCredentials selects on,
+// and leaves the payload and updated_at as they are. The payload keeps the
+// token's real expiry, so an invocation still refreshes on demand. The write
+// is a compare-and-swap on the generation the refused refresh read: a
+// reconnect that landed while the provider call was in flight wrote a new
+// generation, and that credential stays listed. A reconnect (putCredential)
+// and a good on-demand refresh (updateCredential) write expires_at again,
+// and that is what lists the credential again. The marker is the column
+// itself, so it lasts across a restart, its sealed file carries it, and no
+// schema migration closes a rollback for it. Returns whether the row was
+// parked by this call.
+func (ds *dataset) parkRefusedCredential(ctx context.Context, ref string, account eref, seen time.Time) (bool, error) {
+	tx, wc, err := beginWrite(ctx, ds.db)
+	if err != nil {
+		return false, err
+	}
+	defer wc.release()
+	defer func() { _ = tx.Rollback() }()
+	var payload []byte
+	var updated time.Time
+	err = tx.QueryRowContext(ctx, `
+		UPDATE sealed SET expires_at = NULL
+		WHERE ref = $1 AND record_kind = $2 AND record_id = $3 AND updated_at = $4 AND expires_at IS NOT NULL
+		RETURNING payload, updated_at`,
+		ref, account.Kind, account.ID, seen).Scan(&payload, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("substrate/engine: park refused credential: %w", err)
+	}
+	rec := sealedRecordOf(ref, account.Kind, account.ID, payload, sql.NullTime{}, updated)
+	if err := ds.commitSealed(tx, wc, []sealedMirrorOp{{rec: rec}}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // getCredential resolves a ref to its token, owning record and updated_at
 // generation (updateCredential's compare-and-swap anchor).
 func (ds *dataset) getCredential(ctx context.Context, ref string) (*oauth2.Token, eref, time.Time, error) {
@@ -218,7 +258,9 @@ func deleteSealedRowsOf(ctx context.Context, tx *sql.Tx, account eref) ([]sealed
 }
 
 // expiringCredentials lists refs whose tokens expire before the horizon —
-// the refresh loop's work list.
+// the refresh loop's work list. A row with no expires_at is not on it: a
+// token that never expires, a secret value, or a credential
+// parkRefusedCredential parked.
 func (ds *dataset) expiringCredentials(ctx context.Context, horizon time.Time) ([]string, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT ref FROM sealed
