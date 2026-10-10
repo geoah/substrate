@@ -1,26 +1,33 @@
-# The tip of main as one image: ghcr.io/geoah/substrate:latest.
+# The images of main: ghcr.io/geoah/substrate:main-<sha12> for every commit on
+# main whose ci run went green, and ghcr.io/geoah/substrate:latest for the tip.
 #
-# This `latest` is NOT a stable release tag in the usual sense — it moves with
-# every green commit on main and has no release notes behind it. It says so
-# when asked: the version it reports is `git describe`, so a build that is not
-# a release reads as `v0.2.0-4-g1a2b3c4` rather than as v0.2.0. Deploy it only
-# if you meant to track main. Released versions come from a tag, through
-# release.yml, and carry their own semver tags (goreleaser does not tag a
-# release `latest`, so the two never race for the same name).
+# Neither is a stable release tag in the usual sense: `latest` moves with
+# every green commit on main, and neither has release notes behind it. Both
+# say so when asked: the version they report is `git describe`, so a build
+# that is not a release reads as `v0.2.0-4-g1a2b3c4` rather than as v0.2.0.
+# Deploy them only if you meant to track main. Released versions come from a
+# tag, through release.yml, and carry their own semver tags (goreleaser does
+# not tag a release `latest`, so the two never race for the same name).
 #
-# No per-commit tags: one moving tag, so the registry does not fill up with
-# images nobody will ever ask for by name.
+# One tag per commit, `main-<sha12>` (the commit's first twelve hex digits),
+# so a deployment that tracks main pins a name instead of a digest it found
+# by polling. The tag is pushed once and never written again, and `latest` is
+# a second name for the tip's image, written without a rebuild. A commit
+# whose ci run failed any job, required by the ruleset or not, gets no image,
+# and while it is the tip `latest` stays on the previous one.
 #
-# It hangs off ci, like release-please.yml, rather than off the push: on the
-# push it built and published a commit whose suite was still running, so
-# `latest` could be red. There is no dispatch, because a dispatch is that same untested
-# publish with a person's name on it.
+# It hangs off ci rather than off the push: on the push it built and
+# published a commit whose suite was still running, so `latest` could be red.
+# There is no dispatch, because a dispatch is that same untested publish with
+# a person's name on it.
 #
-# A green ci run is necessary and not sufficient, so the `tip` job below asks
-# whether the commit is still what main points at. Anyone can re-run an old ci
-# run, to look at a flake or by mistake, and its completion arrives here
-# carrying a green, push, main event for a commit two releases back. Without
-# the check, that event rewinds `latest` to an image nobody asked for.
+# A green ci run says this commit may have an image, not that it is main's
+# tip. ci runs every push to main to the end, so an older commit's run can
+# finish after a newer one's, and anyone can re-run an old ci run, to look at
+# a flake or by mistake. So the `latest` job reads main's tip immediately
+# before it writes, and points `latest` at that commit's image or leaves it
+# alone (.mise/imagemain.sh). Without that, a re-run rewinds `latest` to an
+# image nobody asked for.
 name: latest
 
 on:
@@ -29,30 +36,18 @@ on:
     types: [completed]
     branches: [main]
 
-concurrency:
-  # One build at a time, so two of them cannot push the one moving tag in an
-  # order nobody chose. ci runs every push to main to the end, so an older
-  # commit's run can finish after a newer one's, and a re-run of an ancient ci
-  # run arrives whenever a person clicks it. The `tip` job below skips both.
-  #
-  # NOT cancel-in-progress: arrival order is what a cancellation would act on,
-  # and that re-run is an arrival for a commit two releases back. It would
-  # cancel the build of the actual tip and then skip at the `tip` job below,
-  # leaving `latest` behind. A superseded build is left to finish and cost a
-  # runner instead.
-  group: latest
-  cancel-in-progress: false
+# No workflow-wide concurrency group. GitHub keeps one running and one pending
+# run per group and cancels the pending one when a third arrives, so under one
+# group for the whole workflow a commit's image build waiting behind two
+# others was dropped and that commit never got its tag. Each job below has a
+# group of its own instead.
 
 permissions:
   contents: read
 
 jobs:
-  # A job of its own so a superseded commit SKIPS rather than fails: there is
-  # nothing wrong with the commit or the run, it is simply not the one `latest`
-  # names any more, and a red X on it would be a lie somebody has to
-  # investigate.
-  tip:
-    name: is this commit still main
+  image:
+    name: push the commit's image
     # Both halves are load-bearing. `conclusion == 'success'` is the gate this
     # trigger exists for; `event == 'push'` is because ci runs on pull
     # requests too and those runs arrive here as well. The trigger's branch
@@ -61,46 +56,62 @@ jobs:
     if: >-
       github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion
       == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      sha: ${{ steps.main.outputs.sha }}
-    steps:
-      # Read now rather than from the event, so it is where main points after
-      # the ci run finished. A commit that has been overtaken stays overtaken.
-      - id: main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/heads/main" --jq .sha)"
-          echo "main is at $sha, this run carries $HEAD_SHA" >&2
-          echo "sha=$sha" >>"$GITHUB_OUTPUT"
-
-  latest:
-    name: push latest image
-    needs: tip
-    # Skipped, not failed, when the commit has been overtaken. The commit that
-    # overtook it gets its own ci run and its own turn here.
-    if: needs.tip.outputs.sha == github.event.workflow_run.head_sha
+    # Per commit: the first run and a re-run for the same commit would both
+    # find the tag missing and both push it, and the second push would replace
+    # the image with a rebuild under a name that promised it never changes.
+    # Waiting for the first, the second finds the tag and builds nothing. A
+    # build of one commit never waits for another's.
+    concurrency:
+      group: latest-image-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
+      contents: read
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The tags, so `image:push` can name this build after the release it
           # sits on: `v0.2.0-4-g1a2b3c4` is what the image reports as its
-          # version. A shallow checkout has none, and every latest image would
-          # call itself by a bare sha.
+          # version. A shallow checkout has none, and every image would call
+          # itself by a bare sha.
           fetch-depth: 0
           # The commit ci went green on, not whatever main points at now.
           ref: ${{ github.event.workflow_run.head_sha }}
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+      # Skips the build when the registry already has main-<sha12>.
+      - run: mise run image:main
+
+  latest:
+    name: point latest at main's tip
+    needs: image
+    # One at a time, so one run's tip read and write cannot interleave with
+    # another's and leave `latest` on the older tip. NOT cancel-in-progress,
+    # and a pending run that a newer arrival cancels loses nothing: every run
+    # reads the tip afresh and points `latest` at the tip's image.
+    concurrency:
+      group: latest
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # main's tree, for the script and the image name: this job builds
+      # nothing, and reads the tip from the remote rather than the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:

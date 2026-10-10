@@ -40,9 +40,19 @@ layer, and it fails closed.
 ## The published image
 
 `ghcr.io/geoah/substrate` is one image for `linux/amd64` and `linux/arm64`,
-built by the tree's one `Dockerfile` on both paths. `latest` is the tip of
-`main` after a green `ci` run, and reports its version the way `git describe`
-spells it (`v0.85.0-4-g1a2b3c4`); a release is tagged `v0.85.0`, `0.85.0`,
+built by the tree's one `Dockerfile` on both paths. A commit on `main` is
+tagged `main-<sha12>`, the first twelve hex digits of the commit
+(`main-1a2b3c4d5e6f`), once its whole push `ci` run has succeeded. That tag
+is pushed once and never moved, so a deployment that tracks `main` pins it
+and pulls the same build every time. `latest` is the tip of `main`: the same
+image as the tip's `main-<sha12>`, under a second name. A commit whose `ci`
+run failed any job, the jobs a pull request does not require included, gets
+no `main-<sha12>`, and while it is the tip `latest` stays on the previous
+one. Both report their version the way
+`git describe` spells it (`v0.85.0-4-g1a2b3c4`) and carry the full commit in
+the `org.opencontainers.image.revision` label, which
+`docker buildx imagetools inspect <ref> --format '{{json .Image}}'` shows
+without a pull. A release is tagged `v0.85.0`, `0.85.0`,
 `0.85`, `v0` and `0`, and reports `v0.85.0`. `v0` is the newest v0.x
 release: the release workflow moves it to each new version, and never to a
 prerelease or back to an older one, and once v1.0.0 ships `v1` moves the same

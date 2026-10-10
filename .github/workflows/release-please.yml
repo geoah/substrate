@@ -1,5 +1,5 @@
-# The release pull request, kept current after every green merge to main, and
-# the tag when it merges.
+# The release pull request, kept current after every merge to main, and the
+# tag when it merges.
 #
 # A merge to main releases nothing on its own. release-please reads the
 # conventional commits since the last tag and keeps ONE pull request open,
@@ -7,16 +7,19 @@
 # and whose title holds the next version (`fix:` the patch, `feat:` the minor,
 # a `!` or a BREAKING CHANGE footer the minor while below 1.0.0, from
 # release-please-config.json). Every merge regenerates it. Merging it is the
-# release: the next run here finds the merged release pull request by its
-# `autorelease: pending` label, tags its merge commit, creates the GitHub
-# release with that section as its body, and calls release.yml to build and
-# attach the artifacts. docs/releasing.md is the checklist a person runs
-# before merging it.
+# release: once the merge commit's own ci run on main is green, the run here
+# finds the merged release pull request by its `autorelease: pending` label,
+# tags its merge commit, creates the GitHub release with that section as its
+# body, and calls release.yml to build and attach the artifacts.
+# docs/releasing.md is the checklist a person runs before merging it.
 #
-# It hangs off ci rather than off the push, like latest.yml, so the pull
-# request is refreshed and the tag is cut only after a suite has passed on
-# main. release.yml checks the tagged commit's own ci run again before it
-# builds, because a green run for a later commit is what brought us here.
+# It runs on the push to main, which refreshes the pull request and never
+# tags, and again after every green ci run on main, which may tag. The gate
+# step below holds every push run, and holds a ci completion until the merged
+# release pull request's own commit has a green push run of ci; that run's
+# completion is what starts the run that cuts the release. release.yml checks
+# the tagged commit's own ci run again before it builds, because a green run
+# for a later commit is what brought us here.
 #
 # The token is a fine-grained personal access token (contents and pull
 # requests, read and write, on this repository alone), stored as
@@ -28,6 +31,10 @@
 name: release-please
 
 on:
+  # Refreshes the pull request and never tags: the gate holds every push run.
+  push:
+    branches: [main]
+  # Cuts the release, once the merged release pull request's commit is green.
   workflow_run:
     workflows: [ci]
     types: [completed]
@@ -40,7 +47,10 @@ on:
 
 concurrency:
   # ONE, for the whole repository, and never cancelled: two runs racing would
-  # both try to push the release branch or the tag.
+  # both try to push the release branch or the tag. GitHub still drops a
+  # pending run when a third arrives. A dropped refresh is redone by the next
+  # run. A dropped cut waits for the next green ci run on main, or a dispatch:
+  # every run reads the pull requests, the tags and ci's runs afresh.
   group: release-please
   cancel-in-progress: false
 
@@ -50,15 +60,16 @@ permissions:
 jobs:
   release-please:
     name: release pull request
-    # Both halves are load-bearing. `conclusion == 'success'` is the gate this
-    # workflow exists for; `event == 'push'` is because ci runs on pull
-    # requests too and those runs arrive here as well.
+    # A push to main always runs, to refresh the pull request. A ci
+    # completion counts only for a green push run: a red one gives the gate
+    # nothing to pass, and ci runs on pull requests too and those runs arrive
+    # here as well.
     # A dispatch counts only from main: from a branch it would call that
     # branch's copy of release.yml, gate included.
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-      || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion
-      == 'success')
+      github.event_name == 'push' || (github.event_name == 'workflow_dispatch'
+      && github.ref == 'refs/heads/main') || (github.event.workflow_run.event
+      == 'push' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -79,34 +90,21 @@ jobs:
             echo "RELEASE_PLEASE_TOKEN is not set; see the comment at the top of this workflow" >&2
             exit 1
           fi
-      # The tag and the GitHub release are public the moment release-please
-      # creates them, before release.yml refuses a commit ci never passed. A
-      # green run for a LATER commit is what started this run, so the merged
-      # release pull request's own commit is checked here: until its push run
-      # on main is green, release-please creates no tag and no release.
-      # That run going green is a ci completion of its own, and the run it
-      # starts here cuts the release.
+      # For the gate's script. Nothing in this job pushes with git, so the
+      # checkout keeps no credentials.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Until the merged release pull request's own commit has a green push
+      # run of ci on main, release-please creates no tag and no release; a
+      # push run and a run that finds no release waiting always hold. The
+      # script says why, and lint:ci holds its answers.
       - id: gate
         name: hold the release until its commit passed ci
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          hold=false
-          shas="$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged \
-            --label 'autorelease: pending' --json mergeCommit --jq '.[].mergeCommit.oid')"
-          for sha in $shas; do
-            green="$(gh api \
-              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&status=success&per_page=100" \
-              --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main")] | length')"
-            if [ "$green" -eq 0 ]; then
-              echo "release commit $sha has no successful ci run on main yet; holding the release" >&2
-              hold=true
-            else
-              echo "release commit $sha passed ci" >&2
-            fi
-          done
-          echo "hold=$hold" >>"$GITHUB_OUTPUT"
+          EVENT_NAME: ${{ github.event_name }}
+        run: .mise/releasegate.sh
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
