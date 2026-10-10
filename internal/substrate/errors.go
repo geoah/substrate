@@ -3,6 +3,7 @@ package substrate
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Sentinel errors. The engine wraps these (errors.Is-matchable) with
@@ -119,6 +120,26 @@ func (e *ValidationError) Error() string {
 	return fmt.Sprintf("%v: %v", ErrValidation, e.Problems)
 }
 func (e *ValidationError) Unwrap() error { return ErrValidation }
+
+// Details derives the structured siblings of the problem strings, each split
+// on its first ": ". A string without the separator keeps its whole text as
+// the message and an empty path, so a malformed problem never drops silently.
+// The API's 422 and `substratectl validate` both carry what it returns, so
+// the two print the same lines.
+func (e *ValidationError) Details() []ProblemDetail {
+	if len(e.Problems) == 0 {
+		return nil
+	}
+	out := make([]ProblemDetail, len(e.Problems))
+	for i, p := range e.Problems {
+		if path, msg, ok := strings.Cut(p, ": "); ok {
+			out[i] = ProblemDetail{Path: path, Message: msg}
+		} else {
+			out[i] = ProblemDetail{Message: p}
+		}
+	}
+	return out
+}
 
 // AcceptConflictError is a FAILED accept of a change request: the decision
 // transition rolled back because the change it would perform does not apply to

@@ -60,7 +60,7 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	if len(vocabularyDocs) == 0 {
 		return plan, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
 	}
-	docs, err := parseVocabularyDocs(vocabularyDocs)
+	docs, err := vocabulary.ParseDocuments(vocabularyDocs)
 	if err != nil {
 		return plan, err
 	}

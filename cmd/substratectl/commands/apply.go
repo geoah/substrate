@@ -401,32 +401,17 @@ func (a *app) readDocuments(files []string) ([]*document, []map[string]any, erro
 // be the record habit, so its keys are read as the declaration's.
 func completePartialDeclarations(ctx context.Context, cl *client, docs []map[string]any) error {
 	for _, doc := range docs {
-		kind, _ := doc["kind"].(string)
-		short, ok := declarationKindOf(kind)
+		short, id, ok := partialDeclaration(doc)
 		if !ok {
 			continue
 		}
+		kind, _ := doc["kind"].(string)
 		admitted := vocabulary.DeclarationDataKeys(short)
-		if !admitted["authority"] || !admitted["package"] {
-			continue
-		}
 		data, _ := doc["data"].(map[string]any)
 		if data == nil {
 			data = map[string]any{}
 		}
-		if _, whole := data["authority"]; whole {
-			continue
-		}
-		if _, whole := data["package"]; whole {
-			continue
-		}
 		meta, _ := doc["metadata"].(map[string]any)
-		id, _ := meta["id"].(string)
-		if id == "" {
-			// Nothing stored to complete it from; the loader's refusal names
-			// what a new declaration needs.
-			continue
-		}
 		if props, ok := data["properties"].(map[string]any); ok && !admitted["properties"] {
 			delete(data, "properties")
 			for k, v := range props {
@@ -458,6 +443,39 @@ func completePartialDeclarations(ctx context.Context, cl *client, docs []map[str
 		}
 	}
 	return nil
+}
+
+// partialDeclaration reports whether doc is a PARTIAL declaration, the kind
+// of one and its id: a declaration kind that admits `data.authority` and
+// `data.package`, naming neither, at an id. Apply completes such a document
+// from the stored declaration before sending it, and `validate`, which reads
+// nothing stored, leaves it unchecked; both ask here, so they agree on which
+// documents those are. A document with no id has nothing stored to complete
+// it from and is sent as written, where the loader's refusal names what a new
+// declaration needs.
+func partialDeclaration(doc map[string]any) (short, id string, ok bool) {
+	kind, _ := doc["kind"].(string)
+	short, ok = declarationKindOf(kind)
+	if !ok {
+		return "", "", false
+	}
+	admitted := vocabulary.DeclarationDataKeys(short)
+	if !admitted["authority"] || !admitted["package"] {
+		return "", "", false
+	}
+	data, _ := doc["data"].(map[string]any)
+	if _, whole := data["authority"]; whole {
+		return "", "", false
+	}
+	if _, whole := data["package"]; whole {
+		return "", "", false
+	}
+	meta, _ := doc["metadata"].(map[string]any)
+	id, _ = meta["id"].(string)
+	if id == "" {
+		return "", "", false
+	}
+	return short, id, true
 }
 
 // isSchemaDocument recognizes a schema manifest by its envelope: a record of

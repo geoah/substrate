@@ -97,6 +97,12 @@ type fakeSubstrate struct {
 	// GET .../bundle/{id}/status answers the one whose id matches.
 	parked  []substrate.TriggerFailure
 	bundles []substrate.BundleStatus
+	// vocabularyCheck makes the vocabulary apply refuse what the server's
+	// admission refuses before it resolves anything: the documents parse and
+	// build package by package through the engine's own functions
+	// (vocabulary.ParseDocuments, vocabulary.BuildEachPackage), and a refusal
+	// answers the 422 internal/api writes (writeValidation).
+	vocabularyCheck bool
 
 	requests  []string
 	lastBody  map[string]json.RawMessage
@@ -451,6 +457,16 @@ func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Req
 	if !ok || json.Unmarshal(raw, &req.Documents) != nil || len(req.Documents) == 0 {
 		writeError(w, http.StatusUnprocessableEntity, "validation", "no documents", nil)
 		return
+	}
+	if f.vocabularyCheck {
+		docs, err := vocabulary.ParseDocuments(req.Documents)
+		if err == nil {
+			_, err = vocabulary.BuildEachPackage(docs, func(string) string { return vocabulary.SourceInstalled })
+		}
+		if ve, ok := err.(*substrate.ValidationError); ok {
+			writeValidation(w, ve.Problems)
+			return
+		}
 	}
 	ents := make([]*substrate.Record, 0, len(req.Documents))
 	for _, d := range req.Documents {
