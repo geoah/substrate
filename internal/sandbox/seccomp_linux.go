@@ -5,6 +5,7 @@ package sandbox
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -79,30 +80,52 @@ type sockFprog struct {
 }
 
 // seccompAvailable reports whether an unprivileged filter can be installed,
-// probed WITHOUT attaching one, because a filter cannot be removed. EPERM here
-// means an outer profile denies seccomp(2) entirely; EINVAL means the kernel
-// predates SECCOMP_GET_ACTION_AVAIL (4.14) but still has filters, so it counts
-// as available.
+// probed WITHOUT attaching one, because a filter cannot be removed, and the
+// reason when it cannot. EPERM here means an outer profile denies seccomp(2)
+// entirely; EINVAL means the kernel predates SECCOMP_GET_ACTION_AVAIL (4.14)
+// but still has filters, so it counts as available.
 //
 // An architecture this package has no syscall table for counts as UNAVAILABLE
 // however willing the kernel is: a filter is written against one numbering, and
 // a wrong one does not fail loudly, it denies and permits the wrong calls. The
 // report has to say so, or SUBSTRATE_SANDBOX=enforce would pass its check at
 // boot and every body would then fail to launch.
-func seccompAvailable() bool {
+func seccompAvailable() (bool, string) {
 	if auditArch == 0 {
-		return false
+		return false, noSyscallTable(runtime.GOARCH)
 	}
 	action := uint32(seccompRetErrno)
 	_, _, errno := unix.Syscall(unix.SYS_SECCOMP, seccompGetActionAvail, 0,
 		uintptr(unsafe.Pointer(&action)))
 	switch {
 	case errno == 0:
-		return true
+		return true, ""
 	case errors.Is(errno, unix.EINVAL):
-		return true
+		return true, ""
 	default:
-		return false
+		return false, seccompUnavailable(errno)
+	}
+}
+
+// noSyscallTable is the reason for a build whose architecture has no syscall
+// table here (arch_linux_other.go). The fix is a build, not a kernel: the
+// kernel may well offer seccomp, and the filter still cannot be written.
+func noSyscallTable(arch string) string {
+	return "no syscall table for " + arch + " in this build: run the linux/amd64 or linux/arm64 build"
+}
+
+// seccompUnavailable is the reason, and the fix, for an errno from the
+// availability probe. ENOSYS is a kernel built without seccomp; EPERM and
+// EACCES are an outer seccomp filter refusing the call: a container's profile
+// (the Docker and containerd defaults permit it) or a unit's SystemCallFilter=.
+func seccompUnavailable(errno unix.Errno) string {
+	switch {
+	case errors.Is(errno, unix.ENOSYS):
+		return fmt.Sprintf("seccomp(2): %v: build the kernel with CONFIG_SECCOMP_FILTER=y", errno)
+	case errors.Is(errno, unix.EPERM), errors.Is(errno, unix.EACCES):
+		return fmt.Sprintf("seccomp(2): %v: allow seccomp(2) in the seccomp profile this process runs under", errno)
+	default:
+		return fmt.Sprintf("seccomp(2): %v", errno)
 	}
 }
 

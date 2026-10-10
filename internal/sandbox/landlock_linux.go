@@ -70,20 +70,28 @@ type pathBeneathAttr struct {
 	_             int32
 }
 
-// landlockABI returns the kernel's Landlock ABI version. ENOSYS means the
-// kernel was built without it; EOPNOTSUPP means it was built in but left out of
-// the boot-time LSM list: two different operator problems, so both are named.
+// landlockABI returns the kernel's Landlock ABI version, or the reason it has
+// none.
 func landlockABI() (int, error) {
 	ret, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, 0, 0, llCreateRulesetVersion)
+	if errno != 0 {
+		return 0, errors.New(landlockUnavailable(errno))
+	}
+	return int(ret), nil
+}
+
+// landlockUnavailable is the reason, and the fix, for an errno from the ABI
+// query. ENOSYS means the kernel was built without Landlock; EOPNOTSUPP means
+// it was built in but left out of the boot-time LSM list: two different
+// operator problems, so both are named. The boot line prints this verbatim.
+func landlockUnavailable(errno unix.Errno) string {
 	switch {
-	case errno == 0:
-		return int(ret), nil
 	case errors.Is(errno, unix.ENOSYS):
-		return 0, fmt.Errorf("landlock: not supported by this kernel")
+		return "not supported by this kernel: build it with CONFIG_SECURITY_LANDLOCK=y and add landlock to its lsm= list"
 	case errors.Is(errno, unix.EOPNOTSUPP):
-		return 0, fmt.Errorf("landlock: built in but disabled: add it to the kernel's lsm= list")
+		return "built in but disabled: add it to the kernel's lsm= list"
 	default:
-		return 0, fmt.Errorf("landlock: %w", errno)
+		return fmt.Sprintf("landlock_create_ruleset: %v", errno)
 	}
 }
 

@@ -111,26 +111,41 @@ func sandboxReport(mode sandbox.Mode, report sandbox.Report) (slog.Level, string
 		// container's seccomp profile refused. The consequence is a refusal
 		// and never an unfiltered body, so the line says what stops working
 		// rather than what quietly widened.
+		//
+		// It lists every missing layer, not only the gate: this branch is
+		// taken first, so it is the only line that can name the others.
 		refused := report.ConnectGateErr
 		if refused == "" && report.Err != nil {
 			refused = report.Err.Error()
 		}
+		missing := missingLayers(mode, report)
 		return slog.LevelError,
-			"function sandbox DEGRADED: the connect gate cannot be serviced, so every function that declares `network:` is REFUSED until the capability is granted",
+			"function sandbox DEGRADED: the connect gate cannot be serviced, so every function that declares `network:` is REFUSED until the capability is granted. Missing: " + missing,
 			[]any{
 				"mode", string(mode),
+				"missing", missing,
 				"kernel", report.String(),
 				"refused", refused,
 				"advice", sandbox.ConnectGateRemedy,
 			}
 
 	case report.Degraded(mode):
+		// The missing layers go in the message as well as the attribute,
+		// because the message is the one field every log viewer shows.
+		missing := missingLayers(mode, report)
 		return slog.LevelError,
-			"function sandbox DEGRADED: this kernel does not offer every layer, and bodies run with less confinement than the mode implies. Set SUBSTRATE_SANDBOX=enforce to refuse instead",
-			[]any{"mode", string(mode), "kernel", report.String()}
+			"function sandbox DEGRADED: this kernel does not offer every layer, and bodies run with less confinement than the mode implies. Set SUBSTRATE_SANDBOX=enforce to refuse instead. Missing: " + missing,
+			[]any{"mode", string(mode), "missing", missing, "kernel", report.String()}
 
 	default:
 		return slog.LevelInfo, "function sandbox active",
 			[]any{"mode", string(mode), "kernel", report.String()}
 	}
+}
+
+// missingLayers joins Report.Missing into one attribute value. A semicolon
+// separates entries because each entry already uses colons between the layer,
+// its reason and its fix.
+func missingLayers(mode sandbox.Mode, report sandbox.Report) string {
+	return strings.Join(report.Missing(mode), "; ")
 }

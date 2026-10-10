@@ -280,6 +280,13 @@ ERROR, not a warning, because a confinement that silently does less than it
 claims is worse than none. A real deployment should run `SUBSTRATE_SANDBOX=enforce`,
 which turns that into a refusal to run bodies at all.
 
+**The DEGRADED line names each missing layer.** The message and its `missing`
+attribute list every layer the kernel did not give, with the reason the probe
+saw and the fix, for example
+`filesystem (Landlock): not supported by this kernel: build it with CONFIG_SECURITY_LANDLOCK=y and add landlock to its lsm= list`.
+[What each layer needs](#what-each-layer-needs-from-the-kernel) says how to
+check a host before booting the substrate on it.
+
 **The boot log also says what bodies trust.** A second line beside the sandbox
 report names the certificate store a body verifies a TLS peer against: the
 interpreter's own where it has one, else the system bundle the runner names in
@@ -323,6 +330,66 @@ on user namespaces or cgroup delegation: `CLONE_NEWUSER` is denied by the
 default profile and `/sys/fs/cgroup` is mounted read-only, which is why the
 sandbox has no memory or process-count ceiling. Do not add `--privileged` to
 try to get one.
+
+### What each layer needs from the kernel
+
+The first column is the name the DEGRADED line uses. Run the checks on the
+host: a container shares the host's kernel.
+
+| Layer | What it confines | What the kernel needs | How to check on the host |
+| ----- | ---------------- | --------------------- | ------------------------ |
+| `filesystem (Landlock)` | The paths a body may read, write and execute. It closes `/proc`, so a body cannot read the substrate's environment. | `CONFIG_SECURITY_LANDLOCK=y`, and `landlock` in the active LSM list (`CONFIG_LSM`, or the `lsm=` boot parameter, which replaces it). ABI 3 (Linux 6.2) or newer: below it `truncate(2)` is not mediated, and the layer counts as missing. | `cat /sys/kernel/security/lsm` lists `landlock`; `uname -r` is 6.2 or newer. The boot line names the ABI it got. |
+| `syscall filter (seccomp)` | The syscall classes a body has no use for (`ptrace`, the mount APIs, `bpf`, `io_uring`, module loading), and `AF_INET`/`AF_INET6` sockets for a body that declares no network. | `CONFIG_SECCOMP_FILTER=y`, and a substrate build with a syscall table for the host's architecture: `linux/amd64` or `linux/arm64`. | `grep Seccomp /proc/self/status` prints a `Seccomp_filters:` line, which the kernel prints since Linux 5.9 and only with `CONFIG_SECCOMP_FILTER`. On an older kernel, use the configuration check below the table. |
+| `connect gate` | Where a body that declares network may connect: the public internet, not loopback, link-local or the RFC1918 ranges. | `SECCOMP_RET_USER_NOTIF` with `SECCOMP_IOCTL_NOTIF_ADDFD`, `pidfd_open(2)`, `pidfd_getfd(2)` and `process_vm_readv(2)`: about Linux 5.9. In a container, `CAP_SYS_PTRACE` in its bounding set (above). | `uname -r` is 5.9 or newer. The boot line reports the probe, which calls `pidfd_open`, `pidfd_getfd` and `process_vm_readv` against a child. |
+
+The kernel's own configuration settles all three where it is readable:
+`zgrep -E 'LANDLOCK|CONFIG_LSM=|SECCOMP' /proc/config.gz`, or the same pattern
+over `/boot/config-$(uname -r)` on a distribution that installs it.
+
+### Raspberry Pi OS
+
+Run a 64-bit Raspberry Pi OS. The image ships `linux/amd64` and `linux/arm64`
+only, and the server does not compile for `GOARCH=arm` today. A 32-bit arm
+build would also have no syscall filter: the sandbox carries no seccomp
+syscall table for 32-bit arm.
+
+A kernel built from the Raspberry Pi defconfigs has no Landlock, so the
+filesystem layer is missing and the boot line says
+`filesystem (Landlock): not supported by this kernel`. The syscall filter and
+the connect gate's kernel side are there. Checked in
+[raspberrypi/linux](https://github.com/raspberrypi/linux) at the head of its
+default branch, `rpi-6.18.y`, on 2026-10-08 (commit `4103a989`):
+
+- None of the three defconfigs below sets `CONFIG_SECURITY_LANDLOCK`, and the
+  option has no default
+  ([`security/landlock/Kconfig` lines 3 to 22](https://github.com/raspberrypi/linux/blob/4103a989a46196239b830bd07693277e42b8f992/security/landlock/Kconfig#L3-L22)),
+  so it is off.
+- Each empties the LSM list: `CONFIG_LSM=""` at
+  [`arch/arm64/configs/bcm2711_defconfig` line 1747](https://github.com/raspberrypi/linux/blob/4103a989a46196239b830bd07693277e42b8f992/arch/arm64/configs/bcm2711_defconfig#L1747)
+  (the 64-bit kernel for the Pi 3, 4, 400, CM4, Zero 2 W and the Pi 5
+  family),
+  [`arch/arm64/configs/bcm2712_defconfig` line 1749](https://github.com/raspberrypi/linux/blob/4103a989a46196239b830bd07693277e42b8f992/arch/arm64/configs/bcm2712_defconfig#L1749)
+  (the optimised kernel for the Pi 5 family) and
+  [`arch/arm/configs/bcm2709_defconfig` line 1612](https://github.com/raspberrypi/linux/blob/4103a989a46196239b830bd07693277e42b8f992/arch/arm/configs/bcm2709_defconfig#L1612)
+  (32-bit).
+- None sets `CONFIG_SECCOMP` or `CONFIG_SECCOMP_FILTER`, and both default to
+  on for arm64 and 32-bit arm
+  ([`arch/Kconfig` lines 646 to 665](https://github.com/raspberrypi/linux/blob/4103a989a46196239b830bd07693277e42b8f992/arch/Kconfig#L646-L665)).
+
+The `rpi-6.12.y` branch (commit `43c132e8`) reads the same: `CONFIG_LSM=""`
+at
+[`arch/arm64/configs/bcm2711_defconfig` line 1733](https://github.com/raspberrypi/linux/blob/43c132e8863c3bff3647033b6a7d2bf87b15501c/arch/arm64/configs/bcm2711_defconfig#L1733)
+and no `CONFIG_SECURITY_LANDLOCK`. On a running Pi, `sudo modprobe configs`
+and then the `zgrep` above over `/proc/config.gz` shows what the installed
+kernel was built with.
+
+To get the filesystem layer, build the Raspberry Pi kernel with
+`CONFIG_SECURITY_LANDLOCK=y` and turn Landlock on at boot: put `landlock` in
+`CONFIG_LSM`, or add an `lsm=` parameter to `/boot/firmware/cmdline.txt`. An
+`lsm=` value replaces the whole list, so name every LSM the host should run,
+for example `lsm=landlock,apparmor` to keep AppArmor. A kernel built with
+Landlock but booted without it in the list makes the boot line say
+`built in but disabled` instead.
 
 ## The invite code
 

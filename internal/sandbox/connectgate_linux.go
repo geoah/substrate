@@ -158,8 +158,8 @@ func probeChildMain() {
 
 // connectGateAvailable reports whether this process may make, AGAINST A CHILD,
 // the two calls the supervisor answers every notification with: it returns
-// whether the gate can run, the refusal where the kernel gave one, and an error
-// where the probe could not complete.
+// whether the gate can run, the refusal and its errno where the kernel gave
+// one, and an error where the probe could not complete.
 //
 // The target is a real child and not this process, because both calls are
 // target-sensitive: a yama ptrace scope, an LSM or a container profile can
@@ -171,20 +171,20 @@ func probeChildMain() {
 // could not be spawned) is a probe that did not complete, reported through
 // Report.Err; Wrap refuses a network policy for either reason, so a transient
 // failure never moves the boundary in either direction.
-func connectGateAvailable() (bool, string, error) {
+func connectGateAvailable() (bool, string, unix.Errno, error) {
 	cmd := exec.Command("/proc/self/exe", probeArgv)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return false, "", fmt.Errorf("connect-gate probe: stdin: %w", err)
+		return false, "", 0, fmt.Errorf("connect-gate probe: stdin: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
-		return false, "", fmt.Errorf("connect-gate probe: stdout: %w", err)
+		return false, "", 0, fmt.Errorf("connect-gate probe: stdout: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
 		_, _ = stdin.Close(), stdout.Close()
-		return false, "", fmt.Errorf("connect-gate probe: start: %w", err)
+		return false, "", 0, fmt.Errorf("connect-gate probe: start: %w", err)
 	}
 	// Every exit path closes stdin (which is how the child is told to go),
 	// drains stdout and reaps the child, so a failed probe leaves behind
@@ -200,10 +200,10 @@ func connectGateAvailable() (bool, string, error) {
 	var addr uint64
 	var length int
 	if _, err := fmt.Fscanf(stdout, "%x %d\n", &addr, &length); err != nil {
-		return false, "", fmt.Errorf("connect-gate probe: read the child's address: %w", err)
+		return false, "", 0, fmt.Errorf("connect-gate probe: read the child's address: %w", err)
 	}
 	if length != len(probeMemory) {
-		return false, "", fmt.Errorf("connect-gate probe: the child named %d bytes, want %d", length, len(probeMemory))
+		return false, "", 0, fmt.Errorf("connect-gate probe: the child named %d bytes, want %d", length, len(probeMemory))
 	}
 
 	pidfd, err := unix.PidfdOpen(cmd.Process.Pid, 0)
@@ -227,19 +227,20 @@ func connectGateAvailable() (bool, string, error) {
 		return classifyProbe("process_vm_readv", err)
 	}
 	if n != length || !bytes.Equal(buf, probeMemory) {
-		return false, "", fmt.Errorf("connect-gate probe: process_vm_readv read %d bytes of %q, want %d of %q",
+		return false, "", 0, fmt.Errorf("connect-gate probe: process_vm_readv read %d bytes of %q, want %d of %q",
 			n, buf, length, probeMemory)
 	}
-	return true, "", nil
+	return true, "", 0, nil
 }
 
 // classifyProbe splits a refusal from a failure: the first is a profile or a
 // kernel the operator can answer, the second says nothing about either.
-func classifyProbe(call string, err error) (bool, string, error) {
-	if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) || errors.Is(err, unix.ENOSYS) {
-		return false, fmt.Sprintf("%s: %v", call, err), nil
+func classifyProbe(call string, err error) (bool, string, unix.Errno, error) {
+	var errno unix.Errno
+	if errors.As(err, &errno) && (errno == unix.EPERM || errno == unix.EACCES || errno == unix.ENOSYS) {
+		return false, fmt.Sprintf("%s: %v", call, err), errno, nil
 	}
-	return false, "", fmt.Errorf("connect-gate probe: %s: %w", call, err)
+	return false, "", 0, fmt.Errorf("connect-gate probe: %s: %w", call, err)
 }
 
 // serve is the linux half of Confiner.Serve: it receives the listener
