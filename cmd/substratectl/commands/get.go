@@ -58,6 +58,11 @@ source that is now gone, with nothing above the machine tier holding a
 property on them. --ambiguous lists the mapping sources the engine marked: rows
 left unlinked because a probe found several candidates.
 
+A list with more rows than --limit prints "more results available; next
+cursor: <cursor>" on stderr, never stdout, so stdout holds only the JSON
+value or the YAML document stream. Pass the cursor to --after for the next
+page.
+
 -w streams this kind's changes instead of listing it; --from and --generation
 resume the stream the way "substratectl watch" does.
 

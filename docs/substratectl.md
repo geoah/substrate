@@ -103,7 +103,10 @@ JSON [filter grammar](api.md#the-filter-grammar)), `-l` label selectors,
 [search grammar](api.md#the-search-grammar): `--search 'rack lay*'` is the
 filter's `search` arm, composed with the rest and printed in the list's own
 order), `--order-by`, and `--limit`; `--after` resends the opaque keyset
-cursor a page printed. `--expand prop1,prop2` carries the referents of those reference
+cursor a page printed. The cursor line,
+`more results available; next cursor: <cursor>`, goes to stderr, so stdout
+holds only the JSON value or the YAML document stream. `--expand prop1,prop2` carries
+the referents of those reference
 properties back with the page (as further `---` documents in `-o yaml`, under
 an `included` key in `-o json`; the table prints the page alone), and
 `--referencing <kind>/<id>` is the reverse read: only the records of the kind
@@ -203,7 +206,10 @@ however the delivery settles, and `forget` drops one that can never be
 delivered again without running anything; `replay`
 resets a record-sourced trigger's cursor; `run` synthesizes a single delivery;
 and `wake` scans a trigger immediately. Trigger rows are ordinary records, so
-`get` / `apply` / `delete` edit them like anything else.
+`get` / `apply` / `delete` edit them like anything else. `status` and `parked`
+take `-o json` or `-o yaml` and print the rows as one array with the wire's
+field names. The `parked` table shows the first line of each error, cut to 80
+characters; `-o json` carries the whole error.
 
 `substratectl sync status` is the synchronization read over every
 [connection](bundles.md#connections) whose kind binds the core `sync` trait:
@@ -212,6 +218,7 @@ synced, whether the owner's request has been served, each stream's state and
 backlog, the parked and lagging deliveries of the triggers on its kind summed,
 and the message or, on an erroring account, the error. To ask for a run,
 patch `syncRequestedAt` on the account; to stop one, patch `syncPaused`.
+`-o json` or `-o yaml` prints the accounts as one array.
 
 `substratectl function call <name> --input <json>` invokes one
 [function](functions.md) directly, applies its effects under the function's
@@ -246,7 +253,9 @@ lifecycle; install and upgrade are `substratectl apply` of the closure, and
 `connect <authority>/<package>/<kind>/<id>` starts the host
 [OAuth flow](bundles.md#the-oauth-facility) for the account record the path
 names, printing the consent URL. A bare id is refused, and the refusal lists
-every account the repository holds under it.
+every account the repository holds under it. `list` and `status` take
+`-o json` or `-o yaml`: `list` prints one array and writes its
+`quarantined:` lines to stderr, and `status` prints one object.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
 first, then the catalog's providers and samples: whether this repository

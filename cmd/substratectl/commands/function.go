@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -39,7 +40,8 @@ records: get/apply/delete them like any other.`,
 }
 
 func (a *app) triggerStatusCommand() *cobra.Command {
-	return &cobra.Command{
+	var output string
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Per-trigger kind, callable, cursor, lag, last fire, parked, pending and in-flight counts, and webhook path",
 		Args:  cobra.NoArgs,
@@ -52,19 +54,23 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 			if err := cl.do(cmd.Context(), http.MethodGet, triggersPath("status"), nil, nil, &res); err != nil {
 				return err
 			}
-			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tPENDING\tINFLIGHT\tWEBHOOK\tERROR")
-			for _, t := range res.Items {
-				lastFire := ""
-				if t.LastFire != nil {
-					lastFire = humanAge(a.now(), *t.LastFire)
+			return printList(a, output, res.Items, func() error {
+				tw := newTable(a.out)
+				fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tPENDING\tINFLIGHT\tWEBHOOK\tERROR")
+				for _, t := range res.Items {
+					lastFire := ""
+					if t.LastFire != nil {
+						lastFire = humanAge(a.now(), *t.LastFire)
+					}
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%d\t%d\t%d\t%s\t%s\n",
+						t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, lastFire, t.Parked, t.Pending, t.InFlight, t.WebhookPath, truncate(t.Error, 60))
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%d\t%d\t%d\t%s\t%s\n",
-					t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, lastFire, t.Parked, t.Pending, t.InFlight, t.WebhookPath, truncate(t.Error, 60))
-			}
-			return tw.Flush()
+				return tw.Flush()
+			})
 		},
 	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: table|json|yaml")
+	return cmd
 }
 
 func (a *app) triggerReplayCommand() *cobra.Command {
@@ -159,10 +165,13 @@ func (a *app) triggerWakeCommand() *cobra.Command {
 }
 
 func (a *app) triggerParkedCommand() *cobra.Command {
-	return &cobra.Command{
+	var output string
+	cmd := &cobra.Command{
 		Use:   "parked <id>",
 		Short: "List a trigger's parked deliveries",
-		Args:  cobra.ExactArgs(1),
+		Long: `List the deliveries a trigger gave up on. The table shows the first line of
+each error, cut to 80 characters; -o json and -o yaml carry the whole error.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := a.client()
 			if err != nil {
@@ -172,15 +181,22 @@ func (a *app) triggerParkedCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tSEQ\tFIRE\tRECORD\tATTEMPTS\tPARKED\tRUNNING\tERROR")
-			for _, f := range parked {
-				fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%d\t%s\t%t\t%s\n",
-					f.ID, f.Seq, f.FireID, f.RecordID, f.Attempts, humanAge(a.now(), f.ParkedAt), f.Running, truncate(f.LastError, 80))
-			}
-			return tw.Flush()
+			return printList(a, output, parked, func() error {
+				tw := newTable(a.out)
+				fmt.Fprintln(tw, "ID\tSEQ\tFIRE\tRECORD\tATTEMPTS\tPARKED\tRUNNING\tERROR")
+				for _, f := range parked {
+					// One line per delivery: a traceback's newlines would
+					// break the table.
+					reason, _, _ := strings.Cut(f.LastError, "\n")
+					fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%d\t%s\t%t\t%s\n",
+						f.ID, f.Seq, f.FireID, f.RecordID, f.Attempts, humanAge(a.now(), f.ParkedAt), f.Running, truncate(reason, 80))
+				}
+				return tw.Flush()
+			})
 		},
 	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: table|json|yaml")
+	return cmd
 }
 
 func (a *app) triggerRetryCommand() *cobra.Command {
