@@ -52,6 +52,41 @@ const (
 	threadError      = "error"
 )
 
+// The two `reason`s of an overbudget thread the deadline ended. The second
+// says the run had its final phase: the nudge is sent and never stored, so
+// the reason is the thread's one record that the last turn ran under it.
+const (
+	reasonDeadline         = "deadline exceeded"
+	reasonDeadlineLastTurn = "deadline exceeded after a last turn"
+)
+
+// finalTurnNudge is the user message that opens the final phase. It rides
+// that turn's request and is never stored: replay and compaction read the
+// stored rows, and a stored nudge would reach every later run of the thread
+// as a standing order to stop. It says that no tool result from the turn
+// will come back, because a model that expects to read the result of its
+// write before replying would otherwise spend the turn on a lookup.
+const finalTurnNudge = "The run's deadline is near and this is your last turn. " +
+	"Record the work you have so far now, with your tools where you have them. " +
+	"The run ends after this turn, and no tool result from it will reach you."
+
+// deadlineReserve is how much of a run's window is left when the loop enters
+// its final phase: a fifth of the window, so a short window keeps most of its
+// time for work, and at most a minute, so a long window does not spend more
+// than a minute on its last turn.
+func deadlineReserve(window time.Duration) time.Duration {
+	return min(time.Minute, window/5)
+}
+
+// deadlineReason is the reason a deadline settles with, naming the final
+// phase when the run had one.
+func deadlineReason(final bool) string {
+	if final {
+		return reasonDeadlineLastTurn
+	}
+	return reasonDeadline
+}
+
 // The two modes only the loop mints (the rest are the runner's).
 const (
 	agentModeChat     = "chat"
@@ -518,26 +553,62 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: l.threadID})
 	messages = l.compactAtOpen(ctx, messages)
 
-	deadline := nowUTC().Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)
+	started := nowUTC()
+	deadline := started.Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)
 	if !in.notAfter.IsZero() && in.notAfter.Before(deadline) {
 		deadline = in.notAfter
 	}
 	lctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
+	// The reserve is taken from the run's own window, not from
+	// deadlineSeconds alone: a calling body's deadline can shorten the window
+	// below the reserve the budget implies, and the run would then spend its
+	// first turn as its last.
+	reserve := deadlineReserve(deadline.Sub(started))
 
 	status, reason, reply := threadOverBudget, "", ""
 	// overflowRetried spends the one compact-and-retry a run gets when the
 	// provider refuses the context: a second refusal settles the thread.
 	overflowRetried := false
+	// final is set when the loop enters its final phase: the deadline is
+	// inside the reserve, the model has been told this is its last turn, and
+	// the loop settles after that turn whatever the model did.
+	final := false
+	maxToolCalls := ag.Budgets.MaxToolCalls
 loop:
-	for l.turns < ag.Budgets.MaxTurns {
-		if !nowUTC().Before(deadline) {
-			reason = "deadline exceeded"
+	for {
+		left := deadline.Sub(nowUTC())
+		if left <= 0 {
+			reason = deadlineReason(final)
 			break
+		}
+		// An overflow retry comes back here with final already set: the
+		// nudge is in its tail and its turn was handed back.
+		if !final {
+			if left < reserve {
+				// The last turn is the run's one chance to record its work,
+				// so a turn and a tool-call budget already spent would refuse
+				// the very write the phase exists for: each grants one past
+				// its counter here, and only here.
+				final = true
+				maxToolCalls = max(maxToolCalls, l.toolCalls+1)
+				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: finalTurnNudge})
+			} else if l.turns >= ag.Budgets.MaxTurns {
+				break
+			}
 		}
 		l.turns++
 		res, err := l.complete(lctx, messages)
 		if err != nil {
+			if ctx.Err() == nil && errors.Is(lctx.Err(), context.DeadlineExceeded) {
+				// The loop's own deadline ended the call, not a server stop
+				// (the outer context is live). It settles like the other two
+				// deadline sites, on this thread and with its spend so far: an
+				// error here would retry the delivery on a fresh thread with a
+				// fresh deadline, buying the same overrun again.
+				reason = deadlineReason(final)
+				break
+			}
 			if errors.Is(err, llm.ErrContextTooLong) && !overflowRetried {
 				overflowRetried = true
 				// The retry runs on the compacted history and the same in-run
@@ -600,7 +671,7 @@ loop:
 			var ok bool
 			l.dispatchChanges = nil
 			l.dispatchWrites = nil
-			if l.toolCalls >= l.ag.Budgets.MaxToolCalls {
+			if l.toolCalls >= maxToolCalls {
 				// The v4 lesson: refuse with a synthetic result the model
 				// SEES, so it can land a final reply instead of a silent
 				// truncation. MaxTurns and the deadline still bound a model
@@ -644,8 +715,8 @@ loop:
 				Role: llm.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Content: out,
 			})
 		}
-		if lctx.Err() != nil {
-			reason = "deadline exceeded"
+		if lctx.Err() != nil || final {
+			reason = deadlineReason(final)
 			break loop
 		}
 	}
