@@ -92,6 +92,11 @@ type fakeSubstrate struct {
 	// validation envelope carrying these problems — the refusal `apply` meets
 	// when a document types a property wrong.
 	putValidation []string
+	// parked is every trigger's parked deliveries, served by GET
+	// .../trigger/{id}/parked; bundles is GET .../bundle/status's items, and
+	// GET .../bundle/{id}/status answers the one whose id matches.
+	parked  []substrate.TriggerFailure
+	bundles []substrate.BundleStatus
 
 	requests  []string
 	lastBody  map[string]json.RawMessage
@@ -229,6 +234,9 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// retired automation.substrate.reamde.dev spelling falls through to the 404 catch-all
 	// rather than passing quietly.
 	mux.HandleFunc("GET "+triggerColPath+"/status", f.handleTriggerStatus)
+	mux.HandleFunc("GET "+triggerColPath+"/{id}/parked", f.handleTriggerParked)
+	mux.HandleFunc("GET "+bundleColPath+"/status", f.handleBundleList)
+	mux.HandleFunc("GET "+bundleColPath+"/{id}/status", f.handleBundleStatus)
 	// The synchronization read: cross-kind, at the version root.
 	mux.HandleFunc("GET /api/v1/sync/status", f.handleSyncStatus)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/run", f.handleTriggerRun)
@@ -295,6 +303,7 @@ const (
 	tasksPath      = "/api/v1/" + taskKind
 	triggerColPath = "/api/v1/substrate.reamde.dev/core/trigger"
 	settingColPath = "/api/v1/substrate.reamde.dev/core/setting"
+	bundleColPath  = "/api/v1/substrate.reamde.dev/core/bundle"
 	digestColPath  = "/api/v1/samples.substrate.reamde.dev/readinglist/digest"
 )
 
@@ -868,7 +877,35 @@ func (f *fakeSubstrate) handleList(w http.ResponseWriter, r *http.Request, flt s
 		out = append(out, e)
 	}
 	sortRecords(out)
+	// `first` cuts the page and leaves a cursor, the offset of the next row,
+	// which `after` resends; the cursor is absent once the walk is exhausted.
+	start := 0
+	if after := r.URL.Query().Get("after"); after != "" {
+		n, err := strconv.Atoi(after)
+		if err != nil || n < 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "unknown cursor "+after, nil)
+			return
+		}
+		start = min(n, len(out))
+	}
+	end := len(out)
+	if raw := r.URL.Query().Get("first"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "first must be a positive integer", nil)
+			return
+		}
+		end = min(start+n, len(out))
+	}
+	cursor := ""
+	if end < len(out) {
+		cursor = strconv.Itoa(end)
+	}
+	out = out[start:end]
 	page := map[string]any{"records": out, "head": fakeHead, "generation": fakeGeneration}
+	if cursor != "" {
+		page["cursor"] = cursor
+	}
 	if raw := r.URL.Query().Get("expand"); raw != "" {
 		included := map[string]*substrate.Record{}
 		for _, e := range out {
@@ -1169,6 +1206,39 @@ func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Reque
 		ID: "classify-page", Kind: substrate.TriggerKindRecord,
 		Callable: "web.substrate.reamde.dev/web/classify", Enabled: true, Cursor: 41, Head: 41,
 	}}})
+}
+
+func (f *fakeSubstrate) handleTriggerParked(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	items := []substrate.TriggerFailure{}
+	for _, p := range f.parked {
+		if p.Trigger == r.PathValue("id") {
+			items = append(items, p)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (f *fakeSubstrate) handleBundleList(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"items": f.bundles})
+}
+
+func (f *fakeSubstrate) handleBundleStatus(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, b := range f.bundles {
+		if b.ID == r.PathValue("id") {
+			writeJSON(w, http.StatusOK, b)
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "not_found", "no such bundle: "+r.PathValue("id"), nil)
 }
 
 // handleSyncStatus answers one `sync`-trait account joined with its trigger:

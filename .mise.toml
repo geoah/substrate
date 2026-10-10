@@ -1,5 +1,5 @@
 [tools]
-go = "1.27.1"
+go = "1.27.2"
 # Held to the Dockerfile's web stage by `lint:toolchain`: this is the node the
 # console is TESTED on, so it is the node the image builds it on.
 node = "26.2.0"

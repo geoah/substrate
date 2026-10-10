@@ -32,7 +32,8 @@ the account; to stop one, patch syncPaused.`,
 }
 
 func (a *app) syncStatusCommand() *cobra.Command {
-	return &cobra.Command{
+	var output string
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Per-account sync state, message, last run, request, streams, parked and lagging triggers, and the newest parked run's reason",
 		Args:  cobra.NoArgs,
@@ -45,32 +46,36 @@ func (a *app) syncStatusCommand() *cobra.Command {
 			if err := cl.do(cmd.Context(), http.MethodGet, syncPath, nil, nil, &res); err != nil {
 				return err
 			}
-			tw := newTable(a.out)
-			fmt.Fprintln(tw, "KIND\tID\tSTATE\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE\tLAST PARKED")
-			for _, s := range res.Items {
-				last := ""
-				if s.LastSyncedAt != nil {
-					last = humanAge(a.now(), *s.LastSyncedAt)
+			return printList(a, output, res.Items, func() error {
+				tw := newTable(a.out)
+				fmt.Fprintln(tw, "KIND\tID\tSTATE\tPAUSED\tLAST\tREQUESTED\tSTREAMS\tPARKED\tLAG\tMESSAGE\tLAST PARKED")
+				for _, s := range res.Items {
+					last := ""
+					if s.LastSyncedAt != nil {
+						last = humanAge(a.now(), *s.LastSyncedAt)
+					}
+					// PARKED is the parked deliveries of this account's sync; LAG is the
+					// kind's triggers' backlog summed, which no record owns alone.
+					var lag int64
+					for _, tr := range s.Triggers {
+						lag += tr.Lag
+					}
+					message := s.Message
+					if s.State == substrate.SyncStateErroring && s.Error != "" {
+						message = s.Error
+					}
+					// One line per account: a message carrying a newline would
+					// break the table.
+					message, _, _ = strings.Cut(message, "\n")
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
+						s.Kind, s.ID, s.State, s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60), a.lastParked(s))
 				}
-				// PARKED is the parked deliveries of this account's sync; LAG is the
-				// kind's triggers' backlog summed, which no record owns alone.
-				var lag int64
-				for _, tr := range s.Triggers {
-					lag += tr.Lag
-				}
-				message := s.Message
-				if s.State == substrate.SyncStateErroring && s.Error != "" {
-					message = s.Error
-				}
-				// One line per account: a message carrying a newline would
-				// break the table.
-				message, _, _ = strings.Cut(message, "\n")
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
-					s.Kind, s.ID, s.State, s.Paused, last, syncRequest(s), syncStreams(s), s.Parked, lag, truncate(message, 60), a.lastParked(s))
-			}
-			return tw.Flush()
+				return tw.Flush()
+			})
 		},
 	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: table|json|yaml")
+	return cmd
 }
 
 // lastParked renders the newest parked delivery as its age and its reason:
