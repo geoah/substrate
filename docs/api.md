@@ -418,8 +418,9 @@ delivery path carries its own idempotency key, so a redelivered change applies
 once. The exception is a function body that runs an agent: the agent commits
 its writes as it runs, so the delivery claims itself when the agent opens its
 thread. A delivery that fails after that parks instead of retrying, one a crash
-interrupted is parked as interrupted, and a retry of either by hand runs the
-agent again ([running an agent](functions.md#running-an-agent)).
+interrupted is parked as interrupted and rerun once by the first trigger pass
+after the restart, and a retry of either by hand runs the agent again
+([running an agent](functions.md#running-an-agent)).
 
 A retried write is NOT safe on its own when the server assigns the identity or
 the effect. `POST /api/v1/records` mints a random id, so a client that

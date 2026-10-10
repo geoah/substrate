@@ -26,10 +26,11 @@ import (
 // and the run record are one commit. A concurrent dispatcher's duplicate
 // loses the claim's swap and runs nothing. A loop error rides the ordinary
 // retries, which find the claim, and parks by rewriting it. A crash mid-loop
-// leaves the claim, which the next open parks as interrupted and a person
-// retries or forgets (settleInterruptedAgentRuns): the loop's effects are
-// never committed without a recorded delivery state, and nothing redelivers
-// by itself.
+// leaves the claim, which the next open parks as interrupted
+// (settleInterruptedAgentRuns) and that open's first dispatcher pass reruns
+// once (rerunInterruptedAgentRuns): the loop's effects are never committed
+// without a recorded delivery state, and a run interrupted again waits for a
+// person.
 func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate.Change, depth int, envelope map[string]any, mode string, advance bool, settle *settlement) (deliverResult, error) {
 	var res deliverResult
 	claim, err := ds.claimAgentDelivery(ctx, settle)
@@ -316,8 +317,9 @@ const interruptedThreadReason = "interrupted: the server stopped during the run"
 // so every claim still stored and every thread still `running` belongs to a
 // run the last writer's stop ended. A claim becomes an ordinary parked
 // failure naming the stop, so the listing and a replay stop treating it as a
-// live run; it is still retried or forgotten by hand, never redelivered
-// (decision 0064). A thread settles to `error` naming the stop.
+// live run; the first dispatcher pass reruns it once
+// (rerunInterruptedAgentRuns, decision 0151), and a hand may retry or forget
+// it before that. A thread settles to `error` naming the stop.
 func (ds *dataset) settleInterruptedAgentRuns(ctx context.Context) error {
 	if ds.svc.readOnly {
 		return nil
@@ -329,12 +331,14 @@ func (ds *dataset) settleInterruptedAgentRuns(ctx context.Context) error {
 }
 
 // settleInterruptedClaims rewrites every stored claim to interruptedAgentError,
-// one ledger entry per trigger, so a rebuild and a restore agree.
+// one ledger entry per trigger, so a rebuild and a restore agree. A row an
+// earlier binary parked as interrupted, in the words it wrote, is rewritten
+// the same way, so it is rerun too.
 func (ds *dataset) settleInterruptedClaims(ctx context.Context) error {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, trigger_id, seq, fire_id, record_id, attempts, parked_at, payload
-		FROM trigger_failures WHERE last_error IN ($1, $2) ORDER BY trigger_id, id`,
-		inFlightError, legacyInFlightError)
+		FROM trigger_failures WHERE last_error IN ($1, $2, $3) ORDER BY trigger_id, id`,
+		inFlightError, legacyInFlightError, legacyInterruptedAgentError)
 	if err != nil {
 		return err
 	}
@@ -382,10 +386,217 @@ func (ds *dataset) settleInterruptedClaims(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("settle interrupted agent deliveries of trigger %s: %w", trigger, err)
 		}
-		ds.svc.log.Warn("substrate: agent deliveries interrupted by a stop, parked for a hand",
+		ds.svc.log.Warn("substrate: agent deliveries interrupted by a stop, parked for the first trigger pass to rerun once",
 			"trigger", logSafeID(trigger), "deliveries", len(failures))
 	}
 	return nil
+}
+
+// The stages of an open's one walk over the agent deliveries the last stop
+// interrupted (dataset.interruptedRerun).
+const (
+	rerunNotStarted int32 = iota
+	rerunWalking
+	rerunWalked
+)
+
+// rerunInterruptedAgentRuns reruns, once per open and from the first
+// dispatcher pass (ProcessTriggers), every agent delivery the open-time sweep
+// parked as interrupted after one attempt (settleInterruptedAgentRuns),
+// decision 0151. That includes a function body's agent claim (decision
+// 0121), whose rerun runs the body again from its start. A rerun is a retry
+// by hand that the server runs: it delivers the parked change or fire to the
+// trigger as the trigger stands at the rerun, callable and arguments
+// included, so a trigger edited since the claim reruns its new callable. It
+// runs where resumeWebhooks runs, for the same reason: only the
+// server dispatches, so an operator's process (a rebuild, a reset) opens the
+// repository and reruns nothing, and a read-only process appends nothing.
+// The walk is one detached task that reruns one delivery at a time, so a slow
+// loop does not hold the pass. A walk that could not read its rows, or that
+// panicked, is started again by the next pass; the rows it already reran no
+// longer qualify.
+func (ds *dataset) rerunInterruptedAgentRuns() {
+	if ds.svc.readOnly || !ds.interruptedRerun.CompareAndSwap(rerunNotStarted, rerunWalking) {
+		return
+	}
+	if !ds.spawn("interrupted agent rerun", func(ctx context.Context) {
+		stage := rerunNotStarted
+		defer func() { ds.interruptedRerun.Store(stage) }()
+		if ds.runInterruptedAgentReruns(ctx) {
+			stage = rerunWalked
+		}
+	}) {
+		ds.interruptedRerun.Store(rerunNotStarted)
+	}
+}
+
+// runInterruptedAgentReruns is the walk: every row carrying
+// interruptedAgentError at attempt 1, oldest first. It reports false when it
+// could not read them. Rows a shutdown kept it from reaching keep their
+// error, and the next open reruns them.
+func (ds *dataset) runInterruptedAgentReruns(ctx context.Context) bool {
+	type interrupted struct {
+		trigger string
+		id      int64
+	}
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT trigger_id, id FROM trigger_failures
+		WHERE last_error = $1 AND attempts = 1 ORDER BY id`, interruptedAgentError)
+	if err != nil {
+		if ctx.Err() == nil {
+			ds.svc.log.Error("substrate: interrupted agent deliveries could not be read for their rerun",
+				"repository", ds.Repository().ID, "error", err)
+		}
+		return false
+	}
+	var found []interrupted
+	for rows.Next() {
+		var r interrupted
+		if err := rows.Scan(&r.trigger, &r.id); err != nil {
+			_ = rows.Close()
+			return false
+		}
+		found = append(found, r)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return false
+	}
+	for _, r := range found {
+		if ctx.Err() != nil {
+			break
+		}
+		ds.rerunInterruptedAgentRun(ctx, r.trigger, r.id)
+	}
+	return true
+}
+
+// The fixed words a rerun's log line carries beside the webhook fire's
+// (webhookFireOutcome), for the cases a fire does not have.
+const (
+	rerunOutcomeOK     = "ok"     // the rerun settled and the row retired
+	rerunOutcomeParked = "parked" // the rerun failed and the row holds its error at attempt 2
+	rerunOutcomeHeld   = "held"   // the trigger is disabled or its callable does not resolve
+	rerunOutcomeCapped = "capped" // the trigger's agent is at a spend cap
+)
+
+// rerunInterruptedAgentRun reruns one interrupted agent delivery, the row
+// failureID of triggerID. The order is what makes it at most once: the
+// in-process claim first (settlement.acquire), so a hand already retrying or
+// forgetting the row keeps it and a hand arriving later answers conflict;
+// then, under that claim and the row lock, the row is checked again and
+// rewritten to attempt 2 and rerunAgentError in its own ledger entry
+// (markRerun); then the delivery runs through the retry's own body
+// (retryHeldFailure); then the claim is released. One log line per delivery
+// names the trigger, the failure, the callable the trigger names now (the
+// one the rerun runs) and the outcome as a fixed word, never the error,
+// which may quote the request or the model.
+func (ds *dataset) rerunInterruptedAgentRun(ctx context.Context, triggerID string, failureID int64) {
+	attrs := []any{"repository", ds.Repository().ID, "trigger", logSafeID(triggerID), "failure", failureID}
+	skipped := func(outcome string, extra ...any) {
+		ds.svc.log.Warn("substrate: agent delivery a restart interrupted was not rerun, it stays parked",
+			append(append(attrs, "outcome", outcome), extra...)...)
+	}
+	settle := &settlement{ds: ds, trigger: triggerID}
+	if err := settle.acquire(failureID); err != nil {
+		ds.svc.log.Info("substrate: agent delivery a restart interrupted was not rerun, a hand holds it",
+			append(attrs, "outcome", fireOutcomeRunning)...)
+		return
+	}
+	defer settle.release()
+	tr, _, err := ds.triggerByID(ctx, triggerID)
+	if err == nil {
+		attrs = append(attrs, "callable", logSafeID(tr.callablePath()))
+	}
+	if err != nil || !tr.Enabled || !tr.runnable() {
+		skipped(rerunOutcomeHeld)
+		return
+	}
+	// An agent at a spend cap is checked before the rewrite, as a hand's
+	// retry is checked before its hold: rerun, it would be refused inside
+	// its loop and parked at attempt 2, its one rerun spent on nothing. Its
+	// row stays as the sweep left it, for a hand or the next open. A
+	// function body that runs an agent meets the cap inside the body, as a
+	// dispatched delivery does.
+	if tr.Agent != nil {
+		if ctx, err = ds.refuseAtSpendCap(ctx, tr.Agent); err != nil {
+			if errors.Is(err, errSpendHeld) {
+				skipped(rerunOutcomeCapped)
+			} else {
+				skipped(webhookFireOutcome(err), "error", err)
+			}
+			return
+		}
+	}
+	f, err := ds.markRerun(ctx, triggerID, failureID)
+	if err != nil {
+		skipped(webhookFireOutcome(err), "error", err)
+		return
+	}
+	if f == nil {
+		ds.svc.log.Info("substrate: agent delivery a restart interrupted was not rerun, a hand ended it",
+			append(attrs, "outcome", fireOutcomeRetired)...)
+		return
+	}
+	// f is the row as it stood, at attempt 1: a rerun that fails parks at
+	// attempt 2, the attempt the rewrite already names.
+	_, err = ds.retryHeldFailure(ctx, tr, *f, settle)
+	outcome := rerunOutcomeOK
+	switch {
+	case err == nil:
+	case errors.Is(err, substrate.ErrParked):
+		outcome = rerunOutcomeParked
+	default:
+		outcome = webhookFireOutcome(err)
+	}
+	attrs = append(attrs, "outcome", outcome)
+	if outcome == rerunOutcomeOK {
+		ds.svc.log.Info("substrate: reran an agent delivery a restart interrupted", attrs...)
+		return
+	}
+	ds.svc.log.Warn("substrate: reran an agent delivery a restart interrupted, it stays parked for a hand", attrs...)
+}
+
+// markRerun rewrites an interrupted agent delivery's row before its rerun
+// runs: attempt 2 and rerunAgentError, on a delivery entry of its own, so a
+// stop during the rerun leaves a row the next open neither rewrites nor
+// reruns. It returns the row as it stood, or nil when the row is gone or no
+// longer an interrupted run at attempt 1 (a hand retried or forgot it before
+// the claim was taken).
+func (ds *dataset) markRerun(ctx context.Context, triggerID string, failureID int64) (*foldFailure, error) {
+	var before *foldFailure
+	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		before = nil
+		if err := t.lockFailure(triggerID, failureID); err != nil {
+			if errors.Is(err, errFailureRetired) {
+				return nil
+			}
+			return err
+		}
+		f, err := scanFailure(t.row(failureRowSQL, failureID, triggerID), triggerID, failureID)
+		if err != nil {
+			return err
+		}
+		if f.LastError != interruptedAgentError || f.Attempts != 1 {
+			return nil
+		}
+		rerun := f
+		rerun.LastError = rerunAgentError
+		rerun.Attempts = 2
+		rerun.ParkedAt = t.now
+		if err := t.parkTx(triggerID, rerun); err != nil {
+			return err
+		}
+		if err := t.settleDelivery(triggerID); err != nil {
+			return err
+		}
+		before = &f
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return before, nil
 }
 
 // lostThreadReason is the reason a thread settles with when the run that
@@ -398,7 +609,8 @@ const lostThreadReason = "interrupted: the agent run holding this thread stopped
 // lost run. The lease is the loop's deadline plus slack (agentloop.go
 // leaseUntil), so no live loop outlives it. Only the thread settles: a
 // claim the run left already lists as interrupted (presentFailure), and the
-// sweep reruns nothing (decision 0064).
+// sweep reruns nothing (decision 0064). The next open parks that claim as
+// interrupted, and its first pass reruns it once (decision 0151).
 func (ds *dataset) settleLostThreads(ctx context.Context) error {
 	if ds.svc.readOnly {
 		return nil

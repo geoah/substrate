@@ -603,9 +603,11 @@ live process, the resolution sweep settles a `running` thread to `error` once
 its `leaseUntil` (the loop's deadline plus 30 seconds) has passed and no loop
 of this process holds it: a canceled request, a failed write on the way out or
 a panic leaves exactly that. The sweep reruns nothing: where the run's
-delivery was left claimed, the claim lists as interrupted and waits for a
-hand to retry or forget it
-([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)).
+delivery was left claimed, the claim lists as interrupted until a hand
+retries or forgets it
+([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
+or until the next start, whose first trigger pass reruns it once
+([decision 0151](decisions/0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md)).
 
 ### The daily spend cap
 

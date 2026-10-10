@@ -231,6 +231,10 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	// window that rolled on resumes a held trigger at the next pass.
 	ds.spend.expire()
 	ds.resumeWebhooks()
+	// The agent deliveries the last stop interrupted, rerun once at the
+	// open's first pass. Detached for the same reason as the resume
+	// (agents.go rerunInterruptedAgentRuns).
+	ds.rerunInterruptedAgentRuns()
 	triggers, err := ds.loadTriggers(ctx)
 	if err != nil {
 		return 0, err
@@ -847,9 +851,10 @@ func settledResult(advance bool, summary map[string]int, pages int) deliverResul
 // (claim), recording the delivery as in flight under a parked failure, then
 // runs the loop, then retires the claim with the run record (complete). A
 // crash between the two leaves the claim, which the next open parks as
-// interrupted (settleInterruptedAgentRuns) for a person to retry or forget;
-// nothing redelivers by itself and no effect commits without a recorded
-// delivery state. A function
+// interrupted (settleInterruptedAgentRuns) and that open's first dispatcher
+// pass reruns once (rerunInterruptedAgentRuns); a run interrupted again
+// waits for a person to retry or forget it, and no effect commits without a
+// recorded delivery state. A function
 // body that runs an agent takes the same claim in the agent thread's
 // transaction (agentThreads.bind), and its final transaction then retires
 // the claim instead of acknowledging (settle). nil settles nothing: a manual
@@ -1105,9 +1110,10 @@ func (s *settlement) release() {
 // A record trigger never supersedes: each of its parks is one record's
 // change, which no delivery of another change re-delivers. Nor is a webhook
 // request's park retired (it carries its request as a payload), nor a fire
-// whose id is not an occurrence (a wake), nor an agent claim, in flight or
-// interrupted, which decision 0064 leaves to a person because its run may
-// have written records. A row a hand is retrying now is held in
+// whose id is not an occurrence (a wake), nor an agent claim, in flight,
+// interrupted or interrupted again during its rerun, because its run may
+// have written records: decision 0064 leaves it to a person, after the one
+// rerun of decision 0151. A row a hand is retrying now is held in
 // runningClaims and keeps its retry. The rows this settlement retires are
 // held the same way until it ends, so a retry of one answers conflict
 // instead of running a fire whose row is being deleted.
@@ -1132,12 +1138,13 @@ func (s *settlement) retireSupersededFires(t *txn) (int, error) {
 	// its string order is its time order and the bound sits in the query.
 	rows, err := t.query(`
 		SELECT id FROM trigger_failures
-		WHERE trigger_id = $1 AND payload IS NULL AND last_error NOT IN ($2, $3, $4, $5)
+		WHERE trigger_id = $1 AND payload IS NULL AND last_error NOT IN ($2, $3, $4, $5, $6, $7)
 		  AND fire_id ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
-		  AND fire_id COLLATE "C" <= $6
-		  AND id NOT IN (SELECT jsonb_array_elements_text($7::jsonb)::bigint)
-		ORDER BY id LIMIT $8`,
+		  AND fire_id COLLATE "C" <= $8
+		  AND id NOT IN (SELECT jsonb_array_elements_text($9::jsonb)::bigint)
+		ORDER BY id LIMIT $10`,
 		s.trigger, pendingWebhookError, inFlightError, legacyInFlightError, interruptedAgentError,
+		legacyInterruptedAgentError, rerunAgentError,
 		fireID(s.supersedes), string(heldJSON), supersedeBatch)
 	if err != nil {
 		return 0, err
@@ -3294,18 +3301,10 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	if !tr.runnable() {
 		return 0, fmt.Errorf("%w: trigger %s: callable %s does not resolve", substrate.ErrValidation, id, tr.CallableID)
 	}
-	f := foldFailure{ID: foldInt(failureID)}
-	var payload []byte
-	err = ds.db.QueryRowContext(ctx, `
-		SELECT seq, fire_id, record_id, attempts, last_error, payload FROM trigger_failures WHERE id = $1 AND trigger_id = $2`,
-		failureID, id).Scan(&f.Seq, &f.FireID, &f.RecordID, &f.Attempts, &f.LastError, &payload)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("%w: trigger %s has no parked failure %d", substrate.ErrNotFound, id, failureID)
-	}
+	f, err := scanFailure(ds.db.QueryRowContext(ctx, failureRowSQL, failureID, id), id, failureID)
 	if err != nil {
 		return 0, err
 	}
-	f.Payload = json.RawMessage(payload)
 	// Before the hold below and before anything runs: an agent at a spend cap
 	// refuses the retry and leaves the row exactly as it was, where a refusal
 	// from inside the loop would re-park it one attempt older.
@@ -3314,7 +3313,56 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 			return 0, err
 		}
 	}
-	settle := &settlement{ds: ds, trigger: tr.ID, seq: int64(f.Seq), fireID: f.FireID, retire: failureID}
+	// The failure is held in this process before anything runs and until the
+	// retirement or the re-park ends: a second retry of the same failure, or
+	// a retry of a claim whose dispatch is still running, answers conflict
+	// and starts no body and no loop.
+	settle := &settlement{ds: ds, trigger: tr.ID}
+	if err := settle.acquire(failureID); err != nil {
+		return 0, err
+	}
+	defer settle.release()
+	return ds.retryHeldFailure(ctx, tr, f, settle)
+}
+
+// failureRowSQL reads one parked failure row whole, by id ($1) and trigger
+// ($2), in the columns scanFailure takes.
+const failureRowSQL = `
+	SELECT seq, fire_id, record_id, attempts, last_error, parked_at, payload
+	FROM trigger_failures WHERE id = $1 AND trigger_id = $2`
+
+// scanFailure reads a failureRowSQL row as the ledger carries it. No row is
+// ErrNotFound naming the trigger and the failure.
+func scanFailure(row *sql.Row, triggerID string, failureID int64) (foldFailure, error) {
+	f := foldFailure{ID: foldInt(failureID)}
+	var payload []byte
+	err := row.Scan(&f.Seq, &f.FireID, &f.RecordID, &f.Attempts, &f.LastError, &f.ParkedAt, &payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return f, fmt.Errorf("%w: trigger %s has no parked failure %d", substrate.ErrNotFound, triggerID, failureID)
+	}
+	if err != nil {
+		return f, err
+	}
+	f.ParkedAt = f.ParkedAt.UTC()
+	f.Payload = json.RawMessage(payload)
+	return f, nil
+}
+
+// retryHeldFailure runs one parked delivery, the row f, as a retry, under a
+// settlement that already holds f's id in runningClaims (settlement.acquire),
+// so no other hand starts it meanwhile; the caller releases the hold. On
+// success the failure retires in the transaction that commits the retry's
+// last effects; on failure the row is rewritten with the new error at one
+// attempt past f's. RetryTriggerFailure and the rerun of an interrupted agent
+// delivery (rerunInterruptedAgentRun) both run a delivery through it, so a
+// hand and the rerun cannot both run one failure.
+func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFailure, settle *settlement) (int, error) {
+	failureID := int64(f.ID)
+	if settle.held != failureID {
+		return 0, fmt.Errorf("substrate/engine: trigger %s failure %d retried without its hold", tr.ID, failureID)
+	}
+	settle.seq, settle.fireID, settle.retire = int64(f.Seq), f.FireID, failureID
+	payload := []byte(f.Payload)
 	// A retried occurrence that settles supersedes the parks at or before
 	// it, as a dispatched one does.
 	if tr.Schedule != nil && len(payload) == 0 {
@@ -3322,14 +3370,6 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 			settle.supersedes = at.UTC()
 		}
 	}
-	// The failure is held in this process before anything runs and until the
-	// retirement or the re-park ends: a second retry of the same failure, or
-	// a retry of a claim whose dispatch is still running, answers conflict
-	// and starts no body and no loop.
-	if err := settle.acquire(failureID); err != nil {
-		return 0, err
-	}
-	defer settle.release()
 	var n int
 	var derr error
 	// record is the retried change's record path, for the alert a failed
