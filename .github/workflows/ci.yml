@@ -793,7 +793,9 @@ jobs:
   # Builds the image from source and BOOTS it under compose.yaml, with fresh
   # volumes and a throwaway Postgres. The release ships the same runtime stage
   # (the Dockerfile's ARTIFACTS switch), so this is the boot a published image
-  # gets before anybody pulls it.
+  # gets before anybody pulls it. The boot ends with the console rendered in
+  # the runner's Google Chrome (web/console/scripts/render-smoke.mjs), which is
+  # what node and pnpm are installed for.
   image:
     name: image builds and boots
     runs-on: ubuntu-latest
@@ -804,4 +806,5 @@ jobs:
         with:
           experimental: true
           version: 2026.9.2
+          install_args: node pnpm
       - run: mise run ci:image

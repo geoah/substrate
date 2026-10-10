@@ -26,6 +26,15 @@ export default defineConfig([
     },
   },
   {
+    // The render check runs under node, not in the browser the rest of this
+    // tree targets.
+    files: ["scripts/**/*.mjs"],
+    extends: [js.configs.recommended, configPrettier],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
     // Registry-managed code (shadcn CLI output). Never forked by hand, so its
     // style is the registry's business, not this lint's.
     files: ["src/components/ui/**/*.{ts,tsx}", "src/hooks/use-mobile.ts"],

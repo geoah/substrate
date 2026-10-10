@@ -15,6 +15,7 @@ suites are where most of the behaviour is actually pinned down.
 | Race | `mise run test:race` | nothing | ~1 minute |
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |
 | Console | `mise run console:test` | pnpm | seconds |
+| Console render | `mise run console:render <url>` | a running substrate; Chrome, or a chromium Playwright downloads | ~10 seconds |
 | Live | `mise run test:llm` | provider keys, money | ~1 minute |
 | End-to-end | `mise run test:e2e` | Docker; leaves data | ~3 minutes |
 
@@ -300,10 +301,42 @@ their partial profiles would buy nothing a push to `main` cannot wait for.
 ```bash
 mise run console:test      # vitest
 mise run ci:console        # typecheck, lint, format, test, build
+mise run console:render http://127.0.0.1:8080   # the served console, in headless Chrome
 ```
 
 Vitest with jsdom, beside the code it covers: every module in
 `src/lib/api/` has a `.test.ts` next to it, and the pages have component tests.
+
+**The render check** (`web/console/scripts/render-smoke.mjs`) opens the
+console a running substrate serves in headless Chrome. jsdom cannot stand in
+for it: #846 bumped `nuqs`, every page rendered blank, and every check passed
+until #864. It visits `/` (expecting the redirect to `/login`), `/login`,
+`/register` (it registers a new repository through the form and acknowledges
+the recovery key), then `/data` and `/history`, where it waits for the
+collections table or the change rows, or their empty states. It prints one
+line per route. A route fails on an uncaught page error, a console error, a
+same-origin response of 400 or more, a request lost to
+`net::ERR_NETWORK_CHANGED` that no retry answered, or its heading or content
+not appearing within 20 seconds. The one 4xx it accepts is the 404 a fresh
+repository gives for
+`GET /api/v1/substrate.reamde.dev/core/consolepreference/navigation`.
+It does not see an error in a route it does not visit, in an interaction
+other than the register form, or in a page that needs records the user
+wrote.
+
+The image job runs it at the end of `.mise/imagesmoke.sh`, against the image
+it booted. `mise run console:render <url>` runs it against any substrate
+whose door reads no invite code and no second factor, such as `mise run dev`,
+and leaves a repository behind on each run. `console:render`, `ci:image` and
+`image:smoke` depend on `console:browser`, which finds the installed Google
+Chrome; `CONSOLE_RENDER_BROWSER=chromium` skips Chrome.
+
+Where there is no Chrome, `console:browser` downloads Playwright's Chrome
+Headless Shell into `~/.cache/ms-playwright` on its first run: about 126 MB,
+plus 2.3 MB of ffmpeg, and about 280 MB on disk. It installs no system
+libraries. A Linux machine that lacks the ones the shell links fails at
+launch, and `pnpm -C web/console exec playwright-core install-deps chromium`
+installs them through apt-get, asking for sudo.
 
 ### The wire drift guard
 
@@ -557,7 +590,7 @@ and do not block a merge.
 | providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams | no |
 | race | `ci:race` | the short suite under `-race` | no |
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | no |
-| image builds | `ci:image` | the image builds from a clean tree and boots | no |
+| image builds | `ci:image` | the image builds from a clean tree, boots, and renders the console in headless Chrome | no |
 | changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites | no |
 | coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only |
 

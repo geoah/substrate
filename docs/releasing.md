@@ -60,7 +60,10 @@ is automated on purpose: it is the QA step.
    `ghcr.io/geoah/substrate:latest` reports `vP.Q.R-N-g<sha>` where `<sha>`
    is the base commit.
 4. **Smoke the image.** `mise run image:smoke ghcr.io/geoah/substrate:latest`
-   boots it against a throwaway Postgres and checks it serves.
+   boots it against a throwaway Postgres, checks it serves, and renders its
+   console in headless Chrome. Without Chrome installed, the first run
+   downloads Playwright's headless shell (about 126 MB,
+   [the render check](testing.md#the-console)).
 5. **Run the upgrade drill.** Restore the newest backup of a real
    deployment into a throwaway Postgres and data root
    ([backups](operations.md#backups)), start `latest` against the copy, read

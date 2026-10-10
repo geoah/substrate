@@ -19,10 +19,19 @@
 #   GET /.well-known/substrate/server.json names a version
 #   uv runs, and is a static binary: Alpine's dynamically linked package
 #   aborts in jemalloc on 16 KB page kernels (arm64, the Raspberry Pi 5)
+#   the console renders in headless Chrome: / sends a stranger to /login, the
+#   sign-in and register pages paint, the register form creates a repository,
+#   and All data and History show their headings and content, with no page
+#   error, no console error and no 4xx or 5xx it does not expect
+#   (web/console/scripts/render-smoke.mjs). #846 blanked every page and every
+#   other check passed.
 #
 # Usage: .mise/imagesmoke.sh <image ref>
 #   `mise run ci:image` builds $IMAGE:ci and runs this over it;
 #   `mise run image:smoke ghcr.io/geoah/substrate:0.85.0` runs it over a pull.
+#   Both run `mise run console:browser` first, which installs the console's
+#   dependencies and finds the browser; run that once before calling this
+#   script directly.
 #
 # A compose project name of its own, so it never touches the project a laptop
 # may be running from this tree, and `down -v` on exit deletes only what it
@@ -34,6 +43,12 @@ image="${1:?usage: imagesmoke.sh <image ref>}"
 timeout="${SMOKE_TIMEOUT:-120}"
 
 cd "$(git rev-parse --show-toplevel)"
+
+# Before anything boots, so a missing dependency costs a second, not a stack.
+if [ ! -d web/console/node_modules/playwright-core ]; then
+  echo "image:smoke: the console render check has no dependencies installed: run \`mise run console:browser\` first" >&2
+  exit 1
+fi
 
 project="substrate-smoke-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
 override="$(mktemp)"
@@ -133,4 +148,9 @@ doc="$(curl -fsS "${base}/.well-known/substrate/server.json")"
 version="$(printf '%s' "$doc" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 [ -n "$version" ] || fail "server.json names no version: ${doc}"
 
-echo "image:smoke: ${image} boots as uid 65532, owns its data root, minted a key, reports ${version}, runs a static ${uv_version} at ${uv_path}"
+# Last, because it registers a repository: every check above reads a store
+# nobody has written to.
+node web/console/scripts/render-smoke.mjs "$base" ||
+  fail "the console did not render; the lines above name each route that failed"
+
+echo "image:smoke: ${image} boots as uid 65532, owns its data root, minted a key, reports ${version}, runs a static ${uv_version} at ${uv_path}, renders the console"
