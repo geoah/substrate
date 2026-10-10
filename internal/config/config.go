@@ -96,6 +96,13 @@ type Config struct {
 	// deliveries in a loop wants a faster one. At most 5s by default; zero or
 	// negative is refused.
 	TriggerInterval time.Duration `envconfig:"SUBSTRATE_TRIGGER_INTERVAL" default:"5s"`
+	// TriggerLaneWorkers is how many due schedule fires one repository's
+	// dispatcher pass runs at once, each of a different trigger. Every
+	// delivery the dispatcher runs also holds one of the process's 16
+	// delivery slots, so a higher value lets more of one repository's syncs
+	// start together without raising what the process runs at once. From 1,
+	// which fires one schedule at a time, to MaxTriggerLaneWorkers.
+	TriggerLaneWorkers int `envconfig:"SUBSTRATE_TRIGGER_LANE_WORKERS" default:"4"`
 
 	// InsecureDisableTOTP takes the SECOND FACTOR OFF the whole door: login,
 	// registration and the credential changes ask for a repository and a
@@ -140,6 +147,11 @@ type Config struct {
 	// process holds no bearer that could reach a repository-chosen endpoint.
 }
 
+// MaxTriggerLaneWorkers is the largest SUBSTRATE_TRIGGER_LANE_WORKERS
+// accepted: the deliveries the dispatcher runs at once over the whole
+// process. It is engine.TriggerDeliverySlots, which Open enforces too.
+const MaxTriggerLaneWorkers = 16
+
 // MinRepositoryConnections is the smallest SUBSTRATE_REPOSITORY_CONNECTIONS
 // accepted. It is engine.MinRepositoryConnections, which Open enforces too.
 const MinRepositoryConnections = 4
@@ -173,6 +185,9 @@ func (c Config) Validate() error {
 	}
 	if c.TriggerInterval <= 0 {
 		return fmt.Errorf("SUBSTRATE_TRIGGER_INTERVAL is %s: it is how often the trigger dispatcher checks every repository for a delivery due, and it must be a positive duration (5s is the default)", c.TriggerInterval)
+	}
+	if c.TriggerLaneWorkers < 1 || c.TriggerLaneWorkers > MaxTriggerLaneWorkers {
+		return fmt.Errorf("SUBSTRATE_TRIGGER_LANE_WORKERS is %d: it is how many schedule fires one repository's dispatcher pass runs at once, so it is at least 1 and at most %d, the deliveries the whole process runs at once (4 is the default)", c.TriggerLaneWorkers, MaxTriggerLaneWorkers)
 	}
 	return ValidateCredentialKey(c.CredentialKey)
 }

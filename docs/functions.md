@@ -988,13 +988,18 @@ budget.** One dispatcher pass over a repository has two lanes that run at the
 same time. The record lane walks the record triggers in id order. The
 schedule lane fires every due schedule occurrence, then looks again every 5
 seconds until the record lane is done, so an occurrence that falls due while
-record backlogs drain starts within about 5 seconds, behind only the fires of
-the repository's other schedule triggers
+record backlogs drain starts within about 5 seconds
 ([decision 0147](decisions/0147-a-pass-runs-its-schedule-triggers-in-a-lane-beside-its-record-triggers.md)).
-Each lane delivers one at a time, so a trigger never has two deliveries in
-flight from the dispatcher, and a pass runs at most two at once: a schedule
-fire can run while a record trigger delivers, and two invocations of one
-function can overlap
+The schedule lane fires up to four triggers at once
+(`SUBSTRATE_TRIGGER_LANE_WORKERS`), each trigger's occurrences one at a time
+and oldest first, so the syncs due at the top of the hour start together
+instead of one after another
+([decision 0150](decisions/0150-a-schedule-lane-fires-its-due-triggers-in-parallel-one-fire-per-trigger.md)).
+Triggers that name the same Python function still fire one after another:
+the runner keeps one process per function and sends it one invocation at a
+time. The record lane delivers one at a time. A trigger never has two
+deliveries in flight from the dispatcher, but a schedule fire can run while a
+record trigger delivers, so two invocations of one function can overlap
 ([two invocations over one record](#two-invocations-over-one-record)). Each
 trigger gets 30 seconds of its lane: past that it stops after the delivery in
 hand and the lane moves on, and the next pass resumes from its cursor. A

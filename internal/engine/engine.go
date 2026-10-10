@@ -63,6 +63,9 @@ type options struct {
 	// mark before the sweep may collect it (WithOrphanCollection). Zero or
 	// less is the default: the mark is made, nothing is collected.
 	orphanGrace time.Duration
+	// laneWorkers is how many schedule fires one pass runs at once
+	// (WithTriggerLaneWorkers); scheduleLaneWorkers when zero.
+	laneWorkers int
 	// catchUpBatch is the page size of the boot's table-to-file catch-up
 	// (appendFromTable); rebuildBatch when not positive. Only a test sets it
 	// (export_test.go), to put a transaction across a page boundary.
@@ -262,6 +265,14 @@ func WithOrphanCollection(grace time.Duration) Option {
 	return func(o *options) { o.orphanGrace = grace }
 }
 
+// WithTriggerLaneWorkers sets how many due schedule fires one repository's
+// dispatcher pass runs at once, each of a different trigger
+// (SUBSTRATE_TRIGGER_LANE_WORKERS, decision 0150). Zero, or not given, is
+// the default of 4. A negative value refuses the Open, as the server's
+// configuration does, and so does one above TriggerDeliverySlots, because
+// no pass could ever run more than the process does.
+func WithTriggerLaneWorkers(n int) Option { return func(o *options) { o.laneWorkers = n } }
+
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open applies
 // no schema migration: it refuses a database missing one this binary carries
@@ -385,6 +396,15 @@ type service struct {
 	// orphanGrace is the sweep's orphan-collection window; zero or less
 	// collects nothing (orphans.go collectOrphans).
 	orphanGrace time.Duration
+	// laneWorkers is how many schedule fires one pass's schedule lane runs
+	// at once (functions.go scheduleLane).
+	laneWorkers int
+	// deliverySlots is the process-wide semaphore every dispatcher pass
+	// takes a slot of for each delivery it runs, record trigger walks and
+	// schedule fires alike (functions.go takeDeliverySlot), so the
+	// dispatcher never has more than TriggerDeliverySlots in flight however
+	// many passes run.
+	deliverySlots chan struct{}
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
 	// valuesBudget is what one change read's before values may read.
@@ -560,6 +580,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if !o.conversionCeilingSet {
 		o.conversionCeiling = DefaultConversionCeiling
 	}
+	if o.laneWorkers == 0 {
+		o.laneWorkers = scheduleLaneWorkers
+	}
+	if o.laneWorkers < 0 || o.laneWorkers > TriggerDeliverySlots {
+		return nil, fmt.Errorf("substrate/engine: %d trigger lane workers: a lane runs at least 1 and at most the %d deliveries the whole process runs at once, and 0 is the default of %d (WithTriggerLaneWorkers)", o.laneWorkers, TriggerDeliverySlots, scheduleLaneWorkers)
+	}
 	if !o.seedLLMSampleSet {
 		o.seedLLMSample = true
 	}
@@ -605,6 +631,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 
 		conversionCeiling: o.conversionCeiling,
 		orphanGrace:       o.orphanGrace,
+		laneWorkers:       o.laneWorkers,
+		deliverySlots:     make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:      o.insecureDisableTOTP,
 		now:               o.now,
 		readOnly:          o.dirReadOnly,
