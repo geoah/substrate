@@ -69,6 +69,10 @@ trigger, a host call and the call API all address it with.
   `always` holds every put, patch and delete the body returns for the
   owner's review ([held for review](#held-for-review)). Both are facts about
   the function, never grants.
+- Optional **`stream`** names the sync stream the function keeps, the key its
+  code writes under the account's `syncStreams`, so `sync status` marks that
+  stream `erroring` when a delivery of the function parks
+  ([the sync trait](bundles.md#the-sync-trait)).
 - **`permissions:`** is what the function is allowed to do while it runs, and
   it is the whole security boundary. Leave a grant out and what it covers is
   refused:

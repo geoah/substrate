@@ -484,6 +484,7 @@
     "recordId": false,
     "running": false,
     "seq": false,
+    "stream": false,
     "trigger": true
   },
   "TriggerRan": {

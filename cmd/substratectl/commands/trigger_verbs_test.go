@@ -6,8 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // A trigger run delivers ONE RECORD, and a record is addressed by (kind, id):
@@ -49,6 +52,34 @@ func TestTriggerRunAcceptsAQualifiedKind(t *testing.T) {
 	_ = json.Unmarshal(h.fake.lastBody["kind"], &gotKind)
 	if gotKind != "samples.substrate.reamde.dev/tasks/task" {
 		t.Fatalf("body kind = %q, want it passed through", gotKind)
+	}
+}
+
+// A parked delivery's line names the sync stream its trigger's function
+// keeps, the stream `sync status` marks erroring for it.
+func TestTriggerParkedNamesTheStream(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.parked = []substrate.TriggerFailure{{
+		ID: 7, Trigger: "google-gmail-on-request", Seq: 41, RecordID: "george-work", Stream: "gmail",
+		Attempts: 3, LastError: "run: runner: invocation exceeded 1m0s", ParkedAt: testNow.Add(-time.Hour),
+	}}
+
+	out, _ := h.mustRun("trigger", "parked", "google-gmail-on-request")
+	header := strings.Fields(strings.SplitN(out, "\n", 2)[0])
+	if strings.Join(header, " ") != "ID SEQ FIRE RECORD STREAM ATTEMPTS PARKED RUNNING ERROR" {
+		t.Fatalf("header = %q, want STREAM after RECORD", header)
+	}
+	var fields []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "george-work") {
+			fields = strings.Fields(l)
+		}
+	}
+	// FIRE is empty on a record-sourced park, so the record is the third
+	// field and the stream the fourth.
+	if len(fields) < 4 || fields[2] != "george-work" || fields[3] != "gmail" {
+		t.Fatalf("parked line = %q, want the stream beside the record", fields)
 	}
 }
 

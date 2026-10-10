@@ -19,7 +19,7 @@ data:
     or built into the substrate on the `host` runtime. The declaration IS
     the record — a write admits it, the commit activates it, and the dispatcher
     reads the registry this row rebuilds into.
-  version: 20
+  version: 21
   purpose: internal
   names:
     singular: function
@@ -120,6 +120,15 @@ data:
       type: duration
       description: the inline run's wall-clock bound, an ISO 8601 duration
         (PT30S); absent defaults to 5s and the loader caps it at 60s
+    # A sync's stream is a fact the dispatcher cannot learn otherwise: a
+    # delivery row names a trigger and a record, never a stream, so a parked
+    # delivery reaches one stream of the account only through the function
+    # that ran it. A function that keeps several streams declares none.
+    stream:
+      type: string
+      description: the sync stream this function keeps, the key its code writes
+        under the account's `syncStreams`; a parked delivery of it marks that
+        stream erroring in the sync status
     # The FLAT argument dialect: one level of named arguments, which is what
     # makes a card valid JSON Schema by construction and keeps the value check
     # off a recursion. `json` is the named escape hatch for a value whose shape

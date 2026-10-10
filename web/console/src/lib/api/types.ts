@@ -637,6 +637,10 @@ export interface TriggerFailure {
   attempts: number
   lastError: string
   parkedAt: string
+  /** The sync stream the trigger's current callable declares (a function's
+   * `stream`), the one the sync status marks erroring for this park; absent
+   * when the callable declares none. */
+  stream?: string
   /** The server is delivering this row now; a retry answers conflict. */
   running?: boolean
 }

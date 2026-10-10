@@ -79,8 +79,8 @@ func (a *app) syncStatusCommand() *cobra.Command {
 }
 
 // lastParked renders the newest parked delivery as its age and its reason:
-// a scheduled sync's park moves no account to erroring, so MESSAGE alone
-// does not say why PARKED is not zero.
+// a park older than the account's last completed run leaves the account's
+// own state standing, so MESSAGE alone does not say why PARKED is not zero.
 func (a *app) lastParked(s substrate.SyncStatus) string {
 	if s.Parked == 0 || s.LastParkedError == "" {
 		return ""

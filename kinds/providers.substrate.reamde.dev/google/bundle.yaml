@@ -261,7 +261,12 @@ data:
   # under the runner's 8 MiB response frame; the host reads stop at 200,
   # under the function's read budget. Each invocation logs its phase
   # timings. Source only.
-  version: 42
+  #
+  # 43: EACH SYNC FUNCTION NAMES ITS STREAM (`stream: contacts`, `gmail`,
+  # `calendar`, `drive`), so `sync status` marks only the stream a parked
+  # delivery ran for as erroring and leaves the other three as the body
+  # stamped them. ADDITIVE.
+  version: 43
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -4478,6 +4483,7 @@ data:
     account's OAuth token, mirror each person under this package's own kinds
     with its addresses as emailaddress rows, and store the People sync token
     for the next incremental run.
+  stream: contacts
   runtime: python
   timeout: PT1M
   permissions:
@@ -7584,6 +7590,7 @@ data:
     Sync a Google account's mail: drain Gmail history (or a bounded backfill
     window) and mirror its threads, messages and addresses. Mirrors only,
     under this package's own kinds.
+  stream: gmail
   runtime: python
   timeout: PT1M
   permissions:
@@ -13227,6 +13234,7 @@ data:
     Sync a Google account's calendars: drain each calendar's events on its
     own sync token and mirror the calendars, the recurring series, the events
     and every attendee address under this package's own kinds.
+  stream: calendar
   runtime: python
   timeout: PT1M
   permissions:
@@ -16431,6 +16439,7 @@ data:
     window, or changes.list from the stored start page token, mirror each
     file and its owners' addresses under this package's own kinds, and export
     the text of every Doc, Sheet and Slides deck the walk named.
+  stream: drive
   runtime: python
   timeout: PT1M
   permissions:

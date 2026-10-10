@@ -186,7 +186,7 @@ func preHostKindsDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	body = strings.Replace(body, "  version: 20\n", "  version: 4\n", 1)
+	body = strings.Replace(body, "  version: 21\n", "  version: 4\n", 1)
 	body = strings.Replace(body, "        - python\n        - host\n", "        - python\n", 1)
 	body = strings.Replace(body,
 		"    source:\n      type: text\n      fts: false\n",

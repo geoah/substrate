@@ -46,9 +46,9 @@ func TestSyncStatusRendersTheAccountLine(t *testing.T) {
 	}
 }
 
-// A parked scheduled run moves no account to erroring, so the line names the
-// newest park itself: when it parked and the first line of why, never the
-// traceback under it.
+// A park older than the account's last completed run leaves the account's
+// state standing, so the line names the newest park itself: when it parked
+// and the first line of why, never the traceback under it.
 func TestSyncStatusNamesTheLatestParkedReason(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()

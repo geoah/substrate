@@ -142,6 +142,11 @@ type Function struct {
 	Output map[string]any
 	// Caps is the capability envelope every function carries.
 	Caps FunctionCaps
+	// Stream is the sync stream the function keeps: the key its body writes
+	// under the account's `syncStreams`. The sync status read marks only that
+	// stream erroring when a delivery of the function parks; empty (a
+	// function keeping several streams, or none) marks the account alone.
+	Stream string
 
 	// Definition is the declaration's own data map, exactly as authored — what
 	// the row stores as its properties (engine/vocabularywrite.go
@@ -703,6 +708,8 @@ var functionDataKeys = map[string]bool{
 	// The author's OBJECTIVE facts for the policy layer: what class of effect
 	// the body has, and a confirmation floor no policy or judge loosens.
 	"effect": true, "confirmation": true,
+	// The sync stream the function keeps, read by the sync status alone.
+	"stream": true,
 }
 
 // deletedFunctionKeys are the removed keys, each naming what replaced it.
@@ -786,6 +793,14 @@ func (l *loader) parseFunction(d Document) *Function {
 	default:
 		l.errf("%s: data.confirmation: %q — \"policy\" (the default) or \"always\"", where, fn.Confirmation)
 		return nil
+	}
+	if raw, declared := d.Data["stream"]; declared {
+		stream, isString := raw.(string)
+		if !isString || strings.TrimSpace(stream) == "" {
+			l.errf("%s: data.stream: a non-empty string, the key the function's code writes under syncStreams", where)
+			return nil
+		}
+		fn.Stream = stream
 	}
 	if !l.parseFunctionBody(where, d.Data, fn) {
 		return nil

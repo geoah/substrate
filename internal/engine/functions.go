@@ -2787,11 +2787,15 @@ func (ds *dataset) latestChangeOf(ctx context.Context, typ, recordID string) (su
 		fmt.Sprintf("record %s has no changes", recordID), typ, recordID, string(substrate.OpDelivery))
 }
 
-// TriggerFailures lists a trigger's parked deliveries, oldest first.
+// TriggerFailures lists a trigger's parked deliveries, oldest first, each
+// naming the stream of the trigger's current callable, as SyncStatuses
+// attributes it.
 func (ds *dataset) TriggerFailures(ctx context.Context, id string) ([]substrate.TriggerFailure, error) {
-	if _, _, err := ds.triggerByID(ctx, id); err != nil {
+	tr, _, err := ds.triggerByID(ctx, id)
+	if err != nil {
 		return nil, err
 	}
+	stream := triggerStream(ds.registry(), tr)
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at
 		FROM trigger_failures WHERE trigger_id = $1 ORDER BY id`, id)
@@ -2806,6 +2810,7 @@ func (ds *dataset) TriggerFailures(ctx context.Context, id string) ([]substrate.
 			return nil, err
 		}
 		f.ParkedAt = f.ParkedAt.UTC()
+		f.Stream = stream
 		ds.presentFailure(&f)
 		out = append(out, f)
 	}

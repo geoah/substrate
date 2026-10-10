@@ -354,6 +354,7 @@ function ParkedList({
                     : f.fireId
                       ? ` · fire ${f.fireId}`
                       : ""}
+                  {f.stream ? ` · stream ${f.stream}` : ""}
                 </span>
               </div>
               {f.running ? (
