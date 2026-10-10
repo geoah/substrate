@@ -79,8 +79,10 @@ install -d -o 65532 -g 65532 /srv/substrate/data /srv/substrate/keys
 `mise run image:smoke ghcr.io/geoah/substrate:0.85.0` boots an image under
 `compose.yaml` against a throwaway Postgres and checks exactly this: the
 process answers `/healthz`, runs as uid 65532, owns its data root, minted
-its key and names a version at `GET /.well-known/substrate/server.json`. CI
-runs it over every image it builds.
+its key and names a version at `GET /.well-known/substrate/server.json`, and
+the console it serves renders in headless Chrome (it registers a throwaway
+repository to reach the signed-in pages). CI runs it over every image it
+builds.
 
 ## Configuration
 

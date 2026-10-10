@@ -636,6 +636,26 @@ dir = "web/console"
 depends = ["console:install"]
 run = "pnpm fmt:check"
 
+[tasks."console:browser"]
+description = "Find the Chrome the render check drives, or download Playwright's chromium where none is installed"
+# `ci:image` and `image:smoke` depend on this because .mise/imagesmoke.sh ends
+# with the render check, and a runner holds no console dependencies until
+# something installs them. CONSOLE_RENDER_BROWSER=chromium skips Chrome.
+dir = "web/console"
+depends = ["console:install"]
+run = "node scripts/render-smoke.mjs --prepare"
+
+[tasks."console:render"]
+description = "Render the console's sign-in page and two signed-in routes in headless Chrome: console:render <base URL>"
+# Against any running substrate whose door reads no invite code and no second
+# factor: compose.yaml's defaults, and `dev`'s. It registers a new repository
+# through the form on every run, so point it at a substrate whose repositories
+# nobody keeps: against `mise run dev:up` it leaves one behind each time.
+dir = "web/console"
+depends = ["console:browser"]
+usage = 'arg "<base>" help="The URL the substrate serves the console at, such as http://127.0.0.1:8080"'
+run = 'node scripts/render-smoke.mjs "$usage_base"'
+
 # =============================================================================
 # Image
 # =============================================================================
@@ -700,6 +720,7 @@ description = "Boot an image under compose.yaml against a throwaway Postgres and
 # build under a registry name (ci:image's `$IMAGE:ci`) goes through
 # .mise/imagesmoke.sh directly, which never pulls.
 usage = 'arg "<image>" help="The image ref to boot, local or in a registry"'
+depends = ["console:browser"]
 run = '''
     set -eu
     first="${usage_image%%/*}"
@@ -894,7 +915,9 @@ description = "CI job `image builds and boots` — the image builds from a clean
 # start: its runtime created no /var/lib/substrate, so a fresh volume came up
 # root-owned and the server died at boot. .mise/imagesmoke.sh runs the image
 # under compose.yaml with fresh volumes and a throwaway Postgres and holds what
-# a person would check by hand.
+# a person would check by hand, ending with the console rendered in headless
+# Chrome, which is what `console:browser` prepares.
+depends = ["console:browser"]
 run = ["docker build -t $IMAGE:ci .", ".mise/imagesmoke.sh $IMAGE:ci"]
 
 [tasks."ci:llm"]

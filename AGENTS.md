@@ -45,6 +45,7 @@ mise run audit          # the vulnerability scans: govulncheck and pnpm audit
 mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
 mise run fmt:check      # the same, as a check — what CI runs
 mise run console:dev    # the console on :5173, proxying /api to :8080
+mise run console:render <url>  # a running substrate's console in headless Chrome: sign-in, register, two signed-in pages
 mise run ci             # every CI job, locally. The whole pipeline.
 ```
 
