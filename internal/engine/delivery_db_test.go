@@ -554,7 +554,8 @@ func TestADeliveryCommitsEffectsCursorAndRunTogether(t *testing.T) {
 	}
 	parkedHead := maxSeqOf(t, ds)
 
-	// The retry: the effect, the unpark and nothing else, one transaction.
+	// The retry: the effect, the unpark and the resolve of the park's alert
+	// (decision 0148), and nothing else, one transaction.
 	ds.mu.Lock()
 	ds.deliveryFault = nil
 	ds.mu.Unlock()
@@ -567,8 +568,8 @@ func TestADeliveryCommitsEffectsCursorAndRunTogether(t *testing.T) {
 	if left, err := ds.TriggerFailures(ctx, triggerID); err != nil || len(left) != 0 {
 		t.Fatalf("failures after the retry: %+v (%v)", left, err)
 	}
-	if groups, rows := txnGroups(t, ds, parkedHead); groups != 1 || rows != 2 {
-		t.Fatalf("the retry wrote %d rows in %d transaction groups, want 2 rows in 1", rows, groups)
+	if groups, rows := txnGroups(t, ds, parkedHead); groups != 1 || rows != 3 {
+		t.Fatalf("the retry wrote %d rows in %d transaction groups, want 3 rows in 1", rows, groups)
 	}
 
 	// A dispatched delivery: the effect, the delivery entry and the run

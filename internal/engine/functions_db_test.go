@@ -667,8 +667,16 @@ def main(input, host):
 		t.Fatalf("cursor after rollback: %+v", st)
 	}
 	// And nothing the rolled-back transaction touched reached the changelog.
-	if rows := actorChanges(t, ds, fnPackage+"/pair"); len(rows) != 0 {
-		t.Fatalf("rolled-back writes logged: %+v", rows)
+	// The park's alert carries the function's actor too (decision 0148), and
+	// it is the park transaction's own write, not the rolled-back one's.
+	var leaked []substrate.Change
+	for _, row := range actorChanges(t, ds, fnPackage+"/pair") {
+		if row.Kind != "substrate.reamde.dev/core/alert" {
+			leaked = append(leaked, row)
+		}
+	}
+	if len(leaked) != 0 {
+		t.Fatalf("rolled-back writes logged: %+v", leaked)
 	}
 }
 

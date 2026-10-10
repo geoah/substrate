@@ -38,6 +38,7 @@ import { DocPage } from "@/components/identity/page-layout"
 import { OriginMark } from "@/components/identity/origin-mark"
 import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
+import { AlertsPanel } from "@/components/alerts/alerts-panel"
 import { RunIO } from "@/components/tools/run-io"
 import { ToolTile } from "@/components/tools/tool-marks"
 import { TryIt } from "@/components/tools/try-it"
@@ -85,6 +86,7 @@ import {
   type StartKind,
   type Tool,
   type ToolRun,
+  FUNCTION_KIND,
 } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { toolRoute } from "@/router"
@@ -313,6 +315,8 @@ function ToolDoc({
           account is connected.
         </Callout>
       ) : null}
+
+      <AlertsPanel refs={[`${FUNCTION_KIND}/${tool.ref}`]} />
 
       <Section
         title="What it’s allowed to do"

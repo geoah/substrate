@@ -1159,6 +1159,29 @@ applied-effects summary. The callable lands twice from the one value —
 newest twenty non-parked runs per trigger stay and older ones tombstone. A
 manual run, a parked retry and a host call mint nothing.
 
+**A trigger whose deliveries park has one open alert.** The transaction that
+parks a delivery, including the open-time park of an agent run a stop
+interrupted, also writes a `substrate.reamde.dev/core/alert` record whose
+key and id are `trigger.parked/<trigger id>`, at level `error`: `summary`
+names the trigger and its callable, `detail` holds the park's error, `count`
+the trigger's parked deliveries as its status counts them (an accepted webhook
+request and an agent run this server is running are not counted), and `about`
+references the trigger, the callable and, for a record trigger, the parked
+change's record, each once. A trigger has one alert
+however many deliveries park: a park within five minutes of the alert's last
+write changes nothing, and a later one rewrites `lastSeenAt`, `count` and
+`detail`. A retry that delivers, a forget and a settled schedule fire's
+retirement recount it, and set `state` to `resolved` once nothing of the
+trigger stands parked; the next park reopens it. The owner may put `resolved`
+by hand. Deleting the trigger leaves its alert as it stood. The alert is
+written under the callable's actor, so a record trigger over `core/alert`
+never receives the alert about its own callable: such a trigger, on a function
+that calls a webhook or sends an email, is how to be notified, and one whose
+code always fails parks once instead of feeding itself
+([decision 0148](decisions/0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md)). `substratectl alerts` lists the open
+alerts, and the console shows them on the provider's, agent's and tool's
+pages.
+
 **A direct call of a networked function writes a run row.** A call through
 the call API of a function that declares `permissions.network`, or whose
 `permissions.call` grant reaches one that does at any depth, writes one

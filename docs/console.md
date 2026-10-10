@@ -168,7 +168,19 @@ with their record counts and where each comes from ("Yours", "From Google",
 holding something leading, then what providers bring in), and **Recent
 changes**, the newest six of [History](#history)'s sentences from one read.
 Against a server that cannot count a collection, a card reads at most 100 of
-its records once and says **many** past that. Nothing on Home asks you to act.
+its records once and says **many** past that.
+
+While an [alert](functions.md#driving-triggers) is open, **Needs attention**
+sits under the cards: how many alerts are open, and up to five of them, each
+with its level and summary, linking to the agent's or tool's page it is about.
+That page, and the provider's page for the provider's tools and agents, lists
+the open alerts about it with the last error, when each was first and last
+seen, its count, and a link to the alert's record, where it can be resolved by
+hand. Apart from the open alerts, which link to the pages that explain them,
+nothing on Home asks you to act; with no alert open, nothing on Home does
+([decision 0148](decisions/0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md) amends
+[0130](decisions/0130-the-console-serves-four-things-and-its-navigation-follows-them.md)
+for this).
 
 ## All data
 
