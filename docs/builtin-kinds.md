@@ -117,6 +117,7 @@ console-editable and changelog-visible like anything else
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `trigger` | One binding of a source (a record subscription, a schedule, or a public webhook endpoint) to one callable, owning the delivery cursor. |
 | `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Parked runs stay until retried away; the rest are pruned to the newest few per trigger. A direct call of a networked function writes one too, with mode `call` and no trigger, never pruned. |
+| `alert` | One ongoing problem the substrate found, such as a trigger whose deliveries keep parking: a `key` its id derives from, a `level`, a `summary`, the last error as `detail`, the records it is `about`, when it was first and last seen, a `count` and a `state` of `open` or `resolved`. The engine opens, updates and resolves it ([decision 0148](decisions/0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md)). |
 
 The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,

@@ -305,6 +305,7 @@ func writeValidation(w http.ResponseWriter, problems []string) {
 // records and their delivery verbs hang off `trigger`.
 const (
 	taskKind       = "samples.substrate.reamde.dev/tasks/task"
+	alertKind      = "substrate.reamde.dev/core/alert"
 	typesPath      = pathRecords + "?kinds=" + kindKind
 	tasksPath      = "/api/v1/" + taskKind
 	triggerColPath = "/api/v1/substrate.reamde.dev/core/trigger"
@@ -821,12 +822,13 @@ func recordsFilter(w http.ResponseWriter, r *http.Request) (substrate.Filter, bo
 }
 
 // knownKind answers the server's 404 for a kind the fake never declared. The
-// fake serves records for two kinds only, the registry and the tasks, and a
-// read of any other declared kind is refused the same way so a test asserting
-// WHICH kind was addressed reads the recorded line and nothing else.
+// fake serves records for three kinds only, the registry, the tasks and the
+// alerts, and a read of any other declared kind is refused the same way so a
+// test asserting WHICH kind was addressed reads the recorded line and nothing
+// else.
 func knownKind(w http.ResponseWriter, kinds []string) bool {
 	for _, k := range kinds {
-		if k != kindKind && k != taskKind {
+		if k != kindKind && k != taskKind && k != alertKind {
 			writeError(w, http.StatusNotFound, "not_found", "unknown kind "+k, nil)
 			return false
 		}
@@ -875,16 +877,25 @@ func (f *fakeSubstrate) handleRecords(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleList serves the tasks: the page shape whole (records, head,
-// generation), the `referencing` arm as a predicate over the stored reference
-// values, and `expand` as the referents the named properties point at, keyed
-// by record path.
+// handleList serves the tasks, or the alerts when the filter names that kind
+// alone: the page shape whole (records, head, generation), the `referencing`
+// arm as a predicate over the stored reference values, and `expand` as the
+// referents the named properties point at, keyed by record path. An alert
+// read also honors the filter's `eq` property predicates, the arm `alerts`
+// narrows to the open ones with.
 func (f *fakeSubstrate) handleList(w http.ResponseWriter, r *http.Request, flt substrate.Filter) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	kind := taskKind
+	if len(flt.Kinds) == 1 && flt.Kinds[0] == alertKind {
+		kind = alertKind
+	}
 	out := make([]*substrate.Record, 0, len(f.records))
 	for _, e := range f.records {
-		if e.Kind != taskKind {
+		if e.Kind != kind {
+			continue
+		}
+		if kind == alertKind && !matchesEq(e, flt.Properties) {
 			continue
 		}
 		if flt.Referencing != nil && !pointsAt(e, flt.Referencing) {
@@ -938,6 +949,15 @@ func (f *fakeSubstrate) handleList(w http.ResponseWriter, r *http.Request, flt s
 		page["included"] = included
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func matchesEq(e *substrate.Record, props map[string]substrate.Cond) bool {
+	for name, cond := range props {
+		if cond.Eq != nil && e.Properties[name] != cond.Eq {
+			return false
+		}
+	}
+	return true
 }
 
 // refValue reads a stored reference value, `{ref: "<kind>/<id>"}`.

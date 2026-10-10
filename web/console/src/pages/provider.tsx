@@ -45,6 +45,7 @@ import {
 } from "@/components/providers/provider-contents"
 import { Pill } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
+import { AlertsPanel } from "@/components/alerts/alerts-panel"
 import {
   ProviderLogo,
   StandingPill,
@@ -88,6 +89,7 @@ import { groupSettings, type SettingField } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 import { providerRoute } from "@/router"
 import { packageDisplayName } from "@/lib/kind-names"
+import { callablePaths } from "@/lib/alerts"
 
 export function ProviderPage() {
   const { authority, pkg } = providerRoute.useParams()
@@ -269,6 +271,14 @@ function ProviderDoc({
 
       {notice}
       <ProviderProblems entry={entry} chain={chain} className="mt-6" />
+      {installed && (
+        <AlertsPanel
+          refs={callablePaths(
+            row.catalog?.closure.functions ?? [],
+            row.catalog?.closure.agents ?? []
+          )}
+        />
+      )}
 
       <SectionHead
         id="setup"

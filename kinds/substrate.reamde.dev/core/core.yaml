@@ -53,7 +53,9 @@ data:
   # over several targets in one call.
   # version 37: the descriptions say "the function's code" and "the
   # substrate" where they said an undefined "body" and "host" (#49).
-  version: 37
+  # version 38: the `alert` kind, one record per ongoing problem the engine
+  # raises and resolves (decision record 0148).
+  version: 38
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

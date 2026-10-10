@@ -306,4 +306,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0145](0145-a-release-is-a-pull-request-that-dates-the-changelog.md) | A release is a pull request that dates the changelog, and a merge to main releases nothing | accepted |
 | [0146](0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md) | A finished segment is read at its first and last lines before serving, and a snapshot links what its base holds | proposed |
 | [0147](0147-a-pass-runs-its-schedule-triggers-in-a-lane-beside-its-record-triggers.md) | A pass runs its schedule triggers in a lane beside its record triggers | proposed |
+| [0148](0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md) | An ongoing problem is one alert record, written under the callable it is about | proposed |
 | [0150](0150-a-schedule-lane-fires-its-due-triggers-in-parallel-one-fire-per-trigger.md) | A schedule lane fires its due triggers in parallel, one fire per trigger | proposed |

@@ -239,6 +239,14 @@ and the message or, on an erroring account, the error. To ask for a run,
 patch `syncRequestedAt` on the account; to stop one, patch `syncPaused`.
 `-o json` or `-o yaml` prints the accounts as one array.
 
+`substratectl alerts` lists the open [alerts](functions.md#driving-triggers),
+newest first: one line per ongoing problem with its key (such as
+`trigger.parked/<trigger id>`), level, state, count, when it was first and
+last seen, and its summary. `--all` adds the resolved ones, and `-o json` or
+`-o yaml` prints them as one array of `apply`-able documents. An alert is an
+ordinary record, so resolving one by hand is `get`, setting `state` to
+`resolved`, and `apply`.
+
 `substratectl function call <name> --input <json>` invokes one
 [function](functions.md) directly, applies its effects under the function's
 actor, and prints the output. There is no build step: a function is inline

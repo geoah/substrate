@@ -373,7 +373,11 @@ func (ds *dataset) settleInterruptedClaims(ctx context.Context) error {
 					return err
 				}
 			}
-			return t.settleDelivery(trigger)
+			if err := t.settleDelivery(trigger); err != nil {
+				return err
+			}
+			// The newest claim names the record, as a dispatched park does.
+			return t.raiseInterruptedAlert(trigger, int64(failures[len(failures)-1].Seq))
 		})
 		if err != nil {
 			return fmt.Errorf("settle interrupted agent deliveries of trigger %s: %w", trigger, err)

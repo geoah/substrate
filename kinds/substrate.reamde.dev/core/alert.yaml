@@ -1,0 +1,83 @@
+# One ongoing problem the engine found, opened, updated and resolved by the
+# engine (decision record 0148). One row per problem, never one per failure:
+# the record id is derived from `key`, so a repeat updates the row in place
+# and a recurrence after a resolve reopens it. `triggerrun` already holds one
+# row per delivery. The first source is a trigger's parked deliveries, under
+# the key `trigger.parked/<trigger id>`.
+#
+# The engine writes an alert about a callable under that callable's actor,
+# never its own, so a record trigger over this kind never receives an alert
+# about its own callable: a notifier that fails cannot feed itself. A record
+# trigger over this kind is the notification hook; a webhook or an email is a
+# function the owner installs.
+#
+# `state` is a plain enum and not a `state` machine, as `syncState` is a
+# string (decision record 0085): a put cannot perform a transition, and a
+# problem that comes back must reopen a resolved row. The owner may put
+# `resolved` by hand; the next occurrence reopens it.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/alert
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One ongoing problem the substrate found, such as a trigger whose deliveries
+    keep parking. The substrate opens it when the problem appears, updates
+    it while the problem continues and resolves it when the problem clears.
+  purpose: internal
+  names:
+    singular: alert
+  displayTemplate: "{summary}"
+  indices:
+    - properties:
+        - state
+  properties:
+    key:
+      type: string
+      required: true
+      description: which problem this is, such as trigger.parked/<trigger
+        id>; the record id is derived from it, so one problem is one record
+    level:
+      type: enum
+      required: true
+      values:
+        - info
+        - warning
+        - error
+      description: how bad the problem is
+    summary:
+      type: string
+      required: true
+      description: one line naming the problem and what it is about
+    detail:
+      type: text
+      description: the most recent error or explanation, in full
+    about:
+      type: reference
+      kind: any
+      repeated: true
+      description: the records the problem is about, such as the trigger and
+        the function or agent it runs
+    firstSeenAt:
+      type: datetime
+      required: true
+      description: when the problem was first seen, or seen again after it
+        was resolved
+    lastSeenAt:
+      type: datetime
+      required: true
+      description: when the problem was last seen
+    count:
+      type: int
+      min: 0
+      description: how many instances of the problem stand, such as the trigger's
+        parked deliveries when the alert was last written
+    state:
+      type: enum
+      required: true
+      values:
+        - open
+        - resolved
+      description: open while the problem stands, resolved once it clears
+        or the owner resolves it by hand

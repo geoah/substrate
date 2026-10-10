@@ -41,6 +41,7 @@ const WORDS = new Set([
   "actor",
   "address",
   "agent",
+  "alert",
   "api",
   "app",
   "attachment",

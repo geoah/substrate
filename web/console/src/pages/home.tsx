@@ -1,8 +1,10 @@
 /** Home (`/`): what the substrate holds and what just happened. The four
- * things the console is for (data, providers, agents, tools) as cards, the
- * main collections with their sizes, the latest chats with your agents, and
- * the latest changes to your data in History's sentences. No inbox: nothing
- * here asks the reader to act. */
+ * things the console is for (data, providers, agents, tools) as cards, a
+ * count of the open alerts linking to the pages they live on (decision
+ * 0148; shown only while one is open), the main collections with their
+ * sizes, the latest chats with your agents, and the latest changes to your
+ * data in History's sentences. No inbox (decision 0130): an alert is read
+ * and handled on its agent's, tool's or provider's page, not here. */
 
 import { useMemo, type ReactNode } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
@@ -14,6 +16,7 @@ import {
 } from "@/components/changelog/history-feed"
 import { CollectionCard } from "@/components/home/collection-card"
 import { OverviewCards } from "@/components/home/overview-cards"
+import { NeedsAttention } from "@/components/home/needs-attention"
 import { RecentChats } from "@/components/home/recent-chats"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
@@ -101,6 +104,8 @@ export function HomePage() {
       <div className="mt-[22px]">
         <OverviewCards groups={groups} />
       </div>
+
+      <NeedsAttention />
 
       <Section
         title="Collections"

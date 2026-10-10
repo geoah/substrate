@@ -924,10 +924,14 @@ func (s *settlement) settle(t *txn, res deliverResult) error {
 			return err
 		}
 	}
-	if err := s.retireSupersededFires(t); err != nil {
+	retired, err := s.retireSupersededFires(t)
+	if err != nil {
 		return err
 	}
 	if err := t.settleDelivery(s.trigger); err != nil {
+		return err
+	}
+	if err := s.settleAlert(t, retired); err != nil {
 		return err
 	}
 	if s.record != nil {
@@ -960,7 +964,22 @@ func (s *settlement) retireClaim(t *txn) error {
 			return err
 		}
 	}
-	return t.settleDelivery(s.trigger)
+	if err := t.settleDelivery(s.trigger); err != nil {
+		return err
+	}
+	return s.settleAlert(t, 0)
+}
+
+// settleAlert settles the trigger's parked-deliveries alert once this
+// settlement retired a parked delivery: the failure a retry re-ran, or older
+// parked fires a settled occurrence retired. A claim in flight and an
+// admitted webhook request are not counted as parked (parkedCount), so
+// retiring one of them alone moves nothing. It runs after the delivery entry.
+func (s *settlement) settleAlert(t *txn, retired int) error {
+	if (s.retire != 0 && s.pending == nil) || retired > 0 {
+		return t.settleParkedAlert(s.trigger)
+	}
+	return nil
 }
 
 // claim is the agent path's first transaction, before the loop: the
@@ -1079,9 +1098,9 @@ func (s *settlement) release() {
 // runningClaims and keeps its retry. The rows this settlement retires are
 // held the same way until it ends, so a retry of one answers conflict
 // instead of running a fire whose row is being deleted.
-func (s *settlement) retireSupersededFires(t *txn) error {
+func (s *settlement) retireSupersededFires(t *txn) (int, error) {
 	if s.supersedes.IsZero() {
-		return nil
+		return 0, nil
 	}
 	// Held elsewhere: every id in runningClaims but the ones this settlement
 	// took on an attempt that rolled back.
@@ -1094,7 +1113,7 @@ func (s *settlement) retireSupersededFires(t *txn) error {
 	})
 	heldJSON, err := json.Marshal(held)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	// A fire id is fireID's fixed-width UTC form, so under the C collation
 	// its string order is its time order and the bound sits in the query.
@@ -1108,31 +1127,33 @@ func (s *settlement) retireSupersededFires(t *txn) error {
 		s.trigger, pendingWebhookError, inFlightError, legacyInFlightError, interruptedAgentError,
 		fireID(s.supersedes), string(heldJSON), supersedeBatch)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var ids []int64
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			_ = rows.Close()
-			return err
+			return 0, err
 		}
 		ids = append(ids, id)
 	}
 	_ = rows.Close()
 	if err := rows.Err(); err != nil {
-		return err
+		return 0, err
 	}
+	retired := 0
 	for _, id := range ids {
 		// A hand that took the row since the snapshot keeps it.
 		if !s.holdSuperseded(id) {
 			continue
 		}
 		if err := t.unparkTx(s.trigger, id); err != nil {
-			return err
+			return 0, err
 		}
+		retired++
 	}
-	return nil
+	return retired, nil
 }
 
 // holdSuperseded takes the in-process claim on a parked fire this settlement
@@ -1167,10 +1188,14 @@ func (s *settlement) complete(t *txn, claim int64, res deliverResult) error {
 	if err := t.unparkTx(s.trigger, claim); err != nil {
 		return err
 	}
-	if err := s.retireSupersededFires(t); err != nil {
+	retired, err := s.retireSupersededFires(t)
+	if err != nil {
 		return err
 	}
 	if err := t.settleDelivery(s.trigger); err != nil {
+		return err
+	}
+	if err := s.settleAlert(t, retired); err != nil {
 		return err
 	}
 	if s.record != nil {
@@ -1411,6 +1436,9 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusParked,
 			attempt: attempts, startedAt: started, errMsg: cause.Error(),
 		}); err != nil {
+			return err
+		}
+		if err := t.raiseParkedAlert(tr, vocabulary.RecordPath(ch.Kind, ch.RecordID), cause); err != nil {
 			return err
 		}
 		// The park and the record's `erroring` commit together, so a reader
@@ -1916,11 +1944,14 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 				return err
 			}
 		}
-		return t.putRun(runRecord{
+		if err := t.putRun(runRecord{
 			trigger: tr.ID, callable: tr.callablePath(), mode: mode,
 			fireID: fid, status: runStatusParked, attempt: attempts,
 			startedAt: started, errMsg: lastErr.Error(),
-		})
+		}); err != nil {
+			return err
+		}
+		return t.raiseParkedAlert(tr, "", lastErr)
 	})
 	if err != nil {
 		if errors.Is(err, errCursorMoved) {
@@ -3251,6 +3282,9 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	defer settle.release()
 	var n int
 	var derr error
+	// record is the retried change's record path, for the alert a failed
+	// retry raises; empty for a fire.
+	var record string
 	if f.FireID != "" {
 		var envelope map[string]any
 		if len(payload) > 0 {
@@ -3264,6 +3298,7 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 		if err != nil {
 			return 0, err
 		}
+		record = vocabulary.RecordPath(ch.Kind, ch.RecordID)
 		depth, err := ds.causalDepth(ctx, ch.Seq)
 		if err != nil {
 			return 0, err
@@ -3311,6 +3346,11 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 				return err
 			}
 			if err := t.settleDelivery(tr.ID); err != nil {
+				return err
+			}
+			// A delivery that fails again is the problem recurring: an alert
+			// the owner resolved by hand reopens.
+			if err := t.raiseParkedAlert(tr, record, derr); err != nil {
 				return err
 			}
 			return t.syncPark(settle.sync, derr)
@@ -3365,7 +3405,10 @@ func (ds *dataset) ForgetTriggerFailure(ctx context.Context, id string, failureI
 		if err := t.unparkTx(id, failureID); err != nil {
 			return err
 		}
-		return t.settleDelivery(id)
+		if err := t.settleDelivery(id); err != nil {
+			return err
+		}
+		return t.settleParkedAlert(id)
 	})
 	if err != nil {
 		return err

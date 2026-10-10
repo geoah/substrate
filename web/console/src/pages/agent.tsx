@@ -28,6 +28,7 @@ import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { Pill, type PillTone } from "@/components/identity/pill"
 import { SectionHead } from "@/components/identity/section-head"
+import { AlertsPanel } from "@/components/alerts/alerts-panel"
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -239,6 +240,8 @@ export function AgentPage() {
           <AddKeyButton providerId={provider} />
         </div>
       )}
+
+      <AlertsPanel refs={[`${AGENT_KIND}/${id}`]} />
 
       <SectionHead
         title="What it runs on"
