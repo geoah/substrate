@@ -3,9 +3,9 @@
 // holds, what each reducer answers over a window, how a counter is differenced
 // under its contract, what one 15-minute rollup row holds, how two rows merge,
 // and when a row may answer for raw points. The engine computes
-// `observed_rollups` with Bucket, and the aggregate read is held to the
-// window reducers here: a rollup answer and a raw answer over the same points
-// must agree.
+// `observed_rollups` with BucketBuilder, which is Bucket a point at a time,
+// and the aggregate read is held to the window reducers here: a rollup answer
+// and a raw answer over the same points must agree.
 //
 // It reads points and nothing else: no database, no clock, no registry. A
 // point's number is a float64 in the point's own unit; where float64 would

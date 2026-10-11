@@ -15,9 +15,12 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
@@ -1200,4 +1203,80 @@ func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
 		t.Error("the unbound kind's stream kept its latest row after the pass")
 	}
 	r.rebuildMatches(t)
+}
+
+// pointReads is a pgx tracer that keeps the most rows any one statement
+// reading observed_points answered: what a recompute held in memory at once.
+type pointReads struct {
+	mu  sync.Mutex
+	max int64
+	sql string
+}
+
+type pointReadKey struct{}
+
+func (p *pointReads) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	return context.WithValue(ctx, pointReadKey{}, d.SQL)
+}
+
+func (p *pointReads) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryEndData) {
+	q, _ := ctx.Value(pointReadKey{}).(string)
+	if !strings.Contains(q, "FROM observed_points") || !d.CommandTag.Select() {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n := d.CommandTag.RowsAffected(); n > p.max {
+		p.max, p.sql = n, q
+	}
+}
+
+func (p *pointReads) most() (int64, string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.max, p.sql
+}
+
+// A rollup recompute reads a bucket's points in bounded pages, in (ts,
+// record_id, ord) order with a running state, never the bucket whole. Five
+// overlapping gauge traces and five overlapping counter traces put 200
+// points each in one 15-minute bucket of their streams; with a page of 50,
+// no read of points the engine sends answers more than 50 rows through the
+// writes, a patch and a rebuild, and the rows are the specification's and
+// the rebuild's. Before, a write read the whole bucket and a rebuild doubled
+// its page until the bucket fit.
+func TestObservedRollupRecomputeReadsBoundedPages(t *testing.T) {
+	t.Parallel()
+	const page = 50
+	reads := &pointReads{}
+	r := openObservedIndex(t, engine.WithTestObservedPageSize(page), engine.WithTestQueryTracer(reads))
+	for i := range 5 {
+		gauge := make([]any, 40)
+		counter := make([]any, 40)
+		for j := range gauge {
+			gauge[j] = fmt.Sprintf("%d.%d", 20+(i*7+j*3)%9, j%10)
+			counter[j] = fmt.Sprintf("%d.%03d", 1000*i+j*5, j)
+		}
+		gauge[17] = nil
+		at := fmt.Sprintf("2026-10-07T06:00:%02dZ", i)
+		r.mustPut(t, r.trace, fmt.Sprintf("attic/%d", i), map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
+			"hold": "PT1M", "at": at, "endsAt": "2026-10-07T06:15:00Z", "every": "PT18S", "values": gauge,
+		})
+		r.mustPut(t, r.trace, fmt.Sprintf("meter/%d", i), map[string]any{
+			"metric": r.metricRef("energy"), "source": r.sourceRef("meter"), "form": "counter", "unit": "kW.h",
+			"resetRule": "monotonic", "at": at, "endsAt": "2026-10-07T06:15:00Z", "every": "PT18S", "values": counter,
+		})
+	}
+	if _, err := r.patch(t, r.trace, "attic/2", map[string]any{"quality": "valid"}); err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_points WHERE ts >= '2026-10-07T06:00:00Z' AND ts < '2026-10-07T06:15:00Z'`); n != 400 {
+		t.Fatalf("the bucket holds %d points, want 400", n)
+	}
+	checkRollupsMatchSpec(t, r.db)
+	r.rebuildMatches(t)
+	if most, q := reads.most(); most > page {
+		t.Fatalf("one read of observed points answered %d rows, above the page of %d:\n%s", most, page, q)
+	}
 }

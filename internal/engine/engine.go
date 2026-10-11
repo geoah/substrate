@@ -138,6 +138,10 @@ type options struct {
 	// (export_test.go WithTestReprojectionHook): a hook run before each
 	// page with the kind it is about to re-derive. Tests only.
 	reprojectionHook func(ctx context.Context, kind string) error
+	// observedPage is the observed index's test seam (export_test.go
+	// WithTestObservedPageSize): a page of points below observedPageSize,
+	// so a few points span several pages. Tests only.
+	observedPage int
 	// inadmissible is the loader's test seam (export_test.go
 	// WithTestInadmissible): the stored packages it refuses as a binary
 	// whose contract tightened would, so a test parks a package without
@@ -490,6 +494,9 @@ type service struct {
 	// testReprojectionHook is the options' reprojection hook
 	// (reprojection.go reprojectKind). Tests only.
 	testReprojectionHook func(ctx context.Context, kind string) error
+	// testObservedPage is the options' page size for reading observed
+	// points (observedsettle.go); zero is observedPageSize. Tests only.
+	testObservedPage int
 	// testInadmissible is the options' loader seam (vocabularywrite.go
 	// admitStored). Tests only.
 	testInadmissible map[string]bool
@@ -686,6 +693,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		searchReindexBatch:    o.searchReindexBatch,
 		testSearchReindexHook: o.searchReindexHook,
 		testReprojectionHook:  o.reprojectionHook,
+		testObservedPage:      o.observedPage,
 		testInadmissible:      o.inadmissible,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {

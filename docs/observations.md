@@ -391,7 +391,10 @@ derives them again; a purge leaves nothing. At the end of the transaction the
 rollup rows of every bucket the old and the new points touched are computed
 again from `observed_points`, once, and so is the latest row of every stream
 they touched. A rebuild and a boot import compute every rollup and latest row
-after the replay.
+after the replay. Either reads a bucket's points in pages of at most 20,000,
+in `(ts, record_id, ord)` order, into a running state
+(`internal/observed.BucketBuilder`), so a dense bucket is never held in
+memory whole; a write still reads every point of each bucket it touches.
 
 A single record derives a point only when it holds a `value` or a `code`;
 one that says why it has none (`absentReason`) or keeps the reading as

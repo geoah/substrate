@@ -74,6 +74,47 @@ of writes and the power put to 500 ms. The recompute now reads each bucket
 through a fenced `LATERAL` subquery, one range of the stream index, and the
 numbers above are after that fix.
 
+## A dense bucket
+
+The hourly streams above put at most 900 points in one 15-minute bucket.
+Review round 1 (finding 13) asked what one dense bucket costs, because each
+write recomputes its buckets from every point in them:
+
+```bash
+SUBSTRATE_BENCH_OBSERVED=1 go test -count=1 -v -run '^TestObservedDenseBucketBenchmark$' ./internal/engine/
+```
+
+`TestObservedDenseBucketBenchmark` writes 40 power traces of 1000 points
+each, all in the same 15-minute bucket of one stream (40,000 points), then
+patches one trace's `quality` and rebuilds the repository. The peak heap is
+the process's live heap above where it stood after a collection, sampled
+every millisecond: a floor of the true peak, background work included. Same
+box and container settings as above, load average about 5 from other work,
+one run of each on 2026-10-11. "Before" is commit 3135d2ed, which read a
+touched bucket's points into memory whole and doubled a rebuild's page until
+a bucket fit; "after" is the change that streams each bucket in pages of
+20,000 points through `observed.BucketBuilder`.
+
+| Dense bucket: 40 traces of 1000 points | Before | After |
+| --- | ---: | ---: |
+| mean put, first 5 | 119.65ms | 121.98ms |
+| mean put, last 5 | 1.048s | 797.53ms |
+| most rows one read of points answered | 40000 | 20000 |
+| patch one trace: wall time | 1.215s | 939ms |
+| patch one trace: peak heap growth | 46963 KiB | 5834 KiB |
+| rebuild: wall time | 4.480s | 3.322s |
+| rebuild: peak heap growth | 67288 KiB | 34489 KiB |
+
+What a recompute holds is now one page and each group's running state,
+whatever the bucket holds. Its work is not bounded by the write: a put still
+reads every point of each bucket it touches once, so the last put into this
+bucket costs about seven times the first, and writing N traces into one
+bucket reads on the order of N squared over 2 traces' worth of points in
+all. The per-repository observed lock is held for that read. Cutting the
+work itself needs a recompute that merges the written record's points into
+the stored rows, which the hold and counter carry across a bucket make more
+than a sum; it is not done.
+
 ## Should the layout be frozen
 
 Freeze the rollup layout, not the points layout. Rollups are cheap and they
