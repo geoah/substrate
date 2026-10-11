@@ -1014,11 +1014,15 @@ cannot send, so the bundle declares no `revocationEndpoint` and deleting the
 account here does not deregister it at Garmin: disconnect the app in Garmin
 Connect as well. No activity files (FIT), no solar intensity, blood glucose,
 menstrual cycle or pregnancy summaries, and no writeback. The webhook door
-refuses an inline body over 1 MiB (`413`), so an activity details push longer
-than about 50 minutes at one sample a second does not arrive by push until that
-cap is raised; ping mode avoids it, because a ping carries only the callback
-URL. `garminpush` writes any body the door admits over several invocations of
-one chain, and skips (and names in its output) a single summary over 6 MiB.
+refuses an inline body over 8 MiB (`413`), and `garminpush` skips (and names
+in its output) a single summary over 6 MiB, because no function frame holds
+one. At one sample a second, 1 MiB of activity details is about 50 minutes, so
+an activity of up to about five hours (a marathon, for example) arrives whole
+by push. A longer one does not: `garminpush` skips it up to 8 MiB (about six
+and a half hours) and the door refuses it past that. Ping mode avoids the
+door's cap when one push carries several large activities, because a ping
+carries only the callback URL; it does not avoid the 6 MiB skip. `garminpush`
+writes any body the door admits over several invocations of one chain.
 
 ## Google Fit
 

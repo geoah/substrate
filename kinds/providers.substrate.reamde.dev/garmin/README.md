@@ -84,15 +84,19 @@ is not.
 
 ## Payload size
 
-The webhook door refuses an inline body over 1 MiB with `413`
-(`internal/api/webhooks.go`). One 36-minute run's activity details at one
-sample a second is about 738 KB, so an activity details push longer than
-about 50 minutes is refused at the door until that cap is raised (a raise to
-8 MiB is planned in another change). Setting the activity details type to
-ping mode in Garmin's tool avoids the cap: a ping carries only a callback URL,
-and `garminpush` fetches the summaries itself. `garminpush` writes any body
-the door admits, over several invocations of one chain, and skips and names
-in its output a single summary over 6 MiB.
+The webhook door refuses an inline body over 8 MiB with `413`
+(`internal/api/webhooks.go`), and `garminpush` skips, and names in its
+output, a single summary over 6 MiB, because no function frame holds one.
+One 36-minute run's activity details at one sample a second is about 738 KB,
+so 1 MiB is about 50 minutes, 6 MiB about five hours and 8 MiB about six and
+a half. An activity of up to about five hours at one sample a second (a
+marathon, for example) arrives whole by push. A longer one does not: the
+door admits it and `garminpush` skips it up to 8 MiB, and the door refuses it
+past that. Ping mode, set per summary type in Garmin's tool, avoids the
+door's cap when one push carries several large activities: a ping carries
+only a callback URL, and `garminpush` fetches the summaries itself. It does
+not avoid the 6 MiB skip. `garminpush` writes any body the door admits over
+several invocations of one chain.
 
 What each toggle writes, the backfill windows, and what the account reports:
 [docs/bundles-catalog.md#garmin](../../../docs/bundles-catalog.md#garmin).
