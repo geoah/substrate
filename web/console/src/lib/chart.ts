@@ -26,37 +26,70 @@ export function linearScale(
   return scale
 }
 
-/** The step between round ticks: 1, 2 or 5 times a power of ten. */
-function tickStep(min: number, max: number, count: number): number {
+/** The step between round ticks, 1, 2 or 5 times a power of ten, as that
+ * factor and the power's exponent. */
+function tickStep(
+  min: number,
+  max: number,
+  count: number
+): { factor: number; exponent: number } {
   const raw = (max - min) / Math.max(1, count)
-  if (!(raw > 0) || !Number.isFinite(raw)) return 1
-  const power = 10 ** Math.floor(Math.log10(raw))
-  const error = raw / power
+  if (!(raw > 0) || !Number.isFinite(raw)) return { factor: 1, exponent: 0 }
+  const exponent = Math.floor(Math.log10(raw))
+  const error = raw / 10 ** exponent
   const factor = error >= 7.5 ? 10 : error >= 3.5 ? 5 : error >= 1.5 ? 2 : 1
-  return factor * power
+  return { factor, exponent }
 }
 
-/** Round tick values covering `[min, max]`, about `count` of them. */
+/** The most ticks one axis enumerates. A step the domain holds more of is
+ * no round step for it, and the domain's own ends stand in. */
+const MAX_TICKS = 64
+
+/** Round tick values covering `[min, max]`, about `count` of them.
+ *
+ * Each tick is an integer index times the step, and below a step of one the
+ * index divided by the step's whole inverse, so no tick is a running sum and
+ * none carries float noise (`0.30000000000000004`). Where the step is finer
+ * than the float spacing at the domain's magnitude (`1e20` and `1e20 +
+ * 16384`), or the index or its inverse leaves the finite numbers, two ticks
+ * would be equal; the answer is then the domain's own two ends. */
 export function niceTicks(min: number, max: number, count = 4): number[] {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return []
+  if (min > max) return niceTicks(max, min, count)
   if (min === max) {
     const pad = Math.abs(min) * 0.1 || 1
     return niceTicks(min - pad, max + pad, count)
   }
-  const step = tickStep(min, max, count)
-  const first = Math.floor(min / step) * step
-  const last = Math.ceil(max / step) * step
+  const ends = [min, max]
+  const { factor, exponent } = tickStep(min, max, count)
+  let lo: number
+  let hi: number
+  let at: (index: number) => number
+  if (exponent >= 0) {
+    const step = factor * 10 ** exponent
+    lo = Math.floor(min / step)
+    hi = Math.ceil(max / step)
+    at = (index) => index * step
+  } else {
+    const inverse = 10 ** -exponent / factor
+    lo = Math.floor(min * inverse)
+    hi = Math.ceil(max * inverse)
+    at = (index) => index / inverse
+  }
+  const n = hi - lo
+  if (!Number.isFinite(n) || n < 1 || n > MAX_TICKS) return ends
   const out: number[] = []
-  // Rounding to the step's own decimals keeps 0.30000000000000004 out.
-  const decimals = Math.max(0, -Math.floor(Math.log10(step)) + 1)
-  for (let v = first; v <= last + step / 2; v += step) {
-    out.push(Number(v.toFixed(decimals)))
+  for (let i = 0; i <= n; i++) {
+    const tick = at(lo + i)
+    if (!Number.isFinite(tick)) return ends
+    if (out.length && !(tick > out[out.length - 1])) return ends
+    out.push(tick)
   }
   return out
 }
 
 /** A value domain widened to round ticks. `zero` anchors it at zero, as a
- * bar's baseline must be. */
+ * bar's baseline must be. The domain is always two finite numbers. */
 export function niceDomain(
   values: readonly number[],
   { zero = false, count = 4 }: { zero?: boolean; count?: number } = {}
@@ -70,6 +103,10 @@ export function niceDomain(
     if (min === 0 && max === 0) max = 1
   }
   const ticks = niceTicks(min, max, count)
+  if (ticks.length < 2) {
+    // Padding a single value overflowed: the value itself is the axis.
+    return { domain: [min, max], ticks: [min] }
+  }
   return { domain: [ticks[0], ticks[ticks.length - 1]], ticks }
 }
 
@@ -85,12 +122,24 @@ export function compactNumber(n: number): string {
   return String(trim(n, abs >= 10 ? 0 : 2))
 }
 
+/** The most decimals a tick label prints before it switches to an
+ * exponent. */
+const MAX_LABEL_DECIMALS = 20
+
 /** One axis's tick labels, each as precise as the step between them, so
  * ticks 0.2 apart never print the same number twice (`72.2`, `72.4`); from
- * a thousand up they are compact. */
+ * a thousand up they are compact, and a step finer than twenty decimals
+ * prints exponents (`1.2e-101`). */
 export function tickLabels(ticks: readonly number[]): string[] {
   const step = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 1
   const decimals = step > 0 ? Math.max(0, -Math.floor(Math.log10(step))) : 0
+  if (decimals > MAX_LABEL_DECIMALS) {
+    const largest = Math.max(...ticks.map((t) => Math.abs(t)))
+    const digits =
+      Math.floor(Math.log10(largest)) - Math.floor(Math.log10(step))
+    const bounded = Math.min(MAX_LABEL_DECIMALS, Math.max(0, digits))
+    return ticks.map((t) => t.toExponential(bounded))
+  }
   return ticks.map((t) =>
     Math.abs(t) >= 1e3 ? compactNumber(t) : t.toFixed(decimals)
   )
