@@ -69,3 +69,41 @@ func TestHealthRequiresObservations(t *testing.T) {
 		t.Errorf("health's floor on %s is %d; the shipped base is version %d", base.ID, floor, base.Version)
 	}
 }
+
+// THE GARMIN ADAPTER INSTALLS AFTER WHAT IT READS AND WRITES. It requires the
+// garmin provider, whose mirror kinds its trigger watches, and the health
+// sample with its observations base, whose kinds it writes, each with a floor;
+// installed in `requires:` order on the seed alone, the whole chain admits.
+func TestHealthGarminRequiresHealthAndTheProvider(t *testing.T) {
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	adapter := shippedSample(t, "healthgarmin")
+	byPackage := map[string]*catalog.Bundle{}
+	for _, b := range cat.Bundles() {
+		byPackage[b.ID] = b
+	}
+	for _, req := range []string{samples.Authority + "/observations", samples.Authority + "/health", "providers.substrate.reamde.dev/garmin"} {
+		b, ok := byPackage[req]
+		if !ok {
+			t.Fatalf("no shipped bundle %s", req)
+		}
+		if !slices.Contains(adapter.Requires, req) {
+			t.Errorf("healthgarmin requires %v, not %s", adapter.Requires, req)
+		}
+		if floor, ok := adapter.RequiresAtLeast[req]; !ok || floor < 1 || floor > b.Version {
+			t.Errorf("healthgarmin's floor on %s is %d (set %v); the shipped one is version %d", req, floor, ok, b.Version)
+		}
+	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.ResolveFunction(samples.Authority + "/healthgarmin/garminhealth"); err != nil {
+		t.Errorf("the adapter function did not install: %v", err)
+	}
+}

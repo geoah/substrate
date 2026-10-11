@@ -1,8 +1,8 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty bundles, in the two tiers
+The catalog in the binary serves twenty-one bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: eight providers and twelve samples. This page covers thirteen of them;
+draws: eight providers and thirteen samples. This page covers fourteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
@@ -20,8 +20,8 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
-a worked example to read and copy, imported under the repository's own
+**Six samples**: LLM, notes, the reading list, Firecrawl, Pebble and Garmin
+health. Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -75,6 +75,7 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
+| Garmin health | Sample   | none           | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -1557,3 +1558,78 @@ curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webho
 ```
 
 Next: [substratectl](substratectl.md), the command line over all of it.
+
+## Garmin health (sample)
+
+Package `samples.substrate.reamde.dev/healthgarmin`. The adapter between the
+Garmin provider and the health sample: it turns each Garmin mirror row into
+the [observations](observations.md), traces, sleeps and workouts the health
+sample describes. It requires `samples.substrate.reamde.dev/observations`,
+`samples.substrate.reamde.dev/health` and the installed
+`providers.substrate.reamde.dev/garmin`, each with a `requiresAtLeast` floor,
+so import it after installing the provider and importing `health`.
+
+- **Kinds**: none of its own; it writes the base and health kinds.
+- **Functions (1)**: `garminhealth` rebuilds what one mirror row implies.
+- **Triggers (1)**: `healthgarmin-on-mirror` delivers every create, update and
+  delete of the fifteen Garmin mirror kinds that carry measurements (every
+  kind but `notice`), coalescing a burst on one row.
+
+| Garmin field | Metric | Form | Unit |
+| --- | --- | --- | --- |
+| `daily.timeOffsetHeartRateSamples` | `heart_rate` | gauge trace, hold PT4M | `/min` |
+| `daily.steps`, `distanceInMeters`, `floorsClimbed`, `activeKilocalories`, `bmrKilocalories`, `restingHeartRateInBeatsPerMinute` | `steps`, `distance`, `floors`, `active_energy`, `basal_energy`, `resting_heart_rate` | summary, `vendor`, day | `{steps}`, `m`, `{floors}`, `kcal`, `kcal`, `/min` |
+| `daily.averageStressLevel` | `garmin_stress` | summary, `avg`, day | `1` |
+| `epoch.steps`, `distanceInMeters`, `activeKilocalories`, summed per slice | `steps`, `distance`, `active_energy` | amount trace | `{steps}`, `m`, `kcal` |
+| `sleep` | a `health/sleep` (and one per nap) | | |
+| `sleep.sleepLevelsMap` segments | `sleep_stage`, coded `awake`, `light`, `deep`, `rem` | amount | `s` |
+| `bodycomp` weight, muscle, bone; fat, water; BMI | `body_mass`, `muscle_mass`, `bone_mass`; `body_fat_fraction`, `body_water_fraction`; `bmi` | gauge | `kg` (from grams); `%`; `kg/m2` |
+| `bloodpressure.systolic`, `diastolic`, `pulse` | `systolic_blood_pressure`, `diastolic_blood_pressure`, `heart_rate` | gauge | `mm[Hg]`, `/min` |
+| `stressdetail` stress and Body Battery values | `garmin_stress`, `garmin_body_battery` | gauge trace, hold PT6M | `1` |
+| `usermetric.vo2Max` | `vo2_max` | summary, `vendor`, day | `mL/(kg.min)` |
+| `pulseox.timeOffsetSpo2Values` | `spo2` | gauge trace, or one gauge for a spot check | `%` |
+| `respiration.timeOffsetEpochToBreaths` | `respiratory_rate` | gauge trace | `/min` |
+| `healthsnapshot` heart rate, respiration, stress, SpO2, RMSSD | `heart_rate`, `respiratory_rate`, `garmin_stress`, `spo2`, `hrv_rmssd` | gauge trace on channel `snapshot` | as above, `ms` |
+| `hrv.lastNightAvg`, `lastNight5MinHigh`; `hrvValues` | `hrv_rmssd` | summary `avg` and `max`, night; gauge trace | `ms` |
+| `skintemp.avgDeviationCelsius` | `skin_temperature_deviation` | summary, `avg`, night, `delta` | `K` |
+| `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout` | | |
+| `activitydetail.samples` heart rate, speed, cadence, power | `heart_rate`, `speed`, `cadence`, `running_power` | gauge trace | `/min`, `m/s`, `/min`, `W` |
+
+**Traces are an hour, from one origin.** A trace covers one metric from one
+source over one UTC hour, split where the UTC offset changes, and it never
+claims time outside the row it came from: the last hour of one daily and the
+first of the next, or two activities in one hour, are separate traces, each
+named for its own start. Epochs and respiration rows are a quarter hour each,
+so their traces are rebuilt per hour from every slice of that hour, and step
+amounts sum the slice's activity types. Ids are
+`garmin/<account id>/<source>/<metric>/<hour>` for a trace and
+`garmin/<account id>/<summaryId>/<role>` for a single record (a stage segment
+is `.../stage/<start second>`), hashed only where Garmin's data would leave
+the id alphabet.
+
+**Sources** are `garmin/<account id>/account`, the account's devices, for
+everything Garmin pushes without naming a device (dailies, sleeps, weigh-ins,
+pressure), and `garmin/<account id>/<deviceName>` for each device an activity
+names (`forerunner265`); a hand-entered activity is `.../manual`. Each points
+at the Garmin account and is written once, so the owner's edits to it stand.
+
+**Reconciled per origin.** Every row written names the mirror row it came
+from (`origin`, or `origins` on a trace). A delivery reads what that row
+produced before, writes the new set and deletes what the row no longer
+implies; a deleted mirror row takes its outputs with it. `revision` is the
+mirror row's own version, which the garmin provider moves only when a re-send
+changes the summary: an identical re-send writes nothing, and a fuller one
+rewrites the same ids at a higher revision. A trace built from several rows
+carries the highest of their versions, and never a lower one than it holds.
+An edit in Garmin Connect wins over the activity it edits.
+
+**What it skips, and counts.** Each delivery's output names the fields it
+left unwritten: those with no catalogue metric (minimum, maximum and average
+daily heart rate, intensity and stress durations, Body Battery charge and
+drain, goals, fitness age, cycling VO2 max, MET and motion intensity, Body
+Battery events, a snapshot's SDRR), positions and elevation samples (no
+`geopoint` yet), air temperature, Garmin's `unmeasurable` sleep level, and a
+sleep's own SpO2 and respiration maps, which the Pulse Ox and respiration
+summaries already carry. Move IQ events and lifecycle notices imply no
+observation. A user metric carries a date and no instant, so its VO2 max
+covers the UTC day of `calendarDate` with no `utcOffset`.
