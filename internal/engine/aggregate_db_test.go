@@ -444,9 +444,12 @@ func TestAggregateHeartRateZonesWeekly(t *testing.T) {
 		if row.Start.Weekday() != time.Monday || row.Start.Hour() != 0 {
 			t.Errorf("a week starts %s", row.Start)
 		}
-		resolved := observed.Prioritize([][]observed.Span{
+		resolved, err := observed.Prioritize(context.Background(), [][]observed.Span{
 			observed.Spans(strap, row.Start, row.End, 5*time.Minute), observed.Spans(watch, row.Start, row.End, 5*time.Minute),
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		all := append(append([]observed.Span(nil), resolved[0]...), resolved[1]...)
 		held := time.Duration(observed.HeldMs(all)) * time.Millisecond
 		var total float64

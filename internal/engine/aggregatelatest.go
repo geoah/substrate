@@ -393,7 +393,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		}
 		out = append(out, aggOut{bucket: c.bucket, group: c.group, row: row})
 	}
-	if res.Rows, err = p.fillAndRoll(out, buckets, nil, meta); err != nil {
+	if res.Rows, err = p.fillAndRoll(ctx, out, buckets, nil, meta); err != nil {
 		return nil, err
 	}
 	if meta.inexact {

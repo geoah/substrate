@@ -151,11 +151,14 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err := r.plan(groups); err != nil {
 		return nil, err
 	}
+	if tr := traceOf(ctx); tr != nil && tr.afterPlan != nil {
+		tr.afterPlan()
+	}
 	rows, err := r.run(groups)
 	if err != nil {
 		return nil, err
 	}
-	if res.Rows, err = p.fillAndRoll(rows, r.buckets, units, &r.meta); err != nil {
+	if res.Rows, err = p.fillAndRoll(ctx, rows, r.buckets, units, &r.meta); err != nil {
 		return nil, err
 	}
 	res.Exact = !r.meta.inexact

@@ -99,6 +99,26 @@ type aggregateTraceKey struct{}
 // rollup-served answer from a raw one.
 type aggTrace struct {
 	rollupRows, rawPoints int64
+	// mergedRows is the rollup rows a reduction merged.
+	mergedRows int64
+	// afterPlan runs once a metric read's plan has read every row and point
+	// it reduces, before the reduction: a test cancels the read there.
+	afterPlan func()
+}
+
+// everyThousand is a Go-side loop's context check: it answers ctx's error on
+// its first call and on every thousandth after. The statement timeout bounds
+// the SQL, not the work after it, so a long loop stops when its caller does.
+func everyThousand(ctx context.Context) func() error {
+	n := 0
+	return func() error {
+		i := n
+		n++
+		if i&(1<<10-1) != 0 {
+			return nil
+		}
+		return ctx.Err()
+	}
 }
 
 func traceOf(ctx context.Context) *aggTrace {

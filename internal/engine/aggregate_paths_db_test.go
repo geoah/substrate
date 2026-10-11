@@ -88,6 +88,47 @@ const (
 	coverageStatement = "sum(x.brk) OVER"
 )
 
+// A read canceled once its statements have run stops inside the Go-side
+// reduction, not after it: a gauge of 3,000 quarter hours, one rollup row
+// each, read over its whole range and canceled as soon as the plan has read
+// the rows, answers context.Canceled having merged fewer rows than the
+// thousand steps between two checks, where it once merged all 3,000 and
+// walked their held time before the first check.
+func TestAggregateStopsWhenCanceledAfterItsStatements(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	const n = 3000
+	offsets := make([]int64, n)
+	vals := make([]any, n)
+	for i := range n {
+		offsets[i] = int64(i) * (15 * time.Minute).Milliseconds()
+		vals[i] = strconv.Itoa(60 + i%40)
+	}
+	end := start.Add(n * 15 * time.Minute)
+	f.series("hr/long", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "gauge", "unit": "/min",
+	}, start, end, offsets, vals)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx, trace := engine.AggregateTraced(ctx)
+	trace.AfterPlan(cancel)
+	_, err := f.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+		Range:    rng(start, end),
+		Reducers: reducers("avg", "twa"),
+	}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if trace.RollupRows() < n {
+		t.Fatalf("the plan read %d rollup rows, want the %d the reduction would merge", trace.RollupRows(), n)
+	}
+	if merged := trace.MergedRows(); merged >= 1024 {
+		t.Errorf("the canceled read merged %d of %d rollup rows before it stopped", merged, n)
+	}
+}
+
 // The raw spans an amount's coverage is joined from, where two rollup rows'
 // extents overlap, count against maxSamples before the statement reads them:
 // two traces over [00:00, 00:35) and [00:15, 00:50), read for an aligned

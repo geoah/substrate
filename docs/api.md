@@ -1357,7 +1357,10 @@ evaluated, before a row is made.
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
-30 seconds where the caller set none or a later one.
+30 seconds where the caller set none or a later one. The reduction after the
+statements stops when the caller does: it checks the request's context every
+thousand points, spans, rows or quarter hours, before each row's reducers
+and before each fill and rolling step, and answers the cancellation.
 
 ### The refusals
 

@@ -46,6 +46,8 @@ type aggRun struct {
 	// samples is the raw points the read's statements have counted so far,
 	// against maxSamples (charge).
 	samples int64
+	// steps counts the reduction's steps between context checks (canceled).
+	steps int
 }
 
 // aggSeries is one stream's raw points: each span read, with the point
@@ -619,7 +621,7 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 	for gi, g := range groups {
 		seen := map[string]bool{}
 		for bi, b := range r.buckets {
-			if err := r.canceled(bi); err != nil {
+			if err := r.canceled(); err != nil {
 				return nil, err
 			}
 			codes := map[string]bool{}
@@ -638,7 +640,11 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 					seen[code] = true
 					codeGroups++
 				}
-				out = append(out, aggOut{bucket: bi, group: g, code: code, row: r.row(b, g, code, ev, from)})
+				row, err := r.row(b, g, code, ev, from)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, aggOut{bucket: bi, group: g, code: code, row: row})
 			}
 		}
 	}
@@ -695,11 +701,16 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 
 // --- raw ---
 
-// canceled answers the read's context error every few thousand steps of a
-// reduction: the statement timeout bounds the SQL, not the work after it, so
-// a long reduction stops when its caller does.
-func (r *aggRun) canceled(step int) error {
-	if step&(1<<12-1) != 0 {
+// canceled counts one step of the reduction and answers the read's context
+// error on the first step and every thousand after it, whichever loop takes
+// them: the statement timeout bounds the SQL, not the work after it, so a
+// long reduction stops when its caller does. A step is one point, span, row
+// or slot; work heavier than a step (a row's reducers, a priority
+// resolution) checks the context itself.
+func (r *aggRun) canceled() error {
+	n := r.steps
+	r.steps++
+	if n&(1<<10-1) != 0 {
 		return nil
 	}
 	return r.ctx.Err()
@@ -732,6 +743,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				for i := range slice {
 					obs[i] = slice[i].Point
 				}
+				if err := r.ctx.Err(); err != nil {
+					return nil, err
+				}
 				for _, iv := range observed.Held(obs, seg.from, seg.to, p.maxGap) {
 					st.spans = append(st.spans, aggSpan{
 						Span: observed.Span{Start: iv.Start, End: iv.End, Point: obs[iv.Point]},
@@ -743,6 +757,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			// point, read before the segment where the segment starts.
 			prev := seg.prev
 			for _, ap := range seg.points {
+				if err := r.canceled(); err != nil {
+					return nil, err
+				}
 				ap.stream = si
 				idx := len(st.points)
 				st.points = append(st.points, ap)
@@ -772,8 +789,14 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 					in[i] = append(in[i], sp.Span)
 				}
 			}
-			resolved := observed.Prioritize(in)
+			resolved, err := observed.Prioritize(r.ctx, in)
+			if err != nil {
+				return nil, err
+			}
 			for i, st := range list {
+				if err := r.ctx.Err(); err != nil {
+					return nil, err
+				}
 				higher := make([]observed.Span, 0, len(cover))
 				for _, c := range cover {
 					higher = append(higher, c.Span)
@@ -793,6 +816,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				hc := intervalCover(cover)
 				var kept []aggPoint
 				for _, ap := range st.points {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
 					if !ap.Unavailable && hc.overlaps(ap.At, pointEnd(ap)) {
 						continue
 					}
@@ -813,7 +839,7 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	out := aggCells{}
 	for _, st := range list {
 		for i := range st.points {
-			if err := r.canceled(i); err != nil {
+			if err := r.canceled(); err != nil {
 				return nil, err
 			}
 			ap := st.points[i]
@@ -840,8 +866,8 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				}
 			}
 		}
-		for i, sp := range st.spans {
-			if err := r.canceled(i); err != nil {
+		for _, sp := range st.spans {
+			if err := r.canceled(); err != nil {
 				return nil, err
 			}
 			if !r.admits(sp.Point.Code) {
@@ -859,6 +885,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	if p.policy == substrate.SourcesSummaries && form == vocabulary.FormSummary {
 		for _, codes := range out {
 			for _, ev := range codes {
+				if err := r.canceled(); err != nil {
+					return nil, err
+				}
 				best := -1
 				for _, m := range ev.members {
 					if best < 0 || m.stream < best {
@@ -875,12 +904,20 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	}
 	for _, codes := range out {
 		for _, ev := range codes {
+			// A cell's sort is as long as its points: the context is checked
+			// before each, and on every thousandth point after.
+			if err := r.ctx.Err(); err != nil {
+				return nil, err
+			}
 			sort.SliceStable(ev.members, func(i, j int) bool {
 				a, b := ev.members[i], ev.members[j]
 				return pointBefore(a.Point, a.stream, b.Point, b.stream)
 			})
 			sort.SliceStable(ev.spans, func(i, j int) bool { return ev.spans[i].Start.Before(ev.spans[j].Start) })
 			for _, m := range ev.members {
+				if err := r.canceled(); err != nil {
+					return nil, err
+				}
 				ev.count++
 				if m.Bounded {
 					ev.bounded++
@@ -1038,9 +1075,16 @@ func (r *aggRun) bucketsMeeting(from, to time.Time) []*aggBucket {
 func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 	out := aggCells{}
 	local := r.p.bucket.mode == bucketLocal
+	tr := traceOf(r.ctx)
 	for si, s := range g.raw {
 		rows := r.rows[s]
 		for _, row := range rows {
+			if err := r.canceled(); err != nil {
+				return nil, err
+			}
+			if tr != nil {
+				tr.mergedRows++
+			}
 			og := r.rowGroups[row.Group]
 			if !r.admits(og.code) {
 				continue
@@ -1250,6 +1294,9 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 	local := r.p.bucket.mode == bucketLocal
 	for _, bk := range r.buckets {
 		for _, code := range sortedKeys(cells[bk]) {
+			if err := r.canceled(); err != nil {
+				return err
+			}
 			ev := cells[bk][code]
 			if ms, ok := observed.UnionMs(ev.extents); ok {
 				ev.coverage = ms
@@ -1304,6 +1351,9 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int) error {
 	ser := r.series[s]
 	for _, b := range r.buckets {
+		if err := r.canceled(); err != nil {
+			return err
+		}
 		_, frags := split(b)
 		for _, e := range frags {
 			for _, seg := range ser.segs {
@@ -1313,6 +1363,9 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 				var pts []observed.Point
 				groups := map[string]string{}
 				for _, ap := range seg.points {
+					if err := r.canceled(); err != nil {
+						return err
+					}
 					if ap.At.Before(e[0]) || !ap.At.Before(e[1]) || !r.admits(ap.Code) {
 						continue
 					}
@@ -1385,6 +1438,9 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observ
 	from, to := floor15(w[0]), w[1]
 	i := sort.Search(len(rows), func(i int) bool { return !rows[i].Start.Before(from) })
 	for slot := from; slot.Before(to); {
+		if err := r.canceled(); err != nil {
+			return err
+		}
 		for i < len(rows) && rows[i].Start.Before(slot) {
 			i++
 		}
@@ -1493,7 +1549,7 @@ func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) time.Time
 // --- values ---
 
 // row assembles one output row from its evidence.
-func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, from string) substrate.AggregateRow {
+func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, from string) (substrate.AggregateRow, error) {
 	start, end := b.shown(r.p.from, r.p.to)
 	row := substrate.AggregateRow{
 		Start: start, End: end, Form: ev.form, Record: b.record, From: from,
@@ -1512,12 +1568,15 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 		r.meta.sources[s] = true
 	}
 	sort.Strings(row.Sources)
-	row.Values = r.values(ev, code)
-	return row
+	var err error
+	row.Values, err = r.values(ev, code)
+	return row, err
 }
 
-// values answers every reducer over one row's evidence, in request order.
-func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue {
+// values answers every reducer over one row's evidence, in request order,
+// checking the context before each: one reducer over one row is as long as
+// the row's points.
+func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValue, error) {
 	var out []substrate.AggregateValue
 	all := observed.Window{From: time.Unix(-1<<40, 0), To: time.Unix(1<<40, 0)}
 	pts := func(stat string) []observed.Point {
@@ -1541,6 +1600,9 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 		out = append(out, r.value(red, v, ok, unit))
 	}
 	for _, red := range r.p.reducers {
+		if err := r.ctx.Err(); err != nil {
+			return nil, err
+		}
 		switch red.Name {
 		case substrate.ReducerCount:
 			v := strconv.FormatInt(ev.count, 10)
@@ -1677,7 +1739,7 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 			float(red, f/(float64(ev.steps.covered)/1000), true, r.u.value+"/s")
 		}
 	}
-	return out
+	return out, nil
 }
 
 // extremaPoints are the members a raw min or max compares, in the read's
