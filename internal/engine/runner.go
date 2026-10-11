@@ -343,6 +343,11 @@ func (ds *dataset) readList(ctx context.Context, q substrate.Query) (*substrate.
 	return window.Read(ctx, ds, q, from, to)
 }
 
+// Aggregate is a function body's aggregate read, the records route's.
+func (b *callBackend) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
+	return b.inv.ds.Aggregate(ctx, q)
+}
+
 func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
 	return b.inv.ds.Search(ctx, in)
 }
