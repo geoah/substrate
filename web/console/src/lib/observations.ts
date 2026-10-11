@@ -898,6 +898,32 @@ export function metricsRead(narrow: StreamNarrowing = {}): AggregateRead {
   }
 }
 
+/** A facet a page filters its streams by on the server, beside the metric. */
+export type StreamFacet = "source" | "about"
+
+/** A facet menu's read: one row per source, or per thing observed, with a
+ * point under the page's other choices, at the group cap. The facet's own
+ * choice is left out, so the menu still offers the values a reader can add
+ * once one is chosen; a row with no value is the owner's. */
+export function facetRead(
+  facet: StreamFacet,
+  narrow: StreamNarrowing = {}
+): AggregateRead {
+  return {
+    filter: narrowedFilter({
+      metrics: narrow.metrics,
+      ...(facet === "source"
+        ? { abouts: narrow.abouts }
+        : { sources: narrow.sources }),
+    }),
+    aggregate: {
+      groupBy: [facet],
+      reducers: ["last"],
+      budget: { maxGroups: MAX_GROUPS_CAP },
+    },
+  }
+}
+
 /** How many metrics one stream read names, and how many stream reads one
  * discovery makes at most: eight metrics of a few streams each sit well
  * inside a read's 200 groups, and past 256 metrics each read names more. */

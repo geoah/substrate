@@ -2019,7 +2019,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 // body (a scheduled backfill) drains off the causal chain, the settlement
 // landing only when the drain finishes.
 func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
-	if err := ds.checkStoredWebhookSignature(ctx, tr, envelope); err != nil {
+	if err := ds.checkStoredWebhookSignature(ctx, tr, envelope, settle.retire); err != nil {
 		return 0, err
 	}
 	// The lifecycle fence's shared side, admission through effect + fire-state

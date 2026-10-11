@@ -115,7 +115,7 @@ func agentResult(advance bool, ares *substrate.AgentResult) deliverResult {
 func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
 	// Before the claim, so a refused request parks as itself rather than as
 	// an interrupted run.
-	if err := ds.checkStoredWebhookSignature(ctx, tr, envelope); err != nil {
+	if err := ds.checkStoredWebhookSignature(ctx, tr, envelope, settle.retire); err != nil {
 		return 0, err
 	}
 	// Admission under the lifecycle fence, held through the claim, the

@@ -289,7 +289,8 @@ record](#two-invocations-over-one-record)). `repository` carries the repository'
 kinds and webhook URLs under. A schedule or webhook delivery has no changelog
 entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
-`record`.
+`record`. `at` is RFC 3339 with the fraction of a second it was taken at, if
+any; a webhook's is the instant the door received the request.
 
 A delivery through the public webhook endpoint adds `request` beside them: the
 HTTP request as it arrived, minus the bytes of any file it carried.
@@ -297,7 +298,7 @@ HTTP request as it arrived, minus the bytes of any file it carried.
 ```yaml
 fire:
   id: hook-k7f3x2m9ab4c
-  at: 2026-09-02T12:00:00Z
+  at: 2026-09-02T12:00:00.418273Z
 repository:
   authority: geoah.example.com
 request:
@@ -1166,7 +1167,11 @@ while the trigger declared no signature carries no such mark. Once the
 trigger declares one, the resume, a retry by hand and the rerun of an
 interrupted agent delivery check that request's kept body and headers
 against the declaration, measuring the timestamp against `fire.at`, when the
-door received it. A request that verifies runs. One that does not, because
+door received it, to the microsecond. An envelope stored before `fire.at`
+kept a fraction of a second names only the whole second: the check then
+uses the receipt the door recorded in the request's admission entry, and
+without one treats the receipt as the start of that second. A request that
+verifies runs. One that does not, because
 it is unsigned, its signature header is not among the headers the trigger
 kept, or its signature does not match, is parked with an error starting
 `webhook signature refused at delivery`, and the callable never runs it.

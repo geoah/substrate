@@ -20,6 +20,7 @@ import {
   isoWithOffset,
   laneRead,
   discoveryChunks,
+  facetRead,
   latestRead,
   metricInfoOf,
   observedKinds,
@@ -208,6 +209,26 @@ describe("the latest read", () => {
     expect(many.length).toBeLessThanOrEqual(32)
     expect(many.flat()).toEqual(ids(1000))
     expect(discoveryChunks([])).toEqual([])
+  })
+
+  it("reads a facet's values under the other choices, never its own", () => {
+    const narrow = { metrics: [HEART], sources: [GARMIN], abouts: [MIA] }
+    expect(facetRead("source", narrow)).toEqual({
+      filter: {
+        implements: OBSERVED,
+        properties: { metric: { in: [HEART] }, about: { in: [MIA] } },
+      },
+      aggregate: {
+        groupBy: ["source"],
+        reducers: ["last"],
+        budget: { maxGroups: 2000 },
+      },
+    })
+    expect(facetRead("about", narrow).filter?.properties).toEqual({
+      metric: { in: [HEART] },
+      source: { in: [GARMIN] },
+    })
+    expect(facetRead("about", narrow).aggregate.groupBy).toEqual(["about"])
   })
 
   it("reads six streams, newest first, with their form and code", () => {

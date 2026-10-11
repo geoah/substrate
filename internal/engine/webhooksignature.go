@@ -385,11 +385,12 @@ var errWebhookUnverified = errors.New("webhook signature refused at delivery")
 // pass here. A request the door verified carries requestSignatureVerified
 // and runs, however long after its timestamp. One stored while the trigger
 // declared no signature is verified from its kept body and headers against
-// the time the door received it (`fire.at`), never the retry's clock, so a
-// genuinely signed request stored before the upgrade still runs and a
-// forged or unsigned one is refused. A wake carries no request and is
-// authenticated already.
-func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger, envelope map[string]any) error {
+// the time the door received it (webhookReceivedAt), never the retry's
+// clock, so a genuinely signed request stored before the upgrade still runs
+// and a forged or unsigned one is refused. failure is the request's ledger
+// row, whose id is the seq of the entry that admitted it. A wake carries no
+// request and is authenticated already.
+func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger, envelope map[string]any, failure int64) error {
 	if !tr.Webhook || tr.WebhookSignature == nil {
 		return nil
 	}
@@ -405,9 +406,11 @@ func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger,
 			errWebhookUnverified, reason)
 	}
 	fire, _ := envelope["fire"].(map[string]any)
-	stamp, _ := fire["at"].(string)
-	at, err := time.Parse(time.RFC3339, stamp)
+	at, ok, err := ds.webhookReceivedAt(ctx, tr.ID, failure, fire)
 	if err != nil {
+		return err
+	}
+	if !ok {
 		return refuse("no receipt time")
 	}
 	stored, err := ds.storedWebhookRequest(ctx, req)
@@ -418,6 +421,59 @@ func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger,
 		return refuse(reason)
 	}
 	return nil
+}
+
+// webhookReceivedAt is the instant the door received a stored request, which
+// a millisecond signature timestamp is measured against to the millisecond.
+// `fire.at` carries it with its fraction of a second. An envelope stored
+// before `fire.at` kept that fraction names only the whole second, so the
+// receipt the door recorded in the request's admission entry (the pending
+// row it folded, at the seq that is the row's id, under the same fire id)
+// stands in for it when it falls inside that second. Without one, the
+// receipt is the start of the named second (receiptOf).
+func (ds *dataset) webhookReceivedAt(ctx context.Context, triggerID string, failure int64, fire map[string]any) (time.Time, bool, error) {
+	stamp, _ := fire["at"].(string)
+	fid, _ := fire["id"].(string)
+	at, ok := receiptOf(stamp, time.Time{})
+	if !ok || !at.Equal(at.Truncate(time.Second)) || failure <= 0 || fid == "" {
+		return at, ok, nil
+	}
+	ch, err := ds.changeAt(ctx, failure)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return at, true, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	ops, err := foldOpsOf(ch)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	for _, op := range ops {
+		if op.Kind == foldPark && op.ID == triggerID && op.Failure != nil &&
+			op.Failure.FireID == fid && op.Failure.LastError == pendingWebhookError {
+			at, ok = receiptOf(stamp, op.Failure.ParkedAt)
+			return at, ok, nil
+		}
+	}
+	return at, true, nil
+}
+
+// receiptOf reads a stored `fire.at`. A stamp with a fraction of a second is
+// the receipt itself. A whole-second stamp is recorded when recorded falls
+// inside that second, and otherwise the start of the second: a stamp written
+// before `fire.at` kept its fraction was truncated, never rounded, so the
+// receipt was no earlier than that.
+func receiptOf(stamp string, recorded time.Time) (time.Time, bool) {
+	at, err := time.Parse(time.RFC3339Nano, stamp)
+	if err != nil {
+		return time.Time{}, false
+	}
+	at = at.UTC()
+	if at.Equal(at.Truncate(time.Second)) && !recorded.IsZero() && recorded.UTC().Truncate(time.Second).Equal(at) {
+		return recorded.UTC(), true
+	}
+	return at, true
 }
 
 // storedWebhookRequest rebuilds what the signature covers from a stored

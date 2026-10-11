@@ -61,7 +61,30 @@ describe("ticks", () => {
     for (let i = 1; i < ticks.length; i++) {
       expect(ticks[i]).toBeGreaterThan(ticks[i - 1])
     }
-    expect(() => tickLabels(ticks)).not.toThrow()
+    // Two ends 16384 apart print two different numbers.
+    const labels = tickLabels(ticks)
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  it("prints compact labels as precisely as the step between them", () => {
+    expect(tickLabels([10000, 10500, 11000])).toEqual(["10K", "10.5K", "11K"])
+    expect(tickLabels([2_000_000, 2_050_000, 2_100_000])).toEqual([
+      "2M",
+      "2.05M",
+      "2.1M",
+    ])
+  })
+
+  it("prints exponents where compact labels would collide", () => {
+    // Two adjacent floats that are one number once divided into billions,
+    // so no compact label tells them apart.
+    const lo = 17400000000000.002
+    const hi = 17400000000000.004
+    expect(hi).toBeGreaterThan(lo)
+    expect(lo / 1e9).toBe(hi / 1e9)
+    const labels = tickLabels([lo, hi])
+    expect(new Set(labels).size).toBe(2)
+    expect(labels[0]).toMatch(/^1\.74\d*e\+13$/)
   })
 
   it("ticks and labels a domain finer than toFixed can print", () => {

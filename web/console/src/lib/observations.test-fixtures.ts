@@ -239,6 +239,34 @@ export const LATEST: AggregateResult = {
   ],
 }
 
+export const LEO = "ada.example.com/people/person/leo"
+
+/** The latest read with two people's heart rate beside the owner's: Mia's
+ * from the Garmin and Leo's from the Apple Watch, so the About facet has
+ * two records to choose between. */
+export const LATEST_PEOPLE: AggregateResult = {
+  ...LATEST,
+  rows: [
+    ...LATEST.rows,
+    row({
+      start: "2026-10-07T06:30:00Z",
+      end: "2026-10-07T06:30:00Z",
+      form: "gauge",
+      group: { metric: HEART, source: GARMIN, about: MIA },
+      values: [{ reducer: "last", value: "88", unit: "/min" }],
+      count: 40,
+    }),
+    row({
+      start: "2026-10-07T06:20:00Z",
+      end: "2026-10-07T06:20:00Z",
+      form: "gauge",
+      group: { metric: HEART, source: APPLE, about: LEO },
+      values: [{ reducer: "last", value: "71", unit: "/min" }],
+      count: 25,
+    }),
+  ],
+}
+
 /** Heart rate zones, weekly, five `durationIn` reducers in minutes. */
 export const ZONES: AggregateResult = {
   metric: HEART,
@@ -468,7 +496,8 @@ function json(body: unknown, status = 200): Response {
 
 /** A latest read answered from `latest` the way the server answers it:
  * narrowed by the filter's `metric`, `source` and `about` lists, and one
- * row per metric (the newest) where it groups by metric alone. */
+ * row per value (the newest) where it groups by one of the three alone; a
+ * row without that value is the group with none. */
 export function latestAnswer(
   read: SeenRead,
   latest: AggregateResult = LATEST
@@ -486,15 +515,19 @@ export function latestAnswer(
       keep("about", r.group?.about)
   )
   const groupBy = read.aggregate.groupBy ?? []
-  if (groupBy.length !== 1 || groupBy[0] !== "metric") {
+  const [by] = groupBy
+  if (
+    groupBy.length !== 1 ||
+    (by !== "metric" && by !== "source" && by !== "about")
+  ) {
     return { ...latest, rows }
   }
   const newest = new Map<string, AggregateRow>()
   for (const r of rows) {
-    const metric = r.group?.metric ?? ""
-    const held = newest.get(metric)
+    const value = r.group?.[by]
+    const held = newest.get(value ?? "")
     if (!held || Date.parse(r.start) > Date.parse(held.start)) {
-      newest.set(metric, { ...r, group: { metric } })
+      newest.set(value ?? "", { ...r, group: value ? { [by]: value } : {} })
     }
   }
   return { ...latest, rows: [...newest.values()] }

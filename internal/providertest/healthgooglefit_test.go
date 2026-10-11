@@ -9,12 +9,16 @@ package providertest
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/big"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -131,6 +135,21 @@ func parseInstant(t *testing.T, v any) time.Time {
 	return at
 }
 
+// fitIDAlphabet is the record-id alphabet the adapter's `_rid` keeps a
+// composed id readable in.
+var fitIDAlphabet = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
+
+// fitReadingID is the id the adapter gives one reading: the dataset row, the
+// source's slug, the metric and the start in nanoseconds, hashed the way
+// `_rid` hashes an id past 128 bytes or outside the alphabet.
+func fitReadingID(dayRow, slug, metric string, start time.Time) string {
+	readable := fmt.Sprintf("googlefit/%s/%s/%s/%d", dayRow, slug, metric, start.UnixNano())
+	if len(readable) <= 128 && fitIDAlphabet.MatchString(readable) {
+		return readable
+	}
+	return runner.ExternalID("googlefit", googlefitAccount, readable)
+}
+
 // TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts: one delivery
 // per mirror row turns the recordings into hourly heart rate traces with
 // per-minute offsets and engine stats, hourly step amounts per device, one
@@ -212,9 +231,9 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	if len(weights) != 17 {
 		t.Fatalf("%d weight observations, want the 17 recorded weigh-ins", len(weights))
 	}
-	first := mustGet(t, ds, obsObservation, fmt.Sprintf("googlefit/%s/body_mass/%d",
-		fitDatasetRow(fitWeight, day(time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC))),
-		1789099361000+today.Sub(fitCutOn).Milliseconds())).Properties
+	first := mustGet(t, ds, obsObservation, fitReadingID(
+		fitDatasetRow(fitWeight, day(time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC))), "withings-body", "body_mass",
+		time.UnixMilli(1789099361000).Add(today.Sub(fitCutOn)))).Properties
 	value, _ := first["value"].(map[string]any)
 	if first["form"] != "gauge" || fmt.Sprint(value["value"]) != "72.26" || value["unit"] != "kg" {
 		t.Fatalf("the first weigh-in = %v", first)
@@ -311,7 +330,7 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 
 	shift := today.Sub(recordedToday)
 	changedDay := fitDatasetRow(fitWeight, today.AddDate(0, 0, -1))
-	evening := fmt.Sprintf("googlefit/%s/body_mass/%d", changedDay, 1791052863000+shift.Milliseconds())
+	evening := fitReadingID(changedDay, "manual", "body_mass", time.UnixMilli(1791052863000).Add(shift))
 	old := mustGet(t, ds, obsObservation, evening)
 	emptiedDay := fitDatasetRow(fitWeight, today)
 	emptied := listLive(t, ds, obsObservation)
@@ -344,7 +363,7 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 	}
 	for key, v := range before {
 		kind, id, _ := strings.Cut(key, "/observations/observation/")
-		if id == "" || kind == "" || id == evening || strings.Contains(id, emptiedDay) {
+		if id == "" || kind == "" || id == evening || slices.Contains(gone, id) {
 			continue
 		}
 		if got := mustGet(t, ds, obsObservation, id).Version; got != v {
@@ -528,6 +547,146 @@ func TestHealthGoogleFitKeepsTwoSourcesAmountsAcrossAnHourApart(t *testing.T) {
 	if len(bySource) != 2 || watchValue != "10" || appValue != "20" {
 		t.Fatalf("step observations by source = %v, want the watch's 10 and the app's 20", bySource)
 	}
+}
+
+// fitPressure is the blood pressure stream the adapter reads.
+const fitPressure = "derived:com.google.blood_pressure:com.google.android.gms:merged"
+
+// fitReadings is one metric's live observations keyed by the source's slug
+// and the reading's instant.
+func fitReadings(t *testing.T, ds substrate.Dataset, metric string) map[string]*substrate.Record {
+	t.Helper()
+	out := map[string]*substrate.Record{}
+	for _, r := range withMetric(t, ds, obsObservation, metric) {
+		src := storedRefPath(r.Properties["source"])
+		key := src[strings.LastIndex(src, "/")+1:] + " " + parseInstant(t, r.Properties["at"]).Format(time.RFC3339Nano)
+		if _, dup := out[key]; dup {
+			t.Fatalf("two %s observations for %s", metric, key)
+		}
+		out[key] = r
+	}
+	return out
+}
+
+// fitValues is each observation's value digits, by key.
+func fitValues(rows map[string]*substrate.Record) map[string]string {
+	out := map[string]string{}
+	for k, r := range rows {
+		value, _ := r.Properties["value"].(map[string]any)
+		out[k] = fmt.Sprint(value["value"])
+	}
+	return out
+}
+
+// TestHealthGoogleFitKeepsTwoSourcesReadingsApart: a single reading's id names
+// its source and its start to the nanosecond. Two scales weighing in at one
+// instant are two observations, two cuffs reading one instant are four (a
+// systolic and a diastolic each), and one scale's two readings 400
+// microseconds apart are two. Correcting one source's reading rewrites only
+// its own observations, under the same id, and dropping it deletes only its
+// own.
+func TestHealthGoogleFitKeepsTwoSourcesReadingsApart(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	install(t, ds, googlefitDir, nil)
+	importVocabulary(t, ds, "healthgooglefit")
+	today := utcToday()
+	fake := newFakeFit(t, today, fitCutOn)
+	recorded := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+	const (
+		scaleA = "raw:com.google.weight:com.example.scalea:"
+		scaleB = "raw:com.google.weight:com.example.scaleb:"
+		cuffA  = "raw:com.google.blood_pressure:com.example.cuffa:"
+		cuffB  = "raw:com.google.blood_pressure:com.example.cuffb:"
+		soon   = 400 * time.Microsecond
+	)
+	point := func(dtype, origin string, after, modified time.Duration, values ...float64) any {
+		vals := []any{}
+		for _, v := range values {
+			vals = append(vals, map[string]any{"fpVal": v})
+		}
+		start := strconv.FormatInt(recorded.Add(after).UnixNano(), 10)
+		return map[string]any{
+			"startTimeNanos": start, "endTimeNanos": start, "dataTypeName": dtype,
+			"originDataSourceId": origin, "value": vals,
+			"modifiedTimeMillis": strconv.FormatInt(recorded.Add(modified).UnixMilli(), 10),
+		}
+	}
+	weight := func(origin string, after, modified time.Duration, kg float64) any {
+		return point("com.google.weight", origin, after, modified, kg)
+	}
+	pressure := func(origin string, modified time.Duration, sys, dia float64) any {
+		return point("com.google.blood_pressure", origin, 0, modified, sys, dia)
+	}
+	at := recorded.Add(today.Sub(fitCutOn))
+	day := at.Truncate(24 * time.Hour)
+	googlefitAccountWith(t, ds, "enabledBody", "enabledBloodPressure")
+	round := func(weights, pressures []any) {
+		t.Helper()
+		fake.setPoints(fitWeight, weights)
+		fake.setPoints(fitPressure, pressures)
+		googlefitSync(t, ds, fake)
+		observe(t, ds, googlefitDatasetType, fitDatasetRow(fitWeight, day))
+		observe(t, ds, googlefitDatasetType, fitDatasetRow(fitPressure, day))
+	}
+	key := func(slug string, after time.Duration) string {
+		return slug + " " + at.Add(after).Format(time.RFC3339Nano)
+	}
+	want := func(name string, got map[string]*substrate.Record, expect map[string]string) {
+		t.Helper()
+		if !maps.Equal(fitValues(got), expect) {
+			t.Fatalf("%s: %v, want %v", name, fitValues(got), expect)
+		}
+	}
+	a, b := "com-example-scalea", "com-example-scaleb"
+	ca, cb := "com-example-cuffa", "com-example-cuffb"
+
+	round([]any{
+		weight(scaleA, 0, time.Hour, 70.1), weight(scaleB, 0, time.Hour, 80.2), weight(scaleA, soon, time.Hour, 75.3),
+	}, []any{pressure(cuffA, time.Hour, 120.1, 80.1), pressure(cuffB, time.Hour, 140.2, 90.2)})
+	first := fitReadings(t, ds, "body_mass")
+	want("weigh-ins", first, map[string]string{key(a, 0): "70.1", key(b, 0): "80.2", key(a, soon): "75.3"})
+	systolic := fitReadings(t, ds, "systolic_blood_pressure")
+	want("systolic", systolic, map[string]string{key(ca, 0): "120.1", key(cb, 0): "140.2"})
+	want("diastolic", fitReadings(t, ds, "diastolic_blood_pressure"),
+		map[string]string{key(ca, 0): "80.1", key(cb, 0): "90.2"})
+
+	// Scale A and cuff A correct their readings at the shared instant; scale
+	// B's and cuff B's stay where they were, at the same version.
+	round([]any{
+		weight(scaleA, 0, 2*time.Hour, 71.4), weight(scaleB, 0, time.Hour, 80.2), weight(scaleA, soon, time.Hour, 75.3),
+	}, []any{pressure(cuffA, 2*time.Hour, 125.3, 85.3), pressure(cuffB, time.Hour, 140.2, 90.2)})
+	corrected := fitReadings(t, ds, "body_mass")
+	want("corrected weigh-ins", corrected, map[string]string{key(a, 0): "71.4", key(b, 0): "80.2", key(a, soon): "75.3"})
+	if corrected[key(a, 0)].ID != first[key(a, 0)].ID {
+		t.Fatalf("the corrected weigh-in moved from %s to %s", first[key(a, 0)].ID, corrected[key(a, 0)].ID)
+	}
+	if got, was := corrected[key(b, 0)], first[key(b, 0)]; got.ID != was.ID || got.Version != was.Version {
+		t.Fatalf("scale B's weigh-in went from %s at %d to %s at %d", was.ID, was.Version, got.ID, got.Version)
+	}
+	resystolic := fitReadings(t, ds, "systolic_blood_pressure")
+	want("corrected systolic", resystolic, map[string]string{key(ca, 0): "125.3", key(cb, 0): "140.2"})
+	if got, was := resystolic[key(cb, 0)], systolic[key(cb, 0)]; got.ID != was.ID || got.Version != was.Version {
+		t.Fatalf("cuff B's systolic went from %s at %d to %s at %d", was.ID, was.Version, got.ID, got.Version)
+	}
+
+	// Scale A and cuff A drop out; scale B's and cuff B's readings survive.
+	round([]any{weight(scaleB, 0, time.Hour, 80.2)}, []any{pressure(cuffB, time.Hour, 140.2, 90.2)})
+	left := fitReadings(t, ds, "body_mass")
+	want("weigh-ins after scale A dropped out", left, map[string]string{key(b, 0): "80.2"})
+	if left[key(b, 0)].ID != first[key(b, 0)].ID {
+		t.Fatalf("scale B's weigh-in moved from %s to %s", first[key(b, 0)].ID, left[key(b, 0)].ID)
+	}
+	for _, k := range []string{key(a, 0), key(a, soon)} {
+		if fitLive(t, ds, obsObservation, first[k].ID) {
+			t.Fatalf("%s outlived scale A's readings", first[k].ID)
+		}
+	}
+	want("systolic after cuff A dropped out", fitReadings(t, ds, "systolic_blood_pressure"),
+		map[string]string{key(cb, 0): "140.2"})
+	want("diastolic after cuff A dropped out", fitReadings(t, ds, "diastolic_blood_pressure"),
+		map[string]string{key(cb, 0): "90.2"})
 }
 
 // parseISODuration reads the PT#H#M#S durations the adapter writes.

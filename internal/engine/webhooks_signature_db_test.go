@@ -467,3 +467,99 @@ func TestWebhookSignatureStoredRequestRunsPastItsSkew(t *testing.T) {
 		t.Fatalf("the forged request ran: %v", got)
 	}
 }
+
+// signedHookMillis is signedHook with the timestamp in milliseconds.
+func signedHookMillis(body, secret string, at time.Time) substrate.WebhookRequest {
+	stamp := strconv.FormatInt(at.UnixMilli(), 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(stamp + "." + body))
+	req := jsonHook(body, "signed")
+	req.Headers["x-hook-timestamp"] = stamp
+	req.Headers["x-hook-signature"] = base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return req
+}
+
+// atNextFraction sleeps until the wall clock next reaches frac past a whole
+// second and returns that instant.
+func atNextFraction(frac time.Duration) time.Time {
+	now := time.Now()
+	at := now.Truncate(time.Second).Add(frac)
+	if !at.After(now) {
+		at = at.Add(time.Second)
+	}
+	time.Sleep(time.Until(at))
+	return at
+}
+
+// A stored request's skew is measured from the instant the door received
+// it, to the millisecond, under `maxSkew: PT1S`. Received at X.900 and signed
+// at X+1.500, a request is 0.6 s inside the window and runs; received at
+// X.900 and signed at X-1.500, one is 1.4 s outside and is refused. Measured
+// from the whole second X, both answers would flip. A third request's
+// envelope is rewritten to whole seconds, the way a binary from before the
+// fractional `fire.at` stored it, and its check reads the receipt instant the
+// door recorded in the request's admission entry instead.
+func TestWebhookSignatureStoredRequestSkewIsMeasuredToTheMillisecond(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newHookDatasetWithDSN(t, nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
+	putHookTrigger(t, ds, "hook-ms", "hookecho", keptSignatureSource(false, ""))
+	authority := testdb.Repository(t)
+	receive := func(body string, signedFrom time.Duration) string {
+		t.Helper()
+		received := atNextFraction(900 * time.Millisecond)
+		fid, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-ms", "",
+			signedHookMillis(body, hookSigningSecret, received.Add(signedFrom)))
+		if err != nil {
+			t.Fatalf("receive %s: %v", body, err)
+		}
+		return fid
+	}
+	inside := receive(`{"n":"inside"}`, 600*time.Millisecond)
+	outside := receive(`{"n":"outside"}`, -1400*time.Millisecond)
+	legacy := receive(`{"n":"legacy"}`, 600*time.Millisecond)
+
+	db := rawDB(t, dsn)
+	var stamp string
+	if err := db.QueryRow(`SELECT payload->'fire'->>'at' FROM trigger_failures WHERE fire_id = $1`, inside).Scan(&stamp); err != nil {
+		t.Fatal(err)
+	}
+	if at, err := time.Parse(time.RFC3339Nano, stamp); err != nil || at.Equal(at.Truncate(time.Second)) {
+		t.Fatalf("the stored fire.at %q (%v) keeps no fraction of a second", stamp, err)
+	}
+	whole := failuresByFire(t, ds, "hook-ms")[legacy].ParkedAt.UTC().Truncate(time.Second).Format(time.RFC3339)
+	res, err := db.Exec(`UPDATE trigger_failures SET payload = jsonb_set(payload, '{fire,at}', to_jsonb($1::text)) WHERE fire_id = $2`, whole, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("rewrote %d rows, want the legacy request's", n)
+	}
+	putHookTrigger(t, ds, "hook-ms", "hookecho", keptSignatureSource(true, "PT1S"))
+
+	retry := func(fid string) error {
+		t.Helper()
+		row, ok := failuresByFire(t, ds, "hook-ms")[fid]
+		if !ok {
+			t.Fatalf("no entry for %s", fid)
+		}
+		_, err := ds.RetryTriggerFailure(ctx, "hook-ms", row.ID)
+		return err
+	}
+	if err := retry(inside); err != nil {
+		t.Fatalf("signed 0.6 s after receipt: %v", err)
+	}
+	if got := hookEcho(t, ds, "hook-echo"); got["record"] != inside {
+		t.Fatalf("the inside retry echoed %v", got)
+	}
+	if err := retry(outside); !errors.Is(err, substrate.ErrParked) || !strings.Contains(err.Error(), "timestamp outside maxSkew") {
+		t.Fatalf("signed 1.4 s before receipt: err = %v, want ErrParked, timestamp outside maxSkew", err)
+	}
+	if err := retry(legacy); err != nil {
+		t.Fatalf("signed 0.6 s after receipt, its envelope in whole seconds: %v", err)
+	}
+	if got := hookEcho(t, ds, "hook-echo"); got["record"] != legacy {
+		t.Fatalf("the legacy retry echoed %v", got)
+	}
+}

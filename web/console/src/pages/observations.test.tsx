@@ -23,6 +23,7 @@ import {
   BODY_MASS,
   HEART,
   KINDS,
+  LATEST_PEOPLE,
   RECOVERY,
   SLEEP_STAGE,
   STEPS_METRIC,
@@ -62,7 +63,7 @@ function mount(
   })
   render(
     <QueryClientProvider client={client}>
-      <NuqsTestingAdapter searchParams={searchParams}>
+      <NuqsTestingAdapter searchParams={searchParams} hasMemory>
         <ObservationsPage />
       </NuqsTestingAdapter>
     </QueryClientProvider>
@@ -95,6 +96,22 @@ async function rows(): Promise<HTMLElement[]> {
     expect(within(table).getAllByText("Heart rate").length).toBeGreaterThan(0)
   )
   return within(table).getAllByRole("row").slice(1)
+}
+
+/** The table's body rows as they stand. */
+function bodyRows(): HTMLElement[] {
+  return within(screen.getByRole("table")).getAllByRole("row").slice(1)
+}
+
+/** Picks one value of a facet from "Add filter", then closes the menu. */
+async function addFilter(facet: string, value: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+  fireEvent.click(await screen.findByRole("option", { name: facet }))
+  fireEvent.click(await screen.findByRole("option", { name: value }))
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+  await waitFor(() =>
+    expect(screen.queryByRole("option", { name: value })).toBe(null)
+  )
 }
 
 describe("the streams table", () => {
@@ -150,6 +167,22 @@ describe("the streams table", () => {
     expect(
       await screen.findByRole("option", { name: /Heart rate/ })
     ).toBeTruthy()
+  })
+
+  it("lists the chosen metric's streams when only the list of every metric is refused", async () => {
+    // The list of every metric is the one read grouped by metric alone.
+    mount(`?metric=${encodeURIComponent(BODY_MASS)}`, KINDS, (read) =>
+      read.aggregate.groupBy?.join() === "metric"
+        ? refusal()
+        : latestAnswer(read)
+    )
+    const table = await screen.findByRole("table")
+    await waitFor(() => expect(table.textContent).toContain("Weight"))
+    expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    const note = await screen.findByRole("alert", {
+      name: "The other metrics didn’t load",
+    })
+    expect(note.textContent).toContain(PROBLEM)
   })
 
   it("says a refused read, naming its problems, never that nothing was measured", async () => {
@@ -211,6 +244,31 @@ describe("the streams table", () => {
     expect(
       await screen.findByRole("option", { name: /Withings Body\+/ })
     ).toBeTruthy()
+  })
+
+  it("offers the other sources when the chosen source's menu reopens", async () => {
+    mount()
+    await rows()
+    await addFilter("Source", /Garmin Forerunner 265/)
+    // The streams read narrows to the Garmin on the server.
+    await waitFor(() => expect(bodyRows()).toHaveLength(2))
+    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Apple Watch/ }))
+    await waitFor(() => expect(bodyRows()).toHaveLength(3))
+    await waitFor(() =>
+      expect(screen.getByRole("table").textContent).toContain("Apple Watch S10")
+    )
+  })
+
+  it("offers the other people when the chosen person's menu reopens", async () => {
+    mount("", KINDS, (read) => latestAnswer(read, LATEST_PEOPLE))
+    await rows()
+    await addFilter("About", /mia/)
+    // Mia's sleep and heart rate, read narrowed to her on the server.
+    await waitFor(() => expect(bodyRows()).toHaveLength(2))
+    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /leo/ }))
+    await waitFor(() => expect(bodyRows()).toHaveLength(3))
   })
 
   it("opens the timeline narrowed to a row's stream", async () => {

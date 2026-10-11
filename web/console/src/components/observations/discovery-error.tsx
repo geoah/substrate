@@ -1,8 +1,11 @@
 /** What the observations pages say where discovery failed: the streams did
  * not load, the server's reason, each problem it named (a refused read's
  * `problems`, such as `aggregate.budget.maxGroups`), and a retry. Never
- * "nothing has been measured", which would be a different fact. */
+ * "nothing has been measured", which would be a different fact. Where only
+ * the list of every metric failed, a note beside the metric picker says so
+ * (`MetricListError`) and the chosen streams stay. */
 
+import { useId } from "react"
 import { SearchXIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -16,10 +19,34 @@ import {
 } from "@/components/ui/empty"
 import type { Discovery } from "@/hooks/use-observations"
 import { ApiError } from "@/lib/api/types"
+import { cn } from "@/lib/utils"
+
+/** A failed read's reason in words: a refusal's message, else the error's. */
+function reasonOf(error: Error | null): string {
+  return error instanceof ApiError && error.status === 422
+    ? `The server refused the read: ${error.message}`
+    : (error?.message ?? "The read failed.")
+}
+
+function Problems({ error }: { error: Error | null }) {
+  const problems = error instanceof ApiError ? error.problems : []
+  if (!problems.length) return null
+  return (
+    <ul
+      aria-label="Problems"
+      className="mt-2 text-left text-[12.5px] text-muted-foreground"
+    >
+      {problems.map((p) => (
+        <li key={p} className="font-mono break-words">
+          {p}
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 export function DiscoveryError({ discovery }: { discovery: Discovery }) {
   const error = discovery.error
-  const problems = error instanceof ApiError ? error.problems : []
   return (
     <Empty className="mt-6">
       <EmptyHeader>
@@ -27,23 +54,8 @@ export function DiscoveryError({ discovery }: { discovery: Discovery }) {
           <SearchXIcon />
         </EmptyMedia>
         <EmptyTitle>The streams didn’t load</EmptyTitle>
-        <EmptyDescription>
-          {error instanceof ApiError && error.status === 422
-            ? `The server refused the read: ${error.message}`
-            : (error?.message ?? "The read failed.")}
-        </EmptyDescription>
-        {problems.length > 0 && (
-          <ul
-            aria-label="Problems"
-            className="mt-2 text-left text-[12.5px] text-muted-foreground"
-          >
-            {problems.map((p) => (
-              <li key={p} className="font-mono break-words">
-                {p}
-              </li>
-            ))}
-          </ul>
-        )}
+        <EmptyDescription>{reasonOf(error)}</EmptyDescription>
+        <Problems error={error} />
       </EmptyHeader>
       <EmptyContent>
         <Button variant="outline" size="sm" onClick={() => discovery.refetch()}>
@@ -51,5 +63,42 @@ export function DiscoveryError({ discovery }: { discovery: Discovery }) {
         </Button>
       </EmptyContent>
     </Empty>
+  )
+}
+
+/** What a page says beside its metric picker where the list of every metric
+ * failed and the chosen metrics' streams did not: the picker offers the
+ * chosen metrics alone, the server's reason and each problem it named, and
+ * a retry. The chosen streams stay on the page. */
+export function MetricListError({
+  error,
+  onRetry,
+  className,
+}: {
+  error: Error
+  onRetry: () => void
+  className?: string
+}) {
+  const title = useId()
+  return (
+    <div
+      role="alert"
+      aria-labelledby={title}
+      className={cn(
+        "flex flex-col items-start gap-1 rounded-md border border-border px-3 py-2 text-[12.5px]",
+        className
+      )}
+    >
+      <p id={title} className="font-medium">
+        The other metrics didn’t load
+      </p>
+      <p className="text-muted-foreground">
+        The metric picker offers only the chosen metrics. {reasonOf(error)}
+      </p>
+      <Problems error={error} />
+      <Button variant="outline" size="sm" className="mt-1" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
   )
 }

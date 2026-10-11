@@ -29,7 +29,10 @@ import {
 } from "@/lib/observations"
 import {
   LATEST,
+  LATEST_PEOPLE,
+  LEO,
   METRIC,
+  MIA,
   SLEEP,
   SLEEP_STAGE,
   SOURCE,
@@ -111,6 +114,17 @@ function charts(seen: SeenRead[], metric: string): SeenRead[] {
 
 async function lane(name: string): Promise<HTMLElement> {
   return screen.findByRole("region", { name })
+}
+
+/** Picks one value of a facet from "Add filter", then closes the menu. */
+async function addFilter(facet: string, value: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+  fireEvent.click(await screen.findByRole("option", { name: facet }))
+  fireEvent.click(await screen.findByRole("option", { name: value }))
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+  await waitFor(() =>
+    expect(screen.queryByRole("option", { name: value })).toBe(null)
+  )
 }
 
 describe("the timeline's requests", () => {
@@ -256,6 +270,32 @@ describe("the timeline's requests", () => {
     expect(screen.queryByText(/Nothing has been measured/)).toBe(null)
   })
 
+  it("draws the chosen metric when only the list of every metric is refused", async () => {
+    const problem =
+      "aggregate.budget.maxGroups: the read makes 2001 groups, over 2000; narrow the filter or raise maxGroups (the cap is 2000)"
+    mount(`?metric=health/body_mass&${WINDOW}`, false, (read) =>
+      // The list of every metric is the one read grouped by metric alone.
+      read.aggregate.groupBy?.join() === "metric"
+        ? new Response(
+            JSON.stringify({
+              error: {
+                code: "validation",
+                message: "the aggregate read was refused",
+                problems: [problem],
+              },
+            }),
+            { status: 422, headers: { "Content-Type": "application/json" } }
+          )
+        : answer(read)
+    )
+    await lane("Weight")
+    expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    const note = await screen.findByRole("alert", {
+      name: "The other metrics didn’t load",
+    })
+    expect(note.textContent).toContain(problem)
+  })
+
   it("narrows discovery to the chosen metric and still offers the others", async () => {
     const server = mount(`?metric=health/body_mass&${WINDOW}`)
     await lane("Weight")
@@ -269,6 +309,64 @@ describe("the timeline's requests", () => {
     expect(
       await screen.findByRole("option", { name: /Heart rate/ })
     ).toBeTruthy()
+  })
+
+  it("offers the other sources when the chosen source's menu reopens", async () => {
+    const server = mount(`?metric=health/heart_rate&${WINDOW}`)
+    await lane("Heart rate")
+    await addFilter("Source", /Garmin Forerunner 265/)
+    // Discovery narrows to the Garmin on the server.
+    await waitFor(() =>
+      expect(
+        server.seen.some(
+          (r) =>
+            r.aggregate.groupBy?.length === 3 &&
+            r.filter.properties?.source?.in?.length === 1
+        )
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Apple Watch/ }))
+    await waitFor(() =>
+      expect(
+        [
+          ...(charts(server.seen, "health/heart_rate").at(-1)!.filter.properties
+            ?.source?.in ?? []),
+        ].sort()
+      ).toEqual(
+        [`${SOURCE}/apple-watch-s10`, `${SOURCE}/garmin-forerunner-265`].sort()
+      )
+    )
+  })
+
+  it("offers the other people when the chosen person's menu reopens", async () => {
+    const server = mount(
+      `?metric=health/heart_rate&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric ? answer(read) : latestAnswer(read, LATEST_PEOPLE)
+    )
+    await lane("Heart rate")
+    await addFilter("About", /mia/)
+    await waitFor(() =>
+      expect(
+        server.seen.some(
+          (r) =>
+            r.aggregate.groupBy?.length === 3 &&
+            r.filter.properties?.about?.in?.length === 1
+        )
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /leo/ }))
+    await waitFor(() =>
+      expect(
+        [
+          ...(charts(server.seen, "health/heart_rate").at(-1)!.filter.properties
+            ?.about?.in ?? []),
+        ].sort()
+      ).toEqual([LEO, MIA].sort())
+    )
   })
 
   it("holds back a read past the bucket budget and says why", async () => {
