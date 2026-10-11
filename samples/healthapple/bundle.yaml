@@ -175,15 +175,14 @@ data:
     GLUCOSE = {"mass-concentration": ("blood_glucose_mass", "mg/dL"),
                "amount-concentration": ("blood_glucose", "mmol/L")}
 
-    # The app's unit spellings the engine's table does not read as written. A
-    # count per minute is a rate per minute; Apple's dimensionless `count` is the
-    # metric's own counted unit (steps, floors, a BMI).
-    APP_UNITS = {
-        "count/min": "/min", "bpm": "/min", "mi": "[mi_i]", "ft": "[ft_i]", "in": "[in_i]",
-        "yd": "[yd_i]", "lb": "[lb_av]", "st": "[stone_av]", "degC": "Cel", "degF": "[degF]",
-        "mmHg": "mm[Hg]", "hr": "h", "ml/(kg·min)": "mL/(kg.min)", "Cal": "[Cal]",
-        "mmol<180.1558800000541>/L": "mmol/L", "kmph": "km/h", "mi/hr": "[mi_i]/h", "km/hr": "km/h",
-    }
+    # The app's unit spellings this adapter reads differently from the engine's
+    # table; every other spelling goes to host.units.canonical. The table keeps
+    # `count/min` and `bpm` apart from `/min` (an annotated count never
+    # converts), but here they are the heart and breathing rates the metrics
+    # hold in `/min`. `ft` is the femtotonne in UCUM, so the foot is mapped here.
+    # Apple's dimensionless `count` is the metric's own counted unit (steps,
+    # floors, a BMI), handled in Units.
+    APP_UNITS = {"count/min": "/min", "bpm": "/min", "ft": "[ft_i]"}
     COUNTED = ("{steps}", "{floors}", "kg/m2")
 
     FINE = ("seconds", "minutes")

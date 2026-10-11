@@ -519,7 +519,17 @@ var primaryMeasure = map[string]string{
 
 // unitAliases are spellings people and vendors write for a code. They are read
 // on input and never stored: the stored unit is always the code. None of them
-// is a valid code itself (TestUnitAliasesAreNotCodes).
+// is a valid code itself, because an alias would shadow the code it spells
+// (buildTable refuses one, TestCanonicalUnitAppliesAliases checks).
+//
+// `count/min` is `{count}/min` and never `/min`, and `count` is `{count}` and
+// never `1`: an annotation is part of the unit and two units that differ in
+// one never convert, so a vendor's bare count per minute stays apart from
+// heart rate, breathing rate and every other rate until a writer that knows
+// what was counted converts it itself.
+//
+// HealthKit spells a foot `ft`, which is not here: `ft` is a UCUM code, the
+// femtotonne, so a writer reading HealthKit maps it to `[ft_i]` itself.
 var unitAliases = map[string]string{
 	"°C": "Cel", "℃": "Cel", "degC": "Cel",
 	"°F": "[degF]", "℉": "[degF]", "degF": "[degF]",
@@ -527,6 +537,16 @@ var unitAliases = map[string]string{
 	"bpm": "{beats}/min", "rpm": "{rev}/min", "count/min": "{count}/min",
 	"kWh": "kW.h", "Wh": "W.h", "Cal": "[Cal]", "ppm": "[ppm]", "ppb": "[ppb]",
 	"VA": "V.A", "var": "V.A{reactive}",
+	// HealthKit's HKUnit spellings, which Health Auto Export sends as written.
+	"count": "{count}", "hr": "h", "IU": "[IU]", "dBASPL": "dB[SPL]", "cmAq": "cm[H2O]",
+	"in": "[in_i]", "yd": "[yd_i]", "mi": "[mi_i]", "km/hr": "km/h", "mi/hr": "[mi_i]/h",
+	"lb": "[lb_av]", "oz": "[oz_av]", "st": "[stone_av]",
+	"mL/(kg*min)": "mL/(kg.min)",
+	// HealthKit's blood glucose unit: mmol/L annotated with glucose's molar
+	// mass (180.15588 g/mol), printed to two different precisions.
+	"mmol<180.1558800000541>/L": "mmol/L", "mmol<180.15588000005408>/L": "mmol/L",
+	// Health Auto Export's own spellings of HealthKit units.
+	"ml/(kg·min)": "mL/(kg.min)", "kmph": "km/h",
 }
 
 // unitCharacters are the characters an alias lookup rewrites before it tries

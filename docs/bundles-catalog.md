@@ -1701,8 +1701,12 @@ floor of 1.
 **What it writes.** A Health Auto Export metric maps to a `health/` metric
 or is skipped and named in the function's `skipped` result, never guessed.
 Values are converted into the metric's unit through the engine's unit table
-(`host.units`); the app's `count/min` is a rate per minute and its `count` is
-the metric's own counted unit.
+(`host.units`), which reads HealthKit's spellings (`lb`, `mi`, `hr`,
+`mmol<180.1558800000541>/L` and the rest) as [aliases](units.md#aliases).
+The adapter reads three itself: `count/min` and `bpm` are a rate per minute,
+which the table keeps apart as `{count}/min` and `{beats}/min`, and `ft` is a
+foot, which the table reads as the femtotonne. The app's `count` is the
+metric's own counted unit.
 
 | App metric | Metric | Written as | Unit |
 | --- | --- | --- | --- |
