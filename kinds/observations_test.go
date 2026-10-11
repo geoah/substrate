@@ -1,0 +1,71 @@
+package kinds_test
+
+import (
+	"slices"
+	"testing"
+
+	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/kinds"
+	"github.com/geoah/substrate/samples"
+)
+
+func shippedSample(t *testing.T, pkg string) *catalog.Bundle {
+	t.Helper()
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	b, ok := cat.ByID(samples.Authority + "/" + pkg)
+	if !ok {
+		t.Fatalf("no shipped sample %s", pkg)
+	}
+	return b
+}
+
+// THE FOUR BASE KIND NAMES ARE FROZEN (decision 0159). A sample's kind cannot
+// be moved by the catalog's upgrade: renaming one after the first import is a
+// repository migration in every repository that took it. A fifth kind is an
+// addition, which this pin lets through; a rename or a removal fails here.
+func TestObservationsSampleKindNamesAreFrozen(t *testing.T) {
+	b := shippedSample(t, "observations")
+	for _, name := range []string{"metric", "observation", "trace", "source"} {
+		if !slices.Contains(b.Closure.Kinds, samples.Authority+"/observations/"+name) {
+			t.Errorf("observations/%s is gone: the base kind names are frozen before the first import", name)
+		}
+	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	if err := installClosure(reg, map[string]*catalog.Bundle{b.ID: b}, b, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	for name, variant := range map[string]string{"observation": vocabulary.ObservedSingle, "trace": vocabulary.ObservedPacked} {
+		k, ok := reg.ByIdentity(samples.Authority + "/observations/" + name)
+		if !ok {
+			t.Fatalf("observations/%s did not install", name)
+		}
+		if bind, ok := k.Binding(vocabulary.TraitObservedCore); !ok || bind.Variant != variant {
+			t.Errorf("observations/%s binds %+v, want %s(%s)", name, bind, vocabulary.TraitObservedCore, variant)
+		}
+	}
+}
+
+// Every domain sample requires the base with a floor (decisions 0070 and
+// 0159), so an import of health into a repository holding an older base is
+// refused rather than landing kinds that point at properties it lacks.
+func TestHealthRequiresObservations(t *testing.T) {
+	base := shippedSample(t, "observations")
+	health := shippedSample(t, "health")
+	if !slices.Contains(health.Requires, base.ID) {
+		t.Fatalf("health requires %v, not %s", health.Requires, base.ID)
+	}
+	floor, ok := health.RequiresAtLeast[base.ID]
+	switch {
+	case !ok:
+		t.Errorf("health requires %s with no requiresAtLeast floor", base.ID)
+	case floor < 1 || floor > base.Version:
+		t.Errorf("health's floor on %s is %d; the shipped base is version %d", base.ID, floor, base.Version)
+	}
+}

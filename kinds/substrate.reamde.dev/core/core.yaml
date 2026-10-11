@@ -55,7 +55,9 @@ data:
   # substrate" where they said an undefined "body" and "host" (#49).
   # version 38: the `alert` kind, one record per ongoing problem the engine
   # raises and resolves (decision record 0148).
-  version: 38
+  # version 39: the `observed` trait, which the write path holds observed
+  # values to and the observed index reads (decision record 0154).
+  version: 39
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -282,3 +284,81 @@ data:
     syncError: string
     syncErrorAt: datetime
     syncStreams: json
+---
+# observed values: a reading, a lab result, a vendor score, or an hour of
+# heart rate packed into one record. A kind that binds it is held on every
+# write to the rules a trait cannot state (engine observed.go): the form is
+# one of four words, a single value is a quantity or a code and never both,
+# a packed value list lines up with its offsets inside the period, a
+# revision never falls, and a trace's `stats` is computed by the engine from
+# its values. `at` and `endsAt` are the record's own time columns, as on
+# `temporal(range)`, which a binding kind binds beside this one so the window
+# read covers it.
+#
+# Contract-style, like `recurring`: the binding kind declares every
+# non-column property itself, with its own descriptions, `repeated: true` on
+# `offsets`, `values` and `codes`, and the pins on the three references. The
+# list is complete from the first version and never grows: a property added
+# here would refuse every imported kind that binds it at the next boot, so a
+# later need is a second trait bound beside this one (decision record 0154).
+#
+# `about` is the thing observed, absent meaning the owner (decision 0155);
+# `form` is gauge, amount, counter or summary (0156); `resetRule` with
+# `resetAt` and `wrapAt` describe a counter (0157); `hold` is how long a gauge
+# value stands (0158). `delta` marks a temperature difference and `circular`
+# an angle averaged on the circle; both live on the value so the index never
+# reads the metric record.
+kind: substrate.reamde.dev/core/trait
+metadata:
+  id: substrate.reamde.dev/core/observed
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: "observed values the substrate indexes: one value per record,
+    or many values packed into one record over a fixed period"
+  oneOf:
+    - name: single
+      properties:
+        at: datetime
+        endsAt: datetime
+        metric: reference
+        source: reference
+        about: reference
+        channel: string
+        form: string
+        value: quantity
+        code: string
+        statistic: string
+        period: string
+        hold: duration
+        resetRule: string
+        resetAt: datetime
+        delta: bool
+        circular: bool
+        wrapAt: decimal
+        utcOffset: int
+        revision: int
+    - name: packed
+      properties:
+        at: datetime
+        endsAt: datetime
+        metric: reference
+        source: reference
+        about: reference
+        channel: string
+        form: string
+        unit: string
+        every: duration
+        offsets: int
+        values: decimal
+        codes: string
+        hold: duration
+        resetRule: string
+        resetAt: datetime
+        delta: bool
+        circular: bool
+        wrapAt: decimal
+        utcOffsetStart: int
+        utcOffsetEnd: int
+        revision: int
+        stats: json

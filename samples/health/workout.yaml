@@ -1,0 +1,92 @@
+# one executed training session, as the device summarized it. Its sample
+# streams (heart rate, power, cadence) are traces of their own over the same
+# span; the summary numbers here are the device's, so a reader lists
+# workouts without aggregating anything.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/health/workout
+data:
+  authority: samples.substrate.reamde.dev
+  package: health
+  description: >-
+    One workout, such as a run or a ride. The sport, when it began and ended,
+    how long and how far, the energy it took, the heart rate during it and
+    the time spent in each heart rate zone.
+  purpose: primary
+  names:
+    singular: workout
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{sport} {at}"
+  properties:
+    sport:
+      type: string
+      description: the sport, such as running, cycling or strength
+    sportSource:
+      type: string
+      description: the sport as the source named it, before mapping
+    source:
+      type: reference
+      kind: samples.substrate.reamde.dev/observations/source
+      description: the device or app that recorded it
+    about:
+      type: reference
+      kind: any
+      description: who trained; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the upstream
+    utcOffsetStart:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC when it began
+    utcOffsetEnd:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC when it ended
+    duration:
+      type: duration
+      description: the time spent moving or timed, which may be less than
+        the span
+    distance:
+      type: quantity
+      measures: length
+      description: how far
+    energy:
+      type: quantity
+      measures: energy
+      description: the energy it took
+    averageHeartRate:
+      type: quantity
+      measures: rate
+      description: the average heart rate
+    maxHeartRate:
+      type: quantity
+      measures: rate
+      description: the highest heart rate
+    elevationGain:
+      type: quantity
+      measures: length
+      description: the height climbed
+    strain:
+      type: decimal
+      description: the device's own effort score, such as WHOOP strain
+    # keyed by zone, zone1 to zone5, or the vendor's own zone names
+    zoneDurations:
+      type: duration
+      keyed: true
+      description: the time in each heart rate zone, by zone name such as
+        zone1
+    notes:
+      type: text
+      description: anything worth saying about it
+    file:
+      type: blobref
+      description: the device's original file, such as a FIT file

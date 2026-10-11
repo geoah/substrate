@@ -4,6 +4,7 @@
 
 import { readReference } from "@/lib/api/types"
 import { isMoney, moneyText } from "@/lib/money"
+import { formatQuantity, isQuantity } from "@/lib/units"
 import { splitRecordPath } from "@/lib/record-path"
 
 const MINUTE = 60_000
@@ -159,11 +160,14 @@ export function referenceObjects(value: unknown): unknown[] | undefined {
 /** One property value flattened into a cell: arrays join, objects summarize,
  * scalars pass through. The cell truncates; this only has to be honest. A
  * value in exactly the money shape reads as its exact text (`19.99 EUR`),
- * which is what those three members say whatever declared them. */
+ * which is what those three members say whatever declared them, and one in
+ * exactly the quantity shape as its title form (`37 °C`), which reads the
+ * same in every locale. */
 export function cellValue(value: unknown): string {
   if (value === null || value === undefined) return ""
   if (Array.isArray(value)) return value.map(cellValue).join(", ")
   if (isMoney(value)) return moneyText(value)
+  if (isQuantity(value)) return formatQuantity(value)
   if (typeof value === "object") {
     const keys = Object.keys(value as Record<string, unknown>)
     return keys.length ? `{${keys.join(", ")}}` : "{}"

@@ -1,0 +1,61 @@
+# one report from one lab: FHIR's DiagnosticReport. Its results are
+# `labresult` records pointing here, deleted with it. `status` is the lab's
+# own word for the report as sent, a string the substrate does not police;
+# `review` is the owner's, for a report read from a PDF.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/health/labreport
+data:
+  authority: samples.substrate.reamde.dev
+  package: health
+  description: >-
+    One report from a lab, such as a blood test. Which lab, when it was collected
+    and issued, its status and the original document.
+  purpose: primary
+  names:
+    singular: labreport
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "{lab} {accession}"
+  properties:
+    lab:
+      type: string
+      description: the lab that issued it
+    accession:
+      type: string
+      description: the lab's own number for this report
+    orderedAt:
+      type: datetime
+      description: when the test was ordered
+    issuedAt:
+      type: datetime
+      description: when the lab issued the report
+    status:
+      type: string
+      description: the report's status as the lab sent it, such as preliminary,
+        final or amended
+    file:
+      type: blobref
+      description: the original document, such as the PDF
+    source:
+      type: reference
+      kind: samples.substrate.reamde.dev/observations/source
+      description: the lab as a source of values
+    about:
+      type: reference
+      kind: any
+      description: whose report it is; absent means the repository's owner
+    origin:
+      type: reference
+      kind: any
+      description: the provider record this was built from
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the upstream
+    review:
+      type: enum
+      description: whether the owner has checked a report read from a document
+      values:
+        - pending
+        - reviewed

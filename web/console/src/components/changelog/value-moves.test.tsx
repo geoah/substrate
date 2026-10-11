@@ -78,6 +78,8 @@ const SPECS = new Map<string, PropSpec>([
   ["favorites", spec("favorites", "string", { repeated: true })],
   ["price", spec("price", "money")],
   ["pastPrices", spec("pastPrices", "money", { repeated: true })],
+  ["temperature", spec("temperature", "quantity")],
+  ["readings", spec("readings", "quantity", { repeated: true })],
   ["originDigest", spec("originDigest", "string", { managed: true })],
   ["syncToken", spec("syncToken", "string", { writer: "connector" })],
 ])
@@ -161,6 +163,30 @@ describe("ValueMoves", () => {
     expect(row?.textContent).toMatch(/3\.00.*→.*3\.50/)
     expect(screen.getByText("added").nextSibling?.textContent).toMatch(/3\.25/)
     expect(document.body.textContent).not.toContain("amount")
+  })
+
+  it("says a quantity by its unit's symbol, not as its JSON", () => {
+    show([
+      move({
+        name: "temperature",
+        before: { value: "37", unit: "Cel" },
+        after: { value: "38.5", unit: "Cel" },
+      }),
+      move({
+        name: "readings",
+        before: [],
+        after: [{ value: "62", unit: "{beats}/min" }],
+        added: [{ value: "62", unit: "{beats}/min" }],
+      }),
+    ])
+    const row = screen
+      .getByText("Temperature:")
+      .closest("[data-slot=value-move]")
+    expect(row?.textContent).toMatch(/37 °C.*→.*38\.5 °C/)
+    expect(screen.getByText("added").nextSibling?.textContent).toBe(
+      "62 beats/min"
+    )
+    expect(document.body.textContent).not.toContain("unit")
   })
 
   it("keeps a secret sealed on both sides", () => {
