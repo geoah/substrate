@@ -1,8 +1,8 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty bundles, in the two tiers
+The catalog in the binary serves twenty-one bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: eight providers and twelve samples. This page covers thirteen of them;
+draws: eight providers and thirteen samples. This page covers fourteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
@@ -19,8 +19,8 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
-a worked example to read and copy, imported under the repository's own
+**Six samples**: LLM, notes, the reading list, Firecrawl, Pebble and the
+Google Fit health adapter. Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -74,6 +74,7 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
+| Health from Google Fit | Sample | none         | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -876,7 +877,9 @@ loopback fake and recordings; nothing was run against a live account.
   `googlefit-on-request` fires it while `syncRequestedAt` and
   `syncRequestedAck` disagree; `googlefit-scheduled` fires it every 15
   minutes, and the body syncs the accounts that are due.
-- **Mappings**: none shipped.
+- **Mappings**: none shipped. The
+  [health from Google Fit](#health-from-google-fit-sample) sample turns these
+  mirror rows into health observations.
 
 **Seven toggles, one scope each**, every scope under
 `https://www.googleapis.com/auth/`:
@@ -1563,5 +1566,55 @@ curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webho
   -F "client=ring" \
   -F "audio=@empty.m4a;type=audio/mp4;filename=recording.m4a"
 ```
+
+## Health from Google Fit (sample)
+
+Package `samples.substrate.reamde.dev/healthgooglefit`. The adapter from the
+[Google Fit](#google-fit) provider's mirror rows to the `health` sample's
+observed values ([observations](observations.md)). It requires
+`observations`, `health` and `providers.substrate.reamde.dev/googlefit`, each
+with a `requiresAtLeast` floor, so install the provider and import `health`
+first.
+
+- **Kinds (0)**: it writes the `observations` and `health` kinds.
+- **Functions (1)**: `observegooglefit` rebuilds the observed values one
+  mirror row implies and deletes the ones it no longer does.
+- **Triggers (1)**: `healthgooglefit-on-mirror` delivers every create, update
+  and delete of a `googlefit/dataset` or `googlefit/session` row, one
+  delivery per row per batch (`coalesce`).
+
+| Fit data type | Stream read | Metric | Form and unit | Written as |
+| --- | --- | --- | --- | --- |
+| `com.google.heart_rate.bpm` | `merge_heart_rate_bpm` | `health/heart_rate` | gauge, `/min`, hold `PT4M` | hourly trace per device |
+| `com.google.step_count.delta` | `estimated_steps` | `health/steps` | amount, `{steps}` | hourly trace per device |
+| `com.google.calories.expended` | `merge_calories_expended` | `health/energy_expended` | amount, `kcal` | hourly trace per device |
+| `com.google.weight` | `merge_weight` | `health/body_mass` | gauge, `kg` | an observation per reading |
+| `com.google.height` | `merge_height` | `health/height` | gauge, `m` | an observation per reading |
+| `com.google.body.fat.percentage` | `merged` | `health/body_fat_fraction` | gauge, `%` | an observation per reading |
+| `com.google.oxygen_saturation` | `merged` | `health/spo2` | gauge, `%` | an observation per reading |
+| `com.google.blood_glucose` | `merged` | `health/blood_glucose` | gauge, `mmol/L` | an observation per reading |
+| `com.google.blood_pressure` | `merged` | `health/systolic_blood_pressure` and `health/diastolic_blood_pressure` | gauge, `mm[Hg]`, hold `PT0S` | two observations per reading, each with both as `components` |
+| `com.google.sleep.segment` | `merged` | `health/sleep_stage` | amount, `min`, with `code` | an observation per segment of a sleep session |
+
+A session with `activityType` 72 becomes a `health/sleep` with its stage
+totals; any other becomes a `health/workout` whose `sportSource` is Fit's
+activity code. Fit's sleep codes map as 1 `awake`, 2 `in_bed` (sleep with no
+stage), 4 `light`, 5 `deep` and 6 `rem`; 3 (out of bed) and 0 are skipped and
+counted. Each data type is read from one derived stream, so a quantity Google
+keeps in two views is never counted twice; the resting heart rate stream,
+`merge_step_deltas`, `com.google.calories.bmr` (a rate, kcal per day),
+activity segments and active and heart minutes have no catalogue metric here
+and are skipped and counted.
+
+Every output names its origin row (`origin`, or `origins` on a trace), and a
+delivery rewrites that row's whole output set, deleting what the row no
+longer implies, so a re-read day, an emptied day and a deleted session
+converge. `revision` is the newest `modifiedTimeMillis`, in seconds, of the
+points an output was built from, and a stored higher one is kept. Fit stores
+no UTC offset, so each offset comes from the account's `timezone`, or UTC
+where none is set; an observation names the rule in a `utcOffsetRule`
+qualifier, and a trace, a sleep and a workout have no property for it. The
+ids, the sources and the rest are in the sample's
+[README](../samples/healthgooglefit/README.md).
 
 Next: [substratectl](substratectl.md), the command line over all of it.

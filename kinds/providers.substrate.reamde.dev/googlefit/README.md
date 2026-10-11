@@ -33,5 +33,8 @@ Fit points carry no UTC offset, so a dataset is keyed by UTC day, and the
 account's `timezone` is the owner's statement of where the data was
 recorded. The sync never reads it; a reader that needs local days does.
 
+The `healthgooglefit` sample (`samples/healthgooglefit`) turns these rows
+into the `health` sample's observations, traces, sleeps and workouts.
+
 The scopes, what each toggle reads, the cursors and the read windows:
 [docs/bundles-catalog.md#google-fit](../../../docs/bundles-catalog.md#google-fit).

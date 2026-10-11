@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -483,6 +484,18 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 			}
 		}
 	}
+	// An adapter sample lands after BOTH halves it reads and writes: the
+	// provider whose mirror kinds its function reads and its trigger watches,
+	// and the domain samples whose kinds it writes.
+	adapter, err := reg.ResolveFunction(samples.Authority + "/healthgooglefit/observegooglefit")
+	if err != nil {
+		t.Fatalf("the healthgooglefit adapter did not land: %v", err)
+	}
+	if !slices.Contains(adapter.Caps.Emit, samples.Authority+"/observations/trace") ||
+		adapter.Caps.Reads == nil ||
+		!slices.Contains(adapter.Caps.Reads.Kinds, "providers.substrate.reamde.dev/googlefit/dataset") {
+		t.Errorf("the healthgooglefit adapter emits %v and reads %+v", adapter.Caps.Emit, adapter.Caps.Reads)
+	}
 	// The suggested mappings landed and RESOLVED: five onto the shipped
 	// person, one onto the shipped task. `installs:` is the package both
 	// directions, so a mapping the tree adds without listing it never reaches
@@ -513,7 +526,9 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 // authority, so their `requires:` resolve against each other exactly as an
 // import chain does.
 //
-// No provider is installed here, which is the other half of the door: a
+// No provider is installed here but one a sample names in `requires:`
+// (healthgooglefit requires googlefit, which no suggested mapping reads), which
+// is the other half of the door: a
 // sample's SUGGESTED MAPPINGS name a provider mirror as their source, and the
 // import DROPS the ones whose provider is absent (decision record 0049). So
 // this is the fresh-repository case, and the filter is what makes it admit:

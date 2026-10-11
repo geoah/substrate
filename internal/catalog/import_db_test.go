@@ -244,11 +244,21 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 	ctx := context.Background()
 
 	// `requires:` forces an order; a refused import is retried after the rest
-	// of the pass, so the loop needs no knowledge of the graph.
+	// of the pass, so the loop needs no knowledge of the graph. A provider an
+	// adapter sample requires (healthgooglefit reads googlefit's mirrors) is
+	// installed first, through its own door.
 	var pending []*catalog.Bundle
 	for _, b := range c.Bundles() {
-		if b.Tier == substrate.TierSample {
-			pending = append(pending, b)
+		if b.Tier != substrate.TierSample {
+			continue
+		}
+		pending = append(pending, b)
+		for _, req := range b.Requires {
+			if p, ok := c.ByID(req); ok && p.Tier == substrate.TierProvider {
+				if _, _, err := c.Install(ctx, substrate.ActorAPI, p.ID, ds); err != nil {
+					t.Fatalf("install %s, which %s requires: %v", p.ID, b.ID, err)
+				}
+			}
 		}
 	}
 	for len(pending) > 0 {
