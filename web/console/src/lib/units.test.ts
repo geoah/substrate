@@ -60,7 +60,10 @@ describe("the unit table", () => {
     expect(unitSymbol("s-1")).toBe("s⁻¹")
     expect(unitSymbol("GJ")).toBe("GJ")
     expect(unitSymbol("kcal/(kg.h)")).toBe("kcal/(kg.h)")
-    expect(unitSymbol("10*3/uL")).toBe("10*3/uL")
+    // An unlisted power-of-ten compound reads as its code; a listed one
+    // carries the engine's symbol (number-concentration lists 10*3/uL).
+    expect(unitSymbol("10*3/mL")).toBe("10*3/mL")
+    expect(unitSymbol("10*3/uL")).toBe("10³/μL")
   })
 
   it("places a listed code in its measure, the primary one where two list it", () => {
