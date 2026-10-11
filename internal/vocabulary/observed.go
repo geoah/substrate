@@ -623,7 +623,9 @@ func listOf(v any) []any {
 
 // obsInt reads an integer the way a stored value arrives: int64 from a write's
 // coercion, float64 from a jsonb read-back, json.Number from a changelog
-// decode.
+// decode. A changelog segment's canonical line spells every number with an
+// exponent (118000 is `1.18E5`), so a replayed number is read exactly as a
+// rational and admitted when it is whole.
 func obsInt(v any) (int64, bool) {
 	switch n := v.(type) {
 	case int:
@@ -636,8 +638,14 @@ func obsInt(v any) (int64, bool) {
 		}
 		return int64(n), true
 	case json.Number:
-		i, err := strconv.ParseInt(string(n), 10, 64)
-		return i, err == nil
+		if i, err := strconv.ParseInt(string(n), 10, 64); err == nil {
+			return i, true
+		}
+		r, ok := new(big.Rat).SetString(string(n))
+		if !ok || !r.IsInt() || !r.Num().IsInt64() {
+			return 0, false
+		}
+		return r.Num().Int64(), true
 	}
 	return 0, false
 }

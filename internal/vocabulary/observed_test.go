@@ -252,3 +252,32 @@ func TestTraceStatsAreComputedFromThePoints(t *testing.T) {
 		t.Errorf("all-unavailable stats = %v", got)
 	}
 }
+
+// A replayed trace arrives with its numbers as a changelog segment spells
+// them, every one with an exponent: its points are the ones the write saw.
+func TestTracePointsReadAReplayedTrace(t *testing.T) {
+	at := *instant(t, "2026-10-07T06:00:00Z")
+	written := map[string]any{"offsets": []any{int64(0), int64(118000), int64(3599000)}, "values": []any{"58", nil, "61"}}
+	replayed := map[string]any{
+		"offsets": []any{json.Number("0"), json.Number("1.18E5"), json.Number("3.599E6")}, "values": []any{"58", nil, "61"},
+	}
+	want, err := vocabulary.TracePoints(at, written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := vocabulary.TracePoints(at, replayed)
+	if err != nil {
+		t.Fatalf("a replayed trace: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("replayed points %+v, written %+v", got, want)
+	}
+	if rev, ok := vocabulary.ObservedRevisionOf(map[string]any{"revision": json.Number("1.2E1")}); !ok || rev != 12 {
+		t.Errorf("a replayed revision reads %d (%v), want 12", rev, ok)
+	}
+	if _, err := vocabulary.TracePoints(at, map[string]any{
+		"offsets": []any{json.Number("1.5E0")}, "values": []any{"1"},
+	}); err == nil {
+		t.Error("a fractional offset was read as a point")
+	}
+}
