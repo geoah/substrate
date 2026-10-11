@@ -245,22 +245,22 @@ func (r *aggRun) segments() [][2]time.Time {
 	return joinSpans(spans)
 }
 
-// split is a bucket's whole rollup rows and the edges that cut a row.
-func split(b *aggBucket) (whole [2]time.Time, edges [][2]time.Time) {
+// split is a bucket's whole rollup rows and the ends that cut a row.
+func split(b *aggBucket) (whole [2]time.Time, frags [][2]time.Time) {
 	cs, fe := ceil15(b.start), floor15(b.end)
 	if !cs.Before(fe) {
 		return [2]time.Time{}, [][2]time.Time{{b.start, b.end}}
 	}
 	if b.start.Before(cs) {
-		edges = append(edges, [2]time.Time{b.start, cs})
+		frags = append(frags, [2]time.Time{b.start, cs})
 	}
 	if fe.Before(b.end) {
-		edges = append(edges, [2]time.Time{fe, b.end})
+		frags = append(frags, [2]time.Time{fe, b.end})
 	}
-	return [2]time.Time{cs, fe}, edges
+	return [2]time.Time{cs, fe}, frags
 }
 
-// fragments are the bucket edges an amount's or a counter's rollup-served
+// fragments are the bucket ends an amount's or a counter's rollup-served
 // read takes from raw points.
 func (r *aggRun) fragments() [][2]time.Time {
 	if r.p.bucket.mode == bucketLocal {
@@ -268,8 +268,8 @@ func (r *aggRun) fragments() [][2]time.Time {
 	}
 	var spans [][2]time.Time
 	for _, b := range r.buckets {
-		_, edges := split(b)
-		spans = append(spans, edges...)
+		_, frags := split(b)
+		spans = append(spans, frags...)
 	}
 	return joinSpans(spans)
 }
@@ -892,8 +892,8 @@ type spanPart struct {
 	span   aggSpan
 }
 
-// spanParts cuts a held interval at the buckets' edges: a UTC bucket's, or
-// for a recorded-local bucket the edges at the holding point's own offset.
+// spanParts cuts a held interval at the buckets' boundaries: a UTC bucket's, or
+// for a recorded-local bucket the boundaries at the holding point's own offset.
 func (r *aggRun) spanParts(sp aggSpan) []spanPart {
 	var out []spanPart
 	switch r.p.bucket.mode {
@@ -946,7 +946,7 @@ func (r *aggRun) bucketsMeeting(from, to time.Time) []*aggBucket {
 // --- rollups ---
 
 // evalRollups reduces a group from its rollup rows: whole rows merged after
-// converting each from its own unit, an amount's or a counter's cut edges
+// converting each from its own unit, an amount's or a counter's cut bucket ends
 // from raw points, a gauge's held time walked across rows with its carry.
 func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 	out := aggCells{}
@@ -992,7 +992,7 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 		}
 		if g.form != vocabulary.FormGauge && !local {
-			if err := r.rollupEdges(out, g, s); err != nil {
+			if err := r.rollupFragments(out, g, s); err != nil {
 				return nil, err
 			}
 		}
@@ -1083,13 +1083,13 @@ func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, conv
 	}
 }
 
-// rollupEdges merges the raw points of an amount's or a counter's cut bucket
-// edges into the buckets, through observed.Bucket as a rollup row would.
-func (r *aggRun) rollupEdges(out aggCells, g *aggGroup, s *aggStream) error {
+// rollupFragments merges the raw points of an amount's or a counter's cut bucket
+// ends into the buckets, through observed.Bucket as a rollup row would.
+func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream) error {
 	ser := r.series[s]
 	for _, b := range r.buckets {
-		_, edges := split(b)
-		for _, e := range edges {
+		_, frags := split(b)
+		for _, e := range frags {
 			for _, seg := range ser.segs {
 				if seg.from.After(e[0]) || seg.to.Before(e[1]) {
 					continue
@@ -1164,7 +1164,7 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observ
 		end := slot.Add(bucketWidth)
 		if i == j {
 			// No row here: jump to the next row, the carry holding (or not)
-			// across the empty slots, cut at bucket edges so each bucket gets
+			// across the empty slots, cut at bucket boundaries so each bucket gets
 			// its share.
 			next := to
 			if i < len(rows) {

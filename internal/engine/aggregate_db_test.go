@@ -187,7 +187,7 @@ var athens = func() *time.Location {
 
 // A heart rate read served from rollups equals the one served from raw
 // points and the observed package's reducers over the stored points, bucket
-// by bucket, a time-weighted mean across the buckets' edges included.
+// by bucket, a time-weighted mean across the buckets' boundaries included.
 func TestAggregateRollupEqualsRaw(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -273,7 +273,7 @@ func (f aggFix) steps(source string, day time.Time, step time.Duration, hours, r
 }
 
 // A read whose range and buckets cut rollup rows merges the whole rows with
-// raw points at the edges, and equals the raw read and the specification:
+// raw points at the cut ends, and equals the raw read and the specification:
 // as written, after a correction at a higher revision, after a deletion and
 // after a rebuild.
 func TestAggregateRollupEqualsRawAfterCorrectionDeletionAndRebuild(t *testing.T) {
@@ -295,7 +295,7 @@ func TestAggregateRollupEqualsRawAfterCorrectionDeletionAndRebuild(t *testing.T)
 		ctx, trace := engine.AggregateTraced(context.Background())
 		fromRollups := f.agg(ctx, substrate.Filter{}, a)
 		if trace.RollupRows() == 0 || trace.RawPoints() == 0 {
-			t.Fatalf("%s: the read took %d rollup rows and %d raw points; the cut edges should be raw and the rest rollups",
+			t.Fatalf("%s: the read took %d rollup rows and %d raw points; the cut ends should be raw and the rest rollups",
 				stage, trace.RollupRows(), trace.RawPoints())
 		}
 		fromRaw := f.agg(engine.AggregateRaw(context.Background()), substrate.Filter{}, a)
@@ -710,7 +710,7 @@ func TestAggregateSleepStagesByRecordWindows(t *testing.T) {
 }
 
 // kWh per day from a meter that resets: the increase steps across the reset
-// and across the day's edge, and the rate is that increase over the time its
+// and across the day's boundary, and the rate is that increase over the time its
 // steps span.
 func TestAggregateCounterIncreaseAndRateAcrossAReset(t *testing.T) {
 	t.Parallel()

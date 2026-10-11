@@ -10,7 +10,7 @@ package engine
 //   - observed_rollups, when every reducer merges exactly from rollup rows
 //     (internal/observed.Merge) and every gauge row is Eligible under the
 //     request's maxGap. A bucket's whole rows are merged after converting each
-//     from its own unit; an amount's or a counter's bucket edges that cut a
+//     from its own unit; an amount's or a counter's bucket ends that cut a
 //     row (the records mode, a range that starts mid-row) are read from raw
 //     points and merged in. A gauge's held time walks the rows with
 //     HeldFromRowsCarry, so one lookup into the raw points per stream carries
