@@ -414,6 +414,11 @@ var measureDefs = []measureDef{
 		units: []string{"g/L", "g/dL", "mg/dL", "mg/L", "ug/L", "ng/mL", "pg/mL", "ug/dL", "g/m3", "mg/m3", "ug/m3", "kg/m3"},
 	},
 	{
+		name: "number-concentration", base: "/m3", scale: ScaleRatio, display: "10*9/L",
+		units: []string{"/L", "/uL", "10*3/uL", "10*6/uL", "10*9/L", "10*12/L"},
+		note:  "things counted per volume, such as blood cells: 10*9/L and 10*3/uL are one value",
+	},
+	{
 		name: "catalytic-concentration", base: "mol/(s.m3)", scale: ScaleRatio, display: "U/L",
 		units: []string{"U/L"},
 		note:  "enzyme activity per volume: U is 1 umol/min, a proper unit",

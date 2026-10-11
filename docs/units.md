@@ -6,8 +6,8 @@
 Every unit a `quantity` value may carry, grouped by **measure**: the named kind of
 quantity (mass, temperature, rate) inside which a value converts and compares.
 [The data model](data-model.md#property-types) says what a quantity value is and how a
-property declares one. This page is the table itself: 56 measures and 200 codes
-(204 rows, because a few codes sit in two measures).
+property declares one. This page is the table itself: 57 measures and 206 codes
+(210 rows, because a few codes sit in two measures).
 
 A code is a case-sensitive UCUM code. The codes listed here are the ones the table
 names; the grammar also reads any compound or prefixed code over the same atoms
@@ -54,6 +54,7 @@ dimension (energy and torque); that is why a measure has a name.
 | [amount-of-substance](#amount-of-substance) | ratio | `mol` | N | `mmol` | `mol`, `mmol`, `umol` |
 | [amount-concentration](#amount-concentration) | ratio | `mol/m3` | L-3 N | `mmol/L` | `mol/L`, `mmol/L`, `umol/L`, `nmol/L`, `pmol/L` |
 | [mass-concentration](#mass-concentration) | ratio | `kg/m3` | L-3 M | `mg/dL` | `g/L`, `g/dL`, `mg/dL`, `mg/L`, `ug/L`, `ng/mL`, `pg/mL`, `ug/dL`, `g/m3`, `mg/m3`, `ug/m3`, `kg/m3` |
+| [number-concentration](#number-concentration) | ratio | `/m3` | L-3 | `10*9/L` | `/L`, `/uL`, `10*3/uL`, `10*6/uL`, `10*9/L`, `10*12/L` |
 | [catalytic-concentration](#catalytic-concentration) | ratio | `mol/(s.m3)` | L-3 T-1 N | `U/L` | `U/L` |
 | [catalytic-activity](#catalytic-activity) | ratio | `mol/s` | T-1 N | `U` | `kat`, `U` |
 | [arbitrary](#arbitrary) | arbitrary | none | none | `[IU]` | `[IU]`, `[IU]/L`, `m[IU]/L`, `[IU]/mL`, `[arb'U]` |
@@ -362,6 +363,19 @@ A part of a whole; mmol/mol (HbA1c IFCC) never converts to an NGSP %, which a me
 | `mg/m3` | mg/m³ | 1/1000000 |  |
 | `ug/m3` | μg/m³ | 1/1000000000 |  |
 | `kg/m3` | kg/m³ | 1 |  |
+
+### number-concentration
+
+Things counted per volume, such as blood cells: 10*9/L and 10*3/uL are one value.
+
+| Code | Symbol | Factor to `/m3` | Offset |
+| --- | --- | --- | --- |
+| `/L` | /L | 1000 |  |
+| `/uL` | /μL | 1000000000 |  |
+| `10*3/uL` | 10³/μL | 1000000000000 |  |
+| `10*6/uL` | 10⁶/μL | 1000000000000000 |  |
+| `10*9/L` | 10⁹/L | 1000000000000 |  |
+| `10*12/L` | 10¹²/L | 1000000000000000 |  |
 
 ### catalytic-concentration
 

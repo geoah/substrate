@@ -202,6 +202,14 @@ var pinnedUnits = map[string]map[string]string{
 		"ug/m3": "1/1000000000",
 		"kg/m3": "1",
 	},
+	"number-concentration": {
+		"/L":      "1000",
+		"/uL":     "1000000000",
+		"10*3/uL": "1000000000000",
+		"10*6/uL": "1000000000000000",
+		"10*9/L":  "1000000000000",
+		"10*12/L": "1000000000000000",
+	},
 	"catalytic-concentration": {
 		"U/L": "1/60000",
 	},

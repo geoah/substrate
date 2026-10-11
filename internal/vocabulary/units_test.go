@@ -71,6 +71,7 @@ func TestMeasureOf(t *testing.T) {
 		"V.A{reactive}": "reactive-power", "Hz": "frequency", "/min": "rate", "dB": "level", "dBm": "power-level",
 		"[pH]": "acidity", "U/L": "catalytic-concentration", "U": "catalytic-activity", "kat": "catalytic-activity",
 		"[IU]": "arbitrary", "kW.h/(100.km)": "energy-per-distance", "mL/(kg.min)": "oxygen-uptake-rate",
+		"10*9/L": "number-concentration", "10*3/uL": "number-concentration",
 		// A prefix the table does not list belongs to its row's measure.
 		"GJ": "energy", "kV.A": "apparent-power", "kV.A{reactive}": "reactive-power", "mK": "temperature",
 		"fL": "volume", "pg": "mass", "/ms": "rate", "MHz": "frequency", "TBy": "information",
@@ -281,6 +282,8 @@ func TestConvertIsExact(t *testing.T) {
 		{"100", "mg/dL", "g/L", "1"},
 		{"1", "U/L", "ukat/L", "1/60"},
 		{"60", "{count}/min", "{count}/s", "1"},
+		// A white cell count in SI and in US units is one number.
+		{"6.2", "10*9/L", "10*3/uL", "6.2"},
 	} {
 		got := convertTo(t, "", c.value, c.from, c.to)
 		if got.Cmp(rat(t, c.want)) != 0 {

@@ -417,8 +417,8 @@ Every unit belongs to a **measure**: the named kind of quantity it measures,
 such as `mass`, `temperature` or `rate`. A value converts and compares only
 inside one measure, because a dimension alone does not keep apart what a
 person needs apart: energy and torque, a fraction and a count, real and
-apparent power. [Units](units.md) lists the 56 measures and their 200 codes,
-each with its exact factor. A code the table does not list is still admitted
+apparent power. [Units](units.md) lists every measure and its codes, each
+with its exact factor. A code the table does not list is still admitted
 when the grammar reads it (`GJ`, `fL`, `kg/h`): one that differs from a listed
 code only by its prefixes belongs to that code's measure, and any other to the
 one measure of its dimension. Where two measures share the dimension (`J/s` is
