@@ -17,6 +17,7 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -209,19 +210,92 @@ func Max(points []Point, w Window) (float64, bool) {
 }
 
 // NumberLess reports whether the number a (its float a and its stored digits
-// ad) is smaller than b. Floats far apart order as their numbers do; within
-// float64's noise of each other (2^53 + 1 and 2^53 are one float) the digits
-// decide, exactly. Equal numbers are not less, so the first of a tie stays.
+// ad) is smaller than b. Where both carry digits the digits decide, exactly,
+// whatever the floats say: a converted number's float is computed apart from
+// its digits, and two floats far apart can order the wrong way
+// (-273.14999999999999 Cel in K is the float 0 and the digits
+// 0.00000000000001, which is more than 1e-15 K). The floats decide only
+// where a number has no digits. Equal numbers are not less, so the first of a
+// tie stays.
 func NumberLess(a float64, ad string, b float64, bd string) bool {
-	if math.Abs(a-b) > 1e-9*math.Max(math.Abs(a), math.Abs(b)) {
-		return a < b
+	if ad != "" && bd != "" {
+		if c, ok := CompareDigits(ad, bd); ok {
+			return c < 0
+		}
 	}
-	x, okA := new(big.Rat).SetString(ad)
-	y, okB := new(big.Rat).SetString(bd)
+	return a < b
+}
+
+// CompareDigits compares two numbers written as decimal digits, exactly: -1,
+// 0 or 1 as a is less than, equal to or greater than b, and false where
+// either is not a number. A plain decimal (`-12.50`, the form `numeric`
+// writes) is compared digit by digit without allocating; anything else a
+// big.Rat reads (an exponent, a fraction) is compared as a rational.
+func CompareDigits(a, b string) (int, bool) {
+	an, ai, af, okA := plainDecimal(a)
+	bn, bi, bf, okB := plainDecimal(b)
+	if okA && okB {
+		switch {
+		case an != bn && an:
+			return -1, true
+		case an != bn:
+			return 1, true
+		}
+		c := compareMagnitude(ai, af, bi, bf)
+		if an {
+			c = -c
+		}
+		return c, true
+	}
+	x, okA := new(big.Rat).SetString(a)
+	y, okB := new(big.Rat).SetString(b)
 	if !okA || !okB {
-		return a < b
+		return 0, false
 	}
-	return x.Cmp(y) < 0
+	return x.Cmp(y), true
+}
+
+// plainDecimal splits a plain decimal into its sign and its integer and
+// fraction digits, the leading zeros of the one and the trailing zeros of
+// the other dropped; zero is never negative.
+func plainDecimal(s string) (neg bool, integer, fraction string, ok bool) {
+	if s != "" && (s[0] == '-' || s[0] == '+') {
+		neg, s = s[0] == '-', s[1:]
+	}
+	integer = s
+	if dot := strings.IndexByte(s, '.'); dot >= 0 {
+		integer, fraction = s[:dot], s[dot+1:]
+	}
+	if integer == "" && fraction == "" {
+		return false, "", "", false
+	}
+	for _, digits := range []string{integer, fraction} {
+		for i := range len(digits) {
+			if digits[i] < '0' || digits[i] > '9' {
+				return false, "", "", false
+			}
+		}
+	}
+	integer, fraction = strings.TrimLeft(integer, "0"), strings.TrimRight(fraction, "0")
+	if integer == "" && fraction == "" {
+		neg = false
+	}
+	return neg, integer, fraction, true
+}
+
+// compareMagnitude compares two non-negative decimals split by plainDecimal:
+// the longer integer part is the larger, then the digits decide.
+func compareMagnitude(ai, af, bi, bf string) int {
+	if len(ai) != len(bi) {
+		if len(ai) < len(bi) {
+			return -1
+		}
+		return 1
+	}
+	if c := strings.Compare(ai, bi); c != 0 {
+		return c
+	}
+	return strings.Compare(af, bf)
 }
 
 // MinPoint is the point holding the smallest number in the window, compared

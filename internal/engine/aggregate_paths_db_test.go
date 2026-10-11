@@ -667,6 +667,60 @@ func TestAggregateExtremesKeepTheirDigits(t *testing.T) {
 	}
 }
 
+// A converted min or max is chosen by its converted digits on both paths and
+// in a downsample's columns: -273.14999999999999 Cel and 0.000000000000001 K
+// read in K are 0.00000000000001 and 0.000000000000001, while their floats
+// are 0 and 1e-15, so ordering the floats once answered them the wrong way
+// round with exact true.
+func TestAggregateConvertedExtremesCompareTheirDigits(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value, unit string
+		at              time.Duration
+	}{{"celsius", "-273.14999999999999", "Cel", time.Minute}, {"kelvin", "0.000000000000001", "K", 20 * time.Minute}} {
+		f.mustPut(t, f.observation, "cold/"+x.id, map[string]any{
+			"metric": f.metricRef("air_temperature"), "source": f.sourceRef("cryostat"), "form": "gauge",
+			"value": quantity(x.value, x.unit), "at": at(start.Add(x.at)),
+		})
+	}
+	a := substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+		Range:    rng(start, start.Add(time.Hour)),
+		Reducers: reducers("min", "max"),
+		Unit:     "K",
+	}
+	const lo, hi = "0.000000000000001", "0.00000000000001"
+	rollups, raw, rollupRows := f.bothPaths(substrate.Filter{}, a)
+	if rollupRows == 0 {
+		t.Error("the read took no rollup row")
+	}
+	for name, res := range map[string]*substrate.AggregateResult{"rollups": rollups, "raw": raw} {
+		if len(res.Rows) != 1 {
+			t.Fatalf("%s: %d rows", name, len(res.Rows))
+		}
+		gotLo, _ := val(res.Rows[0], "min")
+		gotHi, _ := val(res.Rows[0], "max")
+		if gotLo != lo || gotHi != hi || !res.Exact {
+			t.Errorf("%s: min/max = %s/%s, exact %v; want %s/%s, exact", name, gotLo, gotHi, res.Exact, lo, hi)
+		}
+	}
+	a.Reducers = nil
+	cols, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &a, Downsample: &substrate.Downsample{Points: 1}})
+	if err != nil {
+		t.Fatalf("downsample: %v", err)
+	}
+	if len(cols.Rows) != 1 {
+		t.Fatalf("downsample: %+v", cols.Rows)
+	}
+	gotLo, _ := val(cols.Rows[0], "min")
+	gotHi, _ := val(cols.Rows[0], "max")
+	if gotLo != lo || gotHi != hi {
+		t.Errorf("the column's min/max = %s/%s, want %s/%s", gotLo, gotHi, lo, hi)
+	}
+}
+
 // A downsample answers at most `points` columns when its origin moves back to
 // a quarter hour: [00:01, 01:01) in one column is one column, not two.
 func TestAggregateDownsampleKeepsItsColumnCount(t *testing.T) {
