@@ -41,7 +41,15 @@ const (
 	// (money.go). A `min`/`max` bounds the exact value the two denote, a filter
 	// compares within the operand's currency, and an ordering compares the
 	// exact value.
-	DatatypeMoney      Datatype = "money"
+	DatatypeMoney Datatype = "money"
+	// DatatypeQuantity is a measured amount in a unit, stored as the object
+	// `{value: "72.5", unit: "kg"}` (quantity.go): exact digits, as a decimal
+	// is, and a code from the unit table (units.go), with an optional
+	// `comparator` ("<0.5") where the property declares `comparator: true`.
+	// The property may name its measure (`measures: mass`), narrow its units
+	// and bound it with quantities; a filter and an ordering convert exactly
+	// inside one measure, and never across two.
+	DatatypeQuantity   Datatype = "quantity"
 	DatatypeBool       Datatype = "bool"
 	DatatypeDatetime   Datatype = "datetime"
 	DatatypeDate       Datatype = "date"
@@ -127,7 +135,8 @@ const (
 
 var builtinKinds = map[Datatype]bool{
 	DatatypeString: true, DatatypeText: true, DatatypeMarkdown: true, DatatypeInt: true,
-	DatatypeFloat: true, DatatypeDecimal: true, DatatypeMoney: true, DatatypeBool: true, DatatypeDatetime: true, DatatypeDate: true,
+	DatatypeFloat: true, DatatypeDecimal: true, DatatypeMoney: true, DatatypeQuantity: true, DatatypeBool: true,
+	DatatypeDatetime: true, DatatypeDate: true,
 	DatatypeDuration: true, DatatypeEmail: true, DatatypeURL: true, DatatypePhone: true,
 	DatatypeTimezone: true, DatatypeRecurrence: true, DatatypeEnum: true,
 	DatatypeJSON: true, DatatypeSecret: true, DatatypeDigest: true,
@@ -189,8 +198,13 @@ type Property struct {
 	Pattern *regexp.Regexp
 	Min     *float64
 	Max     *float64
-	Embed   bool
-	FTS     bool
+	// Quantity is what a `type: quantity` property declares beyond its
+	// datatype: its measure, its listed units, whether a value may carry a
+	// comparator, and its bounds, which are quantities rather than the
+	// numbers Min and Max hold. Nil for every other datatype.
+	Quantity *QuantitySpec
+	Embed    bool
+	FTS      bool
 	// Required is the declared `required:`: the record must hold a value for
 	// this property AFTER every write, which the engine enforces on the merged
 	// row (checkRequiredProps, in internal/engine). A Default is what keeps a
@@ -758,6 +772,17 @@ func (t *Kind) applyCapability(b TraitBinding) {
 	for _, col := range b.Columns {
 		t.HotColumns[col] = true
 	}
+}
+
+// Binding is the kind's binding of the trait with the given full identity,
+// variant included: what a host rule keyed on one trait reads.
+func (t *Kind) Binding(identity string) (TraitBinding, bool) {
+	for _, b := range t.Traits {
+		if strings.EqualFold(b.Identity, identity) {
+			return b, true
+		}
+	}
+	return TraitBinding{}, false
 }
 
 // Interfaces lists the interface names this type implements: one per bound

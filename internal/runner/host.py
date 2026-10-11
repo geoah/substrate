@@ -9,7 +9,8 @@
 #                    {"op": "invoke", "reqId": N, "id": <key>, "input": {...}}
 #   host -> parent   {"kind": "response", "reqId": N, "ok": true, ...}
 #                    {"kind": "response", "reqId": N, "ok": false, "error": "..."}
-#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call", "params": {...}}
+#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call"|"units.convert"|
+#                     "units.canonical"|"units.measure", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
 #   host -> parent   {"kind": "log", "reqId": N, "line": "..."}   (no answer)
@@ -24,6 +25,8 @@
 # is an error frame the engine parks — never a host crash. Isolation is the
 # process boundary (user code never loads into the substrate); tightening
 # placement is a later dial on the same protocol.
+import datetime
+import decimal
 import hashlib
 import json
 import os
@@ -182,6 +185,10 @@ class HostError(Exception):
 #     link/unlink/merge/split       a staged effect and returns a handle
 #   host.ids.external/url           deterministic, hash-backed, URL-safe ids
 #   host.page.resume / .more()      the paged-checkpoint wrapper
+#   host.units.convert/canonical/   the engine's unit table, over the host call
+#     measure
+#   host.observed.trace/local_day/  pure-Python builders for observed values
+#     period_id
 #
 # Writes STAY effects: the builder never writes mid-body, it accumulates the
 # effect list the engine already applies atomically after the body returns.
@@ -613,10 +620,303 @@ class Agents:
         return self._host.call(agent, input)
 
 
+# --- units and observed values ------------------------------------------------
+#
+# host.units asks the ENGINE's unit table over the host call, so a body and the
+# write path that holds its effects read one table; there is no Python copy of
+# it. host.observed is pure Python: it builds the trace documents core's
+# `observed(packed)` admits from a body's own points, and the labels a trace id
+# and a daily summary are composed from. Its rules mirror the engine's
+# (vocabulary/observed.go); runner's observed tests hold the two together.
+
+_RE_DECIMAL = re.compile(r"^[+-]?[0-9]+(\.[0-9]+)?$")
+_RE_ISO_DURATION = re.compile(
+    r"^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$")
+_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+_US = {"W": 7 * 86400 * 10**6, "D": 86400 * 10**6, "H": 3600 * 10**6, "M": 60 * 10**6, "S": 10**6}
+_MAX_UTC_OFFSET = 1080
+_TRACE_FORMS = ("gauge", "amount", "counter")
+_RESET_RULES = ("monotonic", "signed", "wrap")
+
+
+def _decimal_text(fn, value):
+    """A number as the exact digits the engine stores. A str is held to the
+    decimal grammar and an int or a Decimal is written out; a float is written
+    as its shortest repr, which is the digits a JSON payload carried, so pass a
+    str or a Decimal to keep digits a float cannot hold."""
+    if isinstance(value, bool):
+        raise ValueError("%s: %r is a bool, not a number" % (fn, value))
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("%s: %r is not a finite number" % (fn, value))
+        value = decimal.Decimal(repr(value))
+    if isinstance(value, decimal.Decimal):
+        if not value.is_finite():
+            raise ValueError("%s: %r is not a finite number" % (fn, value))
+        return format(value, "f")
+    if isinstance(value, str) and _RE_DECIMAL.match(value):
+        return value
+    raise ValueError('%s: %r is not a decimal: pass digits as a str ("72.4"), an int or a Decimal'
+                     % (fn, value))
+
+
+def _duration_us(fn, field, value):
+    """An ISO 8601 duration (weeks, days and a time part, as the engine reads
+    one) in whole microseconds."""
+    m = _RE_ISO_DURATION.match(value) if isinstance(value, str) else None
+    if not m or not any(m.groups()):
+        raise ValueError("%s: %s %r is not an ISO 8601 duration (PT1H, PT5S, P1D)" % (fn, field, value))
+    total = decimal.Decimal(0)
+    for digits, unit in zip(m.groups(), "WDHMS"):
+        if digits:
+            total += decimal.Decimal(digits) * _US[unit]
+    if total != total.to_integral_value():
+        raise ValueError("%s: %s %r is finer than a microsecond" % (fn, field, value))
+    return int(total)
+
+
+def _format_duration(us):
+    """The one stored spelling of a duration, as the engine writes it: days,
+    then a time part, zero components omitted, PT0S for zero."""
+    days, us = divmod(us, 86400 * 10**6)
+    h, us = divmod(us, 3600 * 10**6)
+    mi, us = divmod(us, 60 * 10**6)
+    sec, frac = divmod(us, 10**6)
+    out = "P" + ("%dD" % days if days else "")
+    if h or mi or sec or frac or not days:
+        out += "T"
+        if h:
+            out += "%dH" % h
+        if mi:
+            out += "%dM" % mi
+        if frac:
+            out += "%d.%sS" % (sec, ("%06d" % frac).rstrip("0"))
+        elif sec or not (h or mi or days):
+            out += "%dS" % sec
+    return out
+
+
+def _aware(fn, field, at):
+    if not isinstance(at, datetime.datetime) or at.tzinfo is None or at.utcoffset() is None:
+        raise ValueError("%s: %s is a timezone-aware datetime, got %r" % (fn, field, at))
+    return at
+
+
+def _offset_minutes(fn, field, offset):
+    seconds = offset.total_seconds()
+    if seconds % 60 or abs(seconds) > _MAX_UTC_OFFSET * 60:
+        raise ValueError("%s: %s's UTC offset is whole minutes within %d either way, got %s"
+                         % (fn, field, _MAX_UTC_OFFSET, offset))
+    return int(seconds // 60)
+
+
+def _epoch_us(at):
+    delta = at.astimezone(datetime.timezone.utc) - _EPOCH
+    return (delta.days * 86400 + delta.seconds) * 10**6 + delta.microseconds
+
+
+def _instant(us):
+    """An instant in microseconds since the epoch as RFC 3339 UTC."""
+    t = _EPOCH + datetime.timedelta(microseconds=us)
+    if t.microsecond:
+        return t.strftime("%Y-%m-%dT%H:%M:%S.") + ("%06d" % t.microsecond).rstrip("0") + "Z"
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class Units:
+    """The engine's unit table, asked over the host call: every code, alias and
+    factor is the one the write path holds an effect to. Errors are the
+    engine's, raised as HostError."""
+
+    def __init__(self, host):
+        self._host = host
+
+    def convert(self, value, from_unit, to_unit, measure=None):
+        """Convert exact digits between two units of one measure -> a decimal
+        str. Aliases are read (`°C`, `kWh`, `mmHg`). Every digit comes back
+        when the result has a finite decimal expansion; one without is rounded
+        to 20 significant digits. `measure` names the measure to convert in
+        where the units' own reading is not meant: a deviation in Cel converts
+        to [degF] in `temperature-difference`, without the offset."""
+        params = {"value": _decimal_text("units.convert", value),
+                  "from": from_unit, "to": to_unit}
+        if measure is not None:
+            params["measure"] = measure
+        return self._host._call("units.convert", params).get("value")
+
+    def canonical(self, code):
+        """The code the engine stores for a unit spelling: `bpm` is
+        `{beats}/min`, `°C` is `Cel`, `kWh` is `kW.h`."""
+        return self._host._call("units.canonical", {"code": code}).get("code")
+
+    def measure(self, code):
+        """The name of the measure a unit belongs to: `mass` for `kg`, `rate`
+        for `/min`. An ambiguous or unknown code raises."""
+        return self._host._call("units.measure", {"code": code}).get("measure")
+
+
+class Observed:
+    """Builders for observed values (docs/observations.md). Pure Python: they
+    compute, never write; a body stages what they return with host.effects."""
+
+    def trace(self, points, *, metric, source, unit, form, period="PT1H", hold=None,
+              about=None, channel=None, reset_rule=None):
+        """Pack points into the trace documents a kind binding
+        `observed(packed)` admits -> a list of property maps, oldest first,
+        each ready for host.effects.put(<trace kind>, <id>, properties).
+
+        `points` is [(at, value)] for numbers or [(at, code)] for codes, `at` a
+        timezone-aware datetime and a value or code None where the source had
+        nothing (unavailable from that point on). Each document covers one
+        fixed UTC period (`period`, aligned to the epoch: PT1H is the UTC
+        hour) and is split where the points' UTC offset changes, so every
+        document has one offset; a later part of a split period starts at its
+        first point. Points regularly spaced from the period's start are
+        written with `every`, anything else with `offsets` in milliseconds.
+        `metric`, `source` and `about` are reference values (a full record
+        path or {"ref": path}). Ids are the caller's: compose each from
+        `period_id(document["at"], period)`."""
+        fn = "observed.trace"
+        if form not in _TRACE_FORMS:
+            if form == "summary":
+                raise ValueError("%s: a summary is one value per record: write an observation" % fn)
+            raise ValueError("%s: form is one of %s, got %r" % (fn, ", ".join(_TRACE_FORMS), form))
+        p_us = _duration_us(fn, "period", period)
+        if p_us <= 0:
+            raise ValueError("%s: period is longer than zero" % fn)
+        if hold is not None:
+            if form != "gauge":
+                raise ValueError("%s: only a gauge holds its value; a %s does not" % (fn, form))
+            _duration_us(fn, "hold", hold)
+        if reset_rule is not None:
+            if form != "counter":
+                raise ValueError("%s: only a counter resets; a %s does not" % (fn, form))
+            if reset_rule not in _RESET_RULES:
+                raise ValueError("%s: reset_rule is one of %s, got %r" % (fn, ", ".join(_RESET_RULES), reset_rule))
+        coded, pts = None, []
+        for i, point in enumerate(points):
+            if not isinstance(point, (tuple, list)) or len(point) != 2:
+                raise ValueError("%s: point %d is an (at, value) pair" % (fn, i))
+            at, v = point
+            _aware(fn, "point %d's at" % i, at)
+            offset = _offset_minutes(fn, "point %d" % i, at.utcoffset())
+            if v is not None:
+                is_code = isinstance(v, str) and not _RE_DECIMAL.match(v)
+                if coded is None:
+                    coded = is_code
+                elif coded != is_code:
+                    raise ValueError("%s: point %d mixes a %s into a trace of %s"
+                                     % (fn, i, "code" if is_code else "number", "codes" if coded else "numbers"))
+                if is_code:
+                    if v == "":
+                        raise ValueError("%s: point %d's code is empty" % (fn, i))
+                else:
+                    v = _decimal_text(fn, v)
+            pts.append((_epoch_us(at), i, offset, v))
+        if not pts:
+            return []
+        coded = bool(coded)
+        if coded and unit is not None:
+            raise ValueError("%s: a trace of codes carries no unit: pass unit=None" % fn)
+        if not coded and not unit:
+            raise ValueError("%s: a trace of numbers names the unit every value is in" % fn)
+        if coded and form == "counter":
+            raise ValueError("%s: a counter is a running total, a number, never a code" % fn)
+        pts.sort()
+        # Pieces: one per fixed period, split where the offset changes. A
+        # later piece of a split period starts at its first point, floored to
+        # the millisecond its offsets count in.
+        pieces = []
+        for t, _, offset, v in pts:
+            period_start = t - t % p_us
+            last = pieces[-1] if pieces else None
+            if last is None or last["period"] != period_start:
+                pieces.append({"period": period_start, "start": period_start, "offset": offset, "points": []})
+            elif last["offset"] != offset:
+                pieces.append({"period": period_start, "start": t - t % 1000, "offset": offset, "points": []})
+            pieces[-1]["points"].append((t, v))
+        docs = []
+        for i, piece in enumerate(pieces):
+            nxt = pieces[i + 1] if i + 1 < len(pieces) else None
+            end = nxt["start"] if nxt and nxt["period"] == piece["period"] else piece["period"] + p_us
+            start, times = piece["start"], [t for t, _ in piece["points"]]
+            props = {"metric": metric, "form": form, "at": _instant(start), "endsAt": _instant(end),
+                     "utcOffsetStart": piece["offset"], "utcOffsetEnd": piece["offset"]}
+            if source is not None:
+                props["source"] = source
+            if about is not None:
+                props["about"] = about
+            if channel is not None:
+                props["channel"] = channel
+            if not coded:
+                props["unit"] = unit
+            if hold is not None:
+                props["hold"] = hold
+            if reset_rule is not None:
+                props["resetRule"] = reset_rule
+            steps = {b - a for a, b in zip(times, times[1:])}
+            every = steps.pop() if len(steps) == 1 else 0
+            if len(times) > 1 and times[0] == start and every > 0 and every * len(times) <= end - start:
+                props["every"] = _format_duration(every)
+            else:
+                props["offsets"] = [(t - start) // 1000 for t in times]
+            props["codes" if coded else "values"] = [v for _, v in piece["points"]]
+            docs.append(props)
+        return docs
+
+    def local_day(self, at, utc_offset_minutes):
+        """The civil date at `at` where the clock was `utc_offset_minutes`
+        east of UTC, as YYYY-MM-DD: the day a daily summary or a recorded-local
+        reading belongs to."""
+        fn = "observed.local_day"
+        _aware(fn, "at", at)
+        if isinstance(utc_offset_minutes, bool) or not isinstance(utc_offset_minutes, int) \
+                or abs(utc_offset_minutes) > _MAX_UTC_OFFSET:
+            raise ValueError("%s: utc_offset_minutes is whole minutes within %d either way, got %r"
+                             % (fn, _MAX_UTC_OFFSET, utc_offset_minutes))
+        local = at.astimezone(datetime.timezone.utc) + datetime.timedelta(minutes=utc_offset_minutes)
+        return local.date().isoformat()
+
+    def period_id(self, at, period):
+        """The label a trace id ends with: `at` in UTC at the period's
+        resolution, so PT1H gives "2026-10-07T06", PT15M "2026-10-07T06:15"
+        and P1D "2026-10-07". An `at` off the period's grid (the later part of
+        a period split by an offset change) adds the finer fields it needs
+        ("2026-10-07T06:20:31"), so no two parts share a label."""
+        fn = "observed.period_id"
+        _aware(fn, "at", at)
+        p_us = _duration_us(fn, "period", period)
+        t = at.astimezone(datetime.timezone.utc)
+        us = _epoch_us(at)
+        fields = 1  # date, hour, minute, second, fraction
+        for step, n in ((86400 * 10**6, 1), (3600 * 10**6, 2), (60 * 10**6, 3), (10**6, 4)):
+            if p_us % step == 0:
+                fields = n
+                break
+        else:
+            fields = 5
+        for step, n in ((10**6, 5), (60 * 10**6, 4), (3600 * 10**6, 3), (86400 * 10**6, 2)):
+            if us % step:
+                fields = max(fields, n)
+                break
+        out = t.strftime("%Y-%m-%d")
+        if fields >= 2:
+            out += t.strftime("T%H")
+        if fields >= 3:
+            out += t.strftime(":%M")
+        if fields >= 4:
+            out += t.strftime(":%S")
+        if fields >= 5 and t.microsecond:
+            out += "." + ("%06d" % t.microsecond).rstrip("0")
+        return out
+
+
 class Host:
     """The body's host API: logging plus the capability-scoped reads, and the
-    SDK surface (records/functions/agents/effects/ids/page) namespaced beside
-    them."""
+    SDK surface (records/functions/agents/effects/ids/page/units/observed)
+    namespaced beside them."""
 
     def __init__(self, inp, req_id, logs):
         self._config = inp.get("config")
@@ -628,6 +928,8 @@ class Host:
         self.agents = Agents(self)
         self.ids = Ids()
         self.page = Page(inp.get("resume"))
+        self.units = Units(self)
+        self.observed = Observed()
 
     @property
     def logs(self):

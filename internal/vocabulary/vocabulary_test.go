@@ -3318,7 +3318,9 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 // admits alongside them.
 var shippedVocabularyDirs = []string{
 	"../../samples/calendar",
+	"../../samples/health",
 	"../../samples/messaging",
+	"../../samples/observations",
 	"../../samples/people",
 	"../../samples/scheduling",
 	"../../samples/tasks",
@@ -3352,7 +3354,12 @@ func TestShippedVocabularyBundles(t *testing.T) {
 				} else if err != nil {
 					t.Fatalf("%s: %v", e.Name(), err)
 				}
-				if len(m) > 0 {
+				// A sample's DATA records (the health metric catalogue) are
+				// put after its closure lands; they are records, not
+				// declarations, and nothing here builds them.
+				kind, _ := m["kind"].(string)
+				if len(m) > 0 && vocabulary.KindPackage(kind) == vocabulary.PackageCore &&
+					vocabulary.VocabularyDocumentKind(vocabulary.KindName(kind)) {
 					raw = append(raw, m)
 				}
 			}
@@ -3395,11 +3402,13 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		t.Fatalf("import the shipped vocabulary: %v", err)
 	}
 	want := map[string]string{
-		"samples.substrate.reamde.dev/calendar":   "samples.substrate.reamde.dev/calendar",
-		"samples.substrate.reamde.dev/messaging":  "samples.substrate.reamde.dev/messaging",
-		"samples.substrate.reamde.dev/people":     "samples.substrate.reamde.dev/people",
-		"samples.substrate.reamde.dev/scheduling": "samples.substrate.reamde.dev/scheduling",
-		"samples.substrate.reamde.dev/tasks":      "samples.substrate.reamde.dev/tasks",
+		"samples.substrate.reamde.dev/calendar":     "samples.substrate.reamde.dev/calendar",
+		"samples.substrate.reamde.dev/health":       "samples.substrate.reamde.dev/health",
+		"samples.substrate.reamde.dev/messaging":    "samples.substrate.reamde.dev/messaging",
+		"samples.substrate.reamde.dev/observations": "samples.substrate.reamde.dev/observations",
+		"samples.substrate.reamde.dev/people":       "samples.substrate.reamde.dev/people",
+		"samples.substrate.reamde.dev/scheduling":   "samples.substrate.reamde.dev/scheduling",
+		"samples.substrate.reamde.dev/tasks":        "samples.substrate.reamde.dev/tasks",
 	}
 	for _, g := range authorities {
 		id, ok := want[g.Identity]

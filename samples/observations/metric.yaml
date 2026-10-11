@@ -1,0 +1,119 @@
+# the catalogue entry for one observable thing. Writers find a metric by a
+# code they know (a LOINC code, a HealthKit identifier, a Home Assistant
+# device class) and point every value at it; readers find it by name. The
+# engine reads nothing from it: form, unit, hold and the counter contract are
+# advice a writer copies onto each value, and the value is what the index
+# reads (decision record 0156). A domain ships its own metrics with a
+# package-prefixed id (`health/heart_rate`); this package ships the physical
+# ones several domains share (metrics.yaml).
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/observations/metric
+data:
+  authority: samples.substrate.reamde.dev
+  package: observations
+  description: >-
+    Something that can be measured, such as heart rate, a room's temperature
+    or a lab's LDL cholesterol. A catalogue entry: its names, the codes other
+    systems use for it, its unit and how its values are best read. Every observation
+    and trace points at one.
+  purpose: primary
+  names:
+    singular: metric
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the metric's heading, one line
+    description:
+      type: markdown
+      description: what is measured and how to read it
+    # The same metric in other code systems. `system` is a URI where the
+    # system has one (`http://loinc.org`) and a short word otherwise:
+    # `healthkit`, `healthconnect`, `googlefit`, `whoop`, `garmin`,
+    # `homeassistant`, `cf` (a CF standard name).
+    codes:
+      type: object
+      repeated: true
+      description: the same metric in other code systems
+      fields:
+        system:
+          type: string
+          description: the code system, a URI such as http://loinc.org or
+            a word such as healthkit
+        code:
+          type: string
+          description: the code in that system
+        version:
+          type: string
+          description: the code system's version, where it matters
+        display:
+          type: string
+          description: the code system's own name for it
+    # a measure from the unit table (docs/units.md): `mass`, `rate`,
+    # `amount-concentration`. A string, not an enum, because the table grows
+    # by release and a declaration must not lag it.
+    measures:
+      type: string
+      description: the measure every value's unit belongs to, from the unit
+        table, such as mass
+    unit:
+      type: string
+      description: the unit writers store values in, a UCUM code such as kg
+        or /min
+    codeSet:
+      type: string
+      repeated: true
+      description: the codes a categorical metric's values take, such as awake,
+        light, deep, rem
+    form:
+      type: enum
+      description: the form writers stamp on each value unless the source
+        says otherwise
+      values:
+        - gauge
+        - amount
+        - counter
+        - summary
+    hold:
+      type: duration
+      description: how long a gauge value stands without a newer one, copied
+        onto each value
+    # the aggregate read's reducer names (count, sum, avg, twa, min, max,
+    # first, last, stddev, percentile, durationIn, timeInState, increase,
+    # rate, circularMean): a string list, because an enum value is one
+    # lowercase word and three of these are camelCase
+    reducers:
+      type: string
+      repeated: true
+      description: the reducers that answer something useful for this metric,
+        such as avg or durationIn
+    # NGSP and IFCC HbA1c share a measure (fraction) and never pool; serum and
+    # whole-blood glucose share one and never pool. The class says so.
+    compatibility:
+      type: string
+      description: the class within which values may be pooled, where the
+        measure alone is not enough
+    displayPrecision:
+      type: int
+      min: 0
+      max: 12
+      description: the decimal places a reader shows
+    # navigation only: nothing groups or filters by it server-side
+    category:
+      type: string
+      description: where a reader lists it, such as heart, sleep, body, labs
+    algorithm:
+      type: object
+      description: the vendor method behind a computed score
+      fields:
+        vendor:
+          type: string
+          description: who computes it, such as WHOOP
+        name:
+          type: string
+          description: the vendor's name for the method
+        version:
+          type: string
+          description: the method's version, where the vendor states one

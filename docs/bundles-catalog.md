@@ -1,10 +1,11 @@
 # Bundles catalog
 
-The catalog in the binary serves eighteen bundles, in the two tiers
+The catalog in the binary serves twenty bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: eight providers and ten samples. This page covers thirteen of them; the
-five vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
-`scheduling`) are in [built-in kinds](builtin-kinds.md).
+draws: eight providers and twelve samples. This page covers thirteen of them;
+the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
+`scheduling`, `observations` and `health`) are in
+[built-in kinds](builtin-kinds.md).
 
 **Eight providers**: Google, GitHub, Linear, WHOOP, Garmin, Notion, Beeper and
 Slack.

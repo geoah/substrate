@@ -476,6 +476,19 @@ func indexExpr(t *vocabulary.Kind, name string) (string, error) {
 	if p, ok := t.Prop(name); ok && p.Datatype == vocabulary.DatatypeReference && !p.Repeated && !p.Keyed {
 		return `(` + referencePathSQL("props", name) + `)`, nil
 	}
+	// A QUANTITY indexes the value converted to its measure's base, the key
+	// the quantity ordering sorts by (query.go orderExpr), so the index serves
+	// that ordering; its JSON text orders nothing anyone asks for.
+	if p, ok := t.Prop(name); ok && p.Datatype == vocabulary.DatatypeQuantity && !p.Repeated && !p.Keyed {
+		// Without a measure or a unit list the expression names every code
+		// the table lists, and Postgres stores an index expression in a
+		// catalog row that holds about 8 kB: an arm per code does not fit.
+		if p.Quantity == nil || (p.Quantity.Measure == "" && len(p.Quantity.Units) == 0) {
+			return "", fmt.Errorf("%w: %q is a quantity that declares neither measures nor units: an index on it needs one, so the base it orders by is known",
+				substrate.ErrValidation, name)
+		}
+		return `(` + quantityBaseSQL(`(props->`+sqlLiteral(name)+`)`, []*vocabulary.QuantitySpec{p.Quantity}) + `)`, nil
+	}
 	return `(props->>` + sqlLiteral(name) + `)`, nil
 }
 
