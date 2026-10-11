@@ -948,3 +948,61 @@ func writeObservedHistory(t *testing.T, ds substrate.Dataset) {
 		t.Fatalf("purge: %v", err)
 	}
 }
+
+// TestRebuildReproducesTheObservedTables: a rebuild clears the three tables
+// and derives them again from the changelog, every column of every row, for
+// a history that rewrites, deletes, restores and purges observed records.
+func TestRebuildReproducesTheObservedTables(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeObservedHistory(t, ds)
+	db := rawDB(t, dsn)
+	before := observedTables(t, db)
+	if strings.Contains(before, "\n[]\n") || strings.HasPrefix(before, "[]") {
+		t.Fatalf("an observed table is empty; the rebuild would prove nothing:\n%s", before)
+	}
+	// Garbage in all three, so a rebuild that kept anything shows it.
+	for _, table := range []string{"observed_points", "observed_rollups", "observed_latest"} {
+		if _, err := db.Exec(`UPDATE ` + table + ` SET metric = metric || '/stale'`); err != nil {
+			t.Fatalf("spoil %s: %v", table, err)
+		}
+	}
+	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := observedTables(t, db); after != before {
+		t.Fatalf("the rebuilt observed tables are not the live ones\n%s", firstDifference([]byte(before), []byte(after)))
+	}
+	checkRollupsMatchSpec(t, db)
+}
+
+// TestVerifyAndExportReadNoObservedTable: verify and the export read the
+// changelog files and never the observed index, so an emptied index neither
+// fails verify nor travels in the archive, and a server restoring the archive
+// derives the index again.
+func TestVerifyAndExportReadNoObservedTable(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	writeObservedHistory(t, ds)
+	db := rawDB(t, dsn)
+	want := observedTables(t, db)
+	for _, table := range []string{"observed_points", "observed_rollups", "observed_latest"} {
+		if _, err := db.Exec(`DELETE FROM ` + table); err != nil {
+			t.Fatalf("empty %s: %v", table, err)
+		}
+	}
+	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK {
+		t.Fatalf("verify failed with the observed index emptied: %+v", report)
+	}
+	root, _, _ := exportToRoot(t, ds)
+	dsn2 := engine.MigratedDSN(t)
+	svc2 := mustReopen(t, dsn2, root)
+	ds2, err := svc2.Dataset(context.Background(), testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the restored repository: %v", err)
+	}
+	engine.DrainIndexReprojection(t, ds2)
+	if got := observedTables(t, rawDB(t, dsn2)); got != want {
+		t.Fatalf("the restored observed index is not the original\n%s", firstDifference([]byte(want), []byte(got)))
+	}
+}

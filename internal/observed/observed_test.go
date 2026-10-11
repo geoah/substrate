@@ -230,71 +230,73 @@ func counter(points []Point, rule, wrapAt string) []Point {
 	return points
 }
 
-// Decision 0157: the three counter contracts, exact.
-func TestCounterContracts(t *testing.T) {
-	r1 := t0.Add(-24 * time.Hour)
-	r2 := t0.Add(2 * time.Minute)
-	epoch := func(p Point, r time.Time) Point { p.ResetAt = r; return p }
-	for _, tc := range []struct {
-		name     string
-		points   []Point
-		increase string
-		resets   int64
-		covered  time.Duration
-	}{
-		{
-			name: "a monotonic meter that resets twice in a bucket",
-			points: counter([]Point{
-				reading(0, "100"), reading(1, "105"), reading(2, "2"),
-				reading(3, "6"), reading(4, "1"), reading(5, "4"),
-			}, vocabulary.ResetMonotonic, ""),
-			increase: "15", resets: 2, covered: dur(5),
-		},
-		{
-			name:     "no resetRule reads as monotonic",
-			points:   []Point{reading(0, "10"), reading(1, "4")},
-			increase: "4", resets: 1, covered: dur(1),
-		},
-		{
-			name: "a signed net meter within one epoch, then a new epoch",
-			points: counter([]Point{
-				epoch(reading(0, "100"), r1), epoch(reading(1, "90"), r1),
-				epoch(reading(2, "95"), r1), epoch(reading(3, "3"), r2),
-			}, vocabulary.ResetSigned, ""),
-			increase: "-2", resets: 1, covered: dur(3),
-		},
-		{
-			name: "a register that wraps at 256",
-			points: counter([]Point{
-				reading(0, "250"), reading(1, "254"), reading(2, "3"), reading(3, "10"),
-			}, vocabulary.ResetWrap, "256"),
-			increase: "16", resets: 1, covered: dur(3),
-		},
-		{
-			name: "a large reading keeps its last digit",
-			points: counter([]Point{
-				reading(0, "123456789012.001"), reading(1, "123456789012.003"),
-			}, vocabulary.ResetMonotonic, ""),
-			increase: "1/500", resets: 0, covered: dur(1),
-		},
-		{
-			name: "a change of unit starts over",
-			points: func() []Point {
-				p := []Point{reading(0, "5"), reading(1, "5100")}
-				p[1].Unit = "W.h"
-				return p
-			}(),
-			increase: "5100", resets: 1, covered: dur(1),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			inc, resets, covered, ok := Increase(tc.points, window(0, 15))
-			if !ok || inc.RatString() != tc.increase || resets != tc.resets || covered != tc.covered {
-				t.Errorf("increase = %s resets %d covered %v (%v), want %s, %d, %v",
-					inc.RatString(), resets, covered, ok, tc.increase, tc.resets, tc.covered)
-			}
-		})
+// counterCase holds a counter's readings to an increase, a reset count and
+// a covered time, from the raw points over the window and from the rollup
+// rows of every bucket inside it alike, so a step across a bucket boundary is
+// counted once.
+func counterCase(t *testing.T, points []Point, from, to float64, increase string, resets int64, covered time.Duration) {
+	t.Helper()
+	w := window(from, to)
+	inc, n, cov, ok := Increase(points, w)
+	if !ok || inc.RatString() != increase || n != resets || cov != covered {
+		t.Errorf("raw: increase %s resets %d covered %v (%v), want %s, %d, %v", inc.RatString(), n, cov, ok, increase, resets, covered)
 	}
+	sum, sumResets, sumCovered := new(big.Rat), int64(0), int64(0)
+	for _, r := range bucketRows(vocabulary.FormCounter, points, w.From, w.To) {
+		sum.Add(sum, r.Increase)
+		sumResets += r.Resets
+		sumCovered += r.CoveredMs
+	}
+	if sum.RatString() != increase || sumResets != resets || sumCovered != covered.Milliseconds() {
+		t.Errorf("rows: increase %s resets %d covered %dms, want %s, %d, %v", sum.RatString(), sumResets, sumCovered, increase, resets, covered)
+	}
+}
+
+// Decision 0157: a monotonic meter that resets twice inside one bucket, and
+// a reading that drops across a bucket boundary; a counter with no resetRule
+// reads the same way.
+func TestCounterIncreaseAcrossAMonotonicReset(t *testing.T) {
+	counterCase(t, counter([]Point{
+		reading(0, "100"), reading(1, "105"), reading(2, "2"),
+		reading(3, "6"), reading(4, "1"), reading(5, "4"),
+	}, vocabulary.ResetMonotonic, ""), 0, 15, "15", 2, dur(5))
+	counterCase(t, counter([]Point{reading(10, "40"), reading(14, "42"), reading(16, "3"), reading(20, "5")},
+		vocabulary.ResetMonotonic, ""), 0, 30, "7", 1, dur(10))
+	counterCase(t, []Point{reading(0, "10"), reading(1, "4")}, 0, 15, "4", 1, dur(1))
+}
+
+// Decision 0157: a signed net meter falls within one resetAt epoch, and a
+// new resetAt starts a new accumulation.
+func TestCounterSignedIncreaseIsNetWithinAnEpoch(t *testing.T) {
+	r1, r2 := t0.Add(-24*time.Hour), t0.Add(2*time.Minute)
+	epoch := func(p Point, r time.Time) Point { p.ResetAt = r; return p }
+	counterCase(t, counter([]Point{
+		epoch(reading(0, "100"), r1), epoch(reading(1, "90"), r1),
+		epoch(reading(14, "95"), r1), epoch(reading(16, "3"), r2), epoch(reading(17, "1"), r2),
+	}, vocabulary.ResetSigned, ""), 0, 30, "-4", 1, dur(17))
+}
+
+// Decision 0157: a register wraps at its wrapAt, across a bucket boundary.
+func TestCounterWrapsAtWrapAt(t *testing.T) {
+	counterCase(t, counter([]Point{
+		reading(0, "250"), reading(13, "254"), reading(16, "3"), reading(20, "10"),
+	}, vocabulary.ResetWrap, "256"), 0, 30, "16", 1, dur(20))
+}
+
+// Decision 0157: an increment exact in the stored digits of a large reading
+// comes back exact, where float64 would lose it.
+func TestCounterIncreaseStaysExact(t *testing.T) {
+	points := counter([]Point{
+		reading(0, "123456789012.001"), reading(14, "123456789012.002"), reading(16, "123456789012.003"),
+	}, vocabulary.ResetMonotonic, "")
+	counterCase(t, points, 0, 30, "1/500", 0, dur(16))
+	if f := points[2].Value - points[0].Value; f == 0.002 {
+		t.Error("float64 kept the increment; the case proves nothing about exactness")
+	}
+	// A change of unit starts over: the later reading counted from zero.
+	changed := []Point{reading(0, "5"), reading(1, "5100")}
+	changed[1].Unit = "W.h"
+	counterCase(t, changed, 0, 15, "5100", 1, dur(1))
 }
 
 // The step from the point current at a window's start into its first point
@@ -313,7 +315,9 @@ func TestCounterStepInBelongsToTheLaterWindow(t *testing.T) {
 	}
 }
 
-func TestEligible(t *testing.T) {
+// Decision 0160: a bucket answers twa and timeInState from its stored held
+// time only when the request's maxGap is absent or not below its largest gap.
+func TestRollupServesTwaOnlyWithinMaxGap(t *testing.T) {
 	for _, tc := range []struct {
 		maxGap   time.Duration
 		maxGapMs int64
