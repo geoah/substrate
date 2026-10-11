@@ -19,6 +19,7 @@ import {
   formOf,
   isoWithOffset,
   laneRead,
+  discoveryChunks,
   latestRead,
   metricInfoOf,
   observedKinds,
@@ -194,6 +195,19 @@ describe("the latest read", () => {
       filter: { implements: OBSERVED },
       aggregate: { groupBy: ["metric", "source", "about"], reducers: ["last"] },
     })
+  })
+
+  it("narrows on the server and reads its metrics in bounded batches", () => {
+    expect(latestRead({ metrics: [HEART], sources: [GARMIN] }).filter).toEqual({
+      implements: OBSERVED,
+      properties: { metric: { in: [HEART] }, source: { in: [GARMIN] } },
+    })
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `m${i}`)
+    expect(discoveryChunks(ids(20)).map((c) => c.length)).toEqual([8, 8, 4])
+    const many = discoveryChunks(ids(1000))
+    expect(many.length).toBeLessThanOrEqual(32)
+    expect(many.flat()).toEqual(ids(1000))
+    expect(discoveryChunks([])).toEqual([])
   })
 
   it("reads six streams, newest first, with their form and code", () => {
@@ -432,7 +446,12 @@ describe("an answer as buckets and series", () => {
   })
 
   it("breaks every series where the answer skips a bucket", () => {
-    const hour = (start: string, end: string, source: string, value: string) => ({
+    const hour = (
+      start: string,
+      end: string,
+      source: string,
+      value: string
+    ) => ({
       start,
       end,
       group: { source },
@@ -486,11 +505,8 @@ describe("an answer as buckets and series", () => {
     expect(series[0].points[0].value).toBe(1800)
     // Another state's value is not this row's.
     expect(
-      seriesOf(
-        [{ ...rows[0], group: { code: "deep" } }],
-        "timeInState",
-        "code"
-      ).series[0].points[0].value
+      seriesOf([{ ...rows[0], group: { code: "deep" } }], "timeInState", "code")
+        .series[0].points[0].value
     ).toBe(null)
   })
 

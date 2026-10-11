@@ -436,7 +436,9 @@ function lastValue(row: AggregateRow): AggregateValue | undefined {
 
 /** The latest read's rows as streams, newest first. A row with no metric in
  * its group answers no stream and is dropped. */
-export function streamsOf(result: AggregateResult | undefined): Stream[] {
+export function streamsOf(
+  result: Pick<AggregateResult, "rows"> | undefined
+): Stream[] {
   const out: Stream[] = []
   for (const row of result?.rows ?? []) {
     const metric = row.group?.metric
@@ -847,12 +849,74 @@ export function laneRead(spec: LaneSpec): AggregateRead {
   }
 }
 
-/** The latest read: one row per stream, from the newest point of each. */
-export function latestRead(): AggregateRead {
+/** What a page narrows its streams to: record paths of metrics, sources
+ * and things observed. An empty list narrows nothing. */
+export interface StreamNarrowing {
+  metrics?: readonly string[]
+  sources?: readonly string[]
+  abouts?: readonly string[]
+}
+
+/** The observed filter, narrowed server-side by `properties`. */
+function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
+  const properties: NonNullable<RecordFilter["properties"]> = {}
+  if (narrow.metrics?.length) properties.metric = { in: [...narrow.metrics] }
+  if (narrow.sources?.length) properties.source = { in: [...narrow.sources] }
+  if (narrow.abouts?.length) properties.about = { in: [...narrow.abouts] }
   return {
-    filter: { implements: OBSERVED_TRAIT_IDENTITY },
+    implements: OBSERVED_TRAIT_IDENTITY,
+    ...(Object.keys(properties).length ? { properties } : {}),
+  }
+}
+
+/** The latest read: one row per stream, from the newest point of each,
+ * narrowed to the given metrics, sources and things. A read makes at most
+ * `maxGroups` (200) groups, which is why discovery asks for its streams a
+ * few metrics at a time (`discoveryChunks`). */
+export function latestRead(narrow: StreamNarrowing = {}): AggregateRead {
+  return {
+    filter: narrowedFilter(narrow),
     aggregate: { groupBy: ["metric", "source", "about"], reducers: ["last"] },
   }
+}
+
+/** The most groups one read may ask for (`budget.maxGroups`'s cap). */
+export const MAX_GROUPS_CAP = 2000
+
+/** Discovery's first read: one row per metric with a point, narrowed to
+ * the chosen sources and things, at the group cap, since every metric with
+ * a point is one group and a catalogue is a few hundred. Its metrics are
+ * what a picker offers and what `discoveryChunks` partitions. */
+export function metricsRead(narrow: StreamNarrowing = {}): AggregateRead {
+  return {
+    filter: narrowedFilter({ sources: narrow.sources, abouts: narrow.abouts }),
+    aggregate: {
+      groupBy: ["metric"],
+      reducers: ["last"],
+      budget: { maxGroups: MAX_GROUPS_CAP },
+    },
+  }
+}
+
+/** How many metrics one stream read names, and how many stream reads one
+ * discovery makes at most: eight metrics of a few streams each sit well
+ * inside a read's 200 groups, and past 256 metrics each read names more. */
+const METRICS_PER_READ = 8
+const MAX_STREAM_READS = 32
+
+/** The metrics as the batches discovery reads their streams in: at most
+ * `MAX_STREAM_READS` batches, each of at least `METRICS_PER_READ`
+ * metrics. */
+export function discoveryChunks(metrics: readonly string[]): string[][] {
+  const size = Math.max(
+    METRICS_PER_READ,
+    Math.ceil(metrics.length / MAX_STREAM_READS)
+  )
+  const out: string[][] = []
+  for (let i = 0; i < metrics.length; i += size) {
+    out.push(metrics.slice(i, i + size))
+  }
+  return out
 }
 
 // ── the answer, cut into buckets and series ────────────────────────────────

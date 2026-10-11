@@ -466,6 +466,40 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status })
 }
 
+/** A latest read answered from `latest` the way the server answers it:
+ * narrowed by the filter's `metric`, `source` and `about` lists, and one
+ * row per metric (the newest) where it groups by metric alone. */
+export function latestAnswer(
+  read: SeenRead,
+  latest: AggregateResult = LATEST
+): AggregateResult {
+  const props = (read.filter.properties ?? {}) as Record<
+    string,
+    { in?: string[] }
+  >
+  const keep = (name: "metric" | "source" | "about", value?: string) =>
+    !props[name]?.in || (value !== undefined && props[name].in.includes(value))
+  const rows = latest.rows.filter(
+    (r) =>
+      keep("metric", r.group?.metric) &&
+      keep("source", r.group?.source) &&
+      keep("about", r.group?.about)
+  )
+  const groupBy = read.aggregate.groupBy ?? []
+  if (groupBy.length !== 1 || groupBy[0] !== "metric") {
+    return { ...latest, rows }
+  }
+  const newest = new Map<string, AggregateRow>()
+  for (const r of rows) {
+    const metric = r.group?.metric ?? ""
+    const held = newest.get(metric)
+    if (!held || Date.parse(r.start) > Date.parse(held.start)) {
+      newest.set(metric, { ...r, group: { metric } })
+    }
+  }
+  return { ...latest, rows: [...newest.values()] }
+}
+
 /** A stand-in for the substrate's records route: the registry (`kinds`),
  * the metric and source records (with `filter.ids` honoured, as the batched
  * title read asks), and every aggregate read answered by `answer` and kept

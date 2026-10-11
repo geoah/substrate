@@ -36,6 +36,7 @@ import {
   STEPS,
   WEIGHT,
   ZONES,
+  latestAnswer,
   observationsServer,
   type SeenRead,
 } from "@/lib/observations.test-fixtures"
@@ -59,7 +60,7 @@ const ANSWERS: Record<string, AggregateResult> = {
 }
 
 function answer(read: SeenRead): AggregateResult {
-  if (!read.aggregate.metric) return LATEST
+  if (!read.aggregate.metric) return latestAnswer(read)
   return ANSWERS[read.aggregate.metric.ref] ?? { ...LATEST, rows: [] }
 }
 
@@ -233,6 +234,43 @@ describe("the timeline's requests", () => {
     expect(Date.parse(lt!)).toBe(Date.parse("2026-09-01T00:00:00.456Z"))
   })
 
+  it("says discovery was refused, naming its problems, never that nothing was measured", async () => {
+    const problem =
+      "aggregate.budget.maxGroups: the latest read makes 201 groups, over 200; narrow the filter or raise maxGroups (the cap is 2000)"
+    mount(`?${WINDOW}`, false, (read) =>
+      read.aggregate.metric
+        ? answer(read)
+        : new Response(
+            JSON.stringify({
+              error: {
+                code: "validation",
+                message: "the aggregate read was refused",
+                problems: [problem],
+              },
+            }),
+            { status: 422, headers: { "Content-Type": "application/json" } }
+          )
+    )
+    expect(await screen.findByText("The streams didn’t load")).toBeTruthy()
+    expect(screen.getByText(problem)).toBeTruthy()
+    expect(screen.queryByText(/Nothing has been measured/)).toBe(null)
+  })
+
+  it("narrows discovery to the chosen metric and still offers the others", async () => {
+    const server = mount(`?metric=health/body_mass&${WINDOW}`)
+    await lane("Weight")
+    const streamReads = server.seen.filter(
+      (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 3
+    )
+    expect(streamReads.map((r) => r.filter.properties)).toEqual([
+      { metric: { in: [`${METRIC}/health/body_mass`] } },
+    ])
+    fireEvent.click(screen.getByRole("button", { name: /^Metrics?:/ }))
+    expect(
+      await screen.findByRole("option", { name: /Heart rate/ })
+    ).toBeTruthy()
+  })
+
   it("holds back a read past the bucket budget and says why", async () => {
     const server = mount("?metric=health/heart_rate&range=1y&bucket=15m")
     const heart = await lane("Heart rate")
@@ -301,15 +339,18 @@ describe("the charts", () => {
         },
       ],
     }))
-    const server = mount(`?metric=health/sleep_stage&${WINDOW}`, false, (read) =>
-      !read.aggregate.metric
-        ? {
-            ...LATEST,
-            rows: LATEST.rows.map((r) =>
-              r.group?.metric === SLEEP_STAGE ? { ...r, form: "gauge" } : r
-            ),
-          }
-        : { ...SLEEP, unit: "s", rows: stateRows }
+    const server = mount(
+      `?metric=health/sleep_stage&${WINDOW}`,
+      false,
+      (read) =>
+        !read.aggregate.metric
+          ? latestAnswer(read, {
+              ...LATEST,
+              rows: LATEST.rows.map((r) =>
+                r.group?.metric === SLEEP_STAGE ? { ...r, form: "gauge" } : r
+              ),
+            })
+          : { ...SLEEP, unit: "s", rows: stateRows }
     )
     const sleep = await lane("Sleep stage")
     await waitFor(() =>

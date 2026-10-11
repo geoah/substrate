@@ -17,14 +17,21 @@ import { NuqsTestingAdapter } from "nuqs/adapters/testing"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import type { AggregateResult } from "@/lib/api/types"
+
 import {
   BODY_MASS,
+  HEART,
   KINDS,
-  LATEST,
+  RECOVERY,
+  SLEEP_STAGE,
+  STEPS_METRIC,
   WITHINGS,
+  latestAnswer,
   metricKind,
   observationsServer,
   sourceKind,
+  type SeenRead,
 } from "@/lib/observations.test-fixtures"
 
 const navigate = vi.fn()
@@ -42,8 +49,13 @@ afterEach(() => {
   navigate.mockReset()
 })
 
-function mount(searchParams = "", kinds = KINDS) {
-  const server = observationsServer(() => LATEST, kinds)
+function mount(
+  searchParams = "",
+  kinds = KINDS,
+  respond: (read: SeenRead) => AggregateResult | Response = (read) =>
+    latestAnswer(read)
+) {
+  const server = observationsServer(respond, kinds)
   vi.stubGlobal("fetch", vi.fn(server.fetch))
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -58,6 +70,24 @@ function mount(searchParams = "", kinds = KINDS) {
   return server
 }
 
+/** The problem the server names when a latest read makes too many groups. */
+const PROBLEM =
+  "aggregate.budget.maxGroups: the latest read makes 201 groups, over 200; narrow the filter or raise maxGroups (the cap is 2000)"
+
+/** The server's 422 for a read over its group budget. */
+function refusal(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: "validation",
+        message: "the aggregate read was refused",
+        problems: [PROBLEM],
+      },
+    }),
+    { status: 422, headers: { "Content-Type": "application/json" } }
+  )
+}
+
 /** The table's body rows, once the streams have landed. */
 async function rows(): Promise<HTMLElement[]> {
   const table = await screen.findByRole("table")
@@ -68,13 +98,65 @@ async function rows(): Promise<HTMLElement[]> {
 }
 
 describe("the streams table", () => {
-  it("asks for the latest read of every observed kind", async () => {
+  it("lists the metrics first, then reads their streams a few at a time", async () => {
     const server = mount()
     await rows()
     expect(server.seen[0]).toEqual({
       filter: { implements: "substrate.reamde.dev/core/observed" },
-      aggregate: { groupBy: ["metric", "source", "about"], reducers: ["last"] },
+      aggregate: {
+        groupBy: ["metric"],
+        reducers: ["last"],
+        budget: { maxGroups: 2000 },
+      },
     })
+    const streamReads = server.seen.filter(
+      (r) => r.aggregate.groupBy?.length === 3
+    )
+    expect(streamReads).toHaveLength(1)
+    expect(streamReads[0].aggregate).toEqual({
+      groupBy: ["metric", "source", "about"],
+      reducers: ["last"],
+    })
+    expect(
+      [...(streamReads[0].filter.properties?.metric?.in ?? [])].sort()
+    ).toEqual([BODY_MASS, HEART, RECOVERY, SLEEP_STAGE, STEPS_METRIC].sort())
+  })
+
+  it("lists every stream when one read of them all would be refused", async () => {
+    // More than 200 streams: the server refuses a latest read that names
+    // no metrics. Discovery never sends one.
+    const server = mount("", KINDS, (read) =>
+      read.aggregate.groupBy?.length === 3 && !read.filter.properties?.metric
+        ? refusal()
+        : latestAnswer(read)
+    )
+    expect(await rows()).toHaveLength(6)
+    expect(screen.queryByText(/didn’t load/)).toBe(null)
+    expect(server.seen.length).toBeGreaterThan(1)
+  })
+
+  it("narrows the streams read to the chosen metric on the server", async () => {
+    const server = mount(`?metric=${encodeURIComponent(BODY_MASS)}`)
+    const table = await screen.findByRole("table")
+    await waitFor(() => expect(table.textContent).toContain("Weight"))
+    const streamReads = server.seen.filter(
+      (r) => r.aggregate.groupBy?.length === 3
+    )
+    expect(streamReads.map((r) => r.filter.properties)).toEqual([
+      { metric: { in: [BODY_MASS] } },
+    ])
+    // The metric filter still offers the other metrics.
+    fireEvent.click(screen.getByRole("button", { name: /^Metric/ }))
+    expect(
+      await screen.findByRole("option", { name: /Heart rate/ })
+    ).toBeTruthy()
+  })
+
+  it("says a refused read, naming its problems, never that nothing was measured", async () => {
+    mount("", KINDS, () => refusal())
+    expect(await screen.findByText("The streams didn’t load")).toBeTruthy()
+    expect(screen.getByText(PROBLEM)).toBeTruthy()
+    expect(screen.queryByText(/Nothing has been measured/)).toBe(null)
   })
 
   it("lists one row per stream with its metric, source, form and latest value", async () => {

@@ -26,6 +26,7 @@ import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import { SectionHead } from "@/components/identity/section-head"
+import { DiscoveryError } from "@/components/observations/discovery-error"
 import {
   FacetFilters,
   type Facet,
@@ -204,10 +205,11 @@ function Picker({
 }
 
 export function ObservationsTimelinePage() {
-  const obs = useObservations()
   const [metricParam, setMetricParam] = useQueryState("metric", ARRAY)
   const [sources, setSources] = useQueryState("source", ARRAY)
   const [abouts, setAbouts] = useQueryState("about", ARRAY)
+  // The chosen metrics, sources and things narrow discovery on the server.
+  const obs = useObservations({ metrics: metricParam, sources, abouts })
   const [rangeParam, setRangeParam] = useQueryState(
     "range",
     parseAsStringLiteral(RANGE_VALUES).withDefault("7d")
@@ -244,9 +246,8 @@ export function ObservationsTimelinePage() {
   const timezone = useMemo(() => readerTimezone(), [])
 
   const metricOptions = useMemo(() => {
-    const names = new Map(
-      obs.streams.map((s) => [s.metric, obs.metricName(s.metric)])
-    )
+    // Every metric with a point, whichever are chosen.
+    const names = new Map(obs.metrics.map((m) => [m, obs.metricName(m)]))
     return [...names]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label))
@@ -404,7 +405,9 @@ export function ObservationsTimelinePage() {
           }
         />
       </div>
-      {!obs.ready ? (
+      {obs.discovery.isError ? (
+        <DiscoveryError discovery={obs.discovery} />
+      ) : !obs.ready ? (
         <Skeleton className="mt-8 h-[236px] w-full" />
       ) : metrics.length === 0 ? (
         <p className="mt-6 text-muted-foreground">
