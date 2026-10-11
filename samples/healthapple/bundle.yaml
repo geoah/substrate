@@ -28,9 +28,11 @@ data:
     observations, nights and workouts. Needs the health sample and the Apple
     Health provider.
   requires:
+    - samples.substrate.reamde.dev/observations
     - samples.substrate.reamde.dev/health
     - providers.substrate.reamde.dev/applehealth
   requiresAtLeast:
+    samples.substrate.reamde.dev/observations: 1
     samples.substrate.reamde.dev/health: 1
     providers.substrate.reamde.dev/applehealth: 1
   installs:

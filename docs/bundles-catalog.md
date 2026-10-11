@@ -1688,7 +1688,7 @@ the setup as steps.
 Turns [Apple Health](#apple-health) mirror rows into
 [observations](observations.md), traces and health records under the
 repository's own authority. Package `samples.substrate.reamde.dev/healthapple`
-requires `health` (so `observations`) and
+requires `observations`, `health` and
 `providers.substrate.reamde.dev/applehealth`, each with a `requiresAtLeast`
 floor of 1.
 
