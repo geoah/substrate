@@ -63,6 +63,10 @@ type trigger struct {
 	// carries beside the body-describing set (decision 0097). Nil declares
 	// nothing, which is a fire with the body's headers alone.
 	WebhookHeaders map[string]bool
+	// WebhookSignature is what `source.webhook.signature` declared: the
+	// provider signature the door checks before it stores anything (decision
+	// 0164). Nil declares none, and the key, when set, is the one gate.
+	WebhookSignature *webhookSignature
 
 	CallableKind string
 	CallableID   string
@@ -375,11 +379,11 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	case "webhook":
 		m, isMap := source["webhook"].(map[string]any)
 		if source["webhook"] != nil && !isMap {
-			return nil, fmt.Errorf("source.webhook: a map, optionally carrying key and headers")
+			return nil, fmt.Errorf("source.webhook: a map, optionally carrying key, headers and signature")
 		}
 		for k := range m {
-			if k != "key" && k != "headers" {
-				return nil, fmt.Errorf("source.webhook: unknown key %q — key and headers are the fields", k)
+			if k != "key" && k != "headers" && k != "signature" {
+				return nil, fmt.Errorf("source.webhook: unknown key %q; key, headers and signature are the fields", k)
 			}
 		}
 		if raw, has := m["key"]; has && raw != nil {
@@ -394,6 +398,11 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 			return nil, err
 		}
 		t.WebhookHeaders = headers
+		sig, err := parseWebhookSignature(m["signature"])
+		if err != nil {
+			return nil, err
+		}
+		t.WebhookSignature = sig
 		t.Webhook = true
 	}
 	// A record delivery and a webhook fire already hand the body its input,
@@ -582,13 +591,20 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 	if checkCallable {
 		switch t.CallableKind {
 		case callableKindAgent:
-			if _, err := reg.ResolveAgent(t.CallableID); err != nil {
+			ag, err := reg.ResolveAgent(t.CallableID)
+			if err != nil {
 				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
+			if err := checkWebhookSecretSource(reg, t, ag.Package); err != nil {
+				return fmt.Errorf("%w: trigger %w", substrate.ErrValidation, err)
 			}
 		default:
 			fn, err := reg.ResolveFunction(t.CallableID)
 			if err != nil {
 				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
+			if err := checkWebhookSecretSource(reg, t, fn.Package); err != nil {
+				return fmt.Errorf("%w: trigger %w", substrate.ErrValidation, err)
 			}
 			// A HOST FUNCTION IS NOT A DELIVERY TARGET. The engine runs one under
 			// the grants of whoever called it, and a delivery has no caller to

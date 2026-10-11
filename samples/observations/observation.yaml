@@ -125,6 +125,12 @@ data:
       description: rises with each rewrite from the upstream; a lower one
         is refused
     # ---- this kind's own ----
+    # Apart from `revision` (decision record 0162): an adapter fix rewrites
+    # output whose upstream did not change, and this says which code did.
+    adapter:
+      type: string
+      description: the function and version that wrote this row from its origin,
+        `<package>@<version>`
     # the source's own identity for a summary's period: the WHOOP cycle id, the
     # Oura day. Two cycles on one date stay two rows.
     periodId:

@@ -42,11 +42,11 @@ data:
     samples.substrate.reamde.dev/health: 1
     providers.substrate.reamde.dev/googlefit: 1
   installs:
-    - samples.substrate.reamde.dev/healthgooglefit/observegooglefit
+    - samples.substrate.reamde.dev/healthgooglefit/adaptgooglefit
 ---
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/healthgooglefit/observegooglefit
+  id: samples.substrate.reamde.dev/healthgooglefit/adaptgooglefit
 data:
   authority: samples.substrate.reamde.dev
   package: healthgooglefit
@@ -123,6 +123,12 @@ data:
     # the host's own files are readable.
     zoneinfo.reset_tzpath(to=[])
 
+    # This code's own version, stamped on every output apart from Fit's
+    # `revision` (decision record 0162). Raise it with any change to what a
+    # mirror row becomes, then replay `healthgooglefit-on-mirror` from 0:
+    # every output is rewritten at the revision it already holds.
+    ADAPTER = "healthgooglefit@1"
+
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
     TRACE = HOME + "/observations/trace"
@@ -141,6 +147,7 @@ data:
     MAX_ID = 128
     PERIOD = "PT1H"
     NS = 10**9
+    HOUR_NS = 3600 * NS
     SLEEP_ACTIVITY = 72
     SLEEP_TYPE = "com.google.sleep.segment"
     OFFSET_RULE = "utcOffsetRule"
@@ -198,15 +205,15 @@ data:
 
     KEYS = {
         OBSERVATION: ("metric", "source", "form", "value", "code", "hold", "at",
-                      "endsAt", "utcOffset", "origin", "derivedFrom", "revision",
+                      "endsAt", "utcOffset", "origin", "derivedFrom", "revision", "adapter",
                       "qualifiers", "components"),
         TRACE: ("metric", "source", "form", "unit", "hold", "at", "endsAt",
                 "utcOffsetStart", "utcOffsetEnd", "every", "offsets", "values",
-                "codes", "origins", "revision"),
-        SLEEP: ("source", "origin", "revision", "at", "endsAt", "utcOffsetStart",
+                "codes", "origins", "revision", "adapter"),
+        SLEEP: ("source", "origin", "revision", "adapter", "at", "endsAt", "utcOffsetStart",
                 "utcOffsetEnd", "timeInBed", "timeAsleep", "awake", "light", "deep",
                 "rem"),
-        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "at",
+        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "adapter", "at",
                   "endsAt", "utcOffsetStart", "utcOffsetEnd", "duration"),
     }
 
@@ -432,6 +439,7 @@ data:
             if stored is not None and (props.get("revision") or 0) < stored:
                 props["revision"] = stored
             full = {k: props.get(k) for k in KEYS[kind]}
+            full["adapter"] = ADAPTER
             host.effects.put(kind, rid, properties={k: v for k, v in full.items()
                                                     if v is not None}, if_absent=True)
             host.effects.patch(kind, rid, properties=full)
@@ -500,21 +508,59 @@ data:
         return skipped
 
 
+    def _crossing(ctx, m, rid, start, end, value, unit, source, mod, desired):
+        """A delta whose span crosses a UTC hour, as one amount observation over
+        exactly that span: the amount stays whole, and no hour claims time it
+        does not cover."""
+        at = _ns_time(start)
+        oid = _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%d" % (rid, m["metric"], start // 10**6))
+        desired[(OBSERVATION, oid)] = {
+            "metric": _ref(METRIC, "health/" + m["metric"]), "source": source,
+            "form": m["form"], "value": {"value": value, "unit": unit},
+            "at": _iso(at), "endsAt": _iso(_ns_time(end)), "utcOffset": ctx.clock.offset(at),
+            "origin": _ref(DATASET, rid), "revision": mod // 1000,
+            "qualifiers": ctx.clock.qualifiers()}
+
+
     def _traces(ctx, m, rid, points, desired):
+        """Pack one data type's points into hourly traces per source. A delta
+        (steps, energy) covers [startTimeNanos, endTimeNanos), and a trace
+        point's amount spans to the next point, so the end is kept: a null
+        follows the point at its end unless the next point starts there (a
+        null in a trace is unavailable from that instant), and a delta that
+        crosses a UTC hour is written as one amount observation over its own
+        span rather than cut between two hourly traces."""
         skipped = 0
         unit = ctx.canonical(m["unit"])
+        spans = m["form"] == "amount"
         by_source = {}
         for p in points:
             n = _number(_value(p, 0))
             if n is None:
                 skipped += 1
                 continue
-            at = ctx.clock.local(_ns_time(_int(p["startTimeNanos"])))
+            start = _int(p["startTimeNanos"])
+            end = _int(p.get("endTimeNanos")) if spans else None
+            if end is not None and end <= start:
+                end = None
             slug, source = ctx.source_for(p.get("originDataSourceId"))
-            by_source.setdefault((slug, source["ref"]), []).append(
-                (at, ctx.convert(n, m["fitUnit"], unit), _int(p.get("modifiedTimeMillis")) or 0))
+            value = ctx.convert(n, m["fitUnit"], unit)
+            mod = _int(p.get("modifiedTimeMillis")) or 0
+            if end is not None and start // HOUR_NS != (end - 1) // HOUR_NS:
+                _crossing(ctx, m, rid, start, end, value, unit, source, mod, desired)
+                continue
+            by_source.setdefault((slug, source["ref"]), []).append((start, end, value, mod))
         metric = _ref(METRIC, "health/" + m["metric"])
-        for (slug, source), pts in by_source.items():
+        for (slug, source), raw in by_source.items():
+            raw.sort(key=lambda r: r[0])
+            pts = []
+            for i, (start, end, value, mod) in enumerate(raw):
+                pts.append((ctx.clock.local(_ns_time(start)), value, mod))
+                nxt = raw[i + 1][0] if i + 1 < len(raw) else None
+                # An end on the hour is the trace's own end: a null there
+                # would open the next hour's trace with nothing in it.
+                if end is not None and (nxt is None or nxt > end) and end % HOUR_NS:
+                    pts.append((ctx.clock.local(_ns_time(end)), None, mod))
             docs = ctx.host.observed.trace([(at, v) for at, v, _ in pts], metric=metric,
                                            source={"ref": source}, unit=unit, form=m["form"],
                                            period=PERIOD, hold=m.get("hold"))

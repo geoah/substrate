@@ -45,7 +45,7 @@ data:
     # what lets this adapter delete the outputs of one.
     providers.substrate.reamde.dev/whoop: 19
   installs:
-    - samples.substrate.reamde.dev/healthwhoop/whoophealth
+    - samples.substrate.reamde.dev/healthwhoop/adaptwhoop
 ---
 # ---- the adapter: one mirror row per delivery ---------------------------------
 # Fired by `healthwhoop-on-mirror` on every create, update and delete of a
@@ -54,7 +54,7 @@ data:
 # the same outputs as a prompt one.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/healthwhoop/whoophealth
+  id: samples.substrate.reamde.dev/healthwhoop/adaptwhoop
 data:
   authority: samples.substrate.reamde.dev
   package: healthwhoop
@@ -118,6 +118,12 @@ data:
     """
     import datetime as _dt
 
+    # This code's own version, stamped on every output apart from WHOOP's
+    # `revision` (decision record 0162). Raise it with any change to what a
+    # mirror row becomes, then replay `healthwhoop-on-mirror` from 0: every
+    # output is rewritten at the revision it already holds.
+    ADAPTER = "healthwhoop@1"
+
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
     SOURCE = HOME + "/observations/source"
@@ -138,12 +144,12 @@ data:
     # clears what the previous one set and the row no longer says.
     OBSERVATION_PROPS = ("metric", "source", "form", "value", "code", "statistic",
                          "period", "periodId", "at", "endsAt", "utcOffset",
-                         "origin", "revision", "quality")
-    SLEEP_PROPS = ("source", "origin", "revision", "isNap", "utcOffsetStart",
+                         "origin", "revision", "adapter", "quality")
+    SLEEP_PROPS = ("source", "origin", "revision", "adapter", "isNap", "utcOffsetStart",
                    "utcOffsetEnd", "at", "endsAt", "timeInBed", "timeAsleep",
                    "awake", "light", "deep", "rem", "efficiency",
                    "respiratoryRate", "disturbances", "scores")
-    WORKOUT_PROPS = ("sport", "sportSource", "source", "origin", "revision",
+    WORKOUT_PROPS = ("sport", "sportSource", "source", "origin", "revision", "adapter",
                      "utcOffsetStart", "utcOffsetEnd", "at", "endsAt", "duration",
                      "distance", "energy", "averageHeartRate", "maxHeartRate",
                      "elevationGain", "strain", "zoneDurations")
@@ -189,11 +195,15 @@ data:
         return bool(row) and not row.get("deletedAt")
 
 
-    def _ref_id(value):
-        """The record id a stored reference names, in either spelling."""
+    def _ref_id(value, kind):
+        """The record id a stored reference to `kind` names, whole, in either
+        spelling: only the kind's prefix comes off, because an id may hold
+        slashes itself (`team/watch`). A reference to another kind names
+        nothing here."""
         if isinstance(value, dict):
             value = value.get("ref")
-        return str(value or "").rsplit("/", 1)[-1]
+        path, prefix = str(value or ""), kind + "/"
+        return path[len(prefix):] if path.startswith(prefix) else ""
 
 
     def _parse(value):
@@ -308,6 +318,7 @@ data:
                     self.kept += 1
                     continue
                 whole = {name: props.get(name) for name in MANAGED[kind]}
+                whole["adapter"] = ADAPTER
                 mint = {k: v for k, v in whole.items() if v is not None}
                 self.host.effects.put(kind, oid, properties=mint, if_absent=True)
                 self.host.effects.patch(kind, oid, properties=whole)
@@ -333,7 +344,7 @@ data:
                     if score.get(name) is not None:
                         self.skip("cycle.score." + name)
                 if span is not None and p.get("scoreState") == "scored":
-                    aid, cid = _ref_id(p.get("account")), str(p.get("cycleId"))
+                    aid, cid = _ref_id(p.get("account"), ACCOUNT_T), str(p.get("cycleId"))
                     base = "whoop/%s/%s/" % (aid, cid)
                     common = {"source": self.source(aid), "periodId": cid,
                               "at": span[0], "endsAt": span[1],
@@ -375,7 +386,7 @@ data:
             if _live(row):
                 p = _props(row)
                 if not have_cycle:
-                    cid = _ref_id(p.get("cycle"))
+                    cid = _ref_id(p.get("cycle"), CYCLE_T)
                     cycle = self.host.records.get(CYCLE_T, cid) if cid else None
                 cp = _props(cycle) if _live(cycle) else None
                 span = self.cycle_span(cp) if cp is not None else None
@@ -383,7 +394,7 @@ data:
                     self.skip("recovery without a cycle span")
                 elif p.get("scoreState") == "scored":
                     score = p.get("score") or {}
-                    aid, cid = _ref_id(p.get("account")), str(cp.get("cycleId"))
+                    aid, cid = _ref_id(p.get("account"), ACCOUNT_T), str(cp.get("cycleId"))
                     revision = _seconds(p.get("updatedAt"), cp.get("updatedAt"))
                     common = {"source": self.source(aid), "statistic": "vendor",
                               "period": "cycle", "periodId": cid,
@@ -409,7 +420,7 @@ data:
             desired = []
             if _live(row):
                 p = _props(row)
-                aid, sid = _ref_id(p.get("account")), str(p.get("sleepId"))
+                aid, sid = _ref_id(p.get("account"), ACCOUNT_T), str(p.get("sleepId"))
                 base = "whoop/%s/%s/" % (aid, sid)
                 source = self.source(aid)
                 revision = _seconds(p.get("updatedAt"))
@@ -484,7 +495,7 @@ data:
             desired = []
             if _live(row):
                 p = _props(row)
-                aid, wid = _ref_id(p.get("account")), str(p.get("workoutId"))
+                aid, wid = _ref_id(p.get("account"), ACCOUNT_T), str(p.get("workoutId"))
                 offset = _offset(p.get("timezoneOffset"))
                 score = p.get("score") or {}
                 for name in UNMAPPED[WORKOUT_T]:
@@ -521,6 +532,10 @@ data:
         if not rid or kind not in (CYCLE_T, RECOVERY_T, SLEEP_T, WORKOUT_T):
             return {"output": {"skipped": "not a WHOOP cycle, recovery, sleep or "
                                           "workout row"}}
+        if _live(row) and not _ref_id(_props(row).get("account"), ACCOUNT_T):
+            # Every id below starts with the account's: a row that names no
+            # WHOOP account would compose `whoop//...`.
+            return {"output": {"skipped": "the row names no WHOOP account"}}
         if kind == CYCLE_T:
             run.cycle(rid, row)
         elif kind == RECOVERY_T:

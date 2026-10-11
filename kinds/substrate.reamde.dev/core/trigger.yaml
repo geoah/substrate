@@ -7,7 +7,10 @@
 #             coalesce: bool}
 #   schedule: {recurrence: <RRULE>, timezone: <IANA name>, startsAt?: RFC3339}
 #   webhook:  {key?: <16..128 url-safe chars>,
-#             headers?: [<header name>]}        # a public endpoint
+#             headers?: [<header name>],
+#             signature?: {algorithm, signatureHeader, timestampHeader?,
+#                          maxSkew?, message?, encoding, secret}}
+#                                               # a public endpoint
 #
 # A webhook arm is reached at POST /webhooks/{authority}/{trigger}, where the
 # authority is the repository's own. With no key it is open to anyone who can
@@ -19,7 +22,9 @@
 # trigger's callable reads, matched case-insensitively, and a fire carries
 # those and the ones that describe the body (`content-type`,
 # `content-length`, `content-encoding`, `user-agent`, `date`) and nothing
-# else (decision record 0097).
+# else (decision record 0097). `signature` is a provider's HMAC the door
+# checks before it stores anything, against a secret the host resolves and
+# no callable is handed (decision record 0164).
 #
 # `arguments`, on a schedule trigger only, is the map of named arguments each
 # fire hands the function as `input["args"]` (decision record 0110),
@@ -42,7 +47,9 @@ data:
     this row.
   # `source` is one object field per arm and carries no discriminator: the
   # arm present names the source.
-  version: 22
+  # version 23: `source.webhook.signature`, the provider signature the door
+  # checks (decision record 0164).
+  version: 23
   purpose: internal
   names:
     singular: trigger
@@ -114,12 +121,14 @@ data:
             startsAt:
               type: datetime
               description: the instant the recurrence counts from
-        # A public endpoint. Both fields are optional. `key`: absent, the
+        # A public endpoint. Every field is optional. `key`: absent, the
         # endpoint accepts every POST that reaches the server (a substrate
         # on a private network wants exactly that); present, a request must
-        # carry it. Verification of a provider's own signature (GitHub's HMAC)
-        # is the callable's, which receives the raw body. The alphabet is
-        # URL-safe so the key can sit in a path segment without escaping.
+        # carry it. The alphabet is URL-safe so the key can sit in a path
+        # segment without escaping. `signature`: the provider's HMAC, which
+        # the door verifies before the request is stored, against a secret
+        # the host resolves and never hands the callable; a callable verifies
+        # only what the door cannot (decision record 0164).
         # `headers`: the names the callable reads, since an undeclared header
         # never reaches it and never enters the changelog. The door refuses
         # `authorization`, `proxy-authorization`, `cookie` and `set-cookie` by
@@ -143,6 +152,55 @@ data:
                 matched case-insensitively, at most 32; a fire also keeps
                 `content-type`, `content-length`, `content-encoding`, `user-agent`
                 and `date` if present
+            # engine/webhooksignature.go holds the rest of the shape: the
+            # message names `{body}` once and `{timestamp}` exactly when a
+            # timestampHeader is declared, maxSkew needs a timestampHeader
+            # and sits between PT1S and PT1H, and a multipart request is
+            # refused because the door keeps no raw body to sign.
+            signature:
+              type: object
+              description: the provider's signature over each request, which
+                the door checks before it stores anything; a request that
+                fails it is answered 401
+              fields:
+                # A string and not an enum: an enum value is one lowercase
+                # word, and the algorithm's name carries a hyphen.
+                algorithm:
+                  type: string
+                  pattern: "^hmac-sha256$"
+                  description: the MAC the provider computes; `hmac-sha256`
+                    is the one the door knows
+                signatureHeader:
+                  type: string
+                  pattern: "^[A-Za-z0-9-]{1,64}$"
+                  description: the header the provider puts the signature
+                    in
+                timestampHeader:
+                  type: string
+                  pattern: "^[A-Za-z0-9-]{1,64}$"
+                  description: the header carrying the signed Unix time, in
+                    seconds or milliseconds; absent when the provider signs
+                    none
+                maxSkew:
+                  type: duration
+                  description: how far the signed time may sit from when the
+                    door received the request; PT5M when absent
+                message:
+                  type: string
+                  description: the signed bytes as a template over `{timestamp}`
+                    and `{body}`, the request's raw content byte-exact (`{timestamp}.{body}`);
+                    `{body}` when absent
+                encoding:
+                  type: enum
+                  values:
+                    - hex
+                    - base64
+                  description: how the signature header spells the MAC
+                secret:
+                  type: string
+                  description: the signing key, `substrate.reamde.dev/core/secret/<id>`
+                    for a secret record or `oauthClientSecret` for the client
+                    secret of the callable's bundle's OAuth client
     # A json property rather than a field of `source.schedule`: a field is
     # declared shape, and these values take the CALLABLE's shape, which
     # engine/triggers.go holds to the function's declared `arguments:` at

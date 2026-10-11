@@ -22,8 +22,8 @@ write below and
 Do not treat the mirror as confirmation that a send happened.
 
 **Nine samples**: LLM, notes, the reading list, Firecrawl, Pebble, WHOOP to
-health, the Apple Health adapter, Garmin health and the Google Fit health
-adapter. Each is a worked example to read and copy, imported under the repository's own
+health, Apple Health to health, Garmin to health and Google Fit to health.
+Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -67,7 +67,7 @@ thing, and the Records column counts them.
 | Google        | Provider | OAuth          | 14    | 4         | 12      | 0      |
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
-| WHOOP         | Provider | OAuth          | 7     | 2         | 5       | 0      |
+| WHOOP         | Provider | OAuth          | 7     | 2         | 4       | 0      |
 | Garmin        | Provider | OAuth          | 19    | 2         | 4       | 0      |
 | Google Fit    | Provider | OAuth          | 5     | 1         | 3       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
@@ -79,10 +79,10 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
-| WHOOP to health | Sample | the provider's | 0     | 1         | 1       | 0      |
-| Apple Health adapter | Sample | none        | 0     | 1         | 1       | 0      |
-| Garmin health | Sample   | none           | 0     | 1         | 1       | 0      |
-| Health from Google Fit | Sample | none         | 0     | 1         | 1       | 0      |
+| WHOOP to health | Sample | none        | 0     | 1         | 1       | 0      |
+| Apple Health to health | Sample | none      | 0     | 1         | 1       | 0      |
+| Garmin to health | Sample | none          | 0     | 1         | 1       | 0      |
+| Google Fit to health | Sample | none        | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -760,11 +760,7 @@ account's enabled toggles derive: `read:cycles` for `enabledCycles`,
   `whoop-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
   disagree; `whoop-scheduled` fires it hourly, and the body syncs the
   accounts due by their own `syncFrequency`. `whoop-webhook` is the webhook
-  endpoint and fires `whoopwebhook`.
-- **Settings (1)**: a `secret` at
-  `providers.substrate.reamde.dev/whoop/webhooksecret`, shipped empty and not
-  required, read as `config.settings.webhooksecret`
-  ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
+  endpoint, declares WHOOP's signature, and fires `whoopwebhook`.
 - **Mappings**: none shipped. The mirrors describe one member: `user` is that
   member's row, keyed on WHOOP's `user_id`, and `account.user` points at it.
   The `people` sample ships `googlecontactperson`, `googleaddressperson`,
@@ -855,26 +851,22 @@ through the webhook.
 
 **Webhooks.** WHOOP posts `{user_id, id, type, trace_id}` to one URL per WHOOP
 app when a sleep, a recovery or a workout is written or deleted; it sends no
-event for a cycle or the member. To receive them:
+event for a cycle or the member. To receive them, set the app's webhook URL
+in WHOOP's developer dashboard to
+`https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` with model
+version v2. `substratectl trigger status` prints the path in its `WEBHOOK`
+column.
 
-1. Paste the WHOOP app's client secret into the `webhooksecret` secret, on
-   the console's Settings page or with
-   `PATCH /api/v1/substrate.reamde.dev/core/secret/providers.substrate.reamde.dev%2Fwhoop%2Fwebhooksecret`
-   and the body `{"properties": {"value": "<client secret>"}}`. It is the same
-   value as the `config` record's client secret, which no function body can
-   read.
-2. In WHOOP's developer dashboard, set the app's webhook URL to
-   `https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` with
-   model version v2. `substratectl trigger status` prints the path in its
-   `WEBHOOK` column. The trigger is open as shipped; setting
-   `source.webhook.key` on it and appending the key to the URL as its last
-   path segment turns away, at the door, any post that lacks the key.
-
-`whoopwebhook` checks `X-WHOOP-Signature`, which is
-base64(HMAC-SHA256(client secret, `X-WHOOP-Signature-Timestamp` + raw body)),
-and refuses a delivery whose signature does not match, whose timestamp is more
-than five minutes from when the door accepted it, or that arrives while the
-secret is empty: the delivery parks with the reason. A verified event is
+The `whoop-webhook` trigger declares WHOOP's signature: `X-WHOOP-Signature`
+is base64(HMAC-SHA256(client secret, `X-WHOOP-Signature-Timestamp` + raw
+body)), and the server checks it against the `config` record's client secret
+before it stores the request
+([webhook signatures](functions.md#webhook-signatures)). The secret never
+reaches a function. A delivery whose signature is missing or does not match,
+or whose timestamp is more than five minutes from when the server received
+it, is answered `401` and leaves nothing behind. The trigger ships enabled
+because the check fails closed: until the `config` record holds the client
+secret, every delivery is refused the same way. A verified event is
 matched to the account whose `account.user` is the member row for its
 `user_id`, which the first sync writes. `sleep.updated` and `workout.updated`
 read the object by id and rewrite its row; a create arrives as `.updated`.
@@ -1014,11 +1006,15 @@ cannot send, so the bundle declares no `revocationEndpoint` and deleting the
 account here does not deregister it at Garmin: disconnect the app in Garmin
 Connect as well. No activity files (FIT), no solar intensity, blood glucose,
 menstrual cycle or pregnancy summaries, and no writeback. The webhook door
-refuses an inline body over 1 MiB (`413`), so an activity details push longer
-than about 50 minutes at one sample a second does not arrive by push until that
-cap is raised; ping mode avoids it, because a ping carries only the callback
-URL. `garminpush` writes any body the door admits over several invocations of
-one chain, and skips (and names in its output) a single summary over 6 MiB.
+refuses an inline body over 8 MiB (`413`), and `garminpush` skips (and names
+in its output) a single summary over 6 MiB, because no function frame holds
+one. At one sample a second, 1 MiB of activity details is about 50 minutes, so
+an activity of up to about five hours (a marathon, for example) arrives whole
+by push. A longer one does not: `garminpush` skips it up to 8 MiB (about six
+and a half hours) and the door refuses it past that. Ping mode avoids the
+door's cap when one push carries several large activities, because a ping
+carries only the callback URL; it does not avoid the 6 MiB skip. `garminpush`
+writes any body the door admits over several invocations of one chain.
 
 ## Google Fit
 
@@ -1048,7 +1044,7 @@ loopback fake and recordings; nothing was run against a live account.
   `syncRequestedAck` disagree; `googlefit-scheduled` fires it every 15
   minutes, and the body syncs the accounts that are due.
 - **Mappings**: none shipped. The
-  [health from Google Fit](#health-from-google-fit-sample) sample turns these
+  [Google Fit to health](#google-fit-to-health-sample) sample turns these
   mirror rows into health observations.
 
 **Seven toggles, one scope each**, every scope under
@@ -1679,16 +1675,17 @@ rewrite the same records. The provider's
 [README](../kinds/providers.substrate.reamde.dev/applehealth/README.md) has
 the setup as steps.
 
-## Apple Health adapter (sample)
+## Apple Health to health (sample)
 
-Package `samples.substrate.reamde.dev/healthapple`. It writes what the
-[Apple Health provider](#apple-health) mirrors as the `health` sample's
-records ([observations](observations.md)), and requires `health` (so
-`observations`) and `providers.substrate.reamde.dev/applehealth`, each with a
-`requiresAtLeast` floor of 1.
+Turns [Apple Health](#apple-health) mirror rows into
+[observations](observations.md), traces and health records under the
+repository's own authority. Package `samples.substrate.reamde.dev/healthapple`
+requires `observations`, `health` and
+`providers.substrate.reamde.dev/applehealth`, each with a `requiresAtLeast`
+floor of 1.
 
 - **Kinds (0)**: it writes the `observations` and `health` kinds.
-- **Functions (1)**: `healthappleadapt` reads one mirror row and writes
+- **Functions (1)**: `adaptapplehealth` reads one mirror row and writes
   everything that row implies.
 - **Triggers (1)**: `healthapple-on-mirror`, on the provider's `metricbatch`
   and `workout` kinds, for `create`, `update` and `delete`, coalesced.
@@ -1696,8 +1693,12 @@ records ([observations](observations.md)), and requires `health` (so
 **What it writes.** A Health Auto Export metric maps to a `health/` metric
 or is skipped and named in the function's `skipped` result, never guessed.
 Values are converted into the metric's unit through the engine's unit table
-(`host.units`); the app's `count/min` is a rate per minute and its `count` is
-the metric's own counted unit.
+(`host.units`), which reads HealthKit's spellings (`lb`, `mi`, `hr`,
+`mmol<180.1558800000541>/L` and the rest) as [aliases](units.md#aliases).
+The adapter reads three itself: `count/min` and `bpm` are a rate per minute,
+which the table keeps apart as `{count}/min` and `{beats}/min`, and `ft` is a
+foot, which the table reads as the femtotonne. The app's `count` is the
+metric's own counted unit.
 
 | App metric | Metric | Written as | Unit |
 | --- | --- | --- | --- |
@@ -1903,20 +1904,21 @@ curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webho
 
 ## WHOOP to health (sample)
 
-Package `samples.substrate.reamde.dev/healthwhoop`. Turns the
-[WHOOP](#whoop) provider's mirror rows into the `health` sample's records
-under the repository's own authority. It requires `health` (and so
+Turns [WHOOP](#whoop) mirror rows into [observations](observations.md) and
+health records under the repository's own authority. WHOOP sends scored
+summaries, never raw samples, so it writes no traces. Package
+`samples.substrate.reamde.dev/healthwhoop` requires `health` (and so
 `observations`) and the WHOOP provider at version 19 or later, the version
 that deletes a mirror row WHOOP deleted.
 
 - **Kinds**: none; it writes `observations/observation`, `observations/source`,
   `health/sleep` and `health/workout`.
-- **Functions (1)**: `whoophealth` rebuilds every record one mirror row
+- **Functions (1)**: `adaptwhoop` rebuilds every record one mirror row
   implies and deletes the records naming that row in `origin` that it no
   longer implies. A deleted mirror row implies nothing, so its records go with
   it. A cycle delivery rebuilds the cycle's recoveries too, because a
   recovery's records span its cycle.
-- **Triggers (1)**: `healthwhoop-on-mirror` fires `whoophealth` on every
+- **Triggers (1)**: `healthwhoop-on-mirror` fires `adaptwhoop` on every
   create, update and delete of a WHOOP `cycle`, `recovery`, `sleep` or
   `workout` row. It starts at the changelog's head: to convert rows the mirror
   held before the import, replay it from the start (`POST
@@ -1967,17 +1969,17 @@ function's output and not written: a cycle's `averageHeartRate` and
 `sleepCycleCount`, and a workout's `percentRecorded` and
 `altitudeChangeMeter`. A cycle's `step_count` never reaches the mirror.
 
-## Health from Google Fit (sample)
+## Google Fit to health (sample)
 
-Package `samples.substrate.reamde.dev/healthgooglefit`. The adapter from the
-[Google Fit](#google-fit) provider's mirror rows to the `health` sample's
-observed values ([observations](observations.md)). It requires
-`observations`, `health` and `providers.substrate.reamde.dev/googlefit`, each
-with a `requiresAtLeast` floor, so install the provider and import `health`
-first.
+Turns [Google Fit](#google-fit) mirror rows into
+[observations](observations.md), traces and health records under the
+repository's own authority. Package
+`samples.substrate.reamde.dev/healthgooglefit` requires `observations`,
+`health` and `providers.substrate.reamde.dev/googlefit`, each with a
+`requiresAtLeast` floor, so install the provider and import `health` first.
 
 - **Kinds (0)**: it writes the `observations` and `health` kinds.
-- **Functions (1)**: `observegooglefit` rebuilds the observed values one
+- **Functions (1)**: `adaptgooglefit` rebuilds the observed values one
   mirror row implies and deletes the ones it no longer does.
 - **Triggers (1)**: `healthgooglefit-on-mirror` delivers every create, update
   and delete of a `googlefit/dataset` or `googlefit/session` row, one
@@ -2004,7 +2006,10 @@ counted. Each data type is read from one derived stream, so a quantity Google
 keeps in two views is never counted twice; the resting heart rate stream,
 `merge_step_deltas`, `com.google.calories.bmr` (a rate, kcal per day),
 activity segments and active and heart minutes have no catalogue metric here
-and are skipped and counted.
+and are skipped and counted. A step or energy delta keeps its end: a null
+follows it in its trace at `endTimeNanos` unless the next delta starts there,
+and a delta that crosses a UTC hour is one `amount` observation over its own
+span instead of a point in either hour's trace.
 
 Every output names its origin row (`origin`, or `origins` on a trace), and a
 delivery rewrites that row's whole output set, deleting what the row no
@@ -2017,18 +2022,18 @@ qualifier, and a trace, a sleep and a workout have no property for it. The
 ids, the sources and the rest are in the sample's
 [README](../samples/healthgooglefit/README.md).
 
-## Garmin health (sample)
+## Garmin to health (sample)
 
-Package `samples.substrate.reamde.dev/healthgarmin`. The adapter between the
-Garmin provider and the health sample: it turns each Garmin mirror row into
-the [observations](observations.md), traces, sleeps and workouts the health
-sample describes. It requires `samples.substrate.reamde.dev/observations`,
+Turns [Garmin](#garmin) mirror rows into [observations](observations.md),
+traces and health records under the repository's own authority. Package
+`samples.substrate.reamde.dev/healthgarmin` requires
+`samples.substrate.reamde.dev/observations`,
 `samples.substrate.reamde.dev/health` and the installed
 `providers.substrate.reamde.dev/garmin`, each with a `requiresAtLeast` floor,
 so import it after installing the provider and importing `health`.
 
 - **Kinds**: none of its own; it writes the base and health kinds.
-- **Functions (1)**: `garminhealth` rebuilds what one mirror row implies.
+- **Functions (1)**: `adaptgarmin` rebuilds what one mirror row implies.
 - **Triggers (1)**: `healthgarmin-on-mirror` delivers every create, update and
   delete of the fifteen Garmin mirror kinds that carry measurements (every
   kind but `notice`), coalescing a burst on one row.
@@ -2079,7 +2084,10 @@ mirror row's own version, which the garmin provider moves only when a re-send
 changes the summary: an identical re-send writes nothing, and a fuller one
 rewrites the same ids at a higher revision. A trace built from several rows
 carries the highest of their versions, and never a lower one than it holds.
-An edit in Garmin Connect wins over the activity it edits.
+An edit in Garmin Connect wins over the activity it edits while the edit
+lives. A deleted mirror row counts as absent: deleting the edit rebuilds the
+workout from the activity, deleting the activity keeps the edit's, and the
+workout is deleted once both are, whichever of the two deletes is delivered.
 
 **What it skips, and counts.** Each delivery's output names the fields it
 left unwritten: those with no catalogue metric (minimum, maximum and average

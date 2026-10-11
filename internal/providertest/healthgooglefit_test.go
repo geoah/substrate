@@ -1,6 +1,6 @@
 package providertest
 
-// The healthgooglefit sample's `observegooglefit` over the mirror rows the
+// The healthgooglefit sample's `adaptgooglefit` over the mirror rows the
 // googlefit provider writes from the recordings (googlefit_test.go): every
 // dataset and session row is handed to the adapter on a record envelope, the
 // way its trigger delivers it, and the observed records it writes are read
@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +19,11 @@ import (
 )
 
 const (
-	fitObservePackage = "samples.substrate.reamde.dev/healthgooglefit"
-	fitObserveFn      = fitObservePackage + "/observegooglefit"
-	obsHome           = "samples.substrate.reamde.dev"
-	obsMetric         = obsHome + "/observations/metric"
-	fitZone           = "Europe/Athens"
+	fitAdaptPackage = "samples.substrate.reamde.dev/healthgooglefit"
+	fitAdaptFn      = fitAdaptPackage + "/adaptgooglefit"
+	obsHome         = "samples.substrate.reamde.dev"
+	obsMetric       = obsHome + "/observations/metric"
+	fitZone         = "Europe/Athens"
 )
 
 // newFitHealth is a repository with the googlefit provider, the health sample
@@ -54,7 +55,7 @@ func observe(t *testing.T, ds substrate.Dataset, kind, id string) map[string]any
 		env["change"].(map[string]any)["op"] = "delete"
 		env["record"] = nil
 	}
-	s := newStepper(t, ds, fitObserveFn, map[string]any{})
+	s := newStepper(t, ds, fitAdaptFn, map[string]any{})
 	s.setEnvelope(env)
 	_, out, _ := s.step(nil)
 	s.apply()
@@ -186,9 +187,18 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 		stepValues = append(stepValues, row.Properties["values"].([]any)...)
 		devices[strings.Split(row.ID, "/")[2]] = true
 	}
-	if len(stepValues) != 184 || !devices["google-pixel-watch-2"] || !devices["google-pixel-8"] {
-		t.Fatalf("%d step values from devices %v, want the 184 deltas from the watch and the phone",
-			len(stepValues), sortedKeys(devices))
+	// A delta's end is a null in its trace where a gap follows, and the two
+	// recorded deltas that cross an hour are observations of their own.
+	measured := 0
+	for _, v := range stepValues {
+		if v != nil {
+			measured++
+		}
+	}
+	crossing := len(withMetric(t, ds, obsObservation, "steps"))
+	if measured+crossing != 184 || crossing != 2 || !devices["google-pixel-watch-2"] || !devices["google-pixel-8"] {
+		t.Fatalf("%d step values and %d deltas across an hour from devices %v, want the 184 deltas from the watch and the phone, 2 of them across an hour",
+			measured, crossing, sortedKeys(devices))
 	}
 	watch := mustGet(t, ds, obsSource, "googlefit/"+googlefitAccount+"/google-pixel-watch-2").Properties
 	if watch["class"] != "watch" || watch["hardwareModel"] != "Pixel Watch 2" ||
@@ -367,6 +377,101 @@ func TestHealthGoogleFitTriggerDeliversMirrorRows(t *testing.T) {
 	}
 	if n := parkedFailures(t, ds); n != 0 {
 		t.Fatalf("%d deliveries parked", n)
+	}
+}
+
+// TestHealthGoogleFitAdapterUpgradeRewritesUnchangedMirrors: every output
+// names the adapter version that wrote it, and an upgrade of the adapter
+// alone, replayed over mirrors Fit did not change, rewrites each output at
+// the revision it holds (decision record 0162).
+func TestHealthGoogleFitAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, _, _ := newFitHealth(t, fitCutOn, "enabledActivity", "enabledBody", "enabledSleep")
+	observeAll(t, ds)
+	before := adapterOutputs(t, ds)
+	assertAdapterStamp(t, before, "healthgooglefit@1")
+	upgradeAdapter(t, ds, "healthgooglefit")
+	replayAdapter(t, ds, "healthgooglefit-on-mirror")
+	assertAdapterRewrite(t, ds, "healthgooglefit", before)
+}
+
+// TestHealthGoogleFitKeepsAnAmountsEnd: a step delta covers
+// [startTimeNanos, endTimeNanos), and the trace keeps that end. One recorded
+// hour of the watch's deltas: a minute followed by a gap, two adjacent
+// minutes, a minute that crosses into the next hour, and a minute in that
+// next hour. A gap ends in a null at the delta's end, adjacent deltas carry
+// none between them, and the crossing delta is one amount observation over
+// its own span, in neither hour's trace.
+func TestHealthGoogleFitKeepsAnAmountsEnd(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	install(t, ds, googlefitDir, nil)
+	importVocabulary(t, ds, "healthgooglefit")
+	today := utcToday()
+	fake := newFakeFit(t, today, fitCutOn)
+	watch := fake.points[fitSteps][0].raw["originDataSourceId"]
+	recorded := time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC)
+	delta := func(from, to time.Duration, steps int) any {
+		return map[string]any{
+			"startTimeNanos":     strconv.FormatInt(recorded.Add(from).UnixNano(), 10),
+			"endTimeNanos":       strconv.FormatInt(recorded.Add(to).UnixNano(), 10),
+			"dataTypeName":       "com.google.step_count.delta",
+			"originDataSourceId": watch,
+			"value":              []any{map[string]any{"intVal": steps}},
+			"modifiedTimeMillis": strconv.FormatInt(recorded.Add(2*time.Hour).UnixMilli(), 10),
+		}
+	}
+	fake.setPoints(fitSteps, []any{
+		delta(10*time.Minute, 11*time.Minute, 100),
+		delta(20*time.Minute, 21*time.Minute, 50),
+		delta(21*time.Minute, 22*time.Minute, 60),
+		delta(59*time.Minute+30*time.Second, 60*time.Minute+30*time.Second, 30),
+		delta(65*time.Minute, 66*time.Minute, 20),
+	})
+	googlefitAccountWith(t, ds, "enabledActivity")
+	googlefitSync(t, ds, fake)
+	shift := today.Sub(fitCutOn)
+	dayRow := fitDatasetRow(fitSteps, recorded.Add(shift).Truncate(24*time.Hour))
+	observe(t, ds, googlefitDatasetType, dayRow)
+
+	hour := recorded.Add(shift)
+	trace := func(h time.Time) map[string]any {
+		t.Helper()
+		id := "googlefit/" + googlefitAccount + "/google-pixel-watch-2/steps/" + h.Format("2006-01-02T15")
+		return mustGet(t, ds, obsTrace, id).Properties
+	}
+	for _, c := range []struct {
+		name            string
+		at              time.Time
+		offsets, values string
+	}{
+		{"the first hour", hour, "600000 660000 1200000 1260000 1320000", "100 null 50 60 null"},
+		{"the next hour", hour.Add(time.Hour), "300000 360000", "20 null"},
+	} {
+		tr := trace(c.at)
+		if _, every := tr["every"]; every {
+			t.Fatalf("%s: written with every %v, want offsets", c.name, tr["every"])
+		}
+		if got := strings.Join(strs(tr["offsets"]), " "); got != c.offsets {
+			t.Errorf("%s: offsets %s, want %s", c.name, got, c.offsets)
+		}
+		if got := strings.Join(strs(tr["values"]), " "); got != c.values {
+			t.Errorf("%s: values %s, want %s", c.name, got, c.values)
+		}
+	}
+
+	crossing := hour.Add(59*time.Minute + 30*time.Second)
+	obs := mustGet(t, ds, obsObservation, fmt.Sprintf("googlefit/%s/steps/%d", dayRow, crossing.UnixMilli())).Properties
+	value, _ := obs["value"].(map[string]any)
+	if obs["form"] != "amount" || fmt.Sprint(value["value"]) != "30" || value["unit"] != "{steps}" ||
+		!parseInstant(t, obs["at"]).Equal(crossing) || !parseInstant(t, obs["endsAt"]).Equal(crossing.Add(time.Minute)) ||
+		storedRefPath(obs["origin"]) != googlefitDatasetType+"/"+dayRow {
+		t.Fatalf("the delta across the hour = %v", obs)
+	}
+	if n := len(withMetric(t, ds, obsObservation, "steps")); n != 1 {
+		t.Fatalf("%d step observations, want the one delta across the hour", n)
 	}
 }
 

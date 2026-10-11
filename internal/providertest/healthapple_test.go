@@ -28,7 +28,7 @@ const (
 	haMetric      = haObs + "metric/health/"
 	haSleep       = "samples.substrate.reamde.dev/health/sleep"
 	haWorkout     = "samples.substrate.reamde.dev/health/workout"
-	haAdapt       = "samples.substrate.reamde.dev/healthapple/healthappleadapt"
+	haAdapt       = "samples.substrate.reamde.dev/healthapple/adaptapplehealth"
 )
 
 // newHealthApple is a repository with the provider, the health sample, the
@@ -367,6 +367,39 @@ func TestHealthAppleBodyObservations(t *testing.T) {
 	}
 }
 
+// HealthKit's own unit spellings reach the engine's table as the app sends
+// them: a weigh-in in `lb` and glucose in HealthKit's molar-mass annotated
+// mmol/L are read by the table's aliases, and a height in `ft` is a foot,
+// which the adapter maps itself because `ft` is the femtotonne in UCUM.
+func TestHealthAppleReadsHealthKitUnits(t *testing.T) {
+	ds := newHealthApple(t)
+	body, _ := json.Marshal(map[string]any{"data": map[string]any{"metrics": []any{
+		map[string]any{"name": "weight_body_mass", "units": "lb", "data": []any{
+			map[string]any{"qty": 160, "date": "2026-09-11 07:02:41 +0300", "source": "Garmin Connect"},
+		}},
+		map[string]any{"name": "blood_glucose", "units": "mmol<180.1558800000541>/L", "data": []any{
+			map[string]any{"qty": 5.1, "date": "2026-09-20 08:12:00 +0300", "mealTime": "Before Meal", "source": "Ada’s iPhone"},
+		}},
+		map[string]any{"name": "height", "units": "ft", "data": []any{
+			map[string]any{"qty": 5.75, "date": "2026-09-21 08:00:00 +0300", "source": "Ada’s iPhone"},
+		}},
+	}}})
+	req := ahRequest(t, "delivery_3_body_measurements.json")
+	req["body"] = map[string]any{"text": string(body)}
+	deliverAt(t, ds, req, "hook-units", "2026-10-10T05:05:20Z")
+
+	for _, c := range []struct{ id, value, unit string }{
+		{"applehealth/iphone/garmin-connect/body_mass/2026-09-11T04:02:41Z", "72.5747792", "kg"},
+		{"applehealth/iphone/iphone/blood_glucose/2026-09-20T05:12:00Z", "5.1", "mmol/L"},
+		{"applehealth/iphone/iphone/height/2026-09-21T05:00:00Z", "1.7526", "m"},
+	} {
+		v := mustGet(t, ds, haObservation, c.id).Properties["value"]
+		if obj(t, v, "value") != c.value || obj(t, v, "unit") != c.unit {
+			t.Errorf("%s = %v, want %s %s", c.id, v, c.value, c.unit)
+		}
+	}
+}
+
 // Sleep segments are coded stage amounts, one per segment, each the stage
 // and its minutes; the night is one sleep record written by the batch its
 // start falls in. A workout is a health workout attributed to the device its
@@ -410,6 +443,20 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 	if lift["sport"] != "strength" || storedRefPath(lift["source"]) != haSource+"/applehealth/iphone/apple-watch" {
 		t.Fatalf("the strength workout = %v", lift)
 	}
+}
+
+// Every output names the adapter version that wrote it, and an upgrade of the
+// adapter alone, replayed over mirror rows the app did not resend, rewrites
+// each output at the revision it holds (decision record 0162).
+func TestHealthAppleAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
+	ds := newHealthApple(t)
+	deliverAt(t, ds, ahRequest(t, "delivery_1_heart_rate_steps_minutes.json"), "hook-minutes", "2026-10-08T05:31:02Z")
+	deliverAt(t, ds, ahRequest(t, "delivery_2_sleep_and_workouts.json"), "hook-night", "2026-10-08T05:20:13Z")
+	before := adapterOutputs(t, ds)
+	assertAdapterStamp(t, before, "healthapple@1")
+	upgradeAdapter(t, ds, "healthapple")
+	replayAdapter(t, ds, "healthapple-on-mirror")
+	assertAdapterRewrite(t, ds, "healthapple", before)
 }
 
 // The app's day buckets are its own aggregates: summaries, never raw points,

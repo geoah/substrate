@@ -320,9 +320,11 @@ request:
 
 A request that is not multipart carries `body` instead of `parts`:
 `{text: "…"}` when the bytes are valid UTF-8, `{base64: "…"}` otherwise. Both
-are byte-exact, so a body verifies a provider's signature (GitHub's
-`X-Hub-Signature-256` over the raw JSON) by re-encoding the text and hashing
-it against a secret it reads from its bundle's configuration. The host stores
+are byte-exact. A provider signature the trigger declares is verified by the
+door before the fire ([webhook signatures](#webhook-signatures)); a scheme the
+declaration cannot express (GitHub's `sha256=` prefix on
+`X-Hub-Signature-256`) is the body's to verify, by re-encoding the text and
+hashing it against a secret it reads from its bundle's configuration. The host stores
 a part in the blob store when it declares a filename or a media type outside
 `text/*`, and hands every other part inline as `value`. A body up to 8 MiB
 rides inline; a multipart request may total 32 MiB. An authenticated wake
@@ -1019,7 +1021,7 @@ data:
   authority and `trigger` the record's id,
   delivers one fire carrying the request
   ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
-  delivers one bare fire. Both its fields are optional. `key`: absent, the
+  delivers one bare fire. All three of its fields are optional. `key`: absent, the
   endpoint accepts every POST that reaches the server (a substrate on a private
   network wants exactly that); present, a request must carry it as a trailing
   path segment, as `?key=`, or as `Authorization: Bearer`. `substratectl
@@ -1038,6 +1040,8 @@ data:
   now receives the body-describing headers alone: the record declares, or the
   header does not arrive
   ([decision 0097](decisions/0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md)).
+  `signature` is the provider's HMAC, which the door verifies before it
+  stores the request ([webhook signatures](#webhook-signatures)).
 
 `callable` is a [reference](data-model.md#property-types) naming the function
 or [agent](agents.md) to run, written as one `<kind>/<id>` path (the example
@@ -1106,6 +1110,53 @@ boolean over three read-only bindings, `change`, `record` (null after a
 delete), and `repository`. There is deliberately no clock and no way to fetch
 other records: a guard is a cheap filter, not the computation. The computation
 is the function body.
+
+### Webhook signatures
+
+A webhook trigger that declares `source.webhook.signature` has the door check
+each request's signature before the body becomes a blob, before a delivery is
+appended and before anything runs. A request that fails is answered `401`
+with the body `webhook signature refused`, and the repository keeps no trace
+of it. The secret stays in the server, so the callable verifies only what the
+door cannot
+([decision 0164](decisions/0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md)).
+This is WHOOP's scheme as its provider ships it:
+
+```yaml
+source:
+  webhook:
+    signature:
+      algorithm: hmac-sha256
+      signatureHeader: X-WHOOP-Signature
+      timestampHeader: X-WHOOP-Signature-Timestamp
+      maxSkew: PT5M
+      message: "{timestamp}{body}"
+      encoding: base64
+      secret: oauthClientSecret
+```
+
+| Field | Required | What it is |
+| --- | --- | --- |
+| `algorithm` | yes | `hmac-sha256`, the one the door computes |
+| `signatureHeader` | yes | the header the provider puts the signature in |
+| `timestampHeader` | no | the header carrying the signed Unix time, in seconds, or in milliseconds from 10^11 up |
+| `maxSkew` | no | how far that time may sit from when the door received the request: an ISO duration from `PT1S` to `PT1H`, `PT5M` when absent; needs `timestampHeader` |
+| `message` | no | the signed bytes as a template: literal text, `{body}` exactly once (the raw body, byte-exact) and `{timestamp}` exactly when `timestampHeader` is declared; `{body}` when absent |
+| `encoding` | yes | `hex` or `base64`, how the header spells the MAC |
+| `secret` | yes | `substrate.reamde.dev/core/secret/<id>` for a [`secret` record](bundles.md#settings), or `oauthClientSecret` for the client secret of the callable's bundle's OAuth client input |
+
+The door refuses a request whose signature header is missing or does not
+match, whose timestamp is missing or outside `maxSkew`, whose body is
+multipart (the door keeps no raw bytes of one), or whose secret does not
+resolve: a missing or empty `secret` record, or a bundle whose `config` holds
+no client secret yet. The last one is also logged for the operator. The key
+is checked first and still answers `404`, so a trigger may carry both.
+`oauthClientSecret` on a callable whose bundle declares no `oauth2` block is
+refused when the trigger is written. A `secret` record whose id sits under a
+bundle's prefix is also injected into that bundle's functions
+([decision 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)),
+so a secret meant for the door alone takes an id outside every bundle's
+(`webhooks/github`).
 
 ## What makes this safe to run unattended
 

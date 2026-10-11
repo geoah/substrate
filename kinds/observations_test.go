@@ -70,14 +70,15 @@ func TestHealthRequiresObservations(t *testing.T) {
 	}
 }
 
-// The Apple Health adapter writes the health sample's kinds from the Apple
-// Health provider's mirrors, so it requires both with a floor: an import into
-// a repository missing either, or holding an older one, is refused rather
-// than landing a function whose trigger and writes name kinds that are not
-// there. The install follows its requires: provider, observations, health,
-// then the adapter.
+// The Apple Health adapter writes the observations and health samples' kinds
+// from the Apple Health provider's mirrors, so it requires all three with a
+// floor, as the other adapters do: an import into a repository missing one,
+// or holding an older one, is refused rather than landing a function whose
+// trigger and writes name kinds that are not there. The install follows its
+// requires: provider, observations, health, then the adapter.
 func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
 	adapter := shippedSample(t, "healthapple")
+	base := shippedSample(t, "observations")
 	health := shippedSample(t, "health")
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
 	if err != nil {
@@ -87,7 +88,7 @@ func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
 	if !ok {
 		t.Fatal("no shipped applehealth provider")
 	}
-	for _, req := range []*catalog.Bundle{health, provider} {
+	for _, req := range []*catalog.Bundle{base, health, provider} {
 		if !slices.Contains(adapter.Requires, req.ID) {
 			t.Errorf("healthapple requires %v, not %s", adapter.Requires, req.ID)
 		}
@@ -106,7 +107,7 @@ func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
 	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reg.ResolveFunction(adapter.ID + "/healthappleadapt"); err != nil {
+	if _, err := reg.ResolveFunction(adapter.ID + "/adaptapplehealth"); err != nil {
 		t.Fatalf("the adapter's function did not install: %v", err)
 	}
 }
@@ -144,7 +145,7 @@ func TestHealthGarminRequiresHealthAndTheProvider(t *testing.T) {
 	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reg.ResolveFunction(samples.Authority + "/healthgarmin/garminhealth"); err != nil {
+	if _, err := reg.ResolveFunction(samples.Authority + "/healthgarmin/adaptgarmin"); err != nil {
 		t.Errorf("the adapter function did not install: %v", err)
 	}
 }

@@ -487,7 +487,7 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	// An adapter sample lands after BOTH halves it reads and writes: the
 	// provider whose mirror kinds its function reads and its trigger watches,
 	// and the domain samples whose kinds it writes.
-	adapter, err := reg.ResolveFunction(samples.Authority + "/healthgooglefit/observegooglefit")
+	adapter, err := reg.ResolveFunction(samples.Authority + "/healthgooglefit/adaptgooglefit")
 	if err != nil {
 		t.Fatalf("the healthgooglefit adapter did not land: %v", err)
 	}
@@ -624,7 +624,7 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	}
 	// An adapter's grants move with the sample's kinds and leave the
 	// provider's mirror kinds where the provider publishes them.
-	fn, err := reg.ResolveFunction(home + "/healthwhoop/whoophealth")
+	fn, err := reg.ResolveFunction(home + "/healthwhoop/adaptwhoop")
 	if err != nil {
 		t.Fatalf("the rehomed healthwhoop adapter: %v", err)
 	}

@@ -1,12 +1,12 @@
-# The healthgooglefit sample
+# Google Fit to health
 
-Package `samples.substrate.reamde.dev/healthgooglefit`: the adapter from the
-`googlefit` provider's mirror rows to the `health` sample's observed values.
-It requires `observations`, `health` and the provider, and declares no kind
-of its own: `bundle.yaml` holds the `observegooglefit` function and
-`triggers.yaml` the `healthgooglefit-on-mirror` record trigger that runs it on
-every create, update and delete of a `googlefit/dataset` or
-`googlefit/session` row.
+Turns Google Fit mirror rows into observations, traces and health records
+under the repository's own authority. Package
+`samples.substrate.reamde.dev/healthgooglefit` requires `observations`,
+`health` and the `googlefit` provider, and declares no kind of its own:
+`bundle.yaml` holds the `adaptgooglefit` function and `triggers.yaml` the
+`healthgooglefit-on-mirror` record trigger that runs it on every create,
+update and delete of a `googlefit/dataset` or `googlefit/session` row.
 
 Google Fit's REST API ends with 2026 and is closed to new projects, so like
 the provider this was tested against recordings only.
@@ -25,6 +25,15 @@ the provider this was tested against recordings only.
 | `com.google.blood_glucose` | `merged` | `health/blood_glucose` | gauge | `mmol/L` | one observation per reading |
 | `com.google.blood_pressure` | `merged` | `health/systolic_blood_pressure`, `health/diastolic_blood_pressure` | gauge, hold `PT0S` | `mm[Hg]` | two observations per reading, each carrying both as `components` |
 | `com.google.sleep.segment` | `merged` | `health/sleep_stage` | amount | `min` | one observation per segment inside a sleep session, `code` beside the duration |
+
+A step or energy point is a delta over `[startTimeNanos, endTimeNanos)`, and
+a trace point's amount spans to the trace's next point. So the adapter keeps
+each delta's end: a null point follows it at `endTimeNanos` unless the next
+delta from the same device starts exactly there, and a null in a trace means
+nothing was measured from that instant. A delta that crosses a UTC hour is
+written as one `amount` observation over its own span, the reading's id
+below, and not split between two hourly traces: the amount stays whole and
+neither hour claims time it does not cover.
 
 A session with `activityType` 72 becomes a `health/sleep` (span, `timeInBed`,
 `timeAsleep` and the `awake`, `light`, `deep` and `rem` totals); any other
@@ -83,3 +92,12 @@ it overlaps, and a stage observation lists the day rows it was cut from in
 an output was built from, and never falls: a rewrite that would lower it
 keeps the stored one. That is per output rather than per day row, so a late
 point rewrites only the hour or the reading it lands in.
+
+Every output also carries `adapter: healthgooglefit@<version>`, the
+`ADAPTER` constant at the top of the function, apart from `revision`. A
+change to what a mirror row becomes raises the constant. After an upgrade,
+replay the trigger from the start
+(`bin/substratectl trigger replay healthgooglefit-on-mirror --from 0`):
+every mirror row is delivered again, and each output is rewritten under the
+new version at the revision it already holds. Days Fit never re-serves are
+not reprocessed any other way.

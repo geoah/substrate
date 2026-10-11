@@ -28,13 +28,15 @@ data:
     observations, nights and workouts. Needs the health sample and the Apple
     Health provider.
   requires:
+    - samples.substrate.reamde.dev/observations
     - samples.substrate.reamde.dev/health
     - providers.substrate.reamde.dev/applehealth
   requiresAtLeast:
+    samples.substrate.reamde.dev/observations: 1
     samples.substrate.reamde.dev/health: 1
     providers.substrate.reamde.dev/applehealth: 1
   installs:
-    - samples.substrate.reamde.dev/healthapple/healthappleadapt
+    - samples.substrate.reamde.dev/healthapple/adaptapplehealth
 ---
 # Reads are the reconciliation: the outputs that already point at the origin
 # (`filter.referencing`), and the account for the merged source's name. The
@@ -42,7 +44,7 @@ data:
 # name, its `priorities`) stands.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/healthapple/healthappleadapt
+  id: samples.substrate.reamde.dev/healthapple/adaptapplehealth
 data:
   authority: samples.substrate.reamde.dev
   package: healthapple
@@ -115,6 +117,12 @@ data:
     import json
     import re
 
+    # This code's own version, stamped on every output apart from the row's
+    # `revision` (decision record 0162). Raise it with any change to what a
+    # mirror row becomes, then replay `healthapple-on-mirror` from 0: every
+    # output is rewritten at the revision it already holds.
+    ADAPTER = "healthapple@1"
+
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"
     BATCH = PROVIDER + "metricbatch"
     MIRROR_WORKOUT = PROVIDER + "workout"
@@ -134,14 +142,14 @@ data:
     # `offsets` must not keep both).
     OWNED = {
         TRACE: ("metric", "source", "form", "unit", "every", "offsets", "values", "codes", "hold",
-                "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "origins"),
+                "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "origins", "adapter"),
         OBSERVATION: ("metric", "source", "form", "value", "code", "statistic", "period", "periodId",
-                      "hold", "at", "endsAt", "utcOffset", "components", "qualifiers", "origin"),
+                      "hold", "at", "endsAt", "utcOffset", "components", "qualifiers", "origin", "adapter"),
         SLEEP: ("source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "timeInBed", "timeAsleep",
-                "awake", "light", "deep", "rem", "origin"),
+                "awake", "light", "deep", "rem", "origin", "adapter"),
         WORKOUT: ("sport", "sportSource", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
                   "duration", "distance", "energy", "averageHeartRate", "maxHeartRate", "elevationGain",
-                  "origin"),
+                  "origin", "adapter"),
     }
 
     # Health Auto Export's metric name -> (metric id under health/, shape, form,
@@ -173,15 +181,14 @@ data:
     GLUCOSE = {"mass-concentration": ("blood_glucose_mass", "mg/dL"),
                "amount-concentration": ("blood_glucose", "mmol/L")}
 
-    # The app's unit spellings the engine's table does not read as written. A
-    # count per minute is a rate per minute; Apple's dimensionless `count` is the
-    # metric's own counted unit (steps, floors, a BMI).
-    APP_UNITS = {
-        "count/min": "/min", "bpm": "/min", "mi": "[mi_i]", "ft": "[ft_i]", "in": "[in_i]",
-        "yd": "[yd_i]", "lb": "[lb_av]", "st": "[stone_av]", "degC": "Cel", "degF": "[degF]",
-        "mmHg": "mm[Hg]", "hr": "h", "ml/(kg·min)": "mL/(kg.min)", "Cal": "[Cal]",
-        "mmol<180.1558800000541>/L": "mmol/L", "kmph": "km/h", "mi/hr": "[mi_i]/h", "km/hr": "km/h",
-    }
+    # The app's unit spellings this adapter reads differently from the engine's
+    # table; every other spelling goes to host.units.canonical. The table keeps
+    # `count/min` and `bpm` apart from `/min` (an annotated count never
+    # converts), but here they are the heart and breathing rates the metrics
+    # hold in `/min`. `ft` is the femtotonne in UCUM, so the foot is mapped here.
+    # Apple's dimensionless `count` is the metric's own counted unit (steps,
+    # floors, a BMI), handled in Units.
+    APP_UNITS = {"count/min": "/min", "bpm": "/min", "ft": "[ft_i]"}
     COUNTED = ("{steps}", "{floors}", "kg/m2")
 
     FINE = ("seconds", "minutes")
@@ -348,6 +355,7 @@ data:
                 props["origins"] = [ref(*self.origin)]
             else:
                 props["origin"] = ref(*self.origin)
+            props["adapter"] = ADAPTER
             self.outputs[(kind, rid)] = props
 
         def skip(self, reason):

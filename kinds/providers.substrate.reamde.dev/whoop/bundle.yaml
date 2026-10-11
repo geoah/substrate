@@ -124,7 +124,13 @@ data:
   # the `webhooksecret` setting holds the signing secret. `whoopsync` deletes
   # a row whose object WHOOP answers 404 for when read back by id, and never
   # writes a payload older than the stored row's `updatedAt`. ADDITIVE.
-  version: 19
+  #
+  # 20: the `whoop-webhook` trigger declares WHOOP's signature and the door
+  # verifies it against the config record's client secret (decision record
+  # 0164). `whoopwebhook` no longer checks it, and the `webhooksecret`
+  # setting, a second copy of the client secret every function was handed,
+  # is gone.
+  version: 20
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -2643,15 +2649,16 @@ data:
 # ---- the webhook function: one WHOOP event per delivery ----------------------
 # WHOOP POSTs a notification when a sleep, a recovery or a workout is written
 # or deleted: `{user_id, id, type, trace_id}`, signed with the WHOOP app's
-# client secret. The body checks the signature, finds the account by WHOOP's
-# `user_id`, then reads the object back by id and rewrites its mirror row, or
-# deletes the row. WHOOP sends no event for a cycle or the member; the sync's
-# window covers both.
+# client secret. The body finds the account by WHOOP's `user_id`, then reads
+# the object back by id and rewrites its mirror row, or deletes the row.
+# WHOOP sends no event for a cycle or the member; the sync's window covers
+# both.
 #
-# The OAuth facility never injects the client secret into a body, so the
-# signature is checked against the `webhooksecret` setting (settings.yaml), a
-# copy of the same value the owner pastes in. The mapping from a WHOOP object
-# to its row is the sync's, repeated here because a body cannot import
+# The signature is the door's: the `whoop-webhook` trigger declares it, and
+# the host checks it against the config record's client secret before the
+# request is stored (decision 0164), so the secret never reaches this body
+# and a request that reaches it is one WHOOP signed. The mapping from a WHOOP
+# object to its row is the sync's, repeated here because a body cannot import
 # another; a delivery for an object the sync already wrote leaves the row's
 # version where it was, which the provider tests hold.
 kind: substrate.reamde.dev/core/function
@@ -2661,9 +2668,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: whoop
   description: >-
-    Receive one WHOOP webhook: check its signature against the webhooksecret
-    setting, then read the changed sleep, recovery or workout back from WHOOP
-    and rewrite its mirror row, or delete the row of one WHOOP deleted.
+    Receive one WHOOP webhook the door has already verified: read the changed
+    sleep, recovery or workout back from WHOOP and rewrite its mirror row,
+    or delete the row of one WHOOP deleted.
   runtime: python
   timeout: PT30S
   permissions:
@@ -2690,19 +2697,12 @@ data:
     #   "requests==2.32.4",
     # ]
     # ///
-    """WHOOP webhook receiver: check the signature, then rewrite or delete one row.
+    """WHOOP webhook receiver: rewrite or delete the one row an event names.
 
-    THE SIGNATURE (developer.whoop.com/docs/developing/webhooks).
-    `X-WHOOP-Signature` is base64(HMAC-SHA256(key = the app's client secret,
-    message = the `X-WHOOP-Signature-Timestamp` header's value + the raw body)),
-    and the timestamp is milliseconds since the epoch. The body is the bytes the
-    door recorded, so a redelivered or retried fire checks the same bytes. An
-    empty `webhooksecret` setting, a missing header, a signature that does not
-    match, or a timestamp more than TOLERANCE_SECONDS from the moment the door
-    accepted the request is a refusal: the body raises before it reads or writes
-    anything, and the delivery parks with the reason. WHOOP documents no
-    freshness window; each of its retries is signed afresh, so a short one only
-    refuses a captured request replayed later.
+    THE SIGNATURE (developer.whoop.com/docs/developing/webhooks) is checked by
+    the door before the request is stored: the `whoop-webhook` trigger declares
+    WHOOP's scheme and the host verifies it against the client secret, which
+    this body never receives. A delivery that reaches the body is signed.
 
     THE ACCOUNT is the one whose `user` reference is the member row for the
     event's `user_id`, which the sync writes on its first page. An event for a
@@ -2730,8 +2730,6 @@ data:
     """
     import base64
     import datetime as _dt
-    import hashlib
-    import hmac
     import json
     from urllib.parse import quote as _quote
     from urllib.parse import urlsplit as _urlsplit
@@ -2747,11 +2745,6 @@ data:
     DEFAULT_API_BASE = "https://api.prod.whoop.com/developer"
     API_HOST = "api.prod.whoop.com"   # the ONLY non-loopback origin the token may reach
     LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
-
-    SECRET_SETTING = "webhooksecret"
-    SIGNATURE_HEADER = "x-whoop-signature"
-    TIMESTAMP_HEADER = "x-whoop-signature-timestamp"
-    TOLERANCE_SECONDS = 300
 
     # The event's object -> the account toggle that must be on to write it, and
     # the mirror kind its row is.
@@ -2846,7 +2839,7 @@ data:
         return str(value or "")
 
 
-    # ------------------------------------------------------------ the signature
+    # ----------------------------------------------------------------- the body
 
     def _body_bytes(request):
         body = request.get("body")
@@ -2854,44 +2847,7 @@ data:
             return body["text"].encode("utf-8")
         if isinstance(body, dict) and isinstance(body.get("base64"), str):
             return base64.b64decode(body["base64"])
-        raise RuntimeError("whoop webhook: refused, the request carries no body "
-                           "to check the signature over")
-
-
-    def _verify(request, secret, accepted_at):
-        """The signed body, or a refusal that names what failed."""
-        headers = {str(k).lower(): str(v)
-                   for k, v in (request.get("headers") or {}).items()}
-        signature = headers.get(SIGNATURE_HEADER, "").strip()
-        stamp = headers.get(TIMESTAMP_HEADER, "").strip()
-        if not signature or not stamp:
-            raise RuntimeError(
-                "whoop webhook: refused, the request carries no X-WHOOP-Signature "
-                "and X-WHOOP-Signature-Timestamp headers")
-        body = _body_bytes(request)
-        want = base64.b64encode(hmac.new(secret.encode("utf-8"),
-                                         stamp.encode("utf-8") + body,
-                                         hashlib.sha256).digest()).decode("ascii")
-        if not hmac.compare_digest(want.encode("ascii"),
-                                   signature.encode("utf-8", "replace")):
-            raise RuntimeError(
-                "whoop webhook: refused, X-WHOOP-Signature does not match the "
-                "body; the request was not signed with the client secret in the "
-                "%s setting" % SECRET_SETTING)
-        try:
-            signed = int(stamp) / 1000.0
-        except ValueError:
-            raise RuntimeError(
-                "whoop webhook: refused, X-WHOOP-Signature-Timestamp is not "
-                "milliseconds since the epoch") from None
-        arrived = _parse(accepted_at) or _dt.datetime.now(_dt.timezone.utc)
-        skew = abs(arrived.timestamp() - signed)
-        if skew > TOLERANCE_SECONDS:
-            raise RuntimeError(
-                "whoop webhook: refused, the request was signed %d seconds away "
-                "from when it arrived (the limit is %d); a stale or replayed "
-                "request is not acted on" % (skew, TOLERANCE_SECONDS))
-        return body
+        raise RuntimeError("whoop webhook: the request carries no body")
 
 
     def _account_for(host, cfg, user_id):
@@ -3155,18 +3111,13 @@ data:
         if not isinstance(request, dict):
             raise RuntimeError("whoop webhook: the delivery carries no request; "
                                "the whoop-webhook trigger is what fires this")
-        secret = str((cfg.get("settings") or {}).get(SECRET_SETTING) or "")
-        if not secret:
-            raise RuntimeError(
-                "whoop webhook: refused, the %s/%s setting is empty; paste the "
-                "WHOOP app's client secret into it" % (AUTHORITY, SECRET_SETTING))
-        body = _verify(request, secret, (envelope.get("fire") or {}).get("at"))
+        body = _body_bytes(request)
         try:
             event = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
-            raise RuntimeError("whoop webhook: the signed body is not JSON") from None
+            raise RuntimeError("whoop webhook: the body is not JSON") from None
         if not isinstance(event, dict):
-            raise RuntimeError("whoop webhook: the signed body is not a JSON object")
+            raise RuntimeError("whoop webhook: the body is not a JSON object")
 
         etype = str(event.get("type") or "")
         obj, _, action = etype.partition(".")

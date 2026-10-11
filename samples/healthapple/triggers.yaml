@@ -10,6 +10,7 @@ metadata:
 data:
   properties:
     enabled: true
+    label: Apple Health to health
     source:
       record:
         kinds:
@@ -17,4 +18,4 @@ data:
           - providers.substrate.reamde.dev/applehealth/workout
         ops: [create, update, delete]
         coalesce: true
-    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthapple/healthappleadapt
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthapple/adaptapplehealth

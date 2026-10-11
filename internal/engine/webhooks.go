@@ -65,8 +65,8 @@ const (
 )
 
 // ReceiveWebhook is the public door (substrate.WebhookReceiver): resolve the
-// repository by its authority, the trigger by id, check the key when the
-// trigger declares one, spool the file parts and the body into the blob
+// repository by its authority, the trigger by id, check the key and the
+// signature when the trigger declares them, spool the file parts and the body into the blob
 // store, record the request as a pending delivery in the ledger, then hand
 // the fire to the background supervisor and return. The sender gets its
 // answer in milliseconds while an agent callable may run for minutes, and
@@ -118,7 +118,9 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 
 // admitWebhook is the synchronous half of a delivery: the checks, the blob
 // spool and the pending entry. Every check that fails answers
-// errWebhookRefused. Past the checks the request is written into the ledger
+// errWebhookRefused, except the declared signature's, which answers
+// errWebhookSignature: by then the request has named a live trigger and
+// carried its key. Past the checks the request is written into the ledger
 // as a parked failure carrying pendingWebhookError, in its parked form
 // (parkedEnvelope: the body spooled by digest, the headers narrowed to the
 // body's and the ones the trigger declares, the query dropped), with the fire
@@ -141,6 +143,13 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	if tr.WebhookKey != "" && subtle.ConstantTimeCompare([]byte(tr.WebhookKey), []byte(key)) != 1 {
 		return nil, foldFailure{}, errWebhookRefused
 	}
+	// The signature is checked before anything is stored: a request its
+	// provider did not sign spools no blob and appends no entry (decision
+	// 0164). The receipt time it is measured against is the entry's too.
+	at := nowUTC()
+	if err := ds.checkWebhookSignature(ctx, tr, req, at); err != nil {
+		return nil, foldFailure{}, err
+	}
 	parts, err := ds.spoolWebhookParts(ctx, req.Parts)
 	if err != nil {
 		return nil, foldFailure{}, err
@@ -150,7 +159,6 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 		return nil, foldFailure{}, err
 	}
 	fid := webhookFirePrefix + wid
-	at := nowUTC()
 	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
 	envelope["request"] = webhookRequestEnvelope(req, parts)
 	payload, err := ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders)

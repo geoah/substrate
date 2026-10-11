@@ -34,6 +34,10 @@ data:
       type: int
       min: 0
       description: rises with each rewrite from the upstream
+    adapter:
+      type: string
+      description: the function and version that wrote this row from its origin,
+        `<package>@<version>`
     isNap:
       type: bool
       description: true for a nap rather than the main sleep

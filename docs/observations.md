@@ -137,12 +137,13 @@ the reading as received when it could not be normalized; `absentReason`, why
 there is no value; `quality` (`valid`, `estimated`, `questionable`, `stale`,
 `validated`, `unavailable`); `issuedAt`, when the value became known;
 `recordingMethod` (`automatic`, `active`, `manual`); `origin`, the provider
-record that delivered it; `derivedFrom` and `conversion`, for a value computed
+record that delivered it; `adapter`, the code that wrote it from that record
+([the adapters](#the-adapters)); `derivedFrom` and `conversion`, for a value computed
 from another. It titles itself `{metric} {value}`, "Body weight 72.40 kg".
 
 **`trace`** declares the trait's packed properties and adds `acquisition`
-(the recording a trace is one channel of), `quality` and `origins` (the
-provider records the period was built from). One trace covers one metric,
+(the recording a trace is one channel of), `quality`, `origins` (the
+provider records the period was built from) and `adapter`. One trace covers one metric,
 source, `about`, `channel` and period, from one origin provider, and its id is
 composed from them: `<provider>/<account record id>/<metric>/<period start>`
 ([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
@@ -313,7 +314,8 @@ a rewrite that changes no point writes nothing.
 
 `samples.substrate.reamde.dev/health` requires `observations` with a
 `requiresAtLeast` floor (`TestHealthRequiresObservations`) and adds five
-kinds and a catalogue.
+kinds and a catalogue. `sleep` and `workout` carry `origin`, `revision` and
+`adapter` as the base kinds do, because an adapter writes them too.
 
 | Kind | One record is |
 | --- | --- |
@@ -339,13 +341,36 @@ a metric's description marks the least certain ones.
 ## The adapters
 
 An adapter is a sample whose function turns one provider's mirror rows into
-these records. `samples.substrate.reamde.dev/healthapple` is the first: it
-reads the Apple Health provider's metric batches and workouts and writes
-traces, observations, sleeps and workouts, each naming the mirror row it came
-from in `origin` and rewritten or deleted with it. Its mapping and rules are
-in the [catalog](bundles-catalog.md#apple-health-adapter-sample). Its trace
-ids carry the source, `applehealth/<account>/<source>/<metric>/<UTC hour>`,
-because one phone delivers several devices' data.
+these records, each naming the mirror row it came from in `origin` and
+rewritten or deleted with it. Four ship, each with its mapping and rules in
+the catalog: [WHOOP to health](bundles-catalog.md#whoop-to-health-sample)
+(`healthwhoop`), [Apple Health to
+health](bundles-catalog.md#apple-health-to-health-sample) (`healthapple`),
+[Garmin to health](bundles-catalog.md#garmin-to-health-sample)
+(`healthgarmin`) and [Google Fit to
+health](bundles-catalog.md#google-fit-to-health-sample) (`healthgooglefit`).
+The Apple Health adapter's trace ids carry the source,
+`applehealth/<account>/<source>/<metric>/<UTC hour>`, because one phone
+delivers several devices' data.
+
+Every output also names the code that wrote it, in `adapter`:
+`<package>@<version>` (`healthwhoop@1`), a constant at the top of the
+adapter's function. The base kinds and `health/sleep` and `health/workout`
+declare it as their own property, apart from `revision`, which is the
+upstream's
+([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
+An adapter upgrade does not reach mirror rows the upstream never changes on
+its own. To reprocess them, raise the constant with the change, apply the
+new closure, and replay the adapter's record trigger from the start:
+
+```bash
+bin/substratectl trigger replay healthwhoop-on-mirror --from 0
+```
+
+Every mirror row is delivered again and every output is rewritten under the
+new `adapter` at the `revision` it already holds, which the write path admits
+because an equal revision is not a stale one. An output whose code is
+unchanged is not rewritten.
 
 ## Building observed values in a function
 

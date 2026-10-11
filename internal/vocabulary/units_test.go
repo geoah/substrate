@@ -346,6 +346,55 @@ func TestCanonicalUnitAppliesAliases(t *testing.T) {
 	}
 }
 
+// HealthKit's HKUnit strings, as Health Auto Export sends them, read as the
+// codes they mean, so an adapter passes the app's unit straight to the table.
+func TestCanonicalUnitReadsHealthKitSpellings(t *testing.T) {
+	for in, want := range map[string]string{
+		// The aliases HealthKit needs.
+		"count": "{count}", "count/min": "{count}/min", "hr": "h",
+		"lb": "[lb_av]", "oz": "[oz_av]", "st": "[stone_av]",
+		"in": "[in_i]", "yd": "[yd_i]", "mi": "[mi_i]", "km/hr": "km/h", "mi/hr": "[mi_i]/h", "kmph": "km/h",
+		"mL/(kg*min)": "mL/(kg.min)", "ml/(kg·min)": "mL/(kg.min)",
+		"mmol<180.1558800000541>/L": "mmol/L", "mmol<180.15588000005408>/L": "mmol/L",
+		"IU": "[IU]", "dBASPL": "dB[SPL]", "cmAq": "cm[H2O]",
+		"degC": "Cel", "degF": "[degF]", "Cal": "[Cal]", "mmHg": "mm[Hg]",
+		// The ones that are UCUM codes as HealthKit writes them.
+		"kcal": "kcal", "kJ": "kJ", "mg/dL": "mg/dL", "%": "%", "ms": "ms", "s": "s", "min": "min", "d": "d",
+		"m": "m", "km": "km", "cm": "cm", "kg": "kg", "g": "g", "mL": "mL", "L": "L", "W": "W", "m/s": "m/s",
+	} {
+		got, err := vocabulary.CanonicalUnit(in)
+		if err != nil || got != want {
+			t.Errorf("CanonicalUnit(%q) = %q, %v, want %q", in, got, err, want)
+		}
+	}
+	for _, c := range []struct{ value, from, to, want string }{
+		{"1", "lb", "kg", "45359237/100000000"},
+		{"1", "mi", "m", "201168/125"},
+		{"2", "hr", "min", "120"},
+		{"5.5", "mmol<180.1558800000541>/L", "mmol/L", "5.5"},
+		{"42", "ml/(kg·min)", "mL/(kg.min)", "42"},
+	} {
+		from, err := vocabulary.CanonicalUnit(c.from)
+		if err != nil {
+			t.Fatalf("CanonicalUnit(%q): %v", c.from, err)
+		}
+		if got := convertTo(t, "", c.value, from, c.to); got.Cmp(rat(t, c.want)) != 0 {
+			t.Errorf("%s %s to %s = %s, want %s", c.value, c.from, c.to, got.RatString(), c.want)
+		}
+	}
+	// A bare count per minute is not a heart rate: the annotation keeps it
+	// apart from every other rate, and the writer that knows what was counted
+	// converts it.
+	refusesConvert(t, "", "{count}/min", "/min", "an annotation is part of the unit")
+	// `ft` is the femtotonne, a UCUM code, so it can never be the foot's alias.
+	if got, err := vocabulary.CanonicalUnit("ft"); err != nil || got != "ft" {
+		t.Errorf("CanonicalUnit(%q) = %q, %v, want the femtotonne code itself", "ft", got, err)
+	}
+	if m, err := vocabulary.MeasureOf("ft"); err != nil || m.Name != "mass" {
+		t.Errorf("ft measures %v, %v, want mass", m.Name, err)
+	}
+}
+
 func TestFormatQuantity(t *testing.T) {
 	for _, c := range []struct {
 		v    map[string]any
