@@ -61,7 +61,7 @@ func TestAZeroFactorIsRefused(t *testing.T) {
 
 // A dimension is nine small exponents, each held within ±8 in every atom
 // raised to its power and in every product along the way. `m257` once
-// narrowed to int8 and read as metres; `m100.m100` wrapped to L-56.
+// narrowed to int8 and read as a length; `m100.m100` wrapped to L-56.
 func TestADimensionBeyondItsBoundIsRefused(t *testing.T) {
 	for _, code := range []string{"m9", "m-9", "m24", "L3", "m8.m", "m5.m5", "/m5.m5", "(m4.m4).m"} {
 		t.Run(code, func(t *testing.T) {
