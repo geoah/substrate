@@ -318,6 +318,14 @@ func WithTestReprojectionHook(hook func(ctx context.Context, kind string) error)
 	return func(o *options) { o.reprojectionHook = hook }
 }
 
+// WithTestWebhookClock is the clock the webhook door records each request's
+// receipt by (webhooks.go admitWebhook), and nothing else, so a test that
+// measures a stored request's skew from its receipt names that instant to
+// the millisecond instead of sleeping to it.
+func WithTestWebhookClock(now func() time.Time) Option {
+	return func(o *options) { o.webhookNow = now }
+}
+
 // WithTestObservedPageSize sets how many observed points one read of a
 // bucket's or a stream's points takes at most (observedsettle.go), so a test
 // spans a bucket over several pages with a few points.

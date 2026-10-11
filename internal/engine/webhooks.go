@@ -146,7 +146,7 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	// The signature is checked before anything is stored: a request its
 	// provider did not sign spools no blob and appends no entry (decision
 	// 0164). The receipt time it is measured against is the entry's too.
-	at := nowUTC()
+	at := ds.svc.webhookNow().UTC().Truncate(time.Microsecond)
 	if err := ds.checkWebhookSignature(ctx, tr, req, at); err != nil {
 		return nil, foldFailure{}, err
 	}
