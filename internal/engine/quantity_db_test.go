@@ -38,6 +38,7 @@ func readingManifest(overrides map[string]any) map[string]any {
 		"temp":   map[string]any{"type": "quantity", "measures": "temperature"},
 		"result": map[string]any{"type": "quantity", "measures": "mass-concentration", "comparator": true},
 		"pulse":  map[string]any{"type": "quantity"},
+		"height": map[string]any{"type": "quantity", "measures": "length", "fts": true},
 	}
 	for k, v := range overrides {
 		props[k] = v
@@ -124,6 +125,18 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 	}
 	if got.Title != "scale: 72.50 kg" {
 		t.Fatalf("title = %q, want %q", got.Title, "scale: 72.50 kg")
+	}
+	// A quantity declared `fts: true` indexes its value text, number and
+	// unit, so a search finds the record by either.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "tall", Properties: map[string]any{
+		"name": "tall", "height": qv("1.93", "m"),
+	}}); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	for _, q := range []string{"1.93", "1.93 m"} {
+		if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{Search: q}}); strings.Join(got, ",") != "tall" {
+			t.Fatalf("search %q found %v, want the tall reading", q, got)
+		}
 	}
 	for name, bad := range map[string]map[string]any{
 		"a JSON number":            {"weight": map[string]any{"value": 72.5, "unit": "kg"}},
