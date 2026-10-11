@@ -43,6 +43,9 @@ type aggRun struct {
 	bounds []time.Time
 	// nSeries is the series the read was budgeted for (seriesOf).
 	nSeries int
+	// samples is the raw points the read's statements have counted so far,
+	// against maxSamples (charge).
+	samples int64
 }
 
 // aggSeries is one stream's raw points: each span read, with the point
@@ -164,9 +167,8 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 		}
 		total += n
 	}
-	if total > r.p.maxSamples {
-		return refuse("aggregate.budget.maxSamples", "the read needs %d raw points, over %d; narrow the range, use reducers rollups serve (not percentile or durationIn, and no maxGap tighter than the data), or raise maxSamples (the cap is %d)",
-			total, r.p.maxSamples, substrate.AggregateMaxSamplesCap)
+	if err := r.charge(total, "to reduce"); err != nil {
+		return err
 	}
 	for s, spans := range want {
 		if len(spans) == 0 {
@@ -196,6 +198,19 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 		}
 	}
 	return nil
+}
+
+// charge counts n more raw points against maxSamples before a statement
+// reads them, and refuses the read once the points counted so far (the forms'
+// discovery, the reduction's, the coverage's) pass it. what says what the n
+// are for.
+func (r *aggRun) charge(n int64, what string) error {
+	r.samples += n
+	if r.samples <= r.p.maxSamples {
+		return nil
+	}
+	return refuse("aggregate.budget.maxSamples", "the read needs %d raw points (%d of them %s), over %d; narrow the range, use reducers rollups serve (not percentile or durationIn, and no maxGap tighter than the data), or raise maxSamples (the cap is %d)",
+		r.samples, n, what, r.p.maxSamples, substrate.AggregateMaxSamplesCap)
 }
 
 // rollupable reports whether every reducer of the read merges exactly from a
@@ -1173,14 +1188,37 @@ func rowExtent(s observed.Stats) observed.Extent {
 	return observed.Extent{Start: s.First.At, End: s.SpanEnd, Ms: s.CoveredMs}
 }
 
-// amountCoverageSQL is the union of the raw spans of a group's amount
-// streams ($1 to $5) in each cell ($6 to $10): the points a raw read takes
-// into the cell, those whose instant lies in [a, b), on a recorded-local
-// read ($12) whose wall clock at their own offset lies in [wa, wb), of the
-// cell's code where the read groups by code ($13), and of the admitted codes
-// ($11) where the filter names some ($14). Spans that overlap or touch join,
-// as joinSpans joins them, and each joined span counts in whole
-// milliseconds.
+// amountCoveragePoints are the raw spans of a group's amount streams ($1 to
+// $5) in one cell c of amountCoverageCells: the points a raw read takes into
+// the cell, those whose instant lies in [a, b), on a recorded-local read
+// ($12) whose wall clock at their own offset lies in [wa, wb), of the cell's
+// code where the read groups by code ($13), and of the admitted codes ($11)
+// where the filter names some ($14).
+const amountCoveragePoints = `
+	SELECT p.ts, p.ts_end AS e
+	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS s(metric, kind, source, about, channel)
+	CROSS JOIN LATERAL (
+		SELECT p.ts, p.ts_end FROM observed_points p
+		WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.ts >= c.a AND p.ts < c.b AND p.form = 'amount' AND ` + availablePoint + `
+		  AND (NOT $12::boolean OR (p.ts + p.utc_offset_min * interval '1 minute' >= c.wa
+		                            AND p.ts + p.utc_offset_min * interval '1 minute' < c.wb))
+		  AND (NOT $13::boolean OR p.code = c.code)
+		  AND (NOT $14::boolean OR p.code = ANY($11::text[]))) p`
+
+// amountCoverageCells are the cells ($6 to $10) whose coverage is taken from
+// the raw spans.
+const amountCoverageCells = `unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[], $10::text[]) WITH ORDINALITY AS c(a, b, wa, wb, code, i)`
+
+// amountCoverageCountSQL counts the spans amountCoverageSQL reduces, every
+// cell's, before it runs: they count against maxSamples like any raw point
+// a read takes.
+const amountCoverageCountSQL = `
+	SELECT coalesce(sum((SELECT count(*) FROM (` + amountCoveragePoints + `) q)), 0)::bigint FROM ` + amountCoverageCells
+
+// amountCoverageSQL is the union of each cell's spans (amountCoveragePoints).
+// Spans that overlap or touch join, as joinSpans joins them, and each joined
+// span counts in whole milliseconds.
 const amountCoverageSQL = `
 	SELECT c.i, coalesce((
 		SELECT sum(floor(extract(epoch FROM z.e - z.s) * 1000))::bigint FROM (
@@ -1188,22 +1226,11 @@ const amountCoverageSQL = `
 				SELECT x.ts, x.e, sum(x.brk) OVER (ORDER BY x.ts, x.e ROWS UNBOUNDED PRECEDING) AS grp FROM (
 					SELECT q.ts, q.e, CASE WHEN q.ts <= max(q.e) OVER (ORDER BY q.ts, q.e ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
 						THEN 0 ELSE 1 END AS brk
-					FROM (
-						SELECT p.ts, p.ts_end AS e
-						FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS s(metric, kind, source, about, channel)
-						CROSS JOIN LATERAL (
-							SELECT p.ts, p.ts_end FROM observed_points p
-							WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
-							  AND p.ts >= c.a AND p.ts < c.b AND p.form = 'amount' AND ` + availablePoint + `
-							  AND (NOT $12::boolean OR (p.ts + p.utc_offset_min * interval '1 minute' >= c.wa
-							                            AND p.ts + p.utc_offset_min * interval '1 minute' < c.wb))
-							  AND (NOT $13::boolean OR p.code = c.code)
-							  AND (NOT $14::boolean OR p.code = ANY($11::text[]))) p
-					) q
+					FROM (` + amountCoveragePoints + `) q
 				) x
 			) y GROUP BY y.grp
 		) z), 0)
-	FROM unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[], $10::text[]) WITH ORDINALITY AS c(a, b, wa, wb, code, i)`
+	FROM ` + amountCoverageCells
 
 // amountCoverage settles each cell's coverage, the union of its amounts'
 // spans: from the rows' and the cut ends' extents (observed.UnionMs) where no
@@ -1241,8 +1268,15 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 		}
 	}
 	admitted := sortedKeys(r.p.codes)
-	rows, err := r.tx.QueryContext(r.ctx, amountCoverageSQL, ids[0], ids[1], ids[2], ids[3], ids[4],
-		a, b, wa, wb, codes, admitted, local, r.p.grouped[substrate.GroupCode], r.p.codes != nil)
+	args := []any{ids[0], ids[1], ids[2], ids[3], ids[4], a, b, wa, wb, codes, admitted, local, r.p.grouped[substrate.GroupCode], r.p.codes != nil}
+	var n int64
+	if err := r.tx.QueryRowContext(r.ctx, amountCoverageCountSQL, args...).Scan(&n); err != nil {
+		return fmt.Errorf("substrate/engine: aggregate coverage count: %w", err)
+	}
+	if err := r.charge(n, "to join the spans of amounts whose rollup rows overlap"); err != nil {
+		return err
+	}
+	rows, err := r.tx.QueryContext(r.ctx, amountCoverageSQL, args...)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: aggregate coverage: %w", err)
 	}

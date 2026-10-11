@@ -12,8 +12,11 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -41,6 +44,147 @@ func sameRows(t *testing.T, rollups, raw *substrate.AggregateResult) {
 }
 
 func at(t time.Time) string { return t.Format(time.RFC3339) }
+
+// statements is a pgx tracer that keeps the SQL of every statement the
+// service sends, so a test can say a statement never ran.
+type statements struct {
+	mu   sync.Mutex
+	list []string
+}
+
+func (s *statements) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.list = append(s.list, d.SQL)
+	return ctx
+}
+
+func (s *statements) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+// mark is where the statements sent from now on start.
+func (s *statements) mark() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.list)
+}
+
+// since counts the statements sent after mark that hold fragment.
+func (s *statements) since(mark int, fragment string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, q := range s.list[mark:] {
+		if strings.Contains(q, fragment) {
+			n++
+		}
+	}
+	return n
+}
+
+// The statement fragments the budget tests look for: the forms' discovery
+// and the amount coverage taken from raw spans.
+const (
+	discoverStatement = "SELECT DISTINCT s.n, f.form, x.code"
+	coverageStatement = "sum(x.brk) OVER"
+)
+
+// The raw spans an amount's coverage is joined from, where two rollup rows'
+// extents overlap, count against maxSamples before the statement reads them:
+// two traces over [00:00, 00:35) and [00:15, 00:50), read for an aligned
+// hour from rows, need their two spans. maxSamples 1 refuses the read and the
+// statement never runs; maxSamples 2 answers 50 minutes.
+func TestAggregateCoverageFallbackCountsAgainstMaxSamples(t *testing.T) {
+	t.Parallel()
+	log := &statements{}
+	f := aggFix{obsIndex: openObservedIndex(t, engine.WithTestQueryTracer(log)), t: t}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id       string
+		from, to time.Duration
+	}{{"a", 0, 35 * time.Minute}, {"b", 15 * time.Minute, 50 * time.Minute}} {
+		f.series("steps/phone/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}",
+		}, start.Add(x.from), start.Add(x.to), []int64{0}, []any{"1"})
+	}
+	read := func(maxSamples int64) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:    rng(start, start.Add(time.Hour)),
+			Reducers: reducers("sum"),
+			Budget:   &substrate.AggregateBudget{MaxSamples: maxSamples},
+		}}
+	}
+	mark := log.mark()
+	_, err := f.ds.Aggregate(context.Background(), read(1))
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.budget.maxSamples") {
+		t.Fatalf("under maxSamples 1: err = %v, want a refusal naming maxSamples", err)
+	}
+	if n := log.since(mark, coverageStatement); n != 0 {
+		t.Errorf("the refused read ran the coverage statement %d time(s)", n)
+	}
+	q := read(2)
+	res, err := f.ds.Aggregate(context.Background(), q)
+	if err != nil {
+		t.Fatalf("under maxSamples 2: %v", err)
+	}
+	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT50M" {
+		t.Errorf("under maxSamples 2: %+v, want one row covering 50 minutes", res.Rows)
+	}
+}
+
+// Finding a range's forms reads the points at its cut ends and its
+// summaries, and counts them against maxSamples before it reads them: three
+// amounts inside [00:07, 00:15), the cut end of a range from 00:07, and
+// three daily summaries read with prefer-raw, are refused under maxSamples 2
+// before the discovery statement runs.
+func TestAggregateFormDiscoveryCountsAgainstMaxSamples(t *testing.T) {
+	t.Parallel()
+	log := &statements{}
+	f := aggFix{obsIndex: openObservedIndex(t, engine.WithTestQueryTracer(log)), t: t}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 3 {
+		from := start.Add(time.Duration(8+i) * time.Minute)
+		f.mustPut(t, f.observation, "steps/cut/"+strconv.Itoa(i), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
+			"value": quantity("1", "{steps}"), "at": at(from), "endsAt": at(from.Add(time.Minute)),
+		})
+		day := start.AddDate(0, 0, 2+i)
+		f.mustPut(t, f.observation, "hr/day/"+strconv.Itoa(i), map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "summary",
+			"statistic": "avg", "period": "day", "value": quantity("60", "/min"), "at": at(day), "endsAt": at(day.AddDate(0, 0, 1)),
+		})
+	}
+	for _, x := range []struct {
+		name string
+		a    substrate.Aggregate
+	}{
+		{"cut end", substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:  rng(start.Add(7*time.Minute), start.Add(2*time.Hour)), Reducers: reducers("sum"),
+		}},
+		{"summaries", substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")}, From: "prefer-raw",
+			Range: rng(start, start.AddDate(0, 0, 7)), Reducers: reducers("avg"),
+		}},
+	} {
+		t.Run(x.name, func(t *testing.T) {
+			tight := x.a
+			tight.Budget = &substrate.AggregateBudget{MaxSamples: 2}
+			mark := log.mark()
+			_, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &tight})
+			if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.budget.maxSamples") {
+				t.Fatalf("under maxSamples 2: err = %v, want a refusal naming maxSamples", err)
+			}
+			if n := log.since(mark, discoverStatement); n != 0 {
+				t.Errorf("the refused read ran the discovery statement %d time(s)", n)
+			}
+			res, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &x.a})
+			if err != nil || len(res.Rows) == 0 {
+				t.Fatalf("within the default budget: %v, %+v", err, res)
+			}
+		})
+	}
+}
 
 // A read takes the forms its range holds, never the form of the stream's
 // newest point: an amount early in the hour is counted though a gauge of the
