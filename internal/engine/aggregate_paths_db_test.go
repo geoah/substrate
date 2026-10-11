@@ -377,6 +377,57 @@ func TestAggregateFormDiscoveryCountsAgainstMaxSamples(t *testing.T) {
 	}
 }
 
+// maxSamples bounds the raw points of every statement of a read together,
+// not each statement's: an amount from 00:08 in the cut end of a range from
+// 00:07, and two overlapping traces over [00:15, 00:50) and [00:30, 01:00),
+// cost 1 point to find the forms, 1 to reduce the cut end and 3 to join the
+// coverage the rows cannot measure. Each fits under maxSamples 4 and the sum,
+// 5, does not: the read is refused before the coverage statement runs, and
+// answers under maxSamples 5.
+func TestAggregateMaxSamplesAddsEveryStatement(t *testing.T) {
+	t.Parallel()
+	log := &statements{}
+	f := aggFix{obsIndex: openObservedIndex(t, engine.WithTestQueryTracer(log)), t: t}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value string
+		from, to  time.Duration
+	}{{"cut", "5", 8 * time.Minute, 9 * time.Minute}, {"a", "1", 15 * time.Minute, 50 * time.Minute}, {"b", "1", 30 * time.Minute, time.Hour}} {
+		f.series("steps/phone/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}",
+		}, start.Add(x.from), start.Add(x.to), []int64{0}, []any{x.value})
+	}
+	read := func(maxSamples int64) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:    rng(start.Add(7*time.Minute), start.Add(time.Hour)),
+			Reducers: reducers("sum"),
+			Budget:   &substrate.AggregateBudget{MaxSamples: maxSamples},
+		}}
+	}
+	mark := log.mark()
+	_, err := f.ds.Aggregate(context.Background(), read(4))
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "needs 5 raw points (3 of them to join") {
+		t.Fatalf("under maxSamples 4: err = %v, want a refusal of 5 raw points, 3 of them the coverage's", err)
+	}
+	if n := log.since(mark, discoverStatement); n != 1 {
+		t.Errorf("the refused read ran the discovery statement %d time(s), want once: its 1 point fits", n)
+	}
+	if n := log.since(mark, coverageStatement); n != 0 {
+		t.Errorf("the refused read ran the coverage statement %d time(s)", n)
+	}
+	res, err := f.ds.Aggregate(context.Background(), read(5))
+	if err != nil {
+		t.Fatalf("under maxSamples 5: %v", err)
+	}
+	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT46M" {
+		t.Fatalf("under maxSamples 5: %+v, want one row covering 46 minutes", res.Rows)
+	}
+	if v, _ := val(res.Rows[0], "sum"); v != "7" {
+		t.Errorf("under maxSamples 5: sum %s, want 7", v)
+	}
+}
+
 // A read takes the forms its range holds, never the form of the stream's
 // newest point: an amount early in the hour is counted though a gauge of the
 // same stream came after it, a range holding both is refused as mixed, and a
@@ -1025,8 +1076,8 @@ func TestAggregateConvertedExtremesCompareTheirDigits(t *testing.T) {
 	}
 	gotLo, _ := val(cols.Rows[0], "min")
 	gotHi, _ := val(cols.Rows[0], "max")
-	if gotLo != lo || gotHi != hi {
-		t.Errorf("the column's min/max = %s/%s, want %s/%s", gotLo, gotHi, lo, hi)
+	if gotLo != lo || gotHi != hi || !cols.Exact {
+		t.Errorf("the column's min/max = %s/%s, exact %v; want %s/%s, exact", gotLo, gotHi, cols.Exact, lo, hi)
 	}
 }
 
