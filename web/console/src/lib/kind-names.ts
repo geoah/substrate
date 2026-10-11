@@ -163,6 +163,7 @@ export const ACRONYMS: Readonly<Record<string, string>> = {
 /** Names that keep their own casing mid-sentence: the services the shipped
  * providers speak for, spelled as each service spells itself. */
 const PROPER: Readonly<Record<string, string>> = {
+  applehealth: "Apple Health",
   beeper: "Beeper",
   drive: "Drive",
   github: "GitHub",

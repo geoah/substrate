@@ -69,3 +69,44 @@ func TestHealthRequiresObservations(t *testing.T) {
 		t.Errorf("health's floor on %s is %d; the shipped base is version %d", base.ID, floor, base.Version)
 	}
 }
+
+// The Apple Health adapter writes the health sample's kinds from the Apple
+// Health provider's mirrors, so it requires both with a floor: an import into
+// a repository missing either, or holding an older one, is refused rather
+// than landing a function whose trigger and writes name kinds that are not
+// there. The install follows its requires: provider, observations, health,
+// then the adapter.
+func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
+	adapter := shippedSample(t, "healthapple")
+	health := shippedSample(t, "health")
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	provider, ok := cat.ByID("providers.substrate.reamde.dev/applehealth")
+	if !ok {
+		t.Fatal("no shipped applehealth provider")
+	}
+	for _, req := range []*catalog.Bundle{health, provider} {
+		if !slices.Contains(adapter.Requires, req.ID) {
+			t.Errorf("healthapple requires %v, not %s", adapter.Requires, req.ID)
+		}
+		if floor, ok := adapter.RequiresAtLeast[req.ID]; !ok || floor < 1 || floor > req.Version {
+			t.Errorf("healthapple's floor on %s is %d (set %v); the shipped one is version %d", req.ID, floor, ok, req.Version)
+		}
+	}
+	byPackage := map[string]*catalog.Bundle{}
+	for _, b := range cat.Bundles() {
+		byPackage[b.ID] = b
+	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.ResolveFunction(adapter.ID + "/healthappleadapt"); err != nil {
+		t.Fatalf("the adapter's function did not install: %v", err)
+	}
+}

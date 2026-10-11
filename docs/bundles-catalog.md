@@ -1,16 +1,18 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty bundles, in the two tiers
+The catalog in the binary serves twenty-two bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: seven providers and thirteen samples. This page covers thirteen of them;
+draws: eight providers and fourteen samples. This page covers fifteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
 
-**Seven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper and Slack.
-Each is a package its publisher owns, installed under
-`providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
-provider into the repository. Three also ship one write each, a function
+**Eight providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack and
+Apple Health. Each is a package its publisher owns, installed under
+`providers.substrate.reamde.dev` and upgraded there. Seven sync from the
+provider into the repository; Apple Health has no API to read, so its provider
+receives what the Health Auto Export app on the phone sends to a webhook.
+Three also ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
 GitHub's `submitreview`. A write sends one request with the credential the
 sync spends and writes no record; what it sent reaches the mirror only when
@@ -19,8 +21,8 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
-a worked example to read and copy, imported under the repository's own
+**Seven samples**: LLM, notes, the reading list, Firecrawl, Pebble, WHOOP to
+health and the Apple Health adapter. Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -68,12 +70,14 @@ thing, and the Records column counts them.
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
+| Apple Health  | Provider | Webhook key    | 10    | 1         | 1       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 | WHOOP to health | Sample | the provider's | 0     | 1         | 1       | 0      |
+| Apple Health adapter | Sample | none        | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -109,7 +113,8 @@ because the host runs the flow and the bundle only declares it
 
 Linear, Notion, Beeper and Slack take a pasted key or token instead: their
 `config` record holds it and there is no consent step, so step 4 is the
-account's own create.
+account's own create. Apple Health takes neither: the phone sends, and the
+key is the one set on its webhook trigger ([Apple Health](#apple-health)).
 
 **`backfillDepth` bounds the FIRST window only.** Every run after it reads
 from that stream's own stored watermark instead, so the value decides how far
@@ -1359,6 +1364,170 @@ sync reads a first reply when its parent is within a day of the
 conversation's newest message, and misses it otherwise.
 Redirects are refused rather than followed, so the origin pin holds for the
 one request made.
+
+## Apple Health
+
+Package `providers.substrate.reamde.dev/applehealth`. A receiver for what the
+Health Auto Export iOS app sends from the phone: Apple Health has no cloud
+API, so the app's REST API automation POSTs its JSON export to a webhook and
+the bundle writes it as mirror rows, in the app's field names and units.
+Nothing here calls out and there is no OAuth.
+
+- **Kinds (10)**: `account` (one phone, created by hand, carrying its
+  toggles and the `sync` trait), `export` (the receipt for one delivery), and
+  the mirrors `metricbatch` (one metric over one period), `workout`,
+  `stateofmind`, `medication`, `symptom`, `cycleevent` (one cycle tracking
+  entry), `ecg` and `heartratenotification`.
+- **Functions (1)**: `applehealthingest` reads one delivery, resolves its
+  account, writes the mirror rows and the receipt, and stamps the account.
+- **Triggers (1)**: `applehealth-webhook`, shipped disabled and without a
+  key.
+- **Mappings**: none. The `health` sample's adapter reads these mirrors.
+
+**Setting it up.** Install it, create an `account` per phone with an id of
+your choosing (`iphone`), then set `source.webhook.key` (16 to 128 characters
+of `[A-Za-z0-9_-]`) and `enabled: true` on the `applehealth-webhook` trigger:
+an enabled trigger with no key would write health records for anyone who
+reaches the server. In the app's automation, the URL is
+`https://<your-substrate-host>/webhooks/<authority>/applehealth-webhook`
+(`substratectl trigger status` prints the path), the headers are
+`Authorization: Bearer <key>` and `X-Substrate-Account: <account id>`, the
+format is JSON at Export Version 2, the date range Since Last Sync, Summarize
+Data on with a Time Grouping of Minutes or coarser, and Batch Requests on.
+The door reads the key and strips `Authorization` before the function runs;
+the trigger declares `x-substrate-account` and the five headers the app adds
+itself (`automation-name`, `automation-id`, `automation-aggregation`,
+`automation-period`, `session-id`), which is what makes them reach the
+function ([functions](functions.md#triggers)). With one account the
+`X-Substrate-Account` header may be left out.
+
+**What a delivery writes.** Each metric's rows land in `metricbatch` records
+keyed `<account>/<metric>/<grouping>/<period>`, where the grouping is the
+`automation-aggregation` header and the period is the UTC hour at seconds or
+minutes, the UTC day at hours, the UTC month at days and the UTC year above.
+A row is keyed by its instant and never by `source`, because a correction
+sends the same bucket again under another label: a later delivery replaces
+the batch's rows inside the span it covers for that metric, keeps the rest,
+and leaves a batch whose rows did not change unwritten. A change of units
+replaces the batch whole. A workout and a state of mind entry are keyed by
+their HealthKit id; a medication dose, a symptom, a cycle tracking entry, an
+ECG and a heart rate notification, which carry none, by their name and
+start. The `export` receipt, at the webhook fire id, holds the automation's
+headers, the body's size and SHA-256 (the body itself is not kept), the
+count per section, the metric names, the time span covered, the sections a
+toggle dropped and the fields no declaration has a place for. Every mirror
+names the receipt of the delivery that last changed it in `export` and its
+arrival in `receivedAt`.
+
+**The app's own words.** Units are the app's Unit Preferences, verbatim
+(`count/min`, `kJ`, `kcal/hr·kg`). Every date stays the string the app wrote
+(`2026-10-07 08:05:37 +0300`; the offset is the phone's zone when it sent,
+not where the sample was taken), and `at` and `endsAt` hold the instants; a
+date without an offset is read in the account's `timezone`, else UTC.
+`source` is Health's name for the device: a Garmin watch's data arrives as
+`Garmin Connect`, a bucket fed by several sources joins them with `|`, and
+app 10.0.4 sends merged series with an empty `source`. The app's `Min`,
+`Avg` and `Max` are the fields `min`, `avg` and `max`. Workouts carry no
+`source`; their `heartRateData` and series rows do.
+
+**Bounds and failures.** A non-multipart webhook body may be 8 MiB
+([API](api.md#webhooks)); the function writes a large delivery over several
+pages so its own response stays under the 8 MiB frame. A full-history export
+is hundreds of megabytes and is not supported by push. The app skips a part
+answered with anything but 2xx, or not answered in 60 seconds, and never sends
+it again in that run. A delivery the function refuses after the door's `202`
+(no account, two accounts and no header, a CSV body, a body that is not the
+app's JSON, a version 1 workout) parks on the trigger with its body kept, and
+`substratectl trigger retry applehealth-webhook <parked-id>` writes it once
+the cause is fixed. A section whose toggle is off, and every delivery while
+`syncPaused` is true, is dropped unwritten. Since Last Sync misses samples the
+phone writes back-dated (a resting heart rate, another app's backfill); a
+manual Previous 7 Days export catches them up, and overlapping deliveries
+rewrite the same records. The provider's
+[README](../kinds/providers.substrate.reamde.dev/applehealth/README.md) has
+the setup as steps.
+
+## Apple Health adapter (sample)
+
+Package `samples.substrate.reamde.dev/healthapple`. It writes what the
+[Apple Health provider](#apple-health) mirrors as the `health` sample's
+records ([observations](observations.md)), and requires `health` (so
+`observations`) and `providers.substrate.reamde.dev/applehealth`, each with a
+`requiresAtLeast` floor of 1.
+
+- **Kinds (0)**: it writes the `observations` and `health` kinds.
+- **Functions (1)**: `healthappleadapt` reads one mirror row and writes
+  everything that row implies.
+- **Triggers (1)**: `healthapple-on-mirror`, on the provider's `metricbatch`
+  and `workout` kinds, for `create`, `update` and `delete`, coalesced.
+
+**What it writes.** A Health Auto Export metric maps to a `health/` metric
+or is skipped and named in the function's `skipped` result, never guessed.
+Values are converted into the metric's unit through the engine's unit table
+(`host.units`); the app's `count/min` is a rate per minute and its `count` is
+the metric's own counted unit.
+
+| App metric | Metric | Written as | Unit |
+| --- | --- | --- | --- |
+| `heart_rate` | `heart_rate` | gauge trace of `Avg`, hold `PT4M` | `/min` |
+| `respiratory_rate` | `respiratory_rate` | gauge trace | `/min` |
+| `blood_oxygen_saturation` | `spo2` | gauge trace | `%` |
+| `step_count` | `steps` | amount trace | `{steps}` |
+| `walking_running_distance` | `distance` | amount trace | `m` |
+| `flights_climbed` | `floors` | amount trace | `{floors}` |
+| `active_energy` | `active_energy` | amount trace | `kcal` |
+| `basal_energy_burned` | `basal_energy` | amount trace | `kcal` |
+| `heart_rate_variability` | `hrv_sdnn` | gauge observation | `ms` |
+| `apple_sleeping_wrist_temperature` | `skin_temperature` | gauge observation | `Cel` |
+| `vo2_max` | `vo2_max` | gauge observation | `mL/(kg.min)` |
+| `weight_body_mass` | `body_mass` | gauge observation | `kg` |
+| `body_fat_percentage` | `body_fat_fraction` | gauge observation | `%` |
+| `body_mass_index` | `bmi` | gauge observation | `kg/m2` |
+| `height` | `height` | gauge observation | `m` |
+| `blood_pressure` | `systolic_blood_pressure`, `diastolic_blood_pressure` | two gauge observations, each with both as `components`, hold `PT0S` | `mm[Hg]` |
+| `blood_glucose` | `blood_glucose_mass` or `blood_glucose`, by the app's unit | gauge observation, `mealTime` as a qualifier | `mg/dL`, `mmol/L` |
+| `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `/min` |
+| `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value` | `min` |
+
+Everything else the app sends (`apple_exercise_time`, `physical_effort`,
+`walking_asymmetry_percentage`, `lean_body_mass` and the rest) is skipped.
+
+**Raw values come from the Seconds and Minutes groupings only.** A batch at
+Hours, Days or a coarser grouping holds the app's own aggregates, so each row
+becomes `summary` observations (`sum` for an amount, `avg` for a gauge, and
+`avg`, `min` and `max` for heart rate) with the bucket as `period`, which a
+raw read never adds to the minutes. A dense metric is one trace per source and
+UTC hour, split where the UTC offset changes; an amount's minute ends in a
+`null` where the next minute has no row. A sleep segment is one `amount`
+observation per segment (`awake`, `light` for the app's Core, `deep`, `rem`,
+`in_bed`; Asleep and Unspecified map to no stage and are skipped), and the
+night is one `health/sleep` from the night fields every segment repeats,
+written by the batch the night's start falls in; an aggregated night row is a
+`health/sleep` with its stage durations plus one stage amount per stage. A
+workout is a `health/workout` with its sport, span, duration, distance,
+energy, heart rate and climb, attributed to the device its heart rate rows
+name.
+
+**Ids, sources and reconciliation.** Ids are composed: a trace is
+`applehealth/<account>/<source>/<metric>/<UTC hour>`, a single value
+`applehealth/<account>/<source>/<metric>/<instant>` (a summary adds its
+statistic), a workout `applehealth/<account>/<HealthKit id>`. The source is
+the row's `source` label with the owner's name taken off (`Ada's Apple Watch`
+is `apple-watch`, `Garmin Connect` is `garmin-connect`), and a label that is
+empty, absent or joins several devices with `|` is `health`, the phone's
+merged series; each is an `observations/source` record at
+`applehealth/<account>/<source>`, minted `ifAbsent` so an owner's edit
+stands. Every output names its mirror row in `origin` (`origins` on a trace)
+and carries `revision`, the row's `receivedAt` in Unix seconds. Each delivery
+writes the whole set the row implies, leaves an output that already holds it
+unwritten, and deletes the outputs that point at the row and are no longer
+implied, so a corrected redelivery rewrites the same ids at a higher revision
+and a deleted row (an account deleted, say) takes its outputs with it.
+
+**One rule for the automations.** Send each metric at one raw grouping:
+a Seconds automation and a Minutes automation both carrying heart rate write
+the same trace ids from two rows, and each delivery replaces the other's
+points.
 
 ## Firecrawl (sample)
 
