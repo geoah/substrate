@@ -27,6 +27,7 @@ const BRANDS: Record<string, { name?: string; color: string }> = {
   beeper: { color: "#6D5DFC" },
   whoop: { color: "#1CB5AC" },
   applehealth: { color: "#FF2D55" },
+  garmin: { color: "#007CC3" },
 }
 
 function capitalise(text: string): string {

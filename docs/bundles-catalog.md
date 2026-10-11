@@ -1,15 +1,15 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty-two bundles, in the two tiers
+The catalog in the binary serves twenty-four bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: eight providers and fourteen samples. This page covers fifteen of them;
+draws: nine providers and fifteen samples. This page covers seventeen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
 
-**Eight providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper, Slack and
-Apple Health. Each is a package its publisher owns, installed under
-`providers.substrate.reamde.dev` and upgraded there. Seven sync from the
+**Nine providers**: Google, GitHub, Linear, WHOOP, Garmin, Notion, Beeper,
+Slack and Apple Health. Each is a package its publisher owns, installed under
+`providers.substrate.reamde.dev` and upgraded there. Eight sync from the
 provider into the repository; Apple Health has no API to read, so its provider
 receives what the Health Auto Export app on the phone sends to a webhook.
 Three also ship one write each, a function
@@ -21,8 +21,8 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Seven samples**: LLM, notes, the reading list, Firecrawl, Pebble, WHOOP to
-health and the Apple Health adapter. Each is a worked example to read and copy, imported under the repository's own
+**Eight samples**: LLM, notes, the reading list, Firecrawl, Pebble, WHOOP to
+health, the Apple Health adapter and Garmin health. Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -67,6 +67,7 @@ thing, and the Records column counts them.
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
 | WHOOP         | Provider | OAuth          | 7     | 2         | 5       | 0      |
+| Garmin        | Provider | OAuth          | 19    | 2         | 4       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
@@ -78,6 +79,7 @@ thing, and the Records column counts them.
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
 | WHOOP to health | Sample | the provider's | 0     | 1         | 1       | 0      |
 | Apple Health adapter | Sample | none        | 0     | 1         | 1       | 0      |
+| Garmin health | Sample   | none           | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -90,7 +92,7 @@ and how often, and *Create and connect* opens the provider in a new tab, where
 once you approve the account's first sync starts on its own. The current step
 is highlighted with its one action.
 
-Over the API and the CLI, Google, GitHub and WHOOP take the same four steps,
+Over the API and the CLI, Google, GitHub, WHOOP and Garmin take the same four steps,
 because the host runs the flow and the bundle only declares it
 ([bundles](bundles.md#the-oauth-facility)):
 
@@ -906,6 +908,114 @@ none of version 9's derived properties: `recovery.date`, `workout.calories` and
 trait beside its own bookkeeping: `syncPaused`, `syncState`, `syncMessage`,
 `syncProgress`, `syncError`, `syncErrorAt`, `lastSyncStartedAt`,
 `lastSyncDurationMs` and `syncStreams`.
+
+## Garmin
+
+Package `providers.substrate.reamde.dev/garmin`. An OAuth provider that
+mirrors what Garmin's Health API and Activity API push about one Garmin
+Connect user. Read only. **Not verified against Garmin**: Garmin's Connect
+Developer Program was reported closed to new partners through mid-2026
+(checked 2026-10-11), its API specifications sit behind its partner login,
+and every field below follows Garmin's OpenAPI description of the wellness
+API as republished outside Garmin. The bundle is tested against deliveries
+built from that description and a mock Garmin, never a live account; the
+bundle's [README](../kinds/providers.substrate.reamde.dev/garmin/README.md)
+lists the sources.
+
+- **Kinds (19)**: `config` (the Garmin app), `account` (the connection, the
+  Garmin user id every push is matched on, and every cursor), `notice` (a
+  disconnect or a permission change Garmin pushed), and one mirror per
+  summary type Garmin pushes: `daily`, `epoch`, `sleep`, `bodycomp`,
+  `stressdetail`, `usermetric`, `pulseox`, `respiration`, `healthsnapshot`,
+  `hrv`, `bloodpressure`, `skintemp`, `activity`, `activitydetail`,
+  `manuallyupdatedactivity` and `moveiq`.
+- **Functions (2)**: `garminpush` writes one push delivery; `garminsync` records
+  the user id and permissions and asks Garmin to backfill history.
+- **Triggers (4)**: `garmin-webhook` fires `garminpush` for each delivery
+  Garmin posts, and ships disabled; `garmin-on-connect` fires `garminsync` the
+  first time an account is connected and has no `lastSyncedAt`;
+  `garmin-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
+  disagree; `garmin-scheduled` fires it hourly for every account with backfill
+  left.
+- **Mappings**: none shipped.
+
+**Garmin pushes; the substrate does not poll.** Garmin POSTs each summary type
+to the URL its app registers for it in Garmin's Endpoint Configuration tool,
+as `{"<summary type>": [<summary>, ...]}`. Every summary type can share the
+one URL, `https://<your-substrate-host>/webhooks/<authority>/garmin-webhook/<key>`.
+Garmin signs nothing, so the trigger's key is the only credential: set
+`source.webhook.key` on `garmin-webhook` to 16 to 128 characters of
+`[A-Za-z0-9_-]` before enabling it. Where Garmin sends the
+`garmin-client-id` header, a push naming another app's client id is refused.
+
+**Each summary is matched to its account by `userId`.** `garminsync` reads the
+user id from `GET /rest/user/id` on the first sync, so a push for an account
+that has not synced yet has nothing to match. A delivery none of whose
+summaries names a known user fails with an error naming the user id, and parks
+for a retry; a delivery that mixes users writes the known ones and lists the
+rest in its output. An account carried over from Garmin's OAuth 1.0a can set
+`userAccessToken`, which older pushes carry instead of a user id.
+
+**One row per `summaryId`, rewritten whole.** A row's id is
+`<account id>/<summaryId>` (a hash when that would leave the id alphabet), and
+each summary is one put carrying every declared property, absent ones as null.
+Garmin re-sends a summary under the same id when it has more (a day filling
+in, a sleep turning from tentative to final), and the re-send replaces the row:
+what it no longer carries is cleared. Every field keeps Garmin's camelCase name
+and Garmin's units (seconds since the epoch, metres, grams, kilocalories,
+beats per minute), including the per-second sample maps, the sleep stage map
+and an activity's samples. `startTimeInSeconds`, `startTimeOffsetInSeconds`
+and `calendarDate` are kept as Garmin sends them; `at` and `endsAt` are the
+same seconds as instants (a sleep ends at its last stage; a `bodycomp` and a
+`bloodpressure` sit at `measurementTimeInSeconds`; a `usermetric` carries a date
+and no instant). A ping (`callbackURL` instead of summaries) is followed with
+the account's token, only to a URL under `apiBase`.
+
+**The toggles choose what is written and backfilled.** Each summary type has
+its own toggle on the account, on by default, and each maps in `featureScopes`
+to the Garmin permission that covers it: `HEALTH_EXPORT` for the Health API
+types, `ACTIVITY_EXPORT` for `activities`, `activityDetails` and
+`manuallyUpdatedActivities`. Garmin's consent asks for no scopes (the user
+picks what to share on Garmin's page), so `grantedScopes` records what the
+account asked for and `account.permissions` what the user granted, read from
+`GET /rest/user/permissions` and updated by each permission change Garmin
+pushes. A push for a type whose toggle is off, or for a paused account, is not
+written, and Garmin does not send it again.
+
+**Backfill asks; the data arrives by push.** `garminsync` asks for every enabled
+type except `manuallyUpdatedActivities` (Garmin offers no backfill for it), one
+24-hour window per request, the newest day first across every type, back to
+`backfillDepth`: `none`, `last7d`, `last30d` (the default) or `last90d`, counted
+from `backfillUntil`, the instant of the first sync. Garmin answers `202` and
+pushes the summaries later; it answers `409` to a window it already accepted,
+which counts as accepted too. `syncCursors` keeps, per type, the start of the
+oldest accepted window, so a run cut off by its 100-second budget, a `429` or an
+outage continues on the next hourly run, and a deeper `backfillDepth` extends
+the walk. A `429` holds the account until Garmin's `Retry-After` and reads
+`throttled`; a `4xx` on one type (a `403` for a permission the user did not
+grant) stops that type and names it in `syncMessage` while the others go on.
+Garmin is reported to backfill 30 or 90 days per request and only within about
+a month of the first connection, by sources that disagree.
+
+**The account reports both paths.** It binds core's `sync` trait. A push stamps
+`lastSyncedAt`, `lastPushAt`, `syncState: ok` and a `syncMessage` counting what
+it wrote; a backfill run stamps the same with `syncProgress` counted in summary
+types, and `lastCompletedAt` once every enabled type reached its floor with
+nothing refused. A disconnect Garmin pushes lands as a `notice`, sets
+`deregisteredAt` and reads `erroring`; the schedule passes over the account
+until a push of data, or a "sync now" that reaches Garmin, clears the mark.
+
+**What it does not do.** Garmin's disconnect is `DELETE
+/rest/user/registration` under the user's token, which the OAuth facility
+cannot send, so the bundle declares no `revocationEndpoint` and deleting the
+account here does not deregister it at Garmin: disconnect the app in Garmin
+Connect as well. No activity files (FIT), no solar intensity, blood glucose,
+menstrual cycle or pregnancy summaries, and no writeback. The webhook door
+refuses an inline body over 1 MiB (`413`), so an activity details push longer
+than about 50 minutes at one sample a second does not arrive by push until that
+cap is raised; ping mode avoids it, because a ping carries only the callback
+URL. `garminpush` writes any body the door admits over several invocations of
+one chain, and skips (and names in its output) a single summary over 6 MiB.
 
 ## Notion
 
@@ -1736,3 +1846,78 @@ function's output and not written: a cycle's `averageHeartRate` and
 `altitudeChangeMeter`. A cycle's `step_count` never reaches the mirror.
 
 Next: [substratectl](substratectl.md), the command line over all of it.
+
+## Garmin health (sample)
+
+Package `samples.substrate.reamde.dev/healthgarmin`. The adapter between the
+Garmin provider and the health sample: it turns each Garmin mirror row into
+the [observations](observations.md), traces, sleeps and workouts the health
+sample describes. It requires `samples.substrate.reamde.dev/observations`,
+`samples.substrate.reamde.dev/health` and the installed
+`providers.substrate.reamde.dev/garmin`, each with a `requiresAtLeast` floor,
+so import it after installing the provider and importing `health`.
+
+- **Kinds**: none of its own; it writes the base and health kinds.
+- **Functions (1)**: `garminhealth` rebuilds what one mirror row implies.
+- **Triggers (1)**: `healthgarmin-on-mirror` delivers every create, update and
+  delete of the fifteen Garmin mirror kinds that carry measurements (every
+  kind but `notice`), coalescing a burst on one row.
+
+| Garmin field | Metric | Form | Unit |
+| --- | --- | --- | --- |
+| `daily.timeOffsetHeartRateSamples` | `heart_rate` | gauge trace, hold PT4M | `/min` |
+| `daily.steps`, `distanceInMeters`, `floorsClimbed`, `activeKilocalories`, `bmrKilocalories`, `restingHeartRateInBeatsPerMinute` | `steps`, `distance`, `floors`, `active_energy`, `basal_energy`, `resting_heart_rate` | summary, `vendor`, day | `{steps}`, `m`, `{floors}`, `kcal`, `kcal`, `/min` |
+| `daily.averageStressLevel` | `garmin_stress` | summary, `avg`, day | `1` |
+| `epoch.steps`, `distanceInMeters`, `activeKilocalories`, summed per slice | `steps`, `distance`, `active_energy` | amount trace | `{steps}`, `m`, `kcal` |
+| `sleep` | a `health/sleep` (and one per nap) | | |
+| `sleep.sleepLevelsMap` segments | `sleep_stage`, coded `awake`, `light`, `deep`, `rem` | amount | `s` |
+| `bodycomp` weight, muscle, bone; fat, water; BMI | `body_mass`, `muscle_mass`, `bone_mass`; `body_fat_fraction`, `body_water_fraction`; `bmi` | gauge | `kg` (from grams); `%`; `kg/m2` |
+| `bloodpressure.systolic`, `diastolic`, `pulse` | `systolic_blood_pressure`, `diastolic_blood_pressure`, `heart_rate` | gauge | `mm[Hg]`, `/min` |
+| `stressdetail` stress and Body Battery values | `garmin_stress`, `garmin_body_battery` | gauge trace, hold PT6M | `1` |
+| `usermetric.vo2Max` | `vo2_max` | summary, `vendor`, day | `mL/(kg.min)` |
+| `pulseox.timeOffsetSpo2Values` | `spo2` | gauge trace, or one gauge for a spot check | `%` |
+| `respiration.timeOffsetEpochToBreaths` | `respiratory_rate` | gauge trace | `/min` |
+| `healthsnapshot` heart rate, respiration, stress, SpO2, RMSSD | `heart_rate`, `respiratory_rate`, `garmin_stress`, `spo2`, `hrv_rmssd` | gauge trace on channel `snapshot` | as above, `ms` |
+| `hrv.lastNightAvg`, `lastNight5MinHigh`; `hrvValues` | `hrv_rmssd` | summary `avg` and `max`, night; gauge trace | `ms` |
+| `skintemp.avgDeviationCelsius` | `skin_temperature_deviation` | summary, `avg`, night, `delta` | `K` |
+| `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout` | | |
+| `activitydetail.samples` heart rate, speed, cadence, power | `heart_rate`, `speed`, `cadence`, `running_power` | gauge trace | `/min`, `m/s`, `/min`, `W` |
+
+**Traces are an hour, from one origin.** A trace covers one metric from one
+source over one UTC hour, split where the UTC offset changes, and it never
+claims time outside the row it came from: the last hour of one daily and the
+first of the next, or two activities in one hour, are separate traces, each
+named for its own start. Epochs and respiration rows are a quarter hour each,
+so their traces are rebuilt per hour from every slice of that hour, and step
+amounts sum the slice's activity types. Ids are
+`garmin/<account id>/<source>/<metric>/<hour>` for a trace and
+`garmin/<account id>/<summaryId>/<role>` for a single record (a stage segment
+is `.../stage/<start second>`), hashed only where Garmin's data would leave
+the id alphabet.
+
+**Sources** are `garmin/<account id>/account`, the account's devices, for
+everything Garmin pushes without naming a device (dailies, sleeps, weigh-ins,
+pressure), and `garmin/<account id>/<deviceName>` for each device an activity
+names (`forerunner265`); a hand-entered activity is `.../manual`. Each points
+at the Garmin account and is written once, so the owner's edits to it stand.
+
+**Reconciled per origin.** Every row written names the mirror row it came
+from (`origin`, or `origins` on a trace). A delivery reads what that row
+produced before, writes the new set and deletes what the row no longer
+implies; a deleted mirror row takes its outputs with it. `revision` is the
+mirror row's own version, which the garmin provider moves only when a re-send
+changes the summary: an identical re-send writes nothing, and a fuller one
+rewrites the same ids at a higher revision. A trace built from several rows
+carries the highest of their versions, and never a lower one than it holds.
+An edit in Garmin Connect wins over the activity it edits.
+
+**What it skips, and counts.** Each delivery's output names the fields it
+left unwritten: those with no catalogue metric (minimum, maximum and average
+daily heart rate, intensity and stress durations, Body Battery charge and
+drain, goals, fitness age, cycling VO2 max, MET and motion intensity, Body
+Battery events, a snapshot's SDRR), positions and elevation samples (no
+`geopoint` yet), air temperature, Garmin's `unmeasurable` sleep level, and a
+sleep's own SpO2 and respiration maps, which the Pulse Ox and respiration
+summaries already carry. Move IQ events and lifecycle notices imply no
+observation. A user metric carries a date and no instant, so its VO2 max
+covers the UTC day of `calendarDate` with no `utcOffset`.

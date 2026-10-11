@@ -243,26 +243,26 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	// A sample that requires a provider (healthwhoop requires WHOOP) is
-	// imported after the provider's own door installed it.
+	// `requires:` forces an order; a refused import is retried after the rest
+	// of the pass, so the loop needs no knowledge of the graph. A provider a
+	// sample requires (healthwhoop's WHOOP, healthgarmin's Garmin) takes the
+	// install door first, once.
+	var pending []*catalog.Bundle
+	installed := map[string]bool{}
 	for _, b := range c.Bundles() {
 		if b.Tier != substrate.TierSample {
 			continue
 		}
+		pending = append(pending, b)
 		for _, req := range b.Requires {
-			if p, ok := c.ByID(req); ok && p.Tier == substrate.TierProvider {
-				if _, _, err := c.Install(ctx, substrate.ActorAPI, req, ds); err != nil {
-					t.Fatalf("install %s, which %s requires: %v", req, b.ID, err)
-				}
+			rb, ok := c.ByID(req)
+			if !ok || rb.Tier != substrate.TierProvider || installed[rb.ID] {
+				continue
 			}
-		}
-	}
-	// `requires:` forces an order; a refused import is retried after the rest
-	// of the pass, so the loop needs no knowledge of the graph.
-	var pending []*catalog.Bundle
-	for _, b := range c.Bundles() {
-		if b.Tier == substrate.TierSample {
-			pending = append(pending, b)
+			if _, _, err := c.Install(ctx, substrate.ActorAPI, rb.ID, ds); err != nil {
+				t.Fatalf("install %s, which %s requires: %v", rb.ID, b.ID, err)
+			}
+			installed[rb.ID] = true
 		}
 	}
 	for len(pending) > 0 {

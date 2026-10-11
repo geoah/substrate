@@ -166,6 +166,7 @@ const PROPER: Readonly<Record<string, string>> = {
   applehealth: "Apple Health",
   beeper: "Beeper",
   drive: "Drive",
+  garmin: "Garmin",
   github: "GitHub",
   gmail: "Gmail",
   google: "Google",

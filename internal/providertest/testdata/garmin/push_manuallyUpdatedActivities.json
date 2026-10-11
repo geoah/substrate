@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json",
+   "content-length": "864",
+   "garmin-client-id": "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"manuallyUpdatedActivities\":[{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"21004834320\",\"activityId\":21004834320,\"activityName\":\"Hyde Park loop\",\"durationInSeconds\":1873,\"startTimeInSeconds\":1790494813,\"startTimeOffsetInSeconds\":3600,\"activityType\":\"RUNNING\",\"averageHeartRateInBeatsPerMinute\":146,\"maxHeartRateInBeatsPerMinute\":177,\"activeKilocalories\":387,\"deviceName\":\"unknown\",\"manual\":true,\"isWebUpload\":false,\"distanceInMeters\":5000.0,\"averageSpeedInMetersPerSecond\":2.67,\"maxSpeedInMetersPerSecond\":3.698,\"averagePaceInMinutesPerKilometer\":6.243333,\"maxPaceInMinutesPerKilometer\":4.224082,\"totalElevationGainInMeters\":76.0,\"totalElevationLossInMeters\":67.0,\"startingLatitudeInDegree\":51.50842901345834,\"startingLongitudeInDegree\":-0.165645859236336,\"averageRunCadenceInStepsPerMinute\":166.9,\"maxRunCadenceInStepsPerMinute\":180.2,\"steps\":5210}]}"
+  }
+ },
+ "_fixture": "the 2026-09-27 London run, renamed and its distance corrected in Garmin Connect; same summaryId",
+ "_receivedAt": "2026-10-08T07:44:09Z"
+}
