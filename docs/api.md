@@ -1182,6 +1182,9 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 - `increase` is a counter's change under its contract (decision 0157), the
   step in from the stream's previous reading included, so consecutive buckets
   add up; `rate` is that over the time its steps span, in the unit over `s`.
+  Both are `null` in a bucket whose readings have no reading before them.
+  A counter's `min` and `max` are in the read's unit; its steps are taken on
+  the stored digits.
 - `circularMean` averages angles on the circle and answers in `deg`; it has no
   answer when the angles cancel.
 - A `{"timeInState": [...]}` with `groupBy: ["code"]` answers each row's own

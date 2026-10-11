@@ -189,6 +189,58 @@ func TestAggregateBucketBudgetCountsCodes(t *testing.T) {
 	}
 }
 
+// A counter read in a unit it was not stored in: its extremes are in the
+// unit asked for on both paths while its steps take the stored digits, and a
+// bucket whose one reading has none before it has no increase on either path
+// (null), not a measured change of zero.
+func TestAggregateCounterInAnotherUnit(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value, unit string
+		at              time.Duration
+	}{{"first", "1", "kW.h", 0}, {"second", "2000", "W.h", 30 * time.Minute}} {
+		f.mustPut(t, f.observation, "meter/"+x.id, map[string]any{
+			"metric": f.metricRef("energy"), "source": f.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
+			"value": quantity(x.value, x.unit), "at": at(start.Add(x.at)),
+		})
+	}
+	read := func(to time.Duration) substrate.AggregateRow {
+		t.Helper()
+		res, _, rollupRows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("energy")},
+			Range:    rng(start, start.Add(to)),
+			Reducers: reducers("min", "max", "increase"),
+			Unit:     "W.h",
+		})
+		if rollupRows == 0 {
+			t.Error("the read took no rollup row")
+		}
+		if len(res.Rows) != 1 {
+			t.Fatalf("%d rows, want one", len(res.Rows))
+		}
+		return res.Rows[0]
+	}
+	lone := read(15 * time.Minute)
+	if lo, _ := val(lone, "min"); lo != "1000" {
+		t.Errorf("the lone kW.h reading's min = %s W.h, want 1000", lo)
+	}
+	if v, ok := val(lone, "increase"); ok {
+		t.Errorf("a reading with none before it has increase %s, want none", v)
+	}
+	hour := read(time.Hour)
+	if lo, _ := val(hour, "min"); lo != "1000" {
+		t.Errorf("min = %s W.h, want 1000", lo)
+	}
+	if hi, _ := val(hour, "max"); hi != "2000" {
+		t.Errorf("max = %s W.h, want 2000", hi)
+	}
+	if v, _ := val(hour, "increase"); v != "2000" {
+		t.Errorf("increase = %s W.h, want 2000: a reading in another unit starts over", v)
+	}
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`

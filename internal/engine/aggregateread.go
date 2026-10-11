@@ -1501,9 +1501,9 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 			var ok bool
 			switch {
 			case ev.raw && red.Name == substrate.ReducerMin:
-				v, ok = observed.Min(pts(statOf("min")), all)
+				v, ok = observed.Min(r.extremaPoints(ev, statOf("min")), all)
 			case ev.raw:
-				v, ok = observed.Max(pts(statOf("max")), all)
+				v, ok = observed.Max(r.extremaPoints(ev, statOf("max")), all)
 			case red.Name == substrate.ReducerMin:
 				v, ok = ev.stats.Min, ev.stats.Values > 0
 			default:
@@ -1607,6 +1607,29 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 		}
 	}
 	return out
+}
+
+// extremaPoints are the members a raw min or max compares, in the read's
+// unit. A counter's members keep their stored digits, because its steps are
+// taken on them (convertPoint), so they are converted here, each from its
+// own unit, as a rollup row's extremes are (convertStats).
+func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) []observed.Point {
+	var list []observed.Point
+	for _, m := range ev.members {
+		if stat != "" && m.stat != stat {
+			continue
+		}
+		p := m.Point
+		if ev.form == vocabulary.FormCounter && p.HasValue && p.Unit != "" {
+			if c, err := r.u.factor(p.Unit, m.delta); err == nil && !c.identity {
+				p.Value = p.Value*c.ff + c.fo
+				p.Exact, _ = c.digits(p.Exact)
+				p.Unit = r.u.value
+			}
+		}
+		list = append(list, p)
+	}
+	return list
 }
 
 func (r *aggRun) anyConverted(ev *aggEvidence) bool {

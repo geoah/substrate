@@ -243,6 +243,9 @@ func counterCase(t *testing.T, points []Point, from, to float64, increase string
 	}
 	sum, sumResets, sumCovered := new(big.Rat), int64(0), int64(0)
 	for _, r := range bucketRows(vocabulary.FormCounter, points, w.From, w.To) {
+		if r.Increase == nil {
+			continue
+		}
 		sum.Add(sum, r.Increase)
 		sumResets += r.Resets
 		sumCovered += r.CoveredMs

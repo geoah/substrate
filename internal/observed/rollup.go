@@ -50,7 +50,9 @@ type Stats struct {
 	MaxGapMs, StartGapMs int64
 	// Increase and Resets are a counter's: the steps whose later point is in
 	// the row, the step in from the stream's previous available point
-	// included (Increase).
+	// included (Increase). Increase is nil where the row holds no step (its
+	// readings have no reading before them), which is no answer, not a
+	// change of zero; Increase over raw points says the same with its ok.
 	Increase *big.Rat
 	Resets   int64
 	// SinSum and CosSum add the sines and cosines of the circular points'
@@ -154,9 +156,6 @@ func (b *BucketBuilder) Add(point Point) {
 	if s == nil {
 		s = &Stats{}
 		b.rows[p.Group] = s
-		if b.form == vocabulary.FormCounter {
-			s.Increase = new(big.Rat)
-		}
 	}
 	if p.Unavailable {
 		return
@@ -218,6 +217,9 @@ func (b *BucketBuilder) Add(point Point) {
 	case vocabulary.FormCounter:
 		if b.before != nil {
 			d, reset := Step(*b.before, *p)
+			if s.Increase == nil {
+				s.Increase = new(big.Rat)
+			}
 			s.Increase.Add(s.Increase, d)
 			if reset {
 				s.Resets++

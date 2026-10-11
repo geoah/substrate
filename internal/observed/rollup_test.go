@@ -91,6 +91,12 @@ func TestBucketOfACounterTakesItsStepIn(t *testing.T) {
 	if alone.Increase.RatString() != "7" {
 		t.Errorf("a stream's first bucket = %s, want 7", alone.Increase.RatString())
 	}
+	// One reading with none before it holds no step: no answer, as over the
+	// raw points, and not a change of zero.
+	first := Bucket(vocabulary.FormCounter, start, end, nil, points[:1])[""]
+	if _, _, _, ok := Increase(points[:1], Window{From: start, To: end}); ok || first.Increase != nil {
+		t.Errorf("a lone first reading: rows say %v, raw says ok %v; want no increase from either", first.Increase, ok)
+	}
 }
 
 func amount(from, to, v float64, code string) Point {

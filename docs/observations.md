@@ -526,7 +526,9 @@ every step whose later reading is in the row, the step in from the stream's
 previous reading included, wherever that is, and `covered_ms` the time those
 steps span; so the increase of a run of whole buckets is the sum of their
 rows, and `rate` is that sum over the sum of `covered_ms`. A correction to a
-reading therefore also recomputes the bucket of the stream's next reading.
+reading therefore also recomputes the bucket of the stream's next reading. A
+row whose readings have no reading before them holds no step, and its
+`increase` and `resets` are null: no answer, not a change of zero.
 
 ### The latest row
 

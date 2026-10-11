@@ -489,7 +489,7 @@ func compareRollup(t *testing.T, key, form string, g storedRollup, w *observed.S
 	}
 	point("first", g.firstTS, g.firstValue, w.First)
 	point("last", g.lastTS, g.lastValue, w.Last)
-	if form == vocabulary.FormCounter {
+	if form == vocabulary.FormCounter && w.Increase != nil {
 		if !g.increase.Valid || !sameDecimal(g.increase.String, w.Increase.RatString()) || g.resets.Int64 != w.Resets {
 			bad("increase, resets", []any{g.increase, g.resets}, []any{w.Increase.RatString(), w.Resets})
 		}
