@@ -21,4 +21,7 @@ exclude_path = [
   # that as the filesystem root, and pointing one at the repo root would only
   # be wrong for every other file here.
   "web/console/index.html",
+  # UCUM's functional suite, vendored unchanged: an XML file lychee cannot
+  # read for links, and whose one URL is the upstream's own.
+  "internal/vocabulary/testdata/ucum",
 ]
