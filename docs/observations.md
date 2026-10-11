@@ -268,6 +268,9 @@ A packed record is also held to these:
   such as `°C` is stored as its code, `Cel`. A trace of codes has no unit.
 - A `summary` is refused: it is one value per record.
 - `null` is admitted inside `values` and `codes` and nowhere else.
+- A code is never empty: `""` inside `codes` is refused naming its index
+  (`props.codes[1]: a code is not empty`), and so is `code: ""` on a single
+  record. `null` is the one way to say a point has nothing.
 
 A kind that declares any of the result shapes `codedValue`, `ratio` and
 `text` beside the trait, as the health sample's `labresult` does, holds
@@ -358,10 +361,13 @@ the label a trace id ends with and `local_day` the civil date at an offset.
 The fold derives three tables from the rows of every kind that binds
 `observed`, the way it derives `refs`
 ([decision 0160](decisions/0160-the-observed-index-is-three-derived-tables-and-a-rollup-serves-only-exact-answers.md),
-migration `0012_observed_index`). Each row is a function of one record's
-properties and its kind's binding, or of the points those produce, and of
-nothing else. `repository rebuild` clears the three and derives them again
-from the changelog; `repository verify` and the export never read them.
+migration `0012_observed_index`). A point is a function of one record's
+properties and its kind's binding; a rollup row and a latest row are
+functions of a stream's points, and a counter's rollup row also reads the
+stream's reading before its bucket, which may be another record's
+([below](#counters)). Nothing else enters: no clock, no metric record.
+`repository rebuild` clears the three and derives them again from the
+changelog; `repository verify` and the export never read them.
 
 A **stream** is one run of readings: the `kind`, `metric`, `source`, `about`
 and `channel` of a value. A reference column holds the target's record path
@@ -388,7 +394,10 @@ derives them again; a purge leaves nothing. At the end of the transaction the
 rollup rows of every bucket the old and the new points touched are computed
 again from `observed_points`, once, and so is the latest row of every stream
 they touched. A rebuild and a boot import compute every rollup and latest row
-after the replay.
+after the replay. Either reads a bucket's points in pages of at most 20,000,
+in `(ts, record_id, ord)` order, into a running state
+(`internal/observed.BucketBuilder`), so a dense bucket is never held in
+memory whole; a write still reads every point of each bucket it touches.
 
 A single record derives a point only when it holds a `value` or a `code`;
 one that says why it has none (`absentReason`) or keeps the reading as
@@ -400,7 +409,10 @@ A kind that starts or stops binding `observed`, or changes the measure its
 `value` declares, has every row's points derived again by the background
 pass behind the commit that changed it, the one that re-derives the search
 index ([operations](operations.md#upgrading-the-binary)); until the pass
-reaches a row, its points are the ones the previous declaration derived.
+reaches a row, its points are the ones the previous declaration derived. A
+tombstone and a purge in that window still take the record's points with
+them, whatever the kind now declares: a purged row is gone before the pass
+could find it.
 Repository migration `0003_derive_observed_index` asks the same pass to
 derive the index of a repository written before the tables existed.
 
@@ -417,6 +429,13 @@ and `quality` `unavailable`. It ends the hold of the point before it and
 counts in nothing: not in `n`, not in `first` or `last`, not in the latest
 row. A counter's steps skip it, because an outage between two readings of a
 running total still accrued.
+
+A point is available when it holds a value or a code that is not empty, and
+unavailable otherwise. That one test decides every count: the points an
+insertion adds to a stream, the ones a deletion takes back, a trace's
+`stats`, the rollup rows, the latest row and a rebuild. An empty code a row
+stored before the write refused it is therefore an unavailable point, the
+same as a `null`.
 
 A point's `utc_offset_min` is a single record's `utcOffset`. A trace's point
 takes `utcOffsetStart` when it lies before the midpoint of the period and
@@ -633,8 +652,9 @@ reason:
   (`numeric`), so a counter's endpoints stay exact.
 - A counter's step from the previous bucket is in the later row's
   `increase`, computed when the row is, not at read time with a window
-  function, so the read needs no counter contract from the rows. A
-  correction recomputes the next bucket holding a reading too.
+  function as the plan had it, so the read needs no counter contract from
+  the rows. A correction recomputes the next bucket holding a reading too.
+  Decision 0157 states this rule and its cost.
 - A rollup row gains `start_gap_ms`, where the bucket's first point lies, and
   `bounded`, its count of bounded points, so the read can carry a hold across
   rows and report bounded values without the raw points.

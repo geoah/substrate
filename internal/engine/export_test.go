@@ -318,6 +318,13 @@ func WithTestReprojectionHook(hook func(ctx context.Context, kind string) error)
 	return func(o *options) { o.reprojectionHook = hook }
 }
 
+// WithTestObservedPageSize sets how many observed points one read of a
+// bucket's or a stream's points takes at most (observedsettle.go), so a test
+// spans a bucket over several pages with a few points.
+func WithTestObservedPageSize(n int) Option {
+	return func(o *options) { o.observedPage = n }
+}
+
 // IndexReprojectionDone is closed when the dataset's latest background index
 // re-derivation has returned, finished or stopped; a dataset that started
 // none returns a closed channel.

@@ -545,7 +545,14 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   below 160 pounds, a stored 72.4 kg among them. The engine converts the
   operand exactly into each unit the rows hold, inside the operand's
   [measure](units.md); a stored value of another measure never matches, and an
-  operand outside a declared `measures:` is refused. A value stored with a
+  operand outside a declared `measures:` is refused. Where the property
+  declares `units:`, those codes are every unit a row can hold and no row is
+  read to find them. Otherwise the grammar admits codes no list names
+  (`Mg`, `kg/h`), so each request first reads the distinct units of the
+  filtered kinds' rows (the live ones, or the tombstones under
+  `"deleted": true`): one pass over those rows whatever `first`, the time
+  range or the other predicates say, and a refusal past 256 distinct
+  spellings. Declaring `units:` removes that read. A value stored with a
   comparator (`<0.5`) matches only where the comparison holds for its whole
   half-line, and `in` is refused on a property that declares `comparator:
   true` ([the table](data-model.md#property-types)). `match` is the one operator that reads words
@@ -608,11 +615,15 @@ a JSON list of `{property, desc}`). A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
 currencies, so a list that wants one currency filters on it. A `quantity`
 property sorts by its value converted to its measure's base unit (155 `[lb_av]`
-between 50 kg and 71000 g), reading the codes the property lists, else its
-measure's codes, else every code the table lists. A value in a compound the
-list does not name, or in `rad`, sorts after the rest; a level or an arbitrary
+between 50 kg and 71000 g), in every unit a write admitted: the codes the
+property lists, else its measure's codes, else every code the table lists, and
+then any other code the read's rows hold (1 `Mg` sorts as 1000 kg, though the
+mass table lists no `Mg`), found by the same one read of the rows' units a
+filter makes. `rad` sorts through pi at 40 places; a level or an arbitrary
 unit sorts by its own number. A declared index on a quantity holds the same
-expression and needs `measures:` or `units:`. Only declared properties filter and order:
+expression over the declared codes and needs `measures:` or `units:`; it
+serves the order while every stored unit is one of those codes, which
+`units:` guarantees. Only declared properties filter and order:
 **filterable, indexed, and declared are the same set**, so a query that would
 be slow is one the grammar cannot express.
 

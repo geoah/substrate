@@ -179,6 +179,15 @@ func TestCheckObservedRefusals(t *testing.T) {
 			"props.unit: a trace of codes carries no unit",
 		},
 		"no points": {edit(packed(t), map[string]any{"offsets": []any{}, "values": []any{}}), "props.values: a trace holds at least one point"},
+		"an empty code in a trace": {
+			edit(packed(t), map[string]any{"values": nil, "unit": nil, "codes": []any{"open", "", "closed"}}),
+			"props.codes[1]: a code is not empty",
+		},
+		"an empty category in an amount trace": {
+			edit(packed(t), map[string]any{"form": "amount", "hold": nil, "unit": "min", "codes": []any{"light", "deep", ""}}),
+			"props.codes[2]: a code is not empty",
+		},
+		"an empty code": {edit(single(t), map[string]any{"value": nil, "code": ""}), "props.code: a code is not empty"},
 	} {
 		problems := vocabulary.CheckObserved(c.r)
 		found := false
@@ -244,6 +253,29 @@ func TestTraceStatsAreComputedFromThePoints(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("coded stats = %v, want %v", got, want)
+	}
+	// An empty code a row stored before the write refused it is no code: the
+	// point is unavailable, the one reading the index's tables give it too.
+	empty := edit(packed(t), map[string]any{"unit": nil, "values": nil, "codes": []any{"open", "", "closed"}})
+	got, err = vocabulary.TraceStats(*empty.At, empty.Props)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["count"] != int64(2) {
+		t.Errorf("an empty code counted: stats = %v, want a count of 2", got)
+	}
+	points, _ := vocabulary.TracePoints(*empty.At, empty.Props)
+	if len(points) != 3 || !points[1].Unavailable || points[0].Unavailable {
+		t.Errorf("an empty code's point is not the unavailable one: %+v", points)
+	}
+	for _, c := range []struct {
+		hasValue bool
+		code     string
+		want     bool
+	}{{true, "", true}, {true, "rem", true}, {false, "open", true}, {false, "", false}} {
+		if got := vocabulary.ObservedPointAvailable(c.hasValue, c.code); got != c.want {
+			t.Errorf("ObservedPointAvailable(%v, %q) = %v, want %v", c.hasValue, c.code, got, c.want)
+		}
 	}
 	// A trace whose every point is unavailable counts nothing.
 	gone := edit(packed(t), map[string]any{"values": []any{nil, nil, nil}})

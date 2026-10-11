@@ -16,7 +16,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/metrics"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -203,6 +206,112 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	b.WriteString(reads.String())
 	t.Log(b.String())
 	fmt.Println(b.String())
+}
+
+// The dense case of the benchmark gate: many records of one stream in one
+// 15-minute bucket, the shape the hourly benchmark above never writes. Each
+// put recomputes the bucket from all its points, so the work per put grows
+// with the bucket; what the recompute holds at once must not. It prints the
+// mean put time early and late, the most rows one read of points answered,
+// and the wall time and sampled peak heap of a patch and a rebuild:
+//
+//	SUBSTRATE_BENCH_OBSERVED=1 go test -count=1 -v -run '^TestObservedDenseBucketBenchmark$' ./internal/engine/
+func TestObservedDenseBucketBenchmark(t *testing.T) {
+	if os.Getenv("SUBSTRATE_BENCH_OBSERVED") != "1" {
+		t.Skip("set SUBSTRATE_BENCH_OBSERVED=1 to run the observed index benchmark")
+	}
+	const records, points = 40, 1000
+	reads := &pointReads{}
+	r := openObservedIndex(t, engine.WithTestQueryTracer(reads))
+	ctx := context.Background()
+	at := benchStart.Format(time.RFC3339)
+	ends := benchStart.Add(15 * time.Minute).Format(time.RFC3339)
+	var early, late time.Duration
+	for i := range records {
+		values := make([]any, points)
+		for j := range values {
+			values[j] = fmt.Sprintf("%d.%d", 180+(i*13+j*7)%140, j%10)
+		}
+		started := time.Now()
+		r.mustPut(t, r.trace, fmt.Sprintf("garmin/power/%02d", i), map[string]any{
+			"metric": r.metricRef("health/running_power"), "source": r.sourceRef("garmin-forerunner-265"),
+			"form": "gauge", "unit": "W", "hold": "PT2S", "at": at, "endsAt": ends, "every": "PT0.9S", "values": values,
+		})
+		took := time.Since(started)
+		switch {
+		case i < 5:
+			early += took
+		case i >= records-5:
+			late += took
+		}
+	}
+	patch := heapPeak(func() {
+		if _, err := r.patch(t, r.trace, "garmin/power/07", map[string]any{"quality": "valid"}); err != nil {
+			t.Fatalf("patch: %v", err)
+		}
+	})
+	before := observedTables(t, r.db)
+	rebuild := heapPeak(func() {
+		if _, err := r.svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+			t.Fatalf("rebuild: %v", err)
+		}
+	})
+	if after := observedTables(t, r.db); after != before {
+		t.Fatal("the rebuild did not reproduce the observed tables")
+	}
+	most, _ := reads.most()
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n| Dense bucket: %d traces of %d points in one bucket | Value |\n| --- | ---: |\n", records, points)
+	fmt.Fprintf(&b, "| mean put, first 5 | %s |\n", (early / 5).Round(10*time.Microsecond))
+	fmt.Fprintf(&b, "| mean put, last 5 | %s |\n", (late / 5).Round(10*time.Microsecond))
+	fmt.Fprintf(&b, "| most rows one read of points answered | %d |\n", most)
+	fmt.Fprintf(&b, "| patch one trace: wall time | %s |\n", patch.took.Round(time.Millisecond))
+	fmt.Fprintf(&b, "| patch one trace: peak heap growth | %d KiB |\n", patch.peak/1024)
+	fmt.Fprintf(&b, "| rebuild: wall time | %s |\n", rebuild.took.Round(time.Millisecond))
+	fmt.Fprintf(&b, "| rebuild: peak heap growth | %d KiB |\n", rebuild.peak/1024)
+	t.Log(b.String())
+	fmt.Println(b.String())
+}
+
+type peak struct {
+	took time.Duration
+	peak uint64
+}
+
+// heapPeak runs fn and answers its wall time and how far the live heap rose
+// above where it stood after a collection, sampled every millisecond: a
+// floor of the true peak, and the whole process's, background work included.
+func heapPeak(fn func()) peak {
+	runtime.GC()
+	sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
+	metrics.Read(sample)
+	base := sample[0].Value.Uint64()
+	var top atomic.Uint64
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		s := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
+		for {
+			metrics.Read(s)
+			if v := s[0].Value.Uint64(); v > top.Load() {
+				top.Store(v)
+			}
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+			}
+		}
+	}()
+	started := time.Now()
+	fn()
+	took := time.Since(started)
+	close(done)
+	<-stopped
+	return peak{took: took, peak: top.Load() - min(base, top.Load())}
 }
 
 // timedRead runs one read on the app role's pool, row level security in

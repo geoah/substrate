@@ -5,11 +5,13 @@ package engine
 // Three tables derived from the rows of every kind that binds core's
 // `observed` trait, the way `refs` is derived: `observed_points` (one row per
 // value), `observed_rollups` (one row per stream, group and 15-minute bucket)
-// and `observed_latest` (one row per stream). Every column is a function of
-// one record's properties and its kind's binding (deriveObserved), or of the
-// points those produce (internal/observed computes a rollup row), and of
-// nothing else: no clock, no other record. That is what lets `repository
-// rebuild` clear the three and reproduce them from the changelog.
+// and `observed_latest` (one row per stream). A point is a function of one
+// record's properties and its kind's binding (deriveObserved); a rollup or
+// latest row is a function of its stream's points (internal/observed computes
+// a rollup row), a counter's also of the stream's reading before its bucket
+// (decision 0157); and nothing else enters: no clock, no metric record. That
+// is what lets `repository rebuild` clear the three and reproduce them from
+// the changelog.
 //
 // The fold writes the points of one record (syncObserved, from foldRecordOp,
 // and dropObserved, from the tombstone and the purge) and records which
@@ -130,10 +132,13 @@ type obsPoint struct {
 	exact       *string
 	code        string
 	bounded     bool
-	unavailable bool
 }
 
-func (p obsPoint) available() bool { return !p.unavailable }
+// available is vocabulary.ObservedPointAvailable, the definition every reader
+// of the index shares; availablePoint is the same test in SQL.
+func (p obsPoint) available() bool {
+	return vocabulary.ObservedPointAvailable(p.value != nil, p.code)
+}
 
 // deriveObserved computes a live row's points from its properties and its
 // kind's binding alone. It is lenient on purpose: a row the write path
@@ -258,7 +263,7 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 	factor, offset, baseErr := vocabulary.ToBase(measure, r.unit)
 	out := make([]obsPoint, 0, len(pts))
 	for i, tp := range pts {
-		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, unavailable: tp.Unavailable, offset: startOff}
+		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, offset: startOff}
 		if !tp.At.Before(mid) {
 			p.offset = endOff
 		}
@@ -405,10 +410,28 @@ func (t *txn) derivesObserved(ty *vocabulary.Kind) bool {
 }
 
 // dropObservedOf deletes the points of a record leaving the fold (a
-// tombstone, a purge), where its kind can hold them.
+// tombstone, a purge) whatever its kind's declaration now says. A kind that
+// stopped binding `observed` keeps its rows' old points until the background
+// pass reaches each row (reprojection.go), and a purge removes the row that
+// pass would have found, so the record's own exit is the last moment its
+// points can go. A kind that does not bind the trait asks the primary key
+// first, so an ordinary record costs one probe and takes no observed lock.
+// A replay derives every row under one registry from empty tables, so there
+// a kind that does not bind the trait has no points to drop.
 func (t *txn) dropObservedOf(ref eref) error {
 	ty, _ := t.derivationView().ByIdentity(ref.Kind)
-	if !t.derivesObserved(ty) {
+	if bindsObserved(ty) {
+		return t.dropObserved(ref)
+	}
+	if t.observed != nil && t.observed.all {
+		return nil
+	}
+	var holds bool
+	if err := t.row(`SELECT EXISTS (SELECT 1 FROM observed_points WHERE kind = $1 AND record_id = $2)`,
+		ref.Kind, ref.ID).Scan(&holds); err != nil {
+		return fmt.Errorf("substrate/engine: observed points of %s %s: %w", ref.Kind, ref.ID, err)
+	}
+	if !holds {
 		return nil
 	}
 	return t.dropObserved(ref)
@@ -425,10 +448,10 @@ func (t *txn) dropObserved(ref eref) error {
 		WITH d AS (
 			DELETE FROM observed_points WHERE kind = $1 AND record_id = $2
 			RETURNING metric, source, about, channel, form, ts, value, code)
-		SELECT metric, source, about, channel, form,
-		       (extract(epoch FROM date_bin('15 minutes', ts, TIMESTAMPTZ '2000-01-01 00:00:00+00')) * 1000)::bigint,
-		       count(*) FILTER (WHERE value IS NOT NULL OR code <> '')
-		FROM d GROUP BY 1, 2, 3, 4, 5, 6`, ref.Kind, ref.ID)
+		SELECT p.metric, p.source, p.about, p.channel, p.form,
+		       (extract(epoch FROM date_bin('15 minutes', p.ts, TIMESTAMPTZ '2000-01-01 00:00:00+00')) * 1000)::bigint,
+		       count(*) FILTER (WHERE `+availablePoint+`)
+		FROM d p GROUP BY 1, 2, 3, 4, 5, 6`, ref.Kind, ref.ID)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: observed points of %s %s: %w", ref.Kind, ref.ID, err)
 	}
@@ -471,7 +494,7 @@ func (t *txn) insertObserved(r *observedRows) error {
 		ord[i], ts[i], tsEnd[i], offset[i] = int64(p.ord), p.ts, p.tsEnd, p.offset
 		value[i], exact[i], base[i], code[i], bounded[i] = p.value, p.exact, p.base, p.code, p.bounded
 		quality[i] = r.quality
-		if p.unavailable {
+		if !p.available() {
 			quality[i] = &unavailable
 		}
 		if touch.all {

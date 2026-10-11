@@ -62,159 +62,228 @@ type Stats struct {
 // a bucket holding only unavailable points still has a row, with N zero: the
 // read needs to see where a hold stops. A summary has no rollup row.
 func Bucket(form string, start, end time.Time, prev *Point, points []Point) map[string]*Stats {
-	if form == vocabulary.FormSummary || len(points) == 0 {
-		return nil
+	b := NewBucketBuilder(form, start, end, prev)
+	for _, p := range points {
+		b.Add(p)
 	}
-	out := map[string]*Stats{}
-	row := func(g string) *Stats {
-		s := out[g]
-		if s == nil {
-			s = &Stats{}
-			out[g] = s
-		}
-		return s
+	return b.Rows()
+}
+
+// BucketBuilder computes what Bucket answers one point at a time: the points
+// arrive in time order (ties in the order a reader fixes, the same on every
+// read), unavailable ones included, and the builder keeps each group's
+// running state and the point before, never the bucket's points. A reader
+// may therefore stream a bucket of any size in bounded pages. Bucket is this
+// over a slice, so the two cannot disagree.
+type BucketBuilder struct {
+	form       string
+	start, end time.Time
+	rows       map[string]*Stats
+	moments    map[string]*moments
+	// count is the points added; last is the point before the next one,
+	// any group and available or not: it ends a gauge's hold and opens the
+	// next gap.
+	count            int
+	last             *Point
+	maxGap, startGap int64
+	// held is a gauge's last point while it is available: its held interval
+	// waits for the point after it.
+	held *Point
+	// lastHold is, per group, how long after the group's last available
+	// point its value may hold as far as the bucket knows so far.
+	lastHold map[string]*time.Duration
+	// spans is, per group, an amount's open span and the union before it.
+	spans map[string]*spanUnion
+	// before is the stream's last available point, the start of a counter's
+	// next step, prev until a point of the bucket replaces it.
+	before *Point
+	// available is the bucket's last available point.
+	available *Point
+}
+
+type spanUnion struct {
+	cur   [2]time.Time
+	total time.Duration
+}
+
+// NewBucketBuilder starts the bucket [start, end) of one stream; prev is the
+// stream's last available point before start, read by a counter for its step
+// in (nil for none, and ignored by the other forms).
+func NewBucketBuilder(form string, start, end time.Time, prev *Point) *BucketBuilder {
+	b := &BucketBuilder{
+		form: form, start: start, end: end,
+		rows: map[string]*Stats{}, moments: map[string]*moments{},
+		lastHold: map[string]*time.Duration{}, spans: map[string]*spanUnion{},
 	}
-	values := map[string]*moments{}
-	last := map[string]int{}
-	for i := range points {
-		p := &points[i]
-		s := row(p.Group)
-		if p.Unavailable {
-			continue
-		}
-		s.N++
-		if p.Bounded {
-			s.Bounded++
-		}
-		if s.First == nil {
-			s.First = p
-		}
-		s.Last = p
-		last[p.Group] = i
-		if p.HasValue {
-			s.Values++
-			s.Sum += p.Value
-			if s.Values == 1 {
-				s.Min, s.Max = p.Value, p.Value
-			} else {
-				s.Min, s.Max = math.Min(s.Min, p.Value), math.Max(s.Max, p.Value)
+	if prev != nil {
+		p := *prev
+		b.before = &p
+	}
+	return b
+}
+
+// Add takes the bucket's next point.
+func (b *BucketBuilder) Add(point Point) {
+	if b.form == vocabulary.FormSummary {
+		return
+	}
+	p := &point
+	if b.count == 0 {
+		b.startGap = p.At.Sub(b.start).Milliseconds()
+		b.maxGap = b.startGap
+	} else {
+		b.maxGap = max(b.maxGap, p.At.Sub(b.last.At).Milliseconds())
+		if b.form == vocabulary.FormGauge && !b.last.Unavailable {
+			// The point before was its group's last available one, and
+			// this point is the one after it.
+			d := p.At.Sub(b.last.At)
+			if h := b.lastHold[b.last.Group]; h == nil || d < *h {
+				b.lastHold[b.last.Group] = &d
 			}
-			m := values[p.Group]
-			if m == nil {
-				m = &moments{}
-				values[p.Group] = m
-			}
-			m.add(p.Value)
-			s.Mean, s.M2 = m.mean, m.m2
-		}
-		if p.Circular {
-			s.SinSum += math.Sin(p.Angle)
-			s.CosSum += math.Cos(p.Angle)
-			s.Angles++
 		}
 	}
-	maxGap, startGap := gaps(points, start, end)
-	for _, s := range out {
-		s.MaxGapMs, s.StartGapMs = maxGap, startGap
-	}
-	switch form {
-	case vocabulary.FormGauge:
-		for _, iv := range Held(points, start, end, 0) {
-			p := points[iv.Point]
-			s := out[p.Group]
-			d := iv.End.Sub(iv.Start).Milliseconds()
-			s.HeldMs += d
-			if p.HasValue {
-				s.TWASum += p.Value * float64(d)
-			}
-		}
-		for g, i := range last {
-			s, p := out[g], points[i]
-			s.CoveredMs = s.Last.At.Sub(s.First.At).Milliseconds()
-			var bound *time.Duration
-			if p.Hold != nil {
-				h := *p.Hold
-				bound = &h
-			}
-			if i+1 < len(points) {
-				if d := points[i+1].At.Sub(p.At); bound == nil || d < *bound {
-					bound = &d
-				}
-			}
-			if bound != nil {
-				ms := bound.Milliseconds()
-				s.LastHoldMs = &ms
-			}
-		}
-	case vocabulary.FormAmount:
-		spans := map[string][][2]time.Time{}
-		for _, p := range points {
-			if !p.Unavailable {
-				spans[p.Group] = append(spans[p.Group], [2]time.Time{p.At, p.End})
-			}
-		}
-		for g, list := range spans {
-			out[g].CoveredMs = union(list).Milliseconds()
-		}
-	case vocabulary.FormCounter:
-		for _, s := range out {
+	b.count++
+	b.closeHeld(p.At)
+	b.last = p
+	s := b.rows[p.Group]
+	if s == nil {
+		s = &Stats{}
+		b.rows[p.Group] = s
+		if b.form == vocabulary.FormCounter {
 			s.Increase = new(big.Rat)
 		}
-		before := prev
-		for i := range points {
-			p := &points[i]
-			if p.Unavailable {
-				continue
-			}
-			if before != nil {
-				s := out[p.Group]
-				d, reset := Step(*before, *p)
-				s.Increase.Add(s.Increase, d)
-				if reset {
-					s.Resets++
-				}
-				s.CoveredMs += p.At.Sub(before.At).Milliseconds()
-			}
-			before = p
+	}
+	if p.Unavailable {
+		return
+	}
+	b.available = p
+	s.N++
+	if p.Bounded {
+		s.Bounded++
+	}
+	if s.First == nil {
+		s.First = p
+	}
+	s.Last = p
+	if p.HasValue {
+		s.Values++
+		s.Sum += p.Value
+		if s.Values == 1 {
+			s.Min, s.Max = p.Value, p.Value
+		} else {
+			s.Min, s.Max = math.Min(s.Min, p.Value), math.Max(s.Max, p.Value)
 		}
+		m := b.moments[p.Group]
+		if m == nil {
+			m = &moments{}
+			b.moments[p.Group] = m
+		}
+		m.add(p.Value)
+		s.Mean, s.M2 = m.mean, m.m2
 	}
-	return out
-}
-
-// gaps is a bucket's largest gap between consecutive points (from the
-// bucket's start to its first point and from its last point to its end
-// included) and the first of them.
-func gaps(points []Point, start, end time.Time) (maxGap, startGap int64) {
-	startGap = points[0].At.Sub(start).Milliseconds()
-	maxGap = startGap
-	for i := 1; i < len(points); i++ {
-		maxGap = max(maxGap, points[i].At.Sub(points[i-1].At).Milliseconds())
+	if p.Circular {
+		s.SinSum += math.Sin(p.Angle)
+		s.CosSum += math.Cos(p.Angle)
+		s.Angles++
 	}
-	return max(maxGap, end.Sub(points[len(points)-1].At).Milliseconds()), startGap
-}
-
-// union is the length of the union of spans sorted by their start.
-func union(spans [][2]time.Time) time.Duration {
-	var total time.Duration
-	var cur [2]time.Time
-	open := false
-	for _, s := range spans {
+	switch b.form {
+	case vocabulary.FormGauge:
+		b.held = p
+		b.lastHold[p.Group] = nil
+		if p.Hold != nil {
+			h := *p.Hold
+			b.lastHold[p.Group] = &h
+		}
+	case vocabulary.FormAmount:
+		u := b.spans[p.Group]
 		switch {
-		case !open:
-			cur, open = s, true
-		case !s[0].After(cur[1]):
-			if s[1].After(cur[1]) {
-				cur[1] = s[1]
+		case u == nil:
+			b.spans[p.Group] = &spanUnion{cur: [2]time.Time{p.At, p.End}}
+		case !p.At.After(u.cur[1]):
+			if p.End.After(u.cur[1]) {
+				u.cur[1] = p.End
 			}
 		default:
-			total += cur[1].Sub(cur[0])
-			cur = s
+			u.total += u.cur[1].Sub(u.cur[0])
+			u.cur = [2]time.Time{p.At, p.End}
+		}
+	case vocabulary.FormCounter:
+		if b.before != nil {
+			d, reset := Step(*b.before, *p)
+			s.Increase.Add(s.Increase, d)
+			if reset {
+				s.Resets++
+			}
+			s.CoveredMs += p.At.Sub(b.before.At).Milliseconds()
+		}
+		b.before = p
+	}
+}
+
+// closeHeld ends the held interval of a gauge's waiting point at next (the
+// point after it, or the bucket's end), its own hold, whichever comes first,
+// the way Held builds it.
+func (b *BucketBuilder) closeHeld(next time.Time) {
+	p := b.held
+	if p == nil {
+		return
+	}
+	b.held = nil
+	end := b.end
+	if next.Before(end) {
+		end = next
+	}
+	if p.Hold != nil {
+		if e := p.At.Add(*p.Hold); e.Before(end) {
+			end = e
 		}
 	}
-	if open {
-		total += cur[1].Sub(cur[0])
+	start := p.At
+	if start.Before(b.start) {
+		start = b.start
 	}
-	return total
+	if !end.After(start) {
+		return
+	}
+	s := b.rows[p.Group]
+	d := end.Sub(start).Milliseconds()
+	s.HeldMs += d
+	if p.HasValue {
+		s.TWASum += p.Value * float64(d)
+	}
+}
+
+// LastAvailable is the bucket's last available point so far, or nil: the
+// stream's prev for the bucket after it, where the bucket has one.
+func (b *BucketBuilder) LastAvailable() *Point { return b.available }
+
+// Rows finishes the bucket and answers one row per group, as Bucket does: nil
+// for a summary or a bucket with no point. The builder takes no point after.
+func (b *BucketBuilder) Rows() map[string]*Stats {
+	if b.form == vocabulary.FormSummary || b.count == 0 {
+		return nil
+	}
+	b.closeHeld(b.end)
+	b.maxGap = max(b.maxGap, b.end.Sub(b.last.At).Milliseconds())
+	for g, s := range b.rows {
+		s.MaxGapMs, s.StartGapMs = b.maxGap, b.startGap
+		switch b.form {
+		case vocabulary.FormGauge:
+			if s.First == nil {
+				continue
+			}
+			s.CoveredMs = s.Last.At.Sub(s.First.At).Milliseconds()
+			if h := b.lastHold[g]; h != nil {
+				ms := h.Milliseconds()
+				s.LastHoldMs = &ms
+			}
+		case vocabulary.FormAmount:
+			if u := b.spans[g]; u != nil {
+				s.CoveredMs = (u.total + u.cur[1].Sub(u.cur[0])).Milliseconds()
+			}
+		}
+	}
+	return b.rows
 }
 
 // Merge folds b into a: two rows of one group of one stream, b's bucket

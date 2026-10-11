@@ -15,8 +15,12 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
@@ -35,10 +39,10 @@ type obsIndex struct {
 	db  *sql.DB
 }
 
-func openObservedIndex(t *testing.T) obsIndex {
+func openObservedIndex(t *testing.T, opts ...engine.Option) obsIndex {
 	t.Helper()
 	ctx := context.Background()
-	svc, dsn := newService(t)
+	svc, dsn := newService(t, opts...)
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
@@ -1004,5 +1008,275 @@ func TestVerifyAndExportReadNoObservedTable(t *testing.T) {
 	engine.DrainIndexReprojection(t, ds2)
 	if got := observedTables(t, rawDB(t, dsn2)); got != want {
 		t.Fatalf("the restored observed index is not the original\n%s", firstDifference([]byte(want), []byte(got)))
+	}
+}
+
+// --- the review's regressions ---
+
+// packedClosure declares one trace kind, `<pkg>/reading`, binding
+// observed(packed) or binding nothing, so a test can store a row the write
+// rules never saw and bind the kind over it, or take the binding away.
+func packedClosure(pkg string, bound bool) []map[string]any {
+	traits := []any{"substrate.reamde.dev/core/temporal(range)"}
+	if bound {
+		traits = append(traits, "substrate.reamde.dev/core/observed(packed)")
+	}
+	props := map[string]any{}
+	for name, typ := range map[string]string{
+		"channel": "string", "form": "string", "unit": "string", "every": "duration", "hold": "duration",
+		"resetRule": "string", "resetAt": "datetime", "delta": "bool", "circular": "bool", "wrapAt": "decimal",
+		"utcOffsetStart": "int", "utcOffsetEnd": "int", "revision": "int", "stats": "json", "quality": "string",
+	} {
+		props[name] = map[string]any{"type": typ}
+	}
+	for name, typ := range map[string]string{"offsets": "int", "values": "decimal", "codes": "string"} {
+		props[name] = map[string]any{"type": typ, "repeated": true}
+	}
+	for _, name := range []string{"metric", "source", "about"} {
+		props[name] = map[string]any{"type": "reference", "kind": "any"}
+	}
+	return []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "reading"},
+			map[string]any{"traits": traits, "properties": props}),
+	}
+}
+
+func (r obsIndex) applyPackedClosure(t *testing.T, pkg string, bound bool) {
+	t.Helper()
+	actor := substrate.BundleActor(vocabulary.SplitPackageRef(pkg))
+	if _, err := r.ds.ApplyVocabularyDocuments(context.Background(), actor, packedClosure(pkg, bound)); err != nil {
+		t.Fatalf("apply the reading kind (bound %v): %v", bound, err)
+	}
+}
+
+// rebuildMatches rebuilds the repository and holds the three tables to what
+// they were before it, and the rollups to the specification.
+func (r obsIndex) rebuildMatches(t *testing.T) {
+	t.Helper()
+	before := observedTables(t, r.db)
+	if _, err := r.svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := observedTables(t, r.db); after != before {
+		t.Fatalf("the live observed tables are not the rebuilt ones\n%s", firstDifference([]byte(before), []byte(after)))
+	}
+	checkRollupsMatchSpec(t, r.db)
+}
+
+// An empty code is refused on every write, and a row stored before that rule
+// reads its empty code as an unavailable point on every path: the points a
+// derivation inserts, the count a deletion takes back, the rollups, the latest
+// row and the rebuild. Unrelated patches leave the live tables the rebuilt
+// ones; before, each re-derivation of such a row added one point to its
+// stream's count.
+func TestObservedEmptyCodeIsReadOnceAsUnavailable(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	door := func(codes []any) map[string]any {
+		return map[string]any{
+			"metric": r.metricRef("illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
+			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M", "codes": codes,
+		}
+	}
+	_, err := r.put(t, r.trace, "door/hall", door([]any{"open", ""}))
+	refused(t, "a trace with an empty code", err, "props.codes[1]: a code is not empty")
+	_, err = r.put(t, r.observation, "door/hall/1", map[string]any{
+		"metric": r.metricRef("illuminance"), "form": "gauge", "code": "", "at": "2026-10-07T06:00:00Z",
+	})
+	refused(t, "an observation with an empty code", err, "props.code: a code is not empty")
+
+	pkg := testdb.Repository(t) + "/doors"
+	r.applyPackedClosure(t, pkg, false)
+	r.mustPut(t, pkg+"/reading", "d1", door([]any{"open", "", "closed"}))
+	r.applyPackedClosure(t, pkg, true)
+	engine.DrainIndexReprojection(t, r.ds)
+	got := r.points(t, pkg+"/reading", "d1")
+	if len(got) != 3 || got[1].quality.String != "unavailable" || got[0].quality.Valid {
+		t.Fatalf("the stored empty code derived %+v, want its point unavailable", got)
+	}
+	// Re-derive the row again: unbind and bind, each a deletion and an
+	// insertion of its points in one transaction.
+	r.applyPackedClosure(t, pkg, false)
+	r.applyPackedClosure(t, pkg, true)
+	engine.DrainIndexReprojection(t, r.ds)
+	if _, err := r.patch(t, pkg+"/reading", "d1", map[string]any{"quality": "valid"}); err == nil {
+		t.Error("a patch kept the stored empty code")
+	}
+
+	// Unrelated patches of a trace whose null is a legitimate unavailable
+	// point, each a deletion and an insertion of its points.
+	r.mustPut(t, r.trace, "door/porch", map[string]any{
+		"metric": r.metricRef("illuminance"), "source": r.sourceRef("porch"), "channel": "contact", "form": "gauge",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M",
+		"codes": []any{"open", nil, "closed"},
+	})
+	for _, q := range []string{"valid", "estimated", "valid"} {
+		if _, err := r.patch(t, r.trace, "door/porch", map[string]any{"quality": q}); err != nil {
+			t.Fatalf("patch quality %s: %v", q, err)
+		}
+	}
+	for _, source := range []string{"hall", "porch"} {
+		if l, ok := r.latest(t, "illuminance", r.source+"/"+source); !ok || l.points != 2 {
+			t.Errorf("the %s stream counts %d points (%v), want its two available ones", source, l.points, ok)
+		}
+	}
+	r.rebuildMatches(t)
+}
+
+// A record that leaves the fold takes its points with it whatever its kind's
+// declaration now says. Removing the binding leaves old points for the
+// background pass to drop row by row, and the pass is held here while one
+// record is purged and another tombstoned: the purged row is gone from
+// `records` before the pass could find it, so its points, its buckets' rows
+// and its stream's latest row went only if the purge took them. Once the pass
+// is let go and drained, the three tables are a rebuild's.
+func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var armed atomic.Bool
+	release := make(chan struct{})
+	held := make(chan struct{}, 1)
+	var pkg string
+	r := openObservedIndex(t, engine.WithTestReprojectionHook(func(ctx context.Context, kind string) error {
+		if !armed.Load() || kind != pkg+"/reading" {
+			return nil
+		}
+		select {
+		case held <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}))
+	pkg = testdb.Repository(t) + "/meters"
+	kind := pkg + "/reading"
+	r.applyPackedClosure(t, pkg, true)
+	engine.DrainIndexReprojection(t, r.ds)
+	hour := func(at string, values []any) map[string]any {
+		start := mustTime(t, at)
+		return map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
+			"at": at, "endsAt": start.Add(time.Hour).Format(time.RFC3339), "every": "PT20M", "values": values,
+		}
+	}
+	r.mustPut(t, kind, "h06", hour("2026-10-07T06:00:00Z", []any{"20.5", "20.7", "20.9"}))
+	r.mustPut(t, kind, "h07", hour("2026-10-07T07:00:00Z", []any{"21.5", "21.7", "21.9"}))
+	r.mustPut(t, kind, "h08", hour("2026-10-07T08:00:00Z", []any{"22.5", nil, "22.9"}))
+	if l, ok := r.latest(t, "air_temperature", r.source+"/attic"); !ok || l.recordID != "h08" {
+		t.Fatalf("the stream's latest row is %+v (%v), want h08's", l, ok)
+	}
+
+	armed.Store(true)
+	r.applyPackedClosure(t, pkg, false)
+	select {
+	case <-held:
+	case <-time.After(time.Minute):
+		t.Fatal("the pass behind the unbinding never reached the kind")
+	}
+	if _, err := r.ds.Delete(ctx, owner, kind, "h08", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("purge h08: %v", err)
+	}
+	if _, err := r.ds.Delete(ctx, owner, kind, "h07", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete h07: %v", err)
+	}
+	for _, id := range []string{"h07", "h08"} {
+		if got := r.points(t, kind, id); len(got) != 0 {
+			t.Errorf("%s left the fold and kept %d points while the pass was held", id, len(got))
+		}
+	}
+	if l, ok := r.latest(t, "air_temperature", r.source+"/attic"); !ok || l.recordID != "h06" || l.points != 3 {
+		t.Errorf("with h07 and h08 gone the stream's latest row is %+v (%v), want h06's three points", l, ok)
+	}
+
+	close(release)
+	engine.DrainIndexReprojection(t, r.ds)
+	if n := r.count(t, `SELECT count(*) FROM observed_points WHERE kind = $1`, kind); n != 0 {
+		t.Errorf("the unbound kind kept %d points after the pass", n)
+	}
+	if _, ok := r.latest(t, "air_temperature", r.source+"/attic"); ok {
+		t.Error("the unbound kind's stream kept its latest row after the pass")
+	}
+	r.rebuildMatches(t)
+}
+
+// pointReads is a pgx tracer that keeps the most rows any one statement
+// reading observed_points answered: what a recompute held in memory at once.
+type pointReads struct {
+	mu  sync.Mutex
+	max int64
+	sql string
+}
+
+type pointReadKey struct{}
+
+func (p *pointReads) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	return context.WithValue(ctx, pointReadKey{}, d.SQL)
+}
+
+func (p *pointReads) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryEndData) {
+	q, _ := ctx.Value(pointReadKey{}).(string)
+	if !strings.Contains(q, "FROM observed_points") || !d.CommandTag.Select() {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n := d.CommandTag.RowsAffected(); n > p.max {
+		p.max, p.sql = n, q
+	}
+}
+
+func (p *pointReads) most() (int64, string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.max, p.sql
+}
+
+// A rollup recompute reads a bucket's points in bounded pages, in (ts,
+// record_id, ord) order with a running state, never the bucket whole. Five
+// overlapping gauge traces and five overlapping counter traces put 200
+// points each in one 15-minute bucket of their streams; with a page of 50,
+// no read of points the engine sends answers more than 50 rows through the
+// writes, a patch and a rebuild, and the rows are the specification's and
+// the rebuild's. Before, a write read the whole bucket and a rebuild doubled
+// its page until the bucket fit.
+func TestObservedRollupRecomputeReadsBoundedPages(t *testing.T) {
+	t.Parallel()
+	const page = 50
+	reads := &pointReads{}
+	r := openObservedIndex(t, engine.WithTestObservedPageSize(page), engine.WithTestQueryTracer(reads))
+	for i := range 5 {
+		gauge := make([]any, 40)
+		counter := make([]any, 40)
+		for j := range gauge {
+			gauge[j] = fmt.Sprintf("%d.%d", 20+(i*7+j*3)%9, j%10)
+			counter[j] = fmt.Sprintf("%d.%03d", 1000*i+j*5, j)
+		}
+		gauge[17] = nil
+		at := fmt.Sprintf("2026-10-07T06:00:%02dZ", i)
+		r.mustPut(t, r.trace, fmt.Sprintf("attic/%d", i), map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
+			"hold": "PT1M", "at": at, "endsAt": "2026-10-07T06:15:00Z", "every": "PT18S", "values": gauge,
+		})
+		r.mustPut(t, r.trace, fmt.Sprintf("meter/%d", i), map[string]any{
+			"metric": r.metricRef("energy"), "source": r.sourceRef("meter"), "form": "counter", "unit": "kW.h",
+			"resetRule": "monotonic", "at": at, "endsAt": "2026-10-07T06:15:00Z", "every": "PT18S", "values": counter,
+		})
+	}
+	if _, err := r.patch(t, r.trace, "attic/2", map[string]any{"quality": "valid"}); err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_points WHERE ts >= '2026-10-07T06:00:00Z' AND ts < '2026-10-07T06:15:00Z'`); n != 400 {
+		t.Fatalf("the bucket holds %d points, want 400", n)
+	}
+	checkRollupsMatchSpec(t, r.db)
+	r.rebuildMatches(t)
+	if most, q := reads.most(); most > page {
+		t.Fatalf("one read of observed points answered %d rows, above the page of %d:\n%s", most, page, q)
 	}
 }

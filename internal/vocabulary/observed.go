@@ -216,6 +216,9 @@ func (c *obsCheck) single(form string) {
 	if hasCode && form == FormCounter {
 		c.addf("props.code: a counter is a running total, a number, never a code")
 	}
+	if code, isString := c.r.Props[obsCode].(string); isString && code == "" {
+		c.addf("props.code: a code is not empty: drop code")
+	}
 	if form == FormAmount || form == FormSummary {
 		if c.r.At != nil && (c.r.EndsAt == nil || !c.r.EndsAt.After(*c.r.At)) {
 			c.addf("props.endsAt: %s covers [at, endsAt), so it needs endsAt after at", article(form))
@@ -321,6 +324,14 @@ func (c *obsCheck) packed(form string) {
 	list := obsValues
 	if hasCodes {
 		list = obsCodes
+		// An empty code would be a third spelling of "no value" beside null
+		// and an absent list, read one way by one table and another by the
+		// next; null is the one that says a point is unavailable.
+		for i, code := range listOf(c.r.Props[obsCodes]) {
+			if s, isString := code.(string); isString && s == "" {
+				c.addf("props.codes[%d]: a code is not empty; null marks a point with nothing from it on", i)
+			}
+		}
 	}
 	switch {
 	case n == 0:
@@ -480,9 +491,21 @@ type TracePoint struct {
 	Value string
 	// Code is the point's code, or "" for a value or an unavailable point.
 	Code string
-	// Unavailable is a null in the list: no value from this point on, until
-	// the next point (decision 0158).
+	// Unavailable is a null in the list, or a stored empty code: no value
+	// from this point on, until the next point (decision 0158,
+	// ObservedPointAvailable).
 	Unavailable bool
+}
+
+// ObservedPointAvailable is the one definition of an available point, which
+// every reader of the observed index holds to (the points the fold inserts,
+// the count a deletion takes back, a trace's stats, the rollups, the latest
+// row and a rebuild): a point is available when it holds a value, in a
+// numeric stream, or a code that is not empty, in a coded stream. A null in a
+// trace holds neither, and so does an empty code a row stored before the
+// write refused it.
+func ObservedPointAvailable(hasValue bool, code string) bool {
+	return hasValue || code != ""
 }
 
 // TracePoints expands a packed record's stored properties into its points, in
@@ -524,6 +547,7 @@ func TracePoints(at time.Time, props map[string]any) ([]TracePoint, error) {
 			return nil, fmt.Errorf("point %d is not a string", i)
 		case coded:
 			p.Code = s
+			p.Unavailable = !ObservedPointAvailable(false, s)
 		default:
 			p.Value = s
 			// An amount trace may carry each value's category beside it.

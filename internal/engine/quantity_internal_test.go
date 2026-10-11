@@ -115,8 +115,20 @@ func TestQuantityBaseSQLIsStable(t *testing.T) {
 		t.Fatalf("an annotated row and its bare form must share one arm: %s", rate)
 	}
 	undeclared := quantityBaseSQL(`(props->'x')`, []*vocabulary.QuantitySpec{nil})
-	if !strings.Contains(undeclared, `WHEN 'rad' THEN NULL::numeric`) || !strings.Contains(undeclared, `WHEN '[pH]' THEN`) {
-		t.Fatalf("rad must read NULL and a level its own number: %s", undeclared)
+	if strings.Contains(undeclared, `NULL::numeric`) || !strings.Contains(undeclared, `WHEN 'rad' THEN ((`) || !strings.Contains(undeclared, `WHEN '[pH]' THEN`) {
+		t.Fatalf("rad must key through pi and a level by its own number, and no arm reads NULL: %s", undeclared)
+	}
+	// Stored codes the declared arms already cover add nothing, so the
+	// expression stays the declared index's; one they do not cover adds its
+	// arm after them.
+	mass := []*vocabulary.QuantitySpec{{Measure: "mass"}}
+	declared := quantityBaseSQL(`(props->'w')`, mass)
+	if got := quantityBaseSQL(`(props->'w')`, mass, "kg", "g", "{each}kg"); got != declared {
+		t.Fatalf("covered stored codes changed the expression:\n%s\n%s", got, declared)
+	}
+	widened := quantityBaseSQL(`(props->'w')`, mass, "Mg")
+	if !strings.HasPrefix(widened, strings.TrimSuffix(declared, ` END)`)) || !strings.Contains(widened, `WHEN 'Mg' THEN ((`) {
+		t.Fatalf("a stored Mg did not add its arm after the declared ones: %s", widened)
 	}
 }
 
