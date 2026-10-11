@@ -216,6 +216,69 @@ func TestAggregateStopsWhenCanceledAfterItsStatements(t *testing.T) {
 	}
 }
 
+// A read canceled as a reducer begins stops inside the reducer, before it has
+// taken the bucket: 10,000 unsorted readings in one hour, read from raw points
+// and canceled after the read's last check before a reducer, answer
+// context.Canceled having assembled no row. Canceled at a last, the copy of
+// the bucket's points stops it (finding the last point takes one); at a
+// median after a standard deviation, whose copy it reuses, the percentile's
+// own count and sort do; at a durationIn after a twa, whose spans it reuses,
+// the spans reducer does. Each once took the whole bucket, and the row was
+// made before the next check.
+func TestAggregateStopsInsideAReducer(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	const n = 10000
+	offsets := make([]int64, n)
+	vals := make([]any, n)
+	for i := range n {
+		offsets[i] = int64(i) * 100
+		vals[i] = strconv.Itoa(40 + (i*7919)%120)
+	}
+	f.series("hr/dense", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "gauge", "unit": "/min",
+	}, start, start.Add(n*100*time.Millisecond), offsets, vals)
+	median := substrate.AggregateReducer{Name: "percentile", Percentile: ptr(0.5)}
+	zone := substrate.AggregateReducer{Name: "durationIn", Between: []float64{100, 200}}
+	for _, x := range []struct {
+		name     string
+		reducers []substrate.AggregateReducer
+		at       int
+	}{
+		{"the bucket's copy", reducers("last"), 1},
+		{"the percentile", []substrate.AggregateReducer{{Name: "stddev"}, median}, 2},
+		{"the spans reducer", []substrate.AggregateReducer{{Name: "twa"}, zone}, 2},
+	} {
+		t.Run(x.name, func(t *testing.T) {
+			a := substrate.Aggregate{
+				Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+				Range:    rng(start, start.Add(time.Hour)),
+				Reducers: x.reducers,
+			}
+			if res, err := f.ds.Aggregate(engine.AggregateRaw(context.Background()), substrate.AggregateQuery{Aggregate: &a}); err != nil || len(res.Rows) != 1 {
+				t.Fatalf("uncanceled: %v", err)
+			}
+			ctx, cancel := context.WithCancel(engine.AggregateRaw(context.Background()))
+			defer cancel()
+			ctx, trace := engine.AggregateTraced(ctx)
+			began := 0
+			trace.BeforeReducer(func() {
+				if began++; began == x.at {
+					cancel()
+				}
+			})
+			_, err := f.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &a})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("err = %v, want context.Canceled", err)
+			}
+			if trace.Rows() != 0 {
+				t.Errorf("the canceled read assembled %d row(s): its reducers ran to their end", trace.Rows())
+			}
+		})
+	}
+}
+
 // The raw spans an amount's coverage is joined from, where two rollup rows'
 // extents overlap, count against maxSamples before the statement reads them:
 // two traces over [00:00, 00:35) and [00:15, 00:50), read for an aligned

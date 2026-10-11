@@ -104,6 +104,12 @@ type aggTrace struct {
 	// afterPlan runs once a metric read's plan has read every row and point
 	// it reduces, before the reduction: a test cancels the read there.
 	afterPlan func()
+	// beforeReducer runs as each reducer of a row begins, after the read's
+	// last check of its context before it: a test cancels the read there, so
+	// only the reducer's own checks can see it.
+	beforeReducer func()
+	// rows is the rows a metric read assembled, every reducer answered.
+	rows int64
 }
 
 // everyThousand is a Go-side loop's context check: it answers ctx's error on

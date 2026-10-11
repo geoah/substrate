@@ -11,12 +11,19 @@
 // point's number is a float64 in the point's own unit; where float64 would
 // lose an increment (a counter's steps, a row's first and last value) the
 // stored digits in Exact are read instead.
+//
+// A reducer a read runs over a whole bucket's points or spans has a Context
+// form for a caller that may stop waiting: it checks ctx every checkEvery
+// points or spans, and a sort between bounded runs (SortStableFunc), and
+// answers ctx's error where the context ends first. The plain form is the
+// same reducer, run to its end.
 package observed
 
 import (
+	"cmp"
+	"context"
 	"math"
 	"math/big"
-	"sort"
 	"strings"
 	"time"
 
@@ -110,8 +117,18 @@ type Interval struct {
 // means no maxGap) and to. Intervals are built from every transition before
 // anything filters them, so a door's `closed` ends the `open` before it.
 func Held(points []Point, from, to time.Time, maxGap time.Duration) []Interval {
+	out, _ := HeldContext(context.Background(), points, from, to, maxGap)
+	return out
+}
+
+// HeldContext is Held under ctx, checked every checkEvery points.
+func HeldContext(ctx context.Context, points []Point, from, to time.Time, maxGap time.Duration) ([]Interval, error) {
+	check := every(ctx)
 	var out []Interval
 	for i, p := range points {
+		if err := check(); err != nil {
+			return nil, err
+		}
 		if p.Unavailable || !p.At.Before(to) {
 			continue
 		}
@@ -137,7 +154,7 @@ func Held(points []Point, from, to time.Time, maxGap time.Duration) []Interval {
 			out = append(out, Interval{Point: i, Start: start, End: end})
 		}
 	}
-	return out
+	return out, nil
 }
 
 // Window is a read's time range [From, To) and its maxGap, zero for none.
@@ -148,44 +165,62 @@ type Window struct {
 
 func (w Window) holds(p Point) bool { return !p.At.Before(w.From) && p.At.Before(w.To) }
 
-// inWindow lists the available points whose instant is inside the window. An
-// amount belongs whole to the window its span starts in.
-func inWindow(points []Point, w Window) []Point {
-	var out []Point
-	for _, p := range points {
-		if !p.Unavailable && w.holds(p) {
-			out = append(out, p)
-		}
-	}
-	return out
-}
+// in reports whether a point counts in the window: available, its instant
+// inside it. An amount belongs whole to the window its span starts in.
+func (w Window) in(p Point) bool { return !p.Unavailable && w.holds(p) }
 
-func numbers(points []Point, w Window) []float64 {
+// numbers lists the numbers in the window, in point order.
+func numbers(ctx context.Context, points []Point, w Window) ([]float64, error) {
+	check := every(ctx)
 	var out []float64
-	for _, p := range inWindow(points, w) {
-		if p.HasValue {
+	for _, p := range points {
+		if err := check(); err != nil {
+			return nil, err
+		}
+		if w.in(p) && p.HasValue {
 			out = append(out, p.Value)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // Count is the number of available points in the window.
-func Count(points []Point, w Window) int64 { return int64(len(inWindow(points, w))) }
+func Count(points []Point, w Window) int64 {
+	var n int64
+	for _, p := range points {
+		if w.in(p) {
+			n++
+		}
+	}
+	return n
+}
 
 // Sum adds the numbers in the window.
 func Sum(points []Point, w Window) (float64, bool) {
-	vs := numbers(points, w)
+	v, ok, _ := SumContext(context.Background(), points, w)
+	return v, ok
+}
+
+// SumContext is Sum under ctx, checked every checkEvery points.
+func SumContext(ctx context.Context, points []Point, w Window) (float64, bool, error) {
+	check := every(ctx)
 	var s float64
-	for _, v := range vs {
-		s += v
+	ok := false
+	for _, p := range points {
+		if err := check(); err != nil {
+			return 0, false, err
+		}
+		if w.in(p) && p.HasValue {
+			s += p.Value
+			ok = true
+		}
 	}
-	return s, len(vs) > 0
+	return s, ok, nil
 }
 
 // Min is the smallest number in the window.
 func Min(points []Point, w Window) (float64, bool) {
-	vs := numbers(points, w)
+	vs, _ := numbers(context.Background(), points, w)
 	if len(vs) == 0 {
 		return 0, false
 	}
@@ -198,7 +233,7 @@ func Min(points []Point, w Window) (float64, bool) {
 
 // Max is the largest number in the window.
 func Max(points []Point, w Window) (float64, bool) {
-	vs := numbers(points, w)
+	vs, _ := numbers(context.Background(), points, w)
 	if len(vs) == 0 {
 		return 0, false
 	}
@@ -302,64 +337,109 @@ func compareMagnitude(ai, af, bi, bf string) int {
 // exactly (NumberLess): its stored digits are the answer, so a min loses no
 // digit to float64. Of equal numbers, the first in order.
 func MinPoint(points []Point, w Window) (Point, bool) {
-	return extreme(points, w, func(p, best Point) bool { return NumberLess(p.Value, p.Exact, best.Value, best.Exact) })
+	p, ok, _ := MinPointContext(context.Background(), points, w)
+	return p, ok
+}
+
+// MinPointContext is MinPoint under ctx, checked every checkEvery points.
+func MinPointContext(ctx context.Context, points []Point, w Window) (Point, bool, error) {
+	return extreme(ctx, points, w, func(p, best Point) bool { return NumberLess(p.Value, p.Exact, best.Value, best.Exact) })
 }
 
 // MaxPoint is the point holding the largest number in the window, as MinPoint.
 func MaxPoint(points []Point, w Window) (Point, bool) {
-	return extreme(points, w, func(p, best Point) bool { return NumberLess(best.Value, best.Exact, p.Value, p.Exact) })
+	p, ok, _ := MaxPointContext(context.Background(), points, w)
+	return p, ok
 }
 
-func extreme(points []Point, w Window, better func(p, best Point) bool) (Point, bool) {
+// MaxPointContext is MaxPoint under ctx, checked every checkEvery points.
+func MaxPointContext(ctx context.Context, points []Point, w Window) (Point, bool, error) {
+	return extreme(ctx, points, w, func(p, best Point) bool { return NumberLess(best.Value, best.Exact, p.Value, p.Exact) })
+}
+
+func extreme(ctx context.Context, points []Point, w Window, better func(p, best Point) bool) (Point, bool, error) {
+	check := every(ctx)
 	var best Point
 	ok := false
-	for _, p := range inWindow(points, w) {
-		if p.HasValue && (!ok || better(p, best)) {
+	for _, p := range points {
+		if err := check(); err != nil {
+			return Point{}, false, err
+		}
+		if w.in(p) && p.HasValue && (!ok || better(p, best)) {
 			best, ok = p, true
 		}
 	}
-	return best, ok
+	return best, ok, nil
 }
 
 // First is the earliest available point in the window, a code or a number.
+// It reads the points from the first until it meets one, so over a window's
+// own points it takes one.
 func First(points []Point, w Window) (Point, bool) {
-	in := inWindow(points, w)
-	if len(in) == 0 {
-		return Point{}, false
+	for _, p := range points {
+		if w.in(p) {
+			return p, true
+		}
 	}
-	return in[0], true
+	return Point{}, false
 }
 
 // Last is the latest available point in the window; of two at one instant,
-// the later in order.
+// the later in order. It reads the points from the last, as First does from
+// the first.
 func Last(points []Point, w Window) (Point, bool) {
-	in := inWindow(points, w)
-	if len(in) == 0 {
-		return Point{}, false
+	for i := len(points) - 1; i >= 0; i-- {
+		if w.in(points[i]) {
+			return points[i], true
+		}
 	}
-	return in[len(in)-1], true
+	return Point{}, false
 }
 
 // Avg is the mean of the numbers in the window, each point weighing one.
 func Avg(points []Point, w Window) (float64, bool) {
-	var m moments
-	for _, v := range numbers(points, w) {
-		m.add(v)
+	v, ok, _ := AvgContext(context.Background(), points, w)
+	return v, ok
+}
+
+// AvgContext is Avg under ctx, checked every checkEvery points.
+func AvgContext(ctx context.Context, points []Point, w Window) (float64, bool, error) {
+	m, err := momentsOf(ctx, points, w)
+	if err != nil {
+		return 0, false, err
 	}
-	return m.mean, m.n > 0
+	return m.mean, m.n > 0, nil
 }
 
 // StdDev is the population standard deviation of the numbers in the window,
 // the square root of m2 over n.
 func StdDev(points []Point, w Window) (float64, bool) {
+	v, ok, _ := StdDevContext(context.Background(), points, w)
+	return v, ok
+}
+
+// StdDevContext is StdDev under ctx, checked every checkEvery points.
+func StdDevContext(ctx context.Context, points []Point, w Window) (float64, bool, error) {
+	m, err := momentsOf(ctx, points, w)
+	if err != nil || m.n == 0 {
+		return 0, false, err
+	}
+	return math.Sqrt(m.m2 / float64(m.n)), true, nil
+}
+
+// momentsOf is the moments of the numbers in the window, in point order.
+func momentsOf(ctx context.Context, points []Point, w Window) (moments, error) {
+	check := every(ctx)
 	var m moments
-	for _, v := range numbers(points, w) {
-		m.add(v)
+	for _, p := range points {
+		if err := check(); err != nil {
+			return moments{}, err
+		}
+		if w.in(p) && p.HasValue {
+			m.add(p.Value)
+		}
 	}
-	if m.n == 0 {
-		return 0, false
-	}
-	return math.Sqrt(m.m2 / float64(m.n)), true
+	return m, nil
 }
 
 // TWA is the time-weighted mean: each number weighed by the time it holds
@@ -383,34 +463,58 @@ func DurationIn(points []Point, w Window, lo, hi float64) time.Duration {
 // interpolated linearly between the two closest ranks, as Postgres's
 // percentile_cont answers it.
 func Percentile(points []Point, w Window, q float64) (float64, bool) {
-	vs := numbers(points, w)
-	if len(vs) == 0 || q < 0 || q > 1 {
-		return 0, false
+	v, ok, _ := PercentileContext(context.Background(), points, w, q)
+	return v, ok
+}
+
+// PercentileContext is Percentile under ctx, checked every checkEvery points
+// it copies and while it sorts them (SortStableFunc).
+func PercentileContext(ctx context.Context, points []Point, w Window, q float64) (float64, bool, error) {
+	vs, err := numbers(ctx, points, w)
+	if err != nil {
+		return 0, false, err
 	}
-	sort.Float64s(vs)
+	if len(vs) == 0 || q < 0 || q > 1 {
+		return 0, false, nil
+	}
+	if err := SortStableFunc(ctx, vs, cmp.Compare[float64]); err != nil {
+		return 0, false, err
+	}
 	pos := q * float64(len(vs)-1)
 	lo := int(math.Floor(pos))
 	if lo >= len(vs)-1 {
-		return vs[len(vs)-1], true
+		return vs[len(vs)-1], true, nil
 	}
 	frac := pos - float64(lo)
-	return vs[lo] + frac*(vs[lo+1]-vs[lo]), true
+	return vs[lo] + frac*(vs[lo+1]-vs[lo]), true, nil
 }
 
 // CircularMean is the mean direction of the circular points in the window,
 // in degrees in [0, 360), from the sums of their sines and cosines. It has no
 // answer when the mean resultant length is below MinResultantLength.
 func CircularMean(points []Point, w Window) (float64, bool) {
+	v, ok, _ := CircularMeanContext(context.Background(), points, w)
+	return v, ok
+}
+
+// CircularMeanContext is CircularMean under ctx, checked every checkEvery
+// points.
+func CircularMeanContext(ctx context.Context, points []Point, w Window) (float64, bool, error) {
+	check := every(ctx)
 	var sin, cos float64
 	var n int64
-	for _, p := range inWindow(points, w) {
-		if p.Circular {
+	for _, p := range points {
+		if err := check(); err != nil {
+			return 0, false, err
+		}
+		if w.in(p) && p.Circular {
 			sin += math.Sin(p.Angle)
 			cos += math.Cos(p.Angle)
 			n++
 		}
 	}
-	return circularMean(sin, cos, n)
+	v, ok := circularMean(sin, cos, n)
+	return v, ok, nil
 }
 
 func circularMean(sin, cos float64, n int64) (float64, bool) {

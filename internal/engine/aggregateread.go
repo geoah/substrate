@@ -737,9 +737,10 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 // canceled counts one step of the reduction and answers the read's context
 // error on the first step and every thousand after it, whichever loop takes
 // them: the statement timeout bounds the SQL, not the work after it, so a
-// long reduction stops when its caller does. A step is one point, span, row
-// or slot; work heavier than a step (a row's reducers, a priority
-// resolution) checks the context itself.
+// long reduction stops when its caller does. A step is one point, span, row,
+// slot or interval this package copies or walks; what runs in observed (a
+// reducer, a sort, a priority resolution) checks the context through its
+// Context forms, as often.
 func (r *aggRun) canceled() error {
 	n := r.steps
 	r.steps++
@@ -774,12 +775,19 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				slice = append(slice, seg.points...)
 				obs := make([]observed.Point, len(slice))
 				for i := range slice {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
 					obs[i] = slice[i].Point
 				}
-				if err := r.ctx.Err(); err != nil {
+				held, err := observed.HeldContext(r.ctx, obs, seg.from, seg.to, p.maxGap)
+				if err != nil {
 					return nil, err
 				}
-				for _, iv := range observed.Held(obs, seg.from, seg.to, p.maxGap) {
+				for _, iv := range held {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
 					st.spans = append(st.spans, aggSpan{
 						Span: observed.Span{Start: iv.Start, End: iv.End, Point: obs[iv.Point]},
 						off:  slice[iv.Point].off, stream: si,
@@ -819,6 +827,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			in := make([][]observed.Span, len(list))
 			for i, st := range list {
 				for _, sp := range st.spans {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
 					in[i] = append(in[i], sp.Span)
 				}
 			}
@@ -830,15 +841,33 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				if err := r.ctx.Err(); err != nil {
 					return nil, err
 				}
-				higher := make([]observed.Span, 0, len(cover))
+				higher := make([][2]time.Time, 0, len(cover))
 				for _, c := range cover {
-					higher = append(higher, c.Span)
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
+					higher = append(higher, [2]time.Time{c.Start, c.End})
 				}
-				hc := spanCover(higher)
-				st.points = slices.DeleteFunc(st.points, func(ap aggPoint) bool { return !ap.Unavailable && hc.holds(ap.At) })
+				hc, err := r.cover(higher)
+				if err != nil {
+					return nil, err
+				}
+				kept := st.points[:0]
+				for _, ap := range st.points {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
+					if ap.Unavailable || !hc.holds(ap.At) {
+						kept = append(kept, ap)
+					}
+				}
+				st.points = kept
 				cover = append(cover, st.spans...)
 				st.spans = st.spans[:0]
 				for _, sp := range resolved[i] {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
 					off, _ := strconv.ParseInt(sp.Point.Group, 10, 64)
 					st.spans = append(st.spans, aggSpan{Span: sp, off: off, stream: i})
 				}
@@ -846,7 +875,10 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 		default:
 			var cover [][2]time.Time
 			for _, st := range list {
-				hc := intervalCover(cover)
+				hc, err := r.cover(cover)
+				if err != nil {
+					return nil, err
+				}
 				var kept []aggPoint
 				for _, ap := range st.points {
 					if err := r.canceled(); err != nil {
@@ -859,6 +891,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				}
 				st.points = kept
 				for _, ap := range kept {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
 					if !ap.Unavailable {
 						cover = append(cover, [2]time.Time{ap.At, pointEnd(ap)})
 					}
@@ -937,16 +972,22 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	}
 	for _, codes := range out {
 		for _, ev := range codes {
-			// A cell's sort is as long as its points: the context is checked
-			// before each, and on every thousandth point after.
-			if err := r.ctx.Err(); err != nil {
+			// A cell's sorts are as long as its points and spans, so they
+			// check the context as they go.
+			if err := observed.SortStableFunc(r.ctx, ev.members, func(a, b aggPoint) int {
+				switch {
+				case pointBefore(a.Point, a.stream, b.Point, b.stream):
+					return -1
+				case pointBefore(b.Point, b.stream, a.Point, a.stream):
+					return 1
+				}
+				return 0
+			}); err != nil {
 				return nil, err
 			}
-			sort.SliceStable(ev.members, func(i, j int) bool {
-				a, b := ev.members[i], ev.members[j]
-				return pointBefore(a.Point, a.stream, b.Point, b.stream)
-			})
-			sort.SliceStable(ev.spans, func(i, j int) bool { return ev.spans[i].Start.Before(ev.spans[j].Start) })
+			if err := observed.SortStableFunc(r.ctx, ev.spans, func(a, b aggSpan) int { return a.Start.Compare(b.Start) }); err != nil {
+				return nil, err
+			}
 			for _, m := range ev.members {
 				if err := r.canceled(); err != nil {
 					return nil, err
@@ -958,19 +999,28 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			}
 			switch form {
 			case vocabulary.FormGauge:
-				spans := make([]observed.Span, len(ev.spans))
-				for i, s := range ev.spans {
-					spans[i] = s.Span
+				spans, err := r.spansOf(ev)
+				if err != nil {
+					return nil, err
 				}
-				ev.coverage = observed.HeldMs(spans)
+				if ev.coverage, err = observed.HeldMsContext(r.ctx, spans); err != nil {
+					return nil, err
+				}
 			case vocabulary.FormCounter:
 				ev.coverage = ev.steps.covered
 			default:
 				var spans [][2]time.Time
 				for _, m := range ev.members {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
 					spans = append(spans, [2]time.Time{m.At, m.End})
 				}
-				for _, s := range joinSpans(spans) {
+				joined, err := r.cover(spans)
+				if err != nil {
+					return nil, err
+				}
+				for _, s := range joined {
 					ev.coverage += s[1].Sub(s[0]).Milliseconds()
 				}
 			}
@@ -989,16 +1039,28 @@ func pointEnd(ap aggPoint) time.Time {
 // cover is a sorted, joined set of intervals.
 type cover [][2]time.Time
 
-func intervalCover(spans [][2]time.Time) cover {
-	return cover(joinSpans(append([][2]time.Time(nil), spans...)))
-}
-
-func spanCover(spans []observed.Span) cover {
-	var list [][2]time.Time
-	for _, s := range spans {
-		list = append(list, [2]time.Time{s.Start, s.End})
+// cover joins a copy of the intervals as joinSpans does, checking the
+// context as it sorts and joins them: a cover is as long as a stream's
+// points.
+func (r *aggRun) cover(spans [][2]time.Time) (cover, error) {
+	list := append([][2]time.Time(nil), spans...)
+	if err := observed.SortStableFunc(r.ctx, list, func(a, b [2]time.Time) int { return a[0].Compare(b[0]) }); err != nil {
+		return nil, err
 	}
-	return intervalCover(list)
+	var out cover
+	for _, s := range list {
+		if err := r.canceled(); err != nil {
+			return nil, err
+		}
+		if n := len(out); n > 0 && !s[0].After(out[n-1][1]) {
+			if s[1].After(out[n-1][1]) {
+				out[n-1][1] = s[1]
+			}
+			continue
+		}
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 // holds reports whether t lies inside the cover.
@@ -1602,24 +1664,47 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 	}
 	sort.Strings(row.Sources)
 	var err error
-	row.Values, err = r.values(ev, code)
-	return row, err
+	if row.Values, err = r.values(ev, code); err != nil {
+		return row, err
+	}
+	if tr := traceOf(r.ctx); tr != nil {
+		tr.rows++
+	}
+	return row, nil
 }
 
-// values answers every reducer over one row's evidence, in request order,
-// checking the context before each: one reducer over one row is as long as
-// the row's points.
+// values answers every reducer over one row's evidence, in request order. A
+// reducer over a row is as long as the row's points or spans, so the copies
+// it reads (taken once per row) and the reducer itself check the context as
+// they go (observed's Context forms).
 func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValue, error) {
 	var out []substrate.AggregateValue
 	all := observed.Window{From: time.Unix(-1<<40, 0), To: time.Unix(1<<40, 0)}
-	pts := func(stat string) []observed.Point {
+	points := map[string][]observed.Point{}
+	pts := func(stat string) ([]observed.Point, error) {
+		if list, ok := points[stat]; ok {
+			return list, nil
+		}
 		var list []observed.Point
 		for _, m := range ev.members {
+			if err := r.canceled(); err != nil {
+				return nil, err
+			}
 			if stat == "" || m.stat == stat {
 				list = append(list, m.Point)
 			}
 		}
-		return list
+		points[stat] = list
+		return list, nil
+	}
+	var spans []observed.Span
+	held := func() ([]observed.Span, error) {
+		if spans != nil {
+			return spans, nil
+		}
+		var err error
+		spans, err = r.spansOf(ev)
+		return spans, err
 	}
 	summary := ev.form == vocabulary.FormSummary
 	statOf := func(name string) string {
@@ -1632,25 +1717,41 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 		r.meta.inexact = true
 		out = append(out, r.value(red, v, ok, unit))
 	}
+	// reduce answers a float reducer over the raw points of a statistic.
+	reduce := func(red substrate.AggregateReducer, stat, unit string, f func(context.Context, []observed.Point, observed.Window) (float64, bool, error)) error {
+		list, err := pts(stat)
+		if err != nil {
+			return err
+		}
+		v, ok, err := f(r.ctx, list, all)
+		if err != nil {
+			return err
+		}
+		float(red, v, ok, unit)
+		return nil
+	}
+	tr := traceOf(r.ctx)
 	for _, red := range r.p.reducers {
 		if err := r.ctx.Err(); err != nil {
 			return nil, err
 		}
+		if tr != nil && tr.beforeReducer != nil {
+			tr.beforeReducer()
+		}
+		var err error
 		switch red.Name {
 		case substrate.ReducerCount:
 			v := strconv.FormatInt(ev.count, 10)
 			out = append(out, substrate.AggregateValue{Reducer: red, Value: &v})
 		case substrate.ReducerSum:
 			if ev.raw {
-				v, ok := observed.Sum(pts(statOf("sum")), all)
-				float(red, v, ok, r.u.value)
+				err = reduce(red, statOf("sum"), r.u.value, observed.SumContext)
 			} else {
 				float(red, ev.stats.Sum, ev.stats.Values > 0, r.u.value)
 			}
 		case substrate.ReducerAvg:
 			if ev.raw {
-				v, ok := observed.Avg(pts(statOf("avg")), all)
-				float(red, v, ok, r.u.value)
+				err = reduce(red, statOf("avg"), r.u.value, observed.AvgContext)
 			} else {
 				float(red, ev.stats.Mean, ev.stats.Values > 0, r.u.value)
 			}
@@ -1662,11 +1763,14 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 			var ok bool
 			switch {
 			case ev.raw:
+				stat, best := statOf("min"), observed.MinPointContext
+				if red.Name == substrate.ReducerMax {
+					stat, best = statOf("max"), observed.MaxPointContext
+				}
+				var list []observed.Point
 				var p observed.Point
-				if red.Name == substrate.ReducerMin {
-					p, ok = observed.MinPoint(r.extremaPoints(ev, statOf("min")), all)
-				} else {
-					p, ok = observed.MaxPoint(r.extremaPoints(ev, statOf("max")), all)
+				if list, err = r.extremaPoints(ev, stat); err == nil {
+					p, ok, err = best(r.ctx, list, all)
 				}
 				digits = p.Exact
 			case red.Name == substrate.ReducerMin:
@@ -1683,10 +1787,15 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 			var p observed.Point
 			var ok bool
 			switch {
-			case ev.raw && red.Name == substrate.ReducerFirst:
-				p, ok = observed.First(pts(""), all)
 			case ev.raw:
-				p, ok = observed.Last(pts(""), all)
+				var list []observed.Point
+				if list, err = pts(""); err == nil {
+					if red.Name == substrate.ReducerFirst {
+						p, ok = observed.First(list, all)
+					} else {
+						p, ok = observed.Last(list, all)
+					}
+				}
 			case red.Name == substrate.ReducerFirst && ev.stats.First != nil:
 				p, ok = *ev.stats.First, true
 			case red.Name == substrate.ReducerLast && ev.stats.Last != nil:
@@ -1695,28 +1804,30 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 			out = append(out, r.pointValue(red, p, ok))
 		case substrate.ReducerStdDev:
 			if ev.raw {
-				v, ok := observed.StdDev(pts(""), all)
-				float(red, v, ok, r.u.value)
+				err = reduce(red, "", r.u.value, observed.StdDevContext)
 			} else {
 				float(red, math.Sqrt(ev.stats.M2/float64(max(ev.stats.Values, 1))), ev.stats.Values > 0, r.u.value)
 			}
 		case substrate.ReducerPercentile:
-			v, ok := observed.Percentile(pts(""), all, *red.Percentile)
-			float(red, v, ok, r.u.value)
+			q := *red.Percentile
+			err = reduce(red, "", r.u.value, func(ctx context.Context, list []observed.Point, w observed.Window) (float64, bool, error) {
+				return observed.PercentileContext(ctx, list, w, q)
+			})
 		case substrate.ReducerCircularMean:
-			var v float64
-			var ok bool
 			if ev.raw {
-				v, ok = observed.CircularMean(pts(""), all)
+				err = reduce(red, "", "deg", observed.CircularMeanContext)
 			} else {
-				v, ok = observed.CircularMeanOf(ev.stats)
+				v, ok := observed.CircularMeanOf(ev.stats)
+				float(red, v, ok, "deg")
 			}
-			float(red, v, ok, "deg")
 		case substrate.ReducerTWA:
 			var v float64
 			var ok bool
 			if ev.raw {
-				v, ok = observed.TWAOf(r.spansOf(ev))
+				var list []observed.Span
+				if list, err = held(); err == nil {
+					v, ok, err = observed.TWAOfContext(r.ctx, list)
+				}
 			} else {
 				var h observed.HeldSum
 				for _, x := range ev.held {
@@ -1727,12 +1838,21 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 			}
 			float(red, v, ok, r.u.value)
 		case substrate.ReducerDurationIn:
-			d := observed.DurationInOf(r.spansOf(ev), red.Between[0], red.Between[1])
+			var list []observed.Span
+			var d time.Duration
+			if list, err = held(); err == nil {
+				d, err = observed.DurationInOfContext(r.ctx, list, red.Between[0], red.Between[1])
+			}
 			out = append(out, r.duration(red, d.Milliseconds(), ""))
 		case substrate.ReducerTimeInState:
 			per := map[string]int64{}
 			if ev.raw {
-				for c, d := range observed.TimeInStateOf(r.spansOf(ev)) {
+				var list []observed.Span
+				var states map[string]time.Duration
+				if list, err = held(); err == nil {
+					states, err = observed.TimeInStateOfContext(r.ctx, list)
+				}
+				for c, d := range states {
 					per[c] = d.Milliseconds()
 				}
 			} else {
@@ -1771,6 +1891,9 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 			f, _ := ev.steps.inc.Float64()
 			float(red, f/(float64(ev.steps.covered)/1000), true, r.u.value+"/s")
 		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
@@ -1779,9 +1902,12 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 // unit. A counter's members keep their stored digits, because its steps are
 // taken on them (convertPoint), so they are converted here, each from its
 // own unit, as a rollup row's extremes are (convertStats).
-func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) []observed.Point {
+func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) ([]observed.Point, error) {
 	var list []observed.Point
 	for _, m := range ev.members {
+		if err := r.canceled(); err != nil {
+			return nil, err
+		}
 		if stat != "" && m.stat != stat {
 			continue
 		}
@@ -1798,15 +1924,19 @@ func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) []observed.Point {
 		}
 		list = append(list, p)
 	}
-	return list
+	return list, nil
 }
 
-func (r *aggRun) spansOf(ev *aggEvidence) []observed.Span {
+// spansOf is a row's held spans, copied as the reducers over spans take them.
+func (r *aggRun) spansOf(ev *aggEvidence) ([]observed.Span, error) {
 	out := make([]observed.Span, len(ev.spans))
 	for i, s := range ev.spans {
+		if err := r.canceled(); err != nil {
+			return nil, err
+		}
 		out[i] = s.Span
 	}
-	return out
+	return out, nil
 }
 
 // value writes a float answer, or null where the reducer had none.

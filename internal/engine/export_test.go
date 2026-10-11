@@ -629,6 +629,14 @@ func (a AggregateTrace) MergedRows() int64 { return a.t.mergedRows }
 // its plan has read every row and point it reduces, before the reduction.
 func (a AggregateTrace) AfterPlan(hook func()) { a.t.afterPlan = hook }
 
+// BeforeReducer sets a hook each metric read under the trace's context runs
+// as each reducer of a row begins, after the read's last check of its context
+// before it.
+func (a AggregateTrace) BeforeReducer(hook func()) { a.t.beforeReducer = hook }
+
+// Rows is the rows the reads assembled, every reducer answered.
+func (a AggregateTrace) Rows() int64 { return a.t.rows }
+
 // AggregateTraced counts what each aggregate read under the context takes.
 func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
 	t := &aggTrace{}

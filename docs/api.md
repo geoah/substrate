@@ -1358,11 +1358,16 @@ evaluated, before a row is made.
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
-30 seconds where the caller set none or a later one. The reduction after the
-statements stops when the caller does: it checks the request's context every
-thousand points, spans, rows, quarter hours or filled buckets, before each
-row's reducers and before each row a rolling window is computed for, and
-answers the cancellation.
+30 seconds where the caller set none or a later one. The work after the
+statements has no timeout of its own: it checks the request's context and
+answers the cancellation at the first check after the caller stops. It
+checks every thousand points, spans, rows, quarter hours, cover intervals or
+filled buckets it copies, walks or reduces, inside each reducer and the
+`priority` resolution too, between a sort's runs of a thousand elements, and
+before each row a rolling window is computed for. One of those steps can
+still take more than constant work before the next check: a point is placed
+in every records-mode window that holds it, and the points of a bucket end
+that cuts a rollup row are merged as one row.
 
 ### The refusals
 
