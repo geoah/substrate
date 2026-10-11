@@ -1036,6 +1036,11 @@ func (s *readState) serve(ctx context.Context, call hostCall) map[string]any {
 }
 
 func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
+	// The unit table answers from the engine's own code and reads nothing
+	// from the repository, so it is neither gated nor charged (units.go).
+	if out, handled, err := serveUnits(call); handled {
+		return out, err
+	}
 	switch call.Host {
 	case "get":
 		var in struct {

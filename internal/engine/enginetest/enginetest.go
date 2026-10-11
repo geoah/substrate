@@ -103,8 +103,32 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 			_, err := ds.KindByRef(ctx, kind)
 			return err == nil
 		}
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.BundleActor(SampleAuthority, name), WithoutAbsentMappings(docs, held)); err != nil {
+		// A sample's DATA records (the health metric catalogue) are put after
+		// its declarations land, as the catalog's import does; the batch apply
+		// takes declarations alone.
+		var declarations, data []map[string]any
+		for _, d := range docs {
+			kind, _ := d["kind"].(string)
+			if vocabulary.KindPackage(kind) == vocabulary.PackageCore &&
+				vocabulary.VocabularyDocumentKind(vocabulary.KindName(kind)) {
+				declarations = append(declarations, d)
+			} else {
+				data = append(data, d)
+			}
+		}
+		actor := substrate.BundleActor(SampleAuthority, name)
+		if _, err := ds.ApplyVocabularyDocuments(ctx, actor, WithoutAbsentMappings(declarations, held)); err != nil {
 			return fmt.Errorf("enginetest: import %s: %w", name, err)
+		}
+		for _, d := range data {
+			kind, _ := d["kind"].(string)
+			meta, _ := d["metadata"].(map[string]any)
+			id, _ := meta["id"].(string)
+			body, _ := d["data"].(map[string]any)
+			props, _ := body["properties"].(map[string]any)
+			if _, err := ds.Put(ctx, actor, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+				return fmt.Errorf("enginetest: import %s: put %s/%s: %w", name, kind, id, err)
+			}
 		}
 		return nil
 	}

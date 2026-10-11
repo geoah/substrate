@@ -146,7 +146,8 @@ Response:
   "exact": true,
   "rows": [
     {"start": "2026-04-06T00:00:00+03:00", "end": "2026-04-13T00:00:00+03:00",
-     "group": {"source": "garmin-forerunner-265"},
+     "form": "gauge",
+     "group": {"source": "ada.example.com/observations/source/garmin-forerunner-265"},
      "record": {"ref": "ada.example.com/health/workout/garmin/x/123", "version": 3},
      "from": "raw", "sources": ["garmin-forerunner-265"], "coverage": "P6DT22H10M",
      "values": [{"reducer": {"durationIn": [95, 114]}, "value": "612.4", "unit": "min"},
@@ -160,9 +161,22 @@ Response:
 
 - `values[].value` is a decimal string, or `null` when the reducer has no
   answer for the row; `values[].unit` is absent for `count`.
+- `form` on every row is the form of the points that fed it (`gauge`,
+  `amount`, `counter` or `summary`); a row never mixes forms.
+- `values[].code` carries the code for `first` and `last` over coded
+  values, with `value` absent; a numeric reducer over a coded stream is a
+  `422` naming the form.
 - `group` is present only with `groupBy`; its keys are the `groupBy` words,
-  its values record ids for `source`, `about` and `metric`, the kind
-  reference for `kind`, the code for `code`.
+  its values record paths (`<kind>/<id>`) for `source`, `about` and
+  `metric`, the kind reference for `kind`, the code for `code`.
+- The latest read (no `bucket`, `groupBy` on stream keys, the one reducer
+  `last`) returns one row per stream whose `start` is the newest point's
+  `ts`, whose `end` is its `ts_end` (equal to `start` for an instant), and
+  whose `count` is the stream's point count.
+- `{"timeInState": []}` and the bare word `timeInState` mean every code the
+  stream holds, one value per code.
+- Coded gauges admit `count`, `first`, `last` and `timeInState`; coded
+  amounts admit `sum`, `count`, `min` and `max`, grouped by `code`.
 - `record` is present only in the `records` time mode.
 - `unavailable: true` marks a row whose range has expired index points and a
   reducer that needs them; its `values` are `null`.

@@ -25,6 +25,7 @@ import {
 } from "@/components/data-table/data-table-tree"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { MoneyValue } from "@/components/identity/money-value"
+import { QuantityValue } from "@/components/identity/quantity-value"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
@@ -161,6 +162,7 @@ const WIDTHS: Record<string, number> = {
   float: 100,
   decimal: 100,
   money: 120,
+  quantity: 130,
   email: 240,
   url: 220,
   phone: 170,
@@ -327,6 +329,13 @@ function propertyCell(
     return (
       <FirstOf count={values.length}>
         <MoneyValue value={first} className="truncate" />
+      </FirstOf>
+    )
+  }
+  if (prop.kind === "quantity" && !prop.keyed) {
+    return (
+      <FirstOf count={values.length}>
+        <QuantityValue value={first} className="truncate" />
       </FirstOf>
     )
   }
@@ -565,7 +574,8 @@ export function buildColumns(
     prop: DeclaredProperty
   ): DataTableColumn<SubstrateRecord> => {
     const numeric =
-      NUMERIC.has(prop.kind) || (prop.kind === "money" && !prop.keyed)
+      NUMERIC.has(prop.kind) ||
+      ((prop.kind === "money" || prop.kind === "quantity") && !prop.keyed)
     return {
       id: propertyColumnId(prop.name),
       accessorFn: (e) => e.properties[prop.name],

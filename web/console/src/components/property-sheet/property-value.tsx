@@ -12,6 +12,7 @@ import { repeatedLayout } from "./sheet-model"
 import { EmptyValue } from "@/components/identity/empty-value"
 import { EnumTag } from "@/components/identity/enum-tag"
 import { MoneyValue } from "@/components/identity/money-value"
+import { QuantityValue } from "@/components/identity/quantity-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
@@ -108,6 +109,7 @@ function ScalarValue({
     return <ObjectBlock spec={spec} value={value} dense={dense} />
   }
   if (spec.kind === "money") return <MoneyValue value={value} />
+  if (spec.kind === "quantity") return <QuantityValue value={value} />
   if (typeof value === "object" && value !== null) {
     return <JsonBlock value={value} />
   }
