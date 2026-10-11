@@ -397,3 +397,48 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 		t.Errorf("the padel zones = %v", late["zoneDurations"])
 	}
 }
+
+// TestHealthWhoopKeepsAnAccountIdWithSlashes: a record id may hold slashes,
+// and the adapter reads an account reference whole. The thirty days synced
+// under the account `team/watch` land under that account's ids and source,
+// never under its last segment, `watch`, which another account could share.
+func TestHealthWhoopKeepsAnAccountIdWithSlashes(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	const aid = "team/watch"
+	mustPut(t, ds, substrate.PutInput{
+		Kind: whoopAccountType, ID: aid,
+		Properties: syncProps(map[string]any{"backfillDepth": "all"},
+			"enabledProfile", "enabledCycles", "enabledRecovery", "enabledSleep", "enabledWorkouts"),
+	})
+	cfg := whoopConfig(fake, whoopProps(nil))
+	cfg["accounts"].([]any)[0].(map[string]any)["id"] = aid
+	s := newStepper(t, ds, whoopSyncFn, cfg)
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountType, "id": aid}})
+	s.drainApplying(nil)
+	healthDrain(t, ds)
+
+	base := "whoop/" + aid + "/"
+	recovery := healthProps(t, ds, healthObservation, base+whoopExampleCycle+"/recovery")
+	if storedRefPath(recovery["source"]) != healthSource+"/whoop/"+aid {
+		t.Errorf("the recovery's source is %v, want whoop/%s", recovery["source"], aid)
+	}
+	src := healthProps(t, ds, healthSource, "whoop/"+aid)
+	if storedRefPath(src["account"]) != whoopAccountType+"/"+aid {
+		t.Errorf("the source's account is %v, want %s", src["account"], aid)
+	}
+	if whoopLive(t, ds, healthSource, "whoop/watch") {
+		t.Error("a source was written for the account id's last segment")
+	}
+	n := 0
+	for _, kind := range []string{healthObservation, healthSleep, healthWorkout} {
+		for _, row := range listLive(t, ds, kind) {
+			n++
+			if !strings.HasPrefix(row.ID, base) {
+				t.Errorf("%s %s is not under %s", kind, row.ID, base)
+			}
+		}
+	}
+	if n != 457 {
+		t.Errorf("%d outputs under %s, want the 457 one account's thirty days imply", n, base)
+	}
+}
