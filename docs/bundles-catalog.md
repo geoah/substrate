@@ -1,13 +1,13 @@
 # Bundles catalog
 
-The catalog in the binary serves seventeen bundles, in the two tiers
+The catalog in the binary serves eighteen bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: seven providers and ten samples. This page covers twelve of them; the
+draws: eight providers and ten samples. This page covers thirteen of them; the
 five vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
 `scheduling`) are in [built-in kinds](builtin-kinds.md).
 
-**Seven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper and Slack.
-Each is a package its publisher owns, installed under
+**Eight providers**: Google, GitHub, Linear, WHOOP, Google Fit, Notion, Beeper
+and Slack. Each is a package its publisher owns, installed under
 `providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
 provider into the repository. Three also ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
@@ -64,6 +64,7 @@ thing, and the Records column counts them.
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
 | WHOOP         | Provider | OAuth          | 7     | 1         | 3       | 0      |
+| Google Fit    | Provider | OAuth          | 5     | 1         | 3       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
@@ -84,8 +85,8 @@ and how often, and *Create and connect* opens the provider in a new tab, where
 once you approve the account's first sync starts on its own. The current step
 is highlighted with its one action.
 
-Over the API and the CLI, Google, GitHub and WHOOP take the same four steps,
-because the host runs the flow and the bundle only declares it
+Over the API and the CLI, Google, GitHub, WHOOP and Google Fit take the same
+four steps, because the host runs the flow and the bundle only declares it
 ([bundles](bundles.md#the-oauth-facility)):
 
 1. **Register an app** with the provider and note its client id and secret.
@@ -846,6 +847,123 @@ none of version 9's derived properties: `recovery.date`, `workout.calories` and
 trait beside its own bookkeeping: `syncPaused`, `syncState`, `syncMessage`,
 `syncProgress`, `syncError`, `syncErrorAt`, `lastSyncStartedAt`,
 `lastSyncDurationMs` and `syncStreams`.
+
+## Google Fit
+
+Package `providers.substrate.reamde.dev/googlefit`. An OAuth provider that
+mirrors one Google account's fitness data from the Google Fit REST API v1 at
+`https://www.googleapis.com/fitness/v1`. Read only: nothing in this closure
+writes back to Google.
+
+**Dated caveat.** Google announced that the Fit APIs, the REST API included,
+end with 2026, and closed them to new sign-ups on 2024-05-01: a Google Cloud
+project that has not enabled the Fitness API before cannot enable it now. The
+Google Health API that replaces it is not onboarding new projects either. The
+bundle is built against Google's published reference and tested against a
+loopback fake and recordings; nothing was run against a live account.
+
+- **Kinds (5)**: `config` (the Google OAuth client), `account` (the
+  connection, its time zone and every cursor), and the mirrors `datasource`
+  (one entry of `GET users/me/dataSources`, raw or derived), `dataset` (one
+  data source over one UTC day, every page joined) and `session` (a workout,
+  a walk or a night's sleep).
+- **Functions (1)**: `googlefitsync` lists the data sources, reads every
+  derived source of each enabled data type one UTC day at a time, then walks
+  the session list.
+- **Triggers (3)**: `googlefit-on-connect` fires `googlefitsync` the first
+  time an account is connected, has a toggle on and has no `lastSyncedAt`;
+  `googlefit-on-request` fires it while `syncRequestedAt` and
+  `syncRequestedAck` disagree; `googlefit-scheduled` fires it every 15
+  minutes, and the body syncs the accounts that are due.
+- **Mappings**: none shipped.
+
+**Seven toggles, one scope each**, every scope under
+`https://www.googleapis.com/auth/`:
+
+| Toggle | Scope | Data types read |
+| --- | --- | --- |
+| `enabledActivity` | `fitness.activity.read` | `com.google.step_count.delta`, `com.google.calories.expended`, `com.google.calories.bmr`, `com.google.activity.segment`, `com.google.active_minutes`, `com.google.heart_minutes`, and the sessions |
+| `enabledBody` | `fitness.body.read` | `com.google.weight`, `com.google.height`, `com.google.body.fat.percentage` |
+| `enabledHeartRate` | `fitness.heart_rate.read` | `com.google.heart_rate.bpm` |
+| `enabledSleep` | `fitness.sleep.read` | `com.google.sleep.segment`, and the sessions |
+| `enabledOxygenSaturation` | `fitness.oxygen_saturation.read` | `com.google.oxygen_saturation` |
+| `enabledBloodPressure` | `fitness.blood_pressure.read` | `com.google.blood_pressure` |
+| `enabledBloodGlucose` | `fitness.blood_glucose.read` | `com.google.blood_glucose` |
+
+Every toggle also asks for `userinfo.email`, which is how the facility fills
+the account's `email`. Location is not requested: `fitness.location.read` also
+grants GPS samples, and Google files `com.google.distance.delta` under it, so
+the bundle reads no distance. The health scopes need Google's verification
+before a published client may ask for them. The bundle declares Google's
+RFC 7009 `revocationEndpoint`, so deleting the account revokes the grant.
+
+**Which streams are read.** Every data source whose `type` is `derived` and
+whose data type a toggle covers. Google merges each raw device stream into
+those, and each derived point names its raw writer in `originDataSourceId`,
+so reading the raw streams too would store every point twice. Every listed
+source, raw ones included, gets a `datasource` row, which is where a point's
+origin resolves to a device.
+
+**One row per data source per UTC day.** A `dataset` id is
+`<account id>/<data source id>/<YYYY-MM-DD>`, a `datasource` id is
+`<account id>/<data source id>` and a `session` id is
+`<account id>/<session id>`. The account comes first because a derived
+stream's id is the same for every Google user. Where a data source or session
+id leaves the record id alphabet (a space in a device model, the `<` in
+`resting_heart_rate<-merge_heart_rate_bpm`) that segment is
+`host.ids.external("googlefit", <account id>, <id>)`, and so is a whole id past
+128 bytes. `at` and `endsAt` are the day's bounds. The row holds every point
+that started on the day, sorted by end time: Fit answers every point that
+overlaps a range, so a sleep segment crossing midnight comes back on both
+days, and the later day's row leaves it to the earlier one. Every int64 stays
+Google's decimal string (`startTimeNanos`, `endTimeNanos`,
+`modifiedTimeMillis`). `value[]` keeps its positions; an empty `mapVal` is not
+stored, and a map entry's `value.fpVal` sits beside its `key` because a
+declaration nests four levels at most. A day with more than 20,000 points is
+skipped and counted rather than written short.
+
+**Cursors and re-reads.** `syncCursors` holds, per data type, when the last
+walk that reached today began, and the next walk starts two UTC days before
+it, so a late upload from a watch lands. A re-read day whose points changed
+is rewritten in one put, an unchanged day is a no-op, and a day that comes
+back empty deletes its row. An edit to a day older than the overlap is not
+seen. The first walk starts where `backfillDepth` says: `none` is today's UTC
+day, and `last2d`, `last30d` (the default), `last90d` and `last1y` reach that
+far back. There is no `all`, because every day is one request per data
+source. A walk the two-minute drain budget cuts off saves the day it reached
+in `syncFloors` and reports `ok (N pending)`; the 15-minute schedule treats it
+as due, so the tick rate is the backfill rate. Once nothing is left over, the
+account syncs at its `syncFrequency`: `off`, `hourly` (the default) or
+`daily`.
+
+**Sessions** come from Google's own sync token, kept in
+`syncTokens.sessions`. With no token the list answers what changed in the
+last 30 days, page by page, until a page names nothing, and that page's token
+is where the next run starts. A deeper first backfill (`last90d`, `last1y`)
+reads its window with `startTime` and `endTime` first. On the first walk a
+session that ended before the backfill floor is not written, and a session
+the list reports in `deletedSession` is deleted here.
+
+**Time zones.** Fit stores no UTC offset on any point or session. The
+account's owner-set `timezone`, an IANA name, records where the data was
+recorded; the sync never reads it, and a reader that needs local days uses
+it.
+
+**The account reports the run.** It binds core's `sync` trait
+([connections](bundles.md#connections)) like WHOOP's: `syncState`,
+`syncMessage`, `syncProgress` counted in data types plus the session list,
+and `syncError` with `syncErrorAt`. A 429 puts Google's `Retry-After` instant
+on `retryNotBefore` and reads `throttled`. A 401 fails the whole account as
+`erroring`. A 403 abandons that data type for the run, which records it in
+`syncStatus`, and a 404 on one data source drops that source for the run.
+`lastCompletedAt` is written only by a run that reached today with nothing
+left over, skipped or failed.
+
+**What it does not do.** No writeback, no distance or location, and no
+nutrition, body temperature or reproductive health. It calls neither the
+aggregate read (`POST dataset:aggregate`) nor the change feed
+(`dataPointChanges`), whose behaviour on derived streams Google does not
+document.
 
 ## Notion
 

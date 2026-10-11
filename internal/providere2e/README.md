@@ -24,8 +24,8 @@ yours and no two cases write one file), then every case starts as a parallel
 subtest and hands `runner/e2e.py` the server, the authority, the repository's
 bearer, the `substratectl` it just built and `fixtures/<provider>`. The cases
 share the server and nothing else: each mock listens on its own pinned port,
-and the dispatcher runs one pass per repository, capped at eight, so seven
-cases never queue behind each other. The server's dispatcher tick is
+and the dispatcher runs one pass per repository, capped at eight, so the
+eight cases never queue behind each other. The server's dispatcher tick is
 `SUBSTRATE_TRIGGER_INTERVAL=1s`, because every scenario stamps the account
 and then polls for the run it fired, and at the 5s default that wait was most
 of a case. The runner:
@@ -117,8 +117,8 @@ at exec rather than missing the cache, which is a much harder failure to read.
 
 ## The mock ports
 
-`e2e.json` pins one port per provider, 48111 to 48117, so the rewired function
-body is identical run to run: the engine serves the previous apply's body, and
+`e2e.json` pins one port per provider (48111 to 48117, and 48120 for
+`googlefit`), so the rewired function body is identical run to run: the engine serves the previous apply's body, and
 a moving port makes the first drain of every run call a dead mock. A case
 whose port is busy waits thirty seconds and then fails naming the port. The
 harness will not pick another port, because a second listener would serve the
@@ -133,10 +133,16 @@ where the bundles were developed and where the pulls they were cut from live.
 Re-cutting them is out of scope here: it needs the owner's real accounts, the
 pull scripts and the pseudonym map, none of which are in this repository.
 
-Each fixture set carries an `audit.py` that checks the recordings for real
-identity. Five of the seven (whoop, linear, notion, github, google) scan
-against `tools/persona.local.json` and the raw pull in the mneme tree, and
-both of those are gitignored there, so they report `no real corpus` and cannot
-run from either checkout. The two that need no corpus were run on 2026-09-22
+`fixtures/googlefit` is the exception: Google closed the Fit API to new
+projects, so its recordings were written from the documented shapes for an
+invented persona, and its `README.md` says how they replay. Its dataset
+recordings are named without the day range in the path, which the mock's
+`PATH_RELAXATIONS` drops, so one file answers every day the sync reads.
+
+The seven fixture sets from the mneme tree each carry an `audit.py` that
+checks the recordings for real identity. Five of them (whoop, linear, notion,
+github, google) scan against `tools/persona.local.json` and the raw pull in
+the mneme tree, and both of those are gitignored there, so they report `no
+real corpus` and cannot run from either checkout. The two that need no corpus were run on 2026-09-22
 and both printed `FINDINGS: 0`: beeper (0 filenames, 0 leaves, 0 map keys, 0
 prose) and slack (0 filenames, 0 leaves, 0 prose bodies).
