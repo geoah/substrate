@@ -30,7 +30,10 @@ import {
   Reading,
   ShapeWord,
 } from "@/components/observations/marks"
-import { DiscoveryError } from "@/components/observations/discovery-error"
+import {
+  DiscoveryError,
+  MetricListError,
+} from "@/components/observations/discovery-error"
 import { NoObservations } from "@/components/observations/no-observations"
 import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
@@ -279,6 +282,13 @@ export function ObservationsPage() {
           onChange={(next) => void setSearch(next || null)}
         />
       </div>
+      {obs.metricListError && (
+        <MetricListError
+          className="mt-2.5"
+          error={obs.metricListError}
+          onRetry={() => obs.discovery.refetch()}
+        />
+      )}
       {obs.discovery.isError ? (
         <DiscoveryError discovery={obs.discovery} />
       ) : (

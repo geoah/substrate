@@ -152,6 +152,22 @@ describe("the streams table", () => {
     ).toBeTruthy()
   })
 
+  it("lists the chosen metric's streams when only the list of every metric is refused", async () => {
+    // The list of every metric is the one read grouped by metric alone.
+    mount(`?metric=${encodeURIComponent(BODY_MASS)}`, KINDS, (read) =>
+      read.aggregate.groupBy?.join() === "metric"
+        ? refusal()
+        : latestAnswer(read)
+    )
+    const table = await screen.findByRole("table")
+    await waitFor(() => expect(table.textContent).toContain("Weight"))
+    expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    const note = await screen.findByRole("alert", {
+      name: "The other metrics didn’t load",
+    })
+    expect(note.textContent).toContain(PROBLEM)
+  })
+
   it("says a refused read, naming its problems, never that nothing was measured", async () => {
     mount("", KINDS, () => refusal())
     expect(await screen.findByText("The streams didn’t load")).toBeTruthy()

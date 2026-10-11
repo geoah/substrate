@@ -26,7 +26,10 @@ import { IdText } from "@/components/identity/id-text"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import { SectionHead } from "@/components/identity/section-head"
-import { DiscoveryError } from "@/components/observations/discovery-error"
+import {
+  DiscoveryError,
+  MetricListError,
+} from "@/components/observations/discovery-error"
 import {
   FacetFilters,
   type Facet,
@@ -359,6 +362,12 @@ export function ObservationsTimelinePage() {
             }}
           />
         </div>
+        {obs.metricListError && (
+          <MetricListError
+            error={obs.metricListError}
+            onRetry={() => obs.discovery.refetch()}
+          />
+        )}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <Labelled label="Bucket">
             <Segmented

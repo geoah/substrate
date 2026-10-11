@@ -256,6 +256,32 @@ describe("the timeline's requests", () => {
     expect(screen.queryByText(/Nothing has been measured/)).toBe(null)
   })
 
+  it("draws the chosen metric when only the list of every metric is refused", async () => {
+    const problem =
+      "aggregate.budget.maxGroups: the read makes 2001 groups, over 2000; narrow the filter or raise maxGroups (the cap is 2000)"
+    mount(`?metric=health/body_mass&${WINDOW}`, false, (read) =>
+      // The list of every metric is the one read grouped by metric alone.
+      read.aggregate.groupBy?.join() === "metric"
+        ? new Response(
+            JSON.stringify({
+              error: {
+                code: "validation",
+                message: "the aggregate read was refused",
+                problems: [problem],
+              },
+            }),
+            { status: 422, headers: { "Content-Type": "application/json" } }
+          )
+        : answer(read)
+    )
+    await lane("Weight")
+    expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    const note = await screen.findByRole("alert", {
+      name: "The other metrics didn’t load",
+    })
+    expect(note.textContent).toContain(problem)
+  })
+
   it("narrows discovery to the chosen metric and still offers the others", async () => {
     const server = mount(`?metric=health/body_mass&${WINDOW}`)
     await lane("Weight")

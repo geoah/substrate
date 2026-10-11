@@ -47,8 +47,9 @@ const NO_ROWS: AggregateRow[] = []
 /** How many metric records one read lists: a catalogue is a few hundred. */
 const METRIC_PAGE = 500
 
-/** Where discovery stands, across its reads: pending until every read has
- * answered, and failed with the first read's error where any failed. */
+/** Where discovery stands, across the reads the streams come from: pending
+ * until every one has answered, and failed with the first one's error. The
+ * list of every metric is one of them only where no metric is chosen. */
 export interface Discovery {
   isPending: boolean
   isFetching: boolean
@@ -73,6 +74,12 @@ export interface Observations {
    * group values carry them: what a metric picker offers, whichever
    * metrics are chosen. */
   metrics: string[]
+  /** Why the list of every metric failed, where metrics are chosen: their
+   * streams are read without it, so its failure costs a metric picker the
+   * metrics not chosen, never the chosen streams, and the picker says so.
+   * With none chosen the list is what discovery reads from, and its failure
+   * is `discovery`'s; null where it loaded. */
+  metricListError: Error | null
   streams: Stream[]
   discovery: Discovery
   /** The metric a group value names, where a record says. */
@@ -139,8 +146,9 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
     error: catalogueError,
     refetch: refetchCatalogue,
   } = catalogue
+  const metricListError = waitsForCatalogue ? null : catalogueError
   const discovery = useMemo<Discovery>(() => {
-    const error = catalogueError ?? reads.error
+    const error = (waitsForCatalogue ? catalogueError : null) ?? reads.error
     return {
       isPending:
         enabled && ((waitsForCatalogue && cataloguePending) || reads.isPending),
@@ -214,6 +222,7 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
       observedIds,
       pins,
       metrics: metricList,
+      metricListError,
       streams,
       discovery,
       metricOf,
@@ -243,6 +252,7 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
     observedIds,
     pins,
     metricList,
+    metricListError,
     streams,
     discovery,
     metrics,
