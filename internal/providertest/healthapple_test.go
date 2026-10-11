@@ -369,8 +369,9 @@ func TestHealthAppleBodyObservations(t *testing.T) {
 
 // HealthKit's own unit spellings reach the engine's table as the app sends
 // them: a weigh-in in `lb` and glucose in HealthKit's molar-mass annotated
-// mmol/L are read by the table's aliases, and a height in `ft` is a foot,
-// which the adapter maps itself because `ft` is the femtotonne in UCUM.
+// mmol/L are read by the table's aliases, and a height in `ft` is a foot and
+// a weigh-in in `st` a stone, which the adapter maps itself because UCUM's
+// `ft` is the femtotonne and its `st` the stere.
 func TestHealthAppleReadsHealthKitUnits(t *testing.T) {
 	ds := newHealthApple(t)
 	body, _ := json.Marshal(map[string]any{"data": map[string]any{"metrics": []any{
@@ -387,9 +388,18 @@ func TestHealthAppleReadsHealthKitUnits(t *testing.T) {
 	req := ahRequest(t, "delivery_3_body_measurements.json")
 	req["body"] = map[string]any{"text": string(body)}
 	deliverAt(t, ds, req, "hook-units", "2026-10-10T05:05:20Z")
+	stone, _ := json.Marshal(map[string]any{"data": map[string]any{"metrics": []any{
+		map[string]any{"name": "weight_body_mass", "units": "st", "data": []any{
+			map[string]any{"qty": 11.5, "date": "2026-09-12 07:02:41 +0300", "source": "Garmin Connect"},
+		}},
+	}}})
+	req = ahRequest(t, "delivery_3_body_measurements.json")
+	req["body"] = map[string]any{"text": string(stone)}
+	deliverAt(t, ds, req, "hook-stone", "2026-10-10T05:06:20Z")
 
 	for _, c := range []struct{ id, value, unit string }{
 		{"applehealth/iphone/garmin-connect/body_mass/2026-09-11T04:02:41Z", "72.5747792", "kg"},
+		{"applehealth/iphone/garmin-connect/body_mass/2026-09-12T04:02:41Z", "73.02837157", "kg"},
 		{"applehealth/iphone/iphone/blood_glucose/2026-09-20T05:12:00Z", "5.1", "mmol/L"},
 		{"applehealth/iphone/iphone/height/2026-09-21T05:00:00Z", "1.7526", "m"},
 	} {

@@ -14,3 +14,21 @@ licensed under the BSD 3-Clause License, reproduced in `LICENSE` beside it.
 validation and conversion cases against the substrate's unit grammar. A case
 over an atom the unit table does not carry is skipped and counted, never
 passed.
+
+# UCUM atom codes
+
+`atoms.tsv` lists every case-sensitive atom code in UCUM 2.2's
+`ucum-essence.xml` (revision date 2024-06-17), with whether UCUM marks it
+metric. It was extracted from
+https://github.com/ucum-org/ucum/blob/main/ucum-essence.xml, fetched
+2026-10-11: the `Code` attribute of every `base-unit` element (all metric) and
+of every `unit` element, with its `isMetric` attribute. The functional suite
+above names no such inventory, and it never writes `st`, the stere.
+
+Licensing: UCUM is copyright 1999-2024 Regenstrief Institute, Inc., and the
+list is used under the UCUM License, Version 1.1
+(https://unitsofmeasure.org/license), whose notice heads the file.
+
+`TestUnitAliasesSpellNoUCUMCode` (internal/vocabulary/ucumatoms_test.go)
+refuses an input alias that reads as a UCUM expression over these atoms,
+including the ones the unit table does not carry yet.

@@ -989,7 +989,6 @@
     "ppb": "[ppb]",
     "ppm": "[ppm]",
     "rpm": "{rev}/min",
-    "st": "[stone_av]",
     "var": "V.A{reactive}",
     "yd": "[yd_i]",
     "°C": "Cel",
