@@ -374,3 +374,32 @@ func TestCanonicalDecimal(t *testing.T) {
 		t.Errorf("an exponent: %v", err)
 	}
 }
+
+func TestRatDecimal(t *testing.T) {
+	for _, c := range []struct {
+		in    string
+		want  string
+		exact bool
+	}{
+		{"0", "0", true},
+		{"362/5", "72.4", true},
+		{"-1/8", "-0.125", true},
+		{"1/10000", "0.0001", true},
+		{"1200", "1200", true},
+		{"493/5", "98.6", true},
+		{"523/10800", "0.048425925925925925926", false},
+		{"1/3", "0.33333333333333333333", false},
+		{"-2/3", "-0.66666666666666666667", false},
+		{"200000000000000000000000/3", "66666666666666666667000", false},
+		{"99999999999999999999999/99999999999999999999990", "1", false},
+	} {
+		r, ok := new(big.Rat).SetString(c.in)
+		if !ok {
+			t.Fatalf("bad case %s", c.in)
+		}
+		got, exact := vocabulary.RatDecimal(r, vocabulary.ConvertedDigits)
+		if got != c.want || exact != c.exact {
+			t.Errorf("RatDecimal(%s) = %q, %v; want %q, %v", c.in, got, exact, c.want, c.exact)
+		}
+	}
+}
