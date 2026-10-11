@@ -58,6 +58,8 @@ pnpm build       # tsc -b && vite build
 | `/data/:authority/:pkg/:name`            | browse a kind's records                                                                                            |
 | `/data/:authority/:pkg/:name/new`        | create a record                                                                                                    |
 | `/data/:authority/:pkg/:name/:id`        | one record, and `/edit` beside it                                                                                  |
+| `/observations`                          | one row per stream from the aggregate latest read, over every kind binding core's `observed` trait                 |
+| `/observations/timeline`                 | the chosen metrics over a range, one aggregate read and one chart per metric, the numbers under each               |
 | `/actors/:id`                            | an actor's view                                                                                                    |
 | `/account`, `/account/tokens`            | the account, and the tokens it has minted                                                                          |
 

@@ -23,6 +23,7 @@ import { MergedSection, SourcesSection } from "@/components/record/sources"
 import { useLiveRecord } from "@/components/record/use-live-record"
 import { useRecordChanges } from "@/components/record/use-record-changes"
 import { SourceView } from "@/components/record/source-view"
+import { ObservedSection } from "@/components/observations/observed-section"
 import { SyncRail } from "@/components/sync/sync-rail"
 import { Button } from "@/components/ui/button"
 import {
@@ -44,7 +45,11 @@ import {
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
-import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
+import {
+  OBSERVED_TRAIT_IDENTITY,
+  SYNC_TRAIT_IDENTITY,
+  kindHasTrait,
+} from "@/lib/sync"
 import { recordRoute } from "@/router"
 
 const NO_KINDS: KindInfo[] = []
@@ -126,6 +131,7 @@ export function RecordDocument({
     [record, kind, readOnly]
   )
   const syncable = kindHasTrait(kind, SYNC_TRAIT_IDENTITY)
+  const observed = kindHasTrait(kind, OBSERVED_TRAIT_IDENTITY)
   const noun = lowerFirst(displayName(kind ?? record.kind))
 
   return (
@@ -166,6 +172,7 @@ export function RecordDocument({
               <SyncRail record={record} />
             </>
           )}
+          {observed && <ObservedSection record={record} kind={kind} />}
           <SectionHead
             title="Connected to"
             hint="what points here, and what this points to"

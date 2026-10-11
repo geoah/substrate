@@ -320,6 +320,47 @@ const routes = [
       return `"History", ${rows ? plural(rows, "change", "changes") : "its empty state"}`
     },
   },
+  {
+    path: "/observations",
+    async check(page) {
+      await shows(
+        page,
+        '"Observations" heading',
+        pageTitle(page, "Observations")
+      )
+      // A fresh repository binds no `observed` kind until a sample that
+      // records measurements is added, so its page says where they come from.
+      await loaded(
+        page,
+        "streams table or empty state",
+        page
+          .getByRole("columnheader", { name: "Metric", exact: true })
+          .or(page.getByText(/^Nothing here records measurements yet/)),
+        page.getByText(/^The streams didn.t load/)
+      )
+      const empty = await page
+        .getByText(/^Nothing here records measurements yet/)
+        .isVisible()
+      return `"Observations", ${empty ? "its empty state" : "its streams"}`
+    },
+  },
+  {
+    path: "/observations/timeline",
+    async check(page) {
+      await shows(page, '"Timeline" heading', pageTitle(page, "Timeline"))
+      await loaded(
+        page,
+        "a chart or empty state",
+        page
+          .locator('[data-slot="timeline-lane"]')
+          .or(page.getByText(/^Nothing here records measurements yet/))
+          .or(page.getByText(/^Nothing has been measured yet/)),
+        page.getByText(/^This read failed/)
+      )
+      const lanes = await page.locator('[data-slot="timeline-lane"]').count()
+      return `"Timeline", ${lanes ? plural(lanes, "chart", "charts") : "its empty state"}`
+    },
+  },
 ]
 
 async function render(base) {
