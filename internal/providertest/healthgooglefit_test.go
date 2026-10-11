@@ -8,6 +8,8 @@ package providertest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"math/big"
@@ -28,6 +30,14 @@ const (
 	obsHome         = "samples.substrate.reamde.dev"
 	obsMetric       = obsHome + "/observations/metric"
 	fitZone         = "Europe/Athens"
+)
+
+// The recorded devices' source slugs: make and model, then the device's uid,
+// so a second device of the same model is a second source.
+const (
+	fitWatchSlug = "google-pixel-watch-2.8d1f3c7a"
+	fitPhoneSlug = "google-pixel-8.b52e90c4"
+	fitScaleSlug = "withings-body.4a91be20"
 )
 
 // newFitHealth is a repository with the googlefit provider, the health sample
@@ -167,7 +177,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	// the hour, the engine's stats beside the points.
 	hrDay := day(time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC))
 	hour := hrDay.Add(6 * time.Hour)
-	id := "googlefit/" + googlefitAccount + "/google-pixel-watch-2/heart_rate/" + hour.Format("2006-01-02T15")
+	id := "googlefit/" + googlefitAccount + "/" + fitWatchSlug + "/heart_rate/" + hour.Format("2006-01-02T15")
 	tr := mustGet(t, ds, obsTrace, id).Properties
 	values, _ := tr["values"].([]any)
 	offsets, _ := tr["offsets"].([]any)
@@ -215,11 +225,11 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 		}
 	}
 	crossing := len(withMetric(t, ds, obsObservation, "steps"))
-	if measured+crossing != 184 || crossing != 2 || !devices["google-pixel-watch-2"] || !devices["google-pixel-8"] {
+	if measured+crossing != 184 || crossing != 2 || !devices[fitWatchSlug] || !devices[fitPhoneSlug] {
 		t.Fatalf("%d step values and %d deltas across an hour from devices %v, want the 184 deltas from the watch and the phone, 2 of them across an hour",
 			measured, crossing, sortedKeys(devices))
 	}
-	watch := mustGet(t, ds, obsSource, "googlefit/"+googlefitAccount+"/google-pixel-watch-2").Properties
+	watch := mustGet(t, ds, obsSource, "googlefit/"+googlefitAccount+"/"+fitWatchSlug).Properties
 	if watch["class"] != "watch" || watch["hardwareModel"] != "Pixel Watch 2" ||
 		storedRefPath(watch["account"]) != googlefitAccountType+"/"+googlefitAccount {
 		t.Fatalf("the watch's source = %v", watch)
@@ -232,13 +242,13 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 		t.Fatalf("%d weight observations, want the 17 recorded weigh-ins", len(weights))
 	}
 	first := mustGet(t, ds, obsObservation, fitReadingID(
-		fitDatasetRow(fitWeight, day(time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC))), "withings-body", "body_mass",
+		fitDatasetRow(fitWeight, day(time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC))), fitScaleSlug, "body_mass",
 		time.UnixMilli(1789099361000).Add(today.Sub(fitCutOn)))).Properties
 	value, _ := first["value"].(map[string]any)
 	if first["form"] != "gauge" || fmt.Sprint(value["value"]) != "72.26" || value["unit"] != "kg" {
 		t.Fatalf("the first weigh-in = %v", first)
 	}
-	if !strings.HasSuffix(storedRefPath(first["source"]), "/googlefit/"+googlefitAccount+"/withings-body") {
+	if !strings.HasSuffix(storedRefPath(first["source"]), "/googlefit/"+googlefitAccount+"/"+fitScaleSlug) {
 		t.Fatalf("the scale weigh-in's source = %v", first["source"])
 	}
 	quals, _ := first["qualifiers"].([]any)
@@ -458,7 +468,7 @@ func TestHealthGoogleFitKeepsAnAmountsEnd(t *testing.T) {
 	hour := recorded.Add(shift)
 	trace := func(h time.Time) map[string]any {
 		t.Helper()
-		id := "googlefit/" + googlefitAccount + "/google-pixel-watch-2/steps/" + h.Format("2006-01-02T15")
+		id := "googlefit/" + googlefitAccount + "/" + fitWatchSlug + "/steps/" + h.Format("2006-01-02T15")
 		return mustGet(t, ds, obsTrace, id).Properties
 	}
 	for _, c := range []struct {
@@ -538,7 +548,7 @@ func TestHealthGoogleFitKeepsTwoSourcesAmountsAcrossAnHourApart(t *testing.T) {
 	var watchValue, appValue string
 	for src, v := range bySource {
 		switch {
-		case strings.HasSuffix(src, "/google-pixel-watch-2"):
+		case strings.HasSuffix(src, "/"+fitWatchSlug):
 			watchValue = v
 		case strings.Contains(src, "pedometer"):
 			appValue = v
@@ -687,6 +697,213 @@ func TestHealthGoogleFitKeepsTwoSourcesReadingsApart(t *testing.T) {
 		map[string]string{key(cb, 0): "140.2"})
 	want("diastolic after cuff A dropped out", fitReadings(t, ds, "diastolic_blood_pressure"),
 		map[string]string{key(cb, 0): "90.2"})
+}
+
+// listSource adds one raw data source to the listing the fake serves, naming
+// the device behind it, so the next sync writes its datasource row.
+func (f *fakeFit) listSource(stream, dataType, app string, device map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	listing := maps.Clone(f.listing)
+	listing["dataSource"] = append(slices.Clone(listing["dataSource"].([]any)), map[string]any{
+		"dataStreamId": stream, "type": "raw",
+		"dataType":    map[string]any{"name": dataType},
+		"application": map[string]any{"packageName": app},
+		"device":      device,
+	})
+	f.listing = listing
+}
+
+// fitDigest is the device token the adapter derives from a uid that is not
+// id-safe, or from the whole originDataSourceId when the device names no uid:
+// the first 16 hex digits of its SHA-256.
+func fitDigest(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// TestHealthGoogleFitKeepsSameModelDevicesApart: two devices of one make and
+// model are two sources, because the source slug names the device and not
+// only its model. Two Withings Body+ scales with plain uids, two OMRON M7
+// cuffs whose uids leave the id alphabet, and two Ascensia meters listed with
+// no uid each keep their own source record and their own readings at one
+// instant; correcting one device's reading rewrites only its own, under the
+// same id, and removing it deletes only its own. Every reading id here passes
+// 128 bytes, so each is the hashed form, which stays distinct only because
+// the readable key it hashes is.
+func TestHealthGoogleFitKeepsSameModelDevicesApart(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	install(t, ds, googlefitDir, nil)
+	importVocabulary(t, ds, "healthgooglefit")
+	today := utcToday()
+	fake := newFakeFit(t, today, fitCutOn)
+	const (
+		fitGlucose = "derived:com.google.blood_glucose:com.google.android.gms:merged"
+		scaleA     = "raw:com.google.weight:com.withings.wiscale2:Withings:Body+:4a91be21:"
+		scaleB     = "raw:com.google.weight:com.withings.wiscale2:Withings:Body+:4a91be22:"
+		cuffA      = "raw:com.google.blood_pressure:jp.co.omron.healthcare:OMRON:M7:a"
+		cuffB      = "raw:com.google.blood_pressure:jp.co.omron.healthcare:OMRON:M7:b"
+		meterA     = "raw:com.google.blood_glucose:com.ascensia.contour:Ascensia:Contour Next:one"
+		meterB     = "raw:com.google.blood_glucose:com.ascensia.contour:Ascensia:Contour Next:two"
+		uidA, uidB = "HEM-7361T/SN:0001", "HEM-7361T/SN:0002"
+	)
+	scale := func(uid string) map[string]any {
+		return map[string]any{"uid": uid, "type": "scale", "manufacturer": "Withings", "model": "Body+"}
+	}
+	cuff := func(uid string) map[string]any {
+		return map[string]any{"uid": uid, "manufacturer": "OMRON", "model": "M7"}
+	}
+	meter := map[string]any{"manufacturer": "Ascensia", "model": "Contour Next"}
+	fake.listSource(scaleA, "com.google.weight", "com.withings.wiscale2", scale("4a91be21"))
+	fake.listSource(scaleB, "com.google.weight", "com.withings.wiscale2", scale("4a91be22"))
+	fake.listSource(cuffA, "com.google.blood_pressure", "jp.co.omron.healthcare", cuff(uidA))
+	fake.listSource(cuffB, "com.google.blood_pressure", "jp.co.omron.healthcare", cuff(uidB))
+	fake.listSource(meterA, "com.google.blood_glucose", "com.ascensia.contour", meter)
+	fake.listSource(meterB, "com.google.blood_glucose", "com.ascensia.contour", meter)
+
+	recorded := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+	point := func(dtype, origin string, modified time.Duration, values ...float64) any {
+		vals := []any{}
+		for _, v := range values {
+			vals = append(vals, map[string]any{"fpVal": v})
+		}
+		start := strconv.FormatInt(recorded.UnixNano(), 10)
+		return map[string]any{
+			"startTimeNanos": start, "endTimeNanos": start, "dataTypeName": dtype,
+			"originDataSourceId": origin, "value": vals,
+			"modifiedTimeMillis": strconv.FormatInt(recorded.Add(modified).UnixMilli(), 10),
+		}
+	}
+	weight := func(origin string, modified time.Duration, kg float64) any {
+		return point("com.google.weight", origin, modified, kg)
+	}
+	pressure := func(origin string, modified time.Duration, sys, dia float64) any {
+		return point("com.google.blood_pressure", origin, modified, sys, dia)
+	}
+	sugar := func(origin string, modified time.Duration, mmol float64) any {
+		return point("com.google.blood_glucose", origin, modified, mmol)
+	}
+	at := recorded.Add(today.Sub(fitCutOn))
+	day := at.Truncate(24 * time.Hour)
+	googlefitAccountWith(t, ds, "enabledBody", "enabledBloodPressure", "enabledBloodGlucose")
+	round := func(weights, pressures, glucose []any) {
+		t.Helper()
+		fake.setPoints(fitWeight, weights)
+		fake.setPoints(fitPressure, pressures)
+		fake.setPoints(fitGlucose, glucose)
+		googlefitSync(t, ds, fake)
+		for _, stream := range []string{fitWeight, fitPressure, fitGlucose} {
+			observe(t, ds, googlefitDatasetType, fitDatasetRow(stream, day))
+		}
+	}
+	a, b := "withings-body.4a91be21", "withings-body.4a91be22"
+	ca, cb := "omron-m7."+fitDigest(uidA), "omron-m7."+fitDigest(uidB)
+	ma, mb := "ascensia-contour-next."+fitDigest(meterA), "ascensia-contour-next."+fitDigest(meterB)
+	stamp := at.Format(time.RFC3339Nano)
+	key := func(slug string) string { return slug + " " + stamp }
+	want := func(name string, got map[string]*substrate.Record, expect map[string]string) {
+		t.Helper()
+		if !maps.Equal(fitValues(got), expect) {
+			t.Fatalf("%s: %v, want %v", name, fitValues(got), expect)
+		}
+	}
+	// hashed holds a reading's stored id to the hashed form of its readable
+	// key: the dataset row, the device's slug, the metric and the start.
+	hashed := func(rows map[string]*substrate.Record, stream, slug, metric string) {
+		t.Helper()
+		readable := fmt.Sprintf("googlefit/%s/%s/%s/%d", fitDatasetRow(stream, day), slug, metric, at.UnixNano())
+		if len(readable) <= 128 {
+			t.Fatalf("%s is %d bytes, want a key past 128 that the adapter hashes", readable, len(readable))
+		}
+		if got, wantID := rows[key(slug)].ID, fitReadingID(fitDatasetRow(stream, day), slug, metric, at); got != wantID {
+			t.Fatalf("%s's %s reading is %s, want the hashed %s", slug, metric, got, wantID)
+		}
+	}
+
+	round([]any{weight(scaleA, time.Hour, 70.5), weight(scaleB, time.Hour, 80.5)},
+		[]any{pressure(cuffA, time.Hour, 120.5, 80.5), pressure(cuffB, time.Hour, 140.5, 90.5)},
+		[]any{sugar(meterA, time.Hour, 5.4), sugar(meterB, time.Hour, 6.1)})
+	weights := fitReadings(t, ds, "body_mass")
+	want("weigh-ins", weights, map[string]string{key(a): "70.5", key(b): "80.5"})
+	systolic := fitReadings(t, ds, "systolic_blood_pressure")
+	want("systolic", systolic, map[string]string{key(ca): "120.5", key(cb): "140.5"})
+	want("diastolic", fitReadings(t, ds, "diastolic_blood_pressure"), map[string]string{key(ca): "80.5", key(cb): "90.5"})
+	glucose := fitReadings(t, ds, "blood_glucose")
+	want("glucose", glucose, map[string]string{key(ma): "5.4", key(mb): "6.1"})
+	for _, slug := range []string{a, b} {
+		hashed(weights, fitWeight, slug, "body_mass")
+	}
+	for _, slug := range []string{ca, cb} {
+		hashed(systolic, fitPressure, slug, "systolic_blood_pressure")
+	}
+	for _, slug := range []string{ma, mb} {
+		hashed(glucose, fitGlucose, slug, "blood_glucose")
+	}
+	// Each device is its own source record, named for its make and model.
+	for _, c := range []struct{ slug, name string }{
+		{a, "Withings Body+"},
+		{b, "Withings Body+"},
+		{ca, "OMRON M7"},
+		{cb, "OMRON M7"},
+		{ma, "Ascensia Contour Next"},
+		{mb, "Ascensia Contour Next"},
+	} {
+		src := mustGet(t, ds, obsSource, "googlefit/"+googlefitAccount+"/"+c.slug).Properties
+		if src["name"] != c.name {
+			t.Fatalf("source %s is named %v, want %s", c.slug, src["name"], c.name)
+		}
+	}
+	if fitLive(t, ds, obsSource, "googlefit/"+googlefitAccount+"/withings-body") {
+		t.Fatalf("a source keyed by the model alone was written")
+	}
+
+	type device struct {
+		metric string
+		was    map[string]*substrate.Record
+		a, b   string
+		expect map[string]string
+	}
+	// Scale A, cuff A and meter A correct their readings; the B devices'
+	// stay where they were, at the same version.
+	round([]any{weight(scaleA, 2*time.Hour, 71.5), weight(scaleB, time.Hour, 80.5)},
+		[]any{pressure(cuffA, 2*time.Hour, 125.5, 85.5), pressure(cuffB, time.Hour, 140.5, 90.5)},
+		[]any{sugar(meterA, 2*time.Hour, 5.9), sugar(meterB, time.Hour, 6.1)})
+	for _, c := range []device{
+		{"body_mass", weights, a, b, map[string]string{key(a): "71.5", key(b): "80.5"}},
+		{"systolic_blood_pressure", systolic, ca, cb, map[string]string{key(ca): "125.5", key(cb): "140.5"}},
+		{"blood_glucose", glucose, ma, mb, map[string]string{key(ma): "5.9", key(mb): "6.1"}},
+	} {
+		got := fitReadings(t, ds, c.metric)
+		want("corrected "+c.metric, got, c.expect)
+		if got[key(c.a)].ID != c.was[key(c.a)].ID {
+			t.Fatalf("the corrected %s reading moved from %s to %s", c.metric, c.was[key(c.a)].ID, got[key(c.a)].ID)
+		}
+		if g, w := got[key(c.b)], c.was[key(c.b)]; g.ID != w.ID || g.Version != w.Version {
+			t.Fatalf("%s's %s reading went from %s at %d to %s at %d", c.b, c.metric, w.ID, w.Version, g.ID, g.Version)
+		}
+	}
+
+	// The A devices drop out; the B devices' readings survive under their ids.
+	round([]any{weight(scaleB, time.Hour, 80.5)}, []any{pressure(cuffB, time.Hour, 140.5, 90.5)},
+		[]any{sugar(meterB, time.Hour, 6.1)})
+	for _, c := range []device{
+		{"body_mass", weights, a, b, map[string]string{key(b): "80.5"}},
+		{"systolic_blood_pressure", systolic, ca, cb, map[string]string{key(cb): "140.5"}},
+		{"blood_glucose", glucose, ma, mb, map[string]string{key(mb): "6.1"}},
+	} {
+		got := fitReadings(t, ds, c.metric)
+		want(c.metric+" after the A device dropped out", got, c.expect)
+		if got[key(c.b)].ID != c.was[key(c.b)].ID {
+			t.Fatalf("%s's %s reading moved from %s to %s", c.b, c.metric, c.was[key(c.b)].ID, got[key(c.b)].ID)
+		}
+		if fitLive(t, ds, obsObservation, c.was[key(c.a)].ID) {
+			t.Fatalf("%s outlived %s's reading", c.was[key(c.a)].ID, c.a)
+		}
+	}
+	want("diastolic after cuff A dropped out", fitReadings(t, ds, "diastolic_blood_pressure"),
+		map[string]string{key(cb): "90.5"})
 }
 
 // parseISODuration reads the PT#H#M#S durations the adapter writes.

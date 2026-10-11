@@ -71,9 +71,15 @@ counted; out-of-bed time is left out of `timeInBed`.
   128 bytes is hashed through `host.ids.external`.
 - A source is the device behind a point's `originDataSourceId`, looked up in
   the account's `datasource` rows (by id, else by a listed device's `uid`
-  inside the id): `googlefit/<account id>/<manufacturer-model>`, with `class`
-  `watch` or `scale` where the device type maps. A hand entry is the
-  `manual` source; a session's source is its app (`com-strava`).
+  inside the id): `googlefit/<account id>/<manufacturer-model>.<device>`,
+  named for its manufacturer and model, with `class` `watch` or `scale`
+  where the device type maps. `<device>` is the device's `uid` when it is 1
+  to 32 lowercase letters and digits, else the first 16 hex digits of the
+  uid's SHA-256, else, for a device listed with no uid, of the full
+  `originDataSourceId`'s. Two devices of one model are therefore two sources,
+  and their readings at one instant two observations, `withings-body.4a91be20`
+  beside `withings-body.4a91be21`. A hand entry is the `manual` source; a
+  session's source is its app (`com-strava`).
 - Fit stores no UTC offset. Each value's offset comes from the account's
   `timezone`, read at write time, or UTC when the account names none. An
   observation records which in a qualifier, `{system: utcOffsetRule, code:

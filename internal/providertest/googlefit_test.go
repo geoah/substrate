@@ -236,7 +236,10 @@ func (f *fakeFit) start(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /fitness/v1/users/me/dataSources", func(w http.ResponseWriter, r *http.Request) {
 		if gate(w, r) {
-			writeJSON(w, f.listing)
+			f.mu.Lock()
+			listing := f.listing
+			f.mu.Unlock()
+			writeJSON(w, listing)
 		}
 	})
 	mux.HandleFunc("GET /fitness/v1/users/me/dataSources/{id}/datasets/{window}",
