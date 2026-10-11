@@ -274,7 +274,7 @@ func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 	t.Helper()
 	rows, err := db.Query(`
 		SELECT metric, kind, source, about, channel, form, ts, ts_end, value, value_exact::text, value_base, code,
-		       unit, delta, utc_offset_min, bounded, hold_ms, reset_rule, reset_at, wrap_at::text, circular
+		       unit, delta, utc_offset_min, bounded, hold_ms, reset_rule, reset_at, wrap_at::text, circular, record_id, ord
 		FROM observed_points WHERE form <> 'summary'
 		ORDER BY metric, kind, source, about, channel, form, ts, record_id, ord`)
 	if err != nil {
@@ -292,7 +292,7 @@ func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 		p := &sp.point
 		if err := rows.Scan(&sp.hold[0], &sp.hold[1], &sp.hold[2], &sp.hold[3], &sp.hold[4], &sp.hold[5],
 			&p.At, &p.End, &value, &exact, &base, &sp.code, &sp.unit, &sp.delta, &sp.offset, &p.Bounded,
-			&hold, &resetRule, &resetAt, &wrapAt, &circular); err != nil {
+			&hold, &resetRule, &resetAt, &wrapAt, &circular, &p.RecordID, &p.Ord); err != nil {
 			t.Fatal(err)
 		}
 		p.Value, p.HasValue, p.Exact, p.Code, p.Unit = value.Float64, value.Valid, exact.String, sp.code, sp.unit
@@ -327,6 +327,8 @@ type storedRollup struct {
 	firstTS, lastTS, spanEnd               sql.NullTime
 	firstValue, lastValue, increase        sql.NullString
 	held, lastHold, resets                 sql.NullInt64
+	firstRecord, lastRecord                sql.NullString
+	firstOrd, lastOrd                      sql.NullInt64
 }
 
 func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
@@ -335,7 +337,7 @@ func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 		SELECT metric, kind, source, about, channel, form, code, unit, delta, utc_offset_min, bucket15,
 		       n, bounded, sum, min, max, mean, m2, first_ts, first_value::text, last_ts, last_value::text,
 		       covered_ms, held_ms, twa_sum, last_hold_ms, max_gap_ms, start_gap_ms, increase::text, resets,
-		       sin_sum, cos_sum, span_end
+		       sin_sum, cos_sum, span_end, first_record_id, first_ord, last_record_id, last_ord
 		FROM observed_rollups`)
 	if err != nil {
 		t.Fatalf("read the rollups: %v", err)
@@ -352,7 +354,7 @@ func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 		if err := rows.Scan(&k[0], &k[1], &k[2], &k[3], &k[4], &k[5], &code, &unit, &delta, &offset, &bucket,
 			&s.n, &s.bounded, &s.sum, &s.min, &s.max, &s.mean, &s.m2, &s.firstTS, &s.firstValue, &s.lastTS, &s.lastValue,
 			&s.covered, &s.held, &s.twa, &s.lastHold, &s.maxGap, &s.startGap, &s.increase, &s.resets,
-			&s.sin, &s.cos, &s.spanEnd); err != nil {
+			&s.sin, &s.cos, &s.spanEnd, &s.firstRecord, &s.firstOrd, &s.lastRecord, &s.lastOrd); err != nil {
 			t.Fatal(err)
 		}
 		out[rollupKey(k, fmt.Sprintf("%s|%s|%v|%d", code, unit, delta, offset), bucket)] = s
@@ -475,20 +477,22 @@ func compareRollup(t *testing.T, key, form string, g storedRollup, w *observed.S
 	} else if g.held.Valid || g.twa.Valid || g.lastHold.Valid {
 		bad("held_ms, twa_sum, last_hold_ms", []any{g.held, g.twa, g.lastHold}, "null")
 	}
-	point := func(col string, ts sql.NullTime, digits sql.NullString, p *observed.Point) {
+	point := func(col string, ts sql.NullTime, digits, record sql.NullString, ord sql.NullInt64, p *observed.Point) {
 		switch {
 		case p == nil:
-			if ts.Valid || digits.Valid {
+			if ts.Valid || digits.Valid || record.Valid || ord.Valid {
 				bad(col, ts, "null")
 			}
 		case !ts.Valid || !ts.Time.Equal(p.At):
 			bad(col+"_ts", ts, p.At)
 		case p.HasValue != digits.Valid || (p.HasValue && !sameDecimal(digits.String, p.Exact)):
 			bad(col+"_value", digits, p.Exact)
+		case record.String != p.RecordID || ord.Int64 != p.Ord:
+			bad(col+"_record_id, "+col+"_ord", []any{record, ord}, []any{p.RecordID, p.Ord})
 		}
 	}
-	point("first", g.firstTS, g.firstValue, w.First)
-	point("last", g.lastTS, g.lastValue, w.Last)
+	point("first", g.firstTS, g.firstValue, g.firstRecord, g.firstOrd, w.First)
+	point("last", g.lastTS, g.lastValue, g.lastRecord, g.lastOrd, w.Last)
 	if form == vocabulary.FormCounter && w.Increase != nil {
 		if !g.increase.Valid || !sameDecimal(g.increase.String, w.Increase.RatString()) || g.resets.Int64 != w.Resets {
 			bad("increase, resets", []any{g.increase, g.resets}, []any{w.Increase.RatString(), w.Resets})

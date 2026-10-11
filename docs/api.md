@@ -1135,7 +1135,7 @@ read takes the whole [filter grammar](#the-filter-grammar).
 | --- | --- | --- |
 | `{"every": "PT5M", "origin"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
 | `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
-| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the bucket's first point, `end` at its last point's |
+| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the bucket's first point, `end` at its last point's (points at one instant ordered by record id, then index) |
 | `{"records": {"filter", "around"?, "maxRecords"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations) | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,

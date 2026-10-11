@@ -71,6 +71,25 @@ type Point struct {
 	// Group names the rollup row the point belongs to. The index groups by
 	// code, unit, delta and offset; this package treats it as opaque.
 	Group string
+	// RecordID and Ord place the point among points at one instant: its
+	// record's id and its index in the record, the order the index reads a
+	// stream in (Before).
+	RecordID string
+	Ord      int64
+}
+
+// Before orders two points as every reader of the index does: by instant,
+// then by record id, then by index in the record. A rollup row's first and
+// last point are the first and last of its group in this order, so a reader
+// merging rows picks the same first and last as one reading the raw points.
+func Before(a, b Point) bool {
+	if !a.At.Equal(b.At) {
+		return a.At.Before(b.At)
+	}
+	if a.RecordID != b.RecordID {
+		return a.RecordID < b.RecordID
+	}
+	return a.Ord < b.Ord
 }
 
 // Interval is the span during which one point's value holds.

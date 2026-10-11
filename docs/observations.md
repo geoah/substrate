@@ -402,7 +402,7 @@ and `channel` of a value. A reference column holds the target's record path
 | Table | One row per | Holds |
 | --- | --- | --- |
 | `observed_points` | value: one per observation, one per point of a trace | the stream, `form`, `ts` and `ts_end`, `utc_offset_min`, `unit`, `delta`, `value` (float8), `value_exact` (the stored digits), `value_base` (in the measure's base unit), `code`, `statistic`, `bounded`, `quality`, and the parameters a hold and a counter step read: `hold_ms`, `reset_rule`, `reset_at`, `wrap_at`, `circular`, `revision` |
-| `observed_rollups` | stream, form, 15-minute bucket and group | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end` |
+| `observed_rollups` | stream, form, 15-minute bucket and group | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord` |
 | `observed_latest` | stream | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `record_id`, `revision`, and `points`, the stream's count of available points |
 
 The rules every column follows are written once, as Go, in
@@ -687,7 +687,10 @@ reason:
   Decision 0157 states this rule and its cost.
 - A rollup row gains `start_gap_ms`, where the bucket's first point lies, and
   `bounded`, its count of bounded points, so the read can carry a hold across
-  rows and report bounded values without the raw points.
+  rows and report bounded values without the raw points. Migration 0013 adds
+  `span_end` and the record id and index of the first and last point, so a
+  read served from rows joins amount coverage and breaks ties at one instant
+  as the raw points do.
 - `observed_points` carries each point's hold, counter contract, `delta`,
   `circular` and `revision`, and its index `ord` in its record; the plan
   named neither, and the rollups are computed from the points alone.

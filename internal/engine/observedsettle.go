@@ -384,6 +384,7 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 			b = newStreamedBucket(h.form, start.UTC(), prevs[ms])
 			buckets[ms] = b
 		}
+		sp.point.RecordID, sp.point.Ord = key.recordID, key.ord
 		b.add(sp)
 		key.ts = sp.point.At
 		read[ms]++
@@ -438,6 +439,7 @@ func (t *txn) readPointsAfter(h obsHold, after *pointKey, before *time.Time, pag
 			return 0, err
 		}
 		key.ts = sp.point.At
+		sp.point.RecordID, sp.point.Ord = key.recordID, key.ord
 		add(sp)
 		*after = key
 		n++
@@ -483,6 +485,8 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		firstValue, lastValue, increase = make([]*string, n), make([]*string, n), make([]*string, n)
 		held, lastHold, resets          = make([]*int64, n), make([]*int64, n), make([]*int64, n)
 		spanEnd                         = make([]*time.Time, n)
+		firstRecord, lastRecord         = make([]*string, n), make([]*string, n)
+		firstOrd, lastOrd               = make([]*int64, n), make([]*int64, n)
 	)
 	for i, r := range rows {
 		s := r.stats
@@ -498,6 +502,8 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		if s.First != nil {
 			firstTS[i], firstValue[i] = ptrTo(s.First.At), digitsOf(s.First)
 			lastTS[i], lastValue[i] = ptrTo(s.Last.At), digitsOf(s.Last)
+			firstRecord[i], firstOrd[i] = ptrTo(s.First.RecordID), ptrTo(s.First.Ord)
+			lastRecord[i], lastOrd[i] = ptrTo(s.Last.RecordID), ptrTo(s.Last.Ord)
 		}
 		if h.form == vocabulary.FormGauge {
 			held[i], lastHold[i] = ptrTo(s.HeldMs), s.LastHoldMs
@@ -517,23 +523,28 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		INSERT INTO observed_rollups (metric, kind, source, about, channel, form,
 			code, unit, delta, utc_offset_min, bucket15, n, bounded, sum, min, max, mean, m2,
 			first_ts, first_value, last_ts, last_value, covered_ms, held_ms, twa_sum, last_hold_ms,
-			max_gap_ms, start_gap_ms, increase, resets, sin_sum, cos_sum, span_end)
+			max_gap_ms, start_gap_ms, increase, resets, sin_sum, cos_sum, span_end,
+			first_record_id, first_ord, last_record_id, last_ord)
 		SELECT $1, $2, $3, $4, $5, $6,
 			u.code, u.unit, u.delta, u.off, u.bucket, u.n, u.bounded, u.sum, u.min, u.max, u.mean, u.m2,
 			u.first_ts, u.first_value::numeric, u.last_ts, u.last_value::numeric, u.covered, u.held, u.twa, u.last_hold,
-			u.max_gap, u.start_gap, u.increase::numeric, u.resets, u.sin, u.cos, u.span_end
+			u.max_gap, u.start_gap, u.increase::numeric, u.resets, u.sin, u.cos, u.span_end,
+			u.first_record, u.first_ord, u.last_record, u.last_ord
 		FROM unnest($7::text[], $8::text[], $9::boolean[], $10::int[], $11::timestamptz[], $12::bigint[], $13::bigint[],
 		            $14::float8[], $15::float8[], $16::float8[], $17::float8[], $18::float8[],
 		            $19::timestamptz[], $20::text[], $21::timestamptz[], $22::text[], $23::bigint[], $24::bigint[],
 		            $25::float8[], $26::bigint[], $27::bigint[], $28::bigint[], $29::text[], $30::int[],
-		            $31::float8[], $32::float8[], $33::timestamptz[])
+		            $31::float8[], $32::float8[], $33::timestamptz[],
+		            $34::text[], $35::int[], $36::text[], $37::int[])
 		     AS u(code, unit, delta, off, bucket, n, bounded, sum, min, max, mean, m2,
 		          first_ts, first_value, last_ts, last_value, covered, held, twa, last_hold,
-		          max_gap, start_gap, increase, resets, sin, cos, span_end)`,
+		          max_gap, start_gap, increase, resets, sin, cos, span_end,
+		          first_record, first_ord, last_record, last_ord)`,
 		h.metric, h.kind, h.source, h.about, h.channel, h.form,
 		code, unit, delta, offset, bucket, count, bounded, sum, minV, maxV, mean, m2,
 		firstTS, firstValue, lastTS, lastValue, covered, held, twa, lastHold,
-		maxGap, startGap, increase, resets, sin, cos, spanEnd)
+		maxGap, startGap, increase, resets, sin, cos, spanEnd,
+		firstRecord, firstOrd, lastRecord, lastOrd)
 	return err
 }
 

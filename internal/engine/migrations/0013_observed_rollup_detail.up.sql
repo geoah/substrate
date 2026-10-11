@@ -8,6 +8,17 @@
 -- extents do not overlap, and takes the union from the raw spans where they
 -- do. Null for the other forms.
 --
--- A row computed before this migration has the column null, which a read
--- treats as unknown, and a rebuild fills.
+-- `first_record_id`, `first_ord`, `last_record_id` and `last_ord` are the
+-- record id and index of the row's first and last point. Points at one
+-- instant are ordered by record id and index, so two rows whose first (or
+-- last) points share an instant are ordered as the raw points are, and a
+-- recorded-local day's first and last offsets come from real points.
+--
+-- A row computed before this migration has the columns null, which a read
+-- treats as unknown (span_end) or as sorting first (the record keys), and a
+-- rebuild fills.
 ALTER TABLE observed_rollups ADD COLUMN IF NOT EXISTS span_end timestamptz;
+ALTER TABLE observed_rollups ADD COLUMN IF NOT EXISTS first_record_id text;
+ALTER TABLE observed_rollups ADD COLUMN IF NOT EXISTS first_ord integer;
+ALTER TABLE observed_rollups ADD COLUMN IF NOT EXISTS last_record_id text;
+ALTER TABLE observed_rollups ADD COLUMN IF NOT EXISTS last_ord integer;

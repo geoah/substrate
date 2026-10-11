@@ -241,6 +241,114 @@ func TestAggregateCounterInAnotherUnit(t *testing.T) {
 	}
 }
 
+// A recorded-local day starts and ends at the offsets of its first and last
+// points on both paths, however those fall in quarter hours: an amount and a
+// gauge at 12:01Z (+03:00) and 12:10Z (-04:00), one rollup slot, make a day
+// from midnight +03:00 to midnight -04:00, 31 hours, not 17. And prefer-raw
+// measures a day's coverage over the 31 hours it reports: 25 held hours are
+// not 0.9 of it, so the day's summary serves it.
+func TestAggregateRecordedLocalDayFromRealPoints(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	noon := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value string
+		at        time.Duration
+		offset    int
+	}{{"a", "10", time.Minute, 180}, {"b", "20", 10 * time.Minute, -240}} {
+		f.mustPut(t, f.observation, "travel/steps/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("travel"), "form": "amount",
+			"value": quantity(x.value, "{steps}"), "at": at(noon.Add(x.at)), "endsAt": at(noon.Add(x.at + 5*time.Minute)),
+			"utcOffset": x.offset,
+		})
+		f.mustPut(t, f.observation, "travel/hr/"+x.id, map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("travel"), "form": "gauge",
+			"value": quantity(x.value, "/min"), "at": at(noon.Add(x.at)), "hold": "PT5M", "utcOffset": x.offset,
+		})
+	}
+	athensDay := time.Date(2026, 9, 1, 0, 0, 0, 0, time.FixedZone("", 3*3600))
+	travel := substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: f.sourcePath("travel")}}}
+	for _, x := range []struct{ metric, reducer string }{{"health/steps", "sum"}, {"health/heart_rate", "twa"}} {
+		res, _, _ := f.bothPaths(travel, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath(x.metric)},
+			Range:    rng(athensDay, athensDay.AddDate(0, 0, 2)),
+			Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+			Reducers: reducers("count", x.reducer),
+		})
+		if len(res.Rows) != 1 {
+			t.Fatalf("%s: %d rows, want the one day", x.metric, len(res.Rows))
+		}
+		row := res.Rows[0]
+		if row.Start.Format(time.RFC3339) != "2026-09-01T00:00:00+03:00" || row.End.Format(time.RFC3339) != "2026-09-02T00:00:00-04:00" {
+			t.Errorf("%s: the day runs %s to %s, want midnight +03:00 to midnight -04:00", x.metric,
+				row.Start.Format(time.RFC3339), row.End.Format(time.RFC3339))
+		}
+	}
+	// A gauge held 24 hours at +03:00 and then 1 hour at -04:00 of the same
+	// local day, and the day's summary.
+	trip := substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: f.sourcePath("trip")}}}
+	for _, x := range []struct {
+		id, value string
+		at        time.Time
+		offset    int
+	}{{"1", "60", athensDay, 180}, {"2", "80", time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC), -240}} {
+		f.mustPut(t, f.observation, "trip/hr/"+x.id, map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("trip"), "form": "gauge",
+			"value": quantity(x.value, "/min"), "at": at(x.at), "utcOffset": x.offset,
+		})
+	}
+	f.mustPut(t, f.observation, "trip/hr/day", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("trip"), "form": "summary",
+		"statistic": "avg", "period": "day", "value": quantity("70", "/min"),
+		"at": at(athensDay), "endsAt": at(athensDay.AddDate(0, 0, 1)), "utcOffset": 180,
+	})
+	res, _, _ := f.bothPaths(trip, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+		From:     "prefer-raw",
+		Range:    rng(athensDay, athensDay.AddDate(0, 0, 2)),
+		Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+		Reducers: reducers("avg"),
+	})
+	if len(res.Rows) == 0 || res.Rows[0].From != "summaries" {
+		t.Fatalf("prefer-raw: %+v, want the first day from its summary", res.Rows)
+	}
+	if v, _ := val(res.Rows[0], "avg"); v != "70" {
+		t.Errorf("the first day's avg = %s, want the summary's 70", v)
+	}
+}
+
+// Points at one instant are first and last by record id on both paths:
+// `a-reversed` holds 2000 W.h and `z-reversed` 1 kW.h at 00:05, two rollup
+// groups by unit, and in W.h the first is 2000 and the last 1000.
+func TestAggregateFirstAndLastBreakTiesByRecord(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct{ id, value, unit string }{{"a-reversed", "2000", "W.h"}, {"z-reversed", "1", "kW.h"}} {
+		f.mustPut(t, f.observation, x.id, map[string]any{
+			"metric": f.metricRef("energy"), "source": f.sourceRef("meter"), "form": "gauge",
+			"value": quantity(x.value, x.unit), "at": at(start.Add(5 * time.Minute)),
+		})
+	}
+	res, _, rollupRows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("energy")},
+		Range:    rng(start, start.Add(time.Hour)),
+		Reducers: reducers("first", "last"),
+		Unit:     "W.h",
+	})
+	if rollupRows == 0 {
+		t.Error("the read took no rollup row")
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("%d rows", len(res.Rows))
+	}
+	first, _ := val(res.Rows[0], "first")
+	last, _ := val(res.Rows[0], "last")
+	if first != "2000" || last != "1000" {
+		t.Errorf("first/last = %s/%s, want 2000/1000", first, last)
+	}
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`
