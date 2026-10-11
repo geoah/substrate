@@ -1,0 +1,155 @@
+# many values of one metric, from one source, about one thing, over one fixed
+# period, packed into one record: an hour of heart rate, a day of a meter's
+# quarter-hours. Binds core's `observed(packed)` and `temporal(range)`: `at`
+# and `endsAt` are the period, `[at, endsAt)`.
+#
+# Identity is the period, never a sync page: one trace per metric, source,
+# about, channel and period, with one origin provider, its id composed as
+# `<provider>/<account record id>/<metric>/<period start>` (decision record
+# 0162). A rewrite replaces the period whole and carries a revision at least
+# as high as the stored one.
+#
+# Points are `values` (exact decimal strings in `unit`) or `codes`, placed by
+# `every` (regular spacing from `at`) or by `offsets` (integer milliseconds
+# from `at`, one per point). A null in `values` or `codes` means unavailable
+# from that point on: it ends a gauge's hold and counts in nothing. `stats` is
+# the engine's: computed from the points on every write, and anything a writer
+# sends there is dropped.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/observations/trace
+data:
+  authority: samples.substrate.reamde.dev
+  package: observations
+  description: >-
+    Many values of one metric over one fixed period, such as an hour of heart
+    rate. One source and one thing observed, packed into one record; each
+    point is a number in the trace's unit or a code, at a fixed spacing or
+    at its own offset.
+  purpose: supporting
+  names:
+    singular: trace
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/observed(packed)
+  displayTemplate: "{metric} {at}"
+  indices:
+    - properties:
+        - metric
+        - at
+  properties:
+    # ---- the observed(packed) contract ----
+    metric:
+      type: reference
+      kind: samples.substrate.reamde.dev/observations/metric
+      required: true
+      mustExist: true
+      description: what was measured
+    source:
+      type: reference
+      kind: samples.substrate.reamde.dev/observations/source
+      description: the device, app, service or lab that produced the values
+    about:
+      type: reference
+      kind: any
+      description: the thing observed; absent means the repository's owner
+    channel:
+      type: string
+      description: which of a source's channels this is, where one source
+        measures one metric twice
+    form:
+      type: string
+      required: true
+      description: gauge, amount or counter; a summary is a single observation
+      values:
+        - gauge
+        - amount
+        - counter
+        - summary
+    unit:
+      type: string
+      description: the UCUM code every value is in; a trace of codes has none
+    every:
+      type: duration
+      description: the spacing of regular points from at
+    offsets:
+      type: int
+      repeated: true
+      fts: false
+      description: each point's milliseconds from at, for irregular points
+    values:
+      type: decimal
+      repeated: true
+      description: the numbers as exact decimal strings; a null means unavailable
+        from that point
+    codes:
+      type: string
+      repeated: true
+      fts: false
+      description: the codes of a categorical trace; a null means unavailable
+        from that point
+    hold:
+      type: duration
+      description: for a gauge, how long each value stands without a newer
+        one
+    resetRule:
+      type: string
+      description: for a counter, its contract, monotonic, signed or wrap
+      values:
+        - monotonic
+        - signed
+        - wrap
+    resetAt:
+      type: datetime
+      description: for a counter, when the current accumulation began
+    delta:
+      type: bool
+      description: true when the values are temperature differences
+    circular:
+      type: bool
+      description: true when the values are angles averaged on the circle
+    wrapAt:
+      type: decimal
+      description: for a wrapping counter, the value it wraps to zero at
+    utcOffsetStart:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC at the start of the period
+    utcOffsetEnd:
+      type: int
+      min: -1080
+      max: 1080
+      description: minutes east of UTC at the end of the period; a trace splits
+        where it changes
+    revision:
+      type: int
+      min: 0
+      description: rises with each rewrite from the upstream; a lower one
+        is refused
+    stats:
+      type: json
+      managed: true
+      description: computed from the points on every write, count, min, max,
+        mean, m2, first, last and coverage
+    # ---- this kind's own ----
+    acquisition:
+      type: reference
+      kind: any
+      description: the recording this trace is one channel of, such as one
+        ECG
+    quality:
+      type: enum
+      description: how far the values can be trusted
+      values:
+        - valid
+        - estimated
+        - questionable
+        - stale
+        - validated
+        - unavailable
+    origins:
+      type: reference
+      kind: any
+      repeated: true
+      description: the provider records this period was built from
