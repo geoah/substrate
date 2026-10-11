@@ -30,7 +30,8 @@ findings, [the plan, section 13](../plans/observations.md)).
 Chosen: store as sent, difference at read under three contracts, exact.
 
 A counter is stored as the device sent it, indexed as it is, and differenced
-only at read. The value's `resetRule` names its contract:
+only in the derived index a read uses, never in the stored record and never
+at ingest. The value's `resetRule` names its contract:
 
 - `monotonic`: any drop is a reset to zero, then counting resumes (Home
   Assistant's `total_increasing`, an odometer rollover, a plug that reboots).
@@ -42,12 +43,26 @@ only at read. The value's `resetRule` names its contract:
 A trace carries one `resetAt`, so a trace splits at every reset epoch: an
 adapter that sees `resetAt` change inside a period starts a new trace there.
 
-The rollup row stores `increase`, the reset-aware sum of steps inside its
-bucket, and `resets`. The step from one bucket's last point to the next
-bucket's first is computed at read with a window function, so projecting one
-trace never reads another. `rate` is `increase` over the bucket's covered
-time and names its unit (a `kW.h` counter reads as `kW`). Nothing
-extrapolates to the range's boundaries; a partial bucket says it is partial.
+The rollup row stores `increase`, the reset-aware sum of every step whose
+later reading is in the row, `resets`, and `covered_ms`, the time those
+steps span. The step in from the stream's previous available reading
+belongs to the row of the later reading, wherever the earlier one is, and
+the engine computes it when it computes the row: the recompute reads the
+stream's last available point before the bucket and differences it under
+the later reading's contract. The increase of a run of whole buckets is
+therefore the sum of their rows, and `rate` is that sum over the sum of
+their `covered_ms`, naming its unit (a `kW.h` counter reads as `kW`).
+Nothing extrapolates to the range's boundaries; a partial bucket says it is
+partial.
+
+The step is computed when the row is, rather than at read with a window
+function, so every reader of the rows (the aggregate read, the CLI, a
+function's host call, an agent's query) takes one SQL path, a sum, and none
+of them fetches the previous row or applies a counter contract. The price is
+that a row depends on a point of another record: a write reads the stream's
+previous reading when it recomputes a bucket, and a write that changes a
+reading also recomputes the bucket of the stream's next reading, whose step
+in it moved.
 
 The engine has no drop tolerance. A noisy total (`100`, `99`, `101`) under
 `monotonic` reads as a reset; its writer declares `signed` or smooths it in
@@ -65,12 +80,17 @@ drop tolerance is a guess the engine cannot explain to a reader, and
 ### Consequences
 
 - Good, because the meter reading is kept as the fact it is, and a late or
-  corrected trace re-derives only its own buckets.
+  corrected trace re-derives its own buckets and the bucket of the stream's
+  next reading, nothing more.
 - Good, because a daily `increase` of a `kW.h` meter is exact to its last
   stored digit.
+- Good, because a read sums rows and needs no window function and no
+  counter contract.
 - Bad, because a jittery `monotonic` counter reports false resets and a
   large false increase until its writer declares `signed` or smooths it.
-- Bad, because a read pays a window function across bucket boundaries.
+- Bad, because a rollup row is not a function of one record's points alone:
+  its step in reads another record's point, and the recompute must find the
+  next reading's bucket when a reading changes.
 - Bad, because more than one wrap between two readings cannot be seen and
   reads as one.
 - Bad, because `numeric` columns are wider and slower than `float8` in the
@@ -78,13 +98,14 @@ drop tolerance is a guess the engine cannot explain to a reader, and
 
 ### Confirmation
 
-Tests the work package 3 and 4 implementers will write:
 `TestCounterIncreaseAcrossAMonotonicReset`,
 `TestCounterSignedIncreaseIsNetWithinAnEpoch`, `TestCounterWrapsAtWrapAt`,
 and `TestCounterIncreaseStaysExact`, where an increment exact in the stored
-digits of a large reading comes back exact; each also checks that the
-rollup's `increase` equals the raw difference across a bucket boundary, a
-correction and a rebuild.
+digits of a large reading comes back exact (`internal/observed`);
+`TestCounterStepInBelongsToTheLaterWindow`, where the step across a bucket
+boundary is the later row's; and `TestObservedRollupEqualsTheRawAggregate`,
+where the stored rows equal the specification over the stored points
+through a correction, a deletion and a rebuild.
 
 ## More information
 

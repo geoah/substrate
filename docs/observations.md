@@ -361,10 +361,13 @@ the label a trace id ends with and `local_day` the civil date at an offset.
 The fold derives three tables from the rows of every kind that binds
 `observed`, the way it derives `refs`
 ([decision 0160](decisions/0160-the-observed-index-is-three-derived-tables-and-a-rollup-serves-only-exact-answers.md),
-migration `0012_observed_index`). Each row is a function of one record's
-properties and its kind's binding, or of the points those produce, and of
-nothing else. `repository rebuild` clears the three and derives them again
-from the changelog; `repository verify` and the export never read them.
+migration `0012_observed_index`). A point is a function of one record's
+properties and its kind's binding; a rollup row and a latest row are
+functions of a stream's points, and a counter's rollup row also reads the
+stream's reading before its bucket, which may be another record's
+([below](#counters)). Nothing else enters: no clock, no metric record.
+`repository rebuild` clears the three and derives them again from the
+changelog; `repository verify` and the export never read them.
 
 A **stream** is one run of readings: the `kind`, `metric`, `source`, `about`
 and `channel` of a value. A reference column holds the target's record path
@@ -540,8 +543,9 @@ reason:
   (`numeric`), so a counter's endpoints stay exact.
 - A counter's step from the previous bucket is in the later row's
   `increase`, computed when the row is, not at read time with a window
-  function, so the read needs no counter contract from the rows. A
-  correction recomputes the next bucket holding a reading too.
+  function as the plan had it, so the read needs no counter contract from
+  the rows. A correction recomputes the next bucket holding a reading too.
+  Decision 0157 states this rule and its cost.
 - A rollup row gains `start_gap_ms`, where the bucket's first point lies, and
   `bounded`, its count of bounded points, so the read can carry a hold across
   rows and report bounded values without the raw points.

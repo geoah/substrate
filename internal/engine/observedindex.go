@@ -5,11 +5,13 @@ package engine
 // Three tables derived from the rows of every kind that binds core's
 // `observed` trait, the way `refs` is derived: `observed_points` (one row per
 // value), `observed_rollups` (one row per stream, group and 15-minute bucket)
-// and `observed_latest` (one row per stream). Every column is a function of
-// one record's properties and its kind's binding (deriveObserved), or of the
-// points those produce (internal/observed computes a rollup row), and of
-// nothing else: no clock, no other record. That is what lets `repository
-// rebuild` clear the three and reproduce them from the changelog.
+// and `observed_latest` (one row per stream). A point is a function of one
+// record's properties and its kind's binding (deriveObserved); a rollup or
+// latest row is a function of its stream's points (internal/observed computes
+// a rollup row), a counter's also of the stream's reading before its bucket
+// (decision 0157); and nothing else enters: no clock, no metric record. That
+// is what lets `repository rebuild` clear the three and reproduce them from
+// the changelog.
 //
 // The fold writes the points of one record (syncObserved, from foldRecordOp,
 // and dropObserved, from the tombstone and the purge) and records which
