@@ -81,12 +81,99 @@ func (s *statements) since(mark int, fragment string) int {
 	return n
 }
 
-// The statement fragments the budget tests look for: the forms' discovery
-// and the amount coverage taken from raw spans.
+// The statement fragments the budget tests look for: the forms' discovery,
+// the amount coverage taken from raw spans, and a property read's values.
 const (
 	discoverStatement = "SELECT DISTINCT s.n, f.form, x.code"
 	coverageStatement = "sum(x.brk) OVER"
+	propertyStatement = ")::text FROM records WHERE"
 )
+
+// A range holding no point answers in its streams' unit, where the metric
+// declares none, as a range holding points does (a 70.5 kg reading held five
+// minutes, read in the hour after it and five days later): the units are settled from
+// every selected stream before the forms are found in the range. A unit
+// asked for converts there too, where an empty range once had no measure and
+// refused it as a code's.
+func TestAggregateEmptyRangeKeepsItsUnits(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.mustPut(t, f.metric, "load", map[string]any{"name": "Load"})
+	f.mustPut(t, f.observation, "load/1", map[string]any{
+		"metric": f.metricRef("load"), "source": f.sourceRef("scale"), "form": "gauge",
+		"value": quantity("70.5", "kg"), "at": at(start), "hold": "PT5M",
+	})
+	for _, x := range []struct {
+		name, unit, want string
+		from             time.Time
+		rows             int
+	}{
+		{"a range with the point", "", "kg", start, 1},
+		{"an empty range", "", "kg", start.AddDate(0, 0, 5), 0},
+		{"an empty range in grams", "g", "g", start.AddDate(0, 0, 5), 0},
+	} {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("load")},
+			Range:    rng(x.from, x.from.Add(time.Hour)),
+			Reducers: reducers("avg"),
+			Unit:     x.unit,
+		})
+		if res.Unit != x.want || len(res.Rows) != x.rows {
+			t.Errorf("%s: unit %q and %d rows, want %q and %d", x.name, res.Unit, len(res.Rows), x.want, x.rows)
+		}
+	}
+}
+
+// A form held only at a range's cut ends, or only in summaries, is found
+// and read: one source's amount lies only in [00:07, 00:15), before the
+// range's first whole rollup row, another's only in [01:45, 01:52), after
+// its last, and a third source has summaries and no point, read with
+// prefer-raw. Each answers its row.
+func TestAggregateFormsAtTheCutEndsAndInSummaries(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		source string
+		at     time.Duration
+	}{{"early", 8 * time.Minute}, {"late", 110 * time.Minute}} {
+		f.mustPut(t, f.observation, "steps/"+x.source, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef(x.source), "form": "amount",
+			"value": quantity("5", "{steps}"), "at": at(start.Add(x.at)), "endsAt": at(start.Add(x.at + time.Minute)),
+		})
+	}
+	res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+		Range:    rng(start.Add(7*time.Minute), start.Add(112*time.Minute)),
+		GroupBy:  []string{"source"},
+		Reducers: reducers("count", "sum"),
+	})
+	if len(res.Rows) != 2 {
+		t.Fatalf("cut ends: %+v, want a row per source", res.Rows)
+	}
+	for _, row := range res.Rows {
+		if c, _ := val(row, "count"); c != "1" || row.Form != "amount" {
+			t.Errorf("cut ends: %s counts %s %s, want 1 amount", row.Group.Source, c, row.Form)
+		}
+	}
+	f.mustPut(t, f.observation, "hr/daily", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("ring"), "form": "summary",
+		"statistic": "avg", "period": "day", "value": quantity("58", "/min"), "at": at(start), "endsAt": at(start.AddDate(0, 0, 1)),
+	})
+	sums := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+		From:     "prefer-raw",
+		Range:    rng(start, start.AddDate(0, 0, 1)),
+		Reducers: reducers("avg"),
+	})
+	if len(sums.Rows) != 1 || sums.Rows[0].From != "summaries" || sums.Rows[0].Form != "summary" {
+		t.Fatalf("summaries alone: %+v, want the day's summary row", sums.Rows)
+	}
+	if v, _ := val(sums.Rows[0], "avg"); v != "58" {
+		t.Errorf("summaries alone: avg %s, want 58", v)
+	}
+}
 
 // A read canceled once its statements have run stops inside the Go-side
 // reduction, not after it: a gauge of 3,000 quarter hours, one rollup row
@@ -667,10 +754,13 @@ func TestAggregateLocfCarriesThePreviousCode(t *testing.T) {
 
 // A property read counts its groups before it reads a value: a EUR and a JPY
 // spend are two groups, refused under maxGroups 1, and two groups in two
-// months are four cells, refused under maxBuckets 3.
+// months are four cells, refused under maxBuckets 3, each before the
+// statement that reads the values runs; the read within the budget runs it
+// once.
 func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	log := &statements{}
+	_, ds := newDataset(t, engine.WithTestQueryTracer(log))
 	ctx := context.Background()
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{vocabularyPackage(moneyPackage), spendManifest()}); err != nil {
 		t.Fatalf("install the spend kind: %v", err)
@@ -703,12 +793,20 @@ func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 		{substrate.AggregateBudget{MaxGroups: 1}, "aggregate.budget.maxGroups"},
 		{substrate.AggregateBudget{MaxBuckets: 3}, "aggregate.budget.maxBuckets"},
 	} {
+		mark := log.mark()
 		if err := read(x.budget); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), x.want) {
 			t.Errorf("budget %+v: err = %v, want a refusal naming %s", x.budget, err, x.want)
 		}
+		if n := log.since(mark, propertyStatement); n != 0 {
+			t.Errorf("budget %+v: the refused read ran the value statement %d time(s)", x.budget, n)
+		}
 	}
+	mark := log.mark()
 	if err := read(substrate.AggregateBudget{MaxGroups: 2, MaxBuckets: 4}); err != nil {
 		t.Errorf("within the budget: %v", err)
+	}
+	if n := log.since(mark, propertyStatement); n != 1 {
+		t.Errorf("within the budget the value statement ran %d time(s), want once", n)
 	}
 }
 
