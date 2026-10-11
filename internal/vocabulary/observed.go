@@ -204,8 +204,8 @@ func (c *obsCheck) single(form string) {
 		}
 	}
 	switch {
-	case hasValue && hasCode:
-		c.addf("props.value: an observed value is a number or a code, never both: drop value or code")
+	case hasValue && hasCode && form != FormAmount:
+		c.addf("props.value: an observed value is a number or a code, never both, except an amount with its category: drop value or code")
 	case len(shapes) > 0:
 		c.resultShape(shapes, hasValue, hasCode)
 	case !hasValue && !hasCode && !explained:
@@ -295,13 +295,16 @@ func (c *obsCheck) packed(form string) {
 	hasValues, hasCodes := c.r.Props[obsValues] != nil, c.r.Props[obsCodes] != nil
 	var n int
 	switch {
-	case hasValues && hasCodes:
-		c.addf("props.values: a trace holds values or codes, never both: drop one")
+	case hasValues && hasCodes && form != FormAmount:
+		c.addf("props.values: a trace holds values or codes, never both, except an amount trace with each value's category: drop one")
 		return
 	case hasValues:
 		n = len(listOf(c.r.Props[obsValues]))
 		if !c.has(obsUnit) {
 			c.addf("props.unit: a trace of values names the unit every value is in")
+		}
+		if hasCodes && len(listOf(c.r.Props[obsCodes])) != n {
+			c.addf("props.codes: %d codes for %d values; an amount trace with categories carries one code per value", len(listOf(c.r.Props[obsCodes])), n)
 		}
 	case hasCodes:
 		n = len(listOf(c.r.Props[obsCodes]))
@@ -487,10 +490,11 @@ type TracePoint struct {
 // times `every`. It reads a record CheckObserved admitted and refuses one it
 // cannot place.
 func TracePoints(at time.Time, props map[string]any) ([]TracePoint, error) {
-	coded := props[obsCodes] != nil
+	coded := props[obsCodes] != nil && props[obsValues] == nil
 	items := listOf(props[obsValues])
+	codes := listOf(props[obsCodes])
 	if coded {
-		items = listOf(props[obsCodes])
+		items = codes
 	}
 	offsets := listOf(props[obsOffsets])
 	var every time.Duration
@@ -522,6 +526,12 @@ func TracePoints(at time.Time, props map[string]any) ([]TracePoint, error) {
 			p.Code = s
 		default:
 			p.Value = s
+			// An amount trace may carry each value's category beside it.
+			if i < len(codes) {
+				if cs, ok := codes[i].(string); ok {
+					p.Code = cs
+				}
+			}
 		}
 		out[i] = p
 	}
@@ -542,7 +552,7 @@ func TraceStats(at time.Time, props map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	coded := props[obsCodes] != nil
+	coded := props[obsCodes] != nil && props[obsValues] == nil
 	var (
 		count       int64
 		first, last *TracePoint
