@@ -60,10 +60,15 @@ counted; out-of-bed time is left out of `timeInBed`.
 ## Ids, sources and offsets
 
 - A trace is `googlefit/<account id>/<device slug>/<metric>/<UTC hour>`, a
-  reading `googlefit/<dataset row id>/<metric>/<start in epoch ms>`, a stage
-  `googlefit/<session row id>/stage/<n>`, and a sleep or workout
-  `googlefit/<session row id>`. An id that leaves the record-id alphabet or
-  passes 128 bytes is hashed through `host.ids.external`.
+  reading `googlefit/<dataset row id>/<source slug>/<metric>/<start in epoch
+  ns>`, a stage `googlefit/<session row id>/stage/<n>`, and a sleep or
+  workout `googlefit/<session row id>`. A reading's id names its source and
+  its full `startTimeNanos`, so two sources reading one instant, or one
+  source reading twice inside a millisecond, are separate observations, and
+  correcting or removing one leaves the other alone. Each blood pressure
+  reading's two observations take the same shape with the systolic and
+  diastolic metric names. An id that leaves the record-id alphabet or passes
+  128 bytes is hashed through `host.ids.external`.
 - A source is the device behind a point's `originDataSourceId`, looked up in
   the account's `datasource` rows (by id, else by a listed device's `uid`
   inside the id): `googlefit/<account id>/<manufacturer-model>`, with `class`
