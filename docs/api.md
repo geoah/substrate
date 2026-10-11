@@ -1072,7 +1072,9 @@ JSON, so a misspelled key is a `400` naming it, and the mode refuses `q`,
 `watch`, `count`, `orderBy`, `first`, `after`, `offset`, `expand` and
 `withAnnotations` by name. Everything else a request can be refused for is a
 `422 validation` naming the limit, the form, the measure or the parameter, and
-it is refused before any point or rollup row is read.
+it is refused before any point or rollup row is reduced: the one statement
+that finds which forms and codes the range holds runs first, over the rollup
+rows' keys and the points at the range's cut ends.
 
 ```http
 GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
@@ -1329,8 +1331,10 @@ calendar is refused (name a `timezone`), and so is the records mode.
 
 ### Budgets
 
-Every budget is checked before a point is read, and a request over one is a
-`422` naming the limit; a result is never cut short.
+Every budget is checked before a point is reduced, and a request over one is
+a `422` naming the limit; a result is never cut short. The statement that
+finds the range's forms and codes, and an amount's coverage taken from raw
+spans where two rows may overlap, read in SQL and count against no budget.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
@@ -1375,6 +1379,10 @@ what is built in these points, each for a stated reason:
   there, with `count` 0, the way it makes held time.
 - A records-mode window is not clipped to the range: the record is the
   bucket.
+- A refusal for a form, a code count or a bucket budget comes after one
+  statement that reads the rollup rows' keys and the points at the range's
+  cut ends, not before anything runs: which forms and codes a range holds is
+  a fact of its points, and the newest point's form is not.
 - The added keys: `property` and `nonAdditive` on the response and the row,
   `group.channel` and `group.currency`, `values[].rolling` and
   `values[].of`, `budget.maxGroups`.
