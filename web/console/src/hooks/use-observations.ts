@@ -40,6 +40,7 @@ import {
   type ObservedPins,
   type ReadingShape,
   type Stream,
+  type StreamFacet,
   type StreamNarrowing,
 } from "@/lib/observations"
 import { splitRecordPath } from "@/lib/record-path"
@@ -271,6 +272,12 @@ export interface FacetValues {
   /** Every thing observed with a point under the page's other choices; the
    * owner names none and is not among them. */
   abouts: string[]
+  /** Why a menu's own read failed, by facet, null where it answered or is
+   * on its way. A failed menu offers only the values of the streams the
+   * page shows, so a page says so beside it (`FacetListErrors`). */
+  errors: Record<StreamFacet, Error | null>
+  /** Asks a facet's own read again. */
+  retry: (facet: StreamFacet) => void
   /** A source or a thing in words: its title, else its id. */
   nameOf: (value: string, pin?: string) => string
 }
@@ -279,8 +286,9 @@ export interface FacetValues {
  * under the page's metrics and the other facet's choice, never its own, so
  * a reopened menu still offers what a reader can add beside the chosen
  * values. The streams' own values join them, so a menu loses none while its
- * read is on its way or failed. `narrow.metrics` are the metrics the page
- * shows. */
+ * read is on its way or failed, and a failed read's error is kept per facet
+ * so the page can say the menu is short. `narrow.metrics` are the metrics
+ * the page shows. */
 export function useFacetValues(
   obs: Observations,
   narrow: StreamNarrowing
@@ -349,9 +357,14 @@ export function useFacetValues(
   }, [values, obs.pins.source, obs.pins.about])
   const titles = useReferenceTitles(titlePaths, obs.kinds)
 
+  const { error: sourceError, refetch: refetchSources } = bySource
+  const { error: aboutError, refetch: refetchAbouts } = byAbout
   return useMemo(
     () => ({
       ...values,
+      errors: { source: sourceError, about: aboutError },
+      retry: (facet: StreamFacet) =>
+        void (facet === "source" ? refetchSources() : refetchAbouts()),
       nameOf: (value: string, pin?: string) => {
         const path = refPathOf(value, pin)
         return (
@@ -360,7 +373,15 @@ export function useFacetValues(
         )
       },
     }),
-    [values, titles, obs]
+    [
+      values,
+      titles,
+      obs,
+      sourceError,
+      aboutError,
+      refetchSources,
+      refetchAbouts,
+    ]
   )
 }
 

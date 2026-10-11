@@ -28,6 +28,7 @@ import {
   windowWords,
 } from "@/lib/observations"
 import {
+  GARMIN,
   LATEST,
   LATEST_PEOPLE,
   LEO,
@@ -367,6 +368,85 @@ describe("the timeline's requests", () => {
         ].sort()
       ).toEqual([LEO, MIA].sort())
     )
+  })
+
+  it("says the full Source list is unavailable when only its read passes the group cap", async () => {
+    const problem =
+      "aggregate.budget.maxGroups: the read makes 2001 groups, over 2000; narrow the filter or raise maxGroups (the cap is 2000)"
+    mount(
+      `?metric=health/heart_rate&source=${encodeURIComponent(GARMIN)}&${WINDOW}`,
+      false,
+      (read) =>
+        // The Source menu's own read is the one grouped by source alone.
+        read.aggregate.groupBy?.join() === "source" && !read.aggregate.metric
+          ? new Response(
+              JSON.stringify({
+                error: {
+                  code: "validation",
+                  message: "the aggregate read was refused",
+                  problems: [problem],
+                },
+              }),
+              { status: 422, headers: { "Content-Type": "application/json" } }
+            )
+          : answer(read)
+    )
+    await lane("Heart rate")
+    const note = await screen.findByRole("alert", {
+      name: "The full Source list is unavailable",
+    })
+    expect(note.textContent).toContain("more than 2,000 sources")
+    expect(note.textContent).toContain(problem)
+    expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    expect(
+      await screen.findByRole("option", { name: /Garmin Forerunner 265/ })
+    ).toBeTruthy()
+    expect(screen.queryByRole("option", { name: /Apple Watch/ })).toBe(null)
+  })
+
+  it("says the About list didn’t load, keeps the chart, and reads it again on a retry", async () => {
+    let failures = 1
+    mount(
+      `?metric=health/heart_rate&about=${encodeURIComponent(MIA)}&${WINDOW}`,
+      false,
+      (read) => {
+        if (read.aggregate.metric) return answer(read)
+        if (read.aggregate.groupBy?.join() === "about" && failures > 0) {
+          failures--
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: "unavailable",
+                message: "the database is restarting",
+              },
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          )
+        }
+        return latestAnswer(read, LATEST_PEOPLE)
+      }
+    )
+    const heart = await lane("Heart rate")
+    const note = await screen.findByRole("alert", {
+      name: "The About list didn’t load",
+    })
+    expect(note.textContent).toContain("the database is restarting")
+    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    expect(await screen.findByRole("option", { name: /mia/ })).toBeTruthy()
+    expect(screen.queryByRole("option", { name: /leo/ })).toBe(null)
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    })
+    fireEvent.click(within(note).getByRole("button", { name: "Try again" }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("alert", { name: "The About list didn’t load" })
+      ).toBe(null)
+    )
+    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    expect(await screen.findByRole("option", { name: /leo/ })).toBeTruthy()
+    expect(screen.getByRole("region", { name: "Heart rate" })).toBe(heart)
   })
 
   it("holds back a read past the bucket budget and says why", async () => {

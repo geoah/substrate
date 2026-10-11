@@ -32,6 +32,7 @@ import {
 } from "@/components/observations/marks"
 import {
   DiscoveryError,
+  FacetListErrors,
   MetricListError,
 } from "@/components/observations/discovery-error"
 import { NoObservations } from "@/components/observations/no-observations"
@@ -287,6 +288,9 @@ export function ObservationsPage() {
           onChange={(next) => void setSearch(next || null)}
         />
       </div>
+      {!obs.discovery.isError && (
+        <FacetListErrors className="mt-2.5" values={values} />
+      )}
       {obs.metricListError && (
         <MetricListError
           className="mt-2.5"
