@@ -12,6 +12,17 @@ package engine_test
 // the later migrations too, so a faulty migration fails its own subtest and
 // each one before it, and the last subtest that fails names it.
 //
+// A stage is staged twice once the repository ledger exists: with the
+// ledger empty, as a repository older than every repository migration has
+// it, and with the source's ledger rows for the repository migrations a
+// binary at that stage could have run, as an installation upgraded in place
+// holds them. The second open runs no repository migration the installation
+// already ran, so a migration whose effect a repository migration would mask
+// (repository migration 3 re-derives the whole observed index) is held to
+// the fold the installation really keeps. A last stage at the newest
+// migration keeps the whole ledger and runs nothing, so the fold the source's
+// own writes left is held to the rebuild with nothing re-derived first.
+//
 // A fixture migration that edits `records` and writes no changelog entry
 // goes through the same stage and must FAIL the comparison, on `records`.
 // That keeps the test from passing vacuously: a harness that stopped seeing
@@ -26,6 +37,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -70,6 +82,19 @@ var refoldLags = []struct{ migration, table, column string }{
 	{"0006_ambiguous_at", "records", "ambiguous_at"},
 }
 
+// refoldLedgerTable is the migration that creates the repository ledger.
+const refoldLedgerTable = "0005_repository_migrations"
+
+// refoldLedgerFloors names, for every repository migration, the SQL
+// migration that landed with it: a binary that ran it had applied that one,
+// so a stage at or past it keeps the repository migration's ledger row. A new
+// repository migration adds its entry here; the test fails until it does.
+var refoldLedgerFloors = map[string]string{
+	"qualify_bare_declaration_names": "0005_repository_migrations",
+	"qualify_bare_selector_kinds":    "0005_repository_migrations",
+	"derive_observed_index":          "0012_observed_index",
+}
+
 // refoldSource is the seeded store every stage copies: the schema holding its
 // rows, its data root, and the one repository in both.
 type refoldSource struct {
@@ -95,22 +120,31 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 			t.Fatalf("the binary no longer embeds %s: delete its refoldLags entry, whose exemption is for that migration alone", lag.migration)
 		}
 	}
+	for name, floor := range refoldLedgerFloors {
+		if versions[floor] == 0 {
+			t.Fatalf("refoldLedgerFloors names %s for repository migration %s, and the binary embeds no such migration", floor, name)
+		}
+	}
+	omitBehind := func(behind int) map[string][]string {
+		omit := map[string][]string{}
+		for _, lag := range refoldLags {
+			if behind < versions[lag.migration] {
+				omit[lag.table] = append(omit[lag.table], lag.column)
+			}
+		}
+		return omit
+	}
 	// The first migration creates the tables, so no row exists for it to meet.
 	for i, m := range migrations[1:] {
 		prior := migrations[i]
-		t.Run(m.Name, func(t *testing.T) {
-			behind := prior.Version
-			omit := map[string][]string{}
-			for _, lag := range refoldLags {
-				if behind < versions[lag.migration] {
-					omit[lag.table] = append(omit[lag.table], lag.column)
-				}
+		upgrade := func(t *testing.T, dsn string) {
+			if err := engine.MigrateThrough(ctx, dsn, m.Version); err != nil {
+				t.Fatalf("apply %s: %v", m.Name, err)
 			}
-			live, rebuilt := refoldStage(t, src, behind, omit, func(t *testing.T, dsn string) {
-				if err := engine.MigrateThrough(ctx, dsn, m.Version); err != nil {
-					t.Fatalf("apply %s: %v", m.Name, err)
-				}
-			})
+		}
+		stage := func(t *testing.T, ledger bool) {
+			t.Helper()
+			live, rebuilt := refoldStage(t, src, prior.Version, omitBehind(prior.Version), ledger, upgrade)
 			if tables, diff := refoldDifferences(live, rebuilt); len(tables) > 0 {
 				t.Fatalf("a store at %s, upgraded from %s on, holds a fold that differs in %s from what a rebuild "+
 					"makes of its changelog; the last subtest that fails names the migration at fault. "+
@@ -118,15 +152,31 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 					"repository migration (docs/operations.md).\nfirst difference, live then rebuilt:\n%s",
 					prior.Name, m.Name, strings.Join(tables, ", "), diff)
 			}
+		}
+		t.Run(m.Name, func(t *testing.T) {
+			stage(t, false)
+			if prior.Version < versions[refoldLedgerTable] {
+				return
+			}
+			t.Run("ledger_kept", func(t *testing.T) { stage(t, true) })
 		})
 	}
+	t.Run("head_ledger_kept", func(t *testing.T) {
+		last := migrations[len(migrations)-1]
+		live, rebuilt := refoldStage(t, src, last.Version, nil, true, func(*testing.T, string) {})
+		if tables, diff := refoldDifferences(live, rebuilt); len(tables) > 0 {
+			t.Fatalf("a store at %s whose repository ran every repository migration holds a fold that differs in %s "+
+				"from what a rebuild makes of its changelog: the fold's own writes and the rebuild disagree.\n"+
+				"first difference, live then rebuilt:\n%s", last.Name, strings.Join(tables, ", "), diff)
+		}
+	})
 	t.Run("fixture_edits_records_alone", func(t *testing.T) {
 		fixture, err := os.ReadFile(refoldFixture)
 		if err != nil {
 			t.Fatalf("read the fixture: %v", err)
 		}
 		last := migrations[len(migrations)-1].Version
-		live, rebuilt := refoldStage(t, src, last, nil, func(t *testing.T, dsn string) {
+		live, rebuilt := refoldStage(t, src, last, nil, false, func(t *testing.T, dsn string) {
 			if _, err := rawDB(t, dsn).ExecContext(ctx, string(fixture)); err != nil {
 				t.Fatalf("apply the fixture: %v", err)
 			}
@@ -237,8 +287,10 @@ func installRefoldTriggers(t *testing.T, ds substrate.Dataset) {
 // binary left it, changelog entry included). upgrade then runs the step
 // under test, and the engine opens over the schema and a copy of the
 // source's repository directory. omit names columns, by table, left out of
-// both snapshots.
-func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]string, upgrade func(t *testing.T, dsn string)) (live, rebuilt map[string]string) {
+// both snapshots. ledger keeps the source's ledger rows of the repository
+// migrations a binary at `behind` could have run (refoldLedgerFloors), so the
+// open runs only the ones after them.
+func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]string, ledger bool, upgrade func(t *testing.T, dsn string)) (live, rebuilt map[string]string) {
 	t.Helper()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
@@ -248,6 +300,9 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 	db := rawDB(t, dsn)
 	if n := copyRefoldRows(t, db, src.schema, currentSchema(t, db)); n == 0 {
 		t.Fatal("the stage holds no record: it would compare two empty folds")
+	}
+	if ledger && copyRefoldLedger(t, db, src.schema, currentSchema(t, db), behind) == 0 {
+		t.Fatal("the stage kept no ledger row: it would stage what the empty ledger already does")
 	}
 	upgrade(t, dsn)
 
@@ -286,7 +341,8 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 // adds is not in the stage yet, and takes its default when that migration
 // runs. schema_migrations is the stage's own. repository_migrations stays
 // empty, as it is for a repository older than every repository migration, so
-// the stage's open runs them all. It returns the records copied.
+// the stage's open runs them all, unless the stage keeps the ledger
+// (copyRefoldLedger). It returns the records copied.
 func copyRefoldRows(t *testing.T, db *sql.DB, from, to string) int64 {
 	t.Helper()
 	tables := refoldColumnQuery(t, db, `
@@ -324,6 +380,60 @@ func copyRefoldRows(t *testing.T, db *sql.DB, from, to string) int64 {
 		}
 	}
 	return records
+}
+
+// copyRefoldLedger copies the source's repository ledger rows of the
+// repository migrations whose floor (refoldLedgerFloors) is at or before
+// `behind` into the stage, and returns how many it kept.
+func copyRefoldLedger(t *testing.T, db *sql.DB, from, to string, behind int) int {
+	t.Helper()
+	migrations, err := engine.Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions := map[string]int{}
+	for _, m := range migrations {
+		versions[m.Name] = m.Version
+	}
+	rows, err := db.Query(fmt.Sprintf(`SELECT repository, version, name, applied_at FROM %s ORDER BY repository, version`,
+		pgx.Identifier{from, "repository_migrations"}.Sanitize()))
+	if err != nil {
+		t.Fatalf("read the source's ledger: %v", err)
+	}
+	type entry struct {
+		repository, name string
+		version          int
+		appliedAt        time.Time
+	}
+	var all []entry
+	for rows.Next() {
+		var e entry
+		if err := rows.Scan(&e.repository, &e.version, &e.name, &e.appliedAt); err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		all = append(all, e)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	kept := 0
+	for _, e := range all {
+		floor, ok := refoldLedgerFloors[e.name]
+		if !ok {
+			t.Fatalf("repository migration %d (%s) has no entry in refoldLedgerFloors: name the SQL migration it landed with", e.version, e.name)
+		}
+		if versions[floor] > behind {
+			continue
+		}
+		if _, err := db.Exec(fmt.Sprintf(`INSERT INTO %s (repository, version, name, applied_at) VALUES ($1, $2, $3, $4)`,
+			pgx.Identifier{to, "repository_migrations"}.Sanitize()), e.repository, e.version, e.name, e.appliedAt); err != nil {
+			t.Fatalf("copy ledger row %d into the stage: %v", e.version, err)
+		}
+		kept++
+	}
+	return kept
 }
 
 // refoldSnapshot reads every fold table whole: each row as JSON, every column
