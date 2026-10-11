@@ -33,11 +33,14 @@ type aggRun struct {
 	rows map[*aggStream][]observed.Row
 	// rowGroups maps a rollup row's group key to its group.
 	rowGroups map[string]obsGroup
-	// carries are the points current at the range's start, by stream, for a
-	// rollup-served gauge.
-	carries map[*aggStream]*observed.Point
+	// carries are the points current at each window's start, by stream and
+	// in segments order, for a rollup-served gauge.
+	carries map[*aggStream][]*observed.Point
 	// series are the raw points read, by stream.
 	series map[*aggStream]*aggSeries
+	// bounds are the records mode's window starts and ends, sorted, where a
+	// carry walked across empty rows is cut (chunkEnd).
+	bounds []time.Time
 }
 
 // aggSeries is one stream's raw points: each span read, with the point
@@ -101,7 +104,7 @@ func newEvidence(form string, raw bool) *aggEvidence {
 // against maxSamples before reading them.
 func (r *aggRun) plan(groups []*aggGroup) error {
 	r.rows, r.rowGroups = map[*aggStream][]observed.Row{}, map[string]obsGroup{}
-	r.carries, r.series = map[*aggStream]*observed.Point{}, map[*aggStream]*aggSeries{}
+	r.carries, r.series = map[*aggStream][]*observed.Point{}, map[*aggStream]*aggSeries{}
 	for _, g := range groups {
 		g.rollups = r.rollupable(g)
 		if !g.rollups {
@@ -177,7 +180,7 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 	for _, g := range groups {
 		if g.rollups && g.form == vocabulary.FormGauge {
 			for _, s := range g.raw {
-				c, err := r.readCarry(s, r.p.from)
+				c, err := r.readCarries(s, r.segments())
 				if err != nil {
 					return err
 				}
@@ -412,26 +415,38 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 	return ser, nil
 }
 
-// readCarry is the point current at t (available or not), its group set to
-// its rollup row's, for HeldFromRowsCarry.
-func (r *aggRun) readCarry(s *aggStream, t time.Time) (*observed.Point, error) {
-	rows, err := r.tx.QueryContext(r.ctx, `SELECT `+pointColumns+` FROM observed_points p
-		WHERE `+holdStreamSQL+` AND p.ts < $7 ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1`,
-		append(s.hold().args(), t)...)
+// readCarries is, for each window, the point current at its start (available
+// or not), its group set to its rollup row's, for HeldFromRowsCarry; nil
+// where the stream has no point before it.
+func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.Point, error) {
+	starts := make([]time.Time, len(windows))
+	for i, w := range windows {
+		starts[i] = w[0]
+	}
+	rows, err := r.tx.QueryContext(r.ctx, `
+		SELECT s.i, `+pointColumns+`
+		FROM unnest($7::timestamptz[]) WITH ORDINALITY AS s(a, i)
+		CROSS JOIN LATERAL (
+			SELECT * FROM observed_points p
+			WHERE `+holdStreamSQL+` AND p.ts < s.a
+			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`,
+		append(s.hold().args(), starts)...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("substrate/engine: aggregate carry: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	if !rows.Next() {
-		return nil, rows.Err()
+	out := make([]*observed.Point, len(windows))
+	for rows.Next() {
+		var i int
+		sp, err := scanPoint(rows, &i)
+		if err != nil {
+			return nil, err
+		}
+		r.rowGroups[sp.point.Group] = sp.group
+		p := sp.point
+		out[i-1] = &p
 	}
-	sp, err := scanPoint(rows)
-	if err != nil {
-		return nil, err
-	}
-	r.rowGroups[sp.point.Group] = sp.group
-	p := sp.point
-	return &p, nil
+	return out, rows.Err()
 }
 
 // rollupColumns are the columns of observed_rollups a read takes.
@@ -439,13 +454,28 @@ const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.bucket15, r.
 	r.first_ts, r.first_value::text, r.last_ts, r.last_value::text, r.covered_ms, r.held_ms, r.twa_sum, r.last_hold_ms,
 	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum`
 
-// readRollups reads one stream's rollup rows over the range.
+// rowSpans are the rollup rows the read's windows meet: each window from the
+// row holding its start to the row holding its end, joined.
+func (r *aggRun) rowSpans() [][2]time.Time {
+	var spans [][2]time.Time
+	for _, w := range r.segments() {
+		spans = append(spans, [2]time.Time{floor15(w[0]), ceil15(w[1])})
+	}
+	return joinSpans(spans)
+}
+
+// readRollups reads one stream's rollup rows over the read's windows: the
+// range, or every records-mode window, which is not clipped to the range.
 func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
-	rows, err := r.tx.QueryContext(r.ctx, `SELECT `+rollupColumns+` FROM observed_rollups r
-		WHERE r.metric = $1 AND r.kind = $2 AND r.source = $3 AND r.about = $4 AND r.channel = $5 AND r.form = $6
-		  AND r.bucket15 >= $7 AND r.bucket15 < $8
+	from, to := spanArrays(r.rowSpans())
+	rows, err := r.tx.QueryContext(r.ctx, `SELECT `+rollupColumns+`
+		FROM unnest($7::timestamptz[], $8::timestamptz[]) AS w(a, b)
+		CROSS JOIN LATERAL (
+			SELECT * FROM observed_rollups r
+			WHERE r.metric = $1 AND r.kind = $2 AND r.source = $3 AND r.about = $4 AND r.channel = $5 AND r.form = $6
+			  AND r.bucket15 >= w.a AND r.bucket15 < w.b) r
 		ORDER BY r.bucket15, r.code, r.unit, r.delta, r.utc_offset_min`,
-		append(s.hold().args(), floor15(r.p.from), r.p.to)...)
+		append(s.hold().args(), from, to)...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate rollups: %w", err)
 	}
@@ -987,8 +1017,10 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 		}
 		if g.form == vocabulary.FormGauge {
-			if err := r.walkHeld(out, g, s, rows); err != nil {
-				return nil, err
+			for i, w := range r.segments() {
+				if err := r.walkHeld(out, g, s, rows, w, r.carries[s][i]); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -1135,14 +1167,15 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream) error 
 	return nil
 }
 
-// walkHeld walks a gauge stream's 15-minute slots across the range, carrying
-// the held value from row to row (observed.HeldFromRowsCarry), and adds each
-// slot's held time to the bucket it lies in: a recorded-local bucket by the
-// offset of the point that held.
-func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observed.Row) error {
-	carry := r.carries[s]
-	from, to := floor15(r.p.from), r.p.to
-	i := 0
+// walkHeld walks a gauge stream's 15-minute slots across one of the read's
+// windows (the range, or a records-mode window, which may reach past the
+// range), carrying the held value from row to row (observed.HeldFromRowsCarry)
+// from the point current at the window's start, and adds each slot's held
+// time to the buckets it lies in: a recorded-local bucket by the offset of the
+// point that held.
+func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observed.Row, w [2]time.Time, carry *observed.Point) error {
+	from, to := floor15(w[0]), w[1]
+	i := sort.Search(len(rows), func(i int) bool { return !rows[i].Start.Before(from) })
 	for slot := from; slot.Before(to); {
 		for i < len(rows) && rows[i].Start.Before(slot) {
 			i++
@@ -1157,7 +1190,7 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observ
 			// across the empty slots, cut at bucket boundaries so each bucket gets
 			// its share.
 			next := to
-			if i < len(rows) {
+			if i < len(rows) && rows[i].Start.Before(to) {
 				next = rows[i].Start
 			}
 			if carry == nil || carryEnded(carry, slot, r.p.maxGap) {
@@ -1208,17 +1241,34 @@ func carryEnded(c *observed.Point, t time.Time, maxGap time.Duration) bool {
 }
 
 // chunkEnd is where a carry across empty slots is cut: the next row, the end
-// of the bucket the slot lies in, or the range's end.
+// of the bucket the slot lies in (the next start or end of any records-mode
+// window, which may overlap), or the window's end.
 func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) time.Time {
 	end := next
-	if r.p.bucket.mode == bucketLocal {
+	switch {
+	case r.p.bucket.mode == bucketLocal:
 		og := r.rowGroups[carry.Group]
 		shift := time.Duration(og.offset) * time.Minute
 		_, b := localBucketAt(r.buckets, slot.UTC().Add(shift), r.p.bucket)
 		if e := b.end.Add(-shift); e.Before(end) {
 			end = e
 		}
-	} else if bs := r.bucketsOf(slot, 0); len(bs) > 0 {
+	case r.p.bucket.mode == bucketRecords:
+		if r.bounds == nil {
+			for _, b := range r.buckets {
+				r.bounds = append(r.bounds, b.start, b.end)
+			}
+			slices.SortFunc(r.bounds, time.Time.Compare)
+		}
+		i := sort.Search(len(r.bounds), func(i int) bool { return r.bounds[i].After(slot) })
+		if i < len(r.bounds) && r.bounds[i].Before(end) {
+			end = r.bounds[i]
+		}
+	default:
+		bs := r.bucketsOf(slot, 0)
+		if len(bs) == 0 {
+			break
+		}
 		if e := bs[0].end; e.Before(end) {
 			end = e
 		}

@@ -1266,10 +1266,12 @@ served from them where every reducer merges exactly from rows: `count`, `sum`,
 `avg`, `min`, `max`, `first`, `last`, `stddev`, `increase`, `rate`,
 `circularMean`, and `twa` and `timeInState` while every row's largest gap is
 within `maxGap` (or there is none). Each row is converted from its own unit
-before it merges. A gauge's held time is walked across the rows, the value
-current at the range's start read with one lookup per stream. An amount's or a
-counter's bucket boundary that cuts a row (a range starting at 10:07, a records
-window) is read from raw points and merged in.
+before it merges. The rows read are the range's, or in the records mode each
+window's, which may reach past the range. A gauge's held time is walked
+across the rows, the value current at each window's start read with one
+lookup per stream. An amount's or a counter's bucket boundary that cuts a row
+(a range starting at 10:07, a records window) is read from raw points and
+merged in.
 
 Everything else reads raw points: `percentile` and `durationIn`, a `maxGap`
 tighter than a row's gaps, `priority` over two or more streams, a gauge's

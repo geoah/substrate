@@ -9,6 +9,7 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,4 +81,71 @@ func TestAggregateFormsComeFromTheRange(t *testing.T) {
 		"value": quantity("100", "{steps}"), "at": at(start), "endsAt": at(start.Add(24 * time.Hour)),
 	})
 	check("a summary after both")
+}
+
+// A records-mode window is not clipped to the range, on either path: a sleep
+// record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
+// amount at 01:30 and a gauge's value held after 01:00, and an `around`
+// widening reaches past the range at both ends.
+func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	sleep := strings.TrimSuffix(f.observation, "/observations/observation") + "/health/sleep"
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.mustPut(t, sleep, "night", map[string]any{"at": at(start), "endsAt": at(start.Add(2 * time.Hour))})
+	f.mustPut(t, sleep, "nap", map[string]any{"at": at(start.Add(30 * time.Minute)), "endsAt": at(start.Add(45 * time.Minute))})
+	for _, x := range []struct {
+		id, value string
+		from, to  time.Duration
+	}{{"before", "5", -5 * time.Minute, 0}, {"after", "10", 90 * time.Minute, 100 * time.Minute}} {
+		f.mustPut(t, f.observation, "steps/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
+			"value": quantity(x.value, "{steps}"), "at": at(start.Add(x.from)), "endsAt": at(start.Add(x.to)),
+		})
+	}
+	for _, x := range []struct {
+		id, value string
+		at        time.Duration
+	}{{"evening", "60", -time.Hour}, {"night", "80", 90 * time.Minute}} {
+		f.mustPut(t, f.observation, "hr/"+x.id, map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("phone"), "form": "gauge",
+			"value": quantity(x.value, "/min"), "at": at(start.Add(x.at)),
+		})
+	}
+	read := func(metric, id string, around *substrate.AggregateAround, reds ...string) substrate.AggregateRow {
+		t.Helper()
+		res, _, rollupRows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath(metric)},
+			Range:  rng(start, start.Add(time.Hour)),
+			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+				Filter: substrate.Filter{Kinds: []string{sleep}, IDs: []string{id}}, Around: around,
+			}},
+			Reducers: reducers(reds...),
+		})
+		if rollupRows == 0 {
+			t.Errorf("%s over %s read no rollup row; the windows are whole rows", metric, id)
+		}
+		if len(res.Rows) != 1 {
+			t.Fatalf("%s over %s: %d rows, want one", metric, id, len(res.Rows))
+		}
+		return res.Rows[0]
+	}
+	if v, _ := val(read("health/steps", "night", nil, "sum"), "sum"); v != "10" {
+		t.Errorf("the night's steps = %s, want the 10 at 01:30", v)
+	}
+	widened := &substrate.AggregateAround{Before: "PT1H", After: "PT1H"}
+	if v, _ := val(read("health/steps", "nap", widened, "sum"), "sum"); v != "15" {
+		t.Errorf("the widened nap's steps = %s, want 5 before the range and 10 after it", v)
+	}
+	night := read("health/heart_rate", "night", nil, "twa", "count")
+	if v, _ := val(night, "twa"); v != "65" {
+		t.Errorf("the night's time-weighted heart rate = %s, want 65 (60 held 90 minutes, 80 for 30)", v)
+	}
+	if c, _ := val(night, "count"); c != "1" {
+		t.Errorf("the night's count = %s, want the point at 01:30", c)
+	}
+	nap := read("health/heart_rate", "nap", widened, "twa")
+	if v, _ := val(nap, "twa"); !close9(num(t, v), (60*120+80*15)/135.0) {
+		t.Errorf("the widened nap's time-weighted heart rate = %s, want %v", v, (60*120+80*15)/135.0)
+	}
 }
