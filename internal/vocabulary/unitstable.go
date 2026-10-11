@@ -519,8 +519,9 @@ var primaryMeasure = map[string]string{
 
 // unitAliases are spellings people and vendors write for a code. They are read
 // on input and never stored: the stored unit is always the code. None of them
-// is a valid code itself, because an alias would shadow the code it spells
-// (buildTable refuses one, TestCanonicalUnitAppliesAliases checks).
+// is a valid code itself, because an alias would shadow the code it spells:
+// buildTable refuses one the grammar reads, and TestUnitAliasesSpellNoUCUMCode
+// refuses one over an atom UCUM defines and the grammar does not carry yet.
 //
 // `count/min` is `{count}/min` and never `/min`, and `count` is `{count}` and
 // never `1`: an annotation is part of the unit and two units that differ in
@@ -528,8 +529,9 @@ var primaryMeasure = map[string]string{
 // heart rate, breathing rate and every other rate until a writer that knows
 // what was counted converts it itself.
 //
-// HealthKit spells a foot `ft`, which is not here: `ft` is a UCUM code, the
-// femtotonne, so a writer reading HealthKit maps it to `[ft_i]` itself.
+// HealthKit spells a foot `ft` and a stone `st`, which are not here: `ft` is
+// a UCUM code, the femtotonne, and `st` is the stere, a cubic meter, so a
+// writer reading HealthKit maps them to `[ft_i]` and `[stone_av]` itself.
 var unitAliases = map[string]string{
 	"°C": "Cel", "℃": "Cel", "degC": "Cel",
 	"°F": "[degF]", "℉": "[degF]", "degF": "[degF]",
@@ -540,7 +542,7 @@ var unitAliases = map[string]string{
 	// HealthKit's HKUnit spellings, which Health Auto Export sends as written.
 	"count": "{count}", "hr": "h", "IU": "[IU]", "dBASPL": "dB[SPL]", "cmAq": "cm[H2O]",
 	"in": "[in_i]", "yd": "[yd_i]", "mi": "[mi_i]", "km/hr": "km/h", "mi/hr": "[mi_i]/h",
-	"lb": "[lb_av]", "oz": "[oz_av]", "st": "[stone_av]",
+	"lb": "[lb_av]", "oz": "[oz_av]",
 	"mL/(kg*min)": "mL/(kg.min)",
 	// HealthKit's blood glucose unit: mmol/L annotated with glucose's molar
 	// mass (180.15588 g/mol), printed to two different precisions.

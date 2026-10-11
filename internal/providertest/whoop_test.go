@@ -882,3 +882,79 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 		}
 	}
 }
+
+// whoopSettingsReport is a body that returns the names under its injected
+// `config.settings`, sorted.
+const whoopSettingsReport = `
+def main(input, host):
+    settings = (input.get("config") or {}).get("settings") or {}
+    return {"output": {"settings": sorted(settings.keys())}}
+`
+
+// TestWhoopFunctionsReceiveNoWebhookSecretSetting pins that the WHOOP closure
+// ships no `webhooksecret` setting: the door checks WHOOP's signature against
+// the OAuth client secret (decision 0164), so neither `whoopsync` nor
+// `whoopwebhook` receives a copy in `config.settings`. A record left by the
+// earlier closure is still injected until its owner deletes it, which is
+// what the README's upgrade note asks; the test writes one to show the
+// report would see it.
+func TestWhoopFunctionsReceiveNoWebhookSecretSetting(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ctx := context.Background()
+	files, err := filepath.Glob(whoopDir + "/*.yaml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("the WHOOP closure's files: %v %v", files, err)
+	}
+	for _, f := range files {
+		for _, d := range loadDocs(t, f) {
+			if k := d["kind"]; k == "substrate.reamde.dev/core/secret" || k == "substrate.reamde.dev/core/setting" {
+				t.Fatalf("%s ships a %v: %v", f, k, d["metadata"])
+			}
+		}
+	}
+
+	_, ds := newCoreDataset(t)
+	install(t, ds, whoopDir, func(docs []map[string]any) {
+		for _, d := range docs {
+			meta, _ := d["metadata"].(map[string]any)
+			data, _ := d["data"].(map[string]any)
+			if id := meta["id"]; id == whoopSyncFn || id == whoopWebhookFn {
+				data["source"] = whoopSettingsReport
+			}
+		}
+	})
+	report := func(fn string) []any {
+		t.Helper()
+		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{})
+		if err != nil {
+			t.Fatalf("call %s: %v", fn, err)
+		}
+		om, _ := out.(map[string]any)
+		names, _ := om["settings"].([]any)
+		return names
+	}
+	stale := whoopPackage + "/webhooksecret"
+	for _, fn := range []string{whoopSyncFn, whoopWebhookFn} {
+		if names := report(fn); slices.Contains(names, any("webhooksecret")) {
+			t.Fatalf("%s receives config.settings %v from a fresh install", fn, names)
+		}
+	}
+	mustPut(t, ds, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/secret", ID: stale,
+		Properties: map[string]any{"value": "a-copy-of-the-client-secret"},
+	})
+	for _, fn := range []string{whoopSyncFn, whoopWebhookFn} {
+		if names := report(fn); !slices.Contains(names, any("webhooksecret")) {
+			t.Fatalf("%s does not see a webhooksecret record left in place: %v", fn, names)
+		}
+	}
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/secret", stale, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the stale secret: %v", err)
+	}
+	for _, fn := range []string{whoopSyncFn, whoopWebhookFn} {
+		if names := report(fn); slices.Contains(names, any("webhooksecret")) {
+			t.Fatalf("%s still receives config.settings %v after the delete", fn, names)
+		}
+	}
+}

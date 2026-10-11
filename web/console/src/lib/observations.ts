@@ -436,7 +436,9 @@ function lastValue(row: AggregateRow): AggregateValue | undefined {
 
 /** The latest read's rows as streams, newest first. A row with no metric in
  * its group answers no stream and is dropped. */
-export function streamsOf(result: AggregateResult | undefined): Stream[] {
+export function streamsOf(
+  result: Pick<AggregateResult, "rows"> | undefined
+): Stream[] {
   const out: Stream[] = []
   for (const row of result?.rows ?? []) {
     const metric = row.group?.metric
@@ -523,15 +525,19 @@ export function dayRange(first: string, last: string): TimeRange | undefined {
 const pad = (n: number) => String(n).padStart(2, "0")
 
 /** An instant as local wall time with its offset, the spelling the
- * aggregate's `range` reads: `2026-09-01T00:00:00+03:00`. */
+ * aggregate's `range` reads: `2026-09-01T00:00:00+03:00`. Milliseconds are
+ * kept where the instant has them (`00:00:00.123+03:00`): a record's window
+ * shorter than a second would otherwise read as an empty range. */
 export function isoWithOffset(t: number): string {
   const d = new Date(t)
   const off = -d.getTimezoneOffset()
   const sign = off >= 0 ? "+" : "-"
   const abs = Math.abs(off)
+  const ms = d.getMilliseconds()
   return (
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
     `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    (ms ? `.${String(ms).padStart(3, "0")}` : "") +
     `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
   )
 }
@@ -843,12 +849,74 @@ export function laneRead(spec: LaneSpec): AggregateRead {
   }
 }
 
-/** The latest read: one row per stream, from the newest point of each. */
-export function latestRead(): AggregateRead {
+/** What a page narrows its streams to: record paths of metrics, sources
+ * and things observed. An empty list narrows nothing. */
+export interface StreamNarrowing {
+  metrics?: readonly string[]
+  sources?: readonly string[]
+  abouts?: readonly string[]
+}
+
+/** The observed filter, narrowed server-side by `properties`. */
+function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
+  const properties: NonNullable<RecordFilter["properties"]> = {}
+  if (narrow.metrics?.length) properties.metric = { in: [...narrow.metrics] }
+  if (narrow.sources?.length) properties.source = { in: [...narrow.sources] }
+  if (narrow.abouts?.length) properties.about = { in: [...narrow.abouts] }
   return {
-    filter: { implements: OBSERVED_TRAIT_IDENTITY },
+    implements: OBSERVED_TRAIT_IDENTITY,
+    ...(Object.keys(properties).length ? { properties } : {}),
+  }
+}
+
+/** The latest read: one row per stream, from the newest point of each,
+ * narrowed to the given metrics, sources and things. A read makes at most
+ * `maxGroups` (200) groups, which is why discovery asks for its streams a
+ * few metrics at a time (`discoveryChunks`). */
+export function latestRead(narrow: StreamNarrowing = {}): AggregateRead {
+  return {
+    filter: narrowedFilter(narrow),
     aggregate: { groupBy: ["metric", "source", "about"], reducers: ["last"] },
   }
+}
+
+/** The most groups one read may ask for (`budget.maxGroups`'s cap). */
+export const MAX_GROUPS_CAP = 2000
+
+/** Discovery's first read: one row per metric with a point, narrowed to
+ * the chosen sources and things, at the group cap, since every metric with
+ * a point is one group and a catalogue is a few hundred. Its metrics are
+ * what a picker offers and what `discoveryChunks` partitions. */
+export function metricsRead(narrow: StreamNarrowing = {}): AggregateRead {
+  return {
+    filter: narrowedFilter({ sources: narrow.sources, abouts: narrow.abouts }),
+    aggregate: {
+      groupBy: ["metric"],
+      reducers: ["last"],
+      budget: { maxGroups: MAX_GROUPS_CAP },
+    },
+  }
+}
+
+/** How many metrics one stream read names, and how many stream reads one
+ * discovery makes at most: eight metrics of a few streams each sit well
+ * inside a read's 200 groups, and past 256 metrics each read names more. */
+const METRICS_PER_READ = 8
+const MAX_STREAM_READS = 32
+
+/** The metrics as the batches discovery reads their streams in: at most
+ * `MAX_STREAM_READS` batches, each of at least `METRICS_PER_READ`
+ * metrics. */
+export function discoveryChunks(metrics: readonly string[]): string[][] {
+  const size = Math.max(
+    METRICS_PER_READ,
+    Math.ceil(metrics.length / MAX_STREAM_READS)
+  )
+  const out: string[][] = []
+  for (let i = 0; i < metrics.length; i += size) {
+    out.push(metrics.slice(i, i + size))
+  }
+  return out
 }
 
 // ── the answer, cut into buckets and series ────────────────────────────────
@@ -889,17 +957,52 @@ export interface SeriesPoint {
 
 /** A row's value for one reducer, by key. A rolling value (one carrying
  * `rolling` and `of`) is never the reducer's own: the timeline asks for
- * none, and one would otherwise shadow the column it rolls over. */
+ * none, and one would otherwise shadow the column it rolls over.
+ *
+ * A bare `timeInState` is asked for once and answered once per state, each
+ * value naming its state (`{"timeInState": ["rem"]}`, `code: "rem"`), so the
+ * bare key resolves to the value for the row's own code. */
 export function rowValue(
   row: AggregateRow | undefined,
   key: string
 ): AggregateValue | undefined {
-  return row?.values.find(
-    (v) => v.rolling === undefined && reducerKey(v.reducer) === key
+  const own = row?.values.filter((v) => v.rolling === undefined) ?? []
+  const exact = own.find((v) => reducerKey(v.reducer) === key)
+  if (exact || key !== "timeInState") return exact
+  const code = row?.group?.code
+  if (code === undefined) return undefined
+  return own.find(
+    (v) =>
+      reducerName(v.reducer) === "timeInState" &&
+      reducerKey(v.reducer) === `timeInState:${code}`
   )
 }
 
-/** The rows as buckets (distinct windows, oldest first) and series (one per
+/** The empty buckets between windows that do not meet: an answer without
+ * `fill` omits the buckets nothing fell in, and a line drawn from one
+ * returned window to the next would bridge the time between them. Each
+ * stretch of missing time becomes one bucket holding no rows, so every
+ * series breaks there. */
+function withGaps(buckets: Bucket[]): Bucket[] {
+  const out: Bucket[] = []
+  for (const bucket of buckets) {
+    const previous = out.at(-1)
+    if (previous && bucket.start > previous.end) {
+      out.push({
+        start: previous.end,
+        end: bucket.start,
+        startIso: previous.endIso,
+        endIso: bucket.startIso,
+        rows: [],
+      })
+    }
+    out.push(bucket)
+  }
+  return out
+}
+
+/** The rows as buckets (distinct windows, oldest first, with an empty one
+ * standing in for each stretch the answer skipped) and series (one per
  * value of the group key, in first-seen order), every series holding one
  * point per bucket. */
 export function seriesOf(
@@ -923,7 +1026,9 @@ export function seriesOf(
     }
     bucket.rows.push(row)
   }
-  const buckets = [...byWindow.values()].sort((a, b) => a.start - b.start)
+  const buckets = withGaps(
+    [...byWindow.values()].sort((a, b) => a.start - b.start)
+  )
   const keys: string[] = []
   for (const row of rows) {
     const key = groupValue(row.group, groupKey) ?? ""

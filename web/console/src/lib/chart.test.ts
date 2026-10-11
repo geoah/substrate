@@ -50,6 +50,37 @@ describe("ticks", () => {
     expect(niceDomain([]).domain).toEqual([0, 1])
   })
 
+  it("covers a domain narrower than the float spacing at its magnitude", () => {
+    // 16384 is one float step at 1e20, so a round step of 5000 adds
+    // nothing there: the ticks fall back to the domain's own ends.
+    const { domain, ticks } = niceDomain([1e20, 1e20 + 16384])
+    expect(domain.every(Number.isFinite)).toBe(true)
+    expect(domain[0]).toBeLessThanOrEqual(1e20)
+    expect(domain[1]).toBeGreaterThanOrEqual(1e20 + 16384)
+    expect(domain[0]).toBeLessThan(domain[1])
+    for (let i = 1; i < ticks.length; i++) {
+      expect(ticks[i]).toBeGreaterThan(ticks[i - 1])
+    }
+    expect(() => tickLabels(ticks)).not.toThrow()
+  })
+
+  it("ticks and labels a domain finer than toFixed can print", () => {
+    const { domain, ticks } = niceDomain([1e-101, 2e-101])
+    expect(domain[0]).toBeLessThanOrEqual(1e-101)
+    expect(domain[1]).toBeGreaterThanOrEqual(2e-101)
+    expect(ticks.length).toBeGreaterThan(2)
+    for (let i = 1; i < ticks.length; i++) {
+      expect(ticks[i]).toBeGreaterThan(ticks[i - 1])
+    }
+    const labels = tickLabels(ticks)
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(labels[0]).toMatch(/e-10[01]$/)
+  })
+
+  it("keeps a tick at zero clean of float noise", () => {
+    expect(niceTicks(-0.5, 0.5)).toEqual([-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6])
+  })
+
   it("labels compactly from a thousand", () => {
     expect(compactNumber(0)).toBe("0")
     expect(compactNumber(950)).toBe("950")

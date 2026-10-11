@@ -321,7 +321,8 @@ request:
 A request that is not multipart carries `body` instead of `parts`:
 `{text: "…"}` when the bytes are valid UTF-8, `{base64: "…"}` otherwise. Both
 are byte-exact. A provider signature the trigger declares is verified by the
-door before the fire ([webhook signatures](#webhook-signatures)); a scheme the
+door before the fire ([webhook signatures](#webhook-signatures)), and a
+request that passed carries `signatureVerified: true`; a scheme the
 declaration cannot express (GitHub's `sha256=` prefix on
 `X-Hub-Signature-256`) is the body's to verify, by re-encoding the text and
 hashing it against a secret it reads from its bundle's configuration. The host stores
@@ -1157,6 +1158,18 @@ bundle's prefix is also injected into that bundle's functions
 ([decision 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)),
 so a secret meant for the door alone takes an id outside every bundle's
 (`webhooks/github`).
+
+A request the door verified is stored with `request.signatureVerified: true`,
+and a resumed pending delivery or a retry by hand runs it without checking
+its timestamp again, however long after `maxSkew` it runs. A request stored
+while the trigger declared no signature carries no such mark. Once the
+trigger declares one, the resume, a retry by hand and the rerun of an
+interrupted agent delivery check that request's kept body and headers
+against the declaration, measuring the timestamp against `fire.at`, when the
+door received it. A request that verifies runs. One that does not, because
+it is unsigned, its signature header is not among the headers the trigger
+kept, or its signature does not match, is parked with an error starting
+`webhook signature refused at delivery`, and the callable never runs it.
 
 ## What makes this safe to run unattended
 

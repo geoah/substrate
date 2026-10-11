@@ -352,7 +352,7 @@ func TestCanonicalUnitReadsHealthKitSpellings(t *testing.T) {
 	for in, want := range map[string]string{
 		// The aliases HealthKit needs.
 		"count": "{count}", "count/min": "{count}/min", "hr": "h",
-		"lb": "[lb_av]", "oz": "[oz_av]", "st": "[stone_av]",
+		"lb": "[lb_av]", "oz": "[oz_av]",
 		"in": "[in_i]", "yd": "[yd_i]", "mi": "[mi_i]", "km/hr": "km/h", "mi/hr": "[mi_i]/h", "kmph": "km/h",
 		"mL/(kg*min)": "mL/(kg.min)", "ml/(kg·min)": "mL/(kg.min)",
 		"mmol<180.1558800000541>/L": "mmol/L", "mmol<180.15588000005408>/L": "mmol/L",
@@ -392,6 +392,11 @@ func TestCanonicalUnitReadsHealthKitSpellings(t *testing.T) {
 	}
 	if m, err := vocabulary.MeasureOf("ft"); err != nil || m.Name != "mass" {
 		t.Errorf("ft measures %v, %v, want mass", m.Name, err)
+	}
+	// `st` is UCUM's stere, a cubic meter, which the table does not carry:
+	// it is refused, never read as the stone.
+	if got, err := vocabulary.CanonicalUnit("st"); err == nil {
+		t.Errorf("CanonicalUnit(%q) = %q, want a refusal: UCUM's st is the stere", "st", got)
 	}
 }
 

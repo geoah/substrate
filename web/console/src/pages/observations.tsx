@@ -7,7 +7,7 @@
 
 import { useMemo } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { ChartLineIcon, SearchXIcon } from "lucide-react"
+import { ChartLineIcon } from "lucide-react"
 import { parseAsArrayOf, parseAsString, useQueryState } from "nuqs"
 
 import { timeColumn } from "@/components/data-table/columns"
@@ -30,17 +30,10 @@ import {
   Reading,
   ShapeWord,
 } from "@/components/observations/marks"
+import { DiscoveryError } from "@/components/observations/discovery-error"
 import { NoObservations } from "@/components/observations/no-observations"
 import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useObservations, type Observations } from "@/hooks/use-observations"
@@ -107,7 +100,6 @@ function distinct(values: (string | undefined)[]): string[] {
 }
 
 export function ObservationsPage() {
-  const obs = useObservations()
   const [technical] = useTechnicalDetails()
   const navigate = useNavigate()
   const [metrics, setMetrics] = useQueryState("metric", ARRAY)
@@ -115,10 +107,21 @@ export function ObservationsPage() {
   const [abouts, setAbouts] = useQueryState("about", ARRAY)
   const [forms, setForms] = useQueryState("form", ARRAY)
   const [search, setSearch] = useQueryState("q", parseAsString.withDefault(""))
+  // The chosen metrics, sources and things narrow the reads on the server.
+  // "You" names no record, so a filter holding it narrows things here only.
+  const obs = useObservations({
+    metrics,
+    sources,
+    abouts: abouts.includes(OWNER) ? [] : abouts,
+  })
 
   const rows = useMemo(() => rowsOf(obs), [obs])
   const facets = useMemo<Facet[]>(() => {
-    const byMetric = new Map(rows.map((r) => [r.metric, r.metricName]))
+    // Every metric with a point, so choosing one never hides the others.
+    const byMetric = new Map(
+      obs.metrics.map((m) => [m, obs.metricName(m)] as const)
+    )
+    for (const r of rows) byMetric.set(r.metric, r.metricName)
     const bySource = new Map(rows.map((r) => [r.source, r.sourceTitle]))
     const byAbout = new Map(rows.map((r) => [r.about, r.aboutTitle]))
     return [
@@ -159,7 +162,7 @@ export function ObservationsPage() {
         })),
       },
     ]
-  }, [rows])
+  }, [rows, obs])
 
   const shown = useMemo(
     () =>
@@ -276,37 +279,20 @@ export function ObservationsPage() {
           onChange={(next) => void setSearch(next || null)}
         />
       </div>
-      {obs.latest.isError ? (
-        <Empty className="mt-6">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <SearchXIcon />
-            </EmptyMedia>
-            <EmptyTitle>The streams didn’t load</EmptyTitle>
-            <EmptyDescription>{obs.latest.error.message}</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void obs.latest.refetch()}
-            >
-              Try again
-            </Button>
-          </EmptyContent>
-        </Empty>
+      {obs.discovery.isError ? (
+        <DiscoveryError discovery={obs.discovery} />
       ) : (
         <div
           className={cn(
             "-mx-4 md:-mx-6",
-            obs.latest.isFetching &&
-              !obs.latest.isPending &&
+            obs.discovery.isFetching &&
+              !obs.discovery.isPending &&
               "opacity-60 transition-opacity"
           )}
         >
           <DataTable
             table={table}
-            loading={obs.latest.isPending}
+            loading={obs.discovery.isPending}
             onRowClick={(row) =>
               void navigate({
                 to: "/observations/timeline",

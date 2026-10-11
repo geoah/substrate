@@ -45,3 +45,11 @@ The scopes to enable on the WHOOP app, what each toggle syncs, the read
 windows, what each webhook event does, how deletions reach the mirror and why
 revocation is manual:
 [docs/bundles-catalog.md#whoop](../../../docs/bundles-catalog.md#whoop).
+
+## Upgrade notes
+
+A development install that followed the earlier setup instructions may hold
+a `providers.substrate.reamde.dev/whoop/webhooksecret` secret record, a copy
+of the client secret every WHOOP function still receives as
+`config.settings.webhooksecret`, so delete it if it exists (`substratectl
+delete substrate.reamde.dev/core/secret providers.substrate.reamde.dev/whoop/webhooksecret`).

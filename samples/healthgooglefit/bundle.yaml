@@ -508,12 +508,14 @@ data:
         return skipped
 
 
-    def _crossing(ctx, m, rid, start, end, value, unit, source, mod, desired):
+    def _crossing(ctx, m, rid, start, end, value, unit, slug, source, mod, desired):
         """A delta whose span crosses a UTC hour, as one amount observation over
         exactly that span: the amount stays whole, and no hour claims time it
-        does not cover."""
+        does not cover. The id names the source as the hourly trace's does
+        and the start to the nanosecond, so two sources' deltas from one
+        instant stay two observations."""
         at = _ns_time(start)
-        oid = _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%d" % (rid, m["metric"], start // 10**6))
+        oid = _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%s/%d" % (rid, slug, m["metric"], start))
         desired[(OBSERVATION, oid)] = {
             "metric": _ref(METRIC, "health/" + m["metric"]), "source": source,
             "form": m["form"], "value": {"value": value, "unit": unit},
@@ -547,7 +549,7 @@ data:
             value = ctx.convert(n, m["fitUnit"], unit)
             mod = _int(p.get("modifiedTimeMillis")) or 0
             if end is not None and start // HOUR_NS != (end - 1) // HOUR_NS:
-                _crossing(ctx, m, rid, start, end, value, unit, source, mod, desired)
+                _crossing(ctx, m, rid, start, end, value, unit, slug, source, mod, desired)
                 continue
             by_source.setdefault((slug, source["ref"]), []).append((start, end, value, mod))
         metric = _ref(METRIC, "health/" + m["metric"])

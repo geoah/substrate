@@ -185,10 +185,10 @@ data:
     # table; every other spelling goes to host.units.canonical. The table keeps
     # `count/min` and `bpm` apart from `/min` (an annotated count never
     # converts), but here they are the heart and breathing rates the metrics
-    # hold in `/min`. `ft` is the femtotonne in UCUM, so the foot is mapped here.
-    # Apple's dimensionless `count` is the metric's own counted unit (steps,
-    # floors, a BMI), handled in Units.
-    APP_UNITS = {"count/min": "/min", "bpm": "/min", "ft": "[ft_i]"}
+    # hold in `/min`. `ft` is the femtotonne in UCUM and `st` the stere, so the
+    # foot and the stone are mapped here. Apple's dimensionless `count` is the
+    # metric's own counted unit (steps, floors, a BMI), handled in Units.
+    APP_UNITS = {"count/min": "/min", "bpm": "/min", "ft": "[ft_i]", "st": "[stone_av]"}
     COUNTED = ("{steps}", "{floors}", "kg/m2")
 
     FINE = ("seconds", "minutes")

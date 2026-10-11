@@ -22,15 +22,21 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { AggregateResult } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
-import { isoWithOffset, windowWords } from "@/lib/observations"
+import {
+  isoWithOffset,
+  recordTimelineSearch,
+  windowWords,
+} from "@/lib/observations"
 import {
   LATEST,
   METRIC,
   SLEEP,
+  SLEEP_STAGE,
   SOURCE,
   STEPS,
   WEIGHT,
   ZONES,
+  latestAnswer,
   observationsServer,
   type SeenRead,
 } from "@/lib/observations.test-fixtures"
@@ -54,7 +60,7 @@ const ANSWERS: Record<string, AggregateResult> = {
 }
 
 function answer(read: SeenRead): AggregateResult {
-  if (!read.aggregate.metric) return LATEST
+  if (!read.aggregate.metric) return latestAnswer(read)
   return ANSWERS[read.aggregate.metric.ref] ?? { ...LATEST, rows: [] }
 }
 
@@ -63,8 +69,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function mount(searchParams: string, technical = false) {
-  const server = observationsServer(answer)
+function mount(
+  searchParams: string,
+  technical = false,
+  respond: (read: SeenRead) => AggregateResult | Response = answer
+) {
+  const server = observationsServer(respond)
   vi.stubGlobal("fetch", vi.fn(server.fetch))
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -207,6 +217,60 @@ describe("the timeline's requests", () => {
     expect(read.reducers).toEqual(["sum"])
   })
 
+  it("keeps a record's subsecond window from its link to the request", async () => {
+    const search = recordTimelineSearch({
+      metric: { ref: `${METRIC}/health/heart_rate` },
+      source: { ref: `${SOURCE}/garmin-forerunner-265` },
+      at: "2026-09-01T00:00:00.123Z",
+      endsAt: "2026-09-01T00:00:00.456Z",
+    })!
+    const server = mount(`?${new URLSearchParams(search).toString()}`)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    const { gte, lt } = charts(server.seen, "health/heart_rate")[0].aggregate
+      .range!
+    expect(Date.parse(gte!)).toBe(Date.parse("2026-09-01T00:00:00.123Z"))
+    expect(Date.parse(lt!)).toBe(Date.parse("2026-09-01T00:00:00.456Z"))
+  })
+
+  it("says discovery was refused, naming its problems, never that nothing was measured", async () => {
+    const problem =
+      "aggregate.budget.maxGroups: the latest read makes 201 groups, over 200; narrow the filter or raise maxGroups (the cap is 2000)"
+    mount(`?${WINDOW}`, false, (read) =>
+      read.aggregate.metric
+        ? answer(read)
+        : new Response(
+            JSON.stringify({
+              error: {
+                code: "validation",
+                message: "the aggregate read was refused",
+                problems: [problem],
+              },
+            }),
+            { status: 422, headers: { "Content-Type": "application/json" } }
+          )
+    )
+    expect(await screen.findByText("The streams didn’t load")).toBeTruthy()
+    expect(screen.getByText(problem)).toBeTruthy()
+    expect(screen.queryByText(/Nothing has been measured/)).toBe(null)
+  })
+
+  it("narrows discovery to the chosen metric and still offers the others", async () => {
+    const server = mount(`?metric=health/body_mass&${WINDOW}`)
+    await lane("Weight")
+    const streamReads = server.seen.filter(
+      (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 3
+    )
+    expect(streamReads.map((r) => r.filter.properties)).toEqual([
+      { metric: { in: [`${METRIC}/health/body_mass`] } },
+    ])
+    fireEvent.click(screen.getByRole("button", { name: /^Metrics?:/ }))
+    expect(
+      await screen.findByRole("option", { name: /Heart rate/ })
+    ).toBeTruthy()
+  })
+
   it("holds back a read past the bucket budget and says why", async () => {
     const server = mount("?metric=health/heart_rate&range=1y&bucket=15m")
     const heart = await lane("Heart rate")
@@ -256,6 +320,48 @@ describe("the charts", () => {
     const legend = within(sleep).getByRole("list", { name: "Legend" })
     expect(legend.textContent).toContain("Rem")
     expect(legend.textContent).toContain("Awake")
+  })
+
+  it("stacks a coded gauge's time in each state as the engine answers it", async () => {
+    // A coded gauge reads a bare `timeInState`. Grouped by code, the
+    // engine answers each row with its own state's value, the reducer
+    // naming that state (aggregateread.go): {"timeInState": ["rem"]}.
+    const stateRows = SLEEP.rows.map((r) => ({
+      ...r,
+      form: "gauge",
+      nonAdditive: undefined,
+      values: [
+        {
+          reducer: { timeInState: [r.group!.code!] },
+          value: String(Number(r.values[0].value) * 60),
+          unit: "s",
+          code: r.group!.code!,
+        },
+      ],
+    }))
+    const server = mount(
+      `?metric=health/sleep_stage&${WINDOW}`,
+      false,
+      (read) =>
+        !read.aggregate.metric
+          ? latestAnswer(read, {
+              ...LATEST,
+              rows: LATEST.rows.map((r) =>
+                r.group?.metric === SLEEP_STAGE ? { ...r, form: "gauge" } : r
+              ),
+            })
+          : { ...SLEEP, unit: "s", rows: stateRows }
+    )
+    const sleep = await lane("Sleep stage")
+    await waitFor(() =>
+      expect(charts(server.seen, "health/sleep_stage")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/sleep_stage")[0].aggregate.reducers
+    ).toEqual(["timeInState"])
+    await waitFor(() =>
+      expect(sleep.querySelectorAll("path[data-series]")).toHaveLength(4)
+    )
   })
 
   it("reads a bucket out from the keyboard and zooms into it", async () => {

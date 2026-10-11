@@ -463,15 +463,70 @@ func TestHealthGoogleFitKeepsAnAmountsEnd(t *testing.T) {
 	}
 
 	crossing := hour.Add(59*time.Minute + 30*time.Second)
-	obs := mustGet(t, ds, obsObservation, fmt.Sprintf("googlefit/%s/steps/%d", dayRow, crossing.UnixMilli())).Properties
+	steps := withMetric(t, ds, obsObservation, "steps")
+	if len(steps) != 1 {
+		t.Fatalf("%d step observations, want the one delta across the hour", len(steps))
+	}
+	obs := steps[0].Properties
 	value, _ := obs["value"].(map[string]any)
 	if obs["form"] != "amount" || fmt.Sprint(value["value"]) != "30" || value["unit"] != "{steps}" ||
 		!parseInstant(t, obs["at"]).Equal(crossing) || !parseInstant(t, obs["endsAt"]).Equal(crossing.Add(time.Minute)) ||
 		storedRefPath(obs["origin"]) != googlefitDatasetType+"/"+dayRow {
 		t.Fatalf("the delta across the hour = %v", obs)
 	}
-	if n := len(withMetric(t, ds, obsObservation, "steps")); n != 1 {
-		t.Fatalf("%d step observations, want the one delta across the hour", n)
+}
+
+// Two sources that each record an amount across the same UTC hour, from the
+// same instant, keep one observation each: the observation's id names the
+// source the way the hourly trace's does, so the second never replaces the
+// first. One delta comes from the watch, one from a pedometer app, both
+// spanning 10:59:55 to 11:00:05.
+func TestHealthGoogleFitKeepsTwoSourcesAmountsAcrossAnHourApart(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	install(t, ds, googlefitDir, nil)
+	importVocabulary(t, ds, "healthgooglefit")
+	today := utcToday()
+	fake := newFakeFit(t, today, fitCutOn)
+	watch := fake.points[fitSteps][0].raw["originDataSourceId"]
+	recorded := time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC)
+	delta := func(origin any, steps int) any {
+		return map[string]any{
+			"startTimeNanos":     strconv.FormatInt(recorded.Add(59*time.Minute+55*time.Second).UnixNano(), 10),
+			"endTimeNanos":       strconv.FormatInt(recorded.Add(60*time.Minute+5*time.Second).UnixNano(), 10),
+			"dataTypeName":       "com.google.step_count.delta",
+			"originDataSourceId": origin,
+			"value":              []any{map[string]any{"intVal": steps}},
+			"modifiedTimeMillis": strconv.FormatInt(recorded.Add(2*time.Hour).UnixMilli(), 10),
+		}
+	}
+	fake.setPoints(fitSteps, []any{
+		delta(watch, 10),
+		delta("raw:com.google.step_count.delta:com.example.pedometer:", 20),
+	})
+	googlefitAccountWith(t, ds, "enabledActivity")
+	googlefitSync(t, ds, fake)
+	shift := today.Sub(fitCutOn)
+	dayRow := fitDatasetRow(fitSteps, recorded.Add(shift).Truncate(24*time.Hour))
+	observe(t, ds, googlefitDatasetType, dayRow)
+
+	bySource := map[string]string{}
+	for _, r := range withMetric(t, ds, obsObservation, "steps") {
+		value, _ := r.Properties["value"].(map[string]any)
+		bySource[storedRefPath(r.Properties["source"])] = fmt.Sprint(value["value"])
+	}
+	var watchValue, appValue string
+	for src, v := range bySource {
+		switch {
+		case strings.HasSuffix(src, "/google-pixel-watch-2"):
+			watchValue = v
+		case strings.Contains(src, "pedometer"):
+			appValue = v
+		}
+	}
+	if len(bySource) != 2 || watchValue != "10" || appValue != "20" {
+		t.Fatalf("step observations by source = %v, want the watch's 10 and the app's 20", bySource)
 	}
 }
 

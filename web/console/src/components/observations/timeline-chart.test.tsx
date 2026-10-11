@@ -53,4 +53,13 @@ describe("TimelineChart", () => {
     view.rerender(chart(WEIGHT.rows.slice(0, 1)))
     expect(screen.queryByRole("status")).toBe(null)
   })
+
+  it("breaks the line where the answer skipped a week", () => {
+    // The middle week is not in the answer at all: no row, filled or not.
+    const view = render(chart([WEIGHT.rows[0], WEIGHT.rows[2]]))
+    const line = view.container.querySelector("path[stroke-width='2']")!
+    const d = line.getAttribute("d") ?? ""
+    expect(d.match(/M/g)).toHaveLength(2)
+    expect(d).not.toContain("L")
+  })
 })

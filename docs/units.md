@@ -672,7 +672,6 @@ as `2` and `3` anywhere in a code, so `μg/m³` is stored as `ug/m3`.
 | `ppb` | `[ppb]` |
 | `ppm` | `[ppm]` |
 | `rpm` | `{rev}/min` |
-| `st` | `[stone_av]` |
 | `var` | `V.A{reactive}` |
 | `yd` | `[yd_i]` |
 | `°C` | `Cel` |
