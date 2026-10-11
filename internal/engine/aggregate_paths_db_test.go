@@ -9,6 +9,7 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,46 @@ func TestAggregateAmountCoverageIsAUnion(t *testing.T) {
 	res, _, _ = f.bothPaths(substrate.Filter{}, hour)
 	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT1H" {
 		t.Errorf("two groups in one quarter hour: %+v, want an hour covered", res.Rows)
+	}
+}
+
+// The bucket budget counts the series a read answers, codes included, before
+// a point is read: two coded amounts grouped by code over four quarter hours
+// with fill are eight rows, refused under maxBuckets 4 and answered in full
+// under 8.
+func TestAggregateBucketBudgetCountsCodes(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i, code := range []string{"light", "deep"} {
+		from := start.Add(time.Duration(i) * 20 * time.Minute)
+		f.mustPut(t, f.observation, "stage/"+code, map[string]any{
+			"metric": f.metricRef("health/sleep_stage"), "source": f.sourceRef("ring"), "form": "amount",
+			"value": quantity("5", "min"), "code": code, "at": at(from), "endsAt": at(from.Add(5 * time.Minute)),
+		})
+	}
+	read := func(maxBuckets int) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+			Range:    rng(start, start.Add(time.Hour)),
+			Bucket:   &substrate.AggregateBucket{Every: "PT15M"},
+			GroupBy:  []string{"code"},
+			Reducers: reducers("sum"),
+			Fill:     "zero",
+			Budget:   &substrate.AggregateBudget{MaxBuckets: maxBuckets, MaxGroups: 2},
+		}}
+	}
+	ctx, trace := engine.AggregateTraced(context.Background())
+	if _, err := f.ds.Aggregate(ctx, read(4)); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.budget.maxBuckets") {
+		t.Fatalf("err = %v, want a refusal naming maxBuckets", err)
+	}
+	if trace.RawPoints() != 0 || trace.RollupRows() != 0 {
+		t.Errorf("the refused read took %d raw points and %d rollup rows", trace.RawPoints(), trace.RollupRows())
+	}
+	q := read(8)
+	res, _, _ := f.bothPaths(q.Filter, *q.Aggregate)
+	if len(res.Rows) != 8 {
+		t.Errorf("under maxBuckets 8: %d rows, want two codes in four buckets", len(res.Rows))
 	}
 }
 

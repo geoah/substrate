@@ -13,8 +13,10 @@ import (
 )
 
 // fillAndRoll applies fill and rolling per series (a group and a code) and
-// orders the rows by bucket, then group, then code.
-func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) []substrate.AggregateRow {
+// orders the rows by bucket, then group, then code. A fill makes every series
+// dense, so the series times the buckets are checked against maxBuckets
+// before a row is made, and the rows answered never exceed it.
+func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) ([]substrate.AggregateRow, error) {
 	type series struct {
 		key  string
 		rows map[int]*aggOut
@@ -33,6 +35,10 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 		s.rows[o.bucket] = o
 	}
 	sort.Strings(keys)
+	if n := len(keys) * len(buckets); p.fill != "" && n > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "fill makes %d series times %d buckets, %d rows, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			len(keys), len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
 	var out []aggOut
 	for _, k := range keys {
 		s := byKey[k]
@@ -72,6 +78,10 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 			prev = &out[len(out)-1]
 		}
 	}
+	if len(out) > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "the read makes %d rows, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
 	if p.rolling != nil {
 		p.roll(out, meta)
 	}
@@ -88,7 +98,7 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 	for i, o := range out {
 		res[i] = o.row
 	}
-	return res
+	return res, nil
 }
 
 // roll appends, to each row, every rolling reducer over each of its values

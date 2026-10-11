@@ -41,6 +41,8 @@ type aggRun struct {
 	// bounds are the records mode's window starts and ends, sorted, where a
 	// carry walked across empty rows is cut (chunkEnd).
 	bounds []time.Time
+	// nSeries is the series the read was budgeted for (seriesOf).
+	nSeries int
 }
 
 // aggSeries is one stream's raw points: each span read, with the point
@@ -573,9 +575,9 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 			}
 		}
 	}
-	if n := len(r.buckets) * max(len(groups), 1); n > r.p.maxBuckets {
-		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d groups is %d, over %d; narrow the range or raise maxBuckets",
-			len(r.buckets), len(groups), n, r.p.maxBuckets)
+	if n := len(r.buckets) * max(r.nSeries, 1); n > r.p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d series is %d, over %d; narrow the range or raise maxBuckets",
+			len(r.buckets), r.nSeries, n, r.p.maxBuckets)
 	}
 	var out []aggOut
 	codeGroups := 0

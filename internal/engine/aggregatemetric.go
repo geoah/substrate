@@ -126,9 +126,13 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err := p.checkForms(groups, units); err != nil {
 		return nil, err
 	}
-	if n := len(buckets) * max(len(groups), 1); n > p.maxBuckets {
-		return nil, refuse("aggregate.budget.maxBuckets", "%d groups times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
-			len(groups), len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	series, err := p.seriesOf(groups)
+	if err != nil {
+		return nil, err
+	}
+	if n := len(buckets) * max(series, 1); n > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "%d series (groups, and codes where grouped by code) times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			series, len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	res := &substrate.AggregateResult{
 		Metric: p.metric, Unit: units.value, Bucket: p.bucket.echo, From: p.source, Exact: true,
@@ -139,7 +143,7 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if res.Unit == "" {
 		res.Unit = units.duration
 	}
-	r := &aggRun{ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, meta: aggMeta{sources: map[string]bool{}}}
+	r := &aggRun{ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, meta: aggMeta{sources: map[string]bool{}}, nSeries: series}
 	if err := r.plan(groups); err != nil {
 		return nil, err
 	}
@@ -147,7 +151,9 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err != nil {
 		return nil, err
 	}
-	res.Rows = p.fillAndRoll(rows, r.buckets, units, &r.meta)
+	if res.Rows, err = p.fillAndRoll(rows, r.buckets, units, &r.meta); err != nil {
+		return nil, err
+	}
 	res.Exact = !r.meta.inexact
 	for s := range r.meta.sources {
 		res.Sources = append(res.Sources, s)
@@ -469,6 +475,35 @@ func (p *aggPlan) groupStreams(streams []*aggStream) ([]*aggGroup, error) {
 		}
 	}
 	return out, nil
+}
+
+// seriesOf counts the series a read can answer: one per group, or where it
+// groups by code one per group and code its streams' points hold in the
+// read's windows (discoverForms), the filter's codes alone. A row is one
+// series in one bucket and fill makes every series dense, so the series
+// times the buckets bound the rows; it is checked against maxGroups here,
+// before a point is read.
+func (p *aggPlan) seriesOf(groups []*aggGroup) (int, error) {
+	if !p.grouped[substrate.GroupCode] {
+		return len(groups), nil
+	}
+	n := 0
+	for _, g := range groups {
+		codes := map[string]bool{}
+		for _, s := range append(append([]*aggStream(nil), g.raw...), g.sums...) {
+			for _, c := range s.codes {
+				if p.codes == nil || p.codes[c] {
+					codes[c] = true
+				}
+			}
+		}
+		n += len(codes)
+	}
+	if n > p.maxGroups {
+		return 0, refuse("aggregate.budget.maxGroups", "grouping by code makes %d groups, over %d; filter the codes or raise maxGroups (the cap is %d)",
+			n, p.maxGroups, substrate.AggregateMaxGroupsCap)
+	}
+	return n, nil
 }
 
 // --- units ---
