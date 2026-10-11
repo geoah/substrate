@@ -227,7 +227,7 @@ func (t *txn) admitRestored(sp *applySpec, name string, p *vocabulary.Property, 
 		s, isText := v.(string)
 		return v, isText && s == "", nil
 	}
-	kept, err := coerceValue(p, v)
+	kept, err := coerceProp(sp.ty, name, p, v)
 	if err != nil {
 		return nil, false, nil
 	}

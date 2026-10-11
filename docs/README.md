@@ -33,8 +33,13 @@ API call that completes a task.
 
 - [The data model](data-model.md) — the repository and its changelog, records and
   kinds, property types, traits, and validation
+- [Units](units.md): every measure a `quantity` value converts inside, and
+  every unit code, with its exact factor
 - [Traits and interfaces](traits.md) — shared properties, declaring your own,
   and the cross-kind queries binding unlocks
+- [Observations](observations.md): measured values (readings, traces, lab
+  results), core's `observed` trait and the rules every write of one is held
+  to, and the `observations` and `health` samples
 - [Vocabulary as records](vocabulary.md) — the declarable kinds, admission,
   and how the vocabulary evolves
 - [Projection](projection.md) — record mappings, managed properties, and merges

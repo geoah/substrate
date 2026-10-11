@@ -1,0 +1,1663 @@
+# The health catalogue, as DATA: one metric record per thing a wearable, a
+# scale or a lab measures, each with the codes other systems use for it, so
+# an adapter maps by code and a reader finds a metric by the name it knows.
+# They are records of the base package's `metric` kind, ids prefixed
+# `health/`, and the import puts them after the kinds land: editable,
+# deletable, and left in place if this sample is removed.
+#
+# The engine reads nothing from them (decision record 0156): `form`, `unit`,
+# `hold` and the reducers are advice an adapter copies onto each value.
+#
+# Two rules the ids follow. A lab analyte reported in both unit systems is
+# two metrics, the amount concentration unsuffixed (`ldl_cholesterol`, mmol/L)
+# and the mass concentration suffixed `_mass` (mg/dL): the two are different
+# measures, and a function bridges them with the analyte's molar mass as a
+# derived observation. A vendor's score is named for the vendor
+# (`whoop_recovery`) and never mapped onto another vendor's.
+#
+# Code systems: `http://loinc.org` (LOINC), `healthkit` (an Apple HealthKit
+# type identifier), `healthconnect` (an Android Health Connect record type),
+# `googlefit` (a Google Fit data type), `whoop` (a WHOOP API v2 score field),
+# `garmin` (a Garmin Health API summary field), `withings` (a Withings measure
+# type). The codes were written from the vendors' published documentation,
+# without a check against a live account; a metric's description marks the
+# ones least certain, and says where no code is listed.
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/heart_rate
+data:
+  properties:
+    name: Heart rate
+    description: >-
+      Beats per minute, measured continuously or on demand. Write /min: bpm
+      reads as the annotated {beats}/min, which never converts to /min.
+    codes:
+      - system: "http://loinc.org"
+        code: "8867-4"
+        display: Heart rate
+      - system: healthkit
+        code: HKQuantityTypeIdentifierHeartRate
+      - system: healthconnect
+        code: HeartRateRecord
+      - system: googlefit
+        code: com.google.heart_rate.bpm
+      - system: garmin
+        code: timeOffsetHeartRateSamples
+        display: Daily summary heart rate samples
+    measures: rate
+    unit: "/min"
+    form: gauge
+    hold: PT4M
+    reducers:
+      - avg
+      - twa
+      - min
+      - max
+      - percentile
+      - durationIn
+    displayPrecision: 0
+    category: heart
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/resting_heart_rate
+data:
+  properties:
+    name: Resting heart rate
+    description: >-
+      The heart rate at rest, as the device computes it for a night or a day.
+    codes:
+      - system: "http://loinc.org"
+        code: "40443-4"
+        display: Heart rate --resting
+      - system: healthkit
+        code: HKQuantityTypeIdentifierRestingHeartRate
+      - system: healthconnect
+        code: RestingHeartRateRecord
+      - system: whoop
+        code: resting_heart_rate
+        display: Recovery score resting heart rate
+      - system: garmin
+        code: restingHeartRateInBeatsPerMinute
+        display: Daily summary resting heart rate
+    measures: rate
+    unit: "/min"
+    form: summary
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+    displayPrecision: 0
+    category: heart
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/hrv_rmssd
+data:
+  properties:
+    name: Heart rate variability (RMSSD)
+    description: >-
+      The root mean square of successive differences between heartbeats, in
+      milliseconds. A different statistic from SDNN, which Apple reports;
+      the two never pool. No LOINC code is listed: none was verified for RMSSD.
+      The Garmin field name follows the Health API's documentation and is
+      unverified against a live account.
+    codes:
+      - system: healthconnect
+        code: HeartRateVariabilityRmssdRecord
+      - system: whoop
+        code: hrv_rmssd_milli
+        display: Recovery score HRV
+      - system: garmin
+        code: lastNightAvg
+        display: HRV summary last night average
+    measures: duration
+    unit: ms
+    form: summary
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+    displayPrecision: 0
+    category: heart
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/hrv_sdnn
+data:
+  properties:
+    name: Heart rate variability (SDNN)
+    description: >-
+      The standard deviation of the intervals between heartbeats, in milliseconds,
+      as Apple Watch reports it. A different statistic from RMSSD; the two
+      never pool.
+    codes:
+      - system: "http://loinc.org"
+        code: "80404-7"
+        display: R-R interval.standard deviation (Heart rate variability)
+      - system: healthkit
+        code: HKQuantityTypeIdentifierHeartRateVariabilitySDNN
+    measures: duration
+    unit: ms
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 0
+    category: heart
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/spo2
+data:
+  properties:
+    name: Blood oxygen saturation
+    description: >-
+      The share of haemoglobin carrying oxygen, measured by pulse oximetry.
+      Garmin calls it Pulse Ox. The Garmin field name follows the Health API's
+      documentation and is unverified against a live account.
+    codes:
+      - system: "http://loinc.org"
+        code: "59408-5"
+        display: Oxygen saturation in Arterial blood by Pulse oximetry
+      - system: healthkit
+        code: HKQuantityTypeIdentifierOxygenSaturation
+      - system: healthconnect
+        code: OxygenSaturationRecord
+      - system: googlefit
+        code: com.google.oxygen_saturation
+      - system: whoop
+        code: spo2_percentage
+        display: Recovery score SpO2
+      - system: garmin
+        code: timeOffsetSpo2Values
+        display: Pulse Ox summary values
+    measures: fraction
+    unit: "%"
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 0
+    category: oxygen
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/skin_temperature
+data:
+  properties:
+    name: Skin temperature
+    description: >-
+      The temperature of the skin where the device sits, an absolute temperature.
+      A deviation from a baseline is skin_temperature_deviation.
+    codes:
+      - system: "http://loinc.org"
+        code: "39106-0"
+        display: Temperature of Skin
+      - system: healthkit
+        code: HKQuantityTypeIdentifierAppleSleepingWristTemperature
+      - system: whoop
+        code: skin_temp_celsius
+        display: Recovery score skin temperature
+    measures: temperature
+    unit: Cel
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: temperature
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/skin_temperature_deviation
+data:
+  properties:
+    name: Skin temperature deviation
+    description: >-
+      How far the skin temperature sits from the person's own baseline, a
+      temperature difference written with delta true. Never pooled with an
+      absolute temperature.
+    codes:
+      - system: healthconnect
+        code: SkinTemperatureRecord
+        display: Skin temperature deltas
+    measures: temperature-difference
+    unit: K
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 2
+    category: temperature
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/respiratory_rate
+data:
+  properties:
+    name: Respiratory rate
+    description: >-
+      Breaths per minute, most often measured during sleep. The Garmin field
+      name follows the Health API's documentation and is unverified against
+      a live account.
+    codes:
+      - system: "http://loinc.org"
+        code: "9279-1"
+        display: Respiratory rate
+      - system: healthkit
+        code: HKQuantityTypeIdentifierRespiratoryRate
+      - system: healthconnect
+        code: RespiratoryRateRecord
+      - system: whoop
+        code: respiratory_rate
+        display: Sleep score respiratory rate
+      - system: garmin
+        code: timeOffsetEpochToBreaths
+        display: Respiration summary values
+    measures: rate
+    unit: "/min"
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: respiration
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/steps
+data:
+  properties:
+    name: Steps
+    description: >-
+      Steps taken over a span. Each value covers its own span, so a day is
+      the sum of its spans.
+    codes:
+      - system: "http://loinc.org"
+        code: "55423-8"
+        display: Number of steps in unspecified time Pedometer
+      - system: healthkit
+        code: HKQuantityTypeIdentifierStepCount
+      - system: healthconnect
+        code: StepsRecord
+      - system: googlefit
+        code: com.google.step_count.delta
+      - system: garmin
+        code: steps
+        display: Daily summary steps
+    measures: count
+    unit: "{steps}"
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: activity
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/distance
+data:
+  properties:
+    name: Distance
+    description: Distance walked, run or ridden over a span.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierDistanceWalkingRunning
+      - system: healthconnect
+        code: DistanceRecord
+      - system: googlefit
+        code: com.google.distance.delta
+      - system: garmin
+        code: distanceInMeters
+        display: Daily summary distance
+    measures: length
+    unit: m
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: activity
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/floors
+data:
+  properties:
+    name: Floors climbed
+    description: Flights of stairs climbed over a span.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierFlightsClimbed
+      - system: healthconnect
+        code: FloorsClimbedRecord
+      - system: garmin
+        code: floorsClimbed
+        display: Daily summary floors climbed
+    measures: count
+    unit: "{floors}"
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: activity
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/active_energy
+data:
+  properties:
+    name: Active energy
+    description: Energy spent above the resting rate over a span.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierActiveEnergyBurned
+      - system: healthconnect
+        code: ActiveCaloriesBurnedRecord
+      - system: garmin
+        code: activeKilocalories
+        display: Daily summary active calories
+    measures: energy
+    unit: kcal
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: activity
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/basal_energy
+data:
+  properties:
+    name: Resting energy
+    description: Energy spent at rest over a span, the basal metabolism.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBasalEnergyBurned
+      - system: garmin
+        code: bmrKilocalories
+        display: Daily summary resting calories
+    measures: energy
+    unit: kcal
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: activity
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/energy_expended
+data:
+  properties:
+    name: Energy expended
+    description: >-
+      All the energy spent over a span, resting and active together. WHOOP
+      reports it per cycle in kilojoules.
+    codes:
+      - system: healthconnect
+        code: TotalCaloriesBurnedRecord
+      - system: googlefit
+        code: com.google.calories.expended
+      - system: whoop
+        code: kilojoule
+        display: Cycle score energy
+    measures: energy
+    unit: kcal
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: activity
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/elevation_gain
+data:
+  properties:
+    name: Elevation gain
+    description: >-
+      Height climbed over a span or a workout. The Garmin field name follows
+      the Health API's documentation and is unverified against a live account.
+    codes:
+      - system: healthconnect
+        code: ElevationGainedRecord
+      - system: garmin
+        code: totalElevationGainInMeters
+        display: Activity summary elevation gain
+    measures: length
+    unit: m
+    form: amount
+    reducers:
+      - sum
+      - count
+    displayPrecision: 0
+    category: activity
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/cadence
+data:
+  properties:
+    name: Cadence
+    description: >-
+      Steps or pedal strokes per minute during a workout. No Garmin code is
+      listed: the activity sample field was not verified.
+    codes:
+      - system: healthconnect
+        code: StepsCadenceRecord
+      - system: googlefit
+        code: com.google.step_count.cadence
+      - system: healthkit
+        code: HKQuantityTypeIdentifierCyclingCadence
+        display: Cycling cadence
+    measures: rate
+    unit: "/min"
+    form: gauge
+    reducers:
+      - avg
+      - max
+      - twa
+    displayPrecision: 0
+    category: workout
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/running_power
+data:
+  properties:
+    name: Running power
+    description: >-
+      The power a runner produces, in watts. No Garmin code is listed: the
+      activity sample field was not verified.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierRunningPower
+      - system: healthconnect
+        code: PowerRecord
+      - system: googlefit
+        code: com.google.power.sample
+    measures: power
+    unit: W
+    form: gauge
+    reducers:
+      - avg
+      - max
+      - twa
+      - durationIn
+    displayPrecision: 0
+    category: workout
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/speed
+data:
+  properties:
+    name: Speed
+    description: >-
+      How fast, during a workout. No Garmin code is listed: the activity sample
+      field was not verified.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierRunningSpeed
+      - system: healthconnect
+        code: SpeedRecord
+      - system: googlefit
+        code: com.google.speed
+    measures: speed
+    unit: m/s
+    form: gauge
+    reducers:
+      - avg
+      - max
+      - twa
+    displayPrecision: 2
+    category: workout
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/pace
+data:
+  properties:
+    name: Pace
+    description: >-
+      Time per distance, the reciprocal of a speed. A mean pace is total time
+      over total distance, never a mean of paces.
+    measures: pace
+    unit: min/km
+    form: gauge
+    reducers:
+      - min
+      - max
+      - last
+    displayPrecision: 2
+    category: workout
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/vo2_max
+data:
+  properties:
+    name: VO2 max
+    description: >-
+      The highest rate of oxygen uptake, as the device estimates it from workouts.
+    codes:
+      - system: healthkit
+        code: HKQuantityTypeIdentifierVO2Max
+      - system: healthconnect
+        code: Vo2MaxRecord
+      - system: garmin
+        code: vo2Max
+        display: User metrics VO2 max
+    measures: oxygen-uptake-rate
+    unit: mL/(kg.min)
+    form: gauge
+    reducers:
+      - last
+      - avg
+      - max
+    displayPrecision: 1
+    category: fitness
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/body_mass
+data:
+  properties:
+    name: Body weight
+    description: The weight of the body, from a scale or entered by hand.
+    codes:
+      - system: "http://loinc.org"
+        code: "29463-7"
+        display: Body weight
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBodyMass
+      - system: healthconnect
+        code: WeightRecord
+      - system: googlefit
+        code: com.google.weight
+      - system: whoop
+        code: weight_kilogram
+        display: Body measurement weight
+      - system: garmin
+        code: weightInGrams
+        display: Body composition weight
+    measures: mass
+    unit: kg
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+      - count
+    displayPrecision: 1
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/body_fat_fraction
+data:
+  properties:
+    name: Body fat
+    description: "The share of the body's weight that is fat."
+    codes:
+      - system: "http://loinc.org"
+        code: "41982-0"
+        display: Percentage of body fat Measured
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBodyFatPercentage
+      - system: healthconnect
+        code: BodyFatRecord
+      - system: googlefit
+        code: com.google.body.fat.percentage
+      - system: garmin
+        code: bodyFatInPercent
+        display: Body composition body fat
+    measures: fraction
+    unit: "%"
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/fat_mass
+data:
+  properties:
+    name: Fat mass
+    description: "The weight of the body's fat, as a scale estimates it."
+    codes:
+      - system: withings
+        code: "8"
+        display: Fat mass weight
+    measures: mass
+    unit: kg
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/muscle_mass
+data:
+  properties:
+    name: Muscle mass
+    description: "The weight of the body's muscle, as a scale estimates it."
+    codes:
+      - system: withings
+        code: "76"
+        display: Muscle mass
+      - system: garmin
+        code: muscleMassInGrams
+        display: Body composition muscle mass
+    measures: mass
+    unit: kg
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/body_water_fraction
+data:
+  properties:
+    name: Body water
+    description: >-
+      The share of the body's weight that is water, as a scale estimates it.
+    codes:
+      - system: garmin
+        code: bodyWaterInPercent
+        display: Body composition body water
+    measures: fraction
+    unit: "%"
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/bone_mass
+data:
+  properties:
+    name: Bone mass
+    description: >-
+      The weight of the body's bone mineral, as a scale estimates it.
+    codes:
+      - system: withings
+        code: "88"
+        display: Bone mass
+      - system: healthconnect
+        code: BoneMassRecord
+      - system: garmin
+        code: boneMassInGrams
+        display: Body composition bone mass
+    measures: mass
+    unit: kg
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/height
+data:
+  properties:
+    name: Height
+    description: Standing height.
+    codes:
+      - system: "http://loinc.org"
+        code: "8302-2"
+        display: Body height
+      - system: healthkit
+        code: HKQuantityTypeIdentifierHeight
+      - system: healthconnect
+        code: HeightRecord
+      - system: googlefit
+        code: com.google.height
+      - system: whoop
+        code: height_meter
+        display: Body measurement height
+    measures: length
+    unit: m
+    form: gauge
+    reducers:
+      - last
+    displayPrecision: 2
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/bmi
+data:
+  properties:
+    name: Body mass index
+    description: Weight over height squared.
+    codes:
+      - system: "http://loinc.org"
+        code: "39156-5"
+        display: "Body mass index (BMI) [Ratio]"
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBodyMassIndex
+      - system: garmin
+        code: bmi
+        display: Body composition BMI
+    measures: body-mass-index
+    unit: kg/m2
+    form: gauge
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+    displayPrecision: 1
+    category: body
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/systolic_blood_pressure
+data:
+  properties:
+    name: Systolic blood pressure
+    description: >-
+      The pressure in the arteries while the heart beats, the higher of a
+      blood pressure's two numbers.
+    codes:
+      - system: "http://loinc.org"
+        code: "8480-6"
+        display: Systolic blood pressure
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBloodPressureSystolic
+      - system: healthconnect
+        code: BloodPressureRecord
+        display: systolic
+      - system: googlefit
+        code: com.google.blood_pressure
+        display: blood_pressure_systolic
+    measures: pressure
+    unit: "mm[Hg]"
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+      - count
+    displayPrecision: 0
+    category: blood pressure
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/diastolic_blood_pressure
+data:
+  properties:
+    name: Diastolic blood pressure
+    description: >-
+      The pressure in the arteries between beats, the lower of a blood pressure's
+      two numbers.
+    codes:
+      - system: "http://loinc.org"
+        code: "8462-4"
+        display: Diastolic blood pressure
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBloodPressureDiastolic
+      - system: healthconnect
+        code: BloodPressureRecord
+        display: diastolic
+      - system: googlefit
+        code: com.google.blood_pressure
+        display: blood_pressure_diastolic
+    measures: pressure
+    unit: "mm[Hg]"
+    form: gauge
+    hold: PT0S
+    reducers:
+      - avg
+      - min
+      - max
+      - last
+      - count
+    displayPrecision: 0
+    category: blood pressure
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/blood_glucose
+data:
+  properties:
+    name: Blood glucose
+    description: >-
+      Glucose in the blood as an amount concentration, from a meter or a continuous
+      monitor. A reading in mg/dL is blood_glucose_mass; the two pool only
+      through a derived observation.
+    codes:
+      - system: "http://loinc.org"
+        code: "15074-8"
+        display: "Glucose [Moles/volume] in Blood"
+      - system: healthconnect
+        code: BloodGlucoseRecord
+      - system: googlefit
+        code: com.google.blood_glucose
+    measures: amount-concentration
+    unit: mmol/L
+    form: gauge
+    reducers:
+      - avg
+      - twa
+      - min
+      - max
+      - percentile
+      - durationIn
+    compatibility: whole-blood
+    displayPrecision: 1
+    category: glucose
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/blood_glucose_mass
+data:
+  properties:
+    name: Blood glucose (mass)
+    description: >-
+      Glucose in the blood as a mass concentration, as US meters and Apple
+      Health report it. A reading in mmol/L is blood_glucose.
+    codes:
+      - system: "http://loinc.org"
+        code: "2339-0"
+        display: "Glucose [Mass/volume] in Blood"
+      - system: healthkit
+        code: HKQuantityTypeIdentifierBloodGlucose
+    measures: mass-concentration
+    unit: mg/dL
+    form: gauge
+    reducers:
+      - avg
+      - twa
+      - min
+      - max
+      - percentile
+      - durationIn
+    compatibility: whole-blood
+    displayPrecision: 0
+    category: glucose
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/sleep_stage
+data:
+  properties:
+    name: Sleep stage
+    description: >-
+      Which stage of sleep, as a code over a span: awake, light, deep, rem,
+      or in_bed for time in bed not yet staged. Summed by code, the spans
+      are the time in each stage.
+    codes:
+      - system: healthkit
+        code: HKCategoryTypeIdentifierSleepAnalysis
+      - system: healthconnect
+        code: SleepSessionRecord
+        display: stages
+      - system: googlefit
+        code: com.google.sleep.segment
+    codeSet:
+      - awake
+      - light
+      - deep
+      - rem
+      - in_bed
+    form: amount
+    reducers:
+      - sum
+      - count
+      - timeInState
+    category: sleep
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/whoop_recovery
+data:
+  properties:
+    name: WHOOP recovery
+    description: >-
+      WHOOP's recovery score for one physiological cycle, from 0 to 100 percent.
+      WHOOP's own method, never mapped onto another vendor's.
+    codes:
+      - system: whoop
+        code: recovery_score
+        display: Recovery score
+    measures: fraction
+    unit: "%"
+    form: summary
+    reducers:
+      - last
+      - avg
+    displayPrecision: 0
+    category: scores
+    algorithm:
+      vendor: WHOOP
+      name: recovery
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/whoop_strain
+data:
+  properties:
+    name: WHOOP strain
+    description: >-
+      WHOOP's day strain for one physiological cycle, a dimensionless score
+      from 0 to 21. WHOOP's own method, never mapped onto another vendor's.
+    codes:
+      - system: whoop
+        code: strain
+        display: Cycle strain
+    measures: fraction
+    unit: "1"
+    form: summary
+    reducers:
+      - last
+      - avg
+      - max
+    displayPrecision: 1
+    category: scores
+    algorithm:
+      vendor: WHOOP
+      name: strain
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/whoop_sleep_performance
+data:
+  properties:
+    name: WHOOP sleep performance
+    description: >-
+      The sleep WHOOP measured as a share of the sleep it judged needed, for
+      one sleep. WHOOP's own method.
+    codes:
+      - system: whoop
+        code: sleep_performance_percentage
+        display: Sleep performance
+    measures: fraction
+    unit: "%"
+    form: summary
+    reducers:
+      - last
+      - avg
+    displayPrecision: 0
+    category: scores
+    algorithm:
+      vendor: WHOOP
+      name: sleep performance
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/garmin_stress
+data:
+  properties:
+    name: Garmin stress
+    description: >-
+      Garmin's stress level, a dimensionless score from 0 to 100 sampled through
+      the day. Garmin's own method. The Garmin field name follows the Health
+      API's documentation and is unverified against a live account.
+    codes:
+      - system: garmin
+        code: timeOffsetStressLevelValues
+        display: Stress details values
+      - system: garmin
+        code: averageStressLevel
+        display: Daily summary average stress
+    measures: fraction
+    unit: "1"
+    form: gauge
+    hold: PT6M
+    reducers:
+      - avg
+      - twa
+      - max
+      - durationIn
+    displayPrecision: 0
+    category: scores
+    algorithm:
+      vendor: Garmin
+      name: stress
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/garmin_body_battery
+data:
+  properties:
+    name: Garmin Body Battery
+    description: >-
+      Garmin's estimate of the body's energy reserve, a dimensionless score
+      from 0 to 100 sampled through the day. Garmin's own method. The Garmin
+      field name follows the Health API's documentation and is unverified
+      against a live account.
+    codes:
+      - system: garmin
+        code: timeOffsetBodyBatteryValues
+        display: Stress details Body Battery values
+    measures: fraction
+    unit: "1"
+    form: gauge
+    hold: PT6M
+    reducers:
+      - last
+      - min
+      - max
+    displayPrecision: 0
+    category: scores
+    algorithm:
+      vendor: Garmin
+      name: Body Battery
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/ldl_cholesterol
+data:
+  properties:
+    name: LDL cholesterol
+    description: >-
+      Cholesterol carried in low-density lipoprotein, as an amount concentration
+      in serum or plasma. A result in mg/dL is ldl_cholesterol_mass.
+    codes:
+      - system: "http://loinc.org"
+        code: "22748-8"
+        display: "Cholesterol in LDL [Moles/volume] in Serum or Plasma"
+    measures: amount-concentration
+    unit: mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/ldl_cholesterol_mass
+data:
+  properties:
+    name: LDL cholesterol (mass)
+    description: >-
+      Cholesterol carried in low-density lipoprotein, as a mass concentration
+      in serum or plasma. A result in mmol/L is ldl_cholesterol.
+    codes:
+      - system: "http://loinc.org"
+        code: "2089-1"
+        display: "Cholesterol in LDL [Mass/volume] in Serum or Plasma"
+      - system: "http://loinc.org"
+        code: "13457-7"
+        display: "Cholesterol in LDL [Mass/volume] in Serum or Plasma by calculation"
+    measures: mass-concentration
+    unit: mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/hdl_cholesterol
+data:
+  properties:
+    name: HDL cholesterol
+    description: >-
+      Cholesterol carried in high-density lipoprotein, as an amount concentration
+      in serum or plasma.
+    codes:
+      - system: "http://loinc.org"
+        code: "14646-4"
+        display: "Cholesterol in HDL [Moles/volume] in Serum or Plasma"
+    measures: amount-concentration
+    unit: mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/hdl_cholesterol_mass
+data:
+  properties:
+    name: HDL cholesterol (mass)
+    description: >-
+      Cholesterol carried in high-density lipoprotein, as a mass concentration
+      in serum or plasma.
+    codes:
+      - system: "http://loinc.org"
+        code: "2085-9"
+        display: "Cholesterol in HDL [Mass/volume] in Serum or Plasma"
+    measures: mass-concentration
+    unit: mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/total_cholesterol
+data:
+  properties:
+    name: Total cholesterol
+    description: >-
+      All cholesterol in serum or plasma, as an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "14647-2"
+        display: "Cholesterol [Moles/volume] in Serum or Plasma"
+    measures: amount-concentration
+    unit: mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/total_cholesterol_mass
+data:
+  properties:
+    name: Total cholesterol (mass)
+    description: All cholesterol in serum or plasma, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "2093-3"
+        display: "Cholesterol [Mass/volume] in Serum or Plasma"
+    measures: mass-concentration
+    unit: mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/triglycerides
+data:
+  properties:
+    name: Triglycerides
+    description: >-
+      Triglycerides in serum or plasma, as an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "14927-8"
+        display: "Triglyceride [Moles/volume] in Serum or Plasma"
+    measures: amount-concentration
+    unit: mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/triglycerides_mass
+data:
+  properties:
+    name: Triglycerides (mass)
+    description: Triglycerides in serum or plasma, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "2571-8"
+        display: "Triglyceride [Mass/volume] in Serum or Plasma"
+    measures: mass-concentration
+    unit: mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/fasting_glucose
+data:
+  properties:
+    name: Fasting glucose
+    description: >-
+      Glucose in serum or plasma after a fast, as an amount concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "14771-0"
+        display: "Fasting glucose [Moles/volume] in Serum or Plasma"
+    measures: amount-concentration
+    unit: mmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: serum
+    displayPrecision: 1
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/fasting_glucose_mass
+data:
+  properties:
+    name: Fasting glucose (mass)
+    description: >-
+      Glucose in serum or plasma after a fast, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "1558-6"
+        display: "Fasting glucose [Mass/volume] in Serum or Plasma"
+    measures: mass-concentration
+    unit: mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: serum
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/hba1c
+data:
+  properties:
+    name: HbA1c
+    description: >-
+      Glycated haemoglobin as a percentage of all haemoglobin, the NGSP and
+      DCCT unit. Never pooled with the IFCC value in mmol/mol, hba1c_ifcc;
+      the two relate by a formula, not a unit.
+    codes:
+      - system: "http://loinc.org"
+        code: "4548-4"
+        display: Hemoglobin A1c/Hemoglobin.total in Blood
+    measures: fraction
+    unit: "%"
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: ngsp
+    displayPrecision: 1
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/hba1c_ifcc
+data:
+  properties:
+    name: HbA1c (IFCC)
+    description: >-
+      Glycated haemoglobin in mmol per mol of haemoglobin, the IFCC unit.
+      Never pooled with the NGSP percentage, hba1c.
+    codes:
+      - system: "http://loinc.org"
+        code: "59261-8"
+        display: Hemoglobin A1c/Hemoglobin.total in Blood by IFCC protocol
+    measures: fraction
+    unit: mmol/mol
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    compatibility: ifcc
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/tsh
+data:
+  properties:
+    name: TSH
+    description: >-
+      Thyroid stimulating hormone in serum or plasma, in assay units.
+    codes:
+      - system: "http://loinc.org"
+        code: "3016-3"
+        display: "Thyrotropin [Units/volume] in Serum or Plasma"
+    measures: arbitrary
+    unit: "m[IU]/L"
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/vitamin_d
+data:
+  properties:
+    name: Vitamin D
+    description: >-
+      25-hydroxyvitamin D, D2 and D3 together, as an amount concentration
+      in serum or plasma. The LOINC code is unverified.
+    codes:
+      - system: "http://loinc.org"
+        code: "62292-8"
+        display: "25-Hydroxyvitamin D2+25-Hydroxyvitamin D3 [Moles/volume]
+          in Serum or Plasma"
+    measures: amount-concentration
+    unit: nmol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/vitamin_d_mass
+data:
+  properties:
+    name: Vitamin D (mass)
+    description: >-
+      25-hydroxyvitamin D, D2 and D3 together, as a mass concentration in
+      serum or plasma.
+    codes:
+      - system: "http://loinc.org"
+        code: "1989-3"
+        display: "25-Hydroxyvitamin D3+25-Hydroxyvitamin D2 [Mass/volume]
+          in Serum or Plasma"
+    measures: mass-concentration
+    unit: ng/mL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/ferritin
+data:
+  properties:
+    name: Ferritin
+    description: "Ferritin in serum or plasma, the body's iron store."
+    codes:
+      - system: "http://loinc.org"
+        code: "2276-4"
+        display: "Ferritin [Mass/volume] in Serum or Plasma"
+    measures: mass-concentration
+    unit: ug/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/crp
+data:
+  properties:
+    name: C-reactive protein
+    description: >-
+      C-reactive protein in serum or plasma, a marker of inflammation.
+    codes:
+      - system: "http://loinc.org"
+        code: "1988-5"
+        display: "C reactive protein [Mass/volume] in Serum or Plasma"
+    measures: mass-concentration
+    unit: mg/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/haemoglobin
+data:
+  properties:
+    name: Haemoglobin
+    description: Haemoglobin in blood.
+    codes:
+      - system: "http://loinc.org"
+        code: "718-7"
+        display: "Hemoglobin [Mass/volume] in Blood"
+    measures: mass-concentration
+    unit: g/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 1
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/creatinine
+data:
+  properties:
+    name: Creatinine
+    description: >-
+      Creatinine in serum or plasma, as an amount concentration, a marker
+      of kidney function.
+    codes:
+      - system: "http://loinc.org"
+        code: "14682-9"
+        display: "Creatinine [Moles/volume] in Serum or Plasma"
+    measures: amount-concentration
+    unit: umol/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/creatinine_mass
+data:
+  properties:
+    name: Creatinine (mass)
+    description: Creatinine in serum or plasma, as a mass concentration.
+    codes:
+      - system: "http://loinc.org"
+        code: "2160-0"
+        display: "Creatinine [Mass/volume] in Serum or Plasma"
+    measures: mass-concentration
+    unit: mg/dL
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 2
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/alt
+data:
+  properties:
+    name: ALT
+    description: >-
+      Alanine aminotransferase in serum or plasma, an enzyme activity, a marker
+      of liver function.
+    codes:
+      - system: "http://loinc.org"
+        code: "1742-6"
+        display: "Alanine aminotransferase [Enzymatic activity/volume] in
+          Serum or Plasma"
+    measures: catalytic-concentration
+    unit: U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/ast
+data:
+  properties:
+    name: AST
+    description: >-
+      Aspartate aminotransferase in serum or plasma, an enzyme activity, a
+      marker of liver function.
+    codes:
+      - system: "http://loinc.org"
+        code: "1920-8"
+        display: "Aspartate aminotransferase [Enzymatic activity/volume] in
+          Serum or Plasma"
+    measures: catalytic-concentration
+    unit: U/L
+    form: gauge
+    hold: PT0S
+    reducers:
+      - last
+      - avg
+      - min
+      - max
+      - count
+    displayPrecision: 0
+    category: labs

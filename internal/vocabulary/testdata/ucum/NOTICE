@@ -1,0 +1,16 @@
+# UCUM functional tests
+
+`UcumFunctionalTests.xml` is the UCUM conformance suite, copied unchanged from
+the FHIR Java implementation of UCUM
+(https://github.com/FHIR/Ucum-java/blob/master/src/test/resources/UcumFunctionalTests.xml,
+fetched 2026-10-11; its last history entry is dated 3 February 2021).
+
+Licensing: the file's own header states that it is copyright 2008-2009 Grahame
+Grieve and contributors and licensed under the Eclipse Public License
+(http://www.eclipse.org/legal/epl-v10.html). The repository it ships in is
+licensed under the BSD 3-Clause License, reproduced in `LICENSE` beside it.
+
+`TestUCUMFunctionalSuite` (internal/vocabulary/ucum_test.go) runs its
+validation and conversion cases against the substrate's unit grammar. A case
+over an atom the unit table does not carry is skipped and counted, never
+passed.

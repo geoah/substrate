@@ -37,6 +37,7 @@ import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
 import { ReferenceListPicker } from "@/components/record/identity-picker"
 import { MoneyInput } from "@/components/record/money-input"
 import { PropertyChoice } from "@/components/record/property-choice"
+import { QuantityInput } from "@/components/record/quantity-input"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
 import type { ChoiceOption } from "@/components/ui/choice-list"
@@ -518,6 +519,25 @@ export function PropertyField({
     )
   }
 
+  if (field.spec.kind === "quantity") {
+    return (
+      <Field>
+        {label}
+        <QuantityInput
+          id={id}
+          label={field.label}
+          value={text}
+          onChange={onChange}
+          spec={field.spec}
+          invalid={Boolean(error)}
+          boxClassName={MONEY_BOX}
+        />
+        {help()}
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
+    )
+  }
+
   const isSecret = field.control === "secret"
   // A time is picked on the same local-time control the sheet opens; what is
   // stored is the instant it names.
@@ -561,7 +581,7 @@ export function PropertyField({
   )
 }
 
-/** The form's input look, for the two halves of a money input. */
+/** The form's input look, for the parts of a money or a quantity input. */
 const MONEY_BOX =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive disabled:opacity-50"
 
@@ -689,6 +709,21 @@ function ItemList({
                 value={value}
                 onChange={(next) => change(i, next)}
                 fallbackCurrency={moneyCurrency(item.default)}
+                invalid={invalid}
+                onKeyDown={(e) => onKeyDown(e, i)}
+                boxClassName={MONEY_BOX}
+                className="flex-1"
+              />
+            ) : item.kind === "quantity" ? (
+              <QuantityInput
+                id={i === 0 ? id : undefined}
+                valueRef={(el) => {
+                  boxes.current[i] = el
+                }}
+                label={`${field.label} ${i + 1}`}
+                value={value}
+                onChange={(next) => change(i, next)}
+                spec={item}
                 invalid={invalid}
                 onKeyDown={(e) => onKeyDown(e, i)}
                 boxClassName={MONEY_BOX}

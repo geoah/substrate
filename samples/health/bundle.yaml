@@ -1,0 +1,50 @@
+# The first observing domain: a person's body, sleep, training and blood
+# tests. A SAMPLE a repository imports and owns, on top of the `observations`
+# base it requires (decision record 0159).
+#
+# Scalars are generic: a heart rate, a weight, an LDL value is an
+# `observations/observation` or `observations/trace` pointing at one of the
+# metric records this package ships (metrics.yaml, ids `health/<name>`), so
+# a new metric is a record, not an upgrade. Sessions are typed: a night's
+# sleep, a workout and a lab report have their own kinds, because their
+# fields are structural and a reader filters by them. A lab result is typed
+# too, and binds core's `observed(single)` beside its own properties, so the
+# observed index reads it like any observation.
+#
+# Health writes no `about` (absent means the owner) and no counter fields.
+# Two more things it never does: edit a base kind (health-only context is a
+# `qualifiers` code on an observation; health-only definition data is an
+# `analyte`), and declare a reference to a provider kind (an adapter package,
+# such as `healthwhoop`, maps a provider's records onto these).
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/health
+data:
+  authority: samples.substrate.reamde.dev
+  package: health
+  version: 1
+---
+# ---- the bundle document: the import unit -------------------------------------
+# Kinds and the metric catalogue (metrics.yaml) as data. The metric rows are
+# records of the base package's kind, so a re-import of this sample rewrites
+# them and its removal leaves them.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/health
+data:
+  authority: samples.substrate.reamde.dev
+  package: health
+  description: >-
+    Your body, sleep, workouts and blood tests: nights, sessions, lab reports
+    and results, and a catalogue of the metrics wearables, scales and labs
+    measure. Needs the observations sample.
+  requires:
+    - samples.substrate.reamde.dev/observations
+  requiresAtLeast:
+    samples.substrate.reamde.dev/observations: 1
+  installs:
+    - samples.substrate.reamde.dev/health/analyte
+    - samples.substrate.reamde.dev/health/sleep
+    - samples.substrate.reamde.dev/health/workout
+    - samples.substrate.reamde.dev/health/labreport
+    - samples.substrate.reamde.dev/health/labresult

@@ -537,7 +537,17 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   comparisons and `exists`, and each operand is itself a money value:
   `{"price": {"gte": {"amount": 1000, "currency": "EUR"}}}` is every price
   of at least 10.00 EUR. The comparison holds within the operand's currency;
-  a bare number carries no currency and is refused. `match` is the one operator that reads words
+  a bare number carries no currency and is refused. A `quantity` property
+  takes the same operators, and each operand is itself a quantity value
+  without a comparator:
+  `{"weight": {"lt": {"value": "160", "unit": "[lb_av]"}}}` is every weight
+  below 160 pounds, a stored 72.4 kg among them. The engine converts the
+  operand exactly into each unit the rows hold, inside the operand's
+  [measure](units.md); a stored value of another measure never matches, and an
+  operand outside a declared `measures:` is refused. A value stored with a
+  comparator (`<0.5`) matches only where the comparison holds for its whole
+  half-line, and `in` is refused on a property that declares `comparator:
+  true` ([the table](data-model.md#property-types)). `match` is the one operator that reads words
   rather than values: a query in the [search grammar](#the-search-grammar)
   against ONE property's own text, so `{"notes": {"match": "rack lay*"}}` is
   every record whose `notes` holds a word `rack` and a word starting `lay`,
@@ -595,7 +605,13 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
 a JSON list of `{property, desc}`). A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
-currencies, so a list that wants one currency filters on it. Only declared properties filter and order:
+currencies, so a list that wants one currency filters on it. A `quantity`
+property sorts by its value converted to its measure's base unit (155 `[lb_av]`
+between 50 kg and 71000 g), reading the codes the property lists, else its
+measure's codes, else every code the table lists. A value in a compound the
+list does not name, or in `rad`, sorts after the rest; a level or an arbitrary
+unit sorts by its own number. A declared index on a quantity holds the same
+expression and needs `measures:` or `units:`. Only declared properties filter and order:
 **filterable, indexed, and declared are the same set**, so a query that would
 be slow is one the grammar cannot express.
 

@@ -20,6 +20,7 @@ import type { DeclaredProperty } from "@/lib/definition"
 import { enumLabel } from "@/lib/grid-values"
 import { parseMoneyText } from "@/lib/money"
 import { stateWord } from "@/lib/state-words"
+import { parseQuantityText, type Comparator } from "@/lib/units"
 
 export type FilterOp = "eq" | "contains" | "prefix" | "match"
 
@@ -78,7 +79,37 @@ function coerceValue(raw: string, prop?: DeclaredProperty): unknown {
   // {amount: 1999, currency: EUR}, and text that is not one is
   // sent as typed for the server to refuse by name.
   if (kind === "money") return parseMoneyText(raw).value ?? raw
+  // A quantity compares as a quantity, converted within the operand's
+  // measure: `155 lb` is the value {value: "155", unit: "[lb_av]"}. An
+  // operand carries no comparator, so text that is not one plain quantity is
+  // sent as typed for the server to refuse by name.
+  if (kind === "quantity") {
+    const parsed = parseQuantityText(raw).value
+    return parsed && !parsed.comparator ? parsed : raw
+  }
   return raw
+}
+
+const RANGE: Record<Comparator, "lt" | "lte" | "gte" | "gt"> = {
+  "<": "lt",
+  "<=": "lte",
+  ">=": "gte",
+  ">": "gt",
+}
+
+/** A filter on one quantity typed with a leading comparator (`<155 lb`) is
+ * the comparison it names, `lt` {155 [lb_av]}; two of them on one property
+ * are a range. Anything else is undefined, and stays an exact value. */
+function quantityRange(
+  f: ActiveFilter,
+  prop?: DeclaredProperty
+): Cond | undefined {
+  if (prop?.kind !== "quantity" || prop.repeated || prop.keyed) return undefined
+  if (f.op !== "eq") return undefined
+  const parsed = parseQuantityText(f.value).value
+  if (!parsed?.comparator) return undefined
+  const { comparator, ...operand } = parsed
+  return { [RANGE[comparator]]: operand }
 }
 
 /** Fold the active filters into one wire filter. Comma in an `eq` value means
@@ -105,6 +136,11 @@ export function toRecordFilter(
     }
     if (f.op === "match") {
       properties[f.field] = { ...properties[f.field], match: f.value }
+      continue
+    }
+    const range = quantityRange(f, prop)
+    if (range) {
+      properties[f.field] = { ...properties[f.field], ...range }
       continue
     }
     const parts = f.value.includes(",")

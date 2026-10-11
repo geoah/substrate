@@ -394,6 +394,10 @@ type builder struct {
 	// viaRefs says a reference filter was answered from refs, which only a
 	// plan made for its values can drive well (planWithValues).
 	viaRefs bool
+	// rowProps is the one row a mapping's where asks about (mappingwhere.go),
+	// whose values a quantity filter reads its stored units from, since there
+	// is no table of rows to read them from.
+	rowProps map[string]any
 }
 
 // planWithValues makes the rest of a read's transaction plan each statement
@@ -894,7 +898,7 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 			if p.Repeated {
 				kind = ""
 			}
-			if p.Keyed && kind == vocabulary.DatatypeMoney {
+			if p.Keyed && (kind == vocabulary.DatatypeMoney || kind == vocabulary.DatatypeQuantity) {
 				kind = ""
 			}
 			break
@@ -902,6 +906,9 @@ func (ds *dataset) condProp(ctx context.Context, x dbx, b *builder, types []*voc
 	}
 	if kind == vocabulary.DatatypeMoney {
 		return condMoney(b, name, c)
+	}
+	if kind == vocabulary.DatatypeQuantity {
+		return ds.condQuantity(ctx, x, b, types, name, c)
 	}
 	return condJSON(b, `props`, name, c, kind)
 }
@@ -1699,6 +1706,11 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// order is one key, and a list that wants one currency filters on it.
 		if ds.moneyProp(property) {
 			return moneyValueSQL(`(props->` + sqlLiteral(property) + `)`), nil
+		}
+		// A QUANTITY sorts by the value converted to its measure's base, the
+		// expression a declared index on it holds (indices.go).
+		if specs, ok := ds.quantityProp(property); ok {
+			return quantityBaseSQL(`(props->`+sqlLiteral(property)+`)`, specs), nil
 		}
 		// An INSTANT sorts as an instant. validate.go normalizes a datetime to
 		// one UTC RFC 3339 layout, but RFC3339Nano trims trailing fractional
