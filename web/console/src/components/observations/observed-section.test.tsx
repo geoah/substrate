@@ -18,6 +18,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
+  GARMIN,
+  HEART,
   HEART_TRACE,
   WEIGHING,
   metricKind,
@@ -76,7 +78,7 @@ describe("a trace", () => {
     expect(fact("Lowest")).toBe("55 /min")
     expect(fact("Highest")).toBe("171 /min")
     expect(fact("Average")).toBe("131.6 /min")
-    expect(fact("Standard deviation")).toBe("34.88 /min")
+    expect(fact("Standard deviation")).toBe("34.87 /min")
     expect(fact("Covered")).toBe("59m 58s")
   })
 
@@ -113,8 +115,8 @@ describe("a trace", () => {
       .getByText("Open in the timeline")
       .closest("a")!
     expect(JSON.parse(link.dataset.search!)).toMatchObject({
-      metric: "health/heart_rate",
-      source: "garmin-forerunner-265",
+      metric: HEART,
+      source: GARMIN,
       range: "custom",
       start: "2026-10-07T06:00:00.000Z",
       end: "2026-10-07T07:00:00.000Z",

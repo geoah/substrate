@@ -1,30 +1,32 @@
-/** The numbers under a chart: one line per row of the answer (a bucket, or
- * one group of a bucket) with its window, one column per reducer with its
- * unit, the count, the covered time, the sources that fed it and whether
- * raw points or a vendor summary served it. A row the server filled in or
- * could not answer says so. The whole table copies as tab-separated text,
- * the exact digits and the wire's instants. */
+/** The numbers under a chart, one click away: one line per row of the
+ * answer (a bucket, or one group of a bucket) with its window, one column per
+ * reducer with its unit, the points, the covered time, the sources that fed
+ * it and whether raw points or a vendor summary served it. A row the server
+ * filled in or could not answer says so. The whole table copies as
+ * tab-separated text, the exact digits and the wire's instants, folded or
+ * not. */
 
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
+import { ChevronRightIcon } from "lucide-react"
 
 import { CopyButton } from "@/components/identity/copy-button"
 import { EmptyValue } from "@/components/identity/empty-value"
 import { Pill } from "@/components/identity/pill"
-import { Reading } from "@/components/observations/marks"
-import type {
-  AggregateGroupKey,
-  AggregateReducer,
-  AggregateRow,
-} from "@/lib/api/types"
+import { CodeMark, Reading } from "@/components/observations/marks"
+import { Button } from "@/components/ui/button"
+import type { AggregateReducer, AggregateRow } from "@/lib/api/types"
 import {
+  type AggregateGroupKey,
   coverageWords,
   reducerKey,
   reducerLabel,
+  reducerName,
   rollupText,
   rowValue,
   windowWords,
 } from "@/lib/observations"
 import { unitSymbol } from "@/lib/units"
+import { cn } from "@/lib/utils"
 
 const FROM_WORDS: Record<string, string> = {
   raw: "Raw points",
@@ -38,6 +40,7 @@ const GROUP_WORDS: Record<AggregateGroupKey, string> = {
   code: "Category",
   metric: "Metric",
   kind: "Collection",
+  channel: "Channel",
 }
 
 /** A reducer's column head: its words, and the unit its values carry. */
@@ -60,6 +63,7 @@ export function RollupTable({
   groupCell,
   sourceText,
   label,
+  precision,
 }: {
   rows: readonly AggregateRow[]
   reducers: readonly AggregateReducer[]
@@ -70,99 +74,126 @@ export function RollupTable({
   sourceText: (id: string) => string
   /** The table's accessible name. */
   label: string
+  /** The decimal places a value is shown to; the copy keeps every digit. */
+  precision?: number
 }) {
+  // Folded by default, so a timeline of several metrics reads chart after
+  // chart; one click shows the numbers.
+  const [open, setOpen] = useState(false)
   const flagged = rows.some((r) => r.synthetic || r.unavailable)
+  const count =
+    rows.length === 1 ? "1 row" : `${rows.length.toLocaleString("en")} rows`
   return (
-    <div className="mt-3">
-      <div className="mb-1.5 flex items-center gap-2 text-[12.5px] text-faint">
-        <span>
-          {rows.length === 1
-            ? "1 row"
-            : `${rows.length.toLocaleString("en")} rows`}
-        </span>
+    <div className="mt-2">
+      <div className="flex items-center gap-1 text-[12.5px] text-faint">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={open}
+          className="h-7 gap-1 px-1.5 text-[12.5px] font-normal text-muted-foreground"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <ChevronRightIcon
+            className={cn("size-3.5 transition-transform", open && "rotate-90")}
+          />
+          {open ? "Hide the numbers" : "Show the numbers"}
+        </Button>
+        <span>{count}</span>
         <CopyButton
           value={rollupText(rows, reducers, groupKey)}
           label="Copy the table"
         />
       </div>
-      <div className="max-h-80 overflow-auto rounded-md border border-border">
-        <table aria-label={label} className="w-full text-[13px]">
-          <thead className="sticky top-0 bg-background">
-            <tr className="[&>th]:h-[34px] [&>th]:border-b [&>th]:border-border [&>th]:px-2.5 [&>th]:text-left [&>th]:text-[12.5px] [&>th]:font-medium [&>th]:whitespace-nowrap [&>th]:text-faint">
-              <th scope="col">When</th>
-              {groupKey && <th scope="col">{GROUP_WORDS[groupKey]}</th>}
-              {reducers.map((r) => (
-                <th key={reducerKey(r)} scope="col" className="text-right!">
-                  {headOf(r, rows)}
+      {open && (
+        <div className="mt-1 max-h-80 overflow-auto rounded-md border border-border">
+          <table aria-label={label} className="w-full text-[13px]">
+            <thead className="sticky top-0 bg-background">
+              <tr className="[&>th]:h-[34px] [&>th]:border-b [&>th]:border-border [&>th]:px-2.5 [&>th]:text-left [&>th]:text-[12.5px] [&>th]:font-medium [&>th]:whitespace-nowrap [&>th]:text-faint">
+                <th scope="col">When</th>
+                {groupKey && <th scope="col">{GROUP_WORDS[groupKey]}</th>}
+                {reducers.map((r) => (
+                  <th key={reducerKey(r)} scope="col" className="text-right!">
+                    {headOf(r, rows)}
+                  </th>
+                ))}
+                <th scope="col" className="text-right!">
+                  Points
                 </th>
-              ))}
-              <th scope="col" className="text-right!">
-                Count
-              </th>
-              <th scope="col">Covered</th>
-              <th scope="col">Sources</th>
-              <th scope="col">From</th>
-              {flagged && <th scope="col">Note</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr
-                key={`${row.start}-${i}`}
-                className="[&:last-child>td]:border-b-0 [&>td]:h-[30px] [&>td]:border-b [&>td]:border-border [&>td]:px-2.5 [&>td]:whitespace-nowrap"
-              >
-                <td title={`${row.start} to ${row.end}`}>
-                  {windowWords(Date.parse(row.start), Date.parse(row.end))}
-                </td>
-                {groupKey && <td>{groupCell(row.group?.[groupKey])}</td>}
-                {reducers.map((r) => {
-                  const v = rowValue(row, reducerKey(r))
-                  return (
-                    <td key={reducerKey(r)} className="text-right">
-                      <Reading value={v?.value} unit={v?.unit} />
-                    </td>
-                  )
-                })}
-                <td className="text-right tabular-nums">
-                  {row.count === undefined ? (
-                    <EmptyValue />
-                  ) : (
-                    row.count.toLocaleString("en")
-                  )}
-                </td>
-                <td title={row.coverage}>
-                  {row.coverage ? coverageWords(row.coverage) : <EmptyValue />}
-                </td>
-                <td>
-                  {row.sources?.length ? (
-                    row.sources.map(sourceText).join(", ")
-                  ) : (
-                    <EmptyValue />
-                  )}
-                </td>
-                <td>
-                  {row.from ? (
-                    (FROM_WORDS[row.from] ?? row.from)
-                  ) : (
-                    <EmptyValue />
-                  )}
-                </td>
-                {flagged && (
-                  <td>
-                    {row.unavailable ? (
-                      <Pill tone="warn">Not available</Pill>
-                    ) : row.synthetic ? (
-                      <Pill tone="neutral" dot={false}>
-                        Filled in
-                      </Pill>
-                    ) : null}
-                  </td>
-                )}
+                <th scope="col">Covered</th>
+                <th scope="col">Sources</th>
+                <th scope="col">From</th>
+                {flagged && <th scope="col">Note</th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr
+                  key={`${row.start}-${i}`}
+                  className="[&:last-child>td]:border-b-0 [&>td]:h-[30px] [&>td]:border-b [&>td]:border-border [&>td]:px-2.5 [&>td]:whitespace-nowrap"
+                >
+                  <td title={`${row.start} to ${row.end}`}>
+                    {windowWords(Date.parse(row.start), Date.parse(row.end))}
+                  </td>
+                  {groupKey && <td>{groupCell(row.group?.[groupKey])}</td>}
+                  {reducers.map((r) => {
+                    const v = rowValue(row, reducerKey(r))
+                    return (
+                      <td key={reducerKey(r)} className="text-right">
+                        {v?.value == null && v?.code ? (
+                          <CodeMark code={v.code} />
+                        ) : (
+                          <Reading
+                            value={v?.value}
+                            unit={v?.unit}
+                            precision={
+                              reducerName(r) === "count" ? undefined : precision
+                            }
+                          />
+                        )}
+                      </td>
+                    )
+                  })}
+                  <td className="text-right tabular-nums">
+                    {row.count.toLocaleString("en")}
+                  </td>
+                  <td title={row.coverage}>
+                    {row.coverage ? (
+                      coverageWords(row.coverage)
+                    ) : (
+                      <EmptyValue />
+                    )}
+                  </td>
+                  <td>
+                    {row.sources?.length ? (
+                      row.sources.map(sourceText).join(", ")
+                    ) : (
+                      <EmptyValue />
+                    )}
+                  </td>
+                  <td>
+                    {row.from ? (
+                      (FROM_WORDS[row.from] ?? row.from)
+                    ) : (
+                      <EmptyValue />
+                    )}
+                  </td>
+                  {flagged && (
+                    <td>
+                      {row.unavailable ? (
+                        <Pill tone="warn">Not available</Pill>
+                      ) : row.synthetic ? (
+                        <Pill tone="neutral" dot={false}>
+                          Filled in
+                        </Pill>
+                      ) : null}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

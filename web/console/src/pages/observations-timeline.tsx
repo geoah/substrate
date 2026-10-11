@@ -56,15 +56,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useObservations, type Observations } from "@/hooks/use-observations"
 import { aggregateCurl, aggregateQueryOptions } from "@/lib/api/observations"
-import {
-  ApiError,
-  type AggregateFrom,
-  type AggregateGroupKey,
-} from "@/lib/api/types"
+import { ApiError } from "@/lib/api/types"
 import {
   BUCKET_CHOICES,
   FROM_CHOICES,
   GROUP_CHOICES,
+  DEFAULT_PRECISION,
   MAX_BUCKETS,
   RANGE_PRESETS,
   answerReducers,
@@ -83,14 +80,16 @@ import {
   readingText,
   reducerKey,
   reducerLabel,
+  reducerName,
   reducerOptions,
   refPathOf,
   sameRef,
   seriesOf,
-  shapeOf,
   unitChoices,
   windowWords,
   writeChoice,
+  type AggregateFrom,
+  type AggregateGroupKey,
   type BucketChoice,
   type BucketSize,
   type GroupChoice,
@@ -266,7 +265,7 @@ export function ObservationsTimelinePage() {
       label: "Source",
       options: distinct(chosenStreams.map((s) => s.source)).map((value) => ({
         value,
-        label: obs.titleOf(refPathOf(value, obs.pins.source)) ?? value,
+        label: obs.nameOf(value, obs.pins.source),
       })),
     },
     {
@@ -274,14 +273,14 @@ export function ObservationsTimelinePage() {
       label: "About",
       options: distinct(chosenStreams.map((s) => s.about)).map((value) => ({
         value,
-        label: obs.titleOf(refPathOf(value, obs.pins.about)) ?? value,
+        label: obs.nameOf(value, obs.pins.about),
       })),
     },
   ]
   const from: AggregateFrom =
     fromParam ??
     (metrics.length > 0 &&
-    metrics.every((m) => shapeOf(obs.metricOf(m)) === "summary")
+    metrics.every((m) => obs.readingOf(m).shape === "summary")
       ? "summaries"
       : "raw")
   const reducers = readChoices(reducerTokens)
@@ -422,7 +421,7 @@ export function ObservationsTimelinePage() {
             size={size}
             timezone={timezone}
             group={group}
-            from={from}
+            from={fromParam ?? undefined}
             sources={sources}
             abouts={abouts}
             reducer={reducers.get(metric)}
@@ -467,7 +466,7 @@ function TimelineLane({
   size,
   timezone,
   group,
-  from,
+  from: pickedFrom,
   sources,
   abouts,
   reducer: picked,
@@ -482,7 +481,9 @@ function TimelineLane({
   size: BucketSize
   timezone?: string
   group: GroupChoice
-  from: AggregateFrom
+  /** The reader's pick; absent, a vendor summary reads summaries (it has
+   * nothing else) and every other form raw points. */
+  from?: AggregateFrom
   sources: string[]
   abouts: string[]
   reducer?: string
@@ -494,15 +495,16 @@ function TimelineLane({
   const [technical] = useTechnicalDetails()
   const info = obs.metricOf(metric)
   const name = obs.metricName(metric)
-  const shape = shapeOf(info)
+  const { shape, form } = obs.readingOf(metric)
+  const from: AggregateFrom =
+    pickedFrom ?? (shape === "summary" ? "summaries" : "raw")
+  const precision = info?.displayPrecision ?? DEFAULT_PRECISION
   const codes = info?.codeSet
-  const options = reducerOptions(shape, info).filter(
-    (r) => r !== "timeInState" || Boolean(codes?.length)
-  )
+  const options = reducerOptions(shape, form)
   const reducer = picked && options.includes(picked) ? picked : options[0]
   const streams = obs.streams.filter((s) => sameRef(s.metric, metric))
   const stored = info?.unit ?? streams.find((s) => s.unit)?.unit
-  const unitOptions = unitChoices(stored)
+  const unitOptions = unitChoices(stored, info?.measures)
   const unit =
     pickedUnit && pickedUnit !== stored && unitOptions.includes(pickedUnit)
       ? pickedUnit
@@ -520,7 +522,17 @@ function TimelineLane({
   )
   const noAbout = abouts.length > 0 && chosenAbouts.length === 0
   const metricPath = obs.metricPath(metric)
-  const estimate = bucketEstimate(range, size)
+  // The budget counts groups times buckets: a guess at the groups before
+  // the answer says (every chosen source or thing, a category's codes).
+  const groups =
+    shape === "coded"
+      ? codes?.length || 4
+      : group === "source"
+        ? chosenSources.length || laneSources.length || 1
+        : group === "about"
+          ? (chosenAbouts.length || laneAbouts.length) + 1
+          : 1
+  const estimate = bucketEstimate(range, size, groups)
   const tooMany = estimate > MAX_BUCKETS
 
   const spec: LaneSpec | undefined = metricPath
@@ -528,7 +540,6 @@ function TimelineLane({
         metricPath,
         shape,
         reducer,
-        codes,
         unit,
         from,
         range,
@@ -552,7 +563,8 @@ function TimelineLane({
     : undefined
   const pickedKey = spec ? reducerKey(laneReducers(spec)[0]) : reducer
   const rows = runnable ? (query.data?.rows ?? []) : []
-  const { buckets, series } = seriesOf(rows, pickedKey, groupKey)
+  const answer = seriesOf(rows, pickedKey, groupKey)
+  const buckets = answer.buckets
   const columns = answerReducers(rows)
 
   const universe =
@@ -561,16 +573,21 @@ function TimelineLane({
       : groupKey === "about"
         ? ["", ...[...laneAbouts].sort()]
         : groupKey === "code"
-          ? [...(codes ?? []), ...series.map((s) => s.key).sort()]
+          ? [...(codes ?? []), ...answer.series.map((s) => s.key).sort()]
           : [""]
-  const sourceText = (id: string) =>
-    obs.titleOf(refPathOf(id, obs.pins.source)) ?? id
+  // Categories stack and list in the metric's own order, the colours with
+  // them; other series keep the order the answer gave.
+  const series =
+    groupKey === "code"
+      ? [...answer.series].sort(
+          (a, b) => universe.indexOf(a.key) - universe.indexOf(b.key)
+        )
+      : answer.series
+  const sourceText = (value: string) => obs.nameOf(value, obs.pins.source)
   const seriesText = (value: string | undefined): string => {
     if (groupKey === "source" && value) return sourceText(value)
     if (groupKey === "about")
-      return value
-        ? (obs.titleOf(refPathOf(value, obs.pins.about)) ?? value)
-        : "You"
+      return value ? obs.nameOf(value, obs.pins.about) : "You"
     if (groupKey === "code" && value) return codeWords(value)
     return name
   }
@@ -615,24 +632,34 @@ function TimelineLane({
                 </p>
               )}
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
-                {row.values.map((v) => (
+                {row.values.map((v, i) => (
                   <TipLine
-                    key={reducerKey(v.reducer)}
-                    label={reducerLabel(v.reducer)}
+                    key={`${reducerKey(v.reducer)}-${v.code ?? ""}-${i}`}
+                    label={
+                      v.rolling !== undefined
+                        ? `${reducerLabel(v.reducer)} of ${v.rolling}`
+                        : reducerLabel(v.reducer)
+                    }
                     value={
                       row.unavailable
                         ? "not available"
-                        : readingText(v.value, v.unit)
+                        : v.value === null && v.code
+                          ? codeWords(v.code)
+                          : readingText(
+                              v.value,
+                              v.unit,
+                              reducerName(v.reducer) === "count"
+                                ? undefined
+                                : precision
+                            )
                     }
                     strong
                   />
                 ))}
-                {row.count !== undefined && (
-                  <TipLine
-                    label="Count"
-                    value={row.count.toLocaleString("en")}
-                  />
-                )}
+                <TipLine
+                  label="Points"
+                  value={row.count.toLocaleString("en")}
+                />
                 {row.coverage && (
                   <TipLine
                     label="Covered"
@@ -659,6 +686,11 @@ function TimelineLane({
                   Filled in, not measured.
                 </p>
               )}
+              {!row.synthetic && row.count === 0 && (
+                <p className="mt-1 text-muted-foreground">
+                  No reading here; an earlier one still holds.
+                </p>
+              )}
               {row.unavailable && (
                 <p className="mt-1 text-warning">
                   Not available: the points this needs have expired.
@@ -679,8 +711,13 @@ function TimelineLane({
     )
   }
   if (shape === "coded") notes.push("Stacked by category.")
-  if (query.data && query.data.exact === false) {
-    notes.push("Some values were converted or rounded.")
+  if (shape === "summary" && !pickedFrom) {
+    notes.push("Read from the vendor's summaries, the only values it has.")
+  }
+  // `exact` is false whenever a float reduction was involved, so an average
+  // is never exact: a developer's fact, not an everyday warning.
+  if (technical && query.data && query.data.exact === false) {
+    notes.push("Not exact: a float reduction or a rounded conversion.")
   }
 
   return (
@@ -731,9 +768,9 @@ function TimelineLane({
         </p>
       ) : tooMany ? (
         <p className="text-muted-foreground">
-          This range cuts into about {estimate.toLocaleString("en")} buckets,
-          more than the {MAX_BUCKETS.toLocaleString("en")} one read may hold.
-          Pick a larger bucket or a shorter range.
+          This read would make about {estimate.toLocaleString("en")} buckets
+          counting every group, more than the {MAX_BUCKETS.toLocaleString("en")}{" "}
+          one read may hold. Pick a larger bucket or a shorter range.
         </p>
       ) : noSource ? (
         <p className="text-muted-foreground">
@@ -785,6 +822,8 @@ function TimelineLane({
             </ul>
           )}
           <TimelineChart
+            // A new window is a new chart: no hover or drag carries over.
+            key={`${range.start}-${range.end}`}
             mark={mark}
             band={mark === "line" && shape === "gauge"}
             buckets={buckets}
@@ -804,6 +843,7 @@ function TimelineLane({
               groupCell={groupCell}
               sourceText={sourceText}
               label={`${name} in numbers`}
+              precision={precision}
             />
           )}
         </>

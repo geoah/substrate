@@ -24,7 +24,6 @@ import {
   bandPath,
   barPath,
   bucketAt,
-  labelEvery,
   linePath,
   linearScale,
   niceDomain,
@@ -32,6 +31,7 @@ import {
   tickLabels,
 } from "@/lib/chart"
 import {
+  axisTicks,
   bucketWords,
   type Bucket,
   type BucketSize,
@@ -107,8 +107,13 @@ export function TimelineChart({
   stale?: boolean
 }) {
   const { ref, width } = useWidth(720)
-  const [active, setActive] = useState<number | null>(null)
-  const [anchor, setAnchor] = useState<number | null>(null)
+  const [held, setActive] = useState<number | null>(null)
+  const [heldAnchor, setAnchor] = useState<number | null>(null)
+  // A bucket index outlives the answer it pointed into: a zoom or a new read
+  // brings fewer buckets while the pointer still rests on the chart.
+  const active = held !== null && held < buckets.length ? held : null
+  const anchor =
+    heldAnchor !== null && heldAnchor < buckets.length ? heldAnchor : null
 
   const right = Math.max(LEFT + 40, width - RIGHT)
   const x = linearScale([domain.start, domain.end], [LEFT, right])
@@ -141,18 +146,17 @@ export function TimelineChart({
   const base = mark === "line" ? TOP + PLOT : y(Math.max(yDomain[0], 0))
 
   const yLabels = tickLabels(ticks)
-  // A label needs about 84px: no more of them than the axis holds, and none
-  // closer than that however narrow the buckets.
-  const narrowest = Math.min(...windows.map((w) => w.x1 - w.x0))
-  const every = Math.max(
-    labelEvery(buckets.length, Math.max(1, Math.floor((right - LEFT) / 84))),
-    Number.isFinite(narrowest) ? Math.ceil(84 / Math.max(1, narrowest)) : 1
-  )
-  const xLabels = buckets.flatMap((b, i) => {
+  // The x axis is the whole range, its size's boundaries labelled whether a
+  // bucket holds anything there or not. A label needs about 84px, so every
+  // k-th boundary is labelled.
+  const marks = axisTicks(domain, size)
+  const spacing = marks.length > 1 ? x(marks[1]) - x(marks[0]) : right - LEFT
+  const every = Math.max(1, Math.ceil(84 / Math.max(1, spacing)))
+  const xLabels = marks.flatMap((t, i) => {
     if (i % every) return []
-    const previous = i >= every ? buckets[i - every].start : undefined
-    const at = Math.min(Math.max(windows[i].mid, LEFT + 28), right - 28)
-    return [{ i, at, text: bucketWords(b.start, size, previous) }]
+    const previous = i >= every ? marks[i - every] : undefined
+    const at = Math.min(Math.max(x(t), LEFT + 28), right - 28)
+    return [{ i, at, text: bucketWords(t, size, previous) }]
   })
 
   function bucketOf(event: PointerEvent<SVGSVGElement>): number {

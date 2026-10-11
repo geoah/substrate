@@ -139,7 +139,8 @@ describe("the timeline's requests", () => {
       charts(server.seen, "health/heart_rate")[0].aggregate.sources
     ).toEqual({
       policy: "priority",
-      order: ["garmin-forerunner-265", "apple-watch-s10"],
+      // The streams' own spelling, record paths, newest stream first.
+      order: [`${SOURCE}/garmin-forerunner-265`, `${SOURCE}/apple-watch-s10`],
     })
     const group = screen.getByRole("radiogroup", { name: "Group by" })
     fireEvent.click(within(group).getByRole("radio", { name: "Source" }))
@@ -292,18 +293,77 @@ describe("the charts", () => {
 
   it("puts the numbers under the chart, a column per reducer with its unit", async () => {
     mount(`?metric=health/body_mass&${WINDOW}`)
-    const table = await screen.findByRole("table", {
-      name: "Weight in numbers",
+    const weight = await lane("Weight")
+    // Folded until asked for; the copy is there either way.
+    const show = await within(weight).findByRole("button", {
+      name: "Show the numbers",
     })
+    expect(screen.queryByRole("table", { name: "Weight in numbers" })).toBe(
+      null
+    )
+    expect(screen.getByRole("button", { name: "Copy the table" })).toBeTruthy()
+    fireEvent.click(show)
+    const table = screen.getByRole("table", { name: "Weight in numbers" })
     const heads = within(table)
       .getAllByRole("columnheader")
       .map((h) => h.textContent)
     expect(heads).toEqual(
-      expect.arrayContaining(["Average (kg)", "Lowest (kg)", "Highest (kg)"])
+      expect.arrayContaining([
+        "Average (kg)",
+        "Lowest (kg)",
+        "Highest (kg)",
+        "Points",
+      ])
     )
     expect(within(table).getAllByRole("row")).toHaveLength(4)
     expect(table.textContent).toContain("Filled in")
-    expect(screen.getByRole("button", { name: "Copy the table" })).toBeTruthy()
+  })
+
+  it("shows a computed value to the metric's places, the exact digits on hover", async () => {
+    const server = observationsServer((read) =>
+      read.aggregate.metric
+        ? {
+            ...WEIGHT,
+            rows: [
+              {
+                ...WEIGHT.rows[0],
+                values: [
+                  { reducer: "avg", value: "72.6333333333", unit: "kg" },
+                  ...WEIGHT.rows[0].values.slice(1),
+                ],
+              },
+            ],
+          }
+        : LATEST
+    )
+    vi.stubGlobal("fetch", vi.fn(server.fetch))
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <NuqsTestingAdapter searchParams={`?metric=health/body_mass&${WINDOW}`}>
+          <ObservationsTimelinePage />
+        </NuqsTestingAdapter>
+      </QueryClientProvider>
+    )
+    const weight = await lane("Weight")
+    fireEvent.click(
+      await within(weight).findByRole("button", { name: "Show the numbers" })
+    )
+    const cell = within(weight).getByTitle("72.6333333333")
+    // No displayPrecision on the fixture's metric: two places.
+    expect(cell.textContent).toBe("72.63 kg")
+  })
+
+  it("reads a vendor summary from summaries until the reader picks", async () => {
+    const server = mount(`?metric=health/whoop_recovery&${WINDOW}`)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/whoop_recovery")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/whoop_recovery")[0].aggregate
+    ).toMatchObject({ from: "summaries", reducers: ["last"] })
   })
 
   it("shows the request to run again, in technical mode only", async () => {
@@ -322,7 +382,7 @@ describe("the charts", () => {
     cleanup()
     mount(`?metric=health/body_mass&${WINDOW}`)
     const plain = await lane("Weight")
-    await within(plain).findByRole("table")
+    await within(plain).findByRole("button", { name: "Show the numbers" })
     expect(plain.querySelector("[data-slot=lane-request]")).toBe(null)
   })
 })

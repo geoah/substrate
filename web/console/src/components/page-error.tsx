@@ -58,7 +58,12 @@ export function PageError({
             <Button variant="outline" size="sm" onClick={reset}>
               Try again
             </Button>
-            <Button variant="ghost" size="sm" render={<Link to="/" />}>
+            <Button
+              variant="ghost"
+              size="sm"
+              render={<Link to="/" />}
+              nativeButton={false}
+            >
               Go home
             </Button>
           </div>

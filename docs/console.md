@@ -670,9 +670,10 @@ aggregate latest read: `GET /api/v1/records` with
 `aggregate={"groupBy":["metric","source","about"],"reducers":["last"]}`, no
 bucket and no range. Each row shows the metric by its record's name, the
 source as a record mention, what it is about (**You** where it names
-nothing, which means the owner), the form in words (**Level**, **Amount**,
-**Running total**, **Vendor summary**, **Category**), the newest value in its
-unit, when, and the count or covered time where the answer carries one.
+nothing, which means the owner), the form of its newest value in words
+(**Level**, **Amount**, **Running total**, **Vendor summary**, **Category**),
+that value in its unit (or its category, which a coded `last` answers in
+`code`), when, and how many points the stream holds.
 Filters for metric, source, about and form and a search narrow the rows,
 all in the address. A row opens the timeline narrowed to its stream.
 
@@ -699,12 +700,12 @@ Each chart is one aggregate read naming its metric. Grouped by anything but
 source, two or more sources are resolved by `sources.policy: priority` in the
 order you chose them (or the newest first), and the chart says which source
 wins; grouped by source, each keeps its own rows. A category metric is
-always grouped by code. A range that would cut into more than 1,440 buckets
-is not asked for, and the chart says to pick a larger bucket.
-
-The aggregate read is pinned by the observations build's wire contract
-([the brief](plans/observations/implementation/README.md)); until the server
-answers it, these pages exist in the console alone.
+always grouped by code: a coded gauge asks for the time in each category
+(the bare `timeInState`), a coded amount for its total. A read the console
+expects to make more than 1,440 buckets, counting every group, is not asked
+for, and the chart says to pick a larger bucket; a refusal the server makes
+anyway is shown with its reason. The read itself is
+[the aggregate read](api.md#the-aggregate-read).
 
 ## History
 

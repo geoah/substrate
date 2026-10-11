@@ -11,7 +11,9 @@ import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
   SHAPE_WORDS,
   codeWords,
+  readingText,
   refPathOf,
+  roundDigits,
   type ReadingShape,
 } from "@/lib/observations"
 import { splitRecordPath } from "@/lib/record-path"
@@ -95,17 +97,29 @@ export function CodeMark({ code }: { code?: string }) {
 }
 
 /** One reading: its digits with the unit's print symbol, the digits alone
- * where no unit came, and the empty mark where there is no answer. */
+ * where no unit came, and the empty mark where there is no answer. A
+ * `precision` rounds a computed value's digits for display; the exact digits
+ * are on hover. */
 export function Reading({
   value,
   unit,
+  precision,
   className,
 }: {
   value: string | null | undefined
   unit?: string
+  precision?: number
   className?: string
 }) {
   if (value === null || value === undefined) return <EmptyValue />
+  const shown = precision === undefined ? value : roundDigits(value, precision)
+  if (shown !== value) {
+    return (
+      <span className={cn("tabular-nums", className)} title={value}>
+        {readingText(shown, unit)}
+      </span>
+    )
+  }
   if (unit && formatQuantity({ value, unit })) {
     return <QuantityValue value={{ value, unit }} className={className} />
   }

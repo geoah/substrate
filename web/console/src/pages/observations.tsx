@@ -25,6 +25,7 @@ import {
 } from "@/components/observations/facet-filters"
 import {
   AboutMark,
+  CodeMark,
   GroupRecord,
   Reading,
   ShapeWord,
@@ -46,7 +47,9 @@ import { useObservations, type Observations } from "@/hooks/use-observations"
 import {
   SHAPE_WORDS,
   coverageWords,
+  refIdOf,
   refPathOf,
+  sameRef,
   shapeOf,
   streamSearch,
   type ReadingShape,
@@ -74,7 +77,9 @@ function rowsOf(obs: Observations): StreamRow[] {
     metricName: obs.metricName(s.metric),
     sourceTitle: obs.titleOf(refPathOf(s.source, obs.pins.source)),
     aboutTitle: obs.titleOf(refPathOf(s.about, obs.pins.about)),
-    shape: shapeOf(obs.metricOf(s.metric)),
+    // The stream's own form and code, which the index read, before the
+    // metric record's default.
+    shape: shapeOf(obs.metricOf(s.metric), s),
   }))
 }
 
@@ -129,7 +134,7 @@ export function ObservationsPage() {
         label: "Source",
         options: distinct(rows.map((r) => r.source)).map((value) => ({
           value,
-          label: bySource.get(value) ?? value,
+          label: bySource.get(value) ?? refIdOf(value),
         })),
       },
       {
@@ -140,7 +145,7 @@ export function ObservationsPage() {
               { value: OWNER, label: "You" },
               ...distinct(rows.map((r) => r.about)).map((value) => ({
                 value,
-                label: byAbout.get(value) ?? value,
+                label: byAbout.get(value) ?? refIdOf(value),
               })),
             ]
           : [],
@@ -160,9 +165,13 @@ export function ObservationsPage() {
     () =>
       rows.filter(
         (r) =>
-          (!metrics.length || metrics.includes(r.metric)) &&
-          (!sources.length || (r.source && sources.includes(r.source))) &&
-          (!abouts.length || abouts.includes(r.about ?? OWNER)) &&
+          // An address may name a record by its path or by its id.
+          (!metrics.length || metrics.some((m) => sameRef(r.metric, m))) &&
+          (!sources.length || sources.some((s) => sameRef(r.source, s))) &&
+          (!abouts.length ||
+            abouts.some((a) =>
+              r.about ? sameRef(r.about, a) : a === OWNER
+            )) &&
           (!forms.length || forms.includes(r.shape)) &&
           matches(r, search)
       ),
@@ -289,7 +298,7 @@ export function ObservationsPage() {
       ) : (
         <div
           className={cn(
-            "-mx-4 md:-mx-8",
+            "-mx-4 md:-mx-6",
             obs.latest.isFetching &&
               !obs.latest.isPending &&
               "opacity-60 transition-opacity"
@@ -386,9 +395,12 @@ function streamColumns(obs: Observations): DataTableColumn<StreamRow>[] {
       id: "latest",
       header: "Latest",
       accessorFn: (r) => r.value,
-      cell: ({ row }) => (
-        <Reading value={row.original.value} unit={row.original.unit} />
-      ),
+      cell: ({ row }) =>
+        row.original.code ? (
+          <CodeMark code={row.original.code} />
+        ) : (
+          <Reading value={row.original.value} unit={row.original.unit} />
+        ),
       meta: { label: "Latest", width: 140 },
     },
     timeColumn<StreamRow>({
@@ -400,7 +412,7 @@ function streamColumns(obs: Observations): DataTableColumn<StreamRow>[] {
     }),
     {
       id: "count",
-      header: "Count",
+      header: "Points",
       accessorFn: (r) => r.count,
       cell: ({ row }) =>
         row.original.count === undefined ? (
@@ -411,7 +423,7 @@ function streamColumns(obs: Observations): DataTableColumn<StreamRow>[] {
           </span>
         ),
       meta: {
-        label: "Count",
+        label: "Points",
         width: 90,
         headerClassName: "text-right",
         cellClassName: "text-right",

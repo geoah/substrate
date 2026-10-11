@@ -901,28 +901,6 @@ const notOnTheWire: Record<string, string> = {
     "an open map: a reference value is `ref` plus whatever link properties the declaration names, not a struct",
   EnumValue:
     "one element of a property declaration's `values`, declared in internal/vocabulary and out of the golden's reach",
-  // The aggregate read. Each entry leaves when the Go structs land and the
-  // golden carries them.
-  Aggregate:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateBucket:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateSources:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateRolling:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateBudget:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  Downsample:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateResult:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateRow:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateValue:
-    "pinned by the observations brief until the Go structs land (work package 4)",
-  AggregateGroup:
-    "pinned by the observations brief until the Go structs land (work package 4)",
   // discovery.ts
   AuthPolicy:
     "one field of server.json's `registration` object, read as a Partial; the discovery document is #361's to pin",

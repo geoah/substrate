@@ -18,8 +18,10 @@ import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
+  BODY_MASS,
   KINDS,
   LATEST,
+  WITHINGS,
   metricKind,
   observationsServer,
   sourceKind,
@@ -91,6 +93,8 @@ describe("the streams table", () => {
     expect(weight.textContent).toContain("72.40 kg")
     const sleep = body.find((r) => r.textContent?.includes("Sleep stage"))!
     expect(sleep.textContent).toContain("Category")
+    // Its newest value is a code, which a coded `last` answers in `code`.
+    expect(sleep.textContent).toContain("Awake")
     // A stream about the owner names nobody; one about Mia names her record.
     expect(weight.textContent).toContain("You")
     expect(sleep.textContent).not.toContain("You")
@@ -133,7 +137,7 @@ describe("the streams table", () => {
     fireEvent.click(body.find((r) => r.textContent?.includes("Weight"))!)
     expect(navigate).toHaveBeenCalledWith({
       to: "/observations/timeline",
-      search: { metric: "health/body_mass", source: "withings-body-plus" },
+      search: { metric: BODY_MASS, source: WITHINGS },
     })
   })
 

@@ -12,15 +12,21 @@ import { aggregateQueryOptions } from "@/lib/api/observations"
 import { recordsQueryOptions } from "@/lib/api/records"
 import type { KindInfo } from "@/lib/api/types"
 import {
+  formOf,
   latestRead,
   metricInfoOf,
   metricWords,
   observedKinds,
   observedPins,
+  refIdOf,
   refPathOf,
+  sameRef,
+  shapeOf,
   streamsOf,
+  type Form,
   type MetricInfo,
   type ObservedPins,
+  type ReadingShape,
   type Stream,
 } from "@/lib/observations"
 import { splitRecordPath } from "@/lib/record-path"
@@ -52,6 +58,11 @@ export interface Observations {
   metricPath: (value: string) => string | undefined
   /** A source's or a thing's title where it has one. */
   titleOf: (path: string | undefined) => string | undefined
+  /** A record a group value names, in words: its title, else its id. */
+  nameOf: (value: string, pin?: string) => string
+  /** How a metric is read and the form its values are stored in: from its
+   * newest stream (the value's own form, or a code), else its record. */
+  readingOf: (value: string) => { shape: ReadingShape; form?: Form }
 }
 
 function useLatest(observedIds: string[]) {
@@ -103,6 +114,8 @@ export function useObservations(): Observations {
   return useMemo(() => {
     const metricOf = (value: string) =>
       metrics.get(value) ?? metrics.get(splitRecordPath(value)?.id ?? "")
+    const titleOf = (path: string | undefined) =>
+      path ? titles.get(path) || undefined : undefined
     return {
       pending: registry.isPending,
       ready: metricsSettled && !latest.isPending,
@@ -118,8 +131,18 @@ export function useObservations(): Observations {
         metricWords(splitRecordPath(value)?.id ?? value),
       metricPath: (value: string) =>
         metricOf(value)?.path ?? refPathOf(value, pins.metric),
-      titleOf: (path: string | undefined) =>
-        path ? titles.get(path) || undefined : undefined,
+      titleOf,
+      nameOf: (value: string, pin?: string) =>
+        titleOf(refPathOf(value, pin)) ?? refIdOf(value),
+      readingOf: (value: string) => {
+        const metric = metricOf(value)
+        // Streams are newest first, so this is the newest point's form.
+        const stream = streams.find((s) => sameRef(s.metric, value))
+        return {
+          shape: shapeOf(metric, stream),
+          form: formOf(metric, stream),
+        }
+      },
     }
   }, [
     registry.isPending,

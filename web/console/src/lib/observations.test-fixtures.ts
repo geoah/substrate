@@ -9,6 +9,7 @@
 import type {
   Aggregate,
   AggregateResult,
+  AggregateRow,
   KindInfo,
   RecordFilter,
   SubstrateRecord,
@@ -45,7 +46,7 @@ function kind(
 const shared = {
   metric: { type: "reference", kind: METRIC },
   source: { type: "reference", kind: SOURCE },
-  about: { type: "reference" },
+  about: { type: "reference", kind: "any" },
   form: { type: "string" },
   at: { type: "datetime" },
   endsAt: { type: "datetime" },
@@ -158,167 +159,199 @@ export const SOURCES: SubstrateRecord[] = [
   record(SOURCE, "whoop-4-0", { title: "WHOOP 4.0" }),
 ]
 
-const HEAD = { changelog: 2171234, generation: 7 }
+const HEAD = { changelog: 2171234, generation: "7f3a0c2e9b1d4e6f" }
 
-/** The latest read: one row per stream, newest first by `start`. */
+/** A row as the server writes it: `count`, `bounded`, `synthetic` and
+ * `unavailable` always present. */
+function row(
+  r: Partial<AggregateRow> & Pick<AggregateRow, "start" | "end" | "values">
+): AggregateRow {
+  return { count: 0, bounded: 0, synthetic: false, unavailable: false, ...r }
+}
+
+/** Record paths, the spelling every group value and `sources` carry. */
+export const HEART = `${METRIC}/health/heart_rate`
+export const STEPS_METRIC = `${METRIC}/health/steps`
+export const BODY_MASS = `${METRIC}/health/body_mass`
+export const SLEEP_STAGE = `${METRIC}/health/sleep_stage`
+export const RECOVERY = `${METRIC}/health/whoop_recovery`
+export const GARMIN = `${SOURCE}/garmin-forerunner-265`
+export const APPLE = `${SOURCE}/apple-watch-s10`
+export const WITHINGS = `${SOURCE}/withings-body-plus`
+export const WHOOP = `${SOURCE}/whoop-4-0`
+export const MIA = "ada.example.com/people/person/mia"
+
+/** The latest read: one row per stream, its `start` the newest point's
+ * time and its `count` the stream's points. */
 export const LATEST: AggregateResult = {
   exact: true,
   head: HEAD,
   rows: [
-    {
+    row({
       start: "2026-10-07T06:59:58Z",
       end: "2026-10-07T06:59:58Z",
-      group: {
-        metric: "health/heart_rate",
-        source: "garmin-forerunner-265",
-      },
+      form: "gauge",
+      group: { metric: HEART, source: GARMIN },
       values: [{ reducer: "last", value: "96", unit: "/min" }],
       count: 1812,
-    },
-    {
+    }),
+    row({
       start: "2026-10-07T05:00:00Z",
       end: "2026-10-07T05:00:00Z",
-      group: { metric: "health/heart_rate", source: "apple-watch-s10" },
+      form: "gauge",
+      group: { metric: HEART, source: APPLE },
       values: [{ reducer: "last", value: "61", unit: "/min" }],
-    },
-    {
+      count: 310,
+    }),
+    row({
       start: "2026-10-07T06:45:00Z",
       end: "2026-10-07T07:00:00Z",
-      group: { metric: "health/steps", source: "garmin-forerunner-265" },
+      form: "amount",
+      group: { metric: STEPS_METRIC, source: GARMIN },
       values: [{ reducer: "last", value: "412", unit: "{steps}" }],
-      coverage: "PT15M",
-    },
-    {
+      count: 96,
+    }),
+    row({
       start: "2026-10-07T03:41:12Z",
       end: "2026-10-07T03:41:12Z",
-      group: { metric: "health/body_mass", source: "withings-body-plus" },
+      form: "gauge",
+      group: { metric: BODY_MASS, source: WITHINGS },
       values: [{ reducer: "last", value: "72.40", unit: "kg" }],
-    },
-    {
+      count: 9,
+    }),
+    row({
       start: "2026-10-06T19:41:00Z",
       end: "2026-10-07T19:38:00Z",
-      group: { metric: "health/whoop_recovery", source: "whoop-4-0" },
+      form: "summary",
+      group: { metric: RECOVERY, source: WHOOP },
       values: [{ reducer: "last", value: "67", unit: "%" }],
-    },
-    {
+      count: 1,
+    }),
+    row({
       start: "2026-10-06T23:10:00Z",
       end: "2026-10-07T06:20:00Z",
-      group: {
-        metric: "health/sleep_stage",
-        source: "whoop-4-0",
-        about: "ada.example.com/people/person/mia",
-      },
-      values: [{ reducer: "last", value: null }],
-    },
+      form: "amount",
+      group: { metric: SLEEP_STAGE, source: WHOOP, about: MIA },
+      // A coded `last` answers its code, with `value` null.
+      values: [{ reducer: "last", value: null, code: "awake" }],
+      count: 4,
+    }),
   ],
 }
 
 /** Heart rate zones, weekly, five `durationIn` reducers in minutes. */
 export const ZONES: AggregateResult = {
-  metric: `${METRIC}/health/heart_rate`,
+  metric: HEART,
   unit: "/min",
   bucket: { calendar: "week", weekStart: "monday", timezone: "Europe/Athens" },
   from: "raw",
-  exact: true,
+  exact: false,
   head: HEAD,
-  sources: ["garmin-forerunner-265", "apple-watch-s10"],
+  sources: [GARMIN, APPLE],
   rows: [
-    {
+    row({
       start: "2026-04-06T00:00:00+03:00",
       end: "2026-04-13T00:00:00+03:00",
+      form: "gauge",
       from: "raw",
-      sources: ["garmin-forerunner-265"],
+      sources: [GARMIN],
       coverage: "P6DT22H10M",
       values: [
         { reducer: { durationIn: [95, 114] }, value: "612.4", unit: "min" },
-        { reducer: { durationIn: [114, 133] }, value: "171.0", unit: "min" },
+        { reducer: { durationIn: [114, 133] }, value: "171", unit: "min" },
         { reducer: { durationIn: [133, 152] }, value: "88.5", unit: "min" },
-        { reducer: { durationIn: [152, 171] }, value: "21.0", unit: "min" },
+        { reducer: { durationIn: [152, 171] }, value: "21", unit: "min" },
         { reducer: { durationIn: [171, 220] }, value: "2.5", unit: "min" },
       ],
       count: 24810,
-      bounded: 0,
-      synthetic: false,
-    },
-    {
+    }),
+    row({
       start: "2026-04-13T00:00:00+03:00",
       end: "2026-04-20T00:00:00+03:00",
+      form: "gauge",
       from: "raw",
-      sources: ["garmin-forerunner-265", "apple-watch-s10"],
+      sources: [GARMIN, APPLE],
       coverage: "P6DT20H",
       values: [
-        { reducer: { durationIn: [95, 114] }, value: "540.0", unit: "min" },
+        { reducer: { durationIn: [95, 114] }, value: "540", unit: "min" },
         { reducer: { durationIn: [114, 133] }, value: "201.5", unit: "min" },
-        { reducer: { durationIn: [133, 152] }, value: "60.0", unit: "min" },
-        { reducer: { durationIn: [152, 171] }, value: "12.0", unit: "min" },
+        { reducer: { durationIn: [133, 152] }, value: "60", unit: "min" },
+        { reducer: { durationIn: [152, 171] }, value: "12", unit: "min" },
         { reducer: { durationIn: [171, 220] }, value: "0", unit: "min" },
       ],
       count: 22102,
-    },
+    }),
   ],
 }
 
 /** Daily steps with `prefer-raw`: raw where a day is covered, Garmin's
- * daily summary where it is not. */
+ * daily summary where it is not (that row's form is `summary`). */
 export const STEPS: AggregateResult = {
-  metric: `${METRIC}/health/steps`,
+  metric: STEPS_METRIC,
   unit: "{steps}",
   bucket: { calendar: "day" },
   from: "prefer-raw",
-  exact: true,
+  exact: false,
   head: HEAD,
   rows: [
-    {
+    row({
       start: "2026-10-04T00:00:00+03:00",
       end: "2026-10-05T00:00:00+03:00",
+      form: "amount",
       from: "raw",
-      sources: ["garmin-forerunner-265"],
+      sources: [GARMIN],
       coverage: "PT23H40M",
       values: [{ reducer: "sum", value: "9812", unit: "{steps}" }],
       count: 96,
-    },
-    {
+    }),
+    row({
       start: "2026-10-05T00:00:00+03:00",
       end: "2026-10-06T00:00:00+03:00",
+      form: "summary",
       from: "summaries",
-      sources: ["garmin-forerunner-265"],
-      coverage: "PT9H",
+      sources: [GARMIN],
+      coverage: "P1D",
       values: [{ reducer: "sum", value: "7004", unit: "{steps}" }],
       count: 1,
-    },
-    {
+    }),
+    row({
       start: "2026-10-06T00:00:00+03:00",
       end: "2026-10-07T00:00:00+03:00",
+      form: "amount",
       from: "raw",
-      sources: ["garmin-forerunner-265", "apple-watch-s10"],
+      sources: [GARMIN, APPLE],
       coverage: "PT24H",
       values: [{ reducer: "sum", value: "12450", unit: "{steps}" }],
       count: 96,
-    },
+    }),
   ],
 }
 
-/** The weight trend, weekly: the mean with its lowest and highest. */
+/** The weight trend, weekly: the mean with its lowest and highest; the
+ * middle week holds the previous weighing with no point of its own
+ * (`count` 0), and a `fill` row would be `synthetic`. */
 export const WEIGHT: AggregateResult = {
-  metric: `${METRIC}/health/body_mass`,
+  metric: BODY_MASS,
   unit: "kg",
   bucket: { calendar: "week", weekStart: "monday", timezone: "Europe/Athens" },
   from: "raw",
-  exact: true,
+  exact: false,
   head: HEAD,
   rows: [
-    {
+    row({
       start: "2026-09-21T00:00:00+03:00",
       end: "2026-09-28T00:00:00+03:00",
-      sources: ["withings-body-plus"],
+      form: "gauge",
+      from: "raw",
+      sources: [WITHINGS],
       values: [
         { reducer: "avg", value: "72.6", unit: "kg" },
         { reducer: "min", value: "72.1", unit: "kg" },
-        { reducer: "max", value: "73.0", unit: "kg" },
+        { reducer: "max", value: "73", unit: "kg" },
       ],
       count: 6,
-    },
-    {
+    }),
+    row({
       start: "2026-09-28T00:00:00+03:00",
       end: "2026-10-05T00:00:00+03:00",
       synthetic: true,
@@ -327,47 +360,54 @@ export const WEIGHT: AggregateResult = {
         { reducer: "min", value: null, unit: "kg" },
         { reducer: "max", value: null, unit: "kg" },
       ],
-      count: 0,
-    },
-    {
+    }),
+    row({
       start: "2026-10-05T00:00:00+03:00",
       end: "2026-10-12T00:00:00+03:00",
-      sources: ["withings-body-plus"],
+      form: "gauge",
+      from: "raw",
+      sources: [WITHINGS],
       values: [
         { reducer: "avg", value: "72.3", unit: "kg" },
         { reducer: "min", value: "72.1", unit: "kg" },
         { reducer: "max", value: "72.4", unit: "kg" },
       ],
       count: 3,
-    },
+    }),
   ],
 }
 
-/** Sleep stages per night, grouped by code, each night the sleep record's
- * own span. */
+/** Sleep stages per night, a coded amount grouped by code, each night the
+ * sleep record's own span. */
 export const SLEEP: AggregateResult = {
-  metric: `${METRIC}/health/sleep_stage`,
+  metric: SLEEP_STAGE,
   unit: "min",
   from: "raw",
-  exact: true,
+  exact: false,
   head: HEAD,
+  sources: [WHOOP],
   rows: [
     ["rem", "94"],
     ["deep", "71"],
     ["light", "211"],
     ["awake", "38"],
-  ].map(([code, value]) => ({
-    start: "2026-10-06T23:10:00+03:00",
-    end: "2026-10-07T06:20:00+03:00",
-    group: { code },
-    record: {
-      ref: `${AUTHORITY}/health/sleep/whoop/ada/e3b0c442/sleep`,
-      version: 2,
-    },
-    sources: ["whoop-4-0"],
-    values: [{ reducer: "sum", value, unit: "min" }],
-    count: 1,
-  })),
+  ].map(([code, value]) =>
+    row({
+      start: "2026-10-06T23:10:00+03:00",
+      end: "2026-10-07T06:20:00+03:00",
+      form: "amount",
+      group: { code },
+      record: {
+        ref: `${AUTHORITY}/health/sleep/whoop/ada/e3b0c442/sleep`,
+        version: 2,
+      },
+      nonAdditive: true,
+      from: "raw",
+      sources: [WHOOP],
+      values: [{ reducer: "sum", value, unit: "min" }],
+      count: 1,
+    })
+  ),
 }
 
 /** One hour of heart rate as a trace, irregular offsets, a run starting at

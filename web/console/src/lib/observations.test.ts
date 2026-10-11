@@ -8,6 +8,7 @@ import type { KindInfo } from "@/lib/api/types"
 import {
   answerReducers,
   autoBucket,
+  axisTicks,
   breakAtGaps,
   bucketEstimate,
   bucketOf,
@@ -15,6 +16,7 @@ import {
   coverageWords,
   dayRange,
   durationMs,
+  formOf,
   isoWithOffset,
   laneRead,
   latestRead,
@@ -30,7 +32,10 @@ import {
   reducerLabel,
   reducerOptions,
   refPathOf,
+  readingText,
   rollupText,
+  roundDigits,
+  rowValue,
   sameRef,
   seriesOf,
   shapeOf,
@@ -43,6 +48,13 @@ import {
   type LaneSpec,
 } from "@/lib/observations"
 import {
+  BODY_MASS,
+  GARMIN,
+  HEART,
+  MIA,
+  RECOVERY,
+  SLEEP_STAGE,
+  STEPS_METRIC,
   HEART_TRACE,
   KINDS,
   LATEST,
@@ -139,9 +151,18 @@ describe("forms and reducers", () => {
     expect(reducerOptions("amount")).toEqual(["sum", "count", "min", "max"])
     expect(reducerOptions("counter")).toEqual(["increase", "rate", "last"])
     expect(reducerOptions("summary")).toEqual(["last"])
-    expect(reducerOptions("coded")).toEqual(["timeInState", "count"])
+    // A coded gauge answers time per code; a coded amount takes no
+    // timeInState (docs/api.md, "Reducers, by form").
+    expect(reducerOptions("coded", "gauge")).toEqual(["timeInState", "count"])
     expect(shapeOf(info("health/sleep_stage"))).toBe("coded")
-    expect(reducerOptions("coded", info("health/sleep_stage"))[0]).toBe("sum")
+    expect(reducerOptions("coded", "amount")).toEqual(["sum", "count"])
+  })
+
+  it("reads a stream's own form and code before the metric's default", () => {
+    const heart = info("health/heart_rate")
+    expect(shapeOf(heart, { form: "summary" })).toBe("summary")
+    expect(shapeOf(heart, { form: "gauge", code: "open" })).toBe("coded")
+    expect(formOf(heart, { form: "nonsense" })).toBe("gauge")
   })
 
   it("names structured reducers by their argument", () => {
@@ -162,6 +183,8 @@ describe("forms and reducers", () => {
     // An annotation the table does not list converts to nothing.
     expect(unitChoices("{steps}")).toEqual(["{steps}"])
     expect(unitChoices(undefined)).toEqual([])
+    // A declared measure decides where the unit alone is ambiguous.
+    expect(unitChoices("Cel", "temperature")).toContain("[degF]")
   })
 })
 
@@ -173,27 +196,32 @@ describe("the latest read", () => {
     })
   })
 
-  it("reads six streams, newest first, with what the contract gives", () => {
+  it("reads six streams, newest first, with their form and code", () => {
     const streams = streamsOf(LATEST)
     expect(streams).toHaveLength(6)
     expect(streams[0]).toMatchObject({
-      metric: "health/heart_rate",
-      source: "garmin-forerunner-265",
+      metric: HEART,
+      source: GARMIN,
       value: "96",
       unit: "/min",
+      form: "gauge",
       count: 1812,
     })
     expect(streams.map((s) => s.metric)).toEqual([
-      "health/heart_rate",
-      "health/steps",
-      "health/heart_rate",
-      "health/body_mass",
-      "health/sleep_stage",
-      "health/whoop_recovery",
+      HEART,
+      STEPS_METRIC,
+      HEART,
+      BODY_MASS,
+      SLEEP_STAGE,
+      RECOVERY,
     ])
-    expect(
-      streams.find((s) => s.metric === "health/sleep_stage")
-    ).toMatchObject({ about: "ada.example.com/people/person/mia", value: null })
+    // A coded `last` answers its code with `value` null.
+    expect(streams.find((s) => s.metric === SLEEP_STAGE)).toMatchObject({
+      about: MIA,
+      value: null,
+      code: "awake",
+      form: "amount",
+    })
   })
 })
 
@@ -247,6 +275,33 @@ describe("ranges and buckets", () => {
       timezone: "Europe/Athens",
     })
     expect(bucketOf("week")).toEqual({ calendar: "week", weekStart: "monday" })
+  })
+
+  it("ticks the axis at the size's boundaries across the whole range", () => {
+    const range = {
+      start: new Date(2026, 9, 1, 13, 20).getTime(),
+      end: new Date(2026, 9, 4).getTime(),
+    }
+    const days = axisTicks(range, "day").map((t) => new Date(t).getDate())
+    expect(days).toEqual([2, 3])
+    const hours = axisTicks(range, "hour")
+    expect(new Date(hours[0]).getHours()).toBe(14)
+    expect(hours).toHaveLength(58)
+    // 2026-10-05 is a Monday.
+    const weeks = axisTicks(
+      { start: range.start, end: range.end + 9 * DAY },
+      "week"
+    )
+    expect(weeks.map((t) => new Date(t).getDay())).toEqual([1, 1])
+    expect(new Date(weeks[0]).getDate()).toBe(5)
+  })
+
+  it("rounds a computed value for display and keeps stored digits", () => {
+    expect(roundDigits("63.1666666666667", 0)).toBe("63")
+    expect(roundDigits("61.9372442", 2)).toBe("61.94")
+    expect(roundDigits("72.40", 2)).toBe("72.40")
+    expect(roundDigits("9812", 0)).toBe("9812")
+    expect(readingText("160.011509893784", "[lb_av]", 1)).toBe("160.0 lb")
   })
 
   it("labels buckets as finely as their size", () => {
@@ -319,17 +374,34 @@ describe("one chart's request", () => {
     })
   })
 
-  it("groups a coded metric by code and sends its codes to timeInState", () => {
+  it("groups a coded metric by code and asks timeInState bare", () => {
     const read = laneRead(
-      spec({
-        shape: "coded",
-        reducer: "timeInState",
-        codes: ["rem", "deep"],
-        group: "source",
-      })
+      spec({ shape: "coded", reducer: "timeInState", group: "source" })
     ).aggregate
     expect(read.groupBy).toEqual(["code"])
-    expect(read.reducers).toEqual([{ timeInState: ["rem", "deep"] }])
+    // Bare, it answers the time each code holds, each value with its code.
+    expect(read.reducers).toEqual(["timeInState"])
+  })
+
+  it("skips a rolling value where it reads a reducer's own", () => {
+    const rolled = {
+      ...WEIGHT.rows[0],
+      values: [
+        { reducer: "avg", value: "72.9", unit: "kg", rolling: 4, of: "avg" },
+        ...WEIGHT.rows[0].values,
+      ],
+    }
+    expect(rowValue(rolled, "avg")?.value).toBe("72.6")
+    expect(answerReducers([rolled]).map(reducerKey)).toEqual([
+      "avg",
+      "min",
+      "max",
+    ])
+  })
+
+  it("counts groups times buckets against the budget", () => {
+    const week = { start: 0, end: 7 * DAY }
+    expect(bucketEstimate(week, "15m", 3)).toBe(672 * 3)
   })
 
   it("sends the output unit only where one was picked", () => {
@@ -400,7 +472,7 @@ describe("an answer as buckets and series", () => {
       "9812 {steps}",
       "96",
       "PT23H40M",
-      "garmin-forerunner-265",
+      GARMIN,
       "raw",
       "",
       "",
@@ -449,20 +521,20 @@ describe("a trace's own values", () => {
   it("reads the managed stats and the spread they hold", () => {
     const stats = traceStats(HEART_TRACE.properties.stats)!
     expect(stats).toMatchObject({ count: 1812, min: "55", max: "171" })
-    expect(stddevOf(stats)).toBeCloseTo(Math.sqrt(2203418.2 / 1811), 6)
+    expect(stddevOf(stats)).toBeCloseTo(Math.sqrt(2203418.2 / 1812), 6)
   })
 
   it("opens the timeline on the record's stream and window", () => {
     const trace = recordTimelineSearch(HEART_TRACE.properties)!
     expect(trace).toMatchObject({
-      metric: "health/heart_rate",
-      source: "garmin-forerunner-265",
+      metric: HEART,
+      source: GARMIN,
       range: "custom",
       start: "2026-10-07T06:00:00.000Z",
       end: "2026-10-07T07:00:00.000Z",
     })
     const weighing = recordTimelineSearch(WEIGHING.properties)!
-    expect(weighing.metric).toBe("health/body_mass")
+    expect(weighing.metric).toBe(BODY_MASS)
     expect(
       Date.parse(weighing.end) - Date.parse(weighing.start)
     ).toBeGreaterThan(29 * DAY)

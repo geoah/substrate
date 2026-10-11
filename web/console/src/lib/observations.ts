@@ -3,17 +3,15 @@
  * ask for, the range and bucket a timeline reads, the aggregate request each
  * chart issues, and the rows of an answer cut into buckets and series.
  *
- * The aggregate read's wire shape is the one the observations brief pins
- * (docs/plans/observations/implementation/README.md); the request builder
- * lives in `lib/api/observations.ts`. Everything here is a pure function of
- * the registry, the metric records, the URL state and the answer. */
+ * The aggregate read is docs/api.md's ("The aggregate read"), mirrored in
+ * `lib/api/types.ts`; the request builder lives in `lib/api/observations.ts`.
+ * Everything here is a pure function of the registry, the metric records,
+ * the URL state and the answer. */
 
 import type {
   Aggregate,
   AggregateBucket,
-  AggregateFrom,
   AggregateGroup,
-  AggregateGroupKey,
   AggregateReducer,
   AggregateResult,
   AggregateRow,
@@ -27,6 +25,14 @@ import { recordTitle } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
 import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { formatQuantity, lookupMeasure, measureOf } from "@/lib/units"
+
+/** Where an aggregate reads from: raw points, vendor `summary` points, or
+ * raw where a bucket is covered and the summary otherwise. */
+export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
+
+/** A stream key a result may be grouped by. */
+export type AggregateGroupKey =
+  "source" | "about" | "code" | "metric" | "kind" | "channel"
 
 // ── discovery ──────────────────────────────────────────────────────────────
 
@@ -55,7 +61,8 @@ export function observedVariant(
 
 /** The kinds the trait's references are pinned to, read off the observed
  * kinds' own declarations: the first pin found for each. `about` is usually
- * unpinned (it may point at any record), so it is usually absent. */
+ * pinned to `any` (it may point at any record), which names no kind, so it
+ * is usually absent. */
 export interface ObservedPins {
   metric?: string
   source?: string
@@ -66,7 +73,7 @@ export function observedPins(observed: readonly KindInfo[]): ObservedPins {
   const out: ObservedPins = {}
   for (const kind of observed) {
     for (const p of declaredProperties(kind)) {
-      if (p.kind !== "reference" || !p.to) continue
+      if (p.kind !== "reference" || !p.to || p.to === "any") continue
       if (p.name === "metric" || p.name === "source" || p.name === "about") {
         out[p.name] ??= p.to
       }
@@ -137,8 +144,12 @@ export interface MetricInfo {
   name?: string
   form?: Form
   unit?: string
+  /** The measure every value's unit belongs to (`mass`, `rate`). */
+  measures?: string
   codeSet?: string[]
   reducers?: string[]
+  /** The decimal places a reader is shown. */
+  displayPrecision?: number
 }
 
 function strings(value: unknown): string[] | undefined {
@@ -168,9 +179,28 @@ export function metricInfoOf(record: SubstrateRecord): MetricInfo {
     name,
     form: isForm(p.form) ? p.form : undefined,
     unit: typeof p.unit === "string" && p.unit ? p.unit : undefined,
+    measures:
+      typeof p.measures === "string" && p.measures ? p.measures : undefined,
     codeSet: codeSet?.length ? codeSet : undefined,
     reducers: strings(p.reducers),
+    ...(typeof p.displayPrecision === "number" &&
+    Number.isInteger(p.displayPrecision)
+      ? { displayPrecision: p.displayPrecision }
+      : {}),
   }
+}
+
+/** The places a computed value is shown to where the metric names none. */
+export const DEFAULT_PRECISION = 2
+
+/** Decimal digits cut to `precision` places for display, rounded; digits
+ * with no more places than that come back as they are, so a stored `72.40`
+ * keeps its zero. The exact digits stay on the wire, in the copied table
+ * and on hover. */
+export function roundDigits(value: string, precision: number): string {
+  const m = /^(-?\d+)\.(\d+)$/.exec(value)
+  if (!m || m[2].length <= precision) return value
+  return Number(value).toFixed(precision)
 }
 
 /** A category's code as words: `rem` is "Rem", `not-detected` "Not
@@ -184,10 +214,12 @@ export function codeWords(code: string): string {
  * the unit's print symbol, the digits alone where no unit came. */
 export function readingText(
   value: string | null | undefined,
-  unit?: string
+  unit?: string,
+  precision?: number
 ): string {
   if (value === null || value === undefined) return "no answer"
-  return (unit && formatQuantity({ value, unit })) || value
+  const shown = precision === undefined ? value : roundDigits(value, precision)
+  return (unit && formatQuantity({ value: shown, unit })) || shown
 }
 
 /** A metric id read as words when no record names it:
@@ -198,20 +230,37 @@ export function metricWords(id: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** How a metric is read: coded where it lists codes, else its form, a
- * gauge where it says nothing. */
-export function shapeOf(metric: MetricInfo | undefined): ReadingShape {
-  if (metric?.codeSet?.length) return "coded"
-  return metric?.form ?? "gauge"
+/** What a stream's newest point says of its form: the latest read's row
+ * `form`, and a `code` where its `last` answered a code. */
+export interface StreamForm {
+  form?: string
+  code?: string
 }
 
-/** The reducers a shape may ask for, the default first (the brief's table;
- * decision 0156 names which are legal per form). A coded amount adds `sum`,
- * its covered time per code. */
-export function reducerOptions(
-  shape: ReadingShape,
-  metric?: MetricInfo
-): string[] {
+/** The form a metric's values are stored in: the stream's own, since every
+ * value carries its form and the index reads that, else the metric record's
+ * default. */
+export function formOf(
+  metric: MetricInfo | undefined,
+  stream?: StreamForm
+): Form | undefined {
+  return isForm(stream?.form) ? stream.form : metric?.form
+}
+
+/** How a metric is read: coded where it lists codes or its newest value is
+ * a code, else its form, a gauge where nothing says. */
+export function shapeOf(
+  metric: MetricInfo | undefined,
+  stream?: StreamForm
+): ReadingShape {
+  if (metric?.codeSet?.length || stream?.code) return "coded"
+  return formOf(metric, stream) ?? "gauge"
+}
+
+/** The reducers a shape may ask for, the default first: the brief's table,
+ * each legal for its form (docs/api.md, "Reducers, by form"). A coded gauge
+ * answers time per code, a coded amount its total per code. */
+export function reducerOptions(shape: ReadingShape, form?: Form): string[] {
   switch (shape) {
     case "gauge":
       return ["avg", "twa", "min", "max", "first", "last", "count", "stddev"]
@@ -220,9 +269,7 @@ export function reducerOptions(
     case "counter":
       return ["increase", "rate", "last"]
     case "coded":
-      return metric?.form === "amount"
-        ? ["sum", "count", "timeInState"]
-        : ["timeInState", "count"]
+      return form === "amount" ? ["sum", "count"] : ["timeInState", "count"]
     case "summary":
       return ["last"]
   }
@@ -276,12 +323,16 @@ export function reducerLabel(reducer: AggregateReducer): string {
   return word
 }
 
-/** The units a reading may be shown in: every unit of the stored unit's
- * measure, or the stored unit alone where the table does not place it
- * (`{steps}`). Empty where nothing is stored. */
-export function unitChoices(stored: string | undefined): string[] {
+/** The units a reading may be shown in: every unit of the metric's measure
+ * (the declared `measures`, else the stored unit's), or the stored unit alone
+ * where the table does not place it (`{steps}`). Empty where nothing is
+ * stored. */
+export function unitChoices(
+  stored: string | undefined,
+  measures?: string
+): string[] {
   if (!stored) return []
-  const measure = lookupMeasure(measureOf(stored))
+  const measure = lookupMeasure(measures) ?? lookupMeasure(measureOf(stored))
   if (!measure || !measure.units.includes(stored)) return [stored]
   return [...measure.units]
 }
@@ -290,16 +341,18 @@ export function unitChoices(stored: string | undefined): string[] {
 
 /** One stream: a metric written by one source about one thing, with its
  * newest value. `metric`, `source` and `about` are the group values the
- * answer carries (record ids, or record paths). */
-export interface Stream {
+ * answer carries, record paths. */
+export interface Stream extends StreamForm {
   key: string
   metric: string
   source?: string
   about?: string
+  /** The newest value's digits; null where it is a code or has none. */
   value: string | null
   unit?: string
   /** The newest point's time, the row's `start`. */
   at: string
+  /** Every point the stream holds. */
   count?: number
   coverage?: string
 }
@@ -352,12 +405,9 @@ export function recordTimelineSearch(
             end: new Date(y, m, day + 1).getTime(),
           }
         })()
+  // Record paths, the spelling the latest read's groups carry.
   return {
-    ...streamSearch({
-      metric: refIdOf(metric),
-      source: source ? refIdOf(source) : undefined,
-      about,
-    }),
+    ...streamSearch({ metric, source, about }),
     range: "custom",
     start: new Date(window.start).toISOString(),
     end: new Date(window.end).toISOString(),
@@ -399,6 +449,9 @@ export function streamsOf(result: AggregateResult | undefined): Stream[] {
       about: row.group?.about,
       value: value?.value ?? null,
       unit: value?.unit,
+      // A coded `last` answers its code, with `value` null.
+      ...(value?.code ? { code: value.code } : {}),
+      ...(row.form ? { form: row.form } : {}),
       at: row.start,
       count: row.count,
       coverage: row.coverage,
@@ -562,6 +615,41 @@ export function bucketWords(
   return clock === "00:00" ? dayWords(t) : `${dayWords(t)}, ${clock}`
 }
 
+/** The size's boundaries inside a range, local time: every quarter hour,
+ * hour, midnight, Monday or first of the month from the first one at or
+ * after the range's start. The x axis labels these, whether or not a bucket
+ * holds anything there. At most `limit` of them. */
+export function axisTicks(
+  range: TimeRange,
+  size: BucketSize,
+  limit = 2000
+): number[] {
+  const d = new Date(range.start)
+  d.setSeconds(0, 0)
+  if (size === "15m") {
+    d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15)
+  } else {
+    if (d.getMinutes() > 0) d.setHours(d.getHours() + 1)
+    d.setMinutes(0)
+    if (size !== "hour") {
+      if (d.getHours() > 0) d.setDate(d.getDate() + 1)
+      d.setHours(0)
+      if (size === "week") d.setDate(d.getDate() + ((8 - d.getDay()) % 7))
+      if (size === "month" && d.getDate() > 1) d.setMonth(d.getMonth() + 1, 1)
+    }
+  }
+  const out: number[] = []
+  while (d.getTime() < range.end && out.length < limit) {
+    if (d.getTime() >= range.start) out.push(d.getTime())
+    if (size === "15m") d.setMinutes(d.getMinutes() + 15)
+    else if (size === "hour") d.setHours(d.getHours() + 1)
+    else if (size === "day") d.setDate(d.getDate() + 1)
+    else if (size === "week") d.setDate(d.getDate() + 7)
+    else d.setMonth(d.getMonth() + 1)
+  }
+  return out
+}
+
 /** A bucket's window in words, for a tooltip or a table row: a day as
  * `Sep 3, 2026`, a week as `Sep 1 to Sep 7, 2026`, finer windows by their
  * clocks. */
@@ -615,13 +703,18 @@ export function bucketSizeOf(
   return choice === "auto" ? autoBucket(range) : choice
 }
 
-/** About how many buckets a range cuts into; the request's budget counts
- * them (`maxBuckets`, 1,440 by default). */
-export function bucketEstimate(range: TimeRange, size: BucketSize): number {
-  return Math.ceil((range.end - range.start) / BUCKET_MS[size])
+/** About how many buckets a read makes: the range's buckets times its
+ * groups, which is what the request's budget counts (`maxBuckets`). */
+export function bucketEstimate(
+  range: TimeRange,
+  size: BucketSize,
+  groups = 1
+): number {
+  return Math.ceil((range.end - range.start) / BUCKET_MS[size]) * groups
 }
 
-/** The default `maxBuckets` a request is held to. */
+/** The default `maxBuckets` a read is held to; past it the server refuses
+ * with a `422` before reading anything. */
 export const MAX_BUCKETS = 1440
 
 /** A size as the aggregate's time mode: 15 minutes is a physical window on
@@ -685,8 +778,6 @@ export interface LaneSpec {
   shape: ReadingShape
   /** The reducer the reader picked, a word from `reducerOptions`. */
   reducer: string
-  /** The codes `timeInState` counts time in. */
-  codes?: string[]
   /** The output unit; absent keeps the stored one. */
   unit?: string
   from: AggregateFrom
@@ -695,26 +786,26 @@ export interface LaneSpec {
   group: GroupChoice
   /** Source record paths the read is narrowed to; empty for every source. */
   sources: string[]
-  /** Source record ids in the reader's order, for the priority policy. */
+  /** Sources in the reader's order, for the priority policy: record paths
+   * or ids, which `sources.order` takes alike. */
   sourceOrder: string[]
   /** `about` values the read is narrowed to; empty for everything. */
   about: string[]
 }
 
 /** The reducers a lane asks for: the reader's, then (on a level) the
- * lowest and highest, which the chart draws as a band. */
+ * lowest and highest, which the chart draws as a band. `timeInState` goes
+ * bare, which answers the time each code holds. */
 export function laneReducers(spec: LaneSpec): AggregateReducer[] {
-  const picked: AggregateReducer =
-    spec.reducer === "timeInState"
-      ? { timeInState: spec.codes ?? [] }
-      : spec.reducer
+  const picked: AggregateReducer = spec.reducer
   if (spec.shape !== "gauge") return [picked]
   return [picked, ...["min", "max"].filter((r) => r !== spec.reducer)]
 }
 
-/** What a lane's chart groups its series by: a coded metric always by
- * code, since a value carries no code of its own; otherwise the reader's
- * choice, where it is not the metric itself (each metric is its own lane). */
+/** What a lane's chart groups its series by: a coded metric always by code
+ * (a coded amount must be, and each code is a series of the stack);
+ * otherwise the reader's choice, where it is not the metric itself (each
+ * metric is its own lane). */
 export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
   if (spec.shape === "coded") return "code"
   return spec.group === "metric" ? undefined : spec.group
@@ -796,12 +887,16 @@ export interface SeriesPoint {
   high: number | null
 }
 
-/** A row's value for one reducer, by key. */
+/** A row's value for one reducer, by key. A rolling value (one carrying
+ * `rolling` and `of`) is never the reducer's own: the timeline asks for
+ * none, and one would otherwise shadow the column it rolls over. */
 export function rowValue(
   row: AggregateRow | undefined,
   key: string
 ): AggregateValue | undefined {
-  return row?.values.find((v) => reducerKey(v.reducer) === key)
+  return row?.values.find(
+    (v) => v.rolling === undefined && reducerKey(v.reducer) === key
+  )
 }
 
 /** The rows as buckets (distinct windows, oldest first) and series (one per
@@ -880,6 +975,7 @@ export function answerReducers(
   const seen = new Map<string, AggregateReducer>()
   for (const row of rows) {
     for (const v of row.values) {
+      if (v.rolling !== undefined) continue
       const key = reducerKey(v.reducer)
       if (!seen.has(key)) seen.set(key, v.reducer)
     }
@@ -913,7 +1009,8 @@ export function rollupText(
     ...(groupKey ? [row.group?.[groupKey] ?? ""] : []),
     ...reducers.map((r) => {
       const v = rowValue(row, reducerKey(r))
-      return v?.value == null ? "" : `${v.value}${v.unit ? ` ${v.unit}` : ""}`
+      if (v?.value == null) return v?.code ?? ""
+      return `${v.value}${v.unit ? ` ${v.unit}` : ""}`
     }),
     row.count === undefined ? "" : String(row.count),
     row.coverage ?? "",
@@ -1074,11 +1171,11 @@ export function traceStats(raw: unknown): TraceStats | undefined {
   }
 }
 
-/** The sample standard deviation the running `m2` holds, where it can. */
+/** The standard deviation `m2` holds: the variance is `m2 / count`
+ * (docs/observations.md, "Stats"), the population's. */
 export function stddevOf(stats: TraceStats): number | undefined {
-  if (stats.m2 === undefined || !stats.count || stats.count < 2)
-    return undefined
-  return Math.sqrt(stats.m2 / (stats.count - 1))
+  if (stats.m2 === undefined || !stats.count) return undefined
+  return Math.sqrt(stats.m2 / stats.count)
 }
 
 /** A plotted number as digits, at most `digits` after the point, trailing
