@@ -470,9 +470,13 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		firstTS, lastTS                 = make([]*time.Time, n), make([]*time.Time, n)
 		firstValue, lastValue, increase = make([]*string, n), make([]*string, n), make([]*string, n)
 		held, lastHold, resets          = make([]*int64, n), make([]*int64, n), make([]*int64, n)
+		spanEnd                         = make([]*time.Time, n)
 	)
 	for i, r := range rows {
 		s := r.stats
+		if !s.SpanEnd.IsZero() {
+			spanEnd[i] = ptrTo(s.SpanEnd)
+		}
 		code[i], unit[i], delta[i], offset[i] = r.group.code, r.group.unit, r.group.delta, r.group.offset
 		bucket[i], count[i], bounded[i], covered[i] = r.start, s.N, s.Bounded, s.CoveredMs
 		maxGap[i], startGap[i] = s.MaxGapMs, s.StartGapMs
@@ -501,23 +505,23 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		INSERT INTO observed_rollups (metric, kind, source, about, channel, form,
 			code, unit, delta, utc_offset_min, bucket15, n, bounded, sum, min, max, mean, m2,
 			first_ts, first_value, last_ts, last_value, covered_ms, held_ms, twa_sum, last_hold_ms,
-			max_gap_ms, start_gap_ms, increase, resets, sin_sum, cos_sum)
+			max_gap_ms, start_gap_ms, increase, resets, sin_sum, cos_sum, span_end)
 		SELECT $1, $2, $3, $4, $5, $6,
 			u.code, u.unit, u.delta, u.off, u.bucket, u.n, u.bounded, u.sum, u.min, u.max, u.mean, u.m2,
 			u.first_ts, u.first_value::numeric, u.last_ts, u.last_value::numeric, u.covered, u.held, u.twa, u.last_hold,
-			u.max_gap, u.start_gap, u.increase::numeric, u.resets, u.sin, u.cos
+			u.max_gap, u.start_gap, u.increase::numeric, u.resets, u.sin, u.cos, u.span_end
 		FROM unnest($7::text[], $8::text[], $9::boolean[], $10::int[], $11::timestamptz[], $12::bigint[], $13::bigint[],
 		            $14::float8[], $15::float8[], $16::float8[], $17::float8[], $18::float8[],
 		            $19::timestamptz[], $20::text[], $21::timestamptz[], $22::text[], $23::bigint[], $24::bigint[],
 		            $25::float8[], $26::bigint[], $27::bigint[], $28::bigint[], $29::text[], $30::int[],
-		            $31::float8[], $32::float8[])
+		            $31::float8[], $32::float8[], $33::timestamptz[])
 		     AS u(code, unit, delta, off, bucket, n, bounded, sum, min, max, mean, m2,
 		          first_ts, first_value, last_ts, last_value, covered, held, twa, last_hold,
-		          max_gap, start_gap, increase, resets, sin, cos)`,
+		          max_gap, start_gap, increase, resets, sin, cos, span_end)`,
 		h.metric, h.kind, h.source, h.about, h.channel, h.form,
 		code, unit, delta, offset, bucket, count, bounded, sum, minV, maxV, mean, m2,
 		firstTS, firstValue, lastTS, lastValue, covered, held, twa, lastHold,
-		maxGap, startGap, increase, resets, sin, cos)
+		maxGap, startGap, increase, resets, sin, cos, spanEnd)
 	return err
 }
 

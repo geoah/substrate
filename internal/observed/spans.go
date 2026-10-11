@@ -113,6 +113,50 @@ func mergeCover(cover [][2]time.Time) [][2]time.Time {
 	return out
 }
 
+// Extent is one piece of an amount's coverage a reader joins: a rollup row's
+// union of spans, Ms long and lying inside [Start, End) (its First.At and
+// SpanEnd), or one raw point's span, Exact, which covers all of [Start, End).
+type Extent struct {
+	Start, End time.Time
+	Ms         int64
+	Exact      bool
+}
+
+// UnionMs is the length of the union of the extents, the coverage a reader
+// reports for an amount, and false where it cannot be known: where a row's
+// extent overlaps another extent, because a row keeps its union's length
+// and not its spans, so how much of it the other covers is unknown. Exact
+// extents that overlap join as raw spans do. The reader then takes the union
+// from the raw spans.
+func UnionMs(extents []Extent) (int64, bool) {
+	sorted := append([]Extent(nil), extents...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Start.Before(sorted[j].Start) })
+	var total int64
+	for i := 0; i < len(sorted); {
+		run := sorted[i]
+		j := i + 1
+		for ; j < len(sorted); j++ {
+			next := sorted[j]
+			exact := run.Exact && next.Exact
+			if next.Start.After(run.End) || (next.Start.Equal(run.End) && !exact) {
+				break
+			}
+			if !exact {
+				return 0, false
+			}
+			if next.End.After(run.End) {
+				run.End = next.End
+			}
+		}
+		if j > i+1 {
+			run.Ms = run.End.Sub(run.Start).Milliseconds()
+		}
+		total += run.Ms
+		i = j
+	}
+	return total, true
+}
+
 // HeldMs is the time the spans hold, in milliseconds.
 func HeldMs(spans []Span) int64 {
 	var ms int64

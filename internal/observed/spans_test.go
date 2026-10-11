@@ -37,6 +37,36 @@ func TestPrioritizeFillsTheGapsOfTheHigherSource(t *testing.T) {
 	}
 }
 
+// An amount's coverage joins extents: disjoint ones add, raw spans that
+// overlap or touch join as one, and a row's union overlapping anything else
+// cannot be measured from the row, so the reader is told to read the spans.
+func TestUnionMsJoinsWhatItCanMeasure(t *testing.T) {
+	row := func(from, to, covered float64) Extent {
+		return Extent{Start: at(from), End: at(to), Ms: dur(covered).Milliseconds()}
+	}
+	span := func(from, to float64) Extent {
+		return Extent{Start: at(from), End: at(to), Ms: dur(to - from).Milliseconds(), Exact: true}
+	}
+	for _, x := range []struct {
+		name    string
+		extents []Extent
+		want    float64
+		ok      bool
+	}{
+		{"two rows apart", []Extent{row(15, 50, 35), row(0, 35, 20)}, 0, false},
+		{"rows touching", []Extent{row(0, 15, 10), row(15, 30, 15)}, 25, true},
+		{"spans joining", []Extent{span(0, 10), span(5, 20), span(20, 25)}, 25, true},
+		{"a span inside a row", []Extent{row(0, 60, 30), span(10, 20)}, 0, false},
+		{"a span after a row", []Extent{row(0, 15, 15), span(15, 20)}, 20, true},
+		{"nothing", nil, 0, true},
+	} {
+		got, ok := UnionMs(x.extents)
+		if ok != x.ok || got != dur(x.want).Milliseconds() {
+			t.Errorf("%s: %d ms, %v; want %v minutes, %v", x.name, got, ok, x.want, x.ok)
+		}
+	}
+}
+
 // The window reducers are the span reducers over Held: one implementation.
 func TestWindowReducersAreTheSpanReducers(t *testing.T) {
 	points := []Point{coded(0, "closed"), coded(20, "open"), coded(25, "closed")}

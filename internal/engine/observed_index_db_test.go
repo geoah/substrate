@@ -324,7 +324,7 @@ func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 type storedRollup struct {
 	n, bounded, covered, maxGap, startGap  int64
 	sum, min, max, mean, m2, twa, sin, cos sql.NullFloat64
-	firstTS, lastTS                        sql.NullTime
+	firstTS, lastTS, spanEnd               sql.NullTime
 	firstValue, lastValue, increase        sql.NullString
 	held, lastHold, resets                 sql.NullInt64
 }
@@ -335,7 +335,7 @@ func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 		SELECT metric, kind, source, about, channel, form, code, unit, delta, utc_offset_min, bucket15,
 		       n, bounded, sum, min, max, mean, m2, first_ts, first_value::text, last_ts, last_value::text,
 		       covered_ms, held_ms, twa_sum, last_hold_ms, max_gap_ms, start_gap_ms, increase::text, resets,
-		       sin_sum, cos_sum
+		       sin_sum, cos_sum, span_end
 		FROM observed_rollups`)
 	if err != nil {
 		t.Fatalf("read the rollups: %v", err)
@@ -352,7 +352,7 @@ func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 		if err := rows.Scan(&k[0], &k[1], &k[2], &k[3], &k[4], &k[5], &code, &unit, &delta, &offset, &bucket,
 			&s.n, &s.bounded, &s.sum, &s.min, &s.max, &s.mean, &s.m2, &s.firstTS, &s.firstValue, &s.lastTS, &s.lastValue,
 			&s.covered, &s.held, &s.twa, &s.lastHold, &s.maxGap, &s.startGap, &s.increase, &s.resets,
-			&s.sin, &s.cos); err != nil {
+			&s.sin, &s.cos, &s.spanEnd); err != nil {
 			t.Fatal(err)
 		}
 		out[rollupKey(k, fmt.Sprintf("%s|%s|%v|%d", code, unit, delta, offset), bucket)] = s
@@ -444,6 +444,9 @@ func compareRollup(t *testing.T, key, form string, g storedRollup, w *observed.S
 	}
 	if g.covered != w.CoveredMs {
 		bad("covered_ms", g.covered, w.CoveredMs)
+	}
+	if g.spanEnd.Valid != !w.SpanEnd.IsZero() || (g.spanEnd.Valid && !g.spanEnd.Time.Equal(w.SpanEnd)) {
+		bad("span_end", g.spanEnd, w.SpanEnd)
 	}
 	if g.maxGap != w.MaxGapMs || g.startGap != w.StartGapMs {
 		bad("max_gap_ms, start_gap_ms", [2]int64{g.maxGap, g.startGap}, [2]int64{w.MaxGapMs, w.StartGapMs})

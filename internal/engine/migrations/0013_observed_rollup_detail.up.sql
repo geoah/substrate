@@ -1,0 +1,13 @@
+-- What a rollup row keeps beyond 0012's columns, so a read served from the
+-- rows answers what the raw points answer (internal/observed, the second
+-- aggregate review).
+--
+-- `span_end` is the latest end of an amount row's spans. The row's
+-- `covered_ms` is the union of its spans, all inside [first_ts, span_end),
+-- so a read joining two rows' coverage adds their lengths where those
+-- extents do not overlap, and takes the union from the raw spans where they
+-- do. Null for the other forms.
+--
+-- A row computed before this migration has the column null, which a read
+-- treats as unknown, and a rebuild fills.
+ALTER TABLE observed_rollups ADD COLUMN IF NOT EXISTS span_end timestamptz;

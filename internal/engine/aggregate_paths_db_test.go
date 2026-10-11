@@ -83,6 +83,71 @@ func TestAggregateFormsComeFromTheRange(t *testing.T) {
 	check("a summary after both")
 }
 
+// An amount's coverage is the union of its spans on both paths. Two traces of
+// one source over [00:00, 00:35) and [00:15, 00:50) cover 50 minutes, not 70,
+// so prefer-raw passes the hour's 100-step summary over under its 0.9 floor
+// only where raw points cover 54 minutes; and two amounts in one quarter hour
+// at two offsets (two rollup groups) cover their union, an hour, not 90
+// minutes.
+func TestAggregateAmountCoverageIsAUnion(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id       string
+		from, to time.Duration
+	}{{"a", 0, 35 * time.Minute}, {"b", 15 * time.Minute, 50 * time.Minute}} {
+		f.series("steps/phone/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}",
+		}, start.Add(x.from), start.Add(x.to), []int64{0}, []any{"1"})
+	}
+	f.mustPut(t, f.observation, "phone/hour", map[string]any{
+		"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "summary", "statistic": "sum",
+		"period": "hour", "value": quantity("100", "{steps}"), "at": at(start), "endsAt": at(start.Add(time.Hour)),
+	})
+	hour := substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+		Range:    rng(start, start.Add(time.Hour)),
+		Reducers: reducers("sum"),
+		From:     "prefer-raw",
+	}
+	res, _, _ := f.bothPaths(substrate.Filter{}, hour)
+	if len(res.Rows) != 1 || res.Rows[0].From != "summaries" {
+		t.Fatalf("prefer-raw: %+v, want the summary's row", res.Rows)
+	}
+	if v, _ := val(res.Rows[0], "sum"); v != "100" {
+		t.Errorf("prefer-raw sum = %s, want the summary's 100", v)
+	}
+	hour.From = ""
+	res, _, rollupRows := f.bothPaths(substrate.Filter{}, hour)
+	if rollupRows == 0 {
+		t.Error("the raw read took no rollup row")
+	}
+	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT50M" {
+		t.Fatalf("from raw: %+v, want 50 minutes covered", res.Rows)
+	}
+	if v, _ := val(res.Rows[0], "sum"); v != "2" {
+		t.Errorf("from raw sum = %s, want the two traces' 2", v)
+	}
+	// Two rollup groups of one quarter hour: offsets +03:00 and 00:00.
+	next := start.Add(2 * time.Hour)
+	for _, x := range []struct {
+		id       string
+		from, to time.Duration
+		offset   int
+	}{{"long", 0, time.Hour, 180}, {"short", 5 * time.Minute, 35 * time.Minute, 0}} {
+		f.mustPut(t, f.observation, "watch/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("watch"), "form": "amount",
+			"value": quantity("3", "{steps}"), "at": at(next.Add(x.from)), "endsAt": at(next.Add(x.to)), "utcOffset": x.offset,
+		})
+	}
+	hour.Range = rng(next, next.Add(time.Hour))
+	res, _, _ = f.bothPaths(substrate.Filter{}, hour)
+	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT1H" {
+		t.Errorf("two groups in one quarter hour: %+v, want an hour covered", res.Rows)
+	}
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`

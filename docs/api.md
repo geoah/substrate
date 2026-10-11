@@ -1271,7 +1271,10 @@ window's, which may reach past the range. A gauge's held time is walked
 across the rows, the value current at each window's start read with one
 lookup per stream. An amount's or a counter's bucket boundary that cuts a row
 (a range starting at 10:07, a records window) is read from raw points and
-merged in.
+merged in. An amount's coverage is the union of its spans on both paths: the
+rows' covered times add where their spans cannot overlap, and where they may
+(two overlapping traces, two offsets in one quarter hour) the union is taken
+from the raw spans in one statement per group.
 
 Everything else reads raw points: `percentile` and `durationIn`, a `maxGap`
 tighter than a row's gaps, `priority` over two or more streams, a gauge's

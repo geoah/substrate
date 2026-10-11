@@ -25,6 +25,11 @@ type Stats struct {
 	// since an amount belongs whole to the bucket its span starts in; the
 	// time the row's steps span for a counter, its step in included.
 	CoveredMs int64
+	// SpanEnd is the latest end of an amount's spans in the row; zero for
+	// the other forms. The union CoveredMs measures lies inside
+	// [First.At, SpanEnd), so a reader merging rows knows where two rows'
+	// unions cannot overlap and adds their lengths there.
+	SpanEnd time.Time
 	// HeldMs and TWASum are a gauge's held time inside the bucket under the
 	// value's own hold, and the sum of value times held milliseconds, built
 	// from every point of the bucket (Held) and kept for the points of this
@@ -195,6 +200,9 @@ func (b *BucketBuilder) Add(point Point) {
 			b.lastHold[p.Group] = &h
 		}
 	case vocabulary.FormAmount:
+		if p.End.After(s.SpanEnd) {
+			s.SpanEnd = p.End
+		}
 		u := b.spans[p.Group]
 		switch {
 		case u == nil:
@@ -290,10 +298,12 @@ func (b *BucketBuilder) Rows() map[string]*Stats {
 // after a's. Every statistic a reducer reads from rows merges without loss:
 // counts and sums add, the extremes compare, the first is a's and the last
 // is b's, the mean and m2 combine by Chan's formula, a gauge's covered time
-// runs from the merged first point to the merged last. The per-bucket
-// columns (LastHoldMs, MaxGapMs, StartGapMs) do not merge: the read carries
-// a hold across rows in order (HeldFromRows) and judges eligibility per
-// bucket (Eligible), so Merge leaves them zero.
+// runs from the merged first point to the merged last. An amount's covered
+// time adds, which is the union of the two rows' spans only where they do
+// not overlap: a reader that reports it merges the rows' extents with
+// UnionMs. The per-bucket columns (LastHoldMs, MaxGapMs, StartGapMs) do not
+// merge: the read carries a hold across rows in order (HeldFromRows) and
+// judges eligibility per bucket (Eligible), so Merge leaves them zero.
 func Merge(form string, a, b Stats) Stats {
 	out := Stats{
 		N: a.N + b.N, Bounded: a.Bounded + b.Bounded, Values: a.Values + b.Values,
@@ -327,6 +337,10 @@ func Merge(form string, a, b Stats) Stats {
 		}
 	default:
 		out.CoveredMs = a.CoveredMs + b.CoveredMs
+	}
+	out.SpanEnd = a.SpanEnd
+	if b.SpanEnd.After(out.SpanEnd) {
+		out.SpanEnd = b.SpanEnd
 	}
 	if a.Increase != nil || b.Increase != nil {
 		out.Increase = new(big.Rat)

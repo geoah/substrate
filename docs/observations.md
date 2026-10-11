@@ -386,7 +386,7 @@ the label a trace id ends with and `local_day` the civil date at an offset.
 The fold derives three tables from the rows of every kind that binds
 `observed`, the way it derives `refs`
 ([decision 0160](decisions/0160-the-observed-index-is-three-derived-tables-and-a-rollup-serves-only-exact-answers.md),
-migration `0012_observed_index`). A point is a function of one record's
+migrations `0012_observed_index` and `0013_observed_rollup_detail`). A point is a function of one record's
 properties and its kind's binding; a rollup row and a latest row are
 functions of a stream's points, and a counter's rollup row also reads the
 stream's reading before its bucket, which may be another record's
@@ -402,7 +402,7 @@ and `channel` of a value. A reference column holds the target's record path
 | Table | One row per | Holds |
 | --- | --- | --- |
 | `observed_points` | value: one per observation, one per point of a trace | the stream, `form`, `ts` and `ts_end`, `utc_offset_min`, `unit`, `delta`, `value` (float8), `value_exact` (the stored digits), `value_base` (in the measure's base unit), `code`, `statistic`, `bounded`, `quality`, and the parameters a hold and a counter step read: `hold_ms`, `reset_rule`, `reset_at`, `wrap_at`, `circular`, `revision` |
-| `observed_rollups` | stream, form, 15-minute bucket and group | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum` |
+| `observed_rollups` | stream, form, 15-minute bucket and group | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end` |
 | `observed_latest` | stream | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `record_id`, `revision`, and `points`, the stream's count of available points |
 
 The rules every column follows are written once, as Go, in
@@ -499,7 +499,10 @@ never add; a reader converts each row to the unit it asks for.
   `max_gap_ms`**; otherwise no hold inside the bucket is guaranteed to be the
   request's, and the read takes the bucket's raw points.
 - An amount belongs whole to the bucket its span starts in; `covered_ms` is
-  the union of its row's spans.
+  the union of its row's spans and `span_end` the end of the latest of them,
+  so the union lies inside `[first_ts, span_end)`. A read joining two rows
+  adds their `covered_ms` only where those extents do not overlap
+  (`internal/observed.UnionMs`).
 - A bucket holding only unavailable points still has a row, with `n` 0, so
   the read sees where a hold stops.
 

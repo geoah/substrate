@@ -69,6 +69,9 @@ type aggEvidence struct {
 	steps     aggSteps
 	sources   map[string]bool
 	coverage  int64
+	// extents are a rollup-served amount's pieces of coverage, joined into
+	// coverage once every row and cut end has merged (amountCoverage).
+	extents   []observed.Extent
 	count     int64
 	bounded   int64
 	converted bool
@@ -452,7 +455,7 @@ func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.
 // rollupColumns are the columns of observed_rollups a read takes.
 const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.bucket15, r.n, r.bounded, r.sum, r.min, r.max, r.mean, r.m2,
 	r.first_ts, r.first_value::text, r.last_ts, r.last_value::text, r.covered_ms, r.held_ms, r.twa_sum, r.last_hold_ms,
-	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum`
+	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum, r.span_end`
 
 // rowSpans are the rollup rows the read's windows meet: each window from the
 // row holding its start to the row holding its end, joined.
@@ -492,9 +495,11 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 			firstV, lastV, increase              sql.NullString
 			held, lastHold                       sql.NullInt64
 			resets                               sql.NullInt64
+			spanEnd                              sql.NullTime
 		)
 		if err := rows.Scan(&g.code, &g.unit, &g.delta, &g.offset, &bucket, &n, &bounded, &sum, &minV, &maxV, &mean, &m2,
-			&firstTS, &firstV, &lastTS, &lastV, &covered, &held, &twa, &lastHold, &maxGap, &startGp, &increase, &resets, &sin, &cos); err != nil {
+			&firstTS, &firstV, &lastTS, &lastV, &covered, &held, &twa, &lastHold, &maxGap, &startGp, &increase, &resets, &sin, &cos,
+			&spanEnd); err != nil {
 			return nil, err
 		}
 		key := g.key()
@@ -502,7 +507,7 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 		st := observed.Stats{
 			N: n, Bounded: bounded, Sum: sum.Float64, Min: minV.Float64, Max: maxV.Float64, Mean: mean.Float64, M2: m2.Float64,
 			CoveredMs: covered, HeldMs: held.Int64, TWASum: twa.Float64, MaxGapMs: maxGap, StartGapMs: startGp,
-			Resets: resets.Int64, SinSum: sin.Float64, CosSum: cos.Float64,
+			Resets: resets.Int64, SinSum: sin.Float64, CosSum: cos.Float64, SpanEnd: spanEnd.Time,
 		}
 		if sum.Valid {
 			st.Values = n
@@ -1002,7 +1007,10 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 				if row.N > 0 {
 					ev.sources[s.source] = true
 				}
-				if g.form != vocabulary.FormGauge {
+				switch {
+				case g.form == vocabulary.FormAmount && row.First != nil:
+					ev.extents = append(ev.extents, rowExtent(row.Stats))
+				case g.form == vocabulary.FormCounter:
 					ev.coverage += row.CoveredMs
 				}
 				if st.Increase != nil {
@@ -1022,6 +1030,11 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 					return nil, err
 				}
 			}
+		}
+	}
+	if g.form == vocabulary.FormAmount {
+		if err := r.amountCoverage(g, out); err != nil {
+			return nil, err
 		}
 	}
 	for _, codes := range out {
@@ -1105,6 +1118,102 @@ func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, conv
 	}
 }
 
+// rowExtent is an amount row's coverage as UnionMs joins it. A row stored
+// before migration 0013 has no span_end, so its extent reaches to the end of
+// time: its overlap with any later extent is unknown.
+func rowExtent(s observed.Stats) observed.Extent {
+	end := s.SpanEnd
+	if end.IsZero() {
+		end = time.Unix(1<<40, 0)
+	}
+	return observed.Extent{Start: s.First.At, End: end, Ms: s.CoveredMs}
+}
+
+// amountCoverageSQL is the union of the raw spans of a group's amount
+// streams ($1 to $5) in each cell ($6 to $10): the points a raw read takes
+// into the cell, those whose instant lies in [a, b), on a recorded-local
+// read ($12) whose wall clock at their own offset lies in [wa, wb), of the
+// cell's code where the read groups by code ($13), and of the admitted codes
+// ($11) where the filter names some ($14). Spans that overlap or touch join,
+// as joinSpans joins them, and each joined span counts in whole
+// milliseconds.
+const amountCoverageSQL = `
+	SELECT c.i, coalesce((
+		SELECT sum(floor(extract(epoch FROM z.e - z.s) * 1000))::bigint FROM (
+			SELECT min(y.ts) AS s, max(y.e) AS e FROM (
+				SELECT x.ts, x.e, sum(x.brk) OVER (ORDER BY x.ts, x.e ROWS UNBOUNDED PRECEDING) AS grp FROM (
+					SELECT q.ts, q.e, CASE WHEN q.ts <= max(q.e) OVER (ORDER BY q.ts, q.e ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+						THEN 0 ELSE 1 END AS brk
+					FROM (
+						SELECT p.ts, p.ts_end AS e
+						FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS s(metric, kind, source, about, channel)
+						CROSS JOIN LATERAL (
+							SELECT p.ts, p.ts_end FROM observed_points p
+							WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+							  AND p.ts >= c.a AND p.ts < c.b AND p.form = 'amount' AND ` + availablePoint + `
+							  AND (NOT $12::boolean OR (p.ts + p.utc_offset_min * interval '1 minute' >= c.wa
+							                            AND p.ts + p.utc_offset_min * interval '1 minute' < c.wb))
+							  AND (NOT $13::boolean OR p.code = c.code)
+							  AND (NOT $14::boolean OR p.code = ANY($11::text[]))) p
+					) q
+				) x
+			) y GROUP BY y.grp
+		) z), 0)
+	FROM unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[], $10::text[]) WITH ORDINALITY AS c(a, b, wa, wb, code, i)`
+
+// amountCoverage settles each cell's coverage, the union of its amounts'
+// spans: from the rows' and the cut ends' extents (observed.UnionMs) where no
+// row's extent overlaps another, and from the raw spans in SQL in the cells
+// where one does, so a cell served from rows reports the coverage, and
+// prefer-raw makes the choice, that the raw points would.
+func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
+	var pending []*aggEvidence
+	var a, b, wa, wb []time.Time
+	var codes []string
+	local := r.p.bucket.mode == bucketLocal
+	for _, bk := range r.buckets {
+		for _, code := range sortedKeys(cells[bk]) {
+			ev := cells[bk][code]
+			if ms, ok := observed.UnionMs(ev.extents); ok {
+				ev.coverage = ms
+				continue
+			}
+			pending = append(pending, ev)
+			if local {
+				a, b, wa, wb = append(a, r.p.from), append(b, r.p.to), append(wa, bk.start), append(wb, bk.end)
+			} else {
+				a, b, wa, wb = append(a, bk.start), append(b, bk.end), append(wa, bk.start), append(wb, bk.end)
+			}
+			codes = append(codes, code)
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	ids := make([][]string, 5)
+	for _, s := range g.raw {
+		for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel} {
+			ids[i] = append(ids[i], v)
+		}
+	}
+	admitted := sortedKeys(r.p.codes)
+	rows, err := r.tx.QueryContext(r.ctx, amountCoverageSQL, ids[0], ids[1], ids[2], ids[3], ids[4],
+		a, b, wa, wb, codes, admitted, local, r.p.grouped[substrate.GroupCode], r.p.codes != nil)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: aggregate coverage: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var i int
+		var ms int64
+		if err := rows.Scan(&i, &ms); err != nil {
+			return err
+		}
+		pending[i-1].coverage = ms
+	}
+	return rows.Err()
+}
+
 // rollupFragments merges the raw points of an amount's or a counter's cut bucket
 // ends into the buckets, through observed.Bucket as a rollup row would.
 func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream) error {
@@ -1154,10 +1263,22 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream) error 
 					if st.N > 0 {
 						ev.sources[s.source] = true
 					}
-					ev.coverage += st.CoveredMs
+					if g.form == vocabulary.FormCounter {
+						ev.coverage += st.CoveredMs
+					}
 					if conv.Increase != nil {
 						ev.steps.add(conv.Increase, false, st.CoveredMs)
 						ev.steps.resets += st.Resets
+					}
+				}
+				if g.form == vocabulary.FormAmount {
+					// A cut end's spans are known exactly, so they join the
+					// rows' extents as raw spans.
+					for _, p := range pts {
+						if !p.Unavailable {
+							ev := cell(out, b, r.codeKey(p.Code), g.form, false)
+							ev.extents = append(ev.extents, observed.Extent{Start: p.At, End: p.End, Ms: p.End.Sub(p.At).Milliseconds(), Exact: true})
+						}
 					}
 				}
 				break
