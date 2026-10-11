@@ -552,8 +552,12 @@ func TestQuantityRefusesHostileUnits(t *testing.T) {
 		{"/0", "a factor is a positive integer"},
 		{"(m/0)", "a factor is a positive integer"},
 		{"m/(2.0)", "a factor is a positive integer"},
-		{"m257", "beyond the bound of ±8"},
+		{"m9", "beyond the bound of ±8"},
 		{"m5.m5", "beyond the bound of ±8"},
+		{"10*1000000000", "beyond the bound of ±24"},
+		{"1234567890123.m", "beyond the bound of 12 digits"},
+		{strings.Repeat("(", 9) + "m" + strings.Repeat(")", 9), "beyond the bound of 8"},
+		{strings.Repeat("2.", 32) + "m", "beyond the bound of 32"},
 	} {
 		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, Properties: map[string]any{
 			"name": "hostile", "pulse": qv("1", c.code),

@@ -427,8 +427,13 @@ refused unless the property names its measure.
 
 A code's dimension is bounded: the exponent of each base quantity stays
 within ±8, in each atom raised to its power and in every product along the
-way, so `m257` and `m5.m5` are refused rather than read as some other
-dimension. A factor is a positive integer, so `m/0` is refused too.
+way, so `m9` and `m5.m5` are refused rather than read as some other
+dimension. A factor is a positive integer, so `m/0` is refused too. The
+parser holds every code to four more bounds before it evaluates anything, so
+a short code cannot ask for a long computation: a written exponent within
+±24 (`10*24` fits, `10*25` does not), a numeric factor of at most 12 digits,
+parentheses nested at most 8 deep, and at most 32 components in the whole
+code. A refusal names the bound it hit.
 
 A property narrows what it admits:
 

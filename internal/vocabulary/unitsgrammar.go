@@ -82,6 +82,26 @@ func unitValue() value {
 // nothing a person writes, and the int8 a dimension holds would wrap.
 const MaxUnitDimension = 8
 
+// The bounds a code is held to while it is parsed, before anything is
+// evaluated, so a short code cannot buy a long evaluation (`10*1000000000`
+// once asked for a billion rational multiplications). Inside them the work
+// and the size of the factor are small: at most MaxUnitComponents factors,
+// each a table constant or a number of MaxUnitFactorDigits raised to at most
+// MaxUnitExponent, by squaring.
+const (
+	// MaxUnitExponent bounds a written exponent: `10*24`, the largest power
+	// UCUM's prefixes name, fits, and `10*25` does not. A dimension is held
+	// tighter still, by MaxUnitDimension.
+	MaxUnitExponent = 24
+	// MaxUnitFactorDigits bounds a numeric factor's digits (`8.h`, `100.m`).
+	MaxUnitFactorDigits = 12
+	// MaxUnitNesting bounds how deep parentheses nest.
+	MaxUnitNesting = 8
+	// MaxUnitComponents bounds the components of a whole code, parenthesized
+	// ones included.
+	MaxUnitComponents = 32
+)
+
 // mul folds o into v, raised to the power exp. It refuses a division by zero
 // rather than panic: the parser refuses a zero factor, and this holds the
 // arithmetic to the same rule whatever reaches it. The dimension is checked
@@ -104,14 +124,22 @@ func (v *value) mul(o value, exp int) error {
 		}
 		dim[i] = int8(e)
 	}
+	if exp > MaxUnitExponent || exp < -MaxUnitExponent {
+		return fmt.Errorf("the power %d is beyond the bound of ±%d", exp, MaxUnitExponent)
+	}
 	switch {
-	case exp > 0:
-		for range exp {
-			v.factor.Mul(v.factor, o.factor)
-		}
-	case exp < 0:
-		for range -exp {
-			v.factor.Quo(v.factor, o.factor)
+	case exp == 1:
+		v.factor.Mul(v.factor, o.factor)
+	case exp == -1:
+		v.factor.Quo(v.factor, o.factor)
+	case exp != 0:
+		// By squaring: big.Int.Exp on the numerator and the denominator.
+		n := big.NewInt(int64(max(exp, -exp)))
+		pow := new(big.Rat).SetFrac(new(big.Int).Exp(o.factor.Num(), n, nil), new(big.Int).Exp(o.factor.Denom(), n, nil))
+		if exp > 0 {
+			v.factor.Mul(v.factor, pow)
+		} else {
+			v.factor.Quo(v.factor, pow)
 		}
 	}
 	v.pi += o.pi * exp
@@ -307,6 +335,10 @@ type parser struct {
 	s       string
 	i       int
 	resolve func(string) (*atom, error)
+	// depth is how many parentheses are open, and components how many
+	// components the code has so far, each held to its bound as it grows.
+	depth      int
+	components int
 }
 
 // parseTerm parses a whole code into its tree.
@@ -347,6 +379,9 @@ func (p *parser) errf(format string, args ...any) error {
 
 func (p *parser) term(t *termNode) error {
 	for {
+		if p.components++; p.components > MaxUnitComponents {
+			return p.errf("a code of more components is beyond the bound of %d", MaxUnitComponents)
+		}
 		n, err := p.component()
 		if err != nil {
 			return err
@@ -367,6 +402,9 @@ func (p *parser) component() (node, error) {
 	case 0:
 		return nil, p.errf("a term is missing after an operator")
 	case '(':
+		if p.depth++; p.depth > MaxUnitNesting {
+			return nil, p.errf("parentheses nested deeper are beyond the bound of %d", MaxUnitNesting)
+		}
 		p.i++
 		inner := &termNode{}
 		if err := p.term(inner); err != nil {
@@ -376,6 +414,7 @@ func (p *parser) component() (node, error) {
 			return nil, p.errf("an opening parenthesis is not closed")
 		}
 		p.i++
+		p.depth--
 		return groupNode{inner: inner}, nil
 	case '{':
 		text, err := p.annotation()
@@ -422,12 +461,20 @@ func (p *parser) component() (node, error) {
 		if strings.Trim(symbol, "0") == "" {
 			return nil, p.errf("a factor is a positive integer, and %s is zero", symbol)
 		}
+		if len(symbol) > MaxUnitFactorDigits {
+			return nil, p.errf("a factor of %d digits is beyond the bound of %d digits", len(symbol), MaxUnitFactorDigits)
+		}
 		return numberNode{digits: symbol, note: note}, nil
 	}
 	head, exp := splitExponent(symbol)
 	u := unitNode{note: note, exp: 1}
 	if exp != "" {
+		// Digits past the bound's own are refused before Atoi reads them, so
+		// one too long for an int names the bound as well.
 		n, err := strconv.Atoi(exp)
+		if len(strings.TrimLeft(exp, "+-")) > len(strconv.Itoa(MaxUnitExponent)) || err == nil && (n > MaxUnitExponent || n < -MaxUnitExponent) {
+			return nil, p.errf("the exponent %s is beyond the bound of ±%d", exp, MaxUnitExponent)
+		}
 		if err != nil {
 			return nil, p.errf("exponent %q is not an integer", exp)
 		}
