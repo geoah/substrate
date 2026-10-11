@@ -332,6 +332,17 @@ is `hba1c` (NGSP %) and `hba1c_ifcc` (mmol/mol). The codes were written from
 the vendors' published documentation without a check against a live account;
 a metric's description marks the least certain ones.
 
+## The adapters
+
+An adapter is a sample whose function turns one provider's mirror rows into
+these records. `samples.substrate.reamde.dev/healthapple` is the first: it
+reads the Apple Health provider's metric batches and workouts and writes
+traces, observations, sleeps and workouts, each naming the mirror row it came
+from in `origin` and rewritten or deleted with it. Its mapping and rules are
+in the [catalog](bundles-catalog.md#apple-health-adapter-sample). Its trace
+ids carry the source, `applehealth/<account>/<source>/<metric>/<UTC hour>`,
+because one phone delivers several devices' data.
+
 ## Building observed values in a function
 
 `host.units.convert`, `host.units.canonical` and `host.units.measure` ask the

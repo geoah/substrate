@@ -1,8 +1,8 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty bundles, in the two tiers
+The catalog in the binary serves twenty-one bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: eight providers and twelve samples. This page covers thirteen of them;
+draws: eight providers and thirteen samples. This page covers fourteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
@@ -21,8 +21,8 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
-a worked example to read and copy, imported under the repository's own
+**Six samples**: LLM, notes, the reading list, Firecrawl, Pebble and the Apple
+Health adapter. Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -76,6 +76,7 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
+| Apple Health adapter | Sample | none        | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -1391,6 +1392,88 @@ manual Previous 7 Days export catches them up, and overlapping deliveries
 rewrite the same records. The provider's
 [README](../kinds/providers.substrate.reamde.dev/applehealth/README.md) has
 the setup as steps.
+
+## Apple Health adapter (sample)
+
+Package `samples.substrate.reamde.dev/healthapple`. It writes what the
+[Apple Health provider](#apple-health) mirrors as the `health` sample's
+records ([observations](observations.md)), and requires `health` (so
+`observations`) and `providers.substrate.reamde.dev/applehealth`, each with a
+`requiresAtLeast` floor of 1.
+
+- **Kinds (0)**: it writes the `observations` and `health` kinds.
+- **Functions (1)**: `healthappleadapt` reads one mirror row and writes
+  everything that row implies.
+- **Triggers (1)**: `healthapple-on-mirror`, on the provider's `metricbatch`
+  and `workout` kinds, for `create`, `update` and `delete`, coalesced.
+
+**What it writes.** A Health Auto Export metric maps to a `health/` metric
+or is skipped and named in the function's `skipped` result, never guessed.
+Values are converted into the metric's unit through the engine's unit table
+(`host.units`); the app's `count/min` is a rate per minute and its `count` is
+the metric's own counted unit.
+
+| App metric | Metric | Written as | Unit |
+| --- | --- | --- | --- |
+| `heart_rate` | `heart_rate` | gauge trace of `Avg`, hold `PT4M` | `/min` |
+| `respiratory_rate` | `respiratory_rate` | gauge trace | `/min` |
+| `blood_oxygen_saturation` | `spo2` | gauge trace | `%` |
+| `step_count` | `steps` | amount trace | `{steps}` |
+| `walking_running_distance` | `distance` | amount trace | `m` |
+| `flights_climbed` | `floors` | amount trace | `{floors}` |
+| `active_energy` | `active_energy` | amount trace | `kcal` |
+| `basal_energy_burned` | `basal_energy` | amount trace | `kcal` |
+| `heart_rate_variability` | `hrv_sdnn` | gauge observation | `ms` |
+| `apple_sleeping_wrist_temperature` | `skin_temperature` | gauge observation | `Cel` |
+| `vo2_max` | `vo2_max` | gauge observation | `mL/(kg.min)` |
+| `weight_body_mass` | `body_mass` | gauge observation | `kg` |
+| `body_fat_percentage` | `body_fat_fraction` | gauge observation | `%` |
+| `body_mass_index` | `bmi` | gauge observation | `kg/m2` |
+| `height` | `height` | gauge observation | `m` |
+| `blood_pressure` | `systolic_blood_pressure`, `diastolic_blood_pressure` | two gauge observations, each with both as `components`, hold `PT0S` | `mm[Hg]` |
+| `blood_glucose` | `blood_glucose_mass` or `blood_glucose`, by the app's unit | gauge observation, `mealTime` as a qualifier | `mg/dL`, `mmol/L` |
+| `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `/min` |
+| `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value` | `min` |
+
+Everything else the app sends (`apple_exercise_time`, `physical_effort`,
+`walking_asymmetry_percentage`, `lean_body_mass` and the rest) is skipped.
+
+**Raw values come from the Seconds and Minutes groupings only.** A batch at
+Hours, Days or a coarser grouping holds the app's own aggregates, so each row
+becomes `summary` observations (`sum` for an amount, `avg` for a gauge, and
+`avg`, `min` and `max` for heart rate) with the bucket as `period`, which a
+raw read never adds to the minutes. A dense metric is one trace per source and
+UTC hour, split where the UTC offset changes; an amount's minute ends in a
+`null` where the next minute has no row. A sleep segment is one `amount`
+observation per segment (`awake`, `light` for the app's Core, `deep`, `rem`,
+`in_bed`; Asleep and Unspecified map to no stage and are skipped), and the
+night is one `health/sleep` from the night fields every segment repeats,
+written by the batch the night's start falls in; an aggregated night row is a
+`health/sleep` with its stage durations plus one stage amount per stage. A
+workout is a `health/workout` with its sport, span, duration, distance,
+energy, heart rate and climb, attributed to the device its heart rate rows
+name.
+
+**Ids, sources and reconciliation.** Ids are composed: a trace is
+`applehealth/<account>/<source>/<metric>/<UTC hour>`, a single value
+`applehealth/<account>/<source>/<metric>/<instant>` (a summary adds its
+statistic), a workout `applehealth/<account>/<HealthKit id>`. The source is
+the row's `source` label with the owner's name taken off (`Ada's Apple Watch`
+is `apple-watch`, `Garmin Connect` is `garmin-connect`), and a label that is
+empty, absent or joins several devices with `|` is `health`, the phone's
+merged series; each is an `observations/source` record at
+`applehealth/<account>/<source>`, minted `ifAbsent` so an owner's edit
+stands. Every output names its mirror row in `origin` (`origins` on a trace)
+and carries `revision`, the row's `receivedAt` in Unix seconds. Each delivery
+writes the whole set the row implies, leaves an output that already holds it
+unwritten, and deletes the outputs that point at the row and are no longer
+implied, so a corrected redelivery rewrites the same ids at a higher revision
+and a deleted row (an account deleted, say) takes its outputs with it.
+
+**One rule for the automations.** Send each metric at one raw grouping:
+a Seconds automation and a Minutes automation both carrying heart rate write
+the same trace ids from two rows, and each delivery replaces the other's
+points.
 
 ## Firecrawl (sample)
 
