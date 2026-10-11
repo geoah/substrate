@@ -702,6 +702,12 @@ func (t *txn) hardDelete(ref eref) error {
 }
 
 func (t *txn) applyPurge(ref eref) error {
+	// The record's observed points, with what they touched recomputed at the
+	// end of the transaction: the rollup and latest rows are keyed by stream,
+	// not by record, so they are recomputed rather than deleted.
+	if err := t.dropObservedOf(ref); err != nil {
+		return err
+	}
 	for _, q := range []string{
 		// The record's OWN rows, and only those. The index is derived from the
 		// SOURCE record's properties, so deleting by `dst` would erase rows

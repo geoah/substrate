@@ -53,7 +53,7 @@ var refoldMarks = map[string][]string{"records": {"orphaned_at", "ambiguous_at"}
 // to run. A migration that edits either of them seeds a row first.
 var refoldSeeded = []string{
 	"records", "refs", "annotations", "property_managers", "former_ids", "property_offers",
-	"trigger_cursors", "trigger_schedule",
+	"trigger_cursors", "trigger_schedule", "observed_points", "observed_rollups", "observed_latest",
 }
 
 // refoldLags are the landed migrations that predate the rule and add a
@@ -151,8 +151,10 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 // records created, patched, labeled, annotated, referenced, deleted and put
 // back (writeSomeHistory), people fed by three mapped sources, with offers
 // beside an owner's hold, a merge and a source collected by the sweep
-// (writeMappedHistory), and a record trigger and a schedule trigger, whose
-// creation writes their cursor and fire state. Both triggers are disabled
+// (writeMappedHistory), a record trigger and a schedule trigger, whose
+// creation writes their cursor and fire state, and the observations sample
+// with one of every observed shape (writeObservedHistory), so the observed
+// index holds points, rollups and latest rows. Both triggers are disabled
 // and no dispatch runs, so the scan position a dispatch moves outside the
 // ledger (functions.go advanceCursor) never moves. Every stage copies these
 // rows, so they are written once.
@@ -179,6 +181,7 @@ func seedRefoldSource(t *testing.T) refoldSource {
 	installPeopleSourcesWithDir(t, ds)
 	writeMappedHistory(t, ds)
 	installRefoldTriggers(t, ds)
+	writeObservedHistory(t, ds)
 	// The stages copy the rows and the directory, so the source's process
 	// must have written its last line and released the repository.
 	if err := svc.Close(); err != nil {
@@ -253,9 +256,11 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 	if err != nil {
 		t.Fatalf("open the staged repository: %v", err)
 	}
-	// A stage behind the search index's table reindexes at this open, and the
-	// fold is read once that has settled.
+	// A stage behind the search index's table reindexes at this open, and a
+	// stage behind the observed index derives it behind the open (repository
+	// migration 3), so the fold is read once both have settled.
 	<-engine.SearchReindexDone(ds)
+	engine.DrainIndexReprojection(t, ds)
 	live = refoldSnapshot(t, db, omit)
 	for _, table := range refoldSeeded {
 		if live[table] == "[]" {

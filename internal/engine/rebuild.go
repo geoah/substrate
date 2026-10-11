@@ -45,6 +45,11 @@ import (
 //	                   gets back the cursor this table held if its digest
 //	                   matches (keepPagedCursors), else a null one, and starts
 //	                   over.
+//	observed_points    the observed index (observedindex.go), derived from
+//	                   each record by the record effect that writes it
+//	observed_rollups, observed_latest
+//	                   derived from those points once, after the replay
+//	                   (observedsettle.go rederiveObservedAll)
 //
 // property_offers is neither replayed nor kept: it is recompute's projection
 // of what each live source offers each target (mapping.go syncOffers), the
@@ -106,6 +111,7 @@ type RebuildReport struct {
 // anything else.
 var foldTables = append([]string{
 	"refs", "former_ids", "annotations", "property_managers", "records",
+	"observed_points", "observed_rollups", "observed_latest",
 }, deliveryTables...)
 
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
@@ -243,6 +249,10 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			return fmt.Errorf("substrate/engine: rebuild: clear %s: %w", table, err)
 		}
 	}
+	// The replay writes the observed points record by record and leaves
+	// their rollup and latest rows to one recompute after it
+	// (observedsettle.go rederiveObservedAll).
+	t.observed = &observedTouch{all: true}
 	// One cursor across every page, so each segment is read once (issue 745).
 	cur := log.Cursor(0)
 	defer func() { _ = cur.Close() }()
@@ -274,6 +284,11 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 		prog.tick(cur.Position())
 	}
 	if err := t.dropKeptCursors(); err != nil {
+		return err
+	}
+	// A replay never passes through inTx, so the observed index's
+	// per-transaction recompute runs here.
+	if err := t.settleObserved(); err != nil {
 		return err
 	}
 	if err := t.rederiveOffers(); err != nil {
@@ -590,6 +605,15 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"trigger_failures": `SELECT to_jsonb(f) - 'repository' FROM (
 				SELECT id, trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at, payload
 				FROM trigger_failures ORDER BY id) f`,
+		// The observed index (observedindex.go), whole: every column is a
+		// function of the points, and the points of the rows.
+		"observed_points": `SELECT to_jsonb(p) - 'repository' FROM (
+				SELECT * FROM observed_points ORDER BY kind, record_id, ord) p`,
+		"observed_rollups": `SELECT to_jsonb(r) - 'repository' FROM (
+				SELECT * FROM observed_rollups
+				ORDER BY metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min) r`,
+		"observed_latest": `SELECT to_jsonb(l) - 'repository' FROM (
+				SELECT * FROM observed_latest ORDER BY metric, kind, source, about, channel) l`,
 		// A resume row whose last page named its cursor by hash comes back
 		// from the cursor the table held (decision 0141); an import into an
 		// empty database brings it back null.

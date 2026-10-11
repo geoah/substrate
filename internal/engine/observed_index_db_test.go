@@ -1,0 +1,950 @@
+package engine_test
+
+// The observed index against Postgres (decision 0160, migration 0012): the
+// points every shape of observed record derives, the rollup rows the fold
+// computes from them (held to internal/observed, the specification, column
+// by column), the latest row of each stream, and every path that moves them:
+// a rewrite, a tombstone, a restore, a purge, a correction that moves a
+// point to another stream, a vocabulary change and a rebuild.
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"math"
+	"math/big"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/observed"
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
+	"github.com/geoah/substrate/samples"
+)
+
+// obsIndex is a repository holding the observations and health samples, with
+// the tamperer's seat on its database to read the index tables.
+type obsIndex struct {
+	observedRepo
+	svc substrate.Service
+	db  *sql.DB
+}
+
+func openObservedIndex(t *testing.T) obsIndex {
+	t.Helper()
+	ctx := context.Background()
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open dataset: %v", err)
+	}
+	c, err := catalog.Load(catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the sample catalog: %v", err)
+	}
+	for _, id := range []string{samples.Authority + "/observations", samples.Authority + "/health"} {
+		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
+			t.Fatalf("import %s: %v", id, err)
+		}
+	}
+	home := testdb.Repository(t)
+	return obsIndex{
+		observedRepo: observedRepo{
+			ds: ds, observation: home + "/observations/observation", trace: home + "/observations/trace",
+			metric: home + "/observations/metric", source: home + "/observations/source",
+			labreport: home + "/health/labreport", labresult: home + "/health/labresult",
+		},
+		svc: svc, db: rawDB(t, dsn),
+	}
+}
+
+func (r obsIndex) mustPut(t *testing.T, kind, id string, props map[string]any) {
+	t.Helper()
+	if _, err := r.put(t, kind, id, props); err != nil {
+		t.Fatalf("put %s %s: %v", kind, id, err)
+	}
+}
+
+func (r obsIndex) sourceRef(id string) map[string]any {
+	return map[string]any{"ref": r.source + "/" + id}
+}
+
+// pointRow is one row of observed_points as the test reads it.
+type pointRow struct {
+	ord                         int
+	metric, source, about, form string
+	channel, unit, code         string
+	ts, tsEnd                   time.Time
+	offset                      int
+	delta, bounded, circular    bool
+	value, base                 sql.NullFloat64
+	exact, statistic, quality   sql.NullString
+	resetRule, wrapAt           sql.NullString
+	hold, revision              sql.NullInt64
+	resetAt                     sql.NullTime
+}
+
+func (r obsIndex) points(t *testing.T, kind, id string) []pointRow {
+	t.Helper()
+	rows, err := r.db.Query(`
+		SELECT ord, metric, source, about, channel, form, ts, ts_end, utc_offset_min, unit, delta, value,
+		       value_exact::text, value_base, code, statistic, bounded, quality, hold_ms, reset_rule, reset_at,
+		       wrap_at::text, circular, revision
+		FROM observed_points WHERE kind = $1 AND record_id = $2 ORDER BY ord`, kind, id)
+	if err != nil {
+		t.Fatalf("read points: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []pointRow
+	for rows.Next() {
+		var p pointRow
+		if err := rows.Scan(&p.ord, &p.metric, &p.source, &p.about, &p.channel, &p.form, &p.ts, &p.tsEnd, &p.offset,
+			&p.unit, &p.delta, &p.value, &p.exact, &p.base, &p.code, &p.statistic, &p.bounded, &p.quality, &p.hold,
+			&p.resetRule, &p.resetAt, &p.wrapAt, &p.circular, &p.revision); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func (r obsIndex) count(t *testing.T, q string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := r.db.QueryRow(q, args...).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", q, err)
+	}
+	return n
+}
+
+func mustTime(t *testing.T, s string) time.Time {
+	t.Helper()
+	v, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// Every shape of observed record derives its points: a single gauge, a coded
+// gauge, a summary, an amount with its category, a counter trace, a trace
+// with nulls at irregular offsets, and a bounded lab value.
+func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	metric := func(id string) string { return r.metric + "/" + id }
+
+	r.mustPut(t, r.observation, "withings/w1", map[string]any{
+		"metric": r.metricRef("health/body_mass"), "source": r.sourceRef("withings-body"),
+		"form": "gauge", "value": quantity("72.40", "kg"), "at": "2026-10-07T06:41:12+03:00",
+		"utcOffset": 180, "revision": 3, "quality": "valid",
+	})
+	if got := r.points(t, r.observation, "withings/w1"); len(got) != 1 ||
+		got[0].metric != metric("health/body_mass") || got[0].source != r.source+"/withings-body" ||
+		got[0].form != "gauge" || !got[0].ts.Equal(mustTime(t, "2026-10-07T03:41:12Z")) || !got[0].tsEnd.Equal(got[0].ts) ||
+		got[0].offset != 180 || got[0].unit != "kg" || got[0].value.Float64 != 72.4 || got[0].exact.String != "72.40" ||
+		got[0].base.Float64 != 72.4 || got[0].code != "" || got[0].bounded || got[0].quality.String != "valid" ||
+		got[0].revision.Int64 != 3 {
+		t.Errorf("a weighing derived %+v", got)
+	}
+
+	r.mustPut(t, r.observation, "door/1", map[string]any{
+		"metric": r.metricRef("air_temperature"), "about": map[string]any{"ref": r.source + "/front-door"},
+		"channel": "contact", "form": "gauge", "code": "open", "hold": "PT0S", "at": "2026-10-07T17:42:05Z",
+	})
+	if got := r.points(t, r.observation, "door/1"); len(got) != 1 || got[0].code != "open" || got[0].value.Valid ||
+		got[0].exact.Valid || got[0].about != r.source+"/front-door" || got[0].channel != "contact" ||
+		got[0].hold.Int64 != 0 || !got[0].hold.Valid || got[0].offset != 0 {
+		t.Errorf("a door derived %+v", got)
+	}
+
+	r.mustPut(t, r.observation, "whoop/george/1047392/recovery", map[string]any{
+		"metric": r.metricRef("health/whoop_recovery"), "form": "summary", "statistic": "vendor", "period": "cycle",
+		"value": quantity("67", "%"), "at": "2026-10-06T22:31:00Z", "endsAt": "2026-10-07T06:02:00Z", "revision": 1,
+	})
+	if got := r.points(t, r.observation, "whoop/george/1047392/recovery"); len(got) != 1 || got[0].form != "summary" ||
+		got[0].statistic.String != "vendor" || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T06:02:00Z")) ||
+		got[0].base.Float64 != 0.67 {
+		t.Errorf("a summary derived %+v", got)
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_rollups WHERE form = 'summary'`); n != 0 {
+		t.Errorf("a summary rolled up into %d rows", n)
+	}
+
+	r.mustPut(t, r.observation, "sleep/rem", map[string]any{
+		"metric": r.metricRef("health/sleep_stage"), "form": "amount", "value": quantity("94", "min"), "code": "rem",
+		"at": "2026-10-07T01:00:00Z", "endsAt": "2026-10-07T02:34:00Z",
+	})
+	if got := r.points(t, r.observation, "sleep/rem"); len(got) != 1 || got[0].code != "rem" || got[0].exact.String != "94" ||
+		got[0].base.Float64 != 94*60 || !got[0].tsEnd.Equal(mustTime(t, "2026-10-07T02:34:00Z")) {
+		t.Errorf("an amount with its category derived %+v", got)
+	}
+
+	r.mustPut(t, r.trace, "meter/2026-10-07T06", map[string]any{
+		"metric": r.metricRef("energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT15M",
+		"values": []any{"18342.655", "18342.700", "0.010", "0.050"}, "revision": 1,
+	})
+	meter := r.points(t, r.trace, "meter/2026-10-07T06")
+	if len(meter) != 4 || meter[1].exact.String != "18342.700" || meter[2].value.Float64 != 0.01 ||
+		meter[0].base.Float64 != 18342.655*3600000 || meter[0].resetRule.String != "monotonic" ||
+		!meter[3].ts.Equal(mustTime(t, "2026-10-07T06:45:00Z")) || !meter[3].tsEnd.Equal(meter[3].ts) {
+		t.Errorf("a counter trace derived %+v", meter)
+	}
+
+	r.mustPut(t, r.trace, "hr/2026-10-07T06", map[string]any{
+		"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "bpm", "hold": "PT4M",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "utcOffsetStart": 180, "utcOffsetEnd": 120,
+		"offsets": []any{0, 118000, 241000, 1800000, 3599000}, "values": []any{"58", "57", nil, "112", "96"},
+	})
+	hr := r.points(t, r.trace, "hr/2026-10-07T06")
+	if len(hr) != 5 {
+		t.Fatalf("a trace with a null derived %d points", len(hr))
+	}
+	null := hr[2]
+	if null.value.Valid || null.exact.Valid || null.code != "" || null.quality.String != "unavailable" ||
+		!null.ts.Equal(mustTime(t, "2026-10-07T06:04:01Z")) {
+		t.Errorf("the null point = %+v", null)
+	}
+	// The start offset holds before the midpoint and the end offset from it.
+	for i, want := range []int{180, 180, 180, 120, 120} {
+		if hr[i].offset != want || hr[i].unit != "{beats}/min" || hr[i].hold.Int64 != 240000 {
+			t.Errorf("point %d: offset %d unit %s hold %v", i, hr[i].offset, hr[i].unit, hr[i].hold)
+		}
+	}
+
+	r.mustPut(t, r.labresult, "medichecks/george/MC-1/tsh", map[string]any{
+		"metric": r.metricRef("health/tsh"), "hold": "PT0S",
+		"value": map[string]any{"value": "0.01", "unit": "m[IU]/L", "comparator": "<"},
+		"at":    "2026-09-14T08:05:00+01:00", "utcOffset": 60, "status": "final", "revision": 1,
+	})
+	if got := r.points(t, r.labresult, "medichecks/george/MC-1/tsh"); len(got) != 1 || !got[0].bounded ||
+		got[0].exact.String != "0.01" || got[0].base.Valid || got[0].offset != 60 {
+		t.Errorf("a bounded lab value derived %+v", got)
+	}
+	// A lab result with no value and no code derives nothing.
+	if _, err := r.patch(t, r.labresult, "medichecks/george/MC-1/tsh", map[string]any{
+		"value": nil, "absentReason": "not-performed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.points(t, r.labresult, "medichecks/george/MC-1/tsh"); len(got) != 0 {
+		t.Errorf("an absent result derived %+v", got)
+	}
+
+	// An amount trace spans each point to the next and the last to endsAt.
+	r.mustPut(t, r.trace, "steps/2026-10-07T06", map[string]any{
+		"metric": r.metricRef("health/steps"), "form": "amount", "unit": "{steps}",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
+		"offsets": []any{0, 600000, 2700000}, "values": []any{"412", nil, "88"},
+	})
+	steps := r.points(t, r.trace, "steps/2026-10-07T06")
+	if len(steps) != 3 || !steps[0].tsEnd.Equal(mustTime(t, "2026-10-07T06:10:00Z")) ||
+		!steps[2].tsEnd.Equal(mustTime(t, "2026-10-07T07:00:00Z")) {
+		t.Errorf("an amount trace derived %+v", steps)
+	}
+	checkRollupsMatchSpec(t, r.db)
+}
+
+// --- the rollups, held to the specification ---
+
+// specPoint reads one stored point the way the specification takes it.
+type specPoint struct {
+	hold       [6]string // metric, kind, source, about, channel, form
+	group      string
+	point      observed.Point
+	code, unit string
+	delta      bool
+	offset     int
+}
+
+func storedPoints(t *testing.T, db *sql.DB) []specPoint {
+	t.Helper()
+	rows, err := db.Query(`
+		SELECT metric, kind, source, about, channel, form, ts, ts_end, value, value_exact::text, value_base, code,
+		       unit, delta, utc_offset_min, bounded, hold_ms, reset_rule, reset_at, wrap_at::text, circular
+		FROM observed_points WHERE form <> 'summary'
+		ORDER BY metric, kind, source, about, channel, form, ts, record_id, ord`)
+	if err != nil {
+		t.Fatalf("read the points: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []specPoint
+	for rows.Next() {
+		var sp specPoint
+		var value, base sql.NullFloat64
+		var exact, resetRule, wrapAt sql.NullString
+		var hold sql.NullInt64
+		var resetAt sql.NullTime
+		var circular bool
+		p := &sp.point
+		if err := rows.Scan(&sp.hold[0], &sp.hold[1], &sp.hold[2], &sp.hold[3], &sp.hold[4], &sp.hold[5],
+			&p.At, &p.End, &value, &exact, &base, &sp.code, &sp.unit, &sp.delta, &sp.offset, &p.Bounded,
+			&hold, &resetRule, &resetAt, &wrapAt, &circular); err != nil {
+			t.Fatal(err)
+		}
+		p.Value, p.HasValue, p.Exact, p.Code, p.Unit = value.Float64, value.Valid, exact.String, sp.code, sp.unit
+		p.Unavailable = !value.Valid && sp.code == ""
+		p.Reset, p.WrapAt = resetRule.String, wrapAt.String
+		if hold.Valid {
+			d := time.Duration(hold.Int64) * time.Millisecond
+			p.Hold = &d
+		}
+		if resetAt.Valid {
+			p.ResetAt = resetAt.Time
+		}
+		if circular && value.Valid {
+			switch {
+			case sp.unit == "rad":
+				p.Circular, p.Angle = true, value.Float64
+			case base.Valid:
+				p.Circular, p.Angle = true, base.Float64*math.Pi/180
+			}
+		}
+		sp.group = fmt.Sprintf("%s|%s|%v|%d", sp.code, sp.unit, sp.delta, sp.offset)
+		p.Group = sp.group
+		out = append(out, sp)
+	}
+	return out
+}
+
+// rollupRow is one row of observed_rollups, its key spelled as a string.
+type storedRollup struct {
+	n, bounded, covered, maxGap, startGap  int64
+	sum, min, max, mean, m2, twa, sin, cos sql.NullFloat64
+	firstTS, lastTS                        sql.NullTime
+	firstValue, lastValue, increase        sql.NullString
+	held, lastHold, resets                 sql.NullInt64
+}
+
+func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
+	t.Helper()
+	rows, err := db.Query(`
+		SELECT metric, kind, source, about, channel, form, code, unit, delta, utc_offset_min, bucket15,
+		       n, bounded, sum, min, max, mean, m2, first_ts, first_value::text, last_ts, last_value::text,
+		       covered_ms, held_ms, twa_sum, last_hold_ms, max_gap_ms, start_gap_ms, increase::text, resets,
+		       sin_sum, cos_sum
+		FROM observed_rollups`)
+	if err != nil {
+		t.Fatalf("read the rollups: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]storedRollup{}
+	for rows.Next() {
+		var k [6]string
+		var code, unit string
+		var delta bool
+		var offset int
+		var bucket time.Time
+		var s storedRollup
+		if err := rows.Scan(&k[0], &k[1], &k[2], &k[3], &k[4], &k[5], &code, &unit, &delta, &offset, &bucket,
+			&s.n, &s.bounded, &s.sum, &s.min, &s.max, &s.mean, &s.m2, &s.firstTS, &s.firstValue, &s.lastTS, &s.lastValue,
+			&s.covered, &s.held, &s.twa, &s.lastHold, &s.maxGap, &s.startGap, &s.increase, &s.resets,
+			&s.sin, &s.cos); err != nil {
+			t.Fatal(err)
+		}
+		out[rollupKey(k, fmt.Sprintf("%s|%s|%v|%d", code, unit, delta, offset), bucket)] = s
+	}
+	return out
+}
+
+func rollupKey(hold [6]string, group string, bucket time.Time) string {
+	return strings.Join(hold[:], "|") + "#" + group + "#" + bucket.UTC().Format(time.RFC3339)
+}
+
+// checkRollupsMatchSpec computes every rollup row the stored points imply
+// with internal/observed and holds the table to it, column by column: the
+// same rows, no more, and every value equal.
+func checkRollupsMatchSpec(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	points := storedPoints(t, db)
+	want := map[string]*observed.Stats{}
+	for i := 0; i < len(points); {
+		j := i
+		for j < len(points) && points[j].hold == points[i].hold {
+			j++
+		}
+		stream := points[i:j]
+		var prev *observed.Point
+		for a := 0; a < len(stream); {
+			b := a
+			start := stream[a].point.At.UTC().Truncate(observed.BucketWidth)
+			for b < len(stream) && stream[b].point.At.UTC().Truncate(observed.BucketWidth).Equal(start) {
+				b++
+			}
+			list := make([]observed.Point, 0, b-a)
+			for _, sp := range stream[a:b] {
+				list = append(list, sp.point)
+			}
+			for g, s := range observed.Bucket(stream[a].hold[5], start, start.Add(observed.BucketWidth), prev, list) {
+				want[rollupKey(stream[a].hold, g, start)] = s
+			}
+			for k := b - 1; k >= a; k-- {
+				if !list[k-a].Unavailable {
+					p := list[k-a]
+					prev = &p
+					break
+				}
+			}
+			a = b
+		}
+		i = j
+	}
+	got := storedRollups(t, db)
+	if len(got) != len(want) {
+		var keys []string
+		for k := range got {
+			if want[k] == nil {
+				keys = append(keys, "extra "+k)
+			}
+		}
+		for k := range want {
+			if _, ok := got[k]; !ok {
+				keys = append(keys, "missing "+k)
+			}
+		}
+		sort.Strings(keys)
+		t.Fatalf("%d rollup rows, the points imply %d: %v", len(got), len(want), keys)
+	}
+	for k, w := range want {
+		g, ok := got[k]
+		if !ok {
+			t.Errorf("no rollup row %s", k)
+			continue
+		}
+		form := strings.Split(k, "|")[5]
+		form = strings.SplitN(form, "#", 2)[0]
+		compareRollup(t, k, form, g, w)
+	}
+	return len(want)
+}
+
+func compareRollup(t *testing.T, key, form string, g storedRollup, w *observed.Stats) {
+	t.Helper()
+	bad := func(col string, got, want any) {
+		t.Errorf("%s: %s = %v, the specification says %v", key, col, got, want)
+	}
+	if g.n != w.N {
+		bad("n", g.n, w.N)
+	}
+	if g.bounded != w.Bounded {
+		bad("bounded", g.bounded, w.Bounded)
+	}
+	if g.covered != w.CoveredMs {
+		bad("covered_ms", g.covered, w.CoveredMs)
+	}
+	if g.maxGap != w.MaxGapMs || g.startGap != w.StartGapMs {
+		bad("max_gap_ms, start_gap_ms", [2]int64{g.maxGap, g.startGap}, [2]int64{w.MaxGapMs, w.StartGapMs})
+	}
+	float := func(col string, got sql.NullFloat64, want float64, present bool) {
+		if got.Valid != present || (present && got.Float64 != want) {
+			bad(col, got, want)
+		}
+	}
+	values := w.Values > 0
+	float("sum", g.sum, w.Sum, values)
+	float("min", g.min, w.Min, values)
+	float("max", g.max, w.Max, values)
+	float("mean", g.mean, w.Mean, values)
+	float("m2", g.m2, w.M2, values)
+	float("sin_sum", g.sin, w.SinSum, w.Angles > 0)
+	float("cos_sum", g.cos, w.CosSum, w.Angles > 0)
+	if form == vocabulary.FormGauge {
+		float("twa_sum", g.twa, w.TWASum, values)
+		if !g.held.Valid || g.held.Int64 != w.HeldMs {
+			bad("held_ms", g.held, w.HeldMs)
+		}
+		if (w.LastHoldMs == nil) != !g.lastHold.Valid || (w.LastHoldMs != nil && *w.LastHoldMs != g.lastHold.Int64) {
+			bad("last_hold_ms", g.lastHold, w.LastHoldMs)
+		}
+	} else if g.held.Valid || g.twa.Valid || g.lastHold.Valid {
+		bad("held_ms, twa_sum, last_hold_ms", []any{g.held, g.twa, g.lastHold}, "null")
+	}
+	point := func(col string, ts sql.NullTime, digits sql.NullString, p *observed.Point) {
+		switch {
+		case p == nil:
+			if ts.Valid || digits.Valid {
+				bad(col, ts, "null")
+			}
+		case !ts.Valid || !ts.Time.Equal(p.At):
+			bad(col+"_ts", ts, p.At)
+		case p.HasValue != digits.Valid || (p.HasValue && !sameDecimal(digits.String, p.Exact)):
+			bad(col+"_value", digits, p.Exact)
+		}
+	}
+	point("first", g.firstTS, g.firstValue, w.First)
+	point("last", g.lastTS, g.lastValue, w.Last)
+	if form == vocabulary.FormCounter {
+		if !g.increase.Valid || !sameDecimal(g.increase.String, w.Increase.RatString()) || g.resets.Int64 != w.Resets {
+			bad("increase, resets", []any{g.increase, g.resets}, []any{w.Increase.RatString(), w.Resets})
+		}
+	} else if g.increase.Valid || g.resets.Valid {
+		bad("increase, resets", []any{g.increase, g.resets}, "null")
+	}
+}
+
+func sameDecimal(a, b string) bool {
+	x, okA := new(big.Rat).SetString(a)
+	y, okB := new(big.Rat).SetString(b)
+	return okA && okB && x.Cmp(y) == 0
+}
+
+// TestObservedRollupEqualsTheRawAggregate: the rows the fold writes are the
+// specification's over the stored points, for a gauge trace that straddles
+// bucket boundaries, an hour after a three-hour silence, a coded gauge, a
+// counter that resets twice in a bucket and an amount trace, through a
+// correction, a deletion and a rebuild.
+func TestObservedRollupEqualsTheRawAggregate(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	hr := func(id, at, ends string, offsets, values []any, rev int) {
+		r.mustPut(t, r.trace, id, map[string]any{
+			"metric": r.metricRef("health/heart_rate"), "source": r.sourceRef("garmin"), "form": "gauge",
+			"unit": "/min", "at": at, "endsAt": ends, "utcOffsetStart": 180, "utcOffsetEnd": 180,
+			"offsets": offsets, "values": values, "revision": rev,
+		})
+	}
+	// 06:00 to 07:00, points across every bucket boundary of the hour and a
+	// null in the middle; then 10:00 to 11:00, after three silent hours.
+	hr("hr/06", "2026-10-07T06:00:00Z", "2026-10-07T07:00:00Z",
+		[]any{0, 118000, 899000, 901000, 1500000, 1790000, 2700000, 3599999},
+		[]any{"58", "57", "61", "63", nil, "112", "118", "96"}, 1)
+	hr("hr/10", "2026-10-07T10:00:00Z", "2026-10-07T11:00:00Z",
+		[]any{1000, 1800000}, []any{"60", "62"}, 1)
+	// A held door, transitions in one bucket and across the next.
+	for i, c := range []struct{ at, code string }{
+		{"2026-10-07T08:01:00Z", "closed"},
+		{"2026-10-07T08:04:00Z", "open"},
+		{"2026-10-07T08:06:00Z", "closed"},
+		{"2026-10-07T08:14:00Z", "open"},
+		{"2026-10-07T08:31:00Z", "closed"},
+	} {
+		r.mustPut(t, r.observation, fmt.Sprintf("door/%d", i), map[string]any{
+			"metric": r.metricRef("air_temperature"), "about": r.sourceRef("front-door"), "form": "gauge",
+			"code": c.code, "hold": "PT1H", "at": c.at,
+		})
+	}
+	// A meter that resets twice inside one bucket, read every two minutes.
+	r.mustPut(t, r.trace, "meter/06", map[string]any{
+		"metric": r.metricRef("energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT2M",
+		"values": []any{"100.000", "100.250", "0.125", "0.500", "0.050", "0.300", "0.800", "1.100"},
+	})
+	r.mustPut(t, r.trace, "steps/06", map[string]any{
+		"metric": r.metricRef("health/steps"), "form": "amount", "unit": "{steps}",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
+		"offsets": []any{0, 600000, 2700000}, "values": []any{"412", nil, "88"},
+	})
+	// Three heart rate buckets of the first hour (06:30 holds no point) and
+	// two of the second, the door's two codes at 08:00 and one at 08:30, the
+	// meter's one bucket and the steps' two.
+	if n := checkRollupsMatchSpec(t, r.db); n != 11 {
+		t.Fatalf("the points imply %d rollup rows, want 11", n)
+	}
+
+	// Hand-checked values of one row: the 06:00 bucket of the heart rate.
+	// 58 holds to 06:01:58, 57 to 06:14:59, 61 to the end: 900000 ms held,
+	// and the largest gap is 57's 781 seconds.
+	var held, maxGap int64
+	var twa float64
+	if err := r.db.QueryRow(`SELECT held_ms, twa_sum, max_gap_ms FROM observed_rollups
+		WHERE metric = $1 AND bucket15 = '2026-10-07T06:00:00Z'`, r.metric+"/health/heart_rate").Scan(&held, &twa, &maxGap); err != nil {
+		t.Fatal(err)
+	}
+	if held != 900000 || maxGap != 781000 || twa != 58*118000+57*781000+61*1000 {
+		t.Errorf("the 06:00 bucket: held %d max_gap %d twa_sum %v", held, maxGap, twa)
+	}
+	// The meter's 06:00 bucket: 0.25, a reset to 0.125, 0.375, a reset to
+	// 0.05, then 0.25, 0.5 and 0.3: 1.85 over two resets, exact.
+	var increase string
+	var resets int
+	if err := r.db.QueryRow(`SELECT increase::text, resets FROM observed_rollups
+		WHERE metric = $1 AND bucket15 = '2026-10-07T06:00:00Z'`, r.metric+"/energy").Scan(&increase, &resets); err != nil {
+		t.Fatal(err)
+	}
+	if !sameDecimal(increase, "1.85") || resets != 2 {
+		t.Errorf("the meter's 06:00 bucket: increase %s resets %d, want 1.85 and 2", increase, resets)
+	}
+
+	// A correction, a deletion and a rebuild each leave the specification's
+	// rows.
+	hr("hr/06", "2026-10-07T06:00:00Z", "2026-10-07T07:00:00Z",
+		[]any{0, 950000}, []any{"70", "71"}, 2)
+	checkRollupsMatchSpec(t, r.db)
+	if _, err := r.ds.Delete(context.Background(), substrate.ActorAPI, r.observation, "door/2", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	checkRollupsMatchSpec(t, r.db)
+	before := observedTables(t, r.db)
+	if _, err := r.svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := observedTables(t, r.db); after != before {
+		var n []string
+		rows, _ := r.db.Query(`SELECT record_id, count(*) FROM observed_points GROUP BY 1 ORDER BY 1`)
+		for rows.Next() {
+			var id string
+			var c int
+			_ = rows.Scan(&id, &c)
+			n = append(n, fmt.Sprintf("%s=%d", id, c))
+		}
+		_ = rows.Close()
+		t.Fatalf("the rebuild did not reproduce the observed tables (after: %v)\n%s", n, firstDifference([]byte(before), []byte(after)))
+	}
+	checkRollupsMatchSpec(t, r.db)
+}
+
+// observedTables renders the three tables whole, in key order.
+func observedTables(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var b strings.Builder
+	for _, q := range []string{
+		`SELECT coalesce(jsonb_agg(to_jsonb(p) - 'repository' ORDER BY kind, record_id, ord), '[]')::text FROM observed_points p`,
+		`SELECT coalesce(jsonb_agg(to_jsonb(r) - 'repository' ORDER BY metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min), '[]')::text FROM observed_rollups r`,
+		`SELECT coalesce(jsonb_agg(to_jsonb(l) - 'repository' ORDER BY metric, kind, source, about, channel), '[]')::text FROM observed_latest l`,
+	} {
+		var doc string
+		if err := db.QueryRow(q).Scan(&doc); err != nil {
+			t.Fatalf("snapshot: %v", err)
+		}
+		b.WriteString(doc)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// latestRow is one stream's row of observed_latest.
+type latestOf struct {
+	ts       time.Time
+	value    sql.NullString
+	code     string
+	recordID string
+	revision sql.NullInt64
+	points   int64
+}
+
+func (r obsIndex) latest(t *testing.T, metric, source string) (latestOf, bool) {
+	t.Helper()
+	var l latestOf
+	err := r.db.QueryRow(`SELECT ts, value::text, code, record_id, revision, points FROM observed_latest
+		WHERE metric = $1 AND source = $2`, r.metric+"/"+metric, source).
+		Scan(&l.ts, &l.value, &l.code, &l.recordID, &l.revision, &l.points)
+	if err == sql.ErrNoRows {
+		return l, false
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l, true
+}
+
+// A rewrite with a higher revision replaces the record's points, its
+// buckets' rows and its stream's latest row in the write's transaction, and
+// a stale rewrite moves none of them.
+func TestObservedRewriteReplacesPointsRollupsAndLatest(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	trace := func(values []any, rev int) error {
+		_, err := r.put(t, r.trace, "hr/06", map[string]any{
+			"metric": r.metricRef("health/heart_rate"), "source": r.sourceRef("garmin"), "form": "gauge",
+			"unit": "/min", "at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
+			"every": "PT10M", "values": values, "revision": rev,
+		})
+		return err
+	}
+	if err := trace([]any{"58", "57", "59", "61", "60", "62"}, 1); err != nil {
+		t.Fatal(err)
+	}
+	l, ok := r.latest(t, "health/heart_rate", r.source+"/garmin")
+	if !ok || l.value.String != "62" || l.points != 6 || !l.ts.Equal(mustTime(t, "2026-10-07T06:50:00Z")) {
+		t.Fatalf("latest after the write = %+v", l)
+	}
+	if err := trace([]any{"70", "71", "72"}, 2); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.points(t, r.trace, "hr/06"); len(got) != 3 || got[2].exact.String != "72" || got[0].revision.Int64 != 2 {
+		t.Errorf("points after the rewrite = %+v", got)
+	}
+	l, _ = r.latest(t, "health/heart_rate", r.source+"/garmin")
+	if l.value.String != "72" || l.points != 3 || !l.ts.Equal(mustTime(t, "2026-10-07T06:20:00Z")) || l.revision.Int64 != 2 {
+		t.Errorf("latest after the rewrite = %+v", l)
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_rollups WHERE bucket15 >= '2026-10-07T06:30:00Z'`); n != 0 {
+		t.Errorf("%d rollup rows survive for buckets the rewrite emptied", n)
+	}
+	checkRollupsMatchSpec(t, r.db)
+	snapshot := observedTables(t, r.db)
+	err := trace([]any{"1", "2"}, 1)
+	refused(t, "a stale rewrite", err, "stale delivery")
+	if got := observedTables(t, r.db); got != snapshot {
+		t.Error("a refused rewrite moved the observed index")
+	}
+}
+
+// A tombstone removes the record's points and recomputes its buckets and its
+// stream's latest row from what remains; a put onto the tombstone restores
+// them; a purge leaves what the tombstone left.
+func TestObservedTombstoneRestoreAndPurge(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	ctx := context.Background()
+	hour := func(id, at, ends string, values []any) map[string]any {
+		return map[string]any{
+			"metric": r.metricRef("health/heart_rate"), "source": r.sourceRef("garmin"), "form": "gauge",
+			"unit": "/min", "at": at, "endsAt": ends, "every": "PT20M", "values": values,
+		}
+	}
+	six := hour("hr/06", "2026-10-07T06:00:00Z", "2026-10-07T07:00:00Z", []any{"58", "57", "59"})
+	seven := hour("hr/07", "2026-10-07T07:00:00Z", "2026-10-07T08:00:00Z", []any{"61", "60", "62"})
+	r.mustPut(t, r.trace, "hr/06", six)
+	r.mustPut(t, r.trace, "hr/07", seven)
+	whole := observedTables(t, r.db)
+	if l, _ := r.latest(t, "health/heart_rate", r.source+"/garmin"); l.recordID != "hr/07" || l.points != 6 {
+		t.Fatalf("latest = %+v", l)
+	}
+
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.trace, "hr/07", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.points(t, r.trace, "hr/07"); len(got) != 0 {
+		t.Errorf("a tombstone kept %d points", len(got))
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_rollups WHERE bucket15 >= '2026-10-07T07:00:00Z'`); n != 0 {
+		t.Errorf("%d rollup rows survive the tombstone", n)
+	}
+	if l, _ := r.latest(t, "health/heart_rate", r.source+"/garmin"); l.recordID != "hr/06" || l.value.String != "59" || l.points != 3 {
+		t.Errorf("latest after the tombstone = %+v", l)
+	}
+	checkRollupsMatchSpec(t, r.db)
+
+	r.mustPut(t, r.trace, "hr/07", seven)
+	if got := observedTables(t, r.db); got != whole {
+		t.Errorf("the restore did not bring the index back\n%s", firstDifference([]byte(whole), []byte(got)))
+	}
+
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.trace, "hr/06", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if n := r.count(t, `SELECT count(*) FROM records WHERE kind = $1 AND id = 'hr/06'`, r.trace); n != 0 {
+		t.Fatal("the purge left the row")
+	}
+	if got := r.points(t, r.trace, "hr/06"); len(got) != 0 {
+		t.Errorf("a purge kept %d points", len(got))
+	}
+	if l, _ := r.latest(t, "health/heart_rate", r.source+"/garmin"); l.recordID != "hr/07" || l.points != 3 {
+		t.Errorf("latest after the purge = %+v", l)
+	}
+	checkRollupsMatchSpec(t, r.db)
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.trace, "hr/07", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.latest(t, "health/heart_rate", r.source+"/garmin"); ok {
+		t.Error("a stream with no point kept its latest row")
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_rollups WHERE metric = $1`, r.metric+"/health/heart_rate"); n != 0 {
+		t.Errorf("%d rollup rows survive their last point", n)
+	}
+}
+
+// observed_latest breaks a tie at one instant by revision, then record id;
+// and a correction that moves the newest point to another stream recomputes
+// both streams.
+func TestObservedLatestTieBreakAndAMovedPoint(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	weigh := func(id, source, at, value string, rev int) {
+		r.mustPut(t, r.observation, id, map[string]any{
+			"metric": r.metricRef("health/body_mass"), "source": r.sourceRef(source), "form": "gauge",
+			"value": quantity(value, "kg"), "at": at, "revision": rev,
+		})
+	}
+	const at = "2026-10-07T06:00:00Z"
+	weigh("a", "scale", at, "72.0", 2)
+	weigh("b", "scale", at, "72.5", 1)
+	l, _ := r.latest(t, "health/body_mass", r.source+"/scale")
+	if l.recordID != "a" || l.points != 2 {
+		t.Errorf("the higher revision lost the tie: %+v", l)
+	}
+	weigh("c", "scale", at, "73.0", 2)
+	if l, _ = r.latest(t, "health/body_mass", r.source+"/scale"); l.recordID != "c" || l.points != 3 {
+		t.Errorf("an equal revision went to %q, want the greater record id c", l.recordID)
+	}
+
+	weigh("x", "scale", "2026-10-08T06:00:00Z", "71.0", 1)
+	if l, _ = r.latest(t, "health/body_mass", r.source+"/scale"); l.recordID != "x" {
+		t.Fatalf("the newest point is not the latest: %+v", l)
+	}
+	if _, err := r.patch(t, r.observation, "x", map[string]any{"source": r.sourceRef("other-scale")}); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ = r.latest(t, "health/body_mass", r.source+"/scale"); l.recordID != "c" || l.points != 3 {
+		t.Errorf("the old stream after the move = %+v", l)
+	}
+	if l, ok := r.latest(t, "health/body_mass", r.source+"/other-scale"); !ok || l.recordID != "x" || l.points != 1 {
+		t.Errorf("the new stream after the move = %+v", l)
+	}
+	checkRollupsMatchSpec(t, r.db)
+}
+
+// A kind that starts binding `observed` derives its existing rows' points
+// behind the apply that bound it, and one that stops drops them.
+func TestObservedIndexFollowsTheBinding(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	ctx := context.Background()
+	pkg := testdb.Repository(t) + "/readings"
+	closure := func(bound bool) []map[string]any {
+		traits := []any{"substrate.reamde.dev/core/temporal(range)"}
+		if bound {
+			traits = append(traits, "substrate.reamde.dev/core/observed(single)")
+		}
+		props := map[string]any{}
+		for name, typ := range map[string]string{
+			"channel": "string", "form": "string", "code": "string", "statistic": "string", "period": "string",
+			"hold": "duration", "resetRule": "string", "resetAt": "datetime", "delta": "bool", "circular": "bool",
+			"wrapAt": "decimal", "utcOffset": "int", "revision": "int", "value": "quantity",
+		} {
+			props[name] = map[string]any{"type": typ}
+		}
+		for _, name := range []string{"metric", "source", "about"} {
+			props[name] = map[string]any{"type": "reference", "kind": "any"}
+		}
+		return []map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "reading"},
+				map[string]any{"traits": traits, "properties": props}),
+		}
+	}
+	actor := substrate.BundleActor(vocabulary.SplitPackageRef(pkg))
+	if _, err := r.ds.ApplyVocabularyDocuments(ctx, actor, closure(false)); err != nil {
+		t.Fatalf("declare the unbound kind: %v", err)
+	}
+	r.mustPut(t, pkg+"/reading", "r1", map[string]any{
+		"metric": r.metricRef("air_temperature"), "form": "gauge", "value": quantity("21.5", "Cel"),
+		"at": "2026-10-07T06:00:00Z",
+	})
+	if got := r.points(t, pkg+"/reading", "r1"); len(got) != 0 {
+		t.Fatalf("an unbound kind derived %d points", len(got))
+	}
+	if _, err := r.ds.ApplyVocabularyDocuments(ctx, actor, closure(true)); err != nil {
+		t.Fatalf("bind the kind: %v", err)
+	}
+	engine.DrainIndexReprojection(t, r.ds)
+	if got := r.points(t, pkg+"/reading", "r1"); len(got) != 1 || got[0].exact.String != "21.5" {
+		t.Fatalf("binding the kind derived %+v", got)
+	}
+	if l, ok := r.latest(t, "air_temperature", ""); !ok || l.recordID != "r1" {
+		t.Errorf("binding the kind left no latest row: %+v", l)
+	}
+	checkRollupsMatchSpec(t, r.db)
+	if _, err := r.ds.ApplyVocabularyDocuments(ctx, actor, closure(false)); err != nil {
+		t.Fatalf("unbind the kind: %v", err)
+	}
+	engine.DrainIndexReprojection(t, r.ds)
+	if got := r.points(t, pkg+"/reading", "r1"); len(got) != 0 {
+		t.Errorf("unbinding the kind kept %d points", len(got))
+	}
+	if _, ok := r.latest(t, "air_temperature", ""); ok {
+		t.Error("unbinding the kind kept its latest row")
+	}
+	checkRollupsMatchSpec(t, r.db)
+}
+
+// A repository directory imported at boot folds its observed index the way
+// the live writes left it.
+func TestBootImportReproducesTheObservedIndex(t *testing.T) {
+	t.Parallel()
+	svc, ds, _ := newDatasetWithDSN(t)
+	writeObservedHistory(t, ds)
+	before := foldOf(t, ds)
+	if !strings.Contains(string(before), `"observed_rollups": [`) || strings.Contains(string(before), `"observed_points": []`) {
+		t.Fatal("the fold holds no observed rows; the import would prove nothing")
+	}
+	id := repositoryIDOf(t, ds)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	svc2 := mustReopen(t, engine.MigratedDSN(t), copyRepositoryDir(t, root, id))
+	ds2, err := svc2.Dataset(context.Background(), testdb.Repository(t))
+	if err != nil {
+		t.Fatalf("open the imported repository: %v", err)
+	}
+	engine.DrainIndexReprojection(t, ds2)
+	if after := foldOf(t, ds2); string(after) != string(before) {
+		t.Fatalf("the imported fold is not the original\n%s", firstDifference(before, after))
+	}
+}
+
+// --- the shared history ---
+
+// The observations sample's own kinds, as importVocabulary installs them.
+const (
+	obsSampleObservation = "samples.substrate.reamde.dev/observations/observation"
+	obsSampleTrace       = "samples.substrate.reamde.dev/observations/trace"
+	obsSampleMetric      = "samples.substrate.reamde.dev/observations/metric"
+)
+
+// writeObservedHistory imports the observations sample and writes one of
+// every observed shape the index derives, then moves them: a trace of a
+// gauge with a null and an offset change, its rewrite at a higher revision,
+// a counter trace, an amount with its category, a summary, coded gauges, a
+// tombstone, a restore and a purge. The rebuild and refold tests fold it.
+func writeObservedHistory(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	ctx := context.Background()
+	importVocabulary(t, ds, "observations")
+	ref := func(id string) map[string]any { return map[string]any{"ref": obsSampleMetric + "/" + id} }
+	put := func(kind, id string, props map[string]any) {
+		t.Helper()
+		mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: id, Properties: props})
+	}
+	temperature := func(values []any, rev int) map[string]any {
+		return map[string]any{
+			"metric": ref("air_temperature"), "form": "gauge", "unit": "Cel", "hold": "PT20M",
+			"at": "2026-10-25T00:00:00Z", "endsAt": "2026-10-25T01:00:00Z", "utcOffsetStart": 180, "utcOffsetEnd": 120,
+			"offsets": []any{0, 118000, 899000, 1500000, 3000000}, "values": values, "revision": rev,
+		}
+	}
+	put(obsSampleTrace, "sensor/kitchen/2026-10-25T00", temperature([]any{"21.5", "21.7", nil, "22.0", "22.4"}, 1))
+	put(obsSampleTrace, "sensor/kitchen/2026-10-25T00", temperature([]any{"21.5", "21.8", "21.9", nil, "22.3"}, 2))
+	put(obsSampleTrace, "meter/main/2026-10-25T00", map[string]any{
+		"metric": ref("energy"), "form": "counter", "unit": "kW.h", "resetRule": "monotonic",
+		"at": "2026-10-25T00:00:00Z", "endsAt": "2026-10-25T02:00:00Z", "every": "PT15M",
+		"values": []any{"18342.655", "18342.700", "0.010", "0.050", "0.400", "0.900", "0.020", "0.090"},
+	})
+	put(obsSampleObservation, "plug/kettle/2026-10-25", map[string]any{
+		"metric": ref("energy"), "form": "amount", "value": quantity("1.2", "kW.h"), "code": "kettle",
+		"at": "2026-10-25T07:00:00Z", "endsAt": "2026-10-25T08:00:00Z",
+	})
+	put(obsSampleObservation, "plug/daily/2026-10-25", map[string]any{
+		"metric": ref("power"), "form": "summary", "statistic": "avg", "period": "day",
+		"value": quantity("340", "W"), "at": "2026-10-25T00:00:00Z", "endsAt": "2026-10-26T00:00:00Z",
+	})
+	for i, code := range []string{"closed", "open", "closed", "open"} {
+		put(obsSampleObservation, fmt.Sprintf("door/front/%d", i), map[string]any{
+			"metric": ref("illuminance"), "channel": "contact", "form": "gauge", "code": code,
+			"at": time.Date(2026, 10, 25, 8, 3*i+1, 0, 0, time.UTC).Format(time.RFC3339),
+		})
+	}
+	if _, err := ds.Delete(ctx, owner, obsSampleObservation, "door/front/1", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := ds.Delete(ctx, owner, obsSampleObservation, "door/front/2", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	put(obsSampleObservation, "door/front/2", map[string]any{
+		"metric": ref("illuminance"), "channel": "contact", "form": "gauge", "code": "closed",
+		"at": "2026-10-25T08:07:00Z",
+	})
+	if _, err := ds.Delete(ctx, owner, obsSampleObservation, "door/front/3", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+}
