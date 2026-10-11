@@ -445,6 +445,20 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 	}
 }
 
+// Every output names the adapter version that wrote it, and an upgrade of the
+// adapter alone, replayed over mirror rows the app did not resend, rewrites
+// each output at the revision it holds (decision record 0162).
+func TestHealthAppleAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
+	ds := newHealthApple(t)
+	deliverAt(t, ds, ahRequest(t, "delivery_1_heart_rate_steps_minutes.json"), "hook-minutes", "2026-10-08T05:31:02Z")
+	deliverAt(t, ds, ahRequest(t, "delivery_2_sleep_and_workouts.json"), "hook-night", "2026-10-08T05:20:13Z")
+	before := adapterOutputs(t, ds)
+	assertAdapterStamp(t, before, "healthapple@1")
+	upgradeAdapter(t, ds, "healthapple")
+	replayAdapter(t, ds, "healthapple-on-mirror")
+	assertAdapterRewrite(t, ds, "healthapple", before)
+}
+
 // The app's day buckets are its own aggregates: summaries, never raw points,
 // so a raw read beside the minutes never counts them twice. Heart rate gives
 // avg, min and max; steps a sum; resting heart rate Apple's own daily value;

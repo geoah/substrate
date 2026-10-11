@@ -380,6 +380,22 @@ func TestHealthGoogleFitTriggerDeliversMirrorRows(t *testing.T) {
 	}
 }
 
+// TestHealthGoogleFitAdapterUpgradeRewritesUnchangedMirrors: every output
+// names the adapter version that wrote it, and an upgrade of the adapter
+// alone, replayed over mirrors Fit did not change, rewrites each output at
+// the revision it holds (decision record 0162).
+func TestHealthGoogleFitAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, _, _ := newFitHealth(t, fitCutOn, "enabledActivity", "enabledBody", "enabledSleep")
+	observeAll(t, ds)
+	before := adapterOutputs(t, ds)
+	assertAdapterStamp(t, before, "healthgooglefit@1")
+	upgradeAdapter(t, ds, "healthgooglefit")
+	replayAdapter(t, ds, "healthgooglefit-on-mirror")
+	assertAdapterRewrite(t, ds, "healthgooglefit", before)
+}
+
 // TestHealthGoogleFitKeepsAnAmountsEnd: a step delta covers
 // [startTimeNanos, endTimeNanos), and the trace keeps that end. One recorded
 // hour of the watch's deltas: a minute followed by a gap, two adjacent

@@ -132,6 +132,12 @@ data:
       description: computed from the points on every write, count, min, max,
         mean, m2, first, last and coverage
     # ---- this kind's own ----
+    # Apart from `revision` (decision record 0162): an adapter fix rewrites
+    # output whose upstream did not change, and this says which code did.
+    adapter:
+      type: string
+      description: the function and version that wrote this row from its origin,
+        `<package>@<version>`
     acquisition:
       type: reference
       kind: any

@@ -21,5 +21,14 @@ the start (`POST
 /api/v1/substrate.reamde.dev/core/trigger/healthwhoop-on-mirror/replay` with
 `{"from": 0}`).
 
+Every output carries `adapter: healthwhoop@<version>`, the `ADAPTER`
+constant at the top of the function, apart from `revision`, which is
+WHOOP's `updated_at`. A change to what a mirror row becomes raises the
+constant. After an upgrade, the same replay from 0
+(`bin/substratectl trigger replay healthwhoop-on-mirror --from 0`) delivers
+every mirror row again, and each output is rewritten under the new version at
+the revision it already holds; mirror rows WHOOP never rescores are not
+reprocessed any other way.
+
 The mapping table, what is skipped and how deletions reach the outputs:
 [docs/bundles-catalog.md#whoop-to-health-sample](../../docs/bundles-catalog.md#whoop-to-health-sample).

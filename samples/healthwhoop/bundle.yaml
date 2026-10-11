@@ -118,6 +118,12 @@ data:
     """
     import datetime as _dt
 
+    # This code's own version, stamped on every output apart from WHOOP's
+    # `revision` (decision record 0162). Raise it with any change to what a
+    # mirror row becomes, then replay `healthwhoop-on-mirror` from 0: every
+    # output is rewritten at the revision it already holds.
+    ADAPTER = "healthwhoop@1"
+
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
     SOURCE = HOME + "/observations/source"
@@ -138,12 +144,12 @@ data:
     # clears what the previous one set and the row no longer says.
     OBSERVATION_PROPS = ("metric", "source", "form", "value", "code", "statistic",
                          "period", "periodId", "at", "endsAt", "utcOffset",
-                         "origin", "revision", "quality")
-    SLEEP_PROPS = ("source", "origin", "revision", "isNap", "utcOffsetStart",
+                         "origin", "revision", "adapter", "quality")
+    SLEEP_PROPS = ("source", "origin", "revision", "adapter", "isNap", "utcOffsetStart",
                    "utcOffsetEnd", "at", "endsAt", "timeInBed", "timeAsleep",
                    "awake", "light", "deep", "rem", "efficiency",
                    "respiratoryRate", "disturbances", "scores")
-    WORKOUT_PROPS = ("sport", "sportSource", "source", "origin", "revision",
+    WORKOUT_PROPS = ("sport", "sportSource", "source", "origin", "revision", "adapter",
                      "utcOffsetStart", "utcOffsetEnd", "at", "endsAt", "duration",
                      "distance", "energy", "averageHeartRate", "maxHeartRate",
                      "elevationGain", "strain", "zoneDurations")
@@ -312,6 +318,7 @@ data:
                     self.kept += 1
                     continue
                 whole = {name: props.get(name) for name in MANAGED[kind]}
+                whole["adapter"] = ADAPTER
                 mint = {k: v for k, v in whole.items() if v is not None}
                 self.host.effects.put(kind, oid, properties=mint, if_absent=True)
                 self.host.effects.patch(kind, oid, properties=whole)

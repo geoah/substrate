@@ -369,6 +369,26 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 	}
 }
 
+// TestHealthGarminAdapterUpgradeRewritesUnchangedMirrors: every output names
+// the adapter version that wrote it, and an upgrade of the adapter alone,
+// replayed over mirrors Garmin did not change, rewrites each output at the
+// revision it holds (decision record 0162).
+func TestHealthGarminAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds := newHealthGarminDataset(t)
+	cfg := garminConfig(t, ds, "", map[string]any{"userId": garminUser})
+	for i, name := range []string{"push_dailies.json", "push_epochs.json", "push_sleeps.json", "push_activities.json"} {
+		pushGarmin(t, ds, cfg, fmt.Sprintf("webhook-%d", i), loadGarminFixture(t, name).request)
+	}
+	adaptAll(t, ds, "daily", "epoch", "sleep", "activity")
+	before := adapterOutputs(t, ds)
+	assertAdapterStamp(t, before, "healthgarmin@1")
+	upgradeAdapter(t, ds, "healthgarmin")
+	replayAdapter(t, ds, "healthgarmin-on-mirror")
+	assertAdapterRewrite(t, ds, "healthgarmin", before)
+}
+
 // garminEditedRun pushes the London run and its edit in Garmin Connect (the
 // same summaryId, the distance corrected to 5000 m), adapts both, and answers
 // the workout's id: the workout stands on the edit.

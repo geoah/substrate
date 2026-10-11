@@ -123,6 +123,12 @@ data:
     # the host's own files are readable.
     zoneinfo.reset_tzpath(to=[])
 
+    # This code's own version, stamped on every output apart from Fit's
+    # `revision` (decision record 0162). Raise it with any change to what a
+    # mirror row becomes, then replay `healthgooglefit-on-mirror` from 0:
+    # every output is rewritten at the revision it already holds.
+    ADAPTER = "healthgooglefit@1"
+
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
     TRACE = HOME + "/observations/trace"
@@ -199,15 +205,15 @@ data:
 
     KEYS = {
         OBSERVATION: ("metric", "source", "form", "value", "code", "hold", "at",
-                      "endsAt", "utcOffset", "origin", "derivedFrom", "revision",
+                      "endsAt", "utcOffset", "origin", "derivedFrom", "revision", "adapter",
                       "qualifiers", "components"),
         TRACE: ("metric", "source", "form", "unit", "hold", "at", "endsAt",
                 "utcOffsetStart", "utcOffsetEnd", "every", "offsets", "values",
-                "codes", "origins", "revision"),
-        SLEEP: ("source", "origin", "revision", "at", "endsAt", "utcOffsetStart",
+                "codes", "origins", "revision", "adapter"),
+        SLEEP: ("source", "origin", "revision", "adapter", "at", "endsAt", "utcOffsetStart",
                 "utcOffsetEnd", "timeInBed", "timeAsleep", "awake", "light", "deep",
                 "rem"),
-        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "at",
+        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "adapter", "at",
                   "endsAt", "utcOffsetStart", "utcOffsetEnd", "duration"),
     }
 
@@ -433,6 +439,7 @@ data:
             if stored is not None and (props.get("revision") or 0) < stored:
                 props["revision"] = stored
             full = {k: props.get(k) for k in KEYS[kind]}
+            full["adapter"] = ADAPTER
             host.effects.put(kind, rid, properties={k: v for k, v in full.items()
                                                     if v is not None}, if_absent=True)
             host.effects.patch(kind, rid, properties=full)

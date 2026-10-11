@@ -126,6 +126,12 @@ data:
     import re
     from decimal import Decimal
 
+    # This code's own version, stamped on every output apart from the mirror
+    # row's `revision` (decision record 0162). Raise it with any change to
+    # what a mirror row becomes, then replay `healthgarmin-on-mirror` from 0:
+    # every output is rewritten at the revision it already holds.
+    ADAPTER = "healthgarmin@1"
+
     SAMPLE = "samples.substrate.reamde.dev"
     OBSERVATION = SAMPLE + "/observations/observation"
     TRACE = SAMPLE + "/observations/trace"
@@ -885,6 +891,7 @@ data:
             old = ((stored.get(key) or {}).get("properties") or {}).get("revision")
             if isinstance(old, (int, float)) and not isinstance(old, bool) and old > (p.get("revision") or 0):
                 p["revision"] = int(old)
+            p["adapter"] = ADAPTER
             host.effects.put(key[0], key[1], properties=p)
         stale = 0
         for key in stored:

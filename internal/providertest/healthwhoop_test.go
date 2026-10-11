@@ -398,6 +398,21 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	}
 }
 
+// TestHealthWhoopAdapterUpgradeRewritesUnchangedMirrors: every output names
+// the adapter version that wrote it, and an upgrade of the adapter alone,
+// replayed over mirrors WHOOP did not change, rewrites each output at the
+// revision it holds (decision record 0162).
+func TestHealthWhoopAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+	before := adapterOutputs(t, ds)
+	assertAdapterStamp(t, before, "healthwhoop@1")
+	upgradeAdapter(t, ds, "healthwhoop")
+	replayAdapter(t, ds, healthWhoopRun)
+	assertAdapterRewrite(t, ds, "healthwhoop", before)
+}
+
 // TestHealthWhoopKeepsAnAccountIdWithSlashes: a record id may hold slashes,
 // and the adapter reads an account reference whole. The thirty days synced
 // under the account `team/watch` land under that account's ids and source,
