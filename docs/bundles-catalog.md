@@ -1,12 +1,13 @@
 # Bundles catalog
 
-The catalog in the binary serves seventeen bundles, in the two tiers
+The catalog in the binary serves eighteen bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: seven providers and ten samples. This page covers twelve of them; the
+draws: eight providers and ten samples. This page covers thirteen of them; the
 five vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
 `scheduling`) are in [built-in kinds](builtin-kinds.md).
 
-**Seven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper and Slack.
+**Eight providers**: Google, GitHub, Linear, WHOOP, Garmin, Notion, Beeper and
+Slack.
 Each is a package its publisher owns, installed under
 `providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
 provider into the repository. Three also ship one write each, a function
@@ -64,6 +65,7 @@ thing, and the Records column counts them.
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
 | WHOOP         | Provider | OAuth          | 7     | 1         | 3       | 0      |
+| Garmin        | Provider | OAuth          | 19    | 2         | 4       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
@@ -84,7 +86,7 @@ and how often, and *Create and connect* opens the provider in a new tab, where
 once you approve the account's first sync starts on its own. The current step
 is highlighted with its one action.
 
-Over the API and the CLI, Google, GitHub and WHOOP take the same four steps,
+Over the API and the CLI, Google, GitHub, WHOOP and Garmin take the same four steps,
 because the host runs the flow and the bundle only declares it
 ([bundles](bundles.md#the-oauth-facility)):
 
@@ -846,6 +848,114 @@ none of version 9's derived properties: `recovery.date`, `workout.calories` and
 trait beside its own bookkeeping: `syncPaused`, `syncState`, `syncMessage`,
 `syncProgress`, `syncError`, `syncErrorAt`, `lastSyncStartedAt`,
 `lastSyncDurationMs` and `syncStreams`.
+
+## Garmin
+
+Package `providers.substrate.reamde.dev/garmin`. An OAuth provider that
+mirrors what Garmin's Health API and Activity API push about one Garmin
+Connect user. Read only. **Not verified against Garmin**: Garmin's Connect
+Developer Program was reported closed to new partners through mid-2026
+(checked 2026-10-11), its API specifications sit behind its partner login,
+and every field below follows Garmin's OpenAPI description of the wellness
+API as republished outside Garmin. The bundle is tested against deliveries
+built from that description and a mock Garmin, never a live account; the
+bundle's [README](../kinds/providers.substrate.reamde.dev/garmin/README.md)
+lists the sources.
+
+- **Kinds (19)**: `config` (the Garmin app), `account` (the connection, the
+  Garmin user id every push is matched on, and every cursor), `notice` (a
+  disconnect or a permission change Garmin pushed), and one mirror per
+  summary type Garmin pushes: `daily`, `epoch`, `sleep`, `bodycomp`,
+  `stressdetail`, `usermetric`, `pulseox`, `respiration`, `healthsnapshot`,
+  `hrv`, `bloodpressure`, `skintemp`, `activity`, `activitydetail`,
+  `manuallyupdatedactivity` and `moveiq`.
+- **Functions (2)**: `garminpush` writes one push delivery; `garminsync` records
+  the user id and permissions and asks Garmin to backfill history.
+- **Triggers (4)**: `garmin-webhook` fires `garminpush` for each delivery
+  Garmin posts, and ships disabled; `garmin-on-connect` fires `garminsync` the
+  first time an account is connected and has no `lastSyncedAt`;
+  `garmin-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
+  disagree; `garmin-scheduled` fires it hourly for every account with backfill
+  left.
+- **Mappings**: none shipped.
+
+**Garmin pushes; the substrate does not poll.** Garmin POSTs each summary type
+to the URL its app registers for it in Garmin's Endpoint Configuration tool,
+as `{"<summary type>": [<summary>, ...]}`. Every summary type can share the
+one URL, `https://<your-substrate-host>/webhooks/<authority>/garmin-webhook/<key>`.
+Garmin signs nothing, so the trigger's key is the only credential: set
+`source.webhook.key` on `garmin-webhook` to 16 to 128 characters of
+`[A-Za-z0-9_-]` before enabling it. Where Garmin sends the
+`garmin-client-id` header, a push naming another app's client id is refused.
+
+**Each summary is matched to its account by `userId`.** `garminsync` reads the
+user id from `GET /rest/user/id` on the first sync, so a push for an account
+that has not synced yet has nothing to match. A delivery none of whose
+summaries names a known user fails with an error naming the user id, and parks
+for a retry; a delivery that mixes users writes the known ones and lists the
+rest in its output. An account carried over from Garmin's OAuth 1.0a can set
+`userAccessToken`, which older pushes carry instead of a user id.
+
+**One row per `summaryId`, rewritten whole.** A row's id is
+`<account id>/<summaryId>` (a hash when that would leave the id alphabet), and
+each summary is one put carrying every declared property, absent ones as null.
+Garmin re-sends a summary under the same id when it has more (a day filling
+in, a sleep turning from tentative to final), and the re-send replaces the row:
+what it no longer carries is cleared. Every field keeps Garmin's camelCase name
+and Garmin's units (seconds since the epoch, metres, grams, kilocalories,
+beats per minute), including the per-second sample maps, the sleep stage map
+and an activity's samples. `startTimeInSeconds`, `startTimeOffsetInSeconds`
+and `calendarDate` are kept as Garmin sends them; `at` and `endsAt` are the
+same seconds as instants (a sleep ends at its last stage; a `bodycomp` and a
+`bloodpressure` sit at `measurementTimeInSeconds`; a `usermetric` carries a date
+and no instant). A ping (`callbackURL` instead of summaries) is followed with
+the account's token, only to a URL under `apiBase`.
+
+**The toggles choose what is written and backfilled.** Each summary type has
+its own toggle on the account, on by default, and each maps in `featureScopes`
+to the Garmin permission that covers it: `HEALTH_EXPORT` for the Health API
+types, `ACTIVITY_EXPORT` for `activities`, `activityDetails` and
+`manuallyUpdatedActivities`. Garmin's consent asks for no scopes (the user
+picks what to share on Garmin's page), so `grantedScopes` records what the
+account asked for and `account.permissions` what the user granted, read from
+`GET /rest/user/permissions` and updated by each permission change Garmin
+pushes. A push for a type whose toggle is off, or for a paused account, is not
+written, and Garmin does not send it again.
+
+**Backfill asks; the data arrives by push.** `garminsync` asks for every enabled
+type except `manuallyUpdatedActivities` (Garmin offers no backfill for it), one
+24-hour window per request, the newest day first across every type, back to
+`backfillDepth`: `none`, `last7d`, `last30d` (the default) or `last90d`, counted
+from `backfillUntil`, the instant of the first sync. Garmin answers `202` and
+pushes the summaries later; it answers `409` to a window it already accepted,
+which counts as accepted too. `syncCursors` keeps, per type, the start of the
+oldest accepted window, so a run cut off by its 100-second budget, a `429` or an
+outage continues on the next hourly run, and a deeper `backfillDepth` extends
+the walk. A `429` holds the account until Garmin's `Retry-After` and reads
+`throttled`; a `4xx` on one type (a `403` for a permission the user did not
+grant) stops that type and names it in `syncMessage` while the others go on.
+Garmin is reported to backfill 30 or 90 days per request and only within about
+a month of the first connection, by sources that disagree.
+
+**The account reports both paths.** It binds core's `sync` trait. A push stamps
+`lastSyncedAt`, `lastPushAt`, `syncState: ok` and a `syncMessage` counting what
+it wrote; a backfill run stamps the same with `syncProgress` counted in summary
+types, and `lastCompletedAt` once every enabled type reached its floor with
+nothing refused. A disconnect Garmin pushes lands as a `notice`, sets
+`deregisteredAt` and reads `erroring`; the schedule passes over the account
+until a push of data, or a "sync now" that reaches Garmin, clears the mark.
+
+**What it does not do.** Garmin's disconnect is `DELETE
+/rest/user/registration` under the user's token, which the OAuth facility
+cannot send, so the bundle declares no `revocationEndpoint` and deleting the
+account here does not deregister it at Garmin: disconnect the app in Garmin
+Connect as well. No activity files (FIT), no solar intensity, blood glucose,
+menstrual cycle or pregnancy summaries, and no writeback. The webhook door
+refuses an inline body over 1 MiB (`413`), so an activity details push longer
+than about 50 minutes at one sample a second does not arrive by push until that
+cap is raised; ping mode avoids it, because a ping carries only the callback
+URL. `garminpush` writes any body the door admits over several invocations of
+one chain, and skips (and names in its output) a single summary over 6 MiB.
 
 ## Notion
 

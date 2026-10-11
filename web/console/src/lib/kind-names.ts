@@ -158,6 +158,7 @@ export const ACRONYMS: Readonly<Record<string, string>> = {
 const PROPER: Readonly<Record<string, string>> = {
   beeper: "Beeper",
   drive: "Drive",
+  garmin: "Garmin",
   github: "GitHub",
   gmail: "Gmail",
   google: "Google",

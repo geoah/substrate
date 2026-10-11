@@ -77,7 +77,8 @@ LAST PATH SEGMENT is one of these is handled before the recordings are
 consulted:
 
   * `authorize` — 302 to the request's `redirect_uri` carrying `code` and the
-    `state` unchanged. No consent page: the redirect IS the consent.
+    `state` unchanged. No consent page: the redirect IS the consent. `auth`,
+    `oauth2` and Garmin's `oauth2Confirm` are the same stub.
   * `token` / `access_token` — `{access_token, refresh_token, expires_in,
     scope, token_type}`. `grant_type=refresh_token` answers a new access
     token, which is what the facility's refresh loop expects.
@@ -513,7 +514,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(status, out, headers)
 
         last = path.rstrip("/").rsplit("/", 1)[-1].lower()
-        if last in ("authorize", "auth", "oauth2"):
+        if last in ("authorize", "auth", "oauth2", "oauth2confirm"):
             return self.oauth_authorize(query)
         if last in ("token", "access_token"):
             return self.oauth_token(body, ctype)
