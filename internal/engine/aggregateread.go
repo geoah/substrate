@@ -599,7 +599,7 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 	for gi, g := range groups {
 		seen := map[string]bool{}
 		for bi, b := range r.buckets {
-			if err := r.cancelled(bi); err != nil {
+			if err := r.canceled(bi); err != nil {
 				return nil, err
 			}
 			codes := map[string]bool{}
@@ -675,10 +675,10 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 
 // --- raw ---
 
-// cancelled answers the read's context error every few thousand steps of a
+// canceled answers the read's context error every few thousand steps of a
 // reduction: the statement timeout bounds the SQL, not the work after it, so
 // a long reduction stops when its caller does.
-func (r *aggRun) cancelled(step int) error {
+func (r *aggRun) canceled(step int) error {
 	if step&(1<<12-1) != 0 {
 		return nil
 	}
@@ -793,7 +793,7 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	out := aggCells{}
 	for _, st := range list {
 		for i := range st.points {
-			if err := r.cancelled(i); err != nil {
+			if err := r.canceled(i); err != nil {
 				return nil, err
 			}
 			ap := st.points[i]
@@ -821,7 +821,7 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			}
 		}
 		for i, sp := range st.spans {
-			if err := r.cancelled(i); err != nil {
+			if err := r.canceled(i); err != nil {
 				return nil, err
 			}
 			if !r.admits(sp.Point.Code) {
@@ -1093,12 +1093,6 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 		}
 	}
 	return out, nil
-}
-
-// identity reports whether a rollup group's unit is the read's.
-func (u *aggUnits) identity(g obsGroup) bool {
-	c, err := u.factor(g.unit, g.delta)
-	return err == nil && c.identity
 }
 
 // convertStats converts one rollup row's statistics from its own unit into
