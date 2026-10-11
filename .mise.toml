@@ -646,7 +646,7 @@ depends = ["console:install"]
 run = "node scripts/render-smoke.mjs --prepare"
 
 [tasks."console:render"]
-description = "Render the console's sign-in page and two signed-in routes in headless Chrome: console:render <base URL>"
+description = "Render the console's sign-in page and four signed-in routes in headless Chrome: console:render <base URL>"
 # Against any running substrate whose door reads no invite code and no second
 # factor: compose.yaml's defaults, and `dev`'s. It registers a new repository
 # through the form on every run, so point it at a substrate whose repositories
