@@ -87,6 +87,27 @@ var wireTypes = map[string]any{
 	// watch, so a field that moves here moves that handoff.
 	"Page":              Page{},
 	"OccurrenceProblem": OccurrenceProblem{},
+	// The aggregate read (decision 0161): the request's parts as the
+	// console builds them, and the one answer every mode returns. The
+	// reducer is a name or a one-key object, a union no struct names, so
+	// AggregateReducer is the console's type alias and not pinned here.
+	"Aggregate":         Aggregate{},
+	"AggregateMetric":   AggregateMetric{},
+	"AggregateProperty": AggregateProperty{},
+	"AggregateRange":    AggregateRange{},
+	"AggregateBucket":   AggregateBucket{},
+	"AggregateRecords":  AggregateRecords{},
+	"AggregateAround":   AggregateAround{},
+	"AggregateSources":  AggregateSources{},
+	"AggregateRolling":  AggregateRolling{},
+	"AggregateBudget":   AggregateBudget{},
+	"Downsample":        Downsample{},
+	"AggregateResult":   AggregateResult{},
+	"AggregateHead":     AggregateHead{},
+	"AggregateRow":      AggregateRow{},
+	"AggregateGroup":    AggregateGroup{},
+	"AggregateRecord":   AggregateRecord{},
+	"AggregateValue":    AggregateValue{},
 	// The operational-list envelope. Element type does not change the field
 	// names, so any instantiation pins items/cursor.
 	"OperationalList": OperationalList[TokenInfo]{},

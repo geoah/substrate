@@ -300,9 +300,13 @@ type fakeDataset struct {
 
 	// recorded inputs
 	lastQuery substrate.Query
-	lastPut   substrate.PutInput
-	lastPatch substrate.PatchInput
-	lastActor substrate.Actor
+	// lastAggregate is the last aggregate read's query; aggregateResult the
+	// canned answer it returns (fake_aggregate_test.go).
+	lastAggregate   *substrate.AggregateQuery
+	aggregateResult *substrate.AggregateResult
+	lastPut         substrate.PutInput
+	lastPatch       substrate.PatchInput
+	lastActor       substrate.Actor
 	// lastPrincipal is what the engine reads off the write's context: the
 	// token id the door resolved, never anything the caller sent.
 	lastPrincipal string
