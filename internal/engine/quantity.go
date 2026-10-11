@@ -153,11 +153,18 @@ func (ds *dataset) condQuantity(ctx context.Context, x dbx, b *builder, types []
 		}
 		groups[i].kinds = append(groups[i].kinds, d.kind)
 	}
-	stored, err := ds.storedQuantityUnits(ctx, x, b, decls, key)
-	if err != nil {
-		return err
+	// The rows' units are read, and the value's placeholder bound, only for a
+	// comparison: an `exists` alone needs neither, and a placeholder bound and
+	// never used is one Postgres cannot type.
+	var stored []string
+	var v string
+	if c.Eq != nil || c.Gt != nil || c.Gte != nil || c.Lt != nil || c.Lte != nil || len(c.In) > 0 {
+		var err error
+		if stored, err = ds.storedQuantityUnits(ctx, x, b, decls, key); err != nil {
+			return err
+		}
+		v = `(props->(` + b.arg(key) + `::text))`
 	}
-	v := `(props->(` + b.arg(key) + `::text))`
 	compare := func(op string, raw any) (string, error) {
 		var ors []string
 		for _, g := range groups {

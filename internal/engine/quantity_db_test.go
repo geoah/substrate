@@ -378,6 +378,17 @@ func TestOrderByQuantityReadsTheBase(t *testing.T) {
 	if !strings.Contains(def, "regexp_replace") || !strings.Contains(def, "CASE") {
 		t.Fatalf("the weight index is not the base-value expression: %s", def)
 	}
+	no, yes := false, true
+	if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{
+		Properties: map[string]substrate.Cond{"weight": {Exists: &no}},
+	}}); strings.Join(got, ",") != "none" {
+		t.Fatalf("exists: false = %v, want the one reading without a weight", got)
+	}
+	if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{
+		Properties: map[string]substrate.Cond{"weight": {Exists: &yes}},
+	}}); len(got) != 5 {
+		t.Fatalf("exists: true = %v, want the five weighed readings", got)
+	}
 }
 
 // A declaration may not narrow a quantity over the rows that hold it: a unit
