@@ -245,8 +245,8 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 
 	// `requires:` forces an order; a refused import is retried after the rest
 	// of the pass, so the loop needs no knowledge of the graph. A provider a
-	// sample requires (healthwhoop's WHOOP, healthgarmin's Garmin) takes the
-	// install door first, once.
+	// sample requires (healthwhoop's WHOOP, healthgarmin's Garmin,
+	// healthgooglefit's googlefit) takes the install door first, once.
 	var pending []*catalog.Bundle
 	installed := map[string]bool{}
 	for _, b := range c.Bundles() {

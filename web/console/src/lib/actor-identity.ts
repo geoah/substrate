@@ -28,6 +28,7 @@ const BRANDS: Record<string, { name?: string; color: string }> = {
   whoop: { color: "#1CB5AC" },
   applehealth: { color: "#FF2D55" },
   garmin: { color: "#007CC3" },
+  googlefit: { color: "#EA4335" },
 }
 
 function capitalise(text: string): string {

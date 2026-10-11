@@ -170,6 +170,7 @@ const PROPER: Readonly<Record<string, string>> = {
   github: "GitHub",
   gmail: "Gmail",
   google: "Google",
+  googlefit: "Google Fit",
   linear: "Linear",
   notion: "Notion",
   slack: "Slack",

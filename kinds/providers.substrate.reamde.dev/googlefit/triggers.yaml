@@ -1,0 +1,77 @@
+# The Google Fit bundle's delivery wiring: three ordinary trigger records that
+# fire the one sync function.
+#
+#   account(connected, any toggle on, never synced)  first sync
+#   account(syncRequestedAt != syncRequestedAck)     sync now
+#   every 15 minutes                                 every due account
+#
+# The first-sync guard drops the moment the sync stamps lastSyncedAt, so the
+# sync's own stamp cannot fire it again.
+#
+# Every optional property is read through the `in` idiom: a freshly created
+# account has no tokenStatus and no toggles, and CEL indexing an absent key
+# throws, which would park the delivery instead of skipping it.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: googlefit-on-connect
+data:
+  properties:
+    enabled: true
+    label: Google Fit first sync
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/googlefit/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && !("lastSyncedAt" in record.properties) && (("enabledActivity"
+          in record.properties && record.properties.enabledActivity == true)
+          || ("enabledBody" in record.properties && record.properties.enabledBody
+          == true) || ("enabledHeartRate" in record.properties && record.properties.enabledHeartRate
+          == true) || ("enabledSleep" in record.properties && record.properties.enabledSleep
+          == true) || ("enabledOxygenSaturation" in record.properties && record.properties.enabledOxygenSaturation
+          == true) || ("enabledBloodPressure" in record.properties && record.properties.enabledBloodPressure
+          == true) || ("enabledBloodGlucose" in record.properties && record.properties.enabledBloodGlucose
+          == true))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/googlefit/googlefitsync
+---
+# "Sync now", as a generation: the owner stamps `syncRequestedAt`, the sync
+# echoes the value it acted on into `syncRequestedAck`, and this fires exactly
+# while the two disagree. Both sides are stringified, because one is
+# owner-written and the other connector-written.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: googlefit-on-request
+data:
+  properties:
+    enabled: true
+    label: Google Fit sync now
+    source:
+      record:
+        kinds: [providers.substrate.reamde.dev/googlefit/account]
+        ops: [create, update]
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "syncRequestedAt" in record.properties && (!("syncRequestedAck"
+          in record.properties) || string(record.properties.syncRequestedAck)
+          != string(record.properties.syncRequestedAt))
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/googlefit/googlefitsync
+---
+# Fifteen minutes, not an hour: an account with an unfinished walk is due on
+# every tick, and each tick is bounded by the two-minute drain budget, so the
+# tick rate is the backfill rate. An account with nothing left over syncs at
+# its own syncFrequency.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: googlefit-scheduled
+data:
+  properties:
+    enabled: true
+    label: Google Fit scheduled sync
+    source:
+      schedule:
+        recurrence: FREQ=MINUTELY;INTERVAL=15
+        timezone: Europe/London
+        # A fixed past anchor, so every occurrence since is well-defined.
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/googlefit/googlefitsync

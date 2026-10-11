@@ -50,7 +50,12 @@ Three tries, in order, and the first file that exists wins:
      the server logs `~fallback` so nobody mistakes it for a real recording;
   3. the name with no query slug at all.
 
-A miss is `404` with a JSON body naming all three files it looked for, so the
+A provider whose time window is a PATH segment (PATH_RELAXATIONS: Google Fit
+reads `.../datasets/<startNs>-<endNs>`) then gets the same tries again over
+the path with that segment dropped, logged `~path`, `~path+fallback` and so
+on.
+
+A miss is `404` with a JSON body naming every file it looked for, so the
 provider agent sees exactly what to record and under what name.
 
 THE RECORDING
@@ -198,6 +203,17 @@ PAGINATION_PARAMS = {
     "maxResults", "max_results", "limit", "count", "oldest", "latest",
     "inclusive", "syncToken", "sync_token", "startIndex", "pageSize",
 }
+# RELAXABLE WINDOWS INSIDE A PATH. Google Fit names a dataset's time range in
+# the path (`/datasets/1791331200000000000-1791417600000000000`) and the sync
+# derives it from the clock, so no exact name could answer a later run. The
+# window segment is dropped from the path slug and the lookup tried again once
+# every candidate for the exact path missed: one recording then answers every
+# day, and the sync keeps the points that fall in the day it asked for.
+#
+#   {provider: [(regex over the path slug, replacement)]}
+PATH_RELAXATIONS: dict[str, list[tuple[re.Pattern, str]]] = {
+    "googlefit": [(re.compile(r"_datasets_\d+-\d+$"), "_datasets")],
+}
 SLUG_MAX = 80
 
 
@@ -274,30 +290,58 @@ def relax(pairs: list[tuple[str, str]], provider: str = "") -> list[tuple[str, s
              if k in rules else v) for k, v in pairs]
 
 
-def candidate_names(method: str, path: str, query=None,
-                    body: bytes | str | None = None,
-                    content_type: str = "", provider: str = "") -> list[str]:
-    """The names the lookup tries, in order, deduplicated."""
+def relax_path(slug: str, provider: str = "") -> str:
+    """Drop every relaxable window segment from a path slug. See
+    PATH_RELAXATIONS."""
+    for rx, repl in PATH_RELAXATIONS.get(provider, []):
+        slug = rx.sub(repl, slug)
+    return slug
+
+
+MATCH_WORDS = ["exact", "~relaxed", "~fallback", "~relaxed+fallback", "~no-query"]
+
+
+def candidate_matches(method: str, path: str, query=None,
+                      body: bytes | str | None = None,
+                      content_type: str = "",
+                      provider: str = "") -> list[tuple[str, str]]:
+    """The names the lookup tries, in order, deduplicated, each with the word
+    the request log records when it is the one that answers."""
     bp = body_pairs(body, content_type)
     qp = _pairs(query)
-    p = path_slug(path)
     thin = lambda pairs: [(k, v) for k, v in pairs if k not in PAGINATION_PARAMS]
-    names = [
+    slugs = [
         query_slug(qp, bp),                                   # exact
         query_slug(relax(qp, provider), relax(bp, provider)),  # window relaxed
         query_slug(thin(qp), thin(bp)),                       # page relaxed
         query_slug(thin(relax(qp, provider)), thin(relax(bp, provider))),
+        "",                                                   # no query
     ]
-    out = []
-    for slug in names + [""]:
-        n = "%s_%s__%s.json" % (method.upper(), p, slug) if slug \
-            else "%s_%s.json" % (method.upper(), p)
-        if n not in out:
-            out.append(n)
+    p = path_slug(path)
+    paths = [(p, "")]
+    relaxed = relax_path(p, provider)
+    if relaxed != p:
+        paths.append((relaxed, "~path"))
+    out, seen = [], set()
+    for ps, prefix in paths:
+        for slug, word in zip(slugs, MATCH_WORDS):
+            n = "%s_%s__%s.json" % (method.upper(), ps, slug) if slug \
+                else "%s_%s.json" % (method.upper(), ps)
+            if n in seen:
+                continue
+            seen.add(n)
+            if prefix:
+                word = prefix if word == "exact" else prefix + "+" + word.lstrip("~")
+            out.append((n, word))
     return out
 
 
-MATCH_WORDS = ["exact", "~relaxed", "~fallback", "~relaxed+fallback", "~no-query"]
+def candidate_names(method: str, path: str, query=None,
+                    body: bytes | str | None = None,
+                    content_type: str = "", provider: str = "") -> list[str]:
+    """The names the lookup tries, in order, deduplicated."""
+    return [n for n, _ in candidate_matches(method, path, query, body,
+                                            content_type, provider)]
 
 
 # ------------------------------------------------------------------ the server
@@ -522,14 +566,14 @@ class Handler(BaseHTTPRequestHandler):
             self.note("oauth", "revoke", 200)
             return self.respond(200, {})
 
-        names = candidate_names(self.command, path, query, body, ctype,
-                                self.mock.provider)
-        for i, name in enumerate(names):
+        matches = candidate_matches(self.command, path, query, body, ctype,
+                                    self.mock.provider)
+        names = [n for n, _ in matches]
+        for name, verdict in matches:
             doc = self.mock.read(name)
             if doc is None:
                 continue
             status, headers, out = self.mock.resolve(doc, name)
-            verdict = MATCH_WORDS[i] if i < len(MATCH_WORDS) else "~fallback"
             with self.mock.lock:
                 self.mock.requests.append({
                     "method": self.command, "path": path, "query": query,

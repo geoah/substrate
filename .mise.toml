@@ -151,7 +151,7 @@ description = "Every database package but the engine and the provider suite: cat
 run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
 
 [tasks."test:db:providers"]
-description = "The provider suite: eight of the nine closures synced end to end against a substrated the test starts, over recorded upstreams; Apple Health, a webhook receiver, is in providertest"
+description = "The provider suite: nine of the ten closures synced end to end against a substrated the test starts, over recorded upstreams; Apple Health, a webhook receiver, is in providertest"
 # Its own task and its own CI job (`providers e2e`), not a line in
 # test:db:rest: one run is three to five minutes on a laptop (the eight cases
 # run side by side, so the slowest one is the wall time) and longer on a
