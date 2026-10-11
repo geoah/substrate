@@ -707,6 +707,33 @@ func TestQuantityFilterRefusesUnboundedUnitSpellings(t *testing.T) {
 	}
 }
 
+// The read of the rows' units carries the rest of the request's filter: 257
+// spellings on rows the filter leaves out do not count against the bound, for
+// a filter on the quantity (whose condition sorts before the one that
+// narrows) and for an order by it alike.
+func TestQuantityUnitsReadUnderTheWholeFilter(t *testing.T) {
+	t.Parallel()
+	rows := map[string]map[string]any{
+		"a": {"height": qv("1", "m")},
+		"b": {"height": qv("2000", "mm")},
+	}
+	for i := range maxQuantityUnits + 1 {
+		rows[fmt.Sprintf("noise%03d", i)] = map[string]any{"height": qv("1", fmt.Sprintf("%d.m", i+2))}
+	}
+	ds := installReadings(t, rows)
+	narrow := map[string]substrate.Cond{"name": {In: []any{"a", "b"}}}
+	filtered := map[string]substrate.Cond{"name": narrow["name"], "height": {Lt: qv("3", "m")}}
+	if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{Properties: filtered}}); strings.Join(got, ",") != "a,b" {
+		t.Errorf("height below 3 m among a and b = %v, want a,b", got)
+	}
+	if got := readingNames(t, ds, substrate.Query{
+		Filter:  substrate.Filter{Properties: narrow},
+		OrderBy: []substrate.Order{{Property: "height", Desc: true}},
+	}); strings.Join(got, ",") != "b,a" {
+		t.Errorf("a and b by height, tallest first = %v, want b,a", got)
+	}
+}
+
 // A unit the grammar refuses is a validation error on every engine door, the
 // write and the vocabulary apply, and never a panic: each case is a code the
 // parser once crashed or misread on.

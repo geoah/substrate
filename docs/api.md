@@ -550,9 +550,12 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   read to find them. Otherwise the grammar admits codes no list names
   (`Mg`, `kg/h`), so each request first reads the distinct units of the
   filtered kinds' rows (the live ones, or the tombstones under
-  `"deleted": true`): one pass over those rows whatever `first`, the time
-  range or the other predicates say, and a refusal past 256 distinct
-  spellings. Declaring `units:` removes that read. A value stored with a
+  `"deleted": true`): one pass over the rows the rest of the filter selects
+  (its time range and every other condition; the quantity comparisons are
+  built last, so each narrows by everything else), whatever `first` says,
+  and a refusal past 256 distinct spellings among them. An order by the
+  quantity reads the same way, under the whole filter. Declaring `units:`
+  removes that read. A value stored with a
   comparator (`<0.5`) matches only where the comparison holds for its whole
   half-line, and `in` is refused on a property that declares `comparator:
   true` ([the table](data-model.md#property-types)). `match` is the one operator that reads words
