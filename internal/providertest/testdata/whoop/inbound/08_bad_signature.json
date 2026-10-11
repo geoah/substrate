@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json; charset=utf-8",
+   "content-length": "138",
+   "x-whoop-signature": "N/E8BM3SWHFuVAZoz4JHnhNpRQ4MRTm5qPWr4WLzTCw=",
+   "x-whoop-signature-timestamp": "1791645720000"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"user_id\":4021873,\"id\":\"9e266b74-7d93-47c3-acc1-1466371e40bf\",\"type\":\"workout.updated\",\"trace_id\":\"f354230d-775c-4cba-b180-131f263ef4fc\"}"
+  }
+ },
+ "_fixture": "signed with the wrong secret; the function must refuse it"
+}

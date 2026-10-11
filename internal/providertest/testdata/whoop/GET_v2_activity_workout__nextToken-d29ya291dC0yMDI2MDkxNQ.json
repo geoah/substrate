@@ -1,0 +1,232 @@
+{
+ "__responses": [
+  {
+   "records": [
+    {
+     "id": "0bd313ac-f8cc-4cbe-84ab-140e4144498c",
+     "user_id": 4021873,
+     "created_at": "2026-09-14T16:50:28.766Z",
+     "updated_at": "2026-09-14T16:59:28.770Z",
+     "start": "2026-09-14T15:32:19.616Z",
+     "end": "2026-09-14T16:21:28.533Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "weightlifting",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 5.5351,
+      "average_heart_rate": 107,
+      "max_heart_rate": 138,
+      "kilojoule": 1372.74736,
+      "percent_recorded": 93.0,
+      "zone_durations": {
+       "zone_zero_milli": 822771,
+       "zone_one_milli": 1151879,
+       "zone_two_milli": 603366,
+       "zone_three_milli": 164554,
+       "zone_four_milli": 0,
+       "zone_five_milli": 0
+      }
+     }
+    },
+    {
+     "id": "ccd94484-a53d-4622-8c94-1d4262e03dd6",
+     "user_id": 4021873,
+     "created_at": "2026-09-13T08:16:29.588Z",
+     "updated_at": "2026-09-13T08:50:29.628Z",
+     "start": "2026-09-13T06:03:39.490Z",
+     "end": "2026-09-13T08:11:29.553Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "cycling",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 11.7615,
+      "average_heart_rate": 137,
+      "max_heart_rate": 160,
+      "kilojoule": 5575.07073,
+      "percent_recorded": 93.0,
+      "zone_durations": {
+       "zone_zero_milli": 427986,
+       "zone_one_milli": 855972,
+       "zone_two_milli": 1711944,
+       "zone_three_milli": 2353923,
+       "zone_four_milli": 1426620,
+       "zone_five_milli": 356655
+      },
+      "distance_meter": 46570.74564757,
+      "altitude_gain_meter": 335.7520647,
+      "altitude_change_meter": -2.4488478
+     }
+    },
+    {
+     "id": "86806efb-cbe4-480e-9371-a2738bcd0aac",
+     "user_id": 4021873,
+     "created_at": "2026-09-12T05:02:49.840Z",
+     "updated_at": "2026-09-12T05:40:49.969Z",
+     "start": "2026-09-12T04:08:37.100Z",
+     "end": "2026-09-12T04:49:49.833Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "running",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 9.7731,
+      "average_heart_rate": 148,
+      "max_heart_rate": 182,
+      "kilojoule": 1983.76994,
+      "percent_recorded": 97.0,
+      "zone_durations": {
+       "zone_zero_milli": 143870,
+       "zone_one_milli": 287740,
+       "zone_two_milli": 575483,
+       "zone_three_milli": 791287,
+       "zone_four_milli": 479568,
+       "zone_five_milli": 119892
+      },
+      "distance_meter": 7737.21668007,
+      "altitude_gain_meter": 20.9920364,
+      "altitude_change_meter": 2.5353685
+     }
+    },
+    {
+     "id": "0c59237f-97d1-4506-a20f-141a9bc95a25",
+     "user_id": 4021873,
+     "created_at": "2026-09-11T17:49:30.953Z",
+     "updated_at": "2026-09-11T18:29:30.334Z",
+     "start": "2026-09-11T16:05:55.773Z",
+     "end": "2026-09-11T17:35:30.260Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "padel",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 13.2085,
+      "average_heart_rate": 144,
+      "max_heart_rate": 163,
+      "kilojoule": 3174.76823,
+      "percent_recorded": 97.0,
+      "zone_durations": {
+       "zone_zero_milli": 782062,
+       "zone_one_milli": 1564125,
+       "zone_two_milli": 1564126,
+       "zone_three_milli": 938475,
+       "zone_four_milli": 364962,
+       "zone_five_milli": 0
+      }
+     }
+    }
+   ]
+  },
+  {
+   "records": [
+    {
+     "id": "0bd313ac-f8cc-4cbe-84ab-140e4144498c",
+     "user_id": 4021873,
+     "created_at": "2026-09-14T16:50:28.766Z",
+     "updated_at": "2026-09-14T16:59:28.770Z",
+     "start": "2026-09-14T15:32:19.616Z",
+     "end": "2026-09-14T16:21:28.533Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "weightlifting",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 5.5351,
+      "average_heart_rate": 107,
+      "max_heart_rate": 138,
+      "kilojoule": 1372.74736,
+      "percent_recorded": 93.0,
+      "zone_durations": {
+       "zone_zero_milli": 822771,
+       "zone_one_milli": 1151879,
+       "zone_two_milli": 603366,
+       "zone_three_milli": 164554,
+       "zone_four_milli": 0,
+       "zone_five_milli": 0
+      }
+     }
+    },
+    {
+     "id": "ccd94484-a53d-4622-8c94-1d4262e03dd6",
+     "user_id": 4021873,
+     "created_at": "2026-09-13T08:16:29.588Z",
+     "updated_at": "2026-09-13T08:50:29.628Z",
+     "start": "2026-09-13T06:03:39.490Z",
+     "end": "2026-09-13T08:11:29.553Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "cycling",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 11.7615,
+      "average_heart_rate": 137,
+      "max_heart_rate": 160,
+      "kilojoule": 5575.07073,
+      "percent_recorded": 93.0,
+      "zone_durations": {
+       "zone_zero_milli": 427986,
+       "zone_one_milli": 855972,
+       "zone_two_milli": 1711944,
+       "zone_three_milli": 2353923,
+       "zone_four_milli": 1426620,
+       "zone_five_milli": 356655
+      },
+      "distance_meter": 46570.74564757,
+      "altitude_gain_meter": 335.7520647,
+      "altitude_change_meter": -2.4488478
+     }
+    },
+    {
+     "id": "86806efb-cbe4-480e-9371-a2738bcd0aac",
+     "user_id": 4021873,
+     "created_at": "2026-09-12T05:02:49.840Z",
+     "updated_at": "2026-09-12T05:40:49.969Z",
+     "start": "2026-09-12T04:08:37.100Z",
+     "end": "2026-09-12T04:49:49.833Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "running",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 9.7731,
+      "average_heart_rate": 148,
+      "max_heart_rate": 182,
+      "kilojoule": 1983.76994,
+      "percent_recorded": 97.0,
+      "zone_durations": {
+       "zone_zero_milli": 143870,
+       "zone_one_milli": 287740,
+       "zone_two_milli": 575483,
+       "zone_three_milli": 791287,
+       "zone_four_milli": 479568,
+       "zone_five_milli": 119892
+      },
+      "distance_meter": 7737.21668007,
+      "altitude_gain_meter": 20.9920364,
+      "altitude_change_meter": 2.5353685
+     }
+    },
+    {
+     "id": "0c59237f-97d1-4506-a20f-141a9bc95a25",
+     "user_id": 4021873,
+     "created_at": "2026-09-11T17:49:30.953Z",
+     "updated_at": "2026-09-11T18:29:30.334Z",
+     "start": "2026-09-11T16:05:55.773Z",
+     "end": "2026-09-11T17:35:30.260Z",
+     "timezone_offset": "+03:00",
+     "sport_name": "padel",
+     "score_state": "SCORED",
+     "score": {
+      "strain": 13.2085,
+      "average_heart_rate": 144,
+      "max_heart_rate": 163,
+      "kilojoule": 3174.76823,
+      "percent_recorded": 97.0,
+      "zone_durations": {
+       "zone_zero_milli": 782062,
+       "zone_one_milli": 1564125,
+       "zone_two_milli": 1564126,
+       "zone_three_milli": 938475,
+       "zone_four_milli": 364962,
+       "zone_five_milli": 0
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

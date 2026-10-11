@@ -63,7 +63,7 @@ thing, and the Records column counts them.
 | Google        | Provider | OAuth          | 14    | 4         | 12      | 0      |
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
-| WHOOP         | Provider | OAuth          | 7     | 1         | 3       | 0      |
+| WHOOP         | Provider | OAuth          | 7     | 2         | 5       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
@@ -735,17 +735,24 @@ account's enabled toggles derive: `read:cycles` for `enabledCycles`,
   `cycle` (the wake-to-wake day WHOOP scores strain over), `recovery` (the
   verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
   with `nap`) and `workout` (a recorded activity).
-- **Functions (1)**: `whoopsync` reads the member's profile and body
+- **Functions (2)**: `whoopsync` reads the member's profile and body
   measurement, then walks `/v2/cycle`, `/v2/recovery`, `/v2/activity/sleep`
   and `/v2/activity/workout` in that order (cycles first, because a recovery
   and a sleep reference a cycle). One invocation asks for one page of 25
   records and hands its checkpoint back; a page that drains its collection
   lets the same invocation start the next while its 40-second budget lasts.
-- **Triggers (3)**: `whoop-on-connect` fires `whoopsync` the first time an
+  `whoopwebhook` takes one webhook WHOOP posts and rewrites or deletes the one
+  mirror row it names.
+- **Triggers (4)**: `whoop-on-connect` fires `whoopsync` the first time an
   account is connected, has a toggle on and has no `lastSyncedAt`;
   `whoop-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
   disagree; `whoop-scheduled` fires it hourly, and the body syncs the
-  accounts due by their own `syncFrequency`.
+  accounts due by their own `syncFrequency`. `whoop-webhook` is the webhook
+  endpoint and fires `whoopwebhook`.
+- **Settings (1)**: a `secret` at
+  `providers.substrate.reamde.dev/whoop/webhooksecret`, shipped empty and not
+  required, read as `config.settings.webhooksecret`
+  ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
 - **Mappings**: none shipped. The mirrors describe one member: `user` is that
   member's row, keyed on WHOOP's `user_id`, and `account.user` points at it.
   The `people` sample ships `googlecontactperson`, `googleaddressperson`,
@@ -821,6 +828,52 @@ retired v1 integer beside it as `v1Id`; `cycle.cycleId` and `user.userId` are
 integers; a v2 recovery has no id of its own, so its row is keyed on the cycle
 it scores. The references are `recovery.cycle`, `recovery.sleep`,
 `sleep.cycle`, and `user` and `account` on every mirror.
+
+**Revisions and deletions.** WHOOP's `updated_at` is the only revision an
+object has: the sync and the webhook never write a payload whose `updated_at`
+is older than the stored row's `updatedAt`, and a payload equal to the stored
+row changes nothing, so re-reading a page is silent and a rescored cycle is
+rewritten. A deleted object just stops appearing in its collection. When a
+collection that already has a cursor drains, `whoopsync` reads back by id
+each row the mirror holds in that run's window (the 48 hours before the
+cursor, and later) that the walk did not see, at most 25 per collection: a
+`404` deletes the row, and any other answer keeps it. A first sync reads
+nothing back, and a deletion older than the window reaches the mirror only
+through the webhook.
+
+**Webhooks.** WHOOP posts `{user_id, id, type, trace_id}` to one URL per WHOOP
+app when a sleep, a recovery or a workout is written or deleted; it sends no
+event for a cycle or the member. To receive them:
+
+1. Paste the WHOOP app's client secret into the `webhooksecret` secret, on
+   the console's Settings page or with
+   `PATCH /api/v1/substrate.reamde.dev/core/secret/providers.substrate.reamde.dev%2Fwhoop%2Fwebhooksecret`
+   and the body `{"properties": {"value": "<client secret>"}}`. It is the same
+   value as the `config` record's client secret, which no function body can
+   read.
+2. In WHOOP's developer dashboard, set the app's webhook URL to
+   `https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` with
+   model version v2. `substratectl trigger status` prints the path in its
+   `WEBHOOK` column. The trigger is open as shipped; setting
+   `source.webhook.key` on it and appending the key to the URL as its last
+   path segment turns away, at the door, any post that lacks the key.
+
+`whoopwebhook` checks `X-WHOOP-Signature`, which is
+base64(HMAC-SHA256(client secret, `X-WHOOP-Signature-Timestamp` + raw body)),
+and refuses a delivery whose signature does not match, whose timestamp is more
+than five minutes from when the door accepted it, or that arrives while the
+secret is empty: the delivery parks with the reason. A verified event is
+matched to the account whose `account.user` is the member row for its
+`user_id`, which the first sync writes. `sleep.updated` and `workout.updated`
+read the object by id and rewrite its row; a create arrives as `.updated`.
+`recovery.updated` carries the sleep's id, so the body reads that sleep for
+its `cycle_id` and then `GET /v2/cycle/{cycle_id}/recovery`. A `404` on any
+of those reads deletes the row. `sleep.deleted` and `workout.deleted` delete
+the row the id names, and `recovery.deleted` deletes the recovery whose
+`sleep` reference is the named sleep. A paused account drops every event. A
+toggle that is off, a missing token, a `retryNotBefore` still in the future or
+a `429` drops an update and leaves it to the next sync's window; a deletion
+needs no read and is applied whatever the toggles say.
 
 **What it does not do.** No writeback, and no mirror carries a `json` blob, a
 sync cursor or a page token. There is no `sport` kind: `workout.sportName` is
