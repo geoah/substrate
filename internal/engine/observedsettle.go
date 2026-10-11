@@ -351,7 +351,7 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 			p := sp.point
 			prevs[start.UnixMilli()] = &p
 		}
-		if err := rows.Close(); err != nil {
+		if err := finishRows(rows); err != nil {
 			return nil, err
 		}
 	}
@@ -389,7 +389,7 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 		read[ms]++
 		last[ms] = key
 	}
-	if err := rows.Close(); err != nil {
+	if err := finishRows(rows); err != nil {
 		return nil, err
 	}
 	var out []rollupRow
@@ -442,7 +442,19 @@ func (t *txn) readPointsAfter(h obsHold, after *pointKey, before *time.Time, pag
 		*after = key
 		n++
 	}
-	return n, rows.Close()
+	return n, finishRows(rows)
+}
+
+// finishRows ends an iteration: the error that stopped Next, or else the one
+// Close reports. database/sql closes the rows itself when Next fails, so the
+// Close after a failed iteration answers nil, and only Err says the rows ran
+// short; a read that took Close's nil would accept what it had as complete.
+func finishRows(rows *sql.Rows) error {
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	return rows.Close()
 }
 
 // insertRollups writes one stream's computed rows, in batches.
@@ -578,7 +590,7 @@ func (t *txn) recomputeLatest(touched map[obsStream]int64) error {
 		}
 		found[i-1] = l
 	}
-	if err := rows.Close(); err != nil {
+	if err := finishRows(rows); err != nil {
 		return err
 	}
 	var keep []latestRow
@@ -712,7 +724,7 @@ func (t *txn) rederiveObservedAll() error {
 		}
 		holds = append(holds, h)
 	}
-	if err := rows.Close(); err != nil {
+	if err := finishRows(rows); err != nil {
 		return err
 	}
 	sort.Slice(holds, func(i, j int) bool { return holdLess(holds[i], holds[j]) })

@@ -381,8 +381,8 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 		}
 		ser.segs[i-1].points = append(ser.segs[i-1].points, ap)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
+	if err := finishRows(rows); err != nil {
+		return nil, fmt.Errorf("substrate/engine: aggregate points: %w", err)
 	}
 	for _, x := range []struct {
 		filter string
@@ -413,8 +413,8 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 			}
 			x.dst(&ser.segs[i-1], &ap)
 		}
-		if err := rows.Close(); err != nil {
-			return nil, err
+		if err := finishRows(rows); err != nil {
+			return nil, fmt.Errorf("substrate/engine: aggregate carry: %w", err)
 		}
 	}
 	return ser, nil
