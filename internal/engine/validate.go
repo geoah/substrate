@@ -474,6 +474,8 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 		return coerceDecimal(p, v)
 	case vocabulary.DatatypeMoney:
 		return coerceMoney(p, v)
+	case vocabulary.DatatypeQuantity:
+		return coerceQuantity(p, v)
 	case vocabulary.DatatypeFloat:
 		f, err := asFloat(v)
 		if err != nil {
@@ -636,12 +638,6 @@ func intFromFloat(f float64) (int64, error) {
 	return int64(f), nil
 }
 
-var reDecimal = regexp.MustCompile(`^[+-]?[0-9]+(\.[0-9]+)?$`)
-
-// reDecimalExponent spots scientific notation, so its refusal can say what to
-// write instead of the generic grammar line.
-var reDecimalExponent = regexp.MustCompile(`^[+-]?[0-9]*\.?[0-9]+[eE][+-]?[0-9]+$`)
-
 // coerceDecimal admits an exact decimal: a STRING of digits, refused as a bare
 // JSON number because a number rides float64 through every door and may
 // arrive already rounded, which is the whole reason the datatype exists. The
@@ -706,34 +702,9 @@ func boundRat(digits string) *big.Rat {
 	return r
 }
 
-// canonicalDecimal holds one authored decimal to the grammar (an optional
-// sign, digits, an optional fraction, and nothing else) and answers the
-// canonical spelling. No exponent: the datatype is the exact digits, and
-// "1.999e1" admits a second spelling for every value.
-func canonicalDecimal(s string) (string, error) {
-	if !reDecimal.MatchString(s) {
-		if reDecimalExponent.MatchString(s) {
-			return "", fmt.Errorf("a decimal writes its digits out, without an exponent")
-		}
-		return "", fmt.Errorf(`expected a decimal ("19.99"): an optional sign, digits, an optional fraction`)
-	}
-	neg := strings.HasPrefix(s, "-")
-	s = strings.TrimLeft(s, "+-")
-	intPart, frac, _ := strings.Cut(s, ".")
-	intPart = strings.TrimLeft(intPart, "0")
-	if intPart == "" {
-		intPart = "0"
-	}
-	out := intPart
-	if frac != "" {
-		out += "." + frac
-	}
-	// "-0.00" is zero: the sign drops so equal values store one spelling.
-	if neg && strings.Trim(out, "0.") != "" {
-		out = "-" + out
-	}
-	return out, nil
-}
+// canonicalDecimal is the decimal grammar's one spelling, which quantity
+// values share (vocabulary.CanonicalDecimal).
+func canonicalDecimal(s string) (string, error) { return vocabulary.CanonicalDecimal(s) }
 
 // coerceMoney admits one money value: exactly the two members, the amount an
 // integer count of minor units and the currency a code whose minor unit the
@@ -919,6 +890,10 @@ func (r *titleResolver) Prop(name string) string {
 		// A money value is an object, which scalarString renders as nothing.
 		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeMoney && !p.Repeated && !p.Keyed {
 			return vocabulary.FormatMoney(v)
+		}
+		// So is a quantity: it titles itself "72.5 kg".
+		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeQuantity && !p.Repeated && !p.Keyed {
+			return vocabulary.FormatQuantity(v)
 		}
 		return scalarString(v)
 	}
@@ -1128,6 +1103,12 @@ func (r *titleResolver) First(name, field string) string {
 			}
 			continue
 		}
+		if field == "" && p.Datatype == vocabulary.DatatypeQuantity {
+			if s := vocabulary.FormatQuantity(item); strings.TrimSpace(s) != "" {
+				return s
+			}
+			continue
+		}
 		if field == "" {
 			if s := scalarString(item); strings.TrimSpace(s) != "" {
 				return s
@@ -1238,6 +1219,11 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 			continue
 		}
 		s := scalarString(row.Props[name])
+		if p.Datatype == vocabulary.DatatypeQuantity && !p.Keyed {
+			// An object renders as nothing in scalarString; a quantity
+			// declared `fts: true` indexes its value text, "72.5 kg".
+			s = quantityText(row.Props[name])
+		}
 		if s == "" {
 			continue
 		}

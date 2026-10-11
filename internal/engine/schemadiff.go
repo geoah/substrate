@@ -1204,6 +1204,18 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 			query: q, args: args,
 		})
 	}
+	// A quantity's measure, units, comparator and bounds are judged by the
+	// write coercion itself, row by row in Go: a unit's measure is the unit
+	// grammar's to answer, which SQL cannot parse.
+	if candP.Datatype == vocabulary.DatatypeQuantity && quantityNarrows(curP.Quantity, candP.Quantity) {
+		out = append(out, narrowing{
+			format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it refuses; rewrite them first",
+				ident, subject, quantityChange(curP.Quantity, candP.Quantity)),
+			query:   propValuesQuery,
+			args:    []any{ident, path[0].key},
+			strands: quantityStrands(path, candP),
+		})
+	}
 	return out
 }
 
@@ -1237,6 +1249,14 @@ func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabular
 			format: fmt.Sprintf("kind %s: reference %q requires link property %q <= %v while %%d live references hold a larger one; rewrite them first",
 				ident, pname, lname, *candL.Max),
 			query: q, args: args,
+		})
+	}
+	if candL.Datatype == vocabulary.DatatypeQuantity && quantityNarrows(curL.Quantity, candL.Quantity) {
+		out = append(out, narrowing{
+			format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it refuses; rewrite them first",
+				ident, pname, lname, quantityChange(curL.Quantity, candL.Quantity)),
+			query: linkPropValuesQuery, args: []any{ident, pname, lname},
+			strands: quantityStrands([]fieldStep{{key: lname}}, candL),
 		})
 	}
 	return out
@@ -1277,7 +1297,8 @@ func patternApplies(dt vocabulary.Datatype) bool {
 	switch dt {
 	case vocabulary.DatatypeObject, vocabulary.DatatypeReference, vocabulary.DatatypeJSON,
 		vocabulary.DatatypeBool, vocabulary.DatatypeInt, vocabulary.DatatypeFloat, vocabulary.DatatypeDecimal,
-		vocabulary.DatatypeMoney, vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef, vocabulary.DatatypeState:
+		vocabulary.DatatypeMoney, vocabulary.DatatypeQuantity, vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef,
+		vocabulary.DatatypeState:
 		return false
 	}
 	return true

@@ -11,7 +11,7 @@ property declares one. This page is the table itself: 56 measures and 200 codes
 
 A code is a case-sensitive UCUM code. The codes listed here are the ones the table
 names; the grammar also reads any compound or prefixed code over the same atoms
-(`kcal/(kg.h)`, `GJ`, `fL`), whose measure is found from its prefixes and its
+(`kg/h`, `GJ`, `fL`), whose measure is found from its prefixes and its
 dimension. The table only grows: a code, a measure or a factor is never removed
 or changed, because a stored value is read through it.
 

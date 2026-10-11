@@ -138,7 +138,7 @@ func renderUnitsPage(t *testing.T) []byte {
 	w("(%d rows, because a few codes sit in two measures).\n\n", rows)
 	w("A code is a case-sensitive UCUM code. The codes listed here are the ones the table\n")
 	w("names; the grammar also reads any compound or prefixed code over the same atoms\n")
-	w("(`kcal/(kg.h)`, `GJ`, `fL`), whose measure is found from its prefixes and its\n")
+	w("(`kg/h`, `GJ`, `fL`), whose measure is found from its prefixes and its\n")
 	w("dimension. The table only grows: a code, a measure or a factor is never removed\n")
 	w("or changed, because a stored value is read through it.\n\n")
 	w("Each factor is exact, a rational number: a value converts to the measure's base as\n")
