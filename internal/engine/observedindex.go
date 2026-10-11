@@ -130,10 +130,13 @@ type obsPoint struct {
 	exact       *string
 	code        string
 	bounded     bool
-	unavailable bool
 }
 
-func (p obsPoint) available() bool { return !p.unavailable }
+// available is vocabulary.ObservedPointAvailable, the definition every reader
+// of the index shares; availablePoint is the same test in SQL.
+func (p obsPoint) available() bool {
+	return vocabulary.ObservedPointAvailable(p.value != nil, p.code)
+}
 
 // deriveObserved computes a live row's points from its properties and its
 // kind's binding alone. It is lenient on purpose: a row the write path
@@ -258,7 +261,7 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 	factor, offset, baseErr := vocabulary.ToBase(measure, r.unit)
 	out := make([]obsPoint, 0, len(pts))
 	for i, tp := range pts {
-		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, unavailable: tp.Unavailable, offset: startOff}
+		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, offset: startOff}
 		if !tp.At.Before(mid) {
 			p.offset = endOff
 		}
@@ -425,10 +428,10 @@ func (t *txn) dropObserved(ref eref) error {
 		WITH d AS (
 			DELETE FROM observed_points WHERE kind = $1 AND record_id = $2
 			RETURNING metric, source, about, channel, form, ts, value, code)
-		SELECT metric, source, about, channel, form,
-		       (extract(epoch FROM date_bin('15 minutes', ts, TIMESTAMPTZ '2000-01-01 00:00:00+00')) * 1000)::bigint,
-		       count(*) FILTER (WHERE value IS NOT NULL OR code <> '')
-		FROM d GROUP BY 1, 2, 3, 4, 5, 6`, ref.Kind, ref.ID)
+		SELECT p.metric, p.source, p.about, p.channel, p.form,
+		       (extract(epoch FROM date_bin('15 minutes', p.ts, TIMESTAMPTZ '2000-01-01 00:00:00+00')) * 1000)::bigint,
+		       count(*) FILTER (WHERE `+availablePoint+`)
+		FROM d p GROUP BY 1, 2, 3, 4, 5, 6`, ref.Kind, ref.ID)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: observed points of %s %s: %w", ref.Kind, ref.ID, err)
 	}
@@ -471,7 +474,7 @@ func (t *txn) insertObserved(r *observedRows) error {
 		ord[i], ts[i], tsEnd[i], offset[i] = int64(p.ord), p.ts, p.tsEnd, p.offset
 		value[i], exact[i], base[i], code[i], bounded[i] = p.value, p.exact, p.base, p.code, p.bounded
 		quality[i] = r.quality
-		if p.unavailable {
+		if !p.available() {
 			quality[i] = &unavailable
 		}
 		if touch.all {

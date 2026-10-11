@@ -268,6 +268,9 @@ A packed record is also held to these:
   such as `°C` is stored as its code, `Cel`. A trace of codes has no unit.
 - A `summary` is refused: it is one value per record.
 - `null` is admitted inside `values` and `codes` and nowhere else.
+- A code is never empty: `""` inside `codes` is refused naming its index
+  (`props.codes[1]: a code is not empty`), and so is `code: ""` on a single
+  record. `null` is the one way to say a point has nothing.
 
 A kind that declares any of the result shapes `codedValue`, `ratio` and
 `text` beside the trait, as the health sample's `labresult` does, holds
@@ -417,6 +420,13 @@ and `quality` `unavailable`. It ends the hold of the point before it and
 counts in nothing: not in `n`, not in `first` or `last`, not in the latest
 row. A counter's steps skip it, because an outage between two readings of a
 running total still accrued.
+
+A point is available when it holds a value or a code that is not empty, and
+unavailable otherwise. That one test decides every count: the points an
+insertion adds to a stream, the ones a deletion takes back, a trace's
+`stats`, the rollup rows, the latest row and a rebuild. An empty code a row
+stored before the write refused it is therefore an unavailable point, the
+same as a `null`.
 
 A point's `utc_offset_min` is a single record's `utcOffset`. A trace's point
 takes `utcOffsetStart` when it lies before the midpoint of the period and

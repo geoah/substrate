@@ -80,7 +80,10 @@ type rollupRow struct {
 const pointColumns = `p.ts, p.ts_end, p.value, p.value_exact::text, p.value_base, p.code, p.unit, p.delta,
 	p.utc_offset_min, p.bounded, p.hold_ms, p.reset_rule, p.reset_at, p.wrap_at::text, p.circular`
 
-// availablePoint is the SQL test for a point with a value or a code.
+// availablePoint is vocabulary.ObservedPointAvailable in SQL, over a point
+// aliased p: a value, or a code that is not empty. Every statement that
+// counts or picks available points reads it, so the count an insertion adds
+// and a deletion takes back, the rollups and a rebuild cannot disagree.
 const availablePoint = `(p.value IS NOT NULL OR p.code <> '')`
 
 // holdStreamSQL matches one obsHold's points, its six columns bound at
@@ -115,7 +118,7 @@ func scanPoint(rows *sql.Rows, lead ...any) (scannedPoint, error) {
 	p := observed.Point{
 		At: ts, End: tsEnd, Code: code, Bounded: bounded, Unit: unit,
 		Value: value.Float64, HasValue: value.Valid, Exact: exact.String,
-		Unavailable: !value.Valid && code == "",
+		Unavailable: !vocabulary.ObservedPointAvailable(value.Valid, code),
 		Reset:       resetRule.String, WrapAt: wrapAt.String,
 	}
 	if hold.Valid {

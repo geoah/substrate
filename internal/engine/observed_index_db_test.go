@@ -1006,3 +1006,117 @@ func TestVerifyAndExportReadNoObservedTable(t *testing.T) {
 		t.Fatalf("the restored observed index is not the original\n%s", firstDifference([]byte(want), []byte(got)))
 	}
 }
+
+// --- the review's regressions ---
+
+// packedClosure declares one trace kind, `<pkg>/reading`, binding
+// observed(packed) or binding nothing, so a test can store a row the write
+// rules never saw and bind the kind over it, or take the binding away.
+func packedClosure(pkg string, bound bool) []map[string]any {
+	traits := []any{"substrate.reamde.dev/core/temporal(range)"}
+	if bound {
+		traits = append(traits, "substrate.reamde.dev/core/observed(packed)")
+	}
+	props := map[string]any{}
+	for name, typ := range map[string]string{
+		"channel": "string", "form": "string", "unit": "string", "every": "duration", "hold": "duration",
+		"resetRule": "string", "resetAt": "datetime", "delta": "bool", "circular": "bool", "wrapAt": "decimal",
+		"utcOffsetStart": "int", "utcOffsetEnd": "int", "revision": "int", "stats": "json", "quality": "string",
+	} {
+		props[name] = map[string]any{"type": typ}
+	}
+	for name, typ := range map[string]string{"offsets": "int", "values": "decimal", "codes": "string"} {
+		props[name] = map[string]any{"type": typ, "repeated": true}
+	}
+	for _, name := range []string{"metric", "source", "about"} {
+		props[name] = map[string]any{"type": "reference", "kind": "any"}
+	}
+	return []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "reading"},
+			map[string]any{"traits": traits, "properties": props}),
+	}
+}
+
+func (r obsIndex) applyPackedClosure(t *testing.T, pkg string, bound bool) {
+	t.Helper()
+	actor := substrate.BundleActor(vocabulary.SplitPackageRef(pkg))
+	if _, err := r.ds.ApplyVocabularyDocuments(context.Background(), actor, packedClosure(pkg, bound)); err != nil {
+		t.Fatalf("apply the reading kind (bound %v): %v", bound, err)
+	}
+}
+
+// rebuildMatches rebuilds the repository and holds the three tables to what
+// they were before it, and the rollups to the specification.
+func (r obsIndex) rebuildMatches(t *testing.T) {
+	t.Helper()
+	before := observedTables(t, r.db)
+	if _, err := r.svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after := observedTables(t, r.db); after != before {
+		t.Fatalf("the live observed tables are not the rebuilt ones\n%s", firstDifference([]byte(before), []byte(after)))
+	}
+	checkRollupsMatchSpec(t, r.db)
+}
+
+// An empty code is refused on every write, and a row stored before that rule
+// reads its empty code as an unavailable point on every path: the points a
+// derivation inserts, the count a deletion takes back, the rollups, the latest
+// row and the rebuild. Unrelated patches leave the live tables the rebuilt
+// ones; before, each re-derivation of such a row added one point to its
+// stream's count.
+func TestObservedEmptyCodeIsReadOnceAsUnavailable(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	door := func(codes []any) map[string]any {
+		return map[string]any{
+			"metric": r.metricRef("illuminance"), "source": r.sourceRef("hall"), "channel": "contact", "form": "gauge",
+			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M", "codes": codes,
+		}
+	}
+	_, err := r.put(t, r.trace, "door/hall", door([]any{"open", ""}))
+	refused(t, "a trace with an empty code", err, "props.codes[1]: a code is not empty")
+	_, err = r.put(t, r.observation, "door/hall/1", map[string]any{
+		"metric": r.metricRef("illuminance"), "form": "gauge", "code": "", "at": "2026-10-07T06:00:00Z",
+	})
+	refused(t, "an observation with an empty code", err, "props.code: a code is not empty")
+
+	pkg := testdb.Repository(t) + "/doors"
+	r.applyPackedClosure(t, pkg, false)
+	r.mustPut(t, pkg+"/reading", "d1", door([]any{"open", "", "closed"}))
+	r.applyPackedClosure(t, pkg, true)
+	engine.DrainIndexReprojection(t, r.ds)
+	got := r.points(t, pkg+"/reading", "d1")
+	if len(got) != 3 || got[1].quality.String != "unavailable" || got[0].quality.Valid {
+		t.Fatalf("the stored empty code derived %+v, want its point unavailable", got)
+	}
+	// Re-derive the row again: unbind and bind, each a deletion and an
+	// insertion of its points in one transaction.
+	r.applyPackedClosure(t, pkg, false)
+	r.applyPackedClosure(t, pkg, true)
+	engine.DrainIndexReprojection(t, r.ds)
+	if _, err := r.patch(t, pkg+"/reading", "d1", map[string]any{"quality": "valid"}); err == nil {
+		t.Error("a patch kept the stored empty code")
+	}
+
+	// Unrelated patches of a trace whose null is a legitimate unavailable
+	// point, each a deletion and an insertion of its points.
+	r.mustPut(t, r.trace, "door/porch", map[string]any{
+		"metric": r.metricRef("illuminance"), "source": r.sourceRef("porch"), "channel": "contact", "form": "gauge",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT10M",
+		"codes": []any{"open", nil, "closed"},
+	})
+	for _, q := range []string{"valid", "estimated", "valid"} {
+		if _, err := r.patch(t, r.trace, "door/porch", map[string]any{"quality": q}); err != nil {
+			t.Fatalf("patch quality %s: %v", q, err)
+		}
+	}
+	for _, source := range []string{"hall", "porch"} {
+		if l, ok := r.latest(t, "illuminance", r.source+"/"+source); !ok || l.points != 2 {
+			t.Errorf("the %s stream counts %d points (%v), want its two available ones", source, l.points, ok)
+		}
+	}
+	r.rebuildMatches(t)
+}
