@@ -232,18 +232,8 @@ func ceil15(t time.Time) time.Time {
 	return f.Add(bucketWidth)
 }
 
-// segments are the spans a raw stream is read over: the range, or each
-// records-mode window, overlapping ones joined.
-func (r *aggRun) segments() [][2]time.Time {
-	if r.p.bucket.mode != bucketRecords {
-		return [][2]time.Time{{r.p.from, r.p.to}}
-	}
-	var spans [][2]time.Time
-	for _, b := range r.buckets {
-		spans = append(spans, [2]time.Time{b.start, b.end})
-	}
-	return joinSpans(spans)
-}
+// segments are the spans a raw stream is read over: the read's windows.
+func (r *aggRun) segments() [][2]time.Time { return r.p.windows(r.buckets) }
 
 // split is a bucket's whole rollup rows and the ends that cut a row.
 func split(b *aggBucket) (whole [2]time.Time, frags [][2]time.Time) {

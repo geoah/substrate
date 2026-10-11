@@ -1158,9 +1158,11 @@ own offset, its `count` the group's point count.
 
 ### Reducers, by form
 
-Every reducer is checked against the form of the streams it reads (the form
-of each stream's newest point), and a reducer the form does not take is a
-`422` naming the form: `sum does not apply to a gauge`.
+Every reducer is checked against the forms the read takes: each form a
+stream's points hold inside the range (or the records-mode windows),
+including a gauge whose value from before the range still holds into it.
+The form of a stream's newest point decides nothing. A reducer the form does
+not take is a `422` naming the form: `sum does not apply to a gauge`.
 
 | Form | Reducers |
 | --- | --- |

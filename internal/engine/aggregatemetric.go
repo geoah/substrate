@@ -3,9 +3,10 @@ package engine
 // The aggregate read over the observed index (aggregate.go): the metric read
 // and the downsample, which is a metric read in columns.
 //
-// A read selects streams from observed_latest, groups them, checks every
-// reducer against each group's form and the unit against the measure, and
-// decides per group where its buckets are served from:
+// A read enumerates streams from observed_latest, finds the forms their
+// points hold inside the read's windows (discoverForms), groups them, checks
+// every reducer against each group's form and the unit against the measure,
+// and decides per group where its buckets are served from:
 //
 //   - observed_rollups, when every reducer merges exactly from rollup rows
 //     (internal/observed.Merge) and every gauge row is Eligible under the
@@ -34,12 +35,15 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// aggStream is one selected stream: its observed_latest row.
+// aggStream is one selected stream: its observed_latest row, and on a
+// bucketed read one form its points hold inside the read's windows with the
+// codes those points carry ("" for a point without one).
 type aggStream struct {
 	obsStream
 	form      string
 	unit      string
 	code      string
+	codes     []string
 	delta     bool
 	value     sql.NullString
 	ts, tsEnd time.Time
@@ -54,9 +58,12 @@ type aggStream struct {
 
 func (s *aggStream) hold() obsHold { return obsHold{obsStream: s.obsStream, form: s.form} }
 
-// coded reports whether the stream holds codes: a coded gauge holds a code
-// instead of a number, a coded amount a code beside its number.
-func (s *aggStream) coded() bool { return s.code != "" }
+// coded reports whether the stream's points in the read's windows hold
+// codes: a coded gauge holds a code instead of a number, a coded amount a
+// code beside its number.
+func (s *aggStream) coded() bool {
+	return slices.ContainsFunc(s.codes, func(c string) bool { return c != "" })
+}
 
 // aggGroup is one group of streams: what a row reduces.
 type aggGroup struct {
@@ -97,8 +104,15 @@ type aggMeta struct {
 }
 
 func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) (*substrate.AggregateResult, error) {
+	buckets, err := ds.buckets(ctx, tx, p)
+	if err != nil {
+		return nil, err
+	}
 	streams, err := ds.selectStreams(ctx, tx, p)
 	if err != nil {
+		return nil, err
+	}
+	if streams, err = ds.discoverForms(ctx, tx, p, streams, p.windows(buckets)); err != nil {
 		return nil, err
 	}
 	units, err := ds.aggregateUnits(ctx, tx, p, streams)
@@ -110,10 +124,6 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		return nil, err
 	}
 	if err := p.checkForms(groups, units); err != nil {
-		return nil, err
-	}
-	buckets, err := ds.buckets(ctx, tx, p)
-	if err != nil {
 		return nil, err
 	}
 	if n := len(buckets) * max(len(groups), 1); n > p.maxBuckets {
@@ -207,6 +217,132 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 				break
 			}
 		}
+	}
+	return out, nil
+}
+
+// windows are the spans a metric read takes points from: the range, or each
+// records-mode window, overlapping ones joined.
+func (p *aggPlan) windows(buckets []*aggBucket) [][2]time.Time {
+	if p.bucket.mode != bucketRecords {
+		return [][2]time.Time{{p.from, p.to}}
+	}
+	var spans [][2]time.Time
+	for _, b := range buckets {
+		spans = append(spans, [2]time.Time{b.start, b.end})
+	}
+	return joinSpans(spans)
+}
+
+// discoverFormsSQL answers, for each stream ($1 to $5, numbered n), form
+// ($10) and window ($6 and $7, with the ends of the whole rollup rows inside
+// it at $8 and $9), the codes of the stream's available points of that form
+// inside the window. The whole rows answer by the rollup key, so a range the
+// rows serve reads no point; the window's cut ends and a summary, which has
+// no rows, answer by the points. A gauge also answers by its last point
+// before the window where that value still holds into it under its own hold
+// and the request's maxGap ($11), because its held time is the window's.
+const discoverFormsSQL = `
+	SELECT DISTINCT s.n, f.form, x.code
+	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, n)
+	CROSS JOIN unnest($10::text[]) AS f(form)
+	CROSS JOIN unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[]) AS w(a, b, wa, wb)
+	CROSS JOIN LATERAL (
+		SELECT r.code FROM observed_rollups r
+		WHERE r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
+		  AND r.form = f.form AND r.bucket15 >= w.wa AND r.bucket15 < w.wb AND r.n > 0
+		UNION
+		SELECT p.code FROM observed_points p
+		WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.ts >= w.a AND p.ts < LEAST(w.wa, w.b) AND p.form = f.form AND ` + availablePoint + `
+		UNION
+		SELECT p.code FROM observed_points p
+		WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.ts >= GREATEST(w.wb, w.a) AND p.ts < w.b AND p.form = f.form AND ` + availablePoint + `
+		UNION
+		SELECT p.code FROM observed_points p
+		WHERE f.form = 'summary'
+		  AND p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.ts >= w.a AND p.ts < w.b AND p.form = 'summary' AND ` + availablePoint + `
+		UNION
+		SELECT c.code FROM (
+			SELECT p.code, p.value, p.ts, p.hold_ms FROM (
+				SELECT DISTINCT r.bucket15 FROM observed_rollups r
+				WHERE f.form = 'gauge'
+				  AND r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
+				  AND r.form = 'gauge' AND r.bucket15 < w.a
+				ORDER BY r.bucket15 DESC LIMIT 2) rb
+			CROSS JOIN LATERAL (
+				SELECT p.code, p.value, p.ts, p.hold_ms, p.record_id, p.ord FROM observed_points p
+				WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+				  AND p.ts >= rb.bucket15 AND p.ts < LEAST(rb.bucket15 + interval '15 minutes', w.a) AND p.form = 'gauge'
+				ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p
+			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) c
+		WHERE (c.value IS NOT NULL OR c.code <> '')
+		  AND (c.hold_ms IS NULL OR c.ts + c.hold_ms * interval '1 millisecond' > w.a)
+		  AND ($11::bigint = 0 OR c.ts + $11::bigint * interval '1 millisecond' > w.a)
+	) x
+	ORDER BY s.n, f.form, x.code`
+
+// discoverForms turns each selected stream into one stream per form its
+// points hold inside the windows, with the codes they carry, in one
+// statement. The latest row names a stream and says nothing about the points
+// a range holds, so it never decides a form: every form found is checked,
+// and a group holding two is refused, before any path is chosen. A form the
+// read does not take (a summary on a read from raw) is not looked for.
+func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time) ([]*aggStream, error) {
+	if len(streams) == 0 || len(windows) == 0 {
+		return nil, nil
+	}
+	var forms []string
+	switch p.source {
+	case substrate.AggregateFromRaw:
+		forms = []string{vocabulary.FormGauge, vocabulary.FormAmount, vocabulary.FormCounter}
+	case substrate.AggregateFromSummaries:
+		forms = []string{vocabulary.FormSummary}
+	default:
+		forms = []string{vocabulary.FormGauge, vocabulary.FormAmount, vocabulary.FormCounter, vocabulary.FormSummary}
+	}
+	ids := make([][]string, 5)
+	for _, s := range streams {
+		for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel} {
+			ids[i] = append(ids[i], v)
+		}
+	}
+	var a, b, wa, wb []time.Time
+	for _, w := range windows {
+		a, b = append(a, w[0]), append(b, w[1])
+		wa, wb = append(wa, ceil15(w[0])), append(wb, floor15(w[1]))
+	}
+	rows, err := tx.QueryContext(ctx, discoverFormsSQL, ids[0], ids[1], ids[2], ids[3], ids[4], a, b, wa, wb, forms, p.maxGap.Milliseconds())
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: aggregate forms: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	type key struct {
+		n    int
+		form string
+	}
+	var out []*aggStream
+	found := map[key]*aggStream{}
+	for rows.Next() {
+		var k key
+		var code string
+		if err := rows.Scan(&k.n, &k.form, &code); err != nil {
+			return nil, err
+		}
+		s := found[k]
+		if s == nil {
+			c := *streams[k.n-1]
+			c.form, c.codes = k.form, nil
+			s = &c
+			found[k] = s
+			out = append(out, s)
+		}
+		s.codes = append(s.codes, code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
