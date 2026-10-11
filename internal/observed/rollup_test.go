@@ -285,3 +285,41 @@ func TestCircularRows(t *testing.T) {
 		t.Errorf("angles %d %d", rows[0].Angles, rows[1].Angles)
 	}
 }
+
+// Walking consecutive windows and handing each one's carry to the next holds
+// what one walk over the whole range holds, window by window.
+func TestHeldFromRowsCarryThreadsWindows(t *testing.T) {
+	points := stream()
+	from, to := at(0), at(270)
+	rows := bucketRows(vocabulary.FormGauge, points, from, to)
+	var carry *Point
+	for i := range points {
+		if points[i].At.Before(from) {
+			carry = &points[i]
+		}
+	}
+	for _, maxGap := range []time.Duration{0, 3 * time.Hour} {
+		whole, ok := HeldFromRows(rows, carry, from, to, maxGap)
+		if !ok {
+			t.Fatalf("maxGap %v: a row was not eligible", maxGap)
+		}
+		var sum HeldSum
+		c := carry
+		for start := 0.0; start < 270; start += 45 {
+			var part map[string]HeldSum
+			part, c, ok = HeldFromRowsCarry(rows, c, at(start), at(start+45), maxGap)
+			if !ok {
+				t.Fatalf("maxGap %v: window %v was not eligible", maxGap, start)
+			}
+			raw := HeldMs(Spans(points, at(start), at(start+45), maxGap))
+			if part[""].Ms != raw {
+				t.Errorf("maxGap %v: window at %v held %d ms from rows, %d raw", maxGap, start, part[""].Ms, raw)
+			}
+			sum.Ms += part[""].Ms
+			sum.ValueMs += part[""].ValueMs
+		}
+		if sum.Ms != whole[""].Ms || !near(sum.ValueMs, whole[""].ValueMs) {
+			t.Errorf("maxGap %v: the windows held %+v, the whole %+v", maxGap, sum, whole[""])
+		}
+	}
+}

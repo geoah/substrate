@@ -308,6 +308,16 @@ type HeldSum struct {
 // whichever comes first, across buckets with no row. It answers false when a
 // row is not Eligible under maxGap, and the read takes raw points instead.
 func HeldFromRows(rows []Row, carry *Point, from, to time.Time, maxGap time.Duration) (map[string]HeldSum, bool) {
+	out, _, ok := HeldFromRowsCarry(rows, carry, from, to, maxGap)
+	return out, ok
+}
+
+// HeldFromRowsCarry is HeldFromRows that also answers the value held at to:
+// the point whose hold runs past to, its Hold cut to what the rows allow,
+// nil where nothing holds. A read walking consecutive buckets hands it to
+// the next bucket as that bucket's carry, so one lookup into the raw points
+// starts the walk and the rows carry it on.
+func HeldFromRowsCarry(rows []Row, carry *Point, from, to time.Time, maxGap time.Duration) (map[string]HeldSum, *Point, bool) {
 	out := map[string]HeldSum{}
 	add := func(g string, ms int64, valueMs float64) {
 		h := out[g]
@@ -369,7 +379,7 @@ func HeldFromRows(rows []Row, carry *Point, from, to time.Time, maxGap time.Dura
 		}
 		for _, r := range bucket {
 			if !Eligible(maxGap, r.MaxGapMs) {
-				return nil, false
+				return nil, nil, false
 			}
 		}
 		carryTo(start.Add(time.Duration(bucket[0].StartGapMs) * time.Millisecond))
@@ -392,5 +402,13 @@ func HeldFromRows(rows []Row, carry *Point, from, to time.Time, maxGap time.Dura
 		cursor = end
 	}
 	carryTo(to)
-	return out, true
+	if state == nil {
+		return out, nil, true
+	}
+	next := &Point{At: state.at, End: state.at, Value: state.value, HasValue: state.hasValue, Group: state.group}
+	if state.limit != nil {
+		h := state.limit.Sub(state.at)
+		next.Hold = &h
+	}
+	return out, next, true
 }

@@ -233,45 +233,18 @@ func StdDev(points []Point, w Window) (float64, bool) {
 // TWA is the time-weighted mean: each number weighed by the time it holds
 // inside the window. A window in which nothing holds has no answer.
 func TWA(points []Point, w Window) (float64, bool) {
-	var sum float64
-	var held int64
-	for _, iv := range Held(points, w.From, w.To, w.MaxGap) {
-		p := points[iv.Point]
-		if !p.HasValue {
-			continue
-		}
-		d := iv.End.Sub(iv.Start).Milliseconds()
-		sum += p.Value * float64(d)
-		held += d
-	}
-	if held == 0 {
-		return 0, false
-	}
-	return sum / float64(held), true
+	return TWAOf(Spans(points, w.From, w.To, w.MaxGap))
 }
 
 // TimeInState is the time each code holds inside the window.
 func TimeInState(points []Point, w Window) map[string]time.Duration {
-	out := map[string]time.Duration{}
-	for _, iv := range Held(points, w.From, w.To, w.MaxGap) {
-		if c := points[iv.Point].Code; c != "" {
-			out[c] += iv.End.Sub(iv.Start)
-		}
-	}
-	return out
+	return TimeInStateOf(Spans(points, w.From, w.To, w.MaxGap))
 }
 
 // DurationIn is the time a number in [lo, hi) holds inside the window: the
 // time above 140 mg/dL, the time in a heart rate zone.
 func DurationIn(points []Point, w Window, lo, hi float64) time.Duration {
-	var d time.Duration
-	for _, iv := range Held(points, w.From, w.To, w.MaxGap) {
-		p := points[iv.Point]
-		if p.HasValue && p.Value >= lo && p.Value < hi {
-			d += iv.End.Sub(iv.Start)
-		}
-	}
-	return d
+	return DurationInOf(Spans(points, w.From, w.To, w.MaxGap), lo, hi)
 }
 
 // Percentile is the q-quantile (0 to 1) of the numbers in the window,
