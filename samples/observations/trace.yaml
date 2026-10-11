@@ -65,7 +65,6 @@ data:
         - gauge
         - amount
         - counter
-        - summary
     unit:
       type: string
       description: the UCUM code every value is in; a trace of codes has none
