@@ -132,6 +132,9 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 				tr.rollupRows += int64(len(rows))
 			}
 			for _, row := range rows {
+				if err := r.canceled(); err != nil {
+					return err
+				}
 				if g.form == vocabulary.FormGauge && !observed.Eligible(r.p.maxGap, row.MaxGapMs) {
 					g.rollups = false
 					break
@@ -768,11 +771,16 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 		st := &stream{s: s, prevOf: map[int]*aggPoint{}}
 		for _, seg := range r.series[s].segs {
 			if form == vocabulary.FormGauge {
-				var slice []aggPoint
+				slice := make([]aggPoint, 0, len(seg.points)+1)
 				if seg.carry != nil {
 					slice = append(slice, *seg.carry)
 				}
-				slice = append(slice, seg.points...)
+				for _, ap := range seg.points {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
+					slice = append(slice, ap)
+				}
 				obs := make([]observed.Point, len(slice))
 				for i := range slice {
 					if err := r.canceled(); err != nil {
@@ -862,7 +870,12 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 					}
 				}
 				st.points = kept
-				cover = append(cover, st.spans...)
+				for _, sp := range st.spans {
+					if err := r.canceled(); err != nil {
+						return nil, err
+					}
+					cover = append(cover, sp)
+				}
 				st.spans = st.spans[:0]
 				for _, sp := range resolved[i] {
 					if err := r.canceled(); err != nil {
@@ -953,19 +966,8 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	if p.policy == substrate.SourcesSummaries && form == vocabulary.FormSummary {
 		for _, codes := range out {
 			for _, ev := range codes {
-				if err := r.canceled(); err != nil {
+				if err := r.firstSummarySource(ev, streams); err != nil {
 					return nil, err
-				}
-				best := -1
-				for _, m := range ev.members {
-					if best < 0 || m.stream < best {
-						best = m.stream
-					}
-				}
-				ev.members = slices.DeleteFunc(ev.members, func(m aggPoint) bool { return m.stream != best })
-				ev.sources = map[string]bool{}
-				if best >= 0 {
-					ev.sources[streams[best].source] = true
 				}
 			}
 		}
@@ -1009,24 +1011,70 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			case vocabulary.FormCounter:
 				ev.coverage = ev.steps.covered
 			default:
-				var spans [][2]time.Time
-				for _, m := range ev.members {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					spans = append(spans, [2]time.Time{m.At, m.End})
-				}
-				joined, err := r.cover(spans)
-				if err != nil {
+				var err error
+				if ev.coverage, err = r.memberCoverage(ev); err != nil {
 					return nil, err
-				}
-				for _, s := range joined {
-					ev.coverage += s[1].Sub(s[0]).Milliseconds()
 				}
 			}
 		}
 	}
 	return out, nil
+}
+
+// firstSummarySource keeps a cell's members from one source, the first in
+// the summaries policy's order with a summary there. A summary bucket's
+// members are as many as its sources' summaries, so the scan and the filter
+// check the context per step.
+func (r *aggRun) firstSummarySource(ev *aggEvidence, streams []*aggStream) error {
+	best := -1
+	for _, m := range ev.members {
+		if err := r.canceled(); err != nil {
+			return err
+		}
+		if best < 0 || m.stream < best {
+			best = m.stream
+		}
+	}
+	kept := ev.members[:0]
+	for _, m := range ev.members {
+		if err := r.canceled(); err != nil {
+			return err
+		}
+		if m.stream == best {
+			kept = append(kept, m)
+		}
+	}
+	clear(ev.members[len(kept):])
+	ev.members = kept
+	ev.sources = map[string]bool{}
+	if best >= 0 {
+		ev.sources[streams[best].source] = true
+	}
+	return nil
+}
+
+// memberCoverage is the time a cell's raw members' spans cover, joined, each
+// span built, joined and summed with the context checked per step.
+func (r *aggRun) memberCoverage(ev *aggEvidence) (int64, error) {
+	spans := make([][2]time.Time, 0, len(ev.members))
+	for _, m := range ev.members {
+		if err := r.canceled(); err != nil {
+			return 0, err
+		}
+		spans = append(spans, [2]time.Time{m.At, m.End})
+	}
+	joined, err := r.cover(spans)
+	if err != nil {
+		return 0, err
+	}
+	var ms int64
+	for _, s := range joined {
+		if err := r.canceled(); err != nil {
+			return 0, err
+		}
+		ms += s[1].Sub(s[0]).Milliseconds()
+	}
+	return ms, nil
 }
 
 func pointEnd(ap aggPoint) time.Time {
@@ -1039,16 +1087,16 @@ func pointEnd(ap aggPoint) time.Time {
 // cover is a sorted, joined set of intervals.
 type cover [][2]time.Time
 
-// cover joins a copy of the intervals as joinSpans does, checking the
-// context as it sorts and joins them: a cover is as long as a stream's
-// points.
+// cover joins the intervals as joinSpans does, checking the context as it
+// sorts and joins them: a cover is as long as a stream's points. It sorts
+// spans in place, so a caller hands over a slice whose order it does not
+// need, and is spared a copy as long as the cover.
 func (r *aggRun) cover(spans [][2]time.Time) (cover, error) {
-	list := append([][2]time.Time(nil), spans...)
-	if err := observed.SortStableFunc(r.ctx, list, func(a, b [2]time.Time) int { return a[0].Compare(b[0]) }); err != nil {
+	if err := observed.SortStableFunc(r.ctx, spans, func(a, b [2]time.Time) int { return a[0].Compare(b[0]) }); err != nil {
 		return nil, err
 	}
 	var out cover
-	for _, s := range list {
+	for _, s := range spans {
 		if err := r.canceled(); err != nil {
 			return nil, err
 		}
@@ -1393,7 +1441,11 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 				return err
 			}
 			ev := cells[bk][code]
-			if ms, ok := observed.UnionMs(ev.extents); ok {
+			ms, ok, err := observed.UnionMsContext(r.ctx, ev.extents)
+			if err != nil {
+				return err
+			}
+			if ok {
 				ev.coverage = ms
 				continue
 			}
@@ -1475,6 +1527,9 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 				}
 				var prev *observed.Point
 				for i := len(seg.points) - 1; i >= 0; i-- {
+					if err := r.canceled(); err != nil {
+						return err
+					}
 					if ap := seg.points[i]; ap.At.Before(e[0]) && !ap.Unavailable {
 						p := ap.Point
 						prev = &p
@@ -1510,6 +1565,9 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 					// A cut end's spans are known exactly, so they join the
 					// rows' extents as raw spans.
 					for _, p := range pts {
+						if err := r.canceled(); err != nil {
+							return err
+						}
 						if !p.Unavailable {
 							ev := cell(out, b, r.codeKey(p.Code), g.form, false)
 							ev.extents = append(ev.extents, observed.Extent{Start: p.At, End: p.End, Ms: p.End.Sub(p.At).Milliseconds(), Exact: true})
@@ -1791,9 +1849,9 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 				var list []observed.Point
 				if list, err = pts(""); err == nil {
 					if red.Name == substrate.ReducerFirst {
-						p, ok = observed.First(list, all)
+						p, ok, err = observed.FirstContext(r.ctx, list, all)
 					} else {
-						p, ok = observed.Last(list, all)
+						p, ok, err = observed.LastContext(r.ctx, list, all)
 					}
 				}
 			case red.Name == substrate.ReducerFirst && ev.stats.First != nil:

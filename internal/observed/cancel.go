@@ -26,8 +26,8 @@ func every(ctx context.Context) func() error {
 
 // SortStableFunc sorts s stably by cmp, as slices.SortStableFunc does,
 // checking ctx before each run of checkEvery elements it sorts and every
-// checkEvery elements it merges or moves, so a sort as long as a bucket's
-// points stops when its caller does. It sorts the elements' indexes and moves
+// checkEvery indexes it writes, elements it merges or moves, or places it
+// passes, so a sort as long as a bucket's points stops when its caller does. It sorts the elements' indexes and moves
 // each element once, so a large element is not copied into a second slice.
 // Where ctx ends first it answers ctx's error and leaves s in no order, an
 // element possibly in two places: the caller drops s.
@@ -41,9 +41,9 @@ func SortStableFunc[S ~[]E, E any](ctx context.Context, s S, cmp func(a, b E) in
 		return nil
 	}
 	check := every(ctx)
-	idx := make([]int, n)
-	for i := range idx {
-		idx[i] = i
+	idx, err := indexes(n, check)
+	if err != nil {
+		return err
 	}
 	byElement := func(a, b int) int { return cmp(s[a], s[b]) }
 	for lo := 0; lo < n; lo += checkEvery {
@@ -72,9 +72,30 @@ func SortStableFunc[S ~[]E, E any](ctx context.Context, s S, cmp func(a, b E) in
 		}
 		src, dst = dst, src
 	}
-	// s[k] takes the element at s[src[k]]: follow each cycle of the
-	// permutation, marking each place filled.
+	return permute(s, src, check)
+}
+
+// indexes is 0 to n-1 in order, check called for each index it writes.
+func indexes(n int, check func() error) ([]int, error) {
+	idx := make([]int, n)
+	for i := range idx {
+		if err := check(); err != nil {
+			return nil, err
+		}
+		idx[i] = i
+	}
+	return idx, nil
+}
+
+// permute moves s[src[k]] to s[k] for every k, following each cycle of the
+// permutation src and marking each place it fills with -1. check is called
+// for each place its scan passes, one an earlier cycle filled included, and
+// for each element it moves.
+func permute[S ~[]E, E any](s S, src []int, check func() error) error {
 	for start := range src {
+		if err := check(); err != nil {
+			return err
+		}
 		if src[start] < 0 {
 			continue
 		}

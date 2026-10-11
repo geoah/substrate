@@ -1361,13 +1361,15 @@ Every statement runs under a timeout inside the caller's remaining deadline,
 30 seconds where the caller set none or a later one. The work after the
 statements has no timeout of its own: it checks the request's context and
 answers the cancellation at the first check after the caller stops. It
-checks every thousand points, spans, rows, quarter hours, cover intervals or
-filled buckets it copies, walks or reduces, inside each reducer and the
-`priority` resolution too, between a sort's runs of a thousand elements, and
-before each row a rolling window is computed for. One of those steps can
-still take more than constant work before the next check: a point is placed
-in every records-mode window that holds it, and the points of a bucket end
-that cuts a rollup row are merged as one row.
+checks every thousand points, spans, extents, rows, quarter hours, cover
+intervals or filled buckets it copies, walks, selects or reduces, inside each
+reducer, an amount's coverage, the `summaries` policy's choice of source and
+the `priority` resolution too; between a sort's runs of a thousand elements
+and every thousand indexes it writes, merges or moves; and before each row a
+rolling window is computed for. Two steps can still take more than constant
+work before the next check: a point is placed in every records-mode window
+that holds it, and the points of a bucket end that cuts a rollup row are
+merged as one row.
 
 ### The refusals
 

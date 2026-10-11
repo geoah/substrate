@@ -376,24 +376,45 @@ func extreme(ctx context.Context, points []Point, w Window, better func(p, best 
 // It reads the points from the first until it meets one, so over a window's
 // own points it takes one.
 func First(points []Point, w Window) (Point, bool) {
+	p, ok, _ := FirstContext(context.Background(), points, w)
+	return p, ok
+}
+
+// FirstContext is First under ctx, checked every checkEvery points it passes:
+// a bucket of unavailable points is passed whole.
+func FirstContext(ctx context.Context, points []Point, w Window) (Point, bool, error) {
+	check := every(ctx)
 	for _, p := range points {
+		if err := check(); err != nil {
+			return Point{}, false, err
+		}
 		if w.in(p) {
-			return p, true
+			return p, true, nil
 		}
 	}
-	return Point{}, false
+	return Point{}, false, nil
 }
 
 // Last is the latest available point in the window; of two at one instant,
 // the later in order. It reads the points from the last, as First does from
 // the first.
 func Last(points []Point, w Window) (Point, bool) {
+	p, ok, _ := LastContext(context.Background(), points, w)
+	return p, ok
+}
+
+// LastContext is Last under ctx, checked every checkEvery points it passes.
+func LastContext(ctx context.Context, points []Point, w Window) (Point, bool, error) {
+	check := every(ctx)
 	for i := len(points) - 1; i >= 0; i-- {
+		if err := check(); err != nil {
+			return Point{}, false, err
+		}
 		if w.in(points[i]) {
-			return points[i], true
+			return points[i], true, nil
 		}
 	}
-	return Point{}, false
+	return Point{}, false, nil
 }
 
 // Avg is the mean of the numbers in the window, each point weighing one.
