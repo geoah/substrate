@@ -71,10 +71,9 @@ upgrade discards the owner's edits to health. A copy per domain means two
 
 ### Confirmation
 
-Tests the work package 2 implementers will write:
-`TestObservationsSampleKindNamesAreFrozen` pins the four names under
-`samples/observations`, and `TestHealthRequiresObservations` holds the
-`requiresAtLeast` floor. `mise run kinds:check` refuses a changed declaration
+`TestObservationsSampleKindNamesAreFrozen` (kinds) pins the four names under
+`samples/observations`, and `TestHealthRequiresObservations` (kinds) holds
+the `requiresAtLeast` floor. `mise run kinds:check` refuses a changed declaration
 without a version bump. That a domain never edits a base kind is held by
 review only.
 

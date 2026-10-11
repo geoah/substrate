@@ -118,7 +118,13 @@ data:
   #
   # 17: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
-  version: 18
+  #
+  # 19: the `whoopwebhook` function and the `whoop-webhook` trigger check
+  # WHOOP's signed webhooks and rewrite or delete one mirror row per event;
+  # the `webhooksecret` setting holds the signing secret. `whoopsync` deletes
+  # a row whose object WHOOP answers 404 for when read back by id, and never
+  # writes a payload older than the stored row's `updatedAt`. ADDITIVE.
+  version: 19
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -207,6 +213,7 @@ data:
     - providers.substrate.reamde.dev/whoop/sleep
     - providers.substrate.reamde.dev/whoop/workout
     - providers.substrate.reamde.dev/whoop/whoopsync
+    - providers.substrate.reamde.dev/whoop/whoopwebhook
 ---
 # ---- the config type: the `client` input's kind ----------------------------
 # oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
@@ -1364,6 +1371,10 @@ data:
 # one is SKIPPED and COUNTED and the page keeps draining. Per-ACCOUNT
 # isolation: a page-level provider failure (a 401 on a revoked grant, a 5xx, a
 # dead network) stamps THAT account's syncStatus and the queue moves on.
+#
+# Deletions: WHOOP's collections carry no tombstone, so a stream that walks its
+# steady-state window reads back by id every row the mirror holds in that
+# window and the walk did not meet, and a 404 deletes the row.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: providers.substrate.reamde.dev/whoop/whoopsync
@@ -1377,6 +1388,18 @@ data:
   runtime: python
   timeout: PT60S
   permissions:
+    # The stored `updatedAt` of the rows a page names, the rows a drained
+    # stream's window holds, and a recovery's cycle row for the id it is read
+    # back by.
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/whoop/cycle
+        - providers.substrate.reamde.dev/whoop/recovery
+        - providers.substrate.reamde.dev/whoop/sleep
+        - providers.substrate.reamde.dev/whoop/workout
+      budgets:
+        calls: 200
+        rows: 2000
     writes:
       - providers.substrate.reamde.dev/whoop/user
       - providers.substrate.reamde.dev/whoop/cycle
@@ -1440,8 +1463,21 @@ data:
     `_due` refuses to start before it. A 5xx or a transport error is transient and
     the schedule's next tick retries it. A malformed RECORD is skipped and counted;
     records are independent and one of them must never cost the page.
+
+    REVISIONS AND DELETIONS. `updated_at` is the only revision WHOOP gives an
+    object: a payload older than the stored row's `updatedAt` is not written over
+    it (a page read before a webhook rewrote the row), and an equal one is
+    written and dropped by the engine as unchanged, so re-reading a page changes
+    nothing. A deleted object simply stops appearing in its collection. A stream
+    that had a cursor when the run began walks a window of two or three days, so
+    once it drains the rows the mirror holds in that window and the walk did not
+    meet are read back by id, at most RECONCILE_MAX of them: a 404 deletes the
+    row, and an object WHOOP still has is written like any page record. A cold
+    walk reconciles nothing; the webhook function covers deletions older than
+    the window.
     """
     import datetime as _dt
+    from urllib.parse import quote as _quote
     from urllib.parse import urlsplit as _urlsplit
 
     import requests
@@ -1506,6 +1542,23 @@ data:
     SCORE_STATES = {"SCORED": "scored", "PENDING_SCORE": "pendingscore",
                     "UNSCORABLE": "unscorable"}
 
+    # Per stream: the mirror kind it writes, the collection field its row id is
+    # composed from (a recovery has no id and is keyed on the cycle it scores),
+    # the stored property holding that WHOOP id, and the read that fetches one
+    # object back by it.
+    KINDS = {"cycle": CYCLE_TYPE, "recovery": RECOVERY_TYPE, "sleep": SLEEP_TYPE,
+             "workout": WORKOUT_TYPE}
+    UPSTREAM_KEY = {"cycle": "id", "recovery": "cycle_id", "sleep": "id",
+                    "workout": "id"}
+    UPSTREAM_PROPERTY = {"cycle": "cycleId", "sleep": "sleepId",
+                         "workout": "workoutId"}
+    READ_BACK = {"cycle": "/v2/cycle/%s", "recovery": "/v2/cycle/%s/recovery",
+                 "sleep": "/v2/activity/sleep/%s",
+                 "workout": "/v2/activity/workout/%s"}
+    # The most rows one stream reads back per run. A steady-state window holds
+    # a handful; each read back spends one of WHOOP's 100 requests a minute.
+    RECONCILE_MAX = 25
+
 
     # --------------------------------------------------------------- plumbing
 
@@ -1556,6 +1609,11 @@ data:
     class _Permanent(Exception):
         """An answer asking again cannot change: a revoked grant, a missing scope,
         a malformed request. Recorded once; the stream is not retried this run."""
+
+
+    class _NotFound(_Permanent):
+        """A 404. On a read by id it is the one sign a deletion leaves, because
+        WHOOP's collections carry no tombstone."""
 
 
     class _RateLimited(Exception):
@@ -1612,6 +1670,8 @@ data:
             raise _Permanent("unauthorized (was the grant revoked at WHOOP?)")
         if resp.status_code == 403:
             raise _Permanent("forbidden (a scope this grant does not carry)")
+        if resp.status_code == 404:
+            raise _NotFound("whoop returned HTTP 404")
         if 400 <= resp.status_code < 500 and resp.status_code != 408:
             raise _Permanent("whoop returned HTTP %d" % resp.status_code)
         resp.raise_for_status()
@@ -1736,6 +1796,41 @@ data:
 
     def _rid(host, aid, prefix, key):
         return host.ids.external("whoop", aid, prefix + "/" + str(key))
+
+
+    def _row_id(host, aid, key, rec):
+        """The row id one collection record lands at, or "" when it carries no
+        id to compose it from (the ingest then skips and counts it)."""
+        upstream = rec.get(UPSTREAM_KEY[key])
+        if upstream in (None, ""):
+            return ""
+        return _rid(host, aid, key, upstream)
+
+
+    def _ref_id(value):
+        """The record id a stored reference names, in either spelling."""
+        if isinstance(value, dict):
+            value = value.get("ref")
+        return str(value or "").rsplit("/", 1)[-1]
+
+
+    def _revisions(host, kind, rids):
+        """The stored `updatedAt` of each live row among `rids`, as {id: value}:
+        one list call for a page, never a get per record."""
+        rids = sorted({r for r in rids if r})
+        if not rids:
+            return {}
+        page = host.list(filter={"kinds": [kind], "ids": rids}, first=len(rids))
+        return {str(ent.get("id") or ""):
+                (ent.get("properties") or {}).get("updatedAt")
+                for ent in page.get("records") or []}
+
+
+    def _older(incoming, stored):
+        """Whether a payload's `updated_at` is before the stored row's. Equal is
+        not older: the same revision is written again and the engine drops it."""
+        a, b = _parse(incoming), _parse(stored)
+        return a is not None and b is not None and a < b
 
 
     # ------------------------------------------------------ property shapes
@@ -1877,8 +1972,17 @@ data:
             self.host = host
             self.aid = aid
             self.seen = set()
+            # {row id: stored updatedAt} for the rows the current page names.
+            self.stored = {}
 
         def write(self, kind, rid, props):
+            if _older(props.get("updatedAt"), self.stored.get(rid)):
+                # A page read before a newer write landed (a webhook, a later
+                # run) must not put the older revision back.
+                self.host.log("whoop: %s %s is older than the stored row; kept it"
+                              % (kind.rsplit("/", 1)[-1], rid))
+                self.seen.add(rid)
+                return rid
             self.host.effects.put(kind, rid, properties=_mint(props), if_absent=True)
             self.host.effects.patch(kind, rid, properties=props)
             self.seen.add(rid)
@@ -2191,6 +2295,77 @@ data:
         return None
 
 
+    def _upstream_of(host, key, props):
+        """The WHOOP id a stored row is read back by. A recovery is addressed by
+        the cycle it scores and holds that cycle only as a reference, so its
+        cycle row is read for the `cycleId`."""
+        if key != "recovery":
+            return props.get(UPSTREAM_PROPERTY[key])
+        cid = _ref_id(props.get("cycle"))
+        if not cid:
+            return None
+        cycle = host.records.get(CYCLE_TYPE, cid)
+        return ((cycle or {}).get("properties") or {}).get("cycleId")
+
+
+    def _orphans(host, aid, key, cur):
+        """The rows the mirror holds in one drained stream's window that the walk
+        did not meet, as `[stream, row id, WHOOP id, stored updatedAt]`, at most
+        RECONCILE_MAX of them."""
+        seen = set((cur.get("seen") or {}).get(key) or [])
+        page = host.records.list(KINDS[key],
+                                 where={"account": {"eq": aid},
+                                        "at": {"gte": cur["floors"][key]}},
+                                 first=min(len(seen) + RECONCILE_MAX, 500))
+        out = []
+        for ent in page.get("records") or []:
+            rid = str(ent.get("id") or "")
+            if not rid or rid in seen:
+                continue
+            props = ent.get("properties") or {}
+            upstream = _upstream_of(host, key, props)
+            if upstream in (None, ""):
+                host.log("whoop: %s row %s names no WHOOP id to read it back by"
+                         % (key, rid))
+                continue
+            out.append([key, rid, str(upstream), str(props.get("updatedAt") or "")])
+            if len(out) >= RECONCILE_MAX:
+                break
+        return out
+
+
+    def _follow_up(host, base, token, sink, user_rid, cur):
+        """Read back the first row the reconciliation queued. A 404 deletes it;
+        an object WHOOP still has is written as a page record would be, under
+        the same revision rule. Any other refusal is recorded and the row kept."""
+        orphans = list(cur.get("orphans") or [])
+        key, rid, upstream, held = orphans[0]
+        cur["orphans"] = orphans[1:]
+        try:
+            rec = _get(base, token, READ_BACK[key] % _quote(upstream, safe=""))
+        except _NotFound:
+            host.effects.delete(KINDS[key], rid)
+            cur["deleted"] = int(cur.get("deleted") or 0) + 1
+            host.log("whoop: %s %s is gone at WHOOP; deleted row %s"
+                     % (key, upstream, rid))
+            return
+        except _Permanent as e:
+            cur["failed"] = list(cur.get("failed") or []) + \
+                [[key + " read-back", str(e)[:60]]]
+            return
+        try:
+            uid = rec.get("user_id")
+            who = sink.user_stub(uid) if uid not in (None, "") else user_rid
+            if not who:
+                raise ValueError("record carries no user_id and no profile has "
+                                 "been read")
+            sink.stored = {rid: held}
+            _INGEST[key](sink, rec, who)
+        except Exception as e:                                      # noqa: BLE001
+            cur["skipped"] = int(cur.get("skipped") or 0) + 1
+            host.log("whoop: skip a %s read-back for %s: %s" % (key, sink.aid, e))
+
+
     def _sync_account(host, base, acct, aid, props, token, cur, queue):
         budget = _Budget()
         now = _dt.datetime.now(_dt.timezone.utc)
@@ -2210,7 +2385,12 @@ data:
                         # past them (Codex review, finding 13).
                         "runStart": _iso(now),
                         "requested": str(props.get("syncRequestedAt") or ""),
-                        "drained": [], "failed": []})
+                        "drained": [], "failed": [],
+                        # Only a stream that already had a cursor walks a
+                        # window short enough to read back what it missed.
+                        "reconcile": [k for k in streams
+                                      if (props.get("syncCursors") or {}).get(k)],
+                        "seen": {}, "orphans": [], "deleted": 0})
 
         sink = _Sink(host, aid)
         user_rid = cur.get("userRid") or ""
@@ -2247,12 +2427,17 @@ data:
                 return {"more": host.page.more(cur)}
 
         streams = list(cur.get("streams") or [])
-        while streams:
+        while streams or cur.get("orphans"):
             # BEFORE the request, not after the stream: one read may take the whole
             # of `requests`' 20-second timeout, and a run killed before it
             # checkpoints replays the same page forever.
             if budget.spent():
                 return {"more": host.page.more(cur)}
+            if cur.get("orphans"):
+                # A drained stream's read-backs, one per turn, before the next
+                # stream starts.
+                _follow_up(host, base, token, sink, user_rid, cur)
+                continue
             key = streams[0]
             path = next(p for k, _, p in STREAMS if k == key)
             params = {"limit": PAGE_LIMIT, "start": cur["floors"][key]}
@@ -2275,6 +2460,15 @@ data:
                 continue
 
             page = resp.get("records") or []
+            # The stored revision of every row this page names (`_Sink.write`
+            # keeps a newer row), and the rows the walk met, which the
+            # reconciliation leaves alone.
+            rids = [_row_id(host, aid, key, rec) for rec in page]
+            sink.stored = _revisions(host, KINDS[key], rids)
+            if key in (cur.get("reconcile") or []):
+                met = cur.setdefault("seen", {}).setdefault(key, [])
+                held = set(met)
+                met.extend(r for r in rids if r and r not in held)
             # THE REFERENCED ROW FIRST: one thin `user` mint per distinct member id
             # the page named, before any row that references it. GUARDED, because
             # this pass used to sit outside the per-record `try` and a `user_id`
@@ -2325,6 +2519,10 @@ data:
                 + [[key, cur.get("runStart") or _iso(now)]]
             streams = streams[1:]
             cur.update({"streams": streams, "nextToken": ""})
+            if key in (cur.get("reconcile") or []):
+                cur["orphans"] = list(cur.get("orphans") or []) \
+                    + _orphans(host, aid, key, cur)
+                (cur.get("seen") or {}).pop(key, None)
 
         # -- the account drained -------------------------------------------------
         _stamp(host, acct, aid, cur, error=None, completed=True)
@@ -2332,7 +2530,8 @@ data:
         if nxt:
             return nxt
         return {"output": {"account": aid, "records": cur.get("records") or 0,
-                           "skipped": cur.get("skipped") or 0}}
+                           "skipped": cur.get("skipped") or 0,
+                           "deleted": cur.get("deleted") or 0}}
 
 
     def main(input, host):
@@ -2440,3 +2639,572 @@ data:
             _stamp(host, acct, aid, cur, error=msg)
             nxt = _next_account(host, cur, queue)
             return nxt or {"output": {"account": aid, "error": msg}}
+---
+# ---- the webhook function: one WHOOP event per delivery ----------------------
+# WHOOP POSTs a notification when a sleep, a recovery or a workout is written
+# or deleted: `{user_id, id, type, trace_id}`, signed with the WHOOP app's
+# client secret. The body checks the signature, finds the account by WHOOP's
+# `user_id`, then reads the object back by id and rewrites its mirror row, or
+# deletes the row. WHOOP sends no event for a cycle or the member; the sync's
+# window covers both.
+#
+# The OAuth facility never injects the client secret into a body, so the
+# signature is checked against the `webhooksecret` setting (settings.yaml), a
+# copy of the same value the owner pastes in. The mapping from a WHOOP object
+# to its row is the sync's, repeated here because a body cannot import
+# another; a delivery for an object the sync already wrote leaves the row's
+# version where it was, which the provider tests hold.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/whoop/whoopwebhook
+data:
+  authority: providers.substrate.reamde.dev
+  package: whoop
+  description: >-
+    Receive one WHOOP webhook: check its signature against the webhooksecret
+    setting, then read the changed sleep, recovery or workout back from WHOOP
+    and rewrite its mirror row, or delete the row of one WHOOP deleted.
+  runtime: python
+  timeout: PT30S
+  permissions:
+    # The stored `updatedAt` of the rows an event rewrites, whether a row an
+    # event deletes exists, and the recovery a `recovery.deleted` names by its
+    # sleep.
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/whoop/recovery
+        - providers.substrate.reamde.dev/whoop/sleep
+        - providers.substrate.reamde.dev/whoop/workout
+    writes:
+      - providers.substrate.reamde.dev/whoop/recovery
+      - providers.substrate.reamde.dev/whoop/sleep
+      - providers.substrate.reamde.dev/whoop/workout
+    network:
+      - "api.prod.whoop.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.32.4",
+    # ]
+    # ///
+    """WHOOP webhook receiver: check the signature, then rewrite or delete one row.
+
+    THE SIGNATURE (developer.whoop.com/docs/developing/webhooks).
+    `X-WHOOP-Signature` is base64(HMAC-SHA256(key = the app's client secret,
+    message = the `X-WHOOP-Signature-Timestamp` header's value + the raw body)),
+    and the timestamp is milliseconds since the epoch. The body is the bytes the
+    door recorded, so a redelivered or retried fire checks the same bytes. An
+    empty `webhooksecret` setting, a missing header, a signature that does not
+    match, or a timestamp more than TOLERANCE_SECONDS from the moment the door
+    accepted the request is a refusal: the body raises before it reads or writes
+    anything, and the delivery parks with the reason. WHOOP documents no
+    freshness window; each of its retries is signed afresh, so a short one only
+    refuses a captured request replayed later.
+
+    THE ACCOUNT is the one whose `user` reference is the member row for the
+    event's `user_id`, which the sync writes on its first page. An event for a
+    member no account holds, or for a paused account, is acknowledged and
+    dropped.
+
+    THE EVENTS. A create arrives as `.updated`.
+      * `sleep.updated`, `workout.updated`: read the object by id and rewrite its
+        row, while the account's toggle for it is on.
+      * `recovery.updated`: the id is the SLEEP's, not the cycle's. Read the
+        sleep for its `cycle_id`, then `/v2/cycle/{cycle_id}/recovery`, and
+        rewrite the recovery row (and the sleep row, with sleeps on).
+      * `sleep.deleted`, `workout.deleted`: delete the row the id names.
+      * `recovery.deleted`: the id is again the sleep's, so the recovery whose
+        `sleep` reference is that row is deleted.
+    A 404 on any read back means the object is gone, and its row is deleted too.
+    A row that does not exist is never deleted (that would fail the delivery),
+    so a duplicate delivery changes nothing: WHOOP says duplicates happen, and
+    the same object written twice is a write the engine drops.
+
+    REVISIONS. `updated_at` is the object's revision: an answer older than the
+    stored row's `updatedAt` is not written over it. A 429, a missing token or a
+    retry hold drops an update rather than parking it; the sync's next window
+    re-reads the object.
+    """
+    import base64
+    import datetime as _dt
+    import hashlib
+    import hmac
+    import json
+    from urllib.parse import quote as _quote
+    from urllib.parse import urlsplit as _urlsplit
+
+    import requests
+
+    AUTHORITY = "providers.substrate.reamde.dev/whoop"
+    USER_TYPE = AUTHORITY + "/user"
+    RECOVERY_TYPE = AUTHORITY + "/recovery"
+    SLEEP_TYPE = AUTHORITY + "/sleep"
+    WORKOUT_TYPE = AUTHORITY + "/workout"
+
+    DEFAULT_API_BASE = "https://api.prod.whoop.com/developer"
+    API_HOST = "api.prod.whoop.com"   # the ONLY non-loopback origin the token may reach
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+    SECRET_SETTING = "webhooksecret"
+    SIGNATURE_HEADER = "x-whoop-signature"
+    TIMESTAMP_HEADER = "x-whoop-signature-timestamp"
+    TOLERANCE_SECONDS = 300
+
+    # The event's object -> the account toggle that must be on to write it, and
+    # the mirror kind its row is.
+    TOGGLES = {"sleep": "enabledSleep", "recovery": "enabledRecovery",
+               "workout": "enabledWorkouts"}
+    KINDS = {"sleep": SLEEP_TYPE, "recovery": RECOVERY_TYPE,
+             "workout": WORKOUT_TYPE}
+    READ_BACK = {"sleep": "/v2/activity/sleep/%s",
+                 "workout": "/v2/activity/workout/%s"}
+
+    SCORE_STATES = {"SCORED": "scored", "PENDING_SCORE": "pendingscore",
+                    "UNSCORABLE": "unscorable"}
+
+
+    # --------------------------------------------------------------- plumbing
+
+    def _parse(value):
+        if not value:
+            return None
+        try:
+            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+
+    def _check_origin(url):
+        """The sync's origin pin: the token reaches the production host over
+        HTTPS or loopback, nothing else."""
+        u = _urlsplit(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return
+        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+            return
+        raise RuntimeError(
+            "whoop webhook: refusing to send credentials to %s://%s:%s; only "
+            "https://api.prod.whoop.com or loopback"
+            % (u.scheme, host or "?", u.port or "-"))
+
+
+    def _api_base(cfg):
+        client = ((cfg.get("inputs") or {}).get("client") or {})
+        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
+        return (base or DEFAULT_API_BASE).rstrip("/")
+
+
+    class _NotFound(Exception):
+        """WHOOP holds no such object."""
+
+
+    class _RateLimited(Exception):
+        """WHOOP asked us to stop."""
+
+
+    def _get(base, token, path):
+        url = base + path
+        _check_origin(url)
+        resp = requests.get(url, headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "application/json",
+        }, timeout=10)
+        if resp.status_code == 404:
+            raise _NotFound(path)
+        if resp.status_code == 429:
+            raise _RateLimited("rate limited by WHOOP")
+        if resp.status_code == 401:
+            raise RuntimeError("whoop webhook: unauthorized (was the grant "
+                               "revoked at WHOOP?)")
+        if resp.status_code == 403:
+            raise RuntimeError("whoop webhook: forbidden (a scope this grant "
+                               "does not carry)")
+        if resp.status_code >= 400:
+            raise RuntimeError("whoop webhook: whoop returned HTTP %d"
+                               % resp.status_code)
+        return resp.json()
+
+
+    def _held(props):
+        """The sync's 429 hold: WHOOP named an instant to come back, and a read
+        before it earns the next 429."""
+        hold = _parse(props.get("retryNotBefore"))
+        return hold is not None and _dt.datetime.now(_dt.timezone.utc) < hold
+
+
+    def _rid(host, aid, prefix, key):
+        return host.ids.external("whoop", aid, prefix + "/" + str(key))
+
+
+    def _ref_path(value):
+        if isinstance(value, dict):
+            value = value.get("ref")
+        return str(value or "")
+
+
+    # ------------------------------------------------------------ the signature
+
+    def _body_bytes(request):
+        body = request.get("body")
+        if isinstance(body, dict) and isinstance(body.get("text"), str):
+            return body["text"].encode("utf-8")
+        if isinstance(body, dict) and isinstance(body.get("base64"), str):
+            return base64.b64decode(body["base64"])
+        raise RuntimeError("whoop webhook: refused, the request carries no body "
+                           "to check the signature over")
+
+
+    def _verify(request, secret, accepted_at):
+        """The signed body, or a refusal that names what failed."""
+        headers = {str(k).lower(): str(v)
+                   for k, v in (request.get("headers") or {}).items()}
+        signature = headers.get(SIGNATURE_HEADER, "").strip()
+        stamp = headers.get(TIMESTAMP_HEADER, "").strip()
+        if not signature or not stamp:
+            raise RuntimeError(
+                "whoop webhook: refused, the request carries no X-WHOOP-Signature "
+                "and X-WHOOP-Signature-Timestamp headers")
+        body = _body_bytes(request)
+        want = base64.b64encode(hmac.new(secret.encode("utf-8"),
+                                         stamp.encode("utf-8") + body,
+                                         hashlib.sha256).digest()).decode("ascii")
+        if not hmac.compare_digest(want.encode("ascii"),
+                                   signature.encode("utf-8", "replace")):
+            raise RuntimeError(
+                "whoop webhook: refused, X-WHOOP-Signature does not match the "
+                "body; the request was not signed with the client secret in the "
+                "%s setting" % SECRET_SETTING)
+        try:
+            signed = int(stamp) / 1000.0
+        except ValueError:
+            raise RuntimeError(
+                "whoop webhook: refused, X-WHOOP-Signature-Timestamp is not "
+                "milliseconds since the epoch") from None
+        arrived = _parse(accepted_at) or _dt.datetime.now(_dt.timezone.utc)
+        skew = abs(arrived.timestamp() - signed)
+        if skew > TOLERANCE_SECONDS:
+            raise RuntimeError(
+                "whoop webhook: refused, the request was signed %d seconds away "
+                "from when it arrived (the limit is %d); a stale or replayed "
+                "request is not acted on" % (skew, TOLERANCE_SECONDS))
+        return body
+
+
+    def _account_for(host, cfg, user_id):
+        """The account whose `user` reference is this WHOOP member's row, and
+        that row's id."""
+        for acct in cfg.get("accounts") or []:
+            aid = acct.get("id")
+            if not aid:
+                continue
+            rid = _rid(host, aid, "user", user_id)
+            have = _ref_path((acct.get("properties") or {}).get("user"))
+            if have in (USER_TYPE + "/" + rid, rid):
+                return acct, rid
+        return None, ""
+
+
+    # ------------------------------------------------- the sync's row mapping
+    # The same tables and the same rules as `whoopsync` (its comments say why):
+    # an authoritative payload's omitted property is written null, a row is
+    # minted with its non-null half and then patched whole.
+
+    def _take(dst, src, pairs, authoritative=True):
+        for api, prop in pairs:
+            if api in src:
+                value = src[api]
+                dst[prop] = None if value == "" else value
+            elif authoritative:
+                dst[prop] = None
+        return dst
+
+
+    def _mint(props):
+        return {k: v for k, v in props.items() if v is not None}
+
+
+    def _score_state(props, rec):
+        if "score_state" not in rec:
+            props["scoreState"] = None
+            return
+        value = SCORE_STATES.get(str(rec.get("score_state") or "").upper())
+        if value is not None:
+            props["scoreState"] = value
+
+
+    def _obj(src, pairs):
+        if not isinstance(src, dict):
+            return None
+        out = _take({}, src, pairs, authoritative=False)
+        return out or None
+
+
+    def _span(props, rec):
+        if rec.get("start"):
+            props["at"] = rec["start"]
+        props["endsAt"] = rec.get("end") or None
+
+
+    RECOVERY_SCORE = (("user_calibrating", "userCalibrating"),
+                      ("recovery_score", "recoveryScore"),
+                      ("resting_heart_rate", "restingHeartRate"),
+                      ("hrv_rmssd_milli", "hrvRmssdMilli"),
+                      ("spo2_percentage", "spo2Percentage"),
+                      ("skin_temp_celsius", "skinTempCelsius"))
+    SLEEP_SCORE = (("respiratory_rate", "respiratoryRate"),
+                   ("sleep_performance_percentage", "sleepPerformancePercentage"),
+                   ("sleep_consistency_percentage", "sleepConsistencyPercentage"),
+                   ("sleep_efficiency_percentage", "sleepEfficiencyPercentage"))
+    STAGE_SUMMARY = (("total_in_bed_time_milli", "totalInBedTimeMilli"),
+                     ("total_awake_time_milli", "totalAwakeTimeMilli"),
+                     ("total_no_data_time_milli", "totalNoDataTimeMilli"),
+                     ("total_light_sleep_time_milli", "totalLightSleepTimeMilli"),
+                     ("total_slow_wave_sleep_time_milli", "totalSlowWaveSleepTimeMilli"),
+                     ("total_rem_sleep_time_milli", "totalRemSleepTimeMilli"),
+                     ("sleep_cycle_count", "sleepCycleCount"),
+                     ("disturbance_count", "disturbanceCount"))
+    SLEEP_NEEDED = (("baseline_milli", "baselineMilli"),
+                    ("need_from_sleep_debt_milli", "needFromSleepDebtMilli"),
+                    ("need_from_recent_strain_milli", "needFromRecentStrainMilli"),
+                    ("need_from_recent_nap_milli", "needFromRecentNapMilli"))
+    WORKOUT_SCORE = (("strain", "strain"),
+                     ("average_heart_rate", "averageHeartRate"),
+                     ("max_heart_rate", "maxHeartRate"), ("kilojoule", "kilojoule"),
+                     ("percent_recorded", "percentRecorded"),
+                     ("distance_meter", "distanceMeter"),
+                     ("altitude_gain_meter", "altitudeGainMeter"),
+                     ("altitude_change_meter", "altitudeChangeMeter"))
+    ZONE_DURATIONS = (("zone_zero_milli", "zoneZeroMilli"),
+                      ("zone_one_milli", "zoneOneMilli"),
+                      ("zone_two_milli", "zoneTwoMilli"),
+                      ("zone_three_milli", "zoneThreeMilli"),
+                      ("zone_four_milli", "zoneFourMilli"),
+                      ("zone_five_milli", "zoneFiveMilli"))
+
+
+    class _Rows:
+        """Stages the rows one event produces, and what it did, for the output."""
+
+        def __init__(self, host, aid, user_rid):
+            self.host = host
+            self.aid = aid
+            self.user_rid = user_rid
+            self.wrote = []
+            self.kept = []
+            self.deleted = []
+
+        def _stored(self, kind, rid):
+            row = self.host.records.get(kind, rid)
+            return ((row or {}).get("properties") or {}).get("updatedAt")
+
+        def write(self, kind, rid, props):
+            a = _parse(props.get("updatedAt"))
+            b = _parse(self._stored(kind, rid))
+            if a is not None and b is not None and a < b:
+                # An answer older than the row: a later write already landed.
+                self.kept.append(kind + "/" + rid)
+                return
+            self.host.effects.put(kind, rid, properties=_mint(props), if_absent=True)
+            self.host.effects.patch(kind, rid, properties=props)
+            self.wrote.append(kind + "/" + rid)
+
+        def delete(self, kind, rid):
+            """Deleting a row that was never written fails the whole delivery,
+            so the row is read first, and one already deleted is left alone."""
+            row = self.host.records.get(kind, rid)
+            if row is None or row.get("deletedAt"):
+                return
+            self.host.effects.delete(kind, rid)
+            self.deleted.append(kind + "/" + rid)
+
+        def recovery(self, rec):
+            cid = rec.get("cycle_id")
+            if cid in (None, ""):
+                raise ValueError("recovery record carries no cycle_id")
+            sid = rec.get("sleep_id")
+            if sid in (None, ""):
+                raise ValueError("recovery record carries no sleep_id")
+            props = {"account": self.aid, "user": self.user_rid,
+                     "cycle": _rid(self.host, self.aid, "cycle", cid),
+                     "sleep": _rid(self.host, self.aid, "sleep", sid)}
+            if rec.get("created_at"):
+                props["at"] = rec["created_at"]
+            _take(props, rec, (("updated_at", "updatedAt"),))
+            _score_state(props, rec)
+            props["score"] = _obj(rec.get("score"), RECOVERY_SCORE)
+            self.write(RECOVERY_TYPE, _rid(self.host, self.aid, "recovery", cid),
+                       props)
+
+        def sleep(self, rec):
+            sid = rec.get("id")
+            if sid in (None, ""):
+                raise ValueError("sleep record carries no id")
+            cid = rec.get("cycle_id")
+            if cid in (None, ""):
+                raise ValueError("sleep record carries no cycle_id")
+            props = {"account": self.aid, "sleepId": str(sid),
+                     "user": self.user_rid,
+                     "cycle": _rid(self.host, self.aid, "cycle", cid)}
+            _span(props, rec)
+            _take(props, rec, (("v1_id", "v1Id"),
+                               ("timezone_offset", "timezoneOffset"),
+                               ("nap", "nap"), ("created_at", "createdAt"),
+                               ("updated_at", "updatedAt")))
+            _score_state(props, rec)
+            score = _obj(rec.get("score"), SLEEP_SCORE) or {}
+            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
+            stages = _obj(raw.get("stage_summary"), STAGE_SUMMARY)
+            if stages:
+                score["stageSummary"] = stages
+            needed = _obj(raw.get("sleep_needed"), SLEEP_NEEDED)
+            if needed:
+                score["sleepNeeded"] = needed
+            props["score"] = score or None
+            self.write(SLEEP_TYPE, _rid(self.host, self.aid, "sleep", sid), props)
+
+        def workout(self, rec):
+            wid = rec.get("id")
+            if wid in (None, ""):
+                raise ValueError("workout record carries no id")
+            props = {"account": self.aid, "workoutId": str(wid),
+                     "user": self.user_rid}
+            _span(props, rec)
+            _take(props, rec, (("v1_id", "v1Id"),
+                               ("timezone_offset", "timezoneOffset"),
+                               ("sport_name", "sportName"), ("sport_id", "sportId"),
+                               ("created_at", "createdAt"),
+                               ("updated_at", "updatedAt")))
+            _score_state(props, rec)
+            score = _obj(rec.get("score"), WORKOUT_SCORE) or {}
+            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
+            zones = _obj(raw.get("zone_durations") or raw.get("zone_duration"),
+                         ZONE_DURATIONS)
+            if zones:
+                score["zoneDurations"] = zones
+            props["score"] = score or None
+            self.write(WORKOUT_TYPE, _rid(self.host, self.aid, "workout", wid),
+                       props)
+
+
+    # --------------------------------------------------------------- the events
+
+    def _recoveries_of(host, aid, sleep_rid):
+        """The recovery rows whose `sleep` is this sleep row: a recovery event
+        names the sleep, and the row is keyed on the cycle."""
+        page = host.records.list(RECOVERY_TYPE,
+                                 where={"account": {"eq": aid},
+                                        "sleep": {"eq": sleep_rid}},
+                                 first=10)
+        return [str(ent.get("id") or "") for ent in page.get("records") or []
+                if ent.get("id")]
+
+
+    def _deleted(host, rows, obj, oid):
+        aid = rows.aid
+        if obj == "recovery":
+            for rid in _recoveries_of(host, aid, _rid(host, aid, "sleep", oid)):
+                rows.delete(RECOVERY_TYPE, rid)
+            return
+        rows.delete(KINDS[obj], _rid(host, aid, obj, oid))
+
+
+    def _updated(host, base, token, rows, obj, oid, props):
+        aid = rows.aid
+        quoted = _quote(oid, safe="")
+        if obj != "recovery":
+            try:
+                rec = _get(base, token, READ_BACK[obj] % quoted)
+            except _NotFound:
+                rows.delete(KINDS[obj], _rid(host, aid, obj, oid))
+                return
+            getattr(rows, obj)(rec)
+            return
+        # A recovery event names its SLEEP: the sleep says which cycle, and the
+        # cycle is how WHOOP addresses the recovery.
+        sleep_rid = _rid(host, aid, "sleep", oid)
+        try:
+            srec = _get(base, token, READ_BACK["sleep"] % quoted)
+        except _NotFound:
+            # WHOOP deletes a recovery with its sleep.
+            for rid in _recoveries_of(host, aid, sleep_rid):
+                rows.delete(RECOVERY_TYPE, rid)
+            rows.delete(SLEEP_TYPE, sleep_rid)
+            return
+        cid = srec.get("cycle_id")
+        if cid in (None, ""):
+            raise ValueError("sleep %s carries no cycle_id" % oid)
+        if props.get(TOGGLES["sleep"]):
+            rows.sleep(srec)
+        try:
+            rrec = _get(base, token, "/v2/cycle/%s/recovery"
+                        % _quote(str(cid), safe=""))
+        except _NotFound:
+            rows.delete(RECOVERY_TYPE, _rid(host, aid, "recovery", cid))
+            return
+        rows.recovery(rrec)
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        envelope = input.get("envelope") or {}
+        request = envelope.get("request")
+        if not isinstance(request, dict):
+            raise RuntimeError("whoop webhook: the delivery carries no request; "
+                               "the whoop-webhook trigger is what fires this")
+        secret = str((cfg.get("settings") or {}).get(SECRET_SETTING) or "")
+        if not secret:
+            raise RuntimeError(
+                "whoop webhook: refused, the %s/%s setting is empty; paste the "
+                "WHOOP app's client secret into it" % (AUTHORITY, SECRET_SETTING))
+        body = _verify(request, secret, (envelope.get("fire") or {}).get("at"))
+        try:
+            event = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise RuntimeError("whoop webhook: the signed body is not JSON") from None
+        if not isinstance(event, dict):
+            raise RuntimeError("whoop webhook: the signed body is not a JSON object")
+
+        etype = str(event.get("type") or "")
+        obj, _, action = etype.partition(".")
+        oid = str(event.get("id") or "")
+        uid = event.get("user_id")
+        if obj not in TOGGLES or action not in ("updated", "deleted") or not oid \
+                or uid in (None, ""):
+            return {"output": {"skipped": "not an event this receiver acts on",
+                               "type": etype[:60]}}
+        acct, user_rid = _account_for(host, cfg, uid)
+        if acct is None:
+            return {"output": {"skipped": "no connected account is this WHOOP "
+                                          "member", "type": etype}}
+        aid = acct["id"]
+        props = acct.get("properties") or {}
+        out = {"account": aid, "type": etype}
+        if props.get("syncPaused"):
+            out["skipped"] = "the account is paused"
+            return {"output": out}
+        rows = _Rows(host, aid, user_rid)
+
+        if action == "deleted":
+            # A deletion needs no read, and the row mirrors an object that no
+            # longer exists whichever toggles are on now.
+            _deleted(host, rows, obj, oid)
+        elif not props.get(TOGGLES[obj]):
+            out["skipped"] = "the %s toggle is off" % TOGGLES[obj]
+        elif acct.get("tokenError") or not acct.get("token"):
+            out["skipped"] = "the account has no live token"
+        elif _held(props):
+            out["skipped"] = "WHOOP asked to wait until %s" % props["retryNotBefore"]
+        else:
+            base = _api_base(cfg)
+            _check_origin(base)
+            try:
+                _updated(host, base, acct["token"], rows, obj, oid, props)
+            except _RateLimited as e:
+                out["skipped"] = str(e)
+        out.update({"wrote": rows.wrote, "kept": rows.kept,
+                    "deleted": rows.deleted})
+        return {"output": out}

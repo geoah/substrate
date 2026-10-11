@@ -71,6 +71,7 @@ func TestMeasureOf(t *testing.T) {
 		"V.A{reactive}": "reactive-power", "Hz": "frequency", "/min": "rate", "dB": "level", "dBm": "power-level",
 		"[pH]": "acidity", "U/L": "catalytic-concentration", "U": "catalytic-activity", "kat": "catalytic-activity",
 		"[IU]": "arbitrary", "kW.h/(100.km)": "energy-per-distance", "mL/(kg.min)": "oxygen-uptake-rate",
+		"10*9/L": "number-concentration", "10*3/uL": "number-concentration",
 		// A prefix the table does not list belongs to its row's measure.
 		"GJ": "energy", "kV.A": "apparent-power", "kV.A{reactive}": "reactive-power", "mK": "temperature",
 		"fL": "volume", "pg": "mass", "/ms": "rate", "MHz": "frequency", "TBy": "information",
@@ -269,6 +270,25 @@ func TestIrrationalFactorsAreRefused(t *testing.T) {
 	}
 }
 
+// An ordering key has a factor for every admitted code: the exact one where
+// a rational number states it, pi at 40 places where only pi reaches the
+// base, and a prefixed code the table does not list converts by its prefix.
+func TestOrderFactorKeysEveryAdmittedCode(t *testing.T) {
+	f, o, err := vocabulary.OrderFactor("angle", "rad")
+	if err != nil || o.Sign() != 0 || f.FloatString(30) != "57.295779513082320876798154814105" {
+		t.Errorf("rad keys at %v + %v (%v), want 180/pi", f.FloatString(30), o, err)
+	}
+	if f, _, err := vocabulary.OrderFactor("mass", "Mg"); err != nil || f.Cmp(rat(t, "1000")) != 0 {
+		t.Errorf("Mg keys at %v (%v), want 1000 kg", f, err)
+	}
+	if f, o, err := vocabulary.OrderFactor("temperature", "[degF]"); err != nil || f.Cmp(rat(t, "5/9")) != 0 || o.Sign() == 0 {
+		t.Errorf("[degF] keys at %v + %v (%v), want ToBase's exact map", f, o, err)
+	}
+	if _, _, err := vocabulary.OrderFactor("arbitrary", "[IU]"); err == nil {
+		t.Error("an arbitrary unit has a base to key by")
+	}
+}
+
 func TestConvertIsExact(t *testing.T) {
 	for _, c := range []struct{ value, from, to, want string }{
 		{"72.4", "kg", "[lb_av]", "72400000000/453592370"},
@@ -281,6 +301,8 @@ func TestConvertIsExact(t *testing.T) {
 		{"100", "mg/dL", "g/L", "1"},
 		{"1", "U/L", "ukat/L", "1/60"},
 		{"60", "{count}/min", "{count}/s", "1"},
+		// A white cell count in SI and in US units is one number.
+		{"6.2", "10*9/L", "10*3/uL", "6.2"},
 	} {
 		got := convertTo(t, "", c.value, c.from, c.to)
 		if got.Cmp(rat(t, c.want)) != 0 {
@@ -369,5 +391,34 @@ func TestCanonicalDecimal(t *testing.T) {
 	}
 	if _, err := vocabulary.CanonicalDecimal("1e3"); err == nil || !strings.Contains(err.Error(), "exponent") {
 		t.Errorf("an exponent: %v", err)
+	}
+}
+
+func TestRatDecimal(t *testing.T) {
+	for _, c := range []struct {
+		in    string
+		want  string
+		exact bool
+	}{
+		{"0", "0", true},
+		{"362/5", "72.4", true},
+		{"-1/8", "-0.125", true},
+		{"1/10000", "0.0001", true},
+		{"1200", "1200", true},
+		{"493/5", "98.6", true},
+		{"523/10800", "0.048425925925925925926", false},
+		{"1/3", "0.33333333333333333333", false},
+		{"-2/3", "-0.66666666666666666667", false},
+		{"200000000000000000000000/3", "66666666666666666667000", false},
+		{"99999999999999999999999/99999999999999999999990", "1", false},
+	} {
+		r, ok := new(big.Rat).SetString(c.in)
+		if !ok {
+			t.Fatalf("bad case %s", c.in)
+		}
+		got, exact := vocabulary.RatDecimal(r, vocabulary.ConvertedDigits)
+		if got != c.want || exact != c.exact {
+			t.Errorf("RatDecimal(%s) = %q, %v; want %q, %v", c.in, got, exact, c.want, c.exact)
+		}
 	}
 }

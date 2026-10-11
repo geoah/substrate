@@ -1,0 +1,16 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json; charset=utf-8",
+   "content-length": "136",
+   "x-whoop-signature": "fYldaV0jMRKNAse8A6cpkVCBSpEI4Z6FIbIaaaS8RV4=",
+   "x-whoop-signature-timestamp": "1791607267512"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"user_id\":4021873,\"id\":\"adde68d0-1852-41bd-963a-f47e68df7da7\",\"type\":\"sleep.updated\",\"trace_id\":\"75ff71f6-2693-43f4-a8ac-3b26577d37a8\"}"
+  }
+ }
+}

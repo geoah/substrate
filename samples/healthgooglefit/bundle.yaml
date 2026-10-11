@@ -1,0 +1,714 @@
+# The Google Fit adapter: turns the googlefit provider's mirror rows into the
+# health sample's observed values. A SAMPLE the repository imports and owns;
+# it declares no kind of its own, only the function that writes and the
+# trigger that runs it.
+#
+#   googlefit/dataset (one data source, one UTC day)  ->  hourly traces, or
+#                                                         one observation per
+#                                                         reading
+#   googlefit/session (a workout or a night)          ->  health/workout, or
+#                                                         health/sleep plus one
+#                                                         coded amount per
+#                                                         sleep segment
+#
+# Every output names the mirror row it came from (`origin` on an observation,
+# a sleep and a workout, `origins` on a trace), and each delivery rebuilds
+# that row's whole output set: what it no longer implies is deleted, so a
+# re-read day, an emptied day and a deleted session all converge.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/healthgooglefit
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthgooglefit
+  version: 1
+---
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/healthgooglefit
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthgooglefit
+  description: >-
+    Turns your Google Fit data into health observations: heart rate and step
+    traces, weigh-ins, workouts and nights of sleep. Needs the health sample
+    and the Google Fit provider.
+  requires:
+    - samples.substrate.reamde.dev/observations
+    - samples.substrate.reamde.dev/health
+    - providers.substrate.reamde.dev/googlefit
+  requiresAtLeast:
+    samples.substrate.reamde.dev/observations: 1
+    samples.substrate.reamde.dev/health: 1
+    providers.substrate.reamde.dev/googlefit: 1
+  installs:
+    - samples.substrate.reamde.dev/healthgooglefit/observegooglefit
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/healthgooglefit/observegooglefit
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthgooglefit
+  description: >-
+    Rebuild the health observations one Google Fit mirror row implies: a dataset
+    day becomes hourly heart rate, step and energy traces or one observation
+    per weigh-in, blood pressure, oxygen or glucose reading; a session becomes
+    a workout, or a night of sleep with one coded amount per stage segment.
+    Deletes what the row no longer implies. Runs on the healthgooglefit-on-mirror
+    trigger.
+  runtime: python
+  timeout: PT60S
+  returns:
+    - name: written
+      type: int
+      description: how many observed records the delivery wrote or rewrote
+    - name: deleted
+      type: int
+      description: how many earlier outputs it deleted
+    - name: skipped
+      type: int
+      description: how many points or segments it could not map
+    - name: note
+      type: string
+      description: why a row was passed over, when it was
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/googlefit/account
+        - providers.substrate.reamde.dev/googlefit/datasource
+        - providers.substrate.reamde.dev/googlefit/dataset
+        - providers.substrate.reamde.dev/googlefit/session
+        - samples.substrate.reamde.dev/observations/observation
+        - samples.substrate.reamde.dev/observations/trace
+        - samples.substrate.reamde.dev/health/sleep
+        - samples.substrate.reamde.dev/health/workout
+      budgets:
+        calls: 200
+        rows: 5000
+    writes:
+      - samples.substrate.reamde.dev/observations/observation
+      - samples.substrate.reamde.dev/observations/trace
+      - samples.substrate.reamde.dev/observations/source
+      - samples.substrate.reamde.dev/health/sleep
+      - samples.substrate.reamde.dev/health/workout
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "tzdata==2025.2",
+    # ]
+    # ///
+    """Google Fit mirror rows into observed values.
+
+    Fit stores no UTC offset on any point or session. Each value's offset comes
+    from the account's owner-set `timezone`, read when the value is written,
+    and from UTC when the account names none. An observation says which in a
+    qualifier (`utcOffsetRule`: `timezone:<name>` or `utc`); a trace, a sleep
+    and a workout declare no property for it, and the rule is the same for
+    every row of one account.
+
+    A data type is written from ONE derived stream (MAPPINGS): Google keeps
+    several views of the same quantity (estimated_steps and merge_step_deltas
+    count the same steps), and writing two would count everything twice. A
+    stream or a data type with no catalogue metric is passed over and counted.
+    """
+    import datetime as _dt
+    import re as _re
+    import zoneinfo
+    from collections import Counter
+    from decimal import Decimal
+
+    # The zone database is the tzdata package's: the sandbox does not promise
+    # the host's own files are readable.
+    zoneinfo.reset_tzpath(to=[])
+
+    HOME = "samples.substrate.reamde.dev"
+    OBSERVATION = HOME + "/observations/observation"
+    TRACE = HOME + "/observations/trace"
+    SOURCE = HOME + "/observations/source"
+    METRIC = HOME + "/observations/metric"
+    SLEEP = HOME + "/health/sleep"
+    WORKOUT = HOME + "/health/workout"
+
+    FIT = "providers.substrate.reamde.dev/googlefit"
+    ACCOUNT = FIT + "/account"
+    DATASOURCE = FIT + "/datasource"
+    DATASET = FIT + "/dataset"
+    SESSION = FIT + "/session"
+
+    UTC = _dt.timezone.utc
+    MAX_ID = 128
+    PERIOD = "PT1H"
+    NS = 10**9
+    SLEEP_ACTIVITY = 72
+    SLEEP_TYPE = "com.google.sleep.segment"
+    OFFSET_RULE = "utcOffsetRule"
+
+    # data type -> the derived streams read, the catalogue metric, its form and
+    # unit, Fit's own unit, and how the points are stored.
+    MAPPINGS = {
+        "com.google.heart_rate.bpm": {
+            "streams": ("merge_heart_rate_bpm",), "metric": "heart_rate",
+            "form": "gauge", "unit": "/min", "fitUnit": "/min", "hold": "PT4M",
+            "shape": "trace"},
+        "com.google.step_count.delta": {
+            "streams": ("estimated_steps",), "metric": "steps", "form": "amount",
+            "unit": "{steps}", "fitUnit": "{steps}", "shape": "trace"},
+        "com.google.calories.expended": {
+            "streams": ("merge_calories_expended",), "metric": "energy_expended",
+            "form": "amount", "unit": "kcal", "fitUnit": "kcal", "shape": "trace"},
+        "com.google.weight": {
+            "streams": ("merge_weight",), "metric": "body_mass", "form": "gauge",
+            "unit": "kg", "fitUnit": "kg", "shape": "single"},
+        "com.google.height": {
+            "streams": ("merge_height",), "metric": "height", "form": "gauge",
+            "unit": "m", "fitUnit": "m", "shape": "single"},
+        "com.google.body.fat.percentage": {
+            "streams": ("merged",), "metric": "body_fat_fraction", "form": "gauge",
+            "unit": "%", "fitUnit": "%", "shape": "single"},
+        "com.google.oxygen_saturation": {
+            "streams": ("merged",), "metric": "spo2", "form": "gauge",
+            "unit": "%", "fitUnit": "%", "shape": "single"},
+        "com.google.blood_glucose": {
+            "streams": ("merged",), "metric": "blood_glucose", "form": "gauge",
+            "unit": "mmol/L", "fitUnit": "mmol/L", "shape": "single"},
+        "com.google.blood_pressure": {
+            "streams": ("merged",), "form": "gauge", "unit": "mm[Hg]",
+            "fitUnit": "mm[Hg]", "hold": "PT0S", "shape": "pressure"},
+        SLEEP_TYPE: {"streams": ("merged",), "shape": "sleep"},
+    }
+    PRESSURE = ("systolic_blood_pressure", "diastolic_blood_pressure")
+
+    # Fit's sleep segment codes onto health/sleep_stage's code set. 2 is sleep
+    # with no stage, which the set spells in_bed. 3 (out of bed) and 0
+    # (unspecified) are no stage of the set and are skipped and counted.
+    STAGES = {1: "awake", 2: "in_bed", 4: "light", 5: "deep", 6: "rem"}
+    OUT_OF_BED = 3
+    ASLEEP = (2, 4, 5, 6)
+    # The activity codes the research verified; any other keeps only
+    # `sportSource`.
+    SPORTS = {1: "cycling", 7: "walking", 8: "running", 16: "cycling",
+              80: "strength", 108: "other"}
+    # The datasource row's device type onto the source kind's class; a phone
+    # and the rest have no class there.
+    CLASSES = {"watch": "watch", "scale": "scale"}
+
+    _ID = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
+
+    KEYS = {
+        OBSERVATION: ("metric", "source", "form", "value", "code", "hold", "at",
+                      "endsAt", "utcOffset", "origin", "derivedFrom", "revision",
+                      "qualifiers", "components"),
+        TRACE: ("metric", "source", "form", "unit", "hold", "at", "endsAt",
+                "utcOffsetStart", "utcOffsetEnd", "every", "offsets", "values",
+                "codes", "origins", "revision"),
+        SLEEP: ("source", "origin", "revision", "at", "endsAt", "utcOffsetStart",
+                "utcOffsetEnd", "timeInBed", "timeAsleep", "awake", "light", "deep",
+                "rem"),
+        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "at",
+                  "endsAt", "utcOffsetStart", "utcOffsetEnd", "duration"),
+    }
+
+
+    # --------------------------------------------------------------- plumbing
+
+    def _path(value):
+        """A reference value's record path, in either stored shape."""
+        return str((value.get("ref") if isinstance(value, dict) else value) or "")
+
+
+    def _ref_id(value, kind):
+        """A reference value's record id, when it points at `kind`."""
+        path, prefix = _path(value), kind + "/"
+        return path[len(prefix):] if path.startswith(prefix) else ""
+
+
+    def _ref(kind, rid):
+        return {"ref": kind + "/" + rid}
+
+
+    def _int(value):
+        if value in (None, "") or isinstance(value, bool):
+            return None
+        try:
+            return int(Decimal(str(value)))
+        except (ArithmeticError, ValueError):
+            return None
+
+
+    def _ns_time(ns):
+        sec, rest = divmod(int(ns), NS)
+        return _dt.datetime.fromtimestamp(sec, UTC) + _dt.timedelta(microseconds=rest // 1000)
+
+
+    def _parse(value):
+        if not value:
+            return None
+        t = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=UTC)
+
+
+    def _iso(t):
+        t = t.astimezone(UTC)
+        if t.microsecond:
+            return t.strftime("%Y-%m-%dT%H:%M:%S.") + ("%06d" % t.microsecond).rstrip("0") + "Z"
+        return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _duration(ns):
+        """Nanoseconds as an ISO 8601 duration, PT7H48M3S."""
+        sec, frac = divmod(max(int(ns), 0), NS)
+        hours, rest = divmod(sec, 3600)
+        minutes, seconds = divmod(rest, 60)
+        out = "PT"
+        if hours:
+            out += "%dH" % hours
+        if minutes:
+            out += "%dM" % minutes
+        if seconds or frac or out == "PT":
+            out += str(seconds)
+            if frac:
+                out += "." + ("%09d" % frac).rstrip("0")
+            out += "S"
+        return out
+
+
+    def _number(value):
+        """A Fit value as exact digits: an int as itself, a float as its shortest
+        repr."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            return repr(value)
+        return None
+
+
+    def _slug(text):
+        return _re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-") or "unknown"
+
+
+    def _rid(host, aid, readable):
+        """A composed id as written, or its hash where it leaves the record-id
+        alphabet or passes 128 bytes."""
+        if len(readable) <= MAX_ID and _ID.match(readable):
+            return readable
+        return host.ids.external("googlefit", aid, readable)
+
+
+    def _list(host, flt):
+        out, after = [], ""
+        while True:
+            q = {"filter": flt, "first": 500}
+            if after:
+                q["after"] = after
+            page = host.list(**q)
+            out.extend(page.get("records") or [])
+            after = page.get("cursor") or ""
+            if not after:
+                return out
+
+
+    def _outputs(host, path, kinds):
+        """The live outputs whose origin is `path`: the reconciliation's
+        stored side. `derivedFrom` points at a row too, and does not make it
+        an origin."""
+        rows = _list(host, {"kinds": list(kinds), "referencing": {"ref": path}})
+        out = []
+        for r in rows:
+            p = r.get("properties") or {}
+            if _path(p.get("origin")) == path or \
+                    any(_path(o) == path for o in (p.get("origins") or [])):
+                out.append(r)
+        return out
+
+
+    class _Clock:
+        """The account's zone, or UTC, and the rule that says which."""
+
+        def __init__(self, name):
+            self.zone = None
+            if name:
+                try:
+                    self.zone = zoneinfo.ZoneInfo(str(name))
+                except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+                    self.zone = None
+            self.rule = ("timezone:" + str(name)) if self.zone else "utc"
+
+        def local(self, t):
+            return t.astimezone(self.zone or UTC)
+
+        def offset(self, t):
+            return int(self.local(t).utcoffset().total_seconds() // 60)
+
+        def qualifiers(self):
+            return [{"system": OFFSET_RULE, "code": self.rule}]
+
+
+    class _Ctx:
+        """What one delivery reads once: the account, its zone, its data
+        sources, the sources it writes and the units it converts."""
+
+        def __init__(self, host, aid):
+            self.host, self.aid = host, aid
+            acct = host.records.get(ACCOUNT, aid) or {}
+            self.clock = _Clock((acct.get("properties") or {}).get("timezone"))
+            self.streams, self.devices = {}, {}
+            for r in _list(host, {"kinds": [DATASOURCE],
+                                  "referencing": {"ref": ACCOUNT + "/" + aid,
+                                                  "property": "account"}}):
+                p = r.get("properties") or {}
+                self.streams[str(p.get("dataStreamId") or "")] = r
+                dev = p.get("device") or {}
+                if dev.get("uid"):
+                    self.devices[str(dev["uid"])] = dev
+            self.sources = {}
+            self.units = {}
+
+        def source_for(self, origin):
+            """The device behind a point's originDataSourceId: its listed data
+            source, else a listed device whose uid the id names, else the
+            Fit app's manual entry, else the writing app."""
+            origin = str(origin or "")
+            row = self.streams.get(origin)
+            dev = ((row or {}).get("properties") or {}).get("device") or {}
+            if not dev.get("uid") and not dev.get("model"):
+                parts = origin.split(":")
+                dev = next((self.devices[p] for p in parts if p in self.devices), {})
+            if dev.get("model") or dev.get("manufacturer"):
+                slug = _slug("%s %s" % (dev.get("manufacturer") or "", dev.get("model") or ""))
+                return self._source(slug, {
+                    "name": " ".join(x for x in (dev.get("manufacturer"), dev.get("model")) if x),
+                    "class": CLASSES.get(dev.get("type") or ""),
+                    "manufacturer": dev.get("manufacturer"),
+                    "hardwareModel": dev.get("model")})
+            parts = origin.split(":")
+            if parts and parts[-1] == "user_input":
+                return self._source("manual", {"name": "Entered by hand in Google Fit",
+                                               "class": "manual"})
+            package = parts[2] if len(parts) > 2 and "." in parts[2] else ""
+            return self.app_source(package)
+
+        def app_source(self, package):
+            if not package:
+                return self._source("unknown", {"name": "Unknown Google Fit source"})
+            return self._source(_slug(package), {"name": package, "class": "app"})
+
+        def _source(self, slug, props):
+            sid = _rid(self.host, self.aid, "googlefit/%s/%s" % (self.aid, slug))
+            if sid not in self.sources:
+                props = {k: v for k, v in props.items() if v}
+                props["account"] = _ref(ACCOUNT, self.aid)
+                self.sources[sid] = props
+            return slug, _ref(SOURCE, sid)
+
+        def convert(self, digits, fit_unit, unit):
+            if fit_unit == unit:
+                return digits
+            return self.host.units.convert(digits, fit_unit, unit)
+
+        def canonical(self, unit):
+            if unit not in self.units:
+                self.units[unit] = self.host.units.canonical(unit)
+            return self.units[unit]
+
+        def flush(self):
+            for sid, props in self.sources.items():
+                self.host.effects.put(SOURCE, sid, properties=props)
+
+
+    def _apply(host, desired, existing):
+        """Write the desired set whole and delete what it no longer names.
+        Every row is minted then patched with every key this function owns,
+        so a key an earlier write set and this one does not is cleared. A
+        revision never falls: a stored higher one is kept."""
+        held = {(r.get("kind"), r.get("id")): r for r in existing}
+        written = 0
+        for (kind, rid), props in desired.items():
+            old = held.get((kind, rid))
+            stored = _int(((old or {}).get("properties") or {}).get("revision"))
+            if stored is not None and (props.get("revision") or 0) < stored:
+                props["revision"] = stored
+            full = {k: props.get(k) for k in KEYS[kind]}
+            host.effects.put(kind, rid, properties={k: v for k, v in full.items()
+                                                    if v is not None}, if_absent=True)
+            host.effects.patch(kind, rid, properties=full)
+            written += 1
+        deleted = 0
+        for (kind, rid) in held:
+            if (kind, rid) not in desired:
+                host.effects.delete(kind, rid)
+                deleted += 1
+        return written, deleted
+
+
+    # ------------------------------------------------------------ dataset days
+
+    def _points(row):
+        return [p for p in ((row.get("properties") or {}).get("point") or [])
+                if isinstance(p, dict) and _int(p.get("startTimeNanos")) is not None]
+
+
+    def _value(p, i):
+        vals = p.get("value") or []
+        if i >= len(vals) or not isinstance(vals[i], dict):
+            return None
+        v = vals[i]
+        return v.get("fpVal") if v.get("fpVal") is not None else v.get("intVal")
+
+
+    def _revision(points):
+        mods = [_int(p.get("modifiedTimeMillis")) for p in points]
+        mods = [m for m in mods if m is not None]
+        return max(mods) // 1000 if mods else 0
+
+
+    def _single(ctx, m, rid, points, desired):
+        skipped = 0
+        unit = ctx.canonical(m["unit"])
+        for p in points:
+            start = _int(p["startTimeNanos"])
+            at = _ns_time(start)
+            slug, source = ctx.source_for(p.get("originDataSourceId"))
+            base = {"source": source, "form": m["form"], "hold": m.get("hold"),
+                    "at": _iso(at), "utcOffset": ctx.clock.offset(at),
+                    "origin": _ref(DATASET, rid), "revision": _revision([p]),
+                    "qualifiers": ctx.clock.qualifiers()}
+            if m["shape"] == "pressure":
+                nums = [_number(_value(p, i)) for i in (0, 1)]
+                if None in nums:
+                    skipped += 1
+                    continue
+                parts = [{"metric": _ref(METRIC, "health/" + name),
+                          "value": {"value": ctx.convert(n, m["fitUnit"], unit), "unit": unit}}
+                         for name, n in zip(PRESSURE, nums)]
+                for name, part in zip(PRESSURE, parts):
+                    oid = _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%d" % (rid, name, start // 10**6))
+                    desired[(OBSERVATION, oid)] = dict(base, metric=part["metric"],
+                                                       value=part["value"], components=parts)
+                continue
+            n = _number(_value(p, 0))
+            if n is None:
+                skipped += 1
+                continue
+            oid = _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%d" % (rid, m["metric"], start // 10**6))
+            desired[(OBSERVATION, oid)] = dict(
+                base, metric=_ref(METRIC, "health/" + m["metric"]),
+                value={"value": ctx.convert(n, m["fitUnit"], unit), "unit": unit})
+        return skipped
+
+
+    def _traces(ctx, m, rid, points, desired):
+        skipped = 0
+        unit = ctx.canonical(m["unit"])
+        by_source = {}
+        for p in points:
+            n = _number(_value(p, 0))
+            if n is None:
+                skipped += 1
+                continue
+            at = ctx.clock.local(_ns_time(_int(p["startTimeNanos"])))
+            slug, source = ctx.source_for(p.get("originDataSourceId"))
+            by_source.setdefault((slug, source["ref"]), []).append(
+                (at, ctx.convert(n, m["fitUnit"], unit), _int(p.get("modifiedTimeMillis")) or 0))
+        metric = _ref(METRIC, "health/" + m["metric"])
+        for (slug, source), pts in by_source.items():
+            docs = ctx.host.observed.trace([(at, v) for at, v, _ in pts], metric=metric,
+                                           source={"ref": source}, unit=unit, form=m["form"],
+                                           period=PERIOD, hold=m.get("hold"))
+            for doc in docs:
+                lo, hi = _parse(doc["at"]), _parse(doc["endsAt"])
+                mods = [mod for at, _, mod in pts if lo <= at < hi]
+                pid = ctx.host.observed.period_id(lo, PERIOD)
+                tid = _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%s/%s" % (ctx.aid, slug, m["metric"], pid))
+                doc["origins"] = [_ref(DATASET, rid)]
+                doc["revision"] = (max(mods) // 1000) if mods else 0
+                desired[(TRACE, tid)] = doc
+        return skipped
+
+
+    def _dataset(host, rid, row):
+        path = DATASET + "/" + rid
+        existing = _outputs(host, path, (OBSERVATION, TRACE))
+        desired, out = {}, {"skipped": 0}
+        sessions = {}
+        if row is not None:
+            props = row.get("properties") or {}
+            aid = _ref_id(props.get("account"), ACCOUNT)
+            src = host.records.get(DATASOURCE, _ref_id(props.get("dataSource"), DATASOURCE)) or {}
+            sp = src.get("properties") or {}
+            dtype = str((sp.get("dataType") or {}).get("name") or "")
+            stream = str(sp.get("dataStreamName") or "")
+            m = MAPPINGS.get(dtype)
+            if m is None or stream not in m["streams"]:
+                out["note"] = "no catalogue metric for %s from the %s stream" % (dtype or "?", stream or "?")
+                out["skipped"] = len(_points(row))
+            elif m["shape"] == "sleep":
+                # Stage segments are written with the night they belong to, so
+                # a sleep day refreshes the sleep sessions it overlaps.
+                at, end = _parse(props.get("at")), _parse(props.get("endsAt"))
+                for s in _list(host, {"kinds": [SESSION],
+                                      "referencing": {"ref": ACCOUNT + "/" + aid,
+                                                      "property": "account"},
+                                      "properties": {"at": {"gte": _iso(at - _dt.timedelta(days=1)),
+                                                            "lt": _iso(end)}}}):
+                    sp2 = s.get("properties") or {}
+                    if _int(sp2.get("activityType")) == SLEEP_ACTIVITY and \
+                            (_parse(sp2.get("endsAt")) or at) > at:
+                        sessions[s["id"]] = s
+            else:
+                ctx = _Ctx(host, aid)
+                pts = _points(row)
+                if m["shape"] == "trace":
+                    out["skipped"] = _traces(ctx, m, rid, pts, desired)
+                else:
+                    out["skipped"] = _single(ctx, m, rid, pts, desired)
+                ctx.flush()
+        if "sleep.segment" in rid or row is None:
+            # A stage observation names the day rows it was cut from in
+            # `derivedFrom`, which finds the nights an emptied day touched.
+            for r in _list(host, {"kinds": [OBSERVATION],
+                                  "referencing": {"ref": path, "property": "derivedFrom"}}):
+                sid = _ref_id((r.get("properties") or {}).get("origin"), SESSION)
+                if sid and sid not in sessions:
+                    s = host.records.get(SESSION, sid)
+                    if s is not None and not s.get("deletedAt"):
+                        sessions[sid] = s
+        out["written"], out["deleted"] = _apply(host, desired, existing)
+        for sid, s in sorted(sessions.items()):
+            sub = _session(host, sid, s)
+            for k in ("written", "deleted", "skipped"):
+                out[k] = out.get(k, 0) + sub.get(k, 0)
+        return out
+
+
+    # ---------------------------------------------------------------- sessions
+
+    def _segments(ctx, at, end):
+        """The sleep segments inside [at, end), clipped to it, from the day rows
+        of the account's derived sleep stream."""
+        streams = MAPPINGS[SLEEP_TYPE]["streams"]
+        out = []
+        for row in ctx.streams.values():
+            p = row.get("properties") or {}
+            if (p.get("dataType") or {}).get("name") != SLEEP_TYPE or p.get("type") != "derived" \
+                    or p.get("dataStreamName") not in streams:
+                continue
+            day = _dt.datetime(at.year, at.month, at.day, tzinfo=UTC)
+            for d in _list(ctx.host, {"kinds": [DATASET],
+                                      "referencing": {"ref": DATASOURCE + "/" + row["id"],
+                                                      "property": "dataSource"},
+                                      "properties": {"at": {"gte": _iso(day), "lt": _iso(end)}}}):
+                for pt in _points(d):
+                    s, e = _int(pt["startTimeNanos"]), _int(pt.get("endTimeNanos"))
+                    lo, hi = max(s, _ns(at)), min(e or s, _ns(end))
+                    if hi <= lo:
+                        continue
+                    out.append({"start": lo, "end": hi, "code": _int(_value(pt, 0)),
+                                "origin": pt.get("originDataSourceId"),
+                                "modified": _int(pt.get("modifiedTimeMillis")) or 0,
+                                "day": DATASET + "/" + d["id"]})
+        out.sort(key=lambda x: (x["start"], x["end"]))
+        return out
+
+
+    def _ns(t):
+        delta = t.astimezone(UTC) - _dt.datetime(1970, 1, 1, tzinfo=UTC)
+        return (delta.days * 86400 + delta.seconds) * NS + delta.microseconds * 1000
+
+
+    def _session(host, rid, row):
+        path = SESSION + "/" + rid
+        existing = _outputs(host, path, (OBSERVATION, SLEEP, WORKOUT))
+        desired, out = {}, {"skipped": 0}
+        if row is not None:
+            props = row.get("properties") or {}
+            aid = _ref_id(props.get("account"), ACCOUNT)
+            at, end = _parse(props.get("at")), _parse(props.get("endsAt"))
+            ctx = _Ctx(host, aid)
+            revision = (_int(props.get("modifiedTimeMillis")) or 0) // 1000
+            app = str((props.get("application") or {}).get("packageName") or "")
+            base = {"origin": _ref(SESSION, rid), "at": _iso(at), "endsAt": _iso(end) if end else None,
+                    "utcOffsetStart": ctx.clock.offset(at),
+                    "utcOffsetEnd": ctx.clock.offset(end) if end else None}
+            key = "googlefit/" + rid
+            if _int(props.get("activityType")) == SLEEP_ACTIVITY and end is not None:
+                out["skipped"] = _sleep(ctx, rid, at, end, revision, app, base, desired)
+            else:
+                activity = _int(props.get("activityType"))
+                active = _int(props.get("activeTimeMillis"))
+                _, source = ctx.app_source(app)
+                desired[(WORKOUT, _rid(host, aid, key))] = dict(
+                    base, sport=SPORTS.get(activity),
+                    sportSource=str(activity) if activity is not None else None,
+                    source=source, revision=revision,
+                    duration=_duration(active * 10**6) if active is not None else None)
+            ctx.flush()
+        out["written"], out["deleted"] = _apply(host, desired, existing)
+        return out
+
+
+    def _sleep(ctx, rid, at, end, revision, app, base, desired):
+        segs = _segments(ctx, at, end)
+        skipped = 0
+        totals = Counter()
+        origins = Counter()
+        n = 0
+        stage_metric = _ref(METRIC, "health/sleep_stage")
+        for seg in segs:
+            totals[seg["code"]] += seg["end"] - seg["start"]
+            code = STAGES.get(seg["code"])
+            if code is None:
+                skipped += 1
+                continue
+            n += 1
+            start = _ns_time(seg["start"])
+            slug, source = ctx.source_for(seg["origin"])
+            origins[slug, source["ref"]] += 1
+            seconds = str(Decimal(seg["end"] - seg["start"]) / Decimal(NS))
+            oid = _rid(ctx.host, ctx.aid, "googlefit/%s/stage/%d" % (rid, n))
+            desired[(OBSERVATION, oid)] = {
+                "metric": stage_metric, "source": source, "form": "amount", "code": code,
+                "value": {"value": ctx.host.units.convert(seconds, "s", "min"), "unit": "min"},
+                "at": _iso(start), "endsAt": _iso(_ns_time(seg["end"])),
+                "utcOffset": ctx.clock.offset(start), "origin": _ref(SESSION, rid),
+                "derivedFrom": [{"ref": seg["day"]}],
+                "revision": max(revision, seg["modified"] // 1000),
+                "qualifiers": ctx.clock.qualifiers()}
+        if origins:
+            (_, ref), _ = origins.most_common(1)[0]
+            source = {"ref": ref}
+        else:
+            _, source = ctx.app_source(app)
+        span = _ns(end) - _ns(at)
+        sleep = dict(base, source=source,
+                     revision=max([revision] + [s["modified"] // 1000 for s in segs]),
+                     timeInBed=_duration(span - totals[OUT_OF_BED]))
+        if segs:
+            sleep.update({
+                "timeAsleep": _duration(sum(totals[c] for c in ASLEEP)),
+                "awake": _duration(totals[1]), "light": _duration(totals[4]),
+                "deep": _duration(totals[5]), "rem": _duration(totals[6])})
+        desired[(SLEEP, _rid(ctx.host, ctx.aid, "googlefit/" + rid))] = sleep
+        return skipped
+
+
+    def main(input, host):
+        env = input.get("envelope") or {}
+        change = env.get("change") or {}
+        record = env.get("record")
+        kind = str(change.get("kind") or (record or {}).get("kind") or "")
+        rid = str(change.get("id") or (record or {}).get("id") or "")
+        if not rid:
+            return {"output": {"note": "no record named in the envelope"}}
+        if record is not None and record.get("deletedAt"):
+            record = None
+        if kind == DATASET:
+            out = _dataset(host, rid, record)
+        elif kind == SESSION:
+            out = _session(host, rid, record)
+        else:
+            out = {"note": "not a Google Fit dataset or session: %s" % kind}
+        return {"output": out}

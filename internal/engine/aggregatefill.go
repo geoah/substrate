@@ -1,0 +1,173 @@
+package engine
+
+// The aggregate read's last two steps (aggregate.go): `fill` makes each
+// group's buckets dense and marks what it made synthetic, then `rolling`
+// reduces each value over a window of buckets, filled ones included.
+
+import (
+	"math"
+	"sort"
+	"strconv"
+
+	"github.com/geoah/substrate/internal/substrate"
+)
+
+// fillAndRoll applies fill and rolling per series (a group and a code) and
+// orders the rows by bucket, then group, then code.
+func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) []substrate.AggregateRow {
+	type series struct {
+		key  string
+		rows map[int]*aggOut
+	}
+	byKey := map[string]*series{}
+	var keys []string
+	for i := range rows {
+		o := &rows[i]
+		k := o.group.sortKey + "\x1e" + o.code
+		s := byKey[k]
+		if s == nil {
+			s = &series{key: k, rows: map[int]*aggOut{}}
+			byKey[k] = s
+			keys = append(keys, k)
+		}
+		s.rows[o.bucket] = o
+	}
+	sort.Strings(keys)
+	var out []aggOut
+	for _, k := range keys {
+		s := byKey[k]
+		var template, prev *aggOut
+		for bi := range buckets {
+			if o := s.rows[bi]; o != nil && template == nil {
+				template = o
+			}
+		}
+		for bi, b := range buckets {
+			o := s.rows[bi]
+			if o == nil && p.fill != "" && template != nil {
+				start, end := b.shown(p.from, p.to)
+				made := aggOut{bucket: bi, group: template.group, code: template.code, row: substrate.AggregateRow{
+					Start: start, End: end, Form: template.row.Form, Group: template.row.Group, Record: b.record,
+					Synthetic: true, NonAdditive: template.row.NonAdditive,
+				}}
+				for vi, v := range template.row.Values {
+					fv := substrate.AggregateValue{Reducer: v.Reducer, Unit: v.Unit, Code: v.Code}
+					switch p.fill {
+					case substrate.FillZero:
+						zero := "0"
+						fv.Value = &zero
+					case substrate.FillLOCF:
+						if prev != nil && vi < len(prev.row.Values) {
+							fv.Value = prev.row.Values[vi].Value
+						}
+					}
+					made.row.Values = append(made.row.Values, fv)
+				}
+				o = &made
+			}
+			if o == nil {
+				continue
+			}
+			out = append(out, *o)
+			prev = &out[len(out)-1]
+		}
+	}
+	if p.rolling != nil {
+		p.roll(out, meta)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].bucket != out[j].bucket {
+			return out[i].bucket < out[j].bucket
+		}
+		if out[i].group.sortKey != out[j].group.sortKey {
+			return out[i].group.sortKey < out[j].group.sortKey
+		}
+		return out[i].code < out[j].code
+	})
+	res := make([]substrate.AggregateRow, len(out))
+	for i, o := range out {
+		res[i] = o.row
+	}
+	return res
+}
+
+// roll appends, to each row, every rolling reducer over each of its values
+// across this bucket and the Buckets-1 before it in the same series. A
+// window value is matched by its reducer and code, and a null one is skipped.
+func (p *aggPlan) roll(rows []aggOut, meta *aggMeta) {
+	n := p.rolling.Buckets
+	bySeries := map[string][]int{}
+	for i, o := range rows {
+		k := o.group.sortKey + "\x1e" + o.code
+		bySeries[k] = append(bySeries[k], i)
+	}
+	type key struct{ reducer, code string }
+	for _, idx := range bySeries {
+		sort.Slice(idx, func(a, b int) bool { return rows[idx[a]].bucket < rows[idx[b]].bucket })
+		values := make([]map[key]float64, len(idx))
+		for j, i := range idx {
+			values[j] = map[key]float64{}
+			for _, v := range rows[i].row.Values {
+				if v.Value == nil {
+					continue
+				}
+				if f, err := strconv.ParseFloat(*v.Value, 64); err == nil {
+					values[j][key{v.Reducer.String(), v.Code}] = f
+				}
+			}
+		}
+		for j, i := range idx {
+			base := append([]substrate.AggregateValue(nil), rows[i].row.Values...)
+			for _, v := range base {
+				of := v.Reducer
+				for _, rr := range p.rolling.Reducers {
+					var acc []float64
+					for w := j; w >= 0 && rows[idx[w]].bucket > rows[i].bucket-n; w-- {
+						if f, ok := values[w][key{of.String(), v.Code}]; ok {
+							acc = append(acc, f)
+						}
+					}
+					rv := substrate.AggregateValue{Reducer: rr, Of: &of, Rolling: n, Unit: v.Unit, Code: v.Code}
+					if r, ok := rollOf(rr.Name, acc); ok {
+						s := formatFloat(r)
+						rv.Value = &s
+						meta.inexact = true
+					}
+					if of.Name == substrate.ReducerCount {
+						rv.Unit = ""
+					}
+					rows[i].row.Values = append(rows[i].row.Values, rv)
+				}
+			}
+		}
+	}
+}
+
+func rollOf(name string, vs []float64) (float64, bool) {
+	if len(vs) == 0 {
+		return 0, false
+	}
+	switch name {
+	case substrate.ReducerSum, substrate.ReducerAvg:
+		var s float64
+		for _, v := range vs {
+			s += v
+		}
+		if name == substrate.ReducerAvg {
+			s /= float64(len(vs))
+		}
+		return s, true
+	case substrate.ReducerMin:
+		m := math.Inf(1)
+		for _, v := range vs {
+			m = math.Min(m, v)
+		}
+		return m, true
+	default:
+		m := math.Inf(-1)
+		for _, v := range vs {
+			m = math.Max(m, v)
+		}
+		return m, true
+	}
+}

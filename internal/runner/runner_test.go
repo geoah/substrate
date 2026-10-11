@@ -37,6 +37,10 @@ type fakeBackend struct {
 	aliases map[string]string
 	// orderBys is every list's sort, in call order.
 	orderBys [][]substrate.Order
+	// aggregates is every aggregate read served, in call order; aggregateRows
+	// is how many rows each answers.
+	aggregates    []substrate.AggregateQuery
+	aggregateRows int
 	// logs is every line Log received, in order, and logged the instant of
 	// each, so a test can tell a line that arrived while the body ran from
 	// one that came with its end.
@@ -74,6 +78,20 @@ func (f *fakeBackend) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		}
 	}
 	return &substrate.Page{Records: out}, nil
+}
+
+func (f *fakeBackend) Aggregate(_ context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
+	f.aggregates = append(f.aggregates, q)
+	res := &substrate.AggregateResult{Exact: true, Rows: []substrate.AggregateRow{}}
+	for i := range f.aggregateRows {
+		v := fmt.Sprint(60 + i)
+		res.Rows = append(res.Rows, substrate.AggregateRow{
+			Start:  time.Date(2026, 9, 1+i, 0, 0, 0, 0, time.UTC),
+			End:    time.Date(2026, 9, 2+i, 0, 0, 0, 0, time.UTC),
+			Values: []substrate.AggregateValue{{Reducer: substrate.AggregateReducer{Name: "avg"}, Value: &v, Unit: "/min"}},
+		})
+	}
+	return res, nil
 }
 
 func (f *fakeBackend) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
@@ -1135,5 +1153,79 @@ func TestSweepRacingInvokesNeverClosesThePipeUnderThem(t *testing.T) {
 	// the race left in the map, dead or live, the lookup restarts or reuses it.
 	if res, err := r.Invoke(ctx, windowSpec, testInput(), nil); err != nil || res.Output != "ok" {
 		t.Fatalf("a delivery after the sweep stopped did not get through: %+v %v", res, err)
+	}
+}
+
+// TestAggregateHostCall: host.records.aggregate sends its body to the
+// backend whole, answers the result's rows, holds every kind it reads to the
+// allowlist (the streams' and the records bucket's) and pays one call and its
+// rows against the read budget.
+func TestAggregateHostCall(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "trend.g.test",
+		Runtime: "python",
+		Source: `
+def main(input, host):
+    res = host.records.aggregate({
+        "filter": {"kinds": ["widget"]},
+        "aggregate": {
+            "metric": {"ref": "g.test/observations/metric/heart_rate"},
+            "range": {"gte": "2026-09-01T00:00:00Z", "lt": "2026-09-04T00:00:00Z"},
+            "bucket": {"calendar": "day", "timezone": "UTC"},
+            "reducers": ["avg", {"percentile": 0.05}],
+        },
+    })
+    rows = res["rows"]
+    return {"output": {"rows": len(rows), "first": rows[0]["values"][0]["value"], "unit": rows[0]["values"][0]["unit"]}}
+`,
+		TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"},
+		ReadRows:  10,
+	}
+	backend := widgetBackend()
+	backend.aggregateRows = 3
+	res, err := r.Invoke(context.Background(), spec, testInput(), backend)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	if out["rows"] != float64(3) || out["first"] != "60" || out["unit"] != "/min" {
+		t.Fatalf("output = %v", res.Output)
+	}
+	if len(backend.aggregates) != 1 {
+		t.Fatalf("aggregates served = %d", len(backend.aggregates))
+	}
+	q := backend.aggregates[0]
+	if q.Aggregate == nil || q.Aggregate.Metric.Ref != "g.test/observations/metric/heart_rate" || len(q.Aggregate.Reducers) != 2 ||
+		*q.Aggregate.Reducers[1].Percentile != 0.05 || q.Aggregate.Bucket.Timezone != "UTC" || q.Filter.Kinds[0] != "widget" {
+		t.Fatalf("the backend saw %+v", q)
+	}
+
+	// A read naming no kinds, or a records bucket over a kind outside the
+	// allowlist, trips before the backend is asked.
+	for name, body := range map[string]string{
+		"no kinds": `{"aggregate": {"metric": {"ref": "g.test/observations/metric/heart_rate"}}}`,
+		"records bucket": `{"filter": {"kinds": ["widget"]}, "aggregate": {"bucket": {"records": ` +
+			`{"filter": {"kinds": ["secret.g.test"]}}}}}`,
+	} {
+		bad := spec
+		bad.Function = "peek.g.test"
+		bad.Source = "import json\ndef main(input, host):\n    host.records.aggregate(json.loads('" + body + "'))\n    return {\"effects\": []}\n"
+		backend := widgetBackend()
+		_, err := r.Invoke(context.Background(), bad, testInput(), backend)
+		if !errors.Is(err, ErrReadForbidden) || len(backend.aggregates) != 0 {
+			t.Fatalf("%s: err = %v, aggregates served %d; want a read trip before the backend", name, err, len(backend.aggregates))
+		}
+	}
+
+	// More rows than the budget holds is a budget trip.
+	over := spec
+	over.Function = "greedy.g.test"
+	over.ReadRows = 2
+	backend = widgetBackend()
+	backend.aggregateRows = 3
+	if _, err := r.Invoke(context.Background(), over, testInput(), backend); !errors.Is(err, ErrReadBudget) {
+		t.Fatalf("over the row budget: err = %v, want a budget trip", err)
 	}
 }

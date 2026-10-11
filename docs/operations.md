@@ -596,16 +596,18 @@ it trusts:
   previous declaration of that row.
 
   A `POST …/vocabulary/apply` and a provider upgrade (the catalog's install
-  over an older version) use the same pass for the search index alone. Their
-  transaction holds the registry lock every write waits on, so it
-  re-derives only the refs rows of the rows carrying a moved reference
-  property, logging `substrate: vocabulary apply: re-deriving the refs
-  index`, and records the `fts` half for the pass, logging `substrate:
-  vocabulary apply: requesting the search index re-derivation behind the
-  commit` with `kinds`. The pass starts once the batch has committed and
-  logs the lines above. A reverse read is current when the batch answers;
-  until the pass reaches a row, a search over a moved `fts` flag answers
-  for the declaration the batch replaced. A batch whose commit answer was
+  over an older version) use the same pass for the search index and the
+  observed index. Their transaction holds the registry lock every write
+  waits on, so it re-derives only the refs rows of the rows carrying a
+  moved reference property, logging `substrate: vocabulary apply:
+  re-deriving the refs index`, and records the `fts` half and the observed
+  points of a kind that starts or stops binding the `observed` trait for
+  the pass, logging `substrate: vocabulary apply: requesting the search and
+  observed index re-derivation behind the commit` with `kinds`. The pass
+  starts once the batch has committed and logs the lines above. A reverse
+  read is current when the batch answers; until the pass reaches a row, a
+  search over a moved `fts` flag and the observed index of a rebound kind
+  answer for the declaration the batch replaced. A batch whose commit answer was
   lost leaves the repository refusing writes until restart, and may leave
   this process serving the declarations it replaced, so the pass stops
   there without touching a request, logging `substrate: the index
@@ -962,13 +964,18 @@ migration, `0001_qualify_bare_declaration_names`, writes the full identity
 into every stored `kind:` pin, `trait:` pin, `traits:` binding and function
 allowlist entry a binary before
 [decision 0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)
-stored bare, resolving each word the way that binary did.
+stored bare, resolving each word the way that binary did. The third,
+`0003_derive_observed_index`, writes no record: it asks the background pass
+below to derive the [observed index](observations.md#the-observed-index) for
+every row of a kind that binds the `observed` trait, because rows written
+before migration 0012 created the index have no points.
 
 **A schema migration never changes what the fold holds.** The fold is every
 table `repository rebuild` clears and fills again from the changelog
 (`internal/engine/rebuild.go`): `records` with its derived columns `fts`,
 `orphaned_at` and `ambiguous_at`, `refs`, `former_ids`, `annotations`,
-`property_managers`, `property_offers`, and the delivery ledger
+`property_managers`, `property_offers`, the three tables of the
+[observed index](observations.md#the-observed-index), and the delivery ledger
 (`trigger_cursors`, `trigger_schedule`, `trigger_failures`,
 `paged_cursors`; a rebuild brings a cursor back at its last acknowledged
 delivery, not at the scan position past it). A SQL migration changes their

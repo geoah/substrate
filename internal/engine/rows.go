@@ -265,7 +265,8 @@ func nonNilStrings(ss []string) []string {
 // gapless counter rather than a shared one with holes.
 //
 // It is also the FIRST key of the global lock order, which every transaction
-// keeps: changelog < registry-dep < subject-type < record. inTx takes it
+// keeps: changelog < registry-dep < subject-type < record < observed
+// (observedsettle.go observedLockKey). inTx takes it
 // before the transaction locks anything else, so no writer holds a record
 // (an advisory record lock or a row FOR UPDATE) while waiting for the
 // changelog, and RebuildRepository takes it first for the same reason.
@@ -702,6 +703,12 @@ func (t *txn) hardDelete(ref eref) error {
 }
 
 func (t *txn) applyPurge(ref eref) error {
+	// The record's observed points, with what they touched recomputed at the
+	// end of the transaction: the rollup and latest rows are keyed by stream,
+	// not by record, so they are recomputed rather than deleted.
+	if err := t.dropObservedOf(ref); err != nil {
+		return err
+	}
 	for _, q := range []string{
 		// The record's OWN rows, and only those. The index is derived from the
 		// SOURCE record's properties, so deleting by `dst` would erase rows

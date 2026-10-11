@@ -76,22 +76,74 @@ func unitValue() value {
 	return value{factor: big.NewRat(1, 1), notes: map[string]int{}, arbitrary: map[string]int{}}
 }
 
-// mul folds o into v, raised to the power sign*exp.
-func (v *value) mul(o value, exp int) {
-	switch {
-	case exp > 0:
-		for range exp {
-			v.factor.Mul(v.factor, o.factor)
+// MaxUnitDimension bounds each base quantity's exponent in a unit's dimension,
+// in every atom raised to its power and in every product along the way. The
+// table's atoms stay within ±4 (the farad); past the bound a code measures
+// nothing a person writes, and the int8 a dimension holds would wrap.
+const MaxUnitDimension = 8
+
+// The bounds a code is held to while it is parsed, before anything is
+// evaluated, so a short code cannot buy a long evaluation (`10*1000000000`
+// once asked for a billion rational multiplications). Inside them the work
+// and the size of the factor are small: at most MaxUnitComponents factors,
+// each a table constant or a number of MaxUnitFactorDigits raised to at most
+// MaxUnitExponent, by squaring.
+const (
+	// MaxUnitExponent bounds a written exponent: `10*24`, the largest power
+	// UCUM's prefixes name, fits, and `10*25` does not. A dimension is held
+	// tighter still, by MaxUnitDimension.
+	MaxUnitExponent = 24
+	// MaxUnitFactorDigits bounds a numeric factor's digits (`8.h`, `100.m`).
+	MaxUnitFactorDigits = 12
+	// MaxUnitNesting bounds how deep parentheses nest.
+	MaxUnitNesting = 8
+	// MaxUnitComponents bounds the components of a whole code, parenthesized
+	// ones included.
+	MaxUnitComponents = 32
+)
+
+// mul folds o into v, raised to the power exp. It refuses a division by zero
+// rather than panic: the parser refuses a zero factor, and this holds the
+// arithmetic to the same rule whatever reaches it. The dimension is checked
+// before anything is computed, in int, so it never narrows.
+func (v *value) mul(o value, exp int) error {
+	if exp < 0 && o.factor.Sign() == 0 {
+		return errZeroDivisor
+	}
+	var dim dimension
+	for i := range v.dim {
+		e := int(v.dim[i])
+		if o.dim[i] != 0 {
+			if exp > MaxUnitDimension || exp < -MaxUnitDimension {
+				return fmt.Errorf("%s to the power %d is beyond the bound of ±%d", dimNames[i], exp, MaxUnitDimension)
+			}
+			e += int(o.dim[i]) * exp
 		}
-	case exp < 0:
-		for range -exp {
-			v.factor.Quo(v.factor, o.factor)
+		if e > MaxUnitDimension || e < -MaxUnitDimension {
+			return fmt.Errorf("%s to the power %d is beyond the bound of ±%d", dimNames[i], e, MaxUnitDimension)
+		}
+		dim[i] = int8(e)
+	}
+	if exp > MaxUnitExponent || exp < -MaxUnitExponent {
+		return fmt.Errorf("the power %d is beyond the bound of ±%d", exp, MaxUnitExponent)
+	}
+	switch {
+	case exp == 1:
+		v.factor.Mul(v.factor, o.factor)
+	case exp == -1:
+		v.factor.Quo(v.factor, o.factor)
+	case exp != 0:
+		// By squaring: big.Int.Exp on the numerator and the denominator.
+		n := big.NewInt(int64(max(exp, -exp)))
+		pow := new(big.Rat).SetFrac(new(big.Int).Exp(o.factor.Num(), n, nil), new(big.Int).Exp(o.factor.Denom(), n, nil))
+		if exp > 0 {
+			v.factor.Mul(v.factor, pow)
+		} else {
+			v.factor.Quo(v.factor, pow)
 		}
 	}
 	v.pi += o.pi * exp
-	for i := range v.dim {
-		v.dim[i] += o.dim[i] * int8(exp)
-	}
+	v.dim = dim
 	for k, n := range o.notes {
 		v.notes[k] += n * exp
 	}
@@ -101,7 +153,11 @@ func (v *value) mul(o value, exp int) {
 	v.specials = append(v.specials, o.specials...)
 	v.counted = v.counted || o.counted
 	v.symbols += o.symbols
+	return nil
 }
+
+// errZeroDivisor marks a term that divides by zero.
+var errZeroDivisor = errors.New("a unit divides by zero")
 
 // atom is a resolved atom: its definition and the value it denotes.
 type atom struct {
@@ -185,7 +241,10 @@ func loadAtoms() {
 			if err != nil {
 				return nil, fmt.Errorf("atom %s: %w", code, err)
 			}
-			v := evalNode(n)
+			v, err := evalNode(n)
+			if err != nil {
+				return nil, fmt.Errorf("atom %s: %w", code, err)
+			}
 			a.val.factor = new(big.Rat).Mul(f, v.factor)
 			a.val.pi = v.pi
 			a.val.dim = v.dim
@@ -276,6 +335,10 @@ type parser struct {
 	s       string
 	i       int
 	resolve func(string) (*atom, error)
+	// depth is how many parentheses are open, and components how many
+	// components the code has so far, each held to its bound as it grows.
+	depth      int
+	components int
 }
 
 // parseTerm parses a whole code into its tree.
@@ -316,6 +379,9 @@ func (p *parser) errf(format string, args ...any) error {
 
 func (p *parser) term(t *termNode) error {
 	for {
+		if p.components++; p.components > MaxUnitComponents {
+			return p.errf("a code of more components is beyond the bound of %d", MaxUnitComponents)
+		}
 		n, err := p.component()
 		if err != nil {
 			return err
@@ -336,6 +402,9 @@ func (p *parser) component() (node, error) {
 	case 0:
 		return nil, p.errf("a term is missing after an operator")
 	case '(':
+		if p.depth++; p.depth > MaxUnitNesting {
+			return nil, p.errf("parentheses nested deeper are beyond the bound of %d", MaxUnitNesting)
+		}
 		p.i++
 		inner := &termNode{}
 		if err := p.term(inner); err != nil {
@@ -345,6 +414,7 @@ func (p *parser) component() (node, error) {
 			return nil, p.errf("an opening parenthesis is not closed")
 		}
 		p.i++
+		p.depth--
 		return groupNode{inner: inner}, nil
 	case '{':
 		text, err := p.annotation()
@@ -386,12 +456,25 @@ func (p *parser) component() (node, error) {
 		note = &text
 	}
 	if isDigits(symbol) {
+		// UCUM's factor is a positive integer, and a zero one has no
+		// reciprocal: `m/0` would divide by it.
+		if strings.Trim(symbol, "0") == "" {
+			return nil, p.errf("a factor is a positive integer, and %s is zero", symbol)
+		}
+		if len(symbol) > MaxUnitFactorDigits {
+			return nil, p.errf("a factor of %d digits is beyond the bound of %d digits", len(symbol), MaxUnitFactorDigits)
+		}
 		return numberNode{digits: symbol, note: note}, nil
 	}
 	head, exp := splitExponent(symbol)
 	u := unitNode{note: note, exp: 1}
 	if exp != "" {
+		// Digits past the bound's own are refused before Atoi reads them, so
+		// one too long for an int names the bound as well.
 		n, err := strconv.Atoi(exp)
+		if len(strings.TrimLeft(exp, "+-")) > len(strconv.Itoa(MaxUnitExponent)) || err == nil && (n > MaxUnitExponent || n < -MaxUnitExponent) {
+			return nil, p.errf("the exponent %s is beyond the bound of ±%d", exp, MaxUnitExponent)
+		}
 		if err != nil {
 			return nil, p.errf("exponent %q is not an integer", exp)
 		}
@@ -498,43 +581,53 @@ func splitExponent(symbol string) (head, exp string) {
 
 // --- evaluation ---
 
-func evalNode(n node) value {
+func evalNode(n node) (value, error) {
 	v := unitValue()
+	var err error
 	switch x := n.(type) {
 	case *termNode:
-		evalTerm(&v, x)
+		err = evalTerm(&v, x)
 	case termNode:
-		evalTerm(&v, &x)
+		err = evalTerm(&v, &x)
 	}
-	return v
+	return v, err
 }
 
-func evalTerm(v *value, t *termNode) {
+func evalTerm(v *value, t *termNode) error {
 	inner := unitValue()
 	for i, part := range t.parts {
 		sign := 1
 		if i > 0 && t.ops[i-1] == '/' {
 			sign = -1
 		}
-		inner.mul(evalComponent(part), sign)
+		c, err := evalComponent(part)
+		if err != nil {
+			return err
+		}
+		if err := inner.mul(c, sign); err != nil {
+			return err
+		}
 	}
 	if t.reciprocal {
-		v.mul(inner, -1)
-	} else {
-		v.mul(inner, 1)
+		return v.mul(inner, -1)
 	}
+	return v.mul(inner, 1)
 }
 
-func evalComponent(n node) value {
+func evalComponent(n node) (value, error) {
 	v := unitValue()
 	switch x := n.(type) {
 	case unitNode:
 		u := unitValue()
-		u.mul(x.atom.val, 1)
+		if err := u.mul(x.atom.val, 1); err != nil {
+			return value{}, err
+		}
 		if x.prefix != "" {
 			u.factor.Mul(u.factor, prefixes[x.prefix])
 		}
-		v.mul(u, x.exp)
+		if err := v.mul(u, x.exp); err != nil {
+			return value{}, err
+		}
 		if x.note != nil {
 			v.notes[*x.note]++
 		}
@@ -549,9 +642,11 @@ func evalComponent(n node) value {
 		v.notes[x.text]++
 		v.counted = true
 	case groupNode:
-		evalTerm(&v, x.inner)
+		if err := evalTerm(&v, x.inner); err != nil {
+			return value{}, err
+		}
 	}
-	return v
+	return v, nil
 }
 
 // --- rendering ---

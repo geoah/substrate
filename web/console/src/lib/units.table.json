@@ -344,6 +344,22 @@
       ]
     },
     {
+      "name": "number-concentration",
+      "base": "/m3",
+      "scale": "ratio",
+      "display": "10*9/L",
+      "dimension": "L-3",
+      "units": [
+        "/L",
+        "/uL",
+        "10*3/uL",
+        "10*6/uL",
+        "10*9/L",
+        "10*12/L"
+      ],
+      "note": "things counted per volume, such as blood cells: 10*9/L and 10*3/uL are one value"
+    },
+    {
       "name": "catalytic-concentration",
       "base": "mol/(s.m3)",
       "scale": "ratio",
@@ -732,12 +748,18 @@
     "%": "%",
     "'": "′",
     "''": "″",
+    "/L": "/L",
     "/d": "/d",
     "/h": "/h",
     "/min": "/min",
     "/s": "/s",
+    "/uL": "/μL",
     "/wk": "/wk",
     "1": "",
+    "10*12/L": "10¹²/L",
+    "10*3/uL": "10³/μL",
+    "10*6/uL": "10⁶/μL",
+    "10*9/L": "10⁹/L",
     "A": "A",
     "A.h": "Ah",
     "Bq/m3": "Bq/m³",

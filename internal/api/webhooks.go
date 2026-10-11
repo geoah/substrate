@@ -13,12 +13,14 @@ import (
 )
 
 // The bounds on one public webhook delivery. A non-multipart body rides the
-// envelope whole, so it is held to what the runner protocol and an agent's
-// user message can carry; a multipart request may carry files, which the
-// engine spools to the blob store, so its total is bounded below the blob
-// store's own cap while its inline parts share the inline budget.
+// envelope whole into the function's input frame, so it is held to the 8 MiB
+// a function body's own frame may carry (host.py MAX_FRAME_BYTES, under the
+// runner's 16 MiB line ceiling); the ledger keeps it in the blob store by
+// digest, never inline in the changelog. A multipart request may carry files,
+// which the engine spools to the blob store, so its total is bounded below the
+// blob store's own cap while its inline parts share the inline budget.
 const (
-	maxWebhookInline      = 1 << 20
+	maxWebhookInline      = 8 << 20
 	maxWebhookBody        = 32 << 20
 	maxWebhookHeaderBytes = 16 << 10
 	// maxConcurrentWebhooks bounds in-flight deliveries process-wide, the
@@ -125,7 +127,7 @@ func readWebhookRequest(w http.ResponseWriter, r *http.Request) (substrate.Webho
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			return req, http.StatusRequestEntityTooLarge, errors.New("webhook body exceeds 1 MiB; a larger payload must arrive as multipart/form-data file parts")
+			return req, http.StatusRequestEntityTooLarge, errors.New("webhook body exceeds 8 MiB; a larger payload must arrive as multipart/form-data file parts")
 		}
 		return req, http.StatusBadRequest, errors.New("webhook body unreadable")
 	}
@@ -178,7 +180,7 @@ func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string) (
 		} else {
 			inline += len(data)
 			if inline > maxWebhookInline {
-				return nil, http.StatusRequestEntityTooLarge, errors.New("webhook inline parts exceed 1 MiB")
+				return nil, http.StatusRequestEntityTooLarge, errors.New("webhook inline parts exceed 8 MiB")
 			}
 			part.Value = string(data)
 		}

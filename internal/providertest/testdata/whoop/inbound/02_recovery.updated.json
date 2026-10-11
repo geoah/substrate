@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json; charset=utf-8",
+   "content-length": "139",
+   "x-whoop-signature": "Ni+LpqGVDRG0nO58Wd1ZhcRo90yrrBWds5+Iv3fm8qw=",
+   "x-whoop-signature-timestamp": "1791607269720"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"user_id\":4021873,\"id\":\"adde68d0-1852-41bd-963a-f47e68df7da7\",\"type\":\"recovery.updated\",\"trace_id\":\"a4c5fdf8-197b-46a3-a9f3-9668a0995504\"}"
+  }
+ },
+ "_fixture": "v2 recovery events carry the SLEEP id, not the cycle id: read the sleep, then GET /v2/cycle/{cycle_id}/recovery"
+}

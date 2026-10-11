@@ -64,6 +64,20 @@ const (
 	TraitOverrideCore  = PackageCore + "/" + TraitOverride
 )
 
+// The observed trait (decision 0154): a kind that binds it holds observed
+// values, one per record (`single`) or many packed over a fixed period
+// (`packed`), and the write path holds every record of it to the rules a
+// trait cannot state (observed.go). Its property list never grows: a later
+// need is a second trait bound beside it.
+const (
+	TraitObserved     = "observed"
+	TraitObservedCore = PackageCore + "/" + TraitObserved
+
+	// ObservedSingle and ObservedPacked are the trait's two variants.
+	ObservedSingle = "single"
+	ObservedPacked = "packed"
+)
+
 // ComputedSlotLen is the width of the slot a computed occurrence's id carries
 // after its series' id and a `_`: `YYYYMMDDTHHMMSSZ`. MaxSeriesIDLen keeps the
 // whole `<seriesId>_<slot>` inside MaxIDLen, and the write path holds a kind

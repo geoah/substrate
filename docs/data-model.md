@@ -198,7 +198,7 @@ its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/calendar`, `samples.substrate.reamde.dev/tasks`,
 `samples.substrate.reamde.dev/scheduling` (the `occurrencelog` trait that
 `calendar` and `tasks` require; `recurring` is core's now), and the function
-and agent examples `notes`, `llm`, `readinglist`, `firecrawl` and `pebble`
+and agent examples `notes`, `llm`, `readinglist`, `firecrawl`, `pebble` and `healthapple`
 under the same authority (each a bundle you **import**), and the substrate's
 own machinery in `substrate.reamde.dev/core` and the agent runtime's data in
 `substrate.reamde.dev/llm`, which are the two packages a new repository is
@@ -417,13 +417,23 @@ Every unit belongs to a **measure**: the named kind of quantity it measures,
 such as `mass`, `temperature` or `rate`. A value converts and compares only
 inside one measure, because a dimension alone does not keep apart what a
 person needs apart: energy and torque, a fraction and a count, real and
-apparent power. [Units](units.md) lists the 56 measures and their 200 codes,
-each with its exact factor. A code the table does not list is still admitted
+apparent power. [Units](units.md) lists every measure and its codes, each
+with its exact factor. A code the table does not list is still admitted
 when the grammar reads it (`GJ`, `fL`, `kg/h`): one that differs from a listed
 code only by its prefixes belongs to that code's measure, and any other to the
 one measure of its dimension. Where two measures share the dimension (`J/s` is
 a power or an apparent power, `kg.m2/s2` an energy or a torque) the write is
 refused unless the property names its measure.
+
+A code's dimension is bounded: the exponent of each base quantity stays
+within ±8, in each atom raised to its power and in every product along the
+way, so `m9` and `m5.m5` are refused rather than read as some other
+dimension. A factor is a positive integer, so `m/0` is refused too. The
+parser holds every code to four more bounds before it evaluates anything, so
+a short code cannot ask for a long computation: a written exponent within
+±24 (`10*24` fits, `10*25` does not), a numeric factor of at most 12 digits,
+parentheses nested at most 8 deep, and at most 32 components in the whole
+code. A refusal names the bound it hit.
 
 A property narrows what it admits:
 
@@ -855,6 +865,13 @@ console lists every provider's `accountconfig` accounts.
 [Bundles](bundles.md) puts these three interfaces to work, and
 [traits and interfaces](traits.md) is the worked tour: declaring a trait of
 your own, and every query surface binding unlocks.
+
+**Observed values.** Core's `observed` trait marks a kind whose records hold
+measured values, one per record (`observed(single)`) or many over a fixed
+period (`observed(packed)`). The substrate holds every write of such a kind to
+the rules its property list cannot state and computes a packed record's
+`stats`; [observations](observations.md) has the rules and the sample kinds
+that bind it.
 
 ## Validation and state machines
 

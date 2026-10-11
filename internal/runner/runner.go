@@ -54,6 +54,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/sandbox"
+	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -1036,6 +1037,11 @@ func (s *readState) serve(ctx context.Context, call hostCall) map[string]any {
 }
 
 func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
+	// The unit table answers from the engine's own code and reads nothing
+	// from the repository, so it is neither gated nor charged (units.go).
+	if out, handled, err := serveUnits(call); handled {
+		return out, err
+	}
 	switch call.Host {
 	case "get":
 		var in struct {
@@ -1131,6 +1137,37 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		// yet to buy vectors for, so a body can tell a partial semantic index
 		// from a full one. The SDKs' typed readers take `hits` alone.
 		return map[string]any{"hits": res.Hits, "pending": res.Pending}, nil
+	case "aggregate":
+		// The aggregate read pays like a list: one call, and its rows against
+		// the row budget. Every kind it reads is named and held to the
+		// allowlist: the streams' kinds in filter.kinds, and in the records
+		// time mode the kinds whose records are the buckets.
+		var q substrate.AggregateQuery
+		if err := strictjson.DecodeBytes(call.Params, &q, false); err != nil {
+			return nil, fmt.Errorf("aggregate: %w", err)
+		}
+		if err := s.requireTypes(q.Filter.Kinds, "aggregate"); err != nil {
+			return nil, err
+		}
+		if a := q.Aggregate; a != nil && a.Bucket != nil && a.Bucket.Records != nil {
+			if err := s.requireTypes(a.Bucket.Records.Filter.Kinds, "aggregate's records bucket"); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.chargeCall(); err != nil {
+			return nil, s.trip(err)
+		}
+		if _, err := s.remainingRows(); err != nil {
+			return nil, s.trip(err)
+		}
+		res, err := s.backend.Aggregate(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.chargeRows(len(res.Rows)); err != nil {
+			return nil, s.trip(err)
+		}
+		return map[string]any{"result": res}, nil
 	case "call":
 		var in struct {
 			Function string `json:"function"`

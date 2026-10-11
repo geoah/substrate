@@ -29,8 +29,9 @@ const LLM = Authority + "/llm"
 // sample that silently stops existing in production while every other test
 // still passes. kinds_test.go holds it to the tree on disk.
 //
-//go:embed all:authority.yaml all:calendar all:firecrawl all:llm all:messaging
-//go:embed all:notes all:pebble all:people all:readinglist all:scheduling all:tasks
+//go:embed all:authority.yaml all:calendar all:firecrawl all:health all:healthapple all:healthgarmin
+//go:embed all:healthgooglefit all:healthwhoop all:llm all:messaging all:notes all:observations
+//go:embed all:pebble all:people all:readinglist all:scheduling all:tasks
 var files embed.FS
 
 // Samples is the whole sample tree, as a filesystem whose root holds one

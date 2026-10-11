@@ -398,6 +398,10 @@ type builder struct {
 	// whose values a quantity filter reads its stored units from, since there
 	// is no table of rows to read them from.
 	rowProps map[string]any
+	// tombstones says the read selects tombstones (filter.deleted) rather
+	// than live rows, so a quantity read that collects the rows' units
+	// (quantity.go storedQuantityUnits) reads the same side.
+	tombstones bool
 }
 
 // planWithValues makes the rest of a read's transaction plan each statement
@@ -477,6 +481,13 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	// a token replayed against another filter would seek past rows the new
 	// predicate admits and answer a short page that looked complete.
 	signature := order + "|" + filterDigest(q.Filter)
+	// A quantity order gains an arm per stored unit its declaration does not
+	// name, after the signature: each arm keys a row the same whichever arms
+	// stand beside it, so a unit first written mid-walk moves no cursor.
+	if terms, err = ds.quantityOrderTerms(ctx, tx, b, types, q.OrderBy, terms); err != nil {
+		return nil, err
+	}
+	order = renderOrder(terms)
 	first := q.First
 	if first <= 0 {
 		first = defaultPageSize
@@ -761,6 +772,7 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 		b.add(`deleted_at IS NULL`)
 	default:
 		b.add(`deleted_at IS NOT NULL`)
+		b.tombstones = true
 	}
 	if f.Search != "" {
 		// The record's search index, the one column records_fts_idx covers:

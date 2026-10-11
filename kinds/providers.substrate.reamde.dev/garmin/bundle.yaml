@@ -1,0 +1,3606 @@
+# The Garmin bundle: a mirror of what Garmin's Health API and Activity API
+# push about one Garmin Connect user. Read only: nothing here writes back to
+# Garmin.
+#
+# GARMIN PUSHES. Each summary type (dailies, epochs, sleeps, ...) is POSTed
+# to the endpoint the Garmin app registers for it in Garmin's Endpoint
+# Configuration tool, here the `garmin-webhook` trigger, and `garminpush`
+# writes one row per summary, keyed by Garmin's `summaryId`. `garminsync`
+# only asks Garmin to backfill history; the history then arrives by push
+# like everything else.
+#
+# EVERY FIELD-LEVEL FACT HERE IS SECONDARY. Garmin's API specifications sit
+# behind its partner portal login and only the OAuth 2.0 PKCE document is
+# public; the field lists below follow Garmin's own OpenAPI description of
+# the wellness API as republished outside Garmin, and nothing was checked
+# against a live account. README.md says what that means.
+#
+# A KIND IS THE API OBJECT, COMPLETE: every field Garmin documents for a
+# summary type is a property under Garmin's own camelCase name and in
+# Garmin's units (seconds since the epoch, metres, grams, kilocalories), with
+# no derived property beside it. The temporal trait's `at` and `endsAt` are
+# the one addition: the summary's own seconds, as instants, so the rows sit
+# on a timeline. Every sync cursor is on the account; no mirror row carries
+# sync state.
+#
+# This file is the closure (the install unit). The delivery wiring is
+# triggers.yaml, as ordinary data records.
+# ---- the owned package --------------------------------------------------------
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/garmin
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  version: 1
+---
+# ---- the bundle document: the install unit ------------------------------------
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/garmin
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    Keeps a copy of what your Garmin devices record, from daily summaries,
+    sleep, HRV, stress and body composition to activities with their samples,
+    as Garmin pushes it. Read-only.
+  # `inject: functions` because both bodies read `apiBase` and the push
+  # checks `clientId` against the header Garmin sends; the engine never
+  # injects the oauth2 trait's `clientSecret`.
+  inputs:
+    client:
+      kind: providers.substrate.reamde.dev/garmin/config
+      inject: functions
+      description: the Garmin Connect Developer Program app the host exchanges
+        codes through
+  # TRUSTED provider metadata: the host reads the endpoints and the
+  # toggle-to-scope map only from here, never from the editable config
+  # record.
+  #
+  # Garmin's grant has no scopes to ask for: the user picks what to share on
+  # Garmin's consent page, and the token answers a fixed scope string. The
+  # facility sends the union of the enabled toggles' entries as `scope`
+  # anyway, so each toggle names the Garmin permission that covers it
+  # (HEALTH_EXPORT or ACTIVITY_EXPORT), and `grantedScopes` records which of
+  # the two the account asked for. What the user actually granted is
+  # `account.permissions`, read from Garmin by the sync.
+  #
+  # No revocationEndpoint: Garmin's disconnect is `DELETE
+  # /rest/user/registration` under the user's own token, not an RFC 7009 form
+  # POST. No emailEndpoint: Garmin exposes no address, and the account's
+  # identity is the Garmin user id the sync records.
+  oauth2:
+    clientInput: client
+    authorizationEndpoint: https://connect.garmin.com/oauth2Confirm
+    tokenEndpoint: https://connectapi.garmin.com/di-oauth2-service/oauth/token
+    featureScopes:
+      enabledDailies:
+        scopes:
+          - HEALTH_EXPORT
+      enabledEpochs:
+        scopes:
+          - HEALTH_EXPORT
+      enabledSleeps:
+        scopes:
+          - HEALTH_EXPORT
+      enabledBodyComps:
+        scopes:
+          - HEALTH_EXPORT
+      enabledStressDetails:
+        scopes:
+          - HEALTH_EXPORT
+      enabledUserMetrics:
+        scopes:
+          - HEALTH_EXPORT
+      enabledPulseOx:
+        scopes:
+          - HEALTH_EXPORT
+      enabledRespiration:
+        scopes:
+          - HEALTH_EXPORT
+      enabledHealthSnapshot:
+        scopes:
+          - HEALTH_EXPORT
+      enabledHRV:
+        scopes:
+          - HEALTH_EXPORT
+      enabledBloodPressures:
+        scopes:
+          - HEALTH_EXPORT
+      enabledSkinTemp:
+        scopes:
+          - HEALTH_EXPORT
+      enabledActivities:
+        scopes:
+          - ACTIVITY_EXPORT
+      enabledActivityDetails:
+        scopes:
+          - ACTIVITY_EXPORT
+      enabledManuallyUpdatedActivities:
+        scopes:
+          - ACTIVITY_EXPORT
+      enabledMoveIQ:
+        scopes:
+          - HEALTH_EXPORT
+  installs:
+    - providers.substrate.reamde.dev/garmin/config
+    - providers.substrate.reamde.dev/garmin/account
+    - providers.substrate.reamde.dev/garmin/daily
+    - providers.substrate.reamde.dev/garmin/epoch
+    - providers.substrate.reamde.dev/garmin/sleep
+    - providers.substrate.reamde.dev/garmin/bodycomp
+    - providers.substrate.reamde.dev/garmin/stressdetail
+    - providers.substrate.reamde.dev/garmin/usermetric
+    - providers.substrate.reamde.dev/garmin/pulseox
+    - providers.substrate.reamde.dev/garmin/respiration
+    - providers.substrate.reamde.dev/garmin/healthsnapshot
+    - providers.substrate.reamde.dev/garmin/hrv
+    - providers.substrate.reamde.dev/garmin/bloodpressure
+    - providers.substrate.reamde.dev/garmin/skintemp
+    - providers.substrate.reamde.dev/garmin/activity
+    - providers.substrate.reamde.dev/garmin/activitydetail
+    - providers.substrate.reamde.dev/garmin/manuallyupdatedactivity
+    - providers.substrate.reamde.dev/garmin/moveiq
+    - providers.substrate.reamde.dev/garmin/notice
+    - providers.substrate.reamde.dev/garmin/garminpush
+    - providers.substrate.reamde.dev/garmin/garminsync
+---
+# ---- the config kind: the `client` input's kind -------------------------------
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/config
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    The Garmin app settings your account connects through. The Garmin Connect
+    Developer Program app this bundle authenticates through: its consumer
+    key as the client id, a sealed client secret, and the API's origin. The
+    record the bundle's client input resolves; endpoints and permissions are
+    manifest metadata, not editable rows.
+  purpose: internal
+  names:
+    singular: config
+  traits: [substrate.reamde.dev/core/oauth2]
+  displayTemplate: "Garmin app {clientId}"
+  properties:
+    clientId:
+      type: string
+      displayName: Client ID
+      description: >-
+        the app's consumer key from Garmin's developer portal; Garmin names
+        it in the garmin-client-id header of its pushes, and a push naming
+        another is refused
+    clientSecret:
+      type: secret
+      displayName: Client secret
+      description: the app's consumer secret, sealed at rest and never read
+        back
+    apiBase:
+      type: url
+      default: https://apis.garmin.com/wellness-api
+      writer: owner
+      displayName: API base URL
+      description: >-
+        where both functions call Garmin's API: the production one, or a loopback
+        host for a test. Any other origin is refused before a token is sent,
+        and a ping's callback URL must sit under it
+---
+# ---- the account kind: one connected Garmin user -------------------------------
+# accountconfig (its records ARE the bundle's connected accounts) and the core
+# `sync` trait. Every property carries a `writer:` role. Every cursor in the
+# closure is here.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/account
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    Your Garmin Connect account, connected here. One connected Garmin user:
+    the OAuth facility writes the credential reference and status; the sync
+    records the Garmin user id every push is matched on, the permissions the
+    user granted, and the backfill cursors; the owner chooses which summary
+    types are written and how far back to backfill.
+  purpose: internal
+  names:
+    singular: account
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
+  displayTemplate: "Garmin user {userId}"
+  properties:
+    # ---- the grant (the OAuth facility's) ---------------------------------
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: the credential-store reference the OAuth facility writes;
+        never a raw token
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "the connection state the facility last reported: pending,
+        connected or erroring, a growing list rather than an enum"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Requested permissions
+      description: >-
+        the Garmin permissions the last consent asked for, from the enabled
+        toggles; what the user granted is `permissions`
+    tokenError:
+      type: string
+      writer: oauth
+      displayName: Sign-in error
+      description: why the OAuth facility last failed to refresh this account's
+        token, as the provider's status and error code; empty while it works
+    tokenErrorAt:
+      type: datetime
+      writer: oauth
+      displayName: Sign-in error at
+      description: when the OAuth facility first recorded the current sign-in
+        error
+    # ---- who this account is ----------------------------------------------
+    userId:
+      type: string
+      writer: connector
+      displayName: Garmin user ID
+      description: >-
+        the Garmin user id, from GET /rest/user/id at the first sync. It is
+        stable across reconnects, every push carries it, and a push is written
+        to the account whose `userId` it names
+    userAccessToken:
+      type: string
+      writer: owner
+      displayName: OAuth 1.0a user access token
+      description: >-
+        only for a connection carried over from Garmin's OAuth 1.0a: the user
+        access token older pushes carry instead of a user id, matched when
+        no account's `userId` is
+    permissions:
+      type: string
+      repeated: true
+      writer: connector
+      displayName: Granted permissions
+      description: >-
+        what the user let this app read (ACTIVITY_EXPORT, HEALTH_EXPORT, ...),
+        from GET /rest/user/permissions and from each permission change Garmin
+        pushes
+    permissionsChangedAt:
+      type: datetime
+      writer: connector
+      displayName: Permissions changed
+      description: when Garmin last reported a change to `permissions`
+    deregisteredAt:
+      type: datetime
+      writer: connector
+      displayName: Disconnected at Garmin
+      description: >-
+        when Garmin reported the user disconnected this app in Garmin Connect.
+        The schedule passes over the account while it is set; a push of data
+        or a sync that reaches Garmin again clears it
+    # ---- what the owner asked for -------------------------------------------
+    enabledDailies:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Daily summaries
+      description: >-
+        write the `dailies` Garmin pushes as `daily` rows and ask Garmin to
+        backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledEpochs:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Epochs
+      description: >-
+        write the `epochs` Garmin pushes as `epoch` rows and ask Garmin to
+        backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledSleeps:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Sleeps
+      description: >-
+        write the `sleeps` Garmin pushes as `sleep` rows and ask Garmin to
+        backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledBodyComps:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Body composition
+      description: >-
+        write the `bodyComps` Garmin pushes as `bodycomp` rows and ask Garmin
+        to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledStressDetails:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Stress details
+      description: >-
+        write the `stressDetails` Garmin pushes as `stressdetail` rows and
+        ask Garmin to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledUserMetrics:
+      type: bool
+      default: true
+      writer: owner
+      displayName: User metrics
+      description: >-
+        write the `userMetrics` Garmin pushes as `usermetric` rows and ask
+        Garmin to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledPulseOx:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Pulse Ox
+      description: >-
+        write the `pulseox` Garmin pushes as `pulseox` rows and ask Garmin
+        to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledRespiration:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Respiration
+      description: >-
+        write the `allDayRespiration` Garmin pushes as `respiration` rows
+        and ask Garmin to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledHealthSnapshot:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Health Snapshot
+      description: >-
+        write the `healthSnapshot` Garmin pushes as `healthsnapshot` rows
+        and ask Garmin to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledHRV:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Heart rate variability
+      description: >-
+        write the `hrv` Garmin pushes as `hrv` rows and ask Garmin to backfill
+        them; Garmin's permission for it is HEALTH_EXPORT
+    enabledBloodPressures:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Blood pressure
+      description: >-
+        write the `bloodPressures` Garmin pushes as `bloodpressure` rows and
+        ask Garmin to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledSkinTemp:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Skin temperature
+      description: >-
+        write the `skinTemp` Garmin pushes as `skintemp` rows and ask Garmin
+        to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    enabledActivities:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Activities
+      description: >-
+        write the `activities` Garmin pushes as `activity` rows and ask Garmin
+        to backfill them; Garmin's permission for it is ACTIVITY_EXPORT
+    enabledActivityDetails:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Activity details
+      description: >-
+        write the `activityDetails` Garmin pushes as `activitydetail` rows
+        and ask Garmin to backfill them; Garmin's permission for it is ACTIVITY_EXPORT
+    enabledManuallyUpdatedActivities:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Edited activities
+      description: >-
+        write the `manuallyUpdatedActivities` Garmin pushes as `manuallyupdatedactivity`
+        rows (Garmin offers no backfill for them); Garmin's permission for
+        it is ACTIVITY_EXPORT
+    enabledMoveIQ:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Move IQ
+      description: >-
+        write the `moveIQActivities` Garmin pushes as `moveiq` rows and ask
+        Garmin to backfill them; Garmin's permission for it is HEALTH_EXPORT
+    backfillDepth:
+      type: enum
+      values:
+        - value: none
+          label: "Don't backfill"
+        - value: last7d
+          label: "Last 7 days"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+      required: true
+      default: last30d
+      writer: owner
+      displayName: Backfill depth
+      description: >-
+        how far back from the first sync to ask Garmin to re-send history
+        (none means from the connection forward). Raising it later extends
+        the walk; Garmin may refuse a reach it does not keep
+    syncRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Sync requested
+      description: stamp this to ask for a sync now; it also clears a disconnected
+        mark once the grant works again
+    syncPaused:
+      type: bool
+      writer: owner
+      displayName: Paused
+      description: >-
+        while true the sync passes over this account and pushes for it are
+        not written; Garmin does not re-send what a pause dropped, so a backfill
+        is the way to recover it
+    # ---- the sync's own bookkeeping (writer: connector) ---------------------
+    backfillUntil:
+      type: datetime
+      writer: connector
+      displayName: Backfill from
+      description: >-
+        the instant the backfill counts back from, pinned at the first sync
+        so the reach of `backfillDepth` does not move with the clock; data
+        after it arrives by push
+    syncCursors:
+      type: datetime
+      keyed: true
+      keyPattern: camel
+      writer: connector
+      displayName: Backfill cursors
+      description: >-
+        per summary type, the start of the oldest backfill window Garmin accepted;
+        the walk for a type is done when its cursor reaches `backfillUntil`
+        less `backfillDepth`
+    retryNotBefore:
+      type: datetime
+      writer: connector
+      displayName: Retry not before
+      description: when Garmin said to come back, from a 429; the sync refuses
+        to start before it
+    lastCompletedAt:
+      type: datetime
+      writer: connector
+      displayName: Last completed
+      description: when a sync last found every enabled type backfilled with
+        nothing refused
+    lastPushAt:
+      type: datetime
+      writer: connector
+      displayName: Last push
+      description: when a push delivery last wrote to this account
+    # ---- the core `sync` trait (decision 0085) ------------------------------
+    syncRequestedAck:
+      type: datetime
+      writer: connector
+      displayName: Sync request acknowledged
+      description: the `syncRequestedAt` the last sync acted on; equal means
+        the request is spent
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: >-
+        when the last sync or push delivery finished; the on-connect trigger
+        fires while it is absent
+    syncState:
+      type: string
+      writer: connector
+      displayName: Sync state
+      description: >-
+        never, running, ok, erroring or throttled: the state the last sync
+        or push delivery left. A 429 is throttled until `retryNotBefore`,
+        and a disconnect at Garmin is erroring
+    syncMessage:
+      type: string
+      writer: connector
+      displayName: Sync message
+      description: the one human line the last sync or push delivery left
+    lastSyncStartedAt:
+      type: datetime
+      writer: connector
+      displayName: Last sync started
+      description: when the last sync or push delivery began
+    lastSyncDurationMs:
+      type: int
+      writer: connector
+      displayName: Last sync duration (ms)
+      description: how long that sync or delivery took
+    syncProgress:
+      type: json
+      writer: connector
+      displayName: Sync progress
+      description: >-
+        {phase, done, total, pending} of the backfill: the summary type being
+        walked, how many enabled types reached their floor, how many there
+        are, and how many are left
+    syncError:
+      type: string
+      writer: connector
+      displayName: Sync error
+      description: >-
+        the last error text; a later sync that ends ok clears it and syncErrorAt,
+        while a push leaves it standing because pushes do not exercise the
+        grant
+    syncErrorAt:
+      type: datetime
+      writer: connector
+      displayName: Sync error at
+      description: when syncError was written; cleared with it
+    syncStreams:
+      type: json
+      writer: connector
+      displayName: Sync streams
+      description: >-
+        trait contract, unwritten here: the backfill is one walk with one
+        outcome, and `syncCursors` holds each type's place in it
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/daily
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One day of activity, heart rate and stress from a Garmin device. A Garmin
+    Health API daily summary, pushed under `dailies`: steps, distance, energy,
+    intensity minutes, heart rate with its sample map, stress durations and
+    Body Battery, in Garmin's units. `at` is `startTimeInSeconds` and `endsAt`
+    adds `durationInSeconds`, so a travel day lasts more or less than 86,400
+    seconds.
+  purpose: primary
+  names:
+    singular: daily
+  label:
+    singular: Daily summary
+    plural: Daily summaries
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Daily summary {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    activityType:
+      type: string
+      description: >-
+        the activity type the day is counted under, usually GENERIC or WHEELCHAIR_PUSH
+    activeKilocalories:
+      type: int
+      description: >-
+        active energy burned, in kilocalories
+    bmrKilocalories:
+      type: int
+      description: >-
+        resting (basal) energy burned, in kilocalories
+    steps:
+      type: int
+      description: >-
+        steps taken
+    pushes:
+      type: int
+      description: >-
+        wheelchair pushes
+    distanceInMeters:
+      type: float
+      description: >-
+        distance covered, in metres
+    pushDistanceInMeters:
+      type: float
+      description: >-
+        distance pushed in a wheelchair, in metres
+    durationInSeconds:
+      type: int
+      description: >-
+        how long the day lasts, in seconds: 86,400, or more or less on a day
+        the offset changed
+    activeTimeInSeconds:
+      type: int
+      description: >-
+        time spent active, in seconds
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    moderateIntensityDurationInSeconds:
+      type: int
+      description: >-
+        moderate intensity time, in seconds
+    vigorousIntensityDurationInSeconds:
+      type: int
+      description: >-
+        vigorous intensity time, in seconds
+    floorsClimbed:
+      type: int
+      description: >-
+        floors climbed
+    minHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        lowest heart rate, in beats per minute
+    maxHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        highest heart rate, in beats per minute
+    averageHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        average heart rate, in beats per minute
+    restingHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        resting heart rate, in beats per minute; absent on a day the watch
+        was off
+    timeOffsetHeartRateSamples:
+      type: int
+      keyed: true
+      description: >-
+        heart rate samples in beats per minute, keyed by seconds after `startTimeInSeconds`
+    source:
+      type: string
+      description: >-
+        the device family the summary came from, where Garmin names it
+    stepsGoal:
+      type: int
+      description: >-
+        the day's step goal
+    pushesGoal:
+      type: int
+      description: >-
+        the day's wheelchair push goal
+    intensityDurationGoalInSeconds:
+      type: int
+      description: >-
+        the intensity time goal, in seconds
+    floorsClimbedGoal:
+      type: int
+      description: >-
+        the day's floors goal
+    averageStressLevel:
+      type: int
+      description: >-
+        average stress level, 1 to 100; -1 when there was too little data
+    maxStressLevel:
+      type: int
+      description: >-
+        highest stress level, 1 to 100; -1 when there was too little data
+    stressDurationInSeconds:
+      type: int
+      description: >-
+        time spent stressed, in seconds
+    restStressDurationInSeconds:
+      type: int
+      description: >-
+        time at rest, in seconds
+    activityStressDurationInSeconds:
+      type: int
+      description: >-
+        time too active to measure stress, in seconds
+    lowStressDurationInSeconds:
+      type: int
+      description: >-
+        time at low stress, in seconds
+    mediumStressDurationInSeconds:
+      type: int
+      description: >-
+        time at medium stress, in seconds
+    highStressDurationInSeconds:
+      type: int
+      description: >-
+        time at high stress, in seconds
+    stressQualifier:
+      type: string
+      description: >-
+        Garmin's word for the day's stress (calm, balanced, stressful, ...)
+    bodyBatteryChargedValue:
+      type: int
+      description: >-
+        Body Battery points charged over the day
+    bodyBatteryDrainedValue:
+      type: int
+      description: >-
+        Body Battery points drained over the day
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/epoch
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    Fifteen minutes of movement from a Garmin device. A Garmin Health API
+    epoch, pushed under `epochs`: one record per activity type seen in a 15-minute
+    slice, with steps, distance, energy and motion intensity. `at` is `startTimeInSeconds`
+    and `endsAt` adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: epoch
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Epoch {activityType} {at}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    activityType:
+      type: string
+      description: >-
+        the activity type of this slice: SEDENTARY, WALKING, RUNNING, GENERIC
+        or WHEELCHAIR_PUSH
+    activeKilocalories:
+      type: int
+      description: >-
+        active energy burned, in kilocalories
+    steps:
+      type: int
+      description: >-
+        steps taken
+    pushes:
+      type: int
+      description: >-
+        wheelchair pushes
+    distanceInMeters:
+      type: float
+      description: >-
+        distance covered, in metres
+    pushDistanceInMeters:
+      type: float
+      description: >-
+        distance pushed in a wheelchair, in metres
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    activeTimeInSeconds:
+      type: int
+      description: >-
+        time spent in this activity type, in seconds
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    met:
+      type: float
+      description: >-
+        metabolic equivalent of the slice
+    intensity:
+      type: string
+      description: >-
+        SEDENTARY, ACTIVE or HIGHLY_ACTIVE
+    meanMotionIntensity:
+      type: float
+      description: >-
+        mean motion intensity, 0 to 7
+    maxMotionIntensity:
+      type: float
+      description: >-
+        highest motion intensity, 0 to 7
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/sleep
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One night's sleep as a Garmin device recorded it. A Garmin Health API
+    sleep summary, pushed under `sleeps`: stage durations, the stage map,
+    respiration and SpO2 samples, the sleep score and the day's naps. A re-send
+    under the same `summaryId` (tentative turning final) replaces the row.
+    `at` is `startTimeInSeconds`, `endsAt` the last stage's `endTimeInSeconds`.
+  purpose: primary
+  names:
+    singular: sleep
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Sleep {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    durationInSeconds:
+      type: int
+      description: >-
+        time asleep, in seconds; awake time is not counted
+    totalNapDurationInSeconds:
+      type: int
+      description: >-
+        time napping that day, in seconds
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    unmeasurableSleepInSeconds:
+      type: int
+      description: >-
+        time the device could not classify, in seconds
+    deepSleepDurationInSeconds:
+      type: int
+      description: >-
+        deep sleep, in seconds
+    lightSleepDurationInSeconds:
+      type: int
+      description: >-
+        light sleep, in seconds
+    remSleepInSeconds:
+      type: int
+      description: >-
+        REM sleep, in seconds
+    awakeDurationInSeconds:
+      type: int
+      description: >-
+        time awake during the sleep, in seconds
+    sleepLevelsMap:
+      type: object
+      description: >-
+        the stage map: for each stage, the ranges spent in it
+      fields:
+        deep:
+          type: object
+          repeated: true
+          description: >-
+            the deep sleep ranges
+          fields:
+            startTimeInSeconds:
+              type: int
+              description: >-
+                start of the range, in seconds since the Unix epoch (UTC)
+            endTimeInSeconds:
+              type: int
+              description: >-
+                end of the range, in seconds since the Unix epoch (UTC)
+        light:
+          type: object
+          repeated: true
+          description: >-
+            the light sleep ranges
+          fields:
+            startTimeInSeconds:
+              type: int
+              description: >-
+                start of the range, in seconds since the Unix epoch (UTC)
+            endTimeInSeconds:
+              type: int
+              description: >-
+                end of the range, in seconds since the Unix epoch (UTC)
+        rem:
+          type: object
+          repeated: true
+          description: >-
+            the REM sleep ranges
+          fields:
+            startTimeInSeconds:
+              type: int
+              description: >-
+                start of the range, in seconds since the Unix epoch (UTC)
+            endTimeInSeconds:
+              type: int
+              description: >-
+                end of the range, in seconds since the Unix epoch (UTC)
+        awake:
+          type: object
+          repeated: true
+          description: >-
+            the awake ranges
+          fields:
+            startTimeInSeconds:
+              type: int
+              description: >-
+                start of the range, in seconds since the Unix epoch (UTC)
+            endTimeInSeconds:
+              type: int
+              description: >-
+                end of the range, in seconds since the Unix epoch (UTC)
+        unmeasurable:
+          type: object
+          repeated: true
+          description: >-
+            the ranges the device could not classify
+          fields:
+            startTimeInSeconds:
+              type: int
+              description: >-
+                start of the range, in seconds since the Unix epoch (UTC)
+            endTimeInSeconds:
+              type: int
+              description: >-
+                end of the range, in seconds since the Unix epoch (UTC)
+    validation:
+      type: string
+      description: >-
+        how the sleep was determined: MANUAL, DEVICE, OFF_WRIST, AUTO_TENTATIVE,
+        AUTO_FINAL, AUTO_MANUAL, ENHANCED_TENTATIVE or ENHANCED_FINAL
+    timeOffsetSleepSpo2:
+      type: int
+      keyed: true
+      description: >-
+        blood oxygen saturation samples in percent, keyed by seconds after
+        `startTimeInSeconds`
+    timeOffsetSleepRespiration:
+      type: float
+      keyed: true
+      description: >-
+        respiration samples in breaths per minute, keyed by seconds after
+        `startTimeInSeconds`
+    overallSleepScore:
+      type: object
+      description: >-
+        the overall sleep score
+      fields:
+        value:
+          type: int
+          description: >-
+            the score, 0 to 100, where Garmin gives one
+        qualifierKey:
+          type: string
+          description: >-
+            Garmin's verdict word: EXCELLENT, GOOD, FAIR or POOR
+    sleepScores:
+      type: object
+      keyed: true
+      description: >-
+        the sleep score's components, keyed by Garmin's component name (`totalDuration`,
+        `stress`, `remPercentage`, ...)
+      fields:
+        value:
+          type: int
+          description: >-
+            the score, 0 to 100, where Garmin gives one
+        qualifierKey:
+          type: string
+          description: >-
+            Garmin's verdict word: EXCELLENT, GOOD, FAIR or POOR
+    naps:
+      type: object
+      repeated: true
+      description: >-
+        the day's naps
+      fields:
+        napStartTimeInSeconds:
+          type: int
+          description: >-
+            when the nap started, in seconds since the Unix epoch (UTC)
+        napOffsetInSeconds:
+          type: int
+          description: >-
+            the device's offset from UTC at the nap, in seconds
+        napDurationInSeconds:
+          type: int
+          description: >-
+            how long the nap lasted, in seconds
+        napValidation:
+          type: string
+          description: >-
+            how the nap was determined
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/bodycomp
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One weigh-in from a Garmin scale or entered in Garmin Connect. A Garmin
+    Health API body composition, pushed under `bodyComps`: weight and the
+    scale's fat, water, muscle and bone readings, in grams and percent as
+    Garmin sends them. `at` is `measurementTimeInSeconds`.
+  purpose: primary
+  names:
+    singular: bodycomp
+  label:
+    singular: Body composition
+    plural: Body compositions
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "Body composition {at}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    muscleMassInGrams:
+      type: int
+      description: >-
+        muscle mass, in grams
+    boneMassInGrams:
+      type: int
+      description: >-
+        bone mass, in grams
+    bodyWaterInPercent:
+      type: float
+      description: >-
+        body water, in percent
+    bodyFatInPercent:
+      type: float
+      description: >-
+        body fat, in percent
+    bodyMassIndex:
+      type: float
+      description: >-
+        body mass index, in kilograms per square metre
+    weightInGrams:
+      type: int
+      description: >-
+        weight, in grams
+    measurementTimeInSeconds:
+      type: int
+      description: >-
+        when the measurement was taken, in seconds since the Unix epoch (UTC)
+    measurementTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the measurement, in seconds
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/stressdetail
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One day of stress and Body Battery readings from a Garmin device. A Garmin
+    Health API stress details summary, pushed under `stressDetails`: the stress
+    level every three minutes, Body Battery values, and the events that charged
+    or drained it. `at` is `startTimeInSeconds` and `endsAt` adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: stressdetail
+  label:
+    singular: Stress details
+    plural: Stress details
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Stress {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    maxStressLevel:
+      type: int
+      description: >-
+        highest stress level, 1 to 100
+    averageStressLevel:
+      type: int
+      description: >-
+        average stress level, 1 to 100
+    timeOffsetStressLevelValues:
+      type: int
+      keyed: true
+      description: >-
+        stress levels, 1 to 100, keyed by seconds after `startTimeInSeconds`;
+        a negative value is the reason there is none (-1 off wrist, -2 large
+        motion, -3 too little data, -4 recovering, -5 unidentified)
+    timeOffsetBodyBatteryValues:
+      type: int
+      keyed: true
+      description: >-
+        Body Battery values, 0 to 100, keyed by seconds after `startTimeInSeconds`
+    bodyBatteryDynamicFeedbackEvent:
+      type: object
+      description: >-
+        Garmin's current Body Battery feedback
+      fields:
+        eventStartTimeInSeconds:
+          type: int
+          description: >-
+            when the feedback applies, in seconds since the Unix epoch (UTC)
+        bodyBatteryLevel:
+          type: string
+          description: >-
+            Garmin's word for the level (VERY_LOW, LOW, MODERATE, HIGH, ...)
+    bodyBatteryActivityEvents:
+      type: object
+      repeated: true
+      description: >-
+        the events that moved Body Battery
+      fields:
+        eventType:
+          type: string
+          description: >-
+            what charged or drained Body Battery (SLEEP, ACTIVITY, NAP, ...)
+        eventStartTimeInSeconds:
+          type: int
+          description: >-
+            when the event started, in seconds since the Unix epoch (UTC)
+        eventStartTimeOffsetInSeconds:
+          type: int
+          description: >-
+            the device's offset from UTC at the event, in seconds
+        durationInSeconds:
+          type: int
+          description: >-
+            how long the event lasted, in seconds, as Garmin's OpenAPI description
+            names it
+        duration:
+          type: int
+          description: >-
+            how long the event lasted, in seconds, as some deliveries name
+            it instead of `durationInSeconds`
+        bodyBatteryImpact:
+          type: int
+          description: >-
+            the points the event added or removed
+        activityName:
+          type: string
+          description: >-
+            the activity's name, for an activity event
+        activityType:
+          type: string
+          description: >-
+            the activity's type, for an activity event
+        activityId:
+          type: int
+          description: >-
+            the activity's Garmin Connect id, for an activity event
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/usermetric
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    VO2 max and fitness age as Garmin estimated them on one day. A Garmin
+    Health API user metrics summary, pushed under `userMetrics`: the latest
+    values on `calendarDate`. It carries a date and no instant, so it binds
+    no temporal trait.
+  purpose: supporting
+  names:
+    singular: usermetric
+  label:
+    singular: User metrics
+    plural: User metrics
+  displayTemplate: "User metrics {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    vo2Max:
+      type: float
+      description: >-
+        VO2 max for running, in millilitres per kilogram per minute
+    vo2MaxCycling:
+      type: float
+      description: >-
+        VO2 max for cycling, in millilitres per kilogram per minute
+    fitnessAge:
+      type: int
+      description: >-
+        fitness age, in years
+    enhanced:
+      type: bool
+      description: >-
+        whether the values come from Garmin's enhanced estimate
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/pulseox
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    Blood oxygen readings from a Garmin device, overnight or on demand. A
+    Garmin Health API Pulse Ox summary, pushed under `pulseox`: SpO2 in percent,
+    one value a minute overnight, or a single on-demand spot check (`onDemand`,
+    with `durationInSeconds` 0). `at` is `startTimeInSeconds` and `endsAt`
+    adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: pulseox
+  label:
+    singular: Pulse Ox reading
+    plural: Pulse Ox readings
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Pulse Ox {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    timeOffsetSpo2Values:
+      type: int
+      keyed: true
+      description: >-
+        blood oxygen saturation in percent, keyed by seconds after `startTimeInSeconds`
+    onDemand:
+      type: bool
+      description: >-
+        whether this is a spot check the user started
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/respiration
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    Fifteen minutes of breathing rate from a Garmin device. A Garmin Health
+    API all-day respiration summary, pushed under `allDayRespiration`: breaths
+    per minute, one value a minute. `at` is `startTimeInSeconds` and `endsAt`
+    adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: respiration
+  label:
+    singular: Respiration
+    plural: Respiration
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Respiration {at}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    timeOffsetEpochToBreaths:
+      type: float
+      keyed: true
+      description: >-
+        breaths per minute, keyed by seconds after `startTimeInSeconds`
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/healthsnapshot
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    A two-minute Health Snapshot the user ran on a Garmin device. A Garmin
+    Health API health snapshot, pushed under `healthSnapshot`: minimum, maximum
+    and average heart rate, respiration, stress, SpO2 and HRV (RMSSD and SDRR)
+    with their per-second values. `at` is `startTimeInSeconds` and `endsAt`
+    adds `durationInSeconds`.
+  purpose: primary
+  names:
+    singular: healthsnapshot
+  label:
+    singular: Health Snapshot
+    plural: Health Snapshots
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Health Snapshot {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    summaries:
+      type: object
+      repeated: true
+      description: >-
+        one entry per metric: heart rate in beats per minute, respiration
+        in breaths per minute, stress 1 to 100, SpO2 in percent, HRV in milliseconds
+      fields:
+        summaryType:
+          type: string
+          description: >-
+            the metric: heart_rate, respiration, stress, spo2, rmssd_hrv or
+            sdrr_hrv
+        minValue:
+          type: float
+          description: >-
+            the lowest value, in the metric's unit
+        maxValue:
+          type: float
+          description: >-
+            the highest value, in the metric's unit
+        avgValue:
+          type: float
+          description: >-
+            the average value, in the metric's unit
+        epochSummaries:
+          type: float
+          keyed: true
+          description: >-
+            the values, keyed by seconds after `startTimeInSeconds`
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/hrv
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One night's heart rate variability from a Garmin device. A Garmin Health
+    API HRV summary, pushed under `hrv`: the overnight average, the highest
+    five-minute value and the five-minute values, all RMSSD in milliseconds.
+    `at` is `startTimeInSeconds` and `endsAt` adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: hrv
+  label:
+    singular: HRV summary
+    plural: HRV summaries
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "HRV {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    lastNightAvg:
+      type: int
+      description: >-
+        the overnight average HRV (RMSSD), in milliseconds
+    lastNight5MinHigh:
+      type: int
+      description: >-
+        the highest five-minute HRV (RMSSD) overnight, in milliseconds
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    hrvValues:
+      type: int
+      keyed: true
+      description: >-
+        five-minute HRV (RMSSD) values in milliseconds, keyed by seconds after
+        `startTimeInSeconds`
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/bloodpressure
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One blood pressure reading, from a Garmin Index BPM or entered in Garmin
+    Connect. A Garmin Health API blood pressure, pushed under `bloodPressures`:
+    systolic and diastolic in mmHg and the pulse. `at` is `measurementTimeInSeconds`.
+  purpose: primary
+  names:
+    singular: bloodpressure
+  label:
+    singular: Blood pressure reading
+    plural: Blood pressure readings
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "Blood pressure {systolic}/{diastolic}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    systolic:
+      type: int
+      description: >-
+        systolic pressure, in millimetres of mercury
+    diastolic:
+      type: int
+      description: >-
+        diastolic pressure, in millimetres of mercury
+    pulse:
+      type: int
+      description: >-
+        pulse, in beats per minute
+    sourceType:
+      type: string
+      description: >-
+        MANUAL or DEVICE
+    measurementTimeInSeconds:
+      type: int
+      description: >-
+        when the reading was taken, in seconds since the Unix epoch (UTC)
+    measurementTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the reading, in seconds
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/skintemp
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One night's skin temperature change from a Garmin device. A Garmin Health
+    API skin temperature summary, pushed under `skinTemp`: the average deviation
+    from the user's baseline, in degrees Celsius. `at` is `startTimeInSeconds`
+    and `endsAt` adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: skintemp
+  label:
+    singular: Skin temperature
+    plural: Skin temperatures
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Skin temperature {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    avgDeviationCelsius:
+      type: float
+      description: >-
+        the night's average deviation from the user's baseline, in degrees
+        Celsius
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/activity
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    One workout recorded on a Garmin device or entered in Garmin Connect.
+    A Garmin Activity API activity summary, pushed under `activities`: type,
+    duration, distance, energy, heart rate, speed, pace, cadence and elevation,
+    in Garmin's units. `at` is `startTimeInSeconds` and `endsAt` adds `durationInSeconds`.
+  purpose: primary
+  names:
+    singular: activity
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{activityName|activityType}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    activityId:
+      type: int
+      description: >-
+        Garmin Connect's numeric id for the activity
+    activityName:
+      type: string
+      description: >-
+        the activity's name, as the user sees it in Garmin Connect
+    activityDescription:
+      type: string
+      description: >-
+        the activity's free-text description
+    isParent:
+      type: bool
+      description: >-
+        whether this is the parent of a multisport activity
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    activityType:
+      type: string
+      description: >-
+        Garmin's activity type word (RUNNING, ROAD_BIKING, STRENGTH_TRAINING,
+        ...): a growing list, so a string
+    averageBikeCadenceInRoundsPerMinute:
+      type: float
+      description: >-
+        average cycling cadence, in rounds per minute
+    averageHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        average heart rate, in beats per minute
+    averageRunCadenceInStepsPerMinute:
+      type: float
+      description: >-
+        average running cadence, in steps per minute
+    averagePushCadenceInPushesPerMinute:
+      type: float
+      description: >-
+        average wheelchair push cadence, in pushes per minute
+    averageSpeedInMetersPerSecond:
+      type: float
+      description: >-
+        average speed, in metres per second
+    averageSwimCadenceInStrokesPerMinute:
+      type: float
+      description: >-
+        average swim cadence, in strokes per minute
+    averagePaceInMinutesPerKilometer:
+      type: float
+      description: >-
+        average pace, in minutes per kilometre
+    activeKilocalories:
+      type: int
+      description: >-
+        active energy burned, in kilocalories
+    deviceName:
+      type: string
+      description: >-
+        the device that recorded it (`forerunner265`), or `unknown`
+    distanceInMeters:
+      type: float
+      description: >-
+        distance covered, in metres
+    maxBikeCadenceInRoundsPerMinute:
+      type: float
+      description: >-
+        highest cycling cadence, in rounds per minute
+    maxHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        highest heart rate, in beats per minute
+    maxPaceInMinutesPerKilometer:
+      type: float
+      description: >-
+        fastest pace, in minutes per kilometre
+    maxRunCadenceInStepsPerMinute:
+      type: float
+      description: >-
+        highest running cadence, in steps per minute
+    maxPushCadenceInPushesPerMinute:
+      type: float
+      description: >-
+        highest wheelchair push cadence, in pushes per minute
+    maxSpeedInMetersPerSecond:
+      type: float
+      description: >-
+        highest speed, in metres per second
+    numberOfActiveLengths:
+      type: int
+      description: >-
+        pool lengths swum
+    startingLatitudeInDegree:
+      type: float
+      description: >-
+        latitude of the start, in degrees
+    startingLongitudeInDegree:
+      type: float
+      description: >-
+        longitude of the start, in degrees
+    steps:
+      type: int
+      description: >-
+        steps taken
+    pushes:
+      type: int
+      description: >-
+        wheelchair pushes
+    totalElevationGainInMeters:
+      type: float
+      description: >-
+        elevation gained, in metres
+    totalElevationLossInMeters:
+      type: float
+      description: >-
+        elevation lost, in metres
+    manual:
+      type: bool
+      description: >-
+        whether the user entered the activity by hand
+    isWebUpload:
+      type: bool
+      description: >-
+        whether the activity was uploaded on the web rather than synced from
+        a device
+    parent:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/activity
+      description: >-
+        `parentSummaryId` as a reference: the multisport activity this one
+        is a leg of
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/activitydetail
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    The second-by-second recording of one Garmin activity. A Garmin Activity
+    API activity detail, pushed under `activityDetails`: the activity's summary,
+    its samples (up to one a second: position, heart rate, speed, cadence,
+    power, elevation) and its lap starts. `at` is the summary's `startTimeInSeconds`
+    and `endsAt` adds its `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: activitydetail
+  label:
+    singular: Activity details
+    plural: Activity details
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{summary.activityName|summaryId}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    activityId:
+      type: int
+      description: >-
+        Garmin Connect's numeric id for the activity, shared with its `activity`
+        row
+    summary:
+      type: object
+      description: >-
+        the activity's summary, the same fields an `activity` row carries
+      fields:
+        activityName:
+          type: string
+          description: >-
+            the activity's name, as the user sees it in Garmin Connect
+        activityDescription:
+          type: string
+          description: >-
+            the activity's free-text description
+        isParent:
+          type: bool
+          description: >-
+            whether this is the parent of a multisport activity
+        startTimeInSeconds:
+          type: int
+          description: >-
+            when it starts, in seconds since the Unix epoch (UTC)
+        startTimeOffsetInSeconds:
+          type: int
+          description: >-
+            the device's offset from UTC at the start, in seconds: an offset,
+            not a time zone
+        durationInSeconds:
+          type: int
+          description: >-
+            how long it lasts, in seconds
+        activityType:
+          type: string
+          description: >-
+            Garmin's activity type word (RUNNING, ROAD_BIKING, STRENGTH_TRAINING,
+            ...): a growing list, so a string
+        averageBikeCadenceInRoundsPerMinute:
+          type: float
+          description: >-
+            average cycling cadence, in rounds per minute
+        averageHeartRateInBeatsPerMinute:
+          type: int
+          description: >-
+            average heart rate, in beats per minute
+        averageRunCadenceInStepsPerMinute:
+          type: float
+          description: >-
+            average running cadence, in steps per minute
+        averagePushCadenceInPushesPerMinute:
+          type: float
+          description: >-
+            average wheelchair push cadence, in pushes per minute
+        averageSpeedInMetersPerSecond:
+          type: float
+          description: >-
+            average speed, in metres per second
+        averageSwimCadenceInStrokesPerMinute:
+          type: float
+          description: >-
+            average swim cadence, in strokes per minute
+        averagePaceInMinutesPerKilometer:
+          type: float
+          description: >-
+            average pace, in minutes per kilometre
+        activeKilocalories:
+          type: int
+          description: >-
+            active energy burned, in kilocalories
+        deviceName:
+          type: string
+          description: >-
+            the device that recorded it (`forerunner265`), or `unknown`
+        distanceInMeters:
+          type: float
+          description: >-
+            distance covered, in metres
+        maxBikeCadenceInRoundsPerMinute:
+          type: float
+          description: >-
+            highest cycling cadence, in rounds per minute
+        maxHeartRateInBeatsPerMinute:
+          type: int
+          description: >-
+            highest heart rate, in beats per minute
+        maxPaceInMinutesPerKilometer:
+          type: float
+          description: >-
+            fastest pace, in minutes per kilometre
+        maxRunCadenceInStepsPerMinute:
+          type: float
+          description: >-
+            highest running cadence, in steps per minute
+        maxPushCadenceInPushesPerMinute:
+          type: float
+          description: >-
+            highest wheelchair push cadence, in pushes per minute
+        maxSpeedInMetersPerSecond:
+          type: float
+          description: >-
+            highest speed, in metres per second
+        numberOfActiveLengths:
+          type: int
+          description: >-
+            pool lengths swum
+        startingLatitudeInDegree:
+          type: float
+          description: >-
+            latitude of the start, in degrees
+        startingLongitudeInDegree:
+          type: float
+          description: >-
+            longitude of the start, in degrees
+        steps:
+          type: int
+          description: >-
+            steps taken
+        pushes:
+          type: int
+          description: >-
+            wheelchair pushes
+        totalElevationGainInMeters:
+          type: float
+          description: >-
+            elevation gained, in metres
+        totalElevationLossInMeters:
+          type: float
+          description: >-
+            elevation lost, in metres
+        manual:
+          type: bool
+          description: >-
+            whether the user entered the activity by hand
+        isWebUpload:
+          type: bool
+          description: >-
+            whether the activity was uploaded on the web rather than synced
+            from a device
+    samples:
+      type: object
+      repeated: true
+      description: >-
+        the samples, in time order
+      fields:
+        startTimeInSeconds:
+          type: int
+          description: >-
+            the sample's instant, in seconds since the Unix epoch (UTC)
+        latitudeInDegree:
+          type: float
+          description: >-
+            latitude, in degrees
+        longitudeInDegree:
+          type: float
+          description: >-
+            longitude, in degrees
+        elevationInMeters:
+          type: float
+          description: >-
+            elevation, in metres
+        airTemperatureCelcius:
+          type: float
+          description: >-
+            air temperature, in degrees Celsius (Garmin's spelling)
+        heartRate:
+          type: int
+          description: >-
+            heart rate, in beats per minute
+        speedMetersPerSecond:
+          type: float
+          description: >-
+            speed, in metres per second
+        stepsPerMinute:
+          type: float
+          description: >-
+            running cadence, in steps per minute
+        totalDistanceInMeters:
+          type: float
+          description: >-
+            distance since the start, in metres
+        powerInWatts:
+          type: float
+          description: >-
+            power, in watts
+        bikeCadenceInRPM:
+          type: float
+          description: >-
+            cycling cadence, in revolutions per minute
+        swimCadenceInStrokesPerMinute:
+          type: float
+          description: >-
+            swim cadence, in strokes per minute
+        wheelChairCadenceInPushesPerMinute:
+          type: float
+          description: >-
+            wheelchair cadence, in pushes per minute
+        timerDurationInSeconds:
+          type: int
+          description: >-
+            timer time since the start, in seconds
+        clockDurationInSeconds:
+          type: int
+          description: >-
+            wall-clock time since the start, in seconds
+        movingDurationInSeconds:
+          type: int
+          description: >-
+            moving time since the start, in seconds
+    laps:
+      type: object
+      repeated: true
+      description: >-
+        the lap starts
+      fields:
+        startTimeInSeconds:
+          type: int
+          description: >-
+            when the lap started, in seconds since the Unix epoch (UTC)
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/manuallyupdatedactivity
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    An activity as it stands after the user edited it in Garmin Connect. A
+    Garmin Activity API manually updated activity, pushed under `manuallyUpdatedActivities`
+    whenever the user renames or corrects one: the same fields as an `activity`,
+    carrying the edited values under the activity's own `summaryId`. `at`
+    is `startTimeInSeconds` and `endsAt` adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: manuallyupdatedactivity
+  label:
+    singular: Edited activity
+    plural: Edited activities
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{activityName|activityType}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    activityId:
+      type: int
+      description: >-
+        Garmin Connect's numeric id for the activity
+    activityName:
+      type: string
+      description: >-
+        the activity's name, as the user sees it in Garmin Connect
+    activityDescription:
+      type: string
+      description: >-
+        the activity's free-text description
+    isParent:
+      type: bool
+      description: >-
+        whether this is the parent of a multisport activity
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    startTimeOffsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds: an offset,
+        not a time zone
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    activityType:
+      type: string
+      description: >-
+        Garmin's activity type word (RUNNING, ROAD_BIKING, STRENGTH_TRAINING,
+        ...): a growing list, so a string
+    averageBikeCadenceInRoundsPerMinute:
+      type: float
+      description: >-
+        average cycling cadence, in rounds per minute
+    averageHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        average heart rate, in beats per minute
+    averageRunCadenceInStepsPerMinute:
+      type: float
+      description: >-
+        average running cadence, in steps per minute
+    averagePushCadenceInPushesPerMinute:
+      type: float
+      description: >-
+        average wheelchair push cadence, in pushes per minute
+    averageSpeedInMetersPerSecond:
+      type: float
+      description: >-
+        average speed, in metres per second
+    averageSwimCadenceInStrokesPerMinute:
+      type: float
+      description: >-
+        average swim cadence, in strokes per minute
+    averagePaceInMinutesPerKilometer:
+      type: float
+      description: >-
+        average pace, in minutes per kilometre
+    activeKilocalories:
+      type: int
+      description: >-
+        active energy burned, in kilocalories
+    deviceName:
+      type: string
+      description: >-
+        the device that recorded it (`forerunner265`), or `unknown`
+    distanceInMeters:
+      type: float
+      description: >-
+        distance covered, in metres
+    maxBikeCadenceInRoundsPerMinute:
+      type: float
+      description: >-
+        highest cycling cadence, in rounds per minute
+    maxHeartRateInBeatsPerMinute:
+      type: int
+      description: >-
+        highest heart rate, in beats per minute
+    maxPaceInMinutesPerKilometer:
+      type: float
+      description: >-
+        fastest pace, in minutes per kilometre
+    maxRunCadenceInStepsPerMinute:
+      type: float
+      description: >-
+        highest running cadence, in steps per minute
+    maxPushCadenceInPushesPerMinute:
+      type: float
+      description: >-
+        highest wheelchair push cadence, in pushes per minute
+    maxSpeedInMetersPerSecond:
+      type: float
+      description: >-
+        highest speed, in metres per second
+    numberOfActiveLengths:
+      type: int
+      description: >-
+        pool lengths swum
+    startingLatitudeInDegree:
+      type: float
+      description: >-
+        latitude of the start, in degrees
+    startingLongitudeInDegree:
+      type: float
+      description: >-
+        longitude of the start, in degrees
+    steps:
+      type: int
+      description: >-
+        steps taken
+    pushes:
+      type: int
+      description: >-
+        wheelchair pushes
+    totalElevationGainInMeters:
+      type: float
+      description: >-
+        elevation gained, in metres
+    totalElevationLossInMeters:
+      type: float
+      description: >-
+        elevation lost, in metres
+    manual:
+      type: bool
+      description: >-
+        whether the user entered the activity by hand
+    isWebUpload:
+      type: bool
+      description: >-
+        whether the activity was uploaded on the web rather than synced from
+        a device
+    parent:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/activity
+      description: >-
+        `parentSummaryId` as a reference: the multisport activity this one
+        is a leg of
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/moveiq
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    A walk, run or ride a Garmin device noticed without being told. A Garmin
+    Health API Move IQ event, pushed under `moveIQActivities`: an automatically
+    detected activity, not a recorded one. `at` is `startTimeInSeconds` and
+    `endsAt` adds `durationInSeconds`.
+  purpose: supporting
+  names:
+    singular: moveiq
+  label:
+    singular: Move IQ event
+    plural: Move IQ events
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "Move IQ {activityType} {calendarDate}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this summary was pushed for
+    summaryId:
+      type: string
+      required: true
+      description: >-
+        Garmin's id for the summary, and this row's key: a re-sent summary
+        with the same id replaces the row
+    userId:
+      type: string
+      required: true
+      description: >-
+        the Garmin user id the summary belongs to
+    deviceName:
+      type: string
+      description: >-
+        the device that detected it
+    calendarDate:
+      type: date
+      description: >-
+        the local calendar date it belongs to, as Garmin sends it
+    startTimeInSeconds:
+      type: int
+      description: >-
+        when it starts, in seconds since the Unix epoch (UTC)
+    durationInSeconds:
+      type: int
+      description: >-
+        how long it lasts, in seconds
+    activityType:
+      type: string
+      description: >-
+        the detected activity type (Walking, Running, Cycling, ...)
+    activitySubType:
+      type: string
+      description: >-
+        the detected sub-type, where Garmin gives one
+    offsetInSeconds:
+      type: int
+      description: >-
+        the device's offset from UTC at the start, in seconds (Garmin's name
+        for it on this type)
+---
+# ---- the lifecycle notices ------------------------------------------------------
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/garmin/notice
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    A message from Garmin about the connection itself: the user disconnected
+    the app, or changed what it may read. Pushed under `deregistrations` and
+    `userPermissionsChange`; the account records the outcome in `deregisteredAt`
+    or `permissions`. `at` is `changeTimeInSeconds`, or the push's arrival
+    for a disconnect, which carries no time.
+  purpose: supporting
+  names:
+    singular: notice
+  traits:
+    - substrate.reamde.dev/core/temporal(point)
+  displayTemplate: "{noticeType} {userId}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/garmin/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account the notice is about
+    noticeType:
+      type: enum
+      values:
+        - value: deregistration
+          label: Disconnected
+        - value: permissionchange
+          label: Permissions changed
+      required: true
+      displayName: Notice
+      description: >-
+        deregistration for a `deregistrations` push (the user disconnected
+        the app in Garmin Connect), permissionchange for a `userPermissionsChange`
+        push
+    userId:
+      type: string
+      required: true
+      description: the Garmin user id the notice names
+    summaryId:
+      type: string
+      description: Garmin's id for a permission change; a disconnect carries
+        none
+    permissions:
+      type: string
+      repeated: true
+      description: >-
+        the permissions the user left granted, for a permission change. Garmin
+        sends a list of names, or in some deliveries a map of name to true
+        or false; the granted names land here either way
+    changeTimeInSeconds:
+      type: int
+      description: when the permissions changed, in seconds since the Unix
+        epoch (UTC)
+    receivedAt:
+      type: datetime
+      description: when the substrate received the push
+---
+# ---- the push receiver --------------------------------------------------------
+# Fired by the `garmin-webhook` trigger with the request Garmin sent. One
+# invocation stages rows up to a byte budget and hands back a cursor, so a body
+# of any size the door admits is written over one paged chain.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/garmin/garminpush
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    Write one Garmin push delivery: match each summary to its account by the
+    Garmin user id it carries, write one mirror row per summary keyed by its
+    summaryId, record disconnects and permission changes, and follow a ping's
+    callback URL to the summaries it names.
+  runtime: python
+  timeout: PT60S
+  permissions:
+    writes:
+      - providers.substrate.reamde.dev/garmin/daily
+      - providers.substrate.reamde.dev/garmin/epoch
+      - providers.substrate.reamde.dev/garmin/sleep
+      - providers.substrate.reamde.dev/garmin/bodycomp
+      - providers.substrate.reamde.dev/garmin/stressdetail
+      - providers.substrate.reamde.dev/garmin/usermetric
+      - providers.substrate.reamde.dev/garmin/pulseox
+      - providers.substrate.reamde.dev/garmin/respiration
+      - providers.substrate.reamde.dev/garmin/healthsnapshot
+      - providers.substrate.reamde.dev/garmin/hrv
+      - providers.substrate.reamde.dev/garmin/bloodpressure
+      - providers.substrate.reamde.dev/garmin/skintemp
+      - providers.substrate.reamde.dev/garmin/activity
+      - providers.substrate.reamde.dev/garmin/activitydetail
+      - providers.substrate.reamde.dev/garmin/manuallyupdatedactivity
+      - providers.substrate.reamde.dev/garmin/moveiq
+      - providers.substrate.reamde.dev/garmin/notice
+      - providers.substrate.reamde.dev/garmin/account
+    network:
+      - "apis.garmin.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.32.4",
+    # ]
+    # ///
+    """Garmin push receiver: one Health API or Activity API delivery in, mirror
+    rows out.
+
+    Garmin POSTs each summary type to the endpoint the `garmin-webhook` trigger
+    serves, as `{"<summary type>": [<summary>, ...]}`. It signs nothing, so the
+    trigger's key is the only credential; every summary is matched to a
+    connected account by the `userId` it carries (or, on a connection carried
+    over from OAuth 1.0a, by `userAccessToken`). When no summary in the body
+    names a known user the whole delivery fails with an error naming the user
+    ids, so it parks and can be retried once the account is connected; a body
+    that mixes known and unknown users writes the known ones and lists the rest
+    in its output, and a lifecycle notice about an unknown user is skipped.
+
+    Each summary is one row keyed by its `summaryId`, written with ONE put that
+    carries every declared property, the absent ones as null. A put merges and a
+    null clears, so a re-sent summary (a sleep turning final, a daily filling
+    in) rewrites the whole row and leaves no stale value behind.
+
+    A body in PING mode carries `callbackURL` entries instead of summaries; each
+    is fetched with the account's token from the API origin, and from nowhere
+    else, and written the same way.
+
+    Size: the webhook door admits a body up to its inline cap and the runner
+    caps the frame an invocation answers with. So rows are staged against a byte
+    budget and a body that outgrows it is written over several invocations of
+    one paged chain; the cursor names the summary type and position to resume
+    at, and every invocation re-reads the same request. A single summary too big
+    for any frame is skipped and named in the output rather than failing the
+    delivery.
+
+    The body stamps the account's `sync` trait itself: a webhook delivery names
+    no record, so the dispatcher stamps nothing around it.
+    """
+    import base64
+    import datetime as _dt
+    import hashlib
+    import json
+    import math
+    import re
+    import time
+    from urllib.parse import urlsplit
+
+    import requests
+
+    PKG = "providers.substrate.reamde.dev/garmin"
+    ACCOUNT_TYPE = PKG + "/account"
+    NOTICE_TYPE = PKG + "/notice"
+
+    DEFAULT_API_BASE = "https://apis.garmin.com/wellness-api"
+    API_HOST = "apis.garmin.com"
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+    # One invocation's wall clock, under the function's PT60S deadline.
+    BUDGET_SECONDS = 40.0
+    # The runner answers with one frame of at most 8 MiB, encoded with spaces
+    # after every separator, so the rows one invocation stages stay well under it.
+    STAGE_BUDGET_BYTES = 3 << 20
+    # A single row bigger than this cannot fit a frame at all.
+    OVERSIZE_BYTES = 6 << 20
+    MAX_ID_LEN = 128
+    RE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
+    RE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    MAX_SAFE_INT = 2 ** 53 - 1
+    # How many unknown field names the output carries, so a new Garmin field is
+    # visible without the output growing with the body.
+    UNKNOWN_FIELDS_MAX = 20
+
+    # What each summary type is, generated with the kinds from one field
+    # table so the two cannot disagree: the envelope key Garmin pushes
+    # under -> (kind name, account toggle, temporal rule, declared shape).
+    TYPES = {
+        'dailies': ('daily', 'enabledDailies', 'range', {'summaryId': 'string', 'userId': 'string', 'calendarDate': 'date', 'activityType': 'string', 'activeKilocalories': 'int', 'bmrKilocalories': 'int', 'steps': 'int', 'pushes': 'int', 'distanceInMeters': 'float', 'pushDistanceInMeters': 'float', 'durationInSeconds': 'int', 'activeTimeInSeconds': 'int', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'moderateIntensityDurationInSeconds': 'int', 'vigorousIntensityDurationInSeconds': 'int', 'floorsClimbed': 'int', 'minHeartRateInBeatsPerMinute': 'int', 'maxHeartRateInBeatsPerMinute': 'int', 'averageHeartRateInBeatsPerMinute': 'int', 'restingHeartRateInBeatsPerMinute': 'int', 'timeOffsetHeartRateSamples': ('keyed', 'int'), 'source': 'string', 'stepsGoal': 'int', 'pushesGoal': 'int', 'intensityDurationGoalInSeconds': 'int', 'floorsClimbedGoal': 'int', 'averageStressLevel': 'int', 'maxStressLevel': 'int', 'stressDurationInSeconds': 'int', 'restStressDurationInSeconds': 'int', 'activityStressDurationInSeconds': 'int', 'lowStressDurationInSeconds': 'int', 'mediumStressDurationInSeconds': 'int', 'highStressDurationInSeconds': 'int', 'stressQualifier': 'string', 'bodyBatteryChargedValue': 'int', 'bodyBatteryDrainedValue': 'int'}),
+        'epochs': ('epoch', 'enabledEpochs', 'range', {'summaryId': 'string', 'userId': 'string', 'activityType': 'string', 'activeKilocalories': 'int', 'steps': 'int', 'pushes': 'int', 'distanceInMeters': 'float', 'pushDistanceInMeters': 'float', 'durationInSeconds': 'int', 'activeTimeInSeconds': 'int', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'met': 'float', 'intensity': 'string', 'meanMotionIntensity': 'float', 'maxMotionIntensity': 'float'}),
+        'sleeps': ('sleep', 'enabledSleeps', 'sleep', {'summaryId': 'string', 'userId': 'string', 'calendarDate': 'date', 'durationInSeconds': 'int', 'totalNapDurationInSeconds': 'int', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'unmeasurableSleepInSeconds': 'int', 'deepSleepDurationInSeconds': 'int', 'lightSleepDurationInSeconds': 'int', 'remSleepInSeconds': 'int', 'awakeDurationInSeconds': 'int', 'sleepLevelsMap': ('object', {'deep': ('objects', {'startTimeInSeconds': 'int', 'endTimeInSeconds': 'int'}), 'light': ('objects', {'startTimeInSeconds': 'int', 'endTimeInSeconds': 'int'}), 'rem': ('objects', {'startTimeInSeconds': 'int', 'endTimeInSeconds': 'int'}), 'awake': ('objects', {'startTimeInSeconds': 'int', 'endTimeInSeconds': 'int'}), 'unmeasurable': ('objects', {'startTimeInSeconds': 'int', 'endTimeInSeconds': 'int'})}), 'validation': 'string', 'timeOffsetSleepSpo2': ('keyed', 'int'), 'timeOffsetSleepRespiration': ('keyed', 'float'), 'overallSleepScore': ('object', {'value': 'int', 'qualifierKey': 'string'}), 'sleepScores': ('keyed', ('object', {'value': 'int', 'qualifierKey': 'string'})), 'naps': ('objects', {'napStartTimeInSeconds': 'int', 'napOffsetInSeconds': 'int', 'napDurationInSeconds': 'int', 'napValidation': 'string'})}),
+        'bodyComps': ('bodycomp', 'enabledBodyComps', 'measurement', {'summaryId': 'string', 'userId': 'string', 'muscleMassInGrams': 'int', 'boneMassInGrams': 'int', 'bodyWaterInPercent': 'float', 'bodyFatInPercent': 'float', 'bodyMassIndex': 'float', 'weightInGrams': 'int', 'measurementTimeInSeconds': 'int', 'measurementTimeOffsetInSeconds': 'int'}),
+        'stressDetails': ('stressdetail', 'enabledStressDetails', 'range', {'summaryId': 'string', 'userId': 'string', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'durationInSeconds': 'int', 'calendarDate': 'date', 'maxStressLevel': 'int', 'averageStressLevel': 'int', 'timeOffsetStressLevelValues': ('keyed', 'int'), 'timeOffsetBodyBatteryValues': ('keyed', 'int'), 'bodyBatteryDynamicFeedbackEvent': ('object', {'eventStartTimeInSeconds': 'int', 'bodyBatteryLevel': 'string'}), 'bodyBatteryActivityEvents': ('objects', {'eventType': 'string', 'eventStartTimeInSeconds': 'int', 'eventStartTimeOffsetInSeconds': 'int', 'durationInSeconds': 'int', 'duration': 'int', 'bodyBatteryImpact': 'int', 'activityName': 'string', 'activityType': 'string', 'activityId': 'int'})}),
+        'userMetrics': ('usermetric', 'enabledUserMetrics', None, {'summaryId': 'string', 'userId': 'string', 'calendarDate': 'date', 'vo2Max': 'float', 'vo2MaxCycling': 'float', 'fitnessAge': 'int', 'enhanced': 'bool'}),
+        'pulseox': ('pulseox', 'enabledPulseOx', 'range', {'summaryId': 'string', 'userId': 'string', 'calendarDate': 'date', 'startTimeInSeconds': 'int', 'durationInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'timeOffsetSpo2Values': ('keyed', 'int'), 'onDemand': 'bool'}),
+        'allDayRespiration': ('respiration', 'enabledRespiration', 'range', {'summaryId': 'string', 'userId': 'string', 'startTimeInSeconds': 'int', 'durationInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'timeOffsetEpochToBreaths': ('keyed', 'float')}),
+        'healthSnapshot': ('healthsnapshot', 'enabledHealthSnapshot', 'range', {'summaryId': 'string', 'userId': 'string', 'calendarDate': 'date', 'startTimeInSeconds': 'int', 'durationInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'summaries': ('objects', {'summaryType': 'string', 'minValue': 'float', 'maxValue': 'float', 'avgValue': 'float', 'epochSummaries': ('keyed', 'float')})}),
+        'hrv': ('hrv', 'enabledHRV', 'range', {'summaryId': 'string', 'userId': 'string', 'calendarDate': 'date', 'lastNightAvg': 'int', 'lastNight5MinHigh': 'int', 'startTimeOffsetInSeconds': 'int', 'durationInSeconds': 'int', 'startTimeInSeconds': 'int', 'hrvValues': ('keyed', 'int')}),
+        'bloodPressures': ('bloodpressure', 'enabledBloodPressures', 'measurement', {'summaryId': 'string', 'userId': 'string', 'systolic': 'int', 'diastolic': 'int', 'pulse': 'int', 'sourceType': 'string', 'measurementTimeInSeconds': 'int', 'measurementTimeOffsetInSeconds': 'int'}),
+        'skinTemp': ('skintemp', 'enabledSkinTemp', 'range', {'summaryId': 'string', 'userId': 'string', 'calendarDate': 'date', 'avgDeviationCelsius': 'float', 'durationInSeconds': 'int', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int'}),
+        'activities': ('activity', 'enabledActivities', 'range', {'summaryId': 'string', 'userId': 'string', 'activityId': 'int', 'activityName': 'string', 'activityDescription': 'string', 'isParent': 'bool', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'durationInSeconds': 'int', 'activityType': 'string', 'averageBikeCadenceInRoundsPerMinute': 'float', 'averageHeartRateInBeatsPerMinute': 'int', 'averageRunCadenceInStepsPerMinute': 'float', 'averagePushCadenceInPushesPerMinute': 'float', 'averageSpeedInMetersPerSecond': 'float', 'averageSwimCadenceInStrokesPerMinute': 'float', 'averagePaceInMinutesPerKilometer': 'float', 'activeKilocalories': 'int', 'deviceName': 'string', 'distanceInMeters': 'float', 'maxBikeCadenceInRoundsPerMinute': 'float', 'maxHeartRateInBeatsPerMinute': 'int', 'maxPaceInMinutesPerKilometer': 'float', 'maxRunCadenceInStepsPerMinute': 'float', 'maxPushCadenceInPushesPerMinute': 'float', 'maxSpeedInMetersPerSecond': 'float', 'numberOfActiveLengths': 'int', 'startingLatitudeInDegree': 'float', 'startingLongitudeInDegree': 'float', 'steps': 'int', 'pushes': 'int', 'totalElevationGainInMeters': 'float', 'totalElevationLossInMeters': 'float', 'manual': 'bool', 'isWebUpload': 'bool', 'parent': ('reference', 'activity', 'parentSummaryId')}),
+        'activityDetails': ('activitydetail', 'enabledActivityDetails', 'detail', {'summaryId': 'string', 'userId': 'string', 'activityId': 'int', 'summary': ('object', {'activityName': 'string', 'activityDescription': 'string', 'isParent': 'bool', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'durationInSeconds': 'int', 'activityType': 'string', 'averageBikeCadenceInRoundsPerMinute': 'float', 'averageHeartRateInBeatsPerMinute': 'int', 'averageRunCadenceInStepsPerMinute': 'float', 'averagePushCadenceInPushesPerMinute': 'float', 'averageSpeedInMetersPerSecond': 'float', 'averageSwimCadenceInStrokesPerMinute': 'float', 'averagePaceInMinutesPerKilometer': 'float', 'activeKilocalories': 'int', 'deviceName': 'string', 'distanceInMeters': 'float', 'maxBikeCadenceInRoundsPerMinute': 'float', 'maxHeartRateInBeatsPerMinute': 'int', 'maxPaceInMinutesPerKilometer': 'float', 'maxRunCadenceInStepsPerMinute': 'float', 'maxPushCadenceInPushesPerMinute': 'float', 'maxSpeedInMetersPerSecond': 'float', 'numberOfActiveLengths': 'int', 'startingLatitudeInDegree': 'float', 'startingLongitudeInDegree': 'float', 'steps': 'int', 'pushes': 'int', 'totalElevationGainInMeters': 'float', 'totalElevationLossInMeters': 'float', 'manual': 'bool', 'isWebUpload': 'bool'}), 'samples': ('objects', {'startTimeInSeconds': 'int', 'latitudeInDegree': 'float', 'longitudeInDegree': 'float', 'elevationInMeters': 'float', 'airTemperatureCelcius': 'float', 'heartRate': 'int', 'speedMetersPerSecond': 'float', 'stepsPerMinute': 'float', 'totalDistanceInMeters': 'float', 'powerInWatts': 'float', 'bikeCadenceInRPM': 'float', 'swimCadenceInStrokesPerMinute': 'float', 'wheelChairCadenceInPushesPerMinute': 'float', 'timerDurationInSeconds': 'int', 'clockDurationInSeconds': 'int', 'movingDurationInSeconds': 'int'}), 'laps': ('objects', {'startTimeInSeconds': 'int'})}),
+        'manuallyUpdatedActivities': ('manuallyupdatedactivity', 'enabledManuallyUpdatedActivities', 'range', {'summaryId': 'string', 'userId': 'string', 'activityId': 'int', 'activityName': 'string', 'activityDescription': 'string', 'isParent': 'bool', 'startTimeInSeconds': 'int', 'startTimeOffsetInSeconds': 'int', 'durationInSeconds': 'int', 'activityType': 'string', 'averageBikeCadenceInRoundsPerMinute': 'float', 'averageHeartRateInBeatsPerMinute': 'int', 'averageRunCadenceInStepsPerMinute': 'float', 'averagePushCadenceInPushesPerMinute': 'float', 'averageSpeedInMetersPerSecond': 'float', 'averageSwimCadenceInStrokesPerMinute': 'float', 'averagePaceInMinutesPerKilometer': 'float', 'activeKilocalories': 'int', 'deviceName': 'string', 'distanceInMeters': 'float', 'maxBikeCadenceInRoundsPerMinute': 'float', 'maxHeartRateInBeatsPerMinute': 'int', 'maxPaceInMinutesPerKilometer': 'float', 'maxRunCadenceInStepsPerMinute': 'float', 'maxPushCadenceInPushesPerMinute': 'float', 'maxSpeedInMetersPerSecond': 'float', 'numberOfActiveLengths': 'int', 'startingLatitudeInDegree': 'float', 'startingLongitudeInDegree': 'float', 'steps': 'int', 'pushes': 'int', 'totalElevationGainInMeters': 'float', 'totalElevationLossInMeters': 'float', 'manual': 'bool', 'isWebUpload': 'bool', 'parent': ('reference', 'activity', 'parentSummaryId')}),
+        'moveIQActivities': ('moveiq', 'enabledMoveIQ', 'range', {'summaryId': 'string', 'userId': 'string', 'deviceName': 'string', 'calendarDate': 'date', 'startTimeInSeconds': 'int', 'durationInSeconds': 'int', 'activityType': 'string', 'activitySubType': 'string', 'offsetInSeconds': 'int'}),
+    }
+    ORDER = ['dailies', 'epochs', 'sleeps', 'bodyComps', 'stressDetails', 'userMetrics', 'pulseox', 'allDayRespiration', 'healthSnapshot', 'hrv', 'bloodPressures', 'skinTemp', 'activities', 'activityDetails', 'manuallyUpdatedActivities', 'moveIQActivities']
+
+    # The lifecycle notices, written after the data a body carries beside them.
+    LIFECYCLE = ("userPermissionsChange", "deregistrations")
+    # Spellings some body composition deliveries use instead of the documented
+    # names [secondary source]; read only when the documented name is absent.
+    ALIASES = {
+        "bodyComps": {"percentFat": "bodyFatInPercent",
+                      "percentHydration": "bodyWaterInPercent",
+                      "bmi": "bodyMassIndex"},
+    }
+
+
+    def _now():
+        return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+    def _parse(value):
+        if not value:
+            return None
+        try:
+            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+
+    def _instant(secs):
+        if secs is None:
+            return None
+        try:
+            return _dt.datetime.fromtimestamp(secs, _dt.timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ")
+        except (OverflowError, OSError, ValueError):
+            return None
+
+
+    def _scalar(kind, v):
+        """One value in the declared type, or None when it is not one."""
+        if isinstance(v, bool):
+            return v if kind == "bool" else None
+        if kind == "int":
+            if isinstance(v, int):
+                return v if abs(v) <= MAX_SAFE_INT else None
+            if isinstance(v, float) and math.isfinite(v) and v.is_integer():
+                return int(v)
+            return None
+        if kind == "float":
+            if isinstance(v, (int, float)) and math.isfinite(float(v)):
+                return float(v)
+            return None
+        if kind == "string":
+            if isinstance(v, str):
+                return v or None
+            if isinstance(v, int):
+                return str(v)
+            return None
+        if kind == "date":
+            if isinstance(v, str) and RE_DATE.match(v):
+                try:
+                    _dt.date.fromisoformat(v)
+                    return v
+                except ValueError:
+                    return None
+            return None
+        return None
+
+
+    class _Shape:
+        """Holds a payload to the declared shape. A value that does not fit is
+        left out and counted, never the row's failure, and a field the
+        declaration does not name is left out and remembered by name."""
+
+        def __init__(self, cur):
+            self.cur = cur
+
+        def _drop(self):
+            self.cur["dropped"] = int(self.cur.get("dropped") or 0) + 1
+
+        def _unknown(self, where):
+            names = self.cur.setdefault("unknownFields", [])
+            if where not in names and len(names) < UNKNOWN_FIELDS_MAX:
+                names.append(where)
+
+        def value(self, spec, v, where):
+            if v is None:
+                return None
+            if isinstance(spec, str):
+                out = _scalar(spec, v)
+                if out is None:
+                    self._drop()
+                return out
+            tag = spec[0]
+            if tag == "object":
+                if not isinstance(v, dict):
+                    self._drop()
+                    return None
+                return self.fields(spec[1], v, where) or None
+            if tag == "objects":
+                if not isinstance(v, list):
+                    self._drop()
+                    return None
+                out = []
+                for item in v:
+                    shaped = self.fields(spec[1], item, where) if isinstance(item, dict) else None
+                    if shaped:
+                        out.append(shaped)
+                    else:
+                        self._drop()
+                return out or None
+            if tag == "keyed":
+                if not isinstance(v, dict):
+                    self._drop()
+                    return None
+                out = {}
+                for k, item in v.items():
+                    key = str(k)
+                    shaped = self.value(spec[1], item, where) if key else None
+                    if shaped is None:
+                        if item is not None:
+                            self._drop()
+                        continue
+                    out[key] = shaped
+                return out or None
+            return None
+
+        def fields(self, table, src, where):
+            out = {}
+            for name, v in src.items():
+                spec = table.get(name)
+                if spec is None:
+                    self._unknown(where + "." + str(name))
+                    continue
+                shaped = self.value(spec, v, where + "." + name)
+                if shaped is not None:
+                    out[name] = shaped
+            return out
+
+
+    def _rid(host, aid, key):
+        """`<account id>/<Garmin's id>`, readable, or the hashed external id when
+        that would leave the id alphabet or pass 128 characters."""
+        rid = "%s/%s" % (aid, key)
+        if len(rid) <= MAX_ID_LEN and RE_ID.match(rid):
+            return rid
+        return host.ids.external("garmin", aid, str(key))
+
+
+    def _span(rule, props):
+        """The temporal trait's slots, from the summary's own seconds."""
+        if rule is None:
+            return
+        at = end = None
+        if rule == "measurement":
+            props["at"] = _instant(props.get("measurementTimeInSeconds"))
+            return
+        if rule == "detail":
+            src = props.get("summary") or {}
+        else:
+            src = props
+        at = src.get("startTimeInSeconds")
+        if rule == "sleep":
+            ends = [r.get("endTimeInSeconds")
+                    for ranges in (props.get("sleepLevelsMap") or {}).values()
+                    for r in ranges if r.get("endTimeInSeconds") is not None]
+            end = max(ends) if ends else None
+        else:
+            dur = src.get("durationInSeconds")
+            if at is not None and dur is not None and dur >= 0:
+                end = at + dur
+        if at is not None and end is not None and end < at:
+            end = None
+        props["at"] = _instant(at)
+        props["endsAt"] = _instant(end)
+
+
+    def _row(host, shape, key, entry, aid):
+        """One mirror row's properties: every declared property, absent ones as
+        None so the put clears them."""
+        name, _toggle, rule, spec = TYPES[key]
+        rec = dict(entry)
+        for alias, canonical in (ALIASES.get(key) or {}).items():
+            if alias in rec and rec.get(canonical) is None:
+                rec[canonical] = rec.pop(alias)
+        props = {"account": aid}
+        for field, fspec in spec.items():
+            if isinstance(fspec, tuple) and fspec[0] == "reference":
+                parent = _scalar("string", rec.get(fspec[2]))
+                props[field] = _rid(host, aid, parent) if parent else None
+                continue
+            props[field] = shape.value(fspec, rec.get(field), name + "." + field)
+        known = set(spec) | {"parentSummaryId"} | set(ALIASES.get(key) or {})
+        for field in rec:
+            if field not in known:
+                shape._unknown(name + "." + str(field))
+        _span(rule, props)
+        return name, props
+
+
+    def _api_base(cfg):
+        client = ((cfg.get("inputs") or {}).get("client") or {})
+        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
+        return (base or DEFAULT_API_BASE).rstrip("/")
+
+
+    def _check_origin(url):
+        u = urlsplit(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return
+        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+            return
+        raise RuntimeError("garmin: refusing to send credentials to %s://%s; only "
+                           "https://%s or loopback" % (u.scheme, host or "?", API_HOST))
+
+
+    def _check_callback(base, url):
+        """A ping's callbackURL arrives in an unsigned body, so the bearer goes
+        only where the API base already points: same scheme, host and port, and
+        under its path."""
+        b, u = urlsplit(base), urlsplit(str(url))
+        same = (b.scheme, (b.hostname or "").lower(), b.port) == \
+            (u.scheme, (u.hostname or "").lower(), u.port)
+        if not same or not u.path.startswith(b.path.rstrip("/") + "/"):
+            raise RuntimeError("garmin: a ping's callbackURL is outside the API base; "
+                               "refusing to send the token there")
+        _check_origin(url)
+
+
+    def _pull(base, token, url, key):
+        _check_callback(base, url)
+        resp = requests.get(url, headers={"Authorization": "Bearer " + token,
+                                          "Accept": "application/json"},
+                            timeout=20, allow_redirects=False)
+        if resp.status_code != 200:
+            raise RuntimeError("garmin: the %s ping's callback answered HTTP %d"
+                               % (key, resp.status_code))
+        data = resp.json()
+        if isinstance(data, dict):
+            data = data.get(key)
+        if not isinstance(data, list):
+            raise RuntimeError("garmin: the %s ping's callback answered no list" % key)
+        return data
+
+
+    def _body(req):
+        b = req.get("body") or {}
+        if isinstance(b.get("text"), str):
+            raw = b["text"]
+        elif isinstance(b.get("base64"), str):
+            raw = base64.b64decode(b["base64"]).decode("utf-8")
+        else:
+            raise ValueError("garmin: the request carries no body")
+        try:
+            data = json.loads(raw)
+        except ValueError as e:
+            raise ValueError("garmin: the push body is not JSON: %s" % e) from None
+        if not isinstance(data, dict):
+            raise ValueError("garmin: the push body is not a JSON object")
+        return data
+
+
+    def _check_client(req, cfg):
+        """Garmin names the consumer it pushes for in `garmin-client-id`, though
+        not on every request. Where it does, it has to be this bundle's client."""
+        headers = {str(k).lower(): str(v) for k, v in (req.get("headers") or {}).items()}
+        sent = headers.get("garmin-client-id", "").strip()
+        client = (((cfg.get("inputs") or {}).get("client") or {}).get("properties") or {})
+        mine = str(client.get("clientId") or "").strip()
+        if sent and mine and sent != mine:
+            raise RuntimeError("garmin: the push's garmin-client-id header does not "
+                               "match this bundle's clientId; refusing it")
+
+
+    def _accounts(cfg):
+        by_user, by_token = {}, {}
+        for acct in cfg.get("accounts") or []:
+            props = acct.get("properties") or {}
+            if props.get("userId"):
+                by_user.setdefault(str(props["userId"]), acct)
+            if props.get("userAccessToken"):
+                by_token.setdefault(str(props["userAccessToken"]), acct)
+        return by_user, by_token
+
+
+    def _match(entry, by_user, by_token):
+        if not isinstance(entry, dict):
+            return None
+        uid = entry.get("userId")
+        if uid not in (None, "") and str(uid) in by_user:
+            return by_user[str(uid)]
+        tok = entry.get("userAccessToken")
+        if tok not in (None, "") and str(tok) in by_token:
+            return by_token[str(tok)]
+        return None
+
+
+    def _who(entry):
+        if not isinstance(entry, dict):
+            return "(not an object)"
+        return str(entry.get("userId") or entry.get("userAccessToken") or "(no userId)")
+
+
+    def _permissions(value):
+        """A list of permission names, or [some deliveries] a map of name to
+        bool; either way the granted names, sorted."""
+        if isinstance(value, dict):
+            return sorted(str(k) for k, v in value.items() if v is True)
+        if isinstance(value, list):
+            return sorted({str(v) for v in value if isinstance(v, str) and v})
+        return []
+
+
+    def _bump(cur, aid, key):
+        counts = cur.setdefault("written", {}).setdefault(aid, {})
+        counts[key] = int(counts.get(key) or 0) + 1
+
+
+    def _skip(cur, why):
+        skipped = cur.setdefault("skipped", {})
+        skipped[why] = int(skipped.get(why) or 0) + 1
+
+
+    def _notice(host, key, entry, aid, env, cur):
+        fire = env.get("fire") or {}
+        received = fire.get("at") or _now()
+        props = {"account": aid, "userId": _scalar("string", entry.get("userId")),
+                 "summaryId": _scalar("string", entry.get("summaryId")),
+                 "receivedAt": received}
+        if key == "userPermissionsChange":
+            perms = _permissions(entry.get("permissions"))
+            ct = _scalar("int", entry.get("changeTimeInSeconds"))
+            props.update({"noticeType": "permissionchange", "permissions": perms,
+                          "changeTimeInSeconds": ct, "at": _instant(ct) or received})
+            cur.setdefault("permissions", {})[aid] = [perms, _instant(ct) or received]
+        else:
+            props.update({"noticeType": "deregistration", "at": received})
+            cur.setdefault("deregistered", {})[aid] = received
+        ident = props["summaryId"] or fire.get("id") or hashlib.sha256(
+            json.dumps(entry, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+        kind = "deregistration" if key == "deregistrations" else "permissions"
+        host.effects.put(NOTICE_TYPE, _rid(host, aid, "%s-%s" % (kind, ident)),
+                         properties=props)
+        _bump(cur, aid, key)
+
+
+    class _Budget:
+        def __init__(self):
+            self.start = time.monotonic()
+            self.staged = 0
+
+        def spent(self):
+            return time.monotonic() - self.start >= BUDGET_SECONDS
+
+        def fits(self, size):
+            return self.staged == 0 or self.staged + size <= STAGE_BUDGET_BYTES
+
+
+    def _write(host, shape, key, entry, aid, budget, cur):
+        """Stage one summary. False when it does not fit this invocation and the
+        chain has to continue in the next one."""
+        if not _scalar("string", entry.get("summaryId")):
+            _skip(cur, "no summaryId")
+            return True
+        name, props = _row(host, shape, key, entry, aid)
+        size = len(json.dumps(props, separators=(",", ":")))
+        if size > OVERSIZE_BYTES:
+            cur.setdefault("oversized", []).append("%s %s (%d bytes)" % (
+                key, props.get("summaryId"), size))
+            host.log("garmin: %s %s is %d bytes, more than one frame holds; skipped"
+                     % (key, props.get("summaryId"), size))
+            return True
+        if not budget.fits(size) or (budget.staged and budget.spent()):
+            return False
+        host.effects.put(PKG + "/" + name, _rid(host, aid, props["summaryId"]),
+                         properties=props)
+        budget.staged += size
+        _bump(cur, aid, key)
+        return True
+
+
+    def _wants(acct, key):
+        props = acct.get("properties") or {}
+        if props.get("syncPaused"):
+            return False
+        return bool(props.get(TYPES[key][1]))
+
+
+    def _message(counts):
+        parts = ["%d %s" % (n, k) for k, n in sorted(counts.items()) if n]
+        return ("push: " + ", ".join(parts))[:400] if parts else "push: nothing new"
+
+
+    def _stamp(host, acct, aid, cur):
+        """The account's `sync` trait, stamped by the body because a webhook
+        delivery names no record for the dispatcher to stamp."""
+        now = _now()
+        counts = (cur.get("written") or {}).get(aid) or {}
+        patch = {"lastSyncedAt": now, "lastPushAt": now, "syncState": "ok",
+                 "syncMessage": _message(counts)}
+        started = _parse(cur.get("started"))
+        ended = _parse(now)
+        if started is not None and ended is not None:
+            patch["lastSyncStartedAt"] = cur["started"]
+            patch["lastSyncDurationMs"] = max(int((ended - started).total_seconds() * 1000), 0)
+        props = acct.get("properties") or {}
+        data = sum(n for k, n in counts.items() if k not in LIFECYCLE)
+        if data and props.get("deregisteredAt"):
+            # Garmin pushes data only for a registered user, so data means the
+            # user connected again.
+            patch["deregisteredAt"] = None
+        perms = (cur.get("permissions") or {}).get(aid)
+        if perms:
+            patch["permissions"] = perms[0]
+            patch["permissionsChangedAt"] = perms[1]
+        gone = (cur.get("deregistered") or {}).get(aid)
+        if gone:
+            msg = "Garmin reports the user disconnected this app in Garmin Connect"
+            patch.update({"deregisteredAt": gone, "syncState": "erroring",
+                          "syncMessage": msg, "syncError": msg, "syncErrorAt": now})
+        host.effects.patch(acct.get("kind") or acct.get("type") or ACCOUNT_TYPE, aid,
+                           properties=patch)
+
+
+    def main(input, host):
+        env = input.get("envelope") or {}
+        req = env.get("request") or {}
+        cfg = input.get("config") or {}
+        body = _body(req)
+        _check_client(req, cfg)
+        by_user, by_token = _accounts(cfg)
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        keys = [k for k in ORDER if isinstance(body.get(k), list)] + \
+            [k for k in LIFECYCLE if isinstance(body.get(k), list)]
+
+        cur = host.page.resume()
+        if cur is None:
+            # Only DATA decides the refusal: a lifecycle notice about a user this
+            # repository no longer holds is nothing to retry.
+            entries = [e for k in keys if k not in LIFECYCLE for e in body[k]]
+            unknown = sorted({_who(e) for k in keys for e in body[k]
+                              if _match(e, by_user, by_token) is None})
+            data_users = {_who(e) for e in entries}
+            if data_users and data_users <= set(unknown):
+                raise RuntimeError(
+                    "garmin: no connected account has Garmin user id %s. Connect the "
+                    "account and let its first sync record the user id, then retry "
+                    "this delivery" % ", ".join(sorted(data_users)[:5]))
+            fire = env.get("fire") or {}
+            cur = {"t": 0, "n": 0, "m": 0, "started": fire.get("at") or _now(),
+                   "unknownUsers": unknown[:20],
+                   "unknownTypes": sorted(k for k in body
+                                          if k not in TYPES and k not in LIFECYCLE)[:20]}
+            if cur["unknownTypes"]:
+                host.log("garmin: no kind mirrors %s; left unwritten"
+                         % ", ".join(cur["unknownTypes"]))
+
+        shape = _Shape(cur)
+        budget = _Budget()
+        base = _api_base(cfg)
+        while cur["t"] < len(keys):
+            key = keys[cur["t"]]
+            entries = body[key]
+            while cur["n"] < len(entries):
+                entry = entries[cur["n"]]
+                acct = _match(entry, by_user, by_token)
+                if acct is None:
+                    _skip(cur, "unknown user")
+                elif key in LIFECYCLE:
+                    _notice(host, key, entry, acct.get("id"), env, cur)
+                elif not _wants(acct, key):
+                    _skip(cur, "paused or switched off")
+                elif "callbackURL" in entry and "summaryId" not in entry:
+                    token = acct.get("token")
+                    if not token:
+                        raise RuntimeError("garmin: account %s has no token to follow "
+                                           "the %s ping with: %s" % (
+                                               acct.get("id"), key,
+                                               acct.get("tokenError") or "not connected"))
+                    items = _pull(base, token, entry["callbackURL"], key)
+                    while cur["m"] < len(items):
+                        item = items[cur["m"]]
+                        if not isinstance(item, dict):
+                            _skip(cur, "not an object")
+                        elif not _write(host, shape, key, item, acct.get("id"), budget, cur):
+                            return {"more": host.page.more(cur)}
+                        cur["m"] += 1
+                    cur["m"] = 0
+                elif not _write(host, shape, key, entry, acct.get("id"), budget, cur):
+                    return {"more": host.page.more(cur)}
+                cur["n"] += 1
+            cur["t"] += 1
+            cur["n"] = 0
+
+        for aid in sorted((cur.get("written") or {}).keys()):
+            if aid in accounts:
+                _stamp(host, accounts[aid], aid, cur)
+        out = {"written": cur.get("written") or {}}
+        for k in ("skipped", "unknownUsers", "unknownTypes", "unknownFields",
+                  "oversized", "dropped"):
+            if cur.get(k):
+                out[k] = cur[k]
+        return {"output": out}
+---
+# ---- the backfill -------------------------------------------------------------
+# Fired by `garmin-on-connect`, `garmin-on-request` and `garmin-scheduled`.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/garmin/garminsync
+data:
+  authority: providers.substrate.reamde.dev
+  package: garmin
+  description: >-
+    Sync a Garmin account: record its Garmin user id and permissions, then
+    ask Garmin to backfill each enabled summary type over the account's backfillDepth,
+    one day per request. The summaries themselves arrive later by push.
+  runtime: python
+  timeout: PT60S
+  permissions:
+    writes:
+      - providers.substrate.reamde.dev/garmin/account
+    network:
+      - "apis.garmin.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.32.4",
+    # ]
+    # ///
+    """Garmin backfill: ask Garmin to push history, per enabled summary type.
+
+    The Health API and the Activity API push; nothing here reads a summary. This
+    function learns the connected user's Garmin id (`GET /rest/user/id`, the key
+    every push is matched on) and permissions, then asks Garmin to backfill each
+    enabled summary type over the account's `backfillDepth`: one 24-hour window
+    per request, newest day first across every type. Garmin answers `202
+    Accepted` and delivers the summaries later by push to the `garmin-webhook`
+    trigger; it answers `409` to a window it already accepted, which counts as
+    accepted here too, so a repeated run is harmless.
+
+    The lower edge of the oldest accepted window is kept per type in
+    `syncCursors`, and the instant the walk counts back from in `backfillUntil`,
+    pinned at the first run. So a run cut short by its budget, a 429 or an
+    outage resumes where it stopped, and a deeper `backfillDepth` extends the
+    walk instead of starting it again.
+
+    A run stops at its own budget well inside the engine's two-minute drain cap;
+    the hourly schedule continues a walk that has windows left. The body pins
+    the origin the access token may travel to: https://apis.garmin.com, or a
+    loopback host as the test seam.
+    """
+    import datetime as _dt
+    import time
+    from urllib.parse import urlsplit as _urlsplit
+
+    import requests
+
+    PKG = "providers.substrate.reamde.dev/garmin"
+    ACCOUNT_TYPE = PKG + "/account"
+
+    DEFAULT_API_BASE = "https://apis.garmin.com/wellness-api"
+    API_HOST = "apis.garmin.com"
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+    # One invocation's wall clock, under the function's PT60S deadline.
+    BUDGET_SECONDS = 40.0
+    # One run's wall clock across its paged chain, under the engine's two-minute
+    # drain cap; the next scheduled run continues what is left.
+    RUN_BUDGET_SECONDS = 100.0
+    # One backfill request asks for at most a day. Garmin's documented limits
+    # per request are reported as 30 or 90 days by different sources; a day is
+    # inside every reading, and Garmin's rate limit counts days of data, not
+    # requests.
+    WINDOW_SECONDS = 86400
+    BACKFILL_DAYS = {"none": 0, "last7d": 7, "last30d": 30, "last90d": 90}
+    REASON_MAX = 400
+
+    # (cursor key, account toggle, backfill path) per summary type Garmin
+    # backfills; manuallyUpdatedActivities has no backfill.
+    BACKFILL = [
+        ('dailies', 'enabledDailies', 'dailies'),
+        ('epochs', 'enabledEpochs', 'epochs'),
+        ('sleeps', 'enabledSleeps', 'sleeps'),
+        ('bodyComps', 'enabledBodyComps', 'bodyComps'),
+        ('stressDetails', 'enabledStressDetails', 'stressDetails'),
+        ('userMetrics', 'enabledUserMetrics', 'userMetrics'),
+        ('pulseox', 'enabledPulseOx', 'pulseOx'),
+        ('allDayRespiration', 'enabledRespiration', 'respiration'),
+        ('healthSnapshot', 'enabledHealthSnapshot', 'healthSnapshot'),
+        ('hrv', 'enabledHRV', 'hrv'),
+        ('bloodPressures', 'enabledBloodPressures', 'bloodPressures'),
+        ('skinTemp', 'enabledSkinTemp', 'skinTemp'),
+        ('activities', 'enabledActivities', 'activities'),
+        ('activityDetails', 'enabledActivityDetails', 'activityDetails'),
+        ('moveIQActivities', 'enabledMoveIQ', 'moveiq'),
+    ]
+
+
+    def _now_dt():
+        return _dt.datetime.now(_dt.timezone.utc)
+
+
+    def _now():
+        return _now_dt().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+    def _iso_secs(secs):
+        return _dt.datetime.fromtimestamp(int(secs), _dt.timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _parse(value):
+        if not value:
+            return None
+        try:
+            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+
+    def _secs(value):
+        ts = _parse(value)
+        return int(ts.timestamp()) if ts is not None else None
+
+
+    def _check_origin(url):
+        u = _urlsplit(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return
+        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+            return
+        raise RuntimeError("garmin: refusing to send credentials to %s://%s; only "
+                           "https://%s or loopback" % (u.scheme, host or "?", API_HOST))
+
+
+    class _Permanent(Exception):
+        """An answer asking again cannot change: a revoked grant, a refused
+        request."""
+
+
+    class _RateLimited(Exception):
+        def __init__(self, retry_at, message):
+            super().__init__(message)
+            self.retry_at = retry_at
+
+
+    def _retry_at(resp):
+        after = (resp.headers.get("Retry-After") or "").strip()
+        now = _now_dt()
+        if after:
+            try:
+                secs = int(float(after) + 0.999)
+                return (now + _dt.timedelta(seconds=max(secs, 1))).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                pass
+            try:
+                from email.utils import parsedate_to_datetime
+                when = parsedate_to_datetime(after)
+                if when is not None:
+                    if when.tzinfo is None:
+                        when = when.replace(tzinfo=_dt.timezone.utc)
+                    return when.astimezone(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            except (TypeError, ValueError):
+                pass
+        # Garmin's limit counts days of data a minute, so a 429 with no header we
+        # can read is a minute away.
+        return (now + _dt.timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _request(base, token, path, params=None):
+        url = base + path
+        _check_origin(url)
+        resp = requests.get(url, params=params or None, headers={
+            "Authorization": "Bearer " + token, "Accept": "application/json",
+        }, timeout=20, allow_redirects=False)
+        if resp.status_code == 429:
+            raise _RateLimited(_retry_at(resp), "rate limited by Garmin")
+        if resp.status_code == 401:
+            raise _Permanent("unauthorized (was the app disconnected in Garmin Connect?)")
+        return resp
+
+
+    def _get(base, token, path):
+        resp = _request(base, token, path)
+        if 400 <= resp.status_code < 500:
+            raise _Permanent("%s answered HTTP %d" % (path, resp.status_code))
+        resp.raise_for_status()
+        if resp.status_code != 200:
+            raise RuntimeError("%s answered HTTP %d" % (path, resp.status_code))
+        return resp.json()
+
+
+    def _err_msg(e):
+        if isinstance(e, _RateLimited):
+            return "rate limited; retry after %s" % e.retry_at
+        if isinstance(e, requests.HTTPError) and e.response is not None:
+            return "garmin returned HTTP %d" % e.response.status_code
+        return str(e) or type(e).__name__
+
+
+    def _api_base(cfg):
+        client = ((cfg.get("inputs") or {}).get("client") or {})
+        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
+        return (base or DEFAULT_API_BASE).rstrip("/")
+
+
+    def _permissions(value):
+        if isinstance(value, dict):
+            return sorted(str(k) for k, v in value.items() if v is True)
+        if isinstance(value, list):
+            return sorted({str(v) for v in value if isinstance(v, str) and v})
+        return []
+
+
+    # ------------------------------------------------------------- what is due
+
+    def _enabled(props):
+        return [key for key, toggle, _ in BACKFILL if props.get(toggle)]
+
+
+    def _floor(props, anchor):
+        days = BACKFILL_DAYS.get(props.get("backfillDepth") or "last30d", 30)
+        return anchor - days * 86400
+
+
+    def _left(props, cursors, anchor, failed=()):
+        """The enabled types whose walk has not reached the floor."""
+        if anchor is None:
+            return _enabled(props)
+        floor = _floor(props, anchor)
+        return [k for k in _enabled(props)
+                if k not in failed and (cursors.get(k) if cursors.get(k) is not None
+                                        else anchor) > floor]
+
+
+    def _cursors(props):
+        out = {}
+        for k, v in (props.get("syncCursors") or {}).items():
+            s = _secs(v)
+            if s is not None:
+                out[k] = s
+        return out
+
+
+    def _requested(props):
+        want = props.get("syncRequestedAt")
+        return bool(want) and str(want) != str(props.get("syncRequestedAck") or "")
+
+
+    def _held(props):
+        hold = _parse(props.get("retryNotBefore"))
+        return hold is not None and _now_dt() < hold
+
+
+    def _due(props):
+        """The schedule's question. A deregistered account waits for a "sync
+        now" or for its next push to show the user connected again."""
+        if props.get("syncPaused") or _held(props):
+            return False
+        if _requested(props):
+            return True
+        if props.get("deregisteredAt"):
+            return False
+        if not props.get("lastSyncedAt") or not props.get("userId"):
+            return True
+        return bool(_left(props, _cursors(props), _secs(props.get("backfillUntil"))))
+
+
+    # ------------------------------------------------------------- the stamp
+
+    def _progress(props, cur):
+        enabled = _enabled(props)
+        left = _left(props, cur.get("cursors") or {}, cur.get("anchor"),
+                     [k for k, _ in cur.get("failed") or []])
+        phase = cur.get("phase") or "user"
+        if phase == "backfill":
+            phase = left[0] if left else "done"
+        return {"phase": phase, "done": len(enabled) - len(left)
+                - len(cur.get("failed") or []), "total": len(enabled),
+                "pending": len(left)}
+
+
+    def _checkpoint(host, acct, aid, cur):
+        """The cursors so far, committed with this invocation's page, so a chain
+        the engine parks still keeps what Garmin accepted."""
+        patch = {"syncCursors": {k: _iso_secs(v) for k, v in (cur.get("cursors") or {}).items()}
+                 or None}
+        if cur.get("anchor") is not None:
+            patch["backfillUntil"] = _iso_secs(cur["anchor"])
+        host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, aid, properties=patch)
+
+
+    def _stamp(host, acct, aid, props, cur, error=None):
+        now = _now()
+        patch = {"lastSyncedAt": now,
+                 "syncCursors": {k: _iso_secs(v) for k, v in (cur.get("cursors") or {}).items()}
+                 or None}
+        if cur.get("anchor") is not None:
+            patch["backfillUntil"] = _iso_secs(cur["anchor"])
+        if cur.get("requested"):
+            patch["syncRequestedAck"] = cur["requested"]
+        failed = cur.get("failed") or []
+        left = _left(props, cur.get("cursors") or {}, cur.get("anchor"),
+                     [k for k, _ in failed])
+        windows = int(cur.get("windows") or 0)
+        if cur.get("retryAt"):
+            patch["retryNotBefore"] = cur["retryAt"]
+            state, message = "throttled", "rate limited by Garmin; retry after %s" % cur["retryAt"]
+        elif error is not None:
+            state, message = "erroring", str(error)
+        else:
+            state = "ok"
+            notes = ["backfill: %d windows requested" % windows]
+            if left:
+                notes.append("%d types continue on the next run" % len(left))
+            if failed:
+                notes.append("refused: " + ", ".join("%s (%s)" % (k, why)
+                                                     for k, why in failed[:4]))
+            message = "; ".join(notes)
+            if not left and not failed:
+                patch["lastCompletedAt"] = now
+            patch["syncError"] = None
+            patch["syncErrorAt"] = None
+        patch.update({"syncState": state, "syncMessage": message[:REASON_MAX],
+                      "syncProgress": _progress(props, cur)})
+        if state == "erroring":
+            patch["syncError"] = message[:REASON_MAX]
+            patch["syncErrorAt"] = now
+        if cur.get("dispatch") == "schedule" and cur.get("startedAt"):
+            a, b = _parse(cur["startedAt"]), _parse(now)
+            patch["lastSyncStartedAt"] = cur["startedAt"]
+            if a is not None and b is not None:
+                patch["lastSyncDurationMs"] = max(int((b - a).total_seconds() * 1000), 0)
+        host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, aid, properties=patch)
+
+
+    # ------------------------------------------------------------- the walk
+
+    def _fresh(queue, dispatch="", started=""):
+        return {"queue": queue, "phase": None, "dispatch": dispatch,
+                "startedAt": started or _now(), "runStarted": time.time()}
+
+
+    def _next_account(host, cur, queue):
+        rest = queue[1:]
+        if rest:
+            return {"more": host.page.more(_fresh(rest, cur.get("dispatch")))}
+        return None
+
+
+    def _sync_account(host, base, acct, aid, props, token, cur):
+        start = time.monotonic()
+
+        def spent():
+            return time.monotonic() - start >= BUDGET_SECONDS
+
+        def run_spent():
+            return time.time() - float(cur.get("runStarted") or time.time()) >= RUN_BUDGET_SECONDS
+
+        if cur.get("phase") is None:
+            cur.update({"phase": "user", "cursors": _cursors(props), "failed": [],
+                        "windows": 0, "anchor": _secs(props.get("backfillUntil")),
+                        "requested": str(props.get("syncRequestedAt") or "")})
+
+        if cur["phase"] == "user":
+            who = _get(base, token, "/rest/user/id")
+            uid = str((who or {}).get("userId") or "")
+            if not uid:
+                raise _Permanent("GET /rest/user/id carried no userId")
+            perms = _permissions(_get(base, token, "/rest/user/permissions"))
+            patch = {"userId": uid, "permissions": perms}
+            if props.get("deregisteredAt"):
+                # The grant answers again, so the user connected again.
+                patch["deregisteredAt"] = None
+            if props.get("userId") and str(props["userId"]) != uid:
+                host.log("garmin: %s now authenticates as a different Garmin user" % aid)
+            host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, aid, properties=patch)
+            cur["phase"] = "backfill"
+            if cur.get("anchor") is None:
+                cur["anchor"] = int(time.time())
+
+        anchor = int(cur["anchor"])
+        floor = _floor(props, anchor)
+        paths = {k: p for k, _, p in BACKFILL}
+        cursors = cur["cursors"]
+        while True:
+            failed = [k for k, _ in cur["failed"]]
+            left = _left(props, cursors, anchor, failed)
+            if not left:
+                break
+            if run_spent():
+                break
+            if spent():
+                _checkpoint(host, acct, aid, cur)
+                return {"more": host.page.more(cur)}
+            # Newest window first, across every type: the most recent day of
+            # each type is asked for before any type reaches further back.
+            key = max(left, key=lambda k: (cursors.get(k, anchor), -left.index(k)))
+            end = cursors.get(key, anchor)
+            begin = max(floor, end - WINDOW_SECONDS)
+            resp = _request(base, token, "/rest/backfill/" + paths[key], {
+                "summaryStartTimeInSeconds": begin, "summaryEndTimeInSeconds": end})
+            code = resp.status_code
+            if code in (200, 202, 204, 409):
+                cursors[key] = begin
+                cur["windows"] = int(cur.get("windows") or 0) + 1
+            elif 400 <= code < 500:
+                # This type's window was refused (a permission the user did not
+                # grant, a reach Garmin will not backfill): the type stops for
+                # this run and says why; the others carry on.
+                host.log("garmin: %s backfill of %s refused with HTTP %d" % (aid, key, code))
+                cur["failed"].append([key, "HTTP %d" % code])
+            else:
+                resp.raise_for_status()
+                raise RuntimeError("garmin: backfill of %s answered HTTP %d" % (key, code))
+
+        _stamp(host, acct, aid, props, cur)
+        nxt = _next_account(host, cur, cur.get("queue") or [aid])
+        if nxt:
+            return nxt
+        return {"output": {"account": aid, "windows": cur.get("windows") or 0,
+                           "left": _left(props, cursors, anchor,
+                                         [k for k, _ in cur["failed"]]),
+                           "failed": cur["failed"]}}
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        base = _api_base(cfg)
+        _check_origin(base)
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        args = input.get("args")
+        if not isinstance(args, dict):
+            args = {}
+        cur = host.page.resume() or None
+        if cur is None:
+            record = (input.get("envelope") or {}).get("record") or {}
+            named = args.get("accounts") or ([args["account"]] if args.get("account") else [])
+            if (record.get("kind") or "") == ACCOUNT_TYPE:
+                queue = [record.get("id")]
+            elif named:
+                queue = [str(a) for a in named]
+            else:
+                queue = [aid for aid, a in accounts.items()
+                         if _due(a.get("properties") or {})]
+            cur = _fresh(queue, "record" if record.get("kind") else "schedule")
+
+        queue = list(cur.get("queue") or [])
+        while queue:
+            acct = accounts.get(queue[0])
+            props = (acct or {}).get("properties") or {}
+            if acct is None or props.get("syncPaused") or _held(props):
+                queue = queue[1:]
+                cur = _fresh(queue, cur.get("dispatch"))
+                continue
+            terr = acct.get("tokenError")
+            if terr or not acct.get("token"):
+                if terr:
+                    host.log("garmin: skip %s: %s" % (queue[0], terr))
+                    host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, queue[0], properties={
+                        "syncState": "erroring", "syncMessage": str(terr)[:REASON_MAX],
+                        "syncError": str(terr)[:REASON_MAX], "syncErrorAt": _now()})
+                queue = queue[1:]
+                cur = _fresh(queue, cur.get("dispatch"))
+                continue
+            break
+        if not queue:
+            return {"output": {"synced": 0, "accounts": sorted(a for a in accounts if a)}}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        props = acct.get("properties") or {}
+        cur["queue"] = queue
+        try:
+            return _sync_account(host, base, acct, aid, props, acct["token"], cur)
+        except _RateLimited as e:
+            cur["retryAt"] = e.retry_at
+            _stamp(host, acct, aid, props, cur, error=_err_msg(e))
+            return _next_account(host, cur, queue) or {"output": {"account": aid,
+                                                                  "error": _err_msg(e)}}
+        except Exception as e:                                          # noqa: BLE001
+            msg = _err_msg(e)
+            host.log("garmin: account %s failed: %s" % (aid, msg))
+            _stamp(host, acct, aid, props, cur, error=msg)
+            return _next_account(host, cur, queue) or {"output": {"account": aid,
+                                                                  "error": msg}}

@@ -1,0 +1,16 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json",
+   "content-length": "685",
+   "garmin-client-id": "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"moveIQActivities\":[{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6aa6bae8\",\"calendarDate\":\"2026-09-13\",\"startTimeInSeconds\":1789311720,\"durationInSeconds\":1380,\"activityType\":\"Walking\",\"offsetInSeconds\":10800},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ab695d0\",\"calendarDate\":\"2026-09-25\",\"startTimeInSeconds\":1790350800,\"durationInSeconds\":2460,\"activityType\":\"Walking\",\"offsetInSeconds\":3600,\"activitySubType\":\"Walking\"},{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ac4ca24\",\"calendarDate\":\"2026-10-06\",\"startTimeInSeconds\":1791281700,\"durationInSeconds\":1140,\"activityType\":\"Walking\",\"offsetInSeconds\":10800}]}"
+  }
+ },
+ "_receivedAt": "2026-10-08T05:19:00Z"
+}

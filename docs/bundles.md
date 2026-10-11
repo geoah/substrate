@@ -111,11 +111,12 @@ is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
 A **provider** is a bundle whose package a publisher owns: `google`, `github`,
-`linear`, `notion`, `whoop`, `beeper` and `slack`, all published under
-`providers.substrate.reamde.dev`. Installing one from the catalog writes
-`source: published` on its package, and from then on only an install or an
-upgrade writes its declarations: a `POST …/vocabulary/apply` naming that
-package is `403` for every token, because a mirror kind edited under the sync
+`linear`, `notion`, `whoop`, `garmin`, `googlefit`, `beeper`, `slack` and
+`applehealth`, all published under `providers.substrate.reamde.dev`.
+Installing one from the catalog writes `source: published` on its package,
+and from then on only an install or an upgrade writes its declarations: a
+`POST …/vocabulary/apply` naming that package is `403` for every token,
+because a mirror kind edited under the sync
 that writes it breaks the next sync. Nothing else about the bundle changes.
 Its records are the repository's to write, delete and purge, disable and
 enable and uninstall work as they do on any bundle, and the upgrade offer is
@@ -302,14 +303,15 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the seven shipped ones are
+A **provider** is a package a publisher owns: the ten shipped ones are
 `providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
-`/whoop`, `/beeper` and `/slack`. The tier is read from the tree the closure
-came from, never guessed from an OAuth block, from account kinds, or from the
-package's name: a token or webhook provider may declare no OAuth, and an
-account-shaped package is not necessarily one.
+`/whoop`, `/garmin`, `/googlefit`, `/beeper`, `/slack` and `/applehealth`. The
+tier is read from the tree the closure came from, never guessed from an OAuth
+block, from account kinds, or from the package's name: a token or webhook
+provider may declare no OAuth, and an account-shaped package is not
+necessarily one.
 
-An OAuth provider (Google, GitHub, WHOOP) ships, on top of the usual closure,
+An OAuth provider (Google, GitHub, WHOOP, Garmin, Google Fit) ships, on top of the usual closure,
 the pieces the substrate's OAuth facility recognizes by
 [trait](data-model.md#traits): an `accountconfig` kind (the Connection, one
 record per account, required to carry `tokenRef`, `tokenStatus` and
@@ -321,7 +323,10 @@ so a bundle's own trait wearing a core name cannot counterfeit the interface.
 A token provider (Linear, Notion, Beeper, Slack) ships the same
 `accountconfig` kind and no `oauth2:` block: the pasted key or token lives on
 its `config` record, and the trait's `tokenRef`, `tokenStatus` and
-`grantedScopes` stay declared and unwritten.
+`grantedScopes` stay declared and unwritten. A webhook provider (Apple Health)
+ships the same `accountconfig` kind, no `oauth2:` block and no `config`
+record: the sender authenticates with the key on its webhook trigger, and the
+owner creates each account by hand.
 
 A provider's records mirror in as ordinary records of the bundle's own kinds,
 under ids composed from the provider's own identifiers
@@ -636,10 +641,12 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the seven **providers** under `kinds/providers.substrate.reamde.dev`, and the
-ten **samples** under `samples/` (`people`, `tasks`, `messaging`, `calendar`,
-`scheduling`, and the worked examples `llm`, `notes`, `readinglist`, `pebble`,
-`firecrawl`). A repository takes a sample itself: registration seeds
+the ten **providers** under `kinds/providers.substrate.reamde.dev`, and the
+sixteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
+`calendar`, `scheduling`, `observations`, `health`, and the worked examples
+`llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`,
+`healthapple`, `healthgarmin`, `healthgooglefit`). A repository takes a sample
+itself: registration seeds
 `substrate.reamde.dev/core`, imports the `llm` sample onto the repository's
 own authority with its three keyless `provider` rows (`openai`, `anthropic`,
 `gemini`), and nothing else.
@@ -792,7 +799,7 @@ importing the bundle instead rehomes its requirements with it.
 **No provider requires a sample package, and every provider installs on a bare
 repository.** A provider ships mirror kinds in its own shape and writes nothing
 else: no `requires:`, no reference pinned at a sample kind, no core row. So the
-console can install any of the seven from a repository that has imported nothing,
+console can install any of the ten from a repository that has imported nothing,
 and the console's Add button is never disabled for a missing requirement.
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the

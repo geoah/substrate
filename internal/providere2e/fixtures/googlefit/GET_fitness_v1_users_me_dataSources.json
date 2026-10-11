@@ -1,0 +1,481 @@
+{
+ "dataSource": [
+  {
+   "dataStreamId": "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps",
+   "dataStreamName": "estimated_steps",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.step_count.delta",
+    "field": [
+     {
+      "name": "steps",
+      "format": "integer"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas",
+   "dataStreamName": "merge_step_deltas",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.step_count.delta",
+    "field": [
+     {
+      "name": "steps",
+      "format": "integer"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "raw:com.google.step_count.delta:com.google.android.apps.fitness:Google:Pixel Watch 2:8d1f3c7a:",
+   "type": "raw",
+   "dataType": {
+    "name": "com.google.step_count.delta",
+    "field": [
+     {
+      "name": "steps",
+      "format": "integer"
+     }
+    ]
+   },
+   "dataQualityStandard": [],
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "device": {
+    "uid": "8d1f3c7a",
+    "type": "watch",
+    "version": "",
+    "model": "Pixel Watch 2",
+    "manufacturer": "Google"
+   }
+  },
+  {
+   "dataStreamId": "raw:com.google.step_count.cumulative:Google:Pixel 8:b52e90c4:Step Counter",
+   "type": "raw",
+   "dataType": {
+    "name": "com.google.step_count.cumulative",
+    "field": [
+     {
+      "name": "steps",
+      "format": "integer"
+     }
+    ]
+   },
+   "dataQualityStandard": [],
+   "dataStreamName": "Step Counter",
+   "device": {
+    "uid": "b52e90c4",
+    "type": "phone",
+    "version": "",
+    "model": "Pixel 8",
+    "manufacturer": "Google"
+   }
+  },
+  {
+   "dataStreamId": "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm",
+   "dataStreamName": "merge_heart_rate_bpm",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.heart_rate.bpm",
+    "field": [
+     {
+      "name": "bpm",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.heart_rate.bpm:com.google.android.gms:resting_heart_rate<-merge_heart_rate_bpm",
+   "dataStreamName": "resting_heart_rate<-merge_heart_rate_bpm",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.heart_rate.bpm",
+    "field": [
+     {
+      "name": "bpm",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "raw:com.google.heart_rate.bpm:com.google.android.apps.fitness:Google:Pixel Watch 2:8d1f3c7a:",
+   "type": "raw",
+   "dataType": {
+    "name": "com.google.heart_rate.bpm",
+    "field": [
+     {
+      "name": "bpm",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "dataQualityStandard": [],
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "device": {
+    "uid": "8d1f3c7a",
+    "type": "watch",
+    "version": "",
+    "model": "Pixel Watch 2",
+    "manufacturer": "Google"
+   }
+  },
+  {
+   "dataStreamId": "derived:com.google.weight:com.google.android.gms:merge_weight",
+   "dataStreamName": "merge_weight",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.weight",
+    "field": [
+     {
+      "name": "weight",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "raw:com.google.weight:com.withings.wiscale2:Withings:Body+:4a91be20:",
+   "type": "raw",
+   "dataType": {
+    "name": "com.google.weight",
+    "field": [
+     {
+      "name": "weight",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "dataQualityStandard": [],
+   "application": {
+    "packageName": "com.withings.wiscale2"
+   },
+   "device": {
+    "uid": "4a91be20",
+    "type": "scale",
+    "version": "",
+    "model": "Body+",
+    "manufacturer": "Withings"
+   }
+  },
+  {
+   "dataStreamId": "derived:com.google.body.fat.percentage:com.google.android.gms:merged",
+   "dataStreamName": "merged",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.body.fat.percentage",
+    "field": [
+     {
+      "name": "percentage",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.height:com.google.android.gms:merge_height",
+   "dataStreamName": "merge_height",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.height",
+    "field": [
+     {
+      "name": "height",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.sleep.segment:com.google.android.gms:merged",
+   "dataStreamName": "merged",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.sleep.segment",
+    "field": [
+     {
+      "name": "sleep_segment_type",
+      "format": "integer"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "raw:com.google.sleep.segment:com.google.android.apps.fitness:Google:Pixel Watch 2:8d1f3c7a:",
+   "type": "raw",
+   "dataType": {
+    "name": "com.google.sleep.segment",
+    "field": [
+     {
+      "name": "sleep_segment_type",
+      "format": "integer"
+     }
+    ]
+   },
+   "dataQualityStandard": [],
+   "application": {
+    "packageName": "com.google.android.apps.fitness"
+   },
+   "device": {
+    "uid": "8d1f3c7a",
+    "type": "watch",
+    "version": "",
+    "model": "Pixel Watch 2",
+    "manufacturer": "Google"
+   }
+  },
+  {
+   "dataStreamId": "derived:com.google.calories.expended:com.google.android.gms:merge_calories_expended",
+   "dataStreamName": "merge_calories_expended",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.calories.expended",
+    "field": [
+     {
+      "name": "calories",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.calories.bmr:com.google.android.gms:merged",
+   "dataStreamName": "merged",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.calories.bmr",
+    "field": [
+     {
+      "name": "calories",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.distance.delta:com.google.android.gms:merge_distance_delta",
+   "dataStreamName": "merge_distance_delta",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.distance.delta",
+    "field": [
+     {
+      "name": "distance",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.activity.segment:com.google.android.gms:merge_activity_segments",
+   "dataStreamName": "merge_activity_segments",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.activity.segment",
+    "field": [
+     {
+      "name": "activity",
+      "format": "integer"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.heart_minutes:com.google.android.gms:merge_heart_minutes",
+   "dataStreamName": "merge_heart_minutes",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.heart_minutes",
+    "field": [
+     {
+      "name": "intensity",
+      "format": "floatPoint"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.active_minutes:com.google.android.gms:merge_active_minutes",
+   "dataStreamName": "merge_active_minutes",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.active_minutes",
+    "field": [
+     {
+      "name": "duration",
+      "format": "integer"
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.oxygen_saturation:com.google.android.gms:merged",
+   "dataStreamName": "merged",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.oxygen_saturation",
+    "field": [
+     {
+      "name": "oxygen_saturation",
+      "format": "floatPoint"
+     },
+     {
+      "name": "supplemental_oxygen_flow_rate",
+      "format": "floatPoint"
+     },
+     {
+      "name": "oxygen_therapy_administration_mode",
+      "format": "integer",
+      "optional": true
+     },
+     {
+      "name": "oxygen_saturation_system",
+      "format": "integer",
+      "optional": true
+     },
+     {
+      "name": "oxygen_saturation_measurement_method",
+      "format": "integer",
+      "optional": true
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.blood_pressure:com.google.android.gms:merged",
+   "dataStreamName": "merged",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.blood_pressure",
+    "field": [
+     {
+      "name": "blood_pressure_systolic",
+      "format": "floatPoint"
+     },
+     {
+      "name": "blood_pressure_diastolic",
+      "format": "floatPoint"
+     },
+     {
+      "name": "body_position",
+      "format": "integer",
+      "optional": true
+     },
+     {
+      "name": "blood_pressure_measurement_location",
+      "format": "integer",
+      "optional": true
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  },
+  {
+   "dataStreamId": "derived:com.google.blood_glucose:com.google.android.gms:merged",
+   "dataStreamName": "merged",
+   "type": "derived",
+   "dataType": {
+    "name": "com.google.blood_glucose",
+    "field": [
+     {
+      "name": "blood_glucose_level",
+      "format": "floatPoint"
+     },
+     {
+      "name": "temporal_relation_to_meal",
+      "format": "integer",
+      "optional": true
+     },
+     {
+      "name": "meal_type",
+      "format": "integer",
+      "optional": true
+     },
+     {
+      "name": "temporal_relation_to_sleep",
+      "format": "integer",
+      "optional": true
+     },
+     {
+      "name": "blood_glucose_specimen_source",
+      "format": "integer",
+      "optional": true
+     }
+    ]
+   },
+   "application": {
+    "packageName": "com.google.android.gms"
+   },
+   "dataQualityStandard": []
+  }
+ ]
+}

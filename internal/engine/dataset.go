@@ -592,6 +592,9 @@ type txn struct {
 	// deputy for an arbitrary create/delete.
 	effEmit    []string
 	effEmitSet bool
+	// observed is what this transaction's observed point writes touched,
+	// recomputed once at its end (observedsettle.go settleObserved).
+	observed *observedTouch
 	// heldRegistryDep records that this transaction already took the SHARED
 	// registry-dependency lock, so the several doors that need it (the write's
 	// entry, preRecordLocks, trigger and policy admission) can each ask without
@@ -666,6 +669,11 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	pass()
 	t.seqLocked = true
 	if err := fn(t); err != nil {
+		return err
+	}
+	// The observed index's rollups and latest rows, from the points the
+	// transaction's folds left (observedindex.go).
+	if err := t.settleObserved(); err != nil {
 		return err
 	}
 	if err := t.settleFold(); err != nil {
@@ -1161,6 +1169,11 @@ func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{ctx: ctx, ds: ds, tx: tx, wc: wc, now: nowUTC(), internal: true}
 	if err := fn(t); err != nil {
+		return err
+	}
+	// The background re-derivation writes observed points outside the fold
+	// (reprojection.go), and their rollups and latest rows follow them here.
+	if err := t.settleObserved(); err != nil {
 		return err
 	}
 	if len(t.folded) > 0 || len(t.pending) > 0 {

@@ -482,6 +482,7 @@ var repositoryScopedTables = []string{
 	"oauth_flows", "paged_cursors", "vocabulary_dialect", "repository_migrations",
 	"changelog_dialect", "import_progress",
 	"idempotency_keys", "search_index", "index_reprojections",
+	"observed_points", "observed_rollups", "observed_latest",
 }
 
 func (s *service) repositoryByID(ctx context.Context, id string) (Repository, error) {

@@ -1,0 +1,1770 @@
+# The Google Fit bundle: a read-only mirror of one Google account's fitness
+# data over the Google Fit REST API v1 (`https://www.googleapis.com/fitness/v1`).
+#
+# DATED CAVEAT, read before anything else. Google announced that the Fit APIs,
+# the REST API included, end with 2026, and closed new sign-ups on 2024-05-01:
+# a Google Cloud project that has not enabled Fit before cannot enable it now.
+# Its successor, the Google Health API, is not onboarding new projects either.
+# Nothing in this closure was run against a live account. It is written
+# against Google's published reference and discovery document (revision
+# 20261008) and tested against a loopback fake and recorded fixtures.
+#
+# The mirror kinds are the API objects at the granularity Google serves them,
+# never one record per point:
+#
+#   datasource  one entry of GET users/me/dataSources, whole
+#   dataset     one data source over one UTC day: the `point[]` array of
+#               GET users/me/dataSources/{id}/datasets/{start}-{end}, every
+#               page joined
+#   session     one entry of GET users/me/sessions, whole
+#
+# Fit points carry no UTC offset, so a local day cannot be read off them. The
+# mirror keys datasets by UTC day, and the account's owner-set `timezone` is
+# what a reader (the `healthgooglefit` adapter) turns a UTC instant into local
+# time with.
+#
+# Install:   substratectl apply -f bundle.yaml -f triggers.yaml
+# Configure: a config record with the OAuth client id and secret.
+# Connect:   create an account, then run the host OAuth flow against it.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: providers.substrate.reamde.dev/googlefit
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  version: 1
+---
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: providers.substrate.reamde.dev/googlefit
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  description: >-
+    Keeps a copy of your Google Fit data: the devices and apps that write
+    it, their points one day at a time, and your workouts and sleep sessions.
+    Read-only.
+  inputs:
+    client:
+      kind: providers.substrate.reamde.dev/googlefit/config
+      # `inject: functions` because the sync reads `apiBase` off the record.
+      # The engine never injects the oauth2 trait's `clientSecret`.
+      inject: functions
+      description: the Google OAuth client the host exchanges codes through
+  # TRUSTED provider metadata: the host reads the endpoints and the
+  # toggle-to-scope map only from here, never from the mutable config record.
+  # `userinfo.email` rides on every toggle because the facility reads the
+  # account's address off `emailEndpoint` once per consent, whatever is on.
+  oauth2:
+    clientInput: client
+    authorizationEndpoint: https://accounts.google.com/o/oauth2/v2/auth
+    tokenEndpoint: https://oauth2.googleapis.com/token
+    revocationEndpoint: https://oauth2.googleapis.com/revoke
+    emailEndpoint: https://www.googleapis.com/oauth2/v3/userinfo
+    emailProperty: email
+    # Location is left off: `fitness.location.read` also covers GPS samples,
+    # and `com.google.distance.delta` is filed under it, so no distance is
+    # read either.
+    featureScopes:
+      enabledActivity:
+        scopes:
+          - https://www.googleapis.com/auth/fitness.activity.read
+          - https://www.googleapis.com/auth/userinfo.email
+      enabledBody:
+        scopes:
+          - https://www.googleapis.com/auth/fitness.body.read
+          - https://www.googleapis.com/auth/userinfo.email
+      enabledHeartRate:
+        scopes:
+          - https://www.googleapis.com/auth/fitness.heart_rate.read
+          - https://www.googleapis.com/auth/userinfo.email
+      enabledSleep:
+        scopes:
+          - https://www.googleapis.com/auth/fitness.sleep.read
+          - https://www.googleapis.com/auth/userinfo.email
+      enabledOxygenSaturation:
+        scopes:
+          - https://www.googleapis.com/auth/fitness.oxygen_saturation.read
+          - https://www.googleapis.com/auth/userinfo.email
+      enabledBloodPressure:
+        scopes:
+          - https://www.googleapis.com/auth/fitness.blood_pressure.read
+          - https://www.googleapis.com/auth/userinfo.email
+      enabledBloodGlucose:
+        scopes:
+          - https://www.googleapis.com/auth/fitness.blood_glucose.read
+          - https://www.googleapis.com/auth/userinfo.email
+  installs:
+    - providers.substrate.reamde.dev/googlefit/config
+    - providers.substrate.reamde.dev/googlefit/account
+    - providers.substrate.reamde.dev/googlefit/datasource
+    - providers.substrate.reamde.dev/googlefit/dataset
+    - providers.substrate.reamde.dev/googlefit/session
+    - providers.substrate.reamde.dev/googlefit/googlefitsync
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/googlefit/config
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  description: >-
+    The Google app settings your Google Fit account connects through. It holds
+    the OAuth client id, a sealed client secret, and the Fit API's base URL.
+    The endpoints and the toggle-to-scope map are bundle metadata, not rows
+    here.
+  purpose: internal
+  names:
+    singular: config
+  traits: [substrate.reamde.dev/core/oauth2]
+  displayTemplate: "Google Fit client {clientId}"
+  properties:
+    clientId:
+      type: string
+      displayName: Client ID
+      description: the Google OAuth client id, from the Google Cloud console
+    clientSecret:
+      type: secret
+      displayName: Client secret
+      description: the Google OAuth client secret, sealed at rest and never
+        read back
+    # The test seam. The body refuses to send the bearer anywhere but Google's
+    # two Fit hosts over HTTPS or a loopback host, so an owner-editable URL
+    # cannot become an exfiltration channel.
+    apiBase:
+      type: url
+      default: https://www.googleapis.com/fitness/v1
+      writer: owner
+      displayName: API base URL
+      description: >-
+        where the sync reads the Fit API: Google's own base, or a loopback
+        host for a test. Any other origin refuses to sync.
+---
+# Every cursor in this closure is here, never on a mirror row.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/googlefit/account
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  description: >-
+    Your Google Fit account, connected here. The OAuth facility writes the
+    credential reference, status, scopes and address; you choose what syncs,
+    how often and your time zone; the sync keeps its cursors and its last
+    run here.
+  purpose: internal
+  names:
+    singular: account
+  traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
+  displayTemplate: "{email}"
+  properties:
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: the credential-store reference the OAuth facility writes;
+        never a raw token
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "the connection state the facility last reported: pending,
+        connected or erroring"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: the OAuth scopes the last consent granted; a toggle whose
+        scope is missing here needs a reconnect
+    tokenError:
+      type: string
+      writer: oauth
+      displayName: Sign-in error
+      description: why the OAuth facility last failed to refresh this account's
+        token; empty while it works
+    tokenErrorAt:
+      type: datetime
+      writer: oauth
+      displayName: Sign-in error at
+      description: when the OAuth facility first recorded the current sign-in
+        error
+    email:
+      type: email
+      writer: oauth
+      displayName: Email
+      description: the connected Google account's address, read off Google's
+        userinfo endpoint at the end of the consent
+    # ---- what the owner asked for ----------------------------------------
+    enabledActivity:
+      type: bool
+      writer: owner
+      displayName: Activity
+      description: >-
+        steps, calories, activity segments, active and heart minutes, and
+        the workout sessions (fitness.activity.read)
+    enabledBody:
+      type: bool
+      writer: owner
+      displayName: Body
+      description: weight, height and body fat percentage (fitness.body.read)
+    enabledHeartRate:
+      type: bool
+      writer: owner
+      displayName: Heart rate
+      description: heart rate samples and Google's resting heart rate (fitness.heart_rate.read)
+    enabledSleep:
+      type: bool
+      writer: owner
+      displayName: Sleep
+      description: sleep sessions and their stage segments (fitness.sleep.read)
+    enabledOxygenSaturation:
+      type: bool
+      writer: owner
+      displayName: Oxygen saturation
+      description: blood oxygen readings (fitness.oxygen_saturation.read)
+    enabledBloodPressure:
+      type: bool
+      writer: owner
+      displayName: Blood pressure
+      description: blood pressure readings (fitness.blood_pressure.read)
+    enabledBloodGlucose:
+      type: bool
+      writer: owner
+      displayName: Blood glucose
+      description: blood glucose readings (fitness.blood_glucose.read)
+    # Fit stores instants with no offset. The sync keys datasets by UTC day
+    # and never reads this; it is the owner's statement of where the data was
+    # recorded, for whatever turns it into local days.
+    timezone:
+      type: timezone
+      writer: owner
+      displayName: Time zone
+      description: >-
+        the IANA zone the data was recorded in. Fit stores no offset, so readers
+        use this to place a point on a local day
+    syncFrequency:
+      type: enum
+      values:
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
+      required: true
+      default: hourly
+      writer: owner
+      displayName: Sync frequency
+      description: how often the schedule syncs this account once its first
+        walk is done
+    backfillDepth:
+      type: enum
+      values:
+        - value: none
+          label: "Don't backfill"
+        - value: last2d
+          label: "Last two days"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+      required: true
+      default: last30d
+      writer: owner
+      displayName: Backfill depth
+      description: >-
+        how far back the first sync reaches; none starts at the current UTC
+        day. Every data source is read one day at a time, so there is no unbounded
+        value
+    syncRequestedAt:
+      type: datetime
+      writer: owner
+      displayName: Sync requested
+      description: stamp this to ask for a sync now, whatever the cadence
+        says
+    syncPaused:
+      type: bool
+      writer: owner
+      displayName: Paused
+      description: while true no delivery and no scheduled sweep syncs this
+        account
+    # ---- the sync's own bookkeeping (writer: connector) -------------------
+    syncRequestedAck:
+      type: datetime
+      writer: connector
+      displayName: Sync request acknowledged
+      description: the `syncRequestedAt` the last sync acted on; equal means
+        the request is spent
+    syncCursors:
+      type: datetime
+      keyed: true
+      keyPattern: camel
+      writer: connector
+      displayName: Sync cursors
+      description: >-
+        per data type, when the last walk that read it to the present began;
+        the next walk starts two UTC days before it
+    syncFloors:
+      type: datetime
+      keyed: true
+      keyPattern: camel
+      writer: connector
+      displayName: Unfinished walks
+      description: >-
+        per data type, the UTC day an unfinished walk resumes from; cleared
+        when that type reaches the present
+    syncTokens:
+      type: string
+      keyed: true
+      keyPattern: camel
+      writer: connector
+      displayName: Sync tokens
+      description: >-
+        Google's own change tokens, by stream: `sessions` is the session list's
+        nextPageToken, which returns what changed since it was issued
+    retryNotBefore:
+      type: datetime
+      writer: connector
+      displayName: Retry not before
+      description: when Google said to come back, from a 429; no sync starts
+        before it
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: when the last sync attempt finished, ok or not; the cadence
+        anchor and the first-sync trigger's guard
+    lastCompletedAt:
+      type: datetime
+      writer: connector
+      displayName: Last completed
+      description: when a walk last reached the present with nothing skipped,
+        failed or left over
+    syncStatus:
+      type: string
+      writer: connector
+      displayName: Sync status
+      description: "the last outcome as one line: ok, ok (N pending), ok (N
+        skipped; failed: ...) or erroring: <reason>"
+    syncState:
+      type: string
+      writer: connector
+      displayName: Sync state
+      description: never, running, ok, erroring or throttled
+    syncMessage:
+      type: string
+      writer: connector
+      displayName: Sync message
+      description: the one human line the last run left
+    lastSyncStartedAt:
+      type: datetime
+      writer: connector
+      displayName: Last sync started
+      description: when the last run began; the body stamps it itself on the
+        schedule path, which names no record
+    lastSyncDurationMs:
+      type: int
+      writer: connector
+      displayName: Last sync duration (ms)
+      description: how long the last run took
+    syncProgress:
+      type: json
+      writer: connector
+      displayName: Sync progress
+      description: "{phase, done, total, pending}, counted in data types plus
+        the session stream"
+    syncError:
+      type: string
+      writer: connector
+      displayName: Sync error
+      description: the last error text; a later run that ends ok clears it
+        and syncErrorAt
+    syncErrorAt:
+      type: datetime
+      writer: connector
+      displayName: Sync error at
+      description: when syncError was written; cleared with it
+    syncStreams:
+      type: json
+      writer: connector
+      displayName: Sync streams
+      description: declared for the trait and left unwritten; one function
+        walks every data type as one queue with one outcome
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/googlefit/datasource
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  description: >-
+    One stream of Google Fit data: a device or app writing one data type,
+    or a stream Google merges from several. Copied whole from GET users/me/dataSources;
+    a point's originDataSourceId names one of these.
+  purpose: supporting
+  names:
+    singular: datasource
+  label:
+    singular: Data source
+    plural: Data sources
+  displayTemplate: "{dataStreamId}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/googlefit/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this data source was synced through
+    dataStreamId:
+      type: string
+      required: true
+      displayName: Data stream ID
+      description: >-
+        `dataStreamId`, Google's id for the stream: type, data type, app,
+        device and stream name joined by colons. Obfuscated per reading client
+    dataStreamName:
+      type: string
+      displayName: Data stream name
+      description: "`dataStreamName`, the writer's name for the stream (`merge_heart_rate_bpm`,
+        `estimated_steps`)"
+    type:
+      type: enum
+      values:
+        - value: raw
+          label: raw
+        - value: derived
+          label: derived
+      displayName: Type
+      description: "`type`: raw for a device or app writing directly, derived
+        for a stream Google computes from others"
+    dataType:
+      type: object
+      displayName: Data type
+      description: "`dataType`, the kind of reading the stream holds and the
+        order of a point's `value[]` entries"
+      fields:
+        name:
+          type: string
+          description: the data type name, such as `com.google.heart_rate.bpm`
+        field:
+          type: object
+          repeated: true
+          description: the data type's fields, in the order a point's value
+            entries follow
+          fields:
+            name:
+              type: string
+              description: the field's name, such as `bpm`
+            format:
+              type: enum
+              values:
+                - value: integer
+                  label: integer
+                - value: floatpoint
+                  label: floatPoint
+                - value: string
+                  label: string
+                - value: map
+                  label: map
+                - value: intlist
+                  label: intList
+                - value: floatlist
+                  label: floatList
+                - value: blob
+                  label: blob
+              description: how the field's value is encoded; Google's spelling
+                is the label
+            optional:
+              type: bool
+              description: whether a point may leave the field unset
+    application:
+      type: object
+      displayName: Application
+      description: "`application`, the app that writes the stream"
+      fields:
+        packageName:
+          type: string
+          description: the Android package name, such as `com.withings.wiscale2`
+        version:
+          type: string
+          description: the app's version
+        detailsUrl:
+          type: string
+          description: an optional URL Google lets an app publish about itself
+        name:
+          type: string
+          description: the app's name, set only for apps without a package
+            name
+    device:
+      type: object
+      displayName: Device
+      description: "`device`, the hardware that recorded the stream; absent
+        on derived streams"
+      fields:
+        uid:
+          type: string
+          description: the device's serial, obfuscated per reading client
+        type:
+          type: enum
+          values:
+            - value: unknown
+              label: unknown
+            - value: phone
+              label: phone
+            - value: tablet
+              label: tablet
+            - value: watch
+              label: watch
+            - value: cheststrap
+              label: chestStrap
+            - value: scale
+              label: scale
+            - value: headmounted
+              label: headMounted
+            - value: smartdisplay
+              label: smartDisplay
+          description: the device category; Google's spelling is the label
+        version:
+          type: string
+          description: the device's hardware or firmware version
+        model:
+          type: string
+          description: the model, such as `Pixel Watch 2`
+        manufacturer:
+          type: string
+          description: the manufacturer, such as `Google`
+    dataQualityStandard:
+      type: string
+      repeated: true
+      displayName: Data quality standards
+      description: "`dataQualityStandard`, deprecated at Google and usually
+        empty"
+    name:
+      type: string
+      displayName: Name
+      description: "`name`, an end-user visible name Google lets a writer
+        set"
+---
+# One data source over one UTC day. The row is the day's response with its
+# pages joined: Google pages from the end of the range backwards, so a busy
+# day comes in several pages and the row holds them all, sorted by end time.
+# A point that started the day before and overlaps this one is left to that
+# day's row, so every point lives in exactly one row.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/googlefit/dataset
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  description: >-
+    One UTC day of points from one Google Fit data source, as Google returns
+    them. Read from GET users/me/dataSources/{id}/datasets/{start}-{end};
+    a re-read that finds a changed point rewrites the row, and a day that
+    comes back empty deletes it. `at` and `endsAt` are the day's bounds.
+  purpose: supporting
+  names:
+    singular: dataset
+  label:
+    singular: Dataset
+    plural: Datasets
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{dataSourceId} {at}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/googlefit/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this day was synced through
+    dataSource:
+      type: reference
+      kind: providers.substrate.reamde.dev/googlefit/datasource
+      required: true
+      displayName: Data source
+      description: the data source row these points came from
+    dataSourceId:
+      type: string
+      required: true
+      displayName: Data source ID
+      description: "`dataSourceId`, Google's id for the stream, verbatim"
+    # Google encodes every int64 as a decimal string. They stay strings: a
+    # nanosecond count does not fit a JSON number without losing digits.
+    point:
+      type: object
+      repeated: true
+      displayName: Points
+      description: "`point[]`, every point that started on this day, sorted
+        by end time, each as Google sent it"
+      fields:
+        startTimeNanos:
+          type: string
+          description: when the reading starts, in nanoseconds since the epoch,
+            as Google's decimal string
+        endTimeNanos:
+          type: string
+          description: when it ends; equal to the start for an instantaneous
+            reading
+        dataTypeName:
+          type: string
+          description: the point's data type, such as `com.google.weight`
+        originDataSourceId:
+          type: string
+          description: on a derived stream, the data source that first wrote
+            the point; Google calls it debugging information
+        modifiedTimeMillis:
+          type: string
+          description: when Google last changed the point, in epoch milliseconds
+        rawTimestampNanos:
+          type: string
+          description: the timestamp the writing device reported, when it
+            sent one
+        computationTimeMillis:
+          type: string
+          description: deprecated at Google; kept when sent
+        value:
+          type: object
+          repeated: true
+          description: one entry per field of the data type, in its order;
+            each sets one of the value fields
+          fields:
+            intVal:
+              type: int
+              description: an integer field's value
+            fpVal:
+              type: float
+              description: a floating point field's value
+            stringVal:
+              type: string
+              description: a string field's value
+            # Google nests the number one level deeper, as `value.fpVal`. The
+            # dialect stops at four levels, so the leaf rides beside `key`.
+            # None of the data types this sync reads uses a map, and an empty
+            # `mapVal` is not stored.
+            mapVal:
+              type: object
+              repeated: true
+              description: "a map field's entries: Google's key, and the number
+                Google nests under `value.fpVal` lifted beside it"
+              fields:
+                key:
+                  type: string
+                  description: the entry's key
+                fpVal:
+                  type: float
+                  description: Google's `value.fpVal`, the entry's number
+---
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: providers.substrate.reamde.dev/googlefit/session
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  description: >-
+    A workout, a walk or a night's sleep as Google Fit recorded it. One session
+    from GET users/me/sessions, copied whole; `at` and `endsAt` are its start
+    and end, and a session Google reports deleted is deleted here.
+  names:
+    singular: session
+  traits:
+    - substrate.reamde.dev/core/temporal(range)
+  displayTemplate: "{name|sessionId}"
+  properties:
+    account:
+      type: reference
+      kind: providers.substrate.reamde.dev/googlefit/account
+      required: true
+      onDelete: cascade
+      displayName: Account
+      description: the account this session was synced through
+    sessionId:
+      type: string
+      required: true
+      displayName: Session ID
+      description: "`id`, the id the writing app gave the session, unique
+        per account"
+    name:
+      type: string
+      displayName: Name
+      description: "`name`, the session's human name, such as `Morning run`"
+    description:
+      type: string
+      displayName: Description
+      description: "`description`, the writer's longer text, often empty"
+    activityType:
+      type: int
+      displayName: Activity type
+      description: >-
+        `activityType`, Google's activity code: 72 sleep, 7 walking, 8 running,
+        1 biking, 80 strength training, 108 other. A growing list, so an integer
+    application:
+      type: object
+      displayName: Application
+      description: "`application`, the app that recorded the session"
+      fields:
+        packageName:
+          type: string
+          description: the Android package name, such as `com.strava`
+        version:
+          type: string
+          description: the app's version
+        detailsUrl:
+          type: string
+          description: an optional URL Google lets an app publish about itself
+        name:
+          type: string
+          description: the app's name, set only for apps without a package
+            name
+    activeTimeMillis:
+      type: int
+      displayName: Active time (ms)
+      description: "`activeTimeMillis`, the time spent moving, when the writer
+        reported it"
+    modifiedTimeMillis:
+      type: int
+      displayName: Modified (epoch ms)
+      description: "`modifiedTimeMillis`, when Google last changed the session,
+        in milliseconds since the epoch"
+---
+# One function, every stream: the data source list, then each enabled data
+# type's derived streams one UTC day at a time, then the session list. Every
+# invocation is bounded by time, staged bytes and reads, and the whole chain
+# by DRAIN_SECONDS, because the engine parks a paged chain whose middle page
+# arrives past its two-minute deadline and drops that page.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: providers.substrate.reamde.dev/googlefit/googlefitsync
+data:
+  authority: providers.substrate.reamde.dev
+  package: googlefit
+  description: >-
+    Sync a Google Fit account: mirror its data sources, each enabled data
+    type's points one UTC day at a time, and its sessions, resuming where
+    the last run stopped. Never writes back to Google.
+  runtime: python
+  timeout: PT60S
+  permissions:
+    writes:
+      - providers.substrate.reamde.dev/googlefit/datasource
+      - providers.substrate.reamde.dev/googlefit/dataset
+      - providers.substrate.reamde.dev/googlefit/session
+      - providers.substrate.reamde.dev/googlefit/account
+    # A day that comes back empty, and a session Google reports deleted, are
+    # deleted only where a row exists, and a delete of a missing row fails the
+    # whole delivery. One read per such day answers which.
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/googlefit/dataset
+        - providers.substrate.reamde.dev/googlefit/session
+      budgets:
+        calls: 1000
+        rows: 1000
+    network:
+      - "www.googleapis.com"
+      - "fitness.googleapis.com"
+      - "127.0.0.1"
+      - "localhost"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.32.4",
+    # ]
+    # ///
+    """Google Fit sync: data sources, per-day datasets and sessions, mirrors only.
+
+    The access token arrives on `config.accounts[].token`; the API base on the
+    client input. The body never sees a client secret or a refresh token, and
+    it refuses to send the bearer anywhere but Google's Fit hosts over HTTPS or
+    a loopback host.
+
+    Which streams are read. Every data source of an enabled data type whose
+    `type` is `derived`: Google merges each raw device stream into those, and
+    each derived point names its raw writer in `originDataSourceId`, so reading
+    the raw streams too would store every point twice. The raw streams are still
+    mirrored as `datasource` rows, which is where a reader resolves a point's
+    origin to a device.
+
+    The cursors. Per data type, `syncCursors` holds when the last walk that
+    reached the present began, and the next walk starts OVERLAP_DAYS UTC days
+    before it, because a watch can upload a day's points hours late. A walk the
+    chain budget cut off saves the day it got to in `syncFloors` and the next
+    run resumes there; the schedule treats an unfinished walk as due. Sessions
+    use Google's own sync token, kept in `syncTokens.sessions`.
+    """
+    import datetime as _dt
+    import json as _json
+    import re as _re
+    from urllib.parse import quote as _quote
+    from urllib.parse import urlsplit as _urlsplit
+
+    import requests
+
+    AUTHORITY = "providers.substrate.reamde.dev/googlefit"
+    ACCOUNT_KIND = AUTHORITY + "/account"
+    DATASOURCE_KIND = AUTHORITY + "/datasource"
+    DATASET_KIND = AUTHORITY + "/dataset"
+    SESSION_KIND = AUTHORITY + "/session"
+
+    DEFAULT_API_BASE = "https://www.googleapis.com/fitness/v1"
+    API_HOSTS = ("www.googleapis.com", "fitness.googleapis.com")
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    ID_PROVIDER = "googlefit"
+
+    # Google applies `limit` from the end of the range; 1000 is what the
+    # recorded fixtures were captured with.
+    PAGE_LIMIT = 1000
+    # One invocation's wall clock. The function's deadline is PT60S and one
+    # request may take its whole 20-second timeout past the check.
+    BUDGET_SECONDS = 40.0
+    # The CHAIN's budget, measured from its first invocation. The engine parks
+    # a chain whose middle page starts past two minutes, so a page that starts
+    # late gets only what is left of this.
+    DRAIN_SECONDS = 75.0
+    # Staged effect bytes per invocation. The runner's frame cap is 8 MiB.
+    EFFECT_BYTES = 4 << 20
+    # Existence reads per invocation, under the declared budget of 1000.
+    READ_CALLS = 900
+    # A day with more points than this would not fit one frame. It is skipped
+    # and counted rather than written short.
+    MAX_DAY_POINTS = 20000
+    # A day re-read is cheap and a late upload is common, so every walk after
+    # the first starts this many UTC days before its cursor.
+    OVERLAP_DAYS = 2
+    BACKFILL_DAYS = {"none": 0, "last2d": 2, "last30d": 30, "last90d": 90,
+                     "last1y": 365}
+    # GET sessions with no window and no token answers what changed in the
+    # last 30 days. A deeper backfill reads its window first.
+    SESSION_FEED_DAYS = 30
+    MAX_SESSION_PAGES = 40
+    REASON_MAX = 200
+    MAX_ID = 128
+
+    # (data type, toggle, cursor key), in walk order.
+    DATA_TYPES = (
+        ("com.google.step_count.delta", "enabledActivity", "stepCountDelta"),
+        ("com.google.calories.expended", "enabledActivity", "caloriesExpended"),
+        ("com.google.calories.bmr", "enabledActivity", "caloriesBmr"),
+        ("com.google.activity.segment", "enabledActivity", "activitySegment"),
+        ("com.google.active_minutes", "enabledActivity", "activeMinutes"),
+        ("com.google.heart_minutes", "enabledActivity", "heartMinutes"),
+        ("com.google.heart_rate.bpm", "enabledHeartRate", "heartRateBpm"),
+        ("com.google.weight", "enabledBody", "weight"),
+        ("com.google.height", "enabledBody", "height"),
+        ("com.google.body.fat.percentage", "enabledBody", "bodyFatPercentage"),
+        ("com.google.sleep.segment", "enabledSleep", "sleepSegment"),
+        ("com.google.oxygen_saturation", "enabledOxygenSaturation",
+         "oxygenSaturation"),
+        ("com.google.blood_pressure", "enabledBloodPressure", "bloodPressure"),
+        ("com.google.blood_glucose", "enabledBloodGlucose", "bloodGlucose"),
+    )
+    TOGGLES = ("enabledActivity", "enabledBody", "enabledHeartRate",
+               "enabledSleep", "enabledOxygenSaturation", "enabledBloodPressure",
+               "enabledBloodGlucose")
+    # Sessions are workouts and sleeps; either scope makes the list readable.
+    SESSION_TOGGLES = ("enabledActivity", "enabledSleep")
+
+    # Closed sets the declaration carries as enums. A word outside a table is
+    # left absent rather than refusing the row.
+    SOURCE_TYPES = {"raw": "raw", "derived": "derived"}
+    FIELD_FORMATS = {"integer": "integer", "floatPoint": "floatpoint",
+                     "string": "string", "map": "map", "intList": "intlist",
+                     "floatList": "floatlist", "blob": "blob"}
+    DEVICE_TYPES = {"unknown": "unknown", "phone": "phone", "tablet": "tablet",
+                    "watch": "watch", "chestStrap": "cheststrap",
+                    "scale": "scale", "headMounted": "headmounted",
+                    "smartDisplay": "smartdisplay"}
+    POINT_STRINGS = ("startTimeNanos", "endTimeNanos", "dataTypeName",
+                     "originDataSourceId", "modifiedTimeMillis",
+                     "rawTimestampNanos", "computationTimeMillis")
+
+    # The record-id alphabet, without "/": a segment never splits in two.
+    _SEGMENT = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@-]*$")
+    UTC = _dt.timezone.utc
+
+
+    # --------------------------------------------------------------- plumbing
+
+    def _now_dt():
+        return _dt.datetime.now(UTC)
+
+
+    def _now():
+        # Sub-second: a `syncRequestedAt` in the same whole second as
+        # `lastSyncedAt` must still compare as different.
+        return _now_dt().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+    def _iso(ts):
+        return ts.astimezone(UTC).replace(microsecond=0).isoformat().replace(
+            "+00:00", "Z")
+
+
+    def _parse(value):
+        if not value:
+            return None
+        try:
+            ts = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
+
+
+    def _day(value):
+        """A YYYY-MM-DD string as a date, or None."""
+        try:
+            return _dt.date.fromisoformat(str(value)[:10])
+        except ValueError:
+            return None
+
+
+    def _day_start(day):
+        return _dt.datetime(day.year, day.month, day.day, tzinfo=UTC)
+
+
+    def _ns(ts):
+        return int(ts.timestamp()) * 1000000000
+
+
+    def _millis_iso(ms):
+        try:
+            return _iso(_dt.datetime.fromtimestamp(int(ms) / 1000.0, UTC))
+        except (TypeError, ValueError, OverflowError, OSError):
+            return None
+
+
+    def _int(value):
+        if value in (None, "") or isinstance(value, bool):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+
+    def _check_origin(url):
+        """The bearer may reach only Google's Fit hosts over HTTPS, or loopback.
+        `apiBase` is owner-editable, so it is checked, never trusted."""
+        u = _urlsplit(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return
+        if u.scheme == "https" and host in API_HOSTS and u.port in (None, 443):
+            return
+        raise RuntimeError(
+            "googlefit: refusing to send credentials to %s://%s:%s; only "
+            "https://www.googleapis.com, https://fitness.googleapis.com or "
+            "loopback" % (u.scheme, host or "?", u.port or "-"))
+
+
+    class _Permanent(Exception):
+        """An answer asking again cannot change: a missing scope, a malformed
+        request. The data type it hit is abandoned for the run."""
+
+
+    class _NotFound(_Permanent):
+        """A 404: the data source the list named is gone. Only that source is
+        dropped for the run."""
+
+
+    class _Unauthorized(Exception):
+        """A 401: the grant is gone or the token is dead. The whole account
+        fails, because every later call would answer the same."""
+
+
+    class _RateLimited(Exception):
+        def __init__(self, retry_at, message):
+            super().__init__(message)
+            self.retry_at = retry_at
+
+
+    def _retry_at(resp):
+        """When Google said to come back: Retry-After as delta-seconds or an
+        HTTP date, rounded up; a minute when it named neither."""
+        after = (resp.headers.get("Retry-After") or "").strip()
+        now = _now_dt()
+        if after:
+            try:
+                secs = int(float(after) + 0.999)
+                return _iso(now + _dt.timedelta(seconds=max(secs, 1)))
+            except ValueError:
+                pass
+            try:
+                from email.utils import parsedate_to_datetime
+                when = parsedate_to_datetime(after)
+                if when is not None:
+                    if when.tzinfo is None:
+                        when = when.replace(tzinfo=UTC)
+                    return _iso(when)
+            except (TypeError, ValueError):
+                pass
+        return _iso(now + _dt.timedelta(seconds=60))
+
+
+    def _get(base, token, path, params=None):
+        url = base + path
+        _check_origin(url)
+        resp = requests.get(url, params=params or None, headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "application/json",
+        }, timeout=20)
+        if resp.status_code == 429:
+            raise _RateLimited(_retry_at(resp), "rate limited by Google")
+        if resp.status_code == 401:
+            raise _Unauthorized("unauthorized (was the grant revoked at Google?)")
+        if resp.status_code == 403:
+            raise _Permanent("forbidden (a scope this grant does not carry)")
+        if resp.status_code == 404:
+            raise _NotFound("not found")
+        if 400 <= resp.status_code < 500 and resp.status_code != 408:
+            raise _Permanent("google returned HTTP %d" % resp.status_code)
+        resp.raise_for_status()
+        return resp.json()
+
+
+    def _err_msg(e):
+        if isinstance(e, _RateLimited):
+            return "rate limited; retry after %s" % e.retry_at
+        if isinstance(e, (_Permanent, _Unauthorized)):
+            return str(e)
+        if isinstance(e, requests.HTTPError) and e.response is not None:
+            return "google returned HTTP %d" % e.response.status_code
+        return str(e) or type(e).__name__
+
+
+    class _Budget:
+        """One invocation's allowance: wall clock (never past what the chain
+        has left), staged effect bytes and existence reads."""
+
+        def __init__(self, cur):
+            self.start = _now_dt()
+            self.limit = min(BUDGET_SECONDS, _chain_left(cur))
+            self.bytes = 0
+            self.reads = 0
+
+        def spent(self):
+            if self.bytes >= EFFECT_BYTES or self.reads >= READ_CALLS:
+                return True
+            return (_now_dt() - self.start).total_seconds() >= self.limit
+
+
+    def _chain_left(cur):
+        started = _parse(cur.get("chainStart"))
+        if started is None:
+            return 0.0
+        return DRAIN_SECONDS - (_now_dt() - started).total_seconds()
+
+
+    # ------------------------------------------------------- what is due, and when
+
+    def _wants(acct):
+        props = acct.get("properties") or {}
+        if props.get("syncPaused"):
+            return False
+        return any(props.get(t) for t in TOGGLES)
+
+
+    def _requested(props):
+        """Live while the owner's stamp and the acknowledgement disagree;
+        comparing against lastSyncedAt would loop on a stamp in the future."""
+        want = props.get("syncRequestedAt")
+        return bool(want) and str(want) != str(props.get("syncRequestedAck") or "")
+
+
+    def _held(props):
+        hold = _parse(props.get("retryNotBefore"))
+        return hold is not None and _now_dt() < hold
+
+
+    def _due(props):
+        if _held(props):
+            return False
+        if _requested(props):
+            return True
+        freq = (props.get("syncFrequency") or "hourly").lower()
+        if freq == "off":
+            return False
+        # An unfinished walk outranks the cadence, so the 15-minute tick is
+        # the backfill rate. Not after a failure: a dead grant would otherwise
+        # be retried every tick.
+        if props.get("syncFloors") and props.get("syncState") != "erroring":
+            return True
+        seen = _parse(props.get("lastSyncedAt"))
+        if seen is None:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _now_dt() - seen >= _dt.timedelta(hours=hours) - \
+            _dt.timedelta(minutes=2)
+
+
+    def _enabled(props):
+        return [(name, key) for name, toggle, key in DATA_TYPES if props.get(toggle)]
+
+
+    def _first_day(props, key, now):
+        """The UTC day one type's walk starts at: an unfinished walk's own
+        resume day, else its cursor less the overlap, else the backfill."""
+        held = _parse((props.get("syncFloors") or {}).get(key))
+        if held is not None:
+            return held.date()
+        seen = _parse((props.get("syncCursors") or {}).get(key))
+        if seen is not None:
+            return (seen - _dt.timedelta(days=OVERLAP_DAYS)).date()
+        depth = props.get("backfillDepth") or "last30d"
+        return (now - _dt.timedelta(days=BACKFILL_DAYS.get(depth, 30))).date()
+
+
+    # ---------------------------------------------------------------- record ids
+    # Readable ids composed from Google's own: `<account>/<data source id>` for
+    # a source, `<account>/<data source id>/<UTC day>` for a dataset and
+    # `<account>/<session id>` for a session. The account leads because a
+    # derived stream's id is the same for every Google user. A segment outside
+    # the id alphabet (a space in a device model, `<` in a derived name) is
+    # hashed through host.ids.external, and so is a whole id past 128 bytes.
+
+    def _segment(host, aid, upstream, room):
+        s = str(upstream)
+        if _SEGMENT.match(s) and len(s) <= room:
+            return s
+        return host.ids.external(ID_PROVIDER, aid, s)
+
+
+    def _source_rid(host, aid, sid):
+        # Room for the "/YYYY-MM-DD" a dataset id appends.
+        rid = aid + "/" + _segment(host, aid, sid, MAX_ID - len(aid) - 12)
+        if len(rid) + 11 > MAX_ID:
+            return host.ids.external(ID_PROVIDER, aid, "datasource/" + sid)
+        return rid
+
+
+    def _dataset_rid(host, aid, sid, day):
+        rid = _source_rid(host, aid, sid) + "/" + day
+        if len(rid) > MAX_ID:
+            return host.ids.external(ID_PROVIDER, aid,
+                                     "dataset/" + sid + "/" + day)
+        return rid
+
+
+    def _session_rid(host, aid, session_id):
+        rid = aid + "/" + _segment(host, aid, session_id, MAX_ID - len(aid) - 1)
+        if len(rid) > MAX_ID:
+            return host.ids.external(ID_PROVIDER, aid, "session/" + session_id)
+        return rid
+
+
+    # ------------------------------------------------------ property shapes
+
+    def _str(value):
+        """A string field, or None; an explicit empty string is a clear."""
+        if value is None:
+            return None
+        s = str(value)
+        return s if s != "" else None
+
+
+    def _mint(props):
+        return {k: v for k, v in props.items() if v is not None}
+
+
+    def _obj(src, names):
+        if not isinstance(src, dict):
+            return None
+        out = {}
+        for n in names:
+            v = _str(src.get(n))
+            if v is not None:
+                out[n] = v
+        return out or None
+
+
+    def _application(src):
+        return _obj(src, ("packageName", "version", "detailsUrl", "name"))
+
+
+    def _data_type(src):
+        if not isinstance(src, dict):
+            return None
+        out = {}
+        if _str(src.get("name")):
+            out["name"] = str(src["name"])
+        fields = []
+        for f in src.get("field") or []:
+            if not isinstance(f, dict):
+                continue
+            entry = {}
+            if _str(f.get("name")):
+                entry["name"] = str(f["name"])
+            fmt = FIELD_FORMATS.get(str(f.get("format") or ""))
+            if fmt:
+                entry["format"] = fmt
+            if isinstance(f.get("optional"), bool):
+                entry["optional"] = f["optional"]
+            fields.append(entry)
+        if fields:
+            out["field"] = fields
+        return out or None
+
+
+    def _device(src):
+        if not isinstance(src, dict):
+            return None
+        out = _obj(src, ("uid", "version", "model", "manufacturer")) or {}
+        kind = DEVICE_TYPES.get(str(src.get("type") or ""))
+        if kind:
+            out["type"] = kind
+        return out or None
+
+
+    def _value(v):
+        """One positional value entry. Positions carry meaning (the third entry
+        of a blood pressure point is the body position), so an entry with
+        nothing set is kept as an empty object."""
+        out = {}
+        if not isinstance(v, dict):
+            return out
+        iv = v.get("intVal")
+        if isinstance(iv, int) and not isinstance(iv, bool):
+            out["intVal"] = iv
+        fv = v.get("fpVal")
+        if isinstance(fv, (int, float)) and not isinstance(fv, bool):
+            out["fpVal"] = float(fv)
+        if v.get("stringVal") is not None:
+            out["stringVal"] = str(v["stringVal"])
+        entries = []
+        for m in v.get("mapVal") or []:
+            if not isinstance(m, dict) or m.get("key") is None:
+                continue
+            num = (m.get("value") or {}).get("fpVal")
+            entry = {"key": str(m["key"])}
+            if isinstance(num, (int, float)) and not isinstance(num, bool):
+                entry["fpVal"] = float(num)
+            entries.append(entry)
+        if entries:
+            out["mapVal"] = entries
+        return out
+
+
+    def _point(p):
+        out = {}
+        for name in POINT_STRINGS:
+            v = _str(p.get(name))
+            if v is not None:
+                out[name] = v
+        out["value"] = [_value(v) for v in (p.get("value") or [])]
+        return out
+
+
+    def _point_start(p):
+        return _int(p.get("startTimeNanos"))
+
+
+    def _point_order(p):
+        return (_int(p.get("endTimeNanos")) or 0, _int(p.get("startTimeNanos")) or 0)
+
+
+    class _Sink:
+        """Stages one invocation's rows and counts their bytes."""
+
+        def __init__(self, host, aid, budget):
+            self.host = host
+            self.aid = aid
+            self.budget = budget
+
+        def _count(self, props):
+            self.budget.bytes += len(_json.dumps(props, separators=(",", ":")))
+
+        def mirror(self, kind, rid, props):
+            """Mint then patch: the put never clobbers a fuller row and the
+            patch writes every declared field, so an omission is a clear."""
+            self.host.effects.put(kind, rid, properties=_mint(props), if_absent=True)
+            self.host.effects.patch(kind, rid, properties=props)
+            self._count(props)
+            return rid
+
+        def exists(self, kind, rid):
+            """A live row, not a tombstone: a read answers deleted rows too."""
+            self.budget.reads += 1
+            rec = self.host.records.get(kind, rid)
+            return rec is not None and not rec.get("deletedAt")
+
+        def datasource(self, ds):
+            sid = _str(ds.get("dataStreamId"))
+            if sid is None:
+                raise ValueError("data source carries no dataStreamId")
+            raw_dq = ds.get("dataQualityStandard")
+            props = {
+                "account": self.aid,
+                "dataStreamId": sid,
+                "dataStreamName": _str(ds.get("dataStreamName")),
+                "type": SOURCE_TYPES.get(str(ds.get("type") or "")),
+                "dataType": _data_type(ds.get("dataType")),
+                "application": _application(ds.get("application")),
+                "device": _device(ds.get("device")),
+                "dataQualityStandard": [str(x) for x in raw_dq] if raw_dq else None,
+                "name": _str(ds.get("name")),
+            }
+            return self.mirror(DATASOURCE_KIND, _source_rid(self.host, self.aid, sid),
+                               props)
+
+        def dataset(self, sid, day, points):
+            """One UTC day: a put of the whole row, which is a no-op when nothing
+            changed, or a delete when the day came back empty and a row exists."""
+            rid = _dataset_rid(self.host, self.aid, sid, day.isoformat())
+            if not points:
+                if self.exists(DATASET_KIND, rid):
+                    self.host.effects.delete(DATASET_KIND, rid)
+                    return "deleted"
+                return "empty"
+            start = _day_start(day)
+            props = {
+                "account": self.aid,
+                "dataSource": _source_rid(self.host, self.aid, sid),
+                "dataSourceId": sid,
+                "at": _iso(start),
+                "endsAt": _iso(start + _dt.timedelta(days=1)),
+                "point": points,
+            }
+            self.host.effects.put(DATASET_KIND, rid, properties=props)
+            self._count(props)
+            return "written"
+
+        def session(self, s):
+            session_id = _str(s.get("id"))
+            if session_id is None:
+                raise ValueError("session carries no id")
+            at = _millis_iso(s.get("startTimeMillis"))
+            if at is None:
+                raise ValueError("session %s carries no startTimeMillis" % session_id)
+            props = {
+                "account": self.aid,
+                "sessionId": session_id,
+                "at": at,
+                "endsAt": _millis_iso(s.get("endTimeMillis")),
+                "name": _str(s.get("name")),
+                "description": _str(s.get("description")),
+                "activityType": _int(s.get("activityType")),
+                "application": _application(s.get("application")),
+                "activeTimeMillis": _int(s.get("activeTimeMillis")),
+                "modifiedTimeMillis": _int(s.get("modifiedTimeMillis")),
+            }
+            return self.mirror(SESSION_KIND,
+                               _session_rid(self.host, self.aid, session_id), props)
+
+        def session_gone(self, s):
+            session_id = _str(s.get("id"))
+            if session_id is None:
+                return False
+            rid = _session_rid(self.host, self.aid, session_id)
+            if self.exists(SESSION_KIND, rid):
+                self.host.effects.delete(SESSION_KIND, rid)
+                return True
+            return False
+
+
+    # ---------------------------------------------------------------- reading
+
+    def _read_day(base, token, sid, day):
+        """Every point that STARTED on one UTC day, pages joined and sorted by
+        end time. Google answers points that overlap the range, so a point that
+        began the day before is dropped here and kept by that day's row."""
+        start = _ns(_day_start(day))
+        end = start + 86400 * 1000000000
+        path = "/users/me/dataSources/%s/datasets/%d-%d" % (
+            _quote(sid, safe=":._-~"), start, end)
+        pages, token_seen, page_token = [], set(), ""
+        while True:
+            params = {"limit": PAGE_LIMIT}
+            if page_token:
+                params["pageToken"] = page_token
+            resp = _get(base, token, path, params)
+            pages.append(resp.get("point") or [])
+            if sum(len(p) for p in pages) > MAX_DAY_POINTS:
+                raise ValueError("more than %d points on %s" % (MAX_DAY_POINTS, day))
+            page_token = str(resp.get("nextPageToken") or "")
+            if not page_token or page_token in token_seen:
+                break
+            token_seen.add(page_token)
+        joined = []
+        for page in reversed(pages):
+            for p in page:
+                if not isinstance(p, dict):
+                    continue
+                at = _point_start(p)
+                if at is None or at < start or at >= end:
+                    continue
+                joined.append(_point(p))
+        joined.sort(key=_point_order)
+        return joined
+
+
+    # ------------------------------------------------------------- the checkpoint
+
+    def _fresh(queue, dispatch, chain=""):
+        return {"queue": queue, "dispatch": dispatch, "chainStart": chain or _now(),
+                "startedAt": _now(), "types": None}
+
+
+    def _api_base(cfg):
+        client = ((cfg.get("inputs") or {}).get("client") or {})
+        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
+        return (base or DEFAULT_API_BASE).rstrip("/")
+
+
+    def _elapsed_ms(started, ended):
+        a, b = _parse(started), _parse(ended)
+        if a is None or b is None:
+            return None
+        return max(int((b - a).total_seconds() * 1000), 0)
+
+
+    def _pending(cur):
+        left = list(cur.get("types") or [])
+        if cur.get("sessions") in ("window", "feed"):
+            left.append("sessions")
+        return left
+
+
+    def _progress(cur):
+        left = _pending(cur)
+        drained = [k for k, _ in (cur.get("drained") or [])]
+        if cur.get("sessionsDone"):
+            drained.append("sessions")
+        failed = [k for k, _ in (cur.get("failed") or [])]
+        total = len(set(drained) | set(left) | set(failed))
+        if cur.get("sources") is None:
+            phase = "sources"
+        elif left:
+            phase = left[0]
+        else:
+            phase = "done"
+        return {"phase": phase, "done": len(drained), "total": total,
+                "pending": len(left)}
+
+
+    def _stamp(host, acct, aid, cur, error=None, completed=False):
+        """Every connector property in one patch, on every path out of a run."""
+        props = acct.get("properties") or {}
+        patch = {"lastSyncedAt": _now()}
+        left = _pending(cur)
+        if error is not None:
+            patch["syncStatus"] = ("erroring: " + str(error))[:REASON_MAX + 20]
+        else:
+            notes = []
+            if left:
+                notes.append("%d pending" % len(left))
+            if cur.get("skipped"):
+                notes.append("%d skipped" % cur["skipped"])
+            if cur.get("failed"):
+                notes.append("failed: " + ", ".join(
+                    "%s (%s)" % (k, why) for k, why in cur["failed"][:3]))
+            patch["syncStatus"] = ("ok" if not notes
+                                   else "ok (" + "; ".join(notes) + ")")[:400]
+            if completed and not left and not cur.get("failed") \
+                    and not cur.get("skipped"):
+                patch["lastCompletedAt"] = patch["lastSyncedAt"]
+        cursors = dict(props.get("syncCursors") or {})
+        for key, at in (cur.get("drained") or []):
+            cursors[key] = at
+        if cursors:
+            patch["syncCursors"] = cursors
+        # An unfinished type keeps the day it got to, so the next run resumes
+        # there rather than recomputing a floor off a clock that moved.
+        floors = dict(props.get("syncFloors") or {})
+        for key, _ in (cur.get("drained") or []):
+            floors.pop(key, None)
+        for key in (cur.get("types") or []):
+            day = (cur.get("at") or {}).get(key)
+            if day:
+                floors[key] = day + "T00:00:00Z"
+        patch["syncFloors"] = floors or None
+        if cur.get("sessionToken"):
+            tokens = dict(props.get("syncTokens") or {})
+            tokens["sessions"] = cur["sessionToken"]
+            patch["syncTokens"] = tokens
+        if cur.get("retryAt"):
+            patch["retryNotBefore"] = cur["retryAt"]
+        if cur.get("requested"):
+            patch["syncRequestedAck"] = cur["requested"]
+        if cur.get("retryAt"):
+            state = "throttled"
+            message = str(error or "rate limited by Google")
+        elif error is not None:
+            state, message = "erroring", str(error)
+        else:
+            state, message = "ok", patch["syncStatus"]
+        patch.update({"syncState": state, "syncMessage": message[:400],
+                      "syncProgress": _progress(cur)})
+        if state == "erroring":
+            patch["syncError"] = message[:400]
+            patch["syncErrorAt"] = _now()
+        # The dispatcher stamps start and duration around a record-sourced
+        # delivery only; a scheduled fire names no record.
+        if cur.get("dispatch") == "schedule" and cur.get("startedAt"):
+            patch["lastSyncStartedAt"] = cur["startedAt"]
+            took = _elapsed_ms(cur["startedAt"], patch["lastSyncedAt"])
+            if took is not None:
+                patch["lastSyncDurationMs"] = took
+        host.effects.patch(acct.get("kind") or ACCOUNT_KIND, aid, properties=patch)
+
+
+    def _note_failed(cur, key, why):
+        cur["failed"] = list(cur.get("failed") or []) + [[key, str(why)[:60]]]
+
+
+    def _pin(cur, props, queue):
+        """The account just reached the head of the queue: pin what this run
+        walks, so every invocation of the chain walks the same thing."""
+        now = _now_dt()
+        types = _enabled(props)
+        sessions = "skip"
+        token = str((props.get("syncTokens") or {}).get("sessions") or "")
+        floor = None
+        if any(props.get(t) for t in SESSION_TOGGLES):
+            if token:
+                sessions = "feed"
+            else:
+                days = BACKFILL_DAYS.get(props.get("backfillDepth") or "last30d", 30)
+                floor = _iso(_day_start((now - _dt.timedelta(days=days)).date()))
+                sessions = "window" if days > SESSION_FEED_DAYS else "feed"
+        cur.update({
+            "queue": queue,
+            "types": [key for _, key in types],
+            "typeNames": {key: name for name, key in types},
+            "at": {key: _first_day(props, key, now).isoformat() for _, key in types},
+            "until": now.date().isoformat(),
+            "runStart": _iso(now),
+            "requested": str(props.get("syncRequestedAt") or ""),
+            "sources": None,
+            "sessions": sessions,
+            "sessionToken": token,
+            "sessionFloor": floor,
+            "sessionPages": 0,
+            "sessionsDone": False,
+            "drained": [], "failed": [], "skipped": 0,
+            "written": 0, "deleted": 0, "retryAt": "",
+        })
+
+
+    def _stop(host, acct, aid, cur):
+        """The chain budget is spent: save the walk and end the chain. The next
+        run resumes from `syncFloors`."""
+        _stamp(host, acct, aid, cur, error=None, completed=False)
+        return {"output": {"account": aid, "stopped": True,
+                           "pending": _pending(cur)}}
+
+
+    def _sync_account(host, base, acct, aid, props, token, cur, queue):
+        if cur.get("types") is None:
+            _pin(cur, props, queue)
+        budget = _Budget(cur)
+        sink = _Sink(host, aid, budget)
+
+        # -- 1. the data source list, every run --------------------------------
+        if cur.get("sources") is None:
+            listing = _get(base, token, "/users/me/dataSources")
+            wanted = {name: key for key, name in (cur.get("typeNames") or {}).items()}
+            by_type = {key: [] for key in cur["types"]}
+            for ds in listing.get("dataSource") or []:
+                try:
+                    sink.datasource(ds)
+                except Exception as e:                              # noqa: BLE001
+                    cur["skipped"] = int(cur.get("skipped") or 0) + 1
+                    host.log("googlefit: skip a data source for %s: %s" % (aid, e))
+                    continue
+                name = str(((ds.get("dataType") or {}).get("name")) or "")
+                if ds.get("type") == "derived" and name in wanted:
+                    by_type[wanted[name]].append(str(ds["dataStreamId"]))
+            cur["sources"] = by_type
+
+        # -- 2. each enabled type, one UTC day at a time -----------------------
+        until = _day(cur["until"])
+        while cur["types"]:
+            key = cur["types"][0]
+            day = _day(cur["at"][key])
+            if day is None or day > until:
+                cur["drained"] = list(cur.get("drained") or []) + \
+                    [[key, cur["runStart"]]]
+                cur["types"] = cur["types"][1:]
+                continue
+            if _chain_left(cur) <= 0:
+                return _stop(host, acct, aid, cur)
+            if budget.spent():
+                return {"more": host.page.more(cur)}
+            try:
+                for sid in list(cur["sources"].get(key) or []):
+                    try:
+                        points = _read_day(base, token, sid, day)
+                    except _NotFound as e:
+                        host.log("googlefit: %s %s is gone: %s" % (aid, sid, e))
+                        _note_failed(cur, key, "%s not found" % sid)
+                        cur["sources"][key].remove(sid)
+                        continue
+                    except ValueError as e:
+                        cur["skipped"] = int(cur.get("skipped") or 0) + 1
+                        host.log("googlefit: skip %s on %s: %s" % (sid, day, e))
+                        continue
+                    outcome = sink.dataset(sid, day, points)
+                    if outcome == "written":
+                        cur["written"] = int(cur.get("written") or 0) + 1
+                    elif outcome == "deleted":
+                        cur["deleted"] = int(cur.get("deleted") or 0) + 1
+            except _Permanent as e:
+                # Recorded once and the type abandoned for this run with no
+                # cursor and no saved day, so a missing scope does not make the
+                # account due on every tick; the next run starts it again.
+                host.log("googlefit: %s %s failed on %s: %s" % (aid, key, day, e))
+                _note_failed(cur, key, e)
+                cur["types"] = cur["types"][1:]
+                continue
+            cur["at"][key] = (day + _dt.timedelta(days=1)).isoformat()
+
+        # -- 3. sessions -------------------------------------------------------
+        if cur.get("sessions") == "window":
+            if _chain_left(cur) <= 0:
+                return _stop(host, acct, aid, cur)
+            if budget.spent():
+                return {"more": host.page.more(cur)}
+            try:
+                resp = _get(base, token, "/users/me/sessions", {
+                    "startTime": cur["sessionFloor"], "endTime": cur["runStart"]})
+                for s in resp.get("session") or []:
+                    try:
+                        sink.session(s)
+                    except Exception as e:                          # noqa: BLE001
+                        cur["skipped"] = int(cur.get("skipped") or 0) + 1
+                        host.log("googlefit: skip a session for %s: %s" % (aid, e))
+                cur["sessions"] = "feed"
+            except _Permanent as e:
+                _note_failed(cur, "sessions", e)
+                cur["sessions"] = "skip"
+        while cur.get("sessions") == "feed":
+            if _chain_left(cur) <= 0:
+                return _stop(host, acct, aid, cur)
+            if budget.spent():
+                return {"more": host.page.more(cur)}
+            sent = cur.get("sessionToken") or ""
+            params = {"includeDeleted": "true"}
+            if sent:
+                params["pageToken"] = sent
+            try:
+                resp = _get(base, token, "/users/me/sessions", params)
+            except _Permanent as e:
+                _note_failed(cur, "sessions", e)
+                cur["sessions"] = "skip"
+                break
+            floor = _parse(cur.get("sessionFloor"))
+            got = resp.get("session") or []
+            gone = resp.get("deletedSession") or []
+            for s in got:
+                end = _parse(_millis_iso(s.get("endTimeMillis")))
+                if floor is not None and end is not None and end < floor:
+                    continue
+                try:
+                    sink.session(s)
+                except Exception as e:                              # noqa: BLE001
+                    cur["skipped"] = int(cur.get("skipped") or 0) + 1
+                    host.log("googlefit: skip a session for %s: %s" % (aid, e))
+            for s in gone:
+                if sink.session_gone(s):
+                    cur["deleted"] = int(cur.get("deleted") or 0) + 1
+            nxt = str(resp.get("nextPageToken") or "")
+            cur["sessionPages"] = int(cur.get("sessionPages") or 0) + 1
+            if nxt:
+                cur["sessionToken"] = nxt
+            # Google's token never runs out: a page with nothing on it is the
+            # end of what changed, and its token is where the next run starts.
+            if (not got and not gone) or not nxt or nxt == sent \
+                    or cur["sessionPages"] >= MAX_SESSION_PAGES:
+                cur["sessions"] = "done"
+                cur["sessionsDone"] = True
+
+        _stamp(host, acct, aid, cur, error=None, completed=True)
+        rest = queue[1:]
+        if rest:
+            return {"more": host.page.more(_fresh(rest, cur.get("dispatch"),
+                                                  cur.get("chainStart")))}
+        return {"output": {"account": aid, "written": cur.get("written") or 0,
+                           "deleted": cur.get("deleted") or 0,
+                           "skipped": cur.get("skipped") or 0}}
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        base = _api_base(cfg)
+        _check_origin(base)
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        args = input.get("args")
+        if not isinstance(args, dict):
+            args = {}
+        cur = host.page.resume() or None
+        if cur is None:
+            record = (input.get("envelope") or {}).get("record") or {}
+            named = args.get("accounts") or (
+                [args["account"]] if args.get("account") else [])
+            if (record.get("kind") or "") == ACCOUNT_KIND:
+                queue = [record.get("id")]
+            elif named:
+                queue = [str(a) for a in named]
+            elif args.get("force"):
+                queue = [aid for aid, a in accounts.items() if _wants(a)]
+            else:
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+            cur = _fresh(queue, "record" if record.get("kind") else "schedule")
+
+        queue = list(cur.get("queue") or [])
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is None or not _wants(acct):
+                queue = queue[1:]
+                cur = _fresh(queue, cur.get("dispatch"), cur.get("chainStart"))
+                continue
+            props = acct.get("properties") or {}
+            if _held(props):
+                host.log("googlefit: %s is held until %s (429)"
+                         % (queue[0], props.get("retryNotBefore")))
+                queue = queue[1:]
+                cur = _fresh(queue, cur.get("dispatch"), cur.get("chainStart"))
+                continue
+            terr = acct.get("tokenError")
+            if terr or not acct.get("token"):
+                if terr:
+                    host.log("googlefit: skip %s: %s" % (queue[0], terr))
+                    want = ("erroring: " + str(terr))[:REASON_MAX]
+                    if (props.get("syncStatus") or "") != want:
+                        host.effects.patch(
+                            acct.get("kind") or ACCOUNT_KIND, queue[0],
+                            properties={"syncStatus": want,
+                                        "syncState": "erroring",
+                                        "syncMessage": str(terr)[:400],
+                                        "syncError": str(terr)[:400],
+                                        "syncErrorAt": _now()})
+                queue = queue[1:]
+                cur = _fresh(queue, cur.get("dispatch"), cur.get("chainStart"))
+                continue
+            break
+        if not queue:
+            return {"output": {"synced": 0, "accounts": sorted(accounts),
+                               "asked": list(cur.get("queue") or [])}}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        props = acct.get("properties") or {}
+        cur["queue"] = queue
+        try:
+            return _sync_account(host, base, acct, aid, props, acct["token"], cur,
+                                 queue)
+        except _RateLimited as e:
+            cur["retryAt"] = e.retry_at
+            _stamp(host, acct, aid, cur, error=_err_msg(e))
+            return {"output": {"account": aid, "error": _err_msg(e)}}
+        except Exception as e:                                      # noqa: BLE001
+            msg = _err_msg(e)
+            host.log("googlefit: account %s failed: %s" % (aid, msg))
+            _stamp(host, acct, aid, cur, error=msg)
+            return {"output": {"account": aid, "error": msg}}

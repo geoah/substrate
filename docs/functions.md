@@ -324,7 +324,7 @@ are byte-exact, so a body verifies a provider's signature (GitHub's
 `X-Hub-Signature-256` over the raw JSON) by re-encoding the text and hashing
 it against a secret it reads from its bundle's configuration. The host stores
 a part in the blob store when it declares a filename or a media type outside
-`text/*`, and hands every other part inline as `value`. A body under 1 MiB
+`text/*`, and hands every other part inline as `value`. A body up to 8 MiB
 rides inline; a multipart request may total 32 MiB. An authenticated wake
 (`POST …/trigger/{id}/wake`) carries no `request`.
 
@@ -627,6 +627,7 @@ The whole surface:
 host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
+host.records.aggregate(body)                      # the aggregate read's result
 host.functions.call(function, input=None)         # permissions.call gated
 host.agents.call(agent, input)                    # permissions.agents gated
 host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>,
@@ -640,6 +641,13 @@ host.ids.external(provider, account, external_id)
 host.ids.url(url)
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
+host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str
+host.units.canonical(code)                        # "bpm" -> "{beats}/min"
+host.units.measure(code)                          # "kg" -> "mass"
+host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
+                    hold=None, about=None, channel=None, reset_rule=None)
+host.observed.local_day(at, utc_offset_minutes)   # "2026-10-07"
+host.observed.period_id(at, period)               # "2026-10-07T06"
 host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
@@ -686,6 +694,27 @@ page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"
                          where={"at": {"gte": "2026-09-24T00:00:00Z",
                                        "lt": "2026-09-25T00:00:00Z"}})
 # page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
+```
+
+`host.records.aggregate(body)` is the records route's
+[aggregate read](api.md#the-aggregate-read), its parameters as one document:
+`{"filter": ..., "aggregate": ..., "downsample": ...}`. `filter.kinds` names
+the observed kinds it reads (and `aggregate.bucket.records.filter.kinds` the
+records mode's), each held to the reads allowlist; a body that names none
+trips the allowlist. It answers the result dict, and pays one call and its
+rows against the read budget.
+
+```python
+res = host.records.aggregate({
+    "filter": {"kinds": ["ada.example.com/observations/trace"]},
+    "aggregate": {
+        "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+        "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+        "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
+        "reducers": [{"percentile": 0.05}, "min"],
+    },
+})
+# res["rows"]: [{"start": "2026-09-01T00:00:00+03:00", "values": [...], ...}, ...]
 ```
 
 **Reads are scoped and budgeted.** Reads see committed state, never this
@@ -746,6 +775,48 @@ to the runner boundary by the same scrubber. The key is absent when the bundle
 ships no settings, and one setting's own key is absent when nobody has written
 its value at all, so a body that needs one refuses in its own words
 ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
+
+**Units come from the engine's table.** `host.units.convert`,
+`canonical` and `measure` are host calls answered by the same unit table
+the write path holds a quantity to ([units](units.md)); there is no Python
+copy of it. They read nothing from the repository, so no grant gates them
+and no budget is charged. `convert` takes the value as digits (a `str`, an
+`int` or a `Decimal`; a `float` is written as its shortest repr), reads
+aliases on both units (`°C`, `kWh`, `mmHg`) and answers a decimal `str`:
+every digit when the result has a finite decimal expansion (72.4 kg is
+159.61467782185136844 lb, rounded, but 37 Cel is exactly 98.6 [degF]), else
+20 significant digits. Without `measure` the units are read as `MeasureOf`
+reads them, so Cel to [degF] is an absolute temperature;
+`measure="temperature-difference"` converts a deviation without the offset.
+A conversion across measures (`kg` to `J`) raises a `HostError` carrying the
+engine's refusal.
+
+**`host.observed` builds observed values in the body.** It is pure Python and
+writes nothing; [observations](observations.md) has the rules its output
+meets. `trace(points, ...)` packs `[(at, value)]` or `[(at, code)]`,
+each `at` a timezone-aware `datetime` and a value `None` where the source had
+nothing, into the property maps a trace kind (one binding core's
+`observed(packed)`) admits: one map per fixed UTC period (`period`, aligned to
+the epoch, so `PT1H` is the UTC hour), split where the points' UTC offset
+changes so each map has one offset, with `every` where the points are
+regularly spaced from the period's start and `offsets` in milliseconds
+otherwise. Ids are the caller's: compose each from
+`period_id(doc["at"], period)`, which writes `at` in UTC at the period's
+resolution (`2026-10-07T06` for `PT1H`) and adds the finer fields a split
+part's later start needs (`2026-10-07T06:40`). `local_day(at, offset)` is the
+civil date at that offset, the day a daily summary belongs to.
+
+```python
+docs = host.observed.trace(
+    [(sample_time, sample["bpm"]) for sample in samples],
+    metric={"ref": home + "/observations/metric/health/heart_rate"},
+    source={"ref": home + "/observations/source/garmin-forerunner-265"},
+    unit="/min", form="gauge", hold="PT4M")
+for doc in docs:
+    period = host.observed.period_id(datetime.fromisoformat(doc["at"]), "PT1H")
+    host.effects.put(home + "/observations/trace",
+                     "garmin/%s/heart_rate/%s" % (account_id, period), doc)
+```
 
 **Two ceilings.** `host.log(msg)` and `print` write a line to the server log
 the moment the body writes it, as `substrate: function log` with the function,

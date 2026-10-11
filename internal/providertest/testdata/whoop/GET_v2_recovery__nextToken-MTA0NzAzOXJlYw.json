@@ -1,0 +1,84 @@
+{
+ "records": [
+  {
+   "cycle_id": 1046225,
+   "sleep_id": "ced66b44-7f45-4096-9380-1b73c446ab8c",
+   "user_id": 4021873,
+   "created_at": "2026-09-15T03:37:37.265Z",
+   "updated_at": "2026-09-15T06:25:47.944Z",
+   "score_state": "SCORED",
+   "score": {
+    "user_calibrating": false,
+    "recovery_score": 57.0,
+    "resting_heart_rate": 51.0,
+    "hrv_rmssd_milli": 51.967268,
+    "spo2_percentage": 96.375,
+    "skin_temp_celsius": 33.9
+   }
+  },
+  {
+   "cycle_id": 1046181,
+   "sleep_id": "7a98b9ac-b2c5-4523-807c-7e30a598d0db",
+   "user_id": 4021873,
+   "created_at": "2026-09-14T03:26:22.943Z",
+   "updated_at": "2026-09-14T05:42:02.266Z",
+   "score_state": "SCORED",
+   "score": {
+    "user_calibrating": false,
+    "recovery_score": 72.0,
+    "resting_heart_rate": 52.0,
+    "hrv_rmssd_milli": 61.066656,
+    "spo2_percentage": 96.1875,
+    "skin_temp_celsius": 34.0
+   }
+  },
+  {
+   "cycle_id": 1046126,
+   "sleep_id": "85f184e0-b464-4554-b675-299b0c83e786",
+   "user_id": 4021873,
+   "created_at": "2026-09-13T04:43:32.573Z",
+   "updated_at": "2026-09-13T06:58:38.685Z",
+   "score_state": "SCORED",
+   "score": {
+    "user_calibrating": false,
+    "recovery_score": 70.0,
+    "resting_heart_rate": 53.0,
+    "hrv_rmssd_milli": 58.048149,
+    "spo2_percentage": 95.3125,
+    "skin_temp_celsius": 34.1
+   }
+  },
+  {
+   "cycle_id": 1046085,
+   "sleep_id": "66160227-1737-4472-ac16-72297608d942",
+   "user_id": 4021873,
+   "created_at": "2026-09-12T05:00:21.530Z",
+   "updated_at": "2026-09-12T05:54:37.589Z",
+   "score_state": "SCORED",
+   "score": {
+    "user_calibrating": false,
+    "recovery_score": 85.0,
+    "resting_heart_rate": 52.0,
+    "hrv_rmssd_milli": 70.528999,
+    "spo2_percentage": 97.0,
+    "skin_temp_celsius": 33.5
+   }
+  },
+  {
+   "cycle_id": 1046023,
+   "sleep_id": "fadb8908-5900-4ac9-8063-29bc65b00a2d",
+   "user_id": 4021873,
+   "created_at": "2026-09-11T03:49:41.733Z",
+   "updated_at": "2026-09-11T05:51:32.025Z",
+   "score_state": "SCORED",
+   "score": {
+    "user_calibrating": false,
+    "recovery_score": 65.0,
+    "resting_heart_rate": 49.0,
+    "hrv_rmssd_milli": 56.168845,
+    "spo2_percentage": 96.3125,
+    "skin_temp_celsius": 33.4
+   }
+  }
+ ]
+}
