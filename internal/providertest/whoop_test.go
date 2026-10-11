@@ -50,7 +50,6 @@ const (
 	whoopWorkoutType  = whoopPackage + "/workout"
 	whoopSyncFn       = whoopPackage + "/whoopsync"
 	whoopWebhookFn    = whoopPackage + "/whoopwebhook"
-	whoopSecretRecord = whoopPackage + "/webhooksecret"
 	whoopFixtures     = "testdata/whoop"
 	whoopAccount      = "acct-whoop"
 	whoopMember       = "4021873"
@@ -219,10 +218,11 @@ func whoopSteady(cursors map[string]string) map[string]any {
 	return whoopProps(map[string]any{"syncCursors": c})
 }
 
-// whoopConfig is the injected config: the one account with a live token, the
-// API base at the fake, and the webhook secret when one is given.
-func whoopConfig(fake *fakeWhoop, props map[string]any, secret string) map[string]any {
-	cfg := map[string]any{
+// whoopConfig is the injected config: the one account with a live token and
+// the API base at the fake. It carries no client secret and no settings,
+// because the engine hands a WHOOP function neither.
+func whoopConfig(fake *fakeWhoop, props map[string]any) map[string]any {
+	return map[string]any{
 		"accounts": []any{map[string]any{
 			"id": whoopAccount, "kind": whoopAccountType, "properties": props, "token": fakeToken,
 		}},
@@ -230,17 +230,13 @@ func whoopConfig(fake *fakeWhoop, props map[string]any, secret string) map[strin
 			"properties": map[string]any{"apiBase": fake.ts.URL},
 		}},
 	}
-	if secret != "" {
-		cfg["settings"] = map[string]any{"webhooksecret": secret}
-	}
-	return cfg
 }
 
 // whoopSync runs one record-triggered sync of the account to completion,
 // applying each page the way the dispatcher does, and returns its effects.
 func whoopSync(t *testing.T, ds substrate.Dataset, fake *fakeWhoop, props map[string]any) []engine.StepEffect {
 	t.Helper()
-	s := newStepper(t, ds, whoopSyncFn, whoopConfig(fake, props, ""))
+	s := newStepper(t, ds, whoopSyncFn, whoopConfig(fake, props))
 	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountType, "id": whoopAccount}})
 	return s.drainApplying(nil)
 }
@@ -411,21 +407,21 @@ func mustHook(t *testing.T, ds substrate.Dataset, cfg, env map[string]any) (map[
 // whoopHookConfig is the webhook's injected config off the STORED account,
 // whose `user` reference the first sync wrote: that reference is how the
 // body finds the account a delivery is for.
-func whoopHookConfig(t *testing.T, ds substrate.Dataset, fake *fakeWhoop, secret string) map[string]any {
+func whoopHookConfig(t *testing.T, ds substrate.Dataset, fake *fakeWhoop) map[string]any {
 	t.Helper()
 	row := mustGet(t, ds, whoopAccountType, whoopAccount)
 	if refIDs(row, "user") == nil {
 		t.Fatal("the account names no WHOOP member; the first sync did not stamp account.user")
 	}
-	return whoopConfig(fake, row.Properties, secret)
+	return whoopConfig(fake, row.Properties)
 }
 
 // --- the tests --------------------------------------------------------------------
 
-// TestWhoopWebhookFixturesAreSignedAsWhoopDocuments pins the scheme the body
-// implements to the recorded deliveries: every one verifies under the fixture
-// secret over the timestamp header plus the body, except 08, which another
-// secret signed.
+// TestWhoopWebhookFixturesAreSignedAsWhoopDocuments pins the scheme the
+// `whoop-webhook` trigger declares to the recorded deliveries: every one
+// verifies under the fixture secret over the timestamp header plus the body,
+// except 08, which another secret signed.
 func TestWhoopWebhookFixturesAreSignedAsWhoopDocuments(t *testing.T) {
 	t.Parallel()
 	secret := whoopSecret(t)
@@ -447,57 +443,31 @@ func TestWhoopWebhookFixturesAreSignedAsWhoopDocuments(t *testing.T) {
 	}
 }
 
-// TestWhoopWebhookRefusesWhatItCannotVerify: a wrong signature, a stale one,
-// an empty secret setting, missing headers and an altered body are each
-// refused before the body reads or writes anything, and the same delivery
-// arriving on time with the secret set is acted on, which is what says each
-// refusal was the check's.
-func TestWhoopWebhookRefusesWhatItCannotVerify(t *testing.T) {
+// TestWhoopWebhookLeavesTheSignatureToTheDoor: the body no longer verifies.
+// A delivery stripped of its signature headers, arriving an hour after it was
+// signed, under a config holding no secret, is acted on, because the door
+// checked the signature before the fire. The body refuses only a request it
+// cannot read as an event.
+func TestWhoopWebhookLeavesTheSignatureToTheDoor(t *testing.T) {
 	_, ds, fake := newWhoop(t)
-	secret := whoopSecret(t)
 	// No sync ran: the account's `user` is handed in directly.
 	props := whoopProps(map[string]any{"user": map[string]any{"ref": whoopUserType + "/" + whoopRow("user", whoopMember)}})
-	cfg := whoopConfig(fake, props, secret)
+	cfg := whoopConfig(fake, props)
+
+	garbled := whoopDelivery(t, "01_sleep.updated.json")
+	garbled["body"] = map[string]any{"text": "not json"}
+	if _, _, err := whoopHook(t, ds, cfg, whoopArrived(garbled, time.Now())); err == nil || !strings.Contains(err.Error(), "not JSON") {
+		t.Fatalf("a body that is not an event: err = %v, want the JSON refusal", err)
+	}
 
 	stripped := whoopDelivery(t, "01_sleep.updated.json")
 	stripped["headers"] = map[string]any{"content-type": "application/json; charset=utf-8"}
-	altered := whoopDelivery(t, "01_sleep.updated.json")
-	body, _ := altered["body"].(map[string]any)
-	body["text"] = strings.Replace(body["text"].(string), whoopLastSleep, whoopDeletedNap, 1)
-	late := whoopDelivery(t, "01_sleep.updated.json")
-
-	for _, tc := range []struct {
-		name string
-		cfg  map[string]any
-		env  map[string]any
-		want string
-	}{
-		{"another secret signed it", cfg, whoopOnTime(t, "08_bad_signature.json"), "X-WHOOP-Signature does not match"},
-		{"the body was altered", cfg, whoopArrived(altered, whoopSigned(t, altered)), "X-WHOOP-Signature does not match"},
-		{"it arrived an hour after it was signed", cfg, whoopArrived(late, whoopSigned(t, late).Add(time.Hour)), "seconds away from when it arrived"},
-		{"it arrived before it was signed", cfg, whoopArrived(late, whoopSigned(t, late).Add(-10*time.Minute)), "seconds away from when it arrived"},
-		{"it carries no signature", cfg, whoopArrived(stripped, time.Now()), "carries no X-WHOOP-Signature"},
-		{"the secret setting is empty", whoopConfig(fake, props, ""), whoopOnTime(t, "01_sleep.updated.json"), "webhooksecret setting is empty"},
-	} {
-		_, _, err := whoopHook(t, ds, tc.cfg, tc.env)
-		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: err = %v, want a refusal saying %q", tc.name, err, tc.want)
-		}
-	}
-	if seen := fake.seenPaths(); len(seen) != 0 {
-		t.Fatalf("a refused delivery reached WHOOP: %v", seen)
-	}
-	if n := countLive(t, ds, whoopSleepType); n != 0 {
-		t.Fatalf("a refused delivery wrote %d sleeps", n)
-	}
-
-	// The control: the same delivery, on time, under the right secret.
-	out, _ := mustHook(t, ds, cfg, whoopOnTime(t, "01_sleep.updated.json"))
+	out, _ := mustHook(t, ds, cfg, whoopArrived(stripped, whoopSigned(t, whoopDelivery(t, "01_sleep.updated.json")).Add(time.Hour)))
 	if !whoopLive(t, ds, whoopSleepType, whoopRow("sleep", whoopLastSleep)) {
-		t.Fatalf("the verified sleep.updated wrote no sleep row (output %v)", out)
+		t.Fatalf("sleep.updated without its signature headers wrote no sleep row (output %v)", out)
 	}
 	if got := fake.readBacks(); !slices.Equal(got, []string{"/v2/activity/sleep/" + whoopLastSleep}) {
-		t.Fatalf("the verified delivery read %v, want the one sleep", got)
+		t.Fatalf("the delivery read %v, want the one sleep", got)
 	}
 }
 
@@ -511,7 +481,7 @@ func TestWhoopWebhookRewritesAndDeletesMirrorRows(t *testing.T) {
 	_, ds, fake := newWhoop(t)
 	secret := whoopSecret(t)
 	synced := whoopSync(t, ds, fake, whoopProps(nil))
-	cfg := whoopHookConfig(t, ds, fake, secret)
+	cfg := whoopHookConfig(t, ds, fake)
 	before := whoopVersions(t, ds)
 
 	sleepRow := whoopSleepType + "/" + whoopRow("sleep", whoopLastSleep)
@@ -758,33 +728,64 @@ func TestWhoopSyncDeletesWhatWhoopNoLongerHas(t *testing.T) {
 	}
 }
 
+// TestShippedWebhookTriggersAreClosed pins how each shipped webhook trigger
+// keeps an install from taking unauthenticated requests. WHOOP ships enabled
+// because its declared signature fails closed until the config record holds
+// the client secret. Apple Health and Garmin have no signature to declare:
+// they ship disabled and keyless, and the key the owner sets is their gate.
+func TestShippedWebhookTriggersAreClosed(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		dir, id         string
+		enabled, signed bool
+	}{
+		{whoopDir, "whoop-webhook", true, true},
+		{appleHealthDir, "applehealth-webhook", false, false},
+		{garminDir, "garmin-webhook", false, false},
+	} {
+		var found bool
+		for _, d := range loadDocs(t, tc.dir+"/triggers.yaml") {
+			meta, _ := d["metadata"].(map[string]any)
+			if meta["id"] != tc.id {
+				continue
+			}
+			found = true
+			data, _ := d["data"].(map[string]any)
+			props, _ := data["properties"].(map[string]any)
+			source, _ := props["source"].(map[string]any)
+			arm, _ := source["webhook"].(map[string]any)
+			if props["enabled"] != tc.enabled {
+				t.Errorf("%s ships enabled = %v, want %v", tc.id, props["enabled"], tc.enabled)
+			}
+			if _, keyed := arm["key"]; keyed {
+				t.Errorf("%s ships a key; the owner chooses one", tc.id)
+			}
+			sig, _ := arm["signature"].(map[string]any)
+			if (sig != nil) != tc.signed {
+				t.Errorf("%s declares a signature = %v, want %v", tc.id, sig != nil, tc.signed)
+			}
+			if tc.signed && sig["secret"] != "oauthClientSecret" {
+				t.Errorf("%s signs with %v, want the OAuth client secret", tc.id, sig["secret"])
+			}
+		}
+		if !found {
+			t.Errorf("%s/triggers.yaml ships no %s", tc.dir, tc.id)
+		}
+	}
+}
+
 // TestWhoopWebhookThroughTheDoor posts to the shipped `whoop-webhook` trigger
-// the way WHOOP does. The trigger delivers the two headers it declares, the
-// engine injects the `webhooksecret` setting the owner filled in and the
-// account the first sync stamped, and a signed `workout.deleted` deletes its
-// row. A delivery signed with another secret parks with the reason.
+// the way WHOOP does. The trigger declares WHOOP's signature, so the door
+// checks it against the config record's client secret before it stores
+// anything (decision 0164). Before that record exists, a signed delivery is
+// refused; after it, an unsigned, a forged and a stale one are refused, each
+// leaving no blob, no ledger entry and no run, and a signed `workout.deleted`
+// deletes its row.
 func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	svc, ds, fake := newWhoop(t)
 	ctx := context.Background()
 	secret := whoopSecret(t)
 	installTriggers(t, ds, whoopDir, "whoop-webhook")
-	for _, d := range loadDocs(t, whoopDir+"/settings.yaml") {
-		putDataDoc(t, ds, d)
-	}
-	st, err := ds.BundleStatus(ctx, whoopPackage)
-	if err != nil {
-		t.Fatalf("bundle status: %v", err)
-	}
-	for _, item := range st.Setup {
-		if item.Record == whoopSecretRecord {
-			t.Fatalf("the optional webhook secret is a setup item: %+v", item)
-		}
-	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeSecret, whoopSecretRecord, substrate.PatchInput{
-		Properties: map[string]any{"value": secret},
-	}); err != nil {
-		t.Fatalf("fill in the webhook secret: %v", err)
-	}
 	whoopSync(t, ds, fake, whoopProps(nil))
 	deleted := whoopRow("workout", whoopDeletedWorkout)
 	if !whoopLive(t, ds, whoopWorkoutType, deleted) {
@@ -792,13 +793,12 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	}
 
 	authority := ds.Repository().Authority
-	post := func(signWith string) {
-		t.Helper()
+	request := func(signWith string, at time.Time) substrate.WebhookRequest {
 		body, _ := json.Marshal(map[string]any{
 			"user_id": 4021873, "id": whoopDeletedWorkout, "type": "workout.deleted", "trace_id": "t-door",
 		})
-		stamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-		if _, err := svc.ReceiveWebhook(ctx, authority, "whoop-webhook", "", substrate.WebhookRequest{
+		stamp := strconv.FormatInt(at.UnixMilli(), 10)
+		return substrate.WebhookRequest{
 			Method: "POST", ContentType: "application/json",
 			Headers: map[string]string{
 				"content-type":                "application/json",
@@ -806,8 +806,6 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 				"x-whoop-signature-timestamp": stamp,
 			},
 			Body: body,
-		}); err != nil {
-			t.Fatalf("the door refused the request: %v", err)
 		}
 	}
 	status := func() substrate.TriggerStatus {
@@ -827,32 +825,60 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	if got, want := status().WebhookPath, "/webhooks/"+authority+"/whoop-webhook"; got != want {
 		t.Fatalf("the webhook path is %q, want %q", got, want)
 	}
-	waitFor := func(what string, done func() bool) {
+	refused := func(name string, req substrate.WebhookRequest) {
 		t.Helper()
-		deadline := time.Now().Add(30 * time.Second)
-		for !done() {
-			if time.Now().After(deadline) {
-				t.Fatalf("timed out waiting until %s (trigger status %+v)", what, status())
-			}
-			time.Sleep(100 * time.Millisecond)
+		blobs, runs := countLive(t, ds, "substrate.reamde.dev/core/blob"), countLive(t, ds, "substrate.reamde.dev/core/triggerrun")
+		if _, err := svc.ReceiveWebhook(ctx, authority, "whoop-webhook", "", req); !errors.Is(err, substrate.ErrAuth) {
+			t.Fatalf("%s: err = %v, want the door's signature refusal", name, err)
+		}
+		if n := countLive(t, ds, "substrate.reamde.dev/core/blob"); n != blobs {
+			t.Fatalf("%s: the refused request stored %d blobs", name, n-blobs)
+		}
+		if n := countLive(t, ds, "substrate.reamde.dev/core/triggerrun"); n != runs {
+			t.Fatalf("%s: the refused request ran %d times", name, n-runs)
+		}
+		if failures, err := ds.TriggerFailures(ctx, "whoop-webhook"); err != nil || len(failures) != 0 {
+			t.Fatalf("%s: the ledger holds %+v (%v)", name, failures, err)
+		}
+		if !whoopLive(t, ds, whoopWorkoutType, deleted) {
+			t.Fatalf("%s: the refused request deleted the workout", name)
 		}
 	}
 
-	post(secret)
-	waitFor("the signed workout.deleted deleted its row", func() bool {
-		return !whoopLive(t, ds, whoopWorkoutType, deleted)
-	})
-	waitFor("the signed delivery settled", func() bool {
-		s := status()
-		return s.Pending == 0 && s.InFlight == 0
-	})
-	if s := status(); s.Parked != 0 {
-		t.Fatalf("the signed delivery parked: %s", s.LastParkedError)
-	}
+	// Shipped enabled and closed: no config record, no client secret, so a
+	// request WHOOP signed is refused like any other.
+	refused("a signed delivery before the config exists", request(secret, time.Now()))
 
-	post("not-the-client-secret")
-	waitFor("the forged delivery parked", func() bool { return status().Parked == 1 })
-	if msg := status().LastParkedError; !strings.Contains(msg, "X-WHOOP-Signature does not match") {
-		t.Fatalf("the forged delivery parked with %q, want the signature refusal", msg)
+	mustPut(t, ds, substrate.PutInput{
+		Kind: whoopPackage + "/config", ID: "default",
+		Properties: map[string]any{"clientId": "whoop-client", "clientSecret": secret},
+	})
+	unsigned := request(secret, time.Now())
+	delete(unsigned.Headers, "x-whoop-signature")
+	refused("an unsigned delivery", unsigned)
+	refused("a delivery another secret signed", request("not-the-client-secret", time.Now()))
+	refused("a delivery signed ten minutes ago", request(secret, time.Now().Add(-10*time.Minute)))
+
+	if _, err := svc.ReceiveWebhook(ctx, authority, "whoop-webhook", "", request(secret, time.Now())); err != nil {
+		t.Fatalf("the door refused a signed request: %v", err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for whoopLive(t, ds, whoopWorkoutType, deleted) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the signed workout.deleted never deleted its row (trigger status %+v)", status())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	for deadline = time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		s := status()
+		if s.Pending == 0 && s.InFlight == 0 {
+			if s.Parked != 0 {
+				t.Fatalf("the signed delivery parked: %s", s.LastParkedError)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the signed delivery never settled: %+v", s)
+		}
 	}
 }

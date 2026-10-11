@@ -94,15 +94,20 @@ data:
 # dashboard, POSTed a signed notification when a sleep, a recovery or a
 # workout is written or deleted. The URL is
 # POST /webhooks/<authority>/whoop-webhook (`substratectl trigger status`
-# prints it). `whoopwebhook` checks the signature against the `webhooksecret`
-# setting and refuses every delivery until the owner pastes the app's client
-# secret there.
+# prints it).
 #
-# `headers` names the two WHOOP signs with: a header this list does not name
-# never reaches the function (decision 0097). The arm declares no `key`; to
-# turn away unsigned posts at the door instead of in the function, set
-# `source.webhook.key` and register the URL with the key as its last path
-# segment.
+# The door checks WHOOP's signature before it stores anything (decision
+# 0164): `X-WHOOP-Signature` is base64(HMAC-SHA256(client secret,
+# `X-WHOOP-Signature-Timestamp` + raw body)), the timestamp in milliseconds.
+# `oauthClientSecret` is the client secret on the bundle's `client` input,
+# which the host resolves and `whoopwebhook` never receives. A request that
+# fails the check is answered 401 and leaves no blob, no ledger entry and no
+# invocation.
+#
+# Enabled as shipped because the check fails closed: until the owner writes
+# the config record with its client secret, every delivery is refused and
+# nothing is stored. No `headers`: the function reads only the body, so the
+# signature headers never reach it or the changelog (decision 0097).
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: whoop-webhook
@@ -112,7 +117,12 @@ data:
     label: WHOOP webhook
     source:
       webhook:
-        headers:
-          - x-whoop-signature
-          - x-whoop-signature-timestamp
+        signature:
+          algorithm: hmac-sha256
+          signatureHeader: X-WHOOP-Signature
+          timestampHeader: X-WHOOP-Signature-Timestamp
+          maxSkew: PT5M
+          message: "{timestamp}{body}"
+          encoding: base64
+          secret: oauthClientSecret
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/whoop/whoopwebhook

@@ -67,7 +67,7 @@ thing, and the Records column counts them.
 | Google        | Provider | OAuth          | 14    | 4         | 12      | 0      |
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
-| WHOOP         | Provider | OAuth          | 7     | 2         | 5       | 0      |
+| WHOOP         | Provider | OAuth          | 7     | 2         | 4       | 0      |
 | Garmin        | Provider | OAuth          | 19    | 2         | 4       | 0      |
 | Google Fit    | Provider | OAuth          | 5     | 1         | 3       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
@@ -760,11 +760,7 @@ account's enabled toggles derive: `read:cycles` for `enabledCycles`,
   `whoop-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
   disagree; `whoop-scheduled` fires it hourly, and the body syncs the
   accounts due by their own `syncFrequency`. `whoop-webhook` is the webhook
-  endpoint and fires `whoopwebhook`.
-- **Settings (1)**: a `secret` at
-  `providers.substrate.reamde.dev/whoop/webhooksecret`, shipped empty and not
-  required, read as `config.settings.webhooksecret`
-  ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
+  endpoint, declares WHOOP's signature, and fires `whoopwebhook`.
 - **Mappings**: none shipped. The mirrors describe one member: `user` is that
   member's row, keyed on WHOOP's `user_id`, and `account.user` points at it.
   The `people` sample ships `googlecontactperson`, `googleaddressperson`,
@@ -855,26 +851,22 @@ through the webhook.
 
 **Webhooks.** WHOOP posts `{user_id, id, type, trace_id}` to one URL per WHOOP
 app when a sleep, a recovery or a workout is written or deleted; it sends no
-event for a cycle or the member. To receive them:
+event for a cycle or the member. To receive them, set the app's webhook URL
+in WHOOP's developer dashboard to
+`https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` with model
+version v2. `substratectl trigger status` prints the path in its `WEBHOOK`
+column.
 
-1. Paste the WHOOP app's client secret into the `webhooksecret` secret, on
-   the console's Settings page or with
-   `PATCH /api/v1/substrate.reamde.dev/core/secret/providers.substrate.reamde.dev%2Fwhoop%2Fwebhooksecret`
-   and the body `{"properties": {"value": "<client secret>"}}`. It is the same
-   value as the `config` record's client secret, which no function body can
-   read.
-2. In WHOOP's developer dashboard, set the app's webhook URL to
-   `https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` with
-   model version v2. `substratectl trigger status` prints the path in its
-   `WEBHOOK` column. The trigger is open as shipped; setting
-   `source.webhook.key` on it and appending the key to the URL as its last
-   path segment turns away, at the door, any post that lacks the key.
-
-`whoopwebhook` checks `X-WHOOP-Signature`, which is
-base64(HMAC-SHA256(client secret, `X-WHOOP-Signature-Timestamp` + raw body)),
-and refuses a delivery whose signature does not match, whose timestamp is more
-than five minutes from when the door accepted it, or that arrives while the
-secret is empty: the delivery parks with the reason. A verified event is
+The `whoop-webhook` trigger declares WHOOP's signature: `X-WHOOP-Signature`
+is base64(HMAC-SHA256(client secret, `X-WHOOP-Signature-Timestamp` + raw
+body)), and the server checks it against the `config` record's client secret
+before it stores the request
+([webhook signatures](functions.md#webhook-signatures)). The secret never
+reaches a function. A delivery whose signature is missing or does not match,
+or whose timestamp is more than five minutes from when the server received
+it, is answered `401` and leaves nothing behind. The trigger ships enabled
+because the check fails closed: until the `config` record holds the client
+secret, every delivery is refused the same way. A verified event is
 matched to the account whose `account.user` is the member row for its
 `user_id`, which the first sync writes. `sleep.updated` and `workout.updated`
 read the object by id and rewrite its row; a create arrives as `.updated`.
