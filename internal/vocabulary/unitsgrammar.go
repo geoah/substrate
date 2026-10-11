@@ -76,12 +76,33 @@ func unitValue() value {
 	return value{factor: big.NewRat(1, 1), notes: map[string]int{}, arbitrary: map[string]int{}}
 }
 
+// MaxUnitDimension bounds each base quantity's exponent in a unit's dimension,
+// in every atom raised to its power and in every product along the way. The
+// table's atoms stay within ±4 (the farad); past the bound a code measures
+// nothing a person writes, and the int8 a dimension holds would wrap.
+const MaxUnitDimension = 8
+
 // mul folds o into v, raised to the power exp. It refuses a division by zero
 // rather than panic: the parser refuses a zero factor, and this holds the
-// arithmetic to the same rule whatever reaches it.
+// arithmetic to the same rule whatever reaches it. The dimension is checked
+// before anything is computed, in int, so it never narrows.
 func (v *value) mul(o value, exp int) error {
 	if exp < 0 && o.factor.Sign() == 0 {
 		return errZeroDivisor
+	}
+	var dim dimension
+	for i := range v.dim {
+		e := int(v.dim[i])
+		if o.dim[i] != 0 {
+			if exp > MaxUnitDimension || exp < -MaxUnitDimension {
+				return fmt.Errorf("%s to the power %d is beyond the bound of ±%d", dimNames[i], exp, MaxUnitDimension)
+			}
+			e += int(o.dim[i]) * exp
+		}
+		if e > MaxUnitDimension || e < -MaxUnitDimension {
+			return fmt.Errorf("%s to the power %d is beyond the bound of ±%d", dimNames[i], e, MaxUnitDimension)
+		}
+		dim[i] = int8(e)
 	}
 	switch {
 	case exp > 0:
@@ -94,9 +115,7 @@ func (v *value) mul(o value, exp int) error {
 		}
 	}
 	v.pi += o.pi * exp
-	for i := range v.dim {
-		v.dim[i] += o.dim[i] * int8(exp)
-	}
+	v.dim = dim
 	for k, n := range o.notes {
 		v.notes[k] += n * exp
 	}

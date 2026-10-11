@@ -425,6 +425,11 @@ one measure of its dimension. Where two measures share the dimension (`J/s` is
 a power or an apparent power, `kg.m2/s2` an energy or a torque) the write is
 refused unless the property names its measure.
 
+A code's dimension is bounded: the exponent of each base quantity stays
+within ±8, in each atom raised to its power and in every product along the
+way, so `m257` and `m5.m5` are refused rather than read as some other
+dimension. A factor is a positive integer, so `m/0` is refused too.
+
 A property narrows what it admits:
 
 ```yaml

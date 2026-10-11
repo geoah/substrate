@@ -46,3 +46,19 @@ func TestAZeroFactorIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// A dimension is nine small exponents, each held within ±8 in every atom
+// raised to its power and in every product along the way. `m257` once
+// narrowed to int8 and read as metres; `m100.m100` wrapped to L-56.
+func TestADimensionBeyondItsBoundIsRefused(t *testing.T) {
+	for _, code := range []string{"m257", "m9", "m-9", "L3", "m8.m", "m5.m5", "m100.m100", "/m5.m5", "(m4.m4).m"} {
+		t.Run(code, func(t *testing.T) {
+			refusesUnit(t, code, "beyond the bound of ±8")
+		})
+	}
+	for _, code := range []string{"m8", "m-8", "m5/m5", "m4.m4", "/m8", "kg/(cm5.m2)", "10*23"} {
+		if _, err := vocabulary.ParseUnit(code); err != nil {
+			t.Errorf("%s is inside the bound and was refused: %v", code, err)
+		}
+	}
+}
