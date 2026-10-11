@@ -104,6 +104,13 @@ type fakeSubstrate struct {
 	// answers the 422 internal/api writes (writeValidation).
 	vocabularyCheck bool
 
+	// aggregateAnswer is the aggregate read's answer, written verbatim; empty
+	// means fakeAggregateAnswer. lastAggregate and lastDownsample are the
+	// parameters the last aggregate read carried, decoded strictly.
+	aggregateAnswer string
+	lastAggregate   *substrate.Aggregate
+	lastDownsample  *substrate.Downsample
+
 	requests  []string
 	lastBody  map[string]json.RawMessage
 	lastAuth  string
@@ -788,6 +795,10 @@ var (
 	fakeListParams   = []string{"filter", "orderBy", "first", "after", "expand", "withAnnotations"}
 	fakeRankedParams = []string{"q", "mode", "filter", "first"}
 	fakeWatchParams  = []string{"watch", "filter", "from", "generation"}
+	// fakeAggregateParams is the aggregate mode's set: the server refuses
+	// aggregate beside q, watch, count, orderBy, first, after, offset and
+	// expand (decision 0161).
+	fakeAggregateParams = []string{"aggregate", "downsample", "filter"}
 )
 
 // allowParams refuses the first query parameter outside allowed, reporting
@@ -841,6 +852,15 @@ func knownKind(w http.ResponseWriter, kinds []string) bool {
 func (f *fakeSubstrate) handleRecords(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	switch {
+	case q.Has("aggregate"):
+		f.noteRequest(r)
+		if !allowParams(w, r, fakeAggregateParams...) {
+			return
+		}
+		if _, ok := recordsFilter(w, r); !ok {
+			return
+		}
+		f.handleAggregate(w, r)
 	case q.Get("watch") == "1":
 		if !allowParams(w, r, fakeWatchParams...) {
 			return
@@ -875,6 +895,71 @@ func (f *fakeSubstrate) handleRecords(w http.ResponseWriter, r *http.Request) {
 		}
 		f.handleList(w, r, flt)
 	}
+}
+
+// fakeAggregateAnswer is the aggregate read's default answer: two weekly
+// rows of one source, the second a filled bucket whose values are null.
+const fakeAggregateAnswer = `{
+  "metric": "ada.example.com/observations/metric/health/heart_rate",
+  "unit": "/min",
+  "bucket": {"calendar": "week", "timezone": "Europe/Athens", "weekStart": "monday"},
+  "from": "raw",
+  "exact": true,
+  "rows": [
+    {"start": "2026-04-06T00:00:00+03:00", "end": "2026-04-13T00:00:00+03:00", "form": "gauge",
+     "group": {"source": "ada.example.com/observations/source/garmin-forerunner-265"},
+     "from": "raw", "sources": ["ada.example.com/observations/source/garmin-forerunner-265"],
+     "coverage": "P6DT22H10M",
+     "values": [{"reducer": {"durationIn": [95, 114]}, "value": "612.4", "unit": "min"},
+                {"reducer": {"percentile": 0.05}, "value": "52", "unit": "/min"}],
+     "count": 24810, "bounded": 0, "synthetic": false, "unavailable": false},
+    {"start": "2026-04-13T00:00:00+03:00", "end": "2026-04-20T00:00:00+03:00",
+     "group": {"source": "ada.example.com/observations/source/garmin-forerunner-265"},
+     "values": [{"reducer": {"durationIn": [95, 114]}, "value": null, "unit": "min"},
+                {"reducer": {"percentile": 0.05}, "value": null, "unit": "/min"}],
+     "count": 0, "bounded": 0, "synthetic": true, "unavailable": false}
+  ],
+  "sources": ["ada.example.com/observations/source/garmin-forerunner-265"],
+  "head": {"changelog": 41, "generation": "gen-test"}
+}`
+
+// handleAggregate decodes the aggregate read's parameters strictly, as the
+// server does, records them, and answers the canned result. A budget over its
+// cap is the server's 422, refused before anything runs.
+func (f *fakeSubstrate) handleAggregate(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var agg substrate.Aggregate
+	dec := json.NewDecoder(strings.NewReader(q.Get("aggregate")))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&agg); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "aggregate: "+err.Error(), nil)
+		return
+	}
+	var ds *substrate.Downsample
+	if raw := q.Get("downsample"); raw != "" {
+		ds = &substrate.Downsample{}
+		dec := json.NewDecoder(strings.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(ds); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "downsample: "+err.Error(), nil)
+			return
+		}
+	}
+	f.mu.Lock()
+	f.lastAggregate, f.lastDownsample = &agg, ds
+	answer := f.aggregateAnswer
+	f.mu.Unlock()
+	if agg.Budget != nil && agg.Budget.MaxBuckets > substrate.AggregateMaxBucketsCap {
+		writeError(w, http.StatusUnprocessableEntity, "validation",
+			fmt.Sprintf("budget.maxBuckets %d is over the cap %d", agg.Budget.MaxBuckets, substrate.AggregateMaxBucketsCap), nil)
+		return
+	}
+	if answer == "" {
+		answer = fakeAggregateAnswer
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(answer))
 }
 
 // handleList serves the tasks, or the alerts when the filter names that kind

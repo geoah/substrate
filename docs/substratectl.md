@@ -140,6 +140,50 @@ document (`kind`, `metadata`, `data`, and the server-set `status`),
 flat; the envelope is the CLI's YAML form. `status` is ignored on input, so the
 output applies back unchanged.
 
+`substratectl aggregate [metric]` is the aggregate read
+([0161](decisions/0161-the-aggregate-read-is-a-mode-of-the-records-route-checked-before-it-runs.md)):
+it reduces a metric's observed points, or a declared number of the filtered
+kinds (`--property`), into time buckets. The argument is the metric record's
+full path. The flags build the request one field each, and a flag left out
+sends nothing, so the server's default applies. `--reducer` is repeatable and
+takes a name or a name with its argument: `percentile:0.05`,
+`durationIn:95,114`, `timeInState:open,closed`. Heart rate zones per week in
+Athens, one watch preferred over the other:
+
+```
+substratectl aggregate ada.example.com/observations/metric/health/heart_rate \
+  --gte 2026-04-06T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
+  --calendar week --week-start monday --timezone Europe/Athens \
+  --reducer durationIn:95,114 --reducer durationIn:114,133 --reducer durationIn:133,152 \
+  --policy priority --order garmin-forerunner-265,apple-watch-s10 \
+  --unit min --max-gap PT5M
+```
+
+Daily steps for a year, from raw points where they cover a day and from the
+vendor's daily total where they do not. A `--calendar` with no `--timezone`
+is the recorded-local day:
+
+```
+substratectl aggregate ada.example.com/observations/metric/health/steps \
+  --gte 2025-10-05T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
+  --calendar day --from prefer-raw --reducer sum --unit '{steps}'
+```
+
+The latest value of each metric from each source needs no range or bucket:
+
+```
+substratectl aggregate --group-by metric,source --reducer last \
+  --filter '{"properties":{"metric":{"in":["ada.example.com/observations/metric/health/body_mass","ada.example.com/observations/metric/health/body_fat_fraction"]}}}'
+```
+
+`--body FILE` (`-f`; `-` reads stdin) sends a JSON request instead, either
+`{"filter": ..., "aggregate": ..., "downsample": ...}` or the aggregate body
+alone, and a flag given beside it replaces that one field. The records time
+mode (`bucket.records`) has no flags and is written this way. `--downsample N`
+asks for N chart columns instead of buckets. The table prints one line per
+row: start, end, group, form, `from`, coverage, then each value as
+`reducer=value unit`. `-o json` and `-o yaml` print the answer whole.
+
 ## Writing
 
 - `apply -f FILE` applies YAML manifests (`---`-separated; `-` reads stdin). A
