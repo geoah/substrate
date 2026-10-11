@@ -270,6 +270,25 @@ func TestIrrationalFactorsAreRefused(t *testing.T) {
 	}
 }
 
+// An ordering key has a factor for every admitted code: the exact one where
+// a rational number states it, pi at 40 places where only pi reaches the
+// base, and a prefixed code the table does not list converts by its prefix.
+func TestOrderFactorKeysEveryAdmittedCode(t *testing.T) {
+	f, o, err := vocabulary.OrderFactor("angle", "rad")
+	if err != nil || o.Sign() != 0 || f.FloatString(30) != "57.295779513082320876798154814105" {
+		t.Errorf("rad keys at %v + %v (%v), want 180/pi", f.FloatString(30), o, err)
+	}
+	if f, _, err := vocabulary.OrderFactor("mass", "Mg"); err != nil || f.Cmp(rat(t, "1000")) != 0 {
+		t.Errorf("Mg keys at %v (%v), want 1000 kg", f, err)
+	}
+	if f, o, err := vocabulary.OrderFactor("temperature", "[degF]"); err != nil || f.Cmp(rat(t, "5/9")) != 0 || o.Sign() == 0 {
+		t.Errorf("[degF] keys at %v + %v (%v), want ToBase's exact map", f, o, err)
+	}
+	if _, _, err := vocabulary.OrderFactor("arbitrary", "[IU]"); err == nil {
+		t.Error("an arbitrary unit has a base to key by")
+	}
+}
+
 func TestConvertIsExact(t *testing.T) {
 	for _, c := range []struct{ value, from, to, want string }{
 		{"72.4", "kg", "[lb_av]", "72400000000/453592370"},

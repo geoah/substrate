@@ -748,6 +748,49 @@ func ToBase(measure, code string) (factor, offset *big.Rat, err error) {
 	return factor, offset, nil
 }
 
+// orderPi is pi to 40 places, the value OrderFactor reads it at.
+const orderPi = "3.1415926535897932384626433832795028841971"
+
+// OrderFactor is ToBase for an ordering key: the same exact map, except that a
+// code no rational factor reaches (rad, which reaches deg only through pi)
+// takes its factor with pi to 40 places, because an order is a key and
+// nothing compares against it. It still refuses a level and an arbitrary
+// unit, which have no base.
+func OrderFactor(measure, code string) (factor, offset *big.Rat, err error) {
+	t, err := loadTable()
+	if err != nil {
+		return nil, nil, err
+	}
+	u, err := ParseUnit(code)
+	if err != nil {
+		return nil, nil, err
+	}
+	m, err := t.resolve(u, measure)
+	if err != nil {
+		return nil, nil, err
+	}
+	base := t.bases[m.Name]
+	if m.Scale == ScaleLogarithmic || m.Scale == ScaleArbitrary || u.val.pi == base.val.pi {
+		return ToBase(m.Name, code)
+	}
+	pi, _ := new(big.Rat).SetString(orderPi)
+	factor = new(big.Rat).Quo(u.val.factor, base.val.factor)
+	for n := u.val.pi - base.val.pi; n != 0; {
+		if n > 0 {
+			factor.Mul(factor, pi)
+			n--
+		} else {
+			factor.Quo(factor, pi)
+			n++
+		}
+	}
+	offset = new(big.Rat)
+	if m.Scale == ScaleAffine && u.offset != nil {
+		offset.Set(u.offset)
+	}
+	return factor, offset, nil
+}
+
 // UnitSymbol is a code's print symbol, or the code itself when it does not
 // parse.
 func UnitSymbol(code string) string {

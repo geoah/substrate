@@ -481,6 +481,13 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	// a token replayed against another filter would seek past rows the new
 	// predicate admits and answer a short page that looked complete.
 	signature := order + "|" + filterDigest(q.Filter)
+	// A quantity order gains an arm per stored unit its declaration does not
+	// name, after the signature: each arm keys a row the same whichever arms
+	// stand beside it, so a unit first written mid-walk moves no cursor.
+	if terms, err = ds.quantityOrderTerms(ctx, tx, b, types, q.OrderBy, terms); err != nil {
+		return nil, err
+	}
+	order = renderOrder(terms)
 	first := q.First
 	if first <= 0 {
 		first = defaultPageSize

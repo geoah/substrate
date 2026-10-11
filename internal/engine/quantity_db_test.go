@@ -543,6 +543,62 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	}
 }
 
+// A quantity orders by its value at the measure's base in whatever unit the
+// grammar admitted it: 1 Mg is 1000 kg, between 500 kg and 2000 kg, though
+// the mass table lists no Mg, and no accepted number keys NULL. A unit first
+// written between two pages leaves the walk's cursor valid and lands where
+// its value puts it.
+func TestOrderByQuantityKeysEveryAdmittedUnit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := installReadings(t, map[string]map[string]any{
+		"light":    {"weight": qv("500", "kg")},
+		"megagram": {"weight": qv("1", "Mg")},
+		"heavy":    {"weight": qv("2000", "kg")},
+	})
+	var got []string
+	after := ""
+	for pages := 0; ; pages++ {
+		if pages > 10 {
+			t.Fatal("walk did not terminate")
+		}
+		page, err := ds.List(ctx, substrate.Query{
+			Filter:  substrate.Filter{Kinds: []string{readingKind}},
+			OrderBy: []substrate.Order{{Property: "weight"}},
+			First:   1,
+			After:   after,
+		})
+		if err != nil {
+			t.Fatalf("page %d: %v", pages, err)
+		}
+		for _, r := range page.Records {
+			got = append(got, r.Properties["name"].(string))
+		}
+		if pages == 0 {
+			if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "hecto", Properties: map[string]any{
+				"name": "hecto", "weight": qv("30000", "hg"),
+			}}); err != nil {
+				t.Fatalf("put: %v", err)
+			}
+		}
+		if page.Cursor == "" {
+			break
+		}
+		after = page.Cursor
+	}
+	if want := "light,megagram,heavy,hecto"; strings.Join(got, ",") != want {
+		t.Fatalf("ordered %v, want %s", got, want)
+	}
+	page, err := ds.List(ctx, substrate.Query{
+		Filter:  substrate.Filter{Kinds: []string{readingKind}},
+		OrderBy: []substrate.Order{{Property: "weight", Desc: true}},
+		First:   1,
+	})
+	if err != nil || len(page.Records) != 1 || page.Records[0].Properties["name"] != "hecto" {
+		t.Fatalf("the heaviest first is %v (%v), want hecto", page, err)
+	}
+}
+
 // countingDB counts the statements a read sends through it.
 type countingDB struct {
 	dbx

@@ -614,11 +614,15 @@ a JSON list of `{property, desc}`). A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
 currencies, so a list that wants one currency filters on it. A `quantity`
 property sorts by its value converted to its measure's base unit (155 `[lb_av]`
-between 50 kg and 71000 g), reading the codes the property lists, else its
-measure's codes, else every code the table lists. A value in a compound the
-list does not name, or in `rad`, sorts after the rest; a level or an arbitrary
+between 50 kg and 71000 g), in every unit a write admitted: the codes the
+property lists, else its measure's codes, else every code the table lists, and
+then any other code the read's rows hold (1 `Mg` sorts as 1000 kg, though the
+mass table lists no `Mg`), found by the same one read of the rows' units a
+filter makes. `rad` sorts through pi at 40 places; a level or an arbitrary
 unit sorts by its own number. A declared index on a quantity holds the same
-expression and needs `measures:` or `units:`. Only declared properties filter and order:
+expression over the declared codes and needs `measures:` or `units:`; it
+serves the order while every stored unit is one of those codes, which
+`units:` guarantees. Only declared properties filter and order:
 **filterable, indexed, and declared are the same set**, so a query that would
 be slow is one the grammar cannot express.
 

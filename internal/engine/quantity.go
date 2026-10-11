@@ -431,16 +431,22 @@ func (ds *dataset) quantityProp(name string) ([]*vocabulary.QuantitySpec, bool) 
 const annotationsSQL = `'\{[^}]*\}'`
 
 // quantityBaseSQL is the value at `v` converted to its measure's base, the key
-// an ordering sorts by and a declared index holds. It reads the codes the
-// declarations name: the declared `units:` where a property lists them, else
-// the measure's codes where one is declared, else every code the table lists. A value in a code
-// outside that list (a compound no row lists) reads NULL and sorts after the
-// rest; a level or an arbitrary unit, which has no base, sorts by its own
-// number; rad, which reaches deg only through pi, reads NULL.
+// an ordering sorts by and a declared index holds. It has an arm for each code
+// the declarations name (the declared `units:` where a property lists them,
+// else the measure's codes where one is declared, else every code the table
+// lists) and then one for each of the stored codes the read found that no
+// declared arm covers: the grammar admits compounds and prefixed codes no row
+// lists (`Mg`, `kg/h`), and each converts by the same factor its write was
+// admitted under (vocabulary.OrderFactor), so no accepted number keys NULL. A
+// level or an arbitrary unit, which has no base, sorts by its own number; rad
+// reaches deg through pi at 40 places.
 //
-// The expression depends on the declaration and the table alone, never on the
-// rows, so an ordering's cursor stays valid and a declared index matches it.
-func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec) string {
+// Each arm gives a row the same key whichever arms beside it, so the key is a
+// function of the row and the declaration alone: a cursor minted under fewer
+// arms seeks the same position (List signs it with the declared arms only),
+// and with no stored code beyond the declared ones the expression is the
+// declared index's own text.
+func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec, stored ...string) string {
 	type arm struct{ code, expr string }
 	var arms []arm
 	seen := map[string]bool{}
@@ -460,7 +466,7 @@ func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec) string {
 			arms = append(arms, arm{key, value})
 			return
 		}
-		f, o, err := vocabulary.ToBase(m.Name, code)
+		f, o, err := vocabulary.OrderFactor(m.Name, code)
 		if err != nil {
 			arms = append(arms, arm{key, `NULL::numeric`})
 			return
@@ -489,6 +495,15 @@ func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec) string {
 			add(measure, c)
 		}
 	}
+	for _, c := range stored {
+		for _, s := range specs {
+			measure := ""
+			if s != nil {
+				measure = s.Measure
+			}
+			add(measure, c)
+		}
+	}
 	var sb strings.Builder
 	sb.WriteString(`(CASE regexp_replace(` + v + `->>'` + vocabulary.QuantityUnit + `', ` + annotationsSQL + `, '', 'g')`)
 	for _, a := range arms {
@@ -496,6 +511,45 @@ func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec) string {
 	}
 	sb.WriteString(` END)`)
 	return sb.String()
+}
+
+// quantityOrderTerms widens each quantity term of an order with an arm for
+// every stored unit its declared arms do not cover (quantityBaseSQL), read
+// from the rows of the kinds the read covers that declare the property
+// without closing its units (readStoredUnits). A term orderExpr resolved to
+// anything but the declared quantity expression is left as it is, and so is
+// a property whose every declaration closes its units, so its expression
+// stays the declared index's.
+func (ds *dataset) quantityOrderTerms(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, orders []substrate.Order, terms []orderTerm) ([]orderTerm, error) {
+	for i, o := range orders {
+		specs, ok := ds.quantityProp(o.Property)
+		if !ok || i >= len(terms) {
+			continue
+		}
+		v := `(props->` + sqlLiteral(o.Property) + `)`
+		if terms[i].expr != quantityBaseSQL(v, specs) {
+			continue
+		}
+		among := types
+		if len(among) == 0 {
+			among = ds.registry().Kinds()
+		}
+		var open []string
+		for _, d := range quantityDecls(among, o.Property) {
+			if !quantityUnitsClosed(d.spec) {
+				open = append(open, d.kind)
+			}
+		}
+		if len(open) == 0 {
+			continue
+		}
+		stored, err := readStoredUnits(ctx, x, open, o.Property, b.tombstones)
+		if err != nil {
+			return nil, err
+		}
+		terms[i].expr = quantityBaseSQL(v, specs, stored...)
+	}
+	return terms, nil
 }
 
 // stripAnnotations is annotationsSQL in Go, so the CASE's keys are the codes
