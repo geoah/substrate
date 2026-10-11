@@ -24,8 +24,8 @@ yours and no two cases write one file), then every case starts as a parallel
 subtest and hands `runner/e2e.py` the server, the authority, the repository's
 bearer, the `substratectl` it just built and `fixtures/<provider>`. The cases
 share the server and nothing else: each mock listens on its own pinned port,
-and the dispatcher runs one pass per repository, capped at eight, so the
-eight cases never queue behind each other. The server's dispatcher tick is
+and the dispatcher runs one pass per repository, capped at eight, so of the
+nine cases one may wait for a free pass. The server's dispatcher tick is
 `SUBSTRATE_TRIGGER_INTERVAL=1s`, because every scenario stamps the account
 and then polls for the run it fired, and at the 5s default that wait was most
 of a case. The runner:
@@ -134,7 +134,7 @@ where the bundles were developed and where the pulls they were cut from live.
 Re-cutting them is out of scope here: it needs the owner's real accounts, the
 pull scripts and the pseudonym map, none of which are in this repository.
 
-`fixtures/googlefit` is the exception: Google closed the Fit API to new
+`fixtures/googlefit` is one exception: Google closed the Fit API to new
 projects, so its recordings were written from the documented shapes for an
 invented persona, and its `README.md` says how they replay. Its dataset
 recordings are named without the day range in the path, which the mock's

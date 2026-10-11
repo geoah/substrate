@@ -303,7 +303,7 @@ stay `substratectl apply` of the closure.
 
 ## Providers
 
-A **provider** is a package a publisher owns: the eight shipped ones are
+A **provider** is a package a publisher owns: the ten shipped ones are
 `providers.substrate.reamde.dev/google`, `/github`, `/linear`, `/notion`,
 `/whoop`, `/garmin`, `/googlefit`, `/beeper`, `/slack` and `/applehealth`. The
 tier is read from the tree the closure came from, never guessed from an OAuth
@@ -641,7 +641,7 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 The **catalog** lists everything shipped in the binary, in the two tiers
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
-the eight **providers** under `kinds/providers.substrate.reamde.dev`, and the
+the ten **providers** under `kinds/providers.substrate.reamde.dev`, and the
 sixteen **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `observations`, `health`, and the worked examples
 `llm`, `notes`, `readinglist`, `pebble`, `firecrawl`, `healthwhoop`,
@@ -799,7 +799,7 @@ importing the bundle instead rehomes its requirements with it.
 **No provider requires a sample package, and every provider installs on a bare
 repository.** A provider ships mirror kinds in its own shape and writes nothing
 else: no `requires:`, no reference pinned at a sample kind, no core row. So the
-console can install any of the eight from a repository that has imported nothing,
+console can install any of the ten from a repository that has imported nothing,
 and the console's Add button is never disabled for a missing requirement.
 
 What reaches a `person`, an `emailmessage` or a `task` is the mapping the
