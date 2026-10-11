@@ -1186,11 +1186,14 @@ the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing
 path segment (`/webhooks/{authority}/{trigger}/{key}`), as `?key=` or as
 `Authorization: Bearer <key>`; without one the endpoint is open to whoever can
-reach the server.
+reach the server. When the trigger declares `source.webhook.signature`, the
+server verifies the provider's signature before it stores anything
+([functions](functions.md#webhook-signatures)).
 
 | Answer | When |
 | --- | --- |
 | `202 {"fire": "hook-…"}` | the request is recorded in the repository's changelog and the fire is on its way; a restart resumes it under the same id, which names its `triggerrun` row |
+| `401 auth` | the trigger declares a signature and the request's is missing or wrong, its timestamp is missing or stale, its body is multipart, or the signing secret does not resolve; the body says `webhook signature refused` and nothing is stored |
 | `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them |
 | `413` | a non-multipart body over 8 MiB, or a multipart request over 32 MiB |
 | `431` | headers over 16 KiB |
@@ -1225,7 +1228,7 @@ The code set is closed. The client-error codes:
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
 | `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
-| `auth`         | 401  | Missing, invalid, or expired token, or a refused login.                                          |
+| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature the trigger declares that the request fails ([webhooks](#webhooks)). |
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
 

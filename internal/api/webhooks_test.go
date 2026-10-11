@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -140,6 +141,25 @@ func TestWebhookRefusals(t *testing.T) {
 	rec := postHook(h, "/webhooks/geoah.example.com/nope", []byte("{}"), nil)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not_found") {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A request the trigger's declared signature refuses is a 401 whose body says
+// no more than that: the reason the service wrapped (a stale timestamp here)
+// never reaches the unauthenticated sender.
+func TestWebhookSignatureRefusalIsATerse401(t *testing.T) {
+	refusal := fmt.Errorf("%w: webhook signature refused (timestamp outside maxSkew)", substrate.ErrAuth)
+	_, h := webhookHandler("", refusal)
+	rec := postHook(h, "/webhooks/geoah.example.com/signed", []byte("{}"), nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var out substrate.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("body = %s: %v", rec.Body.String(), err)
+	}
+	if out.Error.Code != "auth" || out.Error.Message != "webhook signature refused" {
+		t.Fatalf("error = %+v, want auth and the fixed message", out.Error)
 	}
 }
 

@@ -45,8 +45,9 @@ var webhookHeaderDenylist = map[string]bool{
 // and the trigger's own key, when it declares one, is the credential, read
 // from the trailing path segment, `?key=` or a bearer header. The request is
 // read into transport facts here and handed to the service, which answers
-// 404 for every refusal alike and 202 with the fire id once the delivery is
-// on its way; the callable's output is never a response.
+// 404 for every refusal alike, 401 for a request the trigger's declared
+// signature refuses, and 202 with the fire id once the delivery is on its
+// way; the callable's output is never a response.
 func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	select {
 	case webhookSem <- struct{}{}:
@@ -64,6 +65,13 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
 			writeError(w, http.StatusNotFound, codeNotFound, "no such webhook")
+			return
+		}
+		// The trigger's declared signature refused the request (decision
+		// 0164). The reason stays in the server: the sender is
+		// unauthenticated, and which check failed helps a forger.
+		if errors.Is(err, substrate.ErrAuth) {
+			writeError(w, http.StatusUnauthorized, codeAuth, "webhook signature refused")
 			return
 		}
 		writeSubstrateError(w, r, err)
