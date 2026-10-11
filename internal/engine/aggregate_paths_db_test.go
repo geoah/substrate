@@ -462,6 +462,57 @@ func TestAggregateRecordedLocalDayFromRealPoints(t *testing.T) {
 	}
 }
 
+// A recorded-local day is read from raw points where a point's offset is not
+// whole quarter hours: at +00:01 the quarter hour from 23:45Z holds an
+// amount at 23:58Z, on September 1 locally, and one at 23:59Z, on September
+// 2, and a gauge's two readings fall either side of local midnight the same
+// way. A row's quarter hour placed both on September 1; the raw points place
+// each on its own day, and both paths now answer that.
+func TestAggregateRecordedLocalDayAtAnOddOffset(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	midnight := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value string
+		at        time.Duration
+	}{{"before", "3", -2 * time.Minute}, {"after", "4", -time.Minute}} {
+		f.mustPut(t, f.observation, "odd/steps/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("odd"), "form": "amount",
+			"value": quantity(x.value, "{steps}"), "at": at(midnight.Add(x.at)), "endsAt": at(midnight.Add(x.at + 30*time.Second)),
+			"utcOffset": 1,
+		})
+	}
+	for _, x := range []struct {
+		id, value string
+		at        time.Duration
+	}{{"before", "60", -4 * time.Minute}, {"after", "80", -30 * time.Second}} {
+		f.mustPut(t, f.observation, "odd/hr/"+x.id, map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("odd"), "form": "gauge",
+			"value": quantity(x.value, "/min"), "at": midnight.Add(x.at).Format(time.RFC3339), "hold": "PT2M", "utcOffset": 1,
+		})
+	}
+	days := rng(midnight.AddDate(0, 0, -1), midnight.AddDate(0, 0, 1))
+	for _, x := range []struct {
+		metric, reducer string
+		want            [2]string
+	}{{"health/steps", "sum", [2]string{"3", "4"}}, {"health/heart_rate", "count", [2]string{"1", "1"}}} {
+		res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath(x.metric)},
+			Range:    days,
+			Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+			Reducers: reducers(x.reducer),
+		})
+		if len(res.Rows) != 2 {
+			t.Fatalf("%s: %d rows, want September 1 and 2", x.metric, len(res.Rows))
+		}
+		for i, row := range res.Rows {
+			if v, _ := val(row, x.reducer); v != x.want[i] {
+				t.Errorf("%s on the day from %s: %s = %s, want %s", x.metric, row.Start.Format(time.RFC3339), x.reducer, v, x.want[i])
+			}
+		}
+	}
+}
+
 // Points at one instant are first and last by record id on both paths:
 // `a-reversed` holds 2000 W.h and `z-reversed` 1 kW.h at 00:05, two rollup
 // groups by unit, and in W.h the first is 2000 and the last 1000.

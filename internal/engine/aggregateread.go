@@ -129,12 +129,18 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 			if tr := traceOf(r.ctx); tr != nil {
 				tr.rollupRows += int64(len(rows))
 			}
-			if g.form == vocabulary.FormGauge {
-				for _, row := range rows {
-					if !observed.Eligible(r.p.maxGap, row.MaxGapMs) {
-						g.rollups = false
-						break
-					}
+			for _, row := range rows {
+				if g.form == vocabulary.FormGauge && !observed.Eligible(r.p.maxGap, row.MaxGapMs) {
+					g.rollups = false
+					break
+				}
+				// A recorded-local row lands whole in the day its quarter
+				// hour names at its offset, which holds only where the
+				// offset is whole quarter hours: at +00:01 a row from 23:45Z
+				// holds points on both sides of local midnight.
+				if r.p.bucket.mode == bucketLocal && r.rowGroups[row.Group].offset%int64(bucketWidth/time.Minute) != 0 {
+					g.rollups = false
+					break
 				}
 			}
 		}
