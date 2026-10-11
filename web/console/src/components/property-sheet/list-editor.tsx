@@ -29,6 +29,7 @@ import { listItems, listWrite } from "./sheet-model"
 import { type SheetRow } from "./sheet-rows"
 import { useEditBase, useRecordPatch, writeError } from "./use-record-patch"
 import { MoneyInput } from "@/components/record/money-input"
+import { QuantityInput } from "@/components/record/quantity-input"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import type { SubstrateRecord } from "@/lib/api/types"
@@ -295,6 +296,21 @@ export function ListEditor({
                 disabled={pending}
                 onChange={(next) => change(it.key, next)}
                 fallbackCurrency={moneyCurrency(item.default)}
+                onKeyDown={(e) => onKeyDown(e, it, i)}
+                boxClassName={BOX}
+                className="flex-1"
+              />
+            ) : item.kind === "quantity" ? (
+              <QuantityInput
+                valueRef={(el) => {
+                  if (el) boxes.current.set(it.key, el)
+                  else boxes.current.delete(it.key)
+                }}
+                label={label(i)}
+                value={it.text}
+                disabled={pending}
+                onChange={(next) => change(it.key, next)}
+                spec={item}
                 onKeyDown={(e) => onKeyDown(e, it, i)}
                 boxClassName={BOX}
                 className="flex-1"

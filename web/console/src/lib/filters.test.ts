@@ -123,6 +123,79 @@ describe("toRecordFilter", () => {
     ).toEqual({ properties: { price: { eq: "19.99" } } })
   })
 
+  it("sends a quantity as a quantity value, a comma as any of", () => {
+    const weight = prop({ name: "weight", kind: "quantity" })
+    expect(
+      toRecordFilter(
+        [{ field: "weight", op: "eq", value: "155 lb, 70 kg" }],
+        [weight]
+      )
+    ).toEqual({
+      properties: {
+        weight: {
+          in: [
+            { value: "155", unit: "[lb_av]" },
+            { value: "70", unit: "kg" },
+          ],
+        },
+      },
+    })
+    expect(
+      toRecordFilter(
+        [{ field: "weight", op: "eq", value: "155 [lb_av]" }],
+        [weight]
+      )
+    ).toEqual({
+      properties: { weight: { eq: { value: "155", unit: "[lb_av]" } } },
+    })
+    // Text that is not a quantity goes as typed, for the server to refuse.
+    expect(
+      toRecordFilter([{ field: "weight", op: "eq", value: "155" }], [weight])
+    ).toEqual({ properties: { weight: { eq: "155" } } })
+  })
+
+  it("reads a leading comparator on a quantity as the comparison, two as a range", () => {
+    const weight = prop({ name: "weight", kind: "quantity" })
+    expect(
+      toRecordFilter(
+        [
+          { field: "weight", op: "eq", value: ">=60 kg" },
+          { field: "weight", op: "eq", value: "<155 lb" },
+        ],
+        [weight]
+      )
+    ).toEqual({
+      properties: {
+        weight: {
+          gte: { value: "60", unit: "kg" },
+          lt: { value: "155", unit: "[lb_av]" },
+        },
+      },
+    })
+    // A list's items match item-wise, and an operand carries no comparator.
+    const readings = prop({
+      name: "readings",
+      kind: "quantity",
+      repeated: true,
+    })
+    expect(
+      toRecordFilter(
+        [{ field: "readings", op: "contains", value: "<5 kg" }],
+        [readings]
+      )
+    ).toEqual({ properties: { readings: { contains: "<5 kg" } } })
+  })
+
+  it("never offers a quantity a word match or a prefix", () => {
+    const weight = prop({ name: "weight", kind: "quantity" })
+    expect(canMatch(weight)).toBe(false)
+    expect(canPrefix(weight)).toBe(false)
+    expect(parseValueInput("155 lb*", weight)).toEqual({
+      op: "eq",
+      value: "155 lb*",
+    })
+  })
+
   it("leaves unparseable numbers as text rather than NaN", () => {
     expect(
       toRecordFilter(
