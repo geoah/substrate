@@ -160,7 +160,14 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	}
 	fid := webhookFirePrefix + wid
 	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
-	envelope["request"] = webhookRequestEnvelope(req, parts)
+	request := webhookRequestEnvelope(req, parts)
+	// The mark a later retry or resume reads (checkStoredWebhookSignature):
+	// this request passed the declared signature, so it is not checked
+	// again against a timestamp the retry's clock has left behind.
+	if tr.WebhookSignature != nil {
+		request[requestSignatureVerified] = true
+	}
+	envelope["request"] = request
 	payload, err := ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders)
 	if err != nil {
 		return nil, foldFailure{}, err

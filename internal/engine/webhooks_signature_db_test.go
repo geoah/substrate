@@ -283,3 +283,187 @@ func TestWebhookSignatureUnderTheOAuthClientSecret(t *testing.T) {
 		t.Fatalf("OK runs under %s = %d, want 1", fid, n)
 	}
 }
+
+// putHookTrigger writes a webhook trigger on fn the way the owner does,
+// outside any bundle, so a test can rewrite its source between deliveries.
+func putHookTrigger(t *testing.T, ds substrate.Dataset, id, fn string, source map[string]any) {
+	t.Helper()
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "substrate.reamde.dev/core/trigger", ID: id,
+		Properties: map[string]any{
+			"enabled":  true,
+			"source":   source,
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", fnPackage+"/"+fn),
+		},
+	})
+}
+
+// keptSignatureSource is a webhook arm that keeps the signature headers, so a
+// request stored under it holds what a later declaration checks. signed adds
+// that declaration under the hookSecretID record, with maxSkew skew.
+func keptSignatureSource(signed bool, skew string) map[string]any {
+	arm := map[string]any{"headers": []any{"x-github-event", "x-hook-signature", "x-hook-timestamp"}}
+	if signed {
+		sig := signedSource("", vocabulary.RecordPath("substrate.reamde.dev/core/secret", hookSecretID))["webhook"].(map[string]any)["signature"].(map[string]any)
+		sig["maxSkew"] = skew
+		arm["signature"] = sig
+	}
+	return map[string]any{"webhook": arm}
+}
+
+// failuresByFire is a trigger's ledger rows keyed by fire id.
+func failuresByFire(t *testing.T, ds substrate.Dataset, trigger string) map[string]substrate.TriggerFailure {
+	t.Helper()
+	rows, err := ds.TriggerFailures(context.Background(), trigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make(map[string]substrate.TriggerFailure, len(rows))
+	for _, r := range rows {
+		out[r.FireID] = r
+	}
+	return out
+}
+
+// A request stored while its trigger declared no signature carries no mark
+// that the door verified it. Once the trigger declares one, a hand's retry
+// of a pending entry, a retry of a parked one and the dispatcher's resume
+// each refuse an unsigned request and park it naming the signature, and the
+// callable never runs it.
+func TestWebhookSignatureDeclaredLaterRefusesAStoredUnsignedRequest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var invoked atomic.Int32
+	svc, ds, _ := newDatasetWithDSN(t, engine.WithTestInvokeHook(func(function string) {
+		if strings.HasSuffix(function, "/hookgated") {
+			invoked.Add(1)
+		}
+	}))
+	connector := fnConnector(nil, pyFn("hookgated", map[string]any{
+		"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
+	}, []any{widgetType}, hookGatedSource))
+	if err := enginetest.Install(ctx, ds, owner, connector); err != nil {
+		t.Fatalf("register connector: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
+	putHookTrigger(t, ds, "hook-later", "hookgated", keptSignatureSource(false, ""))
+	authority := testdb.Repository(t)
+
+	// Two pending entries, and one a failed fire parked: all unsigned.
+	retried, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-later", "", jsonHook(`{"n":"unsigned-before-upgrade"}`, "held"))
+	if err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	resumed, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-later", "", jsonHook(`{"n":"resumed"}`, "held"))
+	if err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	parked, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-later", "", jsonHook(`{"n":"parked"}`, "gate"))
+	if err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	ran := invoked.Load()
+	if ran == 0 {
+		t.Fatal("the gated fire never ran")
+	}
+
+	// The upgrade: the trigger declares the signature, and the gate the body
+	// waits on opens, so only the signature stands between a request and a
+	// run.
+	putHookTrigger(t, ds, "hook-later", "hookgated", keptSignatureSource(true, "PT5M"))
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
+
+	rows := failuresByFire(t, ds, "hook-later")
+	for _, fid := range []string{retried, parked} {
+		_, err := ds.RetryTriggerFailure(ctx, "hook-later", rows[fid].ID)
+		if !errors.Is(err, substrate.ErrParked) || !strings.Contains(err.Error(), "source.webhook.signature") {
+			t.Fatalf("retry of the unsigned %s: err = %v, want ErrParked naming the signature", fid, err)
+		}
+	}
+	dispatch(t, ds)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		row, ok := failuresByFire(t, ds, "hook-later")[resumed]
+		if !ok || row.LastError != engine.WebhookPendingError {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the dispatcher pass never settled the pending entry")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	rows = failuresByFire(t, ds, "hook-later")
+	for _, fid := range []string{retried, resumed, parked} {
+		row, ok := rows[fid]
+		if !ok || !strings.Contains(row.LastError, "source.webhook.signature") {
+			t.Fatalf("entry %s = %+v (present %v), want parked naming the signature", fid, row, ok)
+		}
+	}
+	if _, err := ds.Get(ctx, widgetType, "gated-echo"); err == nil {
+		t.Fatal("an unsigned stored request ran after the trigger declared a signature")
+	}
+	if n := invoked.Load(); n != ran {
+		t.Fatalf("the callable ran %d more times after the declaration", n-ran)
+	}
+}
+
+// A stored request the declared signature covers still runs once the skew
+// window has passed. One the door verified carries that mark and is not
+// checked again; one stored before the declaration is checked from its kept
+// body and headers against the time the door received it, not the retry's
+// clock, and one of those whose signature does not match is refused.
+func TestWebhookSignatureStoredRequestRunsPastItsSkew(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newHookDataset(t, nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
+	putHookTrigger(t, ds, "hook-verified", "hookecho", keptSignatureSource(true, "PT2S"))
+	putHookTrigger(t, ds, "hook-legacy", "hookecho", keptSignatureSource(false, ""))
+	authority := testdb.Repository(t)
+	now := time.Now()
+
+	verified, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-verified", "", signedHook(`{"n":"verified"}`, hookSigningSecret, now))
+	if err != nil {
+		t.Fatalf("receive the signed request: %v", err)
+	}
+	legacy, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-legacy", "", signedHook(`{"n":"legacy"}`, hookSigningSecret, now))
+	if err != nil {
+		t.Fatalf("receive the legacy request: %v", err)
+	}
+	forged, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-legacy", "", signedHook(`{"n":"forged"}`, "another-secret-entirely", now))
+	if err != nil {
+		t.Fatalf("receive the forged request: %v", err)
+	}
+	putHookTrigger(t, ds, "hook-legacy", "hookecho", keptSignatureSource(true, "PT2S"))
+
+	// Past the declared skew: measured against the retry's clock, every one
+	// of these timestamps is stale.
+	time.Sleep(3 * time.Second)
+
+	retry := func(trigger, fid string) error {
+		row, ok := failuresByFire(t, ds, trigger)[fid]
+		if !ok {
+			t.Fatalf("no entry for %s under %s", fid, trigger)
+		}
+		_, err := ds.RetryTriggerFailure(ctx, trigger, row.ID)
+		return err
+	}
+	if err := retry("hook-verified", verified); err != nil {
+		t.Fatalf("a request the door verified, retried past its skew: %v", err)
+	}
+	if got := hookEcho(t, ds, "hook-echo"); got["name"] != `{"n":"verified"}` || got["record"] != verified {
+		t.Fatalf("the verified retry echoed %v", got)
+	}
+	if err := retry("hook-legacy", legacy); err != nil {
+		t.Fatalf("a stored request that verifies, retried past its skew: %v", err)
+	}
+	if got := hookEcho(t, ds, "hook-echo"); got["name"] != `{"n":"legacy"}` || got["record"] != legacy {
+		t.Fatalf("the legacy retry echoed %v", got)
+	}
+	if err := retry("hook-legacy", forged); !errors.Is(err, substrate.ErrParked) || !strings.Contains(err.Error(), "signature does not match") {
+		t.Fatalf("a stored request signed under another secret: err = %v, want ErrParked, signature does not match", err)
+	}
+	if got := hookEcho(t, ds, "hook-echo"); got["record"] != legacy {
+		t.Fatalf("the forged request ran: %v", got)
+	}
+}

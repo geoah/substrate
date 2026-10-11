@@ -298,30 +298,40 @@ func refuseSignature(reason string) error {
 
 // checkWebhookSignature verifies the request against the trigger's declared
 // signature, measuring the timestamp against at, the door's receipt time. A
-// trigger declaring none passes. The MAC compare is constant-time.
+// trigger declaring none passes.
 func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) error {
+	if reason := ds.webhookSignatureRefusal(ctx, tr, req, at); reason != "" {
+		return refuseSignature(reason)
+	}
+	return nil
+}
+
+// webhookSignatureRefusal is the reason the trigger's declared signature
+// refuses the request received at at, one of the signatureRefused words, or
+// "" when it verifies or none is declared. The MAC compare is constant-time.
+func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) string {
 	sig := tr.WebhookSignature
 	if sig == nil {
-		return nil
+		return ""
 	}
 	// The door parses a multipart body into parts and keeps no raw bytes,
 	// so there is nothing byte-exact to compute a MAC over.
 	if req.Parts != nil {
-		return refuseSignature(signatureRefusedMultipart)
+		return signatureRefusedMultipart
 	}
 	provided := strings.TrimSpace(req.Headers[sig.Header])
 	if provided == "" {
-		return refuseSignature(signatureRefusedMissing)
+		return signatureRefusedMissing
 	}
 	var stamp string
 	if sig.TimestampHeader != "" {
 		stamp = strings.TrimSpace(req.Headers[sig.TimestampHeader])
 		signedAt, ok := parseWebhookTimestamp(stamp)
 		if !ok {
-			return refuseSignature(signatureRefusedTimestamp)
+			return signatureRefusedTimestamp
 		}
 		if at.Sub(signedAt).Abs() > sig.MaxSkew {
-			return refuseSignature(signatureRefusedStale)
+			return signatureRefusedStale
 		}
 	}
 	var got []byte
@@ -332,13 +342,13 @@ func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req s
 		got, err = base64.StdEncoding.DecodeString(provided)
 	}
 	if err != nil || len(got) != sha256.Size {
-		return refuseSignature(signatureRefusedInvalid)
+		return signatureRefusedInvalid
 	}
 	key, err := ds.webhookSigningKey(ctx, tr)
 	if err != nil {
 		ds.svc.log.Warn("substrate: webhook refused, its trigger's signing secret does not resolve",
 			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "error", err)
-		return refuseSignature(signatureRefusedSecret)
+		return signatureRefusedSecret
 	}
 	mac := hmac.New(sha256.New, []byte(key))
 	for _, p := range sig.Message {
@@ -352,9 +362,103 @@ func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req s
 		}
 	}
 	if !hmac.Equal(mac.Sum(nil), got) {
-		return refuseSignature(signatureRefusedInvalid)
+		return signatureRefusedInvalid
+	}
+	return ""
+}
+
+// requestSignatureVerified is the stored request's key saying the door
+// verified the trigger's declared signature before it stored the request.
+// The door alone writes it, and only after the check passed: a sender's
+// request becomes `method`, `contentType`, `headers`, `query` and `body` or
+// `parts`, never a key of the request map itself.
+const requestSignatureVerified = "signatureVerified"
+
+// errWebhookUnverified parks a stored webhook request that the trigger's
+// signature, declared after the door stored it, does not cover. It is
+// deterministic: the stored bytes verify on no later attempt either.
+var errWebhookUnverified = errors.New("webhook signature refused at delivery")
+
+// checkStoredWebhookSignature holds a stored webhook request to the signature
+// its trigger declares NOW, before the callable runs it: a resumed pending
+// entry, a retry by hand and the rerun of an interrupted agent delivery all
+// pass here. A request the door verified carries requestSignatureVerified
+// and runs, however long after its timestamp. One stored while the trigger
+// declared no signature is verified from its kept body and headers against
+// the time the door received it (`fire.at`), never the retry's clock, so a
+// genuinely signed request stored before the upgrade still runs and a
+// forged or unsigned one is refused. A wake carries no request and is
+// authenticated already.
+func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger, envelope map[string]any) error {
+	if !tr.Webhook || tr.WebhookSignature == nil {
+		return nil
+	}
+	req, _ := envelope["request"].(map[string]any)
+	if req == nil {
+		return nil
+	}
+	if verified, _ := req[requestSignatureVerified].(bool); verified {
+		return nil
+	}
+	refuse := func(reason string) error {
+		return fmt.Errorf("%w: the request was stored before its trigger declared source.webhook.signature, and its kept body and headers do not verify (%s)",
+			errWebhookUnverified, reason)
+	}
+	fire, _ := envelope["fire"].(map[string]any)
+	stamp, _ := fire["at"].(string)
+	at, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return refuse("no receipt time")
+	}
+	stored, err := ds.storedWebhookRequest(ctx, req)
+	if err != nil {
+		return err
+	}
+	if reason := ds.webhookSignatureRefusal(ctx, tr, stored, at); reason != "" {
+		return refuse(reason)
 	}
 	return nil
+}
+
+// storedWebhookRequest rebuilds what the signature covers from a stored
+// request: its kept headers and its raw body, read back from the blob store
+// when the entry references it. A multipart request comes back with its
+// parts marked present and no body, which the check refuses.
+func (ds *dataset) storedWebhookRequest(ctx context.Context, req map[string]any) (substrate.WebhookRequest, error) {
+	out := substrate.WebhookRequest{Headers: map[string]string{}}
+	if headers, ok := req["headers"].(map[string]any); ok {
+		for name, v := range headers {
+			if s, ok := v.(string); ok {
+				out.Headers[strings.ToLower(name)] = s
+			}
+		}
+	}
+	if _, multipart := req["parts"]; multipart {
+		out.Parts = []substrate.WebhookPart{}
+		return out, nil
+	}
+	body, _ := req["body"].(map[string]any)
+	switch {
+	case body == nil:
+	case body["blob"] != nil:
+		digest, _ := body["blob"].(string)
+		_, data, err := ds.GetBlob(ctx, digest)
+		if err != nil {
+			return out, fmt.Errorf("substrate: stored webhook body %s: %w", digest, err)
+		}
+		out.Body = data
+	case body["base64"] != nil:
+		enc, _ := body["base64"].(string)
+		data, err := base64.StdEncoding.DecodeString(enc)
+		if err != nil {
+			return out, fmt.Errorf("substrate: stored webhook body: %w", err)
+		}
+		out.Body = data
+	default:
+		text, _ := body["text"].(string)
+		out.Body = []byte(text)
+	}
+	return out, nil
 }
 
 // parseWebhookTimestamp reads a signed timestamp: decimal Unix time, in

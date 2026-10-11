@@ -113,6 +113,11 @@ func agentResult(advance bool, ares *substrate.AgentResult) deliverResult {
 // deliverToAgent: the fire state moves with the claim before the loop, so a
 // concurrent dispatcher's duplicate loses the swap there and runs nothing.
 func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
+	// Before the claim, so a refused request parks as itself rather than as
+	// an interrupted run.
+	if err := ds.checkStoredWebhookSignature(ctx, tr, envelope); err != nil {
+		return 0, err
+	}
 	// Admission under the lifecycle fence, held through the claim, the
 	// loop's writes and the completion below (bundles.go).
 	ctx, release, err := ds.admitCallable(ctx, tr.Agent.Package, tr.Agent.Identity())
