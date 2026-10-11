@@ -336,8 +336,10 @@ type AggregateRow struct {
 	// Count is the points that fed the row (a stream's point count on the
 	// latest read, the records on a property read).
 	Count int64 `json:"count"`
-	// Bounded counts the values written with a comparator: counted, never
-	// averaged.
+	// Bounded counts the values written with a comparator (a lab's `<0.01`).
+	// They are counted, and for now also in every average and sum as the
+	// bound's number: a rollup row keeps their count and not their sum, so
+	// neither path can leave them out (docs/api.md lists this).
 	Bounded int64 `json:"bounded"`
 	// Synthetic marks a row `fill` created.
 	Synthetic bool `json:"synthetic"`
