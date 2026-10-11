@@ -94,6 +94,15 @@ func TestCheckObservedAdmitsTheWorkedExamples(t *testing.T) {
 			r.EndsAt = instant(t, "2026-10-07T08:00:00+03:00")
 			return r
 		}(),
+		"a stage total with its category": func() vocabulary.ObservedRecord {
+			r := edit(single(t), map[string]any{"form": "amount", "value": q("94", "min"), "code": "rem"})
+			r.EndsAt = instant(t, "2026-10-07T08:00:00+03:00")
+			return r
+		}(),
+		"an amount trace with categories": edit(packed(t), map[string]any{
+			"form": "amount", "hold": nil, "unit": "min",
+			"values": []any{"20", nil, "35"}, "codes": []any{"light", "deep", "rem"},
+		}),
 	} {
 		if problems := vocabulary.CheckObserved(r); len(problems) != 0 {
 			t.Errorf("%s: refused: %v", name, problems)
@@ -117,8 +126,12 @@ func TestCheckObservedRefusals(t *testing.T) {
 		r    vocabulary.ObservedRecord
 		want string
 	}{
-		"no form":             {edit(single(t), map[string]any{"form": nil}), "props.form: an observed value needs a form"},
-		"a fifth form":        {edit(single(t), map[string]any{"form": "state"}), `props.form: "state" is not a form`},
+		"no form":      {edit(single(t), map[string]any{"form": nil}), "props.form: an observed value needs a form"},
+		"a fifth form": {edit(single(t), map[string]any{"form": "state"}), `props.form: "state" is not a form`},
+		"an amount's categories miscounted": {
+			edit(packed(t), map[string]any{"form": "amount", "codes": []any{"rem", "deep"}}),
+			"props.codes: 2 codes for 3 values",
+		},
 		"value and code":      {edit(single(t), map[string]any{"code": "open"}), "props.value: an observed value is a number or a code, never both"},
 		"neither":             {edit(single(t), map[string]any{"value": nil}), "props.value: an observed value needs value or code"},
 		"a value and why not": {edit(single(t), map[string]any{"absentReason": "error"}), "props.absentReason: says why there is no value"},
