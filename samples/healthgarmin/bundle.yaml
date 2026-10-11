@@ -791,11 +791,10 @@ data:
                 return out
 
 
-    def _mirror_id(host, aid, sid):
-        rid = "%s/%s" % (aid, sid)
-        if len(rid) <= MAX_ID_LEN and RE_ID.match(rid):
-            return rid
-        return host.ids.external("garmin", aid, str(sid))
+    def _live(row):
+        """A row host.records.get read, or None when it is a tombstone: a
+        deleted mirror row implies nothing, the same as an absent one."""
+        return row if row and not row.get("deletedAt") else None
 
 
     def _account_of(host, previous):
@@ -822,10 +821,21 @@ data:
         name = kind[len(GARMIN) + 1:]
         origin = kind + "/" + rid
         previous = _previous(host, origin)
+        pair = name in ("activity", "manuallyupdatedactivity")
 
-        if record is None and name in ("activity", "manuallyupdatedactivity"):
-            # One of the pair is gone: the workout stands on the one that remains.
-            record = host.records.get(EDITED if name == "activity" else ACTIVITY, rid)
+        if pair:
+            # An activity and its edit share one mirror id and feed one
+            # workout, whose origin is whichever of the two it was built from.
+            # So a delivery for either reconciles the outputs of both, and
+            # reads both rows as they stand now, a tombstone as absent: the
+            # edit wins while it lives, the activity stands alone once the
+            # edit is deleted, and the workout goes when both are.
+            other = (EDITED if name == "activity" else ACTIVITY) + "/" + rid
+            seen = {(r.get("kind"), r.get("id")) for r in previous}
+            previous += [r for r in _previous(host, other) if (r.get("kind"), r.get("id")) not in seen]
+            act = _live(host.records.get(ACTIVITY, rid))
+            edit = _live(host.records.get(EDITED, rid))
+            record = edit or act
         if record is None:
             props, version = {}, 0
             aid = _account_of(host, previous)
@@ -849,19 +859,14 @@ data:
                     hours.add(t - t % HOUR)
             for hour in sorted(hours):
                 build_hour(host, plan, name, aid, hour, account)
-        elif name in ("activity", "manuallyupdatedactivity"):
+        elif pair:
             if record is not None:
-                mid = _mirror_id(host, aid, props.get("summaryId"))
-                act = host.records.get(ACTIVITY, mid)
-                edit = host.records.get(EDITED, mid)
                 # An edit in Garmin Connect is the activity as it now stands, so
-                # it wins; the revision counts both rows' versions, which only
-                # rise.
-                used = edit or act or record
-                plan.origin = used["kind"] + "/" + used["id"]
+                # it wins; the revision counts the live rows' versions, which
+                # only rise, and the write below keeps a stored higher one.
+                plan.origin = record["kind"] + "/" + record["id"]
                 plan.revision = sum(int(r.get("version") or 0) for r in (act, edit) if r)
-                uprops = used.get("properties") or {}
-                build_workout(Ctx(host, plan, uprops), account, uprops)
+                build_workout(Ctx(host, plan, props), account, props)
         elif name in BUILDERS:
             if record is not None:
                 BUILDERS[name](Ctx(host, plan, props), account)

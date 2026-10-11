@@ -369,6 +369,115 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 	}
 }
 
+// garminEditedRun pushes the London run and its edit in Garmin Connect (the
+// same summaryId, the distance corrected to 5000 m), adapts both, and answers
+// the workout's id: the workout stands on the edit.
+func garminEditedRun(t *testing.T) (substrate.Dataset, string) {
+	t.Helper()
+	ds := newHealthGarminDataset(t)
+	cfg := garminConfig(t, ds, "", map[string]any{"userId": garminUser})
+	pushGarmin(t, ds, cfg, "webhook-1", loadGarminFixture(t, "push_activities.json").request)
+	pushGarmin(t, ds, cfg, "webhook-2", loadGarminFixture(t, "push_manuallyUpdatedActivities.json").request)
+	garminAdapt(t, ds, garminActivityKind, garminRunRow)
+	garminAdapt(t, ds, garminEditKind, garminRunRow)
+	wid := "garmin/" + garminAccountID + "/" + garminRun + "/workout"
+	assertWorkout(t, ds, wid, "5000 m", garminEditKind)
+	return ds, wid
+}
+
+const (
+	garminRun          = "21004834320"
+	garminRunRow       = garminAccountID + "/" + garminRun
+	garminActivityKind = garminPackage + "/activity"
+	garminEditKind     = garminPackage + "/manuallyupdatedactivity"
+)
+
+// assertWorkout holds the run's workout to a distance and to the mirror kind
+// its origin names.
+func assertWorkout(t *testing.T, ds substrate.Dataset, wid, distance, originKind string) *substrate.Record {
+	t.Helper()
+	w, err := ds.Get(t.Context(), healthWorkout, wid)
+	if err != nil || w.DeletedAt != nil {
+		t.Fatalf("the workout is gone (%v), want it built from %s", err, originKind)
+	}
+	if got := quantity(w.Properties["distance"]); got != distance || storedRefPath(w.Properties["origin"]) != originKind+"/"+garminRunRow {
+		t.Fatalf("the workout is %s from %v, want %s from %s", got, w.Properties["origin"], distance, originKind)
+	}
+	return w
+}
+
+func deleteMirror(t *testing.T, ds substrate.Dataset, kind string) {
+	t.Helper()
+	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, kind, garminRunRow, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete %s/%s: %v", kind, garminRunRow, err)
+	}
+}
+
+func workoutGone(t *testing.T, ds substrate.Dataset, wid string) bool {
+	t.Helper()
+	w, err := ds.Get(t.Context(), healthWorkout, wid)
+	return err != nil || w.DeletedAt != nil
+}
+
+// TestHealthGarminReadsADeletedActivityAsAbsent: a deleted mirror row is
+// absent to the adapter, whichever half of an edited activity it is and
+// whichever delivery arrives. Deleting the edit falls back to the activity,
+// deleting the activity keeps the edit, deleting both deletes the workout
+// even when only one delete is delivered, and a replayed delete delivery
+// changes nothing.
+func TestHealthGarminReadsADeletedActivityAsAbsent(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	t.Run("the edit deleted", func(t *testing.T) {
+		t.Parallel()
+		ds, wid := garminEditedRun(t)
+		deleteMirror(t, ds, garminEditKind)
+		garminAdapt(t, ds, garminEditKind, garminRunRow)
+		w := assertWorkout(t, ds, wid, "5278.69 m", garminActivityKind)
+		garminAdapt(t, ds, garminEditKind, garminRunRow)
+		if again := assertWorkout(t, ds, wid, "5278.69 m", garminActivityKind); again.Version != w.Version {
+			t.Fatalf("a replayed delete moved the workout from version %d to %d", w.Version, again.Version)
+		}
+	})
+	t.Run("the activity deleted, then the edit", func(t *testing.T) {
+		t.Parallel()
+		ds, wid := garminEditedRun(t)
+		deleteMirror(t, ds, garminActivityKind)
+		garminAdapt(t, ds, garminActivityKind, garminRunRow)
+		w := assertWorkout(t, ds, wid, "5000 m", garminEditKind)
+		garminAdapt(t, ds, garminActivityKind, garminRunRow)
+		if again := assertWorkout(t, ds, wid, "5000 m", garminEditKind); again.Version != w.Version {
+			t.Fatalf("a replayed delete moved the workout from version %d to %d", w.Version, again.Version)
+		}
+		deleteMirror(t, ds, garminEditKind)
+		garminAdapt(t, ds, garminEditKind, garminRunRow)
+		if !workoutGone(t, ds, wid) {
+			t.Fatal("the workout outlived both halves of its activity")
+		}
+		garminAdapt(t, ds, garminEditKind, garminRunRow)
+		garminAdapt(t, ds, garminActivityKind, garminRunRow)
+		if !workoutGone(t, ds, wid) {
+			t.Fatal("a replayed delete brought the workout back")
+		}
+	})
+	t.Run("both deleted, one delete delivered", func(t *testing.T) {
+		t.Parallel()
+		ds, wid := garminEditedRun(t)
+		deleteMirror(t, ds, garminEditKind)
+		deleteMirror(t, ds, garminActivityKind)
+		// The workout names the edit as its origin; the activity's delete
+		// alone must still find and delete it.
+		garminAdapt(t, ds, garminActivityKind, garminRunRow)
+		if !workoutGone(t, ds, wid) {
+			t.Fatal("the activity's delete left the workout its edit built")
+		}
+		garminAdapt(t, ds, garminEditKind, garminRunRow)
+		if !workoutGone(t, ds, wid) {
+			t.Fatal("the edit's delete brought the workout back")
+		}
+	})
+}
+
 // TestHealthGarminSplitsTracesAtAnOffsetChange: an hour whose epochs change
 // their UTC offset half way (a flight, a daylight saving change) is two step
 // traces, each with one offset, the second named for its own start.

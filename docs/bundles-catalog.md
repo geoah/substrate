@@ -2081,7 +2081,10 @@ mirror row's own version, which the garmin provider moves only when a re-send
 changes the summary: an identical re-send writes nothing, and a fuller one
 rewrites the same ids at a higher revision. A trace built from several rows
 carries the highest of their versions, and never a lower one than it holds.
-An edit in Garmin Connect wins over the activity it edits.
+An edit in Garmin Connect wins over the activity it edits while the edit
+lives. A deleted mirror row counts as absent: deleting the edit rebuilds the
+workout from the activity, deleting the activity keeps the edit's, and the
+workout is deleted once both are, whichever of the two deletes is delivered.
 
 **What it skips, and counts.** Each delivery's output names the fields it
 left unwritten: those with no catalogue metric (minimum, maximum and average
