@@ -889,13 +889,24 @@ export interface SeriesPoint {
 
 /** A row's value for one reducer, by key. A rolling value (one carrying
  * `rolling` and `of`) is never the reducer's own: the timeline asks for
- * none, and one would otherwise shadow the column it rolls over. */
+ * none, and one would otherwise shadow the column it rolls over.
+ *
+ * A bare `timeInState` is asked for once and answered once per state, each
+ * value naming its state (`{"timeInState": ["rem"]}`, `code: "rem"`), so the
+ * bare key resolves to the value for the row's own code. */
 export function rowValue(
   row: AggregateRow | undefined,
   key: string
 ): AggregateValue | undefined {
-  return row?.values.find(
-    (v) => v.rolling === undefined && reducerKey(v.reducer) === key
+  const own = row?.values.filter((v) => v.rolling === undefined) ?? []
+  const exact = own.find((v) => reducerKey(v.reducer) === key)
+  if (exact || key !== "timeInState") return exact
+  const code = row?.group?.code
+  if (code === undefined) return undefined
+  return own.find(
+    (v) =>
+      reducerName(v.reducer) === "timeInState" &&
+      reducerKey(v.reducer) === `timeInState:${code}`
   )
 }
 

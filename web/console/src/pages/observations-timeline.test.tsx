@@ -27,6 +27,7 @@ import {
   LATEST,
   METRIC,
   SLEEP,
+  SLEEP_STAGE,
   SOURCE,
   STEPS,
   WEIGHT,
@@ -63,8 +64,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function mount(searchParams: string, technical = false) {
-  const server = observationsServer(answer)
+function mount(
+  searchParams: string,
+  technical = false,
+  respond: (read: SeenRead) => AggregateResult | Response = answer
+) {
+  const server = observationsServer(respond)
   vi.stubGlobal("fetch", vi.fn(server.fetch))
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -256,6 +261,45 @@ describe("the charts", () => {
     const legend = within(sleep).getByRole("list", { name: "Legend" })
     expect(legend.textContent).toContain("Rem")
     expect(legend.textContent).toContain("Awake")
+  })
+
+  it("stacks a coded gauge's time in each state as the engine answers it", async () => {
+    // A coded gauge reads a bare `timeInState`. Grouped by code, the
+    // engine answers each row with its own state's value, the reducer
+    // naming that state (aggregateread.go): {"timeInState": ["rem"]}.
+    const stateRows = SLEEP.rows.map((r) => ({
+      ...r,
+      form: "gauge",
+      nonAdditive: undefined,
+      values: [
+        {
+          reducer: { timeInState: [r.group!.code!] },
+          value: String(Number(r.values[0].value) * 60),
+          unit: "s",
+          code: r.group!.code!,
+        },
+      ],
+    }))
+    const server = mount(`?metric=health/sleep_stage&${WINDOW}`, false, (read) =>
+      !read.aggregate.metric
+        ? {
+            ...LATEST,
+            rows: LATEST.rows.map((r) =>
+              r.group?.metric === SLEEP_STAGE ? { ...r, form: "gauge" } : r
+            ),
+          }
+        : { ...SLEEP, unit: "s", rows: stateRows }
+    )
+    const sleep = await lane("Sleep stage")
+    await waitFor(() =>
+      expect(charts(server.seen, "health/sleep_stage")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/sleep_stage")[0].aggregate.reducers
+    ).toEqual(["timeInState"])
+    await waitFor(() =>
+      expect(sleep.querySelectorAll("path[data-series]")).toHaveLength(4)
+    )
   })
 
   it("reads a bucket out from the keyboard and zooms into it", async () => {

@@ -431,6 +431,38 @@ describe("an answer as buckets and series", () => {
     expect(series.map((s) => s.points[0].value)).toEqual([94, 71, 211, 38])
   })
 
+  it("reads a bare timeInState from the value naming the row's state", () => {
+    const rows = [
+      {
+        start: "2026-10-06T23:10:00+03:00",
+        end: "2026-10-07T06:20:00+03:00",
+        group: { code: "rem" },
+        values: [
+          {
+            reducer: { timeInState: ["rem"] },
+            value: "1800",
+            unit: "s",
+            code: "rem",
+          },
+        ],
+        count: 1,
+        bounded: 0,
+        synthetic: false,
+        unavailable: false,
+      },
+    ]
+    const { series } = seriesOf(rows, "timeInState", "code")
+    expect(series[0].points[0].value).toBe(1800)
+    // Another state's value is not this row's.
+    expect(
+      seriesOf(
+        [{ ...rows[0], group: { code: "deep" } }],
+        "timeInState",
+        "code"
+      ).series[0].points[0].value
+    ).toBe(null)
+  })
+
   it("keeps each row's from, so prefer-raw is auditable", () => {
     const { series } = seriesOf(STEPS.rows, "sum")
     expect(series[0].points.map((p) => p.row?.from)).toEqual([
