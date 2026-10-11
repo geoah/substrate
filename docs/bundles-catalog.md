@@ -2006,7 +2006,10 @@ counted. Each data type is read from one derived stream, so a quantity Google
 keeps in two views is never counted twice; the resting heart rate stream,
 `merge_step_deltas`, `com.google.calories.bmr` (a rate, kcal per day),
 activity segments and active and heart minutes have no catalogue metric here
-and are skipped and counted.
+and are skipped and counted. A step or energy delta keeps its end: a null
+follows it in its trace at `endTimeNanos` unless the next delta starts there,
+and a delta that crosses a UTC hour is one `amount` observation over its own
+span instead of a point in either hour's trace.
 
 Every output names its origin row (`origin`, or `origins` on a trace), and a
 delivery rewrites that row's whole output set, deleting what the row no

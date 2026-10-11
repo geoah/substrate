@@ -26,6 +26,15 @@ the provider this was tested against recordings only.
 | `com.google.blood_pressure` | `merged` | `health/systolic_blood_pressure`, `health/diastolic_blood_pressure` | gauge, hold `PT0S` | `mm[Hg]` | two observations per reading, each carrying both as `components` |
 | `com.google.sleep.segment` | `merged` | `health/sleep_stage` | amount | `min` | one observation per segment inside a sleep session, `code` beside the duration |
 
+A step or energy point is a delta over `[startTimeNanos, endTimeNanos)`, and
+a trace point's amount spans to the trace's next point. So the adapter keeps
+each delta's end: a null point follows it at `endTimeNanos` unless the next
+delta from the same device starts exactly there, and a null in a trace means
+nothing was measured from that instant. A delta that crosses a UTC hour is
+written as one `amount` observation over its own span, the reading's id
+below, and not split between two hourly traces: the amount stays whole and
+neither hour claims time it does not cover.
+
 A session with `activityType` 72 becomes a `health/sleep` (span, `timeInBed`,
 `timeAsleep` and the `awake`, `light`, `deep` and `rem` totals); any other
 session becomes a `health/workout` with `sportSource` set to Fit's activity
