@@ -24,6 +24,16 @@ const observedPageSize = 20000
 // observedInsertBatch bounds one insert of rollup rows.
 const observedInsertBatch = 2000
 
+// observedLockKey serializes the recompute of rollup and latest rows per
+// repository. The background re-derivation writes points beside a live
+// write, and two transactions recomputing one bucket at once would each read
+// the points before the other's commit, and the second insert of the bucket's
+// row would collide with the first's. Taken last, after every record lock,
+// and held to the commit: the global order is changelog < registry-dep <
+// subject-type < record < observed, and nothing that holds it waits on a
+// record.
+const observedLockKey = "observed"
+
 // settleObserved recomputes what the transaction's point writes touched. A
 // replay recomputes every row (rederiveObservedAll).
 func (t *txn) settleObserved() error {
@@ -32,6 +42,9 @@ func (t *txn) settleObserved() error {
 		return nil
 	}
 	t.observed = nil
+	if err := t.lockKey(observedLockKey); err != nil {
+		return err
+	}
 	if touch.all {
 		return t.rederiveObservedAll()
 	}

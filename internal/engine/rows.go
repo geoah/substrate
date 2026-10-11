@@ -265,7 +265,8 @@ func nonNilStrings(ss []string) []string {
 // gapless counter rather than a shared one with holes.
 //
 // It is also the FIRST key of the global lock order, which every transaction
-// keeps: changelog < registry-dep < subject-type < record. inTx takes it
+// keeps: changelog < registry-dep < subject-type < record < observed
+// (observedsettle.go observedLockKey). inTx takes it
 // before the transaction locks anything else, so no writer holds a record
 // (an advisory record lock or a row FOR UPDATE) while waiting for the
 // changelog, and RebuildRepository takes it first for the same reason.
