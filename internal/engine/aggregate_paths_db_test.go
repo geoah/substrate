@@ -349,6 +349,48 @@ func TestAggregateFirstAndLastBreakTiesByRecord(t *testing.T) {
 	}
 }
 
+// `eq` and `in` on one stream key admit what both admit, as the list's filter
+// does: `eq` source A beside `in` [source B] reads no stream, where it once
+// read both, and the same holds for a code.
+func TestAggregateFilterConditionsIntersect(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i, src := range []string{"a", "b"} {
+		f.mustPut(t, f.observation, "door/"+src, map[string]any{
+			"metric": f.metricRef("air_temperature"), "source": f.sourceRef(src), "form": "gauge",
+			"code": []string{"open", "closed"}[i], "at": at(start.Add(time.Duration(i) * time.Minute)),
+		})
+	}
+	read := func(name string, c substrate.Cond) []substrate.AggregateRow {
+		t.Helper()
+		filter := substrate.Filter{Kinds: []string{f.observation}, Properties: map[string]substrate.Cond{name: c}}
+		res, _, _ := f.bothPaths(filter, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+			Range:    rng(start, start.Add(time.Hour)),
+			Reducers: reducers("count"),
+		})
+		return res.Rows
+	}
+	both := substrate.Cond{Eq: f.sourcePath("a"), In: []any{f.sourcePath("b")}}
+	page, err := f.ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{
+		Kinds: []string{f.observation}, Properties: map[string]substrate.Cond{"source": both},
+	}})
+	if err != nil || len(page.Records) != 0 {
+		t.Fatalf("the list under eq A and in [B]: %d records (%v), want none", len(page.Records), err)
+	}
+	if rows := read("source", both); len(rows) != 0 {
+		t.Errorf("eq A and in [B] on source: %d rows, want none", len(rows))
+	}
+	overlap := substrate.Cond{Eq: f.sourcePath("a"), In: []any{f.sourcePath("a"), f.sourcePath("b")}}
+	if rows := read("source", overlap); len(rows) != 1 || rows[0].Sources[0] != f.sourcePath("a") {
+		t.Errorf("eq A and in [A, B] on source: %+v, want A's row alone", rows)
+	}
+	if rows := read("code", substrate.Cond{Eq: "open", In: []any{"closed"}}); len(rows) != 0 {
+		t.Errorf("eq open and in [closed] on code: %d rows, want none", len(rows))
+	}
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`

@@ -1124,9 +1124,11 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 Exactly one of `metric` and `property`; both is a `422`. A metric read's
 `filter` takes `kinds` and `implements` (a kind that does not bind `observed`
 is refused by name) and `eq` or `in` on the stream properties `source`,
-`about`, `metric` and `channel`, each a record path or `{ref}`. `code` filters
-the intervals by code after they are built from every transition, so a door's
-`closed` still ends the `open` before it. Any other arm is a `400`. A property
+`about`, `metric` and `channel`, each a record path or `{ref}`; `eq` beside
+`in` on one property admits what both admit, as the list's filter does.
+`code` filters the intervals by code after they are built from every
+transition, so a door's `closed` still ends the `open` before it. Any other
+arm is a `400`. A property
 read takes the whole [filter grammar](#the-filter-grammar).
 
 ### The four time modes
