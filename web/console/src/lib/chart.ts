@@ -126,23 +126,65 @@ export function compactNumber(n: number): string {
  * exponent. */
 const MAX_LABEL_DECIMALS = 20
 
-/** One axis's tick labels, each as precise as the step between them, so
- * ticks 0.2 apart never print the same number twice (`72.2`, `72.4`); from
- * a thousand up they are compact, and a step finer than twenty decimals
- * prints exponents (`1.2e-101`). */
-export function tickLabels(ticks: readonly number[]): string[] {
-  const step = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 1
-  const decimals = step > 0 ? Math.max(0, -Math.floor(Math.log10(step))) : 0
-  if (decimals > MAX_LABEL_DECIMALS) {
-    const largest = Math.max(...ticks.map((t) => Math.abs(t)))
-    const digits =
-      Math.floor(Math.log10(largest)) - Math.floor(Math.log10(step))
-    const bounded = Math.min(MAX_LABEL_DECIMALS, Math.max(0, digits))
-    return ticks.map((t) => t.toExponential(bounded))
+/** The decimals that tell values `step` apart. */
+function decimalsFor(step: number): number {
+  return step > 0 ? Math.max(0, -Math.floor(Math.log10(step))) : 0
+}
+
+/** The compact suffixes from a thousand up, largest first. */
+const COMPACT: readonly [number, string][] = [
+  [1e9, "B"],
+  [1e6, "M"],
+  [1e3, "K"],
+]
+
+/** One tick from a thousand up, in its suffix's unit to as many decimals as
+ * the step needs in that unit (`10.5K` beside `10K`), trailing zeros
+ * dropped. */
+function compactTick(t: number, step: number): string {
+  const [unit, suffix] = COMPACT.find(([u]) => Math.abs(t) >= u)!
+  const decimals = Math.min(100, decimalsFor(step / unit))
+  return `${Number((t / unit).toFixed(decimals))}${suffix}`
+}
+
+/** Exponent labels, each with as many digits as the ticks need to differ
+ * (`1.2e-101`, `1.7400000000000004e+13`). Seventeen significant digits
+ * tell any two finite floats apart. */
+function exponentLabels(ticks: readonly number[], step: number): string[] {
+  const largest = Math.max(...ticks.map((t) => Math.abs(t)))
+  const from =
+    largest > 0 && step > 0
+      ? Math.floor(Math.log10(largest)) - Math.floor(Math.log10(step))
+      : 0
+  let labels: string[] = []
+  for (let digits = Math.min(16, Math.max(0, from)); digits <= 16; digits++) {
+    labels = ticks.map((t) => t.toExponential(digits))
+    if (new Set(labels).size === labels.length) break
   }
-  return ticks.map((t) =>
-    Math.abs(t) >= 1e3 ? compactNumber(t) : t.toFixed(decimals)
+  return labels
+}
+
+/** One axis's tick labels, each as precise as the step between them, so
+ * ticks 0.2 apart never print the same number twice (`72.2`, `72.4`). From
+ * a thousand up they are compact, to the decimals the step needs in the
+ * suffix's unit (`10K`, `10.5K`, `11K`). A step finer than twenty decimals,
+ * and labels that would still print one number twice (two adjacent floats
+ * that divide into one number of billions), print exponents instead. */
+export function tickLabels(ticks: readonly number[]): string[] {
+  let step = 0
+  for (let i = 1; i < ticks.length; i++) {
+    const gap = Math.abs(ticks[i] - ticks[i - 1])
+    if (gap > 0 && (!step || gap < step)) step = gap
+  }
+  if (!step) step = 1
+  const decimals = decimalsFor(step)
+  if (decimals > MAX_LABEL_DECIMALS) return exponentLabels(ticks, step)
+  const labels = ticks.map((t) =>
+    Math.abs(t) >= 1e3 ? compactTick(t, step) : t.toFixed(decimals)
   )
+  return new Set(labels).size === labels.length
+    ? labels
+    : exponentLabels(ticks, step)
 }
 
 const r = (n: number) => Number(n.toFixed(2))
