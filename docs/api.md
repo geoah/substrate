@@ -1290,8 +1290,10 @@ answer the same, to float rounding: `internal/observed` holds both.
 ### `fill`, `rolling` and `downsample`
 
 `fill` makes each group's buckets dense: `null` adds rows whose values are
-`null`, `zero` rows of `"0"`, `locf` rows carrying the previous row's values;
-each made row is `synthetic`. `rolling` then adds, to every row, each rolling
+`null`, `zero` rows of `"0"`, `locf` rows carrying the previous row's values
+whole, each with its own `code` (a coded `last` carries the previous code,
+a `timeInState` the previous row's states); a coded `first` or `last` that
+`null` or `zero` makes answers nothing. Each made row is `synthetic`. `rolling` then adds, to every row, each rolling
 reducer over each of its values across that bucket and the `buckets - 1`
 before it, filled rows included and missing ones counted; `rolling` is refused
 in the records mode.

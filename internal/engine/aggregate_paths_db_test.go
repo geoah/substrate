@@ -391,6 +391,43 @@ func TestAggregateFilterConditionsIntersect(t *testing.T) {
 	}
 }
 
+// locf carries a coded stream's previous row whole: `open` at 00:15 and
+// `closed` at 01:15, each held a minute, leave the third hour `closed`, for
+// a last and for the time in each state alike.
+func TestAggregateLocfCarriesThePreviousCode(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i, code := range []string{"open", "closed"} {
+		f.mustPut(t, f.observation, "door/"+code, map[string]any{
+			"metric": f.metricRef("air_temperature"), "source": f.sourceRef("contact"), "form": "gauge", "code": code,
+			"hold": "PT1M", "at": at(start.Add(time.Duration(i)*time.Hour + 15*time.Minute)),
+		})
+	}
+	read := func(red substrate.AggregateReducer, unit string) substrate.AggregateRow {
+		t.Helper()
+		res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+			Range:    rng(start, start.Add(3*time.Hour)),
+			Bucket:   &substrate.AggregateBucket{Every: "PT1H"},
+			Reducers: []substrate.AggregateReducer{red},
+			Fill:     "locf",
+			Unit:     unit,
+		})
+		if len(res.Rows) != 3 || !res.Rows[2].Synthetic {
+			t.Fatalf("%s: %+v, want three hours, the third filled", red.String(), res.Rows)
+		}
+		return res.Rows[2]
+	}
+	if last := read(substrate.AggregateReducer{Name: "last"}, ""); len(last.Values) != 1 || last.Values[0].Code != "closed" {
+		t.Errorf("the filled hour's last = %+v, want closed", last.Values)
+	}
+	states := read(substrate.AggregateReducer{Name: "timeInState"}, "min")
+	if len(states.Values) != 1 || states.Values[0].Code != "closed" || states.Values[0].Value == nil || *states.Values[0].Value != "1" {
+		t.Errorf("the filled hour's time in state = %+v, want closed for 1 min", states.Values)
+	}
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`
