@@ -34,7 +34,7 @@ data:
     samples.substrate.reamde.dev/health: 1
     providers.substrate.reamde.dev/applehealth: 1
   installs:
-    - samples.substrate.reamde.dev/healthapple/healthappleadapt
+    - samples.substrate.reamde.dev/healthapple/adaptapplehealth
 ---
 # Reads are the reconciliation: the outputs that already point at the origin
 # (`filter.referencing`), and the account for the merged source's name. The
@@ -42,7 +42,7 @@ data:
 # name, its `priorities`) stands.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/healthapple/healthappleadapt
+  id: samples.substrate.reamde.dev/healthapple/adaptapplehealth
 data:
   authority: samples.substrate.reamde.dev
   package: healthapple

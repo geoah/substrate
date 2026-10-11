@@ -42,11 +42,11 @@ data:
     samples.substrate.reamde.dev/health: 1
     providers.substrate.reamde.dev/googlefit: 1
   installs:
-    - samples.substrate.reamde.dev/healthgooglefit/observegooglefit
+    - samples.substrate.reamde.dev/healthgooglefit/adaptgooglefit
 ---
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/healthgooglefit/observegooglefit
+  id: samples.substrate.reamde.dev/healthgooglefit/adaptgooglefit
 data:
   authority: samples.substrate.reamde.dev
   package: healthgooglefit

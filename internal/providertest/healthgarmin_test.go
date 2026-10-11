@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	healthGarminFn     = samples.Authority + "/healthgarmin/garminhealth"
+	healthGarminFn     = samples.Authority + "/healthgarmin/adaptgarmin"
 	garminHealthMetric = samples.Authority + "/observations/metric/health/"
 )
 

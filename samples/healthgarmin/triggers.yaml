@@ -29,4 +29,4 @@ data:
           - providers.substrate.reamde.dev/garmin/manuallyupdatedactivity
         ops: [create, update, delete]
         coalesce: true
-    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthgarmin/garminhealth
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthgarmin/adaptgarmin

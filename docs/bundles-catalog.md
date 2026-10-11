@@ -22,8 +22,8 @@ write below and
 Do not treat the mirror as confirmation that a send happened.
 
 **Nine samples**: LLM, notes, the reading list, Firecrawl, Pebble, WHOOP to
-health, the Apple Health adapter, Garmin health and the Google Fit health
-adapter. Each is a worked example to read and copy, imported under the repository's own
+health, Apple Health to health, Garmin to health and Google Fit to health.
+Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -79,10 +79,10 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
-| WHOOP to health | Sample | the provider's | 0     | 1         | 1       | 0      |
-| Apple Health adapter | Sample | none        | 0     | 1         | 1       | 0      |
-| Garmin health | Sample   | none           | 0     | 1         | 1       | 0      |
-| Health from Google Fit | Sample | none         | 0     | 1         | 1       | 0      |
+| WHOOP to health | Sample | none        | 0     | 1         | 1       | 0      |
+| Apple Health to health | Sample | none      | 0     | 1         | 1       | 0      |
+| Garmin to health | Sample | none          | 0     | 1         | 1       | 0      |
+| Google Fit to health | Sample | none        | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -1052,7 +1052,7 @@ loopback fake and recordings; nothing was run against a live account.
   `syncRequestedAck` disagree; `googlefit-scheduled` fires it every 15
   minutes, and the body syncs the accounts that are due.
 - **Mappings**: none shipped. The
-  [health from Google Fit](#health-from-google-fit-sample) sample turns these
+  [Google Fit to health](#google-fit-to-health-sample) sample turns these
   mirror rows into health observations.
 
 **Seven toggles, one scope each**, every scope under
@@ -1683,16 +1683,17 @@ rewrite the same records. The provider's
 [README](../kinds/providers.substrate.reamde.dev/applehealth/README.md) has
 the setup as steps.
 
-## Apple Health adapter (sample)
+## Apple Health to health (sample)
 
-Package `samples.substrate.reamde.dev/healthapple`. It writes what the
-[Apple Health provider](#apple-health) mirrors as the `health` sample's
-records ([observations](observations.md)), and requires `health` (so
-`observations`) and `providers.substrate.reamde.dev/applehealth`, each with a
-`requiresAtLeast` floor of 1.
+Turns [Apple Health](#apple-health) mirror rows into
+[observations](observations.md), traces and health records under the
+repository's own authority. Package `samples.substrate.reamde.dev/healthapple`
+requires `health` (so `observations`) and
+`providers.substrate.reamde.dev/applehealth`, each with a `requiresAtLeast`
+floor of 1.
 
 - **Kinds (0)**: it writes the `observations` and `health` kinds.
-- **Functions (1)**: `healthappleadapt` reads one mirror row and writes
+- **Functions (1)**: `adaptapplehealth` reads one mirror row and writes
   everything that row implies.
 - **Triggers (1)**: `healthapple-on-mirror`, on the provider's `metricbatch`
   and `workout` kinds, for `create`, `update` and `delete`, coalesced.
@@ -1907,20 +1908,21 @@ curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webho
 
 ## WHOOP to health (sample)
 
-Package `samples.substrate.reamde.dev/healthwhoop`. Turns the
-[WHOOP](#whoop) provider's mirror rows into the `health` sample's records
-under the repository's own authority. It requires `health` (and so
+Turns [WHOOP](#whoop) mirror rows into [observations](observations.md) and
+health records under the repository's own authority. WHOOP sends scored
+summaries, never raw samples, so it writes no traces. Package
+`samples.substrate.reamde.dev/healthwhoop` requires `health` (and so
 `observations`) and the WHOOP provider at version 19 or later, the version
 that deletes a mirror row WHOOP deleted.
 
 - **Kinds**: none; it writes `observations/observation`, `observations/source`,
   `health/sleep` and `health/workout`.
-- **Functions (1)**: `whoophealth` rebuilds every record one mirror row
+- **Functions (1)**: `adaptwhoop` rebuilds every record one mirror row
   implies and deletes the records naming that row in `origin` that it no
   longer implies. A deleted mirror row implies nothing, so its records go with
   it. A cycle delivery rebuilds the cycle's recoveries too, because a
   recovery's records span its cycle.
-- **Triggers (1)**: `healthwhoop-on-mirror` fires `whoophealth` on every
+- **Triggers (1)**: `healthwhoop-on-mirror` fires `adaptwhoop` on every
   create, update and delete of a WHOOP `cycle`, `recovery`, `sleep` or
   `workout` row. It starts at the changelog's head: to convert rows the mirror
   held before the import, replay it from the start (`POST
@@ -1971,17 +1973,17 @@ function's output and not written: a cycle's `averageHeartRate` and
 `sleepCycleCount`, and a workout's `percentRecorded` and
 `altitudeChangeMeter`. A cycle's `step_count` never reaches the mirror.
 
-## Health from Google Fit (sample)
+## Google Fit to health (sample)
 
-Package `samples.substrate.reamde.dev/healthgooglefit`. The adapter from the
-[Google Fit](#google-fit) provider's mirror rows to the `health` sample's
-observed values ([observations](observations.md)). It requires
-`observations`, `health` and `providers.substrate.reamde.dev/googlefit`, each
-with a `requiresAtLeast` floor, so install the provider and import `health`
-first.
+Turns [Google Fit](#google-fit) mirror rows into
+[observations](observations.md), traces and health records under the
+repository's own authority. Package
+`samples.substrate.reamde.dev/healthgooglefit` requires `observations`,
+`health` and `providers.substrate.reamde.dev/googlefit`, each with a
+`requiresAtLeast` floor, so install the provider and import `health` first.
 
 - **Kinds (0)**: it writes the `observations` and `health` kinds.
-- **Functions (1)**: `observegooglefit` rebuilds the observed values one
+- **Functions (1)**: `adaptgooglefit` rebuilds the observed values one
   mirror row implies and deletes the ones it no longer does.
 - **Triggers (1)**: `healthgooglefit-on-mirror` delivers every create, update
   and delete of a `googlefit/dataset` or `googlefit/session` row, one
@@ -2021,18 +2023,18 @@ qualifier, and a trace, a sleep and a workout have no property for it. The
 ids, the sources and the rest are in the sample's
 [README](../samples/healthgooglefit/README.md).
 
-## Garmin health (sample)
+## Garmin to health (sample)
 
-Package `samples.substrate.reamde.dev/healthgarmin`. The adapter between the
-Garmin provider and the health sample: it turns each Garmin mirror row into
-the [observations](observations.md), traces, sleeps and workouts the health
-sample describes. It requires `samples.substrate.reamde.dev/observations`,
+Turns [Garmin](#garmin) mirror rows into [observations](observations.md),
+traces and health records under the repository's own authority. Package
+`samples.substrate.reamde.dev/healthgarmin` requires
+`samples.substrate.reamde.dev/observations`,
 `samples.substrate.reamde.dev/health` and the installed
 `providers.substrate.reamde.dev/garmin`, each with a `requiresAtLeast` floor,
 so import it after installing the provider and importing `health`.
 
 - **Kinds**: none of its own; it writes the base and health kinds.
-- **Functions (1)**: `garminhealth` rebuilds what one mirror row implies.
+- **Functions (1)**: `adaptgarmin` rebuilds what one mirror row implies.
 - **Triggers (1)**: `healthgarmin-on-mirror` delivers every create, update and
   delete of the fifteen Garmin mirror kinds that carry measurements (every
   kind but `notice`), coalescing a burst on one row.

@@ -1,5 +1,5 @@
 # The adapter's one delivery: every create, update and delete of a WHOOP
-# cycle, recovery, sleep or workout row fires `whoophealth` with that row's
+# cycle, recovery, sleep or workout row fires `adaptwhoop` with that row's
 # current state. The member row implies no health record and is not named.
 #
 # A new trigger starts at the changelog's head, so rows the WHOOP mirror held
@@ -22,4 +22,4 @@ data:
           - providers.substrate.reamde.dev/whoop/sleep
           - providers.substrate.reamde.dev/whoop/workout
         ops: [create, update, delete]
-    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthwhoop/whoophealth
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthwhoop/adaptwhoop

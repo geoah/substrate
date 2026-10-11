@@ -45,7 +45,7 @@ data:
     # what lets this adapter delete the outputs of one.
     providers.substrate.reamde.dev/whoop: 19
   installs:
-    - samples.substrate.reamde.dev/healthwhoop/whoophealth
+    - samples.substrate.reamde.dev/healthwhoop/adaptwhoop
 ---
 # ---- the adapter: one mirror row per delivery ---------------------------------
 # Fired by `healthwhoop-on-mirror` on every create, update and delete of a
@@ -54,7 +54,7 @@ data:
 # the same outputs as a prompt one.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/healthwhoop/whoophealth
+  id: samples.substrate.reamde.dev/healthwhoop/adaptwhoop
 data:
   authority: samples.substrate.reamde.dev
   package: healthwhoop

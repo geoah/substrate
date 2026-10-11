@@ -28,7 +28,7 @@ const (
 	haMetric      = haObs + "metric/health/"
 	haSleep       = "samples.substrate.reamde.dev/health/sleep"
 	haWorkout     = "samples.substrate.reamde.dev/health/workout"
-	haAdapt       = "samples.substrate.reamde.dev/healthapple/healthappleadapt"
+	haAdapt       = "samples.substrate.reamde.dev/healthapple/adaptapplehealth"
 )
 
 // newHealthApple is a repository with the provider, the health sample, the

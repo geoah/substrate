@@ -9,7 +9,7 @@ metadata:
 data:
   properties:
     enabled: true
-    label: Google Fit health observations
+    label: Google Fit to health
     source:
       record:
         kinds:
@@ -17,4 +17,4 @@ data:
           - providers.substrate.reamde.dev/googlefit/session
         ops: [create, update, delete]
         coalesce: true
-    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthgooglefit/observegooglefit
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthgooglefit/adaptgooglefit

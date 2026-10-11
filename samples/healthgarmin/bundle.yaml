@@ -39,7 +39,7 @@ data:
     samples.substrate.reamde.dev/health: 1
     providers.substrate.reamde.dev/garmin: 1
   installs:
-    - samples.substrate.reamde.dev/healthgarmin/garminhealth
+    - samples.substrate.reamde.dev/healthgarmin/adaptgarmin
 ---
 # ---- the adapter ----------------------------------------------------------------
 # It reads the garmin account (the source's name), the epoch and respiration
@@ -48,7 +48,7 @@ data:
 # output kinds and the sources.
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: samples.substrate.reamde.dev/healthgarmin/garminhealth
+  id: samples.substrate.reamde.dev/healthgarmin/adaptgarmin
 data:
   authority: samples.substrate.reamde.dev
   package: healthgarmin

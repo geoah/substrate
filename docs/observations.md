@@ -336,13 +336,17 @@ a metric's description marks the least certain ones.
 ## The adapters
 
 An adapter is a sample whose function turns one provider's mirror rows into
-these records. `samples.substrate.reamde.dev/healthapple` is the first: it
-reads the Apple Health provider's metric batches and workouts and writes
-traces, observations, sleeps and workouts, each naming the mirror row it came
-from in `origin` and rewritten or deleted with it. Its mapping and rules are
-in the [catalog](bundles-catalog.md#apple-health-adapter-sample). Its trace
-ids carry the source, `applehealth/<account>/<source>/<metric>/<UTC hour>`,
-because one phone delivers several devices' data.
+these records, each naming the mirror row it came from in `origin` and
+rewritten or deleted with it. Four ship, each with its mapping and rules in
+the catalog: [WHOOP to health](bundles-catalog.md#whoop-to-health-sample)
+(`healthwhoop`), [Apple Health to
+health](bundles-catalog.md#apple-health-to-health-sample) (`healthapple`),
+[Garmin to health](bundles-catalog.md#garmin-to-health-sample)
+(`healthgarmin`) and [Google Fit to
+health](bundles-catalog.md#google-fit-to-health-sample) (`healthgooglefit`).
+The Apple Health adapter's trace ids carry the source,
+`applehealth/<account>/<source>/<metric>/<UTC hour>`, because one phone
+delivers several devices' data.
 
 ## Building observed values in a function
 

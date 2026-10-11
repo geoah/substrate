@@ -1,12 +1,12 @@
-# The healthgooglefit sample
+# Google Fit to health
 
-Package `samples.substrate.reamde.dev/healthgooglefit`: the adapter from the
-`googlefit` provider's mirror rows to the `health` sample's observed values.
-It requires `observations`, `health` and the provider, and declares no kind
-of its own: `bundle.yaml` holds the `observegooglefit` function and
-`triggers.yaml` the `healthgooglefit-on-mirror` record trigger that runs it on
-every create, update and delete of a `googlefit/dataset` or
-`googlefit/session` row.
+Turns Google Fit mirror rows into observations, traces and health records
+under the repository's own authority. Package
+`samples.substrate.reamde.dev/healthgooglefit` requires `observations`,
+`health` and the `googlefit` provider, and declares no kind of its own:
+`bundle.yaml` holds the `adaptgooglefit` function and `triggers.yaml` the
+`healthgooglefit-on-mirror` record trigger that runs it on every create,
+update and delete of a `googlefit/dataset` or `googlefit/session` row.
 
 Google Fit's REST API ends with 2026 and is closed to new projects, so like
 the provider this was tested against recordings only.

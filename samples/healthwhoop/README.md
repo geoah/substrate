@@ -1,11 +1,12 @@
-# The healthwhoop sample
+# WHOOP to health
 
-Package `samples.substrate.reamde.dev/healthwhoop`: turns the WHOOP provider's
-mirror rows into health records under the repository's own authority. It
-requires the `health` sample (and so `observations`) and the WHOOP provider at
-version 19 or later.
+Turns WHOOP mirror rows into observations and health records under the
+repository's own authority. WHOOP sends scored summaries, never raw samples,
+so it writes no traces. Package `samples.substrate.reamde.dev/healthwhoop`
+requires the `health` sample (and so `observations`) and the WHOOP provider
+at version 19 or later.
 
-`bundle.yaml` is the closure (the `whoophealth` function) and `triggers.yaml`
+`bundle.yaml` is the closure (the `adaptwhoop` function) and `triggers.yaml`
 is the delivery wiring: `healthwhoop-on-mirror` fires the function on every
 create, update and delete of a WHOOP cycle, recovery, sleep or workout row.
 They are the contract; this file is not.

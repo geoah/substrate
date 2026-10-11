@@ -3,7 +3,7 @@ package providertest
 // The `healthwhoop` sample's adapter over the WHOOP provider's mirror, driven
 // through the dispatcher: the provider's sync (whoop_test.go's stepper and
 // fake, over testdata/whoop) writes the mirror rows, and the sample's record
-// trigger delivers each one to `whoophealth`, which writes the health records
+// trigger delivers each one to `adaptwhoop`, which writes the health records
 // docs/plans/observations/proposal/02a-whoop.md tables.
 
 import (

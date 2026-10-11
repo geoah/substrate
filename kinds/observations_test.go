@@ -106,7 +106,7 @@ func TestHealthAppleRequiresHealthAndTheProvider(t *testing.T) {
 	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reg.ResolveFunction(adapter.ID + "/healthappleadapt"); err != nil {
+	if _, err := reg.ResolveFunction(adapter.ID + "/adaptapplehealth"); err != nil {
 		t.Fatalf("the adapter's function did not install: %v", err)
 	}
 }
@@ -144,7 +144,7 @@ func TestHealthGarminRequiresHealthAndTheProvider(t *testing.T) {
 	if err := installClosure(reg, byPackage, adapter, map[string]bool{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reg.ResolveFunction(samples.Authority + "/healthgarmin/garminhealth"); err != nil {
+	if _, err := reg.ResolveFunction(samples.Authority + "/healthgarmin/adaptgarmin"); err != nil {
 		t.Errorf("the adapter function did not install: %v", err)
 	}
 }

@@ -1,6 +1,6 @@
 package providertest
 
-// The healthgooglefit sample's `observegooglefit` over the mirror rows the
+// The healthgooglefit sample's `adaptgooglefit` over the mirror rows the
 // googlefit provider writes from the recordings (googlefit_test.go): every
 // dataset and session row is handed to the adapter on a record envelope, the
 // way its trigger delivers it, and the observed records it writes are read
@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	fitObservePackage = "samples.substrate.reamde.dev/healthgooglefit"
-	fitObserveFn      = fitObservePackage + "/observegooglefit"
-	obsHome           = "samples.substrate.reamde.dev"
-	obsMetric         = obsHome + "/observations/metric"
-	fitZone           = "Europe/Athens"
+	fitAdaptPackage = "samples.substrate.reamde.dev/healthgooglefit"
+	fitAdaptFn      = fitAdaptPackage + "/adaptgooglefit"
+	obsHome         = "samples.substrate.reamde.dev"
+	obsMetric       = obsHome + "/observations/metric"
+	fitZone         = "Europe/Athens"
 )
 
 // newFitHealth is a repository with the googlefit provider, the health sample
@@ -54,7 +54,7 @@ func observe(t *testing.T, ds substrate.Dataset, kind, id string) map[string]any
 		env["change"].(map[string]any)["op"] = "delete"
 		env["record"] = nil
 	}
-	s := newStepper(t, ds, fitObserveFn, map[string]any{})
+	s := newStepper(t, ds, fitAdaptFn, map[string]any{})
 	s.setEnvelope(env)
 	_, out, _ := s.step(nil)
 	s.apply()
