@@ -226,11 +226,13 @@ func quantityDecls(types []*vocabulary.Kind, name string) []quantityDecl {
 	return out
 }
 
-// storedQuantityUnits are the unit codes a filter's clause must convert into:
-// every code the stored rows hold, read from the rows over the records table
-// and from the one row a mapping's where asks about, plus the codes the
-// declarations list. The grammar admits compounds no table row lists, so the
-// rows themselves are the only complete list.
+// storedQuantityUnits are the unit codes a filter's clause must convert into.
+// A declaration that lists `units:` (or names a level's measure, which admits
+// its listed codes alone) closes the set, and its codes are the whole answer.
+// Any other admits compounds and prefixed codes no table row lists, so the
+// rows themselves are the only complete list: the one row a mapping's where
+// asks about, or one read of the filtered kinds' rows (readStoredUnits),
+// beside the codes the declarations' measures list.
 func (ds *dataset) storedQuantityUnits(ctx context.Context, x dbx, b *builder, decls []quantityDecl, key string) ([]string, error) {
 	var out []string
 	add := func(code string) {
@@ -238,18 +240,24 @@ func (ds *dataset) storedQuantityUnits(ctx context.Context, x dbx, b *builder, d
 			out = append(out, code)
 		}
 	}
+	var open []string
 	for _, d := range decls {
-		if d.spec == nil {
-			continue
-		}
-		for _, u := range d.spec.Units {
-			add(u)
-		}
-		if m, ok := vocabulary.LookupMeasure(d.spec.Measure); ok {
-			for _, u := range m.Units {
+		if d.spec != nil {
+			for _, u := range d.spec.Units {
 				add(u)
 			}
 		}
+		if quantityUnitsClosed(d.spec) {
+			continue
+		}
+		if d.spec != nil {
+			if m, ok := vocabulary.LookupMeasure(d.spec.Measure); ok {
+				for _, u := range m.Units {
+					add(u)
+				}
+			}
+		}
+		open = append(open, d.kind)
 	}
 	switch {
 	case b.rowProps != nil:
@@ -257,29 +265,72 @@ func (ds *dataset) storedQuantityUnits(ctx context.Context, x dbx, b *builder, d
 			u, _ := m[vocabulary.QuantityUnit].(string)
 			add(u)
 		}
-	case b.overRecords && x != nil:
-		kinds := make([]string, len(decls))
-		for i, d := range decls {
-			kinds[i] = d.kind
-		}
-		rows, err := x.QueryContext(ctx, `SELECT DISTINCT props->$1->>'`+vocabulary.QuantityUnit+`'
-			FROM records WHERE kind = ANY($2::text[]) AND jsonb_typeof(props->$1) = 'object'`, key, kinds)
+	case b.overRecords && x != nil && len(open) > 0:
+		units, err := readStoredUnits(ctx, x, open, key, b.tombstones)
 		if err != nil {
 			return nil, err
 		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var u *string
-			if err := rows.Scan(&u); err != nil {
-				return nil, err
-			}
-			if u != nil {
-				add(*u)
-			}
+		for _, u := range units {
+			add(u)
 		}
-		if err := rows.Err(); err != nil {
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// maxQuantityUnits bounds the distinct units one read collects from the rows
+// for one quantity: each is an arm of the read's SQL, and the grammar lets a
+// writer spell one unit many ways (`kg`, `kg.1`, `g.10*3`).
+const maxQuantityUnits = 256
+
+// quantityUnitsClosed reports whether a declaration names every unit a value
+// may hold: a `units:` list, or a level's measure, whose listed codes are the
+// only ones admitted.
+func quantityUnitsClosed(spec *vocabulary.QuantitySpec) bool {
+	if spec == nil {
+		return false
+	}
+	if len(spec.Units) > 0 {
+		return true
+	}
+	m, ok := vocabulary.LookupMeasure(spec.Measure)
+	return ok && m.Scale == vocabulary.ScaleLogarithmic
+}
+
+// readStoredUnits is the one read of the units the rows of kinds hold under a
+// quantity's name, on the side the read selects: the live rows, or the
+// tombstones where it reads those. It reads each such row of the kinds once,
+// found through the records key's kind prefix, and answers at most
+// maxQuantityUnits codes; more is refused, naming the declaration that would
+// close the set.
+func readStoredUnits(ctx context.Context, x dbx, kinds []string, key string, tombstones bool) ([]string, error) {
+	side := `deleted_at IS NULL`
+	if tombstones {
+		side = `deleted_at IS NOT NULL`
+	}
+	rows, err := x.QueryContext(ctx, `SELECT DISTINCT props->$1->>'`+vocabulary.QuantityUnit+`'
+		FROM records WHERE kind = ANY($2::text[]) AND `+side+` AND jsonb_typeof(props->$1) = 'object'
+		LIMIT $3`, key, kinds, maxQuantityUnits+1)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var u *string
+		if err := rows.Scan(&u); err != nil {
 			return nil, err
 		}
+		if u != nil && *u != "" {
+			out = append(out, *u)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) > maxQuantityUnits {
+		return nil, fmt.Errorf("%w: %s holds more than %d distinct units across the rows this read covers; declare `units:` on it so a read need not collect them",
+			substrate.ErrValidation, key, maxQuantityUnits)
 	}
 	slices.Sort(out)
 	return out, nil

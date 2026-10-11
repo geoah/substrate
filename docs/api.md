@@ -544,7 +544,14 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   below 160 pounds, a stored 72.4 kg among them. The engine converts the
   operand exactly into each unit the rows hold, inside the operand's
   [measure](units.md); a stored value of another measure never matches, and an
-  operand outside a declared `measures:` is refused. A value stored with a
+  operand outside a declared `measures:` is refused. Where the property
+  declares `units:`, those codes are every unit a row can hold and no row is
+  read to find them. Otherwise the grammar admits codes no list names
+  (`Mg`, `kg/h`), so each request first reads the distinct units of the
+  filtered kinds' rows (the live ones, or the tombstones under
+  `"deleted": true`): one pass over those rows whatever `first`, the time
+  range or the other predicates say, and a refusal past 256 distinct
+  spellings. Declaring `units:` removes that read. A value stored with a
   comparator (`<0.5`) matches only where the comparison holds for its whole
   half-line, and `in` is refused on a property that declares `comparator:
   true` ([the table](data-model.md#property-types)). `match` is the one operator that reads words

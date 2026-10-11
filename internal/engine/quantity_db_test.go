@@ -9,7 +9,10 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -537,6 +540,114 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	}})
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "not one of the declared units") {
 		t.Fatalf("a unit outside the refinement's list: err = %v", err)
+	}
+}
+
+// countingDB counts the statements a read sends through it.
+type countingDB struct {
+	dbx
+	queries []string
+}
+
+func (c *countingDB) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	c.queries = append(c.queries, q)
+	return c.dbx.QueryContext(ctx, q, args...)
+}
+
+// A quantity filter converts its operand into every unit the rows it reads
+// may hold. Where the declaration lists `units:` that set is closed and no
+// row is read for it; otherwise one read collects the units of the filtered
+// kinds' rows on the side the read selects, live or tombstoned, and never
+// another kind's rows that happen to share the property's name.
+func TestQuantityFilterReadsOnlyTheUnitsItNeeds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := installReadings(t, map[string]map[string]any{
+		"decagram": {"weight": qv("5", "dag")},
+		"megagram": {"weight": qv("1", "Mg")},
+	})
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, "megagram", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	scale := quantityPackage + "/scale"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "scale"}, map[string]any{
+			"properties": map[string]any{
+				"weight": map[string]any{"type": "quantity", "measures": "mass"},
+				"grams":  map[string]any{"type": "quantity", "measures": "mass", "units": []any{"g", "kg"}},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("declare the scale: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: scale, ID: "s1", Properties: map[string]any{
+		"weight": qv("7", "cg"), "grams": qv("3", "g"),
+	}}); err != nil {
+		t.Fatalf("put the scale: %v", err)
+	}
+	kind := func(ident string) *vocabulary.Kind {
+		k, err := ds.registry().Resolve(ident)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	tx, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	read := func(tombstones bool, decls []quantityDecl, key string) ([]string, int) {
+		t.Helper()
+		db := &countingDB{dbx: tx}
+		units, err := ds.storedQuantityUnits(ctx, db, &builder{overRecords: true, tombstones: tombstones}, decls, key)
+		if err != nil {
+			t.Fatalf("read the units: %v", err)
+		}
+		for _, q := range db.queries {
+			if !strings.Contains(q, "kind = ANY(") || !strings.Contains(q, "deleted_at IS") {
+				t.Errorf("the units read %q does not carry the kind filter and the tombstone side", q)
+			}
+		}
+		return units, len(db.queries)
+	}
+	readings := quantityDecls([]*vocabulary.Kind{kind(readingKind)}, "weight")
+	live, n := read(false, readings, "weight")
+	if n != 1 || !slices.Contains(live, "dag") || slices.Contains(live, "Mg") || slices.Contains(live, "cg") {
+		t.Fatalf("a live read collected %v in %d reads, want dag and neither the tombstone's Mg nor the scale's cg", live, n)
+	}
+	if dead, _ := read(true, readings, "weight"); !slices.Contains(dead, "Mg") || slices.Contains(dead, "dag") {
+		t.Fatalf("a read of tombstones collected %v, want the tombstone's Mg and not the live dag", dead)
+	}
+	closed, n := read(false, quantityDecls([]*vocabulary.Kind{kind(scale)}, "grams"), "grams")
+	if n != 0 || strings.Join(closed, ",") != "g,kg" {
+		t.Fatalf("a declaration listing its units read the rows %d times and collected %v, want none and g,kg", n, closed)
+	}
+	// The filter itself still finds the decagram by an operand in kilograms.
+	if got := readingNames(t, ds, substrate.Query{Filter: substrate.Filter{
+		Properties: map[string]substrate.Cond{"weight": {Lt: qv("1", "kg")}},
+	}}); strings.Join(got, ",") != "decagram" {
+		t.Fatalf("weight below 1 kg = %v, want the decagram", got)
+	}
+}
+
+// The units one read collects are bounded: past maxQuantityUnits spellings in
+// the rows a filter covers, the read is refused and names the declaration
+// that would close the set, rather than growing its SQL by one arm a spelling.
+func TestQuantityFilterRefusesUnboundedUnitSpellings(t *testing.T) {
+	t.Parallel()
+	rows := map[string]map[string]any{}
+	for i := range maxQuantityUnits + 1 {
+		rows[fmt.Sprintf("r%03d", i)] = map[string]any{"weight": qv("1", fmt.Sprintf("%d.g", i+2))}
+	}
+	ds := installReadings(t, rows)
+	_, err := ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{
+		Kinds:      []string{readingKind},
+		Properties: map[string]substrate.Cond{"weight": {Lt: qv("1", "kg")}},
+	}})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "more than 256 distinct units") ||
+		!strings.Contains(err.Error(), "declare `units:`") {
+		t.Fatalf("err = %v, want a refusal naming the bound and `units:`", err)
 	}
 }
 
