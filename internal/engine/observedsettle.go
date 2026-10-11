@@ -259,11 +259,17 @@ func (t *txn) nextCounterBuckets(h obsHold, starts []int64) ([]int64, error) {
 // rollupRowsOf computes the rows of the named buckets of one stream.
 func (t *txn) rollupRowsOf(h obsHold, starts []time.Time) ([]rollupRow, error) {
 	byStart := map[int64][]scannedPoint{}
+	// One range of the stream index per bucket, whatever the planner guesses
+	// about the stream's size: as a plain join it put the stream outside the
+	// loop and read every point of it on every write. OFFSET 0 keeps the
+	// subquery from being pulled up into that join.
 	rows, err := t.query(`
 		SELECT b.start, `+pointColumns+`
 		FROM unnest($7::timestamptz[]) AS b(start)
-		JOIN observed_points p ON `+holdStreamSQL+`
-			AND p.ts >= b.start AND p.ts < b.start + interval '15 minutes'
+		CROSS JOIN LATERAL (
+			SELECT * FROM observed_points p
+			WHERE `+holdStreamSQL+` AND p.ts >= b.start AND p.ts < b.start + interval '15 minutes'
+			OFFSET 0) p
 		ORDER BY b.start, p.ts, p.record_id, p.ord`, append(h.args(), starts)...)
 	if err != nil {
 		return nil, err
