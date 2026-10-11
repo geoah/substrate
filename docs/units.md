@@ -5,7 +5,7 @@
 
 Every unit a `quantity` value may carry, grouped by **measure**: the named kind of
 quantity (mass, temperature, rate) inside which a value converts and compares.
-[data-model.md](data-model.md#quantity) says what a quantity value is and how a
+[The data model](data-model.md#property-types) says what a quantity value is and how a
 property declares one. This page is the table itself: 56 measures and 200 codes
 (204 rows, because a few codes sit in two measures).
 

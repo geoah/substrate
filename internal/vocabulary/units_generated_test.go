@@ -133,7 +133,7 @@ func renderUnitsPage(t *testing.T) []byte {
 	w("     go test ./internal/vocabulary/ -run TestUnitsPage -update, never by hand. -->\n\n")
 	w("Every unit a `quantity` value may carry, grouped by **measure**: the named kind of\n")
 	w("quantity (mass, temperature, rate) inside which a value converts and compares.\n")
-	w("[data-model.md](data-model.md#quantity) says what a quantity value is and how a\n")
+	w("[The data model](data-model.md#property-types) says what a quantity value is and how a\n")
 	w("property declares one. This page is the table itself: %d measures and %d codes\n", len(ms), len(vocabulary.UnitCodes()))
 	w("(%d rows, because a few codes sit in two measures).\n\n", rows)
 	w("A code is a case-sensitive UCUM code. The codes listed here are the ones the table\n")

@@ -318,6 +318,7 @@ are written and filtered the same way.
 | `int`, `float`     | numbers, optional `min`/`max`; an `int` is a safe integer, refused past 2^53 - 1 in magnitude because JSON rides float64 |
 | `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded; optional `min`/`max`, compared exactly (`min: 0.01` admits `"0.01"`) |
 | `money`            | an amount in a currency: `{amount: 1999, currency: EUR}` is 19.99 EUR; optional `min`/`max` on the number it denotes |
+| `quantity`         | a measured amount in a unit: `{value: "72.5", unit: kg}`, the digits a string and the unit a UCUM code; optional `measures`, `units`, `comparator`, and `min`/`max` as quantities ([units](units.md)) |
 | `bool`             | true/false                                                  |
 | `datetime`, `date` | RFC 3339 instants / civil dates; the year must fall in Postgres's storable range (4713 BC to 294276 AD) |
 | `duration`         | ISO 8601 without years/months (`PT47M12S`, `P2DT3H`, `P1W`); a day is exactly 24h, and the stored form is one canonical decomposition |
@@ -391,6 +392,102 @@ refused on the declaration. A [filter](api.md#the-filter-grammar) compares
 within one currency and an order compares the exact number. A
 `displayTemplate` renders the value as `19.99 EUR`. The console edits it as an
 amount beside a currency picker.
+
+**Quantities.** A `quantity` value is a measured amount in a unit, and holds
+three members: `value`, the exact digits written as a string, as a `decimal`
+is (a bare JSON number is refused); `unit`, a case-sensitive
+[UCUM](https://ucum.org) code; and, only where the property declares
+`comparator: true`, `comparator`, one of `<`, `<=`, `>=` and `>`, which says
+the true value lies in that half-line. A lab's "below 0.5 ng/mL" is:
+
+```yaml
+result:
+  value: "0.5"
+  unit: ng/mL
+  comparator: "<"
+```
+
+The stored unit is always the code. A write may send an alias instead: `°C`,
+`°F`, `degC`, `degF`, `µg` and `μg` (the two micro signs are two characters),
+`mcg`, `mmHg`, `bpm` (stored as `{beats}/min`), `rpm` (`{rev}/min`), `kWh`,
+`Wh`, `Cal`, `ppm`, `m³` and `count/min`; [the alias table](units.md#aliases)
+lists them all.
+
+Every unit belongs to a **measure**: the named kind of quantity it measures,
+such as `mass`, `temperature` or `rate`. A value converts and compares only
+inside one measure, because a dimension alone does not keep apart what a
+person needs apart: energy and torque, a fraction and a count, real and
+apparent power. [Units](units.md) lists the 56 measures and their 200 codes,
+each with its exact factor. A code the table does not list is still admitted
+when the grammar reads it (`GJ`, `fL`, `kg/h`): one that differs from a listed
+code only by its prefixes belongs to that code's measure, and any other to the
+one measure of its dimension. Where two measures share the dimension (`J/s` is
+a power or an apparent power, `kg.m2/s2` an energy or a torque) the write is
+refused unless the property names its measure.
+
+A property narrows what it admits:
+
+```yaml
+weight:
+  type: quantity
+  measures: mass                        # every unit belongs to mass
+  units: [kg, "[lb_av]"]                # optional: only these codes
+  min: {value: "0", unit: kg}           # optional bounds, themselves quantities
+  max: {value: "700", unit: "[lb_av]"}
+```
+
+`units` lists codes, never aliases. `min` and `max` need `measures:` and
+compare exactly after converting the value into the bound's unit; a bound
+reads the stated number, whatever comparator the value carries. A quantity
+takes no `pattern` and no `values`. A property type may refine `quantity` with
+`measures`, `units` and `comparator` (`airtemperature`, `base: quantity`,
+`measures: temperature`); its bounds are declared on the property that uses
+it, because a property type's `min` and `max` are numbers.
+
+What converts, and what never does:
+
+- Conversion is exact rational arithmetic: 155 `[lb_av]` is 70.30681735 kg to
+  the last digit, and 1 `[degF]` is -155/9 `Cel`, a number with no finite
+  decimal.
+- `temperature` is absolute and converts with offsets: 37 `Cel` is 98.6
+  `[degF]`. `temperature-difference` uses the same three codes without them:
+  0.3 `Cel` of deviation is 0.54 `[degF]`. A property that names neither
+  measure reads `K`, `Cel` and `[degF]` as `temperature`.
+- An annotation is part of the unit, which UCUM itself ignores:
+  `{beats}/min` converts to `{beats}/s` and never to `{steps}/min` or to
+  `/min`. An annotation alone (`{steps}`) is a `count`.
+- An arbitrary unit (`[IU]`, `[arb'U]`) is defined by an assay and converts
+  only to the same atom and annotation under another metric prefix, so
+  `m[IU]/L` converts to `[IU]/L`. This is a substrate extension: UCUM converts
+  no arbitrary unit at all. `[IU]` never reaches `[arb'U]` or a proper unit.
+- A level (`dB`, `dB[SPL]`, `dB[W]`, `dBm`, `[pH]`) converts to nothing but
+  itself. `dBm` is the substrate's own code, 10 lg(P/1 mW) dB, because UCUM
+  has no spelling for a power level against a milliwatt.
+- `rad` converts to nothing but itself: a degree is pi/180 radians, which no
+  rational number states.
+- The table converts units, not measurements: 48 `mmol/mol` is 4.8 `%` as a
+  fraction, though IFCC and NGSP HbA1c are different measurements, and
+  `mg/dL` never converts to `mmol/L`, which takes a molar mass.
+
+A [filter](api.md#the-filter-grammar) compares inside the operand's measure,
+and a bounded value matches a comparison only where the comparison holds for
+every value its half-line admits. For a stored value of 5 in the operand's
+unit:
+
+| Stored | `lt 3` | `lt 5` | `lt 10` | `lte 5` | `eq 5` | `gt 3` | `gte 5` |
+| ------ | ------ | ------ | ------- | ------- | ------ | ------ | ------- |
+| `5`    | no     | no     | yes     | yes     | yes    | yes    | yes     |
+| `<5`   | no     | yes    | yes     | yes     | no     | no     | no      |
+| `<=5`  | no     | no     | yes     | yes     | no     | no     | no      |
+| `>5`   | no     | no     | no      | no      | no     | yes    | yes     |
+| `>=5`  | no     | no     | no      | no      | no     | yes    | yes     |
+
+`in` is refused on a property that declares `comparator: true`, since no set
+of values certainly holds a half-line. An order sorts by the value at its
+measure's base. A `displayTemplate` renders the value with UCUM's print
+symbols: `72.5 kg`, `37 °C`, `<0.5 ng/mL`, `62 beats/min`. The console edits
+a quantity as its digits beside a unit picker narrowed by `measures` and
+`units`, with a comparator picker where the property declares one.
 
 **Secrets.** A `secret` property stores a credential. Writes take a string
 like any other property, but the material never lands in the record: the
