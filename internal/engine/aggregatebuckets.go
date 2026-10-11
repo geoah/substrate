@@ -451,6 +451,11 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	}
 	defer func() { _ = rows.Close() }()
 	var out []*aggBucket
+	// The limit counts the records the filter matches, the ones whose window
+	// is empty (no endsAt, no widening) included: counting only the windows
+	// kept let empty ones use up the rows the LIMIT read and end the read
+	// short without a word.
+	matched := 0
 	for rows.Next() {
 		var kind, id string
 		var version int64
@@ -459,7 +464,7 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		if err := rows.Scan(&kind, &id, &version, &at, &endsAt); err != nil {
 			return nil, err
 		}
-		if len(out) == limit {
+		if matched++; matched > limit {
 			if limit == s.maxRecords {
 				return nil, refuse("aggregate.bucket.records.maxRecords", "the filter matches more than %d records in the range; narrow it or raise maxRecords (the cap is %d)",
 					limit, substrate.AggregateMaxRecordsCap)

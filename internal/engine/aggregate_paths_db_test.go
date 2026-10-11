@@ -553,6 +553,32 @@ func TestAggregateDownsampleKeepsItsColumnCount(t *testing.T) {
 	}
 }
 
+// The records mode's maxRecords counts the records the filter matches: two
+// instants with no endsAt (empty windows) and then a night, under
+// maxRecords 1, are refused, where the empty windows once used up the rows
+// read and the night went unread without a word.
+func TestAggregateMaxRecordsCountsEveryMatch(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	sleep := strings.TrimSuffix(f.observation, "/observations/observation") + "/health/sleep"
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.mustPut(t, sleep, "a-instant", map[string]any{"at": at(start)})
+	f.mustPut(t, sleep, "b-instant", map[string]any{"at": at(start.Add(time.Minute))})
+	f.mustPut(t, sleep, "c-night", map[string]any{"at": at(start.Add(time.Hour)), "endsAt": at(start.Add(3 * time.Hour))})
+	f.mustPut(t, f.observation, "steps/night", map[string]any{
+		"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
+		"value": quantity("10", "{steps}"), "at": at(start.Add(90 * time.Minute)), "endsAt": at(start.Add(100 * time.Minute)),
+	})
+	f.refusedAgg(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+		Range:  rng(start, start.Add(24*time.Hour)),
+		Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+			Filter: substrate.Filter{Kinds: []string{sleep}}, MaxRecords: 1,
+		}},
+		Reducers: reducers("sum"),
+	}}, "aggregate.bucket.records.maxRecords")
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`
