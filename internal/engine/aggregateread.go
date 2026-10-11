@@ -461,8 +461,7 @@ func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.
 const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.bucket15, r.n, r.bounded, r.sum, r.min, r.max, r.mean, r.m2,
 	r.first_ts, r.first_value::text, r.last_ts, r.last_value::text, r.covered_ms, r.held_ms, r.twa_sum, r.last_hold_ms,
 	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum, r.span_end,
-	coalesce(r.first_record_id, ''), coalesce(r.first_ord, 0), coalesce(r.last_record_id, ''), coalesce(r.last_ord, 0),
-	coalesce(r.min_value::text, ''), coalesce(r.max_value::text, '')`
+	r.first_record_id, r.first_ord, r.last_record_id, r.last_ord, r.min_value::text, r.max_value::text`
 
 // rowSpans are the rollup rows the read's windows meet: each window from the
 // row holding its start to the row holding its end, joined.
@@ -503,9 +502,9 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 			held, lastHold                       sql.NullInt64
 			resets                               sql.NullInt64
 			spanEnd                              sql.NullTime
-			firstRecord, lastRecord              string
-			firstOrd, lastOrd                    int64
-			minExact, maxExact                   string
+			firstRecord, lastRecord              sql.NullString
+			firstOrd, lastOrd                    sql.NullInt64
+			minExact, maxExact                   sql.NullString
 		)
 		if err := rows.Scan(&g.code, &g.unit, &g.delta, &g.offset, &bucket, &n, &bounded, &sum, &minV, &maxV, &mean, &m2,
 			&firstTS, &firstV, &lastTS, &lastV, &covered, &held, &twa, &lastHold, &maxGap, &startGp, &increase, &resets, &sin, &cos,
@@ -516,7 +515,7 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 		r.rowGroups[key] = g
 		st := observed.Stats{
 			N: n, Bounded: bounded, Sum: sum.Float64, Min: minV.Float64, Max: maxV.Float64, Mean: mean.Float64, M2: m2.Float64,
-			MinExact: minExact, MaxExact: maxExact,
+			MinExact: minExact.String, MaxExact: maxExact.String,
 			CoveredMs: covered, HeldMs: held.Int64, TWASum: twa.Float64, MaxGapMs: maxGap, StartGapMs: startGp,
 			Resets: resets.Int64, SinSum: sin.Float64, CosSum: cos.Float64, SpanEnd: spanEnd.Time,
 		}
@@ -547,10 +546,10 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 		if n > 0 {
 			st.First, st.Last = point(firstTS, firstV), point(lastTS, lastV)
 			if st.First != nil {
-				st.First.RecordID, st.First.Ord = firstRecord, firstOrd
+				st.First.RecordID, st.First.Ord = firstRecord.String, firstOrd.Int64
 			}
 			if st.Last != nil {
-				st.Last.RecordID, st.Last.Ord = lastRecord, lastOrd
+				st.Last.RecordID, st.Last.Ord = lastRecord.String, lastOrd.Int64
 			}
 		}
 		out = append(out, observed.Row{Start: bucket, Group: key, Stats: st})
@@ -1169,15 +1168,9 @@ func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, stre
 	}
 }
 
-// rowExtent is an amount row's coverage as UnionMs joins it. A row stored
-// before migration 0013 has no span_end, so its extent reaches to the end of
-// time: its overlap with any later extent is unknown.
+// rowExtent is an amount row's coverage as UnionMs joins it.
 func rowExtent(s observed.Stats) observed.Extent {
-	end := s.SpanEnd
-	if end.IsZero() {
-		end = time.Unix(1<<40, 0)
-	}
-	return observed.Extent{Start: s.First.At, End: end, Ms: s.CoveredMs}
+	return observed.Extent{Start: s.First.At, End: s.SpanEnd, Ms: s.CoveredMs}
 }
 
 // amountCoverageSQL is the union of the raw spans of a group's amount
@@ -1530,7 +1523,6 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 			// Compared exactly, answered in the winner's digits (converted
 			// exactly where the unit's factor allows): a min or max is not a
 			// float reduction.
-			var v float64
 			var digits string
 			var ok bool
 			switch {
@@ -1541,21 +1533,15 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 				} else {
 					p, ok = observed.MaxPoint(r.extremaPoints(ev, statOf("max")), all)
 				}
-				v, digits = p.Value, p.Exact
+				digits = p.Exact
 			case red.Name == substrate.ReducerMin:
-				v, digits, ok = ev.stats.Min, ev.stats.MinExact, ev.stats.Values > 0
+				digits, ok = ev.stats.MinExact, ev.stats.Values > 0
 			default:
-				v, digits, ok = ev.stats.Max, ev.stats.MaxExact, ev.stats.Values > 0
+				digits, ok = ev.stats.MaxExact, ev.stats.Values > 0
 			}
 			value := substrate.AggregateValue{Reducer: red, Unit: r.u.value}
-			switch {
-			case !ok:
-			case digits != "":
+			if ok {
 				value.Value = &digits
-			default:
-				// A row from before migration 0013 keeps only the float.
-				r.meta.inexact = true
-				value = r.value(red, v, true, r.u.value)
 			}
 			out = append(out, value)
 		case substrate.ReducerFirst, substrate.ReducerLast:

@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS observed_points (
     wrap_at        numeric,
     circular       boolean     NOT NULL DEFAULT false,
     revision       bigint,
-    PRIMARY KEY (repository, kind, record_id, ord)
+    PRIMARY KEY (repository, kind, record_id, ord),
+    CHECK ((value IS NULL) = (value_exact IS NULL))
 );
 -- A stream's points in time order: a range read, the rollup recompute of a
 -- bucket, the point current at a window's start and the latest point, each
@@ -68,6 +69,26 @@ CREATE INDEX IF NOT EXISTS observed_points_stream_idx
 -- bucket with a point too, because its first step comes from the previous
 -- point. The key puts the bucket before the group, so a recompute deletes
 -- and a read ranges over one stream's buckets on the key.
+--
+-- A read served from the rows answers what the raw points answer
+-- (internal/observed), so a row keeps three things beyond its statistics,
+-- and the CHECKs hold every row to them:
+--
+--   - `min_value` and `max_value`, the stored digits of the row's smallest
+--     and largest number, compared exactly, beside the float8 `min` and
+--     `max`: a float8 holds 15 to 17 digits, and a min or max answers the
+--     digits stored.
+--   - `first_record_id`, `first_ord`, `last_record_id` and `last_ord`, the
+--     record id and index of the first and last point. Points at one instant
+--     are ordered by record id and index, so two rows whose first (or last)
+--     points share an instant are ordered as the raw points are.
+--   - `span_end`, the latest end of an amount row's spans. Its `covered_ms`
+--     is the union of the spans, all inside [first_ts, span_end), so a read
+--     joining two rows adds their lengths where those extents do not
+--     overlap and takes the union from the raw spans where they do.
+--
+-- `increase` is null where the row holds no step (a counter's reading with
+-- none before it): no answer, not a change of zero.
 CREATE TABLE IF NOT EXISTS observed_rollups (
     repository     text        NOT NULL DEFAULT current_setting('substrate.repository'),
     metric         text        NOT NULL,
@@ -86,13 +107,20 @@ CREATE TABLE IF NOT EXISTS observed_rollups (
     sum            float8,
     min            float8,
     max            float8,
+    min_value      numeric,
+    max_value      numeric,
     mean           float8,
     m2             float8,
     first_ts       timestamptz,
     first_value    numeric,
+    first_record_id text,
+    first_ord      integer,
     last_ts        timestamptz,
     last_value     numeric,
+    last_record_id text,
+    last_ord       integer,
     covered_ms     bigint      NOT NULL,
+    span_end       timestamptz,
     held_ms        bigint,
     twa_sum        float8,
     last_hold_ms   bigint,
@@ -102,7 +130,12 @@ CREATE TABLE IF NOT EXISTS observed_rollups (
     resets         integer,
     sin_sum        float8,
     cos_sum        float8,
-    PRIMARY KEY (repository, metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min)
+    PRIMARY KEY (repository, metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min),
+    CHECK ((min IS NULL) = (min_value IS NULL) AND (max IS NULL) = (max_value IS NULL)),
+    CHECK ((first_ts IS NULL) = (first_record_id IS NULL) AND (first_ts IS NULL) = (first_ord IS NULL)),
+    CHECK ((last_ts IS NULL) = (last_record_id IS NULL) AND (last_ts IS NULL) = (last_ord IS NULL)),
+    CHECK ((span_end IS NOT NULL) = (form = 'amount' AND n > 0)),
+    CHECK (increase IS NULL OR form = 'counter')
 );
 
 -- observed_latest: one row per stream, its newest available point, so the

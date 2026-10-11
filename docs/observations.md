@@ -386,7 +386,7 @@ the label a trace id ends with and `local_day` the civil date at an offset.
 The fold derives three tables from the rows of every kind that binds
 `observed`, the way it derives `refs`
 ([decision 0160](decisions/0160-the-observed-index-is-three-derived-tables-and-a-rollup-serves-only-exact-answers.md),
-migrations `0012_observed_index` and `0013_observed_rollup_detail`). A point is a function of one record's
+migration `0012_observed_index`). A point is a function of one record's
 properties and its kind's binding; a rollup row and a latest row are
 functions of a stream's points, and a counter's rollup row also reads the
 stream's reading before its bucket, which may be another record's
@@ -690,11 +690,13 @@ reason:
   Decision 0157 states this rule and its cost.
 - A rollup row gains `start_gap_ms`, where the bucket's first point lies, and
   `bounded`, its count of bounded points, so the read can carry a hold across
-  rows and report bounded values without the raw points. Migration 0013 adds
+  rows and report bounded values without the raw points. It also keeps
   `span_end`, the record id and index of the first and last point, and the
   stored digits of the smallest and largest number (`min_value`,
   `max_value`), so a read served from rows joins amount coverage, breaks ties
-  at one instant and answers a `min` or `max` as the raw points do.
+  at one instant and answers a `min` or `max` as the raw points do. The
+  table's CHECK constraints refuse a row without them, and `increase` is null
+  on a row that holds no step.
 - `observed_points` carries each point's hold, counter contract, `delta`,
   `circular` and `revision`, and its index `ord` in its record; the plan
   named neither, and the rollups are computed from the points alone.
