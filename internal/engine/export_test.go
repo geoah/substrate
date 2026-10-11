@@ -597,3 +597,26 @@ func HoldVocabularyWrites(ds substrate.Dataset) (release func()) {
 	d.vocabularyWriteMu.Lock()
 	return d.vocabularyWriteMu.Unlock
 }
+
+// AggregateRaw makes every aggregate read under the context take raw points
+// where rollup rows could serve, so a test holds the rollup answer against
+// the raw one.
+func AggregateRaw(ctx context.Context) context.Context {
+	return context.WithValue(ctx, aggregateRawKey{}, true)
+}
+
+// AggregateTrace counts what an aggregate read took from observed_rollups
+// and observed_points.
+type AggregateTrace struct{ t *aggTrace }
+
+// RollupRows is the rollup rows the read took.
+func (a AggregateTrace) RollupRows() int64 { return a.t.rollupRows }
+
+// RawPoints is the raw points the read took.
+func (a AggregateTrace) RawPoints() int64 { return a.t.rawPoints }
+
+// AggregateTraced counts what each aggregate read under the context takes.
+func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
+	t := &aggTrace{}
+	return context.WithValue(ctx, aggregateTraceKey{}, t), AggregateTrace{t: t}
+}

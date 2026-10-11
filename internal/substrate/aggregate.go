@@ -278,10 +278,11 @@ func (r *AggregateReducer) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// String is the reducer as a short label: `avg`, `percentile(0.05)`.
+// String is the reducer as a refusal names it: the bare name, or the
+// one-key object of a reducer with its argument (`{"percentile":0.05}`).
 func (r AggregateReducer) String() string {
 	b, err := r.MarshalJSON()
-	if err != nil {
+	if err != nil || (len(b) > 0 && b[0] == '"') {
 		return r.Name
 	}
 	return string(b)
