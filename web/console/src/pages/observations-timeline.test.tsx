@@ -22,7 +22,11 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { AggregateResult } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
-import { isoWithOffset, windowWords } from "@/lib/observations"
+import {
+  isoWithOffset,
+  recordTimelineSearch,
+  windowWords,
+} from "@/lib/observations"
 import {
   LATEST,
   METRIC,
@@ -210,6 +214,23 @@ describe("the timeline's requests", () => {
     const read = charts(server.seen, "health/sleep_stage")[0].aggregate
     expect(read.groupBy).toEqual(["code"])
     expect(read.reducers).toEqual(["sum"])
+  })
+
+  it("keeps a record's subsecond window from its link to the request", async () => {
+    const search = recordTimelineSearch({
+      metric: { ref: `${METRIC}/health/heart_rate` },
+      source: { ref: `${SOURCE}/garmin-forerunner-265` },
+      at: "2026-09-01T00:00:00.123Z",
+      endsAt: "2026-09-01T00:00:00.456Z",
+    })!
+    const server = mount(`?${new URLSearchParams(search).toString()}`)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    const { gte, lt } = charts(server.seen, "health/heart_rate")[0].aggregate
+      .range!
+    expect(Date.parse(gte!)).toBe(Date.parse("2026-09-01T00:00:00.123Z"))
+    expect(Date.parse(lt!)).toBe(Date.parse("2026-09-01T00:00:00.456Z"))
   })
 
   it("holds back a read past the bucket budget and says why", async () => {

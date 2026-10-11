@@ -523,15 +523,19 @@ export function dayRange(first: string, last: string): TimeRange | undefined {
 const pad = (n: number) => String(n).padStart(2, "0")
 
 /** An instant as local wall time with its offset, the spelling the
- * aggregate's `range` reads: `2026-09-01T00:00:00+03:00`. */
+ * aggregate's `range` reads: `2026-09-01T00:00:00+03:00`. Milliseconds are
+ * kept where the instant has them (`00:00:00.123+03:00`): a record's window
+ * shorter than a second would otherwise read as an empty range. */
 export function isoWithOffset(t: number): string {
   const d = new Date(t)
   const off = -d.getTimezoneOffset()
   const sign = off >= 0 ? "+" : "-"
   const abs = Math.abs(off)
+  const ms = d.getMilliseconds()
   return (
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
     `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    (ms ? `.${String(ms).padStart(3, "0")}` : "") +
     `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
   )
 }
