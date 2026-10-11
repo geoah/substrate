@@ -228,6 +228,8 @@ opt into twice:
   sends. The trait's property list never grows: a later need is a second
   trait bound beside it
   ([decision 0154](decisions/0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md)).
+  [Observations](observations.md) has every rule and the sample kinds that
+  bind it.
 - **`accountconfig`** and **`oauth2`** are how the substrate's OAuth
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to

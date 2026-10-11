@@ -770,7 +770,8 @@ A conversion across measures (`kg` to `J`) raises a `HostError` carrying the
 engine's refusal.
 
 **`host.observed` builds observed values in the body.** It is pure Python and
-writes nothing. `trace(points, ...)` packs `[(at, value)]` or `[(at, code)]`,
+writes nothing; [observations](observations.md) has the rules its output
+meets. `trace(points, ...)` packs `[(at, value)]` or `[(at, code)]`,
 each `at` a timezone-aware `datetime` and a value `None` where the source had
 nothing, into the property maps a trace kind (one binding core's
 `observed(packed)`) admits: one map per fixed UTC period (`period`, aligned to

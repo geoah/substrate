@@ -85,6 +85,40 @@ Like every suggested mapping it lands only where the Linear provider is already
 installed, and importing this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
+## samples.substrate.reamde.dev/observations (a sample)
+
+Measured values and where they came from, the base every observing sample
+requires. [Observations](observations.md) has every property and the rules a
+write is held to.
+
+| Kind          | What it is                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `metric`      | Something that can be measured: its names, its codes in other systems, its unit and how its values are read. |
+| `observation` | One measured value, binding core's `observed(single)`: a number with its unit, or a code.                   |
+| `trace`       | The values of one metric from one source over one fixed period, binding `observed(packed)`.                  |
+| `source`      | The device, app, service or lab a value came from.                                                           |
+
+It ships six metric records several domains share: `air_temperature`,
+`relative_humidity`, `energy`, `power`, `illuminance` and
+`atmospheric_pressure`.
+
+## samples.substrate.reamde.dev/health (a sample)
+
+A person's body, sleep, training and blood tests, on top of `observations`,
+which it requires.
+
+| Kind        | What it is                                                                                            |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
+| `analyte`   | The lab facts about one blood test metric: LOINC parts, molar mass, conversions, a fallback range.   |
+| `sleep`     | One night or nap: its span, time in each stage, efficiency and the device's scores.                   |
+| `workout`   | One session: sport, span, distance, energy, heart rate and time in each zone.                         |
+| `labreport` | One report from a lab, with its status and the original document.                                     |
+| `labresult` | One analyte's result, binding `observed(single)`, with the lab's range, flag, specimen and status.     |
+
+It ships a catalogue of 60 metric records with ids `health/<name>`, from
+`health/heart_rate` to `health/ldl_cholesterol`, each with its LOINC,
+HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes.
+
 ## substrate.reamde.dev/core
 
 The substrate's own machinery, declared as kinds so it lists, reads, and
