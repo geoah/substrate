@@ -108,14 +108,17 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err != nil {
 		return nil, err
 	}
-	streams, err := ds.selectStreams(ctx, tx, p)
+	selected, err := ds.selectStreams(ctx, tx, p)
 	if err != nil {
 		return nil, err
 	}
-	if streams, err = ds.discoverForms(ctx, tx, p, streams, p.windows(buckets)); err != nil {
+	// The units are the selected streams' whatever the range holds, so a
+	// range with no point still answers in the metric's unit.
+	units, err := ds.aggregateUnits(ctx, tx, p, selected)
+	if err != nil {
 		return nil, err
 	}
-	units, err := ds.aggregateUnits(ctx, tx, p, streams)
+	streams, err := ds.discoverForms(ctx, tx, p, selected, p.windows(buckets))
 	if err != nil {
 		return nil, err
 	}
