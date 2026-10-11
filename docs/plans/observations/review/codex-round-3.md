@@ -158,3 +158,30 @@ Checks completed:
 - `go vet ./internal/vocabulary/ ./internal/api/ ./kinds/ ./samples/... ./internal/catalog/` and `go build ./cmd/...`: passed.
 - In-memory Go overlays reproduced unsigned queued delivery after adding a signature, legacy secret persistence, and the blocked healthwhoop rename. In-memory TypeScript/Python checks reproduced the coded-chart mismatch, numeric chart failures, Google Fit collision, sparse-series gap, and subsecond truncation.
 - `git diff --check 561fc287 ed10691c`: passed. Repository files and the index remained unchanged.
+
+## Fix notes
+
+Added after the review by the agent that fixed it; the report above is
+unchanged. Each fix is one commit whose title starts with the change and
+whose body ends "Review round 3, finding N".
+
+- Finding 1: the door stores `request.signatureVerified: true` in the
+  stored envelope the delivery ledger already keeps, so no migration was
+  needed. A stored request without the mark is verified from its kept body
+  and headers against `fire.at` before a retry, a resume or an agent rerun
+  runs it, and parks naming the signature when it does not verify.
+- Finding 2: only a development install can hold the record, because
+  nothing on this branch was released; the WHOOP README's upgrade note tells
+  its owner to delete it, and a test pins that the closure ships no setting.
+- Finding 3: no change, because the adapter callables were renamed on this
+  branch before any release, so no repository holds the earlier names to
+  upgrade from.
+- Finding 8: no change, because the `adapter` property was added on this
+  branch before any release, so the shipped package versions are the first
+  versions any repository receives.
+- Finding 7: `testdata/ucum/atoms.tsv` lists the 312 atom codes of UCUM
+  2.2's `ucum-essence.xml`, fetched from the UCUM repository because
+  neither the essence file nor the functional suite (which never writes
+  `st`) was in the tree. Checked against it, `st` (the stere) was the one
+  alias that is a UCUM expression; `in`, `oz`, `IU`, `hr` and `cmAq` are
+  not UCUM codes, alone or as a prefix and a metric atom.
