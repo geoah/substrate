@@ -126,3 +126,32 @@ func TestWebhookTimestampReadsSecondsAndMilliseconds(t *testing.T) {
 		}
 	}
 }
+
+// A stored `fire.at` with a fraction of a second is the receipt. A
+// whole-second one is the receipt the admission recorded when that falls
+// inside the second, and otherwise the start of the second.
+func TestStoredWebhookReceiptKeepsMilliseconds(t *testing.T) {
+	t.Parallel()
+	received := time.Date(2026, 10, 11, 12, 0, 0, 900_000_000, time.UTC)
+	second := received.Truncate(time.Second)
+	for _, c := range []struct {
+		name     string
+		stamp    string
+		recorded time.Time
+		want     time.Time
+	}{
+		{"a fractional stamp", "2026-10-11T12:00:00.9Z", time.Time{}, received},
+		{"a fractional stamp beside a recorded receipt", "2026-10-11T12:00:00.9Z", received.Add(time.Millisecond), received},
+		{"a whole-second stamp and its recorded receipt", "2026-10-11T12:00:00Z", received, received},
+		{"a whole-second stamp alone", "2026-10-11T12:00:00Z", time.Time{}, second},
+		{"a whole-second stamp and a receipt in another second", "2026-10-11T12:00:00Z", received.Add(time.Second), second},
+	} {
+		got, ok := receiptOf(c.stamp, c.recorded)
+		if !ok || !got.Equal(c.want) {
+			t.Errorf("%s: receiptOf(%q, %v) = %v, %v, want %v", c.name, c.stamp, c.recorded, got, ok, c.want)
+		}
+	}
+	if _, ok := receiptOf("", time.Time{}); ok {
+		t.Error("an empty stamp read as a receipt")
+	}
+}
