@@ -84,7 +84,7 @@ func TestVocabularyApplyLogsEachStepAsItStarts(t *testing.T) {
 		[]string{applyLog + `holding the registry lock, checking the batch against the stored records"`, "documents=1", "packages=1"},
 		[]string{applyLog + `writing the declarations of one package"`, "package=" + shop, "index=1", "packages=1"},
 		[]string{applyLog + `rewriting records for the declared conversions"`},
-		[]string{applyLog + `requesting the search index re-derivation behind the commit"`, "kinds=1"},
+		[]string{applyLog + `requesting the search and observed index re-derivation behind the commit"`, "kinds=1"},
 		[]string{applyLog + `committed"`, "took="},
 	)
 	// The pass deletes the request before it logs the kind, so the log is
