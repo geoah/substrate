@@ -8,7 +8,9 @@
  * groups and a repository can hold more streams than that: a first read
  * lists the metrics with a point (one group each), then the streams are
  * read a few metrics at a time (`discoveryChunks`). A page's chosen
- * metrics, sources and things narrow every read on the server. */
+ * metrics, sources and things narrow every read on the server, except the
+ * Source and About menus' own reads (`useFacetValues`), which leave out
+ * the menu's own choice. */
 
 import { useMemo } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
@@ -20,6 +22,7 @@ import { recordsQueryOptions } from "@/lib/api/records"
 import type { AggregateRow, KindInfo } from "@/lib/api/types"
 import {
   discoveryChunks,
+  facetRead,
   formOf,
   latestRead,
   metricInfoOf,
@@ -258,6 +261,107 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
     metrics,
     titles,
   ])
+}
+
+/** What the Source and About menus offer. */
+export interface FacetValues {
+  /** Every source with a point under the page's other choices, as the
+   * group values carry them. */
+  sources: string[]
+  /** Every thing observed with a point under the page's other choices; the
+   * owner names none and is not among them. */
+  abouts: string[]
+  /** A source or a thing in words: its title, else its id. */
+  nameOf: (value: string, pin?: string) => string
+}
+
+/** The values each facet menu offers, one read per facet (`facetRead`):
+ * under the page's metrics and the other facet's choice, never its own, so
+ * a reopened menu still offers what a reader can add beside the chosen
+ * values. The streams' own values join them, so a menu loses none while its
+ * read is on its way or failed. `narrow.metrics` are the metrics the page
+ * shows. */
+export function useFacetValues(
+  obs: Observations,
+  narrow: StreamNarrowing
+): FacetValues {
+  const metrics = paths(narrow.metrics, obs.pins.metric)
+  const sources = paths(narrow.sources, obs.pins.source)
+  const abouts = paths(narrow.abouts, obs.pins.about)
+  const enabled = obs.observedIds.length > 0
+  const bySource = useQuery({
+    ...aggregateQueryOptions(
+      facetRead("source", { metrics, abouts }),
+      obs.observedIds
+    ),
+    enabled,
+  })
+  const byAbout = useQuery({
+    ...aggregateQueryOptions(
+      facetRead("about", { metrics, sources }),
+      obs.observedIds
+    ),
+    enabled,
+  })
+
+  const metricKey = metrics.join("\n")
+  const values = useMemo(() => {
+    const shown = obs.streams.filter(
+      (s) =>
+        !metricKey || metricKey.split("\n").some((m) => sameRef(s.metric, m))
+    )
+    const of = (
+      rows: AggregateRow[] | undefined,
+      key: "source" | "about",
+      own: (string | undefined)[]
+    ) => [
+      ...new Set(
+        [...(rows ?? NO_ROWS).map((r) => r.group?.[key]), ...own].filter(
+          (v): v is string => Boolean(v)
+        )
+      ),
+    ]
+    return {
+      sources: of(
+        bySource.data?.rows,
+        "source",
+        shown.map((s) => s.source)
+      ),
+      abouts: of(
+        byAbout.data?.rows,
+        "about",
+        shown.map((s) => s.about)
+      ),
+    }
+  }, [bySource.data, byAbout.data, obs.streams, metricKey])
+
+  const titlePaths = useMemo(() => {
+    const out = new Set<string>()
+    for (const v of values.sources) {
+      const path = refPathOf(v, obs.pins.source)
+      if (path) out.add(path)
+    }
+    for (const v of values.abouts) {
+      const path = refPathOf(v, obs.pins.about)
+      if (path) out.add(path)
+    }
+    return [...out].sort()
+  }, [values, obs.pins.source, obs.pins.about])
+  const titles = useReferenceTitles(titlePaths, obs.kinds)
+
+  return useMemo(
+    () => ({
+      ...values,
+      nameOf: (value: string, pin?: string) => {
+        const path = refPathOf(value, pin)
+        return (
+          (path ? titles.get(path) || obs.titleOf(path) : undefined) ??
+          refIdOf(value)
+        )
+      },
+    }),
+    [values, titles, obs]
+  )
 }
 
 /** The stream reads as one answer: their rows in order, pending while any

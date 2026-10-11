@@ -58,7 +58,11 @@ import {
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { useObservations, type Observations } from "@/hooks/use-observations"
+import {
+  useFacetValues,
+  useObservations,
+  type Observations,
+} from "@/hooks/use-observations"
 import { aggregateCurl, aggregateQueryOptions } from "@/lib/api/observations"
 import { ApiError } from "@/lib/api/types"
 import {
@@ -260,24 +264,24 @@ export function ObservationsTimelinePage() {
     : obs.streams[0]
       ? [obs.streams[0].metric]
       : []
-  const chosenStreams = obs.streams.filter((s) =>
-    metrics.some((m) => sameRef(s.metric, m))
-  )
+  // The shown metrics' sources and things, each facet's under the other's
+  // choice only, so a chosen source's menu still offers the ones to add.
+  const values = useFacetValues(obs, { metrics, sources, abouts })
   const facets: Facet[] = [
     {
       name: "source",
       label: "Source",
-      options: distinct(chosenStreams.map((s) => s.source)).map((value) => ({
+      options: values.sources.map((value) => ({
         value,
-        label: obs.nameOf(value, obs.pins.source),
+        label: values.nameOf(value, obs.pins.source),
       })),
     },
     {
       name: "about",
       label: "About",
-      options: distinct(chosenStreams.map((s) => s.about)).map((value) => ({
+      options: values.abouts.map((value) => ({
         value,
-        label: obs.nameOf(value, obs.pins.about),
+        label: values.nameOf(value, obs.pins.about),
       })),
     },
   ]

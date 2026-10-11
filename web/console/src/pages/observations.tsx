@@ -39,11 +39,14 @@ import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { useObservations, type Observations } from "@/hooks/use-observations"
+import {
+  useFacetValues,
+  useObservations,
+  type Observations,
+} from "@/hooks/use-observations"
 import {
   SHAPE_WORDS,
   coverageWords,
-  refIdOf,
   refPathOf,
   sameRef,
   shapeOf,
@@ -112,11 +115,15 @@ export function ObservationsPage() {
   const [search, setSearch] = useQueryState("q", parseAsString.withDefault(""))
   // The chosen metrics, sources and things narrow the reads on the server.
   // "You" names no record, so a filter holding it narrows things here only.
-  const obs = useObservations({
+  const narrow = {
     metrics,
     sources,
     abouts: abouts.includes(OWNER) ? [] : abouts,
-  })
+  }
+  const obs = useObservations(narrow)
+  // Each facet's values under the other choices, so a chosen source's menu
+  // still offers the sources a reader can add.
+  const values = useFacetValues(obs, narrow)
 
   const rows = useMemo(() => rowsOf(obs), [obs])
   const facets = useMemo<Facet[]>(() => {
@@ -125,8 +132,6 @@ export function ObservationsPage() {
       obs.metrics.map((m) => [m, obs.metricName(m)] as const)
     )
     for (const r of rows) byMetric.set(r.metric, r.metricName)
-    const bySource = new Map(rows.map((r) => [r.source, r.sourceTitle]))
-    const byAbout = new Map(rows.map((r) => [r.about, r.aboutTitle]))
     return [
       {
         name: "metric",
@@ -138,20 +143,20 @@ export function ObservationsPage() {
       {
         name: "source",
         label: "Source",
-        options: distinct(rows.map((r) => r.source)).map((value) => ({
+        options: values.sources.map((value) => ({
           value,
-          label: bySource.get(value) ?? refIdOf(value),
+          label: values.nameOf(value, obs.pins.source),
         })),
       },
       {
         name: "about",
         label: "About",
-        options: rows.some((r) => r.about)
+        options: values.abouts.length
           ? [
               { value: OWNER, label: "You" },
-              ...distinct(rows.map((r) => r.about)).map((value) => ({
+              ...values.abouts.map((value) => ({
                 value,
-                label: byAbout.get(value) ?? refIdOf(value),
+                label: values.nameOf(value, obs.pins.about),
               })),
             ]
           : [],
@@ -165,7 +170,7 @@ export function ObservationsPage() {
         })),
       },
     ]
-  }, [rows, obs])
+  }, [rows, obs, values])
 
   const shown = useMemo(
     () =>

@@ -29,7 +29,10 @@ import {
 } from "@/lib/observations"
 import {
   LATEST,
+  LATEST_PEOPLE,
+  LEO,
   METRIC,
+  MIA,
   SLEEP,
   SLEEP_STAGE,
   SOURCE,
@@ -111,6 +114,17 @@ function charts(seen: SeenRead[], metric: string): SeenRead[] {
 
 async function lane(name: string): Promise<HTMLElement> {
   return screen.findByRole("region", { name })
+}
+
+/** Picks one value of a facet from "Add filter", then closes the menu. */
+async function addFilter(facet: string, value: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+  fireEvent.click(await screen.findByRole("option", { name: facet }))
+  fireEvent.click(await screen.findByRole("option", { name: value }))
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+  await waitFor(() =>
+    expect(screen.queryByRole("option", { name: value })).toBe(null)
+  )
 }
 
 describe("the timeline's requests", () => {
@@ -295,6 +309,64 @@ describe("the timeline's requests", () => {
     expect(
       await screen.findByRole("option", { name: /Heart rate/ })
     ).toBeTruthy()
+  })
+
+  it("offers the other sources when the chosen source's menu reopens", async () => {
+    const server = mount(`?metric=health/heart_rate&${WINDOW}`)
+    await lane("Heart rate")
+    await addFilter("Source", /Garmin Forerunner 265/)
+    // Discovery narrows to the Garmin on the server.
+    await waitFor(() =>
+      expect(
+        server.seen.some(
+          (r) =>
+            r.aggregate.groupBy?.length === 3 &&
+            r.filter.properties?.source?.in?.length === 1
+        )
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Apple Watch/ }))
+    await waitFor(() =>
+      expect(
+        [
+          ...(charts(server.seen, "health/heart_rate").at(-1)!.filter.properties
+            ?.source?.in ?? []),
+        ].sort()
+      ).toEqual(
+        [`${SOURCE}/apple-watch-s10`, `${SOURCE}/garmin-forerunner-265`].sort()
+      )
+    )
+  })
+
+  it("offers the other people when the chosen person's menu reopens", async () => {
+    const server = mount(
+      `?metric=health/heart_rate&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric ? answer(read) : latestAnswer(read, LATEST_PEOPLE)
+    )
+    await lane("Heart rate")
+    await addFilter("About", /mia/)
+    await waitFor(() =>
+      expect(
+        server.seen.some(
+          (r) =>
+            r.aggregate.groupBy?.length === 3 &&
+            r.filter.properties?.about?.in?.length === 1
+        )
+      ).toBe(true)
+    )
+    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /leo/ }))
+    await waitFor(() =>
+      expect(
+        [
+          ...(charts(server.seen, "health/heart_rate").at(-1)!.filter.properties
+            ?.about?.in ?? []),
+        ].sort()
+      ).toEqual([LEO, MIA].sort())
+    )
   })
 
   it("holds back a read past the bucket budget and says why", async () => {
