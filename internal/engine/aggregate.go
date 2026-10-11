@@ -437,13 +437,18 @@ func (p *aggPlan) parseDownsample() error {
 	}
 	p.points = d.Points
 	// A column at least a rollup row wide is a run of whole rows; a narrower
-	// one reads raw points.
-	span := p.to.Sub(p.from)
-	width := (span + time.Duration(d.Points) - 1) / time.Duration(d.Points)
+	// one reads raw points. Aligning moves the origin back to a quarter hour,
+	// so the width is taken over the aligned extent: the columns from the
+	// aligned origin to the range's end are never more than points.
+	perColumn := func(span time.Duration) time.Duration {
+		return (span + time.Duration(d.Points) - 1) / time.Duration(d.Points)
+	}
+	width := perColumn(p.to.Sub(p.from))
 	origin := p.from
 	if width >= bucketWidth {
-		width = ((width + bucketWidth - 1) / bucketWidth) * bucketWidth
 		origin = p.from.UTC().Truncate(bucketWidth)
+		width = perColumn(p.to.Sub(origin))
+		width = ((width + bucketWidth - 1) / bucketWidth) * bucketWidth
 	} else if width < time.Second {
 		width = time.Second
 	}

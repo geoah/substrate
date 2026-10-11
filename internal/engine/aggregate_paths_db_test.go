@@ -523,6 +523,36 @@ func TestAggregateExtremesKeepTheirDigits(t *testing.T) {
 	}
 }
 
+// A downsample answers at most `points` columns when its origin moves back to
+// a quarter hour: [00:01, 01:01) in one column is one column, not two.
+func TestAggregateDownsampleKeepsItsColumnCount(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 1, 0, 0, time.UTC)
+	for i, minute := range []time.Duration{0, 59} {
+		from := start.Add(minute * time.Minute)
+		f.mustPut(t, f.observation, "col/"+strconv.Itoa(i), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
+			"value": quantity("5", "{steps}"), "at": at(from), "endsAt": at(from.Add(time.Minute)),
+		})
+	}
+	for _, points := range []int{1, 2, 3} {
+		res, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Aggregate: &substrate.Aggregate{
+				Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+				Range:  rng(start, start.Add(time.Hour)),
+			},
+			Downsample: &substrate.Downsample{Points: points},
+		})
+		if err != nil {
+			t.Fatalf("%d points: %v", points, err)
+		}
+		if len(res.Rows) == 0 || len(res.Rows) > points {
+			t.Errorf("%d points: %d columns (%s wide)", points, len(res.Rows), res.Bucket.Every)
+		}
+	}
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`
