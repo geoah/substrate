@@ -114,6 +114,7 @@ data:
     stream or a data type with no catalogue metric is passed over and counted.
     """
     import datetime as _dt
+    import hashlib
     import re as _re
     import zoneinfo
     from collections import Counter
@@ -202,6 +203,9 @@ data:
     CLASSES = {"watch": "watch", "scale": "scale"}
 
     _ID = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
+    # A device uid a source slug keeps as written. Any other uid is digested,
+    # so two uids that differ only in case or punctuation stay two devices.
+    _UID = _re.compile(r"[a-z0-9]{1,32}")
 
     KEYS = {
         OBSERVATION: ("metric", "source", "form", "value", "code", "hold", "at",
@@ -297,6 +301,17 @@ data:
         return _re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-") or "unknown"
 
 
+    def _device_token(dev, origin):
+        """What tells one device from another of the same make and model: its
+        `uid` where `_UID` keeps it as written, else the first 16 hex digits of
+        the uid's SHA-256, else, for a device that names no uid, of the full
+        originDataSourceId's."""
+        uid = str(dev.get("uid") or "")
+        if _UID.fullmatch(uid):
+            return uid
+        return hashlib.sha256((uid or origin).encode("utf-8")).hexdigest()[:16]
+
+
     def _rid(host, aid, readable):
         """A composed id as written, or its hash where it leaves the record-id
         alphabet or passes 128 bytes."""
@@ -377,7 +392,9 @@ data:
         def source_for(self, origin):
             """The device behind a point's originDataSourceId: its listed data
             source, else a listed device whose uid the id names, else the
-            Fit app's manual entry, else the writing app."""
+            Fit app's manual entry, else the writing app. A device's slug is
+            its make and model plus `_device_token`, so two devices of one
+            model are two sources and never share a reading id."""
             origin = str(origin or "")
             row = self.streams.get(origin)
             dev = ((row or {}).get("properties") or {}).get("device") or {}
@@ -385,7 +402,8 @@ data:
                 parts = origin.split(":")
                 dev = next((self.devices[p] for p in parts if p in self.devices), {})
             if dev.get("model") or dev.get("manufacturer"):
-                slug = _slug("%s %s" % (dev.get("manufacturer") or "", dev.get("model") or ""))
+                slug = "%s.%s" % (_slug("%s %s" % (dev.get("manufacturer") or "", dev.get("model") or "")),
+                                  _device_token(dev, origin))
                 return self._source(slug, {
                     "name": " ".join(x for x in (dev.get("manufacturer"), dev.get("model")) if x),
                     "class": CLASSES.get(dev.get("type") or ""),

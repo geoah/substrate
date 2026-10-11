@@ -21,9 +21,11 @@ import type { AggregateResult } from "@/lib/api/types"
 
 import {
   BODY_MASS,
+  GARMIN,
   HEART,
   KINDS,
   LATEST_PEOPLE,
+  MIA,
   RECOVERY,
   SLEEP_STAGE,
   STEPS_METRIC,
@@ -76,16 +78,30 @@ const PROBLEM =
   "aggregate.budget.maxGroups: the latest read makes 201 groups, over 200; narrow the filter or raise maxGroups (the cap is 2000)"
 
 /** The server's 422 for a read over its group budget. */
-function refusal(): Response {
+function refusal(problem = PROBLEM): Response {
   return new Response(
     JSON.stringify({
       error: {
         code: "validation",
         message: "the aggregate read was refused",
-        problems: [PROBLEM],
+        problems: [problem],
       },
     }),
     { status: 422, headers: { "Content-Type": "application/json" } }
+  )
+}
+
+/** The problem the server names when a facet's read passes the group cap. */
+const CAP_PROBLEM =
+  "aggregate.budget.maxGroups: the read makes 2001 groups, over 2000; narrow the filter or raise maxGroups (the cap is 2000)"
+
+/** The server's 503 for a read it could not run just then. */
+function unavailable(): Response {
+  return new Response(
+    JSON.stringify({
+      error: { code: "unavailable", message: "the database is restarting" },
+    }),
+    { status: 503, headers: { "Content-Type": "application/json" } }
   )
 }
 
@@ -269,6 +285,61 @@ describe("the streams table", () => {
     fireEvent.click(screen.getByRole("button", { name: /^About/ }))
     fireEvent.click(await screen.findByRole("option", { name: /leo/ }))
     await waitFor(() => expect(bodyRows()).toHaveLength(3))
+  })
+
+  it("says the full Source list is unavailable when only its read passes the group cap", async () => {
+    // More than 2,000 sources: the Source menu's own read is refused, the
+    // chosen source's streams are not.
+    mount(`?source=${encodeURIComponent(GARMIN)}`, KINDS, (read) =>
+      read.aggregate.groupBy?.join() === "source"
+        ? refusal(CAP_PROBLEM)
+        : latestAnswer(read)
+    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(2))
+    const note = await screen.findByRole("alert", {
+      name: "The full Source list is unavailable",
+    })
+    expect(note.textContent).toContain("more than 2,000 sources")
+    expect(note.textContent).toContain(CAP_PROBLEM)
+    expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    // The menu offers the chosen source, and says nothing of the rest.
+    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    expect(
+      await screen.findByRole("option", { name: /Garmin Forerunner 265/ })
+    ).toBeTruthy()
+    expect(screen.queryByRole("option", { name: /Apple Watch/ })).toBe(null)
+  })
+
+  it("says the About list didn’t load, keeps the streams, and reads it again on a retry", async () => {
+    let failures = 1
+    mount(`?about=${encodeURIComponent(MIA)}`, KINDS, (read) => {
+      if (read.aggregate.groupBy?.join() === "about" && failures > 0) {
+        failures--
+        return unavailable()
+      }
+      return latestAnswer(read, LATEST_PEOPLE)
+    })
+    // Mia's sleep and heart rate stay on the page.
+    await waitFor(() => expect(bodyRows()).toHaveLength(2))
+    const note = await screen.findByRole("alert", {
+      name: "The About list didn’t load",
+    })
+    expect(note.textContent).toContain("the database is restarting")
+    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    expect(await screen.findByRole("option", { name: /mia/ })).toBeTruthy()
+    expect(screen.queryByRole("option", { name: /leo/ })).toBe(null)
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    })
+    fireEvent.click(within(note).getByRole("button", { name: "Try again" }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("alert", { name: "The About list didn’t load" })
+      ).toBe(null)
+    )
+    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    expect(await screen.findByRole("option", { name: /leo/ })).toBeTruthy()
+    expect(bodyRows()).toHaveLength(2)
   })
 
   it("opens the timeline narrowed to a row's stream", async () => {

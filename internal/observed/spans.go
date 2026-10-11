@@ -196,20 +196,43 @@ type Extent struct {
 // extents that overlap join as raw spans do. The reader then takes the union
 // from the raw spans.
 func UnionMs(extents []Extent) (int64, bool) {
-	sorted := append([]Extent(nil), extents...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Start.Before(sorted[j].Start) })
+	ms, ok, _ := UnionMsContext(context.Background(), extents)
+	return ms, ok
+}
+
+// UnionMsContext is UnionMs under ctx, checked every checkEvery extents it
+// copies or walks and between its sort's runs (SortStableFunc): an amount's
+// extents are as many as its rows and raw spans.
+func UnionMsContext(ctx context.Context, extents []Extent) (int64, bool, error) {
+	check := every(ctx)
+	sorted := make([]Extent, 0, len(extents))
+	for _, e := range extents {
+		if err := check(); err != nil {
+			return 0, false, err
+		}
+		sorted = append(sorted, e)
+	}
+	if err := SortStableFunc(ctx, sorted, func(a, b Extent) int { return a.Start.Compare(b.Start) }); err != nil {
+		return 0, false, err
+	}
 	var total int64
 	for i := 0; i < len(sorted); {
+		if err := check(); err != nil {
+			return 0, false, err
+		}
 		run := sorted[i]
 		j := i + 1
 		for ; j < len(sorted); j++ {
+			if err := check(); err != nil {
+				return 0, false, err
+			}
 			next := sorted[j]
 			exact := run.Exact && next.Exact
 			if next.Start.After(run.End) || (next.Start.Equal(run.End) && !exact) {
 				break
 			}
 			if !exact {
-				return 0, false
+				return 0, false, nil
 			}
 			if next.End.After(run.End) {
 				run.End = next.End
@@ -221,7 +244,7 @@ func UnionMs(extents []Extent) (int64, bool) {
 		total += run.Ms
 		i = j
 	}
-	return total, true
+	return total, true, nil
 }
 
 // HeldMs is the time the spans hold, in milliseconds.

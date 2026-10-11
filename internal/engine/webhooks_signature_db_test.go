@@ -479,56 +479,62 @@ func signedHookMillis(body, secret string, at time.Time) substrate.WebhookReques
 	return req
 }
 
-// atNextFraction sleeps until the wall clock next reaches frac past a whole
-// second and returns that instant.
-func atNextFraction(frac time.Duration) time.Time {
-	now := time.Now()
-	at := now.Truncate(time.Second).Add(frac)
-	if !at.After(now) {
-		at = at.Add(time.Second)
-	}
-	time.Sleep(time.Until(at))
-	return at
-}
-
 // A stored request's skew is measured from the instant the door received
-// it, to the millisecond, under `maxSkew: PT1S`. Received at X.900 and signed
-// at X+1.500, a request is 0.6 s inside the window and runs; received at
-// X.900 and signed at X-1.500, one is 1.4 s outside and is refused. Measured
-// from the whole second X, both answers would flip. A third request's
-// envelope is rewritten to whole seconds, the way a binary from before the
-// fractional `fire.at` stored it, and its check reads the receipt instant the
-// door recorded in the request's admission entry instead.
+// it, to the millisecond, under `maxSkew: PT1S`. The door's receipt clock is
+// the test's (WithTestWebhookClock), so each request is received at exactly
+// X.900 for a whole second X, however long the door's reads take. Received
+// at X.900 and signed at X+1.500, a request is 0.6 s inside the window and
+// runs; received at X.900 and signed at X-0.500, one is 1.4 s outside and is
+// refused. Measured from the whole second X, both answers would flip. A
+// third request's envelope is rewritten to whole seconds, the way a binary
+// from before the fractional `fire.at` stored it, and its check reads the
+// receipt instant the door recorded in the request's admission entry
+// instead.
 func TestWebhookSignatureStoredRequestSkewIsMeasuredToTheMillisecond(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, dsn := newHookDatasetWithDSN(t, nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
+	var clock atomic.Int64
+	door := engine.WithTestWebhookClock(func() time.Time { return time.Unix(0, clock.Load()).UTC() })
+	svc, ds, dsn := newHookDatasetWithOptions(t, []engine.Option{door}, nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
 	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
 	putHookTrigger(t, ds, "hook-ms", "hookecho", keptSignatureSource(false, ""))
 	authority := testdb.Repository(t)
-	receive := func(body string, signedFrom time.Duration) string {
+	// Whole seconds a minute back, so no receipt lies ahead of the wall clock.
+	base := time.Now().UTC().Truncate(time.Second).Add(-time.Minute)
+	received := map[string]time.Time{}
+	receive := func(body string, second int, signedFrom time.Duration) string {
 		t.Helper()
-		received := atNextFraction(900 * time.Millisecond)
+		at := base.Add(time.Duration(second)*time.Second + 900*time.Millisecond)
+		clock.Store(at.UnixNano())
 		fid, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-ms", "",
-			signedHookMillis(body, hookSigningSecret, received.Add(signedFrom)))
+			signedHookMillis(body, hookSigningSecret, at.Add(signedFrom)))
 		if err != nil {
 			t.Fatalf("receive %s: %v", body, err)
 		}
+		received[fid] = at
 		return fid
 	}
-	inside := receive(`{"n":"inside"}`, 600*time.Millisecond)
-	outside := receive(`{"n":"outside"}`, -1400*time.Millisecond)
-	legacy := receive(`{"n":"legacy"}`, 600*time.Millisecond)
+	inside := receive(`{"n":"inside"}`, 0, 600*time.Millisecond)
+	outside := receive(`{"n":"outside"}`, 1, -1400*time.Millisecond)
+	legacy := receive(`{"n":"legacy"}`, 2, 600*time.Millisecond)
 
+	// The door recorded each receipt as the clock named it, in the row and
+	// in the stored envelope.
 	db := rawDB(t, dsn)
-	var stamp string
-	if err := db.QueryRow(`SELECT payload->'fire'->>'at' FROM trigger_failures WHERE fire_id = $1`, inside).Scan(&stamp); err != nil {
-		t.Fatal(err)
+	rows := failuresByFire(t, ds, "hook-ms")
+	for _, fid := range []string{inside, outside, legacy} {
+		if got := rows[fid].ParkedAt; !got.Equal(received[fid]) {
+			t.Fatalf("%s was recorded as received at %s, want %s", fid, got.UTC().Format(time.RFC3339Nano), received[fid].Format(time.RFC3339Nano))
+		}
+		var stamp string
+		if err := db.QueryRow(`SELECT payload->'fire'->>'at' FROM trigger_failures WHERE fire_id = $1`, fid).Scan(&stamp); err != nil {
+			t.Fatal(err)
+		}
+		if at, err := time.Parse(time.RFC3339Nano, stamp); err != nil || !at.Equal(received[fid]) {
+			t.Fatalf("%s's stored fire.at is %q (%v), want %s", fid, stamp, err, received[fid].Format(time.RFC3339Nano))
+		}
 	}
-	if at, err := time.Parse(time.RFC3339Nano, stamp); err != nil || at.Equal(at.Truncate(time.Second)) {
-		t.Fatalf("the stored fire.at %q (%v) keeps no fraction of a second", stamp, err)
-	}
-	whole := failuresByFire(t, ds, "hook-ms")[legacy].ParkedAt.UTC().Truncate(time.Second).Format(time.RFC3339)
+	whole := received[legacy].Truncate(time.Second).Format(time.RFC3339)
 	res, err := db.Exec(`UPDATE trigger_failures SET payload = jsonb_set(payload, '{fire,at}', to_jsonb($1::text)) WHERE fire_id = $2`, whole, legacy)
 	if err != nil {
 		t.Fatal(err)

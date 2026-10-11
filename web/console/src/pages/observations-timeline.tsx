@@ -28,6 +28,7 @@ import { TablePage } from "@/components/identity/page-layout"
 import { SectionHead } from "@/components/identity/section-head"
 import {
   DiscoveryError,
+  FacetListErrors,
   MetricListError,
 } from "@/components/observations/discovery-error"
 import {
@@ -417,6 +418,7 @@ export function ObservationsTimelinePage() {
             )
           }
         />
+        {!obs.discovery.isError && <FacetListErrors values={values} />}
       </div>
       {obs.discovery.isError ? (
         <DiscoveryError discovery={obs.discovery} />

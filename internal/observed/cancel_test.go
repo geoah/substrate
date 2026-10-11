@@ -176,6 +176,96 @@ func TestSortStableFuncSortsAsTheStandardSort(t *testing.T) {
 	})
 }
 
+// The sort's passes over indexes alone check too: writing n indexes checks
+// once per index, and applying the permutation checks for every place its
+// scan passes, one an earlier cycle already filled included, and for every
+// element it moves. One cycle through every place fills them all in its
+// first walk, and the scan then passes n-1 filled places: 2n checks, where
+// the indexes were once written and the filled places passed with none.
+func TestSortStableFuncChecksItsIndexPasses(t *testing.T) {
+	const n = 5000
+	var visits int
+	count := func() error { visits++; return nil }
+	idx, err := indexes(n, count)
+	if err != nil || visits != n {
+		t.Errorf("indexes: %d checks writing %d indexes, %v; want one per index", visits, n, err)
+	}
+	for i, v := range idx {
+		if v != i {
+			t.Fatalf("indexes[%d] = %d", i, v)
+		}
+	}
+	src, s := make([]int, n), make([]int, n)
+	for k := range n {
+		src[k], s[k] = (k+1)%n, k
+	}
+	visits = 0
+	if err := permute(s, src, count); err != nil || visits != 2*n {
+		t.Errorf("permute: %d checks over a cycle of %d places, %v; want %d, one per place passed and one per element moved",
+			visits, n, err, 2*n)
+	}
+	for k := range n {
+		if s[k] != (k+1)%n {
+			t.Fatalf("s[%d] = %d, want %d", k, s[k], (k+1)%n)
+		}
+	}
+	// A check that has ended stops each pass at its first place, a filled
+	// one included: every place of src is filled now.
+	ended := func() error { return context.Canceled }
+	if _, err := indexes(n, ended); !errors.Is(err, context.Canceled) {
+		t.Errorf("indexes under an ended check: %v, want context.Canceled", err)
+	}
+	if err := permute(s, src, ended); !errors.Is(err, context.Canceled) {
+		t.Errorf("permute over filled places under an ended check: %v, want context.Canceled", err)
+	}
+}
+
+// First and Last pass every point before the one they answer, and UnionMs
+// copies, sorts and walks every extent; each checks its context as it goes
+// and stops at the first check after it ends. First runs over 50,000 points
+// of which only the last is available, Last over 50,000 of which only the
+// first is, and UnionMs over 50,000 disjoint extents out of order, which it
+// once copied, sorted and walked with no check. UnionMs checks at least once
+// per checkEvery extents it copies and once per checkEvery it walks, beside
+// its sort's own checks.
+func TestFirstLastAndUnionMsStopWhereTheirContextEnds(t *testing.T) {
+	const n = 50000
+	w := window(0, n)
+	late, early := make([]Point, n), make([]Point, n)
+	for i := range n {
+		late[i], early[i] = gauge(float64(i)/60, 1), gauge(float64(i)/60, 1)
+		late[i].Unavailable, early[i].Unavailable = i < n-1, i > 0
+	}
+	stopsThroughout(t, "First", n, func(ctx context.Context) error { _, _, err := FirstContext(ctx, late, w); return err })
+	stopsThroughout(t, "Last", n, func(ctx context.Context) error { _, _, err := LastContext(ctx, early, w); return err })
+	if p, ok, err := FirstContext(context.Background(), late, w); err != nil || !ok || !p.At.Equal(late[n-1].At) {
+		t.Errorf("First = %v at %s, %v; want the last point's", ok, p.At, err)
+	}
+	if p, ok, err := LastContext(context.Background(), early, w); err != nil || !ok || !p.At.Equal(early[0].At) {
+		t.Errorf("Last = %v at %s, %v; want the first point's", ok, p.At, err)
+	}
+
+	extents := make([]Extent, n)
+	for i := range n {
+		start := at(float64((i * 7919) % n))
+		extents[i] = Extent{Start: start, End: start.Add(30 * time.Second), Ms: 30000, Exact: true}
+	}
+	stopsThroughout(t, "UnionMs", n, func(ctx context.Context) error { _, _, err := UnionMsContext(ctx, extents); return err })
+	sorts := &ending{Context: context.Background(), n: math.MaxInt}
+	if err := SortStableFunc(sorts, slices.Clone(extents), func(a, b Extent) int { return a.Start.Compare(b.Start) }); err != nil {
+		t.Fatal(err)
+	}
+	whole := &ending{Context: context.Background(), n: math.MaxInt}
+	ms, ok, err := UnionMsContext(whole, extents)
+	if err != nil || !ok || ms != n*30000 {
+		t.Fatalf("UnionMs = %d ms, %v, %v; want %d", ms, ok, err, n*30000)
+	}
+	if want := sorts.calls + 2*n/checkEvery; whole.calls < want {
+		t.Errorf("UnionMs checks its context %d times over %d extents, want at least %d: its sort's %d, and one per %d extents copied and walked",
+			whole.calls, n, want, sorts.calls, checkEvery)
+	}
+}
+
 // counting is a context that calls at on each Err and never ends.
 type counting struct {
 	context.Context
