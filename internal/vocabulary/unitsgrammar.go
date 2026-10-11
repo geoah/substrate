@@ -37,7 +37,11 @@ func (d dimension) zero() bool { return d == dimension{} }
 func (d dimension) String() string {
 	var parts []string
 	for i, e := range d {
-		if e != 0 {
+		switch e {
+		case 0:
+		case 1:
+			parts = append(parts, dimNames[i])
+		default:
 			parts = append(parts, fmt.Sprintf("%s%d", dimNames[i], e))
 		}
 	}
