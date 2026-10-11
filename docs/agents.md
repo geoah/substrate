@@ -220,7 +220,11 @@ entry could name only a function.
   page, which answers `{records, cursor, head, generation, included?,
   matches?}` exactly as the route does. A `filter` bounding `at` on both
   ends is the [window read](api.md#the-window-read), computed occurrences
-  included. It requires `permissions.reads`, a
+  included. `aggregate` (an object, or the object as a JSON string) is the
+  [aggregate read](api.md#the-aggregate-read) instead of a list: its
+  `filter.kinds` and a records bucket's kinds are held to the allowlist, a
+  call naming no kinds reads the allowlist's observed kinds, and it answers
+  the result with its `rows`, which count against the row budget. It requires `permissions.reads`, a
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list

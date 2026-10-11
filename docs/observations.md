@@ -4,11 +4,11 @@ An observation is a measured value: a weighing, an hour of heart rate, a
 nightly heart rate variability, a vendor's recovery score, an LDL result from
 a blood test. This page covers what holds one today: core's `observed` trait,
 the rules every write of an observed record is held to, the managed `stats`
-of a trace, the `observations` and `health` samples, and the host SDK helpers
-a function builds observed values with, and the observed index the fold
-derives from them. The aggregate read that answers "average heart rate per
-week" from that index is the next piece of work and does not exist yet; the
-plan is [observations](plans/observations.md).
+of a trace, the `observations` and `health` samples, the host SDK helpers
+a function builds observed values with, the observed index the fold derives
+from them, and the aggregate read that answers "average heart rate per week"
+from that index ([reading](#reading)). The plan is
+[observations](plans/observations.md).
 
 ## The observed trait
 
@@ -490,6 +490,115 @@ another stream (a corrected `source`) recomputes both streams' rows, and a
 stream left with no available point loses its row. A null after the newest
 value does not replace it: the row keeps the last value, and a reader that
 must say "unavailable since" finds the null in `observed_points`.
+
+## Reading
+
+One record is a list read, as for any kind: today's WHOOP recovery is
+`filter.properties.periodId` equal to the cycle id, every weighing under
+155 lb is `value` less than `{"value": "155", "unit": "[lb_av]"}`. Everything
+bucketed is the records route's [aggregate read](api.md#the-aggregate-read):
+a metric, a range, a time mode, reducers checked against the form, and a
+source policy, answered from the rollup rows where they answer exactly and
+from the points otherwise. The requests below are the proposal's screens
+([reading the data](plans/observations/proposal/03-reading-the-data.md)),
+each one request.
+
+Heart rate zones per week for six months, the chest strap preferred where it
+recorded, in minutes. `durationIn` reads raw points, so the request raises
+`maxSamples`:
+
+```json
+{"filter": {"kinds": ["ada.example.com/observations/trace"]},
+ "aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+   "range": {"gte": "2026-04-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
+   "reducers": [{"durationIn": [95, 114]}, {"durationIn": [114, 133]}, {"durationIn": [133, 152]},
+                {"durationIn": [152, 171]}, {"durationIn": [171, 220]}],
+   "maxGap": "PT5M",
+   "sources": {"policy": "priority", "order": ["chest-strap-h10", "garmin-forerunner-265"]},
+   "unit": "min",
+   "budget": {"maxSamples": 5000000}}}
+```
+
+Daily steps for a year on each sample's own local day, the step chunks where
+they cover 90 percent of a day and the vendor's daily total otherwise; each
+row's `from` says which:
+
+```json
+{"aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/steps"},
+   "from": "prefer-raw",
+   "range": {"gte": "2025-10-05T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "day"},
+   "reducers": ["sum"],
+   "unit": "{steps}"}}
+```
+
+Weight weekly with a four-week rolling mean, from rollup rows alone:
+
+```json
+{"aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/body_mass"},
+   "range": {"gte": "2025-10-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
+   "reducers": ["avg", "min", "max", "count"],
+   "rolling": {"buckets": 4, "reducers": ["avg"]},
+   "unit": "kg"}}
+```
+
+Sleep stages per night: the coded stage amounts summed by code inside each
+`health/sleep` record, one row per night and code, each carrying the night's
+`record`:
+
+```json
+{"filter": {"kinds": ["ada.example.com/observations/observation"]},
+ "aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/sleep_stage"},
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"records": {"filter": {"kinds": ["ada.example.com/health/sleep"]}}},
+   "groupBy": ["code"],
+   "reducers": ["sum"],
+   "sources": {"policy": "priority", "order": ["whoop-4-0", "garmin-forerunner-265"]},
+   "unit": "min"}}
+```
+
+Hours a door was open per week (`closed` ends each `open`, and a door shut
+over a weekend is not open until Monday), and kWh per day from a meter that
+resets, reset-proof:
+
+```json
+{"aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/home/contact_state"},
+   "range": {"gte": "2026-07-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
+   "reducers": [{"timeInState": ["open"]}],
+   "maxGap": "P1D",
+   "unit": "h"}}
+```
+
+```json
+{"aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/energy"},
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
+   "reducers": ["increase"],
+   "unit": "kW.h"}}
+```
+
+The current value of every stream, the dashboard, needs no range and no
+bucket; an 800-pixel chart of any range is `downsample={"points": 800}`
+beside a metric and a range:
+
+```json
+{"filter": {"implements": "substrate.reamde.dev/core/observed"},
+ "aggregate": {"groupBy": ["metric", "source", "about"], "reducers": ["last"]}}
+```
+
+A function sends the same body to `host.records.aggregate`, an agent to the
+`query` tool's `aggregate` argument, and `substratectl aggregate` builds it
+from flags. Where the build differs from the proposal's contract is listed in
+[the API reference](api.md#where-this-differs-from-the-plan).
 
 ## Where this differs from the plan
 

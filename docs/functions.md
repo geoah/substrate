@@ -627,6 +627,7 @@ The whole surface:
 host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
+host.records.aggregate(body)                      # the aggregate read's result
 host.functions.call(function, input=None)         # permissions.call gated
 host.agents.call(agent, input)                    # permissions.agents gated
 host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>,
@@ -693,6 +694,27 @@ page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"
                          where={"at": {"gte": "2026-09-24T00:00:00Z",
                                        "lt": "2026-09-25T00:00:00Z"}})
 # page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
+```
+
+`host.records.aggregate(body)` is the records route's
+[aggregate read](api.md#the-aggregate-read), its parameters as one document:
+`{"filter": ..., "aggregate": ..., "downsample": ...}`. `filter.kinds` names
+the observed kinds it reads (and `aggregate.bucket.records.filter.kinds` the
+records mode's), each held to the reads allowlist; a body that names none
+trips the allowlist. It answers the result dict, and pays one call and its
+rows against the read budget.
+
+```python
+res = host.records.aggregate({
+    "filter": {"kinds": ["ada.example.com/observations/trace"]},
+    "aggregate": {
+        "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+        "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+        "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
+        "reducers": [{"percentile": 0.05}, "min"],
+    },
+})
+# res["rows"]: [{"start": "2026-09-01T00:00:00+03:00", "values": [...], ...}, ...]
 ```
 
 **Reads are scoped and budgeted.** Reads see committed state, never this
