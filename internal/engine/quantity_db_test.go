@@ -493,3 +493,49 @@ func TestQuantityDefaultFillsACreate(t *testing.T) {
 		t.Fatalf("err = %v, want a default no write could store refused", err)
 	}
 }
+
+// A property type refines a quantity through the apply door: core's
+// propertytype declaration admits `quantity` as a base and its three keys,
+// and a property using the refinement holds values to its measure.
+func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	authority, pkg := vocabulary.SplitPackageRef(quantityPackage)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(quantityPackage, 0),
+		{
+			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
+			"metadata": map[string]any{"id": quantityPackage + "/airtemperature"},
+			"data": map[string]any{
+				"authority": authority, "package": pkg, "base": "quantity",
+				"measures": "temperature", "units": []any{"Cel", "[degF]"}, "comparator": true,
+				"description": "an air temperature",
+			},
+		},
+		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "station"}, map[string]any{
+			"displayTemplate": "{name}: {air}",
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+				"air":  map[string]any{"type": "airtemperature"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("apply the refinement: %v", err)
+	}
+	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: quantityPackage + "/station", Properties: map[string]any{
+		"name": "roof", "air": qv("-3.5", "°C", ">"),
+	}})
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if rec.Title != "roof: >-3.5 °C" {
+		t.Fatalf("title = %q", rec.Title)
+	}
+	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: quantityPackage + "/station", Properties: map[string]any{
+		"name": "roof", "air": qv("270", "K"),
+	}})
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "not one of the declared units") {
+		t.Fatalf("a unit outside the refinement's list: err = %v", err)
+	}
+}
