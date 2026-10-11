@@ -1152,3 +1152,153 @@ export interface BundleUninstalled {
 export interface BundlePurged {
   purged: number
 }
+
+// ── the aggregate read ──────────────────────────────────────────────────────
+// The `aggregate` mode of `GET /api/v1/records`, mirrored from the wire
+// contract the observations brief pins
+// (docs/plans/observations/implementation/README.md). The Go structs land
+// with work package 4; until then the golden does not carry these, and
+// wire.golden.test.ts lists each in `notOnTheWire`.
+
+/** Where an aggregate reads from: raw points, vendor `summary` rows, or raw
+ * where a bucket has `minCoverage` of it and the summary otherwise. */
+export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
+
+/** A stream key a result may be grouped by. */
+export type AggregateGroupKey = "source" | "about" | "code" | "metric" | "kind"
+
+/** One reducer: a word, or a structured one carrying its argument. */
+export type AggregateReducer =
+  | string
+  | { percentile: number }
+  | { durationIn: [number, number] }
+  | { timeInState: string[] }
+
+/** The request, the `aggregate` query parameter. Exactly one of `metric` and
+ * `property`, except on the latest read (`groupBy`, the one reducer `last`,
+ * no `bucket`), where `metric` is optional and no `range` is needed. */
+export interface Aggregate {
+  /** The metric record, `{ref: <kind>/<id>}`. */
+  metric?: { ref: string }
+  /** A declared numeric or quantity property on the filtered kinds, placed
+   * in time by `anchor` (`at` by default). */
+  property?: { name: string; anchor?: string }
+  from?: AggregateFrom
+  /** The `prefer-raw` coverage floor, 0.9 by default. */
+  minCoverage?: number
+  range?: { gte?: string; lt?: string }
+  bucket?: AggregateBucket
+  groupBy?: AggregateGroupKey[]
+  reducers?: AggregateReducer[]
+  sources?: AggregateSources
+  /** The output unit, a UCUM code inside the metric's measure. */
+  unit?: string
+  /** An ISO 8601 duration past which a held value stops. */
+  maxGap?: string
+  fill?: "null" | "zero" | "locf"
+  rolling?: AggregateRolling
+  budget?: AggregateBudget
+}
+
+/** One of three time modes: a physical window (`every`, `origin`), a
+ * calendar window (`calendar`, `timezone`, `weekStart`, `offset`; no
+ * `timezone` is the recorded-local day), or each matched record's span
+ * (`records`). */
+export interface AggregateBucket {
+  every?: string
+  origin?: string
+  calendar?: "minute" | "hour" | "day" | "week" | "month" | "year"
+  timezone?: string
+  weekStart?: string
+  offset?: string
+  records?: {
+    filter: RecordFilter
+    around?: { before?: string; after?: string }
+    maxRecords?: number
+  }
+}
+
+/** How overlapping sources are treated: kept apart (`separate`, the
+ * default), resolved by an ordered list (`priority`), or one vendor's period
+ * rows (`summaries`). */
+export interface AggregateSources {
+  policy?: "separate" | "priority" | "summaries"
+  /** Source record ids, the preferred first. */
+  order?: string[]
+}
+
+/** A window over the last `buckets` buckets, filled ones included. */
+export interface AggregateRolling {
+  buckets: number
+  reducers?: AggregateReducer[]
+}
+
+/** The limits a request asks to be held to; past them it is a `422`. */
+export interface AggregateBudget {
+  maxBuckets?: number
+  maxSamples?: number
+}
+
+/** The `downsample` query parameter: a fixed number of columns, refused
+ * beside `reducers`, `rolling` and `fill`. */
+export interface Downsample {
+  points: number
+  method?: string
+}
+
+/** The answer: one shape for every aggregate. */
+export interface AggregateResult {
+  /** The metric's record path, where the request named one. */
+  metric?: string
+  unit?: string
+  bucket?: AggregateBucket
+  from?: AggregateFrom
+  /** False when a float projection or a rounded output unit was involved. */
+  exact: boolean
+  rows: AggregateRow[]
+  /** Every source that fed any row. */
+  sources?: string[]
+  /** The changelog position the read was served at. */
+  head: { changelog: number; generation: number }
+}
+
+/** One bucket, or one group of one bucket. */
+export interface AggregateRow {
+  start: string
+  end: string
+  /** Present only with `groupBy`, keyed by its words. */
+  group?: AggregateGroup
+  /** The matched record, in the `records` time mode only. */
+  record?: { ref: string; version: number }
+  /** Which of raw points or a vendor summary served the row. */
+  from?: AggregateFrom
+  sources?: string[]
+  /** The covered time, an ISO 8601 duration. */
+  coverage?: string
+  values: AggregateValue[]
+  count?: number
+  /** Values with a comparator: counted, never averaged. */
+  bounded?: number
+  /** A bucket `fill` made, never a measurement. */
+  synthetic?: boolean
+  /** The range has expired index points a reducer needs; `values` are null. */
+  unavailable?: boolean
+}
+
+/** One reducer's answer: a decimal string, or null where the reducer has no
+ * answer for the row. `unit` is absent for `count`. */
+export interface AggregateValue {
+  reducer: AggregateReducer
+  value: string | null
+  unit?: string
+}
+
+/** A row's group: record ids for `source`, `about` and `metric`, the kind
+ * reference for `kind`, the code for `code`. */
+export interface AggregateGroup {
+  source?: string
+  about?: string
+  code?: string
+  metric?: string
+  kind?: string
+}

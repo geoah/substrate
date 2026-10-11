@@ -11,7 +11,9 @@ import { useEffect, useMemo, useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import {
+  ActivityIcon,
   BotIcon,
+  ChartLineIcon,
   DatabaseIcon,
   HistoryIcon,
   HomeIcon,
@@ -46,6 +48,7 @@ import { kindPurpose } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { displayPlural } from "@/lib/kind-names"
 import { INCLUDE_SYSTEM_LABEL, searchPurposes } from "@/lib/search"
+import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 
 const pages = [
   { title: "Home", to: "/", icon: HomeIcon },
@@ -55,6 +58,17 @@ const pages = [
   { title: "Providers", to: "/providers", icon: PlugIcon },
   { title: "History", to: "/history", icon: HistoryIcon },
   { title: "Settings", to: "/settings", icon: SlidersHorizontalIcon },
+] as const
+
+/** Offered only where a kind binds core's `observed` trait, after All data,
+ * as the sidebar places them. */
+const observationPages = [
+  { title: "Observations", to: "/observations", icon: ActivityIcon },
+  {
+    title: "Observations timeline",
+    to: "/observations/timeline",
+    icon: ChartLineIcon,
+  },
 ] as const
 
 /** How long typing rests before the records are asked for. */
@@ -145,7 +159,13 @@ export function CommandMenu({
           )
         )
     : []
-  const matchedPages = pages.filter((p) => matchesWordPrefixes(query, p.title))
+  const observed = (registry.data ?? []).some((k) =>
+    kindHasTrait(k, OBSERVED_TRAIT_IDENTITY)
+  )
+  const places = observed
+    ? [...pages.slice(0, 2), ...observationPages, ...pages.slice(2)]
+    : pages
+  const matchedPages = places.filter((p) => matchesWordPrefixes(query, p.title))
   const hits = query && records.data ? records.data.records : []
   // The hits on screen may still answer an earlier spelling of the query.
   const waiting =
@@ -163,7 +183,7 @@ export function CommandMenu({
         : matchedPages[0]
           ? `page:${matchedPages[0].to}`
           : "search"
-    : `page:${pages[0].to}`
+    : `page:${places[0].to}`
   const [selected, setSelected] = useState(first)
   const [shownFirst, setShownFirst] = useState(first)
   if (shownFirst !== first) {

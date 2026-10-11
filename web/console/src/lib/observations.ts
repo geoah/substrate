@@ -1,0 +1,1120 @@
+/** The observations pages, without React: which kinds hold measured values
+ * (those binding core's `observed` trait), what a metric's form lets a reader
+ * ask for, the range and bucket a timeline reads, the aggregate request each
+ * chart issues, and the rows of an answer cut into buckets and series.
+ *
+ * The aggregate read's wire shape is the one the observations brief pins
+ * (docs/plans/observations/implementation/README.md); the request builder
+ * lives in `lib/api/observations.ts`. Everything here is a pure function of
+ * the registry, the metric records, the URL state and the answer. */
+
+import type {
+  Aggregate,
+  AggregateBucket,
+  AggregateFrom,
+  AggregateGroup,
+  AggregateGroupKey,
+  AggregateReducer,
+  AggregateResult,
+  AggregateRow,
+  AggregateValue,
+  KindInfo,
+  RecordFilter,
+  SubstrateRecord,
+} from "@/lib/api/types"
+import { declaredProperties } from "@/lib/definition"
+import { recordTitle } from "@/lib/format"
+import { splitRecordPath } from "@/lib/record-path"
+import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
+import { formatQuantity, lookupMeasure, measureOf } from "@/lib/units"
+
+// ── discovery ──────────────────────────────────────────────────────────────
+
+/** `single` holds one value per record (an observation), `packed` many over
+ * a fixed period (a trace). */
+export type ObservedVariant = "single" | "packed"
+
+/** The kinds binding the `observed` trait, by reference. Never a fixed
+ * authority: an imported sample lands under the repository's own. */
+export function observedKinds(kinds: readonly KindInfo[]): KindInfo[] {
+  return kinds
+    .filter((k) => kindHasTrait(k, OBSERVED_TRAIT_IDENTITY))
+    .sort((a, b) => a.identity.localeCompare(b.identity))
+}
+
+/** Which layout a kind binding the trait uses: a kind declaring `values`
+ * packs them. Undefined for a kind that does not bind the trait. */
+export function observedVariant(
+  kind: KindInfo | undefined
+): ObservedVariant | undefined {
+  if (!kind || !kindHasTrait(kind, OBSERVED_TRAIT_IDENTITY)) return undefined
+  return declaredProperties(kind).some((p) => p.name === "values")
+    ? "packed"
+    : "single"
+}
+
+/** The kinds the trait's references are pinned to, read off the observed
+ * kinds' own declarations: the first pin found for each. `about` is usually
+ * unpinned (it may point at any record), so it is usually absent. */
+export interface ObservedPins {
+  metric?: string
+  source?: string
+  about?: string
+}
+
+export function observedPins(observed: readonly KindInfo[]): ObservedPins {
+  const out: ObservedPins = {}
+  for (const kind of observed) {
+    for (const p of declaredProperties(kind)) {
+      if (p.kind !== "reference" || !p.to) continue
+      if (p.name === "metric" || p.name === "source" || p.name === "about") {
+        out[p.name] ??= p.to
+      }
+    }
+  }
+  return out
+}
+
+/** A group value as a record path: as given where it already is one, else
+ * the id under the kind its reference is pinned to. Undefined where neither
+ * says what kind the record is. */
+export function refPathOf(
+  value: string | undefined,
+  pin: string | undefined
+): string | undefined {
+  if (!value) return undefined
+  if (splitRecordPath(value)) return value
+  return pin ? `${pin}/${value}` : undefined
+}
+
+/** Whether two spellings name one record: equal, or one is a record path
+ * whose id is the other (the answer names a record by id, a stored
+ * reference by its path). */
+export function sameRef(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false
+  if (a === b) return true
+  return splitRecordPath(a)?.id === b || splitRecordPath(b)?.id === a
+}
+
+/** The id a group value or a stored reference names: a path's id, or the
+ * value itself where it is no path. */
+export function refIdOf(value: string): string {
+  return splitRecordPath(value)?.id ?? value
+}
+
+// ── metrics and forms ──────────────────────────────────────────────────────
+
+/** The four forms a value is stored in (decision 0156). */
+export type Form = "gauge" | "amount" | "counter" | "summary"
+
+/** How a reader reads a metric: its form, or `coded` for a categorical
+ * gauge or amount (a code instead of a number). */
+export type ReadingShape = Form | "coded"
+
+const FORMS: readonly Form[] = ["gauge", "amount", "counter", "summary"]
+
+export function isForm(value: unknown): value is Form {
+  return FORMS.includes(value as Form)
+}
+
+/** Everyday words for each shape; the stored word sits beside them in
+ * technical mode. */
+export const SHAPE_WORDS: Record<ReadingShape, string> = {
+  gauge: "Level",
+  amount: "Amount",
+  counter: "Running total",
+  summary: "Vendor summary",
+  coded: "Category",
+}
+
+/** What one metric record says that a reader uses: its name, its default
+ * form and unit, the codes a categorical metric admits and the reducers it
+ * recommends. The engine reads none of it (decision 0156); every value
+ * carries its own form and unit, so these are defaults for display. */
+export interface MetricInfo {
+  id: string
+  path: string
+  name?: string
+  form?: Form
+  unit?: string
+  codeSet?: string[]
+  reducers?: string[]
+}
+
+function strings(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out = value.filter((v): v is string => typeof v === "string")
+  return out.length ? out : undefined
+}
+
+/** A metric record read as `MetricInfo`. A `codeSet` entry may be a bare
+ * code or an object naming one under `code`. */
+export function metricInfoOf(record: SubstrateRecord): MetricInfo {
+  const p = record.properties ?? {}
+  const codeSet = Array.isArray(p.codeSet)
+    ? p.codeSet.flatMap((c) =>
+        typeof c === "string"
+          ? [c]
+          : c && typeof c === "object" && typeof c.code === "string"
+            ? [c.code as string]
+            : []
+      )
+    : undefined
+  const name =
+    (typeof p.name === "string" && p.name) || recordTitle(p) || undefined
+  return {
+    id: record.id,
+    path: `${record.kind}/${record.id}`,
+    name,
+    form: isForm(p.form) ? p.form : undefined,
+    unit: typeof p.unit === "string" && p.unit ? p.unit : undefined,
+    codeSet: codeSet?.length ? codeSet : undefined,
+    reducers: strings(p.reducers),
+  }
+}
+
+/** A category's code as words: `rem` is "Rem", `not-detected` "Not
+ * detected". */
+export function codeWords(code: string): string {
+  const words = code.replaceAll(/[_-]+/g, " ").trim() || code
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** A reading as text, for a tooltip line or a copied table: the digits and
+ * the unit's print symbol, the digits alone where no unit came. */
+export function readingText(
+  value: string | null | undefined,
+  unit?: string
+): string {
+  if (value === null || value === undefined) return "no answer"
+  return (unit && formatQuantity({ value, unit })) || value
+}
+
+/** A metric id read as words when no record names it:
+ * `health/heart_rate` is "Heart rate". */
+export function metricWords(id: string): string {
+  const last = id.slice(id.lastIndexOf("/") + 1).replaceAll(/[_-]+/g, " ")
+  const words = last.trim() || id
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** How a metric is read: coded where it lists codes, else its form, a
+ * gauge where it says nothing. */
+export function shapeOf(metric: MetricInfo | undefined): ReadingShape {
+  if (metric?.codeSet?.length) return "coded"
+  return metric?.form ?? "gauge"
+}
+
+/** The reducers a shape may ask for, the default first (the brief's table;
+ * decision 0156 names which are legal per form). A coded amount adds `sum`,
+ * its covered time per code. */
+export function reducerOptions(
+  shape: ReadingShape,
+  metric?: MetricInfo
+): string[] {
+  switch (shape) {
+    case "gauge":
+      return ["avg", "twa", "min", "max", "first", "last", "count", "stddev"]
+    case "amount":
+      return ["sum", "count", "min", "max"]
+    case "counter":
+      return ["increase", "rate", "last"]
+    case "coded":
+      return metric?.form === "amount"
+        ? ["sum", "count", "timeInState"]
+        : ["timeInState", "count"]
+    case "summary":
+      return ["last"]
+  }
+}
+
+export const REDUCER_WORDS: Record<string, string> = {
+  avg: "Average",
+  twa: "Time-weighted average",
+  min: "Lowest",
+  max: "Highest",
+  first: "First",
+  last: "Latest",
+  count: "Count",
+  stddev: "Standard deviation",
+  sum: "Total",
+  increase: "Increase",
+  rate: "Rate",
+  timeInState: "Time in each category",
+  percentile: "Percentile",
+  durationIn: "Time in range",
+  circularMean: "Circular average",
+}
+
+/** A reducer's name: the word, or the key of a structured one. */
+export function reducerName(reducer: AggregateReducer): string {
+  if (typeof reducer === "string") return reducer
+  return Object.keys(reducer)[0] ?? ""
+}
+
+/** A reducer as one string, its argument included: `avg`,
+ * `durationIn:95,114`, `percentile:0.05`. Two reducers with one key are the
+ * same column. */
+export function reducerKey(reducer: AggregateReducer): string {
+  if (typeof reducer === "string") return reducer
+  const [name, arg] = Object.entries(reducer)[0] ?? ["", undefined]
+  return `${name}:${Array.isArray(arg) ? arg.join(",") : String(arg)}`
+}
+
+/** A reducer in words: "Average", "Time in range 95 to 114". */
+export function reducerLabel(reducer: AggregateReducer): string {
+  const name = reducerName(reducer)
+  const word = REDUCER_WORDS[name] ?? name
+  if (typeof reducer === "string") return word
+  const arg = Object.values(reducer)[0]
+  if (name === "durationIn" && Array.isArray(arg)) {
+    return `${word} ${arg[0]} to ${arg[1]}`
+  }
+  if (name === "percentile" && typeof arg === "number") {
+    return `${word} ${Math.round(arg * 100)}`
+  }
+  return word
+}
+
+/** The units a reading may be shown in: every unit of the stored unit's
+ * measure, or the stored unit alone where the table does not place it
+ * (`{steps}`). Empty where nothing is stored. */
+export function unitChoices(stored: string | undefined): string[] {
+  if (!stored) return []
+  const measure = lookupMeasure(measureOf(stored))
+  if (!measure || !measure.units.includes(stored)) return [stored]
+  return [...measure.units]
+}
+
+// ── the latest read: streams ───────────────────────────────────────────────
+
+/** One stream: a metric written by one source about one thing, with its
+ * newest value. `metric`, `source` and `about` are the group values the
+ * answer carries (record ids, or record paths). */
+export interface Stream {
+  key: string
+  metric: string
+  source?: string
+  about?: string
+  value: string | null
+  unit?: string
+  /** The newest point's time, the row's `start`. */
+  at: string
+  count?: number
+  coverage?: string
+}
+
+/** The key one stream is told apart by, in the URL and the table. */
+export function streamKey(
+  metric: string,
+  source?: string,
+  about?: string
+): string {
+  return [metric, source ?? "", about ?? ""].join("\n")
+}
+
+/** The timeline's address for one record of an observed kind: its stream,
+ * and a window around its time (the trace's own period, or the 30 days up
+ * to a single value), as the URL keys the timeline reads. Undefined for a
+ * record naming no metric or no time. */
+export function recordTimelineSearch(
+  properties: Record<string, unknown>
+): Record<string, string> | undefined {
+  const ref = (key: string) => {
+    const v = properties[key]
+    if (typeof v === "string") return v || undefined
+    if (
+      v &&
+      typeof v === "object" &&
+      typeof (v as { ref?: unknown }).ref === "string"
+    ) {
+      return (v as { ref: string }).ref
+    }
+    return undefined
+  }
+  const metric = ref("metric")
+  const at = typeof properties.at === "string" ? Date.parse(properties.at) : NaN
+  if (!metric || Number.isNaN(at)) return undefined
+  const endsAt =
+    typeof properties.endsAt === "string" ? Date.parse(properties.endsAt) : NaN
+  const source = ref("source")
+  const about = ref("about")
+  const window: TimeRange =
+    !Number.isNaN(endsAt) && endsAt > at
+      ? { start: at, end: endsAt }
+      : (() => {
+          const d = new Date(at)
+          const y = d.getFullYear()
+          const m = d.getMonth()
+          const day = d.getDate()
+          return {
+            start: new Date(y, m, day - 29).getTime(),
+            end: new Date(y, m, day + 1).getTime(),
+          }
+        })()
+  return {
+    ...streamSearch({
+      metric: refIdOf(metric),
+      source: source ? refIdOf(source) : undefined,
+      about,
+    }),
+    range: "custom",
+    start: new Date(window.start).toISOString(),
+    end: new Date(window.end).toISOString(),
+  }
+}
+
+/** The timeline's address for one stream: its metric, source and thing, as
+ * the URL keys the timeline reads. */
+export function streamSearch(stream: {
+  metric: string
+  source?: string
+  about?: string
+}): Record<string, string> {
+  const out: Record<string, string> = { metric: stream.metric }
+  if (stream.source) out.source = stream.source
+  if (stream.about) out.about = stream.about
+  return out
+}
+
+/** The `last` value of a row, or its first value where none says `last`. */
+function lastValue(row: AggregateRow): AggregateValue | undefined {
+  return (
+    row.values.find((v) => reducerName(v.reducer) === "last") ?? row.values[0]
+  )
+}
+
+/** The latest read's rows as streams, newest first. A row with no metric in
+ * its group answers no stream and is dropped. */
+export function streamsOf(result: AggregateResult | undefined): Stream[] {
+  const out: Stream[] = []
+  for (const row of result?.rows ?? []) {
+    const metric = row.group?.metric
+    if (!metric) continue
+    const value = lastValue(row)
+    out.push({
+      key: streamKey(metric, row.group?.source, row.group?.about),
+      metric,
+      source: row.group?.source,
+      about: row.group?.about,
+      value: value?.value ?? null,
+      unit: value?.unit,
+      at: row.start,
+      count: row.count,
+      coverage: row.coverage,
+    })
+  }
+  return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+}
+
+// ── ranges ─────────────────────────────────────────────────────────────────
+
+export type RangePreset = "today" | "7d" | "30d" | "6m" | "1y"
+
+export const RANGE_PRESETS: readonly { value: RangePreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "6m", label: "Last 6 months" },
+  { value: "1y", label: "Last year" },
+]
+
+export function isRangePreset(value: unknown): value is RangePreset {
+  return RANGE_PRESETS.some((p) => p.value === value)
+}
+
+/** A half-open window `[start, end)` in epoch milliseconds. */
+export interface TimeRange {
+  start: number
+  end: number
+}
+
+function startOfDay(t: number): Date {
+  const d = new Date(t)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+/** A preset as the local days it covers, ending with today:
+ * `[the first day's midnight, tomorrow's midnight)`. */
+export function presetRange(preset: RangePreset, now = Date.now()): TimeRange {
+  const today = startOfDay(now)
+  const y = today.getFullYear()
+  const m = today.getMonth()
+  const d = today.getDate()
+  const end = new Date(y, m, d + 1).getTime()
+  const start =
+    preset === "today"
+      ? today
+      : preset === "7d"
+        ? new Date(y, m, d - 6)
+        : preset === "30d"
+          ? new Date(y, m, d - 29)
+          : preset === "6m"
+            ? new Date(y, m - 6, d + 1)
+            : new Date(y - 1, m, d + 1)
+  return { start: start.getTime(), end }
+}
+
+/** Two local calendar days (`YYYY-MM-DD`) as the window from the first's
+ * midnight to the midnight after the second. Undefined for a day that does
+ * not parse or an end before the start. */
+export function dayRange(first: string, last: string): TimeRange | undefined {
+  const a = /^(\d{4})-(\d{2})-(\d{2})$/.exec(first)
+  const b = /^(\d{4})-(\d{2})-(\d{2})$/.exec(last)
+  if (!a || !b) return undefined
+  const start = new Date(+a[1], +a[2] - 1, +a[3]).getTime()
+  const end = new Date(+b[1], +b[2] - 1, +b[3] + 1).getTime()
+  return end > start ? { start, end } : undefined
+}
+
+const pad = (n: number) => String(n).padStart(2, "0")
+
+/** An instant as local wall time with its offset, the spelling the
+ * aggregate's `range` reads: `2026-09-01T00:00:00+03:00`. */
+export function isoWithOffset(t: number): string {
+  const d = new Date(t)
+  const off = -d.getTimezoneOffset()
+  const sign = off >= 0 ? "+" : "-"
+  const abs = Math.abs(off)
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  )
+}
+
+/** A local day key, `YYYY-MM-DD`. */
+export function dayKeyOf(t: number): string {
+  const d = new Date(t)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+]
+
+function isMidnight(t: number): boolean {
+  const d = new Date(t)
+  return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0
+}
+
+/** A local day in words: `Sep 3`, or `Sep 3, 2026` with its year. */
+export function dayWords(t: number, withYear = false): string {
+  const d = new Date(t)
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}${withYear ? `, ${d.getFullYear()}` : ""}`
+}
+
+/** A local clock time, `06:30`. */
+export function clockWords(t: number): string {
+  const d = new Date(t)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** A window in words: whole days as `Sep 1 to Sep 30, 2026` (the end is
+ * the last day it holds), anything finer as its two instants,
+ * `Oct 7, 06:00 to 09:00`. */
+export function rangeWords(range: TimeRange): string {
+  if (isMidnight(range.start) && isMidnight(range.end)) {
+    const last = new Date(range.end)
+    last.setDate(last.getDate() - 1)
+    const lastAt = last.getTime()
+    if (dayKeyOf(range.start) === dayKeyOf(lastAt)) {
+      return dayWords(range.start, true)
+    }
+    const sameYear = new Date(range.start).getFullYear() === last.getFullYear()
+    return `${dayWords(range.start, !sameYear)} to ${dayWords(lastAt, true)}`
+  }
+  const sameDay = dayKeyOf(range.start) === dayKeyOf(range.end - 1)
+  const from = `${dayWords(range.start, true)}, ${clockWords(range.start)}`
+  const to = sameDay
+    ? clockWords(range.end)
+    : `${dayWords(range.end, true)}, ${clockWords(range.end)}`
+  return `${from} to ${to}`
+}
+
+/** A bucket's start as an axis or table label, as fine as its size:
+ * `06:30` (with the day where it changes), `Sep 3`, `Sep 2026`. */
+export function bucketWords(
+  t: number,
+  size: BucketSize,
+  previous?: number
+): string {
+  const d = new Date(t)
+  if (size === "month") {
+    return d.getMonth() === 0 || previous === undefined
+      ? `${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+      : MONTHS[d.getMonth()]
+  }
+  if (size === "day" || size === "week") return dayWords(t)
+  const clock = clockWords(t)
+  if (previous !== undefined && dayKeyOf(previous) === dayKeyOf(t)) return clock
+  return clock === "00:00" ? dayWords(t) : `${dayWords(t)}, ${clock}`
+}
+
+/** A bucket's window in words, for a tooltip or a table row: a day as
+ * `Sep 3, 2026`, a week as `Sep 1 to Sep 7, 2026`, finer windows by their
+ * clocks. */
+export function windowWords(start: number, end: number): string {
+  return rangeWords({ start, end })
+}
+
+// ── buckets ────────────────────────────────────────────────────────────────
+
+export type BucketSize = "15m" | "hour" | "day" | "week" | "month"
+export type BucketChoice = "auto" | BucketSize
+
+export const BUCKET_CHOICES: readonly { value: BucketChoice; label: string }[] =
+  [
+    { value: "auto", label: "Automatic" },
+    { value: "15m", label: "15 min" },
+    { value: "hour", label: "Hour" },
+    { value: "day", label: "Day" },
+    { value: "week", label: "Week" },
+    { value: "month", label: "Month" },
+  ]
+
+const HOUR_MS = 3_600_000
+const DAY_MS = 24 * HOUR_MS
+
+/** Each size's length, a month counted as 30 days: for estimates only. */
+export const BUCKET_MS: Record<BucketSize, number> = {
+  "15m": 15 * 60_000,
+  hour: HOUR_MS,
+  day: DAY_MS,
+  week: 7 * DAY_MS,
+  month: 30 * DAY_MS,
+}
+
+/** The size a range reads at when nobody picked one: under 200 buckets
+ * for every preset (96 for a day, 168 for a week, 30 for a month, 27 and 53
+ * weeks for six months and a year). */
+export function autoBucket(range: TimeRange): BucketSize {
+  const span = range.end - range.start
+  if (span <= DAY_MS + HOUR_MS) return "15m"
+  if (span <= 8 * DAY_MS) return "hour"
+  if (span <= 62 * DAY_MS) return "day"
+  if (span <= 400 * DAY_MS) return "week"
+  return "month"
+}
+
+export function bucketSizeOf(
+  choice: BucketChoice,
+  range: TimeRange
+): BucketSize {
+  return choice === "auto" ? autoBucket(range) : choice
+}
+
+/** About how many buckets a range cuts into; the request's budget counts
+ * them (`maxBuckets`, 1,440 by default). */
+export function bucketEstimate(range: TimeRange, size: BucketSize): number {
+  return Math.ceil((range.end - range.start) / BUCKET_MS[size])
+}
+
+/** The default `maxBuckets` a request is held to. */
+export const MAX_BUCKETS = 1440
+
+/** A size as the aggregate's time mode: 15 minutes is a physical window on
+ * UTC instants, the rest calendar windows in the reader's zone, weeks from
+ * Monday. */
+export function bucketOf(size: BucketSize, timezone?: string): AggregateBucket {
+  const zone = timezone ? { timezone } : {}
+  switch (size) {
+    case "15m":
+      return { every: "PT15M" }
+    case "hour":
+      return { calendar: "hour", ...zone }
+    case "day":
+      return { calendar: "day", ...zone }
+    case "week":
+      return { calendar: "week", weekStart: "monday", ...zone }
+    case "month":
+      return { calendar: "month", ...zone }
+  }
+}
+
+/** The reader's time zone, for calendar buckets; undefined where the
+ * runtime does not say. */
+export function readerTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+}
+
+// ── the timeline's requests ────────────────────────────────────────────────
+
+export type GroupChoice = "metric" | "source" | "about" | "code"
+
+export const GROUP_CHOICES: readonly { value: GroupChoice; label: string }[] = [
+  { value: "metric", label: "Metric" },
+  { value: "source", label: "Source" },
+  { value: "about", label: "About" },
+  { value: "code", label: "Category" },
+]
+
+export const FROM_CHOICES: readonly { value: AggregateFrom; label: string }[] =
+  [
+    { value: "raw", label: "Raw" },
+    { value: "summaries", label: "Summaries" },
+    { value: "prefer-raw", label: "Prefer raw" },
+  ]
+
+/** One aggregate read: the records filter and the `aggregate` parameter,
+ * which `lib/api/observations.ts` encodes onto the records route. */
+export interface AggregateRead {
+  filter?: RecordFilter
+  aggregate: Aggregate
+}
+
+/** What one chart of the timeline asks for. */
+export interface LaneSpec {
+  /** The metric record's path. */
+  metricPath: string
+  shape: ReadingShape
+  /** The reducer the reader picked, a word from `reducerOptions`. */
+  reducer: string
+  /** The codes `timeInState` counts time in. */
+  codes?: string[]
+  /** The output unit; absent keeps the stored one. */
+  unit?: string
+  from: AggregateFrom
+  range: TimeRange
+  bucket: AggregateBucket
+  group: GroupChoice
+  /** Source record paths the read is narrowed to; empty for every source. */
+  sources: string[]
+  /** Source record ids in the reader's order, for the priority policy. */
+  sourceOrder: string[]
+  /** `about` values the read is narrowed to; empty for everything. */
+  about: string[]
+}
+
+/** The reducers a lane asks for: the reader's, then (on a level) the
+ * lowest and highest, which the chart draws as a band. */
+export function laneReducers(spec: LaneSpec): AggregateReducer[] {
+  const picked: AggregateReducer =
+    spec.reducer === "timeInState"
+      ? { timeInState: spec.codes ?? [] }
+      : spec.reducer
+  if (spec.shape !== "gauge") return [picked]
+  return [picked, ...["min", "max"].filter((r) => r !== spec.reducer)]
+}
+
+/** What a lane's chart groups its series by: a coded metric always by
+ * code, since a value carries no code of its own; otherwise the reader's
+ * choice, where it is not the metric itself (each metric is its own lane). */
+export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
+  if (spec.shape === "coded") return "code"
+  return spec.group === "metric" ? undefined : spec.group
+}
+
+/** The aggregate read one lane issues. Grouped by anything but source, two
+ * or more sources are resolved by priority in the reader's order, so one
+ * line is one thing; grouped by source, each keeps its own rows. */
+export function laneRead(spec: LaneSpec): AggregateRead {
+  const groupKey = laneGroupKey(spec)
+  const properties: NonNullable<RecordFilter["properties"]> = {}
+  if (spec.sources.length) properties.source = { in: spec.sources }
+  if (spec.about.length) properties.about = { in: spec.about }
+  const aggregate: Aggregate = {
+    metric: { ref: spec.metricPath },
+    from: spec.from,
+    range: {
+      gte: isoWithOffset(spec.range.start),
+      lt: isoWithOffset(spec.range.end),
+    },
+    bucket: spec.bucket,
+    ...(groupKey ? { groupBy: [groupKey] } : {}),
+    reducers: laneReducers(spec),
+    ...(groupKey !== "source" && spec.sourceOrder.length > 1
+      ? { sources: { policy: "priority", order: spec.sourceOrder } }
+      : {}),
+    ...(spec.unit ? { unit: spec.unit } : {}),
+  }
+  return {
+    filter: {
+      implements: OBSERVED_TRAIT_IDENTITY,
+      ...(Object.keys(properties).length ? { properties } : {}),
+    },
+    aggregate,
+  }
+}
+
+/** The latest read: one row per stream, from the newest point of each. */
+export function latestRead(): AggregateRead {
+  return {
+    filter: { implements: OBSERVED_TRAIT_IDENTITY },
+    aggregate: { groupBy: ["metric", "source", "about"], reducers: ["last"] },
+  }
+}
+
+// ── the answer, cut into buckets and series ────────────────────────────────
+
+/** A decimal string as a number to plot; null for no answer. */
+export function numberOf(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/** One bucket of the answer: its window and the rows that fell in it. */
+export interface Bucket {
+  start: number
+  end: number
+  startIso: string
+  endIso: string
+  rows: AggregateRow[]
+}
+
+/** One series: the rows one group value answers, a point per bucket. */
+export interface Series {
+  key: string
+  /** The group value, or undefined for the one series of an ungrouped lane. */
+  value?: string
+  points: SeriesPoint[]
+}
+
+export interface SeriesPoint {
+  bucket: number
+  row?: AggregateRow
+  /** The picked reducer's value. */
+  value: number | null
+  /** The band: the lowest and highest, on a level. */
+  low: number | null
+  high: number | null
+}
+
+/** A row's value for one reducer, by key. */
+export function rowValue(
+  row: AggregateRow | undefined,
+  key: string
+): AggregateValue | undefined {
+  return row?.values.find((v) => reducerKey(v.reducer) === key)
+}
+
+/** The rows as buckets (distinct windows, oldest first) and series (one per
+ * value of the group key, in first-seen order), every series holding one
+ * point per bucket. */
+export function seriesOf(
+  rows: readonly AggregateRow[],
+  pickedKey: string,
+  groupKey?: AggregateGroupKey
+): { buckets: Bucket[]; series: Series[] } {
+  const byWindow = new Map<string, Bucket>()
+  for (const row of rows) {
+    const id = `${row.start}\n${row.end}`
+    let bucket = byWindow.get(id)
+    if (!bucket) {
+      bucket = {
+        start: Date.parse(row.start),
+        end: Date.parse(row.end),
+        startIso: row.start,
+        endIso: row.end,
+        rows: [],
+      }
+      byWindow.set(id, bucket)
+    }
+    bucket.rows.push(row)
+  }
+  const buckets = [...byWindow.values()].sort((a, b) => a.start - b.start)
+  const keys: string[] = []
+  for (const row of rows) {
+    const key = groupValue(row.group, groupKey) ?? ""
+    if (!keys.includes(key)) keys.push(key)
+  }
+  const series = keys.map((key) => ({
+    key,
+    value: groupKey ? key || undefined : undefined,
+    points: buckets.map((bucket, i) => {
+      const row = bucket.rows.find(
+        (r) => (groupValue(r.group, groupKey) ?? "") === key
+      )
+      const off = row?.unavailable === true
+      return {
+        bucket: i,
+        row,
+        value: off ? null : numberOf(rowValue(row, pickedKey)?.value),
+        low: off ? null : numberOf(rowValue(row, "min")?.value),
+        high: off ? null : numberOf(rowValue(row, "max")?.value),
+      }
+    }),
+  }))
+  return { buckets, series }
+}
+
+function groupValue(
+  group: AggregateGroup | undefined,
+  key: AggregateGroupKey | undefined
+): string | undefined {
+  return key ? group?.[key] : undefined
+}
+
+/** The unit an answer is in: the picked reducer's, else the result's. */
+export function answerUnit(
+  result: AggregateResult | undefined,
+  pickedKey: string
+): string | undefined {
+  for (const row of result?.rows ?? []) {
+    const unit = rowValue(row, pickedKey)?.unit
+    if (unit) return unit
+  }
+  return result?.unit
+}
+
+/** The reducer columns an answer carries, in first-seen order. */
+export function answerReducers(
+  rows: readonly AggregateRow[]
+): AggregateReducer[] {
+  const seen = new Map<string, AggregateReducer>()
+  for (const row of rows) {
+    for (const v of row.values) {
+      const key = reducerKey(v.reducer)
+      if (!seen.has(key)) seen.set(key, v.reducer)
+    }
+  }
+  return [...seen.values()]
+}
+
+/** An answer as tab-separated text, the rollup table's copy: a header
+ * line, then one line per row with the wire's own values (instants,
+ * digits, codes and durations as served). */
+export function rollupText(
+  rows: readonly AggregateRow[],
+  reducers: readonly AggregateReducer[],
+  groupKey?: AggregateGroupKey
+): string {
+  const head = [
+    "start",
+    "end",
+    ...(groupKey ? [groupKey] : []),
+    ...reducers.map(reducerKey),
+    "count",
+    "coverage",
+    "sources",
+    "from",
+    "synthetic",
+    "unavailable",
+  ]
+  const lines = rows.map((row) => [
+    row.start,
+    row.end,
+    ...(groupKey ? [row.group?.[groupKey] ?? ""] : []),
+    ...reducers.map((r) => {
+      const v = rowValue(row, reducerKey(r))
+      return v?.value == null ? "" : `${v.value}${v.unit ? ` ${v.unit}` : ""}`
+    }),
+    row.count === undefined ? "" : String(row.count),
+    row.coverage ?? "",
+    (row.sources ?? []).join(","),
+    row.from ?? "",
+    row.synthetic ? "true" : "",
+    row.unavailable ? "true" : "",
+  ])
+  return [head, ...lines].map((l) => l.join("\t")).join("\n")
+}
+
+// ── durations ──────────────────────────────────────────────────────────────
+
+const DURATION =
+  /^P(?:(\d+(?:\.\d+)?)W)?(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/
+
+/** An ISO 8601 duration of weeks, days, hours, minutes and seconds in
+ * milliseconds; undefined for anything else (years and months have no fixed
+ * length). */
+export function durationMs(text: string | undefined): number | undefined {
+  if (!text) return undefined
+  const m = DURATION.exec(text)
+  if (!m || text === "P" || text.endsWith("T")) return undefined
+  const [w, d, h, min, s] = m.slice(1).map((x) => (x ? Number(x) : 0))
+  return Math.round((((w * 7 + d) * 24 + h) * 60 + min) * 60_000 + s * 1000)
+}
+
+/** A length of time in a few words: `6d 22h 10m`, `59m 58s`, `0s`. */
+export function durationWords(ms: number): string {
+  const parts: string[] = []
+  let rest = Math.round(ms / 1000)
+  const days = Math.floor(rest / 86_400)
+  rest -= days * 86_400
+  const hours = Math.floor(rest / 3600)
+  rest -= hours * 3600
+  const minutes = Math.floor(rest / 60)
+  const seconds = rest - minutes * 60
+  if (days) parts.push(`${days}d`)
+  if (hours) parts.push(`${hours}h`)
+  if (minutes) parts.push(`${minutes}m`)
+  if (seconds && !days) parts.push(`${seconds}s`)
+  return parts.length ? parts.slice(0, 3).join(" ") : "0s"
+}
+
+/** A stored duration in words, or the stored text where it does not parse. */
+export function coverageWords(text: string | undefined): string {
+  const ms = durationMs(text)
+  return ms === undefined ? (text ?? "") : durationWords(ms)
+}
+
+// ── a trace's own values ───────────────────────────────────────────────────
+
+/** One value of a trace, placed in time. */
+export interface TracePoint {
+  at: number
+  value: string | null
+  code?: string | null
+}
+
+/** A trace's values in time order: each at `at` plus its offset in
+ * milliseconds, or plus `every` times its position. `values` and `codes`
+ * line up with the offsets; whichever the trace holds is read. A trace
+ * whose spacing does not parse answers nothing. */
+export function tracePoints(properties: Record<string, unknown>): TracePoint[] {
+  const at = typeof properties.at === "string" ? Date.parse(properties.at) : NaN
+  if (Number.isNaN(at)) return []
+  const values = Array.isArray(properties.values) ? properties.values : null
+  const codes = Array.isArray(properties.codes) ? properties.codes : null
+  const length = values?.length ?? codes?.length ?? 0
+  const offsets = Array.isArray(properties.offsets)
+    ? properties.offsets.map(Number)
+    : null
+  const every = durationMs(
+    typeof properties.every === "string" ? properties.every : undefined
+  )
+  if (!offsets && every === undefined) return []
+  const out: TracePoint[] = []
+  for (let i = 0; i < length; i++) {
+    const offset = offsets ? offsets[i] : every! * i
+    if (!Number.isFinite(offset)) continue
+    const raw = values?.[i]
+    out.push({
+      at: at + offset,
+      value:
+        typeof raw === "string"
+          ? raw
+          : typeof raw === "number"
+            ? `${raw}`
+            : null,
+      ...(codes
+        ? { code: typeof codes[i] === "string" ? codes[i] : null }
+        : {}),
+    })
+  }
+  return out
+}
+
+/** A trace's points with a break (`null`) wherever two neighbours sit
+ * further apart than the trace's `hold`: past it a level is not known
+ * (decision 0158), so a line must not slope across the gap. No hold, no
+ * breaks. */
+export function breakAtGaps(
+  points: readonly TracePoint[],
+  holdMs: number | undefined
+): (TracePoint | null)[] {
+  if (holdMs === undefined) return [...points]
+  const out: (TracePoint | null)[] = []
+  points.forEach((p, i) => {
+    if (i > 0 && p.at - points[i - 1].at > holdMs) out.push(null)
+    out.push(p)
+  })
+  return out
+}
+
+/** An instant to the second, for a value inside a trace: `Oct 7, 06:30:01`. */
+export function secondWords(t: number): string {
+  const d = new Date(t)
+  return `${dayWords(t)}, ${clockWords(t)}:${pad(d.getSeconds())}`
+}
+
+/** A trace's managed `stats`, read defensively: the engine writes them. */
+export interface TraceStats {
+  count?: number
+  min?: string
+  max?: string
+  mean?: number
+  m2?: number
+  first?: { at: string; value: string }
+  last?: { at: string; value: string }
+  coverage?: string
+}
+
+function point(raw: unknown): { at: string; value: string } | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const p = raw as Record<string, unknown>
+  return typeof p.at === "string" &&
+    (typeof p.value === "string" || typeof p.value === "number")
+    ? { at: p.at, value: String(p.value) }
+    : undefined
+}
+
+export function traceStats(raw: unknown): TraceStats | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
+  const s = raw as Record<string, unknown>
+  const num = (v: unknown) =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined
+  const dec = (v: unknown) =>
+    typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined
+  return {
+    count: num(s.count),
+    min: dec(s.min),
+    max: dec(s.max),
+    mean: num(s.mean),
+    m2: num(s.m2),
+    first: point(s.first),
+    last: point(s.last),
+    coverage: typeof s.coverage === "string" ? s.coverage : undefined,
+  }
+}
+
+/** The sample standard deviation the running `m2` holds, where it can. */
+export function stddevOf(stats: TraceStats): number | undefined {
+  if (stats.m2 === undefined || !stats.count || stats.count < 2)
+    return undefined
+  return Math.sqrt(stats.m2 / (stats.count - 1))
+}
+
+/** A plotted number as digits, at most `digits` after the point, trailing
+ * zeros dropped: `131.6`, `0.25`, `1812`. */
+export function plainNumber(n: number, digits = 2): string {
+  return Number(n.toFixed(digits)).toString()
+}
+
+// ── per-metric choices in the address ──────────────────────────────────────
+
+/** Per-metric choices (a reducer, a unit) as URL tokens `<metric>~<value>`,
+ * the metric URI-encoded since an id may hold a `~`. */
+export function readChoices(
+  tokens: readonly string[] | null
+): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const token of tokens ?? []) {
+    const at = token.lastIndexOf("~")
+    if (at <= 0) continue
+    try {
+      out.set(decodeURIComponent(token.slice(0, at)), token.slice(at + 1))
+    } catch {
+      // A hand-edited token that does not decode names no metric.
+    }
+  }
+  return out
+}
+
+/** The tokens with one metric's choice set, or cleared with "". */
+export function writeChoice(
+  tokens: readonly string[] | null,
+  metric: string,
+  value: string
+): string[] {
+  const choices = readChoices(tokens)
+  if (value) choices.set(metric, value)
+  else choices.delete(metric)
+  return [...choices].map(([m, v]) => `${encodeURIComponent(m)}~${v}`)
+}

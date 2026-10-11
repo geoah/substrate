@@ -39,7 +39,9 @@ The sidebar holds, top to bottom: the repository name, which opens the account
 menu (**Account and settings**, **Appearance**, the **Technical details**
 switch, and **Sign out…**, which asks first), a search button that opens ⌘K,
 the five places (**Home**, **All data**, **Agents**, **Tools**,
-**Providers**, with the number of providers added beside the last),
+**Providers**, with the number of providers added beside the last, and
+[**Observations**](#observations) after All data where some kind records
+measurements),
 **Favorites**, the collections, and at the foot **History**, **Settings** and
 the **Technical details** switch. Collapsed, it peeks over the page while the
 pointer rests at the window's left side or on its toggle.
@@ -375,6 +377,16 @@ Under the properties, in order:
 - **Sync**, on a record of any kind binding the core `sync` trait (a
   provider's account): the trait rendered whole, with **Sync now** and
   **Pause**, and a link to the account on its provider's page.
+- **Measurement** or **Readings**, on a record of any kind binding the core
+  `observed` trait. A single value (the trait's `single` variant) reads its
+  value with its unit, the metric, source and thing it is about as record
+  mentions, the form, the statistic and period of a vendor summary, when,
+  the revision and the record that delivered it. A trace (the `packed`
+  variant, told apart by declaring `values`) draws its values over
+  `[at, endsAt)` as a line broken wherever two values sit further apart than
+  its `hold`, its managed `stats` as labelled values, and every value with
+  its time in a table fifty to a page. Both open the timeline on the
+  record's stream.
 - **Connected to**: the records that point here, read through the
   [`referencing`](api.md#who-points-at-a-record-referencing) filter arm and
   grouped by the kind they are and the property they point through ("Tasks
@@ -644,6 +656,55 @@ The old addresses land here: `/registry` and `/connections` open Providers,
 `/registry/{bundle id}` that bundle's page (a shipped sample's opens All
 data), `/connections/{authority}/{package}/{kind}/{id}` its provider's page at
 that account, and `/settings/{bundle id}` that page's Settings.
+
+## Observations
+
+**Observations** (`/observations`) lists what your devices, apps and providers
+measured, one row per stream: a metric written by one source about one
+thing. It is a place in the sidebar and ⌘K only where some kind binds core's
+`observed` trait, which the console finds in the registry by the trait and
+never by a fixed authority, so an imported `observations` or `health` sample
+under your own authority is found the same way. The rows come from one
+aggregate latest read: `GET /api/v1/records` with
+`filter={"implements":"substrate.reamde.dev/core/observed"}` and
+`aggregate={"groupBy":["metric","source","about"],"reducers":["last"]}`, no
+bucket and no range. Each row shows the metric by its record's name, the
+source as a record mention, what it is about (**You** where it names
+nothing, which means the owner), the form in words (**Level**, **Amount**,
+**Running total**, **Vendor summary**, **Category**), the newest value in its
+unit, when, and the count or covered time where the answer carries one.
+Filters for metric, source, about and form and a search narrow the rows,
+all in the address. A row opens the timeline narrowed to its stream.
+
+**The timeline** (`/observations/timeline`) draws the chosen metrics over one
+range, each metric in its own chart on the same time axis: two metrics never
+share a y axis. One row of controls scopes every chart: the metrics, the
+range (today, the last 7 or 30 days, 6 months, a year, or a custom range of
+days on the calendar), the bucket (automatic from the range, 15 minutes, an
+hour, a day, a week, a month; calendar buckets in your time zone), what to
+group by (metric, source, about or category), where to read from (raw
+points, vendor summaries, or raw where a bucket is covered), and the sources
+and things to keep. Each chart picks its own reducer from the ones its form
+allows and an output unit from the stored unit's measure. A level is a line
+with its lowest-to-highest band, an amount or a count is bars, a category is
+bars stacked per code; a tooltip names the bucket's window, every value with
+its unit, the count, the covered time, the sources and whether the row was
+filled in or is no longer available. Click a bucket or drag across several
+to zoom in; from the keyboard the arrow keys move between buckets and Enter
+zooms. Under each chart, its numbers as a table that copies as
+tab-separated text; with Technical details on, the request itself as JSON
+and as a `curl` command.
+
+Each chart is one aggregate read naming its metric. Grouped by anything but
+source, two or more sources are resolved by `sources.policy: priority` in the
+order you chose them (or the newest first), and the chart says which source
+wins; grouped by source, each keeps its own rows. A category metric is
+always grouped by code. A range that would cut into more than 1,440 buckets
+is not asked for, and the chart says to pick a larger bucket.
+
+The aggregate read is pinned by the observations build's wire contract
+([the brief](plans/observations/implementation/README.md)); until the server
+answers it, these pages exist in the console alone.
 
 ## History
 

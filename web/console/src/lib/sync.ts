@@ -240,7 +240,9 @@ export interface AccountView {
 /** A kind carries a trait when its reconciled declaration lists it, by
  * its full identity (every stored declaration names it in full, decision
  * 0101) or by the bare shipped spelling an older declaration kept. A bare
- * `trait` argument names the core trait of that name. */
+ * `trait` argument names the core trait of that name. A binding that picks a
+ * variant (`observed(packed)`, `temporal(point: dueAt)`) carries the trait
+ * the part before its parenthesis names. */
 export function kindHasTrait(
   kind: KindInfo | undefined,
   trait: string
@@ -249,7 +251,11 @@ export function kindHasTrait(
   if (!Array.isArray(traits)) return false
   const bare = trait.slice(trait.lastIndexOf("/") + 1)
   const full = trait.includes("/") ? trait : `${CORE_PACKAGE}/${trait}`
-  return traits.some((t) => t === full || t === bare)
+  return traits.some((t) => {
+    if (typeof t !== "string") return false
+    const named = t.replace(/\s*\(.*\)\s*$/, "")
+    return named === full || named === bare
+  })
 }
 
 export function accountViewOf(
@@ -294,6 +300,11 @@ export function accountViewOf(
 /** The trait identity, spelled here so this module stays free of the API
  * layer's constants. Must equal `lib/api/sync.ts` `SYNC_TRAIT`. */
 export const SYNC_TRAIT_IDENTITY = "substrate.reamde.dev/core/sync"
+
+/** Core's `observed` trait: a kind whose records hold measured values the
+ * engine indexes (decision 0154). Its two variants describe layout only, and
+ * the console tells them apart by whether the kind declares `values`. */
+export const OBSERVED_TRAIT_IDENTITY = "substrate.reamde.dev/core/observed"
 
 /** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and
  * `syncPaused` is Pause, and the sync panel's buttons are their controls. An
