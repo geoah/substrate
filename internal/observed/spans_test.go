@@ -37,6 +37,74 @@ func TestPrioritizeFillsTheGapsOfTheHigherSource(t *testing.T) {
 	}
 }
 
+// fragmented is two sources of n one-second holds each, interleaved so the
+// higher source's cover stays n disjoint intervals and each lower span half
+// overlaps one of them.
+func fragmented(n int) [][]Span {
+	sec := func(halves int) time.Time { return t0.Add(time.Duration(halves) * time.Second / 2) }
+	high, low := make([]Span, n), make([]Span, n)
+	for k := range n {
+		high[k] = Span{Start: sec(4 * k), End: sec(4*k + 2)}
+		low[k] = Span{Start: sec(4*k + 1), End: sec(4*k + 3)}
+	}
+	return [][]Span{high, low}
+}
+
+// Two fragmented sources of 300,000 holds each resolve in one sweep: each
+// lower span keeps the half second after the higher one's hold. Comparing
+// every lower span with the whole higher cover took about 90 billion steps,
+// minutes after the SQL had finished.
+func TestPrioritizeIsLinearOverFragmentedCover(t *testing.T) {
+	const n = 300000
+	got := Prioritize(fragmented(n))
+	if len(got[0]) != n || len(got[1]) != n {
+		t.Fatalf("resolved %d and %d spans, want %d each", len(got[0]), len(got[1]), n)
+	}
+	if ms := HeldMs(got[1]); ms != int64(n)*500 {
+		t.Errorf("the lower source keeps %d ms, want half a second of each hold", ms)
+	}
+	if s := got[1][n-1]; !s.Start.Equal(t0.Add(time.Duration(4*(n-1)+2)*time.Second/2)) || s.End.Sub(s.Start) != time.Second/2 {
+		t.Errorf("the last lower span is %v to %v", s.Start, s.End)
+	}
+}
+
+func BenchmarkPrioritizeFragmented(b *testing.B) {
+	streams := fragmented(300000)
+	for b.Loop() {
+		Prioritize(streams)
+	}
+}
+
+// An amount's coverage joins extents: disjoint ones add, raw spans that
+// overlap or touch join as one, and a row's union overlapping anything else
+// cannot be measured from the row, so the reader is told to read the spans.
+func TestUnionMsJoinsWhatItCanMeasure(t *testing.T) {
+	row := func(from, to, covered float64) Extent {
+		return Extent{Start: at(from), End: at(to), Ms: dur(covered).Milliseconds()}
+	}
+	span := func(from, to float64) Extent {
+		return Extent{Start: at(from), End: at(to), Ms: dur(to - from).Milliseconds(), Exact: true}
+	}
+	for _, x := range []struct {
+		name    string
+		extents []Extent
+		want    float64
+		ok      bool
+	}{
+		{"two rows apart", []Extent{row(15, 50, 35), row(0, 35, 20)}, 0, false},
+		{"rows touching", []Extent{row(0, 15, 10), row(15, 30, 15)}, 25, true},
+		{"spans joining", []Extent{span(0, 10), span(5, 20), span(20, 25)}, 25, true},
+		{"a span inside a row", []Extent{row(0, 60, 30), span(10, 20)}, 0, false},
+		{"a span after a row", []Extent{row(0, 15, 15), span(15, 20)}, 20, true},
+		{"nothing", nil, 0, true},
+	} {
+		got, ok := UnionMs(x.extents)
+		if ok != x.ok || got != dur(x.want).Milliseconds() {
+			t.Errorf("%s: %d ms, %v; want %v minutes, %v", x.name, got, ok, x.want, x.ok)
+		}
+	}
+}
+
 // The window reducers are the span reducers over Held: one implementation.
 func TestWindowReducersAreTheSpanReducers(t *testing.T) {
 	points := []Point{coded(0, "closed"), coded(20, "open"), coded(25, "closed")}

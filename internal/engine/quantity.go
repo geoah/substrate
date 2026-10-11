@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -266,7 +267,7 @@ func (ds *dataset) storedQuantityUnits(ctx context.Context, x dbx, b *builder, d
 			add(u)
 		}
 	case b.overRecords && x != nil && len(open) > 0:
-		units, err := readStoredUnits(ctx, x, open, key, b.tombstones)
+		units, err := readStoredUnits(ctx, x, b, open, key)
 		if err != nil {
 			return nil, err
 		}
@@ -298,19 +299,26 @@ func quantityUnitsClosed(spec *vocabulary.QuantitySpec) bool {
 }
 
 // readStoredUnits is the one read of the units the rows of kinds hold under a
-// quantity's name, on the side the read selects: the live rows, or the
-// tombstones where it reads those. It reads each such row of the kinds once,
-// found through the records key's kind prefix, and answers at most
-// maxQuantityUnits codes; more is refused, naming the declaration that would
-// close the set.
-func readStoredUnits(ctx context.Context, x dbx, kinds []string, key string, tombstones bool) ([]string, error) {
+// quantity's name, under every condition the read's builder holds so far (the
+// whole filter for an order; for a filter's clause every condition but the
+// quantity comparisons after it, buildFilter building those last), so a
+// narrow range or a narrow filter reads a narrow set of rows. It reads them
+// on the side the read selects, the live rows or the tombstones, and answers
+// at most maxQuantityUnits codes; more is refused, naming the declaration
+// that would close the set.
+func readStoredUnits(ctx context.Context, x dbx, b *builder, kinds []string, key string) ([]string, error) {
 	side := `deleted_at IS NULL`
-	if tombstones {
+	if b.tombstones {
 		side = `deleted_at IS NOT NULL`
 	}
-	rows, err := x.QueryContext(ctx, `SELECT DISTINCT props->$1->>'`+vocabulary.QuantityUnit+`'
-		FROM records WHERE kind = ANY($2::text[]) AND `+side+` AND jsonb_typeof(props->$1) = 'object'
-		LIMIT $3`, key, kinds, maxQuantityUnits+1)
+	args := append(append([]any(nil), b.args...), key, kinds, maxQuantityUnits+1)
+	n := len(b.args)
+	k, ks, lim := "$"+strconv.Itoa(n+1), "$"+strconv.Itoa(n+2), "$"+strconv.Itoa(n+3)
+	where := append(append([]string(nil), b.where...),
+		`kind = ANY(`+ks+`::text[])`, side, `jsonb_typeof(props->`+k+`::text) = 'object'`)
+	rows, err := x.QueryContext(ctx, `SELECT DISTINCT props->`+k+`::text->>'`+vocabulary.QuantityUnit+`'
+		FROM records WHERE `+strings.Join(where, " AND ")+`
+		LIMIT `+lim, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +551,7 @@ func (ds *dataset) quantityOrderTerms(ctx context.Context, x dbx, b *builder, ty
 		if len(open) == 0 {
 			continue
 		}
-		stored, err := readStoredUnits(ctx, x, open, o.Property, b.tombstones)
+		stored, err := readStoredUnits(ctx, x, b, open, o.Property)
 		if err != nil {
 			return nil, err
 		}

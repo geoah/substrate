@@ -33,11 +33,16 @@ type aggRun struct {
 	rows map[*aggStream][]observed.Row
 	// rowGroups maps a rollup row's group key to its group.
 	rowGroups map[string]obsGroup
-	// carries are the points current at the range's start, by stream, for a
-	// rollup-served gauge.
-	carries map[*aggStream]*observed.Point
+	// carries are the points current at each window's start, by stream and
+	// in segments order, for a rollup-served gauge.
+	carries map[*aggStream][]*observed.Point
 	// series are the raw points read, by stream.
 	series map[*aggStream]*aggSeries
+	// bounds are the records mode's window starts and ends, sorted, where a
+	// carry walked across empty rows is cut (chunkEnd).
+	bounds []time.Time
+	// nSeries is the series the read was budgeted for (seriesOf).
+	nSeries int
 }
 
 // aggSeries is one stream's raw points: each span read, with the point
@@ -57,18 +62,23 @@ type aggSegment struct {
 // evidence is what one row reduces: raw members and held spans, or merged
 // rollup statistics and held sums.
 type aggEvidence struct {
-	form      string
-	raw       bool
-	members   []aggPoint
-	spans     []aggSpan
-	stats     observed.Stats
-	held      map[string]observed.HeldSum
-	steps     aggSteps
-	sources   map[string]bool
-	coverage  int64
-	count     int64
-	bounded   int64
-	converted bool
+	form     string
+	raw      bool
+	members  []aggPoint
+	spans    []aggSpan
+	stats    observed.Stats
+	held     map[string]observed.HeldSum
+	steps    aggSteps
+	sources  map[string]bool
+	coverage int64
+	// extents are a rollup-served amount's pieces of coverage, joined into
+	// coverage once every row and cut end has merged (amountCoverage).
+	extents []observed.Extent
+	// firstStream and lastStream are the streams stats.First and stats.Last
+	// came from, the last key of pointBefore.
+	firstStream, lastStream int
+	count                   int64
+	bounded                 int64
 }
 
 type aggSteps struct {
@@ -101,7 +111,7 @@ func newEvidence(form string, raw bool) *aggEvidence {
 // against maxSamples before reading them.
 func (r *aggRun) plan(groups []*aggGroup) error {
 	r.rows, r.rowGroups = map[*aggStream][]observed.Row{}, map[string]obsGroup{}
-	r.carries, r.series = map[*aggStream]*observed.Point{}, map[*aggStream]*aggSeries{}
+	r.carries, r.series = map[*aggStream][]*observed.Point{}, map[*aggStream]*aggSeries{}
 	for _, g := range groups {
 		g.rollups = r.rollupable(g)
 		if !g.rollups {
@@ -177,7 +187,7 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 	for _, g := range groups {
 		if g.rollups && g.form == vocabulary.FormGauge {
 			for _, s := range g.raw {
-				c, err := r.readCarry(s, r.p.from)
+				c, err := r.readCarries(s, r.segments())
 				if err != nil {
 					return err
 				}
@@ -232,18 +242,8 @@ func ceil15(t time.Time) time.Time {
 	return f.Add(bucketWidth)
 }
 
-// segments are the spans a raw stream is read over: the range, or each
-// records-mode window, overlapping ones joined.
-func (r *aggRun) segments() [][2]time.Time {
-	if r.p.bucket.mode != bucketRecords {
-		return [][2]time.Time{{r.p.from, r.p.to}}
-	}
-	var spans [][2]time.Time
-	for _, b := range r.buckets {
-		spans = append(spans, [2]time.Time{b.start, b.end})
-	}
-	return joinSpans(spans)
-}
+// segments are the spans a raw stream is read over: the read's windows.
+func (r *aggRun) segments() [][2]time.Time { return r.p.windows(r.buckets) }
 
 // split is a bucket's whole rollup rows and the ends that cut a row.
 func split(b *aggBucket) (whole [2]time.Time, frags [][2]time.Time) {
@@ -326,6 +326,7 @@ func (r *aggRun) scanAggPoint(rows *sql.Rows, s *aggStream, lead ...any) (aggPoi
 	}
 	ap.Point, ap.off, ap.delta = sp.point, sp.group.offset, sp.group.delta
 	ap.Group = strconv.FormatInt(ap.off, 10)
+	ap.RecordID, ap.Ord = ap.rid, int64(ap.ord)
 	if err := r.convertPoint(&ap, s.form); err != nil {
 		return ap, err
 	}
@@ -383,8 +384,8 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 		}
 		ser.segs[i-1].points = append(ser.segs[i-1].points, ap)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
+	if err := finishRows(rows); err != nil {
+		return nil, fmt.Errorf("substrate/engine: aggregate points: %w", err)
 	}
 	for _, x := range []struct {
 		filter string
@@ -415,47 +416,76 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 			}
 			x.dst(&ser.segs[i-1], &ap)
 		}
-		if err := rows.Close(); err != nil {
-			return nil, err
+		if err := finishRows(rows); err != nil {
+			return nil, fmt.Errorf("substrate/engine: aggregate carry: %w", err)
 		}
 	}
 	return ser, nil
 }
 
-// readCarry is the point current at t (available or not), its group set to
-// its rollup row's, for HeldFromRowsCarry.
-func (r *aggRun) readCarry(s *aggStream, t time.Time) (*observed.Point, error) {
-	rows, err := r.tx.QueryContext(r.ctx, `SELECT `+pointColumns+` FROM observed_points p
-		WHERE `+holdStreamSQL+` AND p.ts < $7 ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1`,
-		append(s.hold().args(), t)...)
+// readCarries is, for each window, the point current at its start (available
+// or not), its group set to its rollup row's, for HeldFromRowsCarry; nil
+// where the stream has no point before it.
+func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.Point, error) {
+	starts := make([]time.Time, len(windows))
+	for i, w := range windows {
+		starts[i] = w[0]
+	}
+	rows, err := r.tx.QueryContext(r.ctx, `
+		SELECT s.i, `+pointColumns+`
+		FROM unnest($7::timestamptz[]) WITH ORDINALITY AS s(a, i)
+		CROSS JOIN LATERAL (
+			SELECT * FROM observed_points p
+			WHERE `+holdStreamSQL+` AND p.ts < s.a
+			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`,
+		append(s.hold().args(), starts)...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("substrate/engine: aggregate carry: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	if !rows.Next() {
-		return nil, rows.Err()
+	out := make([]*observed.Point, len(windows))
+	for rows.Next() {
+		var i int
+		sp, err := scanPoint(rows, &i)
+		if err != nil {
+			return nil, err
+		}
+		r.rowGroups[sp.point.Group] = sp.group
+		p := sp.point
+		out[i-1] = &p
 	}
-	sp, err := scanPoint(rows)
-	if err != nil {
-		return nil, err
-	}
-	r.rowGroups[sp.point.Group] = sp.group
-	p := sp.point
-	return &p, nil
+	return out, rows.Err()
 }
 
 // rollupColumns are the columns of observed_rollups a read takes.
 const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.bucket15, r.n, r.bounded, r.sum, r.min, r.max, r.mean, r.m2,
 	r.first_ts, r.first_value::text, r.last_ts, r.last_value::text, r.covered_ms, r.held_ms, r.twa_sum, r.last_hold_ms,
-	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum`
+	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum, r.span_end,
+	coalesce(r.first_record_id, ''), coalesce(r.first_ord, 0), coalesce(r.last_record_id, ''), coalesce(r.last_ord, 0),
+	coalesce(r.min_value::text, ''), coalesce(r.max_value::text, '')`
 
-// readRollups reads one stream's rollup rows over the range.
+// rowSpans are the rollup rows the read's windows meet: each window from the
+// row holding its start to the row holding its end, joined.
+func (r *aggRun) rowSpans() [][2]time.Time {
+	var spans [][2]time.Time
+	for _, w := range r.segments() {
+		spans = append(spans, [2]time.Time{floor15(w[0]), ceil15(w[1])})
+	}
+	return joinSpans(spans)
+}
+
+// readRollups reads one stream's rollup rows over the read's windows: the
+// range, or every records-mode window, which is not clipped to the range.
 func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
-	rows, err := r.tx.QueryContext(r.ctx, `SELECT `+rollupColumns+` FROM observed_rollups r
-		WHERE r.metric = $1 AND r.kind = $2 AND r.source = $3 AND r.about = $4 AND r.channel = $5 AND r.form = $6
-		  AND r.bucket15 >= $7 AND r.bucket15 < $8
+	from, to := spanArrays(r.rowSpans())
+	rows, err := r.tx.QueryContext(r.ctx, `SELECT `+rollupColumns+`
+		FROM unnest($7::timestamptz[], $8::timestamptz[]) AS w(a, b)
+		CROSS JOIN LATERAL (
+			SELECT * FROM observed_rollups r
+			WHERE r.metric = $1 AND r.kind = $2 AND r.source = $3 AND r.about = $4 AND r.channel = $5 AND r.form = $6
+			  AND r.bucket15 >= w.a AND r.bucket15 < w.b) r
 		ORDER BY r.bucket15, r.code, r.unit, r.delta, r.utc_offset_min`,
-		append(s.hold().args(), floor15(r.p.from), r.p.to)...)
+		append(s.hold().args(), from, to)...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate rollups: %w", err)
 	}
@@ -472,17 +502,23 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 			firstV, lastV, increase              sql.NullString
 			held, lastHold                       sql.NullInt64
 			resets                               sql.NullInt64
+			spanEnd                              sql.NullTime
+			firstRecord, lastRecord              string
+			firstOrd, lastOrd                    int64
+			minExact, maxExact                   string
 		)
 		if err := rows.Scan(&g.code, &g.unit, &g.delta, &g.offset, &bucket, &n, &bounded, &sum, &minV, &maxV, &mean, &m2,
-			&firstTS, &firstV, &lastTS, &lastV, &covered, &held, &twa, &lastHold, &maxGap, &startGp, &increase, &resets, &sin, &cos); err != nil {
+			&firstTS, &firstV, &lastTS, &lastV, &covered, &held, &twa, &lastHold, &maxGap, &startGp, &increase, &resets, &sin, &cos,
+			&spanEnd, &firstRecord, &firstOrd, &lastRecord, &lastOrd, &minExact, &maxExact); err != nil {
 			return nil, err
 		}
 		key := g.key()
 		r.rowGroups[key] = g
 		st := observed.Stats{
 			N: n, Bounded: bounded, Sum: sum.Float64, Min: minV.Float64, Max: maxV.Float64, Mean: mean.Float64, M2: m2.Float64,
+			MinExact: minExact, MaxExact: maxExact,
 			CoveredMs: covered, HeldMs: held.Int64, TWASum: twa.Float64, MaxGapMs: maxGap, StartGapMs: startGp,
-			Resets: resets.Int64, SinSum: sin.Float64, CosSum: cos.Float64,
+			Resets: resets.Int64, SinSum: sin.Float64, CosSum: cos.Float64, SpanEnd: spanEnd.Time,
 		}
 		if sum.Valid {
 			st.Values = n
@@ -510,6 +546,12 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 		}
 		if n > 0 {
 			st.First, st.Last = point(firstTS, firstV), point(lastTS, lastV)
+			if st.First != nil {
+				st.First.RecordID, st.First.Ord = firstRecord, firstOrd
+			}
+			if st.Last != nil {
+				st.Last.RecordID, st.Last.Ord = lastRecord, lastOrd
+			}
 		}
 		out = append(out, observed.Row{Start: bucket, Group: key, Stats: st})
 	}
@@ -548,15 +590,18 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 			}
 		}
 	}
-	if n := len(r.buckets) * max(len(groups), 1); n > r.p.maxBuckets {
-		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d groups is %d, over %d; narrow the range or raise maxBuckets",
-			len(r.buckets), len(groups), n, r.p.maxBuckets)
+	if n := len(r.buckets) * max(r.nSeries, 1); n > r.p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d series is %d, over %d; narrow the range or raise maxBuckets",
+			len(r.buckets), r.nSeries, n, r.p.maxBuckets)
 	}
 	var out []aggOut
 	codeGroups := 0
 	for gi, g := range groups {
 		seen := map[string]bool{}
 		for bi, b := range r.buckets {
+			if err := r.canceled(bi); err != nil {
+				return nil, err
+			}
 			codes := map[string]bool{}
 			for c := range raws[gi][b] {
 				codes[c] = true
@@ -595,7 +640,7 @@ func (r *aggRun) choose(b *aggBucket, raw, sums *aggEvidence) (*aggEvidence, str
 	case raw == nil:
 		return sums, substrate.AggregateFromSummaries
 	}
-	if length := b.length().Milliseconds(); length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
+	if length := b.length(r.p.from, r.p.to).Milliseconds(); length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
 		return raw, substrate.AggregateFromRaw
 	}
 	return sums, substrate.AggregateFromSummaries
@@ -629,6 +674,16 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 }
 
 // --- raw ---
+
+// canceled answers the read's context error every few thousand steps of a
+// reduction: the statement timeout bounds the SQL, not the work after it, so
+// a long reduction stops when its caller does.
+func (r *aggRun) canceled(step int) error {
+	if step&(1<<12-1) != 0 {
+		return nil
+	}
+	return r.ctx.Err()
+}
 
 // evalRaw reduces a group's streams from raw points: held intervals built
 // per stream from every transition, the source policy resolved over the
@@ -684,6 +739,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 		list = append(list, st)
 	}
 	// The source policy, resolved over the range before any bucket.
+	if err := r.ctx.Err(); err != nil {
+		return nil, err
+	}
 	if p.policy == substrate.SourcesPriority && len(list) > 1 {
 		switch form {
 		case vocabulary.FormGauge:
@@ -729,14 +787,23 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			}
 		}
 	}
+	if err := r.ctx.Err(); err != nil {
+		return nil, err
+	}
 	out := aggCells{}
 	for _, st := range list {
 		for i := range st.points {
+			if err := r.canceled(i); err != nil {
+				return nil, err
+			}
 			ap := st.points[i]
 			if ap.Unavailable || !r.admits(ap.Code) {
 				continue
 			}
 			for _, b := range r.bucketsOf(ap.At, ap.off) {
+				if b.local {
+					b.mark(ap.Point, ap.stream, ap.off)
+				}
 				ev := cell(out, b, r.codeKey(ap.Code), form, true)
 				ev.members = append(ev.members, ap)
 				ev.sources[st.s.source] = true
@@ -753,7 +820,10 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				}
 			}
 		}
-		for _, sp := range st.spans {
+		for i, sp := range st.spans {
+			if err := r.canceled(i); err != nil {
+				return nil, err
+			}
 			if !r.admits(sp.Point.Code) {
 				continue
 			}
@@ -785,7 +855,10 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	}
 	for _, codes := range out {
 		for _, ev := range codes {
-			sort.SliceStable(ev.members, func(i, j int) bool { return ev.members[i].At.Before(ev.members[j].At) })
+			sort.SliceStable(ev.members, func(i, j int) bool {
+				a, b := ev.members[i], ev.members[j]
+				return pointBefore(a.Point, a.stream, b.Point, b.stream)
+			})
 			sort.SliceStable(ev.spans, func(i, j int) bool { return ev.spans[i].Start.Before(ev.spans[j].Start) })
 			for _, m := range ev.members {
 				ev.count++
@@ -852,7 +925,9 @@ func (c cover) overlaps(a, b time.Time) bool {
 
 // bucketsOf names the buckets a point at t with the offset lands in: the
 // bucket holding its instant, every records-mode window holding it, or the
-// recorded-local bucket of its own wall clock.
+// recorded-local bucket of its own wall clock, made where the range's own
+// enumeration did not reach it. It marks no bucket's first or last point;
+// the callers that hold a point do (aggBucket.mark).
 func (r *aggRun) bucketsOf(t time.Time, off int64) []*aggBucket {
 	mode := r.p.bucket.mode
 	if mode != bucketRecords && (t.Before(r.p.from) || !t.Before(r.p.to)) {
@@ -862,14 +937,6 @@ func (r *aggRun) bucketsOf(t time.Time, off int64) []*aggBucket {
 	case bucketLocal:
 		var b *aggBucket
 		r.buckets, b = localBucketAt(r.buckets, wallOf(t, off), r.p.bucket)
-		if b.firstOff == nil || t.Before(*b.firstAt) {
-			o, at := off, t
-			b.firstOff, b.firstAt = &o, &at
-		}
-		if b.lastOff == nil || !t.Before(*b.lastAt) {
-			o, at := off, t
-			b.lastOff, b.lastAt = &o, &at
-		}
 		return []*aggBucket{b}
 	case bucketRecords:
 		var out []*aggBucket
@@ -951,7 +1018,7 @@ func (r *aggRun) bucketsMeeting(from, to time.Time) []*aggBucket {
 func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 	out := aggCells{}
 	local := r.p.bucket.mode == bucketLocal
-	for _, s := range g.raw {
+	for si, s := range g.raw {
 		rows := r.rows[s]
 		for _, row := range rows {
 			og := r.rowGroups[row.Group]
@@ -960,7 +1027,15 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 			var targets []*aggBucket
 			if local {
+				// The row lands in the day its quarter hour names at its
+				// offset; the day's first and last points are the rows' own.
 				targets = r.bucketsOf(row.Start, og.offset)
+				for _, b := range targets {
+					if row.First != nil {
+						b.mark(*row.First, si, og.offset)
+						b.mark(*row.Last, si, og.offset)
+					}
+				}
 			} else {
 				for _, b := range r.bucketsMeeting(row.Start, row.Start.Add(bucketWidth)) {
 					whole, _ := split(b)
@@ -978,11 +1053,14 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 			for _, b := range targets {
 				ev := cell(out, b, r.codeKey(og.code), g.form, false)
-				r.mergeStats(ev, st, g.form, !r.u.identity(og))
+				r.mergeStats(ev, st, g.form, si)
 				if row.N > 0 {
 					ev.sources[s.source] = true
 				}
-				if g.form != vocabulary.FormGauge {
+				switch {
+				case g.form == vocabulary.FormAmount && row.First != nil:
+					ev.extents = append(ev.extents, rowExtent(row.Stats))
+				case g.form == vocabulary.FormCounter:
 					ev.coverage += row.CoveredMs
 				}
 				if st.Increase != nil {
@@ -992,14 +1070,21 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 		}
 		if g.form != vocabulary.FormGauge && !local {
-			if err := r.rollupFragments(out, g, s); err != nil {
+			if err := r.rollupFragments(out, g, s, si); err != nil {
 				return nil, err
 			}
 		}
 		if g.form == vocabulary.FormGauge {
-			if err := r.walkHeld(out, g, s, rows); err != nil {
-				return nil, err
+			for i, w := range r.segments() {
+				if err := r.walkHeld(out, g, s, rows, w, r.carries[s][i]); err != nil {
+					return nil, err
+				}
 			}
+		}
+	}
+	if g.form == vocabulary.FormAmount {
+		if err := r.amountCoverage(g, out); err != nil {
+			return nil, err
 		}
 	}
 	for _, codes := range out {
@@ -1008,12 +1093,6 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 		}
 	}
 	return out, nil
-}
-
-// identity reports whether a rollup group's unit is the read's.
-func (u *aggUnits) identity(g obsGroup) bool {
-	c, err := u.factor(g.unit, g.delta)
-	return err == nil && c.identity
 }
 
 // convertStats converts one rollup row's statistics from its own unit into
@@ -1053,39 +1132,143 @@ func (r *aggRun) convertStats(s observed.Stats, g obsGroup, form string) (observ
 		return &q
 	}
 	s.First, s.Last = conv(s.First), conv(s.Last)
+	for _, d := range []*string{&s.MinExact, &s.MaxExact} {
+		digits, exact := c.digits(*d)
+		if !exact && r.wants(substrate.ReducerMin, substrate.ReducerMax) {
+			r.meta.inexact = true
+		}
+		*d = digits
+	}
 	return s, nil
 }
 
-// mergeStats merges converted statistics into a bucket's, keeping the first
-// and last point by time whatever order the rows arrive in (two groups of one
-// bucket interleave).
-func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, converted bool) {
+// wants reports whether the read asks for any of the reducers.
+func (r *aggRun) wants(names ...string) bool {
+	for _, red := range r.p.reducers {
+		if slices.Contains(names, red.Name) {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeStats merges converted statistics of the group's stream-th stream into
+// a bucket's, keeping the first and last point in the order raw points are
+// read in (pointBefore: the instant, the record id, the index, the stream),
+// whatever order the rows arrive in: two groups of one bucket interleave, and
+// two at one instant tie on time alone.
+func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, stream int) {
 	first, last := ev.stats.First, ev.stats.Last
 	ev.stats = observed.Merge(form, ev.stats, s)
-	switch {
-	case first == nil:
-		ev.stats.First = s.First
-	case s.First == nil || !s.First.At.Before(first.At):
-		ev.stats.First = first
-	default:
-		ev.stats.First = s.First
+	ev.stats.First, ev.stats.Last = first, last
+	if s.First != nil && (first == nil || pointBefore(*s.First, stream, *first, ev.firstStream)) {
+		ev.stats.First, ev.firstStream = s.First, stream
 	}
-	switch {
-	case last == nil:
-		ev.stats.Last = s.Last
-	case s.Last == nil || last.At.After(s.Last.At):
-		ev.stats.Last = last
-	default:
-		ev.stats.Last = s.Last
-	}
-	if converted {
-		ev.converted = true
+	if s.Last != nil && (last == nil || pointBefore(*last, ev.lastStream, *s.Last, stream)) {
+		ev.stats.Last, ev.lastStream = s.Last, stream
 	}
 }
 
+// rowExtent is an amount row's coverage as UnionMs joins it. A row stored
+// before migration 0013 has no span_end, so its extent reaches to the end of
+// time: its overlap with any later extent is unknown.
+func rowExtent(s observed.Stats) observed.Extent {
+	end := s.SpanEnd
+	if end.IsZero() {
+		end = time.Unix(1<<40, 0)
+	}
+	return observed.Extent{Start: s.First.At, End: end, Ms: s.CoveredMs}
+}
+
+// amountCoverageSQL is the union of the raw spans of a group's amount
+// streams ($1 to $5) in each cell ($6 to $10): the points a raw read takes
+// into the cell, those whose instant lies in [a, b), on a recorded-local
+// read ($12) whose wall clock at their own offset lies in [wa, wb), of the
+// cell's code where the read groups by code ($13), and of the admitted codes
+// ($11) where the filter names some ($14). Spans that overlap or touch join,
+// as joinSpans joins them, and each joined span counts in whole
+// milliseconds.
+const amountCoverageSQL = `
+	SELECT c.i, coalesce((
+		SELECT sum(floor(extract(epoch FROM z.e - z.s) * 1000))::bigint FROM (
+			SELECT min(y.ts) AS s, max(y.e) AS e FROM (
+				SELECT x.ts, x.e, sum(x.brk) OVER (ORDER BY x.ts, x.e ROWS UNBOUNDED PRECEDING) AS grp FROM (
+					SELECT q.ts, q.e, CASE WHEN q.ts <= max(q.e) OVER (ORDER BY q.ts, q.e ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+						THEN 0 ELSE 1 END AS brk
+					FROM (
+						SELECT p.ts, p.ts_end AS e
+						FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS s(metric, kind, source, about, channel)
+						CROSS JOIN LATERAL (
+							SELECT p.ts, p.ts_end FROM observed_points p
+							WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+							  AND p.ts >= c.a AND p.ts < c.b AND p.form = 'amount' AND ` + availablePoint + `
+							  AND (NOT $12::boolean OR (p.ts + p.utc_offset_min * interval '1 minute' >= c.wa
+							                            AND p.ts + p.utc_offset_min * interval '1 minute' < c.wb))
+							  AND (NOT $13::boolean OR p.code = c.code)
+							  AND (NOT $14::boolean OR p.code = ANY($11::text[]))) p
+					) q
+				) x
+			) y GROUP BY y.grp
+		) z), 0)
+	FROM unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[], $10::text[]) WITH ORDINALITY AS c(a, b, wa, wb, code, i)`
+
+// amountCoverage settles each cell's coverage, the union of its amounts'
+// spans: from the rows' and the cut ends' extents (observed.UnionMs) where no
+// row's extent overlaps another, and from the raw spans in SQL in the cells
+// where one does, so a cell served from rows reports the coverage, and
+// prefer-raw makes the choice, that the raw points would.
+func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
+	var pending []*aggEvidence
+	var a, b, wa, wb []time.Time
+	var codes []string
+	local := r.p.bucket.mode == bucketLocal
+	for _, bk := range r.buckets {
+		for _, code := range sortedKeys(cells[bk]) {
+			ev := cells[bk][code]
+			if ms, ok := observed.UnionMs(ev.extents); ok {
+				ev.coverage = ms
+				continue
+			}
+			pending = append(pending, ev)
+			if local {
+				a, b, wa, wb = append(a, r.p.from), append(b, r.p.to), append(wa, bk.start), append(wb, bk.end)
+			} else {
+				a, b, wa, wb = append(a, bk.start), append(b, bk.end), append(wa, bk.start), append(wb, bk.end)
+			}
+			codes = append(codes, code)
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	ids := make([][]string, 5)
+	for _, s := range g.raw {
+		for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel} {
+			ids[i] = append(ids[i], v)
+		}
+	}
+	admitted := sortedKeys(r.p.codes)
+	rows, err := r.tx.QueryContext(r.ctx, amountCoverageSQL, ids[0], ids[1], ids[2], ids[3], ids[4],
+		a, b, wa, wb, codes, admitted, local, r.p.grouped[substrate.GroupCode], r.p.codes != nil)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: aggregate coverage: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var i int
+		var ms int64
+		if err := rows.Scan(&i, &ms); err != nil {
+			return err
+		}
+		pending[i-1].coverage = ms
+	}
+	return rows.Err()
+}
+
 // rollupFragments merges the raw points of an amount's or a counter's cut bucket
-// ends into the buckets, through observed.Bucket as a rollup row would.
-func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream) error {
+// ends into the buckets, through observed.Bucket as a rollup row would, its
+// groups in key order so the merge does not follow a map's.
+func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int) error {
 	ser := r.series[s]
 	for _, b := range r.buckets {
 		_, frags := split(b)
@@ -1121,21 +1304,35 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream) error 
 					p := seg.prev.Point
 					prev = &p
 				}
-				for key, st := range observed.Bucket(g.form, e[0], e[1], prev, pts) {
+				stats := observed.Bucket(g.form, e[0], e[1], prev, pts)
+				for _, key := range sortedKeys(stats) {
+					st := stats[key]
 					unit := strings.SplitN(key, "\x1f", 2)[1]
 					conv, err := r.convertStats(*st, obsGroup{unit: unit}, g.form)
 					if err != nil {
 						return err
 					}
 					ev := cell(out, b, groups[key], g.form, false)
-					r.mergeStats(ev, conv, g.form, unit != r.u.value)
+					r.mergeStats(ev, conv, g.form, si)
 					if st.N > 0 {
 						ev.sources[s.source] = true
 					}
-					ev.coverage += st.CoveredMs
+					if g.form == vocabulary.FormCounter {
+						ev.coverage += st.CoveredMs
+					}
 					if conv.Increase != nil {
 						ev.steps.add(conv.Increase, false, st.CoveredMs)
 						ev.steps.resets += st.Resets
+					}
+				}
+				if g.form == vocabulary.FormAmount {
+					// A cut end's spans are known exactly, so they join the
+					// rows' extents as raw spans.
+					for _, p := range pts {
+						if !p.Unavailable {
+							ev := cell(out, b, r.codeKey(p.Code), g.form, false)
+							ev.extents = append(ev.extents, observed.Extent{Start: p.At, End: p.End, Ms: p.End.Sub(p.At).Milliseconds(), Exact: true})
+						}
 					}
 				}
 				break
@@ -1145,14 +1342,15 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream) error 
 	return nil
 }
 
-// walkHeld walks a gauge stream's 15-minute slots across the range, carrying
-// the held value from row to row (observed.HeldFromRowsCarry), and adds each
-// slot's held time to the bucket it lies in: a recorded-local bucket by the
-// offset of the point that held.
-func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observed.Row) error {
-	carry := r.carries[s]
-	from, to := floor15(r.p.from), r.p.to
-	i := 0
+// walkHeld walks a gauge stream's 15-minute slots across one of the read's
+// windows (the range, or a records-mode window, which may reach past the
+// range), carrying the held value from row to row (observed.HeldFromRowsCarry)
+// from the point current at the window's start, and adds each slot's held
+// time to the buckets it lies in: a recorded-local bucket by the offset of the
+// point that held.
+func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observed.Row, w [2]time.Time, carry *observed.Point) error {
+	from, to := floor15(w[0]), w[1]
+	i := sort.Search(len(rows), func(i int) bool { return !rows[i].Start.Before(from) })
 	for slot := from; slot.Before(to); {
 		for i < len(rows) && rows[i].Start.Before(slot) {
 			i++
@@ -1167,7 +1365,7 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observ
 			// across the empty slots, cut at bucket boundaries so each bucket gets
 			// its share.
 			next := to
-			if i < len(rows) {
+			if i < len(rows) && rows[i].Start.Before(to) {
 				next = rows[i].Start
 			}
 			if carry == nil || carryEnded(carry, slot, r.p.maxGap) {
@@ -1181,7 +1379,10 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observ
 		if !ok {
 			return fmt.Errorf("substrate/engine: aggregate: a rollup row of %s is not eligible after the plan read it so", s.metric)
 		}
-		for key, h := range sums {
+		// In key order: the sums add as floats, and bucketsOf may make a
+		// recorded-local bucket, so a map's order must decide neither.
+		for _, key := range sortedKeys(sums) {
+			h := sums[key]
 			og := r.rowGroups[key]
 			if h.Ms == 0 || !r.admits(og.code) {
 				continue
@@ -1218,17 +1419,34 @@ func carryEnded(c *observed.Point, t time.Time, maxGap time.Duration) bool {
 }
 
 // chunkEnd is where a carry across empty slots is cut: the next row, the end
-// of the bucket the slot lies in, or the range's end.
+// of the bucket the slot lies in (the next start or end of any records-mode
+// window, which may overlap), or the window's end.
 func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) time.Time {
 	end := next
-	if r.p.bucket.mode == bucketLocal {
+	switch {
+	case r.p.bucket.mode == bucketLocal:
 		og := r.rowGroups[carry.Group]
 		shift := time.Duration(og.offset) * time.Minute
 		_, b := localBucketAt(r.buckets, slot.UTC().Add(shift), r.p.bucket)
 		if e := b.end.Add(-shift); e.Before(end) {
 			end = e
 		}
-	} else if bs := r.bucketsOf(slot, 0); len(bs) > 0 {
+	case r.p.bucket.mode == bucketRecords:
+		if r.bounds == nil {
+			for _, b := range r.buckets {
+				r.bounds = append(r.bounds, b.start, b.end)
+			}
+			slices.SortFunc(r.bounds, time.Time.Compare)
+		}
+		i := sort.Search(len(r.bounds), func(i int) bool { return r.bounds[i].After(slot) })
+		if i < len(r.bounds) && r.bounds[i].Before(end) {
+			end = r.bounds[i]
+		}
+	default:
+		bs := r.bucketsOf(slot, 0)
+		if len(bs) == 0 {
+			break
+		}
 		if e := bs[0].end; e.Before(end) {
 			end = e
 		}
@@ -1309,22 +1527,37 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 				float(red, ev.stats.Mean, ev.stats.Values > 0, r.u.value)
 			}
 		case substrate.ReducerMin, substrate.ReducerMax:
+			// Compared exactly, answered in the winner's digits (converted
+			// exactly where the unit's factor allows): a min or max is not a
+			// float reduction.
 			var v float64
+			var digits string
 			var ok bool
 			switch {
-			case ev.raw && red.Name == substrate.ReducerMin:
-				v, ok = observed.Min(pts(statOf("min")), all)
 			case ev.raw:
-				v, ok = observed.Max(pts(statOf("max")), all)
+				var p observed.Point
+				if red.Name == substrate.ReducerMin {
+					p, ok = observed.MinPoint(r.extremaPoints(ev, statOf("min")), all)
+				} else {
+					p, ok = observed.MaxPoint(r.extremaPoints(ev, statOf("max")), all)
+				}
+				v, digits = p.Value, p.Exact
 			case red.Name == substrate.ReducerMin:
-				v, ok = ev.stats.Min, ev.stats.Values > 0
+				v, digits, ok = ev.stats.Min, ev.stats.MinExact, ev.stats.Values > 0
 			default:
-				v, ok = ev.stats.Max, ev.stats.Values > 0
+				v, digits, ok = ev.stats.Max, ev.stats.MaxExact, ev.stats.Values > 0
 			}
-			if ev.converted || r.anyConverted(ev) {
+			value := substrate.AggregateValue{Reducer: red, Unit: r.u.value}
+			switch {
+			case !ok:
+			case digits != "":
+				value.Value = &digits
+			default:
+				// A row from before migration 0013 keeps only the float.
 				r.meta.inexact = true
+				value = r.value(red, v, true, r.u.value)
 			}
-			out = append(out, r.value(red, v, ok, r.u.value))
+			out = append(out, value)
 		case substrate.ReducerFirst, substrate.ReducerLast:
 			var p observed.Point
 			var ok bool
@@ -1421,13 +1654,30 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 	return out
 }
 
-func (r *aggRun) anyConverted(ev *aggEvidence) bool {
-	for _, c := range r.u.conv {
-		if !c.identity {
-			return true
+// extremaPoints are the members a raw min or max compares, in the read's
+// unit. A counter's members keep their stored digits, because its steps are
+// taken on them (convertPoint), so they are converted here, each from its
+// own unit, as a rollup row's extremes are (convertStats).
+func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) []observed.Point {
+	var list []observed.Point
+	for _, m := range ev.members {
+		if stat != "" && m.stat != stat {
+			continue
 		}
+		p := m.Point
+		if ev.form == vocabulary.FormCounter && p.HasValue && p.Unit != "" {
+			if c, err := r.u.factor(p.Unit, m.delta); err == nil && !c.identity {
+				var exact bool
+				p.Value = p.Value*c.ff + c.fo
+				if p.Exact, exact = c.digits(p.Exact); !exact {
+					r.meta.inexact = true
+				}
+				p.Unit = r.u.value
+			}
+		}
+		list = append(list, p)
 	}
-	return false
+	return list
 }
 
 func (r *aggRun) spansOf(ev *aggEvidence) []observed.Span {

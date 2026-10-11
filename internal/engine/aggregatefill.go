@@ -13,8 +13,10 @@ import (
 )
 
 // fillAndRoll applies fill and rolling per series (a group and a code) and
-// orders the rows by bucket, then group, then code.
-func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) []substrate.AggregateRow {
+// orders the rows by bucket, then group, then code. A fill makes every series
+// dense, so the series times the buckets are checked against maxBuckets
+// before a row is made, and the rows answered never exceed it.
+func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) ([]substrate.AggregateRow, error) {
 	type series struct {
 		key  string
 		rows map[int]*aggOut
@@ -33,6 +35,10 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 		s.rows[o.bucket] = o
 	}
 	sort.Strings(keys)
+	if n := len(keys) * len(buckets); p.fill != "" && n > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "fill makes %d series times %d buckets, %d rows, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			len(keys), len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
 	var out []aggOut
 	for _, k := range keys {
 		s := byKey[k]
@@ -50,19 +56,7 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 					Start: start, End: end, Form: template.row.Form, Group: template.row.Group, Record: b.record,
 					Synthetic: true, NonAdditive: template.row.NonAdditive,
 				}}
-				for vi, v := range template.row.Values {
-					fv := substrate.AggregateValue{Reducer: v.Reducer, Unit: v.Unit, Code: v.Code}
-					switch p.fill {
-					case substrate.FillZero:
-						zero := "0"
-						fv.Value = &zero
-					case substrate.FillLOCF:
-						if prev != nil && vi < len(prev.row.Values) {
-							fv.Value = prev.row.Values[vi].Value
-						}
-					}
-					made.row.Values = append(made.row.Values, fv)
-				}
+				made.row.Values = p.filled(template, prev)
 				o = &made
 			}
 			if o == nil {
@@ -71,6 +65,10 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 			out = append(out, *o)
 			prev = &out[len(out)-1]
 		}
+	}
+	if len(out) > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "the read makes %d rows, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	if p.rolling != nil {
 		p.roll(out, meta)
@@ -88,7 +86,34 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 	for i, o := range out {
 		res[i] = o.row
 	}
-	return res
+	return res, nil
+}
+
+// filled is a made row's values. locf carries the previous row's values
+// whole, each with its own reducer, unit and code, so a coded last carries
+// the previous code and a timeInState the previous row's states, whatever the
+// first row of the series held. Otherwise (and before the series' first row)
+// the values follow the first row's: a timeInState keeps its state, which
+// names the value, while a coded first or last, whose code is its answer,
+// answers nothing; zero is "0" where a number answers.
+func (p *aggPlan) filled(template, prev *aggOut) []substrate.AggregateValue {
+	if p.fill == substrate.FillLOCF && prev != nil {
+		return append([]substrate.AggregateValue(nil), prev.row.Values...)
+	}
+	out := make([]substrate.AggregateValue, 0, len(template.row.Values))
+	for _, v := range template.row.Values {
+		fv := substrate.AggregateValue{Reducer: v.Reducer, Unit: v.Unit}
+		coded := v.Code != "" && (v.Reducer.Name == substrate.ReducerFirst || v.Reducer.Name == substrate.ReducerLast)
+		if v.Reducer.Name == substrate.ReducerTimeInState {
+			fv.Code = v.Code
+		}
+		if p.fill == substrate.FillZero && !coded {
+			zero := "0"
+			fv.Value = &zero
+		}
+		out = append(out, fv)
+	}
+	return out
 }
 
 // roll appends, to each row, every rolling reducer over each of its values

@@ -826,7 +826,12 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			b.add(`ambiguous_at IS NULL`)
 		}
 	}
+	var quantities []string
 	for _, name := range sortedKeys(f.Properties) {
+		if ds.quantityCond(types, name) {
+			quantities = append(quantities, name)
+			continue
+		}
 		if err := ds.condProp(ctx, x, b, types, name, f.Properties[name]); err != nil {
 			return nil, err
 		}
@@ -841,7 +846,34 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 			return nil, err
 		}
 	}
+	// The quantity comparisons come last: one reads the units its rows hold
+	// (storedQuantityUnits) under every condition built before it, so the
+	// rest of the filter narrows that read as it narrows the list.
+	for _, name := range quantities {
+		if err := ds.condProp(ctx, x, b, types, name, f.Properties[name]); err != nil {
+			return nil, err
+		}
+	}
 	return types, nil
+}
+
+// quantityCond reports whether condProp filters the name as a quantity: what
+// it checks before, in its order, says it is none of a column, a state, a
+// sensitive property and a reference, and the first kind declaring it holds
+// one quantity there.
+func (ds *dataset) quantityCond(types []*vocabulary.Kind, name string) bool {
+	if col, err := columnFor(name); err != nil || col != "" {
+		return false
+	}
+	if ds.stateProp(types, name) || ds.sensitiveProp(types, name) || len(ds.referenceShapes(types, name)) > 0 {
+		return false
+	}
+	for _, t := range types {
+		if p, ok := t.Prop(name); ok {
+			return p.Datatype == vocabulary.DatatypeQuantity && !p.Repeated && !p.Keyed
+		}
+	}
+	return false
 }
 
 // recordColumns maps the filterable/orderable record columns onto their SQL

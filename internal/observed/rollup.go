@@ -18,6 +18,10 @@ type Stats struct {
 	// Sum, Min, Max, Mean and M2 are over the numbers; M2 is the sum of
 	// squared deviations from the mean, so the variance is M2 over Values.
 	Sum, Min, Max, Mean, M2 float64
+	// MinExact and MaxExact are the stored digits of the smallest and the
+	// largest number, compared exactly (NumberLess), so the extremes answer
+	// what was stored and not a float64's 15 or 17 digits of it.
+	MinExact, MaxExact string
 	// First and Last are the group's first and last available points.
 	First, Last *Point
 	// CoveredMs is the time the row's points cover: from the first point to
@@ -25,6 +29,11 @@ type Stats struct {
 	// since an amount belongs whole to the bucket its span starts in; the
 	// time the row's steps span for a counter, its step in included.
 	CoveredMs int64
+	// SpanEnd is the latest end of an amount's spans in the row; zero for
+	// the other forms. The union CoveredMs measures lies inside
+	// [First.At, SpanEnd), so a reader merging rows knows where two rows'
+	// unions cannot overlap and adds their lengths there.
+	SpanEnd time.Time
 	// HeldMs and TWASum are a gauge's held time inside the bucket under the
 	// value's own hold, and the sum of value times held milliseconds, built
 	// from every point of the bucket (Held) and kept for the points of this
@@ -45,7 +54,9 @@ type Stats struct {
 	MaxGapMs, StartGapMs int64
 	// Increase and Resets are a counter's: the steps whose later point is in
 	// the row, the step in from the stream's previous available point
-	// included (Increase).
+	// included (Increase). Increase is nil where the row holds no step (its
+	// readings have no reading before them), which is no answer, not a
+	// change of zero; Increase over raw points says the same with its ok.
 	Increase *big.Rat
 	Resets   int64
 	// SinSum and CosSum add the sines and cosines of the circular points'
@@ -149,9 +160,6 @@ func (b *BucketBuilder) Add(point Point) {
 	if s == nil {
 		s = &Stats{}
 		b.rows[p.Group] = s
-		if b.form == vocabulary.FormCounter {
-			s.Increase = new(big.Rat)
-		}
 	}
 	if p.Unavailable {
 		return
@@ -170,8 +178,14 @@ func (b *BucketBuilder) Add(point Point) {
 		s.Sum += p.Value
 		if s.Values == 1 {
 			s.Min, s.Max = p.Value, p.Value
+			s.MinExact, s.MaxExact = p.Exact, p.Exact
 		} else {
-			s.Min, s.Max = math.Min(s.Min, p.Value), math.Max(s.Max, p.Value)
+			if NumberLess(p.Value, p.Exact, s.Min, s.MinExact) {
+				s.Min, s.MinExact = p.Value, p.Exact
+			}
+			if NumberLess(s.Max, s.MaxExact, p.Value, p.Exact) {
+				s.Max, s.MaxExact = p.Value, p.Exact
+			}
 		}
 		m := b.moments[p.Group]
 		if m == nil {
@@ -195,6 +209,9 @@ func (b *BucketBuilder) Add(point Point) {
 			b.lastHold[p.Group] = &h
 		}
 	case vocabulary.FormAmount:
+		if p.End.After(s.SpanEnd) {
+			s.SpanEnd = p.End
+		}
 		u := b.spans[p.Group]
 		switch {
 		case u == nil:
@@ -210,6 +227,9 @@ func (b *BucketBuilder) Add(point Point) {
 	case vocabulary.FormCounter:
 		if b.before != nil {
 			d, reset := Step(*b.before, *p)
+			if s.Increase == nil {
+				s.Increase = new(big.Rat)
+			}
 			s.Increase.Add(s.Increase, d)
 			if reset {
 				s.Resets++
@@ -290,10 +310,12 @@ func (b *BucketBuilder) Rows() map[string]*Stats {
 // after a's. Every statistic a reducer reads from rows merges without loss:
 // counts and sums add, the extremes compare, the first is a's and the last
 // is b's, the mean and m2 combine by Chan's formula, a gauge's covered time
-// runs from the merged first point to the merged last. The per-bucket
-// columns (LastHoldMs, MaxGapMs, StartGapMs) do not merge: the read carries
-// a hold across rows in order (HeldFromRows) and judges eligibility per
-// bucket (Eligible), so Merge leaves them zero.
+// runs from the merged first point to the merged last. An amount's covered
+// time adds, which is the union of the two rows' spans only where they do
+// not overlap: a reader that reports it merges the rows' extents with
+// UnionMs. The per-bucket columns (LastHoldMs, MaxGapMs, StartGapMs) do not
+// merge: the read carries a hold across rows in order (HeldFromRows) and
+// judges eligibility per bucket (Eligible), so Merge leaves them zero.
 func Merge(form string, a, b Stats) Stats {
 	out := Stats{
 		N: a.N + b.N, Bounded: a.Bounded + b.Bounded, Values: a.Values + b.Values,
@@ -310,10 +332,19 @@ func Merge(form string, a, b Stats) Stats {
 	switch {
 	case a.Values == 0:
 		out.Min, out.Max, out.Mean, out.M2 = b.Min, b.Max, b.Mean, b.M2
+		out.MinExact, out.MaxExact = b.MinExact, b.MaxExact
 	case b.Values == 0:
 		out.Min, out.Max, out.Mean, out.M2 = a.Min, a.Max, a.Mean, a.M2
+		out.MinExact, out.MaxExact = a.MinExact, a.MaxExact
 	default:
-		out.Min, out.Max = math.Min(a.Min, b.Min), math.Max(a.Max, b.Max)
+		out.Min, out.MinExact = a.Min, a.MinExact
+		if NumberLess(b.Min, b.MinExact, a.Min, a.MinExact) {
+			out.Min, out.MinExact = b.Min, b.MinExact
+		}
+		out.Max, out.MaxExact = a.Max, a.MaxExact
+		if NumberLess(a.Max, a.MaxExact, b.Max, b.MaxExact) {
+			out.Max, out.MaxExact = b.Max, b.MaxExact
+		}
 		na, nb := float64(a.Values), float64(b.Values)
 		n := na + nb
 		d := b.Mean - a.Mean
@@ -327,6 +358,10 @@ func Merge(form string, a, b Stats) Stats {
 		}
 	default:
 		out.CoveredMs = a.CoveredMs + b.CoveredMs
+	}
+	out.SpanEnd = a.SpanEnd
+	if b.SpanEnd.After(out.SpanEnd) {
+		out.SpanEnd = b.SpanEnd
 	}
 	if a.Increase != nil || b.Increase != nil {
 		out.Increase = new(big.Rat)

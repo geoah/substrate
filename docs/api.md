@@ -550,9 +550,12 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   read to find them. Otherwise the grammar admits codes no list names
   (`Mg`, `kg/h`), so each request first reads the distinct units of the
   filtered kinds' rows (the live ones, or the tombstones under
-  `"deleted": true`): one pass over those rows whatever `first`, the time
-  range or the other predicates say, and a refusal past 256 distinct
-  spellings. Declaring `units:` removes that read. A value stored with a
+  `"deleted": true`): one pass over the rows the rest of the filter selects
+  (its time range and every other condition; the quantity comparisons are
+  built last, so each narrows by everything else), whatever `first` says,
+  and a refusal past 256 distinct spellings among them. An order by the
+  quantity reads the same way, under the whole filter. Declaring `units:`
+  removes that read. A value stored with a
   comparator (`<0.5`) matches only where the comparison holds for its whole
   half-line, and `in` is refused on a property that declares `comparator:
   true` ([the table](data-model.md#property-types)). `match` is the one operator that reads words
@@ -1069,7 +1072,9 @@ JSON, so a misspelled key is a `400` naming it, and the mode refuses `q`,
 `watch`, `count`, `orderBy`, `first`, `after`, `offset`, `expand` and
 `withAnnotations` by name. Everything else a request can be refused for is a
 `422 validation` naming the limit, the form, the measure or the parameter, and
-it is refused before any point or rollup row is read.
+it is refused before any point or rollup row is reduced: the one statement
+that finds which forms and codes the range holds runs first, over the rollup
+rows' keys and the points at the range's cut ends.
 
 ```http
 GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
@@ -1124,9 +1129,11 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 Exactly one of `metric` and `property`; both is a `422`. A metric read's
 `filter` takes `kinds` and `implements` (a kind that does not bind `observed`
 is refused by name) and `eq` or `in` on the stream properties `source`,
-`about`, `metric` and `channel`, each a record path or `{ref}`. `code` filters
-the intervals by code after they are built from every transition, so a door's
-`closed` still ends the `open` before it. Any other arm is a `400`. A property
+`about`, `metric` and `channel`, each a record path or `{ref}`; `eq` beside
+`in` on one property admits what both admit, as the list's filter does.
+`code` filters the intervals by code after they are built from every
+transition, so a door's `closed` still ends the `open` before it. Any other
+arm is a `400`. A property
 read takes the whole [filter grammar](#the-filter-grammar).
 
 ### The four time modes
@@ -1135,7 +1142,7 @@ read takes the whole [filter grammar](#the-filter-grammar).
 | --- | --- | --- |
 | `{"every": "PT5M", "origin"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
 | `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
-| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the bucket's first point, `end` at its last point's |
+| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the bucket's first point, `end` at its last point's (points at one instant ordered by record id, then index) |
 | `{"records": {"filter", "around"?, "maxRecords"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations) | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
@@ -1158,9 +1165,11 @@ own offset, its `count` the group's point count.
 
 ### Reducers, by form
 
-Every reducer is checked against the form of the streams it reads (the form
-of each stream's newest point), and a reducer the form does not take is a
-`422` naming the form: `sum does not apply to a gauge`.
+Every reducer is checked against the forms the read takes: each form a
+stream's points hold inside the range (or the records-mode windows),
+including a gauge whose value from before the range still holds into it.
+The form of a stream's newest point decides nothing. A reducer the form does
+not take is a `422` naming the form: `sum does not apply to a gauge`.
 
 | Form | Reducers |
 | --- | --- |
@@ -1180,6 +1189,9 @@ of each stream's newest point), and a reducer the form does not take is a
 - `increase` is a counter's change under its contract (decision 0157), the
   step in from the stream's previous reading included, so consecutive buckets
   add up; `rate` is that over the time its steps span, in the unit over `s`.
+  Both are `null` in a bucket whose readings have no reading before them.
+  A counter's `min` and `max` are in the read's unit; its steps are taken on
+  the stored digits.
 - `circularMean` averages angles on the circle and answers in `deg`; it has no
   answer when the angles cancel.
 - A `{"timeInState": [...]}` with `groupBy: ["code"]` answers each row's own
@@ -1229,7 +1241,7 @@ which served it; the row's `form` is `summary` where summaries did.
 | `unit` | the values' unit (a coded read's durations unit) |
 | `bucket` | the bucket as the read applied it, defaults filled in; a downsample's computed columns |
 | `from` | the request's `from` |
-| `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value), a `min` or `max` after a unit conversion, or a conversion rounded to 20 significant digits |
+| `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value) or a conversion rounded to 20 significant digits. `min` and `max` compare the stored digits exactly and answer the winner's, so they are exact unless their conversion rounds |
 | `rows` | one per bucket and group, ordered by bucket, then group, then code |
 | `sources` | every source that fed a row, by record path |
 | `head` | `{changelog, generation}`: the changelog position and history generation the read was served at, as a list page's `head` and `generation` |
@@ -1264,10 +1276,15 @@ served from them where every reducer merges exactly from rows: `count`, `sum`,
 `avg`, `min`, `max`, `first`, `last`, `stddev`, `increase`, `rate`,
 `circularMean`, and `twa` and `timeInState` while every row's largest gap is
 within `maxGap` (or there is none). Each row is converted from its own unit
-before it merges. A gauge's held time is walked across the rows, the value
-current at the range's start read with one lookup per stream. An amount's or a
-counter's bucket boundary that cuts a row (a range starting at 10:07, a records
-window) is read from raw points and merged in.
+before it merges. The rows read are the range's, or in the records mode each
+window's, which may reach past the range. A gauge's held time is walked
+across the rows, the value current at each window's start read with one
+lookup per stream. An amount's or a counter's bucket boundary that cuts a row
+(a range starting at 10:07, a records window) is read from raw points and
+merged in. An amount's coverage is the union of its spans on both paths: the
+rows' covered times add where their spans cannot overlap, and where they may
+(two overlapping traces, two offsets in one quarter hour) the union is taken
+from the raw spans in one statement per group.
 
 Everything else reads raw points: `percentile` and `durationIn`, a `maxGap`
 tighter than a row's gaps, `priority` over two or more streams, a gauge's
@@ -1278,8 +1295,10 @@ answer the same, to float rounding: `internal/observed` holds both.
 ### `fill`, `rolling` and `downsample`
 
 `fill` makes each group's buckets dense: `null` adds rows whose values are
-`null`, `zero` rows of `"0"`, `locf` rows carrying the previous row's values;
-each made row is `synthetic`. `rolling` then adds, to every row, each rolling
+`null`, `zero` rows of `"0"`, `locf` rows carrying the previous row's values
+whole, each with its own `code` (a coded `last` carries the previous code,
+a `timeInState` the previous row's states); a coded `first` or `last` that
+`null` or `zero` makes answers nothing. Each made row is `synthetic`. `rolling` then adds, to every row, each rolling
 reducer over each of its values across that bucket and the `buckets - 1`
 before it, filled rows included and missing ones counted; `rolling` is refused
 in the records mode.
@@ -1312,15 +1331,17 @@ calendar is refused (name a `timezone`), and so is the records mode.
 
 ### Budgets
 
-Every budget is checked before a point is read, and a request over one is a
-`422` naming the limit; a result is never cut short.
+Every budget is checked before a point is reduced, and a request over one is
+a `422` naming the limit; a result is never cut short. The statement that
+finds the range's forms and codes, and an amount's coverage taken from raw
+spans where two rows may overlap, read in SQL and count against no budget.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
-| `maxBuckets` | groups times buckets (columns on a downsample, records in the records mode) | 1,440 | 10,000 |
+| `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
 | `maxSamples` | the raw points a read takes, counted first; the records a property read takes | 1,000,000 | 20,000,000 |
-| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` is checked once the codes are known | 200 | 2,000 |
-| `bucket.records.maxRecords` | the records the records mode matches | 1,000 | 10,000 |
+| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
+| `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
 30 seconds where the caller set none or a later one.
@@ -1358,6 +1379,10 @@ what is built in these points, each for a stated reason:
   there, with `count` 0, the way it makes held time.
 - A records-mode window is not clipped to the range: the record is the
   bucket.
+- A refusal for a form, a code count or a bucket budget comes after one
+  statement that reads the rollup rows' keys and the points at the range's
+  cut ends, not before anything runs: which forms and codes a range holds is
+  a fact of its points, and the newest point's form is not.
 - The added keys: `property` and `nonAdditive` on the response and the row,
   `group.channel` and `group.currency`, `values[].rolling` and
   `values[].of`, `budget.maxGroups`.

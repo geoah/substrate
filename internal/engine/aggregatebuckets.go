@@ -67,15 +67,57 @@ type aggBucket struct {
 	zone *time.Location
 	// record is the records mode's matched record.
 	record *substrate.AggregateRecord
-	// firstOff and lastOff are the offsets (minutes) of a recorded-local
-	// bucket's first and last point (at firstAt and lastAt), which its start
-	// and end are written in.
-	firstOff, lastOff *int64
-	firstAt, lastAt   *time.Time
+	// first and last are a recorded-local bucket's first and last points,
+	// whose offsets its start and end are written in (mark).
+	first, last *edge
 }
 
-// length is the bucket's span, the denominator of a coverage fraction.
-func (b *aggBucket) length() time.Duration { return b.end.Sub(b.start) }
+// edge is one end of a recorded-local bucket: the place of the point that
+// opens or closes it, in the order every reader takes points in, and the
+// point's offset in minutes.
+type edge struct {
+	at     time.Time
+	rid    string
+	ord    int64
+	stream int
+	off    int64
+}
+
+func (e *edge) point() observed.Point { return observed.Point{At: e.at, RecordID: e.rid, Ord: e.ord} }
+
+// mark takes one point of a recorded-local bucket, a raw point or a rollup
+// row's first or last, and keeps the bucket's first and last by pointBefore,
+// so neither the order points and rows arrive in nor the quarter hour a row
+// starts decides which offset the bucket's start and end are written in.
+func (b *aggBucket) mark(p observed.Point, stream int, off int64) {
+	e := &edge{at: p.At, rid: p.RecordID, ord: p.Ord, stream: stream, off: off}
+	if b.first == nil || pointBefore(p, stream, b.first.point(), b.first.stream) {
+		b.first = e
+	}
+	if b.last == nil || pointBefore(b.last.point(), b.last.stream, p, stream) {
+		b.last = e
+	}
+}
+
+// pointBefore is observed.Before with the stream last: two streams of one
+// group may hold one record id at one instant (two kinds).
+func pointBefore(a observed.Point, sa int, b observed.Point, sb int) bool {
+	if observed.Before(a, b) {
+		return true
+	}
+	if observed.Before(b, a) {
+		return false
+	}
+	return sa < sb
+}
+
+// length is the time the row reports, the denominator of a coverage
+// fraction: on a recorded-local bucket from its first point's offset to its
+// last's, which is 31 hours on a day flown west, not 24.
+func (b *aggBucket) length(rangeFrom, rangeTo time.Time) time.Duration {
+	start, end := b.shown(rangeFrom, rangeTo)
+	return end.Sub(start)
+}
 
 // aligned reports whether the bucket is a run of whole rollup rows.
 func (b *aggBucket) aligned() bool {
@@ -91,11 +133,11 @@ func (b *aggBucket) shown(rangeFrom, rangeTo time.Time) (time.Time, time.Time) {
 		return b.start.In(b.zone), b.end.In(b.zone)
 	}
 	startOff, endOff := offsetMinutes(rangeFrom), offsetMinutes(rangeTo)
-	if b.firstOff != nil {
-		startOff = *b.firstOff
+	if b.first != nil {
+		startOff = b.first.off
 	}
-	if b.lastOff != nil {
-		endOff = *b.lastOff
+	if b.last != nil {
+		endOff = b.last.off
 	}
 	return wallAt(b.start, startOff), wallAt(b.end, endOff)
 }
@@ -409,6 +451,11 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	}
 	defer func() { _ = rows.Close() }()
 	var out []*aggBucket
+	// The limit counts the records the filter matches, the ones whose window
+	// is empty (no endsAt, no widening) included: counting only the windows
+	// kept let empty ones use up the rows the LIMIT read and end the read
+	// short without a word.
+	matched := 0
 	for rows.Next() {
 		var kind, id string
 		var version int64
@@ -417,7 +464,7 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		if err := rows.Scan(&kind, &id, &version, &at, &endsAt); err != nil {
 			return nil, err
 		}
-		if len(out) == limit {
+		if matched++; matched > limit {
 			if limit == s.maxRecords {
 				return nil, refuse("aggregate.bucket.records.maxRecords", "the filter matches more than %d records in the range; narrow it or raise maxRecords (the cap is %d)",
 					limit, substrate.AggregateMaxRecordsCap)

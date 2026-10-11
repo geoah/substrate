@@ -386,7 +386,7 @@ the label a trace id ends with and `local_day` the civil date at an offset.
 The fold derives three tables from the rows of every kind that binds
 `observed`, the way it derives `refs`
 ([decision 0160](decisions/0160-the-observed-index-is-three-derived-tables-and-a-rollup-serves-only-exact-answers.md),
-migration `0012_observed_index`). A point is a function of one record's
+migrations `0012_observed_index` and `0013_observed_rollup_detail`). A point is a function of one record's
 properties and its kind's binding; a rollup row and a latest row are
 functions of a stream's points, and a counter's rollup row also reads the
 stream's reading before its bucket, which may be another record's
@@ -402,7 +402,7 @@ and `channel` of a value. A reference column holds the target's record path
 | Table | One row per | Holds |
 | --- | --- | --- |
 | `observed_points` | value: one per observation, one per point of a trace | the stream, `form`, `ts` and `ts_end`, `utc_offset_min`, `unit`, `delta`, `value` (float8), `value_exact` (the stored digits), `value_base` (in the measure's base unit), `code`, `statistic`, `bounded`, `quality`, and the parameters a hold and a counter step read: `hold_ms`, `reset_rule`, `reset_at`, `wrap_at`, `circular`, `revision` |
-| `observed_rollups` | stream, form, 15-minute bucket and group | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum` |
+| `observed_rollups` | stream, form, 15-minute bucket and group | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord`, `min_value`, `max_value` |
 | `observed_latest` | stream | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `record_id`, `revision`, and `points`, the stream's count of available points |
 
 The rules every column follows are written once, as Go, in
@@ -423,6 +423,9 @@ after the replay. Either reads a bucket's points in pages of at most 20,000,
 in `(ts, record_id, ord)` order, into a running state
 (`internal/observed.BucketBuilder`), so a dense bucket is never held in
 memory whole; a write still reads every point of each bucket it touches.
+That read is a known limit: it runs under the repository's observed lock,
+and writing N traces into one bucket reads about N squared over 2 traces'
+worth of points in all ([the benchmark](plans/observations/implementation/benchmark.md#a-dense-bucket)).
 
 A single record derives a point only when it holds a `value` or a `code`;
 one that says why it has none (`absentReason`) or keeps the reading as
@@ -499,7 +502,10 @@ never add; a reader converts each row to the unit it asks for.
   `max_gap_ms`**; otherwise no hold inside the bucket is guaranteed to be the
   request's, and the read takes the bucket's raw points.
 - An amount belongs whole to the bucket its span starts in; `covered_ms` is
-  the union of its row's spans.
+  the union of its row's spans and `span_end` the end of the latest of them,
+  so the union lies inside `[first_ts, span_end)`. A read joining two rows
+  adds their `covered_ms` only where those extents do not overlap
+  (`internal/observed.UnionMs`).
 - A bucket holding only unavailable points still has a row, with `n` 0, so
   the read sees where a hold stops.
 
@@ -523,7 +529,9 @@ every step whose later reading is in the row, the step in from the stream's
 previous reading included, wherever that is, and `covered_ms` the time those
 steps span; so the increase of a run of whole buckets is the sum of their
 rows, and `rate` is that sum over the sum of `covered_ms`. A correction to a
-reading therefore also recomputes the bucket of the stream's next reading.
+reading therefore also recomputes the bucket of the stream's next reading. A
+row whose readings have no reading before them holds no step, and its
+`increase` and `resets` are null: no answer, not a change of zero.
 
 ### The latest row
 
@@ -682,7 +690,11 @@ reason:
   Decision 0157 states this rule and its cost.
 - A rollup row gains `start_gap_ms`, where the bucket's first point lies, and
   `bounded`, its count of bounded points, so the read can carry a hold across
-  rows and report bounded values without the raw points.
+  rows and report bounded values without the raw points. Migration 0013 adds
+  `span_end`, the record id and index of the first and last point, and the
+  stored digits of the smallest and largest number (`min_value`,
+  `max_value`), so a read served from rows joins amount coverage, breaks ties
+  at one instant and answers a `min` or `max` as the raw points do.
 - `observed_points` carries each point's hold, counter contract, `delta`,
   `circular` and `revision`, and its index `ord` in its record; the plan
   named neither, and the rollups are computed from the points alone.
