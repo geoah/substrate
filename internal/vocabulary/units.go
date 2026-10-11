@@ -148,7 +148,11 @@ func parseUnit(code string) (Unit, error) {
 	if err != nil {
 		return Unit{}, err
 	}
-	u := Unit{code: code, tree: t, val: evalNode(t)}
+	val, err := evalNode(t)
+	if err != nil {
+		return Unit{}, fmt.Errorf("%q: %w", code, err)
+	}
+	u := Unit{code: code, tree: t, val: val}
 	for _, n := range t.parts {
 		un, ok := n.(unitNode)
 		if !ok || un.atom.def.code != "10*" && un.atom.def.code != "10^" || un.note == nil {

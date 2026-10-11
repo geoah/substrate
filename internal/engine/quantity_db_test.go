@@ -539,3 +539,31 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 		t.Fatalf("a unit outside the refinement's list: err = %v", err)
 	}
 }
+
+// A unit the grammar refuses is a validation error on every engine door, the
+// write and the vocabulary apply, and never a panic: each case is a code the
+// parser once crashed or misread on.
+func TestQuantityRefusesHostileUnits(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := installReadings(t, nil)
+	for _, c := range []struct{ code, want string }{
+		{"m/0", "a factor is a positive integer"},
+		{"/0", "a factor is a positive integer"},
+		{"(m/0)", "a factor is a positive integer"},
+		{"m/(2.0)", "a factor is a positive integer"},
+	} {
+		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, Properties: map[string]any{
+			"name": "hostile", "pulse": qv("1", c.code),
+		}})
+		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("a write in %s: err = %v, want a validation error naming %q", c.code, err, c.want)
+		}
+		_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(map[string]any{
+			"pulse": map[string]any{"type": "quantity", "units": []any{c.code}},
+		})})
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Fatalf("a declaration listing %s: err = %v, want a refusal naming %q", c.code, err, c.want)
+		}
+	}
+}

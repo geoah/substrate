@@ -76,8 +76,13 @@ func unitValue() value {
 	return value{factor: big.NewRat(1, 1), notes: map[string]int{}, arbitrary: map[string]int{}}
 }
 
-// mul folds o into v, raised to the power sign*exp.
-func (v *value) mul(o value, exp int) {
+// mul folds o into v, raised to the power exp. It refuses a division by zero
+// rather than panic: the parser refuses a zero factor, and this holds the
+// arithmetic to the same rule whatever reaches it.
+func (v *value) mul(o value, exp int) error {
+	if exp < 0 && o.factor.Sign() == 0 {
+		return errZeroDivisor
+	}
 	switch {
 	case exp > 0:
 		for range exp {
@@ -101,7 +106,11 @@ func (v *value) mul(o value, exp int) {
 	v.specials = append(v.specials, o.specials...)
 	v.counted = v.counted || o.counted
 	v.symbols += o.symbols
+	return nil
 }
+
+// errZeroDivisor marks a term that divides by zero.
+var errZeroDivisor = errors.New("a unit divides by zero")
 
 // atom is a resolved atom: its definition and the value it denotes.
 type atom struct {
@@ -185,7 +194,10 @@ func loadAtoms() {
 			if err != nil {
 				return nil, fmt.Errorf("atom %s: %w", code, err)
 			}
-			v := evalNode(n)
+			v, err := evalNode(n)
+			if err != nil {
+				return nil, fmt.Errorf("atom %s: %w", code, err)
+			}
 			a.val.factor = new(big.Rat).Mul(f, v.factor)
 			a.val.pi = v.pi
 			a.val.dim = v.dim
@@ -386,6 +398,11 @@ func (p *parser) component() (node, error) {
 		note = &text
 	}
 	if isDigits(symbol) {
+		// UCUM's factor is a positive integer, and a zero one has no
+		// reciprocal: `m/0` would divide by it.
+		if strings.Trim(symbol, "0") == "" {
+			return nil, p.errf("a factor is a positive integer, and %s is zero", symbol)
+		}
 		return numberNode{digits: symbol, note: note}, nil
 	}
 	head, exp := splitExponent(symbol)
@@ -498,43 +515,53 @@ func splitExponent(symbol string) (head, exp string) {
 
 // --- evaluation ---
 
-func evalNode(n node) value {
+func evalNode(n node) (value, error) {
 	v := unitValue()
+	var err error
 	switch x := n.(type) {
 	case *termNode:
-		evalTerm(&v, x)
+		err = evalTerm(&v, x)
 	case termNode:
-		evalTerm(&v, &x)
+		err = evalTerm(&v, &x)
 	}
-	return v
+	return v, err
 }
 
-func evalTerm(v *value, t *termNode) {
+func evalTerm(v *value, t *termNode) error {
 	inner := unitValue()
 	for i, part := range t.parts {
 		sign := 1
 		if i > 0 && t.ops[i-1] == '/' {
 			sign = -1
 		}
-		inner.mul(evalComponent(part), sign)
+		c, err := evalComponent(part)
+		if err != nil {
+			return err
+		}
+		if err := inner.mul(c, sign); err != nil {
+			return err
+		}
 	}
 	if t.reciprocal {
-		v.mul(inner, -1)
-	} else {
-		v.mul(inner, 1)
+		return v.mul(inner, -1)
 	}
+	return v.mul(inner, 1)
 }
 
-func evalComponent(n node) value {
+func evalComponent(n node) (value, error) {
 	v := unitValue()
 	switch x := n.(type) {
 	case unitNode:
 		u := unitValue()
-		u.mul(x.atom.val, 1)
+		if err := u.mul(x.atom.val, 1); err != nil {
+			return value{}, err
+		}
 		if x.prefix != "" {
 			u.factor.Mul(u.factor, prefixes[x.prefix])
 		}
-		v.mul(u, x.exp)
+		if err := v.mul(u, x.exp); err != nil {
+			return value{}, err
+		}
 		if x.note != nil {
 			v.notes[*x.note]++
 		}
@@ -549,9 +576,11 @@ func evalComponent(n node) value {
 		v.notes[x.text]++
 		v.counted = true
 	case groupNode:
-		evalTerm(&v, x.inner)
+		if err := evalTerm(&v, x.inner); err != nil {
+			return value{}, err
+		}
 	}
-	return v
+	return v, nil
 }
 
 // --- rendering ---
