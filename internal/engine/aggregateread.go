@@ -584,6 +584,9 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 	for gi, g := range groups {
 		seen := map[string]bool{}
 		for bi, b := range r.buckets {
+			if err := r.cancelled(bi); err != nil {
+				return nil, err
+			}
 			codes := map[string]bool{}
 			for c := range raws[gi][b] {
 				codes[c] = true
@@ -657,6 +660,16 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 
 // --- raw ---
 
+// cancelled answers the read's context error every few thousand steps of a
+// reduction: the statement timeout bounds the SQL, not the work after it, so
+// a long reduction stops when its caller does.
+func (r *aggRun) cancelled(step int) error {
+	if step&(1<<12-1) != 0 {
+		return nil
+	}
+	return r.ctx.Err()
+}
+
 // evalRaw reduces a group's streams from raw points: held intervals built
 // per stream from every transition, the source policy resolved over the
 // range, then each bucket's members and clipped intervals.
@@ -711,6 +724,9 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 		list = append(list, st)
 	}
 	// The source policy, resolved over the range before any bucket.
+	if err := r.ctx.Err(); err != nil {
+		return nil, err
+	}
 	if p.policy == substrate.SourcesPriority && len(list) > 1 {
 		switch form {
 		case vocabulary.FormGauge:
@@ -756,9 +772,15 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			}
 		}
 	}
+	if err := r.ctx.Err(); err != nil {
+		return nil, err
+	}
 	out := aggCells{}
 	for _, st := range list {
 		for i := range st.points {
+			if err := r.cancelled(i); err != nil {
+				return nil, err
+			}
 			ap := st.points[i]
 			if ap.Unavailable || !r.admits(ap.Code) {
 				continue
@@ -780,7 +802,10 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				}
 			}
 		}
-		for _, sp := range st.spans {
+		for i, sp := range st.spans {
+			if err := r.cancelled(i); err != nil {
+				return nil, err
+			}
 			if !r.admits(sp.Point.Code) {
 				continue
 			}

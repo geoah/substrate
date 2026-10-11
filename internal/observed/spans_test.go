@@ -37,6 +37,44 @@ func TestPrioritizeFillsTheGapsOfTheHigherSource(t *testing.T) {
 	}
 }
 
+// fragmented is two sources of n one-second holds each, interleaved so the
+// higher source's cover stays n disjoint intervals and each lower span half
+// overlaps one of them.
+func fragmented(n int) [][]Span {
+	sec := func(halves int) time.Time { return t0.Add(time.Duration(halves) * time.Second / 2) }
+	high, low := make([]Span, n), make([]Span, n)
+	for k := range n {
+		high[k] = Span{Start: sec(4 * k), End: sec(4*k + 2)}
+		low[k] = Span{Start: sec(4*k + 1), End: sec(4*k + 3)}
+	}
+	return [][]Span{high, low}
+}
+
+// Two fragmented sources of 300,000 holds each resolve in one sweep: each
+// lower span keeps the half second after the higher one's hold. Comparing
+// every lower span with the whole higher cover took about 90 billion steps,
+// minutes after the SQL had finished.
+func TestPrioritizeIsLinearOverFragmentedCover(t *testing.T) {
+	const n = 300000
+	got := Prioritize(fragmented(n))
+	if len(got[0]) != n || len(got[1]) != n {
+		t.Fatalf("resolved %d and %d spans, want %d each", len(got[0]), len(got[1]), n)
+	}
+	if ms := HeldMs(got[1]); ms != int64(n)*500 {
+		t.Errorf("the lower source keeps %d ms, want half a second of each hold", ms)
+	}
+	if s := got[1][n-1]; !s.Start.Equal(t0.Add(time.Duration(4*(n-1)+2)*time.Second/2)) || s.End.Sub(s.Start) != time.Second/2 {
+		t.Errorf("the last lower span is %v to %v", s.Start, s.End)
+	}
+}
+
+func BenchmarkPrioritizeFragmented(b *testing.B) {
+	streams := fragmented(300000)
+	for b.Loop() {
+		Prioritize(streams)
+	}
+}
+
 // An amount's coverage joins extents: disjoint ones add, raw spans that
 // overlap or touch join as one, and a row's union overlapping anything else
 // cannot be measured from the row, so the reader is told to read the spans.
