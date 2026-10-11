@@ -1342,10 +1342,10 @@ for a reduction. Each statement that reads raw points counts them first and
 adds them to the read's `maxSamples` total: finding the forms (the points at
 the range's cut ends, and its summaries), the reduction, and the raw spans
 an amount's coverage is joined from where two rollup rows may overlap, which
-is counted once the rows are merged. Rollup rows count against no budget:
-they are at most one per stream, group and quarter hour of the range. Nor
-does the one point per stream and window a gauge's value is carried in
-from. A recorded-local read can meet days its range's offsets do not name
+is counted once the rows are merged. Rollup rows count against no budget
+(there is at most one per stream, group and quarter hour of the range), and
+neither does the one point per stream and window a gauge's value is carried
+in from. A recorded-local read can meet days its range's offsets do not name
 (a point at another offset); those buckets are counted after the points are
 evaluated, before a row is made.
 
@@ -1353,14 +1353,15 @@ evaluated, before a row is made.
 | --- | --- | --- | --- |
 | `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
 | `maxSamples` | the raw points a read's statements take, each statement's counted before it runs and added up; the records a property read takes | 1,000,000 | 20,000,000 |
-| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
+| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
 30 seconds where the caller set none or a later one. The reduction after the
 statements stops when the caller does: it checks the request's context every
-thousand points, spans, rows or quarter hours, before each row's reducers
-and before each fill and rolling step, and answers the cancellation.
+thousand points, spans, rows, quarter hours or filled buckets, before each
+row's reducers and before each row a rolling window is computed for, and
+answers the cancellation.
 
 ### The refusals
 
@@ -1401,7 +1402,8 @@ what is built in these points, each for a stated reason:
   the points at the range's cut ends, its summaries, and each gauge's value
   held into it), not before anything runs: which forms and codes a range
   holds is a fact of its points, and the newest point's form is not. The
-  points those statements read count against `maxSamples` first.
+  points at the cut ends and in the summaries count against `maxSamples`
+  before they are read.
 - A `maxSamples` refusal for the raw spans an amount's coverage is joined
   from comes once the rollup rows are merged, before the spans are read:
   which rows overlap is known from the rows.
