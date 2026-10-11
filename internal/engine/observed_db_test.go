@@ -307,7 +307,7 @@ func TestObservedLabResultHoldsExactlyOneShape(t *testing.T) {
 	_, err = r.patch(t, r.labresult, id, map[string]any{"codedValue": nil, "code": nil})
 	refused(t, "a patch leaving no shape", err, "this record holds none")
 	if _, err := r.patch(t, r.labresult, id, map[string]any{
-		"codedValue": nil, "code": nil, "absentReason": "cancelled",
+		"codedValue": nil, "code": nil, "absentReason": "not-performed",
 	}); err != nil {
 		t.Errorf("a patch to an absent result: %v", err)
 	}
