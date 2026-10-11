@@ -18,8 +18,9 @@ package engine
 //     a value into the range.
 //   - raw observed_points otherwise (percentile, durationIn, a maxGap tighter
 //     than the data, a priority over two or more streams, a gauge's bucket
-//     that cuts a row, a recorded-local read of a row whose offset is not
-//     whole quarter hours), within maxSamples, counted before the read.
+//     that cuts a row, a recorded-local read of a row, or of a gauge's value
+//     carried into a window, whose offset is not whole quarter hours), within
+//     maxSamples, counted before the read.
 
 import (
 	"context"

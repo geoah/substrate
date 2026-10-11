@@ -1290,8 +1290,9 @@ Everything else reads raw points: `percentile` and `durationIn`, a `maxGap`
 tighter than a row's gaps, `priority` over two or more streams, a gauge's
 bucket boundary that cuts a row, a recorded-local `minute` bucket or an `offset`
 that is not whole quarter hours, a recorded-local read of a stream with a
-point whose UTC offset is not whole quarter hours (a row at `+00:01` holds
-points on both sides of local midnight), and every summary. Raw points and rollups
+point in the range, or a gauge value held into it, whose UTC offset is not
+whole quarter hours (a row at `+00:01` holds points on both sides of local
+midnight), and every summary. Raw points and rollups
 answer the same, to float rounding: `internal/observed` holds both.
 
 ### `fill`, `rolling` and `downsample`

@@ -641,6 +641,62 @@ func TestAggregateRecordedLocalDayAtAnOddOffset(t *testing.T) {
 	}
 }
 
+// A value held into a recorded-local read at an offset that is not whole
+// quarter hours is split at its own local midnight on both paths: `open` at
+// +00:01 from 23:44Z, read from 23:45Z, holds until `closed` at 23:59:30Z
+// (+00:00), 840 s on September 1 and 30 s on September 2, where the rollups
+// once put all 870 s in the day the slot's start names; and at -00:01 from
+// 23:44Z until `closed` at 00:14:30Z, local midnight at 00:01Z, 960 s and
+// 810 s. The only rows read are at +00:00, so the value carried in decides
+// the path.
+func TestAggregateRecordedLocalDayCarriedAtAnOddOffset(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	f.mustPut(t, f.metric, "door", map[string]any{"name": "Door"})
+	midnight := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		source string
+		offset int
+		closed time.Duration
+		want   [2]string
+	}{
+		{"ahead", 1, -30 * time.Second, [2]string{"840", "30"}},
+		{"behind", -1, 14*time.Minute + 30*time.Second, [2]string{"960", "810"}},
+	} {
+		t.Run(x.source, func(t *testing.T) {
+			f := aggFix{obsIndex: f.obsIndex, t: t}
+			for _, p := range []struct {
+				code   string
+				at     time.Time
+				offset int
+			}{{"open", midnight.Add(-16 * time.Minute), x.offset}, {"closed", midnight.Add(x.closed), 0}} {
+				f.mustPut(t, f.observation, "door/"+x.source+"/"+p.code, map[string]any{
+					"metric": f.metricRef("door"), "source": f.sourceRef(x.source), "form": "gauge", "code": p.code,
+					"at": p.at.Format(time.RFC3339), "utcOffset": p.offset,
+				})
+			}
+			res, _, _ := f.bothPaths(substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: f.sourcePath(x.source)}}}, substrate.Aggregate{
+				Metric:   &substrate.AggregateMetric{Ref: f.metricPath("door")},
+				Range:    rng(midnight.Add(-15*time.Minute), midnight.Add(15*time.Minute)),
+				Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+				Reducers: []substrate.AggregateReducer{{Name: "timeInState", States: []string{"open"}}},
+			})
+			if len(res.Rows) != 2 {
+				t.Fatalf("%d rows, want September 1 and 2: %+v", len(res.Rows), res.Rows)
+			}
+			for i, row := range res.Rows {
+				got := "null"
+				if v := row.Values[0].Value; v != nil {
+					got = *v
+				}
+				if got != x.want[i] || row.Values[0].Unit != "s" {
+					t.Errorf("the day from %s: open %s %s, want %s s", row.Start.Format(time.RFC3339), got, row.Values[0].Unit, x.want[i])
+				}
+			}
+		})
+	}
+}
+
 // Points at one instant are first and last by record id on both paths:
 // `a-reversed` holds 2000 W.h and `z-reversed` 1 kW.h at 00:05, two rollup
 // groups by unit, and in W.h the first is 2000 and the last 1000.

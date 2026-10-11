@@ -140,10 +140,15 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 				// hour names at its offset, which holds only where the
 				// offset is whole quarter hours: at +00:01 a row from 23:45Z
 				// holds points on both sides of local midnight.
-				if r.p.bucket.mode == bucketLocal && r.rowGroups[row.Group].offset%int64(bucketWidth/time.Minute) != 0 {
+				if r.p.bucket.mode == bucketLocal && !wholeQuarterHours(r.rowGroups[row.Group].offset) {
 					g.rollups = false
 					break
 				}
+			}
+		}
+		if g.rollups && g.form == vocabulary.FormGauge {
+			if err := r.planCarries(g); err != nil {
+				return err
 			}
 		}
 	}
@@ -194,19 +199,47 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 			}
 		}
 	}
-	for _, g := range groups {
-		if g.rollups && g.form == vocabulary.FormGauge {
-			for _, s := range g.raw {
-				c, err := r.readCarries(s, r.segments())
-				if err != nil {
-					return err
-				}
-				r.carries[s] = c
+	return nil
+}
+
+// planCarries reads the value current at each window's start for a gauge
+// group served from rollups. On a recorded-local read, a value that still
+// holds into its window at an offset that is not whole quarter hours sends
+// the group to raw points, as such a row does: walkHeld puts a slot's carried
+// time whole in the day the slot's start names, and `open` at +00:01 from
+// 23:44Z, held into the slot from 23:45Z, crosses local midnight at 23:59Z.
+// It runs before the raw points are counted, so they are budgeted.
+func (r *aggRun) planCarries(g *aggGroup) error {
+	windows := r.segments()
+	for _, s := range g.raw {
+		c, err := r.readCarries(s, windows)
+		if err != nil {
+			return err
+		}
+		r.carries[s] = c
+		if r.p.bucket.mode != bucketLocal {
+			continue
+		}
+		for i, p := range c {
+			if p == nil || p.Unavailable || carryEnded(p, floor15(windows[i][0]), r.p.maxGap) {
+				continue
 			}
+			if !wholeQuarterHours(r.rowGroups[p.Group].offset) {
+				g.rollups = false
+			}
+		}
+	}
+	if !g.rollups {
+		for _, s := range g.raw {
+			delete(r.carries, s)
 		}
 	}
 	return nil
 }
+
+// wholeQuarterHours reports whether a UTC offset in minutes puts local
+// midnight on a rollup row's boundary.
+func wholeQuarterHours(offset int64) bool { return offset%int64(bucketWidth/time.Minute) == 0 }
 
 // charge counts n more raw points against maxSamples before a statement
 // reads them, and refuses the read once the points counted so far (the forms'
