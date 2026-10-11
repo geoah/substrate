@@ -1,0 +1,534 @@
+# The WHOOP adapter for the health sample: one function that turns the WHOOP
+# provider's mirror rows (providers.substrate.reamde.dev/whoop) into health
+# records under the repository's own authority. A SAMPLE a repository imports
+# and owns, after the `health` sample and the WHOOP provider.
+#
+# WHOOP sends scored objects, never raw samples, so every number lands as a
+# `summary` observation that keeps WHOOP's own cycle identity in `periodId`,
+# energy and stage totals as `amount` observations, and a sleep and a workout
+# as the typed health records. docs/bundles-catalog.md has the mapping table.
+#
+# Every output names the mirror row it came from in `origin` and carries
+# WHOOP's `updated_at` as `revision`, and its id is composed from WHOOP's own
+# identifiers. The function rebuilds the whole set one mirror row implies and
+# deletes what that row no longer implies, so a rescored cycle rewrites the
+# same ids and a deleted mirror row takes its outputs with it.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/healthwhoop
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthwhoop
+  version: 1
+---
+# ---- the bundle document: the import unit -------------------------------------
+# One function and its record trigger (triggers.yaml). No inputs and no
+# settings: the WHOOP credentials are the provider's.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/healthwhoop
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthwhoop
+  description: >-
+    Turns your WHOOP data into health records: each day's recovery, strain
+    and energy, each sleep with its stages, and each workout. Needs the health
+    sample and the WHOOP provider.
+  requires:
+    - samples.substrate.reamde.dev/observations
+    - samples.substrate.reamde.dev/health
+    - providers.substrate.reamde.dev/whoop
+  requiresAtLeast:
+    samples.substrate.reamde.dev/observations: 1
+    samples.substrate.reamde.dev/health: 1
+    # 19 is the version that deletes a mirror row WHOOP deleted, which is
+    # what lets this adapter delete the outputs of one.
+    providers.substrate.reamde.dev/whoop: 19
+  installs:
+    - samples.substrate.reamde.dev/healthwhoop/whoophealth
+---
+# ---- the adapter: one mirror row per delivery ---------------------------------
+# Fired by `healthwhoop-on-mirror` on every create, update and delete of a
+# WHOOP cycle, recovery, sleep or workout row. The envelope carries the row's
+# CURRENT state (null once deleted), so a late or repeated delivery computes
+# the same outputs as a prompt one.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/healthwhoop/whoophealth
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthwhoop
+  description: >-
+    Rebuild the health records one WHOOP mirror row implies: the recovery,
+    strain and energy observations of a cycle, a sleep with its stage totals
+    and scores, or a workout. Deletes the records a deleted or changed row
+    no longer implies.
+  runtime: python
+  timeout: PT30S
+  permissions:
+    # The mirror rows a row depends on (a recovery's cycle, a cycle's
+    # recoveries) and the outputs that name an origin, for the deletions.
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/whoop/cycle
+        - providers.substrate.reamde.dev/whoop/recovery
+        - samples.substrate.reamde.dev/observations/observation
+        - samples.substrate.reamde.dev/health/sleep
+        - samples.substrate.reamde.dev/health/workout
+      budgets:
+        calls: 64
+        rows: 500
+    writes:
+      - samples.substrate.reamde.dev/observations/observation
+      - samples.substrate.reamde.dev/observations/source
+      - samples.substrate.reamde.dev/health/sleep
+      - samples.substrate.reamde.dev/health/workout
+  source: |
+    """WHOOP mirror rows to health records.
+
+    ONE ORIGIN AT A TIME. A delivery names one mirror row. The body computes
+    every record that row implies, writes each (minted with its non-null half,
+    then patched whole, so a property the row no longer implies is cleared),
+    and deletes the records that name the row in `origin` and are no longer
+    implied. A deleted row implies nothing. A cycle's recovery takes its span
+    from the cycle, so a cycle delivery rebuilds the cycle's recoveries too.
+
+    IDS are composed from WHOOP's own identifiers, read off the mirror row
+    (the row ids are hashes): `whoop/<account record id>/<cycle id>/recovery`
+    and the other cycle roles, `whoop/<account>/<sleep id>/sleep`,
+    `whoop/<account>/<sleep id>/stage/<code>`, `whoop/<account>/<workout id>/
+    workout`. The source is `whoop/<account record id>`: the API names no
+    hardware model, so the source is the WHOOP the account syncs.
+
+    SPANS. A summary of a cycle spans the cycle. The current cycle has no end
+    yet, so its span ends at the cycle's `updatedAt`, the last moment WHOOP
+    scored it, and moves forward as WHOOP rescores it. A cycle that has not
+    moved past its start, or a recovery whose cycle row is absent, implies
+    nothing until it does.
+
+    REVISION is WHOOP's `updated_at` in whole seconds since the epoch (for a
+    recovery, the later of its own and its cycle's). An output whose stored
+    revision is higher than the one computed is left as it is.
+
+    UNITS are WHOOP's own and pass through the engine's table: kJ stay kJ, a
+    stage total in milliseconds becomes minutes through host.units.convert. A
+    WHOOP field the metric catalogue has no metric for, or that no health
+    kind holds, is skipped and counted in the output, never mapped onto a
+    metric that means something else.
+    """
+    import datetime as _dt
+
+    HOME = "samples.substrate.reamde.dev"
+    OBSERVATION = HOME + "/observations/observation"
+    SOURCE = HOME + "/observations/source"
+    METRIC = HOME + "/observations/metric"
+    SLEEP = HOME + "/health/sleep"
+    WORKOUT = HOME + "/health/workout"
+    OUTPUTS = [OBSERVATION, SLEEP, WORKOUT]
+
+    WHOOP = "providers.substrate.reamde.dev/whoop"
+    ACCOUNT_T = WHOOP + "/account"
+    CYCLE_T = WHOOP + "/cycle"
+    RECOVERY_T = WHOOP + "/recovery"
+    SLEEP_T = WHOOP + "/sleep"
+    WORKOUT_T = WHOOP + "/workout"
+
+    # Every property an output kind's records get from this body. Each write
+    # names all of them, None where the row implies nothing, so a rewrite
+    # clears what the previous one set and the row no longer says.
+    OBSERVATION_PROPS = ("metric", "source", "form", "value", "code", "statistic",
+                         "period", "periodId", "at", "endsAt", "utcOffset",
+                         "origin", "revision", "quality")
+    SLEEP_PROPS = ("source", "origin", "revision", "isNap", "utcOffsetStart",
+                   "utcOffsetEnd", "at", "endsAt", "timeInBed", "timeAsleep",
+                   "awake", "light", "deep", "rem", "efficiency",
+                   "respiratoryRate", "disturbances", "scores")
+    WORKOUT_PROPS = ("sport", "sportSource", "source", "origin", "revision",
+                     "utcOffsetStart", "utcOffsetEnd", "at", "endsAt", "duration",
+                     "distance", "energy", "averageHeartRate", "maxHeartRate",
+                     "elevationGain", "strain", "zoneDurations")
+    MANAGED = {OBSERVATION: OBSERVATION_PROPS, SLEEP: SLEEP_PROPS,
+               WORKOUT: WORKOUT_PROPS}
+
+    # A recovery's five readings: (score field, metric id, unit, id role).
+    RECOVERY_READINGS = (
+        ("recoveryScore", "health/whoop_recovery", "%", "recovery"),
+        ("hrvRmssdMilli", "health/hrv_rmssd", "ms", "hrv"),
+        ("restingHeartRate", "health/resting_heart_rate", "/min", "resting_heart_rate"),
+        ("spo2Percentage", "health/spo2", "%", "spo2"),
+        ("skinTempCelsius", "health/skin_temperature", "Cel", "skin_temperature"),
+    )
+    # WHOOP's stage totals and the `health/sleep_stage` code each one is.
+    # `totalInBedTimeMilli` is every stage together, not unstaged time, so it
+    # is the sleep's `timeInBed` and never an `in_bed` total: summed by code,
+    # the night would count twice.
+    STAGES = (("totalAwakeTimeMilli", "awake"),
+              ("totalLightSleepTimeMilli", "light"),
+              ("totalSlowWaveSleepTimeMilli", "deep"),
+              ("totalRemSleepTimeMilli", "rem"))
+    ZONES = (("zoneZeroMilli", "zone0"), ("zoneOneMilli", "zone1"),
+             ("zoneTwoMilli", "zone2"), ("zoneThreeMilli", "zone3"),
+             ("zoneFourMilli", "zone4"), ("zoneFiveMilli", "zone5"))
+    # Score fields no metric and no health kind holds.
+    UNMAPPED = {
+        CYCLE_T: ("averageHeartRate", "maxHeartRate"),
+        RECOVERY_T: (),
+        SLEEP_T: ("sleepNeeded",),
+        WORKOUT_T: ("percentRecorded", "altitudeChangeMeter"),
+    }
+    UNMAPPED_STAGES = ("totalNoDataTimeMilli", "sleepCycleCount")
+
+
+    # --------------------------------------------------------------- reading
+
+    def _props(row):
+        return (row or {}).get("properties") or {}
+
+
+    def _live(row):
+        return bool(row) and not row.get("deletedAt")
+
+
+    def _ref_id(value):
+        """The record id a stored reference names, in either spelling."""
+        if isinstance(value, dict):
+            value = value.get("ref")
+        return str(value or "").rsplit("/", 1)[-1]
+
+
+    def _parse(value):
+        if not value:
+            return None
+        try:
+            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+
+    def _seconds(*values):
+        """WHOOP's `updated_at` as whole seconds, the latest of those given."""
+        out = [int(t.timestamp()) for t in map(_parse, values) if t is not None]
+        return max(out) if out else None
+
+
+    def _offset(tzd):
+        """A Time Zone Designator (`+03:00`, `-05:00`, `Z`) as minutes east of UTC."""
+        tzd = str(tzd or "").strip()
+        if tzd == "Z":
+            return 0
+        if len(tzd) != 6 or tzd[0] not in "+-" or tzd[3] != ":":
+            return None
+        try:
+            minutes = int(tzd[1:3]) * 60 + int(tzd[4:6])
+        except ValueError:
+            return None
+        return -minutes if tzd[0] == "-" else minutes
+
+
+    def _decimal(value):
+        """A JSON number as the exact digits it was sent with."""
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, int):
+            return str(value)
+        text = repr(float(value))
+        return text[:-2] if text.endswith(".0") else text
+
+
+    def _duration(ms):
+        """Milliseconds as the ISO 8601 spelling the engine stores."""
+        ms = int(ms)
+        days, rest = divmod(ms, 86400000)
+        hours, rest = divmod(rest, 3600000)
+        minutes, rest = divmod(rest, 60000)
+        seconds, millis = divmod(rest, 1000)
+        out = "P" + ("%dD" % days if days else "")
+        if hours or minutes or seconds or millis or not days:
+            out += "T"
+            if hours:
+                out += "%dH" % hours
+            if minutes:
+                out += "%dM" % minutes
+            if millis:
+                out += "%d.%sS" % (seconds, ("%03d" % millis).rstrip("0"))
+            elif seconds or not (hours or minutes or days):
+                out += "%dS" % seconds
+        return out
+
+
+    # ---------------------------------------------------------------- the run
+
+    class _Run:
+        def __init__(self, host):
+            self.host = host
+            self.units = {}
+            self.sources = set()
+            self.wrote = 0
+            self.deleted = 0
+            self.kept = 0
+            self.skipped = {}
+
+        def skip(self, what):
+            self.skipped[what] = self.skipped.get(what, 0) + 1
+
+        def unit(self, code):
+            if code not in self.units:
+                self.units[code] = self.host.units.canonical(code)
+            return self.units[code]
+
+        def quantity(self, value, unit):
+            digits = _decimal(value)
+            if digits is None:
+                return None
+            return {"value": digits, "unit": self.unit(unit)}
+
+        def source(self, aid):
+            """The WHOOP the account syncs, minted once and then the owner's."""
+            sid = "whoop/" + aid
+            if sid not in self.sources:
+                self.host.effects.put(SOURCE, sid, if_absent=True, properties={
+                    "name": "WHOOP", "class": "watch", "manufacturer": "WHOOP",
+                    "account": ACCOUNT_T + "/" + aid})
+                self.sources.add(sid)
+            return SOURCE + "/" + sid
+
+        def reconcile(self, origin, desired):
+            """Write what one origin implies and delete what it no longer does."""
+            page = self.host.list(filter={
+                "kinds": OUTPUTS,
+                "referencing": {"ref": origin, "property": "origin"},
+            }, first=100)
+            held = {(ent.get("kind"), ent.get("id")): ent
+                    for ent in page.get("records") or []}
+            for kind, oid, props in desired:
+                stored = held.pop((kind, oid), None)
+                old = _props(stored).get("revision")
+                if old is not None and props.get("revision") is not None \
+                        and props["revision"] < old:
+                    self.kept += 1
+                    continue
+                whole = {name: props.get(name) for name in MANAGED[kind]}
+                mint = {k: v for k, v in whole.items() if v is not None}
+                self.host.effects.put(kind, oid, properties=mint, if_absent=True)
+                self.host.effects.patch(kind, oid, properties=whole)
+                self.wrote += 1
+            for kind, oid in sorted(held):
+                self.host.effects.delete(kind, oid)
+                self.deleted += 1
+
+        def observation(self, oid, metric, form, origin, revision, **props):
+            props.update({"metric": METRIC + "/" + metric, "form": form,
+                          "origin": origin, "revision": revision})
+            return (OBSERVATION, oid, props)
+
+        # -- a cycle: strain and energy, then its recoveries -----------------
+        def cycle(self, rid, row):
+            origin = CYCLE_T + "/" + rid
+            desired = []
+            if _live(row):
+                p = _props(row)
+                span = self.cycle_span(p)
+                score = p.get("score") or {}
+                for name in UNMAPPED[CYCLE_T]:
+                    if score.get(name) is not None:
+                        self.skip("cycle.score." + name)
+                if span is not None and p.get("scoreState") == "scored":
+                    aid, cid = _ref_id(p.get("account")), str(p.get("cycleId"))
+                    base = "whoop/%s/%s/" % (aid, cid)
+                    common = {"source": self.source(aid), "periodId": cid,
+                              "at": span[0], "endsAt": span[1],
+                              "utcOffset": _offset(p.get("timezoneOffset"))}
+                    revision = _seconds(p.get("updatedAt"))
+                    strain = self.quantity(score.get("strain"), "1")
+                    if strain is not None:
+                        desired.append(self.observation(
+                            base + "strain", "health/whoop_strain", "summary",
+                            origin, revision, value=strain, statistic="vendor",
+                            period="cycle", **common))
+                    energy = self.quantity(score.get("kilojoule"), "kJ")
+                    if energy is not None:
+                        desired.append(self.observation(
+                            base + "energy", "health/energy_expended", "amount",
+                            origin, revision, value=energy, **common))
+            self.reconcile(origin, desired)
+            # A recovery's span is its cycle's, so the cycle's recoveries are
+            # rebuilt with it, a deleted cycle's included.
+            page = self.host.records.list(RECOVERY_T,
+                                          where={"cycle": {"eq": rid}}, first=10)
+            for rec in page.get("records") or []:
+                self.recovery(str(rec.get("id") or ""), rec,
+                              row if _live(row) else None, have_cycle=True)
+
+        def cycle_span(self, p):
+            """[at, endsAt] of a cycle, or None while it has no length yet."""
+            start = p.get("at")
+            end = p.get("endsAt") or p.get("updatedAt")
+            a, b = _parse(start), _parse(end)
+            if a is None or b is None or b <= a:
+                return None
+            return start, end
+
+        # -- a recovery: five summaries over its cycle -----------------------
+        def recovery(self, rid, row, cycle=None, have_cycle=False):
+            origin = RECOVERY_T + "/" + rid
+            desired = []
+            if _live(row):
+                p = _props(row)
+                if not have_cycle:
+                    cid = _ref_id(p.get("cycle"))
+                    cycle = self.host.records.get(CYCLE_T, cid) if cid else None
+                cp = _props(cycle) if _live(cycle) else None
+                span = self.cycle_span(cp) if cp is not None else None
+                if span is None:
+                    self.skip("recovery without a cycle span")
+                elif p.get("scoreState") == "scored":
+                    score = p.get("score") or {}
+                    aid, cid = _ref_id(p.get("account")), str(cp.get("cycleId"))
+                    revision = _seconds(p.get("updatedAt"), cp.get("updatedAt"))
+                    common = {"source": self.source(aid), "statistic": "vendor",
+                              "period": "cycle", "periodId": cid,
+                              "at": span[0], "endsAt": span[1],
+                              "utcOffset": _offset(cp.get("timezoneOffset"))}
+                    for field, metric, unit, role in RECOVERY_READINGS:
+                        value = self.quantity(score.get(field), unit)
+                        if value is None:
+                            continue
+                        extra = {}
+                        if role == "recovery" and score.get("userCalibrating"):
+                            # WHOOP's score is provisional while it learns the
+                            # member's baseline.
+                            extra["quality"] = "estimated"
+                        desired.append(self.observation(
+                            "whoop/%s/%s/%s" % (aid, cid, role), metric, "summary",
+                            origin, revision, value=value, **common, **extra))
+            self.reconcile(origin, desired)
+
+        # -- a sleep: the typed sleep, its stage totals and two scores -------
+        def sleep(self, rid, row):
+            origin = SLEEP_T + "/" + rid
+            desired = []
+            if _live(row):
+                p = _props(row)
+                aid, sid = _ref_id(p.get("account")), str(p.get("sleepId"))
+                base = "whoop/%s/%s/" % (aid, sid)
+                source = self.source(aid)
+                revision = _seconds(p.get("updatedAt"))
+                offset = _offset(p.get("timezoneOffset"))
+                score = p.get("score") or {}
+                stages = score.get("stageSummary") or {}
+                scored = p.get("scoreState") == "scored"
+                for name in UNMAPPED[SLEEP_T]:
+                    if score.get(name) is not None:
+                        self.skip("sleep.score." + name)
+                for name in UNMAPPED_STAGES:
+                    if stages.get(name) is not None:
+                        self.skip("sleep.score.stageSummary." + name)
+                typed = {"source": source, "origin": origin, "revision": revision,
+                         "isNap": p.get("nap"), "utcOffsetStart": offset,
+                         "utcOffsetEnd": offset, "at": p.get("at"),
+                         "endsAt": p.get("endsAt")}
+                if scored:
+                    asleep = 0
+                    for field, code in STAGES:
+                        ms = stages.get(field)
+                        if ms is None:
+                            continue
+                        typed[code] = _duration(ms)
+                        if code != "awake":
+                            asleep += int(ms)
+                    if any(stages.get(f) is not None for f, c in STAGES if c != "awake"):
+                        typed["timeAsleep"] = _duration(asleep)
+                    if stages.get("totalInBedTimeMilli") is not None:
+                        typed["timeInBed"] = _duration(stages["totalInBedTimeMilli"])
+                    typed["efficiency"] = self.quantity(
+                        score.get("sleepEfficiencyPercentage"), "%")
+                    typed["respiratoryRate"] = self.quantity(
+                        score.get("respiratoryRate"), "/min")
+                    typed["disturbances"] = stages.get("disturbanceCount")
+                    scores = {}
+                    for field, key in (("sleepPerformancePercentage", "sleepPerformance"),
+                                       ("sleepConsistencyPercentage", "sleepConsistency")):
+                        if score.get(field) is not None:
+                            scores[key] = _decimal(score[field])
+                    typed["scores"] = scores or None
+                desired.append((SLEEP, base + "sleep", typed))
+                if scored and p.get("at") and p.get("endsAt"):
+                    common = {"source": source, "periodId": sid, "at": p["at"],
+                              "endsAt": p["endsAt"], "utcOffset": offset}
+                    for field, code in STAGES:
+                        ms = stages.get(field)
+                        if ms is None:
+                            continue
+                        minutes = self.host.units.convert(int(ms), "ms", "min")
+                        desired.append(self.observation(
+                            base + "stage/" + code, "health/sleep_stage", "amount",
+                            origin, revision, code=code,
+                            value={"value": minutes, "unit": self.unit("min")},
+                            **common))
+                    for field, metric, unit, role in (
+                            ("sleepPerformancePercentage", "health/whoop_sleep_performance",
+                             "%", "sleep_performance"),
+                            ("respiratoryRate", "health/respiratory_rate", "/min",
+                             "respiratory_rate")):
+                        value = self.quantity(score.get(field), unit)
+                        if value is not None:
+                            desired.append(self.observation(
+                                base + role, metric, "summary", origin, revision,
+                                value=value, statistic="vendor", period="sleep",
+                                **common))
+            self.reconcile(origin, desired)
+
+        # -- a workout: the typed workout ------------------------------------
+        def workout(self, rid, row):
+            origin = WORKOUT_T + "/" + rid
+            desired = []
+            if _live(row):
+                p = _props(row)
+                aid, wid = _ref_id(p.get("account")), str(p.get("workoutId"))
+                offset = _offset(p.get("timezoneOffset"))
+                score = p.get("score") or {}
+                for name in UNMAPPED[WORKOUT_T]:
+                    if score.get(name) is not None:
+                        self.skip("workout.score." + name)
+                typed = {"sport": p.get("sportName"), "sportSource": p.get("sportName"),
+                         "source": self.source(aid), "origin": origin,
+                         "revision": _seconds(p.get("updatedAt")),
+                         "utcOffsetStart": offset, "utcOffsetEnd": offset,
+                         "at": p.get("at"), "endsAt": p.get("endsAt"),
+                         "distance": self.quantity(score.get("distanceMeter"), "m"),
+                         "energy": self.quantity(score.get("kilojoule"), "kJ"),
+                         "averageHeartRate": self.quantity(score.get("averageHeartRate"), "/min"),
+                         "maxHeartRate": self.quantity(score.get("maxHeartRate"), "/min"),
+                         "elevationGain": self.quantity(score.get("altitudeGainMeter"), "m"),
+                         "strain": _decimal(score.get("strain"))}
+                a, b = _parse(p.get("at")), _parse(p.get("endsAt"))
+                if a is not None and b is not None and b > a:
+                    typed["duration"] = _duration(int((b - a).total_seconds() * 1000))
+                zones = {key: _duration(score["zoneDurations"][field])
+                         for field, key in ZONES
+                         if (score.get("zoneDurations") or {}).get(field) is not None}
+                typed["zoneDurations"] = zones or None
+                desired.append((WORKOUT, "whoop/%s/%s/workout" % (aid, wid), typed))
+            self.reconcile(origin, desired)
+
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        change = envelope.get("change") or {}
+        kind, rid = change.get("kind") or "", change.get("id") or ""
+        row = envelope.get("record")
+        run = _Run(host)
+        if not rid or kind not in (CYCLE_T, RECOVERY_T, SLEEP_T, WORKOUT_T):
+            return {"output": {"skipped": "not a WHOOP cycle, recovery, sleep or "
+                                          "workout row"}}
+        if kind == CYCLE_T:
+            run.cycle(rid, row)
+        elif kind == RECOVERY_T:
+            run.recovery(rid, row)
+        elif kind == SLEEP_T:
+            run.sleep(rid, row)
+        else:
+            run.workout(rid, row)
+        return {"output": {"origin": kind + "/" + rid, "wrote": run.wrote,
+                           "deleted": run.deleted, "kept": run.kept,
+                           "skipped": run.skipped}}

@@ -1,8 +1,8 @@
 # Bundles catalog
 
-The catalog in the binary serves nineteen bundles, in the two tiers
+The catalog in the binary serves twenty bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: seven providers and twelve samples. This page covers twelve of them;
+draws: seven providers and thirteen samples. This page covers thirteen of them;
 the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
 `scheduling`, `observations` and `health`) are in
 [built-in kinds](builtin-kinds.md).
@@ -73,6 +73,7 @@ thing, and the Records column counts them.
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
+| WHOOP to health | Sample | the provider's | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -1498,5 +1499,71 @@ curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webho
   -F "client=ring" \
   -F "audio=@empty.m4a;type=audio/mp4;filename=recording.m4a"
 ```
+
+## WHOOP to health (sample)
+
+Package `samples.substrate.reamde.dev/healthwhoop`. Turns the
+[WHOOP](#whoop) provider's mirror rows into the `health` sample's records
+under the repository's own authority. It requires `health` (and so
+`observations`) and the WHOOP provider at version 19 or later, the version
+that deletes a mirror row WHOOP deleted.
+
+- **Kinds**: none; it writes `observations/observation`, `observations/source`,
+  `health/sleep` and `health/workout`.
+- **Functions (1)**: `whoophealth` rebuilds every record one mirror row
+  implies and deletes the records naming that row in `origin` that it no
+  longer implies. A deleted mirror row implies nothing, so its records go with
+  it. A cycle delivery rebuilds the cycle's recoveries too, because a
+  recovery's records span its cycle.
+- **Triggers (1)**: `healthwhoop-on-mirror` fires `whoophealth` on every
+  create, update and delete of a WHOOP `cycle`, `recovery`, `sleep` or
+  `workout` row. It starts at the changelog's head: to convert rows the mirror
+  held before the import, replay it from the start (`POST
+  /api/v1/substrate.reamde.dev/core/trigger/healthwhoop-on-mirror/replay` with
+  `{"from": 0}`). A replay over converted rows writes nothing.
+
+| WHOOP field | Written as | Form | Unit |
+| --- | --- | --- | --- |
+| recovery `recoveryScore` | `health/whoop_recovery` | summary, `vendor`, period `cycle` | `%` |
+| recovery `hrvRmssdMilli` | `health/hrv_rmssd` | summary, `vendor`, period `cycle` | `ms` |
+| recovery `restingHeartRate` | `health/resting_heart_rate` | summary, `vendor`, period `cycle` | `/min` |
+| recovery `spo2Percentage` | `health/spo2` | summary, `vendor`, period `cycle` | `%` |
+| recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `cycle` | `Cel` |
+| cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `1` |
+| cycle `kilojoule` | `health/energy_expended` | amount | `kJ`, never converted |
+| sleep stage totals (awake, light, slow wave, REM) | `health/sleep_stage`, `code` `awake`, `light`, `deep`, `rem` | amount over the sleep's span | `min` |
+| sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `%` |
+| sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `/min` |
+| sleep | `health/sleep`: span, `isNap`, `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency`, `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency` | | |
+| workout | `health/workout`: span, `sport` and `sportSource` (WHOOP's `sportName`), `duration`, `distance`, `energy` (kJ), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
+
+**Ids and spans.** Every id is composed from WHOOP's own identifiers, read off
+the mirror row: `whoop/<account record id>/<cycle id>/recovery` (and `hrv`,
+`resting_heart_rate`, `spo2`, `skin_temperature`, `strain`, `energy`),
+`whoop/<account>/<sleep id>/sleep`, `.../<sleep id>/stage/<code>`,
+`.../<sleep id>/sleep_performance` and `respiratory_rate`, and
+`whoop/<account>/<workout id>/workout`. A cycle's and a recovery's
+observations span the cycle and carry its id in `periodId`, so two cycles on
+one date stay two; the current cycle has no end yet, so its span ends at the
+cycle's `updatedAt` and moves as WHOOP rescores it. A recovery whose cycle row
+is absent (cycles toggled off) writes nothing until the cycle row lands.
+Every record carries `origin` (the mirror row), `revision` (WHOOP's
+`updated_at` in seconds since the epoch, for a recovery the later of its own
+and its cycle's) and the UTC offset WHOOP recorded. While WHOOP is still
+calibrating the member, the recovery score is written with `quality:
+estimated`. The source is `whoop/<account record id>`, class `watch`, pointing
+at the WHOOP account: the API names no hardware model.
+
+**A stage total spans the whole sleep.** WHOOP reports the minutes in each
+stage, not when each stage happened, so each total is one amount with its
+stage in `code` beside its minutes in `value`, over the sleep's span. WHOOP's
+`totalInBedTimeMilli` is every stage together, so it is the sleep's
+`timeInBed` and never an `in_bed` total, which would count the night twice.
+
+**Skipped.** A field no metric and no health property holds is counted in the
+function's output and not written: a cycle's `averageHeartRate` and
+`maxHeartRate`, a sleep's `sleepNeeded`, `totalNoDataTimeMilli` and
+`sleepCycleCount`, and a workout's `percentRecorded` and
+`altitudeChangeMeter`. A cycle's `step_count` never reaches the mirror.
 
 Next: [substratectl](substratectl.md), the command line over all of it.

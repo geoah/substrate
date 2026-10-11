@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -513,12 +514,14 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 // authority, so their `requires:` resolve against each other exactly as an
 // import chain does.
 //
-// No provider is installed here, which is the other half of the door: a
-// sample's SUGGESTED MAPPINGS name a provider mirror as their source, and the
-// import DROPS the ones whose provider is absent (decision record 0049). So
-// this is the fresh-repository case, and the filter is what makes it admit:
-// without it every sample carrying one would be refused for vocabulary the
-// reader never asked for.
+// No provider is installed here unless a sample requires one by name, which is
+// the other half of the door: a sample's SUGGESTED MAPPINGS name a provider
+// mirror as their source, and the import DROPS the ones whose provider is
+// absent (decision record 0049). So this is the fresh-repository case, and the
+// filter is what makes it admit: without it every sample carrying one would be
+// refused for vocabulary the reader never asked for. `healthwhoop` requires
+// the WHOOP provider, which lands under its own authority as shipped; nothing
+// maps from a WHOOP mirror.
 func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	const home = "ada.example.com"
 	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
@@ -606,6 +609,18 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	}
 	if _, ok := reg.ByIdentity(samples.Authority + "/tasks/task"); ok {
 		t.Errorf("%s/tasks/task is live after a rehome that should have moved it", samples.Authority)
+	}
+	// An adapter's grants move with the sample's kinds and leave the
+	// provider's mirror kinds where the provider publishes them.
+	fn, err := reg.ResolveFunction(home + "/healthwhoop/whoophealth")
+	if err != nil {
+		t.Fatalf("the rehomed healthwhoop adapter: %v", err)
+	}
+	if !slices.Contains(fn.Caps.Emit, home+"/observations/observation") {
+		t.Errorf("the rehomed adapter writes %v, want %s/observations/observation", fn.Caps.Emit, home)
+	}
+	if fn.Caps.Reads == nil || !slices.Contains(fn.Caps.Reads.Kinds, "providers.substrate.reamde.dev/whoop/cycle") {
+		t.Errorf("the rehomed adapter no longer reads the WHOOP mirror at its own authority: %+v", fn.Caps.Reads)
 	}
 	// The five suggested mappings were the ones dropped, and nothing that
 	// projects onto the repository's own kinds survived: on a repository with
