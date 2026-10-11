@@ -1437,6 +1437,9 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		e.PropertyMeta = scope.meta(e.PropertyMeta)
 		return toolJSON(map[string]any{"record": e}), true, 1
 	}
+	if raw, ok := args["aggregate"]; ok && raw != nil {
+		return ds.runAggregateTool(ctx, scope, args, raw)
+	}
 	q := substrate.Query{First: listDefaultFirst}
 	if raw, ok := args["filter"].(map[string]any); ok {
 		buf, _ := json.Marshal(raw)
@@ -1565,6 +1568,83 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			rows, scope.rows)), false, 0
 	}
 	return toolJSON(page), true, rows
+}
+
+// runAggregateTool is the query tool's aggregate read: the records route's
+// `aggregate` parameter as an argument beside the filter. Every kind it reads
+// is held to the allowlist as a list's are, a filter naming no kinds reads
+// the allowlist's observed kinds, and its rows count against the row budget.
+func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args map[string]any, raw any) (string, bool, int) {
+	var q substrate.AggregateQuery
+	q.Aggregate = &substrate.Aggregate{}
+	buf, _ := json.Marshal(raw)
+	if s, ok := raw.(string); ok {
+		// A model that encodes the object as a JSON string gets the same
+		// decode, as the write tool's input does.
+		buf = []byte(s)
+	}
+	if err := strictjson.DecodeBytes(buf, q.Aggregate, false); err != nil {
+		return toolError(fmt.Sprintf("aggregate: %v. aggregate takes %s",
+			err, strings.Join(strictjson.Keys(substrate.Aggregate{}), ", "))), false, 0
+	}
+	if f, ok := args["filter"].(map[string]any); ok {
+		fb, _ := json.Marshal(f)
+		if err := strictjson.DecodeBytes(fb, &q.Filter, false); err != nil {
+			return toolError(fmt.Sprintf("filter: %v. filter takes %s",
+				err, strings.Join(strictjson.Keys(substrate.Filter{}), ", "))), false, 0
+		}
+	}
+	if ident, _ := args["kind"].(string); ident != "" && len(q.Filter.Kinds) == 0 {
+		q.Filter.Kinds = []string{ident}
+	}
+	check := func(kinds []string) ([]string, string) {
+		for i, ident := range kinds {
+			ty, err := ds.resolveType(ident)
+			if err != nil {
+				return nil, err.Error()
+			}
+			if !scope.allows(ty.Identity) {
+				return nil, ident + " is not in the reads allowlist"
+			}
+			kinds[i] = ty.Identity
+		}
+		return kinds, ""
+	}
+	if len(q.Filter.Kinds) == 0 {
+		// The allowlist's observed kinds, where a read names none: a metric
+		// read reaches no kind the agent may not read.
+		for _, ident := range ds.scopeKinds(scope) {
+			if ty, err := ds.resolveType(ident); err == nil && (q.Aggregate.Property != nil || bindsObserved(ty)) {
+				q.Filter.Kinds = append(q.Filter.Kinds, ty.Identity)
+			}
+		}
+		if scope.kinds == nil {
+			q.Filter.Kinds = nil
+		} else if len(q.Filter.Kinds) == 0 {
+			return toolError("aggregate: the reads allowlist holds no observed kind; name the kinds in filter.kinds"), false, 0
+		}
+	}
+	var msg string
+	if q.Filter.Kinds, msg = check(q.Filter.Kinds); msg != "" {
+		return toolError(msg), false, 0
+	}
+	if b := q.Aggregate.Bucket; b != nil && b.Records != nil {
+		if len(b.Records.Filter.Kinds) == 0 && scope.kinds != nil {
+			return toolError("aggregate.bucket.records.filter: name the kinds whose records are the buckets"), false, 0
+		}
+		if b.Records.Filter.Kinds, msg = check(b.Records.Filter.Kinds); msg != "" {
+			return toolError(msg), false, 0
+		}
+	}
+	res, err := ds.Aggregate(ctx, q)
+	if err != nil {
+		return toolError(err.Error()), false, 0
+	}
+	if len(res.Rows) > scope.rows {
+		return toolError(fmt.Sprintf("the aggregate answers %d rows against a budget of %d; widen the bucket or narrow the range",
+			len(res.Rows), scope.rows)), false, 0
+	}
+	return toolJSON(res), true, len(res.Rows)
 }
 
 // rankedFilterArm names the first filter arm set beside `kinds` and
