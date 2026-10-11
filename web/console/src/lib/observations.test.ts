@@ -431,6 +431,37 @@ describe("an answer as buckets and series", () => {
     expect(series.map((s) => s.points[0].value)).toEqual([94, 71, 211, 38])
   })
 
+  it("breaks every series where the answer skips a bucket", () => {
+    const hour = (start: string, end: string, source: string, value: string) => ({
+      start,
+      end,
+      group: { source },
+      values: [{ reducer: "avg", value, unit: "kg" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    // Two hours measured, two between them not: the answer omits them.
+    const rows = [
+      hour("2026-09-01T00:00:00Z", "2026-09-01T01:00:00Z", "a", "10"),
+      hour("2026-09-01T00:00:00Z", "2026-09-01T01:00:00Z", "b", "11"),
+      hour("2026-09-01T03:00:00Z", "2026-09-01T04:00:00Z", "a", "20"),
+      hour("2026-09-01T03:00:00Z", "2026-09-01T04:00:00Z", "b", "21"),
+    ]
+    const { buckets, series } = seriesOf(rows, "avg", "source")
+    expect(buckets.map((b) => [b.startIso, b.endIso])).toEqual([
+      ["2026-09-01T00:00:00Z", "2026-09-01T01:00:00Z"],
+      ["2026-09-01T01:00:00Z", "2026-09-01T03:00:00Z"],
+      ["2026-09-01T03:00:00Z", "2026-09-01T04:00:00Z"],
+    ])
+    expect(buckets[1].rows).toEqual([])
+    expect(series.map((s) => s.points.map((p) => p.value))).toEqual([
+      [10, null, 20],
+      [11, null, 21],
+    ])
+  })
+
   it("reads a bare timeInState from the value naming the row's state", () => {
     const rows = [
       {

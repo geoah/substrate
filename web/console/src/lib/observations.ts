@@ -910,7 +910,31 @@ export function rowValue(
   )
 }
 
-/** The rows as buckets (distinct windows, oldest first) and series (one per
+/** The empty buckets between windows that do not meet: an answer without
+ * `fill` omits the buckets nothing fell in, and a line drawn from one
+ * returned window to the next would bridge the time between them. Each
+ * stretch of missing time becomes one bucket holding no rows, so every
+ * series breaks there. */
+function withGaps(buckets: Bucket[]): Bucket[] {
+  const out: Bucket[] = []
+  for (const bucket of buckets) {
+    const previous = out.at(-1)
+    if (previous && bucket.start > previous.end) {
+      out.push({
+        start: previous.end,
+        end: bucket.start,
+        startIso: previous.endIso,
+        endIso: bucket.startIso,
+        rows: [],
+      })
+    }
+    out.push(bucket)
+  }
+  return out
+}
+
+/** The rows as buckets (distinct windows, oldest first, with an empty one
+ * standing in for each stretch the answer skipped) and series (one per
  * value of the group key, in first-seen order), every series holding one
  * point per bucket. */
 export function seriesOf(
@@ -934,7 +958,9 @@ export function seriesOf(
     }
     bucket.rows.push(row)
   }
-  const buckets = [...byWindow.values()].sort((a, b) => a.start - b.start)
+  const buckets = withGaps(
+    [...byWindow.values()].sort((a, b) => a.start - b.start)
+  )
   const keys: string[] = []
   for (const row of rows) {
     const key = groupValue(row.group, groupKey) ?? ""
