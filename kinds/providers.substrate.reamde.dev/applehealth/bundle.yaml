@@ -241,10 +241,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
-  description: "One delivery from the Health Auto Export app: when it arrived,
-    which automation sent it, how big it was and what it held. A receipt;
-    the data itself lands as metric batches, workouts and the other mirror
-    kinds."
+  description: "One delivery from the Health Auto Export app. It records when
+    it arrived, which automation sent it, how big it was and what it held.
+    A receipt; the data itself lands as metric batches, workouts and the other
+    mirror kinds."
   purpose: internal
   names:
     singular: export
@@ -393,7 +393,7 @@ data:
   authority: providers.substrate.reamde.dev
   package: applehealth
   description: "One health metric from your phone over one stretch of time,
-    as the app sent it: heart rate for an hour, steps by day for a month.
+    as the app sent it. Heart rate for an hour, or steps by day for a month.
     Its rows keep the app's fields and units, and a later delivery of the
     same time rewrites them."
   purpose: supporting
@@ -548,8 +548,9 @@ data:
   authority: providers.substrate.reamde.dev
   package: applehealth
   description: "A workout recorded on your phone or watch, as the app sent
-    it: the activity, when it ran, energy, distance and heart rate and, where
-    the automation includes them, its metrics over time and its GPS route."
+    it. It holds the activity, when it ran, energy, distance and heart rate
+    and, where the automation includes them, its metrics over time and its
+    GPS route."
   names:
     singular: workout
   traits:
@@ -1158,9 +1159,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
-  description: "A mood or emotion you logged in the Health app (iOS 18 and
-    later): how pleasant it felt, the words you chose for it and what it was
-    about."
+  description: "A mood or emotion you logged in the Health app, on iOS 18
+    and later. It holds how pleasant it felt, the words you chose for it and
+    what it was about."
   names:
     singular: stateofmind
   label:
@@ -1238,8 +1239,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
-  description: "One medication dose logged in the Health app (iOS 26 and later):
-    the medication, when it was scheduled and logged, and whether it was taken."
+  description: "One medication dose logged in the Health app, on iOS 26 and
+    later. It holds the medication, when it was scheduled and logged, and
+    whether it was taken."
   names:
     singular: medication
   traits:
@@ -1387,9 +1389,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
-  description: "One cycle tracking entry logged in the Health app: menstrual
-    flow, an ovulation or pregnancy test result, cervical mucus, sexual activity
-    and similar."
+  description: "One cycle tracking entry logged in the Health app. It covers
+    menstrual flow, an ovulation or pregnancy test result, cervical mucus,
+    sexual activity and similar."
   names:
     singular: cycleevent
   label:
@@ -1454,8 +1456,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
-  description: "One ECG recorded on your watch: the classification it gave,
-    your average heart rate and every voltage sample of the recording."
+  description: "One ECG recorded on your watch. It holds the classification
+    it gave, your average heart rate and every voltage sample of the recording."
   names:
     singular: ecg
   label:
@@ -1542,8 +1544,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
-  description: "A heart rate notification your watch raised: a high or low
-    heart rate, or an irregular rhythm, with the readings around it."
+  description: "A heart rate notification your watch raised. It covers a high
+    or low heart rate, or an irregular rhythm, with the readings around it."
   names:
     singular: heartratenotification
   label:

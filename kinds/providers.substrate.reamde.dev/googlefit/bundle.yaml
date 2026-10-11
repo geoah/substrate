@@ -109,9 +109,10 @@ data:
   authority: providers.substrate.reamde.dev
   package: googlefit
   description: >-
-    The Google app settings your Google Fit account connects through: the
-    OAuth client id, a sealed client secret, and the Fit API's base URL. The
-    endpoints and the toggle-to-scope map are bundle metadata, not rows here.
+    The Google app settings your Google Fit account connects through. It holds
+    the OAuth client id, a sealed client secret, and the Fit API's base URL.
+    The endpoints and the toggle-to-scope map are bundle metadata, not rows
+    here.
   purpose: internal
   names:
     singular: config
