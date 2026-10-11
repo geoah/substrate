@@ -1,0 +1,25 @@
+# The adapter's one delivery: every create, update and delete of a WHOOP
+# cycle, recovery, sleep or workout row fires `whoophealth` with that row's
+# current state. The member row implies no health record and is not named.
+#
+# A new trigger starts at the changelog's head, so rows the WHOOP mirror held
+# before this sample was imported are converted by replaying it from the
+# start: POST /api/v1/substrate.reamde.dev/core/trigger/healthwhoop-on-mirror/replay
+# with {"from": 0}. Every output id is composed, so a replay over rows already
+# converted writes nothing.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: healthwhoop-on-mirror
+data:
+  properties:
+    enabled: true
+    label: WHOOP to health
+    source:
+      record:
+        kinds:
+          - providers.substrate.reamde.dev/whoop/cycle
+          - providers.substrate.reamde.dev/whoop/recovery
+          - providers.substrate.reamde.dev/whoop/sleep
+          - providers.substrate.reamde.dev/whoop/workout
+        ops: [create, update, delete]
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthwhoop/whoophealth

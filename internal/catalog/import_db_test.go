@@ -243,6 +243,20 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
+	// A sample that requires a provider (healthwhoop requires WHOOP) is
+	// imported after the provider's own door installed it.
+	for _, b := range c.Bundles() {
+		if b.Tier != substrate.TierSample {
+			continue
+		}
+		for _, req := range b.Requires {
+			if p, ok := c.ByID(req); ok && p.Tier == substrate.TierProvider {
+				if _, _, err := c.Install(ctx, substrate.ActorAPI, req, ds); err != nil {
+					t.Fatalf("install %s, which %s requires: %v", req, b.ID, err)
+				}
+			}
+		}
+	}
 	// `requires:` forces an order; a refused import is retried after the rest
 	// of the pass, so the loop needs no knowledge of the graph.
 	var pending []*catalog.Bundle
