@@ -22,9 +22,11 @@ func (failingDriver) Open(string) (driver.Conn, error) { return failingConn{}, n
 
 type failingConn struct{}
 
-func (failingConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("prepare is not used") }
-func (failingConn) Close() error                        { return nil }
-func (failingConn) Begin() (driver.Tx, error)           { return failingTx{}, nil }
+func (failingConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepare is not used")
+}
+func (failingConn) Close() error              { return nil }
+func (failingConn) Begin() (driver.Tx, error) { return failingTx{}, nil }
 func (failingConn) CheckNamedValue(*driver.NamedValue) error {
 	return nil
 }

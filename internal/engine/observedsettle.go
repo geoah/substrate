@@ -487,6 +487,7 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		spanEnd                         = make([]*time.Time, n)
 		firstRecord, lastRecord         = make([]*string, n), make([]*string, n)
 		firstOrd, lastOrd               = make([]*int64, n), make([]*int64, n)
+		minExact, maxExact              = make([]*string, n), make([]*string, n)
 	)
 	for i, r := range rows {
 		s := r.stats
@@ -498,6 +499,9 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		maxGap[i], startGap[i] = s.MaxGapMs, s.StartGapMs
 		if s.Values > 0 {
 			sum[i], minV[i], maxV[i], mean[i], m2[i] = ptrTo(s.Sum), ptrTo(s.Min), ptrTo(s.Max), ptrTo(s.Mean), ptrTo(s.M2)
+			if s.MinExact != "" && s.MaxExact != "" {
+				minExact[i], maxExact[i] = ptrTo(s.MinExact), ptrTo(s.MaxExact)
+			}
 		}
 		if s.First != nil {
 			firstTS[i], firstValue[i] = ptrTo(s.First.At), digitsOf(s.First)
@@ -524,27 +528,27 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 			code, unit, delta, utc_offset_min, bucket15, n, bounded, sum, min, max, mean, m2,
 			first_ts, first_value, last_ts, last_value, covered_ms, held_ms, twa_sum, last_hold_ms,
 			max_gap_ms, start_gap_ms, increase, resets, sin_sum, cos_sum, span_end,
-			first_record_id, first_ord, last_record_id, last_ord)
+			first_record_id, first_ord, last_record_id, last_ord, min_value, max_value)
 		SELECT $1, $2, $3, $4, $5, $6,
 			u.code, u.unit, u.delta, u.off, u.bucket, u.n, u.bounded, u.sum, u.min, u.max, u.mean, u.m2,
 			u.first_ts, u.first_value::numeric, u.last_ts, u.last_value::numeric, u.covered, u.held, u.twa, u.last_hold,
 			u.max_gap, u.start_gap, u.increase::numeric, u.resets, u.sin, u.cos, u.span_end,
-			u.first_record, u.first_ord, u.last_record, u.last_ord
+			u.first_record, u.first_ord, u.last_record, u.last_ord, u.min_value::numeric, u.max_value::numeric
 		FROM unnest($7::text[], $8::text[], $9::boolean[], $10::int[], $11::timestamptz[], $12::bigint[], $13::bigint[],
 		            $14::float8[], $15::float8[], $16::float8[], $17::float8[], $18::float8[],
 		            $19::timestamptz[], $20::text[], $21::timestamptz[], $22::text[], $23::bigint[], $24::bigint[],
 		            $25::float8[], $26::bigint[], $27::bigint[], $28::bigint[], $29::text[], $30::int[],
 		            $31::float8[], $32::float8[], $33::timestamptz[],
-		            $34::text[], $35::int[], $36::text[], $37::int[])
+		            $34::text[], $35::int[], $36::text[], $37::int[], $38::text[], $39::text[])
 		     AS u(code, unit, delta, off, bucket, n, bounded, sum, min, max, mean, m2,
 		          first_ts, first_value, last_ts, last_value, covered, held, twa, last_hold,
 		          max_gap, start_gap, increase, resets, sin, cos, span_end,
-		          first_record, first_ord, last_record, last_ord)`,
+		          first_record, first_ord, last_record, last_ord, min_value, max_value)`,
 		h.metric, h.kind, h.source, h.about, h.channel, h.form,
 		code, unit, delta, offset, bucket, count, bounded, sum, minV, maxV, mean, m2,
 		firstTS, firstValue, lastTS, lastValue, covered, held, twa, lastHold,
 		maxGap, startGap, increase, resets, sin, cos, spanEnd,
-		firstRecord, firstOrd, lastRecord, lastOrd)
+		firstRecord, firstOrd, lastRecord, lastOrd, minExact, maxExact)
 	return err
 }
 

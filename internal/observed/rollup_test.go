@@ -99,6 +99,34 @@ func TestBucketOfACounterTakesItsStepIn(t *testing.T) {
 	}
 }
 
+// The extremes are compared exactly and keep their stored digits, in a row,
+// across merged rows and over raw points alike: 2^53 + 1 and 2^53 are one
+// float64, and so are two decimals 1e-17 apart.
+func TestExtremesKeepTheirDigits(t *testing.T) {
+	for _, digits := range [][2]string{
+		{"9007199254740993", "9007199254740992"},
+		{"1.00000000000000002", "1.00000000000000001"},
+	} {
+		hi, lo := reading(1, digits[0]), reading(2, digits[1])
+		start, end := bucketAt(0)
+		row := Bucket(vocabulary.FormAmount, start, end, nil, []Point{hi, lo})[""]
+		if row.MinExact != digits[1] || row.MaxExact != digits[0] {
+			t.Errorf("row extremes %s/%s, want %s/%s", row.MinExact, row.MaxExact, digits[1], digits[0])
+		}
+		a := Bucket(vocabulary.FormAmount, start, end, nil, []Point{hi})[""]
+		b := Bucket(vocabulary.FormAmount, end, end.Add(BucketWidth), nil, []Point{reading(16, digits[1])})[""]
+		if m := Merge(vocabulary.FormAmount, *a, *b); m.MinExact != digits[1] || m.MaxExact != digits[0] {
+			t.Errorf("merged extremes %s/%s, want %s/%s", m.MinExact, m.MaxExact, digits[1], digits[0])
+		}
+		w := window(0, 15)
+		p, _ := MinPoint([]Point{hi, lo}, w)
+		q, _ := MaxPoint([]Point{lo, hi}, w)
+		if p.Exact != digits[1] || q.Exact != digits[0] {
+			t.Errorf("raw extremes %s/%s, want %s/%s", p.Exact, q.Exact, digits[1], digits[0])
+		}
+	}
+}
+
 func amount(from, to, v float64, code string) Point {
 	return Point{At: at(from), End: at(to), Value: v, HasValue: true, Code: code, Group: code}
 }

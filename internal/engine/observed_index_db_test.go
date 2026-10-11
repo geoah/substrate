@@ -329,6 +329,7 @@ type storedRollup struct {
 	held, lastHold, resets                 sql.NullInt64
 	firstRecord, lastRecord                sql.NullString
 	firstOrd, lastOrd                      sql.NullInt64
+	minValue, maxValue                     sql.NullString
 }
 
 func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
@@ -337,7 +338,8 @@ func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 		SELECT metric, kind, source, about, channel, form, code, unit, delta, utc_offset_min, bucket15,
 		       n, bounded, sum, min, max, mean, m2, first_ts, first_value::text, last_ts, last_value::text,
 		       covered_ms, held_ms, twa_sum, last_hold_ms, max_gap_ms, start_gap_ms, increase::text, resets,
-		       sin_sum, cos_sum, span_end, first_record_id, first_ord, last_record_id, last_ord
+		       sin_sum, cos_sum, span_end, first_record_id, first_ord, last_record_id, last_ord,
+		       min_value::text, max_value::text
 		FROM observed_rollups`)
 	if err != nil {
 		t.Fatalf("read the rollups: %v", err)
@@ -354,7 +356,8 @@ func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 		if err := rows.Scan(&k[0], &k[1], &k[2], &k[3], &k[4], &k[5], &code, &unit, &delta, &offset, &bucket,
 			&s.n, &s.bounded, &s.sum, &s.min, &s.max, &s.mean, &s.m2, &s.firstTS, &s.firstValue, &s.lastTS, &s.lastValue,
 			&s.covered, &s.held, &s.twa, &s.lastHold, &s.maxGap, &s.startGap, &s.increase, &s.resets,
-			&s.sin, &s.cos, &s.spanEnd, &s.firstRecord, &s.firstOrd, &s.lastRecord, &s.lastOrd); err != nil {
+			&s.sin, &s.cos, &s.spanEnd, &s.firstRecord, &s.firstOrd, &s.lastRecord, &s.lastOrd,
+			&s.minValue, &s.maxValue); err != nil {
 			t.Fatal(err)
 		}
 		out[rollupKey(k, fmt.Sprintf("%s|%s|%v|%d", code, unit, delta, offset), bucket)] = s
@@ -462,6 +465,10 @@ func compareRollup(t *testing.T, key, form string, g storedRollup, w *observed.S
 	float("sum", g.sum, w.Sum, values)
 	float("min", g.min, w.Min, values)
 	float("max", g.max, w.Max, values)
+	if g.minValue.Valid != values || g.maxValue.Valid != values ||
+		(values && (!sameDecimal(g.minValue.String, w.MinExact) || !sameDecimal(g.maxValue.String, w.MaxExact))) {
+		bad("min_value, max_value", []any{g.minValue, g.maxValue}, []any{w.MinExact, w.MaxExact})
+	}
 	float("mean", g.mean, w.Mean, values)
 	float("m2", g.m2, w.M2, values)
 	float("sin_sum", g.sin, w.SinSum, w.Angles > 0)

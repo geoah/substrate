@@ -62,24 +62,23 @@ type aggSegment struct {
 // evidence is what one row reduces: raw members and held spans, or merged
 // rollup statistics and held sums.
 type aggEvidence struct {
-	form      string
-	raw       bool
-	members   []aggPoint
-	spans     []aggSpan
-	stats     observed.Stats
-	held      map[string]observed.HeldSum
-	steps     aggSteps
-	sources   map[string]bool
-	coverage  int64
+	form     string
+	raw      bool
+	members  []aggPoint
+	spans    []aggSpan
+	stats    observed.Stats
+	held     map[string]observed.HeldSum
+	steps    aggSteps
+	sources  map[string]bool
+	coverage int64
 	// extents are a rollup-served amount's pieces of coverage, joined into
 	// coverage once every row and cut end has merged (amountCoverage).
-	extents   []observed.Extent
+	extents []observed.Extent
 	// firstStream and lastStream are the streams stats.First and stats.Last
 	// came from, the last key of pointBefore.
 	firstStream, lastStream int
 	count                   int64
-	bounded   int64
-	converted bool
+	bounded                 int64
 }
 
 type aggSteps struct {
@@ -462,7 +461,8 @@ func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.
 const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.bucket15, r.n, r.bounded, r.sum, r.min, r.max, r.mean, r.m2,
 	r.first_ts, r.first_value::text, r.last_ts, r.last_value::text, r.covered_ms, r.held_ms, r.twa_sum, r.last_hold_ms,
 	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum, r.span_end,
-	coalesce(r.first_record_id, ''), coalesce(r.first_ord, 0), coalesce(r.last_record_id, ''), coalesce(r.last_ord, 0)`
+	coalesce(r.first_record_id, ''), coalesce(r.first_ord, 0), coalesce(r.last_record_id, ''), coalesce(r.last_ord, 0),
+	coalesce(r.min_value::text, ''), coalesce(r.max_value::text, '')`
 
 // rowSpans are the rollup rows the read's windows meet: each window from the
 // row holding its start to the row holding its end, joined.
@@ -505,16 +505,18 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 			spanEnd                              sql.NullTime
 			firstRecord, lastRecord              string
 			firstOrd, lastOrd                    int64
+			minExact, maxExact                   string
 		)
 		if err := rows.Scan(&g.code, &g.unit, &g.delta, &g.offset, &bucket, &n, &bounded, &sum, &minV, &maxV, &mean, &m2,
 			&firstTS, &firstV, &lastTS, &lastV, &covered, &held, &twa, &lastHold, &maxGap, &startGp, &increase, &resets, &sin, &cos,
-			&spanEnd, &firstRecord, &firstOrd, &lastRecord, &lastOrd); err != nil {
+			&spanEnd, &firstRecord, &firstOrd, &lastRecord, &lastOrd, &minExact, &maxExact); err != nil {
 			return nil, err
 		}
 		key := g.key()
 		r.rowGroups[key] = g
 		st := observed.Stats{
 			N: n, Bounded: bounded, Sum: sum.Float64, Min: minV.Float64, Max: maxV.Float64, Mean: mean.Float64, M2: m2.Float64,
+			MinExact: minExact, MaxExact: maxExact,
 			CoveredMs: covered, HeldMs: held.Int64, TWASum: twa.Float64, MaxGapMs: maxGap, StartGapMs: startGp,
 			Resets: resets.Int64, SinSum: sin.Float64, CosSum: cos.Float64, SpanEnd: spanEnd.Time,
 		}
@@ -1051,7 +1053,7 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 			for _, b := range targets {
 				ev := cell(out, b, r.codeKey(og.code), g.form, false)
-				r.mergeStats(ev, st, g.form, !r.u.identity(og), si)
+				r.mergeStats(ev, st, g.form, si)
 				if row.N > 0 {
 					ev.sources[s.source] = true
 				}
@@ -1136,7 +1138,24 @@ func (r *aggRun) convertStats(s observed.Stats, g obsGroup, form string) (observ
 		return &q
 	}
 	s.First, s.Last = conv(s.First), conv(s.Last)
+	for _, d := range []*string{&s.MinExact, &s.MaxExact} {
+		digits, exact := c.digits(*d)
+		if !exact && r.wants(substrate.ReducerMin, substrate.ReducerMax) {
+			r.meta.inexact = true
+		}
+		*d = digits
+	}
 	return s, nil
+}
+
+// wants reports whether the read asks for any of the reducers.
+func (r *aggRun) wants(names ...string) bool {
+	for _, red := range r.p.reducers {
+		if slices.Contains(names, red.Name) {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeStats merges converted statistics of the group's stream-th stream into
@@ -1144,7 +1163,7 @@ func (r *aggRun) convertStats(s observed.Stats, g obsGroup, form string) (observ
 // read in (pointBefore: the instant, the record id, the index, the stream),
 // whatever order the rows arrive in: two groups of one bucket interleave, and
 // two at one instant tie on time alone.
-func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, converted bool, stream int) {
+func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, stream int) {
 	first, last := ev.stats.First, ev.stats.Last
 	ev.stats = observed.Merge(form, ev.stats, s)
 	ev.stats.First, ev.stats.Last = first, last
@@ -1153,9 +1172,6 @@ func (r *aggRun) mergeStats(ev *aggEvidence, s observed.Stats, form string, conv
 	}
 	if s.Last != nil && (last == nil || pointBefore(*last, ev.lastStream, *s.Last, stream)) {
 		ev.stats.Last, ev.lastStream = s.Last, stream
-	}
-	if converted {
-		ev.converted = true
 	}
 }
 
@@ -1303,7 +1319,7 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 						return err
 					}
 					ev := cell(out, b, groups[key], g.form, false)
-					r.mergeStats(ev, conv, g.form, unit != r.u.value, si)
+					r.mergeStats(ev, conv, g.form, si)
 					if st.N > 0 {
 						ev.sources[s.source] = true
 					}
@@ -1517,22 +1533,37 @@ func (r *aggRun) values(ev *aggEvidence, code string) []substrate.AggregateValue
 				float(red, ev.stats.Mean, ev.stats.Values > 0, r.u.value)
 			}
 		case substrate.ReducerMin, substrate.ReducerMax:
+			// Compared exactly, answered in the winner's digits (converted
+			// exactly where the unit's factor allows): a min or max is not a
+			// float reduction.
 			var v float64
+			var digits string
 			var ok bool
 			switch {
-			case ev.raw && red.Name == substrate.ReducerMin:
-				v, ok = observed.Min(r.extremaPoints(ev, statOf("min")), all)
 			case ev.raw:
-				v, ok = observed.Max(r.extremaPoints(ev, statOf("max")), all)
+				var p observed.Point
+				if red.Name == substrate.ReducerMin {
+					p, ok = observed.MinPoint(r.extremaPoints(ev, statOf("min")), all)
+				} else {
+					p, ok = observed.MaxPoint(r.extremaPoints(ev, statOf("max")), all)
+				}
+				v, digits = p.Value, p.Exact
 			case red.Name == substrate.ReducerMin:
-				v, ok = ev.stats.Min, ev.stats.Values > 0
+				v, digits, ok = ev.stats.Min, ev.stats.MinExact, ev.stats.Values > 0
 			default:
-				v, ok = ev.stats.Max, ev.stats.Values > 0
+				v, digits, ok = ev.stats.Max, ev.stats.MaxExact, ev.stats.Values > 0
 			}
-			if ev.converted || r.anyConverted(ev) {
+			value := substrate.AggregateValue{Reducer: red, Unit: r.u.value}
+			switch {
+			case !ok:
+			case digits != "":
+				value.Value = &digits
+			default:
+				// A row from before migration 0013 keeps only the float.
 				r.meta.inexact = true
+				value = r.value(red, v, true, r.u.value)
 			}
-			out = append(out, r.value(red, v, ok, r.u.value))
+			out = append(out, value)
 		case substrate.ReducerFirst, substrate.ReducerLast:
 			var p observed.Point
 			var ok bool
@@ -1642,23 +1673,17 @@ func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) []observed.Point {
 		p := m.Point
 		if ev.form == vocabulary.FormCounter && p.HasValue && p.Unit != "" {
 			if c, err := r.u.factor(p.Unit, m.delta); err == nil && !c.identity {
+				var exact bool
 				p.Value = p.Value*c.ff + c.fo
-				p.Exact, _ = c.digits(p.Exact)
+				if p.Exact, exact = c.digits(p.Exact); !exact {
+					r.meta.inexact = true
+				}
 				p.Unit = r.u.value
 			}
 		}
 		list = append(list, p)
 	}
 	return list
-}
-
-func (r *aggRun) anyConverted(ev *aggEvidence) bool {
-	for _, c := range r.u.conv {
-		if !c.identity {
-			return true
-		}
-	}
-	return false
 }
 
 func (r *aggRun) spansOf(ev *aggEvidence) []observed.Span {

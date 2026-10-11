@@ -476,6 +476,53 @@ func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 	}
 }
 
+// A min or a max answers the stored digits, compared exactly, on both paths
+// and in a downsample's columns, and the read says it is exact:
+// 9007199254740993 and 9007199254740992 are one float64, which once answered
+// 9007199254740990 with exact true.
+func TestAggregateExtremesKeepTheirDigits(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i, v := range []string{"9007199254740993", "9007199254740992"} {
+		from := start.Add(time.Duration(1+20*i) * time.Minute)
+		f.mustPut(t, f.observation, "big/"+strconv.Itoa(i), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("counter"), "form": "amount",
+			"value": quantity(v, "{steps}"), "at": at(from), "endsAt": at(from.Add(time.Minute)),
+		})
+	}
+	a := substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+		Range:    rng(start, start.Add(time.Hour)),
+		Reducers: reducers("min", "max"),
+	}
+	rollups, raw, _ := f.bothPaths(substrate.Filter{}, a)
+	for _, res := range []*substrate.AggregateResult{rollups, raw} {
+		if len(res.Rows) != 1 {
+			t.Fatalf("%d rows", len(res.Rows))
+		}
+		lo, _ := val(res.Rows[0], "min")
+		hi, _ := val(res.Rows[0], "max")
+		if lo != "9007199254740992" || hi != "9007199254740993" || !res.Exact {
+			t.Errorf("min/max = %s/%s, exact %v; want the stored digits, exact", lo, hi, res.Exact)
+		}
+	}
+	a.Reducers = nil
+	cols, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &a, Downsample: &substrate.Downsample{Points: 1}})
+	if err != nil {
+		t.Fatalf("downsample: %v", err)
+	}
+	if len(cols.Rows) != 1 || !cols.Exact {
+		t.Fatalf("downsample: %+v, exact %v", cols.Rows, cols.Exact)
+	}
+	if lo, _ := val(cols.Rows[0], "min"); lo != "9007199254740992" {
+		t.Errorf("the column's min = %s, want 9007199254740992", lo)
+	}
+	if hi, _ := val(cols.Rows[0], "max"); hi != "9007199254740993" {
+		t.Errorf("the column's max = %s, want 9007199254740993", hi)
+	}
+}
+
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`

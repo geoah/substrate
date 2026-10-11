@@ -18,6 +18,10 @@ type Stats struct {
 	// Sum, Min, Max, Mean and M2 are over the numbers; M2 is the sum of
 	// squared deviations from the mean, so the variance is M2 over Values.
 	Sum, Min, Max, Mean, M2 float64
+	// MinExact and MaxExact are the stored digits of the smallest and the
+	// largest number, compared exactly (NumberLess), so the extremes answer
+	// what was stored and not a float64's 15 or 17 digits of it.
+	MinExact, MaxExact string
 	// First and Last are the group's first and last available points.
 	First, Last *Point
 	// CoveredMs is the time the row's points cover: from the first point to
@@ -174,8 +178,14 @@ func (b *BucketBuilder) Add(point Point) {
 		s.Sum += p.Value
 		if s.Values == 1 {
 			s.Min, s.Max = p.Value, p.Value
+			s.MinExact, s.MaxExact = p.Exact, p.Exact
 		} else {
-			s.Min, s.Max = math.Min(s.Min, p.Value), math.Max(s.Max, p.Value)
+			if NumberLess(p.Value, p.Exact, s.Min, s.MinExact) {
+				s.Min, s.MinExact = p.Value, p.Exact
+			}
+			if NumberLess(s.Max, s.MaxExact, p.Value, p.Exact) {
+				s.Max, s.MaxExact = p.Value, p.Exact
+			}
 		}
 		m := b.moments[p.Group]
 		if m == nil {
@@ -322,10 +332,19 @@ func Merge(form string, a, b Stats) Stats {
 	switch {
 	case a.Values == 0:
 		out.Min, out.Max, out.Mean, out.M2 = b.Min, b.Max, b.Mean, b.M2
+		out.MinExact, out.MaxExact = b.MinExact, b.MaxExact
 	case b.Values == 0:
 		out.Min, out.Max, out.Mean, out.M2 = a.Min, a.Max, a.Mean, a.M2
+		out.MinExact, out.MaxExact = a.MinExact, a.MaxExact
 	default:
-		out.Min, out.Max = math.Min(a.Min, b.Min), math.Max(a.Max, b.Max)
+		out.Min, out.MinExact = a.Min, a.MinExact
+		if NumberLess(b.Min, b.MinExact, a.Min, a.MinExact) {
+			out.Min, out.MinExact = b.Min, b.MinExact
+		}
+		out.Max, out.MaxExact = a.Max, a.MaxExact
+		if NumberLess(a.Max, a.MaxExact, b.Max, b.MaxExact) {
+			out.Max, out.MaxExact = b.Max, b.MaxExact
+		}
 		na, nb := float64(a.Values), float64(b.Values)
 		n := na + nb
 		d := b.Mean - a.Mean

@@ -1236,7 +1236,7 @@ which served it; the row's `form` is `summary` where summaries did.
 | `unit` | the values' unit (a coded read's durations unit) |
 | `bucket` | the bucket as the read applied it, defaults filled in; a downsample's computed columns |
 | `from` | the request's `from` |
-| `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value), a `min` or `max` after a unit conversion, or a conversion rounded to 20 significant digits |
+| `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value) or a conversion rounded to 20 significant digits. `min` and `max` compare the stored digits exactly and answer the winner's, so they are exact unless their conversion rounds |
 | `rows` | one per bucket and group, ordered by bucket, then group, then code |
 | `sources` | every source that fed a row, by record path |
 | `head` | `{changelog, generation}`: the changelog position and history generation the read was served at, as a list page's `head` and `generation` |

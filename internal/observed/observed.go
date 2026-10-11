@@ -208,6 +208,45 @@ func Max(points []Point, w Window) (float64, bool) {
 	return m, true
 }
 
+// NumberLess reports whether the number a (its float a and its stored digits
+// ad) is smaller than b. Floats far apart order as their numbers do; within
+// float64's noise of each other (2^53 + 1 and 2^53 are one float) the digits
+// decide, exactly. Equal numbers are not less, so the first of a tie stays.
+func NumberLess(a float64, ad string, b float64, bd string) bool {
+	if math.Abs(a-b) > 1e-9*math.Max(math.Abs(a), math.Abs(b)) {
+		return a < b
+	}
+	x, okA := new(big.Rat).SetString(ad)
+	y, okB := new(big.Rat).SetString(bd)
+	if !okA || !okB {
+		return a < b
+	}
+	return x.Cmp(y) < 0
+}
+
+// MinPoint is the point holding the smallest number in the window, compared
+// exactly (NumberLess): its stored digits are the answer, so a min loses no
+// digit to float64. Of equal numbers, the first in order.
+func MinPoint(points []Point, w Window) (Point, bool) {
+	return extreme(points, w, func(p, best Point) bool { return NumberLess(p.Value, p.Exact, best.Value, best.Exact) })
+}
+
+// MaxPoint is the point holding the largest number in the window, as MinPoint.
+func MaxPoint(points []Point, w Window) (Point, bool) {
+	return extreme(points, w, func(p, best Point) bool { return NumberLess(best.Value, best.Exact, p.Value, p.Exact) })
+}
+
+func extreme(points []Point, w Window, better func(p, best Point) bool) (Point, bool) {
+	var best Point
+	ok := false
+	for _, p := range inWindow(points, w) {
+		if p.HasValue && (!ok || better(p, best)) {
+			best, ok = p, true
+		}
+	}
+	return best, ok
+}
+
 // First is the earliest available point in the window, a code or a number.
 func First(points []Point, w Window) (Point, bool) {
 	in := inWindow(points, w)
