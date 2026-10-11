@@ -85,8 +85,10 @@ relabel a stored value.
 | `counter` | a running total under one of three contracts ([decision 0157](decisions/0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md)) | a meter at 18342.655 kW.h |
 | `summary` | a statistic over a stated period, computed by the source | WHOOP's recovery of 67 % for one cycle |
 
-A categorical value is a gauge or an amount with `code` set instead of
-`value`. A boolean is two named codes, never `0` and `1`. A summary is always
+A categorical value is a gauge with `code` set instead of `value`, or an
+amount with `code` beside `value`: the amount is the quantity and the code its
+category, so 94 minutes of `rem` is `{value: {value: "94", unit: min}, code:
+rem}`. A boolean is two named codes, never `0` and `1`. A summary is always
 one value per record: a trace is never a summary. A `null` inside a trace
 means the source had nothing from that point on: it ends a gauge's hold and
 counts in nothing
@@ -231,7 +233,8 @@ whose problems name the property and the rule, such as
 
 - `form` is required and is `gauge`, `amount`, `counter` or `summary`;
   `metric` and `at` are required.
-- A single record holds `value` or `code`, never both. It may hold neither
+- A single record holds `value` or `code`, never both, except an amount,
+  which may carry its category in `code` beside `value`. It may hold neither
   only where `sourceValue` keeps the reading as received or `absentReason`
   says why there is none, and `absentReason` beside a value is refused.
 - An `amount` and a `summary` need `endsAt` after `at`. A `summary` needs
@@ -252,7 +255,8 @@ whose problems name the property and the rule, such as
 
 A packed record is also held to these:
 
-- It holds `values` or `codes`, never both, at least one point and at most
+- It holds `values` or `codes`, never both, except an amount trace, which
+  may carry one code per value; at least one point and at most
   20,000, and its properties are at most 1 MiB as JSON. A longer recording is
   split into shorter periods.
 - It places points by `every` or by `offsets`, never both. `offsets` are
