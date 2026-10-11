@@ -71,9 +71,8 @@ under each user's authority, so their reference differs per repository.
 
 ### Confirmation
 
-`TestObservedTraitContractIsPinned` (internal/vocabulary, to be written in
-work package 2) pins both variants' property names and datatypes and fails on
-any addition, removal or retype. `mise run kinds:check` refuses a changed
+`TestObservedTraitContractIsPinned` (internal/vocabulary) pins both variants'
+property names and datatypes and fails on any addition, removal or retype. `mise run kinds:check` refuses a changed
 core declaration that ships without a version bump.
 
 ## More information
