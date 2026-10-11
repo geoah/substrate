@@ -55,9 +55,11 @@ func Clip(spans []Span, from, to time.Time) []Span {
 // The work is a sort and a merge per stream and a binary search per span:
 // each span visits only the cover intervals it overlaps, so two fragmented
 // sources of n spans each resolve in O(n log n), never n squared. It answers
-// ctx's error, checked before each stream and every thousand spans, so a
-// caller that stops waiting stops the work.
+// ctx's error, checked every checkEvery spans, cover intervals walked or
+// merged, and between the runs of the cover's sort, so a caller that stops
+// waiting stops the work, inside one long span's walk as well.
 func Prioritize(ctx context.Context, streams [][]Span) ([][]Span, error) {
+	check := every(ctx)
 	out := make([][]Span, len(streams))
 	var cover [][2]time.Time
 	for i, spans := range streams {
@@ -65,19 +67,26 @@ func Prioritize(ctx context.Context, streams [][]Span) ([][]Span, error) {
 			return nil, err
 		}
 		out[i] = make([]Span, 0, len(spans))
-		for j, s := range spans {
-			if j&(1<<10-1) == 0 {
-				if err := ctx.Err(); err != nil {
-					return nil, err
-				}
+		for _, s := range spans {
+			var err error
+			if out[i], err = subtract(out[i], s, cover, check); err != nil {
+				return nil, err
 			}
-			out[i] = subtract(out[i], s, cover)
 		}
 		mine := make([][2]time.Time, 0, len(spans))
 		for _, s := range spans {
+			if err := check(); err != nil {
+				return nil, err
+			}
 			mine = append(mine, [2]time.Time{s.Start, s.End})
 		}
-		cover = mergeSorted(cover, mergeCover(mine))
+		merged, err := mergeCover(ctx, mine, check)
+		if err != nil {
+			return nil, err
+		}
+		if cover, err = mergeSorted(cover, merged, check); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
@@ -94,17 +103,24 @@ func Covered(spans []Span, t time.Time) bool {
 
 // subtract appends to dst the parts of s outside a sorted, merged cover: a
 // binary search to the first interval that ends after s starts, then a walk
-// over the intervals that start before s ends, and no further.
-func subtract(dst []Span, s Span, cover [][2]time.Time) []Span {
+// over the intervals that start before s ends, and no further. check is
+// called for s and for each interval walked.
+func subtract(dst []Span, s Span, cover [][2]time.Time, check func() error) ([]Span, error) {
+	if err := check(); err != nil {
+		return nil, err
+	}
 	j := sort.Search(len(cover), func(j int) bool { return cover[j][1].After(s.Start) })
 	if !s.End.After(s.Start) {
 		if j < len(cover) && cover[j][0].Before(s.Start) {
-			return dst
+			return dst, nil
 		}
-		return append(dst, s)
+		return append(dst, s), nil
 	}
 	start := s.Start
 	for ; j < len(cover) && cover[j][0].Before(s.End); j++ {
+		if err := check(); err != nil {
+			return nil, err
+		}
 		if cover[j][0].After(start) {
 			dst = append(dst, Span{Start: start, End: cover[j][0], Point: s.Point})
 		}
@@ -115,24 +131,32 @@ func subtract(dst []Span, s Span, cover [][2]time.Time) []Span {
 	if s.End.After(start) {
 		dst = append(dst, Span{Start: start, End: s.End, Point: s.Point})
 	}
-	return dst
+	return dst, nil
 }
 
 // mergeCover sorts intervals and joins the ones that touch.
-func mergeCover(cover [][2]time.Time) [][2]time.Time {
-	sort.Slice(cover, func(i, j int) bool { return cover[i][0].Before(cover[j][0]) })
+func mergeCover(ctx context.Context, cover [][2]time.Time, check func() error) ([][2]time.Time, error) {
+	if err := SortStableFunc(ctx, cover, func(a, b [2]time.Time) int { return a[0].Compare(b[0]) }); err != nil {
+		return nil, err
+	}
 	var out [][2]time.Time
 	for _, c := range cover {
+		if err := check(); err != nil {
+			return nil, err
+		}
 		out = appendJoined(out, c)
 	}
-	return out
+	return out, nil
 }
 
 // mergeSorted joins two sorted, merged covers into one, in one pass.
-func mergeSorted(a, b [][2]time.Time) [][2]time.Time {
+func mergeSorted(a, b [][2]time.Time, check func() error) ([][2]time.Time, error) {
 	out := make([][2]time.Time, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) || j < len(b) {
+		if err := check(); err != nil {
+			return nil, err
+		}
 		if j == len(b) || (i < len(a) && a[i][0].Before(b[j][0])) {
 			out = appendJoined(out, a[i])
 			i++
@@ -141,7 +165,7 @@ func mergeSorted(a, b [][2]time.Time) [][2]time.Time {
 			j++
 		}
 	}
-	return out
+	return out, nil
 }
 
 // appendJoined appends c to a sorted, merged cover, joining it to the last
@@ -202,19 +226,39 @@ func UnionMs(extents []Extent) (int64, bool) {
 
 // HeldMs is the time the spans hold, in milliseconds.
 func HeldMs(spans []Span) int64 {
+	ms, _ := HeldMsContext(context.Background(), spans)
+	return ms
+}
+
+// HeldMsContext is HeldMs under ctx, checked every checkEvery spans.
+func HeldMsContext(ctx context.Context, spans []Span) (int64, error) {
+	check := every(ctx)
 	var ms int64
 	for _, s := range spans {
+		if err := check(); err != nil {
+			return 0, err
+		}
 		ms += s.End.Sub(s.Start).Milliseconds()
 	}
-	return ms
+	return ms, nil
 }
 
 // TWAOf is the time-weighted mean over spans: each number weighed by the time
 // its span holds. Spans in which nothing holds have no answer.
 func TWAOf(spans []Span) (float64, bool) {
+	v, ok, _ := TWAOfContext(context.Background(), spans)
+	return v, ok
+}
+
+// TWAOfContext is TWAOf under ctx, checked every checkEvery spans.
+func TWAOfContext(ctx context.Context, spans []Span) (float64, bool, error) {
+	check := every(ctx)
 	var sum float64
 	var held int64
 	for _, s := range spans {
+		if err := check(); err != nil {
+			return 0, false, err
+		}
 		if !s.Point.HasValue {
 			continue
 		}
@@ -223,29 +267,51 @@ func TWAOf(spans []Span) (float64, bool) {
 		held += d
 	}
 	if held == 0 {
-		return 0, false
+		return 0, false, nil
 	}
-	return sum / float64(held), true
+	return sum / float64(held), true, nil
 }
 
 // TimeInStateOf is the time each code holds over spans.
 func TimeInStateOf(spans []Span) map[string]time.Duration {
+	out, _ := TimeInStateOfContext(context.Background(), spans)
+	return out
+}
+
+// TimeInStateOfContext is TimeInStateOf under ctx, checked every checkEvery
+// spans.
+func TimeInStateOfContext(ctx context.Context, spans []Span) (map[string]time.Duration, error) {
+	check := every(ctx)
 	out := map[string]time.Duration{}
 	for _, s := range spans {
+		if err := check(); err != nil {
+			return nil, err
+		}
 		if c := s.Point.Code; c != "" {
 			out[c] += s.End.Sub(s.Start)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // DurationInOf is the time a number in [lo, hi) holds over spans.
 func DurationInOf(spans []Span, lo, hi float64) time.Duration {
+	d, _ := DurationInOfContext(context.Background(), spans, lo, hi)
+	return d
+}
+
+// DurationInOfContext is DurationInOf under ctx, checked every checkEvery
+// spans.
+func DurationInOfContext(ctx context.Context, spans []Span, lo, hi float64) (time.Duration, error) {
+	check := every(ctx)
 	var d time.Duration
 	for _, s := range spans {
+		if err := check(); err != nil {
+			return 0, err
+		}
 		if s.Point.HasValue && s.Point.Value >= lo && s.Point.Value < hi {
 			d += s.End.Sub(s.Start)
 		}
 	}
-	return d
+	return d, nil
 }
