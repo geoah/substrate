@@ -143,7 +143,7 @@ func TestWebhookRefusals(t *testing.T) {
 	}
 }
 
-// The bounds: a non-multipart body past 1 MiB is 413, headers past 16 KiB are
+// The bounds: a non-multipart body past 8 MiB is 413, headers past 16 KiB are
 // 431, and neither reaches the service.
 func TestWebhookBounds(t *testing.T) {
 	svc, h := webhookHandler("f", nil)
@@ -160,6 +160,28 @@ func TestWebhookBounds(t *testing.T) {
 	}
 	if rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), maxWebhookInline), map[string]string{"Content-Type": "text/plain"}); rec.Code != http.StatusAccepted {
 		t.Fatalf("a body at the cap: status = %d", rec.Code)
+	}
+}
+
+// The inline cap is 8 MiB, the function frame a body rides in: a Health
+// Auto Export delivery of a day at minute grouping passes 1 MiB, and the app
+// never re-sends a part the door refused. Pinned in bytes rather than through
+// the constant, so lowering the constant fails here.
+func TestWebhookInlineCapIsEightMiB(t *testing.T) {
+	svc, h := webhookHandler("f", nil)
+	under := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), 8<<20-1), map[string]string{"Content-Type": "application/json"})
+	if under.Code != http.StatusAccepted {
+		t.Fatalf("a body one byte under 8 MiB: status = %d: %s", under.Code, under.Body.String())
+	}
+	if got := len(svc.last(t).req.Body); got != 8<<20-1 {
+		t.Fatalf("the service got %d bytes, want %d", got, 8<<20-1)
+	}
+	over := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), 8<<20+1), map[string]string{"Content-Type": "application/json"})
+	if over.Code != http.StatusRequestEntityTooLarge || !strings.Contains(over.Body.String(), "exceeds 8 MiB") {
+		t.Fatalf("a body one byte past 8 MiB: status = %d: %s", over.Code, over.Body.String())
+	}
+	if len(svc.calls) != 1 {
+		t.Fatalf("the refused body reached the service: %d calls", len(svc.calls))
 	}
 }
 
