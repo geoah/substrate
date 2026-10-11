@@ -1,0 +1,32 @@
+# The Apple Health bundle's delivery wiring: one webhook trigger, an ordinary
+# data record of core's `trigger` kind.
+#
+#   Health Auto Export  --POST /webhooks/<authority>/applehealth-webhook-->  applehealthingest
+#
+# It ships DISABLED and without a key, because an enabled trigger with no key
+# is an open endpoint that writes health records for anyone who can reach the
+# server. Set `source.webhook.key` (16 to 128 characters of [A-Za-z0-9_-]),
+# enable it, and give the app the same key as an `Authorization: Bearer <key>`
+# header; the door reads the key and strips the header before the function
+# runs.
+#
+# `headers` is every header the function reads: the five the app adds to each
+# request on its own, and `X-Substrate-Account`, which the owner adds to name
+# the account a delivery belongs to. A header this list does not name never
+# reaches the function and never enters the changelog (decision record 0097).
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: applehealth-webhook
+data:
+  properties:
+    enabled: false
+    source:
+      webhook:
+        headers:
+          - x-substrate-account
+          - automation-name
+          - automation-id
+          - automation-aggregation
+          - automation-period
+          - session-id
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/applehealth/applehealthingest

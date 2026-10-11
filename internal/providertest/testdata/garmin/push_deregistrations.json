@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json",
+   "content-length": "67",
+   "garmin-client-id": "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"deregistrations\":[{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\"}]}"
+  }
+ },
+ "_fixture": "the user disconnected the app in Garmin Connect; every later request for this user answers 401 or 403",
+ "_receivedAt": "2026-10-10T16:44:02Z"
+}

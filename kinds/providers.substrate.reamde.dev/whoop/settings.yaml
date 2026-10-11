@@ -1,0 +1,17 @@
+# The bundle's one setting, as the ordinary record decision record 0076 makes
+# it: a core `secret` the owner fills in. WHOOP signs each webhook with the
+# WHOOP app's client secret, and the OAuth facility never injects that value
+# into a function body, so `whoopwebhook` checks signatures against this copy
+# of it, read as `config.settings.webhooksecret`. It ships empty and is not
+# required: the sync runs without it, and the `whoop-webhook` trigger's
+# deliveries are refused until it is filled in.
+kind: substrate.reamde.dev/core/secret
+metadata:
+  id: providers.substrate.reamde.dev/whoop/webhooksecret
+data:
+  properties:
+    displayName: Webhook signing secret
+    description: >-
+      The WHOOP app's client secret, the same value as the config record's
+      client secret. WHOOP signs every webhook with it. Leave it empty if
+      no webhook URL is registered in the WHOOP developer dashboard.

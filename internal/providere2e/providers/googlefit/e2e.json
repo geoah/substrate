@@ -1,0 +1,38 @@
+{
+  "_hosts": "Google serves the consent at accounts.google.com, the token exchange at oauth2.googleapis.com, and both the userinfo address and the Fit API under www.googleapis.com. The recordings are named for the paths the sync asks for (/fitness/v1/users/me/...), so the rewire names the bare hosts.",
+  "hosts": [
+    "https://accounts.google.com",
+    "https://oauth2.googleapis.com",
+    "https://www.googleapis.com"
+  ],
+  "config": {
+    "clientId": "e2e-client-id",
+    "clientSecret": "e2e-client-secret"
+  },
+  "_account": "every toggle on, because each one names data types and a run with one off proves nothing about them. `last30d` reads 31 UTC days ending today, and the dataset recordings answer every day through the mock's path relaxation, so the scenario reads the days the sync asked for off the request log instead of the clock.",
+  "account": {
+    "enabledActivity": true,
+    "enabledBody": true,
+    "enabledHeartRate": true,
+    "enabledSleep": true,
+    "enabledOxygenSaturation": true,
+    "enabledBloodPressure": true,
+    "enabledBloodGlucose": true,
+    "timezone": "Europe/Athens",
+    "syncFrequency": "hourly",
+    "backfillDepth": "last30d"
+  },
+  "_triggers": "googlefit-on-connect drives the first sync; googlefit-on-request is how scenario.py asks for the second. The 15-minute schedule is left off so a catch-up fire cannot race the drain.",
+  "triggers": [
+    "googlefit-on-connect",
+    "googlefit-on-request"
+  ],
+  "settleSeconds": 300,
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "_continue": "the sync answers `syncRequestedAt` in `syncRequestedAck`, and a walk the chain budget cut off reports `ok (N pending)`, which is what the runner continues on.",
+  "mockPort": 48120,
+  "_mockPort": "fixed so the rewired function body is identical run to run: the engine serves the previous apply's body (substrate#576), so a moving port makes the first drain of every run call a dead mock"
+}

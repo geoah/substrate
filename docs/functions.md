@@ -324,7 +324,7 @@ are byte-exact, so a body verifies a provider's signature (GitHub's
 `X-Hub-Signature-256` over the raw JSON) by re-encoding the text and hashing
 it against a secret it reads from its bundle's configuration. The host stores
 a part in the blob store when it declares a filename or a media type outside
-`text/*`, and hands every other part inline as `value`. A body under 1 MiB
+`text/*`, and hands every other part inline as `value`. A body up to 8 MiB
 rides inline; a multipart request may total 32 MiB. An authenticated wake
 (`POST …/trigger/{id}/wake`) carries no `request`.
 

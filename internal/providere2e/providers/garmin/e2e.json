@@ -1,0 +1,29 @@
+{
+  "_hosts": "Garmin authorizes at connect.garmin.com, exchanges tokens at connectapi.garmin.com and serves the wellness API (and the ping callbacks) at apis.garmin.com, so the rewire names all three. The authorize path is /oauth2Confirm, which mockserver.py's OAuth stub answers like /authorize.",
+  "hosts": [
+    "https://apis.garmin.com",
+    "https://connect.garmin.com",
+    "https://connectapi.garmin.com"
+  ],
+  "_config": "the client id the push fixtures carry in garmin-client-id: garminpush refuses a push naming another app",
+  "config": {
+    "clientId": "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d",
+    "clientSecret": "e2e-client-secret"
+  },
+  "_account": "every summary type on; last7d keeps the first backfill to 15 types x 7 one-day windows",
+  "account": {
+    "backfillDepth": "last7d"
+  },
+  "_triggers": "garmin-on-connect drives the first sync, which records the Garmin user id the pushes are matched on. garmin-webhook ships disabled; the run enables it and scenario.py sets its key before posting the deliveries. garmin-on-request is the continuation. garmin-scheduled stays off.",
+  "triggers": [
+    "garmin-on-connect",
+    "garmin-on-request",
+    "garmin-webhook"
+  ],
+  "continue": {
+    "property": "syncRequestedAt",
+    "value": "now"
+  },
+  "mockPort": 48119,
+  "_mockPort": "fixed so the rewired function body is identical run to run (substrate#576)"
+}

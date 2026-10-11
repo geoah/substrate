@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json; charset=utf-8",
+   "content-length": "138",
+   "x-whoop-signature": "QeqI+ZwV2WOkFW0WGqrcwimZNDXuvxZ6RXUUuIy2uVs=",
+   "x-whoop-signature-timestamp": "1791645647030"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"user_id\":4021873,\"id\":\"9e266b74-7d93-47c3-acc1-1466371e40bf\",\"type\":\"workout.updated\",\"trace_id\":\"30d040ae-d180-4983-93a4-b8db1b00b05a\"}"
+  }
+ },
+ "_fixture": "a create arrives as .updated; this is the padel session logged by hand after sync 1"
+}

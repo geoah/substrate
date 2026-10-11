@@ -1,0 +1,890 @@
+# The Garmin adapter for the health sample: it turns the rows the
+# `providers.substrate.reamde.dev/garmin` provider mirrors into health
+# observations, traces, sleeps and workouts. A SAMPLE a repository imports
+# and owns, on top of `health` (and so `observations`) and beside the
+# installed garmin provider; it declares no kind of its own.
+#
+# One function, fired for every change to a Garmin mirror row, rebuilds what
+# that row implies and deletes what it no longer implies (decision record
+# 0162: every observed row names its origin and composes its id from upstream
+# data). The function's docstring has the mapping; docs/bundles-catalog.md
+# has the table.
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: samples.substrate.reamde.dev/healthgarmin
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthgarmin
+  version: 1
+---
+# ---- the bundle document: the import unit -------------------------------------
+# The provider is a requirement like the samples: the function reads its
+# mirror kinds and its triggers watch them.
+kind: substrate.reamde.dev/core/bundle
+metadata:
+  id: samples.substrate.reamde.dev/healthgarmin
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthgarmin
+  description: >-
+    Turns what your Garmin devices push into health data: heart rate and step
+    traces, daily totals, sleeps, weigh-ins and workouts. Needs the health
+    sample and the Garmin provider.
+  requires:
+    - samples.substrate.reamde.dev/observations
+    - samples.substrate.reamde.dev/health
+    - providers.substrate.reamde.dev/garmin
+  requiresAtLeast:
+    samples.substrate.reamde.dev/observations: 1
+    samples.substrate.reamde.dev/health: 1
+    providers.substrate.reamde.dev/garmin: 1
+  installs:
+    - samples.substrate.reamde.dev/healthgarmin/garminhealth
+---
+# ---- the adapter ----------------------------------------------------------------
+# It reads the garmin account (the source's name), the epoch and respiration
+# rows of one hour (a trace is an hour, a slice a quarter of one), the
+# activity and its edit, and its own earlier outputs; it writes the four
+# output kinds and the sources.
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/healthgarmin/garminhealth
+data:
+  authority: samples.substrate.reamde.dev
+  package: healthgarmin
+  description: >-
+    Rebuild the health observations, traces, sleeps and workouts one Garmin
+    mirror row implies, and delete the ones it no longer implies.
+  runtime: python
+  timeout: PT60S
+  permissions:
+    reads:
+      kinds:
+        - providers.substrate.reamde.dev/garmin/account
+        - providers.substrate.reamde.dev/garmin/epoch
+        - providers.substrate.reamde.dev/garmin/respiration
+        - providers.substrate.reamde.dev/garmin/activity
+        - providers.substrate.reamde.dev/garmin/manuallyupdatedactivity
+        - samples.substrate.reamde.dev/observations/observation
+        - samples.substrate.reamde.dev/observations/trace
+        - samples.substrate.reamde.dev/observations/source
+        - samples.substrate.reamde.dev/health/sleep
+        - samples.substrate.reamde.dev/health/workout
+    writes:
+      - samples.substrate.reamde.dev/observations/observation
+      - samples.substrate.reamde.dev/observations/trace
+      - samples.substrate.reamde.dev/observations/source
+      - samples.substrate.reamde.dev/health/sleep
+      - samples.substrate.reamde.dev/health/workout
+  source: |
+    """Garmin mirror rows in, health observations out.
+
+    Fired by the `healthgarmin-on-mirror` trigger for every create, update and
+    delete of a Garmin mirror row. One delivery rebuilds everything that row
+    implies and nothing else:
+
+      daily              an hourly heart rate trace (gauge) and Garmin's daily
+                         totals as `summary` observations (statistic vendor,
+                         period day, periodId the calendar date)
+      epoch              hourly step, distance and active energy traces
+                         (amount), the slices of an hour summed across the
+                         activity types Garmin splits them into
+      sleep              a health/sleep record, its naps, and one `amount`
+                         observation per stage segment, coded by stage
+      bodycomp           weight, muscle, bone, fat and water, BMI (gauge)
+      stressdetail       hourly stress and Body Battery traces (gauge)
+      usermetric         VO2 max for the date (summary)
+      pulseox            an SpO2 trace, or one gauge for a spot check
+      respiration        hourly breathing rate traces (gauge)
+      healthsnapshot     the snapshot's traces, on the `snapshot` channel
+      hrv                the night's HRV summaries and its five-minute trace
+      bloodpressure      systolic, diastolic and pulse (gauge)
+      skintemp           the night's skin temperature deviation (summary)
+      activity           a health/workout; an edit in Garmin Connect
+                         (manuallyupdatedactivity, same summaryId) wins over it
+      activitydetail     heart rate, speed, cadence and power traces (gauge)
+
+    RECONCILED PER ORIGIN. Every row written names the mirror row it came from
+    (`origin`, or `origins` on a trace), so a delivery reads what the row
+    produced before (a `referencing` read), writes the new set and deletes what
+    the row no longer implies. Epochs and respiration slices are a quarter hour
+    each and a trace is an hour, so their traces are rebuilt per hour from every
+    slice of that hour.
+
+    `revision` is the mirror row's own version: the garmin provider rewrites a
+    row in place when Garmin re-sends its summaryId, an identical re-send is no
+    write and moves no version, so it rises exactly when the summary changed. A
+    trace built from several rows carries the highest of their versions.
+
+    Ids are composed from Garmin's data, `garmin/<account>/<summaryId>/<role>`
+    for a single record and `garmin/<account>/<source>/<metric>/<hour>` for a
+    trace, hashed through host.ids.external only where they would leave the id
+    alphabet. A value with no catalogue metric is skipped and counted in the
+    output, never invented.
+    """
+    import datetime as _dt
+    import re
+    from decimal import Decimal
+
+    SAMPLE = "samples.substrate.reamde.dev"
+    OBSERVATION = SAMPLE + "/observations/observation"
+    TRACE = SAMPLE + "/observations/trace"
+    SOURCE = SAMPLE + "/observations/source"
+    METRIC = SAMPLE + "/observations/metric"
+    SLEEP = SAMPLE + "/health/sleep"
+    WORKOUT = SAMPLE + "/health/workout"
+    OUTPUTS = [OBSERVATION, TRACE, SLEEP, WORKOUT]
+
+    GARMIN = "providers.substrate.reamde.dev/garmin"
+    ACCOUNT = GARMIN + "/account"
+    ACTIVITY = GARMIN + "/activity"
+    EDITED = GARMIN + "/manuallyupdatedactivity"
+
+    MAX_ID_LEN = 128
+    RE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
+    RE_DURATION = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.(\d+))?S)?$")
+    HOUR = 3600
+    # A trace never splits finer than an hour; a slice shorter than its period
+    # ends early.
+    PERIOD = "PT1H"
+
+    # metric name -> (unit, hold): what each written value carries, copied from
+    # the health catalogue (samples/health/metrics.yaml).
+    METRICS = {
+        "heart_rate": ("/min", "PT4M"),
+        "resting_heart_rate": ("/min", None),
+        "hrv_rmssd": ("ms", None),
+        "spo2": ("%", None),
+        "respiratory_rate": ("/min", None),
+        "skin_temperature_deviation": ("K", None),
+        "steps": ("{steps}", None),
+        "distance": ("m", None),
+        "floors": ("{floors}", None),
+        "active_energy": ("kcal", None),
+        "basal_energy": ("kcal", None),
+        "speed": ("m/s", None),
+        "cadence": ("/min", None),
+        "running_power": ("W", None),
+        "vo2_max": ("mL/(kg.min)", None),
+        "body_mass": ("kg", None),
+        "muscle_mass": ("kg", None),
+        "bone_mass": ("kg", None),
+        "body_fat_fraction": ("%", None),
+        "body_water_fraction": ("%", None),
+        "bmi": ("kg/m2", None),
+        "systolic_blood_pressure": ("mm[Hg]", "PT0S"),
+        "diastolic_blood_pressure": ("mm[Hg]", "PT0S"),
+        "garmin_stress": ("1", "PT6M"),
+        "garmin_body_battery": ("1", "PT6M"),
+        "sleep_stage": (None, None),
+    }
+
+    # Fields of each mirror kind no catalogue metric covers, or that another
+    # kind already writes; a delivery counts the ones its row carries.
+    SKIPPED = {
+        "daily": ("minHeartRateInBeatsPerMinute", "maxHeartRateInBeatsPerMinute",
+                  "averageHeartRateInBeatsPerMinute", "maxStressLevel",
+                  "pushes", "pushDistanceInMeters", "activeTimeInSeconds",
+                  "moderateIntensityDurationInSeconds", "vigorousIntensityDurationInSeconds",
+                  "stressDurationInSeconds", "restStressDurationInSeconds",
+                  "activityStressDurationInSeconds", "lowStressDurationInSeconds",
+                  "mediumStressDurationInSeconds", "highStressDurationInSeconds",
+                  "bodyBatteryChargedValue", "bodyBatteryDrainedValue", "stepsGoal",
+                  "pushesGoal", "floorsClimbedGoal", "intensityDurationGoalInSeconds"),
+        "epoch": ("met", "meanMotionIntensity", "maxMotionIntensity", "pushes",
+                  "pushDistanceInMeters"),
+        "sleep": ("timeOffsetSleepSpo2", "timeOffsetSleepRespiration", "sleepScores",
+                  "unmeasurableSleepInSeconds"),
+        "stressdetail": ("bodyBatteryActivityEvents", "bodyBatteryDynamicFeedbackEvent"),
+        "usermetric": ("vo2MaxCycling", "fitnessAge"),
+        "activity": ("averageRunCadenceInStepsPerMinute", "averageSpeedInMetersPerSecond",
+                     "averagePaceInMinutesPerKilometer", "maxSpeedInMetersPerSecond",
+                     "maxPaceInMinutesPerKilometer", "maxRunCadenceInStepsPerMinute",
+                     "startingLatitudeInDegree", "startingLongitudeInDegree", "steps"),
+    }
+    DETAIL_SKIPPED = ("latitudeInDegree", "longitudeInDegree", "elevationInMeters",
+                      "airTemperatureCelcius", "totalDistanceInMeters", "swimCadenceInStrokesPerMinute",
+                      "wheelChairCadenceInPushesPerMinute")
+    SNAPSHOT_METRICS = {"heart_rate": "heart_rate", "respiration": "respiratory_rate",
+                        "stress": "garmin_stress", "spo2": "spo2", "rmssd_hrv": "hrv_rmssd"}
+    SPORTS = {"RUNNING": "running", "TRAIL_RUNNING": "running", "TREADMILL_RUNNING": "running",
+              "TRACK_RUNNING": "running", "CYCLING": "cycling", "ROAD_BIKING": "cycling",
+              "MOUNTAIN_BIKING": "cycling", "INDOOR_CYCLING": "cycling", "GRAVEL_CYCLING": "cycling",
+              "WALKING": "walking", "HIKING": "hiking", "STRENGTH_TRAINING": "strength",
+              "LAP_SWIMMING": "swimming", "OPEN_WATER_SWIMMING": "swimming", "YOGA": "yoga"}
+    STAGES = ("awake", "light", "deep", "rem")
+
+
+    # ------------------------------------------------------------------ helpers
+
+    def _iso(secs):
+        return _dt.datetime.fromtimestamp(secs, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _iso_us(us):
+        t = _dt.datetime(1970, 1, 1, tzinfo=_dt.timezone.utc) + _dt.timedelta(microseconds=us)
+        if t.microsecond:
+            return t.strftime("%Y-%m-%dT%H:%M:%S.") + ("%06d" % t.microsecond).rstrip("0") + "Z"
+        return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def _us(value):
+        t = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        delta = t - _dt.datetime(1970, 1, 1, tzinfo=_dt.timezone.utc)
+        return (delta.days * 86400 + delta.seconds) * 10**6 + delta.microseconds
+
+
+    def _duration(secs):
+        return "PT%dS" % int(secs)
+
+
+    def _duration_us(text):
+        m = RE_DURATION.match(text or "")
+        if not m:
+            raise ValueError("garmin: cannot read the duration %r" % text)
+        h, mi, s, frac = m.groups()
+        us = (int(h or 0) * 3600 + int(mi or 0) * 60 + int(s or 0)) * 10**6
+        if frac:
+            us += int((frac + "000000")[:6])
+        return us
+
+
+    def _format_ms(ms):
+        secs, rest = divmod(ms, 1000)
+        h, secs = divmod(secs, 3600)
+        mi, secs = divmod(secs, 60)
+        out = "PT"
+        if h:
+            out += "%dH" % h
+        if mi:
+            out += "%dM" % mi
+        if rest:
+            out += "%d.%sS" % (secs, ("%03d" % rest).rstrip("0"))
+        elif secs or out == "PT":
+            out += "%dS" % secs
+        return out
+
+
+    def _digits(v):
+        if isinstance(v, bool) or v is None:
+            return None
+        if isinstance(v, int):
+            return str(v)
+        if isinstance(v, float):
+            return format(Decimal(repr(v)), "f")
+        return str(v)
+
+
+    def _ref(path):
+        return {"ref": path} if path else None
+
+
+    def _ref_id(value, kind):
+        path = value.get("ref") if isinstance(value, dict) else value
+        path = str(path or "")
+        prefix = kind + "/"
+        return path[len(prefix):] if path.startswith(prefix) else ""
+
+
+    def _offset_min(seconds):
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+            return None
+        minutes = int(round(seconds / 60.0))
+        return minutes if abs(minutes) <= 1080 else None
+
+
+    def _tz(minutes):
+        return _dt.timezone(_dt.timedelta(minutes=minutes or 0))
+
+
+    def _slug(text):
+        s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
+        return s or "device"
+
+
+    def _seconds_map(m):
+        """A Garmin sample map, seconds after the start as string keys, as sorted
+        (seconds, value) pairs. A key that is not a number is dropped."""
+        out = []
+        for k, v in (m or {}).items():
+            try:
+                out.append((int(k), v))
+            except (TypeError, ValueError):
+                continue
+        return sorted(out)
+
+
+    # ------------------------------------------------------------------ the plan
+
+    class Plan:
+        """What one origin implies: rows by (kind, id), the sources to mint, and
+        the counts the output reports."""
+
+        def __init__(self, host, origin, aid, revision):
+            self.host = host
+            self.origin = origin
+            self.aid = aid
+            self.revision = revision
+            self.rows = {}
+            self.sources = {}
+            self.skipped = {}
+
+        def skip(self, what, n=1):
+            self.skipped[what] = self.skipped.get(what, 0) + n
+
+        def rid(self, *rest):
+            rid = "/".join(["garmin", self.aid] + [str(r) for r in rest])
+            if len(rid) <= MAX_ID_LEN and RE_ID.match(rid):
+                return rid
+            return self.host.ids.external("garmin", self.aid, "/".join(str(r) for r in rest))
+
+        def source(self, slug, name, cls, model=None):
+            sid = self.rid(slug)
+            if sid not in self.sources:
+                props = {"name": name, "class": cls, "manufacturer": "Garmin",
+                         "account": _ref(ACCOUNT + "/" + self.aid)}
+                if model:
+                    props["hardwareModel"] = model
+                self.sources[sid] = props
+            return SOURCE + "/" + sid
+
+        def observation(self, role, metric, at, *, value=None, unit=None, code=None, ends=None,
+                        form="gauge", statistic=None, period=None, period_id=None, source=None,
+                        utc_offset=None, delta=None):
+            if value is None and code is None:
+                return
+            default_unit, hold = METRICS[metric]
+            props = {
+                "metric": _ref(METRIC + "/health/" + metric), "source": _ref(source), "form": form,
+                "value": None, "code": code, "at": _iso(at), "endsAt": _iso(ends) if ends is not None else None,
+                "statistic": statistic, "period": period, "periodId": period_id,
+                "hold": hold if form == "gauge" else None, "utcOffset": utc_offset,
+                "revision": self.revision, "origin": _ref(self.origin), "delta": delta,
+            }
+            if value is not None:
+                props["value"] = {"value": _digits(value), "unit": unit or default_unit}
+            self.rows[(OBSERVATION, self.rid(*role))] = props
+
+        def summary(self, role, metric, value, start, ends, period, period_id, source,
+                    utc_offset, statistic="vendor", unit=None, delta=None):
+            self.observation(role, metric, start, value=value, unit=unit, ends=ends, form="summary",
+                             statistic=statistic, period=period, period_id=period_id, source=source,
+                             utc_offset=utc_offset, delta=delta)
+
+        def traces(self, metric, points, source, slug, lo, hi, *, form="gauge", channel=None,
+                   origins=None, revision=None):
+            """Pack points into hourly traces, each placed inside [lo, hi) seconds,
+            the span of what produced them."""
+            if not any(v is not None for _, v in points):
+                return
+            unit, hold = METRICS[metric]
+            docs = self.host.observed.trace(
+                points, metric=_ref(METRIC + "/health/" + metric), source=_ref(source), unit=unit,
+                form=form, period=PERIOD, hold=hold if form == "gauge" else None, channel=channel)
+            for doc in docs:
+                _place(doc, lo * 10**6, hi * 10**6)
+                at = _dt.datetime.fromtimestamp(_us(doc["at"]) / 10**6, _dt.timezone.utc)
+                label = self.host.observed.period_id(at, PERIOD)
+                segments = [slug, metric] + ([channel] if channel else []) + [label]
+                props = {k: None for k in ("source", "about", "channel", "unit", "every", "offsets",
+                                           "values", "codes", "hold", "resetRule")}
+                props.update(doc)
+                props["origins"] = [_ref(o) for o in (origins or [self.origin])]
+                props["revision"] = revision if revision is not None else self.revision
+                self.rows[(TRACE, self.rid(*segments))] = props
+
+
+    def _place(doc, lo_us, hi_us):
+        """Narrow a trace document to [lo, hi): a trace written from one origin
+        never claims time outside it, so the hour two origins share holds two
+        traces side by side rather than one overwriting the other."""
+        at, end = _us(doc["at"]), _us(doc["endsAt"])
+        key = "codes" if "codes" in doc else "values"
+        n = len(doc[key])
+        if doc.get("every"):
+            step = _duration_us(doc["every"])
+            times = [at + i * step for i in range(n)]
+        else:
+            times = [at + o * 1000 for o in doc["offsets"]]
+        new_at = max(at, lo_us)
+        if new_at > times[0]:
+            new_at = at
+        new_end = min(end, hi_us)
+        if new_end <= times[-1]:
+            new_end = end
+        doc["at"], doc["endsAt"] = _iso_us(new_at), _iso_us(new_end)
+        offsets = [(t - new_at) // 1000 for t in times]
+        steps = {b - a for a, b in zip(offsets, offsets[1:])}
+        step = steps.pop() if len(steps) == 1 else 0
+        doc.pop("every", None)
+        doc.pop("offsets", None)
+        if n > 1 and offsets[0] == 0 and step > 0 and step * n * 1000 <= new_end - new_at:
+            doc["every"] = _format_ms(step)
+        else:
+            doc["offsets"] = offsets
+
+
+    # ------------------------------------------------------------------ builders
+
+    class Ctx:
+        def __init__(self, host, plan, props):
+            self.host = host
+            self.plan = plan
+            self.p = props
+            self.offset = _offset_min(props.get("startTimeOffsetInSeconds"))
+            self.tz = _tz(self.offset)
+            self.start = props.get("startTimeInSeconds")
+            self.duration = props.get("durationInSeconds")
+            self.date = props.get("calendarDate")
+            self.sid = props.get("summaryId")
+
+        def at(self, secs, offset=None):
+            tz = self.tz if offset is None else _tz(offset)
+            return _dt.datetime.fromtimestamp(secs, _dt.timezone.utc).astimezone(tz)
+
+        def end(self):
+            if self.start is None or self.duration is None:
+                return None
+            return self.start + self.duration
+
+
+    def _primary(plan, account):
+        who = (account or {}).get("properties", {}).get("userId") or plan.aid
+        return plan.source("account", "Garmin account %s" % who, "watch")
+
+
+    def _device(plan, account, props):
+        name = str(props.get("deviceName") or "")
+        if not name or name == "unknown":
+            if props.get("manual"):
+                return plan.source("manual", "Garmin Connect manual entry", "manual"), "manual"
+            return _primary(plan, account), "account"
+        slug = _slug(name)
+        return plan.source(slug, "Garmin %s" % name, "watch", name), slug
+
+
+    def build_daily(c, account):
+        p, plan = c.p, c.plan
+        src = _primary(plan, account)
+        ends = c.end()
+        if c.start is None or ends is None:
+            plan.skip("daily without a start or a duration")
+            return
+        hr = [(c.at(c.start + s), v) for s, v in _seconds_map(p.get("timeOffsetHeartRateSamples"))]
+        plan.traces("heart_rate", hr, src, "account", c.start, ends)
+        for role, field in (("steps", "steps"), ("distance", "distanceInMeters"),
+                            ("floors", "floorsClimbed"), ("active_energy", "activeKilocalories"),
+                            ("basal_energy", "bmrKilocalories"),
+                            ("resting_heart_rate", "restingHeartRateInBeatsPerMinute")):
+            plan.summary((c.sid, role), role, p.get(field), c.start, ends, "day", c.date, src, c.offset)
+        stress = p.get("averageStressLevel")
+        if isinstance(stress, (int, float)) and stress >= 0:
+            plan.summary((c.sid, "garmin_stress"), "garmin_stress", stress, c.start, ends, "day",
+                         c.date, src, c.offset, statistic="avg")
+
+
+    def build_sleep(c, account):
+        p, plan = c.p, c.plan
+        src = _primary(plan, account)
+        if c.start is None:
+            plan.skip("sleep without a start")
+            return
+        levels = p.get("sleepLevelsMap") or {}
+        ends = [r.get("endTimeInSeconds") for rs in levels.values() for r in rs or []
+                if r.get("endTimeInSeconds") is not None]
+        end = max(ends) if ends else c.start + (p.get("durationInSeconds") or 0) + (p.get("awakeDurationInSeconds") or 0)
+        props = {
+            "source": _ref(src), "origin": _ref(plan.origin), "revision": plan.revision,
+            "isNap": False, "utcOffsetStart": c.offset, "utcOffsetEnd": c.offset,
+            "at": _iso(c.start), "endsAt": _iso(end),
+            "timeInBed": _duration(end - c.start) if end > c.start else None,
+            "timeAsleep": _duration(p["durationInSeconds"]) if p.get("durationInSeconds") is not None else None,
+            "awake": _duration(p["awakeDurationInSeconds"]) if p.get("awakeDurationInSeconds") is not None else None,
+            "light": _duration(p["lightSleepDurationInSeconds"]) if p.get("lightSleepDurationInSeconds") is not None else None,
+            "deep": _duration(p["deepSleepDurationInSeconds"]) if p.get("deepSleepDurationInSeconds") is not None else None,
+            "rem": _duration(p["remSleepInSeconds"]) if p.get("remSleepInSeconds") is not None else None,
+            "scores": None,
+        }
+        overall = (p.get("overallSleepScore") or {}).get("value")
+        if overall is not None:
+            props["scores"] = {"overall": _digits(overall)}
+        plan.rows[(SLEEP, plan.rid(c.sid, "sleep"))] = props
+        for stage in STAGES:
+            for r in levels.get(stage) or []:
+                a, b = r.get("startTimeInSeconds"), r.get("endTimeInSeconds")
+                if a is None or b is None or b <= a:
+                    plan.skip("sleep stage segment without a span")
+                    continue
+                plan.observation((c.sid, "stage", a), "sleep_stage", a, code=stage, value=b - a,
+                                 unit="s", ends=b, form="amount", source=src, utc_offset=c.offset)
+        if levels.get("unmeasurable"):
+            plan.skip("sleep.unmeasurable", len(levels["unmeasurable"]))
+        for nap in p.get("naps") or []:
+            a, d = nap.get("napStartTimeInSeconds"), nap.get("napDurationInSeconds")
+            if a is None or not d:
+                continue
+            off = _offset_min(nap.get("napOffsetInSeconds"))
+            plan.rows[(SLEEP, plan.rid(c.sid, "nap", a))] = {
+                "source": _ref(src), "origin": _ref(plan.origin), "revision": plan.revision,
+                "isNap": True, "utcOffsetStart": off, "utcOffsetEnd": off,
+                "at": _iso(a), "endsAt": _iso(a + d), "timeInBed": _duration(d),
+                "timeAsleep": _duration(d), "awake": None, "light": None, "deep": None, "rem": None,
+                "scores": None,
+            }
+
+
+    def build_bodycomp(c, account):
+        p, plan = c.p, c.plan
+        at = p.get("measurementTimeInSeconds")
+        if at is None:
+            plan.skip("body composition without a time")
+            return
+        src = _primary(plan, account)
+        off = _offset_min(p.get("measurementTimeOffsetInSeconds"))
+        for metric, field in (("body_mass", "weightInGrams"), ("muscle_mass", "muscleMassInGrams"),
+                              ("bone_mass", "boneMassInGrams")):
+            if p.get(field) is not None:
+                kg = c.host.units.convert(_digits(p[field]), "g", "kg")
+                plan.observation((c.sid, metric), metric, at, value=kg, source=src, utc_offset=off)
+        for metric, field in (("body_fat_fraction", "bodyFatInPercent"),
+                              ("body_water_fraction", "bodyWaterInPercent"), ("bmi", "bodyMassIndex")):
+            plan.observation((c.sid, metric), metric, at, value=p.get(field), source=src, utc_offset=off)
+
+
+    def build_bloodpressure(c, account):
+        p, plan = c.p, c.plan
+        at = p.get("measurementTimeInSeconds")
+        if at is None:
+            plan.skip("blood pressure without a time")
+            return
+        src = _primary(plan, account)
+        off = _offset_min(p.get("measurementTimeOffsetInSeconds"))
+        for metric, field in (("systolic_blood_pressure", "systolic"),
+                              ("diastolic_blood_pressure", "diastolic"), ("heart_rate", "pulse")):
+            plan.observation((c.sid, metric), metric, at, value=p.get(field), source=src, utc_offset=off)
+
+
+    def build_usermetric(c, account):
+        """A date and no instant: the summary covers the UTC day of
+        calendarDate, and carries no utcOffset because Garmin sends none."""
+        p, plan = c.p, c.plan
+        if not c.date or p.get("vo2Max") is None:
+            return
+        day = _dt.datetime.fromisoformat(c.date).replace(tzinfo=_dt.timezone.utc)
+        start = int(day.timestamp())
+        plan.summary((c.sid, "vo2_max"), "vo2_max", p["vo2Max"], start, start + 86400, "day",
+                     c.date, _primary(plan, account), None)
+
+
+    def build_pulseox(c, account):
+        p, plan = c.p, c.plan
+        src = _primary(plan, account)
+        samples = _seconds_map(p.get("timeOffsetSpo2Values"))
+        if c.start is None or not samples:
+            return
+        if p.get("onDemand") or not c.duration:
+            s, v = samples[-1]
+            plan.observation((c.sid, "spo2"), "spo2", c.start + s, value=v, source=src, utc_offset=c.offset)
+            return
+        plan.traces("spo2", [(c.at(c.start + s), v) for s, v in samples], src, "account",
+                    c.start, c.end())
+
+
+    def build_stressdetail(c, account):
+        p, plan = c.p, c.plan
+        src = _primary(plan, account)
+        if c.start is None or c.end() is None:
+            return
+        stress = [(c.at(c.start + s), v if isinstance(v, (int, float)) and v >= 0 else None)
+                  for s, v in _seconds_map(p.get("timeOffsetStressLevelValues"))]
+        plan.traces("garmin_stress", stress, src, "account", c.start, c.end())
+        battery = [(c.at(c.start + s), v) for s, v in _seconds_map(p.get("timeOffsetBodyBatteryValues"))]
+        plan.traces("garmin_body_battery", battery, src, "account", c.start, c.end())
+
+
+    def build_healthsnapshot(c, account):
+        p, plan = c.p, c.plan
+        src = _primary(plan, account)
+        if c.start is None or c.end() is None:
+            return
+        for s in p.get("summaries") or []:
+            metric = SNAPSHOT_METRICS.get(s.get("summaryType"))
+            if metric is None:
+                plan.skip("healthsnapshot.%s" % s.get("summaryType"))
+                continue
+            pts = [(c.at(c.start + k), v) for k, v in _seconds_map(s.get("epochSummaries"))]
+            plan.traces(metric, pts, src, "account", c.start, max(c.end(), c.start + 1), channel="snapshot")
+
+
+    def build_hrv(c, account):
+        p, plan = c.p, c.plan
+        src = _primary(plan, account)
+        if c.start is None or c.end() is None:
+            return
+        plan.summary((c.sid, "hrv_rmssd"), "hrv_rmssd", p.get("lastNightAvg"), c.start, c.end(),
+                     "night", c.date, src, c.offset, statistic="avg")
+        plan.summary((c.sid, "hrv_rmssd_max"), "hrv_rmssd", p.get("lastNight5MinHigh"), c.start,
+                     c.end(), "night", c.date, src, c.offset, statistic="max")
+        pts = [(c.at(c.start + s), v) for s, v in _seconds_map(p.get("hrvValues"))]
+        plan.traces("hrv_rmssd", pts, src, "account", c.start, c.end())
+
+
+    def build_skintemp(c, account):
+        p, plan = c.p, c.plan
+        if c.start is None or c.end() is None or p.get("avgDeviationCelsius") is None:
+            return
+        # A deviation converts without the offset: in temperature-difference a
+        # Celsius degree is a kelvin.
+        k = c.host.units.convert(_digits(p["avgDeviationCelsius"]), "Cel", "K",
+                                 measure="temperature-difference")
+        plan.summary((c.sid, "skin_temperature_deviation"), "skin_temperature_deviation", k,
+                     c.start, c.end(), "night", c.date, _primary(plan, account), c.offset,
+                     statistic="avg", delta=True)
+
+
+    def build_workout(c, account, props):
+        plan = c.plan
+        if c.start is None:
+            plan.skip("activity without a start")
+            return
+        src, _ = _device(plan, account, props)
+        end = c.end() or c.start
+        kind = str(props.get("activityType") or "")
+        w = {
+            "sport": SPORTS.get(kind, kind.lower().replace("_", " ") or None),
+            "sportSource": kind or None, "source": _ref(src), "origin": _ref(plan.origin),
+            "revision": plan.revision, "utcOffsetStart": c.offset, "utcOffsetEnd": c.offset,
+            "at": _iso(c.start), "endsAt": _iso(end),
+            "duration": _duration(c.duration) if c.duration is not None else None,
+            "distance": None, "energy": None, "averageHeartRate": None, "maxHeartRate": None,
+            "elevationGain": None, "notes": props.get("activityDescription") or None,
+        }
+        for field, prop, unit in (("distanceInMeters", "distance", "m"),
+                                  ("activeKilocalories", "energy", "kcal"),
+                                  ("averageHeartRateInBeatsPerMinute", "averageHeartRate", "/min"),
+                                  ("maxHeartRateInBeatsPerMinute", "maxHeartRate", "/min"),
+                                  ("totalElevationGainInMeters", "elevationGain", "m")):
+            if props.get(field) is not None:
+                w[prop] = {"value": _digits(props[field]), "unit": unit}
+        plan.rows[(WORKOUT, plan.rid(c.sid, "workout"))] = w
+        for field in SKIPPED["activity"]:
+            if props.get(field) is not None:
+                plan.skip("activity.%s" % field)
+
+
+    def build_activitydetail(c, account):
+        p, plan = c.p, c.plan
+        summ = p.get("summary") or {}
+        start, dur = summ.get("startTimeInSeconds"), summ.get("durationInSeconds")
+        if start is None:
+            plan.skip("activity detail without a start")
+            return
+        tz = _tz(_offset_min(summ.get("startTimeOffsetInSeconds")))
+        src, slug = _device(plan, account, summ)
+        samples = [s for s in p.get("samples") or [] if s.get("startTimeInSeconds") is not None]
+        end = max([start + (dur or 0)] + [s["startTimeInSeconds"] + 1 for s in samples])
+        cadence = "stepsPerMinute" if any(s.get("stepsPerMinute") is not None for s in samples) \
+            else "bikeCadenceInRPM"
+        for metric, field in (("heart_rate", "heartRate"), ("speed", "speedMetersPerSecond"),
+                              ("cadence", cadence), ("running_power", "powerInWatts")):
+            pts = [(_dt.datetime.fromtimestamp(s["startTimeInSeconds"], tz), s[field])
+                   for s in samples if s.get(field) is not None]
+            plan.traces(metric, pts, src, slug, start, end)
+        for field in DETAIL_SKIPPED:
+            n = sum(1 for s in samples if s.get(field) is not None)
+            if n:
+                plan.skip("activitydetail.%s" % field, n)
+
+
+    BUILDERS = {
+        "daily": build_daily, "sleep": build_sleep, "bodycomp": build_bodycomp,
+        "bloodpressure": build_bloodpressure, "usermetric": build_usermetric,
+        "pulseox": build_pulseox, "stressdetail": build_stressdetail,
+        "healthsnapshot": build_healthsnapshot, "hrv": build_hrv, "skintemp": build_skintemp,
+        "activitydetail": build_activitydetail,
+    }
+    # A quarter hour each, written as hourly traces rebuilt from every slice.
+    HOURLY = {"epoch", "respiration"}
+
+
+    def _rows_in_hour(host, kind, aid, hour):
+        page = host.records.list([GARMIN + "/" + kind],
+                                 where={"at": {"gte": _iso(hour), "lt": _iso(hour + HOUR)}},
+                                 first=500)
+        out = []
+        for r in page.get("records") or []:
+            p = r.get("properties") or {}
+            start = p.get("startTimeInSeconds")
+            if _ref_id(p.get("account"), ACCOUNT) == aid and start is not None and hour <= start < hour + HOUR:
+                out.append(r)
+        return out
+
+
+    def build_hour(host, plan, kind, aid, hour, account):
+        """Every slice of one UTC hour, rebuilt together."""
+        rows = _rows_in_hour(host, kind, aid, hour)
+        if not rows:
+            return []
+        origins = sorted(r["kind"] + "/" + r["id"] for r in rows)
+        revision = max(int(r.get("version") or 0) for r in rows)
+        src = _primary(plan, account)
+        slices = {}
+        for r in rows:
+            p = r.get("properties") or {}
+            s = slices.setdefault(p["startTimeInSeconds"], {
+                "offset": _offset_min(p.get("startTimeOffsetInSeconds")), "duration": 0, "rows": []})
+            s["duration"] = max(s["duration"], p.get("durationInSeconds") or 0)
+            s["rows"].append(p)
+        starts = sorted(slices)
+        end = max(st + slices[st]["duration"] for st in starts)
+
+        def at(st):
+            return _dt.datetime.fromtimestamp(st, _tz(slices[st]["offset"]))
+
+        def series(value_of):
+            pts = []
+            for i, st in enumerate(starts):
+                pts.append((at(st), value_of(st)))
+                stop = st + slices[st]["duration"]
+                if i + 1 < len(starts) and starts[i + 1] > stop:
+                    pts.append((_dt.datetime.fromtimestamp(stop, _tz(slices[st]["offset"])), None))
+            return pts
+
+        if kind == "epoch":
+            for metric, field in (("steps", "steps"), ("distance", "distanceInMeters"),
+                                  ("active_energy", "activeKilocalories")):
+                def total(st, field=field):
+                    vals = [p.get(field) for p in slices[st]["rows"] if p.get(field) is not None]
+                    return sum(Decimal(_digits(v)) for v in vals) if vals else None
+                plan.traces(metric, series(total), src, "account", hour, end, form="amount",
+                            origins=origins, revision=revision)
+            for field in SKIPPED["epoch"]:
+                n = sum(1 for st in starts for p in slices[st]["rows"] if p.get(field) is not None)
+                if n:
+                    plan.skip("epoch.%s" % field, n)
+        else:
+            pts = []
+            for i, st in enumerate(starts):
+                for s, v in _seconds_map(slices[st]["rows"][0].get("timeOffsetEpochToBreaths")):
+                    pts.append((at(st) + _dt.timedelta(seconds=s), v))
+                stop = st + slices[st]["duration"]
+                if i + 1 < len(starts) and starts[i + 1] > stop:
+                    pts.append((_dt.datetime.fromtimestamp(stop, _tz(slices[st]["offset"])), None))
+            plan.traces("respiratory_rate", pts, src, "account", hour, end,
+                        origins=origins, revision=revision)
+        return origins
+
+
+    # ------------------------------------------------------------------ the delivery
+
+    def _previous(host, origin):
+        """What an origin produced before: every output naming it."""
+        out, after = [], None
+        while True:
+            q = {"filter": {"kinds": OUTPUTS, "referencing": {"ref": origin}}, "first": 500}
+            if after:
+                q["after"] = after
+            page = host.list(**q)
+            out.extend(page.get("records") or [])
+            after = page.get("cursor")
+            if not after:
+                return out
+
+
+    def _mirror_id(host, aid, sid):
+        rid = "%s/%s" % (aid, sid)
+        if len(rid) <= MAX_ID_LEN and RE_ID.match(rid):
+            return rid
+        return host.ids.external("garmin", aid, str(sid))
+
+
+    def _account_of(host, previous):
+        """The Garmin account a deleted row belonged to, read off the source of
+        something it produced."""
+        for row in previous:
+            sid = _ref_id((row.get("properties") or {}).get("source"), SOURCE)
+            if sid:
+                src = host.records.get(SOURCE, sid)
+                aid = _ref_id(((src or {}).get("properties") or {}).get("account"), ACCOUNT)
+                if aid:
+                    return aid
+        return ""
+
+
+    def main(input, host):
+        env = input.get("envelope") or {}
+        change = env.get("change") or {}
+        record = env.get("record")
+        kind = (record or {}).get("kind") or change.get("kind") or ""
+        rid = (record or {}).get("id") or change.get("id") or ""
+        if not kind.startswith(GARMIN + "/") or not rid:
+            return {"output": {"skipped": "not a Garmin mirror row"}}
+        name = kind[len(GARMIN) + 1:]
+        origin = kind + "/" + rid
+        previous = _previous(host, origin)
+
+        if record is None and name in ("activity", "manuallyupdatedactivity"):
+            # One of the pair is gone: the workout stands on the one that remains.
+            record = host.records.get(EDITED if name == "activity" else ACTIVITY, rid)
+        if record is None:
+            props, version = {}, 0
+            aid = _account_of(host, previous)
+        else:
+            props = record.get("properties") or {}
+            version = int(record.get("version") or 0)
+            aid = _ref_id(props.get("account"), ACCOUNT)
+            if not aid:
+                return {"output": {"skipped": "the row names no Garmin account"}}
+
+        plan = Plan(host, origin, aid, version)
+        account = host.records.get(ACCOUNT, aid) if aid else None
+
+        if name in HOURLY:
+            hours = set()
+            if props.get("startTimeInSeconds") is not None:
+                hours.add(props["startTimeInSeconds"] - props["startTimeInSeconds"] % HOUR)
+            for row in previous:
+                if row.get("kind") == TRACE:
+                    t = _us((row.get("properties") or {}).get("at")) // 10**6
+                    hours.add(t - t % HOUR)
+            for hour in sorted(hours):
+                build_hour(host, plan, name, aid, hour, account)
+        elif name in ("activity", "manuallyupdatedactivity"):
+            if record is not None:
+                mid = _mirror_id(host, aid, props.get("summaryId"))
+                act = host.records.get(ACTIVITY, mid)
+                edit = host.records.get(EDITED, mid)
+                # An edit in Garmin Connect is the activity as it now stands, so
+                # it wins; the revision counts both rows' versions, which only
+                # rise.
+                used = edit or act or record
+                plan.origin = used["kind"] + "/" + used["id"]
+                plan.revision = sum(int(r.get("version") or 0) for r in (act, edit) if r)
+                uprops = used.get("properties") or {}
+                build_workout(Ctx(host, plan, uprops), account, uprops)
+        elif name in BUILDERS:
+            if record is not None:
+                BUILDERS[name](Ctx(host, plan, props), account)
+                for field in SKIPPED.get(name, ()):
+                    if props.get(field) is not None:
+                        plan.skip("%s.%s" % (name, field))
+        else:
+            return {"output": {"skipped": "%s implies no observation" % name}}
+
+        stored = {(r.get("kind"), r.get("id")): r for r in previous}
+        for sid, sprops in plan.sources.items():
+            host.effects.put(SOURCE, sid, properties=sprops, if_absent=True)
+        for key, p in plan.rows.items():
+            # A revision never falls: a trace that lost the row with the highest
+            # version keeps the revision it was written with.
+            old = ((stored.get(key) or {}).get("properties") or {}).get("revision")
+            if isinstance(old, (int, float)) and not isinstance(old, bool) and old > (p.get("revision") or 0):
+                p["revision"] = int(old)
+            host.effects.put(key[0], key[1], properties=p)
+        stale = 0
+        for key in stored:
+            if key not in plan.rows:
+                host.effects.delete(key[0], key[1])
+                stale += 1
+        return {"output": {"origin": origin, "written": len(plan.rows), "deleted": stale,
+                           "skipped": plan.skipped}}
