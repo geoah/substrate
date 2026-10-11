@@ -121,11 +121,13 @@ console-editable and changelog-visible like anything else
 
 The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
-`agent`, `bundle`, `actor`) live in core too, and so do the six shipped traits:
+`agent`, `bundle`, `actor`) live in core too, and so do the seven shipped traits:
 `temporal`, which puts a record on the timeline; `recurring` and `override`,
 the repeat rule and the moved occurrence ([traits](traits.md)); `sync`, the
-state a provider's function reports on one connected account; and
-`accountconfig` and `oauth2`, which the OAuth facility recognizes. Core also
+state a provider's function reports on one connected account;
+`accountconfig` and `oauth2`, which the OAuth facility recognizes; and
+`observed`, which marks a kind whose records hold observed values and holds
+every write of one to the trait's rules. Core also
 ships four host functions as `function` records (`query`, `write`, `propose`,
 `ask`), the built-ins an agent calls ([agents](agents.md)).
 

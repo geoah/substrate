@@ -633,7 +633,9 @@ func firstOr(names []string, fallback string) string {
 // parseTraitVariantProps reads one variant's properties. A variant's properties
 // are built-in datatypes only: the variants exist for the machinery bound to
 // record columns, and a refinement is package-local while a trait resolves
-// across packages.
+// across packages. `reference` is admitted as it is on a variant-free trait: a
+// contract datatype whose pin and onDelete the binding kind declares (core's
+// `observed` names its metric, source and the thing observed this way).
 func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[string]Datatype {
 	out := map[string]Datatype{}
 	for _, pname := range sortedKeys(props) {
@@ -642,7 +644,7 @@ func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[
 			continue
 		}
 		k := Datatype(fmt.Sprint(props[pname]))
-		if !builtinKinds[k] {
+		if !builtinKinds[k] && k != DatatypeReference {
 			l.errf("%s.%s: unknown property type %q", where, pname, k)
 			continue
 		}

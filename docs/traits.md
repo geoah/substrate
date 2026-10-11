@@ -215,6 +215,19 @@ opt into twice:
   an ordinary record. The `scheduling` sample's **`occurrencelog`** is how a
   slot gets its done-or-skipped mark: a temporal record of its own in the
   same window.
+- **`observed`** marks a kind whose records hold observed values: one value
+  per record (`observed(single)`: a reading, a vendor score, a lab result) or
+  many values packed into one record over a fixed period (`observed(packed)`:
+  an hour of heart rate). Every write of an implementor, a patch included, is
+  held to the rules the trait's property list cannot state: `form` is
+  `gauge`, `amount`, `counter` or `summary`; a single record holds `value` or
+  `code` and never both; a packed record's `offsets` line up with its
+  `values` or `codes` inside `[at, endsAt)`; `hold` goes only on a gauge and
+  `resetRule` only on a counter; a `revision` never falls. The substrate
+  computes a packed record's `stats` from its values and drops any a writer
+  sends. The trait's property list never grows: a later need is a second
+  trait bound beside it
+  ([decision 0154](decisions/0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md)).
 - **`accountconfig`** and **`oauth2`** are how the substrate's OAuth
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to
