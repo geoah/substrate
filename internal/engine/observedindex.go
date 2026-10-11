@@ -408,10 +408,28 @@ func (t *txn) derivesObserved(ty *vocabulary.Kind) bool {
 }
 
 // dropObservedOf deletes the points of a record leaving the fold (a
-// tombstone, a purge), where its kind can hold them.
+// tombstone, a purge) whatever its kind's declaration now says. A kind that
+// stopped binding `observed` keeps its rows' old points until the background
+// pass reaches each row (reprojection.go), and a purge removes the row that
+// pass would have found, so the record's own exit is the last moment its
+// points can go. A kind that does not bind the trait asks the primary key
+// first, so an ordinary record costs one probe and takes no observed lock.
+// A replay derives every row under one registry from empty tables, so there
+// a kind that does not bind the trait has no points to drop.
 func (t *txn) dropObservedOf(ref eref) error {
 	ty, _ := t.derivationView().ByIdentity(ref.Kind)
-	if !t.derivesObserved(ty) {
+	if bindsObserved(ty) {
+		return t.dropObserved(ref)
+	}
+	if t.observed != nil && t.observed.all {
+		return nil
+	}
+	var holds bool
+	if err := t.row(`SELECT EXISTS (SELECT 1 FROM observed_points WHERE kind = $1 AND record_id = $2)`,
+		ref.Kind, ref.ID).Scan(&holds); err != nil {
+		return fmt.Errorf("substrate/engine: observed points of %s %s: %w", ref.Kind, ref.ID, err)
+	}
+	if !holds {
 		return nil
 	}
 	return t.dropObserved(ref)

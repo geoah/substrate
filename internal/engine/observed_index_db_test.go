@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,10 +36,10 @@ type obsIndex struct {
 	db  *sql.DB
 }
 
-func openObservedIndex(t *testing.T) obsIndex {
+func openObservedIndex(t *testing.T, opts ...engine.Option) obsIndex {
 	t.Helper()
 	ctx := context.Background()
-	svc, dsn := newService(t)
+	svc, dsn := newService(t, opts...)
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
@@ -1117,6 +1118,86 @@ func TestObservedEmptyCodeIsReadOnceAsUnavailable(t *testing.T) {
 		if l, ok := r.latest(t, "illuminance", r.source+"/"+source); !ok || l.points != 2 {
 			t.Errorf("the %s stream counts %d points (%v), want its two available ones", source, l.points, ok)
 		}
+	}
+	r.rebuildMatches(t)
+}
+
+// A record that leaves the fold takes its points with it whatever its kind's
+// declaration now says. Removing the binding leaves old points for the
+// background pass to drop row by row, and the pass is held here while one
+// record is purged and another tombstoned: the purged row is gone from
+// `records` before the pass could find it, so its points, its buckets' rows
+// and its stream's latest row went only if the purge took them. Once the pass
+// is let go and drained, the three tables are a rebuild's.
+func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var armed atomic.Bool
+	release := make(chan struct{})
+	held := make(chan struct{}, 1)
+	var pkg string
+	r := openObservedIndex(t, engine.WithTestReprojectionHook(func(ctx context.Context, kind string) error {
+		if !armed.Load() || kind != pkg+"/reading" {
+			return nil
+		}
+		select {
+		case held <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}))
+	pkg = testdb.Repository(t) + "/meters"
+	kind := pkg + "/reading"
+	r.applyPackedClosure(t, pkg, true)
+	engine.DrainIndexReprojection(t, r.ds)
+	hour := func(at string, values []any) map[string]any {
+		start := mustTime(t, at)
+		return map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("attic"), "form": "gauge", "unit": "Cel",
+			"at": at, "endsAt": start.Add(time.Hour).Format(time.RFC3339), "every": "PT20M", "values": values,
+		}
+	}
+	r.mustPut(t, kind, "h06", hour("2026-10-07T06:00:00Z", []any{"20.5", "20.7", "20.9"}))
+	r.mustPut(t, kind, "h07", hour("2026-10-07T07:00:00Z", []any{"21.5", "21.7", "21.9"}))
+	r.mustPut(t, kind, "h08", hour("2026-10-07T08:00:00Z", []any{"22.5", nil, "22.9"}))
+	if l, ok := r.latest(t, "air_temperature", r.source+"/attic"); !ok || l.recordID != "h08" {
+		t.Fatalf("the stream's latest row is %+v (%v), want h08's", l, ok)
+	}
+
+	armed.Store(true)
+	r.applyPackedClosure(t, pkg, false)
+	select {
+	case <-held:
+	case <-time.After(time.Minute):
+		t.Fatal("the pass behind the unbinding never reached the kind")
+	}
+	if _, err := r.ds.Delete(ctx, owner, kind, "h08", substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("purge h08: %v", err)
+	}
+	if _, err := r.ds.Delete(ctx, owner, kind, "h07", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete h07: %v", err)
+	}
+	for _, id := range []string{"h07", "h08"} {
+		if got := r.points(t, kind, id); len(got) != 0 {
+			t.Errorf("%s left the fold and kept %d points while the pass was held", id, len(got))
+		}
+	}
+	if l, ok := r.latest(t, "air_temperature", r.source+"/attic"); !ok || l.recordID != "h06" || l.points != 3 {
+		t.Errorf("with h07 and h08 gone the stream's latest row is %+v (%v), want h06's three points", l, ok)
+	}
+
+	close(release)
+	engine.DrainIndexReprojection(t, r.ds)
+	if n := r.count(t, `SELECT count(*) FROM observed_points WHERE kind = $1`, kind); n != 0 {
+		t.Errorf("the unbound kind kept %d points after the pass", n)
+	}
+	if _, ok := r.latest(t, "air_temperature", r.source+"/attic"); ok {
+		t.Error("the unbound kind's stream kept its latest row after the pass")
 	}
 	r.rebuildMatches(t)
 }

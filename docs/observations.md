@@ -403,7 +403,10 @@ A kind that starts or stops binding `observed`, or changes the measure its
 `value` declares, has every row's points derived again by the background
 pass behind the commit that changed it, the one that re-derives the search
 index ([operations](operations.md#upgrading-the-binary)); until the pass
-reaches a row, its points are the ones the previous declaration derived.
+reaches a row, its points are the ones the previous declaration derived. A
+tombstone and a purge in that window still take the record's points with
+them, whatever the kind now declares: a purged row is gone before the pass
+could find it.
 Repository migration `0003_derive_observed_index` asks the same pass to
 derive the index of a repository written before the tables existed.
 
