@@ -1,6 +1,8 @@
 package observed
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -12,7 +14,10 @@ func TestPrioritizeFillsTheGapsOfTheHigherSource(t *testing.T) {
 	strap := []Point{held(gauge(10, 120), dur(10)), held(gauge(40, 130), dur(10))}
 	watch := []Point{held(gauge(0, 60), dur(60))}
 	w := window(0, 60)
-	got := Prioritize([][]Span{Spans(strap, w.From, w.To, 0), Spans(watch, w.From, w.To, 0)})
+	got, err := Prioritize(context.Background(), [][]Span{Spans(strap, w.From, w.To, 0), Spans(watch, w.From, w.To, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ms := HeldMs(got[0]); ms != dur(20).Milliseconds() {
 		t.Errorf("the strap holds %d ms, want 20 minutes", ms)
 	}
@@ -56,7 +61,10 @@ func fragmented(n int) [][]Span {
 // minutes after the SQL had finished.
 func TestPrioritizeIsLinearOverFragmentedCover(t *testing.T) {
 	const n = 300000
-	got := Prioritize(fragmented(n))
+	got, err := Prioritize(context.Background(), fragmented(n))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got[0]) != n || len(got[1]) != n {
 		t.Fatalf("resolved %d and %d spans, want %d each", len(got[0]), len(got[1]), n)
 	}
@@ -68,10 +76,23 @@ func TestPrioritizeIsLinearOverFragmentedCover(t *testing.T) {
 	}
 }
 
+// A resolution whose caller has stopped waiting stops: a context canceled
+// before it starts answers its error and no spans.
+func TestPrioritizeStopsWhenItsContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got, err := Prioritize(ctx, fragmented(10000))
+	if !errors.Is(err, context.Canceled) || got != nil {
+		t.Errorf("Prioritize under a canceled context = %d streams, %v; want nil and context.Canceled", len(got), err)
+	}
+}
+
 func BenchmarkPrioritizeFragmented(b *testing.B) {
 	streams := fragmented(300000)
 	for b.Loop() {
-		Prioritize(streams)
+		if _, err := Prioritize(context.Background(), streams); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

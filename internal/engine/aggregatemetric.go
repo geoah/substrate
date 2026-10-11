@@ -18,7 +18,8 @@ package engine
 //     a value into the range.
 //   - raw observed_points otherwise (percentile, durationIn, a maxGap tighter
 //     than the data, a priority over two or more streams, a gauge's bucket
-//     that cuts a row), within maxSamples, counted before the read.
+//     that cuts a row, a recorded-local read of a row whose offset is not
+//     whole quarter hours), within maxSamples, counted before the read.
 
 import (
 	"context"
@@ -118,7 +119,7 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err != nil {
 		return nil, err
 	}
-	streams, err := ds.discoverForms(ctx, tx, p, selected, p.windows(buckets))
+	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, p.windows(buckets))
 	if err != nil {
 		return nil, err
 	}
@@ -146,15 +147,18 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if res.Unit == "" {
 		res.Unit = units.duration
 	}
-	r := &aggRun{ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, meta: aggMeta{sources: map[string]bool{}}, nSeries: series}
+	r := &aggRun{ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, meta: aggMeta{sources: map[string]bool{}}, nSeries: series, samples: samples}
 	if err := r.plan(groups); err != nil {
 		return nil, err
+	}
+	if tr := traceOf(ctx); tr != nil && tr.afterPlan != nil {
+		tr.afterPlan()
 	}
 	rows, err := r.run(groups)
 	if err != nil {
 		return nil, err
 	}
-	if res.Rows, err = p.fillAndRoll(rows, r.buckets, units, &r.meta); err != nil {
+	if res.Rows, err = p.fillAndRoll(ctx, rows, r.buckets, units, &r.meta); err != nil {
 		return nil, err
 	}
 	res.Exact = !r.meta.inexact
@@ -247,27 +251,24 @@ func (p *aggPlan) windows(buckets []*aggBucket) [][2]time.Time {
 // ($10) and window ($6 and $7, with the ends of the whole rollup rows inside
 // it at $8 and $9), the codes of the stream's available points of that form
 // inside the window. The whole rows answer by the rollup key, so a range the
-// rows serve reads no point; the window's cut ends and a summary, which has
-// no rows, answer by the points. A gauge also answers by its last point
-// before the window where that value still holds into it under its own hold
-// and the request's maxGap ($11), because its held time is the window's.
+// rows serve reads no point; the window's cut ends (discoverCutEnds) and a
+// summary, which has no rows, answer by the points. A gauge also answers by
+// its last point before the window where that value still holds into it
+// under its own hold and the request's maxGap ($11), because its held time is
+// the window's.
 const discoverFormsSQL = `
 	SELECT DISTINCT s.n, f.form, x.code
-	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, n)
-	CROSS JOIN unnest($10::text[]) AS f(form)
-	CROSS JOIN unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[]) AS w(a, b, wa, wb)
+	FROM ` + discoverStreams + `
 	CROSS JOIN LATERAL (
 		SELECT r.code FROM observed_rollups r
 		WHERE r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
 		  AND r.form = f.form AND r.bucket15 >= w.wa AND r.bucket15 < w.wb AND r.n > 0
 		UNION
 		SELECT p.code FROM observed_points p
-		WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
-		  AND p.ts >= w.a AND p.ts < LEAST(w.wa, w.b) AND p.form = f.form AND ` + availablePoint + `
+		WHERE ` + discoverCutEnd + ` AND p.ts >= w.a AND p.ts < LEAST(w.wa, w.b) AND ` + availablePoint + `
 		UNION
 		SELECT p.code FROM observed_points p
-		WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
-		  AND p.ts >= GREATEST(w.wb, w.a) AND p.ts < w.b AND p.form = f.form AND ` + availablePoint + `
+		WHERE ` + discoverCutEnd + ` AND p.ts >= GREATEST(w.wb, w.a, LEAST(w.wa, w.b)) AND p.ts < w.b AND ` + availablePoint + `
 		UNION
 		SELECT p.code FROM observed_points p
 		WHERE f.form = 'summary'
@@ -293,15 +294,51 @@ const discoverFormsSQL = `
 	) x
 	ORDER BY s.n, f.form, x.code`
 
+// discoverStreams is every stream, form and window discoverFormsSQL and
+// discoverCountSQL take, as s, f and w.
+const discoverStreams = `unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, n)
+	CROSS JOIN unnest($10::text[]) AS f(form)
+	CROSS JOIN unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[]) AS w(a, b, wa, wb)`
+
+// discoverCutEnd matches a point p of stream s and form f inside a cut end of
+// window w: the part before the first whole row, [a, wa), and the part after
+// the last, [wb, b), the second starting where the first ends so a window
+// with no whole row is read once. A summary is read over its whole window
+// instead, so its cut ends are not read apart.
+const discoverCutEnd = `p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.form = f.form AND f.form <> 'summary'`
+
+// discoverCountSQL counts the points discoverFormsSQL reads, its cut ends
+// and its summaries, before it runs: they count against
+// maxSamples like any raw point a read takes. The gauge's carry is one point
+// per stream and window and is not counted.
+const discoverCountSQL = `
+	SELECT coalesce(sum(x.c), 0)::bigint
+	FROM ` + discoverStreams + `
+	CROSS JOIN LATERAL (
+		SELECT count(*) AS c FROM observed_points p
+		WHERE ` + discoverCutEnd + ` AND p.ts >= w.a AND p.ts < LEAST(w.wa, w.b)
+		UNION ALL
+		SELECT count(*) FROM observed_points p
+		WHERE ` + discoverCutEnd + ` AND p.ts >= GREATEST(w.wb, w.a, LEAST(w.wa, w.b)) AND p.ts < w.b
+		UNION ALL
+		SELECT count(*) FROM observed_points p
+		WHERE f.form = 'summary'
+		  AND p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.ts >= w.a AND p.ts < w.b AND p.form = 'summary'
+	) x`
+
 // discoverForms turns each selected stream into one stream per form its
 // points hold inside the windows, with the codes they carry, in one
 // statement. The latest row names a stream and says nothing about the points
 // a range holds, so it never decides a form: every form found is checked,
 // and a group holding two is refused, before any path is chosen. A form the
-// read does not take (a summary on a read from raw) is not looked for.
-func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time) ([]*aggStream, error) {
+// read does not take (a summary on a read from raw) is not looked for. The
+// points it reads are counted first and refused past maxSamples; samples is
+// that count, the start of the read's (aggRun.charge).
+func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time) (out []*aggStream, samples int64, err error) {
 	if len(streams) == 0 || len(windows) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	var forms []string
 	switch p.source {
@@ -323,22 +360,28 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 		a, b = append(a, w[0]), append(b, w[1])
 		wa, wb = append(wa, ceil15(w[0])), append(wb, floor15(w[1]))
 	}
+	if err := tx.QueryRowContext(ctx, discoverCountSQL, ids[0], ids[1], ids[2], ids[3], ids[4], a, b, wa, wb, forms).Scan(&samples); err != nil {
+		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms count: %w", err)
+	}
+	if samples > p.maxSamples {
+		return nil, 0, refuse("aggregate.budget.maxSamples", "finding the forms the range holds reads %d raw points at its cut ends and in its summaries, over %d; align the range to quarter hours, narrow it, or raise maxSamples (the cap is %d)",
+			samples, p.maxSamples, substrate.AggregateMaxSamplesCap)
+	}
 	rows, err := tx.QueryContext(ctx, discoverFormsSQL, ids[0], ids[1], ids[2], ids[3], ids[4], a, b, wa, wb, forms, p.maxGap.Milliseconds())
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: aggregate forms: %w", err)
+		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	type key struct {
 		n    int
 		form string
 	}
-	var out []*aggStream
 	found := map[key]*aggStream{}
 	for rows.Next() {
 		var k key
 		var code string
 		if err := rows.Scan(&k.n, &k.form, &code); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		s := found[k]
 		if s == nil {
@@ -351,9 +394,9 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 		s.codes = append(s.codes, code)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return out, nil
+	return out, samples, nil
 }
 
 // aggregateKinds resolves filter.kinds and filter.implements to the observed

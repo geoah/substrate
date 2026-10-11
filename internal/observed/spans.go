@@ -1,6 +1,7 @@
 package observed
 
 import (
+	"context"
 	"sort"
 	"time"
 )
@@ -53,13 +54,23 @@ func Clip(spans []Span, from, to time.Time) []Span {
 //
 // The work is a sort and a merge per stream and a binary search per span:
 // each span visits only the cover intervals it overlaps, so two fragmented
-// sources of n spans each resolve in O(n log n), never n squared.
-func Prioritize(streams [][]Span) [][]Span {
+// sources of n spans each resolve in O(n log n), never n squared. It answers
+// ctx's error, checked before each stream and every thousand spans, so a
+// caller that stops waiting stops the work.
+func Prioritize(ctx context.Context, streams [][]Span) ([][]Span, error) {
 	out := make([][]Span, len(streams))
 	var cover [][2]time.Time
 	for i, spans := range streams {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		out[i] = make([]Span, 0, len(spans))
-		for _, s := range spans {
+		for j, s := range spans {
+			if j&(1<<10-1) == 0 {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+			}
 			out[i] = subtract(out[i], s, cover)
 		}
 		mine := make([][2]time.Time, 0, len(spans))
@@ -68,7 +79,7 @@ func Prioritize(streams [][]Span) [][]Span {
 		}
 		cover = mergeSorted(cover, mergeCover(mine))
 	}
-	return out
+	return out, nil
 }
 
 // Covered reports whether t lies inside one of the spans.

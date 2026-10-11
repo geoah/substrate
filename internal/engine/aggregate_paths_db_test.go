@@ -12,8 +12,11 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
@@ -41,6 +44,275 @@ func sameRows(t *testing.T, rollups, raw *substrate.AggregateResult) {
 }
 
 func at(t time.Time) string { return t.Format(time.RFC3339) }
+
+// statements is a pgx tracer that keeps the SQL of every statement the
+// service sends, so a test can say a statement never ran.
+type statements struct {
+	mu   sync.Mutex
+	list []string
+}
+
+func (s *statements) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.list = append(s.list, d.SQL)
+	return ctx
+}
+
+func (s *statements) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+// mark is where the statements sent from now on start.
+func (s *statements) mark() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.list)
+}
+
+// since counts the statements sent after mark that hold fragment.
+func (s *statements) since(mark int, fragment string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, q := range s.list[mark:] {
+		if strings.Contains(q, fragment) {
+			n++
+		}
+	}
+	return n
+}
+
+// The statement fragments the budget tests look for: the forms' discovery,
+// the amount coverage taken from raw spans, and a property read's values.
+const (
+	discoverStatement = "SELECT DISTINCT s.n, f.form, x.code"
+	coverageStatement = "sum(x.brk) OVER"
+	propertyStatement = ")::text FROM records WHERE"
+)
+
+// A range holding no point answers in its streams' unit, where the metric
+// declares none, as a range holding points does (a 70.5 kg reading held five
+// minutes, read in the hour after it and five days later): the units are settled from
+// every selected stream before the forms are found in the range. A unit
+// asked for converts there too, where an empty range once had no measure and
+// refused it as a code's.
+func TestAggregateEmptyRangeKeepsItsUnits(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.mustPut(t, f.metric, "load", map[string]any{"name": "Load"})
+	f.mustPut(t, f.observation, "load/1", map[string]any{
+		"metric": f.metricRef("load"), "source": f.sourceRef("scale"), "form": "gauge",
+		"value": quantity("70.5", "kg"), "at": at(start), "hold": "PT5M",
+	})
+	for _, x := range []struct {
+		name, unit, want string
+		from             time.Time
+		rows             int
+	}{
+		{"a range with the point", "", "kg", start, 1},
+		{"an empty range", "", "kg", start.AddDate(0, 0, 5), 0},
+		{"an empty range in grams", "g", "g", start.AddDate(0, 0, 5), 0},
+	} {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("load")},
+			Range:    rng(x.from, x.from.Add(time.Hour)),
+			Reducers: reducers("avg"),
+			Unit:     x.unit,
+		})
+		if res.Unit != x.want || len(res.Rows) != x.rows {
+			t.Errorf("%s: unit %q and %d rows, want %q and %d", x.name, res.Unit, len(res.Rows), x.want, x.rows)
+		}
+	}
+}
+
+// A form held only at a range's cut ends, or only in summaries, is found
+// and read: one source's amount lies only in [00:07, 00:15), before the
+// range's first whole rollup row, another's only in [01:45, 01:52), after
+// its last, and a third source has summaries and no point, read with
+// prefer-raw. Each answers its row.
+func TestAggregateFormsAtTheCutEndsAndInSummaries(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		source string
+		at     time.Duration
+	}{{"early", 8 * time.Minute}, {"late", 110 * time.Minute}} {
+		f.mustPut(t, f.observation, "steps/"+x.source, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef(x.source), "form": "amount",
+			"value": quantity("5", "{steps}"), "at": at(start.Add(x.at)), "endsAt": at(start.Add(x.at + time.Minute)),
+		})
+	}
+	res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+		Range:    rng(start.Add(7*time.Minute), start.Add(112*time.Minute)),
+		GroupBy:  []string{"source"},
+		Reducers: reducers("count", "sum"),
+	})
+	if len(res.Rows) != 2 {
+		t.Fatalf("cut ends: %+v, want a row per source", res.Rows)
+	}
+	for _, row := range res.Rows {
+		if c, _ := val(row, "count"); c != "1" || row.Form != "amount" {
+			t.Errorf("cut ends: %s counts %s %s, want 1 amount", row.Group.Source, c, row.Form)
+		}
+	}
+	f.mustPut(t, f.observation, "hr/daily", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("ring"), "form": "summary",
+		"statistic": "avg", "period": "day", "value": quantity("58", "/min"), "at": at(start), "endsAt": at(start.AddDate(0, 0, 1)),
+	})
+	sums := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+		From:     "prefer-raw",
+		Range:    rng(start, start.AddDate(0, 0, 1)),
+		Reducers: reducers("avg"),
+	})
+	if len(sums.Rows) != 1 || sums.Rows[0].From != "summaries" || sums.Rows[0].Form != "summary" {
+		t.Fatalf("summaries alone: %+v, want the day's summary row", sums.Rows)
+	}
+	if v, _ := val(sums.Rows[0], "avg"); v != "58" {
+		t.Errorf("summaries alone: avg %s, want 58", v)
+	}
+}
+
+// A read canceled once its statements have run stops inside the Go-side
+// reduction, not after it: a gauge of 3,000 quarter hours, one rollup row
+// each, read over its whole range and canceled as soon as the plan has read
+// the rows, answers context.Canceled having merged fewer rows than the
+// thousand steps between two checks, where it once merged all 3,000 and
+// walked their held time before the first check.
+func TestAggregateStopsWhenCanceledAfterItsStatements(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	const n = 3000
+	offsets := make([]int64, n)
+	vals := make([]any, n)
+	for i := range n {
+		offsets[i] = int64(i) * (15 * time.Minute).Milliseconds()
+		vals[i] = strconv.Itoa(60 + i%40)
+	}
+	end := start.Add(n * 15 * time.Minute)
+	f.series("hr/long", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "gauge", "unit": "/min",
+	}, start, end, offsets, vals)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx, trace := engine.AggregateTraced(ctx)
+	trace.AfterPlan(cancel)
+	_, err := f.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+		Range:    rng(start, end),
+		Reducers: reducers("avg", "twa"),
+	}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if trace.RollupRows() < n {
+		t.Fatalf("the plan read %d rollup rows, want the %d the reduction would merge", trace.RollupRows(), n)
+	}
+	if merged := trace.MergedRows(); merged >= 1024 {
+		t.Errorf("the canceled read merged %d of %d rollup rows before it stopped", merged, n)
+	}
+}
+
+// The raw spans an amount's coverage is joined from, where two rollup rows'
+// extents overlap, count against maxSamples before the statement reads them:
+// two traces over [00:00, 00:35) and [00:15, 00:50), read for an aligned
+// hour from rows, need their two spans. maxSamples 1 refuses the read and the
+// statement never runs; maxSamples 2 answers 50 minutes.
+func TestAggregateCoverageFallbackCountsAgainstMaxSamples(t *testing.T) {
+	t.Parallel()
+	log := &statements{}
+	f := aggFix{obsIndex: openObservedIndex(t, engine.WithTestQueryTracer(log)), t: t}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id       string
+		from, to time.Duration
+	}{{"a", 0, 35 * time.Minute}, {"b", 15 * time.Minute, 50 * time.Minute}} {
+		f.series("steps/phone/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount", "unit": "{steps}",
+		}, start.Add(x.from), start.Add(x.to), []int64{0}, []any{"1"})
+	}
+	read := func(maxSamples int64) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:    rng(start, start.Add(time.Hour)),
+			Reducers: reducers("sum"),
+			Budget:   &substrate.AggregateBudget{MaxSamples: maxSamples},
+		}}
+	}
+	mark := log.mark()
+	_, err := f.ds.Aggregate(context.Background(), read(1))
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.budget.maxSamples") {
+		t.Fatalf("under maxSamples 1: err = %v, want a refusal naming maxSamples", err)
+	}
+	if n := log.since(mark, coverageStatement); n != 0 {
+		t.Errorf("the refused read ran the coverage statement %d time(s)", n)
+	}
+	q := read(2)
+	res, err := f.ds.Aggregate(context.Background(), q)
+	if err != nil {
+		t.Fatalf("under maxSamples 2: %v", err)
+	}
+	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT50M" {
+		t.Errorf("under maxSamples 2: %+v, want one row covering 50 minutes", res.Rows)
+	}
+}
+
+// Finding a range's forms reads the points at its cut ends and its
+// summaries, and counts them against maxSamples before it reads them: three
+// amounts inside [00:07, 00:15), the cut end of a range from 00:07, and
+// three daily summaries read with prefer-raw, are refused under maxSamples 2
+// before the discovery statement runs.
+func TestAggregateFormDiscoveryCountsAgainstMaxSamples(t *testing.T) {
+	t.Parallel()
+	log := &statements{}
+	f := aggFix{obsIndex: openObservedIndex(t, engine.WithTestQueryTracer(log)), t: t}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 3 {
+		from := start.Add(time.Duration(8+i) * time.Minute)
+		f.mustPut(t, f.observation, "steps/cut/"+strconv.Itoa(i), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
+			"value": quantity("1", "{steps}"), "at": at(from), "endsAt": at(from.Add(time.Minute)),
+		})
+		day := start.AddDate(0, 0, 2+i)
+		f.mustPut(t, f.observation, "hr/day/"+strconv.Itoa(i), map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "summary",
+			"statistic": "avg", "period": "day", "value": quantity("60", "/min"), "at": at(day), "endsAt": at(day.AddDate(0, 0, 1)),
+		})
+	}
+	for _, x := range []struct {
+		name string
+		a    substrate.Aggregate
+	}{
+		{"cut end", substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:  rng(start.Add(7*time.Minute), start.Add(2*time.Hour)), Reducers: reducers("sum"),
+		}},
+		{"summaries", substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")}, From: "prefer-raw",
+			Range: rng(start, start.AddDate(0, 0, 7)), Reducers: reducers("avg"),
+		}},
+	} {
+		t.Run(x.name, func(t *testing.T) {
+			tight := x.a
+			tight.Budget = &substrate.AggregateBudget{MaxSamples: 2}
+			mark := log.mark()
+			_, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &tight})
+			if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.budget.maxSamples") {
+				t.Fatalf("under maxSamples 2: err = %v, want a refusal naming maxSamples", err)
+			}
+			if n := log.since(mark, discoverStatement); n != 0 {
+				t.Errorf("the refused read ran the discovery statement %d time(s)", n)
+			}
+			res, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &x.a})
+			if err != nil || len(res.Rows) == 0 {
+				t.Fatalf("within the default budget: %v, %+v", err, res)
+			}
+		})
+	}
+}
 
 // A read takes the forms its range holds, never the form of the stream's
 // newest point: an amount early in the hour is counted though a gauge of the
@@ -318,6 +590,57 @@ func TestAggregateRecordedLocalDayFromRealPoints(t *testing.T) {
 	}
 }
 
+// A recorded-local day is read from raw points where a point's offset is not
+// whole quarter hours: at +00:01 the quarter hour from 23:45Z holds an
+// amount at 23:58Z, on September 1 locally, and one at 23:59Z, on September
+// 2, and a gauge's two readings fall either side of local midnight the same
+// way. A row's quarter hour placed both on September 1; the raw points place
+// each on its own day, and both paths now answer that.
+func TestAggregateRecordedLocalDayAtAnOddOffset(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	midnight := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value string
+		at        time.Duration
+	}{{"before", "3", -2 * time.Minute}, {"after", "4", -time.Minute}} {
+		f.mustPut(t, f.observation, "odd/steps/"+x.id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("odd"), "form": "amount",
+			"value": quantity(x.value, "{steps}"), "at": at(midnight.Add(x.at)), "endsAt": at(midnight.Add(x.at + 30*time.Second)),
+			"utcOffset": 1,
+		})
+	}
+	for _, x := range []struct {
+		id, value string
+		at        time.Duration
+	}{{"before", "60", -4 * time.Minute}, {"after", "80", -30 * time.Second}} {
+		f.mustPut(t, f.observation, "odd/hr/"+x.id, map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("odd"), "form": "gauge",
+			"value": quantity(x.value, "/min"), "at": midnight.Add(x.at).Format(time.RFC3339), "hold": "PT2M", "utcOffset": 1,
+		})
+	}
+	days := rng(midnight.AddDate(0, 0, -1), midnight.AddDate(0, 0, 1))
+	for _, x := range []struct {
+		metric, reducer string
+		want            [2]string
+	}{{"health/steps", "sum", [2]string{"3", "4"}}, {"health/heart_rate", "count", [2]string{"1", "1"}}} {
+		res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath(x.metric)},
+			Range:    days,
+			Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+			Reducers: reducers(x.reducer),
+		})
+		if len(res.Rows) != 2 {
+			t.Fatalf("%s: %d rows, want September 1 and 2", x.metric, len(res.Rows))
+		}
+		for i, row := range res.Rows {
+			if v, _ := val(row, x.reducer); v != x.want[i] {
+				t.Errorf("%s on the day from %s: %s = %s, want %s", x.metric, row.Start.Format(time.RFC3339), x.reducer, v, x.want[i])
+			}
+		}
+	}
+}
+
 // Points at one instant are first and last by record id on both paths:
 // `a-reversed` holds 2000 W.h and `z-reversed` 1 kW.h at 00:05, two rollup
 // groups by unit, and in W.h the first is 2000 and the last 1000.
@@ -431,10 +754,13 @@ func TestAggregateLocfCarriesThePreviousCode(t *testing.T) {
 
 // A property read counts its groups before it reads a value: a EUR and a JPY
 // spend are two groups, refused under maxGroups 1, and two groups in two
-// months are four cells, refused under maxBuckets 3.
+// months are four cells, refused under maxBuckets 3, each before the
+// statement that reads the values runs; the read within the budget runs it
+// once.
 func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	log := &statements{}
+	_, ds := newDataset(t, engine.WithTestQueryTracer(log))
 	ctx := context.Background()
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{vocabularyPackage(moneyPackage), spendManifest()}); err != nil {
 		t.Fatalf("install the spend kind: %v", err)
@@ -467,12 +793,20 @@ func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 		{substrate.AggregateBudget{MaxGroups: 1}, "aggregate.budget.maxGroups"},
 		{substrate.AggregateBudget{MaxBuckets: 3}, "aggregate.budget.maxBuckets"},
 	} {
+		mark := log.mark()
 		if err := read(x.budget); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), x.want) {
 			t.Errorf("budget %+v: err = %v, want a refusal naming %s", x.budget, err, x.want)
 		}
+		if n := log.since(mark, propertyStatement); n != 0 {
+			t.Errorf("budget %+v: the refused read ran the value statement %d time(s)", x.budget, n)
+		}
 	}
+	mark := log.mark()
 	if err := read(substrate.AggregateBudget{MaxGroups: 2, MaxBuckets: 4}); err != nil {
 		t.Errorf("within the budget: %v", err)
+	}
+	if n := log.since(mark, propertyStatement); n != 1 {
+		t.Errorf("within the budget the value statement ran %d time(s), want once", n)
 	}
 }
 
@@ -520,6 +854,60 @@ func TestAggregateExtremesKeepTheirDigits(t *testing.T) {
 	}
 	if hi, _ := val(cols.Rows[0], "max"); hi != "9007199254740993" {
 		t.Errorf("the column's max = %s, want 9007199254740993", hi)
+	}
+}
+
+// A converted min or max is chosen by its converted digits on both paths and
+// in a downsample's columns: -273.14999999999999 Cel and 0.000000000000001 K
+// read in K are 0.00000000000001 and 0.000000000000001, while their floats
+// are 0 and 1e-15, so ordering the floats once answered them the wrong way
+// round with exact true.
+func TestAggregateConvertedExtremesCompareTheirDigits(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value, unit string
+		at              time.Duration
+	}{{"celsius", "-273.14999999999999", "Cel", time.Minute}, {"kelvin", "0.000000000000001", "K", 20 * time.Minute}} {
+		f.mustPut(t, f.observation, "cold/"+x.id, map[string]any{
+			"metric": f.metricRef("air_temperature"), "source": f.sourceRef("cryostat"), "form": "gauge",
+			"value": quantity(x.value, x.unit), "at": at(start.Add(x.at)),
+		})
+	}
+	a := substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("air_temperature")},
+		Range:    rng(start, start.Add(time.Hour)),
+		Reducers: reducers("min", "max"),
+		Unit:     "K",
+	}
+	const lo, hi = "0.000000000000001", "0.00000000000001"
+	rollups, raw, rollupRows := f.bothPaths(substrate.Filter{}, a)
+	if rollupRows == 0 {
+		t.Error("the read took no rollup row")
+	}
+	for name, res := range map[string]*substrate.AggregateResult{"rollups": rollups, "raw": raw} {
+		if len(res.Rows) != 1 {
+			t.Fatalf("%s: %d rows", name, len(res.Rows))
+		}
+		gotLo, _ := val(res.Rows[0], "min")
+		gotHi, _ := val(res.Rows[0], "max")
+		if gotLo != lo || gotHi != hi || !res.Exact {
+			t.Errorf("%s: min/max = %s/%s, exact %v; want %s/%s, exact", name, gotLo, gotHi, res.Exact, lo, hi)
+		}
+	}
+	a.Reducers = nil
+	cols, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &a, Downsample: &substrate.Downsample{Points: 1}})
+	if err != nil {
+		t.Fatalf("downsample: %v", err)
+	}
+	if len(cols.Rows) != 1 {
+		t.Fatalf("downsample: %+v", cols.Rows)
+	}
+	gotLo, _ := val(cols.Rows[0], "min")
+	gotHi, _ := val(cols.Rows[0], "max")
+	if gotLo != lo || gotHi != hi {
+		t.Errorf("the column's min/max = %s/%s, want %s/%s", gotLo, gotHi, lo, hi)
 	}
 }
 

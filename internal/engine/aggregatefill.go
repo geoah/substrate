@@ -5,6 +5,7 @@ package engine
 // reduces each value over a window of buckets, filled ones included.
 
 import (
+	"context"
 	"math"
 	"sort"
 	"strconv"
@@ -15,8 +16,10 @@ import (
 // fillAndRoll applies fill and rolling per series (a group and a code) and
 // orders the rows by bucket, then group, then code. A fill makes every series
 // dense, so the series times the buckets are checked against maxBuckets
-// before a row is made, and the rows answered never exceed it.
-func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) ([]substrate.AggregateRow, error) {
+// before a row is made, and the rows answered never exceed it. Both loops
+// check ctx as they go.
+func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) ([]substrate.AggregateRow, error) {
+	canceled := everyThousand(ctx)
 	type series struct {
 		key  string
 		rows map[int]*aggOut
@@ -49,6 +52,9 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 			}
 		}
 		for bi, b := range buckets {
+			if err := canceled(); err != nil {
+				return nil, err
+			}
 			o := s.rows[bi]
 			if o == nil && p.fill != "" && template != nil {
 				start, end := b.shown(p.from, p.to)
@@ -71,7 +77,9 @@ func (p *aggPlan) fillAndRoll(rows []aggOut, buckets []*aggBucket, u *aggUnits, 
 			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	if p.rolling != nil {
-		p.roll(out, meta)
+		if err := p.roll(ctx, out, meta); err != nil {
+			return nil, err
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].bucket != out[j].bucket {
@@ -119,7 +127,9 @@ func (p *aggPlan) filled(template, prev *aggOut) []substrate.AggregateValue {
 // roll appends, to each row, every rolling reducer over each of its values
 // across this bucket and the Buckets-1 before it in the same series. A
 // window value is matched by its reducer and code, and a null one is skipped.
-func (p *aggPlan) roll(rows []aggOut, meta *aggMeta) {
+// A row's window is up to the cap's buckets long, so the context is checked
+// before each row.
+func (p *aggPlan) roll(ctx context.Context, rows []aggOut, meta *aggMeta) error {
 	n := p.rolling.Buckets
 	bySeries := map[string][]int{}
 	for i, o := range rows {
@@ -142,6 +152,9 @@ func (p *aggPlan) roll(rows []aggOut, meta *aggMeta) {
 			}
 		}
 		for j, i := range idx {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			base := append([]substrate.AggregateValue(nil), rows[i].row.Values...)
 			for _, v := range base {
 				of := v.Reducer
@@ -166,6 +179,7 @@ func (p *aggPlan) roll(rows []aggOut, meta *aggMeta) {
 			}
 		}
 	}
+	return nil
 }
 
 func rollOf(name string, vs []float64) (float64, bool) {

@@ -1289,7 +1289,9 @@ from the raw spans in one statement per group.
 Everything else reads raw points: `percentile` and `durationIn`, a `maxGap`
 tighter than a row's gaps, `priority` over two or more streams, a gauge's
 bucket boundary that cuts a row, a recorded-local `minute` bucket or an `offset`
-that is not whole quarter hours, and every summary. Raw points and rollups
+that is not whole quarter hours, a recorded-local read of a stream with a
+point whose UTC offset is not whole quarter hours (a row at `+00:01` holds
+points on both sides of local midnight), and every summary. Raw points and rollups
 answer the same, to float rounding: `internal/observed` holds both.
 
 ### `fill`, `rolling` and `downsample`
@@ -1331,20 +1333,35 @@ calendar is refused (name a `timezone`), and so is the records mode.
 
 ### Budgets
 
-Every budget is checked before a point is reduced, and a request over one is
-a `422` naming the limit; a result is never cut short. The statement that
-finds the range's forms and codes, and an amount's coverage taken from raw
-spans where two rows may overlap, read in SQL and count against no budget.
+Every budget is checked before the work it bounds, and a request over one is
+a `422` naming the limit; a result is never cut short. The range's buckets
+and the records mode's records are counted as they are enumerated. The
+groups, the code series and series times buckets are checked after the
+statement that finds the range's forms and codes, before any point is read
+for a reduction. Each statement that reads raw points counts them first and
+adds them to the read's `maxSamples` total: finding the forms (the points at
+the range's cut ends, and its summaries), the reduction, and the raw spans
+an amount's coverage is joined from where two rollup rows may overlap, which
+is counted once the rows are merged. Rollup rows count against no budget
+(there is at most one per stream, group and quarter hour of the range), and
+neither does the one point per stream and window a gauge's value is carried
+in from. A recorded-local read can meet days its range's offsets do not name
+(a point at another offset); those buckets are counted after the points are
+evaluated, before a row is made.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
 | `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
-| `maxSamples` | the raw points a read takes, counted first; the records a property read takes | 1,000,000 | 20,000,000 |
-| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
+| `maxSamples` | the raw points a read's statements take, each statement's counted before it runs and added up; the records a property read takes | 1,000,000 | 20,000,000 |
+| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
-30 seconds where the caller set none or a later one.
+30 seconds where the caller set none or a later one. The reduction after the
+statements stops when the caller does: it checks the request's context every
+thousand points, spans, rows, quarter hours or filled buckets, before each
+row's reducers and before each row a rolling window is computed for, and
+answers the cancellation.
 
 ### The refusals
 
@@ -1379,10 +1396,17 @@ what is built in these points, each for a stated reason:
   there, with `count` 0, the way it makes held time.
 - A records-mode window is not clipped to the range: the record is the
   bucket.
-- A refusal for a form, a code count or a bucket budget comes after one
-  statement that reads the rollup rows' keys and the points at the range's
-  cut ends, not before anything runs: which forms and codes a range holds is
-  a fact of its points, and the newest point's form is not.
+- A refusal for a form, a code count or a bucket budget comes after the
+  statements that select the streams, read the metric's unit, read the
+  records mode's records and find the range's forms (the rollup rows' keys,
+  the points at the range's cut ends, its summaries, and each gauge's value
+  held into it), not before anything runs: which forms and codes a range
+  holds is a fact of its points, and the newest point's form is not. The
+  points at the cut ends and in the summaries count against `maxSamples`
+  before they are read.
+- A `maxSamples` refusal for the raw spans an amount's coverage is joined
+  from comes once the rollup rows are merged, before the spans are read:
+  which rows overlap is known from the rows.
 - The added keys: `property` and `nonAdditive` on the response and the row,
   `group.channel` and `group.currency`, `values[].rolling` and
   `values[].of`, `budget.maxGroups`.

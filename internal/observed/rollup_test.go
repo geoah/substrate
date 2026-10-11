@@ -127,6 +127,68 @@ func TestExtremesKeepTheirDigits(t *testing.T) {
 	}
 }
 
+// Where both numbers carry digits the digits decide, whatever their floats
+// say: -273.14999999999999 Cel read in K is the float 0 beside the digits
+// 0.00000000000001, and 0.000000000000001 K is the float 1e-15, so the floats
+// order the two the wrong way round. A row, a merge and the raw extremes all
+// take the digits' order.
+func TestConvertedExtremesCompareTheirDigits(t *testing.T) {
+	celsius := Point{At: at(1), End: at(1), Value: 0, HasValue: true, Exact: "0.00000000000001"}
+	kelvin := Point{At: at(2), End: at(2), Value: 1e-15, HasValue: true, Exact: "0.000000000000001"}
+	if !NumberLess(kelvin.Value, kelvin.Exact, celsius.Value, celsius.Exact) || NumberLess(celsius.Value, celsius.Exact, kelvin.Value, kelvin.Exact) {
+		t.Fatal("NumberLess ordered the floats, not the digits")
+	}
+	start, end := bucketAt(0)
+	row := Bucket(vocabulary.FormGauge, start, end, nil, []Point{celsius, kelvin})[""]
+	if row.MinExact != kelvin.Exact || row.MaxExact != celsius.Exact {
+		t.Errorf("row extremes %s/%s, want %s/%s", row.MinExact, row.MaxExact, kelvin.Exact, celsius.Exact)
+	}
+	a := Bucket(vocabulary.FormGauge, start, end, nil, []Point{celsius})[""]
+	k := kelvin
+	k.At, k.End = at(16), at(16)
+	b := Bucket(vocabulary.FormGauge, end, end.Add(BucketWidth), nil, []Point{k})[""]
+	if m := Merge(vocabulary.FormGauge, *a, *b); m.MinExact != kelvin.Exact || m.MaxExact != celsius.Exact {
+		t.Errorf("merged extremes %s/%s, want %s/%s", m.MinExact, m.MaxExact, kelvin.Exact, celsius.Exact)
+	}
+	w := window(0, 15)
+	p, _ := MinPoint([]Point{celsius, kelvin}, w)
+	q, _ := MaxPoint([]Point{kelvin, celsius}, w)
+	if p.Exact != kelvin.Exact || q.Exact != celsius.Exact {
+		t.Errorf("raw extremes %s/%s, want %s/%s", p.Exact, q.Exact, kelvin.Exact, celsius.Exact)
+	}
+}
+
+func TestCompareDigits(t *testing.T) {
+	for _, x := range []struct {
+		a, b string
+		want int
+		ok   bool
+	}{
+		{"0.000000000000001", "0.00000000000001", -1, true},
+		{"1.50", "1.5", 0, true},
+		{"-0", "0.000", 0, true},
+		{"-2", "-1.5", -1, true},
+		{"-1.5", "-2", 1, true},
+		{"-0.5", "0", -1, true},
+		{"10", "9.999", 1, true},
+		{"007", "7", 0, true},
+		{".5", "0.45", 1, true},
+		{"0.4", "0.45", -1, true},
+		{"9007199254740993", "9007199254740992", 1, true},
+		{"+3", "3", 0, true},
+		{"1e3", "999", 1, true},
+		{"1/3", "0.33", 1, true},
+		{"abc", "1", 0, false},
+		{"-", "1", 0, false},
+		{"1.2.3", "1", 0, false},
+	} {
+		got, ok := CompareDigits(x.a, x.b)
+		if got != x.want || ok != x.ok {
+			t.Errorf("CompareDigits(%q, %q) = %d, %v; want %d, %v", x.a, x.b, got, ok, x.want, x.ok)
+		}
+	}
+}
+
 func amount(from, to, v float64, code string) Point {
 	return Point{At: at(from), End: at(to), Value: v, HasValue: true, Code: code, Group: code}
 }

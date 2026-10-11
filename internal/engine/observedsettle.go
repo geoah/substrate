@@ -499,9 +499,7 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		maxGap[i], startGap[i] = s.MaxGapMs, s.StartGapMs
 		if s.Values > 0 {
 			sum[i], minV[i], maxV[i], mean[i], m2[i] = ptrTo(s.Sum), ptrTo(s.Min), ptrTo(s.Max), ptrTo(s.Mean), ptrTo(s.M2)
-			if s.MinExact != "" && s.MaxExact != "" {
-				minExact[i], maxExact[i] = ptrTo(s.MinExact), ptrTo(s.MaxExact)
-			}
+			minExact[i], maxExact[i] = ptrTo(s.MinExact), ptrTo(s.MaxExact)
 		}
 		if s.First != nil {
 			firstTS[i], firstValue[i] = ptrTo(s.First.At), digitsOf(s.First)

@@ -622,6 +622,13 @@ func (a AggregateTrace) RollupRows() int64 { return a.t.rollupRows }
 // RawPoints is the raw points the read took.
 func (a AggregateTrace) RawPoints() int64 { return a.t.rawPoints }
 
+// MergedRows is the rollup rows the reads' reductions merged.
+func (a AggregateTrace) MergedRows() int64 { return a.t.mergedRows }
+
+// AfterPlan sets a hook each metric read under the trace's context runs once
+// its plan has read every row and point it reduces, before the reduction.
+func (a AggregateTrace) AfterPlan(hook func()) { a.t.afterPlan = hook }
+
 // AggregateTraced counts what each aggregate read under the context takes.
 func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
 	t := &aggTrace{}

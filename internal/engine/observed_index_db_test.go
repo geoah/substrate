@@ -994,6 +994,99 @@ func TestRebuildReproducesTheObservedTables(t *testing.T) {
 	checkRollupsMatchSpec(t, db)
 }
 
+// TestObservedRollupRowsAlwaysCarryTheirDetail: every rollup row the fold
+// writes carries what a read served from it needs to answer as the raw
+// points do: the record id and index of its first and last point, the
+// stored digits of its smallest and largest number, an amount's span end,
+// and an increase only where it holds a step (a counter's first reading has
+// none before it, which is no answer, not a change of zero). The table
+// refuses a row without them, so no row a read meets lacks them.
+func TestObservedRollupRowsAlwaysCarryTheirDetail(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i, v := range []string{"10.50", "12.25"} {
+		r.mustPut(t, r.observation, fmt.Sprintf("meter/%d", i), map[string]any{
+			"metric": r.metricRef("energy"), "source": r.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
+			"value": quantity(v, "kW.h"), "at": start.Add(time.Duration(i) * time.Hour).Format(time.RFC3339),
+		})
+	}
+	r.mustPut(t, r.observation, "steps/1", map[string]any{
+		"metric": r.metricRef("health/steps"), "source": r.sourceRef("phone"), "form": "amount",
+		"value": quantity("9007199254740993", "{steps}"),
+		"at":    start.Format(time.RFC3339), "endsAt": start.Add(5 * time.Minute).Format(time.RFC3339),
+	})
+	r.mustPut(t, r.observation, "door/1", map[string]any{
+		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("contact"), "form": "gauge", "code": "open",
+		"at": start.Format(time.RFC3339),
+	})
+	r.mustPut(t, r.observation, "air/1", map[string]any{
+		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("thermometer"), "form": "gauge",
+		"value": quantity("21.10", "Cel"), "at": start.Format(time.RFC3339),
+	})
+	rows := storedRollups(t, r.db)
+	if len(rows) < 5 {
+		t.Fatalf("%d rollup rows, want one per stream and bucket written", len(rows))
+	}
+	steps := 0
+	for key, g := range rows {
+		form := strings.SplitN(strings.Split(key, "|")[5], "#", 2)[0]
+		if g.firstTS.Valid != (g.firstRecord.Valid && g.firstOrd.Valid) || g.lastTS.Valid != (g.lastRecord.Valid && g.lastOrd.Valid) {
+			t.Errorf("%s: first/last %v/%v without their record id and index %v %v %v %v", key, g.firstTS.Valid, g.lastTS.Valid,
+				g.firstRecord, g.firstOrd, g.lastRecord, g.lastOrd)
+		}
+		if g.min.Valid != g.minValue.Valid || g.max.Valid != g.maxValue.Valid {
+			t.Errorf("%s: min/max %v/%v without their digits %v/%v", key, g.min, g.max, g.minValue, g.maxValue)
+		}
+		if g.spanEnd.Valid != (form == vocabulary.FormAmount && g.n > 0) {
+			t.Errorf("%s: span_end %v on a %s row of %d points", key, g.spanEnd, form, g.n)
+		}
+		if form == vocabulary.FormAmount && g.minValue.String != "9007199254740993" {
+			t.Errorf("%s: min_value %v, want the stored digits 9007199254740993", key, g.minValue)
+		}
+		if form != vocabulary.FormCounter {
+			if g.increase.Valid {
+				t.Errorf("%s: a %s row has an increase %v", key, form, g.increase)
+			}
+			continue
+		}
+		switch {
+		case g.firstTS.Time.Equal(start) && g.increase.Valid:
+			t.Errorf("%s: the counter's first reading has no reading before it, and its row has increase %v, want null", key, g.increase)
+		case g.firstTS.Time.Equal(start.Add(time.Hour)) && (!g.increase.Valid || !sameDecimal(g.increase.String, "1.75")):
+			t.Errorf("%s: the second reading's row has increase %v, want 1.75", key, g.increase)
+		}
+		if g.increase.Valid {
+			steps++
+		}
+	}
+	if steps != 1 {
+		t.Errorf("%d counter rows hold a step, want the second reading's alone", steps)
+	}
+	// The table refuses a row missing any of it.
+	repo := testdb.Repository(t)
+	for _, x := range []struct{ what, columns, values string }{
+		{"a number without its digits", `n, bounded, sum, min, max, covered_ms`, `1, 0, 1, 1, 1, 0`},
+		{"a first and last point without their record", `n, bounded, first_ts, last_ts, covered_ms`, `1, 0, now(), now(), 0`},
+		{
+			"an amount without its span end", `n, bounded, first_ts, first_record_id, first_ord, last_ts, last_record_id, last_ord, covered_ms`,
+			`1, 0, now(), 'x', 0, now(), 'x', 0, 0`,
+		},
+		{"an increase on a gauge", `n, bounded, increase, covered_ms`, `0, 0, 0, 0`},
+	} {
+		form := vocabulary.FormGauge
+		if strings.Contains(x.what, "amount") {
+			form = vocabulary.FormAmount
+		}
+		_, err := r.db.Exec(`INSERT INTO observed_rollups (repository, metric, kind, source, about, channel, form, code, unit, delta,
+			utc_offset_min, bucket15, max_gap_ms, start_gap_ms, `+x.columns+`)
+			VALUES ($1, $3, 'k', '', '', '', $2, '', '', false, 0, '2026-01-01T00:00:00Z', 0, 0, `+x.values+`)`, repo, form, x.what)
+		if err == nil || !strings.Contains(err.Error(), "23514") {
+			t.Errorf("a row with %s: err = %v, want a check violation (23514)", x.what, err)
+		}
+	}
+}
+
 // TestVerifyAndExportReadNoObservedTable: verify and the export read the
 // changelog files and never the observed index, so an emptied index neither
 // fails verify nor travels in the archive, and a server restoring the archive
