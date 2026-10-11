@@ -17,7 +17,9 @@ spacing (3600 points). It then rewrites one day's traces at revision 2 and
 rebuilds the repository, and checks the rebuild reproduced the three tables.
 
 **Caveat: one box, one run.** A 16-core AMD EPYC-Rome VM with 31 GB of RAM,
-load average about 1.5 from other work during the run. Postgres 16 runs in
+Go 1.27.2, load average between 2 and 6 from other work during the run, at
+commit f6ed69f2; an earlier run at 5d6bc6a8 gave write and rebuild times
+within 1 percent of these and read times within 10 percent. Postgres 16 runs in
 the test container on tmpfs with `fsync=off`, `synchronous_commit=off` and
 `full_page_writes=off`, and the changelog segments are on tmpfs too, so
 every time below is a floor for a disk that syncs, and the WAL bytes leave
@@ -28,9 +30,9 @@ in force, best of three.
 
 | Phase | Records | Points | Rollup rows | Changelog bytes | WAL bytes | Wall time |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| write 30 days | 1500 | 262080 | 6000 | 7473985 | 426991616 | 1m8.462s |
-| rewrite one day, revision 2 | 50 | 8736 | 6000 | 7575857 | 9785080 | 1.069s |
-| rebuild | 1629 | 262080 | 6000 | 7575857 | 310532072 | 24.482s |
+| write 30 days | 1500 | 262080 | 6000 | 7473985 | 426999808 | 1m8.486s |
+| rewrite one day, revision 2 | 50 | 8736 | 6000 | 7575857 | 9786000 | 1.066s |
+| rebuild | 1629 | 262080 | 6000 | 7575857 | 310538672 | 24.189s |
 
 Records and points are the phase's own, except the rebuild's, which are the
 repository's (the 129 records past the 1500 are the seeded and imported
@@ -39,9 +41,9 @@ phase.
 
 | Stream, write phase | Puts | Points per put | Mean wall time per put |
 | --- | ---: | ---: | ---: |
-| heart rate | 720 | 60 | 39.69ms |
-| steps | 720 | 4 | 33.34ms |
-| power | 60 | 3600 | 263.08ms |
+| heart rate | 720 | 60 | 39.52ms |
+| steps | 720 | 4 | 33.56ms |
+| power | 60 | 3600 | 262.98ms |
 
 A trace of one point took about 12 ms in a separate probe, which is the
 write path without much index work. Timers placed in the engine for that
@@ -52,17 +54,17 @@ for the latest row.
 
 | Table, after the write | Rows | Total bytes | Bytes per row, with indexes | Bytes per row, heap tuple |
 | --- | ---: | ---: | ---: | ---: |
-| records | 1629 | 6668288 | 4093 | 1292 |
+| records | 1629 | 6651904 | 4083 | 1292 |
 | observed_points | 262080 | 360923136 | 1377 | 424 |
-| observed_rollups | 6000 | 6053888 | 1008 | 452 |
+| observed_rollups | 6000 | 6045696 | 1007 | 452 |
 | observed_latest | 3 | 65536 | 21845 | 395 |
 
 | Read, 30 days, daily mean per stream | Rows read | Wall time |
 | --- | ---: | ---: |
-| heart rate from rollups | 30 | 4.12ms |
-| heart rate from raw points | 30 | 64.77ms |
-| power from rollups | 30 | 970µs |
-| power from raw points | 30 | 254.25ms |
+| heart rate from rollups | 30 | 3.74ms |
+| heart rate from raw points | 30 | 64.45ms |
+| power from rollups | 30 | 1.01ms |
+| power from raw points | 30 | 257.31ms |
 
 The first run found a plan fault: the rollup recompute joined the touched
 buckets against `observed_points`, and the planner, with no statistics on
