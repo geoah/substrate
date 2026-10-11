@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -425,6 +426,53 @@ func TestAggregateLocfCarriesThePreviousCode(t *testing.T) {
 	states := read(substrate.AggregateReducer{Name: "timeInState"}, "min")
 	if len(states.Values) != 1 || states.Values[0].Code != "closed" || states.Values[0].Value == nil || *states.Values[0].Value != "1" {
 		t.Errorf("the filled hour's time in state = %+v, want closed for 1 min", states.Values)
+	}
+}
+
+// A property read counts its groups before it reads a value: a EUR and a JPY
+// spend are two groups, refused under maxGroups 1, and two groups in two
+// months are four cells, refused under maxBuckets 3.
+func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	ctx := context.Background()
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{vocabularyPackage(moneyPackage), spendManifest()}); err != nil {
+		t.Fatalf("install the spend kind: %v", err)
+	}
+	for i, x := range []struct {
+		amount   int64
+		currency string
+	}{{1005, "EUR"}, {2, "JPY"}} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: moneyPackage + "/spend", ID: strconv.Itoa(i), Properties: map[string]any{
+			"price": moneyValue(x.amount, x.currency), "paidAt": "2026-09-03T10:00:00Z",
+		}})
+	}
+	read := func(budget substrate.AggregateBudget) error {
+		_, err := ds.Aggregate(ctx, substrate.AggregateQuery{
+			Filter: substrate.Filter{Kinds: []string{moneyPackage + "/spend"}},
+			Aggregate: &substrate.Aggregate{
+				Property: &substrate.AggregateProperty{Name: "price", Anchor: "paidAt"},
+				Range:    rng(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)),
+				Bucket:   &substrate.AggregateBucket{Calendar: "month", Timezone: "UTC"},
+				Reducers: reducers("sum"),
+				Budget:   &budget,
+			},
+		})
+		return err
+	}
+	for _, x := range []struct {
+		budget substrate.AggregateBudget
+		want   string
+	}{
+		{substrate.AggregateBudget{MaxGroups: 1}, "aggregate.budget.maxGroups"},
+		{substrate.AggregateBudget{MaxBuckets: 3}, "aggregate.budget.maxBuckets"},
+	} {
+		if err := read(x.budget); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), x.want) {
+			t.Errorf("budget %+v: err = %v, want a refusal naming %s", x.budget, err, x.want)
+		}
+	}
+	if err := read(substrate.AggregateBudget{MaxGroups: 2, MaxBuckets: 4}); err != nil {
+		t.Errorf("within the budget: %v", err)
 	}
 }
 

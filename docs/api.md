@@ -1333,7 +1333,7 @@ Every budget is checked before a point is read, and a request over one is a
 | --- | --- | --- | --- |
 | `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
 | `maxSamples` | the raw points a read takes, counted first; the records a property read takes | 1,000,000 | 20,000,000 |
-| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read | 200 | 2,000 |
+| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,

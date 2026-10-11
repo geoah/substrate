@@ -228,9 +228,33 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		return nil, refuse("aggregate.budget.maxSamples", "the read takes %d records, over %d; narrow the filter or the range, or raise maxSamples (the cap is %d)",
 			n, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
+	// The groups are counted before a value is read, as the records are: a
+	// small maxGroups or maxBuckets refuses the read before its scan.
+	var keys []string
+	if p.grouped[substrate.GroupKind] {
+		keys = append(keys, `kind`)
+	}
+	if family == propMoney {
+		keys = append(keys, `props->`+sqlLiteral(name)+`->>'`+vocabulary.MoneyCurrency+`'`)
+	}
+	nGroups := min(n, 1)
+	if len(keys) > 0 {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT DISTINCT `+strings.Join(keys, ", ")+` FROM records WHERE `+where+`) g`,
+			b.args...).Scan(&nGroups); err != nil {
+			return nil, fmt.Errorf("substrate/engine: aggregate groups: %w", err)
+		}
+	}
+	if nGroups > int64(p.maxGroups) {
+		return nil, refuse("aggregate.budget.maxGroups", "the read makes %d groups (kinds and currencies), over %d; narrow the filter or raise maxGroups (the cap is %d)",
+			nGroups, p.maxGroups, substrate.AggregateMaxGroupsCap)
+	}
 	buckets, err := ds.buckets(ctx, tx, p)
 	if err != nil {
 		return nil, err
+	}
+	if cells := nGroups * int64(len(buckets)); cells > int64(p.maxBuckets) {
+		return nil, refuse("aggregate.budget.maxBuckets", "%d groups times %d buckets is %d, over %d; raise maxBuckets or widen the bucket (the cap is %d)",
+			nGroups, len(buckets), cells, p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT kind, `+anchorExpr+`, (props->`+b.arg(name)+`)::text FROM records WHERE `+where+
 		` ORDER BY `+anchorExpr+`, kind, id`, b.args...)
@@ -304,6 +328,11 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		gk := strings.Join(parts, "\x1f")
 		g := groups[gk]
 		if g == nil {
+			// The groups were counted before the scan; one more than
+			// counted stops it rather than reduce past the budget.
+			if int64(len(groups)) >= nGroups {
+				return nil, refuse("aggregate.budget.maxGroups", "the read met more groups than the %d it counted; read again", nGroups)
+			}
 			g = &aggGroup{key: key, sortKey: gk}
 			groups[gk] = g
 		}
@@ -324,10 +353,6 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
-	}
-	if len(groups)*len(buckets) > p.maxBuckets {
-		return nil, refuse("aggregate.budget.maxBuckets", "%d groups times %d buckets is over %d; raise maxBuckets or widen the bucket",
-			len(groups), len(buckets), p.maxBuckets)
 	}
 	res := &substrate.AggregateResult{Property: name, Unit: target, Bucket: p.bucket.echo, Exact: true}
 	meta := &aggMeta{sources: map[string]bool{}}
