@@ -21,12 +21,7 @@ const (
 	fitObservePackage = "samples.substrate.reamde.dev/healthgooglefit"
 	fitObserveFn      = fitObservePackage + "/observegooglefit"
 	obsHome           = "samples.substrate.reamde.dev"
-	obsObservation    = obsHome + "/observations/observation"
-	obsTrace          = obsHome + "/observations/trace"
-	obsSource         = obsHome + "/observations/source"
 	obsMetric         = obsHome + "/observations/metric"
-	healthSleep       = obsHome + "/health/sleep"
-	healthWorkout     = obsHome + "/health/workout"
 	fitZone           = "Europe/Athens"
 )
 

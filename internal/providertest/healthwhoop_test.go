@@ -22,8 +22,6 @@ const (
 	healthObservation = "samples.substrate.reamde.dev/observations/observation"
 	healthSource      = "samples.substrate.reamde.dev/observations/source"
 	healthMetric      = "samples.substrate.reamde.dev/observations/metric"
-	healthSleep       = "samples.substrate.reamde.dev/health/sleep"
-	healthWorkout     = "samples.substrate.reamde.dev/health/workout"
 	healthWhoopRun    = "healthwhoop-on-mirror"
 
 	// The proposal's worked example: one cycle, its recovery and its sleep.

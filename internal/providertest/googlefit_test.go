@@ -510,7 +510,7 @@ func TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions(t *testing.T) {
 	if first := fitInt(points[0]["startTimeNanos"]); first < start.UnixNano() {
 		t.Fatalf("the row holds a point from the day before (%d < %d)", first, start.UnixNano())
 	}
-	if !sameInstant(busy.Properties["at"], start) || !sameInstant(busy.Properties["endsAt"], start.Add(24*time.Hour)) {
+	if !fitSameInstant(busy.Properties["at"], start) || !fitSameInstant(busy.Properties["endsAt"], start.Add(24*time.Hour)) {
 		t.Fatalf("the row's span = %v to %v, want the UTC day %s", busy.Properties["at"], busy.Properties["endsAt"], start)
 	}
 	value, _ := points[0]["value"].([]any)
@@ -722,8 +722,8 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 		run["name"] != "Morning run" {
 		t.Fatalf("the Strava run = %v", run)
 	}
-	if !sameInstant(run["at"], time.UnixMilli(1789186117000).Add(shift)) ||
-		!sameInstant(run["endsAt"], time.UnixMilli(1789188589000).Add(shift)) {
+	if !fitSameInstant(run["at"], time.UnixMilli(1789186117000).Add(shift)) ||
+		!fitSameInstant(run["endsAt"], time.UnixMilli(1789188589000).Add(shift)) {
 		t.Fatalf("the Strava run spans %v to %v", run["at"], run["endsAt"])
 	}
 	sleep := mustGet(t, ds, googlefitSessionType, googlefitAccount+"/Sleep1789070381000").Properties
@@ -873,9 +873,9 @@ func fitLive(t *testing.T, ds substrate.Dataset, kind, id string) bool {
 	return err == nil && row.DeletedAt == nil
 }
 
-// sameInstant compares a stored datetime with an instant, whatever spelling
+// fitSameInstant compares a stored datetime with an instant, whatever spelling
 // the engine stored it in.
-func sameInstant(v any, want time.Time) bool {
+func fitSameInstant(v any, want time.Time) bool {
 	got, err := time.Parse(time.RFC3339Nano, fmt.Sprint(v))
 	return err == nil && got.Equal(want)
 }
