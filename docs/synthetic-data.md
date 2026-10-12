@@ -1,0 +1,76 @@
+# Synthetic provider data
+
+`internal/synth` generates data for one invented person in the exact shapes
+the shipped provider functions read, and `cmd/synth` writes it to disk and
+loads it into a running substrate. The demo substrate, the console
+screenshots and the contract tests in `internal/providertest` all start from
+it, so a change to a provider's shape that the generator does not follow
+fails a test, not a demo.
+
+Nothing here came from anybody's body. The recorded fixtures under
+`internal/providere2e/fixtures/` and `internal/providertest/testdata/` are
+the shapes; this is the volume.
+
+## The person
+
+`synth.Persona` is a deterministic model of a body over a date range: every
+value derives from the seed and a key, so two runs agree to the byte and four
+emitters run independently and still describe one life. The default
+(`synth.DefaultOptions`) is Ada, Athens, the 90 days ending 2026-10-11, with a
+cold from 2026-08-26 to 2026-08-29 (resting heart rate up, HRV down, sleep
+longer and broken, no training) and a trip to London from 2026-09-20 to
+2026-09-24 (the zone moves with her). She trains six days most weeks (an easy
+run, intervals, strength, a long run that grows with the block, yoga, a ride
+every other week), weighs in four mornings a week, takes her blood pressure
+on Sundays and has two lab panels.
+
+`Persona.Day(d)` is the ground truth for one local day: the night that ended
+that morning with its stages, the workouts with their heart-rate curves, the
+heart rate at any instant, steps per bucket, energy, stress and Body Battery
+in Garmin's terms, recovery and strain in WHOOP's, the weigh-in and the
+reading if there was one. An emitter samples it at the resolution its
+provider sends and adds its own device noise with `Persona.Noisy`, keyed by
+provider, so a watch reads two beats off another watch and two scales
+disagree by a few hundred grams.
+
+## The emitters
+
+| Emitter | Writes | How it reaches a substrate |
+| --- | --- | --- |
+| `manual` | `labs.yaml`: two `labreport` records, 22 `labresult` records, the lab and the hand-entry `source` records, and one weigh-in typed in on a hotel scale | `synth load` writes them through `PUT /api/v1/...`; `substratectl apply -f` does the same |
+
+Recordings for a mock-driven provider are named by `synth.RecordingName`,
+the Go form of the rule in `internal/providere2e/runner/mockserver.py`
+(`recording_test.go` pins it against names the Python produced), so the
+provider e2e runner serves them unchanged. A webhook provider's requests are
+saved as the `{"request": {...}}` envelopes the provider tests hold under
+`testdata/`, one file per delivery in posting order, with the trigger they go
+to.
+
+## The command
+
+```bash
+mise run synth:generate                              # every emitter -> .dev/synth/<provider>/
+mise run synth:generate -- -providers manual -out /tmp/synth
+mise run synth:generate -- -from 2026-09-01 -to 2026-09-30 -seed other
+SUBSTRATE_TOKEN=… mise run synth:load -- -server http://127.0.0.1:8080 -authority ada.example.com
+```
+
+`generate` is pure: the same flags write the same bytes. `load` posts each
+webhook delivery to `/webhooks/<authority>/<trigger>`, arming the trigger
+with `-key` first, and waits for the trigger to settle before the next one
+(the door holds eight in flight); a parked delivery stops the load and names
+the trigger to read. For a mock-driven provider it prints the provider e2e
+runner command that drives the real sync over the generated recordings. The
+bearer comes from `SUBSTRATE_TOKEN`, never from argv.
+
+## What holds it to spec
+
+- `internal/synth`'s own tests: determinism, the life's invariants (a sleep
+  is four to twelve hours, a heart rate stays between 40 and the maximum,
+  the ill days walk less and train not at all), the recording names.
+- `internal/providertest` drives the emitted data through the real
+  functions over the real engine: a delivery through `applehealthingest`, a
+  push through `garminpush`, a sync through the loopback fake over the
+  generated recordings, then the adapter samples. Those run under
+  `mise run test:db:rest`.

@@ -46,6 +46,8 @@ linters:
         - "catalogue"
         - "Catalogue"
         - "catalogues"
+        # The health sample's metric id, spelled as the sample declares it.
+        - "haemoglobin"
   # Report every occurrence: a truncated list makes a cleanup pass look done
   # when it is not.
   exclusions:

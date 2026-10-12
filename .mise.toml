@@ -65,6 +65,20 @@ run = "go build -trimpath -o bin/substrate ./cmd/substrated"
 description = "Build the CLI -> bin/substratectl"
 run = "go build -trimpath -o bin/substratectl ./cmd/substratectl"
 
+# Synthetic provider data for one invented person (internal/synth): mock
+# recordings, webhook requests and hand-entered records in the shapes the
+# shipped provider functions read. `generate` writes them under .dev/synth;
+# `load` posts the webhook ones to a running substrate and applies the
+# records (SUBSTRATE_TOKEN carries the bearer). Arguments pass through:
+# `mise run synth:generate -- -providers whoop -from 2026-09-01`.
+[tasks."synth:generate"]
+description = "Generate synthetic provider data -> .dev/synth (args pass through)"
+run = "go run ./cmd/synth generate"
+
+[tasks."synth:load"]
+description = "Load .dev/synth into a running substrate: -server, -authority (args pass through)"
+run = "go run ./cmd/synth load"
+
 [tasks.test]
 description = "The whole Go suite, sequential: what ci:coverage runs on main"
 # SEQUENTIAL, not `depends`. mise runs dependencies in PARALLEL, and running

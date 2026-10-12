@@ -72,6 +72,8 @@ API call that completes a task.
   request, and how a change reaches `CHANGELOG.md`
 - [Testing](testing.md) — every suite, which to reach for, and how to give the
   live one keys
+- [Synthetic provider data](synthetic-data.md): one invented person's 90 days
+  in the shapes the provider functions read, for demos and the contract tests
 - [Built-in kinds](builtin-kinds.md) — reference
 
 ---
