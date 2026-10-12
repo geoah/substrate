@@ -38,8 +38,26 @@ disagree by a few hundred grams.
 | Emitter | Writes | How it reaches a substrate |
 | --- | --- | --- |
 | `whoop` | `recordings/`: the WHOOP v2 profile, body measurement, and the cycle, recovery, sleep and workout collections, 25 records a page, later pages named for their `nextToken`; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `whoopsync` over the recordings |
+| `googlefit` | `recordings/`: the Fit REST v1 data source list (17 derived and 15 raw streams), one recording per derived stream per UTC day with points (`..._datasets_<startNs>-<endNs>__limit-1000.json`) and one empty recording per stream for every other day, the windowed session list, the two-page session feed and the userinfo address; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `googlefitsync` over the recordings, then imports `healthgooglefit` and replays it |
 | `applehealth` | `deliveries/`: one Health Auto Export request per local day (Time Grouping Minutes, Export Version 2) to `applehealth-webhook`, with the app's headers | `synth load` installs the provider, writes the `iphone` account, imports `healthapple`, arms the trigger and posts them one at a time |
 | `manual` | `labs.yaml`: two `labreport` records, 22 `labresult` records, the lab and the hand-entry `source` records, and one weigh-in typed in on a hotel scale | `synth load` writes them through `PUT /api/v1/...`; `substratectl apply -f` does the same |
+
+`googlefit` samples the persona the way a Pixel Watch 2 syncs to Fit. Heart
+rate is one point every 5 minutes with the watch's noise, and one a minute
+during workouts. Steps are 15-minute deltas about 5 percent high. Energy
+expended is hourly. Sleep stages are written as `com.google.sleep.segment`
+points, and oxygen saturation is one nightly average at wake. A Withings
+Body+ writes weigh-ins and body fat four mornings a week, and a Withings BPM
+Connect blood pressure and a pulse on Sundays. Height is entered once, and
+activity segments, active minutes and heart minutes cover every bout.
+Sessions are one sleep per night and nap and the Fit app's rides, strength
+and yoga (codes 1, 80 and 100), plus Strava's runs under Strava ids.
+Distance is written but never served, because the bundle asks for no
+location scope. The 90-day default is 1,212 files (19.7 MB). The
+`healthgooglefit` adapter turns it into about 38,800 observed points under
+the sources `googlefit/<account>/google-pixel-watch-2.8d1f3c7a`,
+`withings-body.4a91be20`, `withings-bpm-connect.7c03d5e1`, `manual`,
+`com-strava` and `com-google-android-apps-fitness`.
 
 `applehealth` writes what the Health Auto Export app POSTs at the end of
 each local day. Heart rate comes from "Ada's Apple Watch" about every 5
