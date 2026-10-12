@@ -195,6 +195,27 @@ describe("the timeline's requests", () => {
     expect(read.aggregate.sources).toBeUndefined()
   })
 
+  it("narrows to a stream's channel from the address, and lets it go", async () => {
+    const server = mount(
+      `?metric=health/heart_rate&source=garmin-forerunner-265&channel=workout&${WINDOW}`
+    )
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/heart_rate")[0].filter.properties?.channel
+    ).toEqual({ in: ["workout"] })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Channel filter" })
+    )
+    await waitFor(() =>
+      expect(
+        charts(server.seen, "health/heart_rate").at(-1)!.filter.properties
+          ?.channel
+      ).toBeUndefined()
+    )
+  })
+
   it("re-reads when the bucket, the reducer or the unit changes", async () => {
     const server = mount(`?metric=health/body_mass&${WINDOW}`)
     const weight = await lane("Weight")

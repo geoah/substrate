@@ -715,8 +715,8 @@ row of controls scopes every chart: the metrics, the range (today, the last
 the bucket (automatic from the range, 15 minutes, an hour, a day, a week, a
 month; calendar buckets in your time zone), what to group by (metric,
 source, about or category), where to read from (automatic, raw points,
-vendor summaries, or raw where a bucket is covered), and the sources and
-things to keep. Under each chart, each metric's numbers as a table that
+vendor summaries, or raw where a bucket is covered), and the sources,
+things and channels to keep. Under each chart, each metric's numbers as a table that
 copies as tab-separated text; with Technical details on, each request itself
 as JSON and as a `curl` command.
 

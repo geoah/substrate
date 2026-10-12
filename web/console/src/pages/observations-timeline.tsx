@@ -88,7 +88,7 @@ export function ObservationsTimelinePage() {
   const [sources, setSources] = useQueryState("source", ARRAY)
   const [abouts, setAbouts] = useQueryState("about", ARRAY)
   // A stream's channel, where a row of the streams table named one.
-  const [channels] = useQueryState("channel", ARRAY)
+  const [channels, setChannels] = useQueryState("channel", ARRAY)
   // The chosen metrics, sources and things narrow discovery on the server.
   const obs = useObservations({ metrics: metricParam, sources, abouts })
   const [rangeParam, setRangeParam] = useQueryState(
@@ -157,6 +157,20 @@ export function ObservationsTimelinePage() {
         value,
         label: values.nameOf(value, obs.pins.about),
       })),
+    },
+    {
+      // A source's own channels of the shown metrics (a WHOOP cycle's heart
+      // rate beside its workouts'), with any the address names.
+      name: "channel",
+      label: "Channel",
+      options: [
+        ...new Set([
+          ...obs.streams
+            .filter((s) => metrics.some((m) => sameRef(s.metric, m)))
+            .flatMap((s) => (s.channel ? [s.channel] : [])),
+          ...channels,
+        ]),
+      ].map((value) => ({ value, label: value })),
     },
   ]
   const reducers = readChoices(reducerTokens)
@@ -296,11 +310,15 @@ export function ObservationsTimelinePage() {
         </div>
         <FacetFilters
           facets={facets}
-          selected={{ source: sources, about: abouts }}
+          selected={{ source: sources, about: abouts, channel: channels }}
           onChange={(name, values) =>
-            void (name === "source" ? setSources : setAbouts)(
-              values.length ? values : null
-            )
+            void (
+              name === "source"
+                ? setSources
+                : name === "about"
+                  ? setAbouts
+                  : setChannels
+            )(values.length ? values : null)
           }
         />
         {!obs.discovery.isError && <FacetListErrors values={values} />}
