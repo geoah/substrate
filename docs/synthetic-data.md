@@ -39,6 +39,7 @@ disagree by a few hundred grams.
 | --- | --- | --- |
 | `whoop` | `recordings/`: the WHOOP v2 profile, body measurement, and the cycle, recovery, sleep and workout collections, 25 records a page, later pages named for their `nextToken`; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `whoopsync` over the recordings |
 | `googlefit` | `recordings/`: the Fit REST v1 data source list (17 derived and 15 raw streams), one recording per derived stream per UTC day with points (`..._datasets_<startNs>-<endNs>__limit-1000.json`) and one empty recording per stream for every other day, the windowed session list, the two-page session feed and the userinfo address; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `googlefitsync` over the recordings, then imports `healthgooglefit` and replays it |
+| `garmin` | `recordings/`: the connect step (the user id, the permissions, and one 202-then-409 answer per backfill type) and `e2e.json` for the runner; `deliveries/`: the pushes to `garmin-webhook`, each the `{"<summary type>": [...]}` envelope `garminpush` reads | `synth load` runs the provider e2e runner for the connect step (it installs the provider and writes the account), imports `healthgarmin`, arms the trigger and posts the deliveries one at a time |
 | `applehealth` | `deliveries/`: one Health Auto Export request per local day (Time Grouping Minutes, Export Version 2) to `applehealth-webhook`, with the app's headers | `synth load` installs the provider, writes the `iphone` account, imports `healthapple`, arms the trigger and posts them one at a time |
 | `manual` | `labs.yaml`: two `labreport` records, 22 `labresult` records, the lab and the hand-entry `source` records, and one weigh-in typed in on a hotel scale | `synth load` writes them through `PUT /api/v1/...`; `substratectl apply -f` does the same |
 
@@ -90,6 +91,29 @@ from each workout's 30-second series. The 90-day default is 17 recordings
 (226 KB); the `healthwhoop` adapter turns them into about 1,200
 observations, 95 `health/sleep` and 62 `health/workout` records under one
 source, `whoop/<account id>`, and no traces.
+
+`garmin` writes what one Forerunner 265 pushes through Garmin's Health and
+Activity API. The connect step answers the real `garminsync` over the
+runner's mock: the user id, the permissions, and 202 then 409 for each
+backfill type, as Garmin answers a repeated backfill request. The data
+arrives as pushes: heart rate every 5 minutes in the daily, 15-minute
+epochs split by activity type, stress every 3 minutes and Body Battery
+every 15 in the stress details, and for each night the stages, SpO2 every
+10 minutes, breathing every 15 and HRV every 5. Each workout is an activity
+and its details, a sample every 30 seconds with laps per kilometer on a
+run, named for the city it started in. One watch cannot record a night and
+a run at once, so a night the persona ends after the Sunday long run has
+started ends 10 minutes before it, and the trip's local days neither
+overlap nor leave a gap the watch could not have. Dailies, epochs, stress
+details, sleeps, respiration and activity details go one day to a
+delivery; HRV, Pulse Ox, skin temperature, weigh-ins, blood pressure, user
+metrics, activities and Move IQ events go one week to a delivery, as a
+backfill would. The 90-day default is 17 recordings, `e2e.json` and 611
+deliveries (7.5 MB); the `healthgarmin` adapter turns them into about
+3,500 observations and 15,000 traces, one `health/sleep` per night and one
+`health/workout` per activity, under two sources: `garmin/<account>/forerunner265`
+for the activities, which name the device, and `garmin/<account>/account`
+for the summaries, which do not.
 
 Recordings for a mock-driven provider are named by `synth.RecordingName`,
 the Go form of the rule in `internal/providere2e/runner/mockserver.py`
