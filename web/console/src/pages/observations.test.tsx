@@ -76,7 +76,8 @@ function mount(
   kinds = KINDS,
   respond: (read: SeenRead) => AggregateResult | Response = (read) =>
     latestAnswer(read),
-  views: SavedView[] = []
+  views: SavedView[] = [],
+  technical = false
 ) {
   const server = observationsServer(respond, kinds)
   vi.stubGlobal("fetch", vi.fn(server.fetch))
@@ -93,6 +94,7 @@ function mount(
           favorites: [],
           sidebarOpen: true,
           ...DEFAULT_SETTINGS,
+          technicalDetails: technical,
           views,
         },
         busy: false,
@@ -292,6 +294,38 @@ describe("the streams table", () => {
     // A stream about the owner names nobody; one about Mia names her record.
     expect(weight.textContent).toContain("You")
     expect(sleep.textContent).not.toContain("You")
+  })
+
+  it("shows a newest value to the metric's places, the stored digits on hover and in technical mode", async () => {
+    const precise: AggregateResult = {
+      ...LATEST,
+      rows: LATEST.rows.map((r, i) =>
+        i === 1
+          ? {
+              ...r,
+              values: [{ reducer: "last", value: "61.405858", unit: "/min" }],
+            }
+          : r
+      ),
+    }
+    mount("", KINDS, (read) => latestAnswer(read, precise))
+    await rows()
+    const apple = await waitFor(() => {
+      const row = bodyRows().find((r) => r.textContent?.includes("61.41"))
+      expect(row).toBeTruthy()
+      return row!
+    })
+    // No displayPrecision on the fixture's metric: two places.
+    expect(apple.textContent).toContain("61.41 /min")
+    expect(within(apple).getByTitle("61.405858")).toBeTruthy()
+    cleanup()
+    mount("", KINDS, (read) => latestAnswer(read, precise), [], true)
+    await rows()
+    await waitFor(() =>
+      expect(
+        bodyRows().some((r) => r.textContent?.includes("61.405858 /min"))
+      ).toBe(true)
+    )
   })
 
   it("narrows to the chosen sources and forms from the address", async () => {

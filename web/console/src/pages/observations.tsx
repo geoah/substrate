@@ -79,6 +79,7 @@ import { encodeFilter, loadBrowsePrefs, saveBrowsePrefs } from "@/lib/filters"
 import {
   BUCKET_CHOICES,
   BUCKET_SIZE_WORDS,
+  DEFAULT_PRECISION,
   GROUP_CHOICES,
   RANGE_PRESETS,
   SHAPE_WORDS,
@@ -886,7 +887,18 @@ function streamColumns(
         row.original.code ? (
           <CodeMark code={row.original.code} />
         ) : (
-          <Reading value={row.original.value} unit={row.original.unit} />
+          <Reading
+            value={row.original.value}
+            unit={row.original.unit}
+            // Shown to the metric's places, the stored digits on hover;
+            // with Technical details on, the stored digits as they are.
+            precision={
+              technical
+                ? undefined
+                : (obs.metricOf(row.original.metric)?.displayPrecision ??
+                  DEFAULT_PRECISION)
+            }
+          />
         ),
       meta: { label: "Latest", width: 124 },
     },

@@ -674,8 +674,10 @@ no bucket and no range. Each row shows the metric by its record's name, the
 source as a record mention, what it is about (**You** where it names
 nothing, which means the owner), its channel, the form of its newest value
 in words (**Level**, **Amount**, **Running total**, **Vendor summary**,
-**Category**), that value in its unit (or its category, which a coded
-`last` answers in `code`), when, and how many points the stream holds.
+**Category**), that value in its unit to the metric's places (the stored
+digits on hover, and as stored with Technical details on; a category is
+the one a coded `last` answers in `code`), when, and how many points the
+stream holds.
 
 The rows sit in the grid a collection's records do
 ([A collection](#a-collection)), with the same controls, applied in the page
