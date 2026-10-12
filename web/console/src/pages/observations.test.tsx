@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 /** The streams table: the latest read, one row per stream with its newest
- * value in its unit, the facet filters and the search narrowing the rows,
- * a row opening the timeline on its stream, and the page saying so where
- * nothing records measurements. Served by a stand-in records route. */
+ * value in its unit, in the records grid with its machinery (the filter bar
+ * and the search narrowing the rows, the sort and the grouping in the
+ * address, saved views), a row's metric opening the timeline on its
+ * stream, the selection in the address and the Timeline panel drawing it,
+ * and the page saying so where nothing records measurements. Served by a
+ * stand-in records route. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -13,17 +16,23 @@ import {
   waitFor,
   within,
 } from "@testing-library/react"
-import { NuqsTestingAdapter } from "nuqs/adapters/testing"
+import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { AggregateResult } from "@/lib/api/types"
+import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
+import type { AggregateResult, AggregateRow } from "@/lib/api/types"
+import { DEFAULT_SETTINGS, type ConsoleAction } from "@/lib/console-preferences"
+import { encodeFilter } from "@/lib/filters"
+import type { SavedView } from "@/lib/saved-views"
 
 import {
+  APPLE,
   BODY_MASS,
   GARMIN,
   HEART,
   KINDS,
+  LATEST,
   LATEST_PEOPLE,
   MIA,
   RECOVERY,
@@ -37,11 +46,14 @@ import {
   type SeenRead,
 } from "@/lib/observations.test-fixtures"
 
-const navigate = vi.fn()
-
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
-  useNavigate: () => navigate,
+  // The link carries where it goes, as the address the timeline reads.
+  Link: ({ children, search }: { children: ReactNode; search?: unknown }) => (
+    <a href="#" data-search={JSON.stringify(search ?? null)}>
+      {children}
+    </a>
+  ),
+  useNavigate: () => vi.fn(),
 }))
 
 import { ObservationsPage } from "./observations"
@@ -49,28 +61,59 @@ import { ObservationsPage } from "./observations"
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  navigate.mockReset()
+  localStorage.clear()
 })
+
+/** A filter token, as the bar writes one: a field's values, any of. */
+function filter(field: string, ...values: string[]): string {
+  return encodeURIComponent(
+    encodeFilter({ field, op: "eq", value: values.join(",") })
+  )
+}
 
 function mount(
   searchParams = "",
   kinds = KINDS,
   respond: (read: SeenRead) => AggregateResult | Response = (read) =>
-    latestAnswer(read)
+    latestAnswer(read),
+  views: SavedView[] = []
 ) {
   const server = observationsServer(respond, kinds)
   vi.stubGlobal("fetch", vi.fn(server.fetch))
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
+  const urls: UrlUpdateEvent[] = []
+  const actions: ConsoleAction[] = []
   render(
-    <QueryClientProvider client={client}>
-      <NuqsTestingAdapter searchParams={searchParams} hasMemory>
-        <ObservationsPage />
-      </NuqsTestingAdapter>
-    </QueryClientProvider>
+    <ConsolePreferencesContext.Provider
+      value={{
+        preferences: {
+          collapsed: [],
+          favorites: [],
+          sidebarOpen: true,
+          ...DEFAULT_SETTINGS,
+          views,
+        },
+        busy: false,
+        change: (action) => void actions.push(action),
+        set: () => {},
+      }}
+    >
+      <QueryClientProvider client={client}>
+        <NuqsTestingAdapter
+          searchParams={searchParams}
+          hasMemory
+          onUrlUpdate={(e) => void urls.push(e)}
+        >
+          <ObservationsPage />
+        </NuqsTestingAdapter>
+      </QueryClientProvider>
+    </ConsolePreferencesContext.Provider>
   )
-  return server
+  /** The address as the page last wrote it. */
+  const param = (key: string) => urls.at(-1)?.searchParams.get(key) ?? null
+  return Object.assign(server, { urls, actions, param })
 }
 
 /** The problem the server names when a latest read makes too many groups. */
@@ -119,6 +162,11 @@ function bodyRows(): HTMLElement[] {
   return within(screen.getByRole("table")).getAllByRole("row").slice(1)
 }
 
+/** An applied filter's control, by its field's label: `Source | Garmin`. */
+function filterControl(label: string): HTMLElement {
+  return screen.getAllByRole("button", { name: new RegExp(`^${label}.+`) })[0]
+}
+
 /** Picks one value of a facet from "Add filter", then closes the menu. */
 async function addFilter(facet: string, value: RegExp) {
   fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
@@ -159,7 +207,7 @@ describe("the streams table", () => {
     // More than 200 streams: the server refuses a latest read that names
     // no metrics. Discovery never sends one.
     const server = mount("", KINDS, (read) =>
-      read.aggregate.groupBy?.length === 3 && !read.filter.properties?.metric
+      read.aggregate.groupBy?.length === 4 && !read.filter.properties?.metric
         ? refusal()
         : latestAnswer(read)
     )
@@ -169,7 +217,7 @@ describe("the streams table", () => {
   })
 
   it("narrows the streams read to the chosen metric on the server", async () => {
-    const server = mount(`?metric=${encodeURIComponent(BODY_MASS)}`)
+    const server = mount(`?filter=${filter("metric", BODY_MASS)}`)
     const table = await screen.findByRole("table")
     await waitFor(() => expect(table.textContent).toContain("Weight"))
     const streamReads = server.seen.filter(
@@ -179,7 +227,7 @@ describe("the streams table", () => {
       { metric: { in: [BODY_MASS] } },
     ])
     // The metric filter still offers the other metrics.
-    fireEvent.click(screen.getByRole("button", { name: /^Metric/ }))
+    fireEvent.click(filterControl("Metric"))
     expect(
       await screen.findByRole("option", { name: /Heart rate/ })
     ).toBeTruthy()
@@ -187,7 +235,7 @@ describe("the streams table", () => {
 
   it("lists the chosen metric's streams when only the list of every metric is refused", async () => {
     // The list of every metric is the one read grouped by metric alone.
-    mount(`?metric=${encodeURIComponent(BODY_MASS)}`, KINDS, (read) =>
+    mount(`?filter=${filter("metric", BODY_MASS)}`, KINDS, (read) =>
       read.aggregate.groupBy?.join() === "metric"
         ? refusal()
         : latestAnswer(read)
@@ -232,21 +280,21 @@ describe("the streams table", () => {
   })
 
   it("narrows to the chosen sources and forms from the address", async () => {
-    mount("?source=withings-body-plus")
+    mount(`?filter=${filter("source", "withings-body-plus")}`)
     const table = await screen.findByRole("table")
     await waitFor(() =>
       expect(within(table).getAllByRole("row").slice(1)).toHaveLength(1)
     )
     expect(table.textContent).toContain("Weight")
     cleanup()
-    mount("?form=summary")
+    mount(`?filter=${filter("form", "summary")}`)
     const again = await screen.findByRole("table")
     await waitFor(() => expect(again.textContent).toContain("Recovery"))
     expect(within(again).getAllByRole("row").slice(1)).toHaveLength(1)
   })
 
   it("searches the streams' words", async () => {
-    mount("?q=sleep")
+    mount("?search=sleep")
     const table = await screen.findByRole("table")
     await waitFor(() => expect(table.textContent).toContain("Sleep stage"))
     expect(within(table).getAllByRole("row").slice(1)).toHaveLength(1)
@@ -268,7 +316,7 @@ describe("the streams table", () => {
     await addFilter("Source", /Garmin Forerunner 265/)
     // The streams read narrows to the Garmin on the server.
     await waitFor(() => expect(bodyRows()).toHaveLength(2))
-    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    fireEvent.click(filterControl("Source"))
     fireEvent.click(await screen.findByRole("option", { name: /Apple Watch/ }))
     await waitFor(() => expect(bodyRows()).toHaveLength(3))
     await waitFor(() =>
@@ -282,7 +330,7 @@ describe("the streams table", () => {
     await addFilter("About", /mia/)
     // Mia's sleep and heart rate, read narrowed to her on the server.
     await waitFor(() => expect(bodyRows()).toHaveLength(2))
-    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    fireEvent.click(filterControl("About"))
     fireEvent.click(await screen.findByRole("option", { name: /leo/ }))
     await waitFor(() => expect(bodyRows()).toHaveLength(3))
   })
@@ -290,7 +338,7 @@ describe("the streams table", () => {
   it("says the full Source list is unavailable when only its read passes the group cap", async () => {
     // More than 2,000 sources: the Source menu's own read is refused, the
     // chosen source's streams are not.
-    mount(`?source=${encodeURIComponent(GARMIN)}`, KINDS, (read) =>
+    mount(`?filter=${filter("source", GARMIN)}`, KINDS, (read) =>
       read.aggregate.groupBy?.join() === "source"
         ? refusal(CAP_PROBLEM)
         : latestAnswer(read)
@@ -303,7 +351,7 @@ describe("the streams table", () => {
     expect(note.textContent).toContain(CAP_PROBLEM)
     expect(screen.queryByText("The streams didn’t load")).toBe(null)
     // The menu offers the chosen source, and says nothing of the rest.
-    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    fireEvent.click(filterControl("Source"))
     expect(
       await screen.findByRole("option", { name: /Garmin Forerunner 265/ })
     ).toBeTruthy()
@@ -312,7 +360,7 @@ describe("the streams table", () => {
 
   it("says the About list didn’t load, keeps the streams, and reads it again on a retry", async () => {
     let failures = 1
-    mount(`?about=${encodeURIComponent(MIA)}`, KINDS, (read) => {
+    mount(`?filter=${filter("about", MIA)}`, KINDS, (read) => {
       if (read.aggregate.groupBy?.join() === "about" && failures > 0) {
         failures--
         return unavailable()
@@ -325,7 +373,7 @@ describe("the streams table", () => {
       name: "The About list didn’t load",
     })
     expect(note.textContent).toContain("the database is restarting")
-    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    fireEvent.click(filterControl("About"))
     expect(await screen.findByRole("option", { name: /mia/ })).toBeTruthy()
     expect(screen.queryByRole("option", { name: /leo/ })).toBe(null)
     fireEvent.keyDown(document.activeElement ?? document.body, {
@@ -337,18 +385,19 @@ describe("the streams table", () => {
         screen.queryByRole("alert", { name: "The About list didn’t load" })
       ).toBe(null)
     )
-    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
+    fireEvent.click(filterControl("About"))
     expect(await screen.findByRole("option", { name: /leo/ })).toBeTruthy()
     expect(bodyRows()).toHaveLength(2)
   })
 
-  it("opens the timeline narrowed to a row's stream", async () => {
+  it("opens the timeline narrowed to a row's stream from its metric", async () => {
     mount()
     const body = await rows()
-    fireEvent.click(body.find((r) => r.textContent?.includes("Weight"))!)
-    expect(navigate).toHaveBeenCalledWith({
-      to: "/observations/timeline",
-      search: { metric: BODY_MASS, source: WITHINGS },
+    const weight = body.find((r) => r.textContent?.includes("Weight"))!
+    const link = within(weight).getByRole("link", { name: "Weight" })
+    expect(JSON.parse(link.getAttribute("data-search")!)).toEqual({
+      metric: BODY_MASS,
+      source: WITHINGS,
     })
   })
 
@@ -358,5 +407,238 @@ describe("the streams table", () => {
       await screen.findByText("Nothing here records measurements yet")
     ).toBeTruthy()
     expect(server.seen).toEqual([])
+  })
+})
+
+/** A selection token, as the page writes one for a stream of the fixture:
+ * the metric and the source by id. */
+function token(metric: string, source: string): string {
+  return `${metric}|${source}||`
+}
+
+/** Heart rate by source over three days, an average per day. */
+function heartBySource(read: SeenRead): AggregateResult {
+  const day = (d: string, source: string, value: string): AggregateRow => ({
+    start: `2026-10-0${d}T00:00:00Z`,
+    end: `2026-10-0${Number(d) + 1}T00:00:00Z`,
+    group: { source },
+    form: "gauge",
+    values: [
+      { reducer: "avg", value, unit: "/min" },
+      { reducer: "min", value: String(Number(value) - 10), unit: "/min" },
+      { reducer: "max", value: String(Number(value) + 30), unit: "/min" },
+    ],
+    count: 60,
+    bounded: 0,
+    synthetic: false,
+    unavailable: false,
+  })
+  const kept = read.filter.properties?.source?.in as string[] | undefined
+  return {
+    ...LATEST,
+    rows: [
+      day("4", GARMIN, "71"),
+      day("4", APPLE, "64"),
+      day("5", GARMIN, "75"),
+      day("5", APPLE, "62"),
+    ].filter((r) => !kept || kept.includes(r.group!.source!)),
+  }
+}
+
+function answer(read: SeenRead): AggregateResult {
+  if (read.aggregate.metric?.ref === HEART) return heartBySource(read)
+  if (read.aggregate.metric) return { ...LATEST, rows: [] }
+  return latestAnswer(read)
+}
+
+const WINDOW =
+  "range=custom&start=2026-10-04T00:00:00.000Z&end=2026-10-06T00:00:00.000Z&bucket=day"
+
+describe("the streams table's machinery", () => {
+  it("sorts by a column from its header, the sort in the address", async () => {
+    const server = mount()
+    await rows()
+    fireEvent.click(screen.getByRole("button", { name: "Points" }))
+    await waitFor(() => expect(server.param("sort")).toBe("count:asc"))
+    expect(bodyRows()[0].textContent).toContain("Recovery")
+    expect(bodyRows().at(-1)!.textContent).toContain("1,812")
+    fireEvent.click(screen.getByRole("button", { name: "Points" }))
+    await waitFor(() => expect(server.param("sort")).toBe("count:desc"))
+    expect(bodyRows()[0].textContent).toContain("1,812")
+  })
+
+  it("groups the rows by a stream column, each group under a head", async () => {
+    const server = mount()
+    await rows()
+    fireEvent.click(screen.getByRole("button", { name: "Group" }))
+    fireEvent.click(
+      await screen.findByRole("menuitemradio", { name: "Source" })
+    )
+    await waitFor(() => expect(server.param("group")).toBe("source"))
+    const fold = await screen.findByRole("button", {
+      name: "Hide Source: Garmin Forerunner 265",
+    })
+    expect(fold).toBeTruthy()
+    // The Garmin's two streams sit together under their head.
+    const garmin = fold.closest("tbody")!
+    expect(within(garmin).getAllByRole("row")).toHaveLength(3)
+  })
+
+  it("saves a view of the filters, the sort and the grouping, never the search or the selection", async () => {
+    const server = mount(
+      `?filter=${filter("source", GARMIN)}&sort=count:asc&group=metric&search=heart&select=${token("health/heart_rate", "garmin-forerunner-265")}`
+    )
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0))
+    fireEvent.click(screen.getByRole("button", { name: "Save view" }))
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Garmin" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(server.actions).toHaveLength(1))
+    const action = server.actions[0] as { type: string; view: SavedView }
+    expect(action.type).toBe("view")
+    expect(action.view).toEqual({
+      id: expect.any(String),
+      collection: "observations/streams",
+      name: "Garmin",
+      filter: [decodeURIComponent(filter("source", GARMIN))],
+      sort: "count:asc",
+      group: "metric",
+      columns: expect.arrayContaining(["select", "metric", "source"]),
+      hidden: [],
+    })
+  })
+
+  it("lights a saved view while the address shows what it names", async () => {
+    const view: SavedView = {
+      id: "v1",
+      collection: "observations/streams",
+      name: "Garmin",
+      filter: [decodeURIComponent(filter("source", GARMIN))],
+    }
+    const pressed = () =>
+      within(screen.getByRole("group", { name: "Views" }))
+        .getAllByRole("button")
+        .filter((b) => b.getAttribute("aria-pressed") === "true")
+        .map((b) => b.textContent)
+    mount(`?filter=${filter("source", GARMIN)}`, KINDS, undefined, [view])
+    await waitFor(() => expect(bodyRows()).toHaveLength(2))
+    expect(pressed()).toEqual(["Garmin"])
+    fireEvent.click(screen.getByRole("button", { name: "All" }))
+    await waitFor(() => expect(bodyRows()).toHaveLength(6))
+    expect(pressed()).toEqual(["All"])
+  })
+})
+
+describe("selecting streams", () => {
+  it("keeps the selection in the address: a row, a shift-run, every row shown", async () => {
+    const server = mount()
+    await rows()
+    const box = (i: number) =>
+      within(bodyRows()[i]).getByRole("checkbox") as HTMLInputElement
+    fireEvent.click(box(0))
+    await waitFor(() =>
+      expect(server.param("select")).toBe(
+        token("health/heart_rate", "garmin-forerunner-265")
+      )
+    )
+    expect(box(0).checked).toBe(true)
+    expect(bodyRows()[0].getAttribute("aria-selected")).toBe("true")
+    fireEvent.click(box(2), { shiftKey: true })
+    await waitFor(() =>
+      expect(server.param("select")?.split(",")).toHaveLength(3)
+    )
+    expect([box(0), box(1), box(2), box(3)].map((b) => b.checked)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ])
+    const all = screen.getByRole("checkbox", {
+      name: "Select every stream shown",
+    }) as HTMLInputElement
+    expect(all.indeterminate).toBe(true)
+    fireEvent.click(all)
+    await waitFor(() =>
+      expect(server.param("select")?.split(",")).toHaveLength(6)
+    )
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Clear every stream shown" })
+    )
+    await waitFor(() => expect(server.param("select")).toBe(null))
+  })
+
+  it("draws the selected streams in one chart, one line per source, read once per metric", async () => {
+    const server = mount(
+      `?timeline=true&by=source&${WINDOW}&select=${token("health/heart_rate", "garmin-forerunner-265")},${token("health/heart_rate", "apple-watch-s10")}`,
+      KINDS,
+      answer
+    )
+    const panel = await screen.findByRole("region", {
+      name: "Timeline of the selected streams",
+    })
+    expect(await within(panel).findByText("2 streams over time")).toBeTruthy()
+    await waitFor(() =>
+      expect(server.seen.filter((r) => r.aggregate.metric)).toHaveLength(1)
+    )
+    const read = server.seen.find((r) => r.aggregate.metric)!
+    expect(read.aggregate.metric).toEqual({ ref: HEART })
+    expect(read.aggregate.groupBy).toEqual(["source", "channel"])
+    expect([...(read.filter.properties?.source?.in ?? [])].sort()).toEqual(
+      [APPLE, GARMIN].sort()
+    )
+    const legend = await within(panel).findByRole("list", {
+      name: "Legend, Heart rate",
+    })
+    expect(
+      within(legend)
+        .getAllByRole("button")
+        .map((b) => b.textContent)
+        .sort()
+    ).toEqual(["Apple Watch S10", "Garmin Forerunner 265"])
+    await waitFor(() =>
+      expect(
+        panel.querySelectorAll(
+          "[data-slot=timeline-chart] path[stroke-width='2']"
+        )
+      ).toHaveLength(2)
+    )
+  })
+
+  it("says plainly which streams a third unit leaves out", async () => {
+    const server = mount(
+      `?timeline=true&${WINDOW}&select=${token("health/heart_rate", "garmin-forerunner-265")},${token("health/body_mass", "withings-body-plus")},${token("health/steps", "garmin-forerunner-265")}`,
+      KINDS,
+      answer
+    )
+    const panel = await screen.findByRole("region", {
+      name: "Timeline of the selected streams",
+    })
+    const note = await within(panel).findByRole("note")
+    expect(note.textContent).toBe(
+      "Up to two units in one chart: Steps (steps) is left out. Deselect it, or deselect Heart rate (/min) or Weight (kg) to draw it here."
+    )
+    // Nothing is read for the metric left out.
+    await waitFor(() =>
+      expect(server.seen.filter((r) => r.aggregate.metric)).toHaveLength(2)
+    )
+    expect(
+      server.seen.some((r) => r.aggregate.metric?.ref === STEPS_METRIC)
+    ).toBe(false)
+  })
+
+  it("keeps a selected stream in the chart while a filter hides its row", async () => {
+    const server = mount(
+      `?timeline=true&${WINDOW}&filter=${filter("metric", BODY_MASS)}&select=${token("health/heart_rate", "garmin-forerunner-265")}`,
+      KINDS,
+      answer
+    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+    expect(bodyRows()[0].textContent).toContain("Weight")
+    await waitFor(() =>
+      expect(server.seen.some((r) => r.aggregate.metric?.ref === HEART)).toBe(
+        true
+      )
+    )
   })
 })
