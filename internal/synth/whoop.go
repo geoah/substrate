@@ -69,7 +69,7 @@ type whoopRecord struct {
 // Emit writes recordings/ and e2e.json.
 func (Whoop) Emit(p *Persona) (*Output, error) {
 	e := &whoopEmitter{p: p, days: p.Days()}
-	out := &Output{}
+	out := &Output{Setup: Setup{Samples: []string{"samples.substrate.reamde.dev/healthwhoop"}}}
 	add := func(name string, body any) {
 		out.Files = append(out.Files, File{Path: "recordings/" + name, Body: JSON(body)})
 	}

@@ -149,6 +149,11 @@ func generate(args []string, stdout io.Writer) error {
 
 // --- load -------------------------------------------------------------------
 
+// triggerVerbs is where the trigger verbs live: triggers are records of
+// core's trigger kind, so the collection-level status and the per-trigger
+// replay sit under core's package, whatever the repository's authority.
+const triggerVerbs = "/api/v1/substrate.reamde.dev/core/trigger"
+
 type client struct {
 	server, token, authority string
 	hc                       *http.Client
@@ -259,7 +264,7 @@ func (c *client) arm(ctx context.Context, id, key string, headers []string) erro
 // settled reports whether the trigger has nothing pending or in flight, and
 // how many deliveries it has parked, from the trigger status route.
 func (c *client) settled(ctx context.Context, id string) (bool, int64, error) {
-	st, out, err := c.do(ctx, http.MethodGet, "/api/v1/"+c.authority+"/trigger/status", nil, nil)
+	st, out, err := c.do(ctx, http.MethodGet, triggerVerbs+"/status", nil, nil)
 	if err != nil {
 		return false, 0, err
 	}
@@ -344,18 +349,145 @@ func load(args []string, stdout, stderr io.Writer) error {
 			}
 			continue
 		}
+		setup, err := readSetup(base)
+		if err != nil {
+			return fmt.Errorf("%s: %w", e.Name(), err)
+		}
 		// A provider with recordings connects and syncs through the e2e
-		// runner first (WHOOP, Google Fit, Garmin's connect step); one with
-		// deliveries posts them after (Garmin's pushes, Apple Health).
-		if _, err := os.Stat(filepath.Join(base, "recordings")); err == nil {
+		// runner first (WHOOP, Google Fit, Garmin's connect step), which
+		// installs it rewired; a push provider is installed from the
+		// catalog. The samples come after the provider they require, and
+		// the records (the account) before the first delivery. A sample
+		// imported after the runner landed rows is replayed from the start.
+		_, hasRecordings := statOK(filepath.Join(base, "recordings"))
+		_, hasDeliveries := statOK(filepath.Join(base, "deliveries"))
+		if hasRecordings {
 			if err := runSync(ctx, c, e.Name(), base, *repo, *ctl, *python, stdout, stderr); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
+		} else if setup.Provider != "" {
+			if err := c.install(ctx, setup.Provider); err != nil {
+				return fmt.Errorf("%s: %w", e.Name(), err)
+			}
+			fmt.Fprintf(stdout, "%s: installed %s\n", e.Name(), setup.Provider)
 		}
-		if _, err := os.Stat(filepath.Join(base, "deliveries")); err == nil {
+		imported, err := c.importSamples(ctx, setup.Samples, stdout)
+		if err != nil {
+			return fmt.Errorf("%s: %w", e.Name(), err)
+		}
+		for _, doc := range setup.Records {
+			if err := c.put(ctx, doc); err != nil {
+				return fmt.Errorf("%s: %w", e.Name(), err)
+			}
+		}
+		if hasRecordings && len(imported) > 0 {
+			if err := c.replaySamples(ctx, imported, stdout); err != nil {
+				return fmt.Errorf("%s: %w", e.Name(), err)
+			}
+		}
+		if hasDeliveries {
 			if err := postDeliveries(ctx, c, base, *key, *settle, stdout, stderr); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
+		}
+	}
+	return nil
+}
+
+func statOK(path string) (os.FileInfo, bool) {
+	st, err := os.Stat(path)
+	return st, err == nil
+}
+
+// readSetup reads the provider's setup.json, empty when generate wrote none.
+func readSetup(base string) (synth.Setup, error) {
+	var s synth.Setup
+	raw, err := os.ReadFile(filepath.Join(base, "setup.json")) //nolint:gosec // the path generate wrote
+	if errors.Is(err, os.ErrNotExist) {
+		return s, nil
+	}
+	if err != nil {
+		return s, err
+	}
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return s, fmt.Errorf("setup.json: %w", err)
+	}
+	return s, nil
+}
+
+// install installs a provider from the catalog; one already held is fine.
+func (c *client) install(ctx context.Context, pkg string) error {
+	st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(pkg)+"/install", []byte("{}"), nil)
+	if err != nil {
+		return err
+	}
+	if st >= 300 && st != http.StatusConflict {
+		return fmt.Errorf("installing %s: %d %s", pkg, st, truncate(out))
+	}
+	return nil
+}
+
+// importSamples imports the observations and health samples, then the
+// listed ones in order, each skipped when the repository already holds it
+// at the version this server ships. It answers the samples it imported.
+func (c *client) importSamples(ctx context.Context, samples []string, stdout io.Writer) ([]string, error) {
+	var imported []string
+	for _, s := range append([]string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health"}, samples...) {
+		st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(s)+"/import", []byte("{}"), nil)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case st < 300:
+			fmt.Fprintf(stdout, "imported %s\n", s)
+			imported = append(imported, s)
+		case st == http.StatusConflict:
+			// Held already at this version: nothing to do.
+		default:
+			return nil, fmt.Errorf("importing %s: %d %s", s, st, truncate(out))
+		}
+	}
+	return imported, nil
+}
+
+// replaySamples replays the record triggers of the samples just imported
+// from the start of the changelog, so rows that landed before the import
+// reach the adapters.
+func (c *client) replaySamples(ctx context.Context, samples []string, stdout io.Writer) error {
+	st, out, err := c.do(ctx, http.MethodGet, triggerVerbs+"/status", nil, nil)
+	if err != nil {
+		return err
+	}
+	if st != http.StatusOK {
+		return fmt.Errorf("trigger status: %d %s", st, truncate(out))
+	}
+	var list struct {
+		Items []struct {
+			ID       string `json:"id"`
+			Kind     string `json:"kind"`
+			Callable string `json:"callable"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(out, &list); err != nil {
+		return fmt.Errorf("trigger status: %w", err)
+	}
+	for _, s := range samples {
+		// An imported sample's callables live under the repository's own
+		// authority and the sample's package name.
+		pkg := s[strings.LastIndex(s, "/")+1:]
+		prefix := c.authority + "/" + pkg + "/"
+		for _, t := range list.Items {
+			if t.Kind != "record" || !strings.HasPrefix(t.Callable, prefix) {
+				continue
+			}
+			st, out, err := c.do(ctx, http.MethodPost, triggerVerbs+"/"+url.PathEscape(t.ID)+"/replay", []byte(`{"from":0}`), nil)
+			if err != nil {
+				return err
+			}
+			if st >= 300 {
+				return fmt.Errorf("replaying %s: %d %s", t.ID, st, truncate(out))
+			}
+			fmt.Fprintf(stdout, "replaying %s from the start\n", t.ID)
 		}
 	}
 	return nil

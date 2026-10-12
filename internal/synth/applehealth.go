@@ -91,7 +91,17 @@ var ahWorkoutNames = map[Sport]string{
 
 // Emit writes one delivery per day, in posting order.
 func (AppleHealth) Emit(p *Persona) (*Output, error) {
-	out := &Output{}
+	out := &Output{Setup: Setup{
+		Provider: "providers.substrate.reamde.dev/applehealth",
+		Samples:  []string{"samples.substrate.reamde.dev/healthapple"},
+		Records: []map[string]any{{
+			"kind":     "providers.substrate.reamde.dev/applehealth/account",
+			"metadata": map[string]any{"id": ahAccountID},
+			"data": map[string]any{"properties": map[string]any{
+				"displayName": ahIPhone, "timezone": p.Options.HomeZone,
+			}},
+		}},
+	}}
 	for _, d := range p.Days() {
 		e := &ahDay{p: p, d: d, day: p.Day(d), next: p.Day(d.Add(1))}
 		body, err := ahBody(map[string]any{"data": map[string]any{

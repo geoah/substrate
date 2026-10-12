@@ -18,14 +18,38 @@ type File struct {
 	Body []byte
 }
 
-// Output is what one emitter produces: files to write, and the requests to
-// POST at a webhook door in order, each one also saved as a file.
+// Output is what one emitter produces: files to write, the requests to POST
+// at a webhook door in order (each one also saved as a file), and what the
+// repository must hold before the data can land.
 type Output struct {
 	// Files are the artifacts, relative to the provider's directory.
 	Files []File
 	// Deliveries are the webhook requests in the order they must be posted,
 	// for providers that receive pushes. Each is saved as a file too.
 	Deliveries []Delivery
+	// Setup is what `load` puts in place first: saved as `setup.json`
+	// beside the files, so the loader needs no emitter at load time.
+	Setup Setup
+}
+
+// Setup is the repository state a provider's data needs: the provider to
+// install (a push provider; a mock-driven one is installed rewired by the
+// e2e runner), the samples to import after it (the adapter, which requires
+// the provider), and the records to write before the first delivery (the
+// account the deliveries name). A sample imported after rows landed is
+// replayed from the start of the changelog by the loader.
+type Setup struct {
+	// Provider is the package to install through the catalog, such as
+	// providers.substrate.reamde.dev/applehealth; empty for a mock-driven
+	// provider, which the e2e runner installs rewired.
+	Provider string `json:"provider,omitempty"`
+	// Samples are the sample packages to import, in order, such as
+	// samples.substrate.reamde.dev/healthapple. The observations and health
+	// samples are imported first whatever the list says.
+	Samples []string `json:"samples,omitempty"`
+	// Records are documents (kind, metadata.id, data.properties) to write
+	// before the deliveries post, such as the account record.
+	Records []map[string]any `json:"records,omitempty"`
 }
 
 // Delivery is one webhook request as the door builds it: the same
@@ -153,6 +177,13 @@ func WriteOutput(dir string, e Emitter, out *Output) ([]string, error) {
 			return nil, err
 		}
 		if err := os.WriteFile(p, body, 0o644); err != nil { //nolint:gosec // generated data, readable on purpose
+			return nil, err
+		}
+		written = append(written, p)
+	}
+	if out.Setup.Provider != "" || len(out.Setup.Samples) > 0 || len(out.Setup.Records) > 0 {
+		p := filepath.Join(base, "setup.json")
+		if err := os.WriteFile(p, JSON(out.Setup), 0o644); err != nil { //nolint:gosec // generated data, readable on purpose
 			return nil, err
 		}
 		written = append(written, p)

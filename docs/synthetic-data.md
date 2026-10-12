@@ -91,12 +91,17 @@ SUBSTRATE_TOKEN=… mise run synth:load -- -server http://127.0.0.1:8080 -author
 ```
 
 `generate` is pure: the same flags write the same bytes. `load` takes a
-provider's directory in two steps. A `recordings/` directory goes through
+provider's directory in three steps. A `recordings/` directory goes through
 the provider e2e runner (`internal/providere2e/runner/e2e.py`, so `python3`
 and `bin/substratectl` are needed): the bundle is installed rewired at a
 mock serving the recordings, the account connects through the mock's OAuth
 stub, the sync drains, and the provider's schedule is switched off because
-the mock dies with the run. A `deliveries/` directory is posted to
+the mock dies with the run. Then `setup.json`, which the emitter declared
+(`synth.Setup`): a push provider is installed from the catalog, the
+`observations` and `health` samples and the adapter sample are imported,
+and the records the deliveries name (the account) are written; an adapter
+imported after the runner landed rows is replayed from the start of the
+changelog. Last, a `deliveries/` directory is posted to
 `/webhooks/<authority>/<trigger>` one request at a time, the trigger armed
 with `-key` first, waiting for the trigger to settle before the next (the
 door holds eight in flight); a parked delivery stops the load and names the
