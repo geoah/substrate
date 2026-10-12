@@ -71,6 +71,7 @@ export function DataGrid<TData extends RowData>({
   empty,
   scrollKey,
   marks,
+  selected,
   label,
   groups,
   className,
@@ -88,6 +89,8 @@ export function DataGrid<TData extends RowData>({
   /** Rows (by id) that just changed under the reader: tinted while `fresh`,
    * easing back while `fading`. */
   marks?: ReadonlyMap<string, "fresh" | "fading">
+  /** Rows (by id) the reader has selected: tinted, and `aria-selected`. */
+  selected?: ReadonlySet<string>
   /** The sheet's accessible name: the collection's display plural. */
   label: string
   /** Cut the rows into groups, each under a head. */
@@ -137,11 +140,13 @@ export function DataGrid<TData extends RowData>({
 
   function drawRow(row: Row<DataTableFeatures, TData>) {
     const mark = marks?.get(row.id)
+    const picked = selected?.has(row.id)
     return (
       <tr
         key={row.id}
         data-slot="grid-row"
         data-changed={mark}
+        aria-selected={selected ? Boolean(picked) : undefined}
         className="group/row [&:hover>td]:bg-[color-mix(in_oklab,var(--background)_96%,var(--foreground))]"
       >
         {row.getVisibleCells().map((cell, i) => (
@@ -154,6 +159,8 @@ export function DataGrid<TData extends RowData>({
               i === 0 &&
                 "sticky left-0 z-[1] font-medium shadow-[1px_0_0_var(--border)]",
               cell.column.columnDef.meta?.cellClassName,
+              picked &&
+                "bg-[color-mix(in_oklab,var(--background)_93%,var(--primary))]",
               // Opaque, because the title column is pinned over the
               // cells that scroll under it.
               mark === "fresh" &&

@@ -71,6 +71,10 @@ interface DataTableFiltersProps {
    * ("Suggested"), not their stored values. Off for a bar whose facets only
    * borrow the state shape (History's kinds and actors). */
   words?: boolean
+  /** Draw an enum's values on their hues, as the grid does. Off for a bar
+   * whose facets only borrow the enum shape (the Observations bar's
+   * metrics and sources), whose values read as plain words. */
+  tags?: boolean
   className?: string
 }
 
@@ -92,7 +96,8 @@ function referenceTarget(
  * value is still listed, since records may hold it. */
 function choiceOptions(
   field: DeclaredProperty,
-  words: boolean
+  words: boolean,
+  tags: boolean
 ): ChoiceOption[] {
   if (field.kind === "bool")
     return ["true", "false"].map((v) => ({
@@ -103,7 +108,7 @@ function choiceOptions(
     return (field.values ?? []).map((v) => ({
       value: v.value,
       label: choiceWord(v.value, field, words),
-      display: <EnumTag prop={field} value={v.value} />,
+      display: tags ? <EnumTag prop={field} value={v.value} /> : undefined,
       hint: v.deprecated ? "no longer offered" : undefined,
     }))
   return (field.states ?? []).map((state) => ({
@@ -124,6 +129,7 @@ function ValueEditor({
   label,
   value,
   words,
+  tags,
   target,
   kinds,
   onApply,
@@ -134,6 +140,7 @@ function ValueEditor({
   label: string
   value: string
   words: boolean
+  tags: boolean
   /** A reference field's resolved referent kind; the picker wants it. */
   target?: KindInfo
   kinds?: KindInfo[]
@@ -160,7 +167,7 @@ function ValueEditor({
     return (
       <ChoiceList
         label={label}
-        options={choiceOptions(field, words)}
+        options={choiceOptions(field, words, tags)}
         selected={splitReferenceIds(value)}
         multiple={many}
         // A state's badge says its stored value itself in technical mode.
@@ -248,6 +255,7 @@ function ActiveFilterControl({
   filter,
   field,
   words,
+  tags,
   target,
   kinds,
   label,
@@ -257,6 +265,7 @@ function ActiveFilterControl({
   filter: ActiveFilter
   field: DeclaredProperty | undefined
   words: boolean
+  tags: boolean
   target?: KindInfo
   kinds?: KindInfo[]
   label: string
@@ -325,6 +334,7 @@ function ActiveFilterControl({
             label={label}
             value={displayValue(filter, field)}
             words={words}
+            tags={tags}
             target={target}
             kinds={kinds}
             onApply={(value) => {
@@ -360,6 +370,7 @@ export function DataTableFilters({
   kinds,
   labelOf = (name) => name,
   words = false,
+  tags = true,
   className,
 }: DataTableFiltersProps) {
   const [technical] = useTechnicalDetails()
@@ -400,6 +411,7 @@ export function DataTableFilters({
             filter={filter}
             field={field}
             words={words}
+            tags={tags}
             target={referenceTarget(field, kinds)}
             kinds={kinds}
             label={labelOf(filter.field)}
@@ -440,6 +452,7 @@ export function DataTableFilters({
               label={labelOf(pending.name)}
               value={filters.find((f) => f.field === pending.name)?.value ?? ""}
               words={words}
+              tags={tags}
               target={pendingTarget}
               kinds={kinds}
               onApply={(value) => {
