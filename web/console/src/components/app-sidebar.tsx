@@ -634,8 +634,12 @@ export function AppSidebar({
     <Sidebar
       collapsible="offcanvas"
       data-peek={peek?.open || undefined}
+      // The peek floats below the shell's header row: drawn over it, it would
+      // cover the toggle that hovering had just peeked from, and the click
+      // that keeps the sidebar open would never reach it.
       className={cn(
-        peek?.open && "left-0! z-30 border-border-strong shadow-card"
+        peek?.open &&
+          "top-11! bottom-2 left-2! z-30 h-auto! overflow-hidden rounded-lg border border-border-strong shadow-card"
       )}
       onMouseEnter={peek?.show}
       onMouseLeave={peek?.hide}
