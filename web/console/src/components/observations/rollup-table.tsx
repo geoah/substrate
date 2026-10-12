@@ -2,7 +2,8 @@
  * answer (a bucket, or one group of a bucket) with its window, one column per
  * reducer with its unit, the points, the covered time, the sources that fed
  * it and whether raw points or a vendor summary served it. A row the server
- * filled in or could not answer says so. The whole table copies as
+ * filled in or could not answer says so. Grouped by source, a source's
+ * channel has its own column. The whole table copies as
  * tab-separated text, the exact digits and the wire's instants, folded or
  * not. */
 
@@ -63,6 +64,7 @@ export function RollupTable({
   groupCell,
   sourceText,
   label,
+  caption,
   precision,
 }: {
   rows: readonly AggregateRow[]
@@ -70,6 +72,8 @@ export function RollupTable({
   groupKey?: AggregateGroupKey
   /** How a group value reads in its cell. */
   groupCell: (value: string | undefined) => ReactNode
+  /** Which metric the numbers are, where a chart draws several. */
+  caption?: ReactNode
   /** A source's name, for the sources column. */
   sourceText: (id: string) => string
   /** The table's accessible name. */
@@ -81,11 +85,17 @@ export function RollupTable({
   // chart; one click shows the numbers.
   const [open, setOpen] = useState(false)
   const flagged = rows.some((r) => r.synthetic || r.unavailable)
+  const channels = rows.some((r) => r.group?.channel)
   const count =
     rows.length === 1 ? "1 row" : `${rows.length.toLocaleString("en")} rows`
   return (
     <div className="mt-2">
       <div className="flex items-center gap-1 text-[12.5px] text-faint">
+        {caption && (
+          <span className="mr-1 font-medium text-muted-foreground">
+            {caption}
+          </span>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -111,6 +121,7 @@ export function RollupTable({
               <tr className="[&>th]:h-[34px] [&>th]:border-b [&>th]:border-border [&>th]:px-2.5 [&>th]:text-left [&>th]:text-[12.5px] [&>th]:font-medium [&>th]:whitespace-nowrap [&>th]:text-faint">
                 <th scope="col">When</th>
                 {groupKey && <th scope="col">{GROUP_WORDS[groupKey]}</th>}
+                {channels && <th scope="col">Channel</th>}
                 {reducers.map((r) => (
                   <th key={reducerKey(r)} scope="col" className="text-right!">
                     {headOf(r, rows)}
@@ -135,6 +146,7 @@ export function RollupTable({
                     {windowWords(Date.parse(row.start), Date.parse(row.end))}
                   </td>
                   {groupKey && <td>{groupCell(row.group?.[groupKey])}</td>}
+                  {channels && <td>{row.group?.channel ?? <EmptyValue />}</td>}
                   {reducers.map((r) => {
                     const v = rowValue(row, reducerKey(r))
                     return (

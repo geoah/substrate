@@ -143,11 +143,11 @@ describe("the streams table", () => {
       },
     })
     const streamReads = server.seen.filter(
-      (r) => r.aggregate.groupBy?.length === 3
+      (r) => r.aggregate.groupBy?.length === 4
     )
     expect(streamReads).toHaveLength(1)
     expect(streamReads[0].aggregate).toEqual({
-      groupBy: ["metric", "source", "about"],
+      groupBy: ["metric", "source", "about", "channel"],
       reducers: ["last"],
     })
     expect(
@@ -173,7 +173,7 @@ describe("the streams table", () => {
     const table = await screen.findByRole("table")
     await waitFor(() => expect(table.textContent).toContain("Weight"))
     const streamReads = server.seen.filter(
-      (r) => r.aggregate.groupBy?.length === 3
+      (r) => r.aggregate.groupBy?.length === 4
     )
     expect(streamReads.map((r) => r.filter.properties)).toEqual([
       { metric: { in: [BODY_MASS] } },

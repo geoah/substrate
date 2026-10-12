@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 /** The timeline: one aggregate read per chosen metric, shaped by the
- * controls (bucket, grouping, reducer, unit, sources), a chart per metric in
- * the mark its form earns, a tooltip and a zoom from the keyboard, the
- * numbers under each chart, and the request in technical mode. Served by a
- * stand-in records route answering the proposal's worked examples. */
+ * controls (bucket, grouping, reducer, unit, sources), the metrics overlaid
+ * in charts of at most two units (the second on the right axis), each
+ * metric in the mark its form earns, a legend that toggles series, one
+ * tooltip and a zoom from the keyboard, the numbers under each chart, and
+ * the request in technical mode. Served by a stand-in records route
+ * answering the proposal's worked examples. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -39,6 +41,7 @@ import {
   SOURCE,
   STEPS,
   WEIGHT,
+  WHOOP,
   ZONES,
   latestAnswer,
   observationsServer,
@@ -113,6 +116,7 @@ function charts(seen: SeenRead[], metric: string): SeenRead[] {
   return seen.filter((r) => r.aggregate.metric?.ref === `${METRIC}/${metric}`)
 }
 
+/** The chart section drawing exactly these metrics, by name. */
 async function lane(name: string): Promise<HTMLElement> {
   return screen.findByRole("region", { name })
 }
@@ -131,8 +135,7 @@ async function addFilter(facet: string, value: RegExp) {
 describe("the timeline's requests", () => {
   it("issues one read per chosen metric, each shaped by its form", async () => {
     const server = mount(`?metric=health/body_mass,health/steps&${WINDOW}`)
-    await lane("Weight")
-    await lane("Steps")
+    await lane("Weight and Steps")
     await waitFor(() =>
       expect(charts(server.seen, "health/steps")).toHaveLength(1)
     )
@@ -173,7 +176,8 @@ describe("the timeline's requests", () => {
       expect(charts(server.seen, "health/heart_rate")).toHaveLength(2)
     )
     const grouped = charts(server.seen, "health/heart_rate")[1].aggregate
-    expect(grouped.groupBy).toEqual(["source"])
+    // A source's channels stay apart, each its own series.
+    expect(grouped.groupBy).toEqual(["source", "channel"])
     expect(grouped.sources).toBeUndefined()
   })
 
@@ -301,7 +305,7 @@ describe("the timeline's requests", () => {
     const server = mount(`?metric=health/body_mass&${WINDOW}`)
     await lane("Weight")
     const streamReads = server.seen.filter(
-      (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 3
+      (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 4
     )
     expect(streamReads.map((r) => r.filter.properties)).toEqual([
       { metric: { in: [`${METRIC}/health/body_mass`] } },
@@ -321,7 +325,7 @@ describe("the timeline's requests", () => {
       expect(
         server.seen.some(
           (r) =>
-            r.aggregate.groupBy?.length === 3 &&
+            r.aggregate.groupBy?.length === 4 &&
             r.filter.properties?.source?.in?.length === 1
         )
       ).toBe(true)
@@ -353,7 +357,7 @@ describe("the timeline's requests", () => {
       expect(
         server.seen.some(
           (r) =>
-            r.aggregate.groupBy?.length === 3 &&
+            r.aggregate.groupBy?.length === 4 &&
             r.filter.properties?.about?.in?.length === 1
         )
       ).toBe(true)
@@ -459,25 +463,158 @@ describe("the timeline's requests", () => {
   })
 })
 
+/** Weekly steps over the weight's three weeks, so the two answers share
+ * their windows the way two reads under one bucket do. */
+const WEEKLY_STEPS: AggregateResult = {
+  ...STEPS,
+  bucket: WEIGHT.bucket,
+  rows: WEIGHT.rows.map((r, i) => ({
+    ...r,
+    form: "amount",
+    synthetic: false,
+    values: [
+      {
+        reducer: "sum",
+        value: ["61200", "58400", "40100"][i],
+        unit: "{steps}",
+      },
+    ],
+    count: 96,
+  })),
+}
+
+function overlaid(read: SeenRead): AggregateResult {
+  if (read.aggregate.metric?.ref === `${METRIC}/health/steps`) {
+    return WEEKLY_STEPS
+  }
+  return answer(read)
+}
+
 describe("the charts", () => {
-  it("draws a level as a line with its band, and an amount as bars", async () => {
-    mount(`?metric=health/body_mass,health/steps&${WINDOW}`)
-    const weight = await lane("Weight")
+  it("overlays two units in one chart, a level as a line on the left and an amount as bars on the right", async () => {
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}`, false, overlaid)
+    const chart = await lane("Weight and Steps")
     await waitFor(() =>
-      expect(weight.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
+      expect(chart.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
         null
       )
     )
-    const series = weight.querySelector("[data-series]")!
-    expect(series.querySelector("path[fill-opacity='0.1']")).not.toBe(null)
-    expect(series.querySelector("path[stroke-width='2']")).not.toBe(null)
-    const steps = await lane("Steps")
-    await waitFor(() =>
-      expect(steps.querySelectorAll("[data-series] path")).toHaveLength(3)
+    const svg = chart.querySelector("[data-slot=timeline-chart] svg")!
+    // The level, its band, on the left axis captioned with its unit.
+    expect(svg.querySelector("path[fill-opacity='0.1']")).not.toBe(null)
+    expect(svg.querySelector("path[stroke-width='2']")).not.toBe(null)
+    expect(svg.querySelector("[data-axis=left]")!.textContent).toContain("kg")
+    // The amount's bars, on the right axis, in the second colour.
+    expect(svg.querySelector("[data-axis=right]")!.textContent).toContain(
+      "steps"
     )
-    for (const bar of steps.querySelectorAll("[data-series] path")) {
-      expect(bar.getAttribute("fill")).toBe("var(--series-1)")
+    await waitFor(() =>
+      expect(svg.querySelectorAll("path[fill='var(--series-2)']")).toHaveLength(
+        3
+      )
+    )
+    expect(
+      within(chart).getByRole("group", { name: "Weight" }).textContent
+    ).toContain("Left axis, kg")
+    expect(
+      within(chart).getByRole("group", { name: "Steps" }).textContent
+    ).toContain("Right axis, steps")
+  })
+
+  it("lists every series at the hovered bucket in one tooltip, each with its unit", async () => {
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}`, false, overlaid)
+    const chart = await lane("Weight and Steps")
+    const group = await within(chart).findByRole("group", {
+      name: "Weight, Average; Steps, Total",
+    })
+    act(() => group.focus())
+    fireEvent.keyDown(group, { key: "ArrowRight" })
+    const tip = await within(chart).findByRole("status")
+    expect(tip.textContent).toContain("Weight, average")
+    expect(tip.textContent).toContain("72.6 kg")
+    expect(tip.textContent).toContain("Steps, total")
+    expect(tip.textContent).toContain("61200 steps")
+    // One crosshair, a marker on the line.
+    expect(chart.querySelectorAll("[data-slot=chart-crosshair]")).toHaveLength(
+      1
+    )
+    expect(chart.querySelectorAll("[data-slot=chart-marker]")).toHaveLength(1)
+  })
+
+  it("splits a third unit into a chart of its own", async () => {
+    const server = mount(
+      `?metric=health/body_mass,health/steps,health/heart_rate&${WINDOW}`,
+      false,
+      overlaid
+    )
+    await lane("Weight and Steps")
+    const heart = await lane("Heart rate")
+    expect(screen.getAllByRole("region")).toHaveLength(2)
+    expect(within(heart).queryByRole("note")).toBe(null)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+  })
+
+  it("hides a series from its legend entry and shows it again", async () => {
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}`, false, overlaid)
+    const chart = await lane("Weight and Steps")
+    const legend = await within(chart).findByRole("list", {
+      name: "Legend, Steps",
+    })
+    await waitFor(() =>
+      expect(
+        chart.querySelectorAll("svg path[fill='var(--series-2)']")
+      ).toHaveLength(3)
+    )
+    const entry = within(legend).getByRole("button", { name: /Steps/ })
+    expect(entry.getAttribute("aria-pressed")).toBe("true")
+    fireEvent.click(entry)
+    expect(entry.getAttribute("aria-pressed")).toBe("false")
+    expect(
+      chart.querySelectorAll("svg path[fill='var(--series-2)']")
+    ).toHaveLength(0)
+    // The axis goes with its only series; the weight keeps its colour.
+    expect(chart.querySelector("[data-axis=right]")).toBe(null)
+    expect(chart.querySelector("path[stroke='var(--series-1)']")).not.toBe(null)
+    fireEvent.click(entry)
+    expect(
+      chart.querySelectorAll("svg path[fill='var(--series-2)']")
+    ).toHaveLength(3)
+  })
+
+  it("reads a metric with a summary stream raw where covered, and says so in technical mode", async () => {
+    const whoopHeart = {
+      ...LATEST.rows[0],
+      start: "2026-10-07T07:30:00Z",
+      end: "2026-10-07T07:30:00Z",
+      form: "summary",
+      group: { metric: `${METRIC}/health/heart_rate`, source: WHOOP },
     }
+    const server = mount(`?metric=health/heart_rate&${WINDOW}`, true, (read) =>
+      read.aggregate.metric
+        ? answer(read)
+        : latestAnswer(read, { ...LATEST, rows: [whoopHeart, ...LATEST.rows] })
+    )
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    const read = charts(server.seen, "health/heart_rate")[0].aggregate
+    expect(read.from).toBe("prefer-raw")
+    // The measured streams say the form: a level, read as an average.
+    expect(read.reducers).toEqual(["avg", "min", "max"])
+    const heart = await lane("Heart rate")
+    expect(heart.textContent).toContain(
+      "Read with prefer-raw: raw points where they cover a bucket, a vendor summary where they do not, because WHOOP 4.0 keeps summaries"
+    )
+    // The reader's pick still wins.
+    const from = screen.getByRole("radiogroup", { name: "Read from" })
+    fireEvent.click(within(from).getByRole("radio", { name: "Raw" }))
+    await waitFor(() =>
+      expect(
+        charts(server.seen, "health/heart_rate").at(-1)!.aggregate.from
+      ).toBe("raw")
+    )
   })
 
   it("stacks a category's codes, one colour per code, with a legend", async () => {
@@ -495,7 +632,9 @@ describe("the charts", () => {
       "var(--series-3)",
       "var(--series-4)",
     ])
-    const legend = within(sleep).getByRole("list", { name: "Legend" })
+    const legend = within(sleep).getByRole("list", {
+      name: "Legend, Sleep stage",
+    })
     expect(legend.textContent).toContain("Rem")
     expect(legend.textContent).toContain("Awake")
   })
