@@ -40,28 +40,28 @@ pnpm build       # tsc -b && vite build
 
 ## Pages
 
-| Route                                    | Surface                                                                                                            |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `/login`, `/register`                    | the door; everything else needs a session                                                                          |
-| `/`                                      | overview                                                                                                           |
-| `/changelog`                             | the repository's change feed                                                                                       |
-| `/registry`, `/registry/:id`             | the catalog: install, upgrade, lifecycle verbs, input resolution + bind, accountconfig trait query + OAuth connect |
-| `/search`                                | the ranked read (`GET /api/v1/records?q=`) as a page                                                               |
-| `/connections`                           | every provider account: token status, sync state, and the connect, sync now, edit and disconnect verbs             |
-| `/connections/:authority/:pkg/:name/:id` | one account: its record, its `sync` trait, its triggers and their runs                                             |
-| `/settings`, `/settings/:id`             | every bundle that ships a `setting` or `secret` record; the `:id` route is that bundle's form                      |
-| `/agents`, `/agents/:id`                 | declared agents; the `:id` route is the ndjson streaming chat                                                      |
-| `/merge-requests/:id`                    | a duplicate-suggestion verdict                                                                                     |
-| `/change-requests/:id`                   | a proposed change, what accepting it would do, and its verdict                                                     |
-| `/data/:authority`                       | one authority's packages                                                                                           |
-| `/data/:authority/:pkg`                  | one package's collections                                                                                          |
-| `/data/:authority/:pkg/:name`            | browse a kind's records                                                                                            |
-| `/data/:authority/:pkg/:name/new`        | create a record                                                                                                    |
-| `/data/:authority/:pkg/:name/:id`        | one record, and `/edit` beside it                                                                                  |
-| `/observations`                          | one row per stream from the aggregate latest read, over every kind binding core's `observed` trait                 |
-| `/observations/timeline`                 | the chosen metrics over a range, one aggregate read and one chart per metric, the numbers under each               |
-| `/actors/:id`                            | an actor's view                                                                                                    |
-| `/account`, `/account/tokens`            | the account, and the tokens it has minted                                                                          |
+| Route                                    | Surface                                                                                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `/login`, `/register`                    | the door; everything else needs a session                                                                                                 |
+| `/`                                      | overview                                                                                                                                  |
+| `/changelog`                             | the repository's change feed                                                                                                              |
+| `/registry`, `/registry/:id`             | the catalog: install, upgrade, lifecycle verbs, input resolution + bind, accountconfig trait query + OAuth connect                        |
+| `/search`                                | the ranked read (`GET /api/v1/records?q=`) as a page                                                                                      |
+| `/connections`                           | every provider account: token status, sync state, and the connect, sync now, edit and disconnect verbs                                    |
+| `/connections/:authority/:pkg/:name/:id` | one account: its record, its `sync` trait, its triggers and their runs                                                                    |
+| `/settings`, `/settings/:id`             | every bundle that ships a `setting` or `secret` record; the `:id` route is that bundle's form                                             |
+| `/agents`, `/agents/:id`                 | declared agents; the `:id` route is the ndjson streaming chat                                                                             |
+| `/merge-requests/:id`                    | a duplicate-suggestion verdict                                                                                                            |
+| `/change-requests/:id`                   | a proposed change, what accepting it would do, and its verdict                                                                            |
+| `/data/:authority`                       | one authority's packages                                                                                                                  |
+| `/data/:authority/:pkg`                  | one package's collections                                                                                                                 |
+| `/data/:authority/:pkg/:name`            | browse a kind's records                                                                                                                   |
+| `/data/:authority/:pkg/:name/new`        | create a record                                                                                                                           |
+| `/data/:authority/:pkg/:name/:id`        | one record, and `/edit` beside it                                                                                                         |
+| `/observations`                          | one row per stream in the records grid (sort, filters, columns, grouping, saved views), and a Timeline panel drawing the selected streams |
+| `/observations/timeline`                 | the chosen metrics over a range, overlaid in charts of up to two units, one aggregate read per metric, the numbers under each             |
+| `/actors/:id`                            | an actor's view                                                                                                                           |
+| `/account`, `/account/tokens`            | the account, and the tokens it has minted                                                                                                 |
 
 `/account/tokens` is deliberately not `/tokens`: the API door answers
 `GET /tokens`, so a browser refreshing that path would be handed JSON.

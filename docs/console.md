@@ -661,51 +661,114 @@ that account, and `/settings/{bundle id}` that page's Settings.
 
 **Observations** (`/observations`) lists what your devices, apps and providers
 measured, one row per stream: a metric written by one source about one
-thing. It is a place in the sidebar and ⌘K only where some kind binds core's
+thing, on one of the source's channels where a source measures a metric
+twice (a WHOOP cycle's heart rate beside a workout's). It is a place in the
+sidebar and ⌘K only where some kind binds core's
 `observed` trait, which the console finds in the registry by the trait and
 never by a fixed authority, so an imported `observations` or `health` sample
 under your own authority is found the same way. The rows come from one
 aggregate latest read: `GET /api/v1/records` with
 `filter={"implements":"substrate.reamde.dev/core/observed"}` and
-`aggregate={"groupBy":["metric","source","about"],"reducers":["last"]}`, no
-bucket and no range. Each row shows the metric by its record's name, the
+`aggregate={"groupBy":["metric","source","about","channel"],"reducers":["last"]}`,
+no bucket and no range. Each row shows the metric by its record's name, the
 source as a record mention, what it is about (**You** where it names
-nothing, which means the owner), the form of its newest value in words
-(**Level**, **Amount**, **Running total**, **Vendor summary**, **Category**),
-that value in its unit (or its category, which a coded `last` answers in
-`code`), when, and how many points the stream holds.
-Filters for metric, source, about and form and a search narrow the rows,
-all in the address. A row opens the timeline narrowed to its stream.
+nothing, which means the owner), its channel, the form of its newest value
+in words (**Level**, **Amount**, **Running total**, **Vendor summary**,
+**Category**), that value in its unit (or its category, which a coded
+`last` answers in `code`), when, and how many points the stream holds.
+
+The rows sit in the grid a collection's records do
+([A collection](#a-collection)), with the same controls, applied in the page
+because discovery loads every stream. **Sort** or a header click picks the
+order (`?sort=`, newest first by default). **Filters** offer metric, source,
+about, form and channel, each a set of values to pick, several meaning any
+of them (`?filter=`); the chosen metrics, sources and things also narrow
+discovery on the server. The search box matches the rows' words
+(`?search=`). **Columns** shows, hides and reorders the columns, and
+**Group** cuts the rows by metric, source, about, form or channel
+(`?group=`). **Saved views** keep a filter, sort, column set and grouping on
+the console preference record under the collection key
+`observations/streams`; a view is lit while the address matches it and never
+holds the search or the selection. A bare address restores the filters, sort
+and grouping last used in this browser. A row's metric opens the timeline
+narrowed to its stream.
+
+A box on each row selects its stream: shift-click selects the run from the
+row clicked before, and the header box selects or clears every row shown.
+The selection is in the address (`?select=`, one `metric|source|about|channel`
+token per stream, by id where the reference's pin allows), so a link carries
+it, and a filter that hides a selected row leaves it selected and drawn.
+**Timeline** (`?timeline=true`) opens a panel above the grid that draws the
+selected streams in one chart over a range (the last 30 days until you pick
+another), with the bucket and what to group the series by: metric, source,
+about or category (`?by=`). Each metric is one aggregate read narrowed to
+its selected sources, and to its things and channels where every selected
+stream names one; each keeps its own reducer and unit (`?reducer=`,
+`?unit=`).
 
 **The timeline** (`/observations/timeline`) draws the chosen metrics over one
-range, each metric in its own chart on the same time axis: two metrics never
-share a y axis. One row of controls scopes every chart: the metrics, the
-range (today, the last 7 or 30 days, 6 months, a year, or a custom range of
-days on the calendar), the bucket (automatic from the range, 15 minutes, an
-hour, a day, a week, a month; calendar buckets in your time zone), what to
-group by (metric, source, about or category), where to read from (raw
-points, vendor summaries, or raw where a bucket is covered), and the sources
-and things to keep. Each chart picks its own reducer from the ones its form
-allows and an output unit from the stored unit's measure. A level is a line
-with its lowest-to-highest band, an amount or a count is bars, a category is
-bars stacked per code; a tooltip names the bucket's window, every value with
-its unit, the count, the covered time, the sources and whether the row was
-filled in or is no longer available. Click a bucket or drag across several
-to zoom in; from the keyboard the arrow keys move between buckets and Enter
-zooms. Under each chart, its numbers as a table that copies as
-tab-separated text; with Technical details on, the request itself as JSON
-and as a `curl` command.
+range on one time axis. They overlay in one chart while they fit two units
+and otherwise split into as few charts as hold them two units each: heart
+rate, HRV and steps are two charts, heart rate with HRV and then steps. One
+row of controls scopes every chart: the metrics, the range (today, the last
+7 or 30 days, 6 months, a year, or a custom range of days on the calendar),
+the bucket (automatic from the range, 15 minutes, an hour, a day, a week, a
+month; calendar buckets in your time zone), what to group by (metric,
+source, about or category), where to read from (automatic, raw points,
+vendor summaries, or raw where a bucket is covered), and the sources and
+things to keep. Under each chart, each metric's numbers as a table that
+copies as tab-separated text; with Technical details on, each request itself
+as JSON and as a `curl` command.
 
-Each chart is one aggregate read naming its metric. Grouped by anything but
-source, two or more sources are resolved by `sources.policy: priority` in the
-order you chose them (or the newest first), and the chart says which source
-wins; grouped by source, each keeps its own rows. A category metric is
-always grouped by code: a coded gauge asks for the time in each category
-(the bare `timeInState`), a coded amount for its total. A read the console
-expects to make more than 1,440 buckets, counting every group, is not asked
-for, and the chart says to pick a larger bucket; a refusal the server makes
-anyway is shown with its reason. The read itself is
-[the aggregate read](api.md#the-aggregate-read).
+**One chart, several metrics.** Above the chart, one row per metric holds
+its name, which axis it reads on, its reducer (from the ones its form
+allows) and its output unit (from the stored unit's measure), and its
+legend. A level is a line with its lowest-to-highest band where its metric
+shows one line, an amount or a count is bars, and a category is bars
+stacked per code that counts as one unit, its time. The series of one unit
+share the left axis and a second unit reads on the right, each axis
+captioned with its unit; a third unit is not drawn, and the chart names the
+metrics it leaves out and what to deselect to draw them. One crosshair marks
+the hovered bucket with a dot on every line, and one tooltip lists every
+series there with its value and unit; a chart of one series keeps the full
+readout (every reducer, the points, the covered time, the sources, whether
+a row was filled in or is no longer available). Each legend entry hides or
+shows its series, and an axis goes with the last series on it. Grouping
+applies to the whole chart: heart rate grouped by source is one line per
+device, and ungrouped it is one line resolved across them. Click a bucket or
+drag across several to zoom in; from the keyboard the arrow keys move
+between buckets and Enter zooms.
+
+**The pattern.** The chart follows Grafana's time series panel: the series
+of one unit share a y axis, a second unit gets an axis on the right, one
+crosshair, an "all series" tooltip, and legend entries that hide a series.
+Datadog puts a request on the right axis the same way and splits a graph
+into small multiples when one would hold too much, which is what the
+timeline does at a third unit rather than adding a third axis. Observable
+Plot has no second y axis and recommends charts side by side, and the
+fitness apps (Oura on the web, WHOOP's trends, Garmin Connect's reports)
+overlay one trend on a second metric with its own scale: two units is the
+case they all draw together. Two scales on one plot line up arbitrarily, so
+each axis carries its unit, each metric's row names its side, and its
+numbers are one click below.
+
+Each metric is one aggregate read naming it, and a chart composes its
+metrics' reads on one bucket axis, each read loading, refreshing or failing
+on its own row. Grouped by anything but source, two or more sources are
+resolved by `sources.policy: priority` in the order you chose them (or the
+newest first), and the chart says which source wins; grouped by source,
+each keeps its own rows, and a source's channels stay apart
+(`groupBy: ["source", "channel"]`). Until you pick where to read from, a
+metric reads raw points, summaries where every one of its streams keeps
+vendor summaries, and `prefer-raw` where some do, since a raw read takes no
+summary and WHOOP's summary-only heart rate would draw nothing; with
+Technical details on, the chart says so. A metric that answers no values
+says why and what helps. A category metric is always grouped by code: a
+coded gauge asks for the time in each category (the bare `timeInState`), a
+coded amount for its total. A read the console expects to make more than
+1,440 buckets, counting every group, is not asked for, and its row says to
+pick a larger bucket; a refusal the server makes anyway is shown with its
+reason. The read itself is [the aggregate read](api.md#the-aggregate-read).
 
 ## History
 
