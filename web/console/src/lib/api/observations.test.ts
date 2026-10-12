@@ -96,7 +96,7 @@ describe("aggregateQueryOptions", () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(init?.method).toBe("GET")
     expect(JSON.parse(params(String(url)).get("aggregate")!)).toEqual({
-      groupBy: ["metric", "source", "about"],
+      groupBy: ["metric", "source", "about", "channel"],
       reducers: ["last"],
     })
     // A write to a trace makes this read stale; one to an unrelated kind
