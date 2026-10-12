@@ -83,14 +83,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function renderMenu() {
+function renderMenu(onOpenChange: (open: boolean) => void = () => {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   const rootRoute = createRootRoute({
     component: () => (
       <QueryClientProvider client={client}>
-        <CommandMenu open onOpenChange={() => {}} />
+        <CommandMenu open onOpenChange={onOpenChange} />
       </QueryClientProvider>
     ),
   })
@@ -199,5 +199,24 @@ describe("CommandMenu", () => {
     expect(options.at(-1)?.textContent).toContain(
       "Search your records for “tas”"
     )
+  })
+
+  it("closes on the first Escape after a dead key's composition", async () => {
+    const onOpenChange = vi.fn()
+    renderMenu(onOpenChange)
+    const input = await screen.findByPlaceholderText("Search or jump to…")
+    // A dead key (the Greek tonos) opens a composition the dialog tracks and
+    // the browser may close only after the dialog stopped listening.
+    fireEvent.compositionStart(input)
+    fireEvent.keyDown(input, { key: "Escape" })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("leaves an Escape that cancels a composition to the composition", async () => {
+    const onOpenChange = vi.fn()
+    renderMenu(onOpenChange)
+    const input = await screen.findByPlaceholderText("Search or jump to…")
+    fireEvent.keyDown(input, { key: "Escape", isComposing: true })
+    expect(onOpenChange).not.toHaveBeenCalled()
   })
 })
