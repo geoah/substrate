@@ -345,6 +345,30 @@ const routes = [
     },
   },
   {
+    // The table's address and the Timeline panel: a sort, a grouping and
+    // the panel open with nothing selected, which says how to draw streams.
+    path: "/observations?sort=count:desc&group=metric&timeline=true",
+    async check(page) {
+      await shows(
+        page,
+        '"Observations" heading',
+        pageTitle(page, "Observations")
+      )
+      await loaded(
+        page,
+        "the Timeline panel or empty state",
+        page
+          .getByRole("region", { name: "Timeline of the selected streams" })
+          .or(page.getByText(/^Nothing here records measurements yet/)),
+        page.getByText(/^The streams didn.t load/)
+      )
+      const empty = await page
+        .getByText(/^Nothing here records measurements yet/)
+        .isVisible()
+      return `"Observations", ${empty ? "its empty state" : "grouped, with the Timeline panel"}`
+    },
+  },
+  {
     path: "/observations/timeline",
     async check(page) {
       await shows(page, '"Timeline" heading', pageTitle(page, "Timeline"))
@@ -359,6 +383,39 @@ const routes = [
       )
       const lanes = await page.locator('[data-slot="timeline-lane"]').count()
       return `"Timeline", ${lanes ? plural(lanes, "chart", "charts") : "its empty state"}`
+    },
+  },
+  {
+    // Three metrics of three units: two overlay on one chart, the left and
+    // the right axis, and the third splits into a chart of its own.
+    path: "/observations/timeline?metric=health/heart_rate,health/hrv_rmssd,health/steps",
+    async check(page) {
+      await shows(page, '"Timeline" heading', pageTitle(page, "Timeline"))
+      await loaded(
+        page,
+        "a chart or empty state",
+        page
+          .locator('[data-slot="timeline-lane"]')
+          .or(page.getByText(/^Nothing here records measurements yet/))
+          .or(page.getByText(/^Nothing has been measured yet/)),
+        page.getByText(/^This read failed/)
+      )
+      const lanes = await page.locator('[data-slot="timeline-lane"]').count()
+      if (lanes) {
+        // Each chart draws once its reads answer; a metric no record names
+        // draws nothing and says so.
+        await loaded(
+          page,
+          "a drawn chart",
+          page
+            .locator('[data-slot="timeline-chart"]')
+            .or(page.getByText(/^No record names this metric/))
+            .first(),
+          page.getByText(/^This read failed/)
+        )
+      }
+      const right = await page.locator('[data-axis="right"]').count()
+      return `"Timeline", ${lanes ? `${plural(lanes, "chart", "charts")}, ${plural(right, "right axis", "right axes")}` : "its empty state"}`
     },
   },
 ]
