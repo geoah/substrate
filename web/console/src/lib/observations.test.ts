@@ -8,6 +8,8 @@ import type { KindInfo } from "@/lib/api/types"
 import {
   answerReducers,
   autoBucket,
+  bucketsOf,
+  channelKey,
   axisTicks,
   breakAtGaps,
   bucketEstimate,
@@ -40,8 +42,10 @@ import {
   rowValue,
   sameRef,
   seriesOf,
+  seriesOn,
   shapeOf,
   stddevOf,
+  streamSearch,
   streamsOf,
   tracePoints,
   traceStats,
@@ -67,6 +71,7 @@ import {
   STEPS,
   WEIGHT,
   WEIGHING,
+  WHOOP,
   ZONES,
   metricKind,
   observationKind,
@@ -194,7 +199,10 @@ describe("the latest read", () => {
   it("asks for the newest value of every stream, no range and no bucket", () => {
     expect(latestRead()).toEqual({
       filter: { implements: OBSERVED },
-      aggregate: { groupBy: ["metric", "source", "about"], reducers: ["last"] },
+      aggregate: {
+        groupBy: ["metric", "source", "about", "channel"],
+        reducers: ["last"],
+      },
     })
   })
 
@@ -256,6 +264,23 @@ describe("the latest read", () => {
       value: null,
       code: "awake",
       form: "amount",
+    })
+  })
+
+  it("tells a source's channels apart as two streams", () => {
+    const row = LATEST.rows[0]
+    const streams = streamsOf({
+      rows: [
+        { ...row, group: { ...row.group, channel: "cycle" } },
+        { ...row, group: { ...row.group, channel: "workout" } },
+      ],
+    })
+    expect(streams.map((s) => s.channel)).toEqual(["cycle", "workout"])
+    expect(new Set(streams.map((s) => s.key)).size).toBe(2)
+    expect(streamSearch(streams[1])).toEqual({
+      metric: HEART,
+      source: GARMIN,
+      channel: "workout",
     })
   })
 })
@@ -390,10 +415,17 @@ describe("one chart's request", () => {
     const bySource = laneRead(
       spec({ group: "source", sourceOrder: ["a", "b"] })
     ).aggregate
-    expect(bySource.groupBy).toEqual(["source"])
+    // A source's channels stay apart: a WHOOP cycle beside its workouts.
+    expect(bySource.groupBy).toEqual(["source", "channel"])
     expect(bySource.sources).toBeUndefined()
     const merged = laneRead(spec({ sourceOrder: ["a", "b"] })).aggregate
     expect(merged.sources).toEqual({ policy: "priority", order: ["a", "b"] })
+  })
+
+  it("narrows to the chosen channels", () => {
+    const read = laneRead(spec({ channels: ["workout"] }))
+    expect(read.filter?.properties).toEqual({ channel: { in: ["workout"] } })
+    expect(laneRead(spec({ channels: [] })).filter?.properties).toBeUndefined()
   })
 
   it("narrows to the chosen sources and things by path", () => {
@@ -446,6 +478,69 @@ describe("one chart's request", () => {
 })
 
 describe("an answer as buckets and series", () => {
+  it("lays several answers on one bucket axis, a gap where one is silent", () => {
+    const day = (start: string, end: string, value: string, unit: string) => ({
+      start,
+      end,
+      values: [{ reducer: "avg", value, unit }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const heart = [
+      day("2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z", "61", "/min"),
+      day("2026-09-02T00:00:00Z", "2026-09-03T00:00:00Z", "64", "/min"),
+      day("2026-09-03T00:00:00Z", "2026-09-04T00:00:00Z", "60", "/min"),
+    ]
+    // HRV, spelled in another offset, with no reading on the second day.
+    const hrv = [
+      day("2026-09-01T03:00:00+03:00", "2026-09-02T03:00:00+03:00", "52", "ms"),
+      day("2026-09-03T03:00:00+03:00", "2026-09-04T03:00:00+03:00", "58", "ms"),
+    ]
+    const buckets = bucketsOf([heart, hrv])
+    expect(buckets).toHaveLength(3)
+    expect(buckets[0].rows).toHaveLength(2)
+    expect(seriesOn(buckets, hrv, "avg")[0].points.map((p) => p.value)).toEqual(
+      [52, null, 58]
+    )
+    expect(
+      seriesOn(buckets, heart, "avg")[0].points.map((p) => p.value)
+    ).toEqual([61, 64, 60])
+  })
+
+  it("keeps a source's channels apart as two series", () => {
+    const row = (channel: string, value: string) => ({
+      start: "2026-09-01T00:00:00Z",
+      end: "2026-09-02T00:00:00Z",
+      group: { source: WHOOP, channel },
+      values: [{ reducer: "avg", value, unit: "/min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const { series } = seriesOf(
+      [row("cycle", "58"), row("workout", "131")],
+      "avg",
+      "source"
+    )
+    expect(series.map((s) => [s.value, s.channel])).toEqual([
+      [WHOOP, "cycle"],
+      [WHOOP, "workout"],
+    ])
+    expect(series.map((s) => s.key)).toEqual([
+      channelKey(WHOOP, "cycle"),
+      channelKey(WHOOP, "workout"),
+    ])
+    expect(
+      rollupText([row("cycle", "58")], ["avg"], "source").split("\n")
+    ).toEqual([
+      "start\tend\tsource\tchannel\tavg\tcount\tcoverage\tsources\tfrom\tsynthetic\tunavailable",
+      `2026-09-01T00:00:00Z\t2026-09-02T00:00:00Z\t${WHOOP}\tcycle\t58 /min\t1\t\t\t\t\t`,
+    ])
+  })
+
   it("draws the weight trend with its band and a filled week as a gap", () => {
     const { buckets, series } = seriesOf(WEIGHT.rows, "avg")
     expect(buckets).toHaveLength(3)

@@ -339,14 +339,17 @@ export function unitChoices(
 
 // ── the latest read: streams ───────────────────────────────────────────────
 
-/** One stream: a metric written by one source about one thing, with its
- * newest value. `metric`, `source` and `about` are the group values the
- * answer carries, record paths. */
+/** One stream: a metric written by one source about one thing on one of
+ * the source's channels, with its newest value. `metric`, `source` and
+ * `about` are the group values the answer carries, record paths; `channel`
+ * is the source's own word for a second measurement of one metric (a
+ * WHOOP cycle's heart rate beside a workout's). */
 export interface Stream extends StreamForm {
   key: string
   metric: string
   source?: string
   about?: string
+  channel?: string
   /** The newest value's digits; null where it is a code or has none. */
   value: string | null
   unit?: string
@@ -361,9 +364,16 @@ export interface Stream extends StreamForm {
 export function streamKey(
   metric: string,
   source?: string,
-  about?: string
+  about?: string,
+  channel?: string
 ): string {
-  return [metric, source ?? "", about ?? ""].join("\n")
+  return [metric, source ?? "", about ?? "", channel ?? ""].join("\n")
+}
+
+/** A series value told apart by its channel too: a source's two channels
+ * of one metric are two series. */
+export function channelKey(value: string, channel?: string): string {
+  return channel ? `${value}\u0001${channel}` : value
 }
 
 /** The timeline's address for one record of an observed kind: its stream,
@@ -392,6 +402,10 @@ export function recordTimelineSearch(
     typeof properties.endsAt === "string" ? Date.parse(properties.endsAt) : NaN
   const source = ref("source")
   const about = ref("about")
+  const channel =
+    typeof properties.channel === "string" && properties.channel
+      ? properties.channel
+      : undefined
   const window: TimeRange =
     !Number.isNaN(endsAt) && endsAt > at
       ? { start: at, end: endsAt }
@@ -407,7 +421,7 @@ export function recordTimelineSearch(
         })()
   // Record paths, the spelling the latest read's groups carry.
   return {
-    ...streamSearch({ metric, source, about }),
+    ...streamSearch({ metric, source, about, channel }),
     range: "custom",
     start: new Date(window.start).toISOString(),
     end: new Date(window.end).toISOString(),
@@ -420,10 +434,12 @@ export function streamSearch(stream: {
   metric: string
   source?: string
   about?: string
+  channel?: string
 }): Record<string, string> {
   const out: Record<string, string> = { metric: stream.metric }
   if (stream.source) out.source = stream.source
   if (stream.about) out.about = stream.about
+  if (stream.channel) out.channel = stream.channel
   return out
 }
 
@@ -445,10 +461,16 @@ export function streamsOf(
     if (!metric) continue
     const value = lastValue(row)
     out.push({
-      key: streamKey(metric, row.group?.source, row.group?.about),
+      key: streamKey(
+        metric,
+        row.group?.source,
+        row.group?.about,
+        row.group?.channel
+      ),
       metric,
       source: row.group?.source,
       about: row.group?.about,
+      ...(row.group?.channel ? { channel: row.group.channel } : {}),
       value: value?.value ?? null,
       unit: value?.unit,
       // A coded `last` answers its code, with `value` null.
@@ -678,6 +700,15 @@ export const BUCKET_CHOICES: readonly { value: BucketChoice; label: string }[] =
     { value: "month", label: "Month" },
   ]
 
+/** Each size in words, for the automatic choice's label: "Automatic: day". */
+export const BUCKET_SIZE_WORDS: Record<BucketSize, string> = {
+  "15m": "15 min",
+  hour: "hour",
+  day: "day",
+  week: "week",
+  month: "month",
+}
+
 const HOUR_MS = 3_600_000
 const DAY_MS = 24 * HOUR_MS
 
@@ -797,6 +828,8 @@ export interface LaneSpec {
   sourceOrder: string[]
   /** `about` values the read is narrowed to; empty for everything. */
   about: string[]
+  /** Channels the read is narrowed to; absent or empty for every one. */
+  channels?: string[]
 }
 
 /** The reducers a lane asks for: the reader's, then (on a level) the
@@ -811,7 +844,8 @@ export function laneReducers(spec: LaneSpec): AggregateReducer[] {
 /** What a lane's chart groups its series by: a coded metric always by code
  * (a coded amount must be, and each code is a series of the stack);
  * otherwise the reader's choice, where it is not the metric itself (each
- * metric is its own lane). */
+ * metric is its own series). Grouped by source, the read also groups by
+ * channel (`laneRead`), so a source's two channels are two series. */
 export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
   if (spec.shape === "coded") return "code"
   return spec.group === "metric" ? undefined : spec.group
@@ -825,6 +859,7 @@ export function laneRead(spec: LaneSpec): AggregateRead {
   const properties: NonNullable<RecordFilter["properties"]> = {}
   if (spec.sources.length) properties.source = { in: spec.sources }
   if (spec.about.length) properties.about = { in: spec.about }
+  if (spec.channels?.length) properties.channel = { in: spec.channels }
   const aggregate: Aggregate = {
     metric: { ref: spec.metricPath },
     from: spec.from,
@@ -833,7 +868,9 @@ export function laneRead(spec: LaneSpec): AggregateRead {
       lt: isoWithOffset(spec.range.end),
     },
     bucket: spec.bucket,
-    ...(groupKey ? { groupBy: [groupKey] } : {}),
+    ...(groupKey
+      ? { groupBy: groupKey === "source" ? ["source", "channel"] : [groupKey] }
+      : {}),
     reducers: laneReducers(spec),
     ...(groupKey !== "source" && spec.sourceOrder.length > 1
       ? { sources: { policy: "priority", order: spec.sourceOrder } }
@@ -876,7 +913,10 @@ function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
 export function latestRead(narrow: StreamNarrowing = {}): AggregateRead {
   return {
     filter: narrowedFilter(narrow),
-    aggregate: { groupBy: ["metric", "source", "about"], reducers: ["last"] },
+    aggregate: {
+      groupBy: ["metric", "source", "about", "channel"],
+      reducers: ["last"],
+    },
   }
 }
 
@@ -968,6 +1008,8 @@ export interface Series {
   key: string
   /** The group value, or undefined for the one series of an ungrouped lane. */
   value?: string
+  /** The source's channel, where the answer is grouped by one. */
+  channel?: string
   points: SeriesPoint[]
 }
 
@@ -1027,6 +1069,82 @@ function withGaps(buckets: Bucket[]): Bucket[] {
   return out
 }
 
+/** The windows of one or more answers as one bucket axis: every distinct
+ * window, oldest first, with an empty bucket standing in for each stretch
+ * no answer covered. Several reads over one range and one bucket share
+ * their windows, so a chart that composes them draws one axis; each
+ * bucket holds every row that fell in it, from any answer. */
+export function bucketsOf(
+  answers: readonly (readonly AggregateRow[])[]
+): Bucket[] {
+  const byWindow = new Map<string, Bucket>()
+  for (const rows of answers) {
+    for (const row of rows) {
+      const start = Date.parse(row.start)
+      const end = Date.parse(row.end)
+      const id = `${start}\n${end}`
+      let bucket = byWindow.get(id)
+      if (!bucket) {
+        bucket = { start, end, startIso: row.start, endIso: row.end, rows: [] }
+        byWindow.set(id, bucket)
+      }
+      bucket.rows.push(row)
+    }
+  }
+  return withGaps([...byWindow.values()].sort((a, b) => a.start - b.start))
+}
+
+/** One answer's series on a bucket axis (`bucketsOf`): one per value of the
+ * group key, in first-seen order, each holding one point per bucket. A
+ * bucket the answer has no row in is a point with no value, so a line
+ * breaks there. */
+export function seriesOn(
+  buckets: readonly Bucket[],
+  rows: readonly AggregateRow[],
+  pickedKey: string,
+  groupKey?: AggregateGroupKey
+): Series[] {
+  const at = new Map<string, number>()
+  buckets.forEach((b, i) => at.set(`${b.start}\n${b.end}`, i))
+  const keys: string[] = []
+  const channels = new Map<string, string | undefined>()
+  const byKey = new Map<string, Map<number, AggregateRow>>()
+  for (const row of rows) {
+    const value = groupValue(row.group, groupKey) ?? ""
+    const channel = groupKey ? row.group?.channel || undefined : undefined
+    const key = channelKey(value, channel)
+    if (!byKey.has(key)) {
+      keys.push(key)
+      channels.set(key, channel)
+      byKey.set(key, new Map())
+    }
+    const i = at.get(`${Date.parse(row.start)}\n${Date.parse(row.end)}`)
+    const held = byKey.get(key)!
+    if (i !== undefined && !held.has(i)) held.set(i, row)
+  }
+  return keys.map((key) => {
+    const held = byKey.get(key)!
+    const channel = channels.get(key)
+    const value = channel ? key.slice(0, key.indexOf("\u0001")) : key
+    return {
+      key,
+      value: groupKey ? value || undefined : undefined,
+      ...(channel ? { channel } : {}),
+      points: buckets.map((_, i) => {
+        const row = held.get(i)
+        const off = row?.unavailable === true
+        return {
+          bucket: i,
+          row,
+          value: off ? null : numberOf(rowValue(row, pickedKey)?.value),
+          low: off ? null : numberOf(rowValue(row, "min")?.value),
+          high: off ? null : numberOf(rowValue(row, "max")?.value),
+        }
+      }),
+    }
+  })
+}
+
 /** The rows as buckets (distinct windows, oldest first, with an empty one
  * standing in for each stretch the answer skipped) and series (one per
  * value of the group key, in first-seen order), every series holding one
@@ -1036,48 +1154,8 @@ export function seriesOf(
   pickedKey: string,
   groupKey?: AggregateGroupKey
 ): { buckets: Bucket[]; series: Series[] } {
-  const byWindow = new Map<string, Bucket>()
-  for (const row of rows) {
-    const id = `${row.start}\n${row.end}`
-    let bucket = byWindow.get(id)
-    if (!bucket) {
-      bucket = {
-        start: Date.parse(row.start),
-        end: Date.parse(row.end),
-        startIso: row.start,
-        endIso: row.end,
-        rows: [],
-      }
-      byWindow.set(id, bucket)
-    }
-    bucket.rows.push(row)
-  }
-  const buckets = withGaps(
-    [...byWindow.values()].sort((a, b) => a.start - b.start)
-  )
-  const keys: string[] = []
-  for (const row of rows) {
-    const key = groupValue(row.group, groupKey) ?? ""
-    if (!keys.includes(key)) keys.push(key)
-  }
-  const series = keys.map((key) => ({
-    key,
-    value: groupKey ? key || undefined : undefined,
-    points: buckets.map((bucket, i) => {
-      const row = bucket.rows.find(
-        (r) => (groupValue(r.group, groupKey) ?? "") === key
-      )
-      const off = row?.unavailable === true
-      return {
-        bucket: i,
-        row,
-        value: off ? null : numberOf(rowValue(row, pickedKey)?.value),
-        low: off ? null : numberOf(rowValue(row, "min")?.value),
-        high: off ? null : numberOf(rowValue(row, "max")?.value),
-      }
-    }),
-  }))
-  return { buckets, series }
+  const buckets = bucketsOf([rows])
+  return { buckets, series: seriesOn(buckets, rows, pickedKey, groupKey) }
 }
 
 function groupValue(
@@ -1122,10 +1200,12 @@ export function rollupText(
   reducers: readonly AggregateReducer[],
   groupKey?: AggregateGroupKey
 ): string {
+  const channels = rows.some((r) => r.group?.channel)
   const head = [
     "start",
     "end",
     ...(groupKey ? [groupKey] : []),
+    ...(channels ? ["channel"] : []),
     ...reducers.map(reducerKey),
     "count",
     "coverage",
@@ -1138,6 +1218,7 @@ export function rollupText(
     row.start,
     row.end,
     ...(groupKey ? [row.group?.[groupKey] ?? ""] : []),
+    ...(channels ? [row.group?.channel ?? ""] : []),
     ...reducers.map((r) => {
       const v = rowValue(row, reducerKey(r))
       if (v?.value == null) return v?.code ?? ""
