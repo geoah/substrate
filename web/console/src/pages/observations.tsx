@@ -254,21 +254,41 @@ export function ObservationsPage() {
     [obs]
   )
 
+  // A record a field offers is spelled by id where its pin allows, the
+  // spelling the address keeps, so a picked value and a linked one agree.
+  const spell = useMemo(() => {
+    const pins: Partial<Record<StreamField, string | undefined>> = {
+      metric: obs.pins.metric,
+      source: obs.pins.source,
+      about: obs.pins.about,
+    }
+    return (field: StreamField, value: string) =>
+      field in pins ? shortRef(value, pins[field]) : value
+  }, [obs.pins])
   const fields = useMemo(() => {
     // Every metric with a point, so choosing one never hides the others.
-    const metrics = new Map(obs.metrics.map((m) => [m, obs.metricName(m)]))
-    for (const r of rows) metrics.set(r.metric, r.metricName)
-    const named = (list: string[], pin?: string): FieldChoice[] =>
-      list.map((value) => ({ value, label: values.nameOf(value, pin) }))
+    const metrics = new Map(
+      obs.metrics.map((m) => [spell("metric", m), obs.metricName(m)])
+    )
+    for (const r of rows) metrics.set(spell("metric", r.metric), r.metricName)
+    const named = (
+      field: StreamField,
+      list: string[],
+      pin?: string
+    ): FieldChoice[] =>
+      list.map((value) => ({
+        value: spell(field, value),
+        label: values.nameOf(value, pin),
+      }))
     return streamFields({
       metric: [...metrics]
         .map(([value, label]) => ({ value, label }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-      source: named(values.sources, obs.pins.source),
+      source: named("source", values.sources, obs.pins.source),
       about: values.abouts.length
         ? [
             { value: OWNER, label: "You" },
-            ...named(values.abouts, obs.pins.about),
+            ...named("about", values.abouts, obs.pins.about),
           ]
         : [],
       form: distinct(rows.map((r) => r.shape)).map((value) => ({
@@ -280,7 +300,7 @@ export function ObservationsPage() {
         label: value,
       })),
     })
-  }, [obs, rows, values])
+  }, [obs, rows, values, spell])
 
   // The words a group head and a group order read: a metric's name, a
   // record's title, a form's word.
@@ -594,7 +614,14 @@ export function ObservationsPage() {
           className="gap-1.5 px-0 py-0"
           fields={fields}
           filters={(Object.keys(choices) as StreamField[]).flatMap((f) =>
-            choices[f].length ? [choiceFilter(f, choices[f])] : []
+            choices[f].length
+              ? [
+                  choiceFilter(
+                    f,
+                    choices[f].map((v) => spell(f, v))
+                  ),
+                ]
+              : []
           )}
           labelOf={(name) => FIELD_LABELS[name as StreamField] ?? name}
           tags={false}
@@ -606,7 +633,7 @@ export function ObservationsPage() {
         />
         <span className="flex-1" />
         <SearchBox
-          className="h-[30px] w-60 [&_input]:font-sans"
+          className="h-[30px] w-48 [&_input]:font-sans"
           label="Search streams"
           placeholder="Search streams"
           value={search}

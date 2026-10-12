@@ -233,6 +233,21 @@ describe("the streams table", () => {
     ).toBeTruthy()
   })
 
+  it("names a chosen metric by its record, spelled by id or by path", async () => {
+    for (const spelling of ["health/body_mass", BODY_MASS]) {
+      mount(`?filter=${filter("metric", spelling)}`)
+      await waitFor(() => expect(bodyRows()).toHaveLength(1))
+      await waitFor(() =>
+        expect(filterControl("Metric").textContent).toContain("Weight")
+      )
+      // The menu checks the chosen metric, whichever way it was spelled.
+      fireEvent.click(filterControl("Metric"))
+      const weight = await screen.findByRole("option", { name: /Weight/ })
+      expect(weight.getAttribute("aria-selected")).toBe("true")
+      cleanup()
+    }
+  })
+
   it("lists the chosen metric's streams when only the list of every metric is refused", async () => {
     // The list of every metric is the one read grouped by metric alone.
     mount(`?filter=${filter("metric", BODY_MASS)}`, KINDS, (read) =>
