@@ -273,6 +273,7 @@ export function planPlot(
   const own = scope.streams
     ? scope.streams.filter((s) => sameRef(s.metric, metric))
     : every
+  const palette = scope.streams ? own : every
   // Newest first. A stream that keeps raw points says how the metric is
   // measured; a vendor summary only where every stream keeps one.
   const newest = own.find((s) => s.form !== "summary") ?? own[0]
@@ -364,12 +365,24 @@ export function planPlot(
     pickedKey: spec ? reducerKey(laneReducers(spec)[0]) : reducer,
     blocked,
     sourceOrder,
-    // Every stream of the metric, whichever are drawn, so a filter or a
-    // selection never repaints the series that stay.
+    // Every stream it could draw, whichever are drawn, so a source filter
+    // or a legend toggle never repaints the series that stay; a selection
+    // is its own palette. Spelled as the answer's groups are, record paths.
     sources: distinct(
-      every.map((s) => s.source && channelKey(s.source, s.channel))
+      palette.map(
+        (s) =>
+          s.source &&
+          channelKey(
+            refPathOf(s.source, obs.pins.source) ?? s.source,
+            s.channel
+          )
+      )
     ),
-    abouts: distinct(every.map((s) => s.about)),
+    abouts: distinct(
+      palette.map(
+        (s) => s.about && (refPathOf(s.about, obs.pins.about) ?? s.about)
+      )
+    ),
     from,
     ...(scope.from ? {} : auto.reason ? { fromReason: auto.reason } : {}),
     summarySources: distinct(

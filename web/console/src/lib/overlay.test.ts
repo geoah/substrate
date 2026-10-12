@@ -304,6 +304,23 @@ describe("one metric's plot", () => {
     expect(colors.get(seriesKey(HEART, GARMIN))).toBe("var(--series-2)")
   })
 
+  it("gives a selection its own palette, its first source the first colour", () => {
+    const streams = streamsOf(LATEST)
+    const garmin = streams.find(
+      (s) => s.metric === HEART && s.source === GARMIN
+    )!
+    const planned = planPlot(source(), HEART, {
+      ...SCOPE,
+      group: "source",
+      streams: [garmin],
+    })
+    const universe = universeOf(planned, []).map((v) => seriesKey(HEART, v))
+    expect(universe).toEqual([seriesKey(HEART, GARMIN)])
+    expect(seriesColors(universe).get(seriesKey(HEART, GARMIN))).toBe(
+      "var(--series-1)"
+    )
+  })
+
   it("orders categories by the metric's own codes, then the rest", () => {
     const sleep = planPlot(source(), SLEEP_STAGE, SCOPE)
     expect(sleep.groupKey).toBe("code")
