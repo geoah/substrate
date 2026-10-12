@@ -37,7 +37,21 @@ disagree by a few hundred grams.
 
 | Emitter | Writes | How it reaches a substrate |
 | --- | --- | --- |
+| `whoop` | `recordings/`: the WHOOP v2 profile, body measurement, and the cycle, recovery, sleep and workout collections, 25 records a page, later pages named for their `nextToken`; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `whoopsync` over the recordings |
 | `manual` | `labs.yaml`: two `labreport` records, 22 `labresult` records, the lab and the hand-entry `source` records, and one weigh-in typed in on a hotel scale | `synth load` writes them through `PUT /api/v1/...`; `substratectl apply -f` does the same |
+
+`whoop` writes WHOOP's scored summaries and never a sample series, because
+WHOOP's API has none. One physiological cycle per local day, from that
+morning's wake to the next, the last one still open; one recovery per
+cycle, scoring the night that opened it; one sleep per night and per nap
+with the stage totals in milliseconds; one workout per persona workout
+under WHOOP's sport name (`sport_id` is not written: WHOOP stopped sending
+it after 2025-09-01 and the adapter ignores it). Cycle heart rate samples
+the persona's curve every 5 minutes, and the workout zone durations come
+from each workout's 30-second series. The 90-day default is 17 recordings
+(226 KB); the `healthwhoop` adapter turns them into about 1,200
+observations, 95 `health/sleep` and 62 `health/workout` records under one
+source, `whoop/<account id>`, and no traces.
 
 Recordings for a mock-driven provider are named by `synth.RecordingName`,
 the Go form of the rule in `internal/providere2e/runner/mockserver.py`
