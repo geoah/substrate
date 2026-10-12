@@ -56,13 +56,17 @@ mise run synth:generate -- -from 2026-09-01 -to 2026-09-30 -seed other
 SUBSTRATE_TOKEN=… mise run synth:load -- -server http://127.0.0.1:8080 -authority ada.example.com
 ```
 
-`generate` is pure: the same flags write the same bytes. `load` posts each
-webhook delivery to `/webhooks/<authority>/<trigger>`, arming the trigger
-with `-key` first, and waits for the trigger to settle before the next one
-(the door holds eight in flight); a parked delivery stops the load and names
-the trigger to read. For a mock-driven provider it prints the provider e2e
-runner command that drives the real sync over the generated recordings. The
-bearer comes from `SUBSTRATE_TOKEN`, never from argv.
+`generate` is pure: the same flags write the same bytes. `load` takes a
+provider's directory in two steps. A `recordings/` directory goes through
+the provider e2e runner (`internal/providere2e/runner/e2e.py`, so `python3`
+and `bin/substratectl` are needed): the bundle is installed rewired at a
+mock serving the recordings, the account connects through the mock's OAuth
+stub, the sync drains, and the provider's schedule is switched off because
+the mock dies with the run. A `deliveries/` directory is posted to
+`/webhooks/<authority>/<trigger>` one request at a time, the trigger armed
+with `-key` first, waiting for the trigger to settle before the next (the
+door holds eight in flight); a parked delivery stops the load and names the
+trigger to read. The bearer comes from `SUBSTRATE_TOKEN`, never from argv.
 
 ## What holds it to spec
 

@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -310,6 +311,9 @@ func load(args []string, stdout, stderr io.Writer) error {
 	providers := fs.String("providers", "", "comma-separated providers; empty is every one with output in -dir")
 	key := fs.String("key", "synth-webhook-key-0123456789abcdef", "the webhook key to arm the push triggers with")
 	settle := fs.Duration("settle", 5*time.Minute, "how long to wait for each delivery's run")
+	repo := fs.String("repo", ".", "the substrate checkout the e2e runner and the bundles are read from (any directory inside it)")
+	ctl := fs.String("ctl", "", "the substratectl binary the runner applies bundles with (default <repo>/bin/substratectl)")
+	python := fs.String("python", "/usr/bin/python3", "the interpreter that runs the e2e runner")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -334,22 +338,144 @@ func load(args []string, stdout, stderr io.Writer) error {
 			}
 			return fmt.Errorf("%s: nothing generated under %s", e.Name(), base)
 		}
-		switch e.Name() {
-		case "manual":
+		if e.Name() == "manual" {
 			if err := applyYAML(ctx, c, filepath.Join(base, "labs.yaml"), stdout); err != nil {
 				return err
 			}
-		case "whoop", "googlefit":
-			fmt.Fprintf(stdout, "%s: a mock-driven sync; run the provider e2e runner over %s:\n", e.Name(), base)
-			fmt.Fprintf(stdout, "  SUBSTRATE_TOKEN=… SUBSTRATECTL_CONFIG=… /usr/bin/python3 internal/providere2e/runner/e2e.py %s --server %s --authority %s --ctl bin/substratectl --recordings %s\n",
-				e.Name(), c.server, c.authority, filepath.Join(base, "recordings"))
-		default:
+			continue
+		}
+		// A provider with recordings connects and syncs through the e2e
+		// runner first (WHOOP, Google Fit, Garmin's connect step); one with
+		// deliveries posts them after (Garmin's pushes, Apple Health).
+		if _, err := os.Stat(filepath.Join(base, "recordings")); err == nil {
+			if err := runSync(ctx, c, e.Name(), base, *repo, *ctl, *python, stdout, stderr); err != nil {
+				return fmt.Errorf("%s: %w", e.Name(), err)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(base, "deliveries")); err == nil {
 			if err := postDeliveries(ctx, c, base, *key, *settle, stdout, stderr); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
 		}
 	}
 	return nil
+}
+
+// repoRoot walks up from dir to the directory holding go.mod.
+func repoRoot(dir string) (string, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", errors.New("not inside the substrate checkout: pass -repo")
+		}
+		dir = parent
+	}
+}
+
+// runSync drives the provider's real sync over the generated recordings
+// with the provider e2e runner (internal/providere2e/runner/e2e.py): it
+// installs the bundle rewired at a mock serving `recordings/`, connects the
+// account through the mock's OAuth stub, drains the sync and switches the
+// provider's schedule off, since the mock dies with the run. The runner
+// reads its suite layout from SUBSTRATE_E2E_ROOT, so a copy is assembled
+// with the emitter's `e2e.json` in place of the recorded one and no
+// scenario, and a substratectl context for the repository is written for
+// it under a temporary config.
+func runSync(ctx context.Context, c *client, provider, base, repo, ctl, python string, stdout, stderr io.Writer) error {
+	root, err := repoRoot(repo)
+	if err != nil {
+		return err
+	}
+	if ctl == "" {
+		ctl = filepath.Join(root, "bin", "substratectl")
+	}
+	if _, err := os.Stat(ctl); err != nil {
+		return fmt.Errorf("no substratectl at %s (mise run build:cli, or -ctl)", ctl)
+	}
+	suite := filepath.Join(root, "internal", "providere2e")
+	tmp, err := os.MkdirTemp("", "synth-"+provider+"-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err := copyDir(filepath.Join(suite, "runner"), filepath.Join(tmp, "runner")); err != nil {
+		return err
+	}
+	pdir := filepath.Join(tmp, "providers", provider)
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		return err
+	}
+	e2e := filepath.Join(base, "e2e.json")
+	if _, err := os.Stat(e2e); err != nil {
+		e2e = filepath.Join(suite, "providers", provider, "e2e.json")
+	}
+	if err := copyFile(e2e, filepath.Join(pdir, "e2e.json")); err != nil {
+		return err
+	}
+	cfg := filepath.Join(tmp, "substratectl.yaml")
+	cfgBody, err := yaml.Marshal(map[string]any{
+		"currentContext": c.authority,
+		"contexts": []map[string]any{{
+			"name": c.authority, "server": c.server, "repository": c.authority, "token": c.token,
+		}},
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(cfg, cfgBody, 0o600); err != nil {
+		return err
+	}
+	args := []string{
+		filepath.Join(tmp, "runner", "e2e.py"), provider,
+		"--server", c.server, "--authority", c.authority, "--ctl", ctl,
+		"--recordings", filepath.Join(base, "recordings"), "--quiesce",
+	}
+	cmd := exec.CommandContext(ctx, python, args...) //nolint:gosec // every argument is this command's own
+	cmd.Dir = tmp
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.Env = append(os.Environ(),
+		"SUBSTRATE_TOKEN="+c.token,
+		"SUBSTRATECTL_CONFIG="+cfg,
+		"SUBSTRATE_E2E_ROOT="+tmp,
+		"SUBSTRATE_E2E_REPO="+root,
+		"PYTHONUNBUFFERED=1",
+	)
+	fmt.Fprintf(stdout, "%s: connecting and syncing through the e2e runner over %s\n", provider, filepath.Join(base, "recordings"))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("the e2e runner failed: %w", err)
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	raw, err := os.ReadFile(src) //nolint:gosec // paths this command assembled
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, raw, 0o644) //nolint:gosec // a copy of a tree file
+}
+
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		if d.IsDir() {
+			if d.Name() == "__pycache__" {
+				return filepath.SkipDir
+			}
+			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+		}
+		return copyFile(p, filepath.Join(dst, rel))
+	})
 }
 
 func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) error {
