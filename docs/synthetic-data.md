@@ -38,7 +38,27 @@ disagree by a few hundred grams.
 | Emitter | Writes | How it reaches a substrate |
 | --- | --- | --- |
 | `whoop` | `recordings/`: the WHOOP v2 profile, body measurement, and the cycle, recovery, sleep and workout collections, 25 records a page, later pages named for their `nextToken`; `e2e.json` for the runner | `synth load` runs the provider e2e runner, which drives the real `whoopsync` over the recordings |
+| `applehealth` | `deliveries/`: one Health Auto Export request per local day (Time Grouping Minutes, Export Version 2) to `applehealth-webhook`, with the app's headers | `synth load` installs the provider, writes the `iphone` account, imports `healthapple`, arms the trigger and posts them one at a time |
 | `manual` | `labs.yaml`: two `labreport` records, 22 `labresult` records, the lab and the hand-entry `source` records, and one weigh-in typed in on a hotel scale | `synth load` writes them through `PUT /api/v1/...`; `substratectl apply -f` does the same |
+
+`applehealth` writes what the Health Auto Export app POSTs at the end of
+each local day. Heart rate comes from "Ada's Apple Watch" about every 5
+minutes as one-minute `Min`/`Avg`/`Max` rows, with a spread during
+workouts. Steps come per 5-minute bucket, from "Ada's iPhone" by day and the
+watch before 07:00, after 22:00 and during runs. Distance, flights, and
+active and basal energy come per hour, in km and kJ. Each night carries
+resting heart rate, three SDNN readings, respiratory rate every 15 minutes
+and SpO2 every 10, without a `source` key, as the app sends them. Weight and
+body fat come on weigh-in mornings and blood pressure on Sundays, from
+"Withings". The night is one aggregated `sleep_analysis` row, and each
+workout carries the app's activity name and `heartRateData` every 60 s.
+Dates are `yyyy-MM-dd HH:mm:ss Z` in the day's zone, `+0300` at home and
+`+0100` in London. The 90-day default is 90 deliveries (5.8 MB, about
+56,000 points); the `healthapple` adapter turns them into about 10,500
+hourly traces, about 930 observations, 90 `health/sleep` and one
+`health/workout` per workout, under four sources:
+`applehealth/iphone/apple-watch`, `.../iphone`, `.../withings` and
+`.../health` for rows without a source or with merged labels.
 
 `whoop` writes WHOOP's scored summaries and never a sample series, because
 WHOOP's API has none. One physiological cycle per local day, from that
