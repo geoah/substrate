@@ -362,7 +362,7 @@ export function OverlayChart({
         />
       )}
       <div className="flex flex-col gap-1.5">
-        {states.map(({ plot, query, pending, failed, stale }) => (
+        {states.map(({ plot, query, rows, pending, failed, stale }) => (
           <div
             key={plot.metric}
             role="group"
@@ -380,11 +380,11 @@ export function OverlayChart({
                   />
                 </span>
               ) : null}
-              <span className="text-[12.5px] text-faint">
-                {twoAxes
-                  ? `${sideOf(plot) === "left" ? "Left" : "Right"} axis, ${unitWords(plot.unit)}`
-                  : unitWords(plot.unit)}
-              </span>
+              {twoAxes && (
+                <span className="text-[12.5px] text-faint">
+                  {`${sideOf(plot) === "left" ? "Left" : "Right"} axis, ${unitWords(plot.unit)}`}
+                </span>
+              )}
               <Picker
                 label="Show"
                 options={plot.reducers.map((value) => ({
@@ -472,6 +472,23 @@ export function OverlayChart({
                 {plot.blocked}
               </p>
             )}
+            {!pending &&
+              !failed &&
+              rows.length > 0 &&
+              all
+                .filter((d) => d.plot === plot)
+                .every((d) =>
+                  d.series.points.every((p) => p.value === null)
+                ) && (
+                <p className="text-[12.5px] text-muted-foreground">
+                  No {lowerFirst(reducerLabel(plot.reducer))} in this range.
+                  {plot.fromReason === "some-summaries"
+                    ? " Its streams mix raw points and vendor summaries: group by source to see each, or pick another under Show."
+                    : plot.fromReason === "summaries-only"
+                      ? " A vendor summary answers only the statistic it keeps: pick another under Show."
+                      : ""}
+                </p>
+              )}
             {failed && query.error && (
               <div className="text-[12.5px] text-destructive">
                 <p>
