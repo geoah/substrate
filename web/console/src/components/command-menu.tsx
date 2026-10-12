@@ -200,6 +200,19 @@ export function CommandMenu({
         shouldFilter={false}
         value={selected}
         onValueChange={setSelected}
+        // The dialog's own dismissal skips an Escape while it believes a
+        // composition is open, a belief a dead key (the Greek tonos) can
+        // leave behind, so a reader had to press Escape twice. The browser's
+        // flag on the key itself is the one that knows, so the palette
+        // decides and the dialog never sees the key.
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return
+          event.stopPropagation()
+          if (event.nativeEvent.isComposing) return
+          event.preventDefault()
+          setTyped("")
+          onOpenChange(false)
+        }}
       >
         <CommandInput
           placeholder="Search or jump to…"
