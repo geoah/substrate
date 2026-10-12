@@ -1934,6 +1934,8 @@ that deletes a mirror row WHOOP deleted.
 | recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `cycle` | `Cel` |
 | cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `1` |
 | cycle `kilojoule` | `health/energy_expended` | amount | `kJ`, never converted |
+| cycle `averageHeartRate`, `maxHeartRate` | `health/heart_rate` | summary, `avg` and `max`, period `cycle` | `/min` |
+| workout `averageHeartRate`, `maxHeartRate` | `health/heart_rate`, channel `workout` | summary, `avg` and `max`, period `workout`, over the workout's span | `/min` |
 | sleep stage totals (awake, light, slow wave, REM) | `health/sleep_stage`, `code` `awake`, `light`, `deep`, `rem` | amount over the sleep's span | `min` |
 | sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `%` |
 | sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `/min` |
@@ -1945,10 +1947,12 @@ the mirror row: `whoop/<account record id>/<cycle id>/recovery` (and `hrv`,
 `resting_heart_rate`, `spo2`, `skin_temperature`, `strain`, `energy`),
 `whoop/<account>/<sleep id>/sleep`, `.../<sleep id>/stage/<code>`,
 `.../<sleep id>/sleep_performance` and `respiratory_rate`, and
-`whoop/<account>/<workout id>/workout`. A cycle's and a recovery's
-observations span the cycle and carry its id in `periodId`, so two cycles on
-one date stay two; the current cycle has no end yet, so its span ends at the
-cycle's `updatedAt` and moves as WHOOP rescores it. A recovery whose cycle row
+`whoop/<account>/<workout id>/workout`; the heart rate summaries are
+`heart_rate_avg` and `heart_rate_max` under the cycle id or the workout id. A
+cycle's and a recovery's observations span the cycle and carry its id in
+`periodId`, so two cycles on one date stay two; a workout's heart rate spans
+the workout and carries the workout id. The current cycle has no end yet, so
+its span ends at the cycle's `updatedAt` and moves as WHOOP rescores it. A recovery whose cycle row
 is absent (cycles toggled off) writes nothing until the cycle row lands.
 Every record carries `origin` (the mirror row), `revision` (WHOOP's
 `updated_at` in seconds since the epoch, for a recovery the later of its own
@@ -1963,11 +1967,21 @@ stage in `code` beside its minutes in `value`, over the sleep's span. WHOOP's
 `totalInBedTimeMilli` is every stage together, so it is the sleep's
 `timeInBed` and never an `in_bed` total, which would count the night twice.
 
+**Heart rate.** WHOOP's API has no heart rate samples, only each scored
+cycle's and workout's average and maximum. Each is a `summary` with the
+statistic it is, `avg` or `max`, not `vendor`, so the aggregate read's `avg`
+and `max` reducers take WHOOP's values beside the other sources' with `from:
+summaries` or `prefer-raw`. A raw read takes gauges alone and shows no WHOOP
+heart rate. A workout's two are on the `workout` channel: the `avg` reducer
+over summaries is the plain mean of the values in a bucket, so on one stream
+a day's average would mix the cycle's with the run's. Group or filter by
+`channel` to read either alone.
+
 **Skipped.** A field no metric and no health property holds is counted in the
-function's output and not written: a cycle's `averageHeartRate` and
-`maxHeartRate`, a sleep's `sleepNeeded`, `totalNoDataTimeMilli` and
-`sleepCycleCount`, and a workout's `percentRecorded` and
-`altitudeChangeMeter`. A cycle's `step_count` never reaches the mirror.
+function's output and not written: a sleep's `sleepNeeded`,
+`totalNoDataTimeMilli` and `sleepCycleCount`, and a workout's
+`percentRecorded` and `altitudeChangeMeter`. A cycle's `step_count` never
+reaches the mirror.
 
 ## Google Fit to health (sample)
 

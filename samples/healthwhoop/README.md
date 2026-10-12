@@ -15,6 +15,15 @@ A WHOOP sleep stage total is one `amount` observation of `health/sleep_stage`
 carrying both `code` (the stage) and `value` (the total in minutes), spanning
 the whole sleep: WHOOP reports totals per stage, not when each stage happened.
 
+A scored cycle's and a scored workout's `averageHeartRate` and
+`maxHeartRate` are two `summary` observations of `health/heart_rate` over the
+cycle's or the workout's span, with `statistic` `avg` and `max` and `period`
+`cycle` or `workout`; a workout's are on the `workout` channel, so a day's
+average is not the plain mean of the cycle's and a run's. They are what puts
+WHOOP beside the watches as a heart rate source: read them with `from:
+summaries` (or `prefer-raw`) and the `avg` and `max` reducers, because a raw
+read takes gauges and WHOOP sends no samples.
+
 The trigger starts at the changelog's head, so a mirror that already held
 rows when this sample was imported is converted by replaying the trigger from
 the start (`POST

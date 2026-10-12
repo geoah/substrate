@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/samples"
 )
 
 const (
@@ -32,6 +33,10 @@ const (
 	whoopLateCycle  = "1046463"
 	// The night WHOOP could not score.
 	whoopUnscoredCycle = "1046319"
+	// A run whose heart rate the worked example reads.
+	whoopExampleWorkout = "37a41337-1dee-49f3-99fb-cf5cfb59acb3"
+	// The adapter version the shipped closure stamps.
+	healthWhoopAdapter = "healthwhoop@2"
 )
 
 // healthOutputs are the kinds the adapter writes.
@@ -186,6 +191,58 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 		t.Errorf("energy = %s %s %v %v %s, want 8125.4 kJ, an amount of energy_expended", v, u, energy["form"], energy["statistic"], metricOf(energy))
 	}
 
+	// Heart rate: the cycle's average and maximum over the cycle, and a run's
+	// over the run on the `workout` channel, each with the statistic it is.
+	cycleOrigin := whoopCycleType + "/" + whoopRow("cycle", whoopExampleCycle)
+	cycleRevision := epochSeconds(t, "2026-10-07T19:58:00.853Z")
+	workoutOrigin := whoopWorkoutType + "/" + whoopRow("workout", whoopExampleWorkout)
+	runStart, runEnd := "2026-10-10T04:08:05.615Z", "2026-10-10T04:48:18.355Z"
+	runRevision := epochSeconds(t, "2026-10-10T05:04:18.468Z")
+	for _, c := range []struct {
+		id, value, statistic, period, periodID, channel, start, end, origin string
+		revision                                                            int64
+	}{
+		{hw(whoopExampleCycle, "heart_rate_avg"), "74", "avg", "cycle", whoopExampleCycle, "", cycleStart, cycleEnd, cycleOrigin, cycleRevision},
+		{hw(whoopExampleCycle, "heart_rate_max"), "171", "max", "cycle", whoopExampleCycle, "", cycleStart, cycleEnd, cycleOrigin, cycleRevision},
+		{hw(whoopExampleWorkout, "heart_rate_avg"), "155", "avg", "workout", whoopExampleWorkout, "workout", runStart, runEnd, workoutOrigin, runRevision},
+		{hw(whoopExampleWorkout, "heart_rate_max"), "180", "max", "workout", whoopExampleWorkout, "workout", runStart, runEnd, workoutOrigin, runRevision},
+	} {
+		p := healthProps(t, ds, healthObservation, c.id)
+		if v, u := quantityOf(t, p, "value"); v != c.value || u != "/min" {
+			t.Errorf("%s = %s %s, want %s /min", c.id, v, u, c.value)
+		}
+		if metricOf(p) != "health/heart_rate" || p["form"] != "summary" || p["statistic"] != c.statistic ||
+			p["period"] != c.period || p["periodId"] != c.periodID {
+			t.Errorf("%s is %s %v/%v/%v period %v, want health/heart_rate summary %s %s %s",
+				c.id, metricOf(p), p["form"], p["statistic"], p["period"], p["periodId"], c.statistic, c.period, c.periodID)
+		}
+		if got, _ := p["channel"].(string); got != c.channel {
+			t.Errorf("%s is on channel %q, want %q", c.id, got, c.channel)
+		}
+		if !sameInstant(t, p["at"], c.start) || !sameInstant(t, p["endsAt"], c.end) {
+			t.Errorf("%s spans %v to %v, want %s to %s", c.id, p["at"], p["endsAt"], c.start, c.end)
+		}
+		if asInt(p["utcOffset"]) != 180 || asInt(p["revision"]) != c.revision || storedRefPath(p["origin"]) != c.origin {
+			t.Errorf("%s utcOffset %v revision %v origin %v, want 180, %d and %s",
+				c.id, p["utcOffset"], p["revision"], p["origin"], c.revision, c.origin)
+		}
+		if storedRefPath(p["source"]) != healthSource+"/whoop/"+whoopAccount || p["adapter"] != healthWhoopAdapter {
+			t.Errorf("%s source %v adapter %v", c.id, p["source"], p["adapter"])
+		}
+	}
+	// One stream per kind of span: the cycles' on no channel, the workouts'
+	// on `workout`, so a day's average never mixes the two.
+	channels := map[string]int{}
+	for _, row := range listLive(t, ds, healthObservation) {
+		if metricOf(row.Properties) == "health/heart_rate" {
+			ch, _ := row.Properties["channel"].(string)
+			channels[ch+"/"+fmt.Sprint(row.Properties["statistic"])]++
+		}
+	}
+	if want := map[string]int{"/avg": 29, "/max": 29, "workout/avg": 29, "workout/max": 29}; fmt.Sprint(channels) != fmt.Sprint(want) {
+		t.Errorf("heart rate summaries by channel and statistic %v, want %v", channels, want)
+	}
+
 	// The sleep: the typed record, its four stage totals and two scores.
 	night := healthProps(t, ds, healthSleep, hw(whoopExampleSleep, "sleep"))
 	for name, want := range map[string]string{
@@ -234,13 +291,15 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 		"health/spo2": 29, "health/skin_temperature": 29, "health/whoop_strain": 29,
 		"health/energy_expended": 29, "health/sleep_stage": 4 * 32,
 		"health/whoop_sleep_performance": 32, "health/respiratory_rate": 32,
+		// An average and a maximum per scored cycle and per scored workout.
+		"health/heart_rate": 2*29 + 2*29,
 	} {
 		if byMetric[metric] != want {
 			t.Errorf("%d observations of %s, want %d", byMetric[metric], metric, want)
 		}
 	}
-	if len(byMetric) != 10 {
-		t.Errorf("observations of %d metrics, want 10: %v", len(byMetric), byMetric)
+	if len(byMetric) != 11 {
+		t.Errorf("observations of %d metrics, want 11: %v", len(byMetric), byMetric)
 	}
 	if n := countLive(t, ds, healthWorkout); n != 29 {
 		t.Errorf("%d workouts, want 29", n)
@@ -306,9 +365,10 @@ func TestHealthWhoopRerunChangesNothing(t *testing.T) {
 	whoopSync(t, ds, fake, whoopProps(nil))
 	healthDrain(t, ds)
 	before := healthVersions(t, ds)
-	// 395 observations, 33 sleeps, 29 workouts and the one source.
-	if len(before) != 458 {
-		t.Fatalf("%d outputs after the first run, want 458", len(before))
+	// 511 observations (116 of them heart rate), 33 sleeps, 29 workouts and
+	// the one source.
+	if len(before) != 574 {
+		t.Fatalf("%d outputs after the first run, want 574", len(before))
 	}
 
 	whoopSync(t, ds, fake, whoopSteady(nil))
@@ -352,6 +412,13 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	if !whoopLive(t, ds, healthWorkout, hw(whoopDeletedWorkout, "workout")) {
 		t.Fatal("the auto-detected workout was never written")
 	}
+	workoutHR := []string{hw(whoopDeletedWorkout, "heart_rate_avg"), hw(whoopDeletedWorkout, "heart_rate_max")}
+	for _, id := range workoutHR {
+		if !whoopLive(t, ds, healthObservation, id) {
+			t.Fatalf("the auto-detected workout's %s was never written", id)
+		}
+	}
+	hrBefore := mustGet(t, ds, healthObservation, hw(whoopRescoredCycle, "heart_rate_max"))
 
 	fake.setPhase(1)
 	whoopSync(t, ds, fake, whoopSteady(map[string]string{"sleep": "2026-10-06T00:00:00Z"}))
@@ -386,9 +453,28 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	if whoopLive(t, ds, healthWorkout, hw(whoopDeletedWorkout, "workout")) {
 		t.Error("the deleted workout's record survived")
 	}
+	for _, id := range workoutHR {
+		if whoopLive(t, ds, healthObservation, id) {
+			t.Errorf("%s outlived the workout WHOOP deleted", id)
+		}
+	}
+	// The rescore rewrites the cycle's heart rate at the same ids.
+	hrAfter := mustGet(t, ds, healthObservation, hw(whoopRescoredCycle, "heart_rate_max"))
+	if v, _ := quantityOf(t, hrAfter.Properties, "value"); v != "168" || hrAfter.Version <= hrBefore.Version ||
+		asInt(hrAfter.Properties["revision"]) != epochSeconds(t, "2026-10-10T15:31:47.865Z") {
+		t.Errorf("the rescored cycle's maximum heart rate is %s at version %d (was %d), revision %v; want 168 at a higher version and the rescore's revision",
+			v, hrAfter.Version, hrBefore.Version, hrAfter.Properties["revision"])
+	}
+	if v, _ := quantityOf(t, healthProps(t, ds, healthObservation, hw(whoopRescoredCycle, "heart_rate_avg")), "value"); v != "76" {
+		t.Errorf("the rescored cycle's average heart rate is %s, want 76", v)
+	}
 	late := healthProps(t, ds, healthWorkout, hw(whoopLateWorkout, "workout"))
 	if late["sport"] != "padel" {
 		t.Errorf("the hand-logged workout landed as %v", late)
+	}
+	lateHR := healthProps(t, ds, healthObservation, hw(whoopLateWorkout, "heart_rate_avg"))
+	if v, _ := quantityOf(t, lateHR, "value"); v != "137" || lateHR["channel"] != "workout" {
+		t.Errorf("the hand-logged workout's average heart rate is %s on channel %v, want 137 on workout", v, lateHR["channel"])
 	}
 	if v, u := quantityOf(t, late, "energy"); v != "2816.74341" || u != "kJ" {
 		t.Errorf("the padel energy = %s %s, want 2816.74341 kJ", v, u)
@@ -407,10 +493,32 @@ func TestHealthWhoopAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
 	whoopSync(t, ds, fake, whoopProps(nil))
 	healthDrain(t, ds)
 	before := adapterOutputs(t, ds)
-	assertAdapterStamp(t, before, "healthwhoop@1")
-	upgradeAdapter(t, ds, "healthwhoop")
+	assertAdapterStamp(t, before, healthWhoopAdapter)
+	// health_test.go's upgradeAdapter raises @1 to @2, and this adapter
+	// ships at @2, so the upgrade here raises it to @3.
+	docs := loadDocs(t, samplesDir+"/healthwhoop/bundle.yaml")
+	rewriteSource(t, docs, `ADAPTER = "healthwhoop@2"`, `ADAPTER = "healthwhoop@3"`)
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.BundleActor(samples.Authority, "healthwhoop"), docs); err != nil {
+		t.Fatalf("upgrade healthwhoop: %v", err)
+	}
 	replayAdapter(t, ds, healthWhoopRun)
-	assertAdapterRewrite(t, ds, "healthwhoop", before)
+	after := adapterOutputs(t, ds)
+	if len(after) != len(before) {
+		t.Fatalf("%d outputs after the upgrade, %d before", len(after), len(before))
+	}
+	for key, was := range before {
+		now := after[key]
+		switch {
+		case now == nil:
+			t.Fatalf("%s is gone after the upgrade", key)
+		case now.Properties["adapter"] != "healthwhoop@3" || now.Version <= was.Version:
+			t.Fatalf("%s: adapter %v at version %d (was %d), want healthwhoop@3 at a higher version",
+				key, now.Properties["adapter"], now.Version, was.Version)
+		case fmt.Sprint(now.Properties["revision"]) != fmt.Sprint(was.Properties["revision"]):
+			t.Fatalf("%s: revision %v, was %v; an adapter-only rewrite keeps the upstream's",
+				key, now.Properties["revision"], was.Properties["revision"])
+		}
+	}
 }
 
 // TestHealthWhoopKeepsAnAccountIdWithSlashes: a record id may hold slashes,
@@ -453,7 +561,7 @@ func TestHealthWhoopKeepsAnAccountIdWithSlashes(t *testing.T) {
 			}
 		}
 	}
-	if n != 457 {
-		t.Errorf("%d outputs under %s, want the 457 one account's thirty days imply", n, base)
+	if n != 573 {
+		t.Errorf("%d outputs under %s, want the 573 one account's thirty days imply", n, base)
 	}
 }

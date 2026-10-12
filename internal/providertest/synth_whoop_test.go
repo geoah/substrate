@@ -177,9 +177,10 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 		}
 	}
 
-	// The adapter: two observations per cycle, five per recovery, six per
-	// sleep, a typed sleep and workout each, one source, and no trace,
-	// because WHOOP sends summaries and never samples.
+	// The adapter: four observations per cycle (strain, energy, an average
+	// and a maximum heart rate), five per recovery, six per sleep, two heart
+	// rates per workout, a typed sleep and workout each, one source, and no
+	// trace, because WHOOP sends summaries and never samples.
 	sleeps := len(days) + naps
 	byMetric := map[string]int{}
 	for _, row := range listLive(t, ds, healthObservation) {
@@ -190,13 +191,14 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 		"health/whoop_recovery": len(days), "health/hrv_rmssd": len(days), "health/resting_heart_rate": len(days),
 		"health/spo2": len(days), "health/skin_temperature": len(days),
 		"health/sleep_stage": 4 * sleeps, "health/whoop_sleep_performance": sleeps, "health/respiratory_rate": sleeps,
+		"health/heart_rate": 2*len(days) + 2*workouts,
 	} {
 		if byMetric[metric] != want {
 			t.Errorf("%d observations of %s, want %d", byMetric[metric], metric, want)
 		}
 	}
-	if len(byMetric) != 10 {
-		t.Errorf("observations of %d metrics, want 10: %v", len(byMetric), byMetric)
+	if len(byMetric) != 11 {
+		t.Errorf("observations of %d metrics, want 11: %v", len(byMetric), byMetric)
 	}
 	for kind, want := range map[string]int{healthSleep: sleeps, healthWorkout: workouts, healthSource: 1, obsTrace: 0} {
 		if n := countLive(t, ds, kind); n != want {
