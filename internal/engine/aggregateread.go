@@ -1823,49 +1823,7 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 // it reads (taken once per row) and the reducer itself check the context as
 // they go (observed's Context forms).
 func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.AggregateValue, error) {
-	var out []substrate.AggregateValue
-	all := observed.Window{From: time.Unix(-1<<40, 0), To: time.Unix(1<<40, 0)}
-	points := map[string][]observed.Point{}
-	pts := func(stat string) ([]observed.Point, error) {
-		if list, ok := points[stat]; ok {
-			return list, nil
-		}
-		var list []observed.Point
-		for _, m := range ev.members {
-			if err := r.canceled(); err != nil {
-				return nil, err
-			}
-			if stat == "" || m.stat == stat {
-				list = append(list, m.Point)
-			}
-		}
-		points[stat] = list
-		return list, nil
-	}
-	summary := ev.form == vocabulary.FormSummary
-	statOf := func(name string) string {
-		if summary {
-			return name
-		}
-		return ""
-	}
-	float := func(red substrate.AggregateReducer, v float64, ok bool, unit string) {
-		r.meta.inexact = true
-		out = append(out, r.value(red, v, ok, unit))
-	}
-	// reduce answers a float reducer over the raw points of a statistic.
-	reduce := func(red substrate.AggregateReducer, stat, unit string, f func(context.Context, []observed.Point, observed.Window) (float64, bool, error)) error {
-		list, err := pts(stat)
-		if err != nil {
-			return err
-		}
-		v, ok, err := f(r.ctx, list, all)
-		if err != nil {
-			return err
-		}
-		float(red, v, ok, unit)
-		return nil
-	}
+	v := &rowValues{r: r, ev: ev, g: g, code: code, points: map[string][]observed.Point{}}
 	tr := traceOf(r.ctx)
 	for _, red := range r.p.reducers {
 		if err := r.ctx.Err(); err != nil {
@@ -1877,156 +1835,270 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.
 		var err error
 		switch red.Name {
 		case substrate.ReducerCount:
-			v := strconv.FormatInt(ev.count, 10)
-			out = append(out, substrate.AggregateValue{Reducer: red, Value: &v})
-		case substrate.ReducerSum:
-			if ev.raw {
-				err = reduce(red, statOf("sum"), r.u.value, observed.SumContext)
-			} else {
-				float(red, ev.stats.Sum, ev.stats.Values > 0, r.u.value)
-			}
-		case substrate.ReducerAvg:
-			if ev.raw {
-				err = reduce(red, statOf("avg"), r.u.value, observed.AvgContext)
-			} else {
-				float(red, ev.stats.Mean, ev.stats.Values > 0, r.u.value)
-			}
+			n := strconv.FormatInt(ev.count, 10)
+			v.out = append(v.out, substrate.AggregateValue{Reducer: red, Value: &n})
+		case substrate.ReducerSum, substrate.ReducerAvg, substrate.ReducerStdDev, substrate.ReducerPercentile, substrate.ReducerCircularMean:
+			err = v.number(red)
 		case substrate.ReducerMin, substrate.ReducerMax:
-			// Compared exactly, answered in the winner's digits (converted
-			// exactly where the unit's factor allows): a min or max is not a
-			// float reduction.
-			var digits string
-			var ok bool
-			switch {
-			case ev.raw:
-				stat, best := statOf("min"), observed.MinPointContext
-				if red.Name == substrate.ReducerMax {
-					stat, best = statOf("max"), observed.MaxPointContext
-				}
-				var list []observed.Point
-				var p observed.Point
-				if list, err = r.extremaPoints(ev, g, stat); err == nil {
-					p, ok, err = best(r.ctx, list, all)
-				}
-				digits = p.Exact
-			case red.Name == substrate.ReducerMin:
-				digits, ok = ev.stats.MinExact, ev.stats.Values > 0
-			default:
-				digits, ok = ev.stats.MaxExact, ev.stats.Values > 0
-			}
-			value := substrate.AggregateValue{Reducer: red, Unit: r.u.value}
-			if ok {
-				value.Value = &digits
-			}
-			out = append(out, value)
+			err = v.extreme(red)
 		case substrate.ReducerFirst, substrate.ReducerLast:
-			var p observed.Point
-			var ok bool
-			switch {
-			case ev.raw:
-				var list []observed.Point
-				if list, err = pts(""); err == nil {
-					if red.Name == substrate.ReducerFirst {
-						p, ok, err = observed.FirstContext(r.ctx, list, all)
-					} else {
-						p, ok, err = observed.LastContext(r.ctx, list, all)
-					}
-				}
-			case red.Name == substrate.ReducerFirst && ev.stats.First != nil:
-				p, ok = *ev.stats.First, true
-			case red.Name == substrate.ReducerLast && ev.stats.Last != nil:
-				p, ok = *ev.stats.Last, true
-			}
-			if err == nil {
-				var v substrate.AggregateValue
-				v, err = r.pointValue(red, p, ok)
-				out = append(out, v)
-			}
-		case substrate.ReducerStdDev:
-			if ev.raw {
-				err = reduce(red, "", r.u.value, observed.StdDevContext)
-			} else {
-				float(red, math.Sqrt(ev.stats.M2/float64(max(ev.stats.Values, 1))), ev.stats.Values > 0, r.u.value)
-			}
-		case substrate.ReducerPercentile:
-			q := *red.Percentile
-			err = reduce(red, "", r.u.value, func(ctx context.Context, list []observed.Point, w observed.Window) (float64, bool, error) {
-				return observed.PercentileContext(ctx, list, w, q)
-			})
-		case substrate.ReducerCircularMean:
-			if ev.raw {
-				err = reduce(red, "", "deg", observed.CircularMeanContext)
-			} else {
-				v, ok := observed.CircularMeanOf(ev.stats)
-				float(red, v, ok, "deg")
-			}
-		case substrate.ReducerTWA:
-			var v float64
-			var ok bool
-			if ev.raw {
-				v, ok, err = observed.TWAOfContext(r.ctx, ev.spans)
-			} else {
-				var h observed.HeldSum
-				for _, x := range ev.held {
-					h.Ms += x.Ms
-					h.ValueMs += x.ValueMs
-				}
-				v, ok = h.ValueMs/float64(max(h.Ms, 1)), h.Ms > 0
-			}
-			float(red, v, ok, r.u.value)
-		case substrate.ReducerDurationIn:
-			var d time.Duration
-			d, err = observed.DurationInOfContext(r.ctx, ev.spans, red.Between[0], red.Between[1])
-			out = append(out, r.duration(red, d.Milliseconds(), ""))
-		case substrate.ReducerTimeInState:
-			per := map[string]int64{}
-			if ev.raw {
-				var states map[string]time.Duration
-				states, err = observed.TimeInStateOfContext(r.ctx, ev.spans)
-				for c, d := range states {
-					per[c] = d.Milliseconds()
-				}
-			} else {
-				for c, h := range ev.held {
-					if c != "" {
-						per[c] += h.Ms
-					}
-				}
-			}
-			states := red.States
-			if len(states) == 0 {
-				states = sortedKeys(per)
-			}
-			for _, st := range states {
-				if r.p.grouped[substrate.GroupCode] && st != code {
-					continue
-				}
-				one := substrate.AggregateReducer{Name: red.Name, States: []string{st}}
-				out = append(out, r.duration(one, per[st], st))
-			}
-		case substrate.ReducerIncrease:
-			if !ev.steps.any {
-				out = append(out, substrate.AggregateValue{Reducer: red, Unit: r.u.value})
-				continue
-			}
-			digits, exact := vocabulary.RatDecimal(ev.steps.inc, vocabulary.ConvertedDigits)
-			if !exact {
-				r.meta.inexact = true
-			}
-			out = append(out, substrate.AggregateValue{Reducer: red, Value: &digits, Unit: r.u.value})
-		case substrate.ReducerRate:
-			if !ev.steps.any || ev.steps.covered <= 0 {
-				out = append(out, substrate.AggregateValue{Reducer: red, Unit: r.u.value + "/s"})
-				continue
-			}
-			f, _ := ev.steps.inc.Float64()
-			float(red, f/(float64(ev.steps.covered)/1000), true, r.u.value+"/s")
+			err = v.point(red)
+		case substrate.ReducerTWA, substrate.ReducerDurationIn, substrate.ReducerTimeInState:
+			err = v.held(red)
+		case substrate.ReducerIncrease, substrate.ReducerRate:
+			v.counter(red)
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
-	return out, nil
+	return v.out, nil
+}
+
+// rowValues is one row's reducers being answered: its evidence, the values
+// answered so far, and the copies of its points the raw reducers read, each
+// taken once per statistic.
+type rowValues struct {
+	r      *aggRun
+	ev     *aggEvidence
+	g      *aggGroup
+	code   string
+	points map[string][]observed.Point
+	out    []substrate.AggregateValue
+}
+
+// everything is the window a row's reducers read its points over: the
+// points are the row's already.
+var everything = observed.Window{From: time.Unix(-1<<40, 0), To: time.Unix(1<<40, 0)}
+
+// pts are the row's raw points of a statistic, every statistic for "".
+func (v *rowValues) pts(stat string) ([]observed.Point, error) {
+	if list, ok := v.points[stat]; ok {
+		return list, nil
+	}
+	var list []observed.Point
+	for _, m := range v.ev.members {
+		if err := v.r.canceled(); err != nil {
+			return nil, err
+		}
+		if stat == "" || m.stat == stat {
+			list = append(list, m.Point)
+		}
+	}
+	v.points[stat] = list
+	return list, nil
+}
+
+// statOf is the statistic a summary row's reducer reads, the reducer's own
+// name; "" on any other form.
+func (v *rowValues) statOf(name string) string {
+	if v.ev.form == vocabulary.FormSummary {
+		return name
+	}
+	return ""
+}
+
+// float answers a float64 reduction, which makes the read inexact.
+func (v *rowValues) float(red substrate.AggregateReducer, f float64, ok bool, unit string) {
+	v.r.meta.inexact = true
+	v.out = append(v.out, v.r.value(red, f, ok, unit))
+}
+
+// number answers sum, avg, stddev, percentile and circularMean: over the
+// raw points of the reducer's statistic, or from the merged rollup rows.
+func (v *rowValues) number(red substrate.AggregateReducer) error {
+	r, ev := v.r, v.ev
+	stat, unit := "", r.u.value
+	var f func(context.Context, []observed.Point, observed.Window) (float64, bool, error)
+	var merged float64
+	switch red.Name {
+	case substrate.ReducerSum:
+		stat, f, merged = v.statOf("sum"), observed.SumContext, ev.stats.Sum
+	case substrate.ReducerAvg:
+		stat, f, merged = v.statOf("avg"), observed.AvgContext, ev.stats.Mean
+	case substrate.ReducerStdDev:
+		f, merged = observed.StdDevContext, math.Sqrt(ev.stats.M2/float64(max(ev.stats.Values, 1)))
+	case substrate.ReducerPercentile:
+		q := *red.Percentile
+		f = func(ctx context.Context, list []observed.Point, w observed.Window) (float64, bool, error) {
+			return observed.PercentileContext(ctx, list, w, q)
+		}
+	case substrate.ReducerCircularMean:
+		unit, f = "deg", observed.CircularMeanContext
+	}
+	// A percentile never merges from rollup rows (rollupable), so a row
+	// asking one is always raw.
+	if !ev.raw && red.Name != substrate.ReducerPercentile {
+		if red.Name == substrate.ReducerCircularMean {
+			m, ok := observed.CircularMeanOf(ev.stats)
+			v.float(red, m, ok, unit)
+			return nil
+		}
+		v.float(red, merged, ev.stats.Values > 0, unit)
+		return nil
+	}
+	list, err := v.pts(stat)
+	if err != nil {
+		return err
+	}
+	n, ok, err := f(r.ctx, list, everything)
+	if err != nil {
+		return err
+	}
+	v.float(red, n, ok, unit)
+	return nil
+}
+
+// extreme answers a min or a max: compared exactly and answered in the
+// winner's digits (converted exactly where the unit's factor allows), not a
+// float reduction.
+func (v *rowValues) extreme(red substrate.AggregateReducer) error {
+	r, ev := v.r, v.ev
+	var digits string
+	var ok bool
+	switch {
+	case ev.raw:
+		stat, best := v.statOf("min"), observed.MinPointContext
+		if red.Name == substrate.ReducerMax {
+			stat, best = v.statOf("max"), observed.MaxPointContext
+		}
+		list, err := r.extremaPoints(ev, v.g, stat)
+		if err != nil {
+			return err
+		}
+		var p observed.Point
+		if p, ok, err = best(r.ctx, list, everything); err != nil {
+			return err
+		}
+		digits = p.Exact
+	case red.Name == substrate.ReducerMin:
+		digits, ok = ev.stats.MinExact, ev.stats.Values > 0
+	default:
+		digits, ok = ev.stats.MaxExact, ev.stats.Values > 0
+	}
+	value := substrate.AggregateValue{Reducer: red, Unit: r.u.value}
+	if ok {
+		value.Value = &digits
+	}
+	v.out = append(v.out, value)
+	return nil
+}
+
+// point answers a first or a last: its code, or its digits in the read's
+// unit.
+func (v *rowValues) point(red substrate.AggregateReducer) error {
+	r, ev := v.r, v.ev
+	var p observed.Point
+	var ok bool
+	switch {
+	case ev.raw:
+		list, err := v.pts("")
+		if err != nil {
+			return err
+		}
+		if red.Name == substrate.ReducerFirst {
+			p, ok, err = observed.FirstContext(r.ctx, list, everything)
+		} else {
+			p, ok, err = observed.LastContext(r.ctx, list, everything)
+		}
+		if err != nil {
+			return err
+		}
+	case red.Name == substrate.ReducerFirst && ev.stats.First != nil:
+		p, ok = *ev.stats.First, true
+	case red.Name == substrate.ReducerLast && ev.stats.Last != nil:
+		p, ok = *ev.stats.Last, true
+	}
+	value, err := r.pointValue(red, p, ok)
+	if err != nil {
+		return err
+	}
+	v.out = append(v.out, value)
+	return nil
+}
+
+// held answers twa, durationIn and timeInState over the row's held time:
+// its raw spans, or the held sums walked across its rollup rows.
+func (v *rowValues) held(red substrate.AggregateReducer) error {
+	r, ev := v.r, v.ev
+	switch red.Name {
+	case substrate.ReducerTWA:
+		var f float64
+		var ok bool
+		if ev.raw {
+			var err error
+			if f, ok, err = observed.TWAOfContext(r.ctx, ev.spans); err != nil {
+				return err
+			}
+		} else {
+			var h observed.HeldSum
+			for _, x := range ev.held {
+				h.Ms += x.Ms
+				h.ValueMs += x.ValueMs
+			}
+			f, ok = h.ValueMs/float64(max(h.Ms, 1)), h.Ms > 0
+		}
+		v.float(red, f, ok, r.u.value)
+	case substrate.ReducerDurationIn:
+		d, err := observed.DurationInOfContext(r.ctx, ev.spans, red.Between[0], red.Between[1])
+		if err != nil {
+			return err
+		}
+		v.out = append(v.out, r.duration(red, d.Milliseconds(), ""))
+	default:
+		per := map[string]int64{}
+		if ev.raw {
+			states, err := observed.TimeInStateOfContext(r.ctx, ev.spans)
+			if err != nil {
+				return err
+			}
+			for c, d := range states {
+				per[c] = d.Milliseconds()
+			}
+		} else {
+			for c, h := range ev.held {
+				if c != "" {
+					per[c] += h.Ms
+				}
+			}
+		}
+		states := red.States
+		if len(states) == 0 {
+			states = sortedKeys(per)
+		}
+		for _, st := range states {
+			if r.p.grouped[substrate.GroupCode] && st != v.code {
+				continue
+			}
+			one := substrate.AggregateReducer{Name: red.Name, States: []string{st}}
+			v.out = append(v.out, r.duration(one, per[st], st))
+		}
+	}
+	return nil
+}
+
+// counter answers a counter's increase, exactly, and its rate over the time
+// its steps span; both null where the row holds no step.
+func (v *rowValues) counter(red substrate.AggregateReducer) {
+	r, steps := v.r, v.ev.steps
+	if red.Name == substrate.ReducerRate {
+		if !steps.any || steps.covered <= 0 {
+			v.out = append(v.out, substrate.AggregateValue{Reducer: red, Unit: r.u.value + "/s"})
+			return
+		}
+		f, _ := steps.inc.Float64()
+		v.float(red, f/(float64(steps.covered)/1000), true, r.u.value+"/s")
+		return
+	}
+	if !steps.any {
+		v.out = append(v.out, substrate.AggregateValue{Reducer: red, Unit: r.u.value})
+		return
+	}
+	digits, exact := vocabulary.RatDecimal(steps.inc, vocabulary.ConvertedDigits)
+	if !exact {
+		r.meta.inexact = true
+	}
+	v.out = append(v.out, substrate.AggregateValue{Reducer: red, Value: &digits, Unit: r.u.value})
 }
 
 // extremaPoints are the members a raw min or max compares, in the read's
