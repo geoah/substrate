@@ -306,6 +306,7 @@ export function ObservationsTimelinePage() {
           ))}
           {known.length < metrics.length && (
             <Skeleton
+              role="status"
               aria-label="Reading the streams"
               className="mt-8 h-[236px] w-full"
             />
