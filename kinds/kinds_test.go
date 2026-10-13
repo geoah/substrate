@@ -7,8 +7,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -791,4 +793,410 @@ func TestShippedKindsDeclareTheirDisplayLabels(t *testing.T) {
 			t.Errorf("%s: label = %+v, want %+v", id, k.Label, want)
 		}
 	}
+}
+
+// A python body's PEP 723 block is what `uv sync --script` installs when the
+// function registers, so its dependencies ship as surely as the body does.
+// Each pins one exact version (`==`), so `audit:python` audits what installs
+// and an upgrade is a line a reviewer sees. A package takes ONE version across
+// the tree, so a bump cannot land in one provider and miss the next, which is
+// how requests sat at 2.32.3 in two bodies and 2.32.4 in four.
+func TestShippedPythonDependenciesPinOneExactVersion(t *testing.T) {
+	var deps []pythonDependency
+	for _, d := range readTreeDocuments(t) {
+		if d.Kind != vocabulary.DocFunction || d.Data["runtime"] != "python" {
+			continue
+		}
+		source, _ := d.Data["source"].(string)
+		specs, err := pep723Dependencies(source)
+		if err != nil {
+			t.Errorf("%s: %v", d.ID, err)
+			continue
+		}
+		for _, spec := range specs {
+			deps = append(deps, pythonDependency{where: d.ID, spec: spec})
+		}
+	}
+	// A reader that stopped finding the blocks would pass this test forever.
+	if len(deps) == 0 {
+		t.Fatal("read no PEP 723 dependency at all: the bodies no longer declare them this way")
+	}
+	for _, problem := range pythonPinProblems(deps) {
+		t.Error(problem)
+	}
+}
+
+// The two refusals on inputs the shipped tree does not hold today, so a green
+// tree test means a pinned tree and not a rule that stopped refusing.
+func TestPythonPinProblems(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		deps []pythonDependency
+		want []string // a fragment of each problem, in order
+	}{
+		{"exact pins agree", []pythonDependency{
+			{"a", "requests==2.34.2"}, {"b", "Requests == 2.34.2"}, {"c", "requests[socks]==2.34.2 ; python_version >= '3.11'"},
+		}, nil},
+		{"a range", []pythonDependency{{"a", "requests>=2.34"}}, []string{`a: "requests>=2.34" pins no exact version`}},
+		{"a bare name", []pythonDependency{{"a", "requests"}}, []string{`a: "requests" pins no exact version`}},
+		{"a wildcard", []pythonDependency{{"a", "requests==2.*"}}, []string{`a: "requests==2.*" pins no exact version`}},
+		{"arbitrary equality", []pythonDependency{{"a", "requests===2.34.2"}}, []string{`a: "requests===2.34.2" pins no exact version`}},
+		{"a second bound", []pythonDependency{{"a", "requests==2.34.2,<3"}}, []string{`a: "requests==2.34.2,<3" pins no exact version`}},
+		{"a URL", []pythonDependency{{"a", "requests @ https://example.com/r.whl"}}, []string{"pins no exact version"}},
+		{"two versions", []pythonDependency{
+			{"a", "requests==2.32.3"}, {"b", "requests==2.34.2"},
+		}, []string{"b pins requests==2.34.2 and a pins requests==2.32.3"}},
+		{"two spellings of one name", []pythonDependency{
+			{"a", "google_auth==2.40.0"}, {"b", "Google.Auth==2.41.0"},
+		}, []string{"b pins google-auth==2.41.0 and a pins google-auth==2.40.0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := pythonPinProblems(tc.deps)
+			if len(got) != len(tc.want) {
+				t.Fatalf("problems = %q, want %d", got, len(tc.want))
+			}
+			for i, want := range tc.want {
+				if !strings.Contains(got[i], want) {
+					t.Errorf("problem %d = %q, want it to say %q", i, got[i], want)
+				}
+			}
+		})
+	}
+}
+
+func TestPEP723Dependencies(t *testing.T) {
+	block := func(lines ...string) string {
+		return "# /// script\n" + strings.Join(lines, "\n") + "\n# ///\ndef main(input, host):\n    return {}\n"
+	}
+	for _, tc := range []struct {
+		name, source string
+		want         []string
+		err          string
+	}{
+		{"no block", "def main(input, host):\n    return {}\n", nil, ""},
+		{"no dependencies", block(`# requires-python = ">=3.11"`), nil, ""},
+		{"one line", block(`# dependencies = ["requests==2.34.2", 'six==1.17.0']`), []string{"requests==2.34.2", "six==1.17.0"}, ""},
+		{"several lines and a comment", block(
+			`# requires-python = ">=3.11"`,
+			`# dependencies = [`,
+			`#   "requests[socks]==2.34.2",  # the HTTP client`,
+			`#   "six==1.17.0",`,
+			`# ]`,
+		), []string{"requests[socks]==2.34.2", "six==1.17.0"}, ""},
+		{"an indented key", block(`#   dependencies = ["requests>=2"]`), []string{"requests>=2"}, ""},
+		{"a quoted key", block(`# "dependencies" = ['requests>=2']`), []string{"requests>=2"}, ""},
+		{"a longer key is another key", block(`# dev-dependencies = ["requests>=2"]`), nil, ""},
+		{"not an array", block(`# dependencies = "requests==2.34.2"`), nil, "not an array"},
+		{"a non-string entry", block(`# dependencies = [requests]`), nil, "not a string"},
+		{"never closed", block(`# dependencies = [`, `#   "requests==2.34.2",`), nil, "never closes"},
+		{"an escape in a value", block(`# dependencies = ["requests\\x3d=2"]`), nil, "escape"},
+		{"an escape in the key", block(`# "depen\\u0064encies" = ["requests>=2"]`), nil, "escape"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := pep723Dependencies(tc.source)
+			if tc.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.err) {
+					t.Fatalf("err = %v, want one saying %q", err, tc.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Errorf("dependencies = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// .mise/pybodies.py reads the bundles line by line, with no YAML parser, so
+// `lint:python` and `audit:python` see only the spellings it knows. This holds
+// it to the real parser: every python function and bundle module the tree
+// declares is written out under its own name, byte for byte, and nothing else
+// is.
+func TestPybodiesExtractsEveryShippedPythonBody(t *testing.T) {
+	got, output, err := runPybodies(t, filepath.Join("..", ".mise", "pybodies.py"))
+	if err != nil {
+		t.Fatalf("pybodies.py extract: %v\n%s", err, output)
+	}
+	want := parsedBodies(t, "kinds", kinds.All())
+	for name, source := range parsedBodies(t, "samples", samples.Samples()) {
+		want[name] = source
+	}
+	if len(want) == 0 {
+		t.Fatal("the tree declares no python function")
+	}
+	sameBodies(t, got, want)
+}
+
+// No shipped bundle declares `modules:` yet, and yamlfmt never writes a quoted
+// key, so the shipped tree holds neither path; a fixture does. The script reads
+// the tree its own file sits in, so a copy beside a fixture reads the fixture.
+func TestPybodiesReadsAFixtureTree(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", ".mise", "pybodies.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := func(t *testing.T, doc string) (string, string) {
+		root := t.TempDir()
+		for name, content := range map[string]string{
+			".mise/pybodies.py":           string(script),
+			"samples/fixture/bundle.yaml": doc,
+		} {
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return root, filepath.Join(root, ".mise", "pybodies.py")
+	}
+
+	t.Run("modules and quoted keys", func(t *testing.T) {
+		const doc = `kind: "substrate.reamde.dev/core/bundle" # quoted, with a comment
+metadata:
+  id: samples.substrate.reamde.dev/fixture
+data:
+  package: fixture
+  modules:
+    connkit.py: |
+      def greet(who):
+          return "hi " + who
+    "quoted.py": |-
+      X = 1
+---
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/fixture/fn
+data:
+  "runtime": python # quoted
+  source: |
+    import connkit
+
+
+    def main(input, host):
+        return {"output": connkit.greet("x")}
+`
+		root, script := fixture(t, doc)
+		got, output, err := runPybodies(t, script)
+		if err != nil {
+			t.Fatalf("pybodies.py extract: %v\n%s", err, output)
+		}
+		want := parsedBodies(t, "samples", os.DirFS(filepath.Join(root, "samples")))
+		if len(want) != 3 {
+			t.Fatalf("the fixture parses to %d bodies, want 2 modules and 1 function", len(want))
+		}
+		sameBodies(t, got, want)
+		// The padding is the point: a line in the written file is the line in
+		// the YAML file, which is what lets ruff name the bundle.yaml line.
+		lines := strings.Split(doc, "\n")
+		for name, body := range got {
+			first := strings.SplitN(strings.TrimLeft(body, "\n"), "\n", 2)[0]
+			at := len(body) - len(strings.TrimLeft(body, "\n"))
+			if strings.TrimSpace(lines[at]) != first {
+				t.Errorf("%s: its first line sits at line %d, and the YAML holds %q there", name, at+1, lines[at])
+			}
+		}
+	})
+
+	t.Run("a source that is not a literal block", func(t *testing.T) {
+		_, script := fixture(t, `kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/fixture/fn
+data:
+  runtime: python
+  source: >-
+    def main(input, host):
+        return {}
+`)
+		_, output, err := runPybodies(t, script)
+		if err == nil || !strings.Contains(output, "samples/fixture/bundle.yaml:1: a `runtime: python` document with 0 `source: |` blocks") {
+			t.Fatalf("a folded source was not refused by name: %v\n%s", err, output)
+		}
+	})
+}
+
+// runPybodies runs `extract` with the given copy of the script and returns
+// every file it wrote, by its path under the output directory.
+func runPybodies(t *testing.T, script string) (map[string]string, string, error) {
+	t.Helper()
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3 on PATH")
+	}
+	out := t.TempDir()
+	output, err := exec.Command(python, script, "extract", out).CombinedOutput()
+	if err != nil {
+		return nil, string(output), err
+	}
+	got := map[string]string{}
+	err = filepath.WalkDir(out, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(p)
+		rel, _ := filepath.Rel(out, p)
+		got[filepath.ToSlash(rel)] = string(raw)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("read the extracted tree: %v", err)
+	}
+	return got, string(output), nil
+}
+
+// parsedBodies is every python function source and bundle module the YAML
+// parser reads under fsys, keyed by the path pybodies.py writes it to.
+func parsedBodies(t *testing.T, dir string, fsys fs.FS) map[string]string {
+	t.Helper()
+	want := map[string]string{}
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(p) != ".yaml" {
+			return err
+		}
+		raw, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return err
+		}
+		docs, err := vocabulary.ParseStream(raw)
+		if err != nil {
+			return nil // delivery wiring, as readTreeDocuments skips it
+		}
+		for _, doc := range docs {
+			switch {
+			case doc.Kind == vocabulary.DocFunction && doc.Data["runtime"] == "python":
+				source, _ := doc.Data["source"].(string)
+				want[dir+"/"+p+"."+path.Base(doc.ID)+".py"] = source
+			case doc.Kind == vocabulary.DocBundle:
+				for name, source := range asMapping(doc.Data["modules"]) {
+					want[dir+"/"+p+".modules."+name], _ = source.(string)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	return want
+}
+
+func sameBodies(t *testing.T, got, want map[string]string) {
+	t.Helper()
+	for name, source := range want {
+		body, ok := got[name]
+		switch {
+		case !ok:
+			t.Errorf("%s: declared, not extracted", name)
+		case strings.Trim(body, "\n") != strings.Trim(source, "\n"):
+			t.Errorf("%s: the extracted body differs from the declared source", name)
+		}
+	}
+	for name := range got {
+		if _, ok := want[name]; !ok {
+			t.Errorf("%s: extracted, not declared", name)
+		}
+	}
+}
+
+type pythonDependency struct {
+	where string // the function that declares it
+	spec  string // the PEP 508 string, verbatim
+}
+
+var (
+	// PEP 723's own regex, the one internal/runner/pep723.go matches with.
+	pep723Block = regexp.MustCompile(`(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$`)
+	// The top-level key in every spelling TOML allows: bare or quoted, and
+	// indented. Whatever follows the `=` must be the array.
+	tomlDeps = regexp.MustCompile(`(?m)^[ \t]*(?:dependencies|"dependencies"|'dependencies')[ \t]*=[ \t]*`)
+	// One name, optional extras, `==` and one version, optional markers. A
+	// wildcard, a second bound, `===` and a URL all fall outside it.
+	exactPin  = regexp.MustCompile(`^([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*(?:\[[^\]]*\])?\s*==\s*([0-9A-Za-z][0-9A-Za-z.+!_-]*)\s*(?:;.*)?$`)
+	nameRunes = regexp.MustCompile(`[-_.]+`)
+)
+
+// pep723Dependencies reads the `dependencies` array of a body's `script`
+// block: the strings in it, verbatim. A body with no block, or a block with no
+// array, declares none.
+func pep723Dependencies(source string) ([]string, error) {
+	var content string
+	for _, m := range pep723Block.FindAllStringSubmatch(source, -1) {
+		if m[1] == "script" {
+			content = m[2]
+			break
+		}
+	}
+	var toml strings.Builder
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimPrefix(line, "#")
+		toml.WriteString(strings.TrimPrefix(line, " ") + "\n")
+	}
+	text := toml.String()
+	// TOML can spell a key or a value through an escape (`"depen\u0064encies"`),
+	// which this reader does not decode, so it refuses one rather than read past
+	// it. No shipped block carries a backslash.
+	if strings.ContainsRune(text, '\\') {
+		return nil, errors.New("PEP 723 block: an escape this reader does not decode")
+	}
+	loc := tomlDeps.FindStringIndex(text)
+	if loc == nil {
+		return nil, nil
+	}
+	if !strings.HasPrefix(text[loc[1]:], "[") {
+		return nil, errors.New("PEP 723 dependencies: the value is not an array")
+	}
+	var out []string
+	for rest := text[loc[1]+1:]; rest != ""; {
+		switch c := rest[0]; c {
+		case ' ', '\t', '\n', '\r', ',':
+			rest = rest[1:]
+		case '#':
+			if i := strings.IndexByte(rest, '\n'); i >= 0 {
+				rest = rest[i:]
+			} else {
+				rest = ""
+			}
+		case ']':
+			return out, nil
+		case '"', '\'':
+			end := strings.IndexByte(rest[1:], c)
+			if end < 0 {
+				return nil, errors.New("PEP 723 dependencies: a string never closes")
+			}
+			out = append(out, rest[1:1+end])
+			rest = rest[end+2:]
+		default:
+			return nil, fmt.Errorf("PEP 723 dependencies: %q is not a string", strings.SplitN(rest, "\n", 2)[0])
+		}
+	}
+	return nil, errors.New("PEP 723 dependencies: the array never closes")
+}
+
+// pythonPinProblems holds every dependency to one exact version, and every
+// package to one version across the tree, keyed by its normalized name
+// (PEP 503), so `google_auth` and `Google.Auth` are one package.
+func pythonPinProblems(deps []pythonDependency) []string {
+	type pin struct{ where, version string }
+	first := map[string]pin{}
+	var problems []string
+	for _, d := range deps {
+		m := exactPin.FindStringSubmatch(d.spec)
+		if m == nil {
+			problems = append(problems, fmt.Sprintf("%s: %q pins no exact version; write `name==version`", d.where, d.spec))
+			continue
+		}
+		name := nameRunes.ReplaceAllString(strings.ToLower(m[1]), "-")
+		prev, seen := first[name]
+		switch {
+		case !seen:
+			first[name] = pin{where: d.where, version: m[2]}
+		case prev.version != m[2]:
+			problems = append(problems, fmt.Sprintf("%s pins %s==%s and %s pins %s==%s: one package ships at one version, so move every pin together",
+				d.where, name, m[2], prev.where, name, prev.version))
+		}
+	}
+	return problems
 }

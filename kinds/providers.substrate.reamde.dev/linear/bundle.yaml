@@ -97,7 +97,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  version: 21
+  version: 22
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -3571,7 +3571,7 @@ data:
     # /// script
     # requires-python = ">=3.11"
     # dependencies = [
-    #   "requests==2.32.4",
+    #   "requests==2.34.2",
     # ]
     # ///
     """Linear sync — one GraphQL page per request, mirrors only, references everywhere.

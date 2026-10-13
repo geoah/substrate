@@ -382,7 +382,7 @@ def persona_output() -> set[str]:
     # this set's whole population.
     learned = ROOT / "tools" / "persona.learned.local.json"
     if learned.exists():
-        for name, bucket in json.loads(learned.read_text()).items():
+        for bucket in json.loads(learned.read_text()).values():
             for v in bucket.values():
                 if isinstance(v, str):
                     add(v)

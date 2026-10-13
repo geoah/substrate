@@ -64,7 +64,6 @@ import json
 import os
 import pathlib
 import re
-import sys
 import time
 import urllib.error
 import urllib.parse
@@ -390,7 +389,7 @@ def expected_from_recordings():
         if isinstance(latest, dict) and keep(latest):
             messages.setdefault(cid, {}).setdefault(latest["ts"], latest)
     # so can an embedded `root`, on a broadcast reply.
-    for cid, by_ts in list(messages.items()):
+    for by_ts in list(messages.values()):
         for msg in list(by_ts.values()):
             root = msg.get("root")
             if isinstance(root, dict) and root.get("ts") and keep(root):
@@ -428,7 +427,7 @@ def expected_from_recordings():
         for key in ("topic", "purpose"):
             if isinstance(c.get(key), dict) and c[key].get("creator"):
                 named_users.add(c[key]["creator"])
-    for name, doc in each("GET_api_conversations.members__*"):
+    for _name, doc in each("GET_api_conversations.members__*"):
         named_users |= {m for m in (doc.get("members") or [])
                         if isinstance(m, str)}
     # T-021. `files.info` names a file's EDITORS, its canvas creator and the
@@ -798,7 +797,7 @@ def main():
         # backfillDepth scopes roots), so one old reply in the mirror must
         # not drag the floor down and make every unwalked message between it
         # and the window read as a hole.
-        def top_level(ts):
+        def top_level(ts, by_ts=by_ts):
             m = by_ts.get(ts) or {}
             return not m.get("thread_ts") or m.get("thread_ts") == ts
         tops = [ts for ts in have_by_conv[cid] if top_level(ts)]
@@ -1013,7 +1012,7 @@ def main():
     no_at = [m for m, p in by_id.items() if not p.get("at")]
     ok(not no_at, "%d messages carry no `at`" % len(no_at))
     bad_at = []
-    for m, p in by_id.items():
+    for p in by_id.values():
         at, ts = p.get("at"), p.get("ts")
         if not (at and ts):
             continue
@@ -1105,7 +1104,6 @@ def main():
     # ---------------------------------------------------------------- 9
     section("9. a second sync is idempotent, and picks up what is new")
     before = {"user": len(users), "conversation": len(convs), "message": len(msgs)}
-    conv_versions = {rid(c): version(c) for c in convs}
     cursors_before = {ref_id(props(s).get("conversation")): props(s).get("latestTs")
                       for s in states}
     stamp = account.get("lastSyncedAt")

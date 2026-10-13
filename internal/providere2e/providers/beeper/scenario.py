@@ -747,7 +747,7 @@ def main() -> int:
     truncated = {cid: c for cid, c in exp["listed"].items()
                  if ((c.get("participants") or {}).get("hasMore"))}
     checked = 0
-    for cid, c in truncated.items():
+    for cid in truncated:
         row = by_chat_id.get(cid)
         if not row:
             continue

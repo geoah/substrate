@@ -118,7 +118,10 @@ data:
   #
   # 17: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
-  version: 18
+  #
+  # 19: `whoopsync` pins requests 2.34.2, past PYSEC-2026-2275
+  # (CVE-2026-25645).
+  version: 19
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -1392,7 +1395,7 @@ data:
     # /// script
     # requires-python = ">=3.11"
     # dependencies = [
-    #   "requests==2.32.4",
+    #   "requests==2.34.2",
     # ]
     # ///
     """WHOOP sync — one page of one v2 stream per invocation, mirrors only.

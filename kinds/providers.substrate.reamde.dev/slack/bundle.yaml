@@ -159,7 +159,11 @@ data:
   # never queues one thread twice. `message` gains the optional
   # `latestReplyAt` datetime, the instant of `latest_reply`. Widening only:
   # no default, no rewrite of stored rows, which take it at their next write.
-  version: 19
+  #
+  # 20: `slacksync` pins requests 2.34.2, past PYSEC-2026-1872
+  # (CVE-2024-47081) and PYSEC-2026-2275 (CVE-2026-25645); `postmessage`
+  # raises its HTTP errors `from` the exception that caused them.
+  version: 20
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -2957,7 +2961,7 @@ data:
     # /// script
     # requires-python = ">=3.11"
     # dependencies = [
-    #   "requests==2.32.3",
+    #   "requests==2.34.2",
     # ]
     # ///
     """Slack workspace sync — at most one Slack HTTP call per invocation.
@@ -6131,9 +6135,9 @@ data:
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 raise RuntimeError("slack chat.postMessage: rate limited; retry "
-                                   "after %ss" % (e.headers.get("Retry-After") or "?"))
+                                   "after %ss" % (e.headers.get("Retry-After") or "?")) from e
             raise RuntimeError("slack chat.postMessage: HTTP %d %s"
-                               % (e.code, e.read()[:200].decode("utf-8", "replace")))
+                               % (e.code, e.read()[:200].decode("utf-8", "replace"))) from e
         if not body.get("ok"):
             raise RuntimeError("slack chat.postMessage refused: %s"
                                % _refusal(body))

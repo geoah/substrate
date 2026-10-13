@@ -161,7 +161,12 @@ data:
   #
   # 20: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
-  version: 21
+  #
+  # 22: `messagessync` pins requests 2.34.2, past PYSEC-2026-1872
+  # (CVE-2024-47081) and PYSEC-2026-2275 (CVE-2026-25645), and drops an
+  # unused `import re`; both functions raise their HTTP and JSON errors
+  # `from` the exception that caused them.
+  version: 22
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -1786,7 +1791,7 @@ data:
     # /// script
     # requires-python = ">=3.11"
     # dependencies = [
-    #   "requests==2.32.3",
+    #   "requests==2.34.2",
     # ]
     # ///
     """Beeper Desktop sync — at most one Beeper HTTP call per invocation.
@@ -1827,7 +1832,6 @@ data:
     """
     import datetime as _dt
     import ipaddress
-    import re
     import time
     import urllib.parse
 
@@ -2291,8 +2295,8 @@ data:
             raise Beeper(path, detail.strip(), r.status_code)
         try:
             return r.json()
-        except ValueError:
-            raise Beeper(path, "response was not JSON", r.status_code)
+        except ValueError as e:
+            raise Beeper(path, "response was not JSON", r.status_code) from e
 
 
     def _chatpath(cid, suffix=""):
@@ -3586,7 +3590,7 @@ data:
             except ValueError:
                 detail = raw
             raise RuntimeError("beeper: sending to %s failed: HTTP %d %s"
-                               % (chat, e.code, str(detail)[:200]))
+                               % (chat, e.code, str(detail)[:200])) from e
         pending = str(body.get("pendingMessageID") or "")
         if not pending:
             raise RuntimeError("beeper: the send answered no pendingMessageID")

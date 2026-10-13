@@ -1,9 +1,14 @@
-# The Python here is two files. internal/runner/host.py is the one that matters:
-# the long-lived child every `runtime: python` function body is exec'd into, a
+# The Python here is four groups, held to one config because there is no
+# reason for a second. internal/runner/host.py is the one that matters: the
+# long-lived child every `runtime: python` function body is exec'd into, a
 # protocol implementation, not application code, and it must run on whatever
 # `python3` a deployment happens to have (mise deliberately does not pin one).
-# .mise/testtiming.py is the reader behind `test:timing` and is held to the
-# same rules because there is no reason for a second config.
+# The function bodies and bundle modules under `kinds/` and `samples/` ship
+# too, as YAML literal scalars: .mise/pybodies.py writes each one out, padded
+# so a finding names its bundle.yaml line, because admission runs only a
+# body's top level and the short suite skips the provider cases that run the
+# rest. internal/providere2e holds the provider suite's scenarios, runner and
+# fixtures, and .mise/*.py the task helpers.
 #
 # So this config selects the rules that catch a BREAK and none that argue about
 # style. A slip in the host takes out every Python function at once and no Go
@@ -25,3 +30,12 @@ target-version = "py39"
 # B  — bugbear's genuine traps: mutable default arguments, a `raise` inside an
 #      `except` that loses the cause, a loop variable captured by a closure.
 select = ["F", "E9", "B"]
+
+# A BASELINE, not a policy: the one finding the bodies carried when they were
+# first linted, in a package this change did not otherwise touch. The key is
+# the path .mise/pybodies.py writes google's `syncdrive` body to
+# (`<yaml path>.<function>.py`), which ruff resolves against the extracted
+# tree. The google change that next bumps that package raises it `from` its
+# cause and deletes this table.
+[lint.per-file-ignores]
+"kinds/providers.substrate.reamde.dev/google/bundle.yaml.syncdrive.py" = ["B904"]

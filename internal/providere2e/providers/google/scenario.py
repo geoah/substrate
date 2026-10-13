@@ -134,7 +134,7 @@ def api(path, method="GET", body=None):
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:400]
-        raise Failed("%s %s -> HTTP %d: %s" % (method, path, e.code, detail))
+        raise Failed("%s %s -> HTTP %d: %s" % (method, path, e.code, detail)) from e
 
 
 def rows(kind, where=None, expand=None, scoped=True):
@@ -359,8 +359,8 @@ def recordings():
         with open(os.path.join(RECORDINGS, name), "r", encoding="utf-8") as fh:
             try:
                 out[name] = json.load(fh)
-            except ValueError:
-                raise Failed("recording %s is not JSON" % name)
+            except ValueError as e:
+                raise Failed("recording %s is not JSON" % name) from e
     if not out:
         raise Failed("no recordings under %s" % RECORDINGS)
     return out
@@ -2208,7 +2208,7 @@ def assert_threads_authoritative(got, recs):
         return
     by_id = {str(props(r).get("threadId") or ""): r for r in got["gmailthread"]}
     checked = 0
-    for name, doc in sorted(reads.items()):
+    for _name, doc in sorted(reads.items()):
         tid = str(doc.get("id") or "")
         row = by_id.get(tid)
         if row is None:
@@ -2805,7 +2805,7 @@ def mock(path, method="GET", body=None):
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else {}
     except Exception as e:
-        raise Failed("mock %s %s: %s" % (method, path, e))
+        raise Failed("mock %s %s: %s" % (method, path, e)) from e
 
 
 def faults_fired():
@@ -3293,7 +3293,7 @@ def assert_drain_bounds_itself():
     # AND THE REMAINDER IS PICKED UP. A hand-back is only honest if the next
     # fire finishes the work, so the account is driven back to a whole mirror
     # before anything downstream reads it.
-    for attempt in range(8):
+    for _attempt in range(8):
         acct = props(one(KIND["account"], ACCOUNT))
         if not _pending_now(acct):
             break
