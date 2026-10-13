@@ -116,8 +116,8 @@ func TestPersonaDefaultLife(t *testing.T) {
 	if ill.RestingHR <= well.RestingHR || ill.HRVRMSSDMs >= well.HRVRMSSDMs {
 		t.Fatalf("the cold does not show: ill rhr %d hrv %v, well rhr %d hrv %v", ill.RestingHR, ill.HRVRMSSDMs, well.RestingHR, well.HRVRMSSDMs)
 	}
-	if len(p.Labs()) != 2 || len(p.Labs()[0].Results) != 11 {
-		t.Fatalf("labs: %d panels", len(p.Labs()))
+	if labs := p.Labs(); len(labs) != 3 || len(labs[0].Results) != 11 || len(labs[1].Results) != 8 {
+		t.Fatalf("labs: %d panels", len(labs))
 	}
 }
 

@@ -983,18 +983,23 @@ type LabResult struct {
 
 // LabPanel is one report.
 type LabPanel struct {
-	Date    Date
-	Lab     string
-	Results []LabResult
+	Date Date
+	// Lab is the lab's name, and Slug the id its source and reports take.
+	Lab, Slug string
+	Results   []LabResult
 }
 
-// Labs is the two panels, independent of the date range.
+// Labs is the three panels, independent of the date range: two from an
+// Athens lab in SI units, and between them a home collection kit a US lab
+// analysed and reported in US conventional units (mg/dL, ng/mL), on the
+// metrics' mass twins. Each panel has the same body behind it, so the
+// health sample's lab conversion puts every reading on one trend.
 func (p *Persona) Labs() []LabPanel {
 	mk := func(name string, v float64, unit string, lo, hi float64, hasLo, hasHi bool) LabResult {
 		return LabResult{name, v, unit, lo, hi, hasLo, hasHi}
 	}
 	return []LabPanel{
-		{Date: NewDate(2026, time.July, 20), Lab: "Bioiatriki Athens", Results: []LabResult{
+		{Date: NewDate(2026, time.July, 20), Lab: "Bioiatriki Athens", Slug: "bioiatriki", Results: []LabResult{
 			mk("glucose_fasting", 5.4, "mmol/L", 3.9, 5.6, true, true),
 			mk("hba1c", 5.3, "%", 4.0, 5.6, true, true),
 			mk("cholesterol_total", 5.1, "mmol/L", 0, 5.2, false, true),
@@ -1007,7 +1012,17 @@ func (p *Persona) Labs() []LabPanel {
 			mk("hemoglobin", 131, "g/L", 120, 160, true, true),
 			mk("crp", 0.8, "mg/L", 0, 5.0, false, true),
 		}},
-		{Date: NewDate(2026, time.October, 5), Lab: "Bioiatriki Athens", Results: []LabResult{
+		{Date: NewDate(2026, time.August, 31), Lab: "Harbor Point Laboratories", Slug: "harborpoint", Results: []LabResult{
+			mk("glucose_fasting_mass", 95, "mg/dL", 65, 99, true, true),
+			mk("hba1c", 5.3, "%", 4.8, 5.6, true, true),
+			mk("cholesterol_total_mass", 190, "mg/dL", 0, 200, false, true),
+			mk("ldl_cholesterol_mass", 112, "mg/dL", 0, 100, false, true),
+			mk("hdl_cholesterol_mass", 64, "mg/dL", 40, 0, true, false),
+			mk("triglycerides_mass", 75, "mg/dL", 0, 150, false, true),
+			mk("vitamin_d_25oh_mass", 24, "ng/mL", 30, 100, true, true),
+			mk("creatinine_mass", 0.82, "mg/dL", 0.57, 1.00, true, true),
+		}},
+		{Date: NewDate(2026, time.October, 5), Lab: "Bioiatriki Athens", Slug: "bioiatriki", Results: []LabResult{
 			mk("glucose_fasting", 5.1, "mmol/L", 3.9, 5.6, true, true),
 			mk("hba1c", 5.2, "%", 4.0, 5.6, true, true),
 			mk("cholesterol_total", 4.8, "mmol/L", 0, 5.2, false, true),
