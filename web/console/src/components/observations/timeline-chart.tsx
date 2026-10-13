@@ -15,6 +15,7 @@
  * between buckets, Enter zooms and Escape leaves. */
 
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -153,6 +154,7 @@ export function TimelineChart({
   tooltip,
   onZoom,
   units,
+  autoFocus = false,
 }: {
   buckets: Bucket[]
   series: ChartSeries[]
@@ -163,11 +165,19 @@ export function TimelineChart({
   label: string
   /** What the tooltip says about one bucket. */
   tooltip: (bucket: number) => ReactNode
-  onZoom: (range: TimeRange) => void
+  /** A window to read, and whether the keyboard asked for it. */
+  onZoom: (range: TimeRange, keyboard: boolean) => void
   /** Each axis's unit in words, captioned above it. */
   units?: { left?: string; right?: string }
+  /** Take the focus on mount: the chart a keyboard zoom asked for. */
+  autoFocus?: boolean
 }) {
   const { ref, width } = useWidth(720)
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus()
+    // On mount alone: a later render never takes the focus back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [held, setActive] = useState<number | null>(null)
   const [heldAnchor, setAnchor] = useState<number | null>(null)
   // A bucket index outlives the answer it pointed into: a zoom or a new read
@@ -248,10 +258,10 @@ export function TimelineChart({
     return bucketAt(event.clientX - box.left, windows)
   }
 
-  function zoom(lo: number, hi: number) {
+  function zoom(lo: number, hi: number, keyboard = false) {
     const a = buckets[Math.min(lo, hi)]
     const b = buckets[Math.max(lo, hi)]
-    if (a && b) onZoom({ start: a.start, end: b.end })
+    if (a && b) onZoom({ start: a.start, end: b.end }, keyboard)
   }
 
   function onKey(event: KeyboardEvent<HTMLDivElement>) {
@@ -267,7 +277,7 @@ export function TimelineChart({
     else if (event.key === "Escape") next = null
     else if (event.key === "Enter" && active !== null) {
       event.preventDefault()
-      zoom(active, active)
+      zoom(active, active, true)
       return
     } else return
     event.preventDefault()

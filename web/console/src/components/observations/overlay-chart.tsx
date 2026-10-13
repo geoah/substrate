@@ -125,6 +125,10 @@ export function OverlayChart({
 }) {
   const [technical] = useTechnicalDetails()
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
+  // The window a keyboard zoom asked for: its chart takes the focus once
+  // drawn, since the zoomed-out one it had goes while the new one is read.
+  const [focusFor, setFocusFor] = useState<string>()
+  const windowKey = `${range.start}-${range.end}`
   const plan = assignAxes(plots)
   const drawn = plots.filter((p) => !plan.leftOut.includes(p))
   const sideOf = (plot: Plot): AxisSide =>
@@ -573,14 +577,18 @@ export function OverlayChart({
         <div className="mt-2">
           <TimelineChart
             // A new window is a new chart: no hover or drag carries over.
-            key={`${range.start}-${range.end}`}
+            key={windowKey}
+            autoFocus={focusFor === windowKey}
             buckets={buckets}
             series={chartSeries}
             domain={range}
             size={size}
             label={label}
             tooltip={tooltip}
-            onZoom={onZoom}
+            onZoom={(next, keyboard) => {
+              setFocusFor(keyboard ? `${next.start}-${next.end}` : undefined)
+              onZoom(next)
+            }}
             units={{
               left: left ? unitWords(left.unit) : undefined,
               right: right ? unitWords(right.unit) : undefined,

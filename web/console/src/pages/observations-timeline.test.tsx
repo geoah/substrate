@@ -953,6 +953,13 @@ describe("the charts", () => {
         lt: isoWithOffset(Date.parse("2026-10-05T00:00:00+03:00")),
       })
     })
+    // The zoomed chart takes the focus, so the keys go on reading it.
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("aria-label")).toBe(
+        "Weight, Average"
+      )
+    )
+    expect(document.activeElement).not.toBe(chart)
   })
 
   it("puts the numbers under the chart, a column per reducer with its unit", async () => {
