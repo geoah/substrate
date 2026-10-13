@@ -77,7 +77,7 @@ type aggEvidence struct {
 	form     string
 	raw      bool
 	members  []aggPoint
-	spans    []aggSpan
+	spans    []observed.Span
 	stats    observed.Stats
 	held     map[string]observed.HeldSum
 	steps    aggSteps
@@ -843,42 +843,67 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 // Context forms, as often.
 func (r *aggRun) canceled() error { return r.steps.check(r.ctx) }
 
+// rawStream is one stream of a group as a raw read holds it.
+type rawStream struct {
+	s *aggStream
+	// points is every point read in the windows, in time order.
+	points []aggPoint
+	// spans are a gauge's held intervals, built from every transition; each
+	// span's point carries its offset as its group (scanAggPoint).
+	spans []observed.Span
+	// prevOf is, for a counter, the last available point before each point,
+	// by the point's index.
+	prevOf map[int]*aggPoint
+}
+
 // evalRaw reduces a group's streams from raw points: held intervals built
 // per stream from every transition, the source policy resolved over the
 // range, then each bucket's members and clipped intervals.
 func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCells, error) {
-	p := r.p
-	type stream struct {
-		s      *aggStream
-		points []aggPoint // every point read, carries and prev included, in time order
-		spans  []aggSpan
-		// prevOf is, for a counter, the last available point before each
-		// point, by the point's index.
-		prevOf map[int]*aggPoint
+	list, err := r.rawStreams(streams, form)
+	if err != nil {
+		return nil, err
 	}
-	var list []*stream
+	if r.p.policy == substrate.SourcesPriority && len(list) > 1 {
+		if err := r.resolvePriority(list, form); err != nil {
+			return nil, err
+		}
+	}
+	out, err := r.placeRaw(list, form)
+	if err != nil {
+		return nil, err
+	}
+	if r.p.policy == substrate.SourcesSummaries && form == vocabulary.FormSummary {
+		for _, codes := range out {
+			for _, ev := range codes {
+				if err := r.firstSummarySource(ev, streams); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	return out, r.settleRaw(out, form)
+}
+
+// rawStreams holds each stream's points in the read's windows and, for a
+// gauge, the intervals they hold, the value carried into each window first.
+func (r *aggRun) rawStreams(streams []*aggStream, form string) ([]*rawStream, error) {
+	var list []*rawStream
 	for si, s := range streams {
-		st := &stream{s: s, prevOf: map[int]*aggPoint{}}
+		st := &rawStream{s: s, prevOf: map[int]*aggPoint{}}
 		for _, seg := range r.series[s].segs {
 			if form == vocabulary.FormGauge {
-				slice := make([]aggPoint, 0, len(seg.points)+1)
+				obs := make([]observed.Point, 0, len(seg.points)+1)
 				if seg.carry != nil {
-					slice = append(slice, *seg.carry)
+					obs = append(obs, seg.carry.Point)
 				}
 				for _, ap := range seg.points {
 					if err := r.canceled(); err != nil {
 						return nil, err
 					}
-					slice = append(slice, ap)
+					obs = append(obs, ap.Point)
 				}
-				obs := make([]observed.Point, len(slice))
-				for i := range slice {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					obs[i] = slice[i].Point
-				}
-				held, err := observed.HeldContext(r.ctx, obs, seg.from, seg.to, p.maxGap)
+				held, err := observed.HeldContext(r.ctx, obs, seg.from, seg.to, r.p.maxGap)
 				if err != nil {
 					return nil, err
 				}
@@ -886,10 +911,7 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 					if err := r.canceled(); err != nil {
 						return nil, err
 					}
-					st.spans = append(st.spans, aggSpan{
-						Span: observed.Span{Start: iv.Start, End: iv.End, Point: obs[iv.Point]},
-						off:  slice[iv.Point].off, stream: si,
-					})
+					st.spans = append(st.spans, observed.Span{Start: iv.Start, End: iv.End, Point: obs[iv.Point]})
 				}
 			}
 			// A counter's step runs from the stream's previous available
@@ -914,101 +936,85 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 		}
 		list = append(list, st)
 	}
-	// The source policy, resolved over the range before any bucket.
-	if err := r.ctx.Err(); err != nil {
-		return nil, err
-	}
-	if p.policy == substrate.SourcesPriority && len(list) > 1 {
-		switch form {
-		case vocabulary.FormGauge:
-			var cover []aggSpan
-			in := make([][]observed.Span, len(list))
-			for i, st := range list {
-				for _, sp := range st.spans {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					in[i] = append(in[i], sp.Span)
-				}
-			}
-			resolved, err := observed.Prioritize(r.ctx, in)
+	return list, r.ctx.Err()
+}
+
+// resolvePriority applies the priority policy over the range, before any
+// bucket: a gauge's held intervals by observed.Prioritize, a lower stream's
+// point inside a higher one's hold dropped; another form's point dropped
+// where it overlaps a higher stream's point.
+func (r *aggRun) resolvePriority(list []*rawStream, form string) error {
+	if form != vocabulary.FormGauge {
+		var higher [][2]time.Time
+		for _, st := range list {
+			hc, err := r.cover(higher)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			for i, st := range list {
-				if err := r.ctx.Err(); err != nil {
-					return nil, err
+			var kept []aggPoint
+			for _, ap := range st.points {
+				if err := r.canceled(); err != nil {
+					return err
 				}
-				higher := make([][2]time.Time, 0, len(cover))
-				for _, c := range cover {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					higher = append(higher, [2]time.Time{c.Start, c.End})
+				if !ap.Unavailable && hc.overlaps(ap.At, pointEnd(ap)) {
+					continue
 				}
-				hc, err := r.cover(higher)
-				if err != nil {
-					return nil, err
-				}
-				kept := st.points[:0]
-				for _, ap := range st.points {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					if ap.Unavailable || !hc.holds(ap.At) {
-						kept = append(kept, ap)
-					}
-				}
-				st.points = kept
-				for _, sp := range st.spans {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					cover = append(cover, sp)
-				}
-				st.spans = st.spans[:0]
-				for _, sp := range resolved[i] {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					off, _ := strconv.ParseInt(sp.Point.Group, 10, 64)
-					st.spans = append(st.spans, aggSpan{Span: sp, off: off, stream: i})
-				}
+				kept = append(kept, ap)
 			}
-		default:
-			var cover [][2]time.Time
-			for _, st := range list {
-				hc, err := r.cover(cover)
-				if err != nil {
-					return nil, err
+			st.points = kept
+			for _, ap := range kept {
+				if err := r.canceled(); err != nil {
+					return err
 				}
-				var kept []aggPoint
-				for _, ap := range st.points {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					if !ap.Unavailable && hc.overlaps(ap.At, pointEnd(ap)) {
-						continue
-					}
-					kept = append(kept, ap)
-				}
-				st.points = kept
-				for _, ap := range kept {
-					if err := r.canceled(); err != nil {
-						return nil, err
-					}
-					if !ap.Unavailable {
-						cover = append(cover, [2]time.Time{ap.At, pointEnd(ap)})
-					}
+				if !ap.Unavailable {
+					higher = append(higher, [2]time.Time{ap.At, pointEnd(ap)})
 				}
 			}
 		}
+		return r.ctx.Err()
 	}
-	if err := r.ctx.Err(); err != nil {
-		return nil, err
+	in := make([][]observed.Span, len(list))
+	for i, st := range list {
+		in[i] = st.spans
 	}
+	resolved, err := observed.Prioritize(r.ctx, in)
+	if err != nil {
+		return err
+	}
+	var higher [][2]time.Time
+	for i, st := range list {
+		// cover sorts higher in place, which its later appends do not mind.
+		hc, err := r.cover(higher)
+		if err != nil {
+			return err
+		}
+		kept := st.points[:0]
+		for _, ap := range st.points {
+			if err := r.canceled(); err != nil {
+				return err
+			}
+			if ap.Unavailable || !hc.holds(ap.At) {
+				kept = append(kept, ap)
+			}
+		}
+		st.points = kept
+		for _, sp := range st.spans {
+			if err := r.canceled(); err != nil {
+				return err
+			}
+			higher = append(higher, [2]time.Time{sp.Start, sp.End})
+		}
+		st.spans = resolved[i]
+	}
+	return r.ctx.Err()
+}
+
+// placeRaw puts each stream's available points and held intervals into the
+// cells of the buckets they lie in, with a counter's step from the point
+// before.
+func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 	out := aggCells{}
-	for _, st := range list {
+	for si, st := range list {
 		for i := range st.points {
 			if err := r.canceled(); err != nil {
 				return nil, err
@@ -1045,28 +1051,24 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			if !r.admits(sp.Point.Code) {
 				continue
 			}
-			for _, part := range r.spanParts(sp) {
+			off, _ := strconv.ParseInt(sp.Point.Group, 10, 64)
+			for _, part := range r.spanParts(sp, off) {
 				ev := cell(out, part.bucket, r.codeKey(sp.Point.Code), form, true)
 				ev.spans = append(ev.spans, part.span)
 				ev.sources[st.s.source] = true
 				if b := part.bucket; b.local {
-					b.ends.hold(part.span.Start, part.span.End, sp.stream, sp.off)
-					ev.ends.hold(part.span.Start, part.span.End, sp.stream, sp.off)
+					b.ends.hold(part.span.Start, part.span.End, si, off)
+					ev.ends.hold(part.span.Start, part.span.End, si, off)
 				}
 			}
 		}
 	}
-	// The summaries policy reads one source per bucket: the first in its
-	// order with a summary there.
-	if p.policy == substrate.SourcesSummaries && form == vocabulary.FormSummary {
-		for _, codes := range out {
-			for _, ev := range codes {
-				if err := r.firstSummarySource(ev, streams); err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
+	return out, nil
+}
+
+// settleRaw orders each cell's members as every reader takes points and its
+// spans by start, and counts the cell's points and coverage.
+func (r *aggRun) settleRaw(out aggCells, form string) error {
 	for _, codes := range out {
 		for _, ev := range codes {
 			// A cell's sorts are as long as its points and spans, so they
@@ -1080,40 +1082,35 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				}
 				return 0
 			}); err != nil {
-				return nil, err
+				return err
 			}
-			if err := observed.SortStableFunc(r.ctx, ev.spans, func(a, b aggSpan) int { return a.Start.Compare(b.Start) }); err != nil {
-				return nil, err
+			if err := observed.SortStableFunc(r.ctx, ev.spans, func(a, b observed.Span) int { return a.Start.Compare(b.Start) }); err != nil {
+				return err
 			}
+			ev.count = int64(len(ev.members))
 			for _, m := range ev.members {
 				if err := r.canceled(); err != nil {
-					return nil, err
+					return err
 				}
-				ev.count++
 				if m.Bounded {
 					ev.bounded++
 				}
 			}
+			var err error
 			switch form {
 			case vocabulary.FormGauge:
-				spans, err := r.spansOf(ev)
-				if err != nil {
-					return nil, err
-				}
-				if ev.coverage, err = observed.HeldMsContext(r.ctx, spans); err != nil {
-					return nil, err
-				}
+				ev.coverage, err = observed.HeldMsContext(r.ctx, ev.spans)
 			case vocabulary.FormCounter:
 				ev.coverage = ev.steps.covered
 			default:
-				var err error
-				if ev.coverage, err = r.memberCoverage(ev); err != nil {
-					return nil, err
-				}
+				ev.coverage, err = r.memberCoverage(ev)
+			}
+			if err != nil {
+				return err
 			}
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // firstSummarySource keeps a cell's members from one source, the first in
@@ -1228,16 +1225,16 @@ func (r *aggRun) bucketsOf(t time.Time, off int64) []*aggBucket {
 
 type spanPart struct {
 	bucket *aggBucket
-	span   aggSpan
+	span   observed.Span
 }
 
 // spanParts cuts a held interval at the buckets' boundaries: a UTC bucket's, or
-// for a recorded-local bucket the boundaries at the holding point's own offset.
-func (r *aggRun) spanParts(sp aggSpan) []spanPart {
+// for a recorded-local bucket the boundaries at the holding point's offset.
+func (r *aggRun) spanParts(sp observed.Span, off int64) []spanPart {
 	var out []spanPart
 	switch r.p.bucket.mode {
 	case bucketLocal:
-		shift := time.Duration(sp.off) * time.Minute
+		shift := time.Duration(off) * time.Minute
 		start := sp.Start
 		for start.Before(sp.End) {
 			wall := start.UTC().Add(shift)
@@ -1255,10 +1252,8 @@ func (r *aggRun) spanParts(sp aggSpan) []spanPart {
 		return out
 	}
 	for _, b := range r.bucketsMeeting(sp.Start, sp.End) {
-		for _, c := range observed.Clip([]observed.Span{sp.Span}, b.start, b.end) {
-			part := sp
-			part.Span = c
-			out = append(out, spanPart{bucket: b, span: part})
+		for _, c := range observed.Clip([]observed.Span{sp}, b.start, b.end) {
+			out = append(out, spanPart{bucket: b, span: c})
 		}
 	}
 	return out
@@ -1847,15 +1842,6 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.
 		points[stat] = list
 		return list, nil
 	}
-	var spans []observed.Span
-	held := func() ([]observed.Span, error) {
-		if spans != nil {
-			return spans, nil
-		}
-		var err error
-		spans, err = r.spansOf(ev)
-		return spans, err
-	}
 	summary := ev.form == vocabulary.FormSummary
 	statOf := func(name string) string {
 		if summary {
@@ -1978,10 +1964,7 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.
 			var v float64
 			var ok bool
 			if ev.raw {
-				var list []observed.Span
-				if list, err = held(); err == nil {
-					v, ok, err = observed.TWAOfContext(r.ctx, list)
-				}
+				v, ok, err = observed.TWAOfContext(r.ctx, ev.spans)
 			} else {
 				var h observed.HeldSum
 				for _, x := range ev.held {
@@ -1992,20 +1975,14 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.
 			}
 			float(red, v, ok, r.u.value)
 		case substrate.ReducerDurationIn:
-			var list []observed.Span
 			var d time.Duration
-			if list, err = held(); err == nil {
-				d, err = observed.DurationInOfContext(r.ctx, list, red.Between[0], red.Between[1])
-			}
+			d, err = observed.DurationInOfContext(r.ctx, ev.spans, red.Between[0], red.Between[1])
 			out = append(out, r.duration(red, d.Milliseconds(), ""))
 		case substrate.ReducerTimeInState:
 			per := map[string]int64{}
 			if ev.raw {
-				var list []observed.Span
 				var states map[string]time.Duration
-				if list, err = held(); err == nil {
-					states, err = observed.TimeInStateOfContext(r.ctx, list)
-				}
+				states, err = observed.TimeInStateOfContext(r.ctx, ev.spans)
 				for c, d := range states {
 					per[c] = d.Milliseconds()
 				}
@@ -2076,18 +2053,6 @@ func (r *aggRun) extremaPoints(ev *aggEvidence, g *aggGroup, stat string) ([]obs
 		list = append(list, p)
 	}
 	return list, nil
-}
-
-// spansOf is a row's held spans, copied as the reducers over spans take them.
-func (r *aggRun) spansOf(ev *aggEvidence) ([]observed.Span, error) {
-	out := make([]observed.Span, len(ev.spans))
-	for i, s := range ev.spans {
-		if err := r.canceled(); err != nil {
-			return nil, err
-		}
-		out[i] = s.Span
-	}
-	return out, nil
 }
 
 // value writes a float answer, or null where the reducer had none.

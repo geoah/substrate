@@ -103,13 +103,6 @@ type aggPoint struct {
 	stream int
 }
 
-// aggSpan is one held interval, with the offset of the point that holds it.
-type aggSpan struct {
-	observed.Span
-	off    int64
-	stream int
-}
-
 // aggMeta is what a read learns beside its rows.
 type aggMeta struct {
 	sources map[string]bool
