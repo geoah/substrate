@@ -978,8 +978,8 @@ data:
         against
 ---
 # ---- mirror: one physiological cycle ----------------------------------------
-# WHOOP's day. A cycle is NOT a calendar day: it runs wake to wake, so two
-# cycles can start on one UTC date and a cycle can span two. The cycle is the
+# WHOOP's day. A cycle is NOT a calendar day: it runs from one sleep onset to
+# the next, so two cycles can start on one UTC date and a cycle can span two. The cycle is the
 # identity everything day-shaped in WHOOP hangs off — a recovery scores a
 # cycle, not a date, and a sleep names the cycle it belongs to — and it is the
 # kind substrate's version 9 did not have, which is why its recovery rows
@@ -987,8 +987,8 @@ data:
 #
 # TEMPORAL(RANGE), fed by `start` and `end` (§4): the API's instants land in
 # the trait's slots and are NOT redeclared, so there is no `start`/`end`
-# property here. The CURRENT cycle has no `end` — WHOOP omits it until the
-# member wakes — so `endsAt` is simply absent on it, and a records read
+# property here. The CURRENT cycle has no `end` (WHOOP omits it until the
+# next sleep starts a cycle), so `endsAt` is simply absent on it, and a records read
 # bounding `at` still finds it.
 kind: substrate.reamde.dev/core/kind
 metadata:

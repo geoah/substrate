@@ -126,8 +126,8 @@ cycle is `start` shifted by that offset [inferred]. `score_state` is
 
 A cycle is not a calendar day: the sleep page calls the main sleep "the
 sleep activity that starts a Cycle" [verified]. These fixtures therefore
-start each cycle at its main sleep's `start`. The existing provider
-fixtures start cycles at wake time instead, which this sentence contradicts.
+start each cycle at its main sleep's `start`, and so do the provider e2e
+fixtures and the synthetic WHOOP data (internal/synth).
 
 ## Corrections, deletions, backfill
 

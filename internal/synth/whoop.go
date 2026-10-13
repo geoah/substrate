@@ -22,13 +22,14 @@ import (
 // recorded fixtures' under internal/providere2e/fixtures/whoop and the
 // fields `whoopsync` reads.
 //
-// One cycle per local day, from that morning's wake to the next morning's;
-// the last day's cycle is the current one, with no `end`. Each cycle's
-// recovery scores the night that ended at the cycle's start, and that night
-// names the cycle in `cycle_id`; a nap belongs to its day's cycle. WHOOP
-// sends summaries only, so nothing here is a sample series. A sick day's nap
-// is UNSCORABLE and carries no score, and the range's first three
-// recoveries are calibrating.
+// One cycle per local day, as WHOOP defines one: from the onset of the night
+// that ends on that day's morning to the onset of the next night. The last
+// day's cycle is the current one, with no `end`. Each cycle's recovery
+// scores the night that starts it, and that night names the cycle in
+// `cycle_id`; a nap names the cycle in progress, its day's. WHOOP sends
+// summaries only, so nothing here is a sample series. A sick day's nap is
+// UNSCORABLE and carries no score, and the range's first three recoveries
+// are calibrating.
 type Whoop struct{}
 
 func init() { register(Whoop{}) }
@@ -197,8 +198,11 @@ func whoopUUID(p *Persona, key ...any) string {
 
 func whoopMs(d time.Duration) int64 { return d.Milliseconds() }
 
-// wake is the instant the night ending on d ended: a cycle boundary.
+// wake is the instant the night ending on d ended.
 func (e *whoopEmitter) wake(d Date) time.Time { return e.jit(e.p.Day(d).Sleep.End, "wake", d) }
+
+// onset is the instant the night ending on d began: a cycle boundary.
+func (e *whoopEmitter) onset(d Date) time.Time { return e.jit(e.p.Day(d).Sleep.Start, "sleepstart", d) }
 
 // cycleID is WHOOP's integer id for the cycle starting on d, rising daily.
 func (e *whoopEmitter) cycleID(d Date) int {
@@ -214,14 +218,18 @@ func (e *whoopEmitter) cycles() []whoopRecord {
 	var out []whoopRecord
 	for _, d := range e.days {
 		day := e.p.Day(d)
-		start := e.wake(d)
+		start := e.onset(d)
 		var end, updated, spanEnd time.Time
 		if e.last(d) {
-			// The current cycle: scored up to the evening before the sync.
+			// The current cycle: scored up to the evening before the sync,
+			// which runs before the next night starts a cycle.
 			updated = e.jit(d.At(day.Zone, 22, 47), "openupd", d)
+			if next := e.onset(d.Add(1)); !updated.Before(next) {
+				updated = next.Add(-time.Duration(e.intn(5, 40, "openupdcap", d)) * time.Minute)
+			}
 			spanEnd = updated
 		} else {
-			end = e.wake(d.Add(1))
+			end = e.onset(d.Add(1))
 			updated = end.Add(time.Duration(e.intn(25, 200, "cycupd", d))*time.Minute +
 				time.Duration(e.intn(0, 999, "cycupdms", d))*time.Millisecond)
 			spanEnd = end
@@ -247,7 +255,7 @@ func (e *whoopEmitter) cycles() []whoopRecord {
 			"created_at":      whoopStamp(start.Add(7*time.Second + time.Duration(e.intn(0, 999, "cyccre", d))*time.Millisecond)),
 			"updated_at":      whoopStamp(updated),
 			"start":           whoopStamp(start),
-			"timezone_offset": whoopTZD(start.In(day.Zone)),
+			"timezone_offset": whoopTZD(start),
 			"score_state":     "SCORED",
 			"score": map[string]any{
 				"strain":             whoopDec(math.Min(21, math.Max(0.1, e.noisy("strain", d, day.Strain(), 0.3))), 4),
@@ -343,7 +351,7 @@ func (e *whoopEmitter) sleeps() ([]whoopRecord, map[Date]string) {
 		s := day.Sleep
 		id := whoopUUID(e.p, "sleep", d, "night")
 		nights[d] = id
-		start, end := e.jit(s.Start, "sleepstart", d), e.wake(d)
+		start, end := e.onset(d), e.wake(d)
 		inBed := whoopMs(end.Sub(start))
 		tot := s.StageTotals()
 		awake := max(0, int64(tot[Awake])*1000+int64(e.noisy("awakeshift", d, 0, 120)*1000))

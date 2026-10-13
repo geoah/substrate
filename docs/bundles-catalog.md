@@ -745,8 +745,8 @@ recovery webhook names a sleep, which `whoopwebhook` reads for its cycle),
 
 - **Kinds (7)**: `config` (the WHOOP OAuth app), `account` (the connection,
   and every cursor in the closure), and the mirrors `user` (the member),
-  `cycle` (the wake-to-wake day WHOOP scores strain over), `recovery` (the
-  verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
+  `cycle` (WHOOP's physiological day, from one sleep onset to the next,
+  which WHOOP scores strain over), `recovery` (the verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
   with `nap`) and `workout` (a recorded activity).
 - **Functions (2)**: `whoopsync` reads the member's profile and body
   measurement, then walks `/v2/cycle`, `/v2/recovery`, `/v2/activity/sleep`

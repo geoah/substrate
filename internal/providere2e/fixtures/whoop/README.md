@@ -57,7 +57,7 @@ asks*.
 | `GET_v2_activity_workout.json` | four workouts, one page |
 
 Five cycles, four recoveries, four sleeps, four workouts and one member, all
-inside 2026-09-08 → 2026-09-12. The dates are FIXED rather than relative to the
+inside 2026-09-07 → 2026-09-12. The dates are FIXED rather than relative to the
 clock: a set that moves with today is a set nobody can reproduce.
 
 Every collection is ordered **newest first**, as WHOOP serves one. Nothing in
@@ -74,8 +74,13 @@ string.
   pages, so a sync that read only the first page would land three rows instead
   of five and the scenario would say so;
 - **a CURRENT cycle** — `742812004` carries no `end` at all, because WHOOP
-  omits it until the member wakes. It is what proves an absent trait slot is
-  absent and not null;
+  omits it until the next sleep starts a cycle. It is what proves an absent
+  trait slot is absent and not null;
+- **cycles from one sleep onset to the next**, as WHOOP's sleep page has it
+  ("the sleep activity that starts a Cycle"): each cycle starts at the
+  `start` of the night that names it, ends where the next cycle starts, and
+  holds the nap that names it. The two cycles whose night this cut does not
+  hold start at an onset of their own;
 - **the two unscored states** — one cycle is `UNSCORABLE` (the strap was off),
   the current one is `PENDING_SCORE`, one recovery is `UNSCORABLE` and one
   sleep is `PENDING_SCORE`. All four carry NO `score` object, which is how

@@ -106,8 +106,9 @@ deliveries (5.8 MB, about 53,700 rows), written under five sources:
 and `.../health` for rows without a source or with merged labels.
 
 `whoop` writes WHOOP's summaries and never a sample series, because WHOOP's
-API has none. One physiological cycle per local day, from that morning's
-wake to the next, the last one still open; one recovery per cycle, scoring
+API has none. One physiological cycle per local day, from the onset of the
+night that ends that morning to the onset of the next night, as WHOOP
+defines a cycle, the last one still open; one recovery per cycle, scoring
 the night that opened it, the first three calibrating; one sleep per night
 and per nap with the stage totals in milliseconds, a sick day's nap
 `UNSCORABLE` with no score; one workout per persona workout under WHOOP's

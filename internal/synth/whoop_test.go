@@ -195,7 +195,7 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 
 	inRange := func(d Date) bool { return !d.Before(p.Options.Start) && !d.After(p.Options.End) }
 	cycleIDs := map[float64]bool{}
-	cycleDay := map[float64]Date{}
+	cycleByID := map[float64]map[string]any{}
 	var prevStart time.Time
 	open := 0
 	london := 0
@@ -205,14 +205,11 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 			t.Fatalf("cycles are not newest first at %d", i)
 		}
 		prevStart = start
-		if d := localDay(t, start, c["timezone_offset"]); !inRange(d) {
-			t.Errorf("cycle %v starts on %s, outside the range", c["id"], d)
-		}
 		if c["timezone_offset"] == "+01:00" {
 			london++
 		}
 		cycleIDs[whoopNum(t, c, "id")] = true
-		cycleDay[whoopNum(t, c, "id")] = localDay(t, start, c["timezone_offset"])
+		cycleByID[whoopNum(t, c, "id")] = c
 		whoopInstant(t, c["created_at"])
 		whoopInstant(t, c["updated_at"])
 		if c["end"] == nil {
@@ -241,6 +238,33 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 	}
 	if open != 1 || london != 5 || len(cycleIDs) != len(cycles) {
 		t.Errorf("%d open cycles (want 1), %d in London (want 5), %d distinct ids of %d", open, london, len(cycleIDs), len(cycles))
+	}
+
+	// WHOOP's cycle runs from one sleep onset to the next: each night starts
+	// the cycle it names, at the night's own start, and a nap lies inside
+	// the cycle in progress, the one it names.
+	cycleDay := map[float64]Date{}
+	for _, s := range sleeps {
+		c := cycleByID[whoopNum(t, s, "cycle_id")]
+		if c == nil {
+			continue
+		}
+		start, end := whoopInstant(t, s["start"]), whoopInstant(t, s["end"])
+		cs := whoopInstant(t, c["start"])
+		if s["nap"] == false {
+			cycleDay[whoopNum(t, c, "id")] = localDay(t, end, s["timezone_offset"])
+			if !cs.Equal(start) || c["timezone_offset"] != s["timezone_offset"] {
+				t.Errorf("cycle %v starts at %s %v, not at the onset of the night %v that names it (%s %v)",
+					c["id"], cs, c["timezone_offset"], s["id"], start, s["timezone_offset"])
+			}
+			continue
+		}
+		if start.Before(cs) || c["end"] != nil && end.After(whoopInstant(t, c["end"])) {
+			t.Errorf("nap %v from %s to %s lies outside the cycle %v it names (%v to %v)", s["id"], start, end, c["id"], c["start"], c["end"])
+		}
+	}
+	if len(cycleDay) != len(cycles) {
+		t.Errorf("%d cycles opened by a night, want all %d", len(cycleDay), len(cycles))
 	}
 
 	sleepByID := map[string]map[string]any{}
