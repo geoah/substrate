@@ -120,6 +120,7 @@ export function ObservationsTimelinePage() {
       name: "source",
       label: "Source",
       ordered: true,
+      orderHint: "Where sources overlap, the first is used first.",
       options: values.sources.map((value) => ({
         value: shortRef(value, pins.source),
         label: values.nameOf(value, pins.source),

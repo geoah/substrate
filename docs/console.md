@@ -780,7 +780,9 @@ over an empty chart. A metric that declares no unit is read in the unit of its
 newest selected stream, named in the request, so the axis and the answer
 agree. Grouped by anything but source, two or more sources are
 resolved by `sources.policy: priority` in the order you picked them in the
-Source filter, each new pick last (or the newest first), a stream that names
+Source filter, each new pick last (or the newest first); the Source filter
+lists the chosen sources in that order, each with a move up and a move
+down, a stream that names
 no source counting as one ranked after them, and the chart says which source
 wins; grouped by source,
 each keeps its own rows, and a source's channels stay apart

@@ -239,6 +239,36 @@ describe("the timeline's requests", () => {
     )
   })
 
+  it("moves a chosen source up the priority without unpicking it", async () => {
+    const server = mount(
+      `?metric=health/heart_rate&source=garmin-forerunner-265,apple-watch-s10&${WINDOW}`
+    )
+    const order = () =>
+      charts(server.seen, "health/heart_rate").at(-1)?.aggregate.sources
+    await waitFor(() =>
+      expect(order()).toEqual({
+        policy: "priority",
+        order: [`${SOURCE}/garmin-forerunner-265`, `${SOURCE}/apple-watch-s10`],
+      })
+    )
+    fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
+    const ranks = await screen.findByRole("list", { name: "Source order" })
+    expect(
+      within(ranks)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent)
+    ).toEqual(["1Garmin Forerunner 265", "2Apple Watch S10"])
+    fireEvent.click(
+      within(ranks).getByRole("button", { name: "Move Apple Watch S10 up" })
+    )
+    await waitFor(() =>
+      expect(order()).toEqual({
+        policy: "priority",
+        order: [`${SOURCE}/apple-watch-s10`, `${SOURCE}/garmin-forerunner-265`],
+      })
+    )
+  })
+
   it("narrows to a stream's source by its path", async () => {
     const server = mount(
       `?metric=health/heart_rate&source=apple-watch-s10&${WINDOW}`

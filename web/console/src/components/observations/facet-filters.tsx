@@ -3,10 +3,11 @@
  * anatomy: each active filter one `facet | values | ×` control that reopens
  * its choices, a dashed "Add filter" that offers the facets, and "Clear all".
  * Several values of one facet are an either-or; an `ordered` facet's values
- * also rank, in the order they were picked. */
+ * also rank, in the order they were picked, and its filter moves them up or
+ * down. */
 
 import { useState } from "react"
-import { ListFilterIcon, XIcon } from "lucide-react"
+import { ArrowDownIcon, ArrowUpIcon, ListFilterIcon, XIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ChoiceList, type ChoiceOption } from "@/components/ui/choice-list"
@@ -31,8 +32,74 @@ export interface Facet {
   /** The facet in words ("Source"). */
   label: string
   options: ChoiceOption[]
-  /** Its values rank in the order they were picked, a new one last. */
+  /** Its values rank in the order they were picked, a new one last, and
+   * its filter lists them in that order to move up or down. */
   ordered?: boolean
+  /** What the rank means, over that list ("Where sources overlap, the
+   * first is used first."). */
+  orderHint?: string
+}
+
+/** An ordered facet's chosen values in rank order, each with a move up and
+ * a move down, so a reader reorders them without unpicking any. */
+function RankList({
+  facet,
+  values,
+  onChange,
+}: {
+  facet: Facet
+  values: string[]
+  onChange: (values: string[]) => void
+}) {
+  const labelOf = (v: string) =>
+    facet.options.find((o) => o.value === v)?.label ?? v
+  function move(at: number, by: -1 | 1) {
+    const next = [...values]
+    const [value] = next.splice(at, 1)
+    next.splice(at + by, 0, value)
+    onChange(next)
+  }
+  return (
+    <div className="border-b border-border p-1">
+      {facet.orderHint && (
+        <p className="px-2 pt-1 pb-1.5 text-xs text-faint">{facet.orderHint}</p>
+      )}
+      <ol aria-label={`${facet.label} order`}>
+        {values.map((value, i) => {
+          const label = labelOf(value)
+          return (
+            <li
+              key={value}
+              className="flex min-h-[30px] items-center gap-2 px-2 text-[13px]"
+            >
+              <span className="w-3 shrink-0 text-faint tabular-nums">
+                {i + 1}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`Move ${label} up`}
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+              >
+                <ArrowUpIcon />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`Move ${label} down`}
+                disabled={i === values.length - 1}
+                onClick={() => move(i, 1)}
+              >
+                <ArrowDownIcon />
+              </Button>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
 }
 
 function summary(facet: Facet, values: readonly string[]): string {
@@ -83,6 +150,9 @@ function ActiveFacet({
         </Button>
       </div>
       <PopoverContent align="start" className="w-72 p-0">
+        {facet.ordered && values.length > 1 && (
+          <RankList facet={facet} values={values} onChange={onChange} />
+        )}
         <ChoiceList
           multiple
           ordered={facet.ordered}
