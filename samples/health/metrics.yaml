@@ -995,8 +995,8 @@ data:
       - system: whoop
         code: strain
         display: Cycle strain
-    measures: fraction
-    unit: "1"
+    measures: score
+    unit: "{score}"
     form: summary
     reducers:
       - last
@@ -1050,8 +1050,8 @@ data:
       - system: garmin
         code: averageStressLevel
         display: Daily summary average stress
-    measures: fraction
-    unit: "1"
+    measures: score
+    unit: "{score}"
     form: gauge
     hold: PT6M
     reducers:
@@ -1080,8 +1080,8 @@ data:
       - system: garmin
         code: timeOffsetBodyBatteryValues
         display: Stress details Body Battery values
-    measures: fraction
-    unit: "1"
+    measures: score
+    unit: "{score}"
     form: gauge
     hold: PT6M
     reducers:
@@ -1392,7 +1392,7 @@ data:
       - system: "http://loinc.org"
         code: "59261-8"
         display: Hemoglobin A1c/Hemoglobin.total in Blood by IFCC protocol
-    measures: fraction
+    measures: amount-fraction
     unit: mmol/mol
     form: gauge
     hold: PT0S

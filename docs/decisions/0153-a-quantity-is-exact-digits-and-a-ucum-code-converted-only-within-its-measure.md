@@ -53,6 +53,11 @@ scale, its codes, and an exact rational factor from each code to the base
   (`kW.h/(100.km)`) takes its measure from its vector, and is refused when
   that vector matches more than one measure, unless the property's
   declaration names the measure.
+- A dimension cannot tell every pair apart: `mmol/mol` and `g/kg` are both
+  dimensionless, and a vendor's score is a bare number. So a measure may
+  admit its listed codes and their prefixes alone (`amount-fraction` for
+  `mmol/mol`, `score` for `{score}`), and IFCC HbA1c never converts to an
+  NGSP `%`, nor WHOOP strain to a percent.
 - Annotations are part of a unit's identity, although UCUM discards them:
   `{beats}/min` and `{steps}/min` never convert into each other, and a lone
   annotation is a count.

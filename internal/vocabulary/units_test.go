@@ -77,7 +77,10 @@ func TestMeasureOf(t *testing.T) {
 		"fL": "volume", "pg": "mass", "/ms": "rate", "MHz": "frequency", "TBy": "information",
 		"mSv/h": "dose-equivalent-rate", "kN.m": "torque", "mrad": "angle",
 		// A compound no row lists, by its dimension.
-		"[lb_av]/[ft_i]3": "mass-concentration", "g/(kg)": "fraction", "umol/mol": "fraction", "kg/h": "mass-flow",
+		"[lb_av]/[ft_i]3": "mass-concentration", "g/(kg)": "fraction", "kg/h": "mass-flow",
+		// A measure that admits its listed codes alone, and their prefixes.
+		"mmol/mol": "amount-fraction", "umol/mol": "amount-fraction", "mol/kmol": "amount-fraction",
+		"{score}": "score",
 		// Annotations.
 		"{steps}": "count", "{beats}/min": "rate", "{steps}/h": "rate", "10*3{copies}": "count",
 		"kg{body_wt}": "mass",
@@ -256,6 +259,29 @@ func TestAnnotationsArePartOfIdentity(t *testing.T) {
 	refusesConvert(t, "", "Hz", "/min", "a frequency is not a rate of events")
 }
 
+// A vendor's score (WHOOP strain, Garmin stress) is a number on the vendor's
+// own scale: it converts to nothing but itself, never to a percent, a bare
+// number or a count, and a measure listing it admits no other code.
+func TestAScoreConvertsToNothingButItself(t *testing.T) {
+	if got := convertTo(t, "", "17.5", "{score}", "{score}"); got.Cmp(rat(t, "17.5")) != 0 {
+		t.Errorf("{score} to itself = %s", got.RatString())
+	}
+	for _, to := range []string{"%", "1", "{count}", "[ppth]", "10*3{score}"} {
+		refusesConvert(t, "", "{score}", to, "a score converts to nothing but itself")
+		refusesConvert(t, "", to, "{score}", "the same, the other way")
+	}
+	for _, code := range []string{"%", "1", "{count}", "%{score}", "g/kg"} {
+		if _, err := vocabulary.ResolveMeasure(code, "score"); err == nil {
+			t.Errorf("measures: score admitted %s", code)
+		}
+	}
+	for _, code := range []string{"g/kg", "%", "mol/m3"} {
+		if _, err := vocabulary.ResolveMeasure(code, "amount-fraction"); err == nil {
+			t.Errorf("measures: amount-fraction admitted %s", code)
+		}
+	}
+}
+
 func TestIrrationalFactorsAreRefused(t *testing.T) {
 	if got := convertTo(t, "", "1", "deg", "''"); got.Cmp(rat(t, "3600")) != 0 {
 		t.Errorf("1 deg = %s arc seconds", got.RatString())
@@ -311,11 +337,15 @@ func TestConvertIsExact(t *testing.T) {
 	}
 	refusesConvert(t, "", "kg", "J", "two measures")
 	refusesConvert(t, "", "mg/dL", "mmol/L", "a molar mass is a derivation, not a unit conversion")
-	// IFCC and NGSP HbA1c are two metrics, related by a formula, never a
-	// factor; the unit table converts the units, and the metric refuses the
-	// pooling.
-	if got := convertTo(t, "", "48", "mmol/mol", "%"); got.Cmp(rat(t, "4.8")) != 0 {
-		t.Errorf("48 mmol/mol = %s %%, want 4.8", got.RatString())
+	// IFCC and NGSP HbA1c relate by a formula, never a factor: mmol/mol is an
+	// amount fraction and % a fraction, so the two never convert, read
+	// undeclared or under either measure.
+	refusesConvert(t, "", "mmol/mol", "%", "an amount fraction is not a fraction")
+	refusesConvert(t, "", "%", "mmol/mol", "the same, the other way")
+	refusesConvert(t, "fraction", "%", "mmol/mol", "a fraction refuses mmol/mol")
+	refusesConvert(t, "amount-fraction", "mmol/mol", "1", "an amount fraction refuses a bare number")
+	if got := convertTo(t, "", "48", "mmol/mol", "umol/mol"); got.Cmp(rat(t, "48000")) != 0 {
+		t.Errorf("48 mmol/mol = %s umol/mol, want 48000", got.RatString())
 	}
 	refusesConvert(t, "", "N.m", "J", "torque is not energy")
 	refusesConvert(t, "", "V.A", "W", "apparent power is not power")

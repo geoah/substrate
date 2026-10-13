@@ -6,8 +6,8 @@
 Every unit a `quantity` value may carry, grouped by **measure**: the named kind of
 quantity (mass, temperature, rate) inside which a value converts and compares.
 [The data model](data-model.md#property-types) says what a quantity value is and how a
-property declares one. This page is the table itself: 57 measures and 206 codes
-(210 rows, because a few codes sit in two measures).
+property declares one. This page is the table itself: 59 measures and 207 codes
+(211 rows, because a few codes sit in two measures).
 
 A code is a case-sensitive UCUM code. The codes listed here are the ones the table
 names; the grammar also reads any compound or prefixed code over the same atoms
@@ -50,7 +50,9 @@ dimension (energy and torque); that is why a measure has a name.
 | [frequency](#frequency) | ratio | `Hz` | T-1 | `Hz` | `Hz`, `kHz` |
 | [rate](#rate) | ratio | `/s` | T-1 | `/min` | `/s`, `/min`, `/h`, `/d`, `/wk`, `{count}/min` |
 | [count](#count) | count | `1` | 1 | `{count}` | `{count}`, `1` |
-| [fraction](#fraction) | ratio | `1` | 1 | `%` | `1`, `%`, `[ppth]`, `[ppm]`, `[ppb]`, `mmol/mol` |
+| [fraction](#fraction) | ratio | `1` | 1 | `%` | `1`, `%`, `[ppth]`, `[ppm]`, `[ppb]` |
+| [amount-fraction](#amount-fraction) | ratio | `mol/mol` | 1 | `mmol/mol` | `mmol/mol` |
+| [score](#score) | ratio | `{score}` | 1 | `{score}` | `{score}` |
 | [amount-of-substance](#amount-of-substance) | ratio | `mol` | N | `mmol` | `mol`, `mmol`, `umol` |
 | [amount-concentration](#amount-concentration) | ratio | `mol/m3` | L-3 N | `mmol/L` | `mol/L`, `mmol/L`, `umol/L`, `nmol/L`, `pmol/L` |
 | [mass-concentration](#mass-concentration) | ratio | `kg/m3` | L-3 M | `mg/dL` | `g/L`, `g/dL`, `mg/dL`, `mg/L`, `ug/L`, `ng/mL`, `pg/mL`, `ug/dL`, `g/m3`, `mg/m3`, `ug/m3`, `kg/m3` |
@@ -318,7 +320,7 @@ A count of things, named by an annotation alone ({steps}); two annotations never
 
 ### fraction
 
-A part of a whole; mmol/mol (HbA1c IFCC) never converts to an NGSP %, which a metric says.
+A part of a whole.
 
 | Code | Symbol | Factor to `1` | Offset |
 | --- | --- | --- | --- |
@@ -327,7 +329,22 @@ A part of a whole; mmol/mol (HbA1c IFCC) never converts to an NGSP %, which a me
 | `[ppth]` | ‰ | 1/1000 |  |
 | `[ppm]` | ppm | 1/1000000 |  |
 | `[ppb]` | ppb | 1/1000000000 |  |
+
+### amount-fraction
+
+An amount of substance per amount of substance (HbA1c IFCC); a mol over a mol under any prefixes belongs here and never converts to a fraction such as an NGSP %.
+
+| Code | Symbol | Factor to `mol/mol` | Offset |
+| --- | --- | --- | --- |
 | `mmol/mol` | mmol/mol | 1/1000 |  |
+
+### score
+
+A vendor's number on its own scale (WHOOP strain, Garmin stress): it converts to nothing but itself, never to a percent.
+
+| Code | Symbol | Factor to `{score}` | Offset |
+| --- | --- | --- | --- |
+| `{score}` | score | 1 |  |
 
 ### amount-of-substance
 

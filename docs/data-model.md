@@ -475,9 +475,10 @@ What converts, and what never does:
   has no spelling for a power level against a milliwatt.
 - `rad` converts to nothing but itself: a degree is pi/180 radians, which no
   rational number states.
-- The table converts units, not measurements: 48 `mmol/mol` is 4.8 `%` as a
-  fraction, though IFCC and NGSP HbA1c are different measurements, and
-  `mg/dL` never converts to `mmol/L`, which takes a molar mass.
+- `mmol/mol` is an `amount-fraction` and `%` a `fraction`, so IFCC HbA1c
+  never converts to NGSP HbA1c, which takes a formula. A vendor's score
+  (`{score}`) converts to nothing but itself, never to a percent. `mg/dL`
+  never converts to `mmol/L`, which takes a molar mass.
 
 A [filter](api.md#the-filter-grammar) compares inside the operand's measure,
 and a bounded value matches a comparison only where the comparison holds for

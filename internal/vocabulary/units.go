@@ -24,7 +24,8 @@ package vocabulary
 //  5. Anything else belongs to the measure whose dimension it has, when exactly
 //     one has it. Two (J/m is a force or an energy per distance; J/s is a
 //     power or an apparent power) is ambiguous, and the property must declare
-//     `measures:`.
+//     `measures:`. A measure marked listed (amount-fraction, score) takes no
+//     code by this rule: its codes are the ones rules 1 and 4 give it.
 
 import (
 	"errors"
@@ -55,6 +56,7 @@ type Measure struct {
 
 	dim        dimension
 	annotation string
+	listed     bool
 }
 
 // Dimension renders the measure's dimension over the nine base quantities
@@ -280,7 +282,7 @@ func buildTable() (*unitTable, error) {
 		}
 		m := Measure{
 			Name: d.name, Base: d.base, Scale: d.scale, Display: d.display,
-			Units: slices.Clone(d.units), Note: d.note, annotation: d.annotation,
+			Units: slices.Clone(d.units), Note: d.note, annotation: d.annotation, listed: d.listed,
 		}
 		var base Unit
 		if d.base != "" {
@@ -469,7 +471,7 @@ func (t *unitTable) resolve(u Unit, declared string) (*Measure, error) {
 	var candidates []string
 	for i := range t.measures {
 		m := &t.measures[i]
-		if t.dimensionAdmits(m, u) == nil {
+		if !m.listed && t.dimensionAdmits(m, u) == nil {
 			candidates = append(candidates, m.Name)
 		}
 	}
@@ -525,8 +527,13 @@ func (t *unitTable) admits(m *Measure, u Unit) error {
 	if m.Scale == ScaleCount {
 		return fmt.Errorf("%s is not a count: a count is an annotation such as {steps}", u.code)
 	}
-	if names := t.plain[u.plain()]; len(names) > 0 && !slices.Contains(names, m.Name) {
+	names := t.plain[u.plain()]
+	if len(names) > 0 && !slices.Contains(names, m.Name) {
 		return fmt.Errorf("%s measures %s, not %s", u.code, orList(names), m.Name)
+	}
+	if m.listed && len(names) == 0 {
+		return fmt.Errorf("%s is not %s: the measure admits %s and those codes under another prefix, nothing else",
+			u.code, m.Name, strings.Join(m.Units, ", "))
 	}
 	return t.dimensionAdmits(m, u)
 }

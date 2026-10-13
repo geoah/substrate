@@ -305,7 +305,12 @@ type measureDef struct {
 	// `reactive` for reactive power, which UCUM can only spell as an annotated
 	// V.A.
 	annotation string
-	note       string
+	// listed says the measure admits the codes it lists and those codes under
+	// other metric prefixes (rule 4), and never a code by its dimension alone
+	// (rule 5): mmol/mol and g/kg share the zero dimension, and only the first
+	// is an amount fraction.
+	listed bool
+	note   string
 }
 
 // measureDefs is the measure list, in the order the docs and the console list
@@ -398,8 +403,19 @@ var measureDefs = []measureDef{
 	},
 	{
 		name: "fraction", base: "1", scale: ScaleRatio, display: "%",
-		units: []string{"1", "%", "[ppth]", "[ppm]", "[ppb]", "mmol/mol"},
-		note:  "a part of a whole; mmol/mol (HbA1c IFCC) never converts to an NGSP %, which a metric says",
+		units: []string{"1", "%", "[ppth]", "[ppm]", "[ppb]"},
+		note:  "a part of a whole",
+	},
+	{
+		name: "amount-fraction", base: "mol/mol", scale: ScaleRatio, display: "mmol/mol", listed: true,
+		units: []string{"mmol/mol"},
+		note: "an amount of substance per amount of substance (HbA1c IFCC); a mol over a mol under " +
+			"any prefixes belongs here and never converts to a fraction such as an NGSP %",
+	},
+	{
+		name: "score", base: "{score}", scale: ScaleRatio, display: "{score}", listed: true,
+		units: []string{"{score}"},
+		note:  "a vendor's number on its own scale (WHOOP strain, Garmin stress): it converts to nothing but itself, never to a percent",
 	},
 	{
 		name: "amount-of-substance", base: "mol", scale: ScaleRatio, display: "mmol",

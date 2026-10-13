@@ -291,10 +291,31 @@
         "%",
         "[ppth]",
         "[ppm]",
-        "[ppb]",
+        "[ppb]"
+      ],
+      "note": "a part of a whole"
+    },
+    {
+      "name": "amount-fraction",
+      "base": "mol/mol",
+      "scale": "ratio",
+      "display": "mmol/mol",
+      "dimension": "1",
+      "units": [
         "mmol/mol"
       ],
-      "note": "a part of a whole; mmol/mol (HbA1c IFCC) never converts to an NGSP %, which a metric says"
+      "note": "an amount of substance per amount of substance (HbA1c IFCC); a mol over a mol under any prefixes belongs here and never converts to a fraction such as an NGSP %"
+    },
+    {
+      "name": "score",
+      "base": "{score}",
+      "scale": "ratio",
+      "display": "{score}",
+      "dimension": "1",
+      "units": [
+        "{score}"
+      ],
+      "note": "a vendor's number on its own scale (WHOOP strain, Garmin stress): it converts to nothing but itself, never to a percent"
     },
     {
       "name": "amount-of-substance",
@@ -950,7 +971,8 @@
     "us": "μs",
     "wk": "wk",
     "{count}": "count",
-    "{count}/min": "count/min"
+    "{count}/min": "count/min",
+    "{score}": "score"
   },
   "primary": {
     "1": "fraction",

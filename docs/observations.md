@@ -120,12 +120,13 @@ from the [unit table](units.md) its values belong to, and `unit` the code
 writers store; `codeSet` lists a categorical metric's codes; `form` and
 `hold` are the defaults a writer copies onto each value; `reducers` names the
 reducers that answer something useful; `compatibility` names the class values
-pool within where the measure alone is not enough (NGSP and IFCC HbA1c are
-both a fraction and never pool); `displayPrecision` is the decimal places a
-reader shows; `category` groups it for navigation; `algorithm`
-(`{vendor, name, version}`) names a vendor's scoring method. The sample ships
-six metrics several domains share: `air_temperature`, `relative_humidity`,
-`energy`, `power`, `illuminance` and `atmospheric_pressure`.
+pool within where the measure alone is not enough (`ngsp` and `ifcc` on the
+two HbA1c metrics, whose measures already keep them apart);
+`displayPrecision` is the decimal places a reader shows; `category` groups it
+for navigation; `algorithm` (`{vendor, name, version}`) names a vendor's
+scoring method. The sample ships six metrics several domains share:
+`air_temperature`, `relative_humidity`, `energy`, `power`, `illuminance` and
+`atmospheric_pressure`.
 
 **`observation`** declares the trait's single properties and adds:
 `periodId`, the source's own identity for a summary's period (a WHOOP cycle

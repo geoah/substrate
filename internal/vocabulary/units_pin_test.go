@@ -169,12 +169,17 @@ var pinnedUnits = map[string]map[string]string{
 		"1":       "1",
 	},
 	"fraction": {
-		"1":        "1",
-		"%":        "1/100",
-		"[ppth]":   "1/1000",
-		"[ppm]":    "1/1000000",
-		"[ppb]":    "1/1000000000",
+		"1":      "1",
+		"%":      "1/100",
+		"[ppth]": "1/1000",
+		"[ppm]":  "1/1000000",
+		"[ppb]":  "1/1000000000",
+	},
+	"amount-fraction": {
 		"mmol/mol": "1/1000",
+	},
+	"score": {
+		"{score}": "1",
 	},
 	"amount-of-substance": {
 		"mol":  "1",
