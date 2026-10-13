@@ -155,9 +155,19 @@ func TestAmbiguousDimensionsAreRefusedUndeclared(t *testing.T) {
 // in every compound and under every prefix.
 func TestQuantityConvertsOnlyWithinAMeasure(t *testing.T) {
 	for _, c := range [][2]string{
-		{"N.m", "J"}, {"kN.m", "kJ"}, {"V.A", "W"},
-		{"Gy", "Sv"}, {"mGy", "mSv"}, {"Gy", "J/kg"}, {"Gy", "kcal/kg"}, {"Sv", "J/kg"},
-		{"Hz", "Bq"}, {"kHz", "kBq"}, {"Bq", "/s"}, {"Bq", "s-1"}, {"Ci", "Hz"},
+		{"N.m", "J"},
+		{"kN.m", "kJ"},
+		{"V.A", "W"},
+		{"Gy", "Sv"},
+		{"mGy", "mSv"},
+		{"Gy", "J/kg"},
+		{"Gy", "kcal/kg"},
+		{"Sv", "J/kg"},
+		{"Hz", "Bq"},
+		{"kHz", "kBq"},
+		{"Bq", "/s"},
+		{"Bq", "s-1"},
+		{"Ci", "Hz"},
 		{"{beats}/min", "{steps}/min"},
 	} {
 		refusesConvert(t, "", c[0], c[1], "two measures")

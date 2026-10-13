@@ -66,16 +66,26 @@ func TestUnitConversionRoute(t *testing.T) {
 		params map[string]string
 		want   substrate.UnitConversion
 	}{
-		{map[string]string{"value": "72.4", "from": "kg", "to": "[lb_av]"},
-			substrate.UnitConversion{Value: "159.61467782185136844", Unit: "[lb_av]", Measure: "mass", Exact: false}},
-		{map[string]string{"value": "37", "from": "°C", "to": "°F"},
-			substrate.UnitConversion{Value: "98.6", Unit: "[degF]", Measure: "temperature", Exact: true}},
-		{map[string]string{"value": "0.3", "from": "Cel", "to": "[degF]", "measure": "temperature-difference"},
-			substrate.UnitConversion{Value: "0.54", Unit: "[degF]", Measure: "temperature-difference", Exact: true}},
-		{map[string]string{"value": "3", "from": "GJ", "to": "kW.h"},
-			substrate.UnitConversion{Value: "833.33333333333333333", Unit: "kW.h", Measure: "energy", Exact: false}},
-		{map[string]string{"value": "62", "from": "bpm", "to": "/s"},
-			substrate.UnitConversion{Value: "1.0333333333333333333", Unit: "/s", Measure: "rate", Exact: false}},
+		{
+			map[string]string{"value": "72.4", "from": "kg", "to": "[lb_av]"},
+			substrate.UnitConversion{Value: "159.61467782185136844", Unit: "[lb_av]", Measure: "mass", Exact: false},
+		},
+		{
+			map[string]string{"value": "37", "from": "°C", "to": "°F"},
+			substrate.UnitConversion{Value: "98.6", Unit: "[degF]", Measure: "temperature", Exact: true},
+		},
+		{
+			map[string]string{"value": "0.3", "from": "Cel", "to": "[degF]", "measure": "temperature-difference"},
+			substrate.UnitConversion{Value: "0.54", Unit: "[degF]", Measure: "temperature-difference", Exact: true},
+		},
+		{
+			map[string]string{"value": "3", "from": "GJ", "to": "kW.h"},
+			substrate.UnitConversion{Value: "833.33333333333333333", Unit: "kW.h", Measure: "energy", Exact: false},
+		},
+		{
+			map[string]string{"value": "62", "from": "bpm", "to": "/s"},
+			substrate.UnitConversion{Value: "1.0333333333333333333", Unit: "/s", Measure: "rate", Exact: false},
+		},
 	} {
 		rec := env.do(t, http.MethodGet, convert(tc.params), tok, nil)
 		wantStatus(t, rec, http.StatusOK)

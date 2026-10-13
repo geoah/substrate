@@ -414,8 +414,10 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 		})
 	}
 	// Unfiltered, the label's string weight still decides: the text order.
-	page, err := ds.List(ctx, substrate.Query{OrderBy: []substrate.Order{{Property: "score"}}, First: 50,
-		Filter: substrate.Filter{Kinds: []string{readingKind, labelKind}}})
+	page, err := ds.List(ctx, substrate.Query{
+		OrderBy: []substrate.Order{{Property: "score"}}, First: 50,
+		Filter: substrate.Filter{Kinds: []string{readingKind, labelKind}},
+	})
 	if err != nil {
 		t.Fatalf("list across both kinds: %v", err)
 	}
