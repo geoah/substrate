@@ -417,8 +417,10 @@ data:
             return self.units[unit]
 
         def flush(self):
+            """Mint the sources once: an owner's edit to one (its name, its
+            priorities) stands."""
             for sid, props in self.sources.items():
-                self.host.effects.put(SOURCE, sid, properties=props)
+                self.host.effects.put(SOURCE, sid, properties=props, if_absent=True)
 
 
     def _apply(host, path, desired, kinds):

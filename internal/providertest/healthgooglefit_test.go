@@ -354,6 +354,11 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 		t.Fatalf("%d observations from today's weigh-in, want 1", len(gone))
 	}
 
+	// The owner names the hand-entry source; a later delivery that reads
+	// from it leaves the name alone, as the other adapters do.
+	manual := "googlefit/" + googlefitAccount + "/manual"
+	mustPut(t, ds, substrate.PutInput{Kind: obsSource, ID: manual, Properties: map[string]any{"name": "Bathroom scale"}})
+
 	reread := readFitJSON(t, "testdata/googlefit/weight_reread.json")
 	fake.setPoints(fitWeight, reread["point"].([]any))
 	fake.dropPoints(fitWeight, recordedToday)
@@ -370,6 +375,9 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 		if live(t, ds, obsObservation, id) {
 			t.Fatalf("%s survived its day coming back empty", id)
 		}
+	}
+	if name := mustGet(t, ds, obsSource, manual).Properties["name"]; name != "Bathroom scale" {
+		t.Fatalf("the hand-entry source is named %v after a delivery, want the owner's Bathroom scale", name)
 	}
 	for key, v := range before {
 		kind, id, _ := strings.Cut(key, "/observations/observation/")
