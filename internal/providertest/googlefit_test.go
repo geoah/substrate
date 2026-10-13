@@ -29,10 +29,10 @@ import (
 const (
 	googlefitDir         = providersDir + "/googlefit"
 	googlefitPackage     = "providers.substrate.reamde.dev/googlefit"
-	googlefitAccountType = googlefitPackage + "/account"
-	googlefitSourceType  = googlefitPackage + "/datasource"
-	googlefitDatasetType = googlefitPackage + "/dataset"
-	googlefitSessionType = googlefitPackage + "/session"
+	googlefitAccountKind = googlefitPackage + "/account"
+	googlefitSourceKind  = googlefitPackage + "/datasource"
+	googlefitDatasetKind = googlefitPackage + "/dataset"
+	googlefitSessionKind = googlefitPackage + "/session"
 	googlefitSyncFn      = googlefitPackage + "/googlefitsync"
 	googlefitAccount     = "acct-fit"
 	googlefitRecordings  = "../providere2e/fixtures/googlefit"
@@ -387,10 +387,10 @@ func (f *fakeFit) forbid(sids ...string) {
 // token, and the API base pointed at the fake.
 func googlefitConfig(t *testing.T, ds substrate.Dataset, fake *fakeFit) map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, googlefitAccountType, googlefitAccount)
+	row := mustGet(t, ds, googlefitAccountKind, googlefitAccount)
 	return map[string]any{
 		"accounts": []any{map[string]any{
-			"id": googlefitAccount, "kind": googlefitAccountType,
+			"id": googlefitAccount, "kind": googlefitAccountKind,
 			"properties": row.Properties, "token": fakeToken,
 		}},
 		"inputs": map[string]any{"client": map[string]any{
@@ -404,7 +404,7 @@ func googlefitConfig(t *testing.T, ds substrate.Dataset, fake *fakeFit) map[stri
 func googlefitAccountWith(t *testing.T, ds substrate.Dataset, toggles ...string) {
 	t.Helper()
 	mustPut(t, ds, substrate.PutInput{
-		Kind: googlefitAccountType, ID: googlefitAccount,
+		Kind: googlefitAccountKind, ID: googlefitAccount,
 		Properties: syncProps(map[string]any{"timezone": "Europe/Athens"}, toggles...),
 	})
 }
@@ -415,11 +415,11 @@ func googlefitSync(t *testing.T, ds substrate.Dataset, fake *fakeFit) []map[stri
 	t.Helper()
 	s := newStepper(t, ds, googlefitSyncFn, googlefitConfig(t, ds, fake))
 	s.setEnvelope(map[string]any{"record": map[string]any{
-		"kind": googlefitAccountType, "id": googlefitAccount,
+		"kind": googlefitAccountKind, "id": googlefitAccount,
 	}})
 	var stamps []map[string]any
 	for _, ef := range s.drainApplying(nil) {
-		if ef.Action == "patch" && ef.Kind == googlefitAccountType {
+		if ef.Action == "patch" && ef.Kind == googlefitAccountKind {
 			stamps = append(stamps, ef.Properties)
 		}
 	}
@@ -443,7 +443,7 @@ func fitDatasetRow(sid string, day time.Time) string {
 func fitDatasets(t *testing.T, ds substrate.Dataset, sid string) map[string]*substrate.Record {
 	t.Helper()
 	out := map[string]*substrate.Record{}
-	for _, row := range listLive(t, ds, googlefitDatasetType) {
+	for _, row := range listLive(t, ds, googlefitDatasetKind) {
 		if row.Properties["dataSourceId"] == sid {
 			out[row.ID] = row
 		}
@@ -493,13 +493,13 @@ func TestGoogleFitClosureAdmits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve %s: %v", googlefitSyncFn, err)
 	}
-	mustEmit(t, fn, googlefitSourceType, googlefitDatasetType, googlefitSessionType, googlefitAccountType)
-	mustRead(t, fn, googlefitDatasetType, googlefitSessionType)
-	mustProps(t, mustKind(t, reg, googlefitAccountType),
+	mustEmit(t, fn, googlefitSourceKind, googlefitDatasetKind, googlefitSessionKind, googlefitAccountKind)
+	mustRead(t, fn, googlefitDatasetKind, googlefitSessionKind)
+	mustProps(t, mustKind(t, reg, googlefitAccountKind),
 		append([]string{"timezone", "syncCursors", "syncFloors", "syncTokens"}, fitAllToggles...)...)
-	mustProps(t, mustKind(t, reg, googlefitDatasetType), "account", "dataSource", "dataSourceId", "point")
-	mustProps(t, mustKind(t, reg, googlefitSourceType), "dataStreamId", "type", "dataType", "device")
-	mustProps(t, mustKind(t, reg, googlefitSessionType), "sessionId", "activityType", "application")
+	mustProps(t, mustKind(t, reg, googlefitDatasetKind), "account", "dataSource", "dataSourceId", "point")
+	mustProps(t, mustKind(t, reg, googlefitSourceKind), "dataStreamId", "type", "dataType", "device")
+	mustProps(t, mustKind(t, reg, googlefitSessionKind), "sessionId", "activityType", "application")
 }
 
 // TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions: a first sync with
@@ -524,10 +524,10 @@ func TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions(t *testing.T) {
 
 	// Every data source, raw ones included: a derived point's origin resolves
 	// to one of them.
-	if n := countLive(t, ds, googlefitSourceType); n != 22 {
+	if n := countLive(t, ds, googlefitSourceKind); n != 22 {
 		t.Fatalf("%d data source rows, want the 22 the listing names", n)
 	}
-	watch := mustGet(t, ds, googlefitSourceType, fitSourceRow(fitWatchHR))
+	watch := mustGet(t, ds, googlefitSourceKind, fitSourceRow(fitWatchHR))
 	device, _ := watch.Properties["device"].(map[string]any)
 	if watch.Properties["type"] != "raw" || device["model"] != "Pixel Watch 2" || device["type"] != "watch" {
 		t.Fatalf("the watch's heart rate source = %v", watch.Properties)
@@ -605,18 +605,18 @@ func TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions(t *testing.T) {
 	if n := len(fitDatasets(t, ds, fitSleep)); n != 30 {
 		t.Fatalf("%d sleep rows, want one per night from the recorded 2026-09-11 to 2026-10-10", n)
 	}
-	if n := countLive(t, ds, googlefitDatasetType); n != 2+1+16+30 {
+	if n := countLive(t, ds, googlefitDatasetKind); n != 2+1+16+30 {
 		t.Fatalf("%d dataset rows, want 49: a source with no points writes none", n)
 	}
 
-	if n := countLive(t, ds, googlefitSessionType); n != 59 {
+	if n := countLive(t, ds, googlefitSessionKind); n != 59 {
 		t.Fatalf("%d sessions, want the 59 the feed's two pages name", n)
 	}
 	if got := fake.sessionTokens(); !slices.Equal(got, []string{"", "1790405742001", fitLastSessionToken}) {
 		t.Fatalf("the session feed was read with tokens %q, want the three pages in order", got)
 	}
 
-	acct := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties
+	acct := mustGet(t, ds, googlefitAccountKind, googlefitAccount).Properties
 	cursors, _ := acct["syncCursors"].(map[string]any)
 	if len(cursors) != 14 {
 		t.Fatalf("syncCursors = %v, want one per data type the toggles cover", cursors)
@@ -654,13 +654,13 @@ func TestGoogleFitIncrementalSyncRereadsOnlyTheOverlap(t *testing.T) {
 
 	googlefitSync(t, ds, fake)
 	before := map[string]int64{}
-	for _, row := range listLive(t, ds, googlefitDatasetType) {
+	for _, row := range listLive(t, ds, googlefitDatasetKind) {
 		before[row.ID] = row.Version
 	}
 	if len(before) == 0 {
 		t.Fatal("the first sync wrote no dataset rows")
 	}
-	firstCursors := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties["syncCursors"]
+	firstCursors := mustGet(t, ds, googlefitAccountKind, googlefitAccount).Properties["syncCursors"]
 
 	fake.forget()
 	googlefitSync(t, ds, fake)
@@ -678,7 +678,7 @@ func TestGoogleFitIncrementalSyncRereadsOnlyTheOverlap(t *testing.T) {
 	if got := fake.sessionTokens(); !slices.Equal(got, []string{fitLastSessionToken}) {
 		t.Fatalf("the second run read the session feed with %q, want one read from the stored token", got)
 	}
-	after := listLive(t, ds, googlefitDatasetType)
+	after := listLive(t, ds, googlefitDatasetKind)
 	if len(after) != len(before) {
 		t.Fatalf("%d dataset rows after the second run, want the %d the first wrote", len(after), len(before))
 	}
@@ -687,7 +687,7 @@ func TestGoogleFitIncrementalSyncRereadsOnlyTheOverlap(t *testing.T) {
 			t.Fatalf("%s moved from version %d to %d with nothing changed upstream", row.ID, before[row.ID], row.Version)
 		}
 	}
-	cursors, _ := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties["syncCursors"].(map[string]any)
+	cursors, _ := mustGet(t, ds, googlefitAccountKind, googlefitAccount).Properties["syncCursors"].(map[string]any)
 	was, _ := firstCursors.(map[string]any)
 	for key, at := range cursors {
 		a, _ := time.Parse(time.RFC3339, fmt.Sprint(was[key]))
@@ -731,7 +731,7 @@ func TestGoogleFitRereadRewritesAChangedDayAndDeletesAnEmptiedOne(t *testing.T) 
 	fake.dropPoints(fitWeight, recordedToday)
 	googlefitSync(t, ds, fake)
 
-	row := mustGet(t, ds, googlefitDatasetType, changed)
+	row := mustGet(t, ds, googlefitDatasetKind, changed)
 	if row.Version <= changedVersion {
 		t.Fatalf("the re-read day stayed at version %d", row.Version)
 	}
@@ -752,10 +752,10 @@ func TestGoogleFitRereadRewritesAChangedDayAndDeletesAnEmptiedOne(t *testing.T) 
 	if len(fitPoints(row)) != 2 {
 		t.Fatalf("the re-read day holds %d points, want both weigh-ins", len(fitPoints(row)))
 	}
-	if got := mustGet(t, ds, googlefitDatasetType, steady).Version; got != steadyVersion {
+	if got := mustGet(t, ds, googlefitDatasetKind, steady).Version; got != steadyVersion {
 		t.Fatalf("an unchanged day moved from version %d to %d", steadyVersion, got)
 	}
-	if live(t, ds, googlefitDatasetType, emptied) {
+	if live(t, ds, googlefitDatasetKind, emptied) {
 		t.Fatalf("%s survived a re-read that found no points", emptied)
 	}
 }
@@ -773,7 +773,7 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 	fake := newFakeFit(t, today, fitCutOn)
 	googlefitAccountWith(t, ds, "enabledSleep")
 	walk := googlefitAccount + "/" + fitDeletedWalk
-	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionType, ID: walk, Properties: map[string]any{
+	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionKind, ID: walk, Properties: map[string]any{
 		"account": googlefitAccount, "sessionId": fitDeletedWalk, "name": "Afternoon walk",
 		"at": today.AddDate(0, 0, -9).Format(time.RFC3339),
 	}})
@@ -783,14 +783,14 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 	if got := fake.sessionTokens(); !slices.Equal(got, []string{"", "1790405742001", fitLastSessionToken}) {
 		t.Fatalf("the feed was read with tokens %q, want three pages in order", got)
 	}
-	if n := countLive(t, ds, googlefitSessionType); n != 59 {
+	if n := countLive(t, ds, googlefitSessionKind); n != 59 {
 		t.Fatalf("%d sessions, want 59", n)
 	}
-	if live(t, ds, googlefitSessionType, walk) {
+	if live(t, ds, googlefitSessionKind, walk) {
 		t.Fatal("the walk the feed reports deleted is still here")
 	}
 	shift := today.Sub(fitCutOn)
-	run := mustGet(t, ds, googlefitSessionType, googlefitAccount+"/strava-16238731866").Properties
+	run := mustGet(t, ds, googlefitSessionKind, googlefitAccount+"/strava-16238731866").Properties
 	app, _ := run["application"].(map[string]any)
 	if app["packageName"] != "com.strava" || app["version"] != "421.9" ||
 		asFloat(t, run["activityType"]) != 8 || asFloat(t, run["activeTimeMillis"]) != 2409000 ||
@@ -801,11 +801,11 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 		!sameInstant(run["endsAt"], time.UnixMilli(1789188589000).Add(shift)) {
 		t.Fatalf("the Strava run spans %v to %v", run["at"], run["endsAt"])
 	}
-	sleep := mustGet(t, ds, googlefitSessionType, googlefitAccount+"/Sleep1789070381000").Properties
+	sleep := mustGet(t, ds, googlefitSessionKind, googlefitAccount+"/Sleep1789070381000").Properties
 	if asFloat(t, sleep["activityType"]) != 72 {
 		t.Fatalf("the first night's session = %v", sleep)
 	}
-	tokens, _ := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties["syncTokens"].(map[string]any)
+	tokens, _ := mustGet(t, ds, googlefitAccountKind, googlefitAccount).Properties["syncTokens"].(map[string]any)
 	if tokens["sessions"] != fitLastSessionToken {
 		t.Fatalf("syncTokens = %v", tokens)
 	}
@@ -824,7 +824,7 @@ func TestGoogleFitDeepBackfillReadsTheSessionWindow(t *testing.T) {
 	installFit(t, ds, today)
 	fake := newFakeFit(t, fitCutOn, fitCutOn)
 	mustPut(t, ds, substrate.PutInput{
-		Kind: googlefitAccountType, ID: googlefitAccount,
+		Kind: googlefitAccountKind, ID: googlefitAccount,
 		Properties: syncProps(map[string]any{"timezone": "Europe/Athens", "backfillDepth": "last90d"}, "enabledSleep"),
 	})
 
@@ -837,7 +837,7 @@ func TestGoogleFitDeepBackfillReadsTheSessionWindow(t *testing.T) {
 	if got := fake.sessionTokens(); len(got) == 0 || got[0] != "" {
 		t.Fatalf("the feed was read with tokens %q after the window, want a walk from no token", got)
 	}
-	if n := countLive(t, ds, googlefitSessionType); n != 59 {
+	if n := countLive(t, ds, googlefitSessionKind); n != 59 {
 		t.Fatalf("%d sessions, want the 59 the window answers", n)
 	}
 	if n := len(fitDatasets(t, ds, fitSleep)); n != 30 {
@@ -872,7 +872,7 @@ func TestGoogleFitStopsOnTheDrainBudgetAndResumes(t *testing.T) {
 	if got := fake.days(fitWeight); len(got) != 0 {
 		t.Fatalf("the stopping page read %s on %v", fitWeight, got)
 	}
-	stamp := accountStamp(t, effects, googlefitAccountType, googlefitAccount)
+	stamp := accountStamp(t, effects, googlefitAccountKind, googlefitAccount)
 	floors, _ := stamp["syncFloors"].(map[string]any)
 	wantFloor := today.AddDate(0, 0, -30).Format(time.RFC3339)
 	if len(floors) != 3 || floors["weight"] != wantFloor {
@@ -891,7 +891,7 @@ func TestGoogleFitStopsOnTheDrainBudgetAndResumes(t *testing.T) {
 	if n := len(fitDatasets(t, ds, fitWeight)); n != 16 {
 		t.Fatalf("%d weight rows after the resumed walk, want 16", n)
 	}
-	acct := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties
+	acct := mustGet(t, ds, googlefitAccountKind, googlefitAccount).Properties
 	if acct["syncFloors"] != nil || acct["lastCompletedAt"] == nil || acct["syncMessage"] != "ok" {
 		t.Fatalf("after the resumed walk: floors %v, completed %v, message %v",
 			acct["syncFloors"], acct["lastCompletedAt"], acct["syncMessage"])
@@ -924,8 +924,8 @@ func TestGoogleFitDropsTheFloorOfATypeItNoLongerWalks(t *testing.T) {
 		props["syncFloors"] = floors
 		acct["properties"] = props
 		s := newStepper(t, ds, googlefitSyncFn, cfg)
-		s.setEnvelope(map[string]any{"record": map[string]any{"kind": googlefitAccountType, "id": googlefitAccount}})
-		return accountStamp(t, s.drainApplying(nil), googlefitAccountType, googlefitAccount)
+		s.setEnvelope(map[string]any{"record": map[string]any{"kind": googlefitAccountKind, "id": googlefitAccount}})
+		return accountStamp(t, s.drainApplying(nil), googlefitAccountKind, googlefitAccount)
 	}
 
 	// Heart rate was cut off at a floor, then switched off.
@@ -994,7 +994,7 @@ func TestGoogleFitWalkCheckpointsBetweenInvocations(t *testing.T) {
 			t.Fatalf("%s was read on %d days across the chain, want 31", sid, len(got))
 		}
 	}
-	if acct := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties; acct["lastCompletedAt"] == nil {
+	if acct := mustGet(t, ds, googlefitAccountKind, googlefitAccount).Properties; acct["lastCompletedAt"] == nil {
 		t.Fatalf("the chain finished without completing: %v", acct["syncMessage"])
 	}
 }
@@ -1015,7 +1015,7 @@ func TestGoogleFitRevokedGrantStampsErroring(t *testing.T) {
 	if len(stamps) == 0 {
 		t.Fatal("the failed run stamped nothing on the account")
 	}
-	acct := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties
+	acct := mustGet(t, ds, googlefitAccountKind, googlefitAccount).Properties
 	if acct["syncState"] != "erroring" || !strings.Contains(fmt.Sprint(acct["syncError"]), "unauthorized") ||
 		!strings.Contains(fmt.Sprint(acct["syncMessage"]), "unauthorized") {
 		t.Fatalf("after a 401 the account reads state %v, error %v, message %v",
@@ -1025,7 +1025,7 @@ func TestGoogleFitRevokedGrantStampsErroring(t *testing.T) {
 		t.Fatalf("lastSyncedAt %v, lastCompletedAt %v: a failed attempt is an attempt and not a completion",
 			acct["lastSyncedAt"], acct["lastCompletedAt"])
 	}
-	if n := countLive(t, ds, googlefitSourceType) + countLive(t, ds, googlefitDatasetType); n != 0 {
+	if n := countLive(t, ds, googlefitSourceKind) + countLive(t, ds, googlefitDatasetKind); n != 0 {
 		t.Fatalf("a revoked grant wrote %d mirror rows", n)
 	}
 }

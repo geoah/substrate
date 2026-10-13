@@ -240,11 +240,11 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 
 	// The mirror: every listed source, a dataset row per day with points per
 	// derived source, a session per night, nap and workout.
-	if n := countLive(t, ds, googlefitSourceType); n != len(listing.DataSource) {
+	if n := countLive(t, ds, googlefitSourceKind); n != len(listing.DataSource) {
 		t.Errorf("%d data source rows, want the %d the listing names", n, len(listing.DataSource))
 	}
 	got := map[string]int{}
-	for _, row := range listLive(t, ds, googlefitDatasetType) {
+	for _, row := range listLive(t, ds, googlefitDatasetKind) {
 		got[row.Properties["dataSourceId"].(string)]++
 	}
 	for sid, want := range wantRows {
@@ -252,12 +252,12 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 			t.Errorf("%d dataset rows of %s, want %d", got[sid], sid, want)
 		}
 	}
-	if n := countLive(t, ds, googlefitSessionType); n != nights+naps+workouts {
+	if n := countLive(t, ds, googlefitSessionKind); n != nights+naps+workouts {
 		t.Errorf("%d sessions, want %d nights, %d naps and %d workouts", n, nights, naps, workouts)
 	}
 	hrKept := kept[fitHeartRate]
 	middle := start.AddDate(0, 0, 1)
-	row := mustGet(t, ds, googlefitDatasetType, fitDatasetRow(fitHeartRate, middle))
+	row := mustGet(t, ds, googlefitDatasetKind, fitDatasetRow(fitHeartRate, middle))
 	var onDay int
 	for _, pt := range hrKept {
 		if time.Unix(0, asInt(t, pt["startTimeNanos"])).UTC().Format(time.DateOnly) == middle.Format(time.DateOnly) {
@@ -362,6 +362,6 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 		t.Fatalf("%d deliveries parked", n)
 	}
 	t.Logf("%s to %s: %d data sources, %d dataset rows, %d sessions; traces %v; observations %v; %d sleeps, workouts by code %v; sources %v",
-		start.Format(time.DateOnly), end.Format(time.DateOnly), len(listing.DataSource), countLive(t, ds, googlefitDatasetType),
-		countLive(t, ds, googlefitSessionType), traces, byMetric, countLive(t, ds, healthSleep), bySport, sortedKeys(sources))
+		start.Format(time.DateOnly), end.Format(time.DateOnly), len(listing.DataSource), countLive(t, ds, googlefitDatasetKind),
+		countLive(t, ds, googlefitSessionKind), traces, byMetric, countLive(t, ds, healthSleep), bySport, sortedKeys(sources))
 }

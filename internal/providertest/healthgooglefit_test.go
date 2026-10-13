@@ -66,7 +66,7 @@ func observe(t *testing.T, ds substrate.Dataset, kind, id string) map[string]any
 // the sync wrote them in.
 func observeAll(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
-	for _, kind := range []string{googlefitDatasetType, googlefitSessionType} {
+	for _, kind := range []string{googlefitDatasetKind, googlefitSessionKind} {
 		for _, row := range listLive(t, ds, kind) {
 			observe(t, ds, kind, row.ID)
 		}
@@ -200,7 +200,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 		t.Fatalf("utcOffsetStart = %v, want %s's offset at %s", tr["utcOffsetStart"], fitZone, hour)
 	}
 	if origins, _ := tr["origins"].([]any); len(origins) != 1 ||
-		storedRefPath(origins[0]) != googlefitDatasetType+"/"+fitDatasetRow(fitHeartRate, hrDay) {
+		storedRefPath(origins[0]) != googlefitDatasetKind+"/"+fitDatasetRow(fitHeartRate, hrDay) {
 		t.Fatalf("the trace's origins = %v", tr["origins"])
 	}
 	if n := len(withMetric(t, ds, obsTrace, "heart_rate")); n < 24 {
@@ -232,7 +232,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	}
 	watch := mustGet(t, ds, obsSource, "googlefit/"+googlefitAccount+"/"+fitWatchSlug).Properties
 	if watch["class"] != "watch" || watch["hardwareModel"] != "Pixel Watch 2" ||
-		storedRefPath(watch["account"]) != googlefitAccountType+"/"+googlefitAccount {
+		storedRefPath(watch["account"]) != googlefitAccountKind+"/"+googlefitAccount {
 		t.Fatalf("the watch's source = %v", watch)
 	}
 
@@ -308,7 +308,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	codes := map[string]int{}
 	for _, row := range withMetric(t, ds, obsObservation, "sleep_stage") {
 		codes[fmt.Sprint(row.Properties["code"])]++
-		session := strings.TrimPrefix(storedRefPath(row.Properties["origin"]), googlefitSessionType+"/")
+		session := strings.TrimPrefix(storedRefPath(row.Properties["origin"]), googlefitSessionKind+"/")
 		readable := fmt.Sprintf("googlefit/%s/stage/%d", session, asInstant(t, row.Properties["at"]).UnixNano())
 		if want := fitReadingIDOf(readable); row.ID != want {
 			t.Fatalf("stage %s, want the id %s its session and start compose", row.ID, want)
@@ -381,7 +381,7 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 	emptied := listLive(t, ds, obsObservation)
 	var gone []string
 	for _, row := range emptied {
-		if storedRefPath(row.Properties["origin"]) == googlefitDatasetType+"/"+emptiedDay {
+		if storedRefPath(row.Properties["origin"]) == googlefitDatasetKind+"/"+emptiedDay {
 			gone = append(gone, row.ID)
 		}
 	}
@@ -398,8 +398,8 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 	fake.setPoints(fitWeight, reread["point"].([]any))
 	fake.dropPoints(fitWeight, recordedToday)
 	googlefitSync(t, ds, fake)
-	observe(t, ds, googlefitDatasetType, changedDay)
-	observe(t, ds, googlefitDatasetType, emptiedDay)
+	observe(t, ds, googlefitDatasetKind, changedDay)
+	observe(t, ds, googlefitDatasetKind, emptiedDay)
 
 	now := mustGet(t, ds, obsObservation, evening)
 	value, _ := now.Properties["value"].(map[string]any)
@@ -445,7 +445,7 @@ func TestHealthGoogleFitTriggerDeliversMirrorRows(t *testing.T) {
 	}
 	// Today's weigh-in, found by the dataset row it came from: its id is
 	// hashed past 128 bytes, so it does not name the row.
-	emptied := googlefitDatasetType + "/" + fitDatasetRow(fitWeight, today)
+	emptied := googlefitDatasetKind + "/" + fitDatasetRow(fitWeight, today)
 	var gone []string
 	for _, row := range withMetric(t, ds, obsObservation, "body_mass") {
 		if storedRefPath(row.Properties["origin"]) == emptied {
@@ -526,7 +526,7 @@ func TestHealthGoogleFitKeepsAnAmountsEnd(t *testing.T) {
 	googlefitSync(t, ds, fake)
 	shift := today.Sub(fitCutOn)
 	dayRow := fitDatasetRow(fitSteps, recorded.Add(shift).Truncate(24*time.Hour))
-	observe(t, ds, googlefitDatasetType, dayRow)
+	observe(t, ds, googlefitDatasetKind, dayRow)
 
 	hour := recorded.Add(shift)
 	trace := func(h time.Time) map[string]any {
@@ -563,7 +563,7 @@ func TestHealthGoogleFitKeepsAnAmountsEnd(t *testing.T) {
 	value, _ := obs["value"].(map[string]any)
 	if obs["form"] != "amount" || fmt.Sprint(value["value"]) != "30" || value["unit"] != "{steps}" ||
 		!asInstant(t, obs["at"]).Equal(crossing) || !asInstant(t, obs["endsAt"]).Equal(crossing.Add(time.Minute)) ||
-		storedRefPath(obs["origin"]) != googlefitDatasetType+"/"+dayRow {
+		storedRefPath(obs["origin"]) != googlefitDatasetKind+"/"+dayRow {
 		t.Fatalf("the delta across the hour = %v", obs)
 	}
 }
@@ -601,7 +601,7 @@ func TestHealthGoogleFitKeepsTwoSourcesAmountsAcrossAnHourApart(t *testing.T) {
 	googlefitSync(t, ds, fake)
 	shift := today.Sub(fitCutOn)
 	dayRow := fitDatasetRow(fitSteps, recorded.Add(shift).Truncate(24*time.Hour))
-	observe(t, ds, googlefitDatasetType, dayRow)
+	observe(t, ds, googlefitDatasetKind, dayRow)
 
 	bySource := map[string]string{}
 	for _, r := range withMetric(t, ds, obsObservation, "steps") {
@@ -700,8 +700,8 @@ func TestHealthGoogleFitKeepsTwoSourcesReadingsApart(t *testing.T) {
 		fake.setPoints(fitWeight, weights)
 		fake.setPoints(fitPressure, pressures)
 		googlefitSync(t, ds, fake)
-		observe(t, ds, googlefitDatasetType, fitDatasetRow(fitWeight, day))
-		observe(t, ds, googlefitDatasetType, fitDatasetRow(fitPressure, day))
+		observe(t, ds, googlefitDatasetKind, fitDatasetRow(fitWeight, day))
+		observe(t, ds, googlefitDatasetKind, fitDatasetRow(fitPressure, day))
 	}
 	key := func(slug string, after time.Duration) string {
 		return slug + " " + at.Add(after).Format(time.RFC3339Nano)
@@ -858,7 +858,7 @@ func TestHealthGoogleFitKeepsSameModelDevicesApart(t *testing.T) {
 		fake.setPoints(fitGlucose, glucose)
 		googlefitSync(t, ds, fake)
 		for _, stream := range []string{fitWeight, fitPressure, fitGlucose} {
-			observe(t, ds, googlefitDatasetType, fitDatasetRow(stream, day))
+			observe(t, ds, googlefitDatasetKind, fitDatasetRow(stream, day))
 		}
 	}
 	a, b := "withings-body.4a91be21", "withings-body.4a91be22"
@@ -993,7 +993,7 @@ func TestHealthGoogleFitWritesASmallReadingWithoutAnExponent(t *testing.T) {
 	googlefitAccountWith(t, ds, "enabledBody")
 	googlefitSync(t, ds, fake)
 	day := recorded.Add(today.Sub(fitCutOn)).Truncate(24 * time.Hour)
-	if out := observe(t, ds, googlefitDatasetType, fitDatasetRow(fitWeight, day)); asFloat(t, out["written"]) != 1 {
+	if out := observe(t, ds, googlefitDatasetKind, fitDatasetRow(fitWeight, day)); asFloat(t, out["written"]) != 1 {
 		t.Fatalf("the delivery wrote %v, want the one reading", out)
 	}
 	values := fitValues(fitReadings(t, ds, "body_mass"))
@@ -1012,7 +1012,7 @@ func TestHealthGoogleFitWritesNoOffsetWithoutAZone(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	ds, _, today := newFitHealth(t, fitCutOn, "enabledActivity", "enabledBody", "enabledHeartRate", "enabledSleep")
-	mustPut(t, ds, substrate.PutInput{Kind: googlefitAccountType, ID: googlefitAccount, Properties: map[string]any{"timezone": nil}})
+	mustPut(t, ds, substrate.PutInput{Kind: googlefitAccountKind, ID: googlefitAccount, Properties: map[string]any{"timezone": nil}})
 	observeAll(t, ds)
 	for _, metric := range []string{"heart_rate", "steps"} {
 		if len(withMetric(t, ds, obsTrace, metric)) == 0 {
@@ -1049,13 +1049,13 @@ func TestHealthGoogleFitWritesNoOffsetWithoutAZone(t *testing.T) {
 		}
 	}
 	nap := today.Add(-11 * time.Hour)
-	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionType, ID: googlefitAccount + "/nap", Properties: map[string]any{
-		"account":   map[string]any{"ref": googlefitAccountType + "/" + googlefitAccount},
+	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionKind, ID: googlefitAccount + "/nap", Properties: map[string]any{
+		"account":   map[string]any{"ref": googlefitAccountKind + "/" + googlefitAccount},
 		"sessionId": "nap", "activityType": 72, "name": "Nap",
 		"at": nap.Format(time.RFC3339), "endsAt": nap.Add(40 * time.Minute).Format(time.RFC3339),
 		"modifiedTimeMillis": nap.Add(time.Hour).UnixMilli(),
 	}})
-	observe(t, ds, googlefitSessionType, googlefitAccount+"/nap")
+	observe(t, ds, googlefitSessionKind, googlefitAccount+"/nap")
 	sl := mustGet(t, ds, healthSleep, "googlefit/"+googlefitAccount+"/nap").Properties
 	if sl["isNap"] != true || sl["utcOffsetStart"] != nil || sl["timeInBed"] != "PT40M" {
 		t.Fatalf("the afternoon session = %v, want a nap of 40 minutes with no offset", sl)
@@ -1070,13 +1070,13 @@ func TestHealthGoogleFitMapsDownhillSkiingToSkiing(t *testing.T) {
 	t.Parallel()
 	ds, _, today := newFitHealth(t, fitCutOn, "enabledActivity")
 	at := today.Add(-30 * time.Hour)
-	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionType, ID: googlefitAccount + "/ski", Properties: map[string]any{
-		"account":   map[string]any{"ref": googlefitAccountType + "/" + googlefitAccount},
+	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionKind, ID: googlefitAccount + "/ski", Properties: map[string]any{
+		"account":   map[string]any{"ref": googlefitAccountKind + "/" + googlefitAccount},
 		"sessionId": "ski", "activityType": 68, "name": "Downhill skiing",
 		"at": at.Format(time.RFC3339), "endsAt": at.Add(3 * time.Hour).Format(time.RFC3339),
 		"modifiedTimeMillis": at.Add(4 * time.Hour).UnixMilli(),
 	}})
-	observe(t, ds, googlefitSessionType, googlefitAccount+"/ski")
+	observe(t, ds, googlefitSessionKind, googlefitAccount+"/ski")
 	w := mustGet(t, ds, healthWorkout, "googlefit/"+googlefitAccount+"/ski").Properties
 	if w["sport"] != "skiing" || w["sportSource"] != "68" {
 		t.Fatalf("the downhill ski session landed as sport %v from %v, want skiing from 68", w["sport"], w["sportSource"])

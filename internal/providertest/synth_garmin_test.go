@@ -137,7 +137,7 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 	if len(fake.misses) != 0 {
 		t.Fatalf("the generated recordings did not answer %v", fake.misses)
 	}
-	acct := mustGet(t, ds, garminAccountType, garminAccountID).Properties
+	acct := mustGet(t, ds, garminAccountKind, garminAccountID).Properties
 	if acct["userId"] != garminUser || acct["syncState"] != "ok" || acct["lastCompletedAt"] == nil {
 		t.Fatalf("the first sync left %v", acct)
 	}
@@ -224,10 +224,10 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 			}
 		}
 	}
-	if n := countLive(t, ds, garminNoticeType); n != 0 {
+	if n := countLive(t, ds, garminNoticeKind); n != 0 {
 		t.Errorf("%d notices", n)
 	}
-	acct = mustGet(t, ds, garminAccountType, garminAccountID).Properties
+	acct = mustGet(t, ds, garminAccountKind, garminAccountID).Properties
 	if acct["syncState"] != "ok" || acct["lastPushAt"] == nil {
 		t.Errorf("the pushes left the account %v: %v", acct["syncState"], acct["syncMessage"])
 	}

@@ -42,12 +42,12 @@ import (
 const (
 	whoopDir          = providersDir + "/whoop"
 	whoopPackage      = "providers.substrate.reamde.dev/whoop"
-	whoopAccountType  = whoopPackage + "/account"
-	whoopUserType     = whoopPackage + "/user"
-	whoopCycleType    = whoopPackage + "/cycle"
-	whoopRecoveryType = whoopPackage + "/recovery"
-	whoopSleepType    = whoopPackage + "/sleep"
-	whoopWorkoutType  = whoopPackage + "/workout"
+	whoopAccountKind  = whoopPackage + "/account"
+	whoopUserKind     = whoopPackage + "/user"
+	whoopCycleKind    = whoopPackage + "/cycle"
+	whoopRecoveryKind = whoopPackage + "/recovery"
+	whoopSleepKind    = whoopPackage + "/sleep"
+	whoopWorkoutKind  = whoopPackage + "/workout"
 	whoopSyncFn       = whoopPackage + "/whoopsync"
 	whoopWebhookFn    = whoopPackage + "/whoopwebhook"
 	whoopFixtures     = "testdata/whoop"
@@ -68,7 +68,7 @@ const (
 )
 
 // whoopMirrors are the five kinds a WHOOP account's rows are.
-var whoopMirrors = []string{whoopUserType, whoopCycleType, whoopRecoveryType, whoopSleepType, whoopWorkoutType}
+var whoopMirrors = []string{whoopUserKind, whoopCycleKind, whoopRecoveryKind, whoopSleepKind, whoopWorkoutKind}
 
 // whoopRow is the row id a body composes for one WHOOP object.
 func whoopRow(prefix, key string) string {
@@ -254,7 +254,7 @@ func newWhoop(t *testing.T) (substrate.Service, substrate.Dataset, *fakeWhoop) {
 	install(t, ds, whoopDir, nil)
 	fake := newFakeWhoop(t)
 	mustPut(t, ds, substrate.PutInput{
-		Kind: whoopAccountType, ID: whoopAccount,
+		Kind: whoopAccountKind, ID: whoopAccount,
 		Properties: syncProps(map[string]any{"backfillDepth": "all"},
 			"enabledProfile", "enabledCycles", "enabledRecovery", "enabledSleep", "enabledWorkouts"),
 	})
@@ -296,7 +296,7 @@ func whoopSteady(cursors map[string]string) map[string]any {
 func whoopConfig(fake *fakeWhoop, props map[string]any) map[string]any {
 	return map[string]any{
 		"accounts": []any{map[string]any{
-			"id": whoopAccount, "kind": whoopAccountType, "properties": props, "token": fakeToken,
+			"id": whoopAccount, "kind": whoopAccountKind, "properties": props, "token": fakeToken,
 		}},
 		"inputs": map[string]any{"client": map[string]any{
 			"properties": map[string]any{"apiBase": fake.ts.URL},
@@ -309,7 +309,7 @@ func whoopConfig(fake *fakeWhoop, props map[string]any) map[string]any {
 func whoopSync(t *testing.T, ds substrate.Dataset, fake *fakeWhoop, props map[string]any) []engine.StepEffect {
 	t.Helper()
 	s := newStepper(t, ds, whoopSyncFn, whoopConfig(fake, props))
-	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountType, "id": whoopAccount}})
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountKind, "id": whoopAccount}})
 	return s.drainApplying(nil)
 }
 
@@ -475,7 +475,7 @@ func mustHook(t *testing.T, ds substrate.Dataset, cfg, env map[string]any) (map[
 // body finds the account a delivery is for.
 func whoopHookConfig(t *testing.T, ds substrate.Dataset, fake *fakeWhoop) map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, whoopAccountType, whoopAccount)
+	row := mustGet(t, ds, whoopAccountKind, whoopAccount)
 	if refIDs(row, "user") == nil {
 		t.Fatal("the account names no WHOOP member; the first sync did not stamp account.user")
 	}
@@ -518,7 +518,7 @@ func TestWhoopWebhookFixturesAreSignedAsWhoopDocuments(t *testing.T) {
 func TestWhoopWebhookLeavesTheSignatureToTheDoor(t *testing.T) {
 	_, ds, fake := newWhoop(t)
 	// No sync ran: the account's `user` is handed in directly.
-	props := whoopProps(map[string]any{"user": map[string]any{"ref": whoopUserType + "/" + whoopRow("user", whoopMember)}})
+	props := whoopProps(map[string]any{"user": map[string]any{"ref": whoopUserKind + "/" + whoopRow("user", whoopMember)}})
 	cfg := whoopConfig(fake, props)
 
 	garbled := whoopDelivery(t, "01_sleep.updated.json")
@@ -530,7 +530,7 @@ func TestWhoopWebhookLeavesTheSignatureToTheDoor(t *testing.T) {
 	stripped := whoopDelivery(t, "01_sleep.updated.json")
 	stripped["headers"] = map[string]any{"content-type": "application/json; charset=utf-8"}
 	out, _ := mustHook(t, ds, cfg, whoopArrived(stripped, whoopSigned(t, whoopDelivery(t, "01_sleep.updated.json")).Add(time.Hour)))
-	if !live(t, ds, whoopSleepType, whoopRow("sleep", whoopLastSleep)) {
+	if !live(t, ds, whoopSleepKind, whoopRow("sleep", whoopLastSleep)) {
 		t.Fatalf("sleep.updated without its signature headers wrote no sleep row (output %v)", out)
 	}
 	if got := fake.readBacks(); !slices.Equal(got, []string{"/v2/activity/sleep/" + whoopLastSleep}) {
@@ -568,11 +568,11 @@ func whoopGrantFor(t *testing.T, toggles ...string) []string {
 func TestWhoopRecoveryEventUnderTheRecoveryGrantAlone(t *testing.T) {
 	_, ds, fake := newWhoop(t)
 	props := whoopProps(map[string]any{
-		"user":         map[string]any{"ref": whoopUserType + "/" + whoopRow("user", whoopMember)},
+		"user":         map[string]any{"ref": whoopUserKind + "/" + whoopRow("user", whoopMember)},
 		"enabledSleep": false, "enabledCycles": false, "enabledWorkouts": false, "enabledProfile": false,
 	})
 	cfg := whoopConfig(fake, props)
-	recoveryRow := whoopRecoveryType + "/" + whoopRow("recovery", whoopCurrentCycle)
+	recoveryRow := whoopRecoveryKind + "/" + whoopRow("recovery", whoopCurrentCycle)
 
 	fake.grant(whoopGrantFor(t, "enabledRecovery"))
 	out, _, err := whoopHook(t, ds, cfg, whoopOnTime(t, "02_recovery.updated.json"))
@@ -606,23 +606,23 @@ func TestWhoopWebhookRewritesAndDeletesMirrorRows(t *testing.T) {
 	cfg := whoopHookConfig(t, ds, fake)
 	before := whoopVersions(t, ds)
 
-	sleepRow := whoopSleepType + "/" + whoopRow("sleep", whoopLastSleep)
-	recoveryRow := whoopRecoveryType + "/" + whoopRow("recovery", whoopCurrentCycle)
+	sleepRow := whoopSleepKind + "/" + whoopRow("sleep", whoopLastSleep)
+	recoveryRow := whoopRecoveryKind + "/" + whoopRow("recovery", whoopCurrentCycle)
 
 	// sleep.updated, for a sleep the sync wrote from the same object.
 	out, hooked := mustHook(t, ds, cfg, whoopOnTime(t, "01_sleep.updated.json"))
 	if fmt.Sprint(out["wrote"]) != fmt.Sprint([]any{sleepRow}) {
 		t.Fatalf("sleep.updated wrote %v, want %s", out["wrote"], sleepRow)
 	}
-	whoopSameRow(t, synced, hooked, whoopSleepType, whoopRow("sleep", whoopLastSleep))
+	whoopSameRow(t, synced, hooked, whoopSleepKind, whoopRow("sleep", whoopLastSleep))
 	// recovery.updated names the SLEEP: the body reads it for its cycle and
 	// then reads the recovery through the cycle.
 	out, hooked = mustHook(t, ds, cfg, whoopOnTime(t, "02_recovery.updated.json"))
 	if !slices.Contains(out["wrote"].([]any), any(recoveryRow)) {
 		t.Fatalf("recovery.updated wrote %v, want %s among them", out["wrote"], recoveryRow)
 	}
-	whoopSameRow(t, synced, hooked, whoopRecoveryType, whoopRow("recovery", whoopCurrentCycle))
-	whoopSameRow(t, synced, hooked, whoopSleepType, whoopRow("sleep", whoopLastSleep))
+	whoopSameRow(t, synced, hooked, whoopRecoveryKind, whoopRow("recovery", whoopCurrentCycle))
+	whoopSameRow(t, synced, hooked, whoopSleepKind, whoopRow("sleep", whoopLastSleep))
 	if got, want := fake.readBacks(), []string{
 		"/v2/activity/sleep/" + whoopLastSleep,
 		"/v2/activity/sleep/" + whoopLastSleep,
@@ -643,7 +643,7 @@ func TestWhoopWebhookRewritesAndDeletesMirrorRows(t *testing.T) {
 
 	// workout.updated for a workout logged after the sync: a create.
 	mustHook(t, ds, cfg, whoopOnTime(t, "04_workout.updated.json"))
-	late := mustGet(t, ds, whoopWorkoutType, whoopRow("workout", whoopLateWorkout))
+	late := mustGet(t, ds, whoopWorkoutKind, whoopRow("workout", whoopLateWorkout))
 	if late.Properties["sportName"] != "padel" || refIDs(late, "user")[0] != whoopRow("user", whoopMember) {
 		t.Fatalf("the late workout landed as %v", late.Properties)
 	}
@@ -661,15 +661,15 @@ func TestWhoopWebhookRewritesAndDeletesMirrorRows(t *testing.T) {
 		t.Fatalf("recovery.deleted deleted %v, want %s", out["deleted"], recoveryRow)
 	}
 	for _, row := range [][2]string{
-		{whoopWorkoutType, whoopRow("workout", whoopDeletedWorkout)},
-		{whoopSleepType, whoopRow("sleep", whoopDeletedNap)},
-		{whoopRecoveryType, whoopRow("recovery", whoopCurrentCycle)},
+		{whoopWorkoutKind, whoopRow("workout", whoopDeletedWorkout)},
+		{whoopSleepKind, whoopRow("sleep", whoopDeletedNap)},
+		{whoopRecoveryKind, whoopRow("recovery", whoopCurrentCycle)},
 	} {
 		if live(t, ds, row[0], row[1]) {
 			t.Errorf("%s/%s survived its delete event", row[0], row[1])
 		}
 	}
-	if !live(t, ds, whoopSleepType, whoopRow("sleep", whoopLastSleep)) {
+	if !live(t, ds, whoopSleepKind, whoopRow("sleep", whoopLastSleep)) {
 		t.Fatal("recovery.deleted took the sleep row with it; only sleep.deleted deletes a sleep")
 	}
 
@@ -738,9 +738,9 @@ func TestWhoopSyncRewritesARescoredCycleAndKeepsTheNewerRevision(t *testing.T) {
 	_, ds, fake := newWhoop(t)
 	whoopSync(t, ds, fake, whoopProps(nil))
 	before := whoopVersions(t, ds)
-	rescored := whoopCycleType + "/" + whoopRow("cycle", whoopRescoredCycle)
+	rescored := whoopCycleKind + "/" + whoopRow("cycle", whoopRescoredCycle)
 	strain := func() any {
-		row := mustGet(t, ds, whoopCycleType, whoopRow("cycle", whoopRescoredCycle))
+		row := mustGet(t, ds, whoopCycleKind, whoopRow("cycle", whoopRescoredCycle))
 		score, _ := row.Properties["score"].(map[string]any)
 		return score["strain"]
 	}
@@ -757,8 +757,8 @@ func TestWhoopSyncRewritesARescoredCycleAndKeepsTheNewerRevision(t *testing.T) {
 	if got := fmt.Sprint(strain()); got != "13.6118" {
 		t.Fatalf("the rescored strain = %s, want 13.6118", got)
 	}
-	for _, row := range listLive(t, ds, whoopCycleType) {
-		k := whoopCycleType + "/" + row.ID
+	for _, row := range listLive(t, ds, whoopCycleKind) {
+		k := whoopCycleKind + "/" + row.ID
 		if k != rescored && after[k] != before[k] {
 			t.Errorf("cycle %v moved without being rescored", row.Properties["cycleId"])
 		}
@@ -787,8 +787,8 @@ func TestWhoopSyncRewritesARescoredCycleAndKeepsTheNewerRevision(t *testing.T) {
 func TestWhoopSyncDeletesWhatWhoopNoLongerHas(t *testing.T) {
 	_, ds, fake := newWhoop(t)
 	whoopSync(t, ds, fake, whoopProps(nil))
-	if !live(t, ds, whoopWorkoutType, whoopRow("workout", whoopDeletedWorkout)) ||
-		!live(t, ds, whoopSleepType, whoopRow("sleep", whoopDeletedNap)) {
+	if !live(t, ds, whoopWorkoutKind, whoopRow("workout", whoopDeletedWorkout)) ||
+		!live(t, ds, whoopSleepKind, whoopRow("sleep", whoopDeletedNap)) {
 		t.Fatal("the first sync did not mirror the workout and the nap the second one loses")
 	}
 
@@ -804,23 +804,23 @@ func TestWhoopSyncDeletesWhatWhoopNoLongerHas(t *testing.T) {
 		t.Fatalf("the second sync read back %v, want %v", got, want)
 	}
 	dels := whoopDeletes(effects)
-	if !slices.Equal(dels[whoopWorkoutType], []string{whoopRow("workout", whoopDeletedWorkout)}) ||
-		!slices.Equal(dels[whoopSleepType], []string{whoopRow("sleep", whoopDeletedNap)}) || len(dels) != 2 {
+	if !slices.Equal(dels[whoopWorkoutKind], []string{whoopRow("workout", whoopDeletedWorkout)}) ||
+		!slices.Equal(dels[whoopSleepKind], []string{whoopRow("sleep", whoopDeletedNap)}) || len(dels) != 2 {
 		t.Fatalf("the second sync deleted %v", dels)
 	}
-	if live(t, ds, whoopWorkoutType, whoopRow("workout", whoopDeletedWorkout)) {
+	if live(t, ds, whoopWorkoutKind, whoopRow("workout", whoopDeletedWorkout)) {
 		t.Fatal("the deleted workout's row survived")
 	}
-	if live(t, ds, whoopSleepType, whoopRow("sleep", whoopDeletedNap)) {
+	if live(t, ds, whoopSleepKind, whoopRow("sleep", whoopDeletedNap)) {
 		t.Fatal("the deleted nap's row survived")
 	}
-	if !live(t, ds, whoopWorkoutType, whoopRow("workout", whoopLateWorkout)) {
+	if !live(t, ds, whoopWorkoutKind, whoopRow("workout", whoopLateWorkout)) {
 		t.Fatal("the hand-logged workout did not land")
 	}
-	if n := countLive(t, ds, whoopWorkoutType); n != 29 {
+	if n := countLive(t, ds, whoopWorkoutKind); n != 29 {
 		t.Fatalf("%d workouts are mirrored, want 29", n)
 	}
-	if n := countLive(t, ds, whoopSleepType); n != 32 {
+	if n := countLive(t, ds, whoopSleepKind); n != 32 {
 		t.Fatalf("%d sleeps are mirrored, want 32", n)
 	}
 
@@ -832,7 +832,7 @@ func TestWhoopSyncDeletesWhatWhoopNoLongerHas(t *testing.T) {
 	for _, toggle := range []string{"enabledProfile", "enabledCycles", "enabledRecovery", "enabledSleep"} {
 		workoutsOnly[toggle] = false
 	}
-	kept := whoopWorkoutType + "/" + whoopRow("workout", whoopLateWorkout)
+	kept := whoopWorkoutKind + "/" + whoopRow("workout", whoopLateWorkout)
 	before := whoopVersions(t, ds)[kept]
 	reads := len(fake.readBacks())
 	effects = whoopSync(t, ds, fake, workoutsOnly)
@@ -862,21 +862,21 @@ func TestWhoopSyncDeletesARecoveryWithCyclesOff(t *testing.T) {
 		return props
 	}
 	whoopSync(t, ds, fake, noCycles(whoopProps(nil)))
-	if n := countLive(t, ds, whoopCycleType); n != 0 {
+	if n := countLive(t, ds, whoopCycleKind); n != 0 {
 		t.Fatalf("%d cycle rows with the cycles toggle off", n)
 	}
 	gone := whoopRow("recovery", whoopRescoredCycle)
-	if !live(t, ds, whoopRecoveryType, gone) {
+	if !live(t, ds, whoopRecoveryKind, gone) {
 		t.Fatal("the first sync did not mirror the recovery WHOOP then deletes")
 	}
 
 	cycle, _ := strconv.ParseFloat(whoopRescoredCycle, 64)
 	fake.remove("/v2/recovery", cycle, "/v2/cycle/"+whoopRescoredCycle+"/recovery")
 	effects := whoopSync(t, ds, fake, noCycles(whoopSteady(nil)))
-	if got := whoopDeletes(effects)[whoopRecoveryType]; !slices.Equal(got, []string{gone}) {
+	if got := whoopDeletes(effects)[whoopRecoveryKind]; !slices.Equal(got, []string{gone}) {
 		t.Fatalf("the steady sync deleted recoveries %v, want the one WHOOP lost; read back %v", got, fake.readBacks())
 	}
-	if live(t, ds, whoopRecoveryType, gone) {
+	if live(t, ds, whoopRecoveryKind, gone) {
 		t.Fatal("the recovery WHOOP deleted is still mirrored")
 	}
 }
@@ -942,7 +942,7 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	installTriggers(t, ds, whoopDir, "whoop-webhook")
 	whoopSync(t, ds, fake, whoopProps(nil))
 	deleted := whoopRow("workout", whoopDeletedWorkout)
-	if !live(t, ds, whoopWorkoutType, deleted) {
+	if !live(t, ds, whoopWorkoutKind, deleted) {
 		t.Fatal("the first sync did not mirror the workout the delivery deletes")
 	}
 
@@ -994,7 +994,7 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 		if failures, err := ds.TriggerFailures(ctx, "whoop-webhook"); err != nil || len(failures) != 0 {
 			t.Fatalf("%s: the ledger holds %+v (%v)", name, failures, err)
 		}
-		if !live(t, ds, whoopWorkoutType, deleted) {
+		if !live(t, ds, whoopWorkoutKind, deleted) {
 			t.Fatalf("%s: the refused request deleted the workout", name)
 		}
 	}
@@ -1017,7 +1017,7 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 		t.Fatalf("the door refused a signed request: %v", err)
 	}
 	deadline := time.Now().Add(30 * time.Second)
-	for live(t, ds, whoopWorkoutType, deleted) {
+	for live(t, ds, whoopWorkoutKind, deleted) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the signed workout.deleted never deleted its row (trigger status %+v)", status())
 		}

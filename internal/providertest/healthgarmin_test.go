@@ -30,7 +30,7 @@ func newHealthGarminDataset(t *testing.T) substrate.Dataset {
 	_, ds := newCoreDataset(t)
 	install(t, ds, garminDir, nil)
 	importVocabulary(t, ds, "healthgarmin")
-	mustPut(t, ds, substrate.PutInput{Kind: garminAccountType, ID: garminAccountID, Properties: map[string]any{}})
+	mustPut(t, ds, substrate.PutInput{Kind: garminAccountKind, ID: garminAccountID, Properties: map[string]any{}})
 	return ds
 }
 
@@ -248,7 +248,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 		t.Errorf("workout %v", w.Properties)
 	}
 	if src := mustGet(t, ds, obsSource, acct+"/forerunner265"); src.Properties["class"] != "watch" ||
-		storedRefPath(src.Properties["account"]) != garminAccountType+"/"+garminAccountID {
+		storedRefPath(src.Properties["account"]) != garminAccountKind+"/"+garminAccountID {
 		t.Errorf("device source %v", src.Properties)
 	}
 
@@ -760,7 +760,7 @@ func TestHealthGarminWritesAnActivitysSamples(t *testing.T) {
 	}
 	assertCatalogueHolds(t, ds)
 	device := mustGet(t, ds, obsSource, acct+"/unknown-device").Properties
-	if device["class"] != nil || storedRefPath(device["account"]) != garminAccountType+"/"+garminAccountID {
+	if device["class"] != nil || storedRefPath(device["account"]) != garminAccountKind+"/"+garminAccountID {
 		t.Errorf("the unnamed device's source is %v", device)
 	}
 	w := mustGet(t, ds, healthWorkout, acct+"/"+unnamed["summaryId"].(string)+"/workout").Properties

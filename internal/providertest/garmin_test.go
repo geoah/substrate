@@ -28,8 +28,8 @@ import (
 const (
 	garminDir         = providersDir + "/garmin"
 	garminPackage     = "providers.substrate.reamde.dev/garmin"
-	garminAccountType = garminPackage + "/account"
-	garminNoticeType  = garminPackage + "/notice"
+	garminAccountKind = garminPackage + "/account"
+	garminNoticeKind  = garminPackage + "/notice"
 	garminPushFn      = garminPackage + "/garminpush"
 	garminSyncFn      = garminPackage + "/garminsync"
 	garminAccountID   = "acct"
@@ -122,7 +122,7 @@ func newGarminDataset(t *testing.T, props map[string]any) substrate.Dataset {
 	if props == nil {
 		props = map[string]any{}
 	}
-	mustPut(t, ds, substrate.PutInput{Kind: garminAccountType, ID: garminAccountID, Properties: props})
+	mustPut(t, ds, substrate.PutInput{Kind: garminAccountKind, ID: garminAccountID, Properties: props})
 	return ds
 }
 
@@ -131,7 +131,7 @@ func newGarminDataset(t *testing.T, props map[string]any) substrate.Dataset {
 // recorded), its token, and the client input.
 func garminConfig(t *testing.T, ds substrate.Dataset, apiBase string, extra map[string]any) map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, garminAccountType, garminAccountID)
+	row := mustGet(t, ds, garminAccountKind, garminAccountID)
 	props := map[string]any{}
 	for k, v := range row.Properties {
 		props[k] = v
@@ -145,7 +145,7 @@ func garminConfig(t *testing.T, ds substrate.Dataset, apiBase string, extra map[
 	}
 	return map[string]any{
 		"accounts": []any{map[string]any{
-			"id": garminAccountID, "kind": garminAccountType, "properties": props, "token": fakeToken,
+			"id": garminAccountID, "kind": garminAccountKind, "properties": props, "token": fakeToken,
 		}},
 		"inputs": map[string]any{"client": map[string]any{"properties": client}},
 	}
@@ -276,7 +276,7 @@ func TestGarminPushWritesEverySummaryType(t *testing.T) {
 		t.Errorf("a user metric binds no temporal trait, yet at = %v", metric.At)
 	}
 
-	acct := mustGet(t, ds, garminAccountType, garminAccountID)
+	acct := mustGet(t, ds, garminAccountKind, garminAccountID)
 	if acct.Properties["syncState"] != "ok" || acct.Properties["lastPushAt"] == nil ||
 		acct.Properties["lastSyncedAt"] == nil || acct.Properties["lastSyncDurationMs"] == nil {
 		t.Errorf("the push did not stamp the account's sync trait: %v", acct.Properties)
@@ -358,7 +358,7 @@ func TestGarminPushRecordsLifecycleNotices(t *testing.T) {
 	cfg := garminConfig(t, ds, "", map[string]any{"userId": garminUser})
 
 	pushGarmin(t, ds, cfg, "webhook-perm", loadGarminFixture(t, "push_userPermissionsChange.json").request)
-	acct := mustGet(t, ds, garminAccountType, garminAccountID)
+	acct := mustGet(t, ds, garminAccountKind, garminAccountID)
 	if got := normal(t, acct.Properties["permissions"]); !reflect.DeepEqual(got, []any{"ACTIVITY_EXPORT", "HEALTH_EXPORT"}) {
 		t.Errorf("permissions = %v", got)
 	}
@@ -367,7 +367,7 @@ func TestGarminPushRecordsLifecycleNotices(t *testing.T) {
 	}
 
 	pushGarmin(t, ds, cfg, "webhook-dereg", loadGarminFixture(t, "push_deregistrations.json").request)
-	notices := listLive(t, ds, garminNoticeType)
+	notices := listLive(t, ds, garminNoticeKind)
 	types := []string{}
 	for _, n := range notices {
 		types = append(types, n.Properties["noticeType"].(string))
@@ -379,7 +379,7 @@ func TestGarminPushRecordsLifecycleNotices(t *testing.T) {
 	if !slices.Equal(types, []string{"deregistration", "permissionchange"}) {
 		t.Fatalf("notices = %v", types)
 	}
-	acct = mustGet(t, ds, garminAccountType, garminAccountID)
+	acct = mustGet(t, ds, garminAccountKind, garminAccountID)
 	if acct.Properties["deregisteredAt"] == nil || acct.Properties["syncState"] != "erroring" ||
 		acct.Properties["syncError"] == nil {
 		t.Errorf("the disconnect did not mark the account: %v", acct.Properties)
@@ -388,7 +388,7 @@ func TestGarminPushRecordsLifecycleNotices(t *testing.T) {
 	// Data for the user again means the user connected again: the mark goes.
 	cfg = garminConfig(t, ds, "", map[string]any{"userId": garminUser})
 	pushGarmin(t, ds, cfg, "webhook-data", loadGarminFixture(t, "push_bloodPressures.json").request)
-	acct = mustGet(t, ds, garminAccountType, garminAccountID)
+	acct = mustGet(t, ds, garminAccountKind, garminAccountID)
 	if v, ok := acct.Properties["deregisteredAt"]; ok {
 		t.Errorf("deregisteredAt = %v survived a push of data", v)
 	}
@@ -748,7 +748,7 @@ func (f *fakeGarmin) windows(t *testing.T) map[string][][2]int64 {
 func syncGarmin(t *testing.T, ds substrate.Dataset, cfg map[string]any) []engine.StepEffect {
 	t.Helper()
 	s := newStepper(t, ds, garminSyncFn, cfg)
-	s.setEnvelope(map[string]any{"record": map[string]any{"kind": garminAccountType, "id": garminAccountID}})
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": garminAccountKind, "id": garminAccountID}})
 	return s.drainApplying(nil)
 }
 
@@ -769,7 +769,7 @@ func TestGarminSyncRequestsBackfillWindows(t *testing.T) {
 	// before any backfill request, so the id is committed by the time Garmin
 	// pushes what the backfill asks for, and those pushes match the account.
 	s := newStepper(t, ds, garminSyncFn, garminConfig(t, ds, base, nil))
-	s.setEnvelope(map[string]any{"record": map[string]any{"kind": garminAccountType, "id": garminAccountID}})
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": garminAccountKind, "id": garminAccountID}})
 	effects, _, cur := s.step(nil)
 	if user := stampOf(effects, garminAccountID); cur == nil || user["userId"] != garminUser || fake.askedCount() != 0 {
 		t.Fatalf("the first invocation staged %v, continued %v, and asked %d backfill windows; want the user id alone, a cursor and none",
@@ -777,7 +777,7 @@ func TestGarminSyncRequestsBackfillWindows(t *testing.T) {
 	}
 	s.apply()
 	s.drainApplying(cur)
-	acct := mustGet(t, ds, garminAccountType, garminAccountID)
+	acct := mustGet(t, ds, garminAccountKind, garminAccountID)
 	if acct.Properties["userId"] != garminUser {
 		t.Fatalf("userId = %v, want %s", acct.Properties["userId"], garminUser)
 	}
@@ -826,7 +826,7 @@ func TestGarminSyncRequestsBackfillWindows(t *testing.T) {
 	if again := fake.askedCount() - first; again != first {
 		t.Errorf("the second walk asked %d windows, want the same %d", again, first)
 	}
-	acct = mustGet(t, ds, garminAccountType, garminAccountID)
+	acct = mustGet(t, ds, garminAccountKind, garminAccountID)
 	if acct.Properties["syncState"] != "ok" {
 		t.Errorf("a walk answered only 409s ended %v: %v", acct.Properties["syncState"], acct.Properties["syncMessage"])
 	}
@@ -851,7 +851,7 @@ func TestGarminSyncHoldsOnRefusalAndRateLimit(t *testing.T) {
 	fake.refuseWith("activityDetails", http.StatusForbidden)
 
 	syncGarmin(t, ds, garminConfig(t, ds, base, nil))
-	acct := mustGet(t, ds, garminAccountType, garminAccountID)
+	acct := mustGet(t, ds, garminAccountKind, garminAccountID)
 	if got := len(fake.windows(t)["activityDetails"]); got != 1 {
 		t.Errorf("activityDetails was asked %d times after its 403, want once", got)
 	}
@@ -897,7 +897,7 @@ func TestGarminSyncHoldsOnRefusalAndRateLimit(t *testing.T) {
 		fake2 := newFakeGarmin(t)
 		fake2.limitAfterWindows(20)
 		syncGarmin(t, ds2, garminConfig(t, ds2, fake2.ts.URL+"/wellness-api", nil))
-		acct := mustGet(t, ds2, garminAccountType, garminAccountID)
+		acct := mustGet(t, ds2, garminAccountKind, garminAccountID)
 		if acct.Properties["syncState"] != "throttled" || acct.Properties["retryNotBefore"] == nil {
 			t.Fatalf("a 429 left %v, retryNotBefore %v", acct.Properties["syncState"], acct.Properties["retryNotBefore"])
 		}

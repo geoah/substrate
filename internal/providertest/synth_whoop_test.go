@@ -113,21 +113,21 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	if rb := fake.readBacks(); len(rb) != 0 {
 		t.Fatalf("a cold walk read rows back: %v", rb)
 	}
-	stamp := accountStamp(t, effects, whoopAccountType, whoopAccount)
+	stamp := accountStamp(t, effects, whoopAccountKind, whoopAccount)
 	if stamp["syncStatus"] != "ok" || stamp["syncState"] != "ok" || stamp["lastCompletedAt"] == nil {
 		t.Fatalf("the sync stamped %v", stamp)
 	}
 
 	// The mirror: one row per generated record, counted from the persona.
 	for kind, want := range map[string]int{
-		whoopUserType: 1, whoopCycleType: len(days), whoopRecoveryType: len(days),
-		whoopSleepType: len(days) + naps, whoopWorkoutType: workouts,
+		whoopUserKind: 1, whoopCycleKind: len(days), whoopRecoveryKind: len(days),
+		whoopSleepKind: len(days) + naps, whoopWorkoutKind: workouts,
 	} {
 		if n := countLive(t, ds, kind); n != want {
 			t.Errorf("%d rows of %s, want %d", n, kind, want)
 		}
 	}
-	user := mustGet(t, ds, whoopUserType, whoopRow("user", whoopMember)).Properties
+	user := mustGet(t, ds, whoopUserKind, whoopRow("user", whoopMember)).Properties
 	if user["email"] != p.Person.Email || user["heightMeter"] == nil || user["weightKilogram"] == nil ||
 		asInt(t, user["maxHeartRate"]) != int64(p.Person.MaxHR) {
 		t.Errorf("the member row is %v", user)
@@ -139,7 +139,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	var open int
 	for _, c := range cycles {
 		id := strconv.FormatInt(int64(c["id"].(float64)), 10)
-		row := mustGet(t, ds, whoopCycleType, whoopRow("cycle", id)).Properties
+		row := mustGet(t, ds, whoopCycleKind, whoopRow("cycle", id)).Properties
 		if !sameInstant(row["at"], asInstant(t, c["start"])) || row["timezoneOffset"] != "+03:00" || row["scoreState"] != "scored" {
 			t.Errorf("cycle %s mirrored as %v", id, row)
 		}
@@ -155,15 +155,15 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	if open != 1 {
 		t.Errorf("%d open cycles, want the last day's", open)
 	}
-	for _, row := range listLive(t, ds, whoopRecoveryType) {
-		for _, ref := range []struct{ name, kind string }{{"cycle", whoopCycleType}, {"sleep", whoopSleepType}} {
+	for _, row := range listLive(t, ds, whoopRecoveryKind) {
+		for _, ref := range []struct{ name, kind string }{{"cycle", whoopCycleKind}, {"sleep", whoopSleepKind}} {
 			path := storedRefPath(row.Properties[ref.name])
 			if !strings.HasPrefix(path, ref.kind+"/") || !whoopLive(t, ds, ref.kind, strings.TrimPrefix(path, ref.kind+"/")) {
 				t.Errorf("recovery %s names %s %s, which is not mirrored", row.ID, ref.name, path)
 			}
 		}
 	}
-	for _, row := range listLive(t, ds, whoopWorkoutType) {
+	for _, row := range listLive(t, ds, whoopWorkoutKind) {
 		if row.Properties["sportName"] == nil || row.Properties["sportId"] != nil || row.Properties["score"] == nil {
 			t.Errorf("workout %s mirrored as %v", row.ID, row.Properties)
 		}
@@ -207,9 +207,9 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	// Every recovery spans the night it scores, the sleep the recovery names,
 	// so a day read places it on the wake day beside the other sources'
 	// nightly summaries.
-	for _, row := range listLive(t, ds, whoopRecoveryType) {
+	for _, row := range listLive(t, ds, whoopRecoveryKind) {
 		cid := strconv.FormatInt(asInt(t, row.Properties["cycleId"]), 10)
-		night := mustGet(t, ds, whoopSleepType, strings.TrimPrefix(storedRefPath(row.Properties["sleep"]), whoopSleepType+"/")).Properties
+		night := mustGet(t, ds, whoopSleepKind, strings.TrimPrefix(storedRefPath(row.Properties["sleep"]), whoopSleepKind+"/")).Properties
 		for _, role := range []string{"recovery", "hrv", "resting_heart_rate", "spo2", "skin_temperature"} {
 			obs := healthProps(t, ds, obsObservation, hw(cid, role))
 			if obs["period"] != "sleep" || obs["periodId"] != night["sleepId"] ||

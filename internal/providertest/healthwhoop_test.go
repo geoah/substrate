@@ -113,7 +113,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 	whoopSync(t, ds, fake, whoopProps(nil))
 	healthDrain(t, ds)
 
-	recoveryOrigin := whoopRecoveryType + "/" + whoopRow("recovery", whoopExampleCycle)
+	recoveryOrigin := whoopRecoveryKind + "/" + whoopRow("recovery", whoopExampleCycle)
 	cycleStart, cycleEnd := "2026-10-06T19:41:00.862Z", "2026-10-07T19:38:00.174Z"
 	// A recovery measures the night it scores: it spans that sleep, so a
 	// day read places it on the wake day beside the other sources'
@@ -172,7 +172,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 	}
 	strain := healthProps(t, ds, obsObservation, hw(whoopExampleCycle, "strain"))
 	if v, u := quantityOf(t, strain, "value"); v != "14.2" || u != "{score}" || strain["form"] != "summary" ||
-		storedRefPath(strain["origin"]) != whoopCycleType+"/"+whoopRow("cycle", whoopExampleCycle) {
+		storedRefPath(strain["origin"]) != whoopCycleKind+"/"+whoopRow("cycle", whoopExampleCycle) {
 		t.Errorf("strain = %s %s %v from %v", v, u, strain["form"], strain["origin"])
 	}
 	energy := healthProps(t, ds, obsObservation, hw(whoopExampleCycle, "energy"))
@@ -183,9 +183,9 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 
 	// Heart rate: the cycle's average and maximum over the cycle, and a run's
 	// over the run on the `workout` channel, each with the statistic it is.
-	cycleOrigin := whoopCycleType + "/" + whoopRow("cycle", whoopExampleCycle)
+	cycleOrigin := whoopCycleKind + "/" + whoopRow("cycle", whoopExampleCycle)
 	cycleRevision := asInstant(t, "2026-10-07T19:58:00.853Z").Unix()
-	workoutOrigin := whoopWorkoutType + "/" + whoopRow("workout", whoopExampleWorkout)
+	workoutOrigin := whoopWorkoutKind + "/" + whoopRow("workout", whoopExampleWorkout)
 	runStart, runEnd := "2026-10-10T04:08:05.615Z", "2026-10-10T04:48:18.355Z"
 	runRevision := asInstant(t, "2026-10-10T05:04:18.468Z").Unix()
 	for _, c := range []struct {
@@ -453,7 +453,7 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	// delivery rebuilds the recovery that names the sleep over the new span,
 	// at the sleep's revision.
 	mustPut(t, ds, substrate.PutInput{
-		Kind: whoopSleepType, ID: whoopRow("sleep", whoopRescoredNight),
+		Kind: whoopSleepKind, ID: whoopRow("sleep", whoopRescoredNight),
 		Properties: map[string]any{"endsAt": "2026-10-09T03:41:12.500Z", "updatedAt": "2026-10-10T16:02:31.118Z"},
 	})
 	healthDrain(t, ds)
@@ -520,7 +520,7 @@ func TestHealthWhoopRecoveryWithoutItsSleepSpansTheCycle(t *testing.T) {
 	ds, fake := newHealthWhoop(t)
 	whoopSync(t, ds, fake, whoopProps(map[string]any{"enabledSleep": false}))
 	healthDrain(t, ds)
-	if n := countLive(t, ds, whoopSleepType); n != 0 {
+	if n := countLive(t, ds, whoopSleepKind); n != 0 {
 		t.Fatalf("%d sleep rows with the sleep toggle off, want none", n)
 	}
 	id := hw(whoopExampleCycle, "hrv")
@@ -572,14 +572,14 @@ func TestHealthWhoopKeepsAnAccountIdWithSlashes(t *testing.T) {
 	ds, fake := newHealthWhoop(t)
 	const aid = "team/watch"
 	mustPut(t, ds, substrate.PutInput{
-		Kind: whoopAccountType, ID: aid,
+		Kind: whoopAccountKind, ID: aid,
 		Properties: syncProps(map[string]any{"backfillDepth": "all"},
 			"enabledProfile", "enabledCycles", "enabledRecovery", "enabledSleep", "enabledWorkouts"),
 	})
 	cfg := whoopConfig(fake, whoopProps(nil))
 	cfg["accounts"].([]any)[0].(map[string]any)["id"] = aid
 	s := newStepper(t, ds, whoopSyncFn, cfg)
-	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountType, "id": aid}})
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": whoopAccountKind, "id": aid}})
 	s.drainApplying(nil)
 	healthDrain(t, ds)
 
@@ -589,7 +589,7 @@ func TestHealthWhoopKeepsAnAccountIdWithSlashes(t *testing.T) {
 		t.Errorf("the recovery's source is %v, want whoop/%s", recovery["source"], aid)
 	}
 	src := healthProps(t, ds, obsSource, "whoop/"+aid)
-	if storedRefPath(src["account"]) != whoopAccountType+"/"+aid {
+	if storedRefPath(src["account"]) != whoopAccountKind+"/"+aid {
 		t.Errorf("the source's account is %v, want %s", src["account"], aid)
 	}
 	if whoopLive(t, ds, obsSource, "whoop/watch") {
