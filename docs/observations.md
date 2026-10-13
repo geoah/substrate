@@ -695,8 +695,8 @@ Heart rate zones per week for six months is
 [the aggregate read's first example](api.md#the-aggregate-read) with one
 `durationIn` reducer per zone (95 to 114, 114 to 133, 133 to 152, 152 to 171
 and 171 to 220 a minute). `durationIn` reads raw points: six months of the synthetic data's
-heart rate is about 100,000 of them, inside the default `maxSamples` of
-1,000,000, while six months of a one-second stream is 15.5 million, which
+heart rate is fewer than 100,000 of them, inside the default `maxSamples` of
+1,000,000, while the 182 days of a one-second stream are 15.7 million, which
 needs `budget.maxSamples` raised toward its cap of 20,000,000.
 
 Daily steps for a year on each sample's own local day. Under the default
