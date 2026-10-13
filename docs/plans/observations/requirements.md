@@ -26,7 +26,7 @@ critic; both are summarized under [follow-ups](#follow-ups) where they stay
 open. Source keys in square brackets resolve under [sources](#sources).
 
 Of the 79 app requirements, 39 are supported, 31 partly, 8 are follow-ups
-and 1 is out of scope. Of the 59 platform primitives, 43 are supported, 12
+and 1 is out of scope. Of the 59 platform primitives, 42 are supported, 13
 partly, 2 are follow-ups and 2 are out of scope.
 
 ## Apps: time and calendars
@@ -53,7 +53,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | R-AGG-8 | Rolling windows over days (must) | supported | `rolling: {"buckets": 7, "reducers": ["avg", "stddev"]}`; the window reaches before the range, and each rolling value's `n` counts the buckets that held a value. One window length per read. [Trends with a baseline](../../health-apps.md#trends-with-a-baseline) |
 | R-AGG-9 | Dense series with gaps, fills and wear coverage (must) [S35b] | supported | `fill` (`null`, `zero`, `locf`) marks each made row `synthetic`; every row carries `coverage`. A series with no row in the range gets none under any `fill`. |
 | R-AGG-10 | Totals over session records grouped by a property (must) | supported | The property read with `property.groupBy: ["sport"]` and `property.sources`, so a run four devices recorded counts once. [Weekly load](../../health-apps.md#weekly-load) |
-| R-AGG-11 | Best and worst values with the record that holds them (should) | partly | A list read of one metric ordered by `value` answers the record, with the range as `at` from its start and `endsAt` before its end (a filter bounding `at` on both ends is the window read, which orders by `at` alone); a downsample answers each extreme's instant. No reducer answers the record inside a bucket: [G-50](#g-50-reducers-and-filter-arms). [Resting heart rate](../../health-apps.md#resting-heart-rate-across-providers-and-merged) |
+| R-AGG-11 | Best and worst values with the record that holds them (should) | partly | For interval observations, a list read of one metric ordered by `value` answers the record, with the range as `at` from its start and `endsAt` before its end (a filter bounding `at` on both ends is the window read, which orders by `at` alone). An instant has no `endsAt`, so that filter answers nothing: a one-column downsample answers the extreme's instant, and a second list read at that instant answers the record. A sample packed in a trace has no record; the downsample answers its value and instant. No reducer answers the record inside a bucket: [G-50](#g-50-reducers-and-filter-arms). [Resting heart rate](../../health-apps.md#resting-heart-rate-across-providers-and-merged) |
 
 ## Apps: baselines
 
@@ -200,7 +200,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | P-21 | Source discovery for a metric (should) [hk-source] | supported | The latest read grouped by `metric` and `source` (and `about`, `channel`, `statistic`): 124 streams from 16 sources on the demo in one request. [The stream list](../../health-apps.md#the-stream-list) |
 | P-22 | A reconciled raw stream (should) [gh-reconcile] | partly | `priority` resolves points into buckets; no read answers the resolved points themselves. |
 | P-23 | Provenance on every value: app, device type, recording method (must) [gh-dp] [withings-spec] [hc-sync] | supported | See R-SRC-1. |
-| P-24 | Most recent value per metric or code, and last N (must) [fhir-lastn] [hk-opts] [oura-spec] [hc-rrr] [prom-fn] | supported | The latest read; the last N of one metric is a list read ordered by `at:desc`. |
+| P-24 | Most recent value per metric or code, and last N (must) [fhir-lastn] [hk-opts] [oura-spec] [hc-rrr] [prom-fn] | partly | The latest read answers the newest value per metric, source or code. The last N values of a metric is a list read ordered by `at:desc` only where each value is a record of its own. For `health/heart_rate` on the demo that list answers the pulse of Garmin's weekly blood pressure readings and WHOOP's workout and cycle summaries, or, over `observations/trace`, hourly traces of 12 values each, so the app unpacks the last N from the traces' `values`. |
 | P-25 | Raw sample reads with filter, order, limit and cursor (must) [hc-rrr] [hc-read] [hk-sample] [whoop-spec] [gh-rollup] | supported | The list read, keyset-paged. |
 | P-26 | Predicates on values, metadata and a parent's child statistics (should) [hk-query] [gh-filters] | partly | Filters on `value` and declared properties; none on statistics of a session's children. |
 | P-27 | Field projection (could) [oura-spec] | follow-up | [G-52](#g-52-records-route-limits). |

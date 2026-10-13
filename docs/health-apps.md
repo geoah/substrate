@@ -890,7 +890,8 @@ sends no order at all.
 The lowest of the month and the record that holds it is a list read ordered
 by value. A filter that bounds `at` on both ends turns a list into the window
 read, which orders by `at` alone, so the month is `at` from its start and
-`endsAt` before its end:
+`endsAt` before its end. That bound fits interval observations only, such as
+WHOOP's per-cycle summaries here:
 
 ```http
 GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"],
@@ -910,6 +911,17 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"
 
 WHOOP's lowest of September was 47, in the cycle that began on the morning
 of 29 September.
+
+An instant has no `endsAt`, so the same filter over
+`health/systolic_blood_pressure` answers no records at all. For an instant
+the app sends two reads: a [downsample](#a-chart-sized-series) to one column
+over the month, whose `min` carries the instant it was taken, then a list
+read whose `at` is `gte` and `lte` that instant. On the demo the Withings
+cuff's lowest systolic of September is 109 at `2026-09-13T08:48:30+03:00`,
+and the second read answers the record
+`applehealth/iphone/withings/systolic_blood_pressure/2026-09-13T05:48:30Z`.
+A sample packed in a trace has no record of its own: the downsample answers
+its value and instant, as [a night](#a-night) shows for heart rate.
 
 ## The stream list
 
