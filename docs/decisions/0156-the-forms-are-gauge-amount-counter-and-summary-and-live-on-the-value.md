@@ -40,8 +40,9 @@ Chosen: the four forms, on the value, with the reading rules beside them.
 A reducer the form does not admit is a `422` naming the form.
 
 A categorical value (a door `open`, a sleep stage `rem`, a mood) is a gauge
-or an amount with `code` set instead of `value`. It is never a fifth form and
-never a number: a boolean is two named codes, never `0` and `1`, so the form
+with `code` set instead of `value`, or an amount with `code` beside `value`,
+so 94 minutes of `rem` carries both and sums by code. It is never a fifth
+form and never a number: a boolean is two named codes, never `0` and `1`, so the form
 check can refuse a mean of door states. `state` was refused as a form because
 the `state` datatype is a state machine the substrate polices, and a door's
 code is data it does not police.
