@@ -308,8 +308,8 @@ func TestLoadKeepsAKeyTheTriggerHas(t *testing.T) {
 	t.Setenv("SYNTH_WEBHOOK_KEY", "")
 
 	out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", testKey)
-	if err == nil || !strings.Contains(err.Error(), "-replace-key") {
-		t.Fatalf("a load with another key = %v, want a refusal naming -replace-key\n%s", err, out)
+	if err == nil || !strings.Contains(err.Error(), "-replace-key") || !strings.Contains(err.Error(), "-resume applehealth/0001") {
+		t.Fatalf("a load with another key = %v, want a refusal naming -replace-key and the -resume that skips the setup\n%s", err, out)
 	}
 	if key := f.triggers["applehealth-webhook"]["source"].(map[string]any)["webhook"].(map[string]any)["key"]; key != owners || len(f.webhooks) != 0 {
 		t.Fatalf("the refused load left key %v and posted %d deliveries", key, len(f.webhooks))

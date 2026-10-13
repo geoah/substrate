@@ -713,9 +713,9 @@ type poster struct {
 }
 
 // deliveries posts the deliveries under base in order from the from-th,
-// arming each trigger first and waiting for each run. It stops on a delivery
-// the door refuses or that parks, naming the -resume that takes the load up
-// again. A trigger the loader found disabled is disabled again when it
+// arming each trigger first and waiting for each run. It stops on a trigger
+// it cannot arm or read, and on a delivery the door refuses or that parks,
+// naming the -resume that takes the load up again. A trigger the loader found disabled is disabled again when it
 // returns, so the door it opened with the key closes with it.
 func (p *poster) deliveries(ctx context.Context, provider, base string, from int) (err error) {
 	c := p.c
@@ -767,11 +767,11 @@ func (p *poster) deliveries(ctx context.Context, provider, base string, from int
 			}
 			wasEnabled, err := c.arm(ctx, env.Trigger, p.key, p.replaceKey, headers)
 			if err != nil {
-				return err
+				return fmt.Errorf("%w; take the load up with -resume %s/%04d", err, provider, i+1)
 			}
 			armed[env.Trigger] = wasEnabled
 			if _, parked[env.Trigger], err = c.settled(ctx, env.Trigger); err != nil {
-				return err
+				return fmt.Errorf("%w; take the load up with -resume %s/%04d", err, provider, i+1)
 			}
 		}
 		path := "/webhooks/" + c.authority + "/" + env.Trigger

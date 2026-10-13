@@ -10,8 +10,8 @@
 //	           [-key KEY] [-replace-key] [-resume PROVIDER/NNNN] [-settle 5m]
 //	           [-repo DIR] [-ctl PATH] [-python PATH]
 //
-// `generate` writes one directory per provider under DIR, replacing what an
-// earlier run wrote there: mock recordings named the way
+// `generate` writes one directory per provider it names under DIR, replacing
+// that provider's directory from an earlier run: mock recordings named the way
 // internal/providere2e/runner/mockserver.py finds them (WHOOP, Google Fit,
 // Garmin's connect step), webhook requests in posting order (Garmin pushes,
 // Apple Health deliveries) and the hand-entered records (`manual/labs.yaml`).

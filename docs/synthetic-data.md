@@ -172,8 +172,11 @@ SUBSTRATE_TOKEN=… SYNTH_WEBHOOK_KEY=… mise run synth:load -- -server http://
 
 `generate` is pure: the same flags write the same bytes, and the zones are
 compiled in, so a host's zone database does not change them. It replaces
-each provider's directory under `-out`, so a second run into the same
-directory leaves nothing of the first.
+the directory of each provider it writes under `-out`, so nothing of an
+earlier run's output for that provider is left. A provider that a narrower
+`-providers` leaves out keeps its earlier directory, and `load` without
+`-providers` loads it too, so a run that changes the range or the seed names
+every provider, or a fresh `-out`.
 
 `load` takes each provider's directory in four steps. A `recordings/`
 directory goes through the provider e2e runner
@@ -202,8 +205,13 @@ trigger it found disabled is disabled again once its deliveries are posted.
 A post the door answers 503 (busy) or that loses its connection is tried
 again, after the door's `Retry-After`, up to six times. A delivery that
 parks stops the load and names the trigger to read; a delivery an earlier
-run parked does not. Every stop names the `-resume PROVIDER/NNNN` that takes
-the load up again: the providers before it and its own setup are skipped.
+run parked does not. A stop at a trigger or a delivery (a key refused, a
+trigger that cannot be read, a post refused or lost, a run that does not
+settle, a park) names the `-resume PROVIDER/NNNN` that takes the load up
+again: the providers before it and its own setup are skipped. A stop in a
+provider's setup (the runner, an install, an import, a record) names none;
+the next load starts over, and skips the packages the repository already
+holds at the shipped version.
 The bearer comes from `SUBSTRATE_TOKEN`, never from argv, and is sent to the
 API alone, never to the webhook door. An interrupted load stops the runner
 and removes the temporary config that holds the token.
