@@ -210,7 +210,8 @@ lived it.
 The window reaches before the range, so the first day's baseline is already
 30 days deep. A short window against the long one (a 7-day mean against the
 30-day band) is a second read with `"buckets": 7`: `rolling` takes one
-window length per read. A log transform before the mean is the app's.
+window length per read. Taking the natural logarithm of each value before
+the mean, as sport science does with RMSSD, is the app's.
 
 ## A night
 

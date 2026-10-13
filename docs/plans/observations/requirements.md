@@ -26,7 +26,7 @@ critic; both are summarized under [follow-ups](#follow-ups) where they stay
 open. Source keys in square brackets resolve under [sources](#sources).
 
 Of the 79 app requirements, 39 are supported, 31 partly, 8 are follow-ups
-and 1 is out of scope. Of the 59 platform primitives, 42 are supported, 13
+and 1 is out of scope. Of the 59 platform primitives, 41 are supported, 14
 partly, 2 are follow-ups and 2 are out of scope.
 
 ## Apps: time and calendars
@@ -59,7 +59,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 
 | Id | Need | Status | Request, or what is missing |
 | --- | --- | --- | --- |
-| R-BASE-1 | Personal baseline band per nightly metric (must) [S5] [S11] [S14] [S23] [S41] | supported | `rolling: {"buckets": 30, "reducers": ["avg", "stddev"], "through": "previous"}` leaves the night out of its own baseline, and `n` says how many nights the window held, which is the "calibrating" count. A log transform before the mean is the app's. [Trends with a baseline](../../health-apps.md#trends-with-a-baseline) |
+| R-BASE-1 | Personal baseline band per nightly metric (must) [S5] [S11] [S14] [S23] [S41] | supported | `rolling: {"buckets": 30, "reducers": ["avg", "stddev"], "through": "previous"}` leaves the night out of its own baseline, and `n` says how many nights the window held, which is the "calibrating" count. Taking the natural logarithm of each value before the mean is the app's. [Trends with a baseline](../../health-apps.md#trends-with-a-baseline) |
 | R-BASE-2 | Short window against long window (must) [S5] [S7] [S11] [S17] [S18] | partly | Two reads, one per window length, over the same buckets. No recency-weighted mean. |
 | R-BASE-3 | Several metrics off baseline on the same night (should) [S10] [S14] | supported | `metrics` with `rolling`: each metric's nightly value and its band in one read; the app counts the metrics outside their bands. |
 
@@ -107,7 +107,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | R-LAB-3 | High and low flags, with censored values (must) | supported | `interpretation`, `referenceRanges` (quantities, converted with a derived result) and `comparator`; a read counts bounded values in `bounded`. |
 | R-LAB-4 | Preliminary, final and corrected results (should) | partly | `status` and `revision` are stored and a corrected input rewrites its derived results; no aggregate read filters on `status`: [G-50](#g-50-reducers-and-filter-arms). |
 | R-GLU-1 | CGM day view, time in ranges, wear, mean, CV and GMI (must) [S35b] [S36] | partly | `durationIn` bands, `avg`, `stddev` and `coverage` answer it over one glucose metric. Meter and monitor readings are not converted between unit systems the way lab results are: the demo's Contour meter reads 5.3125 mmol/L on average in September through Google Fit (`blood_glucose`) and 95.625 mg/dL through Apple Health (`blood_glucose_mass`), and neither metric reads in the other's unit. GMI and the target range are the app's. |
-| R-GLU-2 | Glucose response to a meal or another logged event (should) [S35] | follow-up | No meal or journal record to anchor a window ([G-33](#g-33-kinds-an-app-writes-about-the-person)), and no filter on a reading's meal qualifier ([C-12](#c-12-qualifier-filters)). |
+| R-GLU-2 | Glucose response to a meal or another recorded event (should) [S35] | follow-up | No meal or journal record to anchor a window ([G-33](#g-33-kinds-an-app-writes-about-the-person)), and no filter on a reading's meal qualifier ([C-12](#c-12-qualifier-filters)). |
 
 ## Apps: body and activity goals
 
@@ -193,7 +193,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | P-14 | Statistics scoped to a session's window (must) [gfit-agg] [hk-query] [hk-workout] [hc-sessions] | supported | The records mode, with `around`. |
 | P-15 | Counter increase and rate across resets (could) [prom-fn] [ts-hyper] | supported | `increase` and `rate` under the counter contracts. |
 | P-16 | Smoothing, trend and regression (could) [prom-fn] [fhir-stats] | partly | `rolling` gives windowed means; exponential smoothing and regression are the app's. |
-| P-17 | Merged statistics by default, per-source on request (must) [hk-stats] [hc-agg] [gfit-agg] | supported | `priority` merges, `separate` (the default) splits. |
+| P-17 | Merged statistics by default, per-source on request (must) [hk-stats] [hc-agg] [gfit-agg] | partly | Merged on request, split by default: `separate`, the default, answers a row per source, so an app that wants one merged row asks for `priority` on every read. |
 | P-18 | User-ordered source priority, resolved per time slice (must) [apple-support] [hc-agg] | supported | `priority`, resolved per stored interval before buckets are cut. |
 | P-19 | Source filter on reads and aggregates (must) [hc-agg] [hc-rrr] [hk-query] [gh-daily] | supported | `filter.properties.source` with `eq`, `in` and `exists`. |
 | P-20 | Contributing sources reported with each result (should) [hc-aggres] [hk-stats] [hk-sc] | supported | `sources` on each row and on the response. |
@@ -362,9 +362,10 @@ mapping.
 ### C-12 Qualifier filters
 
 Apple writes a glucose reading's meal relation as a qualifier, but a metric
-read cannot filter or group by `qualifiers` (a `400`), so fasting against
-after-meal glucose cannot be averaged apart. Proposal: an `eq` and `in` arm on
-qualifier codes in the metric read's filter, beside the G-50 arms.
+read cannot filter by `qualifiers` (a `400`) or group by them (a `422`), so
+fasting against after-meal glucose cannot be averaged apart. Proposal: an `eq`
+and `in` arm on qualifier codes in the metric read's filter, beside the G-50
+arms.
 
 ### C-14 Multi-record writes
 
