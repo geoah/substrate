@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/observed"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -80,25 +81,34 @@ func (r *aggRun) countPoints(s *aggStream, spans [][2]time.Time) (int64, error) 
 	return n, nil
 }
 
-// amountReachSQL is, for each stream ($1 to $5, numbered n), the longest
-// span of its amounts that meet [$6, $7), in whole microseconds, on the
-// span index.
+// amountReachSQL is, for each stream ($1 to $5, numbered n), the spanned
+// points the span index holds ending after $6, and the longest span of the
+// amounts among them that start before $7, in whole microseconds. The index
+// bounds a point by its end alone, so the statement visits every spanned
+// point from the first window's start to each stream's newest; the LIMIT
+// ($8) stops it one past maxSamples, and the count is of every point it
+// visits, so the budget bounds the scan itself.
 const amountReachSQL = `
-	SELECT s.n, ceil(extract(epoch FROM max(p.ts_end - p.ts)) * 1000000)::bigint
-	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, n)
-	CROSS JOIN LATERAL (
-		SELECT p.ts, p.ts_end FROM observed_points p
-		WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
-		  AND p.form = 'amount' AND p.ts_end > p.ts AND p.ts_end > $6 AND p.ts < $7) p
-	GROUP BY s.n`
+	SELECT x.n, count(*), coalesce(ceil(extract(epoch FROM max(x.span) FILTER (WHERE x.meets)) * 1000000), 0)::bigint
+	FROM (
+		SELECT s.n, p.ts_end - p.ts AS span, p.form = 'amount' AND p.ts < $7 AS meets
+		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, n)
+		CROSS JOIN LATERAL (
+			SELECT p.ts, p.ts_end, p.form FROM observed_points p
+			WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+			  AND p.ts_end > p.ts AND p.ts_end > $6) p
+		LIMIT $8) x
+	GROUP BY x.n`
 
 // amountReach is how far before a records-mode window each stream's amounts
 // may start and still reach into it: its longest span among those meeting
-// the windows' extent. A stream it does not name has no span there.
-func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, streams []*aggStream, windows [][2]time.Time) (map[obsStream]time.Duration, error) {
+// the windows' extent. A stream it does not name has no span there. The
+// amounts it reads count against maxSamples (read is how many), and past
+// it the read is refused.
+func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time) (reach map[obsStream]time.Duration, read int64, err error) {
 	out := map[obsStream]time.Duration{}
 	if len(windows) == 0 {
-		return out, nil
+		return out, 0, nil
 	}
 	var keys []*aggStream
 	seen := map[obsStream]bool{}
@@ -109,7 +119,7 @@ func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, streams []*aggSt
 		}
 	}
 	if len(keys) == 0 {
-		return out, nil
+		return out, 0, nil
 	}
 	lo, hi := windows[0][0], windows[0][1]
 	for _, w := range windows {
@@ -118,20 +128,28 @@ func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, streams []*aggSt
 		}
 	}
 	ids := streamKeys(keys, false)
-	rows, err := tx.QueryContext(ctx, amountReachSQL, ids[0], ids[1], ids[2], ids[3], ids[4], lo, hi)
+	rows, err := tx.QueryContext(ctx, amountReachSQL, ids[0], ids[1], ids[2], ids[3], ids[4], lo, hi, p.maxSamples+1)
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: aggregate amount reach: %w", err)
+		return nil, 0, fmt.Errorf("substrate/engine: aggregate amount reach: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var n int
-		var us int64
-		if err := rows.Scan(&n, &us); err != nil {
-			return nil, err
+		var c, us int64
+		if err := rows.Scan(&n, &c, &us); err != nil {
+			return nil, 0, err
 		}
+		read += c
 		out[keys[n-1].obsStream] = time.Duration(us) * time.Microsecond
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if read > p.maxSamples {
+		return nil, 0, refuse("aggregate.budget.maxSamples", "finding how far amounts reach into the windows reads every value with a span from the first window's start to each stream's newest, more than %d; read windows nearer the newest values, narrow the filter, or raise maxSamples (the cap is %d)",
+			p.maxSamples, substrate.AggregateMaxSamplesCap)
+	}
+	return out, read, nil
 }
 
 // aggPointLead are the columns read before pointColumns.

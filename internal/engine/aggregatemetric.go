@@ -159,12 +159,13 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		return nil, err
 	}
 	var reach map[obsStream]time.Duration
+	var reachRead int64
 	if p.bucket.mode == bucketRecords && p.source != substrate.AggregateFromSummaries {
-		if reach, err = ds.amountReach(ctx, tx, selected, windows); err != nil {
+		if reach, reachRead, err = ds.amountReach(ctx, tx, p, selected, windows); err != nil {
 			return nil, err
 		}
 	}
-	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows, reach)
+	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows, reach, reachRead)
 	if err != nil {
 		return nil, err
 	}
@@ -606,9 +607,9 @@ func placedPoints(placeEnd bool, where, a, b string) string {
 // read does not take (a summary on a read from raw) is not looked for. The
 // points it reads are counted first and refused past maxSamples; samples is
 // that count, the start of the read's (aggRun.charge).
-func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time, reach map[obsStream]time.Duration) (out []*aggStream, samples int64, err error) {
+func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time, reach map[obsStream]time.Duration, spent int64) (out []*aggStream, samples int64, err error) {
 	if len(streams) == 0 || len(windows) == 0 {
-		return nil, 0, nil
+		return nil, spent, nil
 	}
 	var forms []string
 	switch p.source {
@@ -641,10 +642,15 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 		longest.Microseconds()).Scan(&samples); err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms count: %w", err)
 	}
-	if samples > p.maxSamples {
-		return nil, 0, refuse("aggregate.budget.maxSamples", "finding the forms the range holds reads %d raw points at its cut ends and in its summaries, over %d; align the range to quarter hours, narrow it, or raise maxSamples (the cap is %d)",
-			samples, p.maxSamples, substrate.AggregateMaxSamplesCap)
+	if samples+spent > p.maxSamples {
+		beside := ""
+		if spent > 0 {
+			beside = fmt.Sprintf(" beside the %d amounts read for how far they reach", spent)
+		}
+		return nil, 0, refuse("aggregate.budget.maxSamples", "finding the forms the range holds reads %d raw points at its cut ends and in its summaries%s, over %d; align the range to quarter hours, narrow it, or raise maxSamples (the cap is %d)",
+			samples, beside, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
+	samples += spent
 	rows, err := tx.QueryContext(ctx, discoverFormsSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms, p.maxGap.Milliseconds(),
 		longest.Microseconds())
 	if err != nil {

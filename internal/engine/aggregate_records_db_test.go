@@ -474,6 +474,44 @@ func TestAggregateRecordWindowsTakeAnAmountByItsOverlap(t *testing.T) {
 	}
 }
 
+// The records mode finds how far an amount may start before a window and
+// still reach into it by reading the selected streams' spanned amounts from
+// the first window to their newest, and those count against maxSamples: a
+// night read long before a stream's later amounts takes them all, and a
+// budget they pass refuses the read rather than scan past it.
+func TestAggregateRecordWindowsChargeTheAmountReach(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	night := time.Date(2026, 8, 1, 23, 0, 0, 0, plus3)
+	f.sleepNight("whoop", 0, night, 3*time.Hour, night, []stage{{"light", 60}, {"deep", 45}})
+	for d := 1; d <= 30; d++ {
+		f.stageAt(fmt.Sprintf("later/%d", d), "whoop", "light", night.AddDate(0, 0, d).Add(-10*time.Hour), 10*time.Minute)
+	}
+	query := func(maxSamples int64) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+			Range:  rng(night.Add(-time.Hour), night.Add(5*time.Hour)),
+			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+				Filter: substrate.Filter{Kinds: []string{f.sleepKind()}},
+			}},
+			Reducers: reducers("count"),
+			Budget:   &substrate.AggregateBudget{MaxSamples: maxSamples},
+		}}
+	}
+	f.refusedAgg(query(20), "finding how far amounts reach")
+	res, err := f.ds.Aggregate(context.Background(), query(100))
+	if err != nil {
+		t.Fatalf("maxSamples 100: %v", err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("rows %+v, want the night's one", res.Rows)
+	}
+	if n, _ := val(res.Rows[0], "count"); n != "2" {
+		t.Errorf("count = %s, want the night's two stages", n)
+	}
+}
+
 // A property read reduces a duration in a duration unit, exactly, and gives
 // its population standard deviation; property.groupBy splits it by the
 // records' own properties, an enum (sport) and a reference (source), each

@@ -1424,8 +1424,13 @@ lookup per stream. An amount's or a counter's bucket boundary that cuts a row
 (a range starting at 10:07, a records window) is read from raw points and
 merged in, and in the records mode an amount is read from raw points alone,
 because a window takes the part of an amount that started in a row before
-it. The read finds those amounts by the stream's longest span among its
-amounts that meet the windows, one statement before the forms are found. An amount's coverage is the union of its spans on both paths: the
+it. The read finds those amounts by the stream's longest
+span among its amounts that meet the windows, one statement before the
+forms are found. The index orders a span by its end alone, so that
+statement visits every value with a span the selected streams hold from
+the first window's start to their newest, and counts each against
+`maxSamples`: a read of windows long before a dense stream's newest amounts
+may need a larger budget. An amount's coverage is the union of its spans on both paths: the
 rows' covered times add where their spans cannot overlap, and where they may
 (two overlapping traces, two offsets in one quarter hour) the union is taken
 from the raw spans in one statement per group.
@@ -1560,7 +1565,10 @@ and the records mode's records are counted as they are enumerated. The
 groups, the code series and series times buckets are checked after the
 statement that finds the range's forms and codes, before any point is read
 for a reduction. Each statement that reads raw points or rollup rows counts
-them first and adds them to the read's `maxSamples` total: finding the forms
+them first and adds them to the read's `maxSamples` total: in the records
+mode, the values with a span visited to find how far amounts reach into the
+windows (counted as they are read, and the statement stops one past the
+budget); finding the forms
 (the points at the range's cut ends, and its summaries), the rollup rows (one
 statement for every group they serve; a group sent to raw points after all
 gives its rows back), the reduction's raw points, and the raw spans an
@@ -1575,7 +1583,7 @@ after the points are evaluated, before a row is made.
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
 | `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
-| `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
+| `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up, and in the records mode the values with a span it visits to find how far amounts reach; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
 | `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds, currencies and `property.groupBy` values before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row; with a source policy, also the records outside the range it weighs | 1,000 | 10,000 |
 
