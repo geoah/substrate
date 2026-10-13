@@ -221,6 +221,38 @@ func TestFilterByQuantityConvertsExactly(t *testing.T) {
 	}
 }
 
+// A comparison that no stored unit converts into selects nothing and answers
+// an empty page: a property no row holds yet, an ids filter naming no row, an
+// operand of another measure than every stored unit.
+func TestQuantityFilterNoStoredUnitConvertsIsEmpty(t *testing.T) {
+	t.Parallel()
+	ds := installReadings(t, map[string]map[string]any{
+		"heavy": {"weight": qv("80", "kg")},
+	})
+	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: "rested", Properties: map[string]any{
+		"name": "rested", "pulse": qv("58", "/min"),
+	}}); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	for name, f := range map[string]substrate.Filter{
+		"ids naming no row": {IDs: []string{"no-such-id"}, Properties: map[string]substrate.Cond{
+			"pulse": {Gt: qv("50", "/min")},
+		}},
+		"an operand no stored unit converts into": {Properties: map[string]substrate.Cond{
+			"pulse": {Gt: qv("1", "kg")},
+		}},
+		"in, the same": {Properties: map[string]substrate.Cond{
+			"pulse": {In: []any{qv("1", "kg")}},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := readingNames(t, ds, substrate.Query{Filter: f}); len(got) != 0 {
+				t.Fatalf("filtered to %v, want nothing", got)
+			}
+		})
+	}
+}
+
 // An absolute temperature compares after its offset: 37 Cel, 98.6 [degF] and
 // 310.15 K are one temperature.
 func TestFilterByTemperatureAppliesTheOffset(t *testing.T) {
