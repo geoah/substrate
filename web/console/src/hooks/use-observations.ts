@@ -4,8 +4,9 @@
  * metric, source and thing, from the latest read) and the titles of the
  * sources and the things observed.
  *
- * Discovery is partitioned, because one latest read makes at most 200
- * groups and a repository can hold more streams than that: a first read
+ * Discovery is partitioned, because one latest read makes at most 2000
+ * groups (the cap it asks for) and a repository can hold more streams than
+ * that: a first read
  * lists the metrics with a point (one group each), then the streams are
  * read a few metrics at a time (`discoveryChunks`). A page's chosen
  * metrics, sources and things narrow every read on the server, except the

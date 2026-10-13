@@ -98,6 +98,7 @@ describe("aggregateQueryOptions", () => {
     expect(JSON.parse(params(String(url)).get("aggregate")!)).toEqual({
       groupBy: ["metric", "source", "about", "channel"],
       reducers: ["last"],
+      budget: { maxGroups: 2000 },
     })
     // A write to a trace makes this read stale; one to an unrelated kind
     // does not.

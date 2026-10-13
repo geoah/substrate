@@ -184,11 +184,14 @@ describe("forms and reducers", () => {
 
 describe("the latest read", () => {
   it("asks for the newest value of every stream, no range and no bucket", () => {
+    // At the group cap: one metric of a few hundred rooms is past the
+    // default 200 groups.
     expect(latestRead()).toEqual({
       filter: { implements: OBSERVED },
       aggregate: {
         groupBy: ["metric", "source", "about", "channel"],
         reducers: ["last"],
+        budget: { maxGroups: 2000 },
       },
     })
   })

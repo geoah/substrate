@@ -910,22 +910,23 @@ function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
   }
 }
 
+/** The most groups one read may ask for (`budget.maxGroups`'s cap). */
+export const MAX_GROUPS_CAP = 2000
+
 /** The latest read: one row per stream, from the newest point of each,
- * narrowed to the given metrics, sources and things. A read makes at most
- * `maxGroups` (200) groups, which is why discovery asks for its streams a
- * few metrics at a time (`discoveryChunks`). */
+ * narrowed to the given metrics, sources and things, at the group cap. A
+ * read makes at most that many groups, which is why discovery asks for its
+ * streams a few metrics at a time (`discoveryChunks`). */
 export function latestRead(narrow: StreamNarrowing = {}): AggregateRead {
   return {
     filter: narrowedFilter(narrow),
     aggregate: {
       groupBy: ["metric", "source", "about", "channel"],
       reducers: ["last"],
+      budget: { maxGroups: MAX_GROUPS_CAP },
     },
   }
 }
-
-/** The most groups one read may ask for (`budget.maxGroups`'s cap). */
-export const MAX_GROUPS_CAP = 2000
 
 /** Discovery's first read: one row per metric with a point, narrowed to
  * the chosen sources and things, at the group cap, since every metric with
@@ -969,8 +970,8 @@ export function facetRead(
 }
 
 /** How many metrics one stream read names, and how many stream reads one
- * discovery makes at most: eight metrics of a few streams each sit well
- * inside a read's 200 groups, and past 256 metrics each read names more. */
+ * discovery makes at most: eight metrics of a few hundred streams each sit
+ * inside a read's 2000 groups, and past 256 metrics each read names more. */
 const METRICS_PER_READ = 8
 const MAX_STREAM_READS = 32
 

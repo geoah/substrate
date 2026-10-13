@@ -199,6 +199,7 @@ describe("the streams table", () => {
     expect(streamReads[0].aggregate).toEqual({
       groupBy: ["metric", "source", "about", "channel"],
       reducers: ["last"],
+      budget: { maxGroups: 2000 },
     })
     expect(
       [...(streamReads[0].filter.properties?.metric?.in ?? [])].sort()
