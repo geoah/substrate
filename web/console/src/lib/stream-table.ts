@@ -63,6 +63,16 @@ export interface FieldChoice {
   label: string
 }
 
+/** A value as the filter bar carries it: the bar joins several with a
+ * comma, so a comma inside one (a channel may hold any text) is escaped. */
+function escapeChoice(value: string): string {
+  return value.replace(/%/g, "%25").replace(/,/g, "%2C")
+}
+
+function unescapeChoice(value: string): string {
+  return value.replace(/%2C/g, ",").replace(/%25/g, "%")
+}
+
 /** The filter bar's fields: each one a set of values to pick from, several
  * meaning any of them, in the bar's anatomy. A field with nothing to offer
  * is left out. */
@@ -77,7 +87,10 @@ export function streamFields(
         name,
         kind: "enum",
         repeated: false,
-        values: values.map((c) => ({ value: c.value, label: c.label })),
+        values: values.map((c) => ({
+          value: escapeChoice(c.value),
+          label: c.label,
+        })),
       },
     ]
   })
@@ -98,7 +111,7 @@ export function streamChoices(tokens: readonly string[] | null): StreamChoices {
     if (!(STREAM_FIELDS as readonly string[]).includes(f.field)) continue
     const values = f.value
       .split(",")
-      .map((v) => v.trim())
+      .map((v) => unescapeChoice(v.trim()))
       .filter(Boolean)
     out[f.field as StreamField].push(...values)
   }
@@ -110,7 +123,7 @@ export function choiceFilter(
   field: StreamField,
   values: readonly string[]
 ): ActiveFilter {
-  return { field, op: "eq", value: values.join(",") }
+  return { field, op: "eq", value: values.map(escapeChoice).join(",") }
 }
 
 /** Whether a row holds every chosen field's value (one of them, where
