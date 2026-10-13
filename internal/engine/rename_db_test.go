@@ -240,6 +240,9 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 		}
 		offerProps = append(offerProps, p)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	_ = rows.Close()
 	if strings.Join(offerProps, ",") != "dimensions" {
 		t.Fatalf("offers after the rename = %v, want dimensions alone", offerProps)
@@ -255,6 +258,9 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 			t.Fatal(err)
 		}
 		queued = append(queued, p)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 	_ = rows.Close()
 	if strings.Join(queued, ",") != "summary" {
@@ -273,6 +279,9 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 			t.Fatal(err)
 		}
 		vectorProps = append(vectorProps, p)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 	_ = rows.Close()
 	if strings.Join(vectorProps, ",") != "summary:"+hex.EncodeToString(blurbHash[:]) {

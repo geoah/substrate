@@ -100,6 +100,9 @@ func tableChangelog(t *testing.T, dsn string) map[int64][]byte {
 		}
 		out[seq] = hash
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 

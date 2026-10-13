@@ -107,7 +107,7 @@ func startServer(t *testing.T) *server {
 	port := freePort(t)
 	srv.baseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 
-	logs, err := os.Create(srv.logDst) //nolint:gosec // a path under the test's own temp dir
+	logs, err := os.Create(srv.logDst)
 	if err != nil {
 		t.Fatalf("creating the server log: %v", err)
 	}
@@ -118,7 +118,7 @@ func startServer(t *testing.T) *server {
 		t.Fatalf("creating the data root: %v", err)
 	}
 
-	cmd := exec.Command(filepath.Join(dir, "substrated")) //nolint:gosec // the binary this test just built
+	cmd := exec.Command(filepath.Join(dir, "substrated"))
 	cmd.Dir = repoRoot
 	cmd.Stdout, cmd.Stderr = logs, logs
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -216,7 +216,7 @@ func (s *server) stop(t *testing.T) {
 }
 
 func (s *server) logTail(lines int) string {
-	raw, err := os.ReadFile(s.logDst) //nolint:gosec // the log this test wrote
+	raw, err := os.ReadFile(s.logDst)
 	if err != nil {
 		return fmt.Sprintf("(no server log: %v)", err)
 	}
@@ -233,7 +233,7 @@ func (s *server) logTail(lines int) string {
 // developer's.
 func (s *server) register(t *testing.T, authority, ctlConfig string) string {
 	t.Helper()
-	cmd := exec.Command(s.substratectl, //nolint:gosec // the binary this test just built
+	cmd := exec.Command(s.substratectl,
 		"--context", authority, "--server", s.baseURL,
 		"register", "--repository", authority,
 		"--invite-code", inviteCode, "--password-stdin")
@@ -253,7 +253,7 @@ func (s *server) register(t *testing.T, authority, ctlConfig string) string {
 // registration wrote.
 func contextToken(t *testing.T, ctlConfig, name string) string {
 	t.Helper()
-	raw, err := os.ReadFile(ctlConfig) //nolint:gosec // a path under the test's own temp dir
+	raw, err := os.ReadFile(ctlConfig)
 	if err != nil {
 		t.Fatalf("reading %s: %v", ctlConfig, err)
 	}
@@ -347,7 +347,7 @@ func resolveInterpreter(t *testing.T) string {
 func resolveUV(t *testing.T) string {
 	t.Helper()
 	if mise, err := exec.LookPath("mise"); err == nil {
-		out, err := exec.Command(mise, "which", "uv").Output() //nolint:gosec // mise as PATH resolved it
+		out, err := exec.Command(mise, "which", "uv").Output()
 		if err == nil {
 			if p := strings.TrimSpace(string(out)); p != "" && !isShim(p) {
 				return p
@@ -404,7 +404,7 @@ func uvCacheHome(t *testing.T, python3 string) string {
 
 func build(t *testing.T, repoRoot, out, pkg string) {
 	t.Helper()
-	cmd := exec.Command("go", "build", "-o", out, pkg) //nolint:gosec // the suite's own package paths
+	cmd := exec.Command("go", "build", "-o", out, pkg)
 	cmd.Dir = repoRoot
 	if raw, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build %s: %v\n%s", pkg, err, raw)

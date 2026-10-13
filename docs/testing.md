@@ -578,7 +578,7 @@ and do not block a merge.
 | --- | ---- | -- | -------- |
 | conventional commits | `commits:check` (in `pr.yml`) | the PR title and every commit subject are conventional commits, a break carries a `BREAKING CHANGE:` footer with its steps, and a release pull request touches only the changelog ([releasing](releasing.md)) | yes |
 | lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the three diff guards: the `kinds/` and `samples/` version bump and new kind names (`kinds:check`), the write-once files (`frozen:check`), and a decision number another live branch took first (`decisions:check`) | yes |
-| lint go | `ci:lint:go` | golangci-lint and the Go formatting check | yes |
+| lint go | `ci:lint:go` | `lint:go` (the golangci-lint config check, `go mod tidy -diff` and `go mod verify`, no test infrastructure linked into a binary, then golangci-lint) and the Go formatting check | yes |
 | console | `ci:console` | typecheck, lint, format, build | yes |
 | console test | `ci:console:test` | the console's vitest suite | yes |
 | go test | `ci:go` | the short suite, no database | through `go gate` |
@@ -589,7 +589,7 @@ and do not block a merge.
 | acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no |
 | providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams | no |
 | race | `ci:race` | the short suite under `-race` | no |
-| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | no |
+| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64, and golangci-lint for darwin | no |
 | image builds | `ci:image` | the image builds from a clean tree, boots, and renders the console in headless Chrome | no |
 | changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites | no |
 | coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only |

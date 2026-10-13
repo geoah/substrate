@@ -1,34 +1,129 @@
-# A deliberately small linter set — the same one the substrate was developed
-# under in the monorepo, minus the rules that only meant something there.
+# A linter is on when the tree is at zero for it and each finding it reports
+# is a bug or a one-line fix. One whose findings are mostly style or false
+# positives stays off. Measured on this tree and turned down, so do not
+# re-enable one without a new reason:
+#   govet shadow    993 findings, 975 of them a shadowed `err`
+#   sqlclosecheck    51, each "should use defer" on rows the code closes
+#   contextcheck     73, false positives on idempotentContext and
+#                    context.WithoutCancel
+#   thelper          90, style
+#   paralleltest   1348, style: a test without t.Parallel is not a defect
+#   gocognit 170, gocyclo 67, funlen 532, nestif 41, cyclop 1042, maintidx 37:
+#                    the complexity linters at their defaults cap size and
+#                    catch no defect
 version: "2"
 linters:
   default: none
   enable:
+    - asasalint
+    - asciicheck
+    - bidichk
     - bodyclose
     - copyloopvar
+    - depguard
     - dogsled
-    # - errcheck  # every ignored error would need a pass of its own first
+    - errcheck
     - errorlint
+    - exptostd
+    - fatcontext
+    - gocheckcompilerdirectives
     - godox
     - goprintffuncname
+    - gosec
+    - govet
     - intrange
     - ineffassign
     - misspell
     - nakedret
+    - nilnesserr
+    - nolintlint
+    - reassign
+    - rowserrcheck
     - staticcheck
     - unconvert
     - unused
+    - usestdlibvars
     - whitespace
   settings:
+    depguard:
+      # depguard matches absolute paths, so `${base-path}` anchors each glob
+      # at the repository root: a bare `**/cmd/**` would also exempt a nested
+      # cmd/ directory, or every file of a checkout that lives under one.
+      rules:
+        # AGENTS.md: internal/api builds against internal/substrate and is
+        # tested against its hand-written fake alone, so its test files are
+        # held too.
+        api-never-imports-engine:
+          list-mode: lax
+          files:
+            - "${base-path}/internal/api/**"
+          deny:
+            - pkg: github.com/geoah/substrate/internal/engine
+              desc: internal/api builds against internal/substrate and is
+                tested against fake_test.go, never the engine (AGENTS.md)
+        # Only the binaries, internal/testenv (a whole substrate for one test)
+        # and tests open the engine; every other package builds against the
+        # contract.
+        engine-consumers:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!${base-path}/cmd/**"
+            - "!${base-path}/internal/engine/**"
+            - "!${base-path}/internal/testenv/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/geoah/substrate/internal/engine
+              desc: only cmd/, internal/testenv and tests open the engine;
+                build against internal/substrate
+        # Test infrastructure imported by production code links the docker
+        # client into the binaries. lint:go's `go list -deps` check holds the
+        # same line over each binary's whole import closure.
+        test-infra:
+          list-mode: lax
+          files:
+            - "$all"
+            - "!$test"
+            - "!${base-path}/internal/testdb/**"
+          deny:
+            - pkg: github.com/testcontainers/testcontainers-go
+              desc: test infrastructure; only internal/testdb and tests import
+                it
+            - pkg: github.com/moby/moby
+              desc: test infrastructure; only internal/testdb and tests import
+                it
+            - pkg: github.com/stretchr/testify
+              desc: the suite uses the standard testing package
+    errorlint:
+      asserts: true
     godox:
       keywords:
         - FIXME
+    gosec:
+      excludes:
+        # Hardcoded credentials: every hit is a kind reference, an env var
+        # name, a token prefix or a message, never a secret value.
+        - G101
+        # Integer overflow on conversion: 16 hits are the sandbox's kernel-ABI
+        # fields, which truncate by design; the other 5 convert non-negative
+        # values that fit (a hash length, a TOTP step, a pass count, a free
+        # block count, a 0 or 1 byte).
+        - G115
+        # Secret field marshaled: the one hit marshals an OAuth token to seal it.
+        - G117
+        # SQL string concatenation: every hit joins constants or $n
+        # placeholders, and CodeQL's security-and-quality suite tracks taint.
+        - G202
     govet:
-      enable:
-        - nilness
+      # Every analyzer, not just the subset `go test` runs. fieldalignment is
+      # a memory-layout preference and shadow is rejected in the header.
+      enable-all: true
+      disable:
+        - fieldalignment
         - shadow
-    errorlint:
-      asserts: false
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     staticcheck:
       checks:
         - all
@@ -46,8 +141,6 @@ linters:
         - "catalogue"
         - "Catalogue"
         - "catalogues"
-  # Report every occurrence: a truncated list makes a cleanup pass look done
-  # when it is not.
   exclusions:
     generated: lax
     presets:
@@ -69,6 +162,23 @@ linters:
         linters:
           - unused
           - dogsled
+      # A test runs the suite's own binaries over its own temp files; gosec's
+      # subprocess and file-path rules would flag every harness.
+      - path: (.+)_test\.go
+        linters:
+          - gosec
+      # spaHandler stats and serves a path only after filepath.IsLocal and a
+      # prefix check on the joined result, a guard G703 does not credit.
+      - path: ^internal/api/api\.go$
+        text: "G703"
+        linters:
+          - gosec
+      # seekPredicate indexes the cursor keys, whose length its one caller
+      # checks against the order terms first; G602 does not follow the call.
+      - path: ^internal/engine/query\.go$
+        text: "G602"
+        linters:
+          - gosec
 formatters:
   enable:
     - gofumpt
@@ -84,3 +194,9 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/geoah/substrate
+issues:
+  # Report every occurrence: a truncated list makes a cleanup pass look done
+  # when it is not, and a bare `golangci-lint run` from an editor or an agent
+  # must print what lint:go prints.
+  max-issues-per-linter: 0
+  max-same-issues: 0

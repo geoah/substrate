@@ -6,9 +6,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -112,7 +114,19 @@ func dief(format string, args ...any) {
 // let name resolution through a loopback stub without reparsing resolv.conf per
 // connection.
 func New(mode Mode) *Confiner {
-	return &Confiner{mode: mode, report: probe(), resolvers: loadResolvers()}
+	return &Confiner{mode: mode, report: probe(), confinerOS: confinerOS{resolvers: loadResolvers()}}
+}
+
+// confinerOS is the connect gate's state, which only the Linux confinement
+// reads.
+type confinerOS struct {
+	// resolvers are the nameservers from /etc/resolv.conf, allowed on port 53
+	// so name resolution through a loopback stub survives the connect filter.
+	// Resolved once at New.
+	resolvers []netip.Addr
+	// pending holds the parent end of each connect-gate socket between Wrap and
+	// Serve, keyed by the *exec.Cmd Wrap set it up for.
+	pending sync.Map
 }
 
 // probe asks the kernel what it actually supports. Landlock answers its own

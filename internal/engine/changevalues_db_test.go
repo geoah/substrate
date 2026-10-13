@@ -423,6 +423,9 @@ func TestChangeValuesKeepAFormerSecretRedacted(t *testing.T) {
 		}
 		sealed = append(sealed, p)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	_ = rows.Close()
 	if !strings.Contains(strings.Join(sealed, "\n"), `"secret:`) {
 		t.Fatalf("the changelog holds no sealed ref to guard: %v", sealed)

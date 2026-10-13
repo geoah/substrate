@@ -221,7 +221,7 @@ func readExport(r io.Reader) (exportReport, error) {
 			report.blobs++
 			report.blobBytes += h.Size
 		}
-		if _, err := io.Copy(io.Discard, tr); err != nil {
+		if _, err := io.Copy(io.Discard, tr); err != nil { //nolint:gosec // G110: the entry drains to io.Discard and nothing is held in memory
 			return report, fmt.Errorf("the export ended inside %s: %w", h.Name, err)
 		}
 	}

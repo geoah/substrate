@@ -137,7 +137,7 @@ func runProvider(t *testing.T, srv *server, c providerCase) {
 		"--ctl", srv.substratectl,
 		"--recordings", filepath.Join(srv.suiteDir, "fixtures", provider),
 	}
-	cmd := exec.Command(srv.python3, args...) //nolint:gosec // every argument is the suite's own
+	cmd := exec.Command(srv.python3, args...)
 	cmd.Dir = srv.suiteDir
 	cmd.Env = append(os.Environ(),
 		// The bearer goes through the environment and never through argv:
@@ -180,7 +180,7 @@ type providerConfig struct {
 func readProviderConfig(t *testing.T, provider string) providerConfig {
 	t.Helper()
 	path := filepath.Join("providers", provider, "e2e.json")
-	raw, err := os.ReadFile(path) //nolint:gosec // a path built from the suite's own table
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading %s: %v", path, err)
 	}

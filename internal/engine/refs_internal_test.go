@@ -7,6 +7,7 @@ package engine
 // shape whose rows collide would silently lose pointers.
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -151,29 +152,32 @@ func TestDeriveRefsEscapesDottedKeyedMapKeys(t *testing.T) {
 	// "a.b" + field "c" against key "a" + field "b.c" is the collision from
 	// issue #322. The second key's field name cannot itself carry a dot, so
 	// the second half is a nested keyed map.
-	inner := &vocabulary.Property{
-		Datatype: vocabulary.DatatypeObject, Keyed: true,
-		Fields:     map[string]*vocabulary.Property{"c": reference(nil)},
-		FieldOrder: []string{"c"},
-	}
-	_ = inner
+	inner := reference(func(p *vocabulary.Property) { p.Keyed = true })
 	outer := &vocabulary.Property{
 		Datatype: vocabulary.DatatypeObject, Keyed: true,
-		Fields:     map[string]*vocabulary.Property{"c": reference(nil)},
-		FieldOrder: []string{"c"},
+		Fields:     map[string]*vocabulary.Property{"b": inner, "c": reference(nil)},
+		FieldOrder: []string{"b", "c"},
 	}
 	ty := derivedKind(map[string]*vocabulary.Property{"outer": outer}, "outer")
 
 	got := deriveRefs(ty, map[string]any{
 		"outer": map[string]any{
 			"a.b": map[string]any{"c": hubPath("h1")},
-			"a":   map[string]any{"c": hubPath("h2")},
+			"a":   map[string]any{"b": map[string]any{"c": hubPath("h2")}},
 		},
 	})
+	seen := map[string]bool{}
+	for _, r := range got {
+		addr := fmt.Sprintf("%s|%s|%d", r.Property, r.Path, r.Ord)
+		if seen[addr] {
+			t.Fatalf("two rows share the address %s: %+v", addr, got)
+		}
+		seen[addr] = true
+	}
 	// "a.b" escapes to "a~1b", so the two rows are distinct addresses. Sorted
-	// by path: "a.c" < "a~1b.c" (Go compares bytes, and '.' is 0x2e < '~').
+	// by path: "a.b.c" < "a~1b.c" (Go compares bytes, and '.' is 0x2e < '~').
 	wantRows(t, got, []site{
-		{"outer", "a.c", 0, "h2"},
+		{"outer", "a.b.c", 0, "h2"},
 		{"outer", "a~1b.c", 0, "h1"},
 	})
 }

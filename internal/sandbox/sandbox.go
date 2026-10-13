@@ -62,7 +62,6 @@ import (
 	"net/netip"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 )
 
@@ -341,13 +340,10 @@ func (r Report) String() string {
 type Confiner struct {
 	mode   Mode
 	report Report
-	// resolvers are the nameservers from /etc/resolv.conf, allowed on port 53
-	// so name resolution through a loopback stub survives the connect filter.
-	// Resolved once at New.
-	resolvers []netip.Addr
-	// pending holds the parent end of each connect-gate socket between Wrap and
-	// Serve, keyed by the *exec.Cmd Wrap set it up for.
-	pending sync.Map
+	// confinerOS is the platform's half: the connect gate's state on Linux,
+	// the no-op wrap and serve elsewhere. A field only Linux reads, declared
+	// here, is an unused field in every other build.
+	confinerOS
 }
 
 // Gate is a served connect gate: the closer that stops it, and its record of

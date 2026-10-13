@@ -160,6 +160,9 @@ def main(input, host):
 		}
 		fires = append(fires, at)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	_ = rows.Close()
 	if len(fires) != 4 {
 		t.Fatalf("run rows: %d, want 4", len(fires))

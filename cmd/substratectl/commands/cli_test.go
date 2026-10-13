@@ -940,8 +940,8 @@ func TestGetAmbiguousNameErrors(t *testing.T) {
 	// requests matter here.
 	h2 := newHarness(t)
 	h2.writeConfig()
-	h2.run("get", "slack.connectors.substrate.reamde.dev/slack/syncrun")   //nolint:dogsled // requests are the assertion
-	h2.run("get", "google.connectors.substrate.reamde.dev/google/syncrun") //nolint:dogsled // requests are the assertion
+	_, _, _ = h2.run("get", "slack.connectors.substrate.reamde.dev/slack/syncrun")
+	_, _, _ = h2.run("get", "google.connectors.substrate.reamde.dev/google/syncrun")
 	for _, want := range []string{
 		listOf("slack.connectors.substrate.reamde.dev/slack/syncrun"),
 		listOf("google.connectors.substrate.reamde.dev/google/syncrun"),
@@ -1454,7 +1454,7 @@ func TestApplyResolvesTheKindThroughItsPackage(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.stdin.WriteString("kind: slack.connectors.substrate.reamde.dev/slack/syncrun\nmetadata:\n  id: r1\ndata: {}\n")
-	_, _, _ = h.run("apply", "-f", "-") //nolint:dogsled // the addressed collection is the assertion
+	_, _, _ = h.run("apply", "-f", "-")
 	var saw bool
 	for _, req := range h.fake.requests {
 		saw = saw || req == "PUT /api/v1/slack.connectors.substrate.reamde.dev/slack/syncrun/r1"

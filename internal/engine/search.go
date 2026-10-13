@@ -493,6 +493,12 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 		}
 		items = append(items, it)
 	}
+	// A failed Next closes the rows itself and ends the loop early, so only
+	// rows.Err tells a short batch from a short queue.
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, err
+	}
 	_ = rows.Close()
 
 	done := 0
@@ -537,9 +543,14 @@ type embedPlan struct {
 func (ds *dataset) computeEmbedding(ctx context.Context, provider *embedProvider, id eref, prop string) (*embedPlan, error) {
 	row, err := scanRecord(ds.db.QueryRowContext(ctx,
 		`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id = $2`, id.Kind, id.ID))
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
 		// The record went away; drop the queue row and touch no vectors.
 		return &embedPlan{skip: true}, nil
+	}
+	if err != nil {
+		// A skip deletes the queue row, so a failed read must not plan one:
+		// the row stays for the next drain.
+		return nil, err
 	}
 	ty, ok := ds.registry().ByIdentity(row.Kind)
 	if !ok {

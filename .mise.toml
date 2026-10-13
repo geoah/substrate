@@ -80,12 +80,17 @@ description = "Compile for every platform the project ships or is developed on"
 # host-arch build. The image ships linux/amd64 and linux/arm64; developers run
 # macOS. A compile error on any of them would otherwise surface in a RELEASE
 # (which builds multi-arch) rather than in the pull request that caused it.
+# golangci-lint for darwin too: a linux runner never compiles the !linux
+# files, so a field or an import only the linux build uses fails `lint` on
+# macOS alone.
 run = """
     for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
       echo "building ${target}"
       GOOS=${target%/*} GOARCH=${target#*/} go build ./... || exit 1
       GOOS=${target%/*} GOARCH=${target#*/} go vet ./... || exit 1
     done
+    echo "golangci-lint for darwin"
+    GOOS=darwin golangci-lint run ./... || exit 1
     """
 
 [tasks."test:short"]
@@ -303,11 +308,42 @@ depends = [
 ]
 
 [tasks."lint:go"]
-description = "golangci-lint over the module"
-# --max-same-issues 0 --max-issues-per-linter 0: the default caps the report at
-# three of any one finding, which makes a cleanup pass look finished when it is
-# not. Report everything.
-run = "golangci-lint run --max-same-issues 0 --max-issues-per-linter 0"
+description = "golangci-lint over the module, after its config, the module files and the binaries' dependencies"
+# In order, each failing the task:
+# `config verify`: `run` ignores a misspelled settings key, so a typo in
+# .golangci.yml would turn a setting off and still pass.
+# `go mod tidy -diff` and `go mod verify`: a requirement a removal left behind,
+# or a go.sum edited by hand, fails here rather than on a fresh machine.
+# Offline, tidy needs a module cache that `go mod download all` filled: it
+# reads the modules only Windows or Plan 9 files, or the dependencies' own
+# tests, import, and no linux or darwin build or test downloads those.
+# `go list -deps ./cmd/...`, for linux and for darwin: no binary links test
+# infrastructure. depguard sees one file's direct imports; this sees each
+# binary's whole closure, so a production import of a package that imports
+# internal/testdb fails too.
+# The report cap is off in .golangci.yml, so a bare `golangci-lint run` prints
+# the same list. The darwin pass is `cross`'s: it is a second whole typecheck,
+# and `lint go` is a required check held to a minute.
+run = [
+  "golangci-lint config verify",
+  "go mod tidy -diff",
+  "go mod verify",
+  '''
+    deps=$(go list -deps ./cmd/... && GOOS=darwin go list -deps ./cmd/...) || exit 1
+    status=0
+    leaked=$(printf '%s\n' "$deps" | grep -E '^(github\.com/(testcontainers|moby/moby|stretchr/testify)|github\.com/geoah/substrate/internal/(testdb|testenv|engine/enginetest))(/|$)') || status=$?
+    if [ "$status" -gt 1 ]; then
+      echo "grep exited $status, so the dependency check checked nothing" >&2
+      exit 1
+    fi
+    if [ -n "$leaked" ]; then
+      echo "a binary under cmd/ links test infrastructure:" >&2
+      printf '%s\n' "$leaked" | sort -u >&2
+      exit 1
+    fi
+    ''',
+  "golangci-lint run",
+]
 
 [tasks."lint:yaml"]
 description = "yamllint over every YAML in the tree — block style, and nothing else"
@@ -801,7 +837,7 @@ depends = [
 ]
 
 [tasks."ci:lint:go"]
-description = "CI job `lint go`: golangci-lint and the Go formatting check"
+description = "CI job `lint go`: lint:go (module checks, then golangci-lint for linux and darwin) and the Go formatting check"
 depends = ["lint:go", "fmt:go:check"]
 
 [tasks."ci:cross"]

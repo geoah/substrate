@@ -215,7 +215,7 @@ jobs:
         with:
           experimental: true
           version: 2026.9.2
-          install_args: go
+          install_args: go golangci-lint
       # Its own key: this job's working set is four foreign GOARCHes, which the
       # test job's cache never holds and would only evict.
       - id: cache
@@ -224,6 +224,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
+            ~/.cache/golangci-lint
           key: ${{ runner.os }}-go-cross-${{ hashFiles('go.sum') }}-${{ github.sha
             }}
           restore-keys: |
@@ -245,6 +246,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
+            ~/.cache/golangci-lint
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
   changes:

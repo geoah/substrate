@@ -103,6 +103,9 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 		}
 		assertNoKeyFragment("the thread reason", reason)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if seen != 1 {
 		t.Fatalf("found %d error threads, want 1", seen)
 	}

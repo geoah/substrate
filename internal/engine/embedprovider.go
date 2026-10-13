@@ -296,6 +296,12 @@ func pruneUnembeddable(ctx context.Context, q dbx, reg *vocabulary.Registry, emb
 		}
 		stale = append(stale, pair)
 	}
+	// A failed Next closes the rows itself, so Close reports nothing and only
+	// rows.Err tells a partial list from a complete one.
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("substrate/engine: list embedded pairs: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return err
 	}
