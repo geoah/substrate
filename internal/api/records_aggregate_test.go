@@ -136,7 +136,8 @@ func TestAggregateIsRefusedBesideListParameters(t *testing.T) {
 }
 
 // A metric read's filter takes a summary's statistic beside the stream keys,
-// and the route hands it to the dataset as written.
+// and exists or a null inside in on a stream key, and the route hands them
+// to the dataset as written.
 func TestRecordsAggregateTakesTheStatisticFilter(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
@@ -146,12 +147,18 @@ func TestRecordsAggregateTakesTheStatisticFilter(t *testing.T) {
 		From:    substrate.AggregateFromSummaries,
 		GroupBy: []string{substrate.GroupStatistic},
 	}
-	f, _ := json.Marshal(substrate.Filter{Properties: map[string]substrate.Cond{"statistic": {In: []any{"avg", "max"}}}})
-	rec := env.do(t, http.MethodGet, aggregatePath(t, a, "filter="+url.QueryEscape(string(f))), tok, nil)
+	filter := `{"properties":{"statistic":{"in":["avg","max"]},"channel":{"in":[null,"workout"]},"about":{"exists":false}}}`
+	rec := env.do(t, http.MethodGet, aggregatePath(t, a, "filter="+url.QueryEscape(filter)), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	q := ds.lastAggregate
 	if c, ok := q.Filter.Properties["statistic"]; !ok || len(c.In) != 2 || q.Aggregate.GroupBy[0] != "statistic" {
 		t.Fatalf("the dataset saw filter %+v groupBy %v", q.Filter, q.Aggregate.GroupBy)
+	}
+	if c := q.Filter.Properties["channel"]; len(c.In) != 2 || c.In[0] != nil || c.In[1] != "workout" {
+		t.Fatalf("the dataset saw channel %+v", c)
+	}
+	if c := q.Filter.Properties["about"]; c.Exists == nil || *c.Exists {
+		t.Fatalf("the dataset saw about %+v", c)
 	}
 }
 
