@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -412,5 +413,41 @@ func TestGoogleFitThreeDaysIsSmall(t *testing.T) {
 		p.Options.Start.Add(1).Midnight(time.UTC))
 	if relaxed || len(pts) < 288 {
 		t.Fatalf("a whole UTC day of heart rate is %d points (relaxed %v)", len(pts), relaxed)
+	}
+}
+
+// The watch reads a night whichever local day it falls in: between bedtime
+// and midnight its points are the sleeping persona's, not the waking curve
+// of the day that is ending.
+func TestGoogleFitHeartRateFollowsTheNextNight(t *testing.T) {
+	p, files := fitEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
+	sid := fitDerivedID("com.google.heart_rate.bpm", "merge_heart_rate_bpm")
+	var nights []*Sleep
+	for _, d := range p.Days() {
+		nights = append(nights, p.Day(d.Add(1)).Sleep)
+	}
+	sum, truth, n := 0.0, 0.0, 0
+	for day := p.Options.Start.Midnight(time.UTC); day.Before(p.Options.End.Add(1).Midnight(time.UTC)); day = day.AddDate(0, 0, 1) {
+		pts, _ := fitReadDay(t, files, sid, day)
+		for _, pt := range pts {
+			at := time.Unix(0, fitNanos(t, pt["startTimeNanos"]))
+			if pt["originDataSourceId"] != fitRawHR {
+				continue
+			}
+			for _, s := range nights {
+				// Before the local midnight that ends the evening's day.
+				if !at.Before(s.Start) && at.Before(s.End) && at.Before(s.Date.Midnight(p.Zone(s.Date))) {
+					sum += fitValue(t, pt, 0, "fpVal")
+					truth += float64(s.HR(at))
+					n++
+				}
+			}
+		}
+	}
+	if n < 6 {
+		t.Fatalf("%d heart rate points between bedtime and midnight; the check reads nothing", n)
+	}
+	if got, want := sum/float64(n), truth/float64(n); math.Abs(got-want) > 3 {
+		t.Fatalf("heart rate averages %.1f between bedtime and midnight over %d points, the sleeping persona's %.1f", got, n, want)
 	}
 }

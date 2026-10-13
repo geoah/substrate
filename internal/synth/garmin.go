@@ -231,33 +231,20 @@ func roundTo(v float64, places int) float64 {
 
 func iround(v float64) int { return int(math.Round(v)) }
 
-// next is the day after d as the watch recorded it, nil past the range.
-func (e *garminEmitter) next(d Date) *Day { return e.day[d.Add(1)] }
-
 // span is the day's [start, end) in seconds.
 func (e *garminEmitter) span(d Date) (int64, int64) {
 	x := e.day[d]
 	return x.Start().Unix(), x.EndTime().Unix()
 }
 
-// hrAt is the watch's heart rate at t on day d: the next night's when that
-// night has begun before midnight.
+// hrAt is the watch's heart rate at t on day d.
 func (e *garminEmitter) hrAt(d Date, t time.Time) int {
-	x, n := e.day[d], e.next(d)
-	v := x.HR(t)
-	if n != nil && n.AsleepAt(t) != nil {
-		v = n.HR(t)
-	}
-	return iround(e.noisy("hr", t.Unix(), float64(v)+e.hrBias, 1.4))
+	return iround(e.noisy("hr", t.Unix(), float64(e.day[d].HR(t))+e.hrBias, 1.4))
 }
 
 // stressAt is the watch's stress level at t, -1 where it measured none.
 func (e *garminEmitter) stressAt(d Date, t time.Time) int {
-	x, n := e.day[d], e.next(d)
-	v := x.Stress(t)
-	if n != nil && n.AsleepAt(t) != nil {
-		v = n.Stress(t)
-	}
+	v := e.day[d].Stress(t)
 	if v < 0 {
 		return -1
 	}
@@ -265,9 +252,6 @@ func (e *garminEmitter) stressAt(d Date, t time.Time) int {
 }
 
 func (e *garminEmitter) stepsMinute(d Date, t time.Time) int {
-	if n := e.next(d); n != nil && n.AsleepAt(t) != nil {
-		return 0
-	}
 	return e.day[d].StepsIn(t, t.Add(time.Minute))
 }
 

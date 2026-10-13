@@ -103,7 +103,7 @@ func (AppleHealth) Emit(p *Persona) (*Output, error) {
 		}},
 	}}
 	for _, d := range p.Days() {
-		e := &ahDay{p: p, d: d, day: p.Day(d), next: p.Day(d.Add(1))}
+		e := &ahDay{p: p, d: d, day: p.Day(d)}
 		body, err := ahBody(map[string]any{"data": map[string]any{
 			"metrics":  e.metrics(),
 			"workouts": e.workouts(),
@@ -174,9 +174,9 @@ type ahBucket struct {
 }
 
 type ahDay struct {
-	p         *Persona
-	d         Date
-	day, next *Day
+	p   *Persona
+	d   Date
+	day *Day
 }
 
 func (e *ahDay) noisy(what string, key any, v, sd float64) float64 {
@@ -189,16 +189,6 @@ func (e *ahDay) rng(key ...any) *rand.Rand {
 
 // date is t as the app writes it, in the day's zone.
 func (e *ahDay) date(t time.Time) string { return t.In(e.day.Zone).Format(ahDate) }
-
-// hr is the persona's heart rate at t, with the night that ends tomorrow
-// morning folded in: Day.HR only knows the night that ended this morning,
-// so after bedtime it would answer a waking rate.
-func (e *ahDay) hr(t time.Time) int {
-	if s := e.next.Sleep; s != nil && !t.Before(s.Start) && t.Before(s.End) {
-		return s.HR(t)
-	}
-	return e.day.HR(t)
-}
 
 func (e *ahDay) running(t time.Time) bool {
 	w := e.day.WorkoutAt(t)
@@ -262,7 +252,7 @@ func (e *ahDay) heartRate() []map[string]any {
 		t := slot.Add(time.Duration(jitters[r.IntN(len(jitters))]) * time.Minute)
 		skip := r.Float64() < 0.04
 		if !skip && t.Before(end) {
-			v := e.noisy("hr", i, float64(e.hr(t)), 2)
+			v := e.noisy("hr", i, float64(e.day.HR(t)), 2)
 			if e.day.WorkoutAt(t) != nil {
 				avg := ahRound(v, 6)
 				rows = append(rows, map[string]any{

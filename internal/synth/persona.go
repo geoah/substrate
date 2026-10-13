@@ -406,11 +406,16 @@ func (d *Day) EndTime() time.Time {
 	return next.Midnight(d.persona.Zone(next))
 }
 
-// AsleepAt is the sleep covering t, if any.
+// AsleepAt is the sleep covering t, if any: the night that ended this
+// morning, a nap, or the night that ends tomorrow morning, which begins
+// before this day ends.
 func (d *Day) AsleepAt(t time.Time) *Sleep {
 	all := append([]*Sleep{}, d.Naps...)
 	if d.Sleep != nil {
 		all = append(all, d.Sleep)
+	}
+	if next := d.persona.Day(d.Date.Add(1)).Sleep; next != nil {
+		all = append(all, next)
 	}
 	for _, s := range all {
 		if !t.Before(s.Start) && t.Before(s.End) {
@@ -419,6 +424,22 @@ func (d *Day) AsleepAt(t time.Time) *Sleep {
 	}
 	return nil
 }
+
+// DayAt is the local day whose span holds t.
+func (p *Persona) DayAt(t time.Time) *Day {
+	u := t.UTC()
+	d := NewDate(u.Year(), u.Month(), u.Day())
+	for _, c := range []Date{d.Add(-1), d, d.Add(1)} {
+		if day := p.Day(c); !t.Before(day.Start()) && t.Before(day.EndTime()) {
+			return day
+		}
+	}
+	return p.Day(d)
+}
+
+// HR is the heart rate at t without device noise, whichever day and night
+// hold it.
+func (p *Persona) HR(t time.Time) int { return p.DayAt(t).HR(t) }
 
 // WorkoutAt is the workout covering t, if any.
 func (d *Day) WorkoutAt(t time.Time) *Workout {
@@ -573,12 +594,12 @@ func (d *Day) Floors() int {
 // Stress is a Garmin-style stress level 0..100 at t, -1 while a workout
 // runs (not measured).
 func (d *Day) Stress(t time.Time) int {
-	if d.AsleepAt(t) != nil {
+	if s := d.AsleepAt(t); s != nil {
 		v := 18.0
-		if d.Ill {
+		if d.persona.Ill(s.Date) {
 			v += 12
 		}
-		return max(5, int(math.Round(v+d.persona.rng("stress", d.Date, t.Unix()/180).NormFloat64()*5)))
+		return max(5, int(math.Round(v+d.persona.rng("stress", s.Date, t.Unix()/180).NormFloat64()*5)))
 	}
 	if d.WorkoutAt(t) != nil {
 		return -1

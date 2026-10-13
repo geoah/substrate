@@ -201,26 +201,12 @@ func (e *whoopEmitter) cycleID(d Date) int {
 // last reports whether d is the range's last day, whose cycle is open.
 func (e *whoopEmitter) last(d Date) bool { return d == e.p.Options.End }
 
-// whoopHRAt is the heart rate at t inside the cycle that starts on day's wake:
-// the next night is the next day's sleep, and after midnight the next day's
-// curve.
-func whoopHRAt(day, next *Day, t time.Time) int {
-	if next != nil && next.Sleep != nil && !t.Before(next.Sleep.Start) && t.Before(next.Sleep.End) {
-		return next.Sleep.HR(t)
-	}
-	if next != nil && !t.Before(day.EndTime()) {
-		return next.HR(t)
-	}
-	return day.HR(t)
-}
-
 // --- the collections ---------------------------------------------------------
 
 func (e *whoopEmitter) cycles() []whoopRecord {
 	var out []whoopRecord
 	for _, d := range e.days {
 		day := e.p.Day(d)
-		var next *Day
 		start := e.wake(d)
 		var end, updated, spanEnd time.Time
 		if e.last(d) {
@@ -228,7 +214,6 @@ func (e *whoopEmitter) cycles() []whoopRecord {
 			updated = e.jit(d.At(day.Zone, 22, 47), "openupd", d)
 			spanEnd = updated
 		} else {
-			next = e.p.Day(d.Add(1))
 			end = e.wake(d.Add(1))
 			updated = end.Add(time.Duration(e.intn(25, 200, "cycupd", d))*time.Minute +
 				time.Duration(e.intn(0, 999, "cycupdms", d))*time.Millisecond)
@@ -237,7 +222,7 @@ func (e *whoopEmitter) cycles() []whoopRecord {
 		var sum, n float64
 		peak := 0
 		for t := start; t.Before(spanEnd); t = t.Add(5 * time.Minute) {
-			v := whoopHRAt(day, next, t)
+			v := e.p.HR(t)
 			sum += float64(v)
 			n++
 			peak = max(peak, v)
