@@ -411,6 +411,27 @@ func everyStart(t, origin time.Time, every time.Duration) time.Time {
 	return t.Add(-time.Duration(phase.Int64()))
 }
 
+// firstEndingAfter is the index of the first of buckets whose end is after
+// t, len(buckets) where none is; the buckets are disjoint and in order. It is
+// a binary search, and check runs once per bucket it compares: a read places
+// each of its points and records in a bucket, and a scan would take points
+// times buckets.
+func firstEndingAfter(buckets []*aggBucket, t time.Time, check func() error) (int, error) {
+	lo, hi := 0, len(buckets)
+	for lo < hi {
+		if err := check(); err != nil {
+			return 0, err
+		}
+		mid := int(uint(lo+hi) >> 1)
+		if buckets[mid].end.After(t) {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo, nil
+}
+
 // localBucketAt is the recorded-local bucket holding a wall-clock time,
 // created where the range's own enumeration did not reach (a point whose
 // offset puts it on a day the range's offsets do not name).

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"math/bits"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -144,7 +145,7 @@ func TestAggregateRecordWindowsMeetingOverlap(t *testing.T) {
 		length := time.Duration(1+rnd.IntN(24*60)) * time.Minute
 		windows = append(windows, &aggBucket{start: at, end: at.Add(length), zone: time.UTC})
 	}
-	r := &aggRun{p: &aggPlan{bucket: bucketSpec{mode: bucketRecords}}, buckets: windows}
+	r := &aggRun{ctx: context.Background(), p: &aggPlan{bucket: bucketSpec{mode: bucketRecords}}, buckets: windows}
 	want := func(from, to time.Time) []*aggBucket {
 		var out []*aggBucket
 		for _, b := range windows {
@@ -157,12 +158,75 @@ func TestAggregateRecordWindowsMeetingOverlap(t *testing.T) {
 	for range 2000 {
 		from := start.Add(time.Duration(rnd.IntN(700*60)) * time.Minute)
 		to := from.Add(time.Duration(rnd.IntN(120)) * time.Minute)
-		if got, w := r.bucketsMeeting(from, to), want(from, to); !slices.Equal(got, w) {
-			t.Fatalf("[%s, %s): %d windows, want %d", from.Format(time.RFC3339), to.Format(time.RFC3339), len(got), len(w))
+		got, err := r.bucketsMeeting(from, to)
+		if w := want(from, to); err != nil || !slices.Equal(got, w) {
+			t.Fatalf("[%s, %s): %d windows (%v), want %d", from.Format(time.RFC3339), to.Format(time.RFC3339), len(got), err, len(w))
 		}
 		r.p.from, r.p.to = start, start
-		if got, w := r.bucketsOf(from, 0), want(from, from.Add(time.Nanosecond)); !slices.Equal(got, w) {
-			t.Fatalf("a point at %s: %d windows, want %d", from.Format(time.RFC3339), len(got), len(w))
+		got, err = r.bucketsOf(from, 0)
+		if w := want(from, from.Add(time.Nanosecond)); err != nil || !slices.Equal(got, w) {
+			t.Fatalf("a point at %s: %d windows (%v), want %d", from.Format(time.RFC3339), len(got), err, len(w))
 		}
+	}
+}
+
+// A point is placed among records-mode windows in steps that grow with the
+// windows it meets and the depth of a tree over them, not with the windows
+// before it: one window over all 10,000 minutes, whose end is every later
+// window's running latest end, and 2,000 ten-minute windows every five
+// minutes, under 20,000 points every 30 seconds, each meeting three. A scan
+// from the first window that has not ended takes about a thousand steps per
+// point here.
+func TestAggregateRecordWindowsTakeStepsInTheWindowsTheyMeet(t *testing.T) {
+	const n = 20000
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	windows := []*aggBucket{{start: start, end: start.Add(10000 * time.Minute), zone: time.UTC}}
+	for i := range 2000 {
+		at := start.Add(time.Duration(i) * 5 * time.Minute)
+		windows = append(windows, &aggBucket{start: at, end: at.Add(10 * time.Minute), zone: time.UTC})
+	}
+	r := &aggRun{ctx: context.Background(), p: &aggPlan{bucket: bucketSpec{mode: bucketRecords}}, buckets: windows}
+	met := 0
+	for i := range n {
+		at := start.Add(time.Duration(i)*30*time.Second + time.Second)
+		bs, err := r.bucketsOf(at, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := min(3, 2+i/10); len(bs) != want {
+			t.Fatalf("a point at %s meets %d windows, want %d", at.Format(time.RFC3339), len(bs), want)
+		}
+		met += len(bs)
+	}
+	depth := bits.Len(uint(len(windows))) + 1
+	if limit := len(windows) + 2*depth*(met+n); int(r.steps) > limit {
+		t.Errorf("%d steps placing %d points among %d windows, want at most %d: each point a walk down the tree to the %d windows met",
+			r.steps, n, len(windows), limit, met)
+	}
+}
+
+// A point or a record is placed among disjoint buckets, the property read's
+// and every UTC bucket mode's, in steps that grow with the log of the
+// buckets: 10,000 instants over 10,000 one-minute buckets take at most 15
+// comparisons each, where a scan takes 5,000 on average.
+func TestAggregateBucketSearchComparesLogBuckets(t *testing.T) {
+	const n = 10000
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	var buckets []*aggBucket
+	for i := range n {
+		at := start.Add(time.Duration(i) * time.Minute)
+		buckets = append(buckets, &aggBucket{start: at, end: at.Add(time.Minute), zone: time.UTC})
+	}
+	steps := 0
+	count := func() error { steps++; return nil }
+	for i := range n + 1 {
+		at := start.Add(time.Duration(i)*time.Minute + 30*time.Second)
+		got, err := firstEndingAfter(buckets, at, count)
+		if want := min(i, n); err != nil || got != want {
+			t.Fatalf("an instant at %s: bucket %d (%v), want %d", at.Format(time.RFC3339), got, err, want)
+		}
+	}
+	if limit := (n + 1) * (bits.Len(uint(n)) + 1); steps > limit {
+		t.Errorf("%d comparisons placing %d instants among %d buckets, want at most %d", steps, n+1, n, limit)
 	}
 }

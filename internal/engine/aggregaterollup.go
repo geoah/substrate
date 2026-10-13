@@ -44,9 +44,16 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			if local {
 				// The row lands in the day its quarter hour names at its
 				// offset; the day's first and last points are the rows' own.
-				targets = r.bucketsOf(row.Start, og.offset)
+				var err error
+				if targets, err = r.bucketsOf(row.Start, og.offset); err != nil {
+					return nil, err
+				}
 			} else {
-				for _, b := range r.bucketsMeeting(row.Start, row.Start.Add(bucketWidth)) {
+				meeting, err := r.bucketsMeeting(row.Start, row.Start.Add(bucketWidth))
+				if err != nil {
+					return nil, err
+				}
+				for _, b := range meeting {
 					whole, _ := split(b)
 					if !row.Start.Before(whole[0]) && row.Start.Before(whole[1]) {
 						targets = append(targets, b)
@@ -418,7 +425,10 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, si int, rows 
 				slot = next
 				continue
 			}
-			end = r.chunkEnd(slot, next, carry)
+			var err error
+			if end, err = r.chunkEnd(slot, next, carry); err != nil {
+				return err
+			}
 		}
 		sums, nextCarry, ok := observed.HeldFromRowsCarry(rows[i:j], carry, slot, end, r.p.maxGap)
 		if !ok {
@@ -440,7 +450,11 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, si int, rows 
 				}
 				valueMs = c.ff*valueMs + c.fo*float64(ms)
 			}
-			for _, b := range r.bucketsOf(slot, og.offset) {
+			buckets, err := r.bucketsOf(slot, og.offset)
+			if err != nil {
+				return err
+			}
+			for _, b := range buckets {
 				ev := cell(out, b, r.codeKey(og.code), g.form, false)
 				if b.local {
 					b.ends.hold(slot, end, si, og.offset)
@@ -470,7 +484,7 @@ func carryEnded(c *observed.Point, t time.Time, maxGap time.Duration) bool {
 // chunkEnd is where a carry across empty slots is cut: the next row, the end
 // of the bucket the slot lies in (the next start or end of any records-mode
 // window, which may overlap), or the window's end.
-func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) time.Time {
+func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) (time.Time, error) {
 	end := next
 	switch {
 	case r.p.bucket.mode == bucketLocal:
@@ -494,16 +508,16 @@ func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) time.Time
 			end = r.bounds[i]
 		}
 	default:
-		bs := r.bucketsOf(slot, 0)
-		if len(bs) == 0 {
-			break
+		bs, err := r.bucketsOf(slot, 0)
+		if err != nil {
+			return end, err
 		}
-		if e := bs[0].end; e.Before(end) {
-			end = e
+		if len(bs) > 0 && bs[0].end.Before(end) {
+			end = bs[0].end
 		}
 	}
 	if !end.After(slot) {
 		end = slot.Add(bucketWidth)
 	}
-	return end
+	return end, nil
 }

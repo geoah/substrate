@@ -197,7 +197,11 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 			if ap.Unavailable || !r.admits(ap.Code) {
 				continue
 			}
-			for _, b := range r.bucketsOf(ap.At, ap.off) {
+			buckets, err := r.bucketsOf(ap.At, ap.off)
+			if err != nil {
+				return nil, err
+			}
+			for _, b := range buckets {
 				ev := cell(out, b, r.codeKey(ap.Code), form, true)
 				ev.members = append(ev.members, ap)
 				ev.sources[st.s.source] = true
@@ -225,14 +229,17 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 			if err := r.convertPoint(&sp.Point, og.delta, st.s); err != nil {
 				return nil, err
 			}
-			off := og.offset
-			for _, part := range r.spanParts(sp, off) {
+			parts, err := r.spanParts(sp, og.offset)
+			if err != nil {
+				return nil, err
+			}
+			for _, part := range parts {
 				ev := cell(out, part.bucket, r.codeKey(sp.Point.Code), form, true)
 				ev.spans = append(ev.spans, part.span)
 				ev.sources[st.s.source] = true
 				if b := part.bucket; b.local {
-					b.ends.hold(part.span.Start, part.span.End, si, off)
-					ev.ends.hold(part.span.Start, part.span.End, si, off)
+					b.ends.hold(part.span.Start, part.span.End, si, og.offset)
+					ev.ends.hold(part.span.Start, part.span.End, si, og.offset)
 				}
 			}
 		}
@@ -390,25 +397,26 @@ func (c cover) overlaps(a, b time.Time) bool {
 // bucket holding its instant, every records-mode window holding it, or the
 // recorded-local bucket of its own wall clock, made where the range's own
 // enumeration did not reach it. It marks no bucket's first or last point;
-// the callers that hold a point do (aggBucket.mark).
-func (r *aggRun) bucketsOf(t time.Time, off int64) []*aggBucket {
+// the callers that hold a point do (aggBucket.mark). Each bucket it compares
+// is a step of the read (canceled).
+func (r *aggRun) bucketsOf(t time.Time, off int64) ([]*aggBucket, error) {
 	mode := r.p.bucket.mode
 	if mode != bucketRecords && (t.Before(r.p.from) || !t.Before(r.p.to)) {
-		return nil
+		return nil, nil
 	}
 	switch mode {
 	case bucketLocal:
 		var b *aggBucket
 		r.buckets, b = localBucketAt(r.buckets, wallOf(t, off), r.p.bucket)
-		return []*aggBucket{b}
+		return []*aggBucket{b}, nil
 	case bucketRecords:
 		return r.windowsMeeting(t, t.Add(time.Nanosecond))
 	}
-	i := sort.Search(len(r.buckets), func(i int) bool { return r.buckets[i].end.After(t) })
-	if i < len(r.buckets) && !t.Before(r.buckets[i].start) {
-		return []*aggBucket{r.buckets[i]}
+	i, err := firstEndingAfter(r.buckets, t, r.canceled)
+	if err != nil || i == len(r.buckets) || t.Before(r.buckets[i].start) {
+		return nil, err
 	}
-	return nil
+	return []*aggBucket{r.buckets[i]}, nil
 }
 
 type spanPart struct {
@@ -418,7 +426,7 @@ type spanPart struct {
 
 // spanParts cuts a held interval at the buckets' boundaries: a UTC bucket's, or
 // for a recorded-local bucket the boundaries at the holding point's offset.
-func (r *aggRun) spanParts(sp observed.Span, off int64) []spanPart {
+func (r *aggRun) spanParts(sp observed.Span, off int64) ([]spanPart, error) {
 	var out []spanPart
 	switch r.p.bucket.mode {
 	case bucketLocal:
@@ -437,50 +445,88 @@ func (r *aggRun) spanParts(sp observed.Span, off int64) []spanPart {
 			out = append(out, spanPart{bucket: b, span: part})
 			start = end
 		}
-		return out
+		return out, nil
 	}
-	for _, b := range r.bucketsMeeting(sp.Start, sp.End) {
+	buckets, err := r.bucketsMeeting(sp.Start, sp.End)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range buckets {
 		for _, c := range observed.Clip([]observed.Span{sp}, b.start, b.end) {
 			out = append(out, spanPart{bucket: b, span: c})
 		}
 	}
-	return out
+	return out, nil
 }
 
-// bucketsMeeting lists the UTC buckets [from, to) meets.
-func (r *aggRun) bucketsMeeting(from, to time.Time) []*aggBucket {
+// bucketsMeeting lists the UTC buckets [from, to) meets, each bucket it
+// compares or lists a step of the read.
+func (r *aggRun) bucketsMeeting(from, to time.Time) ([]*aggBucket, error) {
 	if r.p.bucket.mode == bucketRecords {
 		return r.windowsMeeting(from, to)
 	}
+	i, err := firstEndingAfter(r.buckets, from, r.canceled)
+	if err != nil {
+		return nil, err
+	}
 	var out []*aggBucket
-	i := sort.Search(len(r.buckets), func(i int) bool { return r.buckets[i].end.After(from) })
 	for ; i < len(r.buckets) && r.buckets[i].start.Before(to); i++ {
+		if err := r.canceled(); err != nil {
+			return nil, err
+		}
 		out = append(out, r.buckets[i])
 	}
-	return out
+	return out, nil
 }
 
 // windowsMeeting lists the records-mode windows [from, to) meets, in order.
-// The windows are sorted by start but overlap and differ in length, so no
-// search on their ends finds them all: the scan starts at the first window
-// whose running latest end (reach) passes from, every window before it having
-// ended, and stops at the first that starts at or after to.
-func (r *aggRun) windowsMeeting(from, to time.Time) []*aggBucket {
+// The windows are sorted by start but overlap and differ in length, so
+// neither their starts nor their ends find them by binary search, and one
+// long window keeps every later one's running latest end high. reach is
+// therefore a tree over the windows in start order, each node holding the
+// latest end below it: the walk descends only into nodes whose first window
+// starts before to and whose latest end passes from, so a point takes steps
+// (canceled) in the windows it meets times the tree's depth, not in the
+// windows before it.
+func (r *aggRun) windowsMeeting(from, to time.Time) ([]*aggBucket, error) {
 	if r.reach == nil {
-		r.reach = make([]time.Time, len(r.buckets))
+		size := 1
+		for size < len(r.buckets) {
+			size *= 2
+		}
+		r.reach = make([]time.Time, 2*size)
 		for i, b := range r.buckets {
-			r.reach[i] = b.end
-			if i > 0 && r.reach[i-1].After(b.end) {
-				r.reach[i] = r.reach[i-1]
+			if err := r.canceled(); err != nil {
+				r.reach = nil
+				return nil, err
+			}
+			r.reach[size+i] = b.end
+		}
+		for i := size - 1; i > 0; i-- {
+			r.reach[i] = r.reach[2*i]
+			if r.reach[2*i+1].After(r.reach[i]) {
+				r.reach[i] = r.reach[2*i+1]
 			}
 		}
 	}
 	var out []*aggBucket
-	i := sort.Search(len(r.buckets), func(i int) bool { return r.reach[i].After(from) })
-	for ; i < len(r.buckets) && r.buckets[i].start.Before(to); i++ {
-		if b := r.buckets[i]; b.end.After(from) {
-			out = append(out, b)
+	var walk func(node, first, width int) error
+	walk = func(node, first, width int) error {
+		if first >= len(r.buckets) || !r.buckets[first].start.Before(to) || !r.reach[node].After(from) {
+			return nil
 		}
+		if err := r.canceled(); err != nil {
+			return err
+		}
+		if width == 1 {
+			out = append(out, r.buckets[first])
+			return nil
+		}
+		half := width / 2
+		if err := walk(2*node, first, half); err != nil {
+			return err
+		}
+		return walk(2*node+1, first+half, half)
 	}
-	return out
+	return out, walk(1, 0, len(r.reach)/2)
 }

@@ -246,6 +246,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	cells := map[string]*acc{}
 	groups := map[string]*aggGroup{}
 	target := p.unit
+	var steps everyThousand
 	for rows.Next() {
 		var kind string
 		var at time.Time
@@ -278,8 +279,10 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			}
 			v, unit = cv, target
 		}
-		// The buckets are disjoint and in order.
-		bi := sort.Search(len(buckets), func(i int) bool { return buckets[i].end.After(at) })
+		bi, err := firstEndingAfter(buckets, at, func() error { return steps.check(ctx) })
+		if err != nil {
+			return nil, err
+		}
 		if bi == len(buckets) || at.Before(buckets[bi].start) {
 			continue
 		}

@@ -43,8 +43,8 @@ type aggRun struct {
 	// bounds are the records mode's window starts and ends, sorted, where a
 	// carry walked across empty rows is cut (chunkEnd).
 	bounds []time.Time
-	// reach is, for each records-mode window, the latest end of it and every
-	// window before it (windowsMeeting).
+	// reach is a tree over the records-mode windows in start order, each
+	// node the latest end of the windows below it (windowsMeeting).
 	reach []time.Time
 	// nSeries is the series the read was budgeted for (seriesOf).
 	nSeries int
@@ -243,7 +243,7 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 // error on the first step and every thousand after it, whichever loop takes
 // them: the statement timeout bounds the SQL, not the work after it, so a
 // long reduction stops when its caller does. A step is one point, span, row,
-// slot or interval this package copies or walks; what runs in observed (a
-// reducer, a sort, a priority resolution) checks the context through its
-// Context forms, as often.
+// slot or interval this package copies or walks, or one bucket or window a
+// search compares; what runs in observed (a reducer, a sort, a priority
+// resolution) checks the context through its Context forms, as often.
 func (r *aggRun) canceled() error { return r.steps.check(r.ctx) }
