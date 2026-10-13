@@ -440,13 +440,14 @@ The four hold to one set of rules:
 
 Every output also names the code that wrote it, in `adapter`:
 `<package>@<version>` (`healthwhoop@3`), a constant at the top of the
-adapter's function. The base kinds and `health/sleep` and `health/workout`
+adapter's function whose version is the package's own. The base kinds and `health/sleep` and `health/workout`
 declare it as their own property, apart from `revision`, which is the
 upstream's
 ([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
 An adapter upgrade does not reach mirror rows the upstream never changes on
-its own. To reprocess them, raise the constant with the change, apply the
-new closure, and replay the adapter's record trigger from the start:
+its own. To reprocess them, raise the constant and the package's `version`
+with the change, apply the new closure, and replay the adapter's record
+trigger from the start:
 
 ```bash
 bin/substratectl trigger replay healthwhoop-on-mirror --from 0

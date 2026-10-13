@@ -130,10 +130,12 @@ data:
     import datetime as _dt
     from decimal import Decimal
 
-    # This code's own version, stamped on every output apart from WHOOP's
-    # `revision` (decision record 0162). Raise it with any change to what a
-    # mirror row becomes, then replay `healthwhoop-on-mirror` from 0: every
-    # output is rewritten at the revision it already holds.
+    # This code's own version, `<package>@<package version>`, stamped on
+    # every output apart from WHOOP's `revision` (decision record 0162).
+    # Raise it and the package's `version` together with any change to
+    # what a mirror row becomes: the new package version is what offers
+    # a repository the upgrade. Then replay `healthwhoop-on-mirror` from 0:
+    # every output is rewritten at the revision it already holds.
     ADAPTER = "healthwhoop@3"
 
     HOME = "samples.substrate.reamde.dev"

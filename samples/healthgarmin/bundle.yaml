@@ -15,7 +15,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthgarmin
-  version: 1
+  version: 2
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # The provider is a requirement like the samples: the function reads its
@@ -139,9 +139,11 @@ data:
     import re
     from decimal import Decimal
 
-    # This code's own version, stamped on every output apart from the mirror
-    # row's `revision` (decision record 0162). Raise it with any change to
-    # what a mirror row becomes, then replay `healthgarmin-on-mirror` from 0:
+    # This code's own version, `<package>@<package version>`, stamped on
+    # every output apart from the mirror row's `revision` (decision record 0162).
+    # Raise it and the package's `version` together with any change to
+    # what a mirror row becomes: the new package version is what offers
+    # a repository the upgrade. Then replay `healthgarmin-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
     ADAPTER = "healthgarmin@2"
 

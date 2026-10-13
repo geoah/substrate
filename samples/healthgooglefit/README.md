@@ -120,8 +120,10 @@ point rewrites only the hour or the reading it lands in.
 
 Every output also carries `adapter: healthgooglefit@<version>`, the
 `ADAPTER` constant at the top of the function, apart from `revision`. A
-change to what a mirror row becomes raises the constant. After an upgrade,
-replay the trigger from the start
+change to what a mirror row becomes raises the constant and the package's
+`version` together, so `<version>` is the package version and a repository
+that imported the package is offered the upgrade. After an upgrade, replay
+the trigger from the start
 (`bin/substratectl trigger replay healthgooglefit-on-mirror --from 0`):
 every mirror row is delivered again, and each output is rewritten under the
 new version at the revision it already holds. Days Fit never re-serves are

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/samples"
 )
 
@@ -173,5 +175,39 @@ func assertCatalogueHolds(t *testing.T, ds substrate.Dataset) {
 	}
 	for _, metric := range slices.Sorted(maps.Keys(wrong)) {
 		t.Errorf("%s: %s", metric, wrong[metric])
+	}
+}
+
+// adapterConstant is the ADAPTER line at the top of an adapter's function.
+var adapterConstant = regexp.MustCompile(`(?m)^ADAPTER = "([^"]+)"$`)
+
+// TestHealthAdaptersStampTheirPackageVersion: each adapter's ADAPTER stamp is
+// `<package>@<package version>`, and the shared constants the suites assert
+// are those stamps. A stamp raised without the package's version is code no
+// repository that imported the package is offered, and a package version
+// raised without the stamp rewrites nothing on a replay.
+func TestHealthAdaptersStampTheirPackageVersion(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]string{
+		"healthapple": healthAppleAdapter, "healthgarmin": healthGarminAdapter,
+		"healthgooglefit": healthGoogleFitAdapter, "healthwhoop": healthWhoopAdapter,
+	} {
+		var version any
+		var stamps []string
+		for _, d := range loadDocs(t, samplesDir+"/"+name+"/bundle.yaml") {
+			data, _ := d["data"].(map[string]any)
+			switch d["kind"] {
+			case vocabulary.CoreKind(vocabulary.DocPackage):
+				version = data["version"]
+			case typeFunction:
+				src, _ := data["source"].(string)
+				for _, m := range adapterConstant.FindAllStringSubmatch(src, -1) {
+					stamps = append(stamps, m[1])
+				}
+			}
+		}
+		if len(stamps) != 1 || stamps[0] != fmt.Sprintf("%s@%v", name, version) || stamps[0] != want {
+			t.Errorf("%s at package version %v stamps %v, want %s@%v and the suites' %s", name, version, stamps, name, version, want)
+		}
 	}
 }

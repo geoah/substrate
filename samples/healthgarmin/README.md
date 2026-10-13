@@ -23,7 +23,9 @@ bin/substratectl import samples.substrate.reamde.dev/healthgarmin
 Every output carries `adapter: healthgarmin@<version>`, the `ADAPTER`
 constant at the top of the function, apart from `revision`, which is the
 mirror row's own version. A change to what a mirror row becomes raises the
-constant. After an upgrade, replay the trigger from the start
+constant and the package's `version` together, so `<version>` is the package
+version and a repository that imported the package is offered the upgrade.
+After an upgrade, replay the trigger from the start
 (`bin/substratectl trigger replay healthgarmin-on-mirror --from 0`): every
 mirror row is delivered again, and each output is rewritten under the new
 version at the revision it already holds. Rows Garmin never resends are not

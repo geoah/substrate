@@ -15,7 +15,9 @@ delete. They are the contract; this file is not.
 Every output carries `adapter: healthapple@<version>`, the `ADAPTER` constant
 at the top of the function, apart from `revision`, which is when the
 provider received the row. A change to what a mirror row becomes raises the
-constant. After an upgrade, replay the trigger from the start
+constant and the package's `version` together, so `<version>` is the package
+version and a repository that imported the package is offered the upgrade.
+After an upgrade, replay the trigger from the start
 (`bin/substratectl trigger replay healthapple-on-mirror --from 0`): every
 mirror row is delivered again, and each output is rewritten under the new
 version at the revision it already holds. Rows the app never resends are not

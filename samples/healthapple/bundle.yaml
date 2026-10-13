@@ -15,7 +15,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthapple
-  version: 1
+  version: 2
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -116,10 +116,12 @@ data:
     import decimal
     import re
 
-    # This code's own version, stamped on every output apart from the row's
-    # `revision` (decision record 0162). Raise it with any change to what a
-    # mirror row becomes, then replay `healthapple-on-mirror` from 0: every
-    # output is rewritten at the revision it already holds.
+    # This code's own version, `<package>@<package version>`, stamped on
+    # every output apart from the row's `revision` (decision record 0162).
+    # Raise it and the package's `version` together with any change to
+    # what a mirror row becomes: the new package version is what offers
+    # a repository the upgrade. Then replay `healthapple-on-mirror` from 0:
+    # every output is rewritten at the revision it already holds.
     ADAPTER = "healthapple@2"
 
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"

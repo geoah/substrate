@@ -42,7 +42,9 @@ the start (`POST
 Every output carries `adapter: healthwhoop@<version>`, the `ADAPTER`
 constant at the top of the function, apart from `revision`, which is
 WHOOP's `updated_at`. A change to what a mirror row becomes raises the
-constant. After an upgrade, the same replay from 0
+constant and the package's `version` together, so `<version>` is the package
+version and a repository that imported the package is offered the upgrade.
+After an upgrade, the same replay from 0
 (`bin/substratectl trigger replay healthwhoop-on-mirror --from 0`) delivers
 every mirror row again, and each output is rewritten under the new version at
 the revision it already holds; mirror rows WHOOP never rescores are not
