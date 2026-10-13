@@ -1031,8 +1031,9 @@ Garmin pushes no deletion: a summary or activity deleted in Garmin Connect
 stays mirrored, and so do the health records the
 [adapter](#garmin-to-health-sample) built from it. A re-send of a summary
 clears the fields it no longer carries. To remove one, delete its mirror row
-(`substratectl delete providers.substrate.reamde.dev/garmin/<kind> <id>`):
-the adapter's delete trigger removes what it built.
+(`substratectl delete <kind> <id>`, the kind in full, such as
+`providers.substrate.reamde.dev/garmin/daily`): the adapter's delete trigger
+removes what it built.
 
 ## Google Fit
 
@@ -1702,13 +1703,13 @@ phone writes back-dated (a resting heart rate, another app's backfill); a
 manual Previous 7 Days export catches them up, and overlapping deliveries
 rewrite the same records. The app sends no deletion. A sample deleted on the
 phone drops out of a metric batch only when a later export re-sends the
-batch's surviving samples on both sides of it; one at the edge of what a
-delivery covers, a lone weigh-in, an emptied hour, and a deleted workout or
-other id-keyed record stay mirrored, and so do the health records the
+batch's surviving samples on both sides of it; one at the start or end of
+what a delivery covers, a lone weigh-in, an emptied hour, and a deleted
+workout or other id-keyed record stay mirrored, and so do the health records the
 [adapter](#apple-health-to-health-sample) built from them. To remove one,
-delete its mirror row (`substratectl delete
-providers.substrate.reamde.dev/applehealth/<kind> <id>`): the adapter's
-delete trigger removes what it built. The provider's
+delete its mirror row (`substratectl delete <kind> <id>`, the kind in full,
+such as `providers.substrate.reamde.dev/applehealth/metricbatch`): the
+adapter's delete trigger removes what it built. The provider's
 [README](../kinds/providers.substrate.reamde.dev/applehealth/README.md) has
 the setup as steps.
 
