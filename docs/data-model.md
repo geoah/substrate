@@ -449,7 +449,10 @@ weight:
 
 `units` lists codes, never aliases. `min` and `max` need `measures:` and
 compare exactly after converting the value into the bound's unit; a bound
-reads the stated number, whatever comparator the value carries. A quantity
+reads the stated number, whatever comparator the value carries. Every code
+the property lists (its `units`, else its measure's codes) must convert into
+the bound's unit, so a bound on a `rate`, a `count`, an `angle` or a level
+needs `units` naming the codes that do. A quantity
 takes no `pattern` and no `values`. A property type may refine `quantity` with
 `measures`, `units` and `comparator` (`airtemperature`, `base: quantity`,
 `measures: temperature`); its bounds are declared on the property that uses

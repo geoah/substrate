@@ -293,7 +293,11 @@ func (l *loader) parseQuantitySpec(where string, d map[string]any, inherited *Qu
 	}
 	if s.Min != nil && s.Max != nil {
 		hi, err := ConvertIn(s.Measure, s.Max.Rat(), s.Max.Unit, s.Min.Unit)
-		if err == nil && hi.Cmp(s.Min.Rat()) < 0 {
+		switch {
+		case err != nil:
+			l.errf("%s: max %s does not compare with min %s: %v", where, s.Max, s.Min, err)
+			return nil
+		case hi.Cmp(s.Min.Rat()) < 0:
 			l.errf("%s: max %s is below min %s", where, s.Max, s.Min)
 			return nil
 		}
@@ -303,7 +307,11 @@ func (l *loader) parseQuantitySpec(where string, d map[string]any, inherited *Qu
 
 // parseQuantityBound reads one declared bound: a quantity value whose unit the
 // declaration admits. A bound needs `measures:`, because without one a stored
-// value of another measure has nothing to be compared with.
+// value of another measure has nothing to be compared with, and every code
+// the declaration lists (its `units:`, else its measure's codes) must convert
+// into the bound's unit, or the bound would refuse every value in that code:
+// a rate's {count}/min never reaches /min, a count's annotations never reach
+// one another, and rad reaches deg only through pi.
 func parseQuantityBound(raw any, s *QuantitySpec) (*QuantityBound, error) {
 	m := asMapOrNil(raw)
 	if m == nil {
@@ -349,12 +357,21 @@ func parseQuantityBound(raw any, s *QuantitySpec) (*QuantityBound, error) {
 		return nil, fmt.Errorf("%s: %w", QuantityUnit, err)
 	}
 	m2, _ := LookupMeasure(s.Measure)
-	switch m2.Scale {
-	case ScaleLogarithmic, ScaleArbitrary:
-		// A level and an assay unit convert to nothing but themselves, so a
-		// bound would refuse every value in another of the measure's units.
-		if len(s.Units) != 1 || s.Units[0] != unit {
-			return nil, fmt.Errorf("a %s measure converts nothing, so a bound needs `units:` listing its one unit, %s", m2.Scale, unit)
+	listed := s.Units
+	if len(listed) == 0 {
+		if m2.Scale == ScaleArbitrary {
+			// An assay measure admits every arbitrary unit, listed or not.
+			return nil, fmt.Errorf("an arbitrary measure converts nothing, so a bound needs `units:` listing its one unit, %s", unit)
+		}
+		listed = m2.Units
+	}
+	one := big.NewRat(1, 1)
+	for _, code := range listed {
+		if _, err := ConvertIn(s.Measure, one, code, unit); err != nil {
+			if len(s.Units) > 0 {
+				return nil, fmt.Errorf("%s: the listed unit %s does not convert to it: %w", QuantityUnit, code, err)
+			}
+			return nil, fmt.Errorf("%s does not convert to %s, so a bound needs `units:` listing the codes that do: %w", code, unit, err)
 		}
 	}
 	return &QuantityBound{Value: c, Unit: unit}, nil

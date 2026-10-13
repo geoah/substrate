@@ -97,6 +97,10 @@ data: {authority: g.example.com, package: g, base: quantity, measures: temperatu
 		{"a bound with a comparator", `    w: {type: quantity, measures: mass, max: {value: "1", unit: kg, comparator: "<"}}`, "is neither"},
 		{"max below min", `    w: {type: quantity, measures: mass, min: {value: "1", unit: kg}, max: {value: "999", unit: g}}`, "is below min"},
 		{"a level bound over two units", `    w: {type: quantity, measures: power-level, min: {value: "-90", unit: dBm}}`, "needs `units:`"},
+		{"a rate bound", `    w: {type: quantity, measures: rate, max: {value: "300", unit: /min}}`, "needs `units:`"},
+		{"a count bound", `    w: {type: quantity, measures: count, min: {value: "0", unit: "{count}"}}`, "needs `units:`"},
+		{"an angle bound", `    w: {type: quantity, measures: angle, max: {value: "360", unit: deg}}`, "needs `units:`"},
+		{"a listed unit the bound does not reach", `    w: {type: quantity, measures: rate, units: [/min, "{beats}/min"], max: {value: "300", unit: /min}}`, "{beats}/min"},
 		{"a comparator that is not a bool", `    w: {type: quantity, comparator: "yes"}`, "true or false"},
 		{"a pattern", `    w: {type: quantity, pattern: "^1"}`, "never a pattern or values"},
 		{"a value set", `    w: {type: quantity, values: [a, b]}`, "never a pattern or values"},
@@ -109,6 +113,19 @@ data: {authority: g.example.com, package: g, base: quantity, measures: temperatu
 			loadThingErr(t, "  properties:\n"+c.body+"\n", c.want)
 		})
 	}
+	t.Run("a bound every admitted unit converts into", func(t *testing.T) {
+		ty := loadThing(t, `  properties:
+    pulse: {type: quantity, measures: rate, units: [/min, /s], max: {value: "300", unit: /min}}
+    weight: {type: quantity, measures: mass, min: {value: "0", unit: kg}}
+    heading: {type: quantity, measures: angle, units: [deg], max: {value: "360", unit: deg}}
+    level: {type: quantity, measures: level, max: {value: "140", unit: dB}}
+`)
+		for _, name := range []string{"pulse", "weight", "heading", "level"} {
+			if q := ty.Props[name].Quantity; q == nil || q.Max == nil && q.Min == nil {
+				t.Fatalf("%s lost its bound: %+v", name, q)
+			}
+		}
+	})
 	t.Run("a refinement takes no bounds", func(t *testing.T) {
 		loadThingErr(t, `  properties:
     w: {type: weight}
