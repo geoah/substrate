@@ -2,6 +2,18 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/reposettings.sh is the twelfth: an admin runs it against the live
+# repository, so a wrong call is a setting nobody sees change. It runs
+# against a fake gh at the end, and the `release` environment must end with
+# main's deployment policy alone, whatever policies it had.
+#
+# .github/zizmor.yml is the eleventh, and the one that is not a script: each
+# entry in it is a finding the lint job stops failing on, so an entry wider
+# than its reason turns the workflow check off without a red build. Its
+# entries are held to a list written here, and a scratch copy of .github
+# with one checkout keeping its token, and one with a guarded `workflow_run`
+# workflow the file does not name, must each still fail zizmor, at the end.
+#
 # .mise/toolchaincheck.sh is the tenth: it holds every copy of a toolchain pin
 # to its source, so a wrong pass is an image, a CI job or a laptop on a
 # version nobody reviewed. Each of its rules runs against a scratch copy of
@@ -1407,5 +1419,166 @@ toolchain mise-none 1 'no jdx/mise-action step' '.github/workflows/*.yml' '/jdx\
 # min_version moved alone, and missing.
 toolchain mise-min 1 "min_version is 2000.1.1" .mise.toml 's/soft = "[^"]*"/soft = "2000.1.1"/'
 toolchain mise-min-none 1 'sets no min_version' .mise.toml '/^min_version/d'
+
+# --- the zizmor config -------------------------------------------------------
+
+# Every key and entry in the config, comments and blank lines aside. The
+# planted violations below cannot see an entry that silences a rule or a file
+# they do not touch (an `artipacked` ignore for release.yml passed them), so
+# a new rule, file or key is added here too, in the same change that writes
+# its reason into .github/zizmor.yml.
+zizmor_entries='rules:
+  dangerous-triggers:
+    ignore:
+      - latest.yml
+      - release-please.yml
+  self-repository:
+    ignore:
+      - release-please.yml'
+# zizmor_list <config>: its keys and entries, comments and blank lines cut.
+zizmor_list() { sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$1"; }
+[ "$(zizmor_list .github/zizmor.yml)" = "$zizmor_entries" ] ||
+  flag "zizmor entries: .github/zizmor.yml is not the list in .mise/cicheck.sh: $(diff <(printf '%s\n' "$zizmor_entries") <(zizmor_list .github/zizmor.yml))"
+printf '  artipacked:\n    ignore:\n      - release.yml\n' | cat .github/zizmor.yml - >"$tmp/zizmor-wide.yml"
+[ "$(zizmor_list "$tmp/zizmor-wide.yml")" != "$zizmor_entries" ] ||
+  flag "zizmor entries: an artipacked ignore for release.yml matched the list"
+
+# zizmor_case <name> <audit> <setup...>: .github copied, the setup run in the
+# copy, and zizmor run over it with the tree's config; it must fail and name
+# <audit>. The tree itself passing is `lint:ci`'s own zizmor run.
+zizmor_case() {
+  local name="$1" audit="$2" dir="$tmp/zizmor-$1/.github"
+  shift 2
+  mkdir -p "$(dirname "$dir")"
+  cp -R .github "$dir"
+  if ! (cd "$dir" && "$@"); then
+    flag "zizmor ${name}: the setup changed nothing, so the scenario tests nothing"
+    return
+  fi
+  if zizmor --offline --config .github/zizmor.yml "$dir" >"$tmp/zizmor.out" 2>&1; then
+    flag "zizmor ${name}: passed, expected a ${audit} finding"
+  elif ! grep -q "\[${audit}\]" "$tmp/zizmor.out"; then
+    flag "zizmor ${name}: expected a ${audit} finding in: $(cat "$tmp/zizmor.out")"
+  fi
+}
+# Invoked through `zizmor_case`'s arguments, which shellcheck cannot follow.
+# shellcheck disable=SC2329
+persist_token() {
+  local key='^[[:space:]]*persist-credentials: false$'
+  grep -q "$key" workflows/ci.yml || return 1
+  awk -v key="$key" '!cut && $0 ~ key { cut = 1; next } 1' workflows/ci.yml >workflows/ci.yml.new &&
+    mv workflows/ci.yml.new workflows/ci.yml
+}
+# shellcheck disable=SC2329
+second_trigger() { cp workflows/latest.yml workflows/latest-copy.yml; }
+if ! command -v zizmor >/dev/null; then
+  flag "zizmor is not installed, so its config was not held: run through \`mise run lint:ci\`"
+else
+  zizmor_case persisted-token artipacked persist_token
+  zizmor_case unlisted-trigger dangerous-triggers second_trigger
+fi
+
+# --- the repository settings -------------------------------------------------
+
+# .mise/reposettings.sh against a fake gh that logs "<method> <path>" for each
+# call, keeps each request body under FAKE_BODIES named for its call, and
+# answers the two reads: the ruleset lookup with an id, and the `release`
+# environment's deployment policies with FAKE_POLICIES, one "<id> <type>
+# <name>" a line. GITHUB_REPOSITORY names no real repository, so a call that
+# missed the fake reaches nothing.
+rsbin="$tmp/rsbin"
+mkdir -p "$rsbin"
+cat >"$rsbin/gh" <<'FAKE'
+#!/usr/bin/env bash
+method=GET path="" input=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+  --method)
+    method="$2"
+    shift
+    ;;
+  --input)
+    input="$2"
+    shift
+    ;;
+  repos/*) path="$1" ;;
+  esac
+  shift
+done
+printf '%s %s\n' "$method" "$path" >>"$FAKE_LOG"
+if [ -n "$input" ]; then
+  body="$FAKE_BODIES/$(printf '%s %s' "$method" "$path" | tr -c 'A-Za-z0-9' _)"
+  if [ "$input" = - ]; then cat >"$body"; else cp "$input" "$body"; fi
+fi
+case "$method $path" in
+"GET "*/rulesets) echo 42 ;;
+"GET "*/deployment-branch-policies) printf '%s' "${FAKE_POLICIES:-}" ;;
+esac
+FAKE
+chmod +x "$rsbin/gh"
+rs="repos/example/fake"
+rs_writes="PATCH $rs
+PUT $rs/rulesets/42
+PUT $rs/vulnerability-alerts
+PUT $rs/automated-security-fixes
+PUT $rs/actions/permissions/workflow
+PUT $rs/actions/permissions"
+
+# settings <name> <policies> <writes after an environment's PUT>: the script
+# applied, and every call that is not a read held to the list, in order.
+# Both environments read the same policies here, so each gets the same
+# writes, @env@ standing for its name.
+settings() {
+  local name="$1" policies="$2" tail="$3" want got env
+  : >"$tmp/rs.log"
+  rm -rf "$tmp/rs.bodies"
+  mkdir -p "$tmp/rs.bodies"
+  if ! PATH="$rsbin:$PATH" GITHUB_REPOSITORY=example/fake FAKE_LOG="$tmp/rs.log" \
+    FAKE_BODIES="$tmp/rs.bodies" FAKE_POLICIES="$policies" \
+    .mise/reposettings.sh >/dev/null 2>"$tmp/stderr"; then
+    flag "settings ${name}: failed: $(cat "$tmp/stderr")"
+    return
+  fi
+  want="$rs_writes"
+  for env in release llm-live; do
+    want="$want
+PUT $rs/environments/$env${tail:+
+${tail//@env@/$env}}"
+  done
+  got="$(grep -v '^GET ' "$tmp/rs.log")"
+  [ "$got" = "$want" ] || flag "settings ${name}: wrote
+${got}
+expected
+${want}"
+}
+settings main-only "7 branch main" ""
+settings none "" "POST $rs/environments/@env@/deployment-branch-policies"
+# What the last run sent, for the settings this script exists to hold.
+# body <method and path> <jq test>: the request body of that call passes.
+body() {
+  local file
+  file="$tmp/rs.bodies/$(printf '%s' "$1" | tr -c 'A-Za-z0-9' _)"
+  jq -e "$2" "$file" >/dev/null 2>&1 || flag "settings body: $1 sent $(cat "$file" 2>/dev/null || echo nothing), expected $2"
+}
+body "PUT $rs/actions/permissions/workflow" \
+  '. == {"default_workflow_permissions": "read", "can_approve_pull_request_reviews": false}'
+body "PUT $rs/actions/permissions" '.enabled == true and .sha_pinning_required == true'
+for env in release llm-live; do
+  body "PUT $rs/environments/$env" \
+    '.deployment_branch_policy == {"protected_branches": false, "custom_branch_policies": true}'
+  body "POST $rs/environments/$env/deployment-branch-policies" '. == {"name": "main", "type": "branch"}'
+done
+settings others "$(printf '7 branch main\n9 branch release/*\n11 tag v*')" "DELETE $rs/environments/@env@/deployment-branch-policies/9
+DELETE $rs/environments/@env@/deployment-branch-policies/11"
+settings other-only "9 branch feature" "DELETE $rs/environments/@env@/deployment-branch-policies/9
+POST $rs/environments/@env@/deployment-branch-policies"
+# The dry run writes nothing.
+: >"$tmp/rs.log"
+if ! PATH="$rsbin:$PATH" GITHUB_REPOSITORY=example/fake FAKE_LOG="$tmp/rs.log" \
+  FAKE_BODIES="$tmp/rs.bodies" .mise/reposettings.sh --dry-run >/dev/null 2>"$tmp/stderr"; then
+  flag "settings dry-run: failed: $(cat "$tmp/stderr")"
+elif grep -qv '^GET ' "$tmp/rs.log"; then
+  flag "settings dry-run: wrote $(grep -v '^GET ' "$tmp/rs.log")"
+fi
 
 exit "$fail"

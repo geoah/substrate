@@ -35,11 +35,17 @@ run on `main` is green, the workflow run that completion starts tags the
 merge commit `vX.Y.Z`, creates the GitHub release with the section as its
 body, swaps the label to `autorelease: tagged`, and calls
 `.github/workflows/release.yml`,
-which checks that the tagged commit's own `ci` run was green and then runs
-`mise run release`: goreleaser builds the CLI archives and the multi-arch
-image and attaches them to that release, then points the `v0` image tag at
-the new version when it is the newest v0.x
-([the published image](operations.md#the-published-image)).
+which builds the console, checks that the tagged commit's own `ci` run was
+green, and runs `mise run release`: goreleaser builds the CLI archives and
+the multi-arch image and attaches them to that release. The workflow then
+boots the published image (`mise run image:smoke`) and points the `v0` image
+tag at the new version when it is the newest v0.x
+([the published image](operations.md#the-published-image)); an image that
+fails to boot leaves `v0` where it was. Beside the boot, it records the
+archives' and the image's build provenance
+([verifying a release](#verifying-a-release)). Each of those steps is a job
+of its own, so the code pnpm installs never shares a runner with the token
+that publishes.
 
 ## Cutting a release
 
@@ -138,6 +144,37 @@ with its steps as sub-bullets. Releases before v0.70.0 are not listed, since
 no database from before it can be upgraded in place. One line per change is
 the rule; the file stays short because a release is a section, not a page.
 
+## Verifying a release
+
+Each release carries build provenance for its CLI archives and its image: a
+signed statement, kept in GitHub's attestation store, naming the repository,
+the workflow run that built the artifact and the commit that workflow ran
+from. `gh attestation verify` checks it, for a downloaded archive and for
+the image by its tag:
+
+```
+gh release download vX.Y.Z -R geoah/substrate -p 'substrate_*_linux_amd64.tar.gz'
+gh attestation verify substrate_X.Y.Z_linux_amd64.tar.gz -R geoah/substrate
+gh attestation verify oci://ghcr.io/geoah/substrate:vX.Y.Z -R geoah/substrate
+```
+
+Both print the signing workflow, `.github/workflows/release.yml`, and fail
+on an artifact no workflow of this repository attested. The image
+check reads the tag's digest from the registry; the attestation is not
+pushed beside the image, so `docker buildx imagetools inspect` still lists
+one manifest per platform. A release cut before the `attest` job existed
+has no attestations, and the check fails on it.
+
+The commit the provenance names is the one the release workflow itself ran
+from: `main` when the release-please run that cut the release started. The
+artifacts are built from the tag's commit, which the image's
+`org.opencontainers.image.revision` label and a running server's
+`server.build` in `GET /.well-known/substrate/server.json` report. The two
+are the same commit unless a pull request merged between the release pull
+request and its release. When they differ, the `attest` job attests nothing,
+because the statement would name a commit the artifacts were not built from;
+the run summary says so, and `gh attestation verify` fails on that release.
+
 ## Setup and recovery
 
 The workflow authenticates with `RELEASE_PLEASE_TOKEN`, a fine-grained
@@ -148,6 +185,24 @@ pull request would never get the checks the ruleset requires. The token has
 no bypass on the ruleset; `main` still moves only through a pull request
 that passed them. The two `autorelease:` labels are in `.github/labels.yml`,
 which the labels sync holds the repository to.
+
+`mise run repo:settings`, run by an admin and never by CI, applies what the
+tree holds about the repository itself: the ruleset, the merge buttons,
+Dependabot alerts and security updates, a read-only default workflow token
+that cannot approve a pull request, actions pinned by commit SHA, and the
+`release` and `llm-live` environments, each deploying from `main` alone.
+`mise run repo:settings -- --dry-run` prints each call.
+
+The `release-please` job runs in the `release` environment. A job in an
+environment reads the environment's secrets and the repository's, and the
+environment's win, so moving `RELEASE_PLEASE_TOKEN` into it takes two steps
+and no release-please run in between misses the token:
+
+1. Add `RELEASE_PLEASE_TOKEN` as a secret of the `release` environment
+   (Settings, Environments, `release`, or `gh secret set
+   RELEASE_PLEASE_TOKEN --env release`).
+2. Delete the repository secret `RELEASE_PLEASE_TOKEN`. Until then, a
+   workflow on any branch of this repository can read it.
 
 A run that never happened (a dropped `push` or `workflow_run` event) or died
 is replayed with a `workflow_dispatch` of `release-please`; it refreshes an

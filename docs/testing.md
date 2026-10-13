@@ -715,9 +715,13 @@ runner's with nothing. The script also refuses to run if a package under the
 one it shards has grown tests of its own, since the shards run only the root
 package and `test:db` runs the tree.
 
-`mise run lint:ci` (`.mise/cicheck.sh`, part of `lint`) holds the CI scripts:
-each path-gate scenario is a throwaway git repository with the verdict it
-must give, including the unresolvable base that must fail and a pull
+`mise run lint:ci` (part of `lint`) first runs actionlint and
+`zizmor --offline` over `.github`: zizmor refuses a checkout that keeps the
+job's token, an untrusted expression pasted into a `run:` line and an action
+not pinned to a commit, and `.github/zizmor.yml` lists the findings it
+accepts and why. Then `.mise/cicheck.sh` holds the CI scripts: each
+path-gate scenario is a throwaway git repository with the verdict it must
+give, including the unresolvable base that must fail and a pull
 request's merge commit fetched two commits deep, which must be answered
 without fetching more; the shard partition (`.mise/shardselect.sh`) is run
 over a fixed list that the shards together must reproduce exactly once;
@@ -730,12 +734,17 @@ every `pg_isready` must probe TCP;
 `.mise/cipostgres.sh` must start the image, port and tmpfs the jobs' DSN
 expects, probe over TCP and fail at its timeout with the server's log;
 `.mise/gocache.sh` must remove exactly the cache entries a run did not
-touch; and every rule of `.mise/toolchaincheck.sh` (`lint:toolchain`) must
+touch; every rule of `.mise/toolchaincheck.sh` (`lint:toolchain`) must
 fail on a scratch copy of the tree with one copy of one pin moved (a base
 image tag or digest, `go.mod`'s `go` or `toolchain` line, the console's pnpm
 `packageManager`, the Dockerfile's `UV_VERSION`, one `pgvector/pgvector`
 image, one workflow's mise version or `min_version`) or with `uv` added to
-an `apk add`.
+an `apk add`; zizmor with `.github/zizmor.yml` must still fail a copy of
+`.github` where one checkout keeps its token, and one with a guarded
+`workflow_run` workflow the file does not name; and `.mise/reposettings.sh`,
+against a fake `gh`, must send its settings in order, leave the `release`
+environment with `main`'s deployment policy alone, and write nothing on
+`--dry-run`.
 
 `mise run test` and `test:db` are untouched by the cut: each is still the
 whole suite, sequential, on one machine. `test:coverage` is the same without

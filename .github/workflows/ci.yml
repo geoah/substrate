@@ -14,6 +14,15 @@
 # release. The comment is what dependabot reads to keep them current, and it is
 # also what proposes the major upgrades none of these are on yet.
 #
+# No step that runs third-party code (pnpm's install scripts, a vite plugin, a
+# wheel uv resolves) can read the job's token. Every checkout here and in the
+# other workflows sets `persist-credentials: false`: no job pushes with git,
+# and the fetches the scripts make read this public repository anonymously.
+# jdx/mise-action keeps its token inside its own step (v5.1.1 stopped
+# exporting it as MISE_GITHUB_TOKEN). `lint:ci` runs actionlint and zizmor
+# over every workflow, and zizmor refuses a checkout that keeps the token;
+# .github/zizmor.yml lists the findings it accepts, and why.
+#
 # Two tiers. The REQUIRED checks (.github/rulesets/main.json: `conventional
 # commits` in pr.yml, `lint`, `lint go`, `console`, `console test`, `go gate`)
 # are what a pull request waits for, so each job behind them has a budget of
@@ -70,9 +79,13 @@
 # The actions/cache steps below are the one thing that IS about the machine and
 # so belongs here rather than in .mise.toml: a laptop keeps ~/.cache and
 # ~/go/pkg/mod between runs and a runner does not. They restore those
-# directories, nothing more — no job's behaviour depends on a hit. (The
-# toolchain itself — go, node, pnpm, golangci-lint — is cached by
-# jdx/mise-action, which does that by default.)
+# directories, nothing more — no job's behaviour depends on a hit. The
+# toolchain itself (go, node, pnpm, golangci-lint) is cached by
+# jdx/mise-action, under a key that hashes .mise.toml. Every job restores it
+# and only a push to main saves it (`cache_save`), for the reason the Go
+# caches below give: a pull request that changed .mise.toml saved its own
+# tool set, 100 to 280 MB an entry, against the same 10 GB as main's caches.
+# Such a pull request installs its tools on every run instead.
 #
 # Only the Go jobs carry one, and only because it was measured: lint 69s -> 18s,
 # go test 369s -> 292s. The console job's pnpm store is NOT cached — see the
@@ -152,13 +165,15 @@ jobs:
       # refs/remotes/origin, and without them the check exits 2.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go golangci-lint yamlfmt yamllint shellcheck ruff
-            lychee goreleaser uv
+            lychee goreleaser uv actionlint zizmor
       # kinds:check compiles cmd/vocabularydiff only on a pull request that
       # changes kinds/ or samples/, so a push to main builds nothing this job
       # could save. It restores `go test`'s entry, which holds every package
@@ -183,10 +198,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go golangci-lint
       # golangci-lint typechecks the module, so it wants the same module and
       # build caches `go test` does, plus its own analysis cache.
@@ -227,10 +245,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go golangci-lint
       # Its own key: this job's working set is four foreign GOARCHes, which the
       # test job's cache never holds and would only evict.
@@ -274,6 +295,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2
       # The script diffs a pull request's merge commit against its first
       # parent and writes `go=` to $GITHUB_OUTPUT. On a push it answers true
@@ -288,14 +310,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2
       - id: changes
         run: .mise/changescheck.sh
       - if: steps.changes.outputs.go == 'true'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go uv
       - if: steps.changes.outputs.go == 'true'
         id: cache
@@ -375,19 +399,25 @@ jobs:
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
       SHARD: ${{ matrix.shard }}
       SHARDS: ${{ matrix.shards }}
+      # The task reaches its `run:` line through the environment: an
+      # expression written into the line is pasted into the script before the
+      # shell parses it, which is safe only while the matrix is a fixed list.
+      TASK: ${{ matrix.task }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2
       - id: changes
         run: .mise/changescheck.sh
       - if: steps.changes.outputs.go == 'true'
         run: .mise/cipostgres.sh start
       - if: steps.changes.outputs.go == 'true'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go uv
       - if: steps.changes.outputs.go == 'true'
         id: cache
@@ -423,7 +453,7 @@ jobs:
       - if: steps.changes.outputs.go == 'true'
         run: .mise/cipostgres.sh wait
       - if: steps.changes.outputs.go == 'true'
-        run: mise run ${{ matrix.task }}
+        run: mise run "$TASK"
       # The first shard of each task saves; catalog 2/2 builds what 1/2 did.
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
@@ -458,16 +488,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 2
       - id: changes
         run: .mise/changescheck.sh
       - if: steps.changes.outputs.go == 'true'
         run: .mise/cipostgres.sh start
       - if: steps.changes.outputs.go == 'true'
-        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go
       # One key for every shard: they all build the one engine test binary, so
       # shard 1 saves for the rest.
@@ -521,11 +553,14 @@ jobs:
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: .mise/cipostgres.sh start
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
       - id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -592,11 +627,14 @@ jobs:
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: .mise/cipostgres.sh start
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go
       - id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -655,11 +693,14 @@ jobs:
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: .mise/cipostgres.sh start
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
       # Its own key: -covermode=atomic instruments every package, so the
       # objects `go test` and the shards cache are of no use here.
       - id: cache
@@ -711,10 +752,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: go uv
       # Its own key: -race builds a differently-instrumented object for every
       # package, so sharing the `go test` job's cache would only evict it.
@@ -753,10 +797,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: node pnpm
       # NO pnpm store cache here, deliberately — it was measured and it does not
       # pay. `pnpm install --frozen-lockfile` on a cold store is 4.5s (593
@@ -773,10 +820,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: node pnpm
       # NO pnpm store cache here, deliberately — it was measured and it does not
       # pay. `pnpm install --frozen-lockfile` on a cold store is 4.5s (593
@@ -799,9 +849,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
+          cache_save: ${{ github.event_name == 'push' }}
           install_args: node pnpm
       - run: mise run ci:image

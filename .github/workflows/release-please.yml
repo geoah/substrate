@@ -72,6 +72,11 @@ jobs:
       == 'push' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Deploys from main alone (`mise run repo:settings`), so a workflow on
+    # another branch cannot read the environment's RELEASE_PLEASE_TOKEN. A
+    # repository secret of the same name is still read while it exists
+    # (docs/releasing.md has the move).
+    environment: release
     permissions:
       contents: read
       # The gate below: merged release pull requests, and ci's runs.
@@ -121,13 +126,16 @@ jobs:
   publish:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
-    # Every permission release.yml's job asks for, because a called workflow
+    # Every permission release.yml's jobs ask for, because a called workflow
     # may not request one its caller did not grant, and GitHub refuses the
-    # whole run at startup when it does. `actions: read` is the ci-run gate.
+    # whole run at startup when it does. `actions: read` is the ci-run gate;
+    # `id-token` and `attestations` are its `attest` job's alone.
     permissions:
       contents: write
       packages: write
       actions: read
+      id-token: write
+      attestations: write
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}

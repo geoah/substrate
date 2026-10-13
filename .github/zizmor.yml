@@ -1,0 +1,24 @@
+# The zizmor findings `lint:ci` accepts, each with the reason it is safe.
+# Everything else zizmor reports fails the lint job. An entry names a whole
+# file, so one that gains a second finding of the same rule is not caught
+# here: read the reason again before adding a trigger or a call to one.
+# .mise/cicheck.sh holds the entries to its own copy of this list, so a new
+# one is written there too.
+rules:
+  dangerous-triggers:
+    ignore:
+      # `workflow_run` on ci. Both jobs run only for a green ci run of a push
+      # to main: `if:` holds `workflow_run.event == 'push'` and
+      # `workflow_run.conclusion == 'success'`, so a pull request's run, a
+      # fork's above all, never reaches the packages: write token.
+      - latest.yml
+      # The same trigger and the same guard on the release-please job, and
+      # .mise/releasegate.sh holds the tag until the release commit's own
+      # push run of ci is green.
+      - release-please.yml
+  self-repository:
+    ignore:
+      # `uses: ./.github/workflows/release.yml`, release.yml's one caller.
+      # actionlint 1.7.12 refuses the `$/` form zizmor asks for, and a
+      # release is the only run that exercises the call.
+      - release-please.yml
