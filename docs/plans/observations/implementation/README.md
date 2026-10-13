@@ -1,15 +1,39 @@
 # Observations: the implementation brief
 
-Status: in progress, started 2026-10-11. This page is what every agent
-building the observations work reads first. It fixes the decisions the plan
-left open, lists the work packages and their order, pins the wire contract of
-the aggregate read so the engine and the console agree before either exists,
-and names the rules every change is held to. The spec itself is the proposal
-under [`../proposal/`](../proposal/README.md) (the current end-to-end
-proposal, with worked examples) and [`../../observations.md`](../../observations.md)
-(the plan, whose section 13 supersedes its earlier sections where they
-differ). Where this page and the proposal disagree, this page wins, because
-it records the decisions taken to build.
+Status: built, and reviewed on 2026-10-12 and 2026-10-13. This page is
+what every agent building the observations work read first. It fixed the
+decisions the plan left open, listed the work packages and their order,
+pinned the wire contract of the aggregate read so the engine and the console
+agreed before either existed, and named the rules every change was held to.
+The spec itself is the proposal under [`../proposal/`](../proposal/README.md)
+(the end-to-end proposal, with worked examples) and
+[`../../observations.md`](../../observations.md) (the plan, whose section 13
+supersedes its earlier sections where they differ). Where this page and the
+proposal disagree, this page wins, because it records the decisions taken to
+build.
+
+Everything [in scope](#scope-of-this-build) is built: the `quantity` type
+and the unit table, the `observed` trait, the `observations` and `health`
+samples, the observed index, the aggregate read with its CLI command, host
+call and agent tool, the four providers and their adapters, the console's
+observations pages, synthetic data and decision records 0153 to 0164. The
+review added to the aggregate read's contract (marked in
+[the wire contract](#the-aggregate-read-wire-contract)) and changed the
+adapters, the catalogue and the index; the reference pages
+([observations](../../../observations.md), [units](../../../units.md),
+[the aggregate read](../../../api.md#the-aggregate-read)) describe the
+result. What is left:
+
+- The decision records are `proposed`; the owner accepts or amends each.
+- Nothing expires a point yet, so `unavailable` is always `false`.
+- Nothing refuses `sum` over a level (`dB`, `[pH]`).
+- The Garmin and Google Fit providers are tested against mock upstreams
+  only, and Garmin and Apple Health push no deletion.
+- A WHOOP night (`health/sleep`) carries no reference to its cycle's
+  recovery.
+- The console has no raw-line view of a downsample, no reference-range
+  marker on a lab chart and no "today" view.
+- Every item listed [out of scope](#scope-of-this-build).
 
 The four `map-*.md` pages beside this one are snapshots of the codebase taken
 on 2026-10-11 by read-only agents: where value types are validated, where the
@@ -30,7 +54,7 @@ reverse any of them there, and the code is written so a reversal is a rename.
 | the form names | `gauge`, `amount`, `counter`, `summary` |
 | a persistent stream record | none; `observed_latest` is the stream list |
 | money as an observed value | no; a balance is a typed kind read through the records path |
-| the arbitrary-unit prefix rule | kept, as a labelled substrate extension: the same arbitrary atom with the same annotation may be rescaled by a metric prefix (`m[IU]/L` to `[IU]/L`) |
+| the arbitrary-unit prefix rule | kept, as a labelled substrate rule: the same arbitrary atom with the same annotation may be rescaled by a metric prefix (`m[IU]/L` to `[IU]/L`) |
 | `dBm` | a local code with a documented definition |
 | retention tiers | deferred; every point is kept; the response shape already carries `unavailable` |
 | the word for a vendor-method summary | `statistic: vendor` |
@@ -89,51 +113,58 @@ mock upstreams; neither is verified against a live account here.
 
 ## The aggregate read: wire contract
 
-Field names below are the contract. Work package 4 implements them in Go
-(`internal/substrate`, struct names `Aggregate`, `AggregateBucket`,
+Field names below are the contract. Work package 4 implemented them in Go
+(`internal/substrate`: `Aggregate`, `AggregateMetricRead`, `AggregateProperty`,
+`AggregateBucket`, `AggregateRecords`, `AggregateRecordSources`,
 `AggregateSources`, `AggregateRolling`, `AggregateBudget`, `Downsample`,
 `AggregateResult`, `AggregateRow`, `AggregateValue`, `AggregateGroup`) and
-work package 6 mirrors them in `types.ts`. An implementer may add a field,
-never rename one. Everything optional is `omitempty`.
+work package 6 mirrors them in `types.ts`, held together by
+`wire.golden.json`. An implementer may add a field, never rename one.
+Everything optional is `omitempty`. [The API reference](../../../api.md#the-aggregate-read)
+says what each field does; this section lists them, and marks each field
+that arrived after this brief was written: *build* for one work package 4
+added, *review* for one the 2026-10-13 review added.
 
-Request, the `aggregate` query parameter on `GET /api/v1/records`, strict
+Request: the `aggregate` query parameter on `GET /api/v1/records`, strict
 JSON, refused beside `q`, `watch`, `count`, `orderBy`, `first`, `after`,
-`offset` and `expand`:
+`offset`, `expand` and `withAnnotations`. A metric read of heart rate zones:
 
 ```json
 {
   "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
-  "property": {"name": "amount", "anchor": "at"},
   "from": "raw",
-  "minCoverage": 0.9,
   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
-  "bucket": {"every": "PT5M", "origin": "2026-09-01T00:00:00Z"},
-  "groupBy": ["source", "about", "code", "metric", "kind"],
-  "reducers": ["count", "sum", "avg", "twa", "min", "max", "first", "last", "stddev",
-               {"percentile": 0.05}, {"durationIn": [70, 180]}, {"timeInState": ["open"]},
-               "increase", "rate", "circularMean"],
-  "sources": {"policy": "priority", "order": ["garmin-forerunner-265", "apple-watch-s10"]},
-  "unit": "/min",
-  "maxGap": "PT3H",
-  "fill": "null",
-  "rolling": {"buckets": 7, "reducers": ["avg"]},
-  "budget": {"maxBuckets": 1440, "maxSamples": 20000000}
+  "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
+  "groupBy": ["source"],
+  "reducers": ["avg", {"durationIn": [95, 114]}, {"durationIn": [114, 133]}],
+  "sources": {"policy": "priority", "order": ["garmin/ada/forerunner265"]},
+  "unit": "min",
+  "maxGap": "PT5M",
+  "budget": {"maxBuckets": 1440, "maxSamples": 5000000}
 }
 ```
 
-- Exactly one of `metric` and `property`. `property.anchor` names the
-  datetime property that places a record in time (`at` by default).
-- `bucket` is one of `{"every", "origin"?}`, `{"calendar", "timezone"?,
-  "weekStart"?, "offset"?}` (`calendar` in `minute`, `hour`, `day`, `week`,
-  `month`, `year`; no `timezone` means the recorded-local day), or
-  `{"records": {"filter", "around"?: {"before", "after"}, "maxRecords"?}}`.
-  No `bucket` with `groupBy` and the one reducer `last` is the latest read,
-  which needs no `range`.
-- `from` is `raw` (default), `summaries` or `prefer-raw`.
-- `sources.policy` is `separate` (default), `priority` or `summaries`.
-- `fill` is `null`, `zero` or `locf`.
-- `downsample` is its own query parameter: `{"points": 800, "method": "m4"}`;
-  it is refused beside `reducers`, `rolling` and `fill`.
+| Key | Fields | Arrived |
+| --- | --- | --- |
+| selector | exactly one of `metric` (`{ref}`), `metrics` (`[{ref, unit?, reducers?, from?, statistic?}]`, at most 16) and `property` (`{name, anchor?, utcOffset?, groupBy?, sources?}`) | `metrics`, `property.utcOffset`, `property.groupBy`, `property.sources`: review |
+| `from`, `minCoverage` | `raw` (default), `summaries` or `prefer-raw`; prefer-raw's floor, default 0.9 | |
+| `range` | `{gte, lt}` | |
+| `bucket` | `{every, origin?, place?}`; `{calendar, timezone?, fallbackTimezone?, weekStart?, offset?, place?}` (`calendar` in `minute`, `hour`, `day`, `week`, `month`, `year`; no `timezone` is the recorded-local day); `{records: {filter, around?: {before, after}, maxRecords?, sources?, utcOffsets?: {start, end?}}}` | `fallbackTimezone`, `place`, `records.sources`, `records.utcOffsets`: review |
+| `groupBy` | `source`, `about`, `code`, `metric`, `kind`, `channel`, `statistic` | `channel`: build; `statistic`: review |
+| `reducers` | `count`, `sum`, `avg`, `twa`, `min`, `max`, `first`, `last`, `stddev`, `{"percentile": q}`, `{"durationIn": [lo, hi]}`, `{"timeInState": [...]}`, `increase`, `rate`, `circularMean` | |
+| `sources` | `{policy, order?}`: `separate` (default), `priority` or `summaries` | |
+| `unit`, `maxGap`, `fill` | a unit; an ISO 8601 duration; `null`, `zero` or `locf` | |
+| `rolling` | `{buckets, reducers?, through?}` | `through`: review |
+| `budget` | `{maxBuckets?, maxSamples?, maxGroups?}` | `maxGroups`: build |
+| `downsample` | its own query parameter, `{points, method?}` (`m4`) | |
+| `filter.properties.statistic` | narrows a metric read's summaries | review |
+
+- No `bucket`, no `range` and the one reducer `last` is the latest read: the
+  newest point of each group.
+- A records source policy (`bucket.records.sources`, `property.sources`) is
+  `{policy, order?, property?, match?}`, `policy` being `separate` or
+  `priority`.
+- `downsample` is refused beside `reducers`, `rolling`, `fill` and `bucket`.
 
 Response:
 
@@ -143,36 +174,45 @@ Response:
   "unit": "/min",
   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
   "from": "raw",
-  "exact": true,
+  "exact": false,
   "rows": [
-    {"start": "2026-04-06T00:00:00+03:00", "end": "2026-04-13T00:00:00+03:00",
+    {"start": "2026-09-07T00:00:00+03:00", "end": "2026-09-14T00:00:00+03:00",
      "form": "gauge",
-     "group": {"source": "ada.example.com/observations/source/garmin-forerunner-265"},
-     "record": {"ref": "ada.example.com/health/workout/garmin/x/123", "version": 3},
-     "from": "raw", "sources": ["garmin-forerunner-265"], "coverage": "P6DT22H10M",
-     "values": [{"reducer": {"durationIn": [95, 114]}, "value": "612.4", "unit": "min"},
-                {"reducer": "avg", "value": "131.6", "unit": "/min"}],
+     "group": {"source": "ada.example.com/observations/source/garmin/ada/forerunner265"},
+     "from": "raw", "sources": ["ada.example.com/observations/source/garmin/ada/forerunner265"],
+     "coverage": "P6DT22H10M",
+     "values": [{"reducer": "avg", "value": "71.2", "unit": "/min"},
+                {"reducer": {"durationIn": [95, 114]}, "value": "212.5", "unit": "min"},
+                {"reducer": {"durationIn": [114, 133]}, "value": "41", "unit": "min"}],
      "count": 24810, "bounded": 0, "synthetic": false, "unavailable": false}
   ],
-  "sources": ["garmin-forerunner-265", "apple-watch-s10"],
-  "head": {"changelog": 2171234, "generation": 7}
+  "sources": ["ada.example.com/observations/source/garmin/ada/forerunner265"],
+  "head": {"changelog": 2171234, "generation": "7f3a0c2e9b1d4e6f"}
 }
 ```
 
+| Key | Fields | Arrived |
+| --- | --- | --- |
+| result | `metric`, `property`, `unit`, `units`, `bucket`, `from`, `exact`, `rows`, `sources`, `head: {changelog, generation}` | `property`: build; `units`: review |
+| row | `start`, `end`, `form`, `group`, `record: {ref, version}`, `from`, `sources`, `coverage`, `values`, `count`, `offsetless`, `prorated`, `bounded`, `synthetic`, `unavailable`, `nonAdditive` | `nonAdditive`: build; `offsetless`, `prorated`: review |
+| `group` | `source`, `about`, `code`, `metric`, `kind`, `channel`, `statistic`, `currency`, `properties` | `channel`, `currency`: build; `statistic`, `properties`: review |
+| value | `reducer`, `value`, `unit`, `code`, `at`, `rolling`, `of`, `n` | `rolling`, `of`: build; `at`, `n`: review |
+
 - `values[].value` is a decimal string, or `null` when the reducer has no
-  answer for the row; `values[].unit` is absent for `count`.
+  answer for the row; it is always present. `values[].unit` is absent for
+  `count`.
 - `form` on every row is the form of the points that fed it (`gauge`,
   `amount`, `counter` or `summary`); a row never mixes forms.
 - `values[].code` carries the code for `first` and `last` over coded
-  values, with `value` absent; a numeric reducer over a coded stream is a
+  values, with `value` `null`; a numeric reducer over a coded stream is a
   `422` naming the form.
-- `group` is present only with `groupBy`; its keys are the `groupBy` words,
-  its values record paths (`<kind>/<id>`) for `source`, `about` and
-  `metric`, the kind reference for `kind`, the code for `code`.
-- The latest read (no `bucket`, `groupBy` on stream keys, the one reducer
-  `last`) returns one row per stream whose `start` is the newest point's
-  `ts`, whose `end` is its `ts_end` (equal to `start` for an instant), and
-  whose `count` is the stream's point count.
+- `group` is present only with `groupBy`, and on a several-metric read,
+  whose every row names its `metric`; its values are record paths
+  (`<kind>/<id>`) for `source`, `about` and `metric`, the kind reference for
+  `kind`, the code for `code`.
+- The latest read returns one row per group whose `start` is the newest
+  point's `ts`, whose `end` is its `ts_end` (equal to `start` for an
+  instant), and whose `count` is the group's point count.
 - `{"timeInState": []}` and the bare word `timeInState` mean every code the
   stream holds, one value per code.
 - Coded gauges admit `count`, `first`, `last` and `timeInState`; coded
@@ -181,10 +221,105 @@ Response:
 - `unavailable: true` marks a row whose range has expired index points and a
   reducer that needs them; its `values` are `null`.
 - A request over budget, a reducer illegal for the form, or a unit outside
-  the metric's quantity kind is a `422` naming the limit, the form or the
-  kind, before anything runs.
+  the metric's measure is a `422` naming the limit, the form or the measure,
+  before any point is reduced.
 - The downsample response reuses `AggregateResult` with one row per column
-  and the four reducers `first`, `last`, `min`, `max`.
+  and the four reducers `first`, `last`, `min`, `max`, each carrying `at`.
+
+## Where the build differs
+
+### From the proposal's data model
+
+The proposal's worked examples ([proposal](../proposal/README.md)) were
+written before this build; these points differ, each for a stated reason:
+
+- A lab result's code as received is `coding`, an object, not `code`: the
+  trait contracts `code` as a string, the categorical key the index reads
+  (`not-detected`).
+- A lab result's `specimen` names its material `material`, not `type`, a word
+  the vocabulary has retired.
+- The metric names its measure with `measures`, not `dimension`, and keeps no
+  `delta`, `circular` or `wrapAt`: they live on each value.
+- A metric's `reducers` and a lab's `status` are free strings rather than
+  enums, because an enum value is one lowercase word and `durationIn` and
+  `entered-in-error` are not.
+- The engine holds the result-shape rule for any observed kind that declares
+  `codedValue`, `ratio` or `text`, since a kind declaration has no
+  "exactly one of" key; `code` beside `codedValue` counts as one shape.
+- Garmin's Pulse Ox is `health/spo2` with Garmin's code, not a metric of its
+  own; Apple's heart rate variability is SDNN, so the catalogue has
+  `hrv_sdnn` beside `hrv_rmssd`; Health Connect's skin temperature is a
+  deviation, so it is `skin_temperature_deviation`.
+- The write rules a [decision](../../../decisions/README.md) did not name are this
+  build's choices: a `statistic` or a `period` outside a summary is refused,
+  a removed `revision` is refused, a coded trace with a `unit` is refused,
+  and a trace needs at least one point.
+- The rollup key adds `unit` and `delta` to the stream key, and a rollup row
+  keeps its statistics in its own unit, so two units that share no base
+  never add. `first_value` and `last_value` are the stored digits
+  (`numeric`), so a counter's endpoints stay exact.
+- A counter's step from the previous bucket is in the later row's
+  `increase`, computed when the row is, not at read time with a window
+  function as the plan had it, so the read needs no counter contract from
+  the rows. A correction recomputes the next bucket holding a reading too.
+  Decision 0157 states this rule and its cost.
+- A rollup row gains `start_gap_ms`, where the bucket's first point lies, and
+  `bounded`, its count of bounded points, so the read can carry a hold across
+  rows and report bounded values without the raw points. It also keeps
+  `span_end`, the record id and index of the first and last point, and the
+  stored digits of the smallest and largest number (`min_value`,
+  `max_value`), so a read served from rows joins amount coverage, breaks ties
+  at one instant and answers a `min` or `max` as the raw points do. The
+  table's CHECK constraints refuse a row without them, and `increase` is null
+  on a row that holds no step.
+- `observed_points` carries each point's hold, counter contract, `delta`,
+  `circular` and `revision`, and its index `ord` in its record; the plan
+
+### From this brief's wire contract
+
+The contract above as first written differs from what is built in these
+points, each for a stated reason:
+
+- `head.generation` is a string, the history generation a list page carries,
+  not a number.
+- `sources` lists record paths, not bare ids, as `group.source` does; `order`
+  takes either.
+- `values[].value` is always present: `null` for no answer and for a coded
+  `first` or `last`, whose answer is `code`.
+- A value written with a comparator is counted in `bounded` and is in every
+  average and sum: the rollup rows do not keep bounded values apart.
+- A gauge's value holding into a bucket with no point of its own makes a row
+  there, with `count` 0, the way it makes held time.
+- A records-mode window is not clipped to the range: the record is the
+  bucket.
+- A refusal for a form, a code count or a bucket budget comes after the
+  statements that select the streams, read the metric's unit, read the
+  records mode's records and find the range's forms (the rollup rows' keys,
+  the points at the range's cut ends, its summaries, and each gauge's value
+  held into it), not before anything runs: which forms and codes a range
+  holds is a fact of its points, and the newest point's form is not. The
+  points at the cut ends and in the summaries count against `maxSamples`
+  before they are read.
+- A `maxSamples` refusal for the raw spans an amount's coverage is joined
+  from comes once the rollup rows are merged, before the spans are read:
+  which rows overlap is known from the rows.
+- `exact` is `false` whenever a float64 reduction was involved, so an `avg`
+  is never exact.
+
+## The timeline chart's design
+
+The console's timeline ([the console](../../../console.md#observations))
+follows Grafana's time series panel: the series of one unit share a y axis,
+a second unit gets an axis on the right, one crosshair, an "all series"
+tooltip, and legend entries that hide a series. Datadog puts a request on
+the right axis the same way and splits a graph into small multiples when one
+would hold too much, which is what the timeline does at a third unit rather
+than adding a third axis. Observable Plot has no second y axis and
+recommends charts side by side, and the fitness apps (Oura on the web,
+WHOOP's trends, Garmin Connect's reports) overlay one trend on a second
+metric with its own scale: two units is the case they all draw together.
+Two scales on one plot line up arbitrarily, so each axis carries its unit,
+each metric's row names its side, and its numbers are one click below.
 
 ## Rules every work package is held to
 
@@ -216,5 +351,5 @@ Response:
 - Write for a tired reader: plain statements, the identifiers verbatim, no
   slogans. Comments carry constraints, not narration.
 - Keep the proposal honest: when an implementation detail must differ from
-  the proposal, say so in the work package's report and in the docs page
-  that describes the feature, never silently.
+  the proposal, say so in the work package's report and in
+  [where the build differs](#where-the-build-differs), never silently.

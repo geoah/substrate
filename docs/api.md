@@ -1267,7 +1267,11 @@ dashboard's "current value of everything". `metric` is optional (the filter's
 `properties.metric` may select several), `groupBy` takes the stream keys and
 `statistic` (a night's latest average and maximum, a row each), and each
 row's `start` and `end` are the newest point's `ts` and `ts_end` at its own
-offset, its `count` the group's point count.
+offset, its `count` the group's point count. It takes `groupBy`, `unit`
+(beside a `metric`) and the filter alone: `fill`, `rolling`, `maxGap`,
+`minCoverage`, a `from` other than `raw`, a `sources` policy other than
+`separate`, `groupBy` `code`, `metrics` and `filter.properties.code` are
+each a `422`.
 
 ```json
 {"filter": {"implements": "substrate.reamde.dev/core/observed"},
@@ -1455,7 +1459,8 @@ source, so a scale's weight wins over a typed one in a bucket both hold.
 `from: "prefer-raw"` reads raw points where the bucket holds at least one and
 they cover at least `minCoverage` of the row (held time for a gauge, the union
 of spans for an amount, over the row's own `start` to `end`), and the
-summaries otherwise. A gauge's value held in from an earlier bucket, under its
+summaries otherwise. A bucket with no summary is served from its raw points
+whatever they cover, and one with no raw point from its summaries. A gauge's value held in from an earlier bucket, under its
 `hold` and `maxGap`, adds held time but is no reading of the bucket: a day
 with no reading of its own is served by its summary. A bucket never mixes the
 two, and each row's `from` says which served it; the row's `form` is `summary`
@@ -1486,7 +1491,7 @@ where summaries did.
 | `coverage` | an ISO 8601 duration: held time for a gauge, the union of spans for an amount or a summary, the time a counter's steps span |
 | `values` | one per reducer in request order (`timeInState` without states, one per code), then the rolling values |
 | `count` | the points that fed the row; on the latest read the group's point count |
-| `bounded` | the values written with a comparator (a lab's `<0.01`) |
+| `bounded` | the values written with a comparator (a lab's `<0.01`); each is also in every average and sum at its stated number, because a rollup row keeps their count and not their sum |
 | `offsetless` | in the recorded-local calendar, the points among `count` written without a UTC offset, placed by `bucket.fallbackTimezone`; absent when none |
 | `prorated` | in the records mode, the amounts among `count` the window cut, each counted by the part of its span inside; absent when none |
 | `synthetic` | a row `fill` made |
@@ -1733,8 +1738,10 @@ merged as one row.
   from summaries; `priority` over two counters; a budget below zero or over its
   cap, or a read over a budget (naming the limit); `rolling` without a
   `bucket`; `downsample` beside `reducers`, `rolling`, `fill` or `bucket`;
-  `minCoverage` without `prefer-raw`; a `fill`, `rolling` or `maxGap` on the
-  latest read; a records source policy that is not `separate` or
+  `minCoverage` without `prefer-raw`; on the latest read, `fill`,
+  `rolling`, `maxGap`, `minCoverage`, a `from` other than `raw`, a `sources`
+  policy other than `separate`, `groupBy` `code`, `unit` without `metric`,
+  or `filter.properties.code`; a records source policy that is not `separate` or
   `priority`, a `priority` without `property` or `order`, or a `property`
   or `match` entry the selected kinds do not all declare as a single
   string, enum or reference; a `utcOffsets` property the selected kinds do
@@ -1743,41 +1750,6 @@ merged as one row.
   recorded-local calendar without one, a record holding no offset there
   without `bucket.fallbackTimezone`, or a `property.groupBy` property that is
   not a declared single string, enum or reference.
-
-### Where this differs from the plan
-
-The brief that fixed this contract
-([implementation](plans/observations/implementation/README.md)) differs from
-what is built in these points, each for a stated reason:
-
-- `head.generation` is a string, the history generation a list page carries,
-  not a number.
-- `sources` lists record paths, not bare ids, as `group.source` does; `order`
-  takes either.
-- `values[].value` is always present: `null` for no answer and for a coded
-  `first` or `last`, whose answer is `code`.
-- A value written with a comparator is counted in `bounded` and is in every
-  average and sum: the rollup rows do not keep bounded values apart.
-- A gauge's value holding into a bucket with no point of its own makes a row
-  there, with `count` 0, the way it makes held time.
-- A records-mode window is not clipped to the range: the record is the
-  bucket.
-- A refusal for a form, a code count or a bucket budget comes after the
-  statements that select the streams, read the metric's unit, read the
-  records mode's records and find the range's forms (the rollup rows' keys,
-  the points at the range's cut ends, its summaries, and each gauge's value
-  held into it), not before anything runs: which forms and codes a range
-  holds is a fact of its points, and the newest point's form is not. The
-  points at the cut ends and in the summaries count against `maxSamples`
-  before they are read.
-- A `maxSamples` refusal for the raw spans an amount's coverage is joined
-  from comes once the rollup rows are merged, before the spans are read:
-  which rows overlap is known from the rows.
-- The added keys: `property` and `nonAdditive` on the response and the row,
-  `group.channel` and `group.currency`, `values[].rolling` and
-  `values[].of`, `budget.maxGroups`.
-- `exact` is `false` whenever a float64 reduction was involved, so an `avg`
-  is never exact.
 
 ## The unit table
 

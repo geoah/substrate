@@ -68,9 +68,10 @@ Properties of both variants:
 | `utcOffsetStart`, `utcOffsetEnd` | int | minutes east of UTC at the start and the end of the period |
 | `stats` | json | computed by the engine on every write ([below](#stats)) |
 
-A kind binding the trait declares every one of these properties itself, with
-its own descriptions, `repeated: true` on the three lists and its own pins on
-the references. The trait holds their names and datatypes, and the loader
+A kind binding the trait declares every one of these properties itself but
+`at` and `endsAt`, which are the record's own time columns (the loader
+refuses a declared `at` or `endsAt` as reserved), with its own descriptions,
+`repeated: true` on the three lists and its own pins on the references. The trait holds their names and datatypes, and the loader
 holds their shapes: a binding kind whose `offsets`, `values` or `codes` is
 not a list, or whose other properties are lists or keyed maps, is refused,
 because the rules and the index read one value from each of those.
@@ -301,20 +302,22 @@ points, and a `stats` the writer sends is dropped rather than refused, so a
 function that writes back a trace it read never trips over it. `null` points
 count in nothing.
 
+The trace above, whose middle point is `null`, gets:
+
 ```yaml
 stats:
-  count: 3
-  min: "57"
+  count: 2
+  min: "58"
   max: "61"
-  mean: 58.666666666666664
-  m2: 8.666666666666666
+  mean: 59.5
+  m2: 4.5
   first:
     at: 2026-10-07T06:00:00Z
     value: "58"
   last:
-    at: 2026-10-07T06:06:02Z
-    value: "57"
-  coverage: PT6M2S
+    at: 2026-10-07T06:04:01Z
+    value: "61"
+  coverage: PT4M1S
 ```
 
 `min` and `max` are the stored digits. `mean` and `m2` (the sum of squared
@@ -352,8 +355,9 @@ common labs. A lab analyte reported in both unit systems is two metrics, the
 amount concentration unsuffixed (`ldl_cholesterol`, mmol/L) and the mass
 concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because the
 two are different measures and a read of one in the other's unit is refused.
-HbA1c is `hba1c` (NGSP %) and `hba1c_ifcc` (IFCC mmol/mol), which relate
-by a formula, not a unit.
+HbA1c is `hba1c` (NGSP %, measure `fraction`) and `hba1c_ifcc` (IFCC
+mmol/mol, measure `amount-fraction`), which never convert into each other:
+they relate by a formula, not a unit.
 The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
@@ -406,9 +410,11 @@ health](bundles-catalog.md#apple-health-to-health-sample) (`healthapple`),
 [Garmin to health](bundles-catalog.md#garmin-to-health-sample)
 (`healthgarmin`) and [Google Fit to
 health](bundles-catalog.md#google-fit-to-health-sample) (`healthgooglefit`).
-Every adapter that writes traces names the source in their ids,
-`<provider>/<account>/<source>/<metric>/<UTC hour>`, because one account
-delivers several devices' data.
+Every adapter that writes traces composes their ids as
+[a trace's](#the-base-kinds) are,
+`<provider>/<account record id>/<source>/<metric>[/<channel>]/<period start>`,
+the period being the UTC hour, because one account delivers several
+devices' data.
 
 The four hold to one set of rules:
 
@@ -501,7 +507,8 @@ by stream and `ts_end` too, so a read that places a value by its end
 
 The rules every column follows are written once, as Go, in
 `internal/observed`: the engine computes each rollup row with it, and the
-aggregate read will be held to it.
+aggregate read reduces raw points with it, so a bucket answers the same from
+rollup rows and from points.
 
 ### When rows are written
 
@@ -851,56 +858,4 @@ beside a metric and a range:
 A function sends the same body to `host.records.aggregate`. An agent sends
 its three parts as the `query` tool's arguments of the same names, `filter`,
 `aggregate` and `downsample`, and `substratectl aggregate` builds it from
-flags. Where the build differs from the proposal's contract is listed in
-[the API reference](api.md#where-this-differs-from-the-plan).
-
-## Where this differs from the plan
-
-The proposal's worked examples ([proposal](plans/observations/proposal/README.md))
-were written before this build; these points differ, each for a stated
-reason:
-
-- A lab result's code as received is `coding`, an object, not `code`: the
-  trait contracts `code` as a string, the categorical key the index reads
-  (`not-detected`).
-- A lab result's `specimen` names its material `material`, not `type`, a word
-  the vocabulary has retired.
-- The metric names its measure with `measures`, not `dimension`, and keeps no
-  `delta`, `circular` or `wrapAt`: they live on each value.
-- A metric's `reducers` and a lab's `status` are free strings rather than
-  enums, because an enum value is one lowercase word and `durationIn` and
-  `entered-in-error` are not.
-- The engine holds the result-shape rule for any observed kind that declares
-  `codedValue`, `ratio` or `text`, since a kind declaration has no
-  "exactly one of" key; `code` beside `codedValue` counts as one shape.
-- Garmin's Pulse Ox is `health/spo2` with Garmin's code, not a metric of its
-  own; Apple's heart rate variability is SDNN, so the catalogue has
-  `hrv_sdnn` beside `hrv_rmssd`; Health Connect's skin temperature is a
-  deviation, so it is `skin_temperature_deviation`.
-- The write rules a [decision](decisions/README.md) did not name are this
-  build's choices: a `statistic` or a `period` outside a summary is refused,
-  a removed `revision` is refused, a coded trace with a `unit` is refused,
-  and a trace needs at least one point.
-- The rollup key adds `unit` and `delta` to the stream key, and a rollup row
-  keeps its statistics in its own unit, so two units that share no base
-  never add. `first_value` and `last_value` are the stored digits
-  (`numeric`), so a counter's endpoints stay exact.
-- A counter's step from the previous bucket is in the later row's
-  `increase`, computed when the row is, not at read time with a window
-  function as the plan had it, so the read needs no counter contract from
-  the rows. A correction recomputes the next bucket holding a reading too.
-  Decision 0157 states this rule and its cost.
-- A rollup row gains `start_gap_ms`, where the bucket's first point lies, and
-  `bounded`, its count of bounded points, so the read can carry a hold across
-  rows and report bounded values without the raw points. It also keeps
-  `span_end`, the record id and index of the first and last point, and the
-  stored digits of the smallest and largest number (`min_value`,
-  `max_value`), so a read served from rows joins amount coverage, breaks ties
-  at one instant and answers a `min` or `max` as the raw points do. The
-  table's CHECK constraints refuse a row without them, and `increase` is null
-  on a row that holds no step.
-- `observed_points` carries each point's hold, counter contract, `delta`,
-  `circular` and `revision`, and its index `ord` in its record; the plan
-  named neither, and the rollups are computed from the points alone.
-- `observed_latest` names its hold `hold_ms` and adds `ts_end`, `delta`,
-  `statistic`, `bounded` and `points`.
+flags.

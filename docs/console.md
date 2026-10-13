@@ -824,19 +824,6 @@ instant. A sleep metric (its record's `category` is `sleep`) in days, weeks
 or months is placed by its end (`bucket.place: "end"`), so a night lands on
 the day you woke and a week is the sum of its days.
 
-**The pattern.** The chart follows Grafana's time series panel: the series
-of one unit share a y axis, a second unit gets an axis on the right, one
-crosshair, an "all series" tooltip, and legend entries that hide a series.
-Datadog puts a request on the right axis the same way and splits a graph
-into small multiples when one would hold too much, which is what the
-timeline does at a third unit rather than adding a third axis. Observable
-Plot has no second y axis and recommends charts side by side, and the
-fitness apps (Oura on the web, WHOOP's trends, Garmin Connect's reports)
-overlay one trend on a second metric with its own scale: two units is the
-case they all draw together. Two scales on one plot line up arbitrarily, so
-each axis carries its unit, each metric's row names its side, and its
-numbers are one click below.
-
 Each metric plans its own read, and the reads that match in filter, range,
 bucket, grouping and sources are one request, across the timeline's charts,
 which names each metric in `aggregate.metrics` with its own unit, reducers,
