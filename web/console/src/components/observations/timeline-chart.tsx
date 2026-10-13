@@ -50,9 +50,6 @@ export type { ChartMark }
 
 export interface ChartSeries {
   key: string
-  /** The group value the series answers, where the chart is grouped. */
-  value?: string
-  label: string
   /** A CSS colour, a `--series-N` token. */
   color: string
   points: SeriesPoint[]

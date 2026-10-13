@@ -174,7 +174,7 @@ const FACET_WORDS: Record<
  * shorten the list, and has no retry, since asking again answers the same;
  * any other failure carries the server's reason and a retry. The page's
  * data stays. */
-export function FacetListError({
+function FacetListError({
   facet,
   error,
   onRetry,

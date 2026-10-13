@@ -22,7 +22,6 @@ function chart(rows: typeof WEIGHT.rows) {
   const { buckets, series } = seriesOf(rows, "avg")
   const shown: ChartSeries[] = series.map((s) => ({
     key: s.key,
-    label: "Weight",
     color: "var(--series-1)",
     points: s.points,
     mark: "line",
@@ -85,7 +84,6 @@ describe("a drag", () => {
         buckets={buckets}
         series={series.map((s) => ({
           key: s.key,
-          label: "Weight",
           color: "var(--series-1)",
           points: s.points,
         }))}

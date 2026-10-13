@@ -29,7 +29,6 @@ it("lays the marks out once while the pointer crosses the buckets", () => {
       buckets={buckets}
       series={series.map((s) => ({
         key: s.key,
-        label: "Weight",
         color: "var(--series-1)",
         points: s.points,
         mark: "line",

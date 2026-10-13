@@ -228,8 +228,6 @@ export function OverlayChart({
     shown.filter((d) => d.plot === plot).length === 1
   const chartSeries: ChartSeries[] = shown.map((d) => ({
     key: d.key,
-    value: d.series.value,
-    label: d.label,
     color: d.color,
     points: d.series.points,
     mark: d.plot.mark,
