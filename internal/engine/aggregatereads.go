@@ -243,7 +243,7 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 			WHERE r.metric = $1 AND r.kind = $2 AND r.source = $3 AND r.about = $4 AND r.channel = $5 AND r.form = $6
 			  AND r.bucket15 >= w.a AND r.bucket15 < w.b) r
 		ORDER BY r.bucket15, r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known`,
-		append(s.hold().args(), from, to)...)
+		append(s.streamForm().args(), from, to)...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate rollups: %w", err)
 	}

@@ -90,7 +90,7 @@ func TestObservedReadsFailWhenAnIterationFails(t *testing.T) {
 	}
 	w := &txn{ctx: ctx, tx: tx}
 	after := pointKey{ord: -1}
-	if _, err := w.readPointsAfter(obsHold{form: "gauge"}, &after, nil, 10, func(scannedPoint) {}); err == nil ||
+	if _, err := w.readPointsAfter(obsStreamForm{form: "gauge"}, &after, nil, 10, func(scannedPoint) {}); err == nil ||
 		!strings.Contains(err.Error(), "statement timeout") {
 		t.Errorf("a recompute page that failed halfway: err = %v, want the timeout", err)
 	}

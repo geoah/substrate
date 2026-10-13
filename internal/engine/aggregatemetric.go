@@ -65,13 +65,15 @@ type aggStream struct {
 	offsetless bool
 }
 
-func (s *aggStream) hold() obsHold { return obsHold{obsStream: s.obsStream, form: s.form} }
+func (s *aggStream) streamForm() obsStreamForm {
+	return obsStreamForm{obsStream: s.obsStream, form: s.form}
+}
 
 // aggStreamSQL matches the points of one aggStream, its seven columns bound
 // at $1 to $7 (args).
 const aggStreamSQL = streamFormSQL + ` AND coalesce(p.statistic, '') = $7`
 
-func (s *aggStream) args() []any { return append(s.hold().args(), s.stat) }
+func (s *aggStream) args() []any { return append(s.streamForm().args(), s.stat) }
 
 // aggStreamLess orders streams as observed_latest keys them.
 func aggStreamLess(a, b *aggStream) bool {

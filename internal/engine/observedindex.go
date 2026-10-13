@@ -162,12 +162,6 @@ type obsStreamForm struct {
 	form string
 }
 
-// obsHold and holdStreamSQL are the aggregate read's names for obsStreamForm
-// and streamFormSQL, which its files still use.
-type obsHold = obsStreamForm
-
-const holdStreamSQL = streamFormSQL
-
 // obsBucket is one bucket of one obsStreamForm, its start in Unix milliseconds.
 type obsBucket struct {
 	obsStreamForm
