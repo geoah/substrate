@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import os from "node:os"
 import path from "node:path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
@@ -59,5 +60,9 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test-setup.ts"],
+    // vitest leaves one core to the main process by default, three workers
+    // on a four vCPU runner. On CI the main process does little but report,
+    // so the fourth core runs a test file too; a laptop keeps the default.
+    maxWorkers: process.env.CI ? os.availableParallelism() : undefined,
   },
 })

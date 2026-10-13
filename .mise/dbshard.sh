@@ -2,12 +2,12 @@
 #
 # One database package's suite, or one shard of it.
 #
-# internal/engine is 800-odd top-level tests and the slowest package in the
-# tree, and internal/catalog is the next. CI runs each as SHARDS parallel
-# jobs, each of which runs this script with its own SHARD. The package's test
-# files name every top-level test and .mise/shardselect.sh hands back this shard's
-# slice, so the same tree always cuts the same way and a failure reproduces
-# by rerunning its shard number.
+# internal/engine is the slowest package in the tree, and internal/catalog
+# is the next. CI runs each as SHARDS parallel jobs, each of which runs this
+# script with its own SHARD. The package's test files name every top-level
+# test and .mise/shardselect.sh hands back this shard's slice, so the same
+# tree always cuts the same way and a failure reproduces by rerunning its
+# shard number. The script prints the shard's count of the package's total.
 #
 # The selection is a `-run` regex anchored at both ends, so a name that is a
 # prefix of another cannot pull the other in. Subtests follow their parent:

@@ -51,9 +51,24 @@ if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
 fi
 
 base_commit="${CHANGES_CHECK_BASE:-}"
+# A pull request's checkout is its merge commit (refs/pull/N/merge), whose
+# first parent is the base branch's tip it was merged onto. The merge base
+# with the base branch is that parent even after the branch moves on, so the
+# diff is the same, and two commits of history (`fetch-depth: 2`) hold it.
+# The unshallow below cost every gated job 2 to 6 s. GitHub sets GITHUB_SHA
+# to that merge commit and GITHUB_REF to the merge ref whatever a job checks
+# out, so HEAD equal to GITHUB_SHA is the one sign the checkout is the merge
+# commit. Any other checkout (a PR head that is itself a merge has the wrong
+# first parent), or a merge commit whose parents were not fetched, takes the
+# merge base path.
+if [ -z "$base_commit" ] && [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] &&
+  [ "$(git rev-parse HEAD)" = "${GITHUB_SHA:-}" ] &&
+  git rev-parse --verify --quiet 'HEAD^2' >/dev/null; then
+  base_commit="$(git rev-parse 'HEAD^1')"
+fi
 if [ -z "$base_commit" ]; then
   base_branch="${GITHUB_BASE_REF:-main}"
-  # CI checkouts are shallow (fetch-depth 1); the merge base needs history.
+  # A CI checkout is shallow; the merge base needs history.
   if [ -f "$(git rev-parse --git-dir)/shallow" ]; then
     git fetch --quiet --unshallow origin || git fetch --quiet origin
   fi

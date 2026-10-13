@@ -119,7 +119,7 @@ db_state() {
 	echo "${status:-absent}"
 }
 
-# db_start brings the SHARED container up and waits for its socket. It is
+# db_start brings the SHARED container up and waits until it accepts TCP. It is
 # shared by every tree on the box, so nothing here stops it, recreates it or
 # touches its volume: only `wipe-all` does.
 db_start() {
@@ -146,9 +146,10 @@ db_start() {
 		;;
 	esac
 	# The server's first act is a migration, so waiting here is what keeps a
-	# start from racing an empty socket.
+	# start from racing an empty socket. Over TCP, because a fresh volume's
+	# init server answers on the unix socket and then stops (#869).
 	for _ in $(seq 1 60); do
-		if docker exec "$CONTAINER" pg_isready -U postgres -d "$BOOTSTRAP_DB" >/dev/null 2>&1; then
+		if docker exec "$CONTAINER" pg_isready -h 127.0.0.1 -U postgres -d "$BOOTSTRAP_DB" >/dev/null 2>&1; then
 			return 0
 		fi
 		sleep 1

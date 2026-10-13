@@ -16,13 +16,17 @@
 #
 # Two tiers. The REQUIRED checks (.github/rulesets/main.json: `conventional
 # commits` in pr.yml, `lint`, `lint go`, `console`, `console test`, `go gate`)
-# each finish inside a minute on the runner, so a pull request waits about a
-# minute plus GitHub's own scheduling for its verdict. Everything else runs on
-# the same pull request and on main and is not required: `providers e2e` (nine
-# minutes), `acceptance drill` (one serial scenario), `race`, `cross compile`,
-# `image builds and boots`. A required job that grows past a minute is cut
-# (more shards, a split job), not left to slow every merge. `audit` is not
-# here: it runs in audit.yml, because this workflow's conclusion is what
+# are what a pull request waits for, so each job behind them has a budget of
+# about a minute on the runner, and one that grows past it is cut (more
+# shards, a split job), not left to slow every merge. Several are over it:
+# over the 29 pull request runs of 2026-10-10 to 2026-10-12 that ran the Go
+# suite, `console test` took a median 133 s, `db rest` 122 s and an engine
+# shard 76 s, and `go gate` went green a median 179 s after the push.
+# `gh run view <id> --json createdAt,jobs` measures a run. Everything else
+# runs on the same pull request and on main and is not required: `providers
+# e2e` (228 to 325 s in those runs), `acceptance drill` (one serial
+# scenario), `race`, `cross compile`, `image builds and boots`. `audit` is
+# not here: it runs in audit.yml, because this workflow's conclusion is what
 # latest.yml, release-please.yml and release.yml wait for.
 #
 # The Go jobs gate themselves. Each one's first step is .mise/changescheck.sh:
@@ -32,7 +36,19 @@
 # they all wait on saved that job's 14 seconds from every Go job's start; the
 # `changes` job remains for the non-required suites. A workflow-level `paths:`
 # filter would never create the checks at all and would leave a required one
-# pending forever. A push to main answers yes and runs everything.
+# pending forever. A push to main answers yes and runs everything. The gated
+# jobs check out two commits (`fetch-depth: 2`): a pull request's checkout is
+# its merge commit, and the script diffs it against the first parent, the
+# base branch's tip, instead of fetching the whole history for a merge base.
+#
+# The database jobs run their suites against one Postgres per job, started
+# by `.mise/cipostgres.sh start` as early as the job can and awaited by
+# `.mise/cipostgres.sh wait` right before the suite, so its pull overlaps
+# mise and the cache restore. A `services:` block made the runner pull and
+# start it before the first step, a median 15 s of every database job's
+# critical path, paid even where the path gate then skipped the suite. The
+# suites read it through SUBSTRATE_TEST_DATABASE_URL, and
+# SUBSTRATE_TEST_DATABASE_DISPOSABLE lets testdb turn its durability off.
 #
 # `go gate` is the ONE name a ruleset requires for the Go suite, because the
 # shard names are a matrix detail. It fails unless `go test`, every `engine`
@@ -257,9 +273,11 @@ jobs:
       go: ${{ steps.changes.outputs.go }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The script diffs against the merge base with the PR's base branch,
-      # fetching the history the shallow checkout lacks, and writes `go=` to
-      # $GITHUB_OUTPUT. On a push it answers true without diffing.
+        with:
+          fetch-depth: 2
+      # The script diffs a pull request's merge commit against its first
+      # parent and writes `go=` to $GITHUB_OUTPUT. On a push it answers true
+      # without diffing.
       - id: changes
         run: .mise/changescheck.sh
 
@@ -269,6 +287,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - id: changes
         run: .mise/changescheck.sh
       - if: steps.changes.outputs.go == 'true'
@@ -340,27 +360,16 @@ jobs:
     # testcontainers when they have to, which is right on a laptop. On a runner
     # it is fragile — the container has died mid-suite, and every remaining case
     # then fails with `connection refused`, which reads like a code failure and
-    # is not one. A service container is the runner's own job to keep alive, and
-    # testdb picks it up through SUBSTRATE_TEST_DATABASE_URL. Same task, same
-    # assertions; only the machine differs.
+    # is not one. So the job starts one Postgres of its own with
+    # .mise/cipostgres.sh, and testdb picks it up through
+    # SUBSTRATE_TEST_DATABASE_URL. Same task, same assertions; only the machine
+    # differs.
     #
     # Its stock 100 connections are not raised the way testdb raises its own
-    # container's, because a service container takes no command and
-    # max_connections needs a restart, which ALTER SYSTEM (the route the
-    # durability settings take) cannot give it: the suite runs
-    # GOMAXPROCS tests at once holding ~4 connections each, which is ~16 on this
-    # runner's four vCPUs. A LARGER runner would need that ceiling lifted, and
-    # the failure says "too many clients already".
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: substrate
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
-          5s --health-timeout 5s --health-retries 20 --tmpfs /var/lib/postgresql/data:rw,size=3g
+    # container's: the suite runs GOMAXPROCS tests at once holding ~4
+    # connections each, which is ~16 on this runner's four vCPUs. A LARGER
+    # runner would need that ceiling lifted in .mise/cipostgres.sh, and the
+    # failure says "too many clients already".
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
@@ -368,8 +377,12 @@ jobs:
       SHARDS: ${{ matrix.shards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - id: changes
         run: .mise/changescheck.sh
+      - if: steps.changes.outputs.go == 'true'
+        run: .mise/cipostgres.sh start
       - if: steps.changes.outputs.go == 'true'
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -408,6 +421,8 @@ jobs:
             }}
           restore-keys: ${{ runner.os }}-uv-
       - if: steps.changes.outputs.go == 'true'
+        run: .mise/cipostgres.sh wait
+      - if: steps.changes.outputs.go == 'true'
         run: mise run ${{ matrix.task }}
       # The first shard of each task saves; catalog 2/2 builds what 1/2 did.
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
@@ -428,23 +443,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
-      # Every shard reports: one red shard must not cancel the seven that
-      # would have said which other tests failed.
+      # Every shard reports: one red shard must not cancel the other fifteen,
+      # which would have said which other tests failed.
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
-    # The same service container as `go test`, for the same reason; one per
-    # shard, because a shard is a runner of its own.
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: substrate
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
-          5s --health-timeout 5s --health-retries 20 --tmpfs /var/lib/postgresql/data:rw,size=3g
+    # The same Postgres as the `db` job, for the same reason; one per shard,
+    # because a shard is a runner of its own.
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
@@ -452,8 +457,12 @@ jobs:
       SHARDS: ${{ strategy.job-total }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - id: changes
         run: .mise/changescheck.sh
+      - if: steps.changes.outputs.go == 'true'
+        run: .mise/cipostgres.sh start
       - if: steps.changes.outputs.go == 'true'
         uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
@@ -478,6 +487,8 @@ jobs:
           && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
         run: .mise/gocache.sh age ~/.cache/go-build
         continue-on-error: true
+      - if: steps.changes.outputs.go == 'true'
+        run: .mise/cipostgres.sh wait
       - if: steps.changes.outputs.go == 'true'
         run: mise run ci:engine
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
@@ -505,21 +516,12 @@ jobs:
     # side, so the job is the slowest case: about four minutes on a laptop;
     # the runner is slower and the first run also warms uv.
     timeout-minutes: 30
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: substrate
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
-          5s --health-timeout 5s --health-retries 20 --tmpfs /var/lib/postgresql/data:rw,size=3g
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: .mise/cipostgres.sh start
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
@@ -548,7 +550,20 @@ jobs:
             ${{ runner.os }}-uv-${{ hashFiles('.mise.toml', 'kinds/providers.substrate.reamde.dev/*/bundle.yaml')
             }}
           restore-keys: ${{ runner.os }}-uv-
+      - run: .mise/cipostgres.sh wait
       - run: mise run ci:providers
+      # The server's own log, substrated.log, is the part of a failure the
+      # job log lacks: each case's output is already there through t.Log, and
+      # .dev/providere2e/ goes with the runner. A dotted path, so the upload
+      # must be told to include hidden files.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: providere2e-logs
+          path: .dev/providere2e/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
         run: .mise/gocache.sh prune ~/.cache/go-build
@@ -572,21 +587,12 @@ jobs:
     # reading the one before it, so it cannot be cut into shards. Under a
     # minute on a laptop; the budget is for a runner that builds cold.
     timeout-minutes: 20
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: substrate
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
-          5s --health-timeout 5s --health-retries 20 --tmpfs /var/lib/postgresql/data:rw,size=3g
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: .mise/cipostgres.sh start
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
@@ -607,6 +613,7 @@ jobs:
           'true'
         run: .mise/gocache.sh age ~/.cache/go-build
         continue-on-error: true
+      - run: .mise/cipostgres.sh wait
       - run: mise run ci:drill
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
@@ -643,21 +650,12 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: substrate
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
-          5s --health-timeout 5s --health-retries 20 --tmpfs /var/lib/postgresql/data:rw,size=3g
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
       SUBSTRATE_TEST_DATABASE_DISPOSABLE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: .mise/cipostgres.sh start
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           experimental: true
@@ -679,6 +677,7 @@ jobs:
           'true'
         run: .mise/gocache.sh age ~/.cache/go-build
         continue-on-error: true
+      - run: .mise/cipostgres.sh wait
       - run: mise run ci:coverage
       - if: github.event_name == 'push' && steps.cache.outputs.cache-hit !=
           'true'
@@ -768,10 +767,6 @@ jobs:
       # above, which save 51s and 77s. Re-measure before adding one back.
       - run: mise run ci:console
 
-  # Builds the image from source and BOOTS it under compose.yaml, with fresh
-  # volumes and a throwaway Postgres. The release ships the same runtime stage
-  # (the Dockerfile's ARTIFACTS switch), so this is the boot a published image
-  # gets before anybody pulls it.
   console-test:
     name: console test
     runs-on: ubuntu-latest

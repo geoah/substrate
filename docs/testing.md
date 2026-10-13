@@ -19,10 +19,11 @@ suites are where most of the behaviour is actually pinned down.
 | Live | `mise run test:llm` | provider keys, money | ~1 minute |
 | End-to-end | `mise run test:e2e` | Docker; leaves data | ~3 minutes |
 
-`mise run test` is the one to run before pushing. `mise run ci` is the
-pipeline as CI runs it, including the linters, the console and an image build,
-except the provider suite (`ci:providers`), which it does not run, and the
-weekly live suite (`ci:llm`), which spends money.
+`mise run test` is the one to run before pushing. `mise run ci:quick` is the
+required checks that need no database or Docker (`lint`, `lint go`,
+`console`, `console test`, `go test`). `mise run ci` is the pipeline as CI
+runs it, including the linters, the console, an image build and the provider
+suite, except the weekly live suite (`ci:llm`), which spends money.
 
 **The short suite** is everything that needs no database: the API against its
 hand-written fake (`internal/api/fake_test.go`), the CLI's commands, the
@@ -30,9 +31,12 @@ vocabulary, the sandbox, the runner's protocol. It is fast enough to run on
 every save.
 
 **The database suites** are the engine, the catalog, the provider suites
-(`internal/providertest`, `internal/providere2e`), `cmd/substratectl`'s
-database cases and the whole-server harness (`internal/testenv`). They are the ones that hold the real contracts, because the changelog,
-the fold and admission are only themselves against Postgres.
+(`internal/providertest`, `internal/providere2e`) and the whole-server
+harness (`internal/testenv`). They are the ones that hold the real
+contracts, because the changelog, the fold and admission are only themselves
+against Postgres. `cmd/substratectl` has none: commit 2a4112ac removed its
+one database test because `internal/engine/migrate_db_test.go` holds the same
+assertion (`ErrDatabaseNewer`).
 
 ## The database suites
 
@@ -43,11 +47,11 @@ not care which:
   hands out one DSN per test binary. This is what happens on a laptop, and it
   needs nothing but Docker.
 - **A server you point it at.** Set `SUBSTRATE_TEST_DATABASE_URL` and `testdb`
-  uses that instead. This is how CI runs, against a service container the
-  runner keeps alive. Two requirements, both refused with a message rather
-  than worked around: the URL is a `postgres://` URL, and its role has
-  `CREATEDB`, because the engine suite copies a migrated template database
-  per test. The template also needs the `vector` and `pgcrypto` extensions,
+  uses that instead. This is how CI runs, against the one Postgres each
+  database job starts (`.mise/cipostgres.sh`). Two requirements, both
+  refused with a message rather than worked around: the URL is a
+  `postgres://` URL, and its role has `CREATEDB`, because the engine suite
+  copies a migrated template database per test. The template also needs the `vector` and `pgcrypto` extensions,
   and `vector` is not a trusted extension, so either the role is a superuser
   or you install both into `template1` once (connect to `template1` and
   `CREATE EXTENSION` each), after which every new database inherits them and
@@ -68,7 +72,9 @@ SUBSTRATE_TEST_DATABASE_URL="$(mise run dev:dsn)" mise run test:db
 ```
 
 **One database suite per machine at a time.** `test:db`, `test:db:engine`,
-`test:db:rest` and `test:db:providers` run under `.mise/dblock.sh`, which takes
+`test:db:rest`, `test:db:providers`, `test:llm`, the database half of
+`test:coverage`, and the `ci:db:*` and `ci:drill` tasks run under
+`.mise/dblock.sh`, which takes
 a machine-wide `flock` slot before the suite starts and holds it until the
 suite's last process exits, whatever signal ends it. A second run on the same
 machine prints `dblock: waiting for a database test slot` with the holder's
@@ -114,15 +120,16 @@ concurrently. A `*_db_test.go` failure that looks arbitrary usually is, so
 confirm it alone before believing it:
 
 ```bash
-mise run test:db:engine                # about 106 s on 16 cores; the answer you can trust
+mise run test:db:engine                # the answer you can trust
 go test ./internal/engine/ -run TestFold -v
 ```
 
-The engine package is roughly 850 top-level tests: about 106 s of wall time on a
-16 core machine (best of three runs, measured 2026-09-10; 117 s on the same
-box before the fixture stopped importing the sample packages no test reads)
-and longer on a 4 vCPU CI runner, where a shard's log says what it costs, so
-the comment above is this machine's number, not a promise.
+The engine package has about 1,230 top-level tests (2026-10-13, counted by
+`cat internal/engine/*_test.go | grep -cE '^func Test[A-Z_]'`). Its last
+measured wall time is 106 s on a 16 core machine, best of three runs on
+2026-09-10, when it had 766; it has grown since, so time a run of your own
+with `mise run test:timing` (below) before planning around a number. A CI
+shard's log prints how many of the package's tests it ran.
 
 `test:db:engine` is the engine package with `test:db`'s flags, and it is also
 the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
@@ -135,9 +142,9 @@ them. The cut is described under [What CI runs](#what-ci-runs).
 ### The engine fixture, and where the time goes
 
 Almost every engine test opens its own service, creates a repository and
-imports the sample vocabulary. Five things the harness does keep that near
-106 s on 16 cores, and this page is the one place that explains them (the code
-comments point here).
+imports the sample vocabulary. Five things the harness does keep that cost
+down, and this page is the one place that explains them (the code comments
+point here).
 
 **A migrated template database, copied per test.** `engine.Open` runs once
 per binary on a template (`migratedTemplate` in
@@ -175,9 +182,9 @@ starts runs with `fsync=off`, `synchronous_commit=off` and
 to the container's own IP where the host can route to it, else the published
 port, because the published port is docker-proxy, one process relaying every
 connection that every test then queues in. Each test drops its copy in its
-cleanup and `testdb.Main` drops what is left after `m.Run`. CI's service
-containers keep their data directory on a tmpfs (`--tmpfs` in the job's
-`options`) and take no command line, so the jobs set
+cleanup and `testdb.Main` drops what is left after `m.Run`. CI's Postgres
+keeps its data directory on a tmpfs (`--tmpfs` in `.mise/cipostgres.sh`)
+and runs the image's stock settings, so the jobs set
 `SUBSTRATE_TEST_DATABASE_DISPOSABLE=true` and `testdb` applies the same three
 settings through `ALTER SYSTEM`. The one test that starts a container of its
 own (`TestOpenFailsClosedWithoutSafeRoles`) passes `testdb.DurabilityOff()`,
@@ -205,7 +212,7 @@ imports exactly the packages a test names, and the tests that read a messaging
 or calendar kind name theirs. Both halves' `importVocabulary`
 refuses an empty name list, because `enginetest.ImportVocabulary` reads that
 as all five and a caller who wants all five says `enginetest.Vocabulary...`.
-This is worth 11 s of the suite's wall clock, 117 s to 106 s.
+On 2026-09-10 this was worth 11 s of the suite's wall clock, 117 s to 106 s.
 
 To see what a run spent, capture it as JSON once and read it:
 
@@ -254,9 +261,9 @@ case goes from passing to skipping, and the build stays green.
 `SUBSTRATE_TEST_REQUIRE_SANDBOX=1` closes that. The guards fail instead of
 skipping, and `internal/sandboxtest` counts, so a run that skipped its way to
 zero cases cannot exit 0 either. Each package's `TestMain` declares how many
-cases guard on the confinement, ten in `internal/runner` and four in
-`internal/sandbox`, and the count is held to that **exactly**: adding an
-eleventh case, or deleting one of the ten, fails until the number moves with it. A
+cases guard on the confinement, the number it passes to `sandboxtest.Run`,
+and the count is held to that **exactly**: adding a case, or deleting one,
+fails until the number moves with it. A
 case that passes the guard and then skips on a precondition of its own (a uid
 that cannot make a device node, a probe that will not build) counts as guarded
 but not as asserted, and at least one case must have asserted.
@@ -290,7 +297,12 @@ go tool cover -html=coverage.out
 
 There is **no threshold and no badge**, deliberately. A number that fails a
 build teaches people to write tests that move the number. What the profile is
-for is the opposite question: which paths does nothing exercise at all. CI
+for is the opposite question: which paths does nothing exercise at all. Both
+halves run with `-coverpkg=github.com/geoah/substrate/...`, so a statement
+counts whichever package's tests ran it (`internal/api`'s tests drive most
+of `internal/window`, `internal/providertest` drives the engine from outside).
+The total is over every package in the module, a package with no tests at
+0%. CI
 keeps `coverage.out` as an artifact of every push to `main` (the `coverage`
 job), so a reviewer can answer "is that new branch covered" without running
 anything. A PR's runs carry no profile: the PR jobs are sharded, and merging
@@ -304,8 +316,12 @@ mise run ci:console        # typecheck, lint, format, test, build
 mise run console:render http://127.0.0.1:8080   # the served console, in headless Chrome
 ```
 
-Vitest with jsdom, beside the code it covers: every module in
-`src/lib/api/` has a `.test.ts` next to it, and the pages have component tests.
+Vitest with jsdom, beside the code it covers: most modules in
+`src/lib/api/` have a `.test.ts` next to them, and the pages have component
+tests. The new-record sheet's sweep over every shipped kind is the slowest
+of them, so it is cut across four files (`create-sheet.kinds-1.test.tsx` to
+`-4`) that vitest runs side by side, and on CI vitest runs one worker per
+core rather than leaving one idle.
 
 **The render check** (`web/console/scripts/render-smoke.mjs`) opens the
 console a running substrate serves in headless Chrome. jsdom cannot stand in
@@ -570,29 +586,34 @@ asks the in-process engine for.
 ## What CI runs
 
 Every job is one `mise run ci:<job>`, defined once in `.mise.toml` so the
-pipeline is reproducible on a laptop. The required checks each finish inside
-a minute on the runner; the rest run on the same pull request and on `main`
-and do not block a merge.
+pipeline is reproducible on a laptop. Each job behind a required check has a
+budget of about a minute on the runner, and several are over it; the rest
+run on the same pull request and on `main` and do not block a merge. The
+Median column is the median job time over the 29 pull request runs of
+2026-10-10 to 2026-10-12 that ran the Go suite (the coverage job: the 12
+pushes to `main` in the same days); `gh run view <id> --json createdAt,jobs`
+measures a run. `go gate` went green a median 179 s after the push in those
+runs.
 
-| Job | Task | Is | Required |
-| --- | ---- | -- | -------- |
-| conventional commits | `commits:check` (in `pr.yml`) | the PR title and every commit subject are conventional commits, a break carries a `BREAKING CHANGE:` footer with its steps, and a release pull request touches only the changelog ([releasing](releasing.md)) | yes |
-| lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the three diff guards: the `kinds/` and `samples/` version bump and new kind names (`kinds:check`), the write-once files (`frozen:check`), and a decision number another live branch took first (`decisions:check`) | yes |
-| lint go | `ci:lint:go` | `lint:go` (the golangci-lint config check, `go mod tidy -diff` and `go mod verify`, no test infrastructure linked into a binary, then golangci-lint) and the Go formatting check | yes |
-| console | `ci:console` | typecheck, lint, format, build | yes |
-| console test | `ci:console:test` | the console's vitest suite | yes |
-| go test | `ci:go` | the short suite, no database | through `go gate` |
-| engine 1/16 to 16/16 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | through `go gate` |
-| db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` |
-| db rest | `ci:db:rest` | `internal/providertest`, `internal/testenv` without the acceptance drill, and `substratectl` | through `go gate` |
-| go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes |
-| acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no |
-| providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams | no |
-| race | `ci:race` | the short suite under `-race` | no |
-| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64, and golangci-lint for darwin | no |
-| image builds | `ci:image` | the image builds from a clean tree, boots, and renders the console in headless Chrome | no |
-| changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites | no |
-| coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only |
+| Job | Task | Is | Required | Median |
+| --- | ---- | -- | -------- | -----: |
+| conventional commits | `commits:check` (in `pr.yml`) | the PR title and every commit subject are conventional commits, a break carries a `BREAKING CHANGE:` footer with its steps, and a release pull request touches only the changelog ([releasing](releasing.md)) | yes | |
+| lint | `ci:lint` | every linter and formatter check but Go's, the release config, and the three diff guards: the `kinds/` and `samples/` version bump and new kind names (`kinds:check`), the write-once files (`frozen:check`), and a decision number another live branch took first (`decisions:check`) | yes | 27 s |
+| lint go | `ci:lint:go` | `lint:go` (the golangci-lint config check, `go mod tidy -diff` and `go mod verify`, no test infrastructure linked into a binary, then golangci-lint) and the Go formatting check | yes | 43 s |
+| console | `ci:console` | typecheck, lint, format, build | yes | 52 s |
+| console test | `ci:console:test` | the console's vitest suite | yes | 133 s |
+| go test | `ci:go` | the short suite, no database | through `go gate` | 54 s |
+| engine 1/16 to 16/16 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | through `go gate` | 76 s |
+| db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` | 72 s, 75 s |
+| db rest | `ci:db:rest` | `internal/providertest`, and `internal/testenv` without the acceptance drill | through `go gate` | 122 s |
+| go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes | 3 s |
+| acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no | 50 s |
+| providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams; a failed run keeps `.dev/providere2e/`, the server's log included, as the `providere2e-logs` artifact | no | 260 s |
+| race | `ci:race` | the short suite under `-race` | no | 145 s |
+| cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64, and golangci-lint for darwin | no | 82 s |
+| image builds | `ci:image` | the image builds from a clean tree, boots, and renders the console in headless Chrome | no | 115 s |
+| changes | `ci:changes` | answers `go=true` or `go=false` for the non-required Go suites | no | 9 s |
+| coverage | `ci:coverage` | the whole suite, unsharded, with the coverage profile kept as an artifact | push to `main` only | 632 s |
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on
 changes, because its queries change even when the code does not. So does
@@ -609,8 +630,8 @@ providers, weekly on `main` and on dispatch, never on a pull request, and
 
 ### The database suite, cut for the runner
 
-The engine package alone is 380 to 500 seconds on the 4 vCPU runner, so CI
-runs it as sixteen matrix jobs, and `internal/catalog` as two.
+The engine package is too long for one 4 vCPU runner, so CI runs it as
+sixteen matrix jobs, and `internal/catalog` as two.
 `.mise/dbshard.sh` reads a package's top-level test names from its
 `_test.go` files, sorts them and gives shard `k` every `n`th name starting
 from the `k`th, as one `-run` regex anchored at both ends. Every test lands in
@@ -627,8 +648,13 @@ and `MISE_TASK_RUN_AUTO_INSTALL=false` stops `mise run` installing the rest,
 so a task that needs a tool its job did not name fails and the fix is to name
 it.
 
-Each Go job's first step is `.mise/changescheck.sh`, the path gate. It diffs
-the merge base with the PR's base branch against the tree and answers
+Each Go job's first step is `.mise/changescheck.sh`, the path gate. On a pull
+request the checkout is the PR's merge commit, and the gate diffs the tree
+against its first parent, the base branch's tip, which the job's two-commit
+checkout (`fetch-depth: 2`) already holds. The gate takes that path only when
+`HEAD` is `GITHUB_SHA`, the merge commit GitHub built. Any other checkout, or
+a merge commit whose parents were not fetched, diffs against the merge base
+with the base branch, fetching the history first. It answers
 `go=false` only when every changed file matches a pattern nothing a Go test
 reads: `docs/`, `web/console/` (except `wire.golden.json` and
 `record-schema.ts`, which Go tests read), `.github/` other than `ci.yml`,
@@ -640,6 +666,19 @@ merged green. The diff is read with `--no-renames`, so a Go file moved onto an
 inert path is seen on both sides, and a base the script cannot resolve fails
 the job rather than answering `false`. On `false` every later step is skipped
 and the job is green; a push to `main` answers `true` without diffing.
+
+Each database job runs its suite against one Postgres of its own, the
+`pgvector/pgvector:pg16` image on a tmpfs at `localhost:5432`.
+`.mise/cipostgres.sh start` runs right after the path gate and returns at
+once, so the image pull overlaps mise and the cache restore, and
+`.mise/cipostgres.sh wait` blocks right before the suite until `pg_isready`
+answers over TCP. A `services:` block made the runner pull and start it
+before the first step, a median 15 s of every database job (944 jobs,
+2026-10-10 to 2026-10-12), paid even where the gate then skipped the suite.
+TCP, not the unix socket, everywhere a probe runs (`compose.yaml`,
+`.mise/dev.sh`, the `llm live` service container): the image's init scripts
+run against a temporary server that listens on the socket alone, so a socket
+probe reads it as ready just before it stops (#869).
 
 Each Go job restores its build caches with `actions/cache/restore`, and only a
 push to `main` saves them, under `<os>-go-<job>-<go.sum hash>-<commit>`. A
@@ -661,17 +700,26 @@ package and `test:db` runs the tree.
 
 `mise run lint:ci` (`.mise/cicheck.sh`, part of `lint`) holds the CI scripts:
 each path-gate scenario is a throwaway git repository with the verdict it
-must give, including the unresolvable base that must fail; the shard
-partition (`.mise/shardselect.sh`) is run over a fixed list that the shards
-together must reproduce exactly once; `ci:lint` plus `ci:lint:go` must
-cover every task in `lint` and `fmt:check`; and `.mise/gocache.sh` must
-remove exactly the cache entries a run did not touch.
+must give, including the unresolvable base that must fail and a pull
+request's merge commit fetched two commits deep, which must be answered
+without fetching more; the shard partition (`.mise/shardselect.sh`) is run
+over a fixed list that the shards together must reproduce exactly once;
+`ci:lint` plus `ci:lint:go` must cover every task in `lint` and
+`fmt:check`; every required context in `.github/rulesets/main.json` must
+name exactly one job; every `ci:*` task a workflow runs must be in `ci` or
+run inside one of its tasks; every `.mise.toml` task that runs a database
+package's `go test` without `-short` must run it through `.mise/dblock.sh`;
+every `pg_isready` must probe TCP;
+`.mise/cipostgres.sh` must start the image, port and tmpfs the jobs' DSN
+expects, probe over TCP and fail at its timeout with the server's log; and
+`.mise/gocache.sh` must remove exactly the cache entries a run did not
+touch.
 
 `mise run test` and `test:db` are untouched by the cut: each is still the
 whole suite, sequential, on one machine. `test:coverage` is the same without
 the provider suite, and `mise run ci` runs `ci:coverage` in place of `ci:go`,
-the shards and the drill, because it is the same tests once with the profile;
-it runs no `ci:providers`.
+the shards, the `db` jobs and the drill, because it is the same tests once
+with the profile, and `ci:providers` beside it.
 
 Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
 can import.

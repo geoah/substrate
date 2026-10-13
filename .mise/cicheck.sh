@@ -2,6 +2,14 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/cipostgres.sh is the ninth: it starts the database jobs' Postgres and
+# says when it is ready, so a wrong answer is a suite run against a server
+# still in its init scripts, or a job that hangs to its timeout on a pull
+# that failed. Its scenarios run against a fake docker. Beside them, every
+# pg_isready the tree runs is held to TCP (#869), the ruleset's required
+# checks to one job each, every `ci:*` task a workflow runs to `mise run
+# ci`, and every database suite a task runs to .mise/dblock.sh.
+#
 # .mise/releasegate.sh is the eighth: it decides whether a release-please run
 # may tag, so a wrong pass is a public release whose commit ci never passed.
 # Its scenarios run against a fake gh, at the end.
@@ -49,6 +57,7 @@ llmliveissue="$PWD/.mise/llmliveissue.sh"
 gocache="$PWD/.mise/gocache.sh"
 imagemain="$PWD/.mise/imagemain.sh"
 releasegate="$PWD/.mise/releasegate.sh"
+cipostgres="$PWD/.mise/cipostgres.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -91,7 +100,7 @@ g add -A && g commit --quiet -m base
 # on a push to main, where the runner's own GITHUB_EVENT_NAME=push would make
 # every scenario answer "a push runs every job" and its CI=true would turn the
 # laptop fallback into a refusal. The PR runs never saw that, main did.
-scrub=(env -u GITHUB_EVENT_NAME -u GITHUB_BASE_REF -u GITHUB_REF -u CI -u GITHUB_OUTPUT -u CHANGES_CHECK_BASE)
+scrub=(env -u GITHUB_EVENT_NAME -u GITHUB_BASE_REF -u GITHUB_REF -u GITHUB_SHA -u CI -u GITHUB_OUTPUT -u CHANGES_CHECK_BASE)
 gate_out=""
 gate_status=0
 gate_output_lines=0
@@ -183,6 +192,85 @@ git -C "$lone" -c user.name=ci -c user.email=ci@example.com -c commit.gpgsign=fa
 if (cd "$lone" && "${scrub[@]}" CI=1 GITHUB_OUTPUT="$tmp/lone-output" "$changescheck" >/dev/null 2>&1); then
   flag "CI without a base branch: exit 0, expected a refusal"
 fi
+
+# A pull request's checkout, made the way actions/checkout makes it: a fresh
+# repository fetching refs/pull/1/merge from an origin at a depth. At depth 2
+# the merge commit's parents are there, so the gate diffs against HEAD^1 and
+# fetches nothing: the clone must still be shallow after it. At depth 1 they
+# are not, and the gate falls back to unshallowing for the merge base. These
+# run last against $repo because they move its main.
+#
+# pr_merge <name> <main-side setup> <branch-side setup>: a branch off main
+# with the branch-side change, main moved on by the main-side change, and
+# the branch merged onto main's tip by `git merge --no-ff` and published as
+# refs/pull/1/merge, as GitHub builds it.
+pr_merge() {
+  local name="$1" main_side="$2" branch_side="$3"
+  g checkout --quiet -b "$name" main
+  "$branch_side"
+  g add -A && g commit --quiet -m "$name"
+  g checkout --quiet main
+  "$main_side"
+  g add -A && g commit --quiet -m "${name}: main moves"
+  g checkout --quiet --detach main
+  g merge --quiet --no-ff --no-edit "$name" >/dev/null
+  g update-ref refs/pull/1/merge HEAD
+  g checkout --quiet main
+}
+# pr_gate <name> <depth> <GITHUB_SHA: head|other> <expected go=> <shallow after: yes|no>
+# GITHUB_REF is the merge ref in every scenario, as it is on every
+# pull_request run whatever the job checked out; `other` is a GITHUB_SHA
+# that is not the checkout's HEAD, as for a job that checked out another
+# commit than the merge commit GitHub built.
+pr_gate() {
+  local name="$1" depth="$2" sha="$3" expected="$4" shallow="$5" clone="$tmp/pr-$1"
+  git init --quiet "$clone"
+  git -C "$clone" remote add origin "file://$repo"
+  git -C "$clone" fetch --quiet --depth "$depth" origin +refs/pull/1/merge:refs/remotes/pull/1/merge
+  git -C "$clone" checkout --quiet --detach refs/remotes/pull/1/merge
+  case "$sha" in
+  head) sha="$(git -C "$clone" rev-parse HEAD)" ;;
+  other) sha="$(g rev-parse main)" ;;
+  esac
+  : >"$tmp/output"
+  gate_out="$(cd "$clone" && "${scrub[@]}" CI=true GITHUB_EVENT_NAME=pull_request GITHUB_REF=refs/pull/1/merge GITHUB_SHA="$sha" GITHUB_BASE_REF=main GITHUB_OUTPUT="$tmp/output" "$changescheck" 2>"$tmp/stderr")"
+  gate_status=$?
+  case "$gate_out" in
+  *"go=${expected}"*) ;;
+  *) flag "${name}: expected go=${expected}, got '${gate_out}' (exit ${gate_status}): $(cat "$tmp/stderr")" ;;
+  esac
+  [ "$gate_status" -eq 0 ] || flag "${name}: exit ${gate_status}, expected 0"
+  [ "$(cat "$tmp/output")" = "go=${expected}" ] ||
+    flag "${name}: GITHUB_OUTPUT holds '$(cat "$tmp/output")', expected exactly go=${expected}"
+  if [ -f "$clone/.git/shallow" ]; then
+    [ "$shallow" = yes ] || flag "${name}: the clone is still shallow, expected the fallback to fetch the history"
+  else
+    [ "$shallow" = no ] || flag "${name}: the gate fetched the history, expected it to answer from HEAD^1"
+  fi
+}
+# Invoked through pr_merge's arguments, which shellcheck cannot follow.
+# shellcheck disable=SC2329
+change_go() { touch_file internal/engine/x.go; }
+# shellcheck disable=SC2329
+change_docs() { touch_file docs/a.md; }
+# shellcheck disable=SC2329
+change_readme() { touch_file README.md; }
+
+pr_merge pr-go change_readme change_go
+pr_gate pr-merge-go 2 head true yes
+# main's own Go change is not the pull request's: HEAD^1 already holds it.
+pr_merge pr-docs change_go change_docs
+pr_gate pr-merge-docs 2 head false yes
+pr_gate pr-merge-depth-one 1 head false no
+# The pull request's own head after merging main into it, checked out in
+# place of GitHub's merge commit: its HEAD^1 is the branch's previous commit,
+# not the base, so only the merge base sees the branch's Go change.
+pr_merge pr-head change_docs change_go
+g checkout --quiet --detach 'refs/pull/1/merge^2'
+g merge --quiet --no-ff --no-edit main >/dev/null
+g update-ref refs/pull/1/merge HEAD
+g checkout --quiet main
+pr_gate pr-head-is-a-merge 2 other true no
 
 # --- the shard partition ------------------------------------------------
 
@@ -291,6 +379,406 @@ print(" ".join(sorted(want - have)))
 PY
 )"
 [ -z "$missing" ] || flag "in lint or fmt:check but in neither ci:lint nor ci:lint:go: ${missing}"
+
+# --- the pipeline the ruleset and `mise run ci` describe --------------------
+
+# Two promises no workflow run checks. A required context in
+# .github/rulesets/main.json that names no job, or two, is a check that stays
+# pending forever or passes on the wrong job, and renaming a job is all it
+# takes. And `mise run ci` is the whole pipeline only while every `ci:*` task
+# a workflow runs is one of its dependencies, or is run inside one of them.
+#
+# Job names are read by indentation, which yamlfmt holds: a job is a
+# two-space key under `jobs:` and its name the four-space `name:` under it,
+# else its key, as GitHub names it.
+cat >"$tmp/pipeline.py" <<'PY'
+import json, pathlib, re, sys, tomllib
+
+mise, workflows, ruleset = sys.argv[1:4]
+tasks = tomllib.load(open(mise, "rb"))["tasks"]
+ci = set(tasks["ci"]["depends"])
+# The tasks `ci` runs inside another: ci:coverage's two runs are the short
+# suite and every database package unsharded, the drill included.
+covered = {
+    "ci:go": "ci:coverage",
+    "ci:engine": "ci:coverage",
+    "ci:db:catalog": "ci:coverage",
+    "ci:db:rest": "ci:coverage",
+    "ci:drill": "ci:coverage",
+}
+# Never in `ci`: it buys completions.
+excluded = {"ci:llm"}
+
+findings = []
+jobs = {}
+runs = {}
+for wf in sorted(pathlib.Path(workflows).glob("*.yml")):
+    text = wf.read_text()
+    names, job, in_jobs = {}, None, False
+    for line in text.splitlines():
+        if re.match(r"\S", line):
+            in_jobs, job = line.rstrip() == "jobs:", None
+            continue
+        if not in_jobs:
+            continue
+        m = re.match(r"  ([A-Za-z0-9_-]+):\s*$", line)
+        if m:
+            job = m.group(1)
+            names[job] = job
+            continue
+        m = re.match(r"    name:\s*(.+?)\s*$", line)
+        if m and job:
+            names[job] = m.group(1).strip("'\"")
+    for job, name in names.items():
+        jobs.setdefault(name, []).append(f"{wf.name}:{job}")
+    for m in re.finditer(r'(?:mise run|task:)\s*"?(ci:[a-z0-9:]+)', text):
+        runs.setdefault(m.group(1), wf.name)
+
+rules = json.load(open(ruleset))["rules"]
+for rule in rules:
+    if rule["type"] != "required_status_checks":
+        continue
+    for check in rule["parameters"]["required_status_checks"]:
+        found = jobs.get(check["context"], [])
+        if len(found) != 1:
+            findings.append(f"required check '{check['context']}' names {len(found)} jobs ({', '.join(found) or 'none'}), expected exactly one")
+
+for task, wf in sorted(runs.items()):
+    if task not in tasks:
+        findings.append(f"{wf} runs {task}, which .mise.toml does not define")
+    elif task not in ci and task not in covered and task not in excluded:
+        findings.append(f"{wf} runs {task}, which `mise run ci` neither depends on nor runs inside another task")
+for task, by in sorted(covered.items()):
+    if task not in tasks:
+        findings.append(f"{task} is listed as run inside {by}, and .mise.toml does not define it")
+    if by not in ci:
+        findings.append(f"{task} is listed as run inside {by}, which `ci` does not depend on")
+print("\n".join(findings))
+PY
+pipeline() { python3 "$tmp/pipeline.py" "$1" "$2" "$3" 2>&1; }
+found="$(pipeline .mise.toml .github/workflows .github/rulesets/main.json)"
+[ -z "$found" ] || flag "the pipeline: ${found}"
+# The rules themselves, on scratch copies: a renamed required job, a second
+# job under a required name, and `ci:providers` dropped from `ci`.
+# scratch <dir> <sed expression>: the workflows, ci.yml edited.
+scratch() {
+  cp -R .github/workflows "$1"
+  sed "$2" .github/workflows/ci.yml >"$1/ci.yml"
+}
+scratch "$tmp/wf-renamed" 's/^    name: console test$/    name: console tests/'
+case "$(pipeline .mise.toml "$tmp/wf-renamed" .github/rulesets/main.json)" in
+*"'console test' names 0 jobs"*) ;;
+*) flag "the pipeline: a renamed \`console test\` job was not reported" ;;
+esac
+scratch "$tmp/wf-twice" 's/^    name: race$/    name: lint/'
+case "$(pipeline .mise.toml "$tmp/wf-twice" .github/rulesets/main.json)" in
+*"'lint' names 2 jobs"*) ;;
+*) flag "the pipeline: two jobs named \`lint\` were not reported" ;;
+esac
+sed '/^  "ci:providers",$/d' .mise.toml >"$tmp/mise-no-providers.toml"
+case "$(pipeline "$tmp/mise-no-providers.toml" .github/workflows .github/rulesets/main.json)" in
+*"runs ci:providers, which \`mise run ci\` neither"*) ;;
+*) flag "the pipeline: ci:providers missing from \`ci\` was not reported" ;;
+esac
+
+# --- the database slot --------------------------------------------------------
+
+# A database suite started outside .mise/dblock.sh runs beside whatever holds
+# the machine's slot, which is the load the slot exists to stop. So every
+# command in a .mise.toml run line that runs `go test` without -short over a
+# database package, or runs .mise/dbshard.sh, runs it through
+# .mise/dblock.sh. The database packages are the ones `test:db` runs, which
+# is by its description every suite that wants a database. A line is split
+# into commands at `&&`, `||`, `;` and `|` outside quotes, because the slot
+# wraps one command and a -short on one `go test` says nothing of the next,
+# and an `sh -c` payload is read as the commands it runs.
+cat >"$tmp/dbslot.py" <<'PY'
+import re, shlex, sys, tomllib
+
+tasks = tomllib.load(open(sys.argv[1], "rb"))["tasks"]
+module = "github.com/geoah/substrate/"
+
+
+def split(line):
+    """A shell line's simple commands, as their words."""
+    lex = shlex.shlex(line, posix=True, punctuation_chars=True)
+    lex.whitespace_split, lex.commenters = True, ""
+    try:
+        words = list(lex)
+    except ValueError:
+        words = line.split()
+    found, command = [], []
+    for word in words:
+        if word.startswith("#"):
+            break
+        if word and set(word) <= set("&|;(){}"):
+            if command:
+                found.append(command)
+            command = []
+        else:
+            command.append(word)
+    if command:
+        found.append(command)
+    return found
+
+
+def expand(command, prefix=()):
+    """A command, or the commands an `sh -c` in it runs, each behind the
+    words that run that shell, so a dblock.sh in front of it still counts."""
+    for i, word in enumerate(command[:-2]):
+        if word.rsplit("/", 1)[-1] in ("sh", "bash") and re.fullmatch(r"-[a-z]*c", command[i + 1]):
+            for inner in split(command[i + 2]):
+                yield from expand(inner, (*prefix, *command[: i + 2]))
+            return
+    yield [*prefix, *command]
+
+
+def commands(task):
+    """Every simple command of a task's run lines, as its words."""
+    run = task.get("run", [])
+    for entry in [run] if isinstance(run, str) else run:
+        for line in re.sub(r"\\\n", " ", entry).splitlines():
+            for command in split(line):
+                yield from expand(command)
+
+
+def packages(words):
+    found = []
+    for word in words:
+        if word.startswith(module):
+            word = "./" + word[len(module) :]
+        if word == "./...":
+            found.append("")
+        elif word.startswith("./"):
+            found.append(word[2:].removesuffix("/...").rstrip("/"))
+    return found
+
+
+def go_test(words):
+    """The index of the `go test` in a command, or None."""
+    return next((i for i in range(len(words) - 1) if words[i : i + 2] == ["go", "test"]), None)
+
+
+roots = {p for words in commands(tasks.get("test:db", {})) if go_test(words) is not None for p in packages(words)}
+findings = [] if roots else ["test:db runs no `go test` over packages, so the database packages are unknown"]
+
+
+def database(pkg):
+    return any(pkg in ("", r) or pkg.startswith(r + "/") or r.startswith(pkg + "/") for r in roots)
+
+
+for name, task in sorted(tasks.items()):
+    for words in commands(task):
+        at = next((i for i, w in enumerate(words) if w.endswith(".mise/dbshard.sh")), None)
+        if at is None:
+            at = go_test(words)
+            rest = words[at:] if at is not None else []
+            if at is None or "-short" in rest or "-short=true" in rest or not any(map(database, packages(rest))):
+                continue
+        if not any(w.endswith(".mise/dblock.sh") for w in words[:at]):
+            findings.append(f"{name} runs a database suite outside .mise/dblock.sh: {shlex.join(words)}")
+print("\n".join(findings))
+PY
+dbslot() { python3 "$tmp/dbslot.py" "$1" 2>&1; }
+found="$(dbslot .mise.toml)"
+[ -z "$found" ] || flag "the database slot: ${found}"
+# The rule itself, on scratch copies: each line below with its prefix taken
+# off must be reported under its task.
+while IFS='|' read -r task line; do
+  sed "/${line}/s|\.mise/dblock\.sh ||" .mise.toml >"$tmp/mise-unlocked.toml"
+  case "$(dbslot "$tmp/mise-unlocked.toml")" in
+  *"${task} runs a database suite outside"*) ;;
+  *) flag "the database slot: ${task} without .mise/dblock.sh was not reported" ;;
+  esac
+done <<'EOF'
+test:db|-timeout 45m
+test:coverage|coverage\.db\.out
+ci:db:rest|-timeout 12m -skip
+ci:drill|-timeout 12m -run
+test:llm|TestLive' -v
+test:db:engine|dbshard\.sh
+EOF
+# And on spellings the tree does not use today: a task named `bad-*` must be
+# reported, a task named `ok-*` must not.
+cat >"$tmp/mise-spellings.toml" <<'TOML'
+[tasks."test:db"]
+run = ".mise/dblock.sh go test ./internal/engine/... ./internal/testenv/..."
+[tasks.bad-quoted]
+run = "go test './internal/engine/...'"
+[tasks.bad-import-path]
+run = "go test github.com/geoah/substrate/internal/engine/..."
+[tasks.bad-tree]
+run = ["go  test -run '^TestX$' ./..."]
+[tasks.bad-after-short]
+run = "go test -short ./... && go test ./internal/testenv/"
+[tasks.bad-second-unlocked]
+run = ".mise/dblock.sh go test ./internal/engine/... && go test ./internal/testenv/..."
+[tasks.bad-continued]
+run = '''
+  X=1 \
+    go test -run '^TestX$' \
+    ./internal/engine/
+  '''
+[tasks.bad-shard]
+run = ".mise/dbshard.sh"
+[tasks.bad-sh-c]
+run = "sh -c 'cd . && go test ./internal/engine/...'"
+[tasks.ok-locked-chain]
+run = ".mise/dblock.sh go test ./internal/engine/... && .mise/dblock.sh go test ./internal/testenv/"
+[tasks.ok-short]
+run = "go test -count=1 -short ./... # every package, no database"
+[tasks.ok-other]
+run = "go test ./internal/api/... ./internal/e2e/"
+[tasks.ok-comment]
+run = "go vet ./... # then go test ./internal/engine/..."
+[tasks.ok-locked-sh-c]
+run = ".mise/dblock.sh bash -ec 'go test ./internal/engine/...'"
+TOML
+found="$(dbslot "$tmp/mise-spellings.toml")"
+for task in bad-quoted bad-import-path bad-tree bad-after-short bad-second-unlocked bad-continued bad-shard bad-sh-c; do
+  grep -q "^${task} runs " <<<"$found" || flag "the database slot: ${task} was not reported: ${found}"
+done
+if grep -q '^ok-' <<<"$found"; then
+  flag "the database slot: a locked, -short or non-database command was reported: ${found}"
+fi
+
+# --- Postgres readiness over TCP -------------------------------------------
+
+# The pgvector image runs its init scripts against a temporary server that
+# listens on the unix socket only, then stops it and starts the real one. A
+# socket probe reads the temporary server as ready, and the first connection
+# meets the restart (#869). Every pg_isready the tree runs probes TCP.
+#
+# socket_probes: the `path:line:text` lines on stdin that run pg_isready, in
+# any spelling (a shell line, compose's exec form, a bare call), without a
+# whole `-h 127.0.0.1` option on the same line. A comment is no probe and no
+# option: a comment line is dropped, and a trailing ` #` comment is cut
+# before either is looked for.
+socket_probes() {
+  grep -v -E '^[^:]+:[0-9]+:[[:space:]]*(#|//)' |
+    sed -E 's/[[:space:]]#.*$//' |
+    grep -w -e pg_isready |
+    grep -v -E -e "(^|[[:space:]\"'])(-h ?|--host[= ])127\.0\.0\.1([^[:alnum:]._-]|\$)" -e '"-h", *"127\.0\.0\.1"'
+}
+found="$(git grep --untracked -n -w pg_isready -- ':!*.md' ':!.mise/cicheck.sh' | socket_probes)"
+[ -z "$found" ] || flag "pg_isready without -h 127.0.0.1 probes the unix socket (#869): ${found}"
+# The rule itself: every spelling of a socket probe is reported, and no TCP
+# probe or comment is.
+while IFS= read -r line; do
+  [ -n "$(socket_probes <<<"$line")" ] || flag "a socket probe was not reported: ${line}"
+done <<'EOF'
+compose.yaml:1:      test: ["CMD", "pg_isready", "-U", "postgres"]
+compose.yaml:1:      test: ["CMD-SHELL", "pg_isready"]
+compose.yaml:1:      test: ["CMD-SHELL", "pg_isready -U postgres -d substrate"]
+x.sh:1:  docker exec db pg_isready --username=postgres
+x.sh:1:  docker exec db pg_isready -q -h /var/run/postgresql
+x.sh:1:  docker exec db pg_isready -h 127.0.0.10
+x.sh:1:  docker exec db pg_isready --host=127.0.0.1.example.com
+x.sh:1:  docker exec db pg_isready --host=/var/run/postgresql/-h127.0.0.1
+x.sh:1:  docker exec db pg_isready # add -h 127.0.0.1
+EOF
+while IFS= read -r line; do
+  [ -z "$(socket_probes <<<"$line")" ] || flag "a TCP probe or a comment was reported as a socket probe: ${line}"
+done <<'EOF'
+compose.yaml:1:      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+compose.yaml:1:      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
+compose.yaml:1:      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1"]
+x.sh:1:  docker exec db pg_isready -q -h 127.0.0.1 -U postgres
+x.sh:1:  docker exec db pg_isready -h127.0.0.1
+x.sh:1:  docker exec db pg_isready --host=127.0.0.1
+x.sh:1:  sh -c 'pg_isready -h 127.0.0.1'
+x.sh:1:  until pg_isready -h 127.0.0.1; do sleep 1; done
+x.sh:1:# restarting after pg_isready answers
+x.sh:1:  wait_for_db # until pg_isready answers
+EOF
+
+# --- the CI Postgres ---------------------------------------------------------
+
+# .mise/cipostgres.sh against a fake docker that logs every call: `run`
+# exits FAKE_RUN_STATUS (default 0), `exec` succeeds from its
+# FAKE_READY_AFTER-th call on (never when unset), and `logs` prints the
+# server's log. The container name is the script's, so
+# a real docker reached by mistake meets no container of that name on a
+# laptop, and the script refuses to start outside CI anyway.
+pgbin="$tmp/pgbin"
+mkdir -p "$pgbin"
+cat >"$pgbin/docker" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$FAKE_LOG"
+case "$1" in
+run)
+  if [ "${FAKE_RUN_STATUS:-0}" != 0 ]; then
+    echo "fake: pull access denied" >&2
+    exit "$FAKE_RUN_STATUS"
+  fi
+  echo fakecontainerid
+  ;;
+exec)
+  [ -n "${FAKE_READY_AFTER:-}" ] || exit 1
+  calls="$(grep -c '^exec ' "$FAKE_LOG")"
+  [ "$calls" -ge "$FAKE_READY_AFTER" ]
+  ;;
+logs) echo "fake: server log" ;;
+esac
+FAKE
+chmod +x "$pgbin/docker"
+
+# pg <name> <expected exit of wait> <VAR=value...>: `start`, then, once the
+# background `docker run` has written its status, `wait`, in a directory of
+# the scenario's own.
+pg_elapsed=0
+pg() {
+  local name="$1" expected="$2" dir="$tmp/pg-$1" status began
+  shift 2
+  : >"$tmp/pg.log"
+  local run=(env -u FAKE_READY_AFTER -u FAKE_RUN_STATUS -u CI_POSTGRES_TIMEOUT PATH="$pgbin:$PATH"
+    FAKE_LOG="$tmp/pg.log" CI=true CI_POSTGRES_DIR="$dir" "$@" "$cipostgres")
+  "${run[@]}" start >/dev/null 2>"$tmp/stderr" || flag "cipostgres ${name}: start exit $?: $(cat "$tmp/stderr")"
+  for _ in $(seq 1 50); do
+    [ -f "$dir/status" ] && break
+    sleep 0.1
+  done
+  [ -f "$dir/status" ] || flag "cipostgres ${name}: the background docker run wrote no status"
+  began=$SECONDS
+  "${run[@]}" wait >/dev/null 2>"$tmp/stderr"
+  status=$?
+  pg_elapsed=$((SECONDS - began))
+  [ "$status" -eq "$expected" ] || flag "cipostgres ${name}: wait exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+}
+
+# Ready: the container is what the jobs' DSN names, on a tmpfs, and the
+# probe is over TCP.
+pg ready 0 FAKE_READY_AFTER=1
+grep -qxF 'run -d --name substrate-ci-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=substrate --tmpfs /var/lib/postgresql/data:rw,size=3g pgvector/pgvector:pg16' "$tmp/pg.log" ||
+  flag "cipostgres ready: docker run was not the container the jobs' DSN names: $(cat "$tmp/pg.log")"
+grep -qxF 'exec substrate-ci-postgres pg_isready -q -h 127.0.0.1 -U postgres -d substrate' "$tmp/pg.log" ||
+  flag "cipostgres ready: the probe was not pg_isready over TCP: $(cat "$tmp/pg.log")"
+# Ready on the third probe: wait keeps probing, a second apart.
+pg slow 0 FAKE_READY_AFTER=3 CI_POSTGRES_TIMEOUT=30
+[ "$(grep -c '^exec ' "$tmp/pg.log")" -eq 3 ] ||
+  flag "cipostgres slow: expected three probes, got: $(grep '^exec ' "$tmp/pg.log")"
+[ "$pg_elapsed" -ge 2 ] || flag "cipostgres slow: wait returned after ${pg_elapsed}s, before the third probe could"
+# Never ready: a failure at the timeout, not before it, with the server's
+# log printed.
+pg timeout 1 CI_POSTGRES_TIMEOUT=2
+[ "$pg_elapsed" -ge 2 ] || flag "cipostgres timeout: wait gave up after ${pg_elapsed}s, before its 2s"
+grep -qF 'did not accept a TCP connection within 2s' "$tmp/stderr" ||
+  flag "cipostgres timeout: no timeout message: $(cat "$tmp/stderr")"
+grep -qF 'fake: server log' "$tmp/stderr" || flag "cipostgres timeout: the server's log was not printed"
+# A failed pull fails at once with its output, not at the timeout.
+pg pull-fails 1 FAKE_RUN_STATUS=1 CI_POSTGRES_TIMEOUT=60
+grep -qF 'fake: pull access denied' "$tmp/stderr" ||
+  flag "cipostgres pull-fails: the pull's output was not printed: $(cat "$tmp/stderr")"
+[ "$pg_elapsed" -lt 10 ] || flag "cipostgres pull-fails: wait took ${pg_elapsed}s, expected it to fail at once"
+# A wait with no start, and a start outside CI, are refusals.
+if env PATH="$pgbin:$PATH" FAKE_LOG="$tmp/pg.log" CI=true CI_POSTGRES_DIR="$tmp/pg-never-started" \
+  "$cipostgres" wait >/dev/null 2>&1; then
+  flag "cipostgres: wait with no start exited 0"
+fi
+: >"$tmp/pg.log"
+env -u CI PATH="$pgbin:$PATH" FAKE_LOG="$tmp/pg.log" CI_POSTGRES_DIR="$tmp/pg-laptop" "$cipostgres" start >/dev/null 2>&1
+[ $? -eq 2 ] || flag "cipostgres: a start outside CI was not refused with exit 2"
+[ ! -s "$tmp/pg.log" ] || flag "cipostgres: a start outside CI called docker: $(cat "$tmp/pg.log")"
 
 # --- the commit and title check -----------------------------------------
 
