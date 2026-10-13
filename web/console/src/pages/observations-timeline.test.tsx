@@ -334,6 +334,23 @@ describe("the timeline's requests", () => {
     expect(chart.textContent).not.toContain("unknown field")
   })
 
+  it("says once for a shared request that its answer is not exact", async () => {
+    // Steps alone answer exactly; Weight's average does not.
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}`, true, (read) =>
+      read.aggregate.metric?.ref === `${METRIC}/health/steps`
+        ? { ...STEPS, exact: true }
+        : answer(read)
+    )
+    const chart = await lane("Weight and Steps")
+    await drawn(chart)
+    const [request] = chart.querySelectorAll("[data-slot=lane-request]")
+    expect(request.textContent).toContain(
+      "Not exact: a float reduction or a rounded conversion in at least one of its metrics."
+    )
+    // The answer says it of the request, so no metric's row says it.
+    expect(chart.textContent).not.toMatch(/(Weight|Steps): not exact/)
+  })
+
   it("resolves overlapping sources by priority unless grouped by source", async () => {
     const server = mount(`?metric=health/heart_rate&${WINDOW}`)
     await waitFor(() =>

@@ -115,8 +115,9 @@ interface PlotState {
   failed: boolean
   /** Why the read failed. */
   error?: Error | null
-  /** Whether the answer is exact; a read several metrics share says it once
-   * for all of them. */
+  /** Whether the answer is exact, where its request reads this metric
+   * alone: a request of several metrics answers it once for all of them,
+   * so its details say it (`RequestDetails`). */
   exact?: boolean
   /** A newer answer is on its way while this one is drawn. */
   stale: boolean
@@ -125,10 +126,12 @@ interface PlotState {
   held: boolean
 }
 
-/** One request a chart makes, and the metrics it is drawn for. */
+/** One request a chart makes, the metrics it is drawn for, and where it
+ * stands. */
 interface ChartRequest {
   read: AggregateRead
   plots: Plot[]
+  query: UseQueryResult<AggregateResult>
 }
 
 /** A read of several metrics the server refused: each of its metrics is
@@ -243,9 +246,15 @@ export function OverlayChart({
     Math.min(...r.plots.map((p) => drawn.indexOf(p)).filter((i) => i >= 0))
   const requests: ChartRequest[] = [
     ...shared.flatMap(({ read, lanes }, i) =>
-      refused[i] ? [] : [{ read, plots: lanes.map((at) => reading[at]) }]
+      refused[i]
+        ? []
+        : [{ read, plots: lanes.map((at) => reading[at]), query: together[i] }]
     ),
-    ...apart.map((plot) => ({ read: plot.read!, plots: [plot] })),
+    ...apart.map((plot, i) => ({
+      read: plot.read!,
+      plots: [plot],
+      query: alone[i],
+    })),
   ].sort((a, b) => firstDrawn(a) - firstDrawn(b))
 
   /** The request a plot's rows come from, and where it stands. */
@@ -285,7 +294,7 @@ export function OverlayChart({
       pending,
       failed: query.isError,
       error: query.error,
-      exact: answer?.exact,
+      exact: read.aggregate.metrics ? undefined : answer?.exact,
       stale: query.isFetching && !pending,
       held: query.isPlaceholderData && Boolean(answer),
     }
@@ -549,7 +558,7 @@ export function OverlayChart({
         ) : null
       )}
       {technical &&
-        requests.map(({ read, plots: asked }) => (
+        requests.map(({ read, plots: asked, query }) => (
           <RequestDetails
             key={asked.map((p) => p.metric).join("\n")}
             read={read}
@@ -557,6 +566,11 @@ export function OverlayChart({
               drawn.length > 1 || asked.length > 1
                 ? listWords(asked.map((p) => p.name))
                 : undefined
+            }
+            inexact={
+              Boolean(read.aggregate.metrics) &&
+              !query.isPlaceholderData &&
+              query.data?.exact === false
             }
           />
         ))}
@@ -780,8 +794,8 @@ function PlotHead({
 /** What a chart says under itself about each metric's read: how sources
  * are ranked, rows it leaves out, streams it reads beyond the selection,
  * how it reads a vendor's summaries, and (with Technical details on) an
- * inexact answer. Each is prefixed with its metric where the chart draws
- * several. */
+ * inexact answer to a request of the metric alone. Each is prefixed with
+ * its metric where the chart draws several. */
 function chartNotes(
   states: readonly PlotState[],
   all: readonly Drawn[],
@@ -965,13 +979,16 @@ function TipLine({
 
 /** One request of a chart, for one metric or several, to run again with
  * `curl`: the `filter` and `aggregate` parameters as JSON, and the whole
- * call. */
+ * call. A request of several metrics answers `exact` once for all of them,
+ * so it says here, not on a metric's row, that its answer is not exact. */
 function RequestDetails({
   read,
   caption,
+  inexact = false,
 }: {
   read: AggregateRead
   caption?: string
+  inexact?: boolean
 }) {
   const json = JSON.stringify(read, null, 2)
   const curl = aggregateCurl(read)
@@ -983,6 +1000,12 @@ function RequestDetails({
         <span className="ml-3">As curl</span>
         <CopyButton value={curl} label="Copy the curl command" />
       </div>
+      {inexact && (
+        <p className="mt-1.5 text-[12.5px] text-faint">
+          Not exact: a float reduction or a rounded conversion in at least one
+          of its metrics.
+        </p>
+      )}
       <CodeBlock source={json} lang="json" className="mt-1.5" />
     </div>
   )
