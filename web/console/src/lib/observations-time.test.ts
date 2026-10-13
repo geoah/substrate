@@ -14,6 +14,7 @@ import {
   dayRange,
   durationMs,
   isoWithOffset,
+  labelledTicks,
   presetRange,
   rangeWords,
   readerTimezone,
@@ -63,6 +64,31 @@ describe("ranges and buckets", () => {
       expect(bucketEstimate(r, autoBucket(r))).toBeLessThan(200)
     }
     expect(bucketEstimate(presetRange("1y", now), "15m")).toBeGreaterThan(1440)
+  })
+
+  it("labels the axis on round clock times, as often as there is room", () => {
+    const day = {
+      start: Date.parse("2026-10-07T00:00:00+03:00"),
+      end: Date.parse("2026-10-09T00:00:00+03:00"),
+    }
+    const hours = axisTicks(day, "hour")
+    // Room for a label every fifth hour: one every six, on 00, 06, 12, 18.
+    const labelled = labelledTicks(hours, "hour", 5).map((i) =>
+      new Date(hours[i]).getHours()
+    )
+    expect(labelled).toEqual([0, 6, 12, 18, 0, 6, 12, 18])
+    // A quarter hour with room every third: on the hour.
+    const quarters = axisTicks(
+      { start: day.start + 10 * 60_000, end: day.start + 4 * 3_600_000 },
+      "15m"
+    )
+    expect(
+      labelledTicks(quarters, "15m", 3).map((i) =>
+        new Date(quarters[i]).getMinutes()
+      )
+    ).toEqual([0, 0, 0])
+    // Room for every one: each is labelled.
+    expect(labelledTicks(hours.slice(0, 4), "hour", 1)).toEqual([0, 1, 2, 3])
   })
 
   it("says a point's window short: its days, its clocks, or both ends", () => {

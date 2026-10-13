@@ -39,6 +39,7 @@ import {
 import {
   axisTicks,
   bucketWords,
+  labelledTicks,
   type BucketSize,
   type TimeRange,
 } from "@/lib/observations-time"
@@ -420,11 +421,12 @@ function layoutOf(
   const marks = axisTicks(domain, size)
   const spacing = marks.length > 1 ? x(marks[1]) - x(marks[0]) : right - LEFT
   const every = Math.max(1, Math.ceil(84 / Math.max(1, spacing)))
-  const xLabels = marks.flatMap((t, i) => {
-    if (i % every) return []
-    const previous = i >= every ? marks[i - every] : undefined
+  const labelled = labelledTicks(marks, size, every)
+  const xLabels = labelled.map((i, n) => {
+    const t = marks[i]
+    const previous = n > 0 ? marks[labelled[n - 1]] : undefined
     const at = Math.min(Math.max(x(t), LEFT + 28), right - 28)
-    return [{ i, at, text: bucketWords(t, size, previous) }]
+    return { i, at, text: bucketWords(t, size, previous) }
   })
 
   return {

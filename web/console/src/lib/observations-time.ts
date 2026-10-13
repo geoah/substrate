@@ -227,6 +227,28 @@ export function axisTicks(
   return out
 }
 
+/** The round clock steps, in minutes, a finer-than-a-day axis labels at. */
+const LABEL_MINUTES = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440]
+
+/** Which of an axis's ticks (`axisTicks`) carry a label, where a label has
+ * room for one in every `every` ticks: under a day, the ticks on the
+ * smallest round clock step that leaves that room (every 6 hours on 00, 06,
+ * 12 and 18, never every 5 from the first); otherwise every `every`-th from
+ * the first. */
+export function labelledTicks(
+  marks: readonly number[],
+  size: BucketSize,
+  every: number
+): number[] {
+  const minutes = STEP_MINUTES[size]
+  const step = minutes && LABEL_MINUTES.find((m) => m >= minutes * every)
+  if (!step) return marks.flatMap((_, i) => (i % every ? [] : [i]))
+  return marks.flatMap((t, i) => {
+    const d = new Date(t)
+    return (d.getHours() * 60 + d.getMinutes()) % step ? [] : [i]
+  })
+}
+
 /** A bucket's window in words, for a tooltip or a table row: a day as
  * `Sep 3, 2026`, a week as `Sep 1 to Sep 7, 2026`, finer windows by their
  * clocks. */
