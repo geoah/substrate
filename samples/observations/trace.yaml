@@ -5,7 +5,8 @@
 #
 # Identity is the period, never a sync page: one trace per metric, source,
 # about, channel and period, with one origin provider, its id composed as
-# `<provider>/<account record id>/<metric>/<period start>` (decision record
+# `<provider>/<account record id>/<source>/<metric>[/<channel>]/<period
+# start>`, the source naming the device within the account (decision record
 # 0162). A rewrite replaces the period whole and carries a revision at least
 # as high as the stored one.
 #

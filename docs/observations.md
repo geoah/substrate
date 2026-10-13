@@ -154,7 +154,9 @@ from another. It titles itself `{metric} {value}`, "Body weight 72.40 kg".
 (the recording a trace is one channel of), `quality`, `origins` (the
 provider records the period was built from) and `adapter`. One trace covers one metric,
 source, `about`, `channel` and period, from one origin provider, and its id is
-composed from them: `<provider>/<account record id>/<metric>/<period start>`
+composed from them: `<provider>/<account record id>/<source>/<metric>[/<channel>]/<period start>`,
+where `<source>` names the device within the account, so two devices on one
+account never share an id
 ([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
 
 **`source`** is the device, never the delivery: `name`, `class` (`watch`,
@@ -209,13 +211,13 @@ An hour of heart rate at irregular times, with one unavailable reading:
 ```yaml
 kind: ada.example.com/observations/trace
 metadata:
-  id: applehealth/iphone/heart_rate/2026-10-07T06
+  id: garmin/ada/forerunner265/heart_rate/2026-10-07T06
 data:
   properties:
     metric:
       ref: ada.example.com/observations/metric/health/heart_rate
     source:
-      ref: ada.example.com/observations/source/garmin-forerunner-265
+      ref: ada.example.com/observations/source/garmin/ada/forerunner265
     form: gauge
     unit: /min
     hold: PT4M

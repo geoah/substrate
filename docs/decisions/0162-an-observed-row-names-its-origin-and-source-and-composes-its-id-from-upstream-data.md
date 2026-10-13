@@ -38,7 +38,9 @@ Chosen: the first.
 - Ids are composed from source data, never minted:
   `<provider>/<account record id>/<upstream id>[/<role>]` for a row derived
   from one upstream object (`whoop/george/1047392/recovery`), and
-  `<provider>/<account record id>/<metric>/<period start>` for a trace. The
+  `<provider>/<account record id>/<source>/<metric>[/<channel>]/<period start>`
+  for a trace, the source segment naming the device within the account so
+  two devices on one account never share an id. The
   id alphabet admits `/`, `:` and `@` up to 128 characters
   (`internal/vocabulary/naming.go`); only a segment outside the alphabet, or
   an id past the limit, is hashed with `host.ids.external`, and the hash

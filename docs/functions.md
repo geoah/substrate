@@ -830,15 +830,16 @@ part's later start needs (`2026-10-07T06:40`). `local_day(at, offset)` is the
 civil date at that offset, the day a daily summary belongs to.
 
 ```python
+device = "forerunner265"
 docs = host.observed.trace(
     [(sample_time, sample["bpm"]) for sample in samples],
     metric={"ref": home + "/observations/metric/health/heart_rate"},
-    source={"ref": home + "/observations/source/garmin-forerunner-265"},
+    source={"ref": home + "/observations/source/garmin/%s/%s" % (account_id, device)},
     unit="/min", form="gauge", hold="PT4M")
 for doc in docs:
     period = host.observed.period_id(datetime.fromisoformat(doc["at"]), "PT1H")
     host.effects.put(home + "/observations/trace",
-                     "garmin/%s/heart_rate/%s" % (account_id, period), doc)
+                     "garmin/%s/%s/heart_rate/%s" % (account_id, device, period), doc)
 ```
 
 **Two ceilings.** `host.log(msg)` and `print` write a line to the server log
