@@ -617,12 +617,15 @@ func TestWebhookSignatureDeclaredLaterRefusesAStoredUnsignedRequest(t *testing.T
 func TestWebhookSignatureStoredRequestRunsPastItsSkew(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds := newHookDataset(t, nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
+	// The door receives and the sender signs 3 s before the retries run, past
+	// the PT2S skew measured against the retry's clock, with no wait.
+	now := time.Now().Add(-3 * time.Second)
+	door := engine.WithTestWebhookClock(func() time.Time { return now })
+	svc, ds, _ := newHookDatasetWithOptions(t, []engine.Option{door}, nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
 	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
 	putHookTrigger(t, ds, "hook-verified", "hookecho", keptSignatureSource(true, "PT2S"))
 	putHookTrigger(t, ds, "hook-legacy", "hookecho", keptSignatureSource(false, ""))
 	authority := testdb.Repository(t)
-	now := time.Now()
 
 	verified, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-verified", "", signedHook(`{"n":"verified"}`, hookSigningSecret, now))
 	if err != nil {
@@ -640,7 +643,6 @@ func TestWebhookSignatureStoredRequestRunsPastItsSkew(t *testing.T) {
 
 	// Past the declared skew: measured against the retry's clock, every one
 	// of these timestamps is stale.
-	time.Sleep(3 * time.Second)
 
 	retry := func(trigger, fid string) error {
 		row, ok := failuresByFire(t, ds, trigger)[fid]
@@ -678,7 +680,11 @@ func TestWebhookSignatureStoredRequestRunsPastItsSkew(t *testing.T) {
 func TestWebhookSignatureMarkSurvivesAParkAndARetry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds := newHookDataset(t, nil, pyFn("hookgated", map[string]any{
+	// The door receives and the sender signs 3 s before the retry runs, past
+	// maxSkew, with no wait.
+	received := time.Now().Add(-3 * time.Second)
+	door := engine.WithTestWebhookClock(func() time.Time { return received })
+	svc, ds, _ := newHookDatasetWithOptions(t, []engine.Option{door}, nil, pyFn("hookgated", map[string]any{
 		"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
 	}, []any{widgetType}, hookGatedSource))
 	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
@@ -687,7 +693,7 @@ func TestWebhookSignatureMarkSurvivesAParkAndARetry(t *testing.T) {
 	putHookTrigger(t, ds, "hook-unkept", "hookgated", source)
 	authority := testdb.Repository(t)
 
-	fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-unkept", "", signedHook(`{"n":"marked"}`, hookSigningSecret, time.Now()))
+	fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-unkept", "", signedHook(`{"n":"marked"}`, hookSigningSecret, received))
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
@@ -695,7 +701,6 @@ func TestWebhookSignatureMarkSurvivesAParkAndARetry(t *testing.T) {
 	if !ok || !strings.Contains(row.LastError, "gate closed") {
 		t.Fatalf("the first fire left %+v (present %v), want parked on the closed gate", row, ok)
 	}
-	time.Sleep(3 * time.Second)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
 	if _, err := ds.RetryTriggerFailure(ctx, "hook-unkept", row.ID); err != nil {
 		t.Fatalf("a verified request with no kept signature, retried past maxSkew: %v", err)
