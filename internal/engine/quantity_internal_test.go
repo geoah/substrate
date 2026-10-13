@@ -115,7 +115,7 @@ func TestQuantityBaseSQLIsStable(t *testing.T) {
 		t.Fatalf("an annotated row and its bare form must share one arm: %s", rate)
 	}
 	undeclared := quantityBaseSQL(`(props->'x')`, []*vocabulary.QuantitySpec{nil})
-	if strings.Contains(undeclared, `NULL::numeric`) || !strings.Contains(undeclared, `WHEN 'rad' THEN ((`) || !strings.Contains(undeclared, `WHEN '[pH]' THEN`) {
+	if strings.Contains(undeclared, `NULL::numeric`) || !strings.Contains(undeclared, `WHEN 'rad' THEN (round(`) || !strings.Contains(undeclared, `WHEN '[pH]' THEN`) {
 		t.Fatalf("rad must key through pi and a level by its own number, and no arm reads NULL: %s", undeclared)
 	}
 	// Stored codes the declared arms already cover add nothing, so the

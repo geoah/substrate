@@ -430,6 +430,27 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 	}
 }
 
+// An order key keeps the base value to forty decimal places, so two rates
+// that differ at the twenty-second significant digit sort apart rather than
+// tie and fall to the id.
+func TestOrderByQuantityKeepsFortyPlaces(t *testing.T) {
+	t.Parallel()
+	ds := installReadings(t, map[string]map[string]any{
+		"aa": {"pulse": qv("7200.000000000000001", "/h")},
+		"bb": {"pulse": qv("2", "/s")},
+	})
+	for _, desc := range []bool{false, true} {
+		want := "bb,aa"
+		if desc {
+			want = "aa,bb"
+		}
+		got := readingNames(t, ds, substrate.Query{OrderBy: []substrate.Order{{Property: "pulse", Desc: desc}}})
+		if strings.Join(got, ",") != want {
+			t.Fatalf("desc %v ordered %v, want %s", desc, got, want)
+		}
+	}
+}
+
 // An order across two kinds that read one code in two measures keys each
 // kind's rows in its own: a 10 Cel temperature is 283.15 K, a 10 Cel
 // difference is 10 K, whichever kind the read names first.

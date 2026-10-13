@@ -623,11 +623,12 @@ a JSON list of `{property, desc}`). A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
 currencies, so a list that wants one currency filters on it. A `quantity`
 property sorts by its value converted to its measure's base unit (155 `[lb_av]`
-between 50 kg and 71000 g), in every unit a write admitted: the codes the
-property lists, else its measure's codes, else every code the table lists, and
-then any other code the read's rows hold (1 `Mg` sorts as 1000 kg, though the
-mass table lists no `Mg`), found by the same one read of the rows' units a
-filter makes. Each kind's rows sort in the measure that kind declares, so a
+between 50 kg and 71000 g), kept to 40 decimal places of the base unit (two
+values that agree that far tie and sort by kind and id), in every unit a write
+admitted: the codes the property lists, else its measure's codes, else every
+code the table lists, and then any other code the read's rows hold (1 `Mg`
+sorts as 1000 kg, though the mass table lists no `Mg`), found by the same one
+read of the rows' units a filter makes. Each kind's rows sort in the measure that kind declares, so a
 10 `Cel` temperature (283.15 K) sorts after a 20 `K` difference, and a row
 marked `delta: true` sorts as a difference. `rad` sorts through pi at 40
 places; a level or an arbitrary unit sorts by its own number. A declared

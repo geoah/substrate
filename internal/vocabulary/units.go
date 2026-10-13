@@ -891,7 +891,7 @@ func UnitSymbol(code string) string {
 
 // ConvertedDigits is how many significant digits RatDecimal keeps of a
 // converted value that has no finite decimal expansion (1 kcal/d is 523/10800
-// W): the precision an ordering key reads a quantity at, too.
+// W).
 const ConvertedDigits = 20
 
 // RatDecimal writes an exact value as decimal digits. A value with a finite

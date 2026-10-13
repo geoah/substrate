@@ -9,8 +9,8 @@ package engine
 // SQL `value * d - n`, whose sign is the sign of the stored value minus the
 // operand however the two units relate, because every conversion inside a
 // measure is increasing. An ordering reads the value converted to the measure's
-// base, where a division may round past the twentieth significant digit; an
-// order is a key, and nothing compares against it.
+// base to orderPlaces decimal places, where the one division rounds; an order
+// is a key, and nothing compares against it.
 
 import (
 	"context"
@@ -695,8 +695,15 @@ func stripAnnotations(code string) string {
 	return b.String()
 }
 
+// orderPlaces is the decimal places of the base value an order key keeps.
+// Postgres numeric division keeps as many places as its operands carry, at
+// least 16 significant digits, so the numerator is given these places first:
+// two values that agree to 40 places of the base unit tie and fall to the
+// (kind, id) tiebreak, and any two that differ sooner sort apart.
+const orderPlaces = 40
+
 // linearSQL renders value x f + o with integer arithmetic and one division,
-// which is where numeric rounds, and only past its twentieth digit.
+// which is where numeric rounds, at orderPlaces decimal places.
 func linearSQL(value string, f, o *big.Rat) string {
 	// value x fn/fd + on/od = (value x fn x od + on x fd) / (fd x od)
 	num := new(big.Int).Mul(f.Num(), o.Denom())
@@ -710,7 +717,7 @@ func linearSQL(value string, f, o *big.Rat) string {
 		expr = `(` + expr + ` + (` + add.String() + `))`
 	}
 	if den.Cmp(big.NewInt(1)) != 0 {
-		expr = `(` + expr + ` / ` + den.String() + `)`
+		expr = `(round(` + expr + `, ` + strconv.Itoa(orderPlaces) + `) / ` + den.String() + `)`
 	}
 	return expr
 }
