@@ -463,7 +463,7 @@ Defined by an assay: converts only to the same atom and annotation under another
 
 ### level
 
-A ratio in decibels against no stated reference: never converted; a sum of levels is not a level, and the aggregate read does not refuse one.
+A ratio in decibels against no stated reference: never converted; a sum of levels is not a level, so the aggregate read refuses sum over any logarithmic measure.
 
 | Code | Symbol | Factor to `dB` | Offset |
 | --- | --- | --- | --- |

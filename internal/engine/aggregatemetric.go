@@ -1309,6 +1309,60 @@ func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
 			}
 		}
 	}
+	return p.checkLevels(u.measure, aggMetricName(p))
+}
+
+// levelAdds are the reducers that add values or their changes, which a
+// logarithmic measure's values never do: 61 dB and 62 dB are not 123 dB.
+var levelAdds = []string{substrate.ReducerSum, substrate.ReducerIncrease, substrate.ReducerRate}
+
+// energyLevels are the levels of a power against a stated reference. Their
+// mean is the level of the mean power (60 and 80 dB[SPL], an hour each, hold
+// 77.0 dB[SPL] over the two hours), so an arithmetic mean of the decibels,
+// and the deviation around it, misstates them. A level against no reference
+// (dB, such as a hearing threshold) and an acidity do average: the mean of
+// pH values is the pH of the geometric mean activity.
+var energyLevels = []string{"sound-pressure-level", "power-level"}
+
+// levelMeans are the reducers that take an arithmetic mean of the values.
+var levelMeans = []string{substrate.ReducerAvg, substrate.ReducerTWA, substrate.ReducerStdDev}
+
+// levelRefusal says why a reducer does not apply to a measure's values, or
+// "" where it does.
+func levelRefusal(measure, reducer string) string {
+	m, ok := vocabulary.LookupMeasure(measure)
+	if !ok || m.Scale != vocabulary.ScaleLogarithmic {
+		return ""
+	}
+	switch {
+	case slices.Contains(levelAdds, reducer):
+		return fmt.Sprintf("%s is logarithmic, and its values do not add (61 and 62 %s are not 123 %s)", measure, m.Base, m.Base)
+	case slices.Contains(energyLevels, measure) && slices.Contains(levelMeans, reducer):
+		return fmt.Sprintf("%s is the level of a power, whose mean is not the mean of its decibels (60 and 80 %s an hour each hold 77.0, not 70)", measure, m.Base)
+	}
+	return ""
+}
+
+// checkLevels refuses, on every form and every read, a reducer or a rolling
+// reducer that adds or averages what a logarithmic measure's values do not
+// (levelRefusal), what naming the metric or the property read. count, min,
+// max, first, last, percentile and durationIn read a level as it is.
+func (p *aggPlan) checkLevels(measure, what string) error {
+	for i, r := range p.reducers {
+		if why := levelRefusal(measure, r.Name); why != "" {
+			return p.refuse(p.reducerPath(i), "%s does not apply to %s: %s; read count, min, max, first, last or percentile",
+				r.String(), what, why)
+		}
+	}
+	if p.rolling == nil {
+		return nil
+	}
+	for i, r := range p.rolling.Reducers {
+		if why := levelRefusal(measure, r.Name); why != "" {
+			return p.refuse(fmt.Sprintf("aggregate.rolling.reducers[%d]", i), "a rolling %s does not apply to %s: %s; roll min or max",
+				r.String(), what, why)
+		}
+	}
 	return nil
 }
 

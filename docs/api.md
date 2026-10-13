@@ -1431,6 +1431,19 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 A row never mixes forms: a group whose streams hold two forms is a `422`
 asking to group them apart.
 
+A logarithmic measure's values do not add: 61 dB and 62 dB are not 123 dB.
+Over a metric or a property of `level`, `sound-pressure-level`,
+`power-level` or `acidity`, `sum`, `increase` and `rate` are a `422` naming
+the reducer and the measure, on every form, a summary of any statistic
+included, and so is a rolling `sum`. Over `sound-pressure-level` and
+`power-level`, the levels of a power, `avg`, `twa`, `stddev` and a rolling
+`avg` or `stddev` are a `422` too: their mean is the level of the mean power
+(60 and 80 dB[SPL], an hour each, hold 77.0 dB[SPL]), not the mean of the
+decibels. A `level` against no reference (a hearing threshold) and an
+`acidity` average arithmetically; the mean of pH values is the pH of the
+geometric mean activity. `count`, `min`, `max`, `first`, `last`,
+`percentile` and `durationIn` read any level as it is.
+
 ### Units
 
 Each value carries its own `unit`. The values' unit is `unit` where it is a
@@ -1754,7 +1767,8 @@ merged as one row.
   `downsample`; an entry's `statistic` where the entry reads `raw`; an
   unknown reducer or a bad
   argument; a reducer the form does not take (naming the form); `circularMean`
-  off an angle; a `unit` outside the measure (naming the measure); a value the
+  off an angle; a reducer that adds or averages a logarithmic measure's
+  values (naming the measure); a `unit` outside the measure (naming the measure); a value the
   read takes whose unit does not convert; a group of two forms; a
   recorded-local read of a stream holding a value written without a UTC offset
   and no `bucket.fallbackTimezone`, or a `fallbackTimezone` outside the

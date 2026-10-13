@@ -122,6 +122,14 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	case p.unit != "" && family != propQuantity && family != propDuration:
 		return nil, refuse("aggregate.unit", "%s is not a quantity or a duration, so no unit converts it", name)
 	}
+	// A declared measure is held before the scan; otherwise the first
+	// value's unit names it, and take holds it there.
+	levelsChecked := measure != ""
+	if levelsChecked {
+		if err := p.checkLevels(measure, name); err != nil {
+			return nil, err
+		}
+	}
 	anchorExpr, err := propertyAnchor(b, p, types, anchor)
 	if err != nil {
 		return nil, err
@@ -255,6 +263,12 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			}
 			if !resolves(target, m) {
 				return refuse("aggregate.unit", "%s is not a unit of %s, the measure of %s", target, m, name)
+			}
+			if !levelsChecked {
+				if err := p.checkLevels(m, name); err != nil {
+					return err
+				}
+				levelsChecked = true
 			}
 			cv, err := vocabulary.ConvertIn(m, v, unit, target)
 			if err != nil {

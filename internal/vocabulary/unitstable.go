@@ -475,7 +475,7 @@ var measureDefs = []measureDef{
 	{name: "irradiance", base: "W/m2", scale: ScaleRatio, display: "W/m2", units: []string{"W/m2"}},
 	{
 		name: "level", base: "dB", scale: ScaleLogarithmic, display: "dB", units: []string{"dB"},
-		note: "a ratio in decibels against no stated reference: never converted; a sum of levels is not a level, and the aggregate read does not refuse one",
+		note: "a ratio in decibels against no stated reference: never converted; a sum of levels is not a level, so the aggregate read refuses sum over any logarithmic measure",
 	},
 	{
 		name: "sound-pressure-level", base: "dB[SPL]", scale: ScaleLogarithmic, display: "dB[SPL]",

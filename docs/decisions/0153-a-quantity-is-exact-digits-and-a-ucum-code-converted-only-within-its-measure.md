@@ -112,8 +112,12 @@ removed unit would rescale history.
   that uses it does not load on an older binary.
 - Bad, because the engine's table, the console's copy and the host SDK's
   `host.units.*` must agree.
-- Bad, because nothing refuses `sum` over a level yet: a `61 dB` amount
-  and a `62 dB` amount sum to `123 dB`, a number with no physical meaning.
+- Bad, because a level answers only what reads it as it is: the aggregate
+  read refuses `sum`, `increase` and `rate` over any logarithmic measure (a
+  `61 dB` amount and a `62 dB` amount would sum to `123 dB`), and `avg`,
+  `twa` and `stddev` over the levels of a power (`sound-pressure-level`,
+  `power-level`), whose mean is the level of the mean power. No read answers
+  that energy mean yet.
 
 ### Confirmation
 
