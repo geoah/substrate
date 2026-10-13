@@ -1513,9 +1513,11 @@ and `utcOffsetEnd`, minutes east of UTC), so `property.utcOffset` names the
 declared `int` property that holds the anchor's offset, and each record
 lands on the date its own offset names, as a metric read's point does: a
 night that ends at 01:30Z in Los Angeles is on its wake day there. A record
-that holds no offset is a `422` naming it, decided before any value is read,
-unless `bucket.fallbackTimezone` places it by that zone's clock at its
-anchor and the row counts it in `offsetless`. A row's `start` and `end` are
+that holds no offset is a `422` naming it, decided before any value is
+reduced, unless `bucket.fallbackTimezone` places it by that zone's clock at
+its anchor and the row counts it in `offsetless`. Under `property.sources`
+only a record the policy keeps is placed, so a dropped record's missing
+offset refuses nothing. A row's `start` and `end` are
 written at the offsets of its first and last records and clipped to the
 range. `utcOffset` is refused outside the recorded-local calendar, and a
 `date` anchor, which names its day already, inside it.

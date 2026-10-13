@@ -167,16 +167,22 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		return nil, refuse("aggregate.budget.maxSamples", "the read takes %d records, over %d; narrow the filter or the range, or raise maxSamples (the cap is %d)",
 			n, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
-	if local && p.bucket.fallback == nil {
-		// A record with no offset has no local day: refused before any value
-		// is read, as the metric read refuses an offsetless point.
+	// A record with no offset has no local day: refused before any value is
+	// reduced, as the metric read refuses an offsetless point. A record the
+	// source policy drops is never placed, so under a policy only a kept one
+	// refuses, once the policy has weighed them.
+	checkOffsets := local && p.bucket.fallback == nil
+	offsetless := func(ref string) error {
+		return refuse("aggregate.property.utcOffset", "%s holds no %s, so the recorded-local calendar cannot place it; name bucket.fallbackTimezone to place such records by a zone's clock, or read in bucket.timezone",
+			ref, prop.UTCOffset)
+	}
+	if checkOffsets && pol == nil {
 		var missing string
 		err := tx.QueryRowContext(ctx, `SELECT kind || '/' || id FROM records WHERE `+where+` AND `+offsetExpr+` IS NULL ORDER BY kind, id LIMIT 1`,
 			b.args...).Scan(&missing)
 		switch {
 		case err == nil:
-			return nil, refuse("aggregate.property.utcOffset", "%s holds no %s, so the recorded-local calendar cannot place it; name bucket.fallbackTimezone to place such records by a zone's clock, or read in bucket.timezone",
-				missing, prop.UTCOffset)
+			return nil, offsetless(missing)
 		case err != sql.ErrNoRows:
 			return nil, fmt.Errorf("substrate/engine: aggregate offsets: %w", err)
 		}
@@ -387,6 +393,13 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		keep, err := keepBySource(ctx, append(weighed, around...))
 		if err != nil {
 			return nil, err
+		}
+		if checkOffsets {
+			for i, r := range held {
+				if keep[i] && !r.offset.Valid {
+					return nil, offsetless(r.kind + "/" + r.id)
+				}
+			}
 		}
 		for i, r := range held {
 			if !keep[i] {

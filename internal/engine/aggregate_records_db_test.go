@@ -626,6 +626,53 @@ func TestAggregatePropertyPlacesARecordByItsOwnOffset(t *testing.T) {
 	}
 }
 
+// Under a source policy the recorded-local calendar refuses only a kept
+// record without an offset: a lower-ranked source's night that the policy
+// drops is never placed, so its missing offset refuses nothing. Kept, it
+// refuses the read, naming it.
+func TestAggregatePropertyRefusesOnlyAKeptRecordWithoutAnOffset(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	end := time.Date(2026, 9, 21, 4, 0, 0, 0, time.UTC)
+	f.mustPut(t, f.sleepKind(), "whoop/0", map[string]any{
+		"source": f.sourceRef("whoop"), "at": end.Add(-8 * time.Hour).Format(time.RFC3339), "endsAt": end.Format(time.RFC3339),
+		"timeAsleep": "PT7H", "utcOffsetEnd": 180,
+	})
+	f.mustPut(t, f.sleepKind(), "googlefit/0", map[string]any{
+		"source": f.sourceRef("googlefit"), "at": end.Add(-8 * time.Hour).Format(time.RFC3339), "endsAt": end.Add(10 * time.Minute).Format(time.RFC3339),
+		"timeAsleep": "PT6H50M",
+	})
+	plus3 := time.FixedZone("", 3*3600)
+	query := func(order ...string) substrate.AggregateQuery {
+		var sources *substrate.AggregateRecordSources
+		if len(order) > 0 {
+			sources = &substrate.AggregateRecordSources{Policy: "priority", Order: order, Property: "source"}
+		}
+		return substrate.AggregateQuery{
+			Filter: substrate.Filter{Kinds: []string{f.sleepKind()}},
+			Aggregate: &substrate.Aggregate{
+				Property: &substrate.AggregateProperty{Name: "timeAsleep", Anchor: "endsAt", UTCOffset: "utcOffsetEnd", Sources: sources},
+				Range:    rng(time.Date(2026, 9, 21, 0, 0, 0, 0, plus3), time.Date(2026, 9, 22, 0, 0, 0, 0, plus3)),
+				Bucket:   &substrate.AggregateBucket{Calendar: "day"}, Reducers: reducers("sum", "count"), Unit: "h",
+			},
+		}
+	}
+	res, err := f.ds.Aggregate(context.Background(), query("whoop", "googlefit"))
+	if err != nil {
+		t.Fatalf("the whoop's night first: %v", err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("rows %+v, want one day", res.Rows)
+	}
+	sum, _ := val(res.Rows[0], "sum")
+	n, _ := val(res.Rows[0], "count")
+	if sum != "7" || n != "1" {
+		t.Errorf("sum/count = %s/%s, want the whoop's night alone, 7/1", sum, n)
+	}
+	f.refusedAgg(query(), f.sleepKind()+"/googlefit/0 holds no utcOffsetEnd")
+	f.refusedAgg(query("googlefit", "whoop"), f.sleepKind()+"/googlefit/0 holds no utcOffsetEnd")
+}
+
 // A records-mode row is written at its record's own offsets where the
 // request names the properties holding them: a night begun in London
 // (+01:00) and ended in Athens (+03:00), read with a range written at
