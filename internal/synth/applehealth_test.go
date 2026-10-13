@@ -88,7 +88,7 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 	if len(out.Deliveries) != len(days) {
 		t.Fatalf("%d deliveries, want one per day: %d", len(out.Deliveries), len(days))
 	}
-	first, last := days[0].Add(-1).Midnight(p.Home()), days[len(days)-1].Add(1).Midnight(p.Home())
+	first, last := p.Day(days[0].Add(-1)).Start(), p.Day(days[len(days)-1]).EndTime()
 	sessions := map[string]bool{}
 	london := 0
 	rows := map[string]int{}

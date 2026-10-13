@@ -192,9 +192,6 @@ func (p *Persona) Zone(d Date) *time.Location {
 	return p.home
 }
 
-// Home is the home zone.
-func (p *Persona) Home() *time.Location { return p.home }
-
 // Ill reports whether d falls in the illness.
 func (p *Persona) Ill(d Date) bool { return p.Options.Illness != nil && p.Options.Illness.Contains(d) }
 
@@ -263,10 +260,8 @@ type Sleep struct {
 	Date         Date
 	Start, End   time.Time
 	Stages       []StageSpan
-	LatencyS     int
 	Efficiency   float64 // 0..1
 	RestingHR    int
-	HRAvg        int
 	HRVRMSSDMs   float64
 	SpO2Avg      float64
 	RespRate     float64
@@ -410,7 +405,6 @@ type Day struct {
 	VO2Max        float64
 	FitnessAge    int
 	Recovery      int // WHOOP-style 0..100
-	Readiness     int // 0..100
 	Ill, Trip     bool
 	persona       *Persona
 }
@@ -581,9 +575,6 @@ func (d *Day) StepsTotal() int {
 	}
 	return total
 }
-
-// DistanceM is the day's walking and running distance.
-func (d *Day) DistanceM() float64 { return math.Round(float64(d.StepsTotal())*0.74*10) / 10 }
 
 // ActiveKcal is the day's active energy.
 func (d *Day) ActiveKcal() int {
@@ -820,19 +811,16 @@ func (p *Persona) sleepFor(d Date, ill, trip, longRunYesterday bool) *Sleep {
 		}
 	}
 	rhr := p.restingHR(d)
-	hrAvg := rhr + 4
 	spo2, resp, skin := 96.8, 14.2, 0.0
 	if ill {
-		hrAvg += 3
 		spo2 -= 1.2
 		resp += 1.8
 		skin = 0.9
 	}
 	return &Sleep{
-		Date: d, Start: start, End: end, Stages: merged, LatencyS: latency,
+		Date: d, Start: start, End: end, Stages: merged,
 		Efficiency:   math.Round(asleep/total*1000) / 1000,
 		RestingHR:    rhr,
-		HRAvg:        hrAvg,
 		HRVRMSSDMs:   p.hrv(d, longRunYesterday),
 		SpO2Avg:      math.Round((spo2+r.NormFloat64()*0.5)*10) / 10,
 		RespRate:     math.Round((resp+r.NormFloat64()*0.5)*10) / 10,
@@ -907,9 +895,9 @@ func (p *Persona) Day(d Date) *Day {
 		ns := d.At(loc, 14, 30+int(r.NormFloat64()*20))
 		ne := ns.Add(time.Duration(math.Max(15, 35+r.NormFloat64()*10)) * time.Minute)
 		naps = append(naps, &Sleep{
-			Date: d, Start: ns, End: ne, IsNap: true, LatencyS: 240, Efficiency: 0.9,
+			Date: d, Start: ns, End: ne, IsNap: true, Efficiency: 0.9,
 			Stages:    []StageSpan{{ns, ns.Add(4 * time.Minute), Awake}, {ns.Add(4 * time.Minute), ne, Light}},
-			RestingHR: sleep.RestingHR, HRAvg: sleep.RestingHR + 5, HRVRMSSDMs: sleep.HRVRMSSDMs,
+			RestingHR: sleep.RestingHR, HRVRMSSDMs: sleep.HRVRMSSDMs,
 			SpO2Avg: sleep.SpO2Avg, RespRate: sleep.RespRate, persona: p,
 		})
 	}
@@ -943,7 +931,6 @@ func (p *Persona) Day(d Date) *Day {
 	}
 	rec := 55 + (sleep.HRVRMSSDMs-(58+7*i/span))*1.6 - float64(sleep.RestingHR-int(53-2.5*i/span))*3 + (sleep.Efficiency-0.9)*120
 	day.Recovery = int(math.Max(5, math.Min(99, rec+r.NormFloat64()*4)))
-	day.Readiness = int(math.Max(5, math.Min(99, float64(day.Recovery)*0.6+36+r.NormFloat64()*5)))
 	p.cache[d] = day
 	return day
 }

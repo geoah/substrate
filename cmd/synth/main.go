@@ -386,7 +386,7 @@ func load(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 		if hasDeliveries {
-			if err := postDeliveries(ctx, c, base, *key, *settle, stdout, stderr); err != nil {
+			if err := postDeliveries(ctx, c, base, *key, *settle, stdout); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
 		}
@@ -625,7 +625,7 @@ func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) er
 			}
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		if err := c.put(ctx, normalise(doc)); err != nil {
+		if err := c.put(ctx, doc); err != nil {
 			return err
 		}
 		n++
@@ -633,10 +633,6 @@ func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) er
 	fmt.Fprintf(stdout, "manual: %d records written from %s\n", n, path)
 	return nil
 }
-
-// normalise turns yaml's map[string]any nesting into JSON-able maps; yaml.v3
-// already decodes mappings as map[string]any, so this only guards integers.
-func normalise(v map[string]any) map[string]any { return v }
 
 type envelope struct {
 	Request struct {
@@ -649,7 +645,7 @@ type envelope struct {
 	Trigger string `json:"trigger"`
 }
 
-func postDeliveries(ctx context.Context, c *client, base, key string, settle time.Duration, stdout, stderr io.Writer) error {
+func postDeliveries(ctx context.Context, c *client, base, key string, settle time.Duration, stdout io.Writer) error {
 	files, err := filepath.Glob(filepath.Join(base, "deliveries", "*.json"))
 	if err != nil {
 		return err
@@ -721,6 +717,5 @@ func postDeliveries(ctx context.Context, c *client, base, key string, settle tim
 		fmt.Fprintf(stdout, "\r%s: %d/%d posted (%s)", filepath.Base(base), i+1, len(files), time.Since(started).Round(time.Second))
 	}
 	fmt.Fprintln(stdout)
-	_ = stderr
 	return nil
 }

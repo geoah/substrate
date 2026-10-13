@@ -139,16 +139,6 @@ func Emitters() []Emitter {
 	return out
 }
 
-// EmitterByName finds one emitter.
-func EmitterByName(name string) (Emitter, bool) {
-	for _, e := range Emitters() {
-		if e.Name() == name {
-			return e, true
-		}
-	}
-	return nil, false
-}
-
 // WriteOutput writes the output under dir/<name>/, deliveries as numbered
 // envelope files beside the rest, and answers the paths written. It removes
 // dir/<name>/ first: `load` posts every delivery and applies every document
