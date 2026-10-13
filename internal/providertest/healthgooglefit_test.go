@@ -23,6 +23,7 @@ import (
 
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
@@ -291,7 +292,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 		}
 		for code, prop := range map[string]string{"light": "light", "deep": "deep", "rem": "rem", "awake": "awake"} {
 			want := byCode[code]
-			got, err := parseISODuration(fmt.Sprint(sl.Properties[prop]))
+			got, err := vocabulary.ParseISODuration(fmt.Sprint(sl.Properties[prop]))
 			if err != nil || got != want {
 				t.Fatalf("sleep %s: %s = %v, the %s stage amounts add up to %s", sl.ID, prop, sl.Properties[prop], code, want)
 			}
@@ -319,12 +320,16 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	// Every night carries its efficiency, time asleep over time in bed, and
 	// none of the recorded sessions is a nap.
 	for _, sl := range sleeps {
-		asleep, err1 := parseISODuration(fmt.Sprint(sl.Properties["timeAsleep"]))
-		inBed, err2 := parseISODuration(fmt.Sprint(sl.Properties["timeInBed"]))
-		eff, _ := sl.Properties["efficiency"].(map[string]any)
-		if err1 != nil || err2 != nil || inBed == 0 {
+		if sl.Properties["timeAsleep"] == nil || sl.Properties["timeInBed"] == nil {
 			continue
 		}
+		asleep, err1 := vocabulary.ParseISODuration(fmt.Sprint(sl.Properties["timeAsleep"]))
+		inBed, err2 := vocabulary.ParseISODuration(fmt.Sprint(sl.Properties["timeInBed"]))
+		if err1 != nil || err2 != nil || inBed == 0 {
+			t.Fatalf("sleep %s holds timeAsleep %v and timeInBed %v, which the engine's duration grammar does not read (%v, %v)",
+				sl.ID, sl.Properties["timeAsleep"], sl.Properties["timeInBed"], err1, err2)
+		}
+		eff, _ := sl.Properties["efficiency"].(map[string]any)
 		want := new(big.Rat).SetFrac64(asleep.Milliseconds()*100, inBed.Milliseconds()).FloatString(2)
 		if eff == nil || eff["value"] != want || eff["unit"] != "%" || sl.Properties["isNap"] != false {
 			t.Fatalf("sleep %s efficiency %v nap %v, want %s %% and no nap", sl.ID, sl.Properties["efficiency"], sl.Properties["isNap"], want)
@@ -963,15 +968,6 @@ func TestHealthGoogleFitKeepsSameModelDevicesApart(t *testing.T) {
 	want("diastolic after cuff A dropped out", fitReadings(t, ds, "diastolic_blood_pressure"),
 		map[string]string{key(cb): "90.5"})
 	assertCatalogueHolds(t, ds)
-}
-
-// parseISODuration reads the PT#H#M#S durations the adapter writes.
-func parseISODuration(s string) (time.Duration, error) {
-	rest, ok := strings.CutPrefix(s, "PT")
-	if !ok {
-		return 0, fmt.Errorf("%q is not a PT duration", s)
-	}
-	return time.ParseDuration(strings.ToLower(rest))
 }
 
 // TestHealthGoogleFitWritesASmallReadingWithoutAnExponent: Fit sends a float,

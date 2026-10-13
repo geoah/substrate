@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/samples"
 )
 
@@ -229,8 +230,8 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	}
 	// Efficiency is time asleep over time in bed, where Garmin sends both.
 	nightRow := out[healthSleep+"/"+acct+"/"+sid+"/sleep"].Properties
-	asleep, err1 := parseISODuration(fmt.Sprint(nightRow["timeAsleep"]))
-	inBed, err2 := parseISODuration(fmt.Sprint(nightRow["timeInBed"]))
+	asleep, err1 := vocabulary.ParseISODuration(fmt.Sprint(nightRow["timeAsleep"]))
+	inBed, err2 := vocabulary.ParseISODuration(fmt.Sprint(nightRow["timeInBed"]))
 	eff, _ := nightRow["efficiency"].(map[string]any)
 	wantEff := new(big.Rat).SetFrac64(int64(asleep.Seconds())*100, int64(inBed.Seconds())).FloatString(2)
 	if err1 != nil || err2 != nil || eff == nil || eff["value"] != wantEff || eff["unit"] != "%" {
