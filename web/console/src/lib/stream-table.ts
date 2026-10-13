@@ -431,7 +431,9 @@ export function selectionState(
 /** The selected streams of each metric, in the order the metrics were
  * first selected: one read per metric, narrowed to its selected sources,
  * and to its things and channels where every selected stream names one (a
- * stream about the owner, or on no channel, cannot be asked for by `in`). */
+ * stream about the owner, or on no channel, cannot be asked for by `in`).
+ * The read may therefore take streams the selection leaves out, which the
+ * plot drops or names (`lib/overlay.ts` planPlot). */
 export interface MetricSelection {
   metric: string
   streams: Stream[]

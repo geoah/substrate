@@ -9,6 +9,7 @@ import { parseAllDocuments } from "yaml"
 import catalogue from "../../../../samples/health/metrics.yaml?raw"
 
 import {
+  channelKey,
   metricInfoOf,
   presetRange,
   streamsOf,
@@ -37,6 +38,7 @@ import {
   leftOutWords,
   markOf,
   planPlot,
+  plotRows,
   seriesColors,
   seriesKey,
   splitCharts,
@@ -414,6 +416,52 @@ describe("one metric's plot", () => {
     expect(
       planPlot(source(streams.slice(0, 6)), HEART, scope).read
     ).toBeDefined()
+  })
+
+  it("draws only the selected streams where the read takes others too", () => {
+    const streams = streamsOf(LATEST)
+    const garmin = streams.find(
+      (s) => s.metric === HEART && s.source === GARMIN
+    )!
+    const apple = streams.find((s) => s.metric === HEART && s.source === APPLE)!
+    const whoop = (channel?: string): Stream => ({
+      ...garmin,
+      key: `whoop-${channel ?? ""}`,
+      source: WHOOP,
+      ...(channel ? { channel } : {}),
+    })
+    const cycle = whoop()
+    const workout = whoop("workout")
+    // Apple Watch, and WHOOP's workouts: no `in` names WHOOP's stream on no
+    // channel, so the read narrowed to the two sources takes it too.
+    const obs = source([garmin, apple, cycle, workout])
+    const scope: PlotScope = {
+      ...SCOPE,
+      group: "source",
+      sources: [APPLE, WHOOP],
+      streams: [apple, workout],
+    }
+    const bySource = planPlot(obs, HEART, scope)
+    expect(bySource.only).toEqual([APPLE, channelKey(WHOOP, "workout")])
+    expect(bySource.mixedIn).toEqual([])
+    const row = (src: string, channel?: string) => ({
+      start: "2026-10-01T00:00:00+03:00",
+      end: "2026-10-02T00:00:00+03:00",
+      group: { source: src, ...(channel ? { channel } : {}) },
+      values: [{ reducer: "avg", value: "60", unit: "/min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const answer = [row(APPLE), row(WHOOP), row(WHOOP, "workout")]
+    expect(plotRows(bySource, answer)).toEqual([answer[0], answer[2]])
+    // Resolved into one line, the unselected stream joins it, and the plot
+    // says which.
+    const merged = planPlot(obs, HEART, { ...scope, group: "metric" })
+    expect(merged.only).toBeUndefined()
+    expect(merged.mixedIn).toEqual([cycle])
+    expect(plotRows(merged, answer)).toBe(answer)
   })
 
   it("keeps a series' colour whichever series a filter or a toggle hides", () => {

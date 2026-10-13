@@ -57,6 +57,7 @@ import {
 import {
   assignAxes,
   leftOutWords,
+  plotRows,
   seriesColors,
   seriesKey,
   unitWords,
@@ -78,6 +79,8 @@ interface Drawn {
   side: AxisSide
   stale: boolean
 }
+
+const NO_ROWS: readonly AggregateRow[] = []
 
 function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1)
@@ -128,7 +131,7 @@ export function OverlayChart({
     return {
       plot,
       query,
-      rows: (reads ? (query.data?.rows ?? []) : []) as readonly AggregateRow[],
+      rows: reads ? plotRows(plot, query.data?.rows ?? []) : NO_ROWS,
       pending: reads && query.isPending,
       failed: reads && query.isError,
       stale: reads && query.isFetching && !query.isPending,
@@ -336,6 +339,18 @@ export function OverlayChart({
     if (dropped > 0) {
       own.push(
         `${dropped === 1 ? "1 row shares" : `${dropped} rows share`} a bucket with another row of the same series and ${dropped === 1 ? "is" : "are"} left out of the chart; the table below lists every row.`
+      )
+    }
+    if (plot.mixedIn.length) {
+      const named = plot.mixedIn.map((s) =>
+        [
+          s.source ? sourceText(s.source) : "no source",
+          s.channel ? ` (${s.channel})` : "",
+          s.about ? `, about ${obs.nameOf(s.about, obs.pins.about)}` : "",
+        ].join("")
+      )
+      own.push(
+        `Also reads ${listWords(named)}, which the selection leaves out: a read narrows sources, things and channels each on its own.`
       )
     }
     if (plot.shape === "coded") own.push("Stacked by category.")

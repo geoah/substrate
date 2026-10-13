@@ -38,6 +38,7 @@ import {
   type Stream,
   type TimeRange,
 } from "@/lib/observations"
+import type { AggregateRow } from "@/lib/api/types"
 import { listWords } from "@/lib/tools"
 import { unitChoices } from "@/lib/unit-choices"
 import { unitSymbol } from "@/lib/units"
@@ -226,6 +227,13 @@ export interface Plot {
   sourceOrder: string[]
   /** The read takes a stream naming no source too, after every named one. */
   sourceless: boolean
+  /** The series a selection names, where the read, grouped by source,
+   * answers others too: the chart draws these alone (`plotRows`). */
+  only?: string[]
+  /** Streams a selection leaves out that the read takes anyway and folds
+   * into a selected series: a read narrows sources, things and channels
+   * each on its own, and no `in` names a stream with none. */
+  mixedIn: Stream[]
   /** The series the plot could show grouped by source (each source's
    * channels apart) or by about, for colours that hold while a filter or a
    * toggle hides some. */
@@ -289,8 +297,9 @@ export function planPlot(
     scope.abouts.some((a) => sameRef(l, a))
   )
   const channels = scope.channels ?? []
-  // The streams the read selects: the filter narrows each key apart.
-  const selected = own.filter(
+  // The streams the read selects, a selection's and any others its filter
+  // takes: the filter narrows each key apart.
+  const selected = every.filter(
     (s) =>
       (!chosenSources.length || chosenSources.includes(s.source ?? "")) &&
       (!chosenAbouts.length || chosenAbouts.includes(s.about ?? "")) &&
@@ -346,6 +355,25 @@ export function planPlot(
     ? chosenSources
     : distinct(selected.map((s) => s.source))
 
+  // Grouped by source, the answer keeps each source's channels apart, so
+  // the rows of a stream the selection leaves out can be dropped; any other
+  // grouping folds it into a selected series.
+  const seriesOf = (s: Stream) =>
+    channelKey(
+      refPathOf(s.source, obs.pins.source) ?? s.source ?? "",
+      s.channel
+    )
+  const extra = scope.streams
+    ? selected.filter((s) => !own.some((o) => o.key === s.key))
+    : []
+  const bySource = shape !== "coded" && scope.group === "source"
+  const named = own.map(seriesOf)
+  const only =
+    bySource && extra.some((s) => !named.includes(seriesOf(s)))
+      ? distinct(named)
+      : undefined
+  const mixedIn = extra.filter((s) => !only || named.includes(seriesOf(s)))
+
   const spec: LaneSpec | undefined = metricPath
     ? {
         metricPath,
@@ -397,6 +425,8 @@ export function planPlot(
     blocked,
     sourceOrder,
     sourceless,
+    ...(only ? { only } : {}),
+    mixedIn,
     // Every stream it could draw, whichever are drawn, so a source filter
     // or a legend toggle never repaints the series that stay; a selection
     // is its own palette. Spelled as the answer's groups are, record paths.
@@ -421,6 +451,19 @@ export function planPlot(
       selected.filter((s) => s.form === "summary").map((s) => s.source)
     ),
   }
+}
+
+/** The rows of one plot's answer the chart draws and tabulates: every
+ * row, but those of a series the selection leaves out (`Plot.only`). */
+export function plotRows(
+  plot: Pick<Plot, "only">,
+  rows: readonly AggregateRow[]
+): readonly AggregateRow[] {
+  const only = plot.only
+  if (!only) return rows
+  return rows.filter((r) =>
+    only.includes(channelKey(r.group?.source ?? "", r.group?.channel))
+  )
 }
 
 /** Every value one plot's series could take, in a stable order: its
