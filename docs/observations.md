@@ -163,7 +163,10 @@ composed from them: `<provider>/<account record id>/<metric>/<period start>`
 `resolution` (the smallest step it reports, a quantity), `about` (the thing it
 is fixed to, which writers copy onto each value), `account` (the connected
 account it syncs through, any kind binding `accountconfig`) and `priorities`
-(its rank per metric id when sources overlap, 1 first).
+(its rank per metric id when sources overlap, 1 first). The aggregate read's
+`priority` and `summaries` policies take `priorities` as their order when a
+request names none, an unranked source last; a request's `sources.order`
+wins.
 
 ## Writing an observation by hand
 

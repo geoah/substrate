@@ -59,9 +59,11 @@ data:
       description: the connected account it syncs through
     # keyed by the metric's id, such as health/heart_rate: the owner's order
     # per metric, because a chest strap wins for heart rate and a watch for
-    # steps
+    # steps. The aggregate read's priority and summaries policies take it as
+    # their order when a request names none; an explicit order wins.
     priorities:
       type: int
       keyed: true
       description: this source's rank per metric id when sources overlap,
-        1 first
+        1 first; the aggregate read's priority and summaries policies take
+        it as their order when a request names none, an unranked source last
