@@ -55,6 +55,11 @@ reads `.../datasets/<startNs>-<endNs>`) then gets the same tries again over
 the path with that segment dropped, logged `~path`, `~path+fallback` and so
 on.
 
+A provider in TIME_SHIFTS (Google Fit) has the instants in every response it
+is served moved by the whole days from the day its recordings were cut on to
+the day the mock started, so a sync reading a window that ends today finds
+them in it.
+
 A miss is `404` with a JSON body naming every file it looked for, so the
 provider agent sees exactly what to record and under what name.
 
@@ -105,6 +110,8 @@ INTROSPECTION
                               text, so a scenario asserts what a write sent
     GET /__mock/recordings    what is on disk
     GET /__mock/misses        the 404s, i.e. the recordings still to capture
+    GET /__mock/shift         `{"days": n}`, how far TIME_SHIFTS moved this
+                              provider's instants
     DELETE /__mock/requests   reset the log between phases of a scenario
     GET /healthz              ok
 
@@ -160,6 +167,7 @@ asserts the failure or the slowness happened rather than assuming it.
 from __future__ import annotations
 
 import argparse
+import datetime
 import fnmatch
 import hashlib
 import json
@@ -213,6 +221,20 @@ PAGINATION_PARAMS = {
 #   {provider: [(regex over the path slug, replacement)]}
 PATH_RELAXATIONS: dict[str, list[tuple[re.Pattern, str]]] = {
     "googlefit": [(re.compile(r"_datasets_\d+-\d+$"), "_datasets")],
+}
+# RECORDINGS THAT MOVE WITH THE CLOCK. A sync that reads a window ending today
+# keeps nothing from recordings cut weeks earlier, and a scenario comparing
+# what landed with what was recorded would then compare two empty sets. A
+# provider listed here names the UTC day its recordings were cut on and the
+# response fields that hold instants; every response the mock serves moves
+# those fields by the whole days from that day to the day the mock started.
+# `/__mock/shift` reports the count, so a scenario moves what it expects too.
+#
+#   {provider: (cut-on day, nanosecond fields, millisecond fields)}
+TIME_SHIFTS: dict[str, tuple[datetime.date, tuple[str, ...], tuple[str, ...]]] = {
+    "googlefit": (datetime.date(2026, 10, 11),
+                  ("startTimeNanos", "endTimeNanos"),
+                  ("startTimeMillis", "endTimeMillis", "modifiedTimeMillis")),
 }
 SLUG_MAX = 80
 
@@ -395,6 +417,37 @@ class Mock:
         self.seq: dict[str, int] = {}     # per-file cursor into __responses
         self.codes: dict[str, str] = {}   # authorize code -> granted scope
         self.faults: list[dict] = []      # injected failures, in order
+        shift = TIME_SHIFTS.get(self.provider)
+        self.shift_days = 0
+        if shift is not None:
+            today = datetime.datetime.now(datetime.timezone.utc).date()
+            self.shift_days = (today - shift[0]).days
+
+    def shifted(self, value):
+        """A served body with its instants moved by `shift_days` (TIME_SHIFTS),
+        each in the type the recording holds it in."""
+        shift = TIME_SHIFTS.get(self.provider)
+        if shift is None or not self.shift_days:
+            return value
+        _, nanos, millis = shift
+        delta = {**{k: self.shift_days * 86400 * 10**9 for k in nanos},
+                 **{k: self.shift_days * 86400 * 1000 for k in millis}}
+
+        def move(v):
+            if isinstance(v, list):
+                return [move(x) for x in v]
+            if not isinstance(v, dict):
+                return v
+            out = {}
+            for k, x in v.items():
+                if k in delta and isinstance(x, str) and x.lstrip("-").isdigit():
+                    out[k] = str(int(x) + delta[k])
+                elif k in delta and isinstance(x, int) and not isinstance(x, bool):
+                    out[k] = x + delta[k]
+                else:
+                    out[k] = move(x)
+            return out
+        return move(value)
 
     # -- injected failures ---------------------------------------------------
 
@@ -574,6 +627,7 @@ class Handler(BaseHTTPRequestHandler):
             if doc is None:
                 continue
             status, headers, out = self.mock.resolve(doc, name)
+            out = self.mock.shifted(out)
             with self.mock.lock:
                 self.mock.requests.append({
                     "method": self.command, "path": path, "query": query,
@@ -679,6 +733,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, {"requests": self.mock.requests})
         if what == "misses":
             return self.respond(200, {"misses": self.mock.misses})
+        if what == "shift":
+            return self.respond(200, {"days": self.mock.shift_days})
         if what == "recordings":
             return self.respond(200, {
                 "dir": str(self.mock.dir),

@@ -8,8 +8,11 @@ sync to settle. This file runs after that.
 Every expectation is read off the recordings and off the mock's request log,
 never off the clock: the dataset recordings answer any day through the mock's
 path relaxation, so which days were read depends on the run date, and the
-scenario asks the log rather than guessing. On a run date far past the
-recorded month the expected dataset rows are fewer; the rules stay the same.
+scenario asks the log rather than guessing. The mock moves every recorded
+instant by whole days to the run date (TIME_SHIFTS, `/__mock/shift`) and the
+scenario moves what it expects by the same days, so the recorded month lands
+in the window on any run date. An expectation that comes out empty fails: two
+empty sets would agree whatever the sync wrote.
 
 WHAT IT PROVES
 
@@ -167,12 +170,15 @@ def main():
     span = [first + datetime.timedelta(days=i) for i in range((last - first).days + 1)]
     ok(all(days == span for days in windows.values()),
        "every derived source was read on every day from %s to %s" % (first, last))
+    shift = int(mock("/__mock/shift").get("days") or 0)
     want = {}
     for sid, points in recorded_points(recordings).items():
         for p in points:
-            d = day_of_ns(p["startTimeNanos"])
+            d = day_of_ns(int(p["startTimeNanos"]) + shift * DAY_NS)
             if first <= d <= last:
                 want[(sid, d.isoformat())] = want.get((sid, d.isoformat()), 0) + 1
+    ok(want, "the recordings, moved %d days to the run date, put points in the "
+       "window read (%d source days)" % (shift, len(want)))
     rows = every(api, DATASET)
     have, strays = {}, []
     for r in rows:
@@ -193,7 +199,10 @@ def main():
     sessions, gone = recorded_sessions(recordings)
     floor = datetime.datetime.combine(first, datetime.time(), UTC)
     expect = {s["id"] for s in sessions
-              if datetime.datetime.fromtimestamp(int(s["endTimeMillis"]) / 1000, UTC) >= floor}
+              if datetime.datetime.fromtimestamp(
+                  (int(s["endTimeMillis"]) + shift * 86400 * 1000) / 1000, UTC) >= floor}
+    ok(expect, "the recorded sessions, moved %d days, end inside the window "
+       "(%d)" % (shift, len(expect)))
     rows = every(api, SESSION)
     ok({props(r).get("sessionId") for r in rows} == expect,
        "%d sessions mirrored, %d expected" % (len(rows), len(expect)))
