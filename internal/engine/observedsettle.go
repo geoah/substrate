@@ -323,7 +323,8 @@ func (t *txn) nextCounterBuckets(h obsStreamForm, starts []int64) ([]int64, erro
 // a running state (streamedBucket), so what the recompute holds is one page
 // and each group's state, whatever the bucket's size, and its work is the
 // bucket's points once. The buckets are taken half a page's worth at a time,
-// so each bucket's share of the first page is at least two rows.
+// so each bucket asks the first page for at least two rows: at least one it
+// takes, and one whose arrival says more follow.
 func (t *txn) rollupRowsOf(h obsStreamForm, starts []time.Time) ([]rollupRow, error) {
 	page := t.observedPage()
 	var out []rollupRow
