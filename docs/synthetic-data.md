@@ -90,8 +90,11 @@ workouts. Steps come per 5-minute bucket, from "Ada's iPhone" by day and the
 watch before 07:00, after 22:00 and during runs; on about one day in four the
 watch also counts the walks to work, to lunch and home, and both devices'
 rows are sent for the same buckets, so a reader has to choose between two
-sources. Distance, flights, and active and basal energy come per hour, in km
-and kJ, each bucket counted once. Each night carries resting heart rate,
+sources. Distance, flights, and active and basal energy come one row per
+minute that has any, as the app sends them at Time Grouping Minutes: basal
+energy every minute, distance and active energy over each step bucket's five
+minutes and each workout's minutes, a flight at the minute climbed; in km and
+kJ, each bucket counted once. Each night carries resting heart rate,
 three SDNN readings, respiratory rate every 15 minutes, SpO2 every 10 and the
 sleeping wrist temperature, without a `source` key, as the app sends them.
 The watch sends a VO2 max estimate after each run. Weight, body fat and BMI
@@ -101,7 +104,7 @@ the phone once, in centimeters, on the first morning. The night is one
 aggregated `sleep_analysis` row, and each workout carries the app's activity
 name and `heartRateData` every 60 s. Dates are `yyyy-MM-dd HH:mm:ss Z` in the
 day's zone, `+0300` at home and `+0100` in London. The 90-day default is 90
-deliveries (5.8 MB, about 53,700 rows), written under five sources:
+deliveries (29 MB, about 331,000 rows), written under five sources:
 `applehealth/iphone/apple-watch`, `.../iphone`, `.../withings`, `.../contour`
 and `.../health` for rows without a source or with merged labels.
 

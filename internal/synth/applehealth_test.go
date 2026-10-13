@@ -3,6 +3,7 @@ package synth
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"regexp"
 	"strings"
@@ -159,8 +160,23 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 				t.Fatalf("%s step row %v", d.Name, row)
 			}
 		}
-		if n, hours := len(byName["basal_energy_burned"]), int(day.EndTime().Sub(day.Start())/time.Hour); n != hours {
-			t.Errorf("%s: %d basal energy rows over %d hours", d.Name, n, hours)
+		// At Time Grouping Minutes a row is one minute's worth: basal energy
+		// comes every minute, and no energy, distance or floor row holds an
+		// hour's.
+		if n, minutes := len(byName["basal_energy_burned"]), int(day.EndTime().Sub(day.Start())/time.Minute); n != minutes {
+			t.Errorf("%s: %d basal energy rows over %d minutes", d.Name, n, minutes)
+		}
+		for name, most := range map[string]float64{
+			"basal_energy_burned": 10, "active_energy": 120, "walking_running_distance": 0.4, "flights_climbed": 10,
+		} {
+			seen := map[string]bool{}
+			for _, row := range byName[name] {
+				key := fmt.Sprint(row["date"], row["source"])
+				if q := ahNum(t, row, "qty"); q <= 0 || q > most || seen[key] {
+					t.Errorf("%s: %s row %v is not one minute's worth (at most %v, one per minute and source)", d.Name, name, row, most)
+				}
+				seen[key] = true
+			}
 		}
 		for _, name := range []string{"resting_heart_rate", "heart_rate_variability", "respiratory_rate", "blood_oxygen_saturation", "apple_sleeping_wrist_temperature"} {
 			for _, row := range byName[name] {
@@ -271,7 +287,7 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 		points += n
 	}
 	t.Logf("90 days: %d deliveries, %d bytes (largest %d), %d metric rows %v, %d workouts", len(out.Deliveries), total, largest, points, rows, workouts)
-	if london != 5 || workouts < 50 || points < 40000 || points > 70000 {
+	if london != 5 || workouts < 50 || points < 250000 || points > 400000 {
 		t.Errorf("%d London days (want 5), %d workouts, %d metric rows", london, workouts, points)
 	}
 }
@@ -367,8 +383,8 @@ func TestAppleHealthThreeDaysIsSmall(t *testing.T) {
 	for _, d := range out.Deliveries {
 		size += len(d.Body)
 	}
-	if len(out.Deliveries) != 3 || size > 250_000 {
-		t.Fatalf("three days are %d deliveries and %d bytes, want 3 under 250 KB", len(out.Deliveries), size)
+	if len(out.Deliveries) != 3 || size > 1_200_000 {
+		t.Fatalf("three days are %d deliveries and %d bytes, want 3 under 1.2 MB", len(out.Deliveries), size)
 	}
 }
 

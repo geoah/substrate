@@ -30,8 +30,11 @@ import (
 //     about one day in four a second row from the watch for each bucket of
 //     the walks to work, to lunch and home.
 //   - walking_running_distance, flights_climbed, active_energy and
-//     basal_energy_burned: one row per local hour, at the hour, energy in kJ
-//     (the recorded user's unit preference) and distance in km.
+//     basal_energy_burned: one row per minute that has any, as the app sends
+//     them at Time Grouping Minutes (basal energy every minute, distance and
+//     active energy over each step bucket's five minutes and each workout's
+//     minutes, floors at the minute climbed), energy in kJ (the recorded
+//     user's unit preference) and distance in km.
 //   - resting_heart_rate (one row at local midnight), heart_rate_variability
 //     (SDNN, three readings in the night), respiratory_rate (every 15
 //     minutes of the night), blood_oxygen_saturation (every 10) and
@@ -328,49 +331,101 @@ func (e *ahDay) steps(buckets []ahBucket) []map[string]any {
 	return rows
 }
 
-func (e *ahDay) distance(buckets []ahBucket) []map[string]any {
-	var rows []map[string]any
-	for k, a := range e.hours() {
-		b := a.Add(time.Hour)
-		meters := 0.0
-		watch, phone := false, false
-		for _, s := range buckets {
-			if !s.again && !s.start.Before(a) && s.start.Before(b) && !e.running(s.start) {
-				meters += s.read * StrideM
-				watch = watch || s.src == ahWatch
-				phone = phone || s.src == ahIPhone
+// minutes is every minute of the hour from a, up to the day's end.
+func (e *ahDay) minutes(a time.Time) []time.Time {
+	end := a.Add(time.Hour)
+	if dayEnd := e.day.EndTime(); dayEnd.Before(end) {
+		end = dayEnd
+	}
+	var out []time.Time
+	for m := a; m.Before(end); m = m.Add(time.Minute) {
+		out = append(out, m)
+	}
+	return out
+}
+
+// perMinute spreads each bucket's share over the five minutes it covers and
+// each workout's over the minutes it overlaps, by minute.
+func perMinute(buckets []ahBucket, share func(ahBucket) float64, workouts []*Workout, workShare func(*Workout) float64) map[time.Time]float64 {
+	out := map[time.Time]float64{}
+	for _, b := range buckets {
+		if v := share(b); v > 0 {
+			for m := b.start; m.Before(b.start.Add(ahStepsStep)); m = m.Add(time.Minute) {
+				out[m] += v / ahStepsStep.Minutes()
 			}
 		}
-		for _, w := range e.day.Workouts {
-			if ov := overlap(a, b, w.Start, w.End); w.Sport == Running && w.DistanceM > 0 && ov > 0 {
-				meters += w.DistanceM * ov / w.Duration().Seconds()
-				watch = true
-			}
-		}
-		if meters <= 0 {
+	}
+	for _, w := range workouts {
+		v := workShare(w)
+		if v <= 0 {
 			continue
 		}
-		meters = math.Max(0, e.noisy("dist", k, meters, meters*0.02))
-		label := ahIPhone
-		switch {
-		case watch && phone:
-			label = ahMerged
-		case watch:
-			label = ahWatch
+		for m := w.Start.Truncate(time.Minute); m.Before(w.End); m = m.Add(time.Minute) {
+			out[m] += v * overlap(m, m.Add(time.Minute), w.Start, w.End) / w.Duration().Seconds()
 		}
-		rows = append(rows, map[string]any{"qty": round(meters/1000, 10), "date": e.date(a), "source": label})
+	}
+	return out
+}
+
+// distance is one row per minute that walked or ran, as the app sends it at
+// Time Grouping Minutes: a step bucket's distance over its five minutes and
+// a run's over its own, each hour's rows scaled by that hour's noise.
+func (e *ahDay) distance(buckets []ahBucket) []map[string]any {
+	meters := perMinute(buckets, func(s ahBucket) float64 {
+		if s.again || e.running(s.start) {
+			return 0
+		}
+		return s.read * StrideM
+	}, e.day.Workouts, func(w *Workout) float64 {
+		if w.Sport != Running {
+			return 0
+		}
+		return w.DistanceM
+	})
+	watch, phone := map[time.Time]bool{}, map[time.Time]bool{}
+	for _, s := range buckets {
+		if s.again || e.running(s.start) {
+			continue
+		}
+		for m := s.start; m.Before(s.start.Add(ahStepsStep)); m = m.Add(time.Minute) {
+			watch[m] = watch[m] || s.src == ahWatch
+			phone[m] = phone[m] || s.src == ahIPhone
+		}
+	}
+	var rows []map[string]any
+	for k, a := range e.hours() {
+		f := math.Max(0, e.noisy("dist", k, 1, 0.02))
+		for _, m := range e.minutes(a) {
+			v := meters[m] * f
+			if v <= 0 {
+				continue
+			}
+			label := ahIPhone
+			switch w := watch[m] || e.running(m); {
+			case w && phone[m]:
+				label = ahMerged
+			case w:
+				label = ahWatch
+			}
+			rows = append(rows, map[string]any{"qty": round(v/1000, 10), "date": e.date(m), "source": label})
+		}
 	}
 	return rows
 }
 
-// flights spreads the day's floors over the four hours the phone walked most.
+// flights spreads the day's floors over the four hours the phone walked
+// most, each floor at the start of one of that hour's busiest phone step
+// buckets, one row per minute that climbed.
 func (e *ahDay) flights(buckets []ahBucket) []map[string]any {
 	total := e.day.Floors()
 	perHour := map[time.Time]float64{}
+	inHour := map[time.Time][]ahBucket{}
 	for _, b := range buckets {
 		if b.src == ahIPhone {
 			lt := b.start.In(e.day.Zone)
-			perHour[time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, e.day.Zone)] += b.read
+			h := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, e.day.Zone)
+			perHour[h] += b.read
+			inHour[h] = append(inHour[h], b)
 		}
 	}
 	if total <= 0 || len(perHour) == 0 {
@@ -392,41 +447,53 @@ func (e *ahDay) flights(buckets []ahBucket) []map[string]any {
 	for range total {
 		alloc[hours[r.IntN(len(hours))]]++
 	}
-	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
-	var rows []map[string]any
+	byMinute := map[time.Time]int{}
 	for _, h := range hours {
-		if alloc[h] > 0 {
-			rows = append(rows, map[string]any{"qty": alloc[h], "date": e.date(h), "source": ahIPhone})
+		bs := inHour[h]
+		sort.SliceStable(bs, func(i, j int) bool { return bs[i].read > bs[j].read })
+		for n := range alloc[h] {
+			byMinute[bs[n%len(bs)].start]++
 		}
+	}
+	minutes := make([]time.Time, 0, len(byMinute))
+	for m := range byMinute {
+		minutes = append(minutes, m)
+	}
+	sort.Slice(minutes, func(i, j int) bool { return minutes[i].Before(minutes[j]) })
+	rows := make([]map[string]any, 0, len(minutes))
+	for _, m := range minutes {
+		rows = append(rows, map[string]any{"qty": byMinute[m], "date": e.date(m), "source": ahIPhone})
 	}
 	return rows
 }
 
+// activeEnergy is one row per minute that burned above the resting rate: a
+// step bucket's energy over its five minutes and a workout's over its own,
+// each hour's rows scaled by that hour's noise.
 func (e *ahDay) activeEnergy(buckets []ahBucket) []map[string]any {
+	kcal := perMinute(buckets, func(s ahBucket) float64 {
+		if s.again {
+			return 0
+		}
+		return float64(s.steps) * KcalPerStep
+	}, e.day.Workouts, func(w *Workout) float64 { return float64(w.Kcal) })
 	var rows []map[string]any
 	for k, a := range e.hours() {
-		b := a.Add(time.Hour)
-		kcal := 0.0
-		for _, s := range buckets {
-			if !s.again && !s.start.Before(a) && s.start.Before(b) {
-				kcal += float64(s.steps) * KcalPerStep
+		f := e.noisy("aekcal", k, 1, 0.04)
+		for _, m := range e.minutes(a) {
+			v := kcal[m] * f
+			if v <= 0 {
+				continue
 			}
+			rows = append(rows, map[string]any{"qty": round(v*4.184, 10), "date": e.date(m), "source": ahWatch})
 		}
-		for _, w := range e.day.Workouts {
-			kcal += float64(w.Kcal) * overlap(a, b, w.Start, w.End) / w.Duration().Seconds()
-		}
-		if kcal <= 0 {
-			continue
-		}
-		kcal = math.Max(0.05, kcal*e.noisy("aekcal", k, 1, 0.04))
-		rows = append(rows, map[string]any{"qty": round(kcal*4.184, 10), "date": e.date(a), "source": ahWatch})
 	}
 	return rows
 }
 
-// basalEnergy is the day's basal energy hour by hour, a little lower in the
-// small hours. BMRKcal is a 24-hour rate, so a day the zone changes on burns
-// it over its own length.
+// basalEnergy is the day's basal energy minute by minute, a little lower in
+// the small hours. BMRKcal is a 24-hour rate, so a day the zone changes on
+// burns it over its own length.
 func (e *ahDay) basalEnergy() []map[string]any {
 	hours := e.hours()
 	weights := make([]float64, len(hours))
@@ -439,10 +506,12 @@ func (e *ahDay) basalEnergy() []map[string]any {
 		sum += weights[i]
 	}
 	scale := float64(e.day.BMRKcal()) * float64(len(hours)) / 24 / sum
-	rows := make([]map[string]any, 0, len(hours))
+	rows := make([]map[string]any, 0, len(hours)*60)
 	for k, a := range hours {
-		kcal := e.noisy("basal", k, weights[k]*scale, 0.6)
-		rows = append(rows, map[string]any{"qty": round(kcal*4.184, 10), "date": e.date(a), "source": ahWatch})
+		perMinute := e.noisy("basal", k, weights[k]*scale, 0.6) / 60
+		for _, m := range e.minutes(a) {
+			rows = append(rows, map[string]any{"qty": round(perMinute*4.184, 10), "date": e.date(m), "source": ahWatch})
+		}
 	}
 	return rows
 }

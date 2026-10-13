@@ -246,6 +246,11 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 		} else if got < rows || got > 2*rows {
 			t.Errorf("trace %s holds %d values for %d rows", key, got, rows)
 		}
+		// Basal energy accrues every minute, so an hour's trace holds sixty
+		// minutes of it, not one minute holding the hour.
+		if strings.HasPrefix(key, "basal_energy ") && got != 60 {
+			t.Errorf("trace %s holds %d values, want one per minute of its hour", key, got)
+		}
 	}
 	byMetric := map[string]int{}
 	for _, row := range listLive(t, ds, obsObservation) {
