@@ -241,7 +241,8 @@ describe("where a metric reads from", () => {
         value: "twa",
         label: "Time-weighted average",
         raw: true,
-        hint: "Raw points only",
+        // What it is, beside why it reads raw points alone.
+        hint: "Each reading weighed by how long it held; raw points only",
       },
     ])
     expect(planned.reducers).toContain("durationIn:114,133")
@@ -291,7 +292,7 @@ describe("where a metric reads from", () => {
     expect(held.from).toBe("prefer-raw")
     expect(held.reducerMenu.find((o) => o.value === "twa")).toMatchObject({
       disabled: true,
-      hint: "Needs raw points: set Read from to Raw",
+      hint: "Each reading weighed by how long it held; needs raw points: set Read from to Raw",
     })
     // A raw read leaves the summaries out, and offers the level's every one,
     // none disabled and the two averages saying how they differ.

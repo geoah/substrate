@@ -637,6 +637,16 @@ function menuOf(
     label: reducerChoiceWords(value),
     ...(shape === "gauge" && AVERAGES[value] ? { hint: AVERAGES[value] } : {}),
   })
+  // What a reducer is stays beside why the read takes it apart.
+  const noted = (value: string, note: string): ReducerOption => {
+    const own = option(value)
+    return {
+      ...own,
+      hint: own.hint
+        ? `${own.hint}; ${note.charAt(0).toLowerCase()}${note.slice(1)}`
+        : note,
+    }
+  }
   const own = reducerOptions(shape, form, info, read.statistic)
   if (read.from === "raw" || !read.summaries || shape === "summary") {
     return own.map(option)
@@ -649,13 +659,15 @@ function menuOf(
       .filter((k) => !shared.includes(k))
       .map((k) =>
         read.switchable && rawOnly(k)
-          ? { ...option(k), raw: true, hint: "Raw points only" }
+          ? { ...noted(k, "Raw points only"), raw: true }
           : {
-              ...option(k),
+              ...noted(
+                k,
+                rawOnly(k)
+                  ? "Needs raw points: set Read from to Raw"
+                  : "Adds only summaries of a sum or a count"
+              ),
               disabled: true,
-              hint: rawOnly(k)
-                ? "Needs raw points: set Read from to Raw"
-                : "Adds only summaries of a sum or a count",
             }
       ),
   ]
