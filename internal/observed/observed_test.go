@@ -83,8 +83,6 @@ func TestTimeInStateBuildsIntervalsBeforeFiltering(t *testing.T) {
 	}
 }
 
-// Decision 0158: a null ends the hold of the point before it and counts in
-// nothing.
 // A gauge written with an end after its instant holds no longer than that
 // span; its own hold cuts it shorter, and without an end the hold is as
 // written.
@@ -109,6 +107,8 @@ func TestGaugeHoldEndsAtTheEnd(t *testing.T) {
 	}
 }
 
+// Decision 0158: a null ends the hold of the point before it and counts in
+// nothing.
 func TestANullInATraceEndsTheHold(t *testing.T) {
 	points := []Point{gauge(0, 20), null(10), gauge(30, 22)}
 	w := window(0, 60)
