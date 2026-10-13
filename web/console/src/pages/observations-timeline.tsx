@@ -12,15 +12,10 @@
  * and carries each one's numbers under it, with the request itself in
  * technical mode. */
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { ListIcon } from "lucide-react"
-import {
-  parseAsArrayOf,
-  parseAsString,
-  parseAsStringLiteral,
-  useQueryState,
-} from "nuqs"
+import { parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
@@ -41,48 +36,26 @@ import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useFacetValues, useObservations } from "@/hooks/use-observations"
+import { useTimelineControls } from "@/hooks/use-timeline-controls"
 import type { AggregateFrom } from "@/lib/api/types"
 import { sameRef } from "@/lib/observations"
-import {
-  BUCKET_CHOICES,
-  BUCKET_SIZE_WORDS,
-  bucketSizeOf,
-  presetRange,
-  RANGE_PRESETS,
-  readerTimezone,
-  type BucketChoice,
-  type RangePreset,
-  type TimeRange,
-} from "@/lib/observations-time"
 import {
   FROM_CHOICES,
   GROUP_CHOICES,
   type GroupChoice,
 } from "@/lib/observations-reads"
-import { readChoices, writeChoice } from "@/lib/timeline-address"
+import {
+  BUCKET_CHOICES,
+  BUCKET_SIZE_WORDS,
+  type BucketChoice,
+} from "@/lib/observations-time"
 import { planPlot, splitCharts } from "@/lib/overlay"
-
-const ARRAY = parseAsArrayOf(parseAsString).withDefault([])
-const RANGE_VALUES = [...RANGE_PRESETS.map((p) => p.value), "custom"] as const
-const BUCKET_VALUES = BUCKET_CHOICES.map((b) => b.value)
-const GROUP_VALUES = GROUP_CHOICES.map((g) => g.value)
-const FROM_VALUES = FROM_CHOICES.map((f) => f.value)
+import { ARRAY, FROM_VALUES, GROUP_VALUES } from "@/lib/timeline-address"
 
 /** Where to read from, Automatic first: each metric reads what its streams
  * hold (`lib/overlay.ts` fromOf) until the reader picks. */
 const FROM_PICKS: readonly { value: AggregateFrom | "auto"; label: string }[] =
   [{ value: "auto", label: "Automatic" }, ...FROM_CHOICES]
-
-function customRange(
-  start: string | null,
-  end: string | null
-): TimeRange | undefined {
-  const a = start ? Date.parse(start) : NaN
-  const b = end ? Date.parse(end) : NaN
-  return Number.isNaN(a) || Number.isNaN(b) || b <= a
-    ? undefined
-    : { start: a, end: b }
-}
 
 export function ObservationsTimelinePage() {
   const [metricParam, setMetricParam] = useQueryState("metric", ARRAY)
@@ -92,16 +65,8 @@ export function ObservationsTimelinePage() {
   const [channels, setChannels] = useQueryState("channel", ARRAY)
   // The chosen metrics, sources and things narrow discovery on the server.
   const obs = useObservations({ metrics: metricParam, sources, abouts })
-  const [rangeParam, setRangeParam] = useQueryState(
-    "range",
-    parseAsStringLiteral(RANGE_VALUES).withDefault("7d")
-  )
-  const [startParam, setStart] = useQueryState("start", parseAsString)
-  const [endParam, setEnd] = useQueryState("end", parseAsString)
-  const [bucket, setBucket] = useQueryState(
-    "bucket",
-    parseAsStringLiteral(BUCKET_VALUES).withDefault("auto")
-  )
+  const controls = useTimelineControls("7d")
+  const { range, size, bucket } = controls
   const [group, setGroup] = useQueryState(
     "group",
     parseAsStringLiteral(GROUP_VALUES).withDefault("metric")
@@ -110,22 +75,6 @@ export function ObservationsTimelinePage() {
     "from",
     parseAsStringLiteral(FROM_VALUES)
   )
-  const [reducerTokens, setReducerTokens] = useQueryState("reducer", ARRAY)
-  const [unitTokens, setUnitTokens] = useQueryState("unit", ARRAY)
-  // Presets count back from when the page opened, so a re-render never
-  // moves the window (and never re-asks).
-  const [now] = useState(() => Date.now())
-
-  const custom =
-    rangeParam === "custom" ? customRange(startParam, endParam) : undefined
-  const preset: RangePreset | "custom" = custom
-    ? "custom"
-    : rangeParam === "custom"
-      ? "7d"
-      : rangeParam
-  const range = custom ?? presetRange(preset as RangePreset, now)
-  const size = bucketSizeOf(bucket, range)
-  const timezone = useMemo(() => readerTimezone(), [])
 
   const metricOptions = useMemo(() => {
     // Every metric with a point, whichever are chosen.
@@ -174,30 +123,21 @@ export function ObservationsTimelinePage() {
       ].map((value) => ({ value, label: value })),
     },
   ]
-  const reducers = readChoices(reducerTokens)
-  const units = readChoices(unitTokens)
   const plots = metrics.map((metric) =>
     planPlot(obs, metric, {
       range,
       size,
-      timezone,
+      timezone: controls.timezone,
       group,
       from: fromParam ?? undefined,
       sources,
       abouts,
       channels,
-      reducer: reducers.get(metric),
-      unit: units.get(metric),
+      reducer: controls.reducers.get(metric),
+      unit: controls.units.get(metric),
     })
   )
   const charts = splitCharts(plots)
-
-  function zoom(next: TimeRange) {
-    void setRangeParam("custom")
-    void setStart(new Date(next.start).toISOString())
-    void setEnd(new Date(next.end).toISOString())
-    void setBucket(null)
-  }
 
   const header = (
     <PageHeader
@@ -253,18 +193,10 @@ export function ObservationsTimelinePage() {
             onChange={(next) => void setMetricParam(next.length ? next : null)}
           />
           <RangePicker
-            preset={preset}
+            preset={controls.preset}
             range={range}
-            onPreset={(p) => {
-              void setRangeParam(p === "7d" ? null : p)
-              void setStart(null)
-              void setEnd(null)
-            }}
-            onCustom={(next) => {
-              void setRangeParam("custom")
-              void setStart(new Date(next.start).toISOString())
-              void setEnd(new Date(next.end).toISOString())
-            }}
+            onPreset={controls.onPreset}
+            onCustom={controls.onCustom}
           />
         </div>
         {obs.metricListError && (
@@ -285,9 +217,7 @@ export function ObservationsTimelinePage() {
                     ? `Automatic: ${BUCKET_SIZE_WORDS[size]}`
                     : b.label,
               }))}
-              onChange={(next: BucketChoice) =>
-                void setBucket(next === "auto" ? null : next)
-              }
+              onChange={(next: BucketChoice) => controls.onBucket(next)}
             />
           </Labelled>
           <Labelled label="Group by">
@@ -342,15 +272,9 @@ export function ObservationsTimelinePage() {
             range={range}
             size={size}
             title
-            onReducer={(metric, value) => {
-              const next = writeChoice(reducerTokens, metric, value)
-              void setReducerTokens(next.length ? next : null)
-            }}
-            onUnit={(metric, value) => {
-              const next = writeChoice(unitTokens, metric, value)
-              void setUnitTokens(next.length ? next : null)
-            }}
-            onZoom={zoom}
+            onReducer={controls.onReducer}
+            onUnit={controls.onUnit}
+            onZoom={controls.zoom}
           />
         ))
       )}

@@ -15,14 +15,13 @@
  * A box on each row selects it (shift for a run, the header box for every
  * row shown), the selection kept in the address. The Timeline toggle opens
  * a panel above the grid drawing the selected streams in one chart of up to
- * two units (`components/observations/overlay-chart.tsx`). */
+ * two units (`components/observations/timeline-panel.tsx`). */
 
 import { useEffect, useMemo, useState, type MouseEvent } from "react"
 import { Link } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
-import { ChartLineIcon, XIcon } from "lucide-react"
+import { ChartLineIcon } from "lucide-react"
 import {
-  parseAsArrayOf,
   parseAsBoolean,
   parseAsString,
   parseAsStringLiteral,
@@ -57,12 +56,9 @@ import {
   ShapeWord,
 } from "@/components/observations/marks"
 import { NoObservations } from "@/components/observations/no-observations"
-import { OverlayChart } from "@/components/observations/overlay-chart"
-import { Labelled } from "@/components/observations/picker"
-import { RangePicker } from "@/components/observations/range-picker"
+import { TimelinePanel } from "@/components/observations/timeline-panel"
 import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
-import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   useConsolePreferences,
@@ -85,21 +81,7 @@ import {
   streamSearch,
   type ReadingShape,
 } from "@/lib/observations"
-import {
-  BUCKET_CHOICES,
-  BUCKET_SIZE_WORDS,
-  bucketSizeOf,
-  coverageWords,
-  presetRange,
-  RANGE_PRESETS,
-  readerTimezone,
-  type BucketChoice,
-  type RangePreset,
-  type TimeRange,
-} from "@/lib/observations-time"
-import { GROUP_CHOICES, type GroupChoice } from "@/lib/observations-reads"
-import { readChoices, writeChoice } from "@/lib/timeline-address"
-import { planPlot } from "@/lib/overlay"
+import { coverageWords } from "@/lib/observations-time"
 import {
   isAllView,
   matchingView,
@@ -119,8 +101,6 @@ import {
   isStreamGroup,
   parseStreamSort,
   selectRange,
-  selectedStreams,
-  selectionByMetric,
   selectionState,
   shortRef,
   sortStreams,
@@ -129,20 +109,13 @@ import {
   streamGroupKey,
   streamMatches,
   streamViewState,
-  tokenMetric,
   tokenNames,
   type FieldChoice,
   type StreamField,
   type StreamRow,
 } from "@/lib/stream-table"
+import { ARRAY } from "@/lib/timeline-address"
 import { cn } from "@/lib/utils"
-
-const ARRAY = parseAsArrayOf(parseAsString).withDefault([])
-const RANGE_VALUES = [...RANGE_PRESETS.map((p) => p.value), "custom"] as const
-const BUCKET_VALUES = BUCKET_CHOICES.map((b) => b.value)
-const CHART_GROUPS = GROUP_CHOICES.map((g) => g.value)
-/** The panel opens on a month: long enough to compare, daily buckets. */
-const PANEL_RANGE: RangePreset = "30d"
 
 /** The page's side gutter, shared by every band so they line up. */
 const GUTTER = "px-4 md:px-8"
@@ -151,17 +124,6 @@ const GUTTER_MX = "mx-4 md:mx-8"
 /** Where the last view of the table is kept in this browser
  * (`lib/filters.ts` loadBrowsePrefs). */
 const PREFS: [string, string] = ["observations", "streams"]
-
-function customRange(
-  start: string | null,
-  end: string | null
-): TimeRange | undefined {
-  const a = start ? Date.parse(start) : NaN
-  const b = end ? Date.parse(end) : NaN
-  return Number.isNaN(a) || Number.isNaN(b) || b <= a
-    ? undefined
-    : { start: a, end: b }
-}
 
 export function ObservationsPage() {
   const [technical] = useTechnicalDetails()
@@ -954,185 +916,4 @@ function streamColumns(
       meta: { label: "Covered", width: 110 },
     },
   ]
-}
-
-/** The panel the Timeline toggle opens: the selected streams over a range
- * in one chart of up to two units, with the range, the bucket and the
- * grouping, and each metric's reducer and unit, in the address. */
-function TimelinePanel({
-  selection,
-  onClear,
-  className,
-}: {
-  selection: string[]
-  onClear: () => void
-  className?: string
-}) {
-  const [rangeParam, setRangeParam] = useQueryState(
-    "range",
-    parseAsStringLiteral(RANGE_VALUES).withDefault(PANEL_RANGE)
-  )
-  const [startParam, setStart] = useQueryState("start", parseAsString)
-  const [endParam, setEnd] = useQueryState("end", parseAsString)
-  const [bucket, setBucket] = useQueryState(
-    "bucket",
-    parseAsStringLiteral(BUCKET_VALUES).withDefault("auto")
-  )
-  const [by, setBy] = useQueryState(
-    "by",
-    parseAsStringLiteral(CHART_GROUPS).withDefault("metric")
-  )
-  const [reducerTokens, setReducerTokens] = useQueryState("reducer", ARRAY)
-  const [unitTokens, setUnitTokens] = useQueryState("unit", ARRAY)
-  // Presets count back from when the panel opened, so a re-render never
-  // moves the window (and never re-asks).
-  const [now] = useState(() => Date.now())
-  const timezone = useMemo(() => readerTimezone(), [])
-
-  const custom =
-    rangeParam === "custom" ? customRange(startParam, endParam) : undefined
-  const preset: RangePreset | "custom" = custom
-    ? "custom"
-    : rangeParam === "custom"
-      ? PANEL_RANGE
-      : rangeParam
-  const range = custom ?? presetRange(preset as RangePreset, now)
-  const size = bucketSizeOf(bucket, range)
-
-  // The selection's own streams, read apart from the table's filters, so
-  // narrowing the table never drops a selected stream from the chart.
-  const metrics = useMemo(
-    () => [...new Set(selection.map(tokenMetric).filter(Boolean))],
-    [selection]
-  )
-  const own = useObservations({ metrics })
-  const picked = selectedStreams(selection, own.streams)
-  const reducers = readChoices(reducerTokens)
-  const units = readChoices(unitTokens)
-  const plots = selectionByMetric(picked).map((entry) =>
-    // By id where the pin allows, so a metric's reducer and unit read
-    // short in the address.
-    planPlot(own, shortRef(entry.metric, own.pins.metric), {
-      range,
-      size,
-      timezone,
-      group: by,
-      sources: entry.sources,
-      abouts: entry.abouts,
-      channels: entry.channels,
-      streams: entry.streams,
-      reducer: reducers.get(shortRef(entry.metric, own.pins.metric)),
-      unit: units.get(shortRef(entry.metric, own.pins.metric)),
-    })
-  )
-  const missing = own.ready ? selection.length - picked.length : 0
-
-  function zoom(next: TimeRange) {
-    void setRangeParam("custom")
-    void setStart(new Date(next.start).toISOString())
-    void setEnd(new Date(next.end).toISOString())
-    void setBucket(null)
-  }
-
-  return (
-    <section
-      aria-label="Timeline of the selected streams"
-      data-slot="stream-timeline"
-      className={cn("shrink-0", className)}
-    >
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <h2 className="text-[13px] font-semibold">
-          {picked.length === 0
-            ? "Timeline"
-            : picked.length === 1
-              ? "1 stream over time"
-              : `${picked.length} streams over time`}
-        </h2>
-        <RangePicker
-          preset={preset}
-          range={range}
-          onPreset={(p) => {
-            void setRangeParam(p === PANEL_RANGE ? null : p)
-            void setStart(null)
-            void setEnd(null)
-          }}
-          onCustom={(next) => {
-            void setRangeParam("custom")
-            void setStart(new Date(next.start).toISOString())
-            void setEnd(new Date(next.end).toISOString())
-          }}
-        />
-        <Labelled label="Bucket">
-          <Segmented
-            label="Bucket"
-            value={bucket}
-            options={BUCKET_CHOICES.map((b) => ({
-              value: b.value,
-              label:
-                b.value === "auto" && bucket === "auto"
-                  ? `Automatic: ${BUCKET_SIZE_WORDS[size]}`
-                  : b.label,
-            }))}
-            onChange={(next: BucketChoice) =>
-              void setBucket(next === "auto" ? null : next)
-            }
-          />
-        </Labelled>
-        <Labelled label="Group by">
-          <Segmented
-            label="Group by"
-            value={by}
-            options={GROUP_CHOICES}
-            onChange={(next: GroupChoice) =>
-              void setBy(next === "metric" ? null : next)
-            }
-          />
-        </Labelled>
-        <span className="flex-1" />
-        {selection.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 text-[12.5px] font-normal text-muted-foreground"
-            onClick={onClear}
-          >
-            <XIcon className="size-3.5" />
-            Clear the selection
-          </Button>
-        )}
-      </div>
-      {missing > 0 && (
-        <p className="mt-2 text-[12.5px] text-faint">
-          {missing === 1
-            ? "1 selected stream has no points any more, so the chart leaves it out."
-            : `${missing} selected streams have no points any more, so the chart leaves them out.`}
-        </p>
-      )}
-      {!own.ready && selection.length > 0 ? (
-        <Skeleton className="mt-3 h-[250px] w-full" />
-      ) : picked.length === 0 ? (
-        <p className="mt-3 text-muted-foreground">
-          Select streams in the table to draw them here, in one chart. Streams
-          of one unit share an axis; a second unit reads on the right.
-        </p>
-      ) : (
-        <OverlayChart
-          className="mt-3"
-          obs={own}
-          plots={plots}
-          range={range}
-          size={size}
-          onReducer={(metric, value) => {
-            const next = writeChoice(reducerTokens, metric, value)
-            void setReducerTokens(next.length ? next : null)
-          }}
-          onUnit={(metric, value) => {
-            const next = writeChoice(unitTokens, metric, value)
-            void setUnitTokens(next.length ? next : null)
-          }}
-          onZoom={zoom}
-        />
-      )}
-    </section>
-  )
 }
