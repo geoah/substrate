@@ -5,12 +5,13 @@ package engine
 // One request reduces the observed index (decision 0160) or a declared number
 // of the filtered kinds into buckets. Everything the request can be refused
 // for is checked first: the shape of the body here (planAggregate), then the
-// selected streams' forms and units (aggregatemetric.go), then the budgets,
-// each before the work it bounds: every statement that reads raw points
-// counts them against maxSamples before it runs (aggRun.charge). The read
-// runs on one read-only repeatable-read snapshot under a statement timeout
-// inside the caller's deadline, and answers the changelog head it was served
-// at.
+// metric reference and the selected streams' forms and units
+// (aggregatemetric.go), then the budgets, each before the work it bounds:
+// every statement that reads raw points or rollup rows counts them against
+// maxSamples before it runs (aggRun.charge). A value in a unit that does not
+// convert is refused where the read takes it. The read runs on one
+// read-only repeatable-read snapshot under a statement timeout inside the
+// caller's deadline, and answers the changelog head it was served at.
 //
 // The evaluation order is fixed: select streams, build held intervals from
 // every transition, resolve the source policy, clip to the range and the
