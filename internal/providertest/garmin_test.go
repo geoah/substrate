@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -631,10 +630,10 @@ func TestGarminPushFollowsAPing(t *testing.T) {
 // fakeGarmin answers the calls garminsync makes and the pull a ping names.
 // A backfill window is accepted (202) the first time it is asked for and a
 // conflict (409) every time after, which is what Garmin answers a repeat.
+// Its fields are guarded by the embedded fakeAPI's mu.
 type fakeGarmin struct {
 	fakeAPI
 
-	mu sync.Mutex
 	// asked is every backfill window, "<path> <start> <end>", in order.
 	asked []string
 	seen  map[string]bool
@@ -704,6 +703,20 @@ func newFakeGarmin(t *testing.T) *fakeGarmin {
 	})
 	f.serve(t, mux)
 	return f
+}
+
+// refuseWith answers every backfill request for path with code.
+func (f *fakeGarmin) refuseWith(path string, code int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refuse[path] = code
+}
+
+// limitAfterWindows answers 429 to every backfill request past the nth.
+func (f *fakeGarmin) limitAfterWindows(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.limitAfter = n
 }
 
 // askedCount is how many backfill windows the fake has answered.
@@ -835,7 +848,7 @@ func TestGarminSyncHoldsOnRefusalAndRateLimit(t *testing.T) {
 	ds := newGarminDataset(t, map[string]any{"backfillDepth": "last7d"})
 	fake := newFakeGarmin(t)
 	base := fake.ts.URL + "/wellness-api"
-	fake.refuse["activityDetails"] = http.StatusForbidden
+	fake.refuseWith("activityDetails", http.StatusForbidden)
 
 	syncGarmin(t, ds, garminConfig(t, ds, base, nil))
 	acct := mustGet(t, ds, garminAccountType, garminAccountID)
@@ -876,7 +889,7 @@ func TestGarminSyncHoldsOnRefusalAndRateLimit(t *testing.T) {
 	// A deeper reach on a fresh account, cut off by a 429 part way.
 	ds2 := newGarminDataset(t, map[string]any{"backfillDepth": "last30d"})
 	fake2 := newFakeGarmin(t)
-	fake2.limitAfter = 20
+	fake2.limitAfterWindows(20)
 	syncGarmin(t, ds2, garminConfig(t, ds2, fake2.ts.URL+"/wellness-api", nil))
 	acct = mustGet(t, ds2, garminAccountType, garminAccountID)
 	if acct.Properties["syncState"] != "throttled" || acct.Properties["retryNotBefore"] == nil {

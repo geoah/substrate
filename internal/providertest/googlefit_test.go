@@ -18,7 +18,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -67,12 +66,12 @@ type fitPoint struct {
 }
 
 // fakeFit is Google Fit over the recordings. Every instant it serves is the
-// recorded one plus shift.
+// recorded one plus shift. Its fields are guarded by the embedded fakeAPI's
+// mu, which the handlers and the test goroutine both take.
 type fakeFit struct {
 	fakeAPI
 	shift time.Duration
 
-	mu      sync.Mutex
 	sources map[string]bool
 	listing map[string]any
 	points  map[string][]fitPoint
@@ -341,6 +340,30 @@ func (f *fakeFit) sessionTokens() []string {
 	return slices.Clone(f.tokens)
 }
 
+// pageTokenReads is how many dataset reads carried a pageToken.
+func (f *fakeFit) pageTokenReads() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pageTokens
+}
+
+// revoke makes every later request answer 401, as a revoked grant does.
+func (f *fakeFit) revoke() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.revoked = true
+}
+
+// forbid makes a dataset read of these data sources answer 403.
+func (f *fakeFit) forbid(sids ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forbidden = map[string]bool{}
+	for _, sid := range sids {
+		f.forbidden[sid] = true
+	}
+}
+
 // googlefitConfig is the injected config: the account as stored, a live
 // token, and the API base pointed at the fake.
 func googlefitConfig(t *testing.T, ds substrate.Dataset, fake *fakeFit) map[string]any {
@@ -514,7 +537,7 @@ func TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions(t *testing.T) {
 
 	// Heart rate: the recorded day spans two UTC days, and the second one
 	// arrives in two pages joined into one row.
-	if fake.pageTokens == 0 {
+	if fake.pageTokenReads() == 0 {
 		t.Fatal("no dataset read carried a pageToken; the second heart rate page was never asked for")
 	}
 	hr := fitDatasets(t, ds, fitHeartRate)
@@ -858,9 +881,7 @@ func TestGoogleFitDropsTheFloorOfATypeItNoLongerWalks(t *testing.T) {
 		t.Fatalf("a run with heart rate off kept syncFloors %v", stamp["syncFloors"])
 	}
 	// Weight was cut off at a floor, and Google now refuses its data source.
-	fake.mu.Lock()
-	fake.forbidden = map[string]bool{fitWeight: true}
-	fake.mu.Unlock()
+	fake.forbid(fitWeight)
 	stamp := run(map[string]any{"weight": cut})
 	if !strings.Contains(fmt.Sprint(stamp["syncMessage"]), "weight") {
 		t.Fatalf("the refused type is not named: %v", stamp["syncMessage"])
@@ -932,7 +953,7 @@ func TestGoogleFitRevokedGrantStampsErroring(t *testing.T) {
 	today := utcToday()
 	installFit(t, ds, today)
 	fake := newFakeFit(t, today, fitCutOn)
-	fake.revoked = true
+	fake.revoke()
 	googlefitAccountWith(t, ds, "enabledBody", "enabledSleep")
 
 	stamps := googlefitSync(t, ds, fake)
