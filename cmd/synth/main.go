@@ -3,18 +3,23 @@
 // substrate. It is a development tool: the demo, the screenshots and the
 // contract tests in internal/providertest all start from it.
 //
-//	synth generate [-out DIR] [-providers whoop,garmin,googlefit,applehealth,manual]
-//	               [-from 2026-07-14] [-to 2026-10-11] [-seed ada] [-authority ada.example.com]
-//	synth load -dir DIR -server URL -authority AUTHORITY [-providers ...] [-key KEY]
+//	synth generate [-out DIR] [-providers whoop,googlefit,garmin,applehealth,manual]
+//	               [-from 2026-07-14] [-to 2026-10-11] [-seed ada] [-zone Europe/Athens]
+//	               [-authority ada.example.com]
+//	synth load -authority AUTHORITY [-dir DIR] [-server URL] [-providers ...]
+//	           [-key KEY] [-replace-key] [-resume PROVIDER/NNNN] [-settle 5m]
+//	           [-repo DIR] [-ctl PATH] [-python PATH]
 //
-// `generate` writes one directory per provider under DIR: mock recordings
-// named the way internal/providere2e/runner/mockserver.py finds them (WHOOP,
-// Google Fit, Garmin's connect step), webhook requests in posting order
-// (Garmin pushes, Apple Health deliveries) and the hand-entered records
-// (`manual/labs.yaml`). `load` posts the webhook requests to the server's
-// door, one at a time, waiting for each run, and applies the records; the
-// mock-driven syncs run through the provider e2e runner, and `load` prints
-// the exact command. The bearer comes from SUBSTRATE_TOKEN, never argv.
+// `generate` writes one directory per provider under DIR, replacing what an
+// earlier run wrote there: mock recordings named the way
+// internal/providere2e/runner/mockserver.py finds them (WHOOP, Google Fit,
+// Garmin's connect step), webhook requests in posting order (Garmin pushes,
+// Apple Health deliveries) and the hand-entered records (`manual/labs.yaml`).
+// `load` runs the mock-driven syncs through the provider e2e runner, imports
+// the samples, applies the records and posts the webhook requests to the
+// server's door one at a time, waiting for each run. The bearer comes from
+// SUBSTRATE_TOKEN, never argv, and the webhook key from -key or
+// SYNTH_WEBHOOK_KEY.
 package main
 
 import (
@@ -26,6 +31,10 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	// The zones are compiled in, so generate writes the same bytes on a host
+	// whose zone database is missing or older.
+	_ "time/tzdata"
 
 	"github.com/geoah/substrate/internal/synth"
 )
