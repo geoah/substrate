@@ -268,19 +268,60 @@ export function readingText(
     : digits
 }
 
+/** HL7 v3 ObservationInterpretation codes in words, after that code
+ * system's own displays, for a flag that carries no `display`. */
+const INTERPRETATION_WORDS: Record<string, string> = {
+  N: "normal",
+  A: "abnormal",
+  AA: "critical abnormal",
+  H: "high",
+  HH: "critical high",
+  HU: "significantly high",
+  L: "low",
+  LL: "critical low",
+  LU: "significantly low",
+  POS: "positive",
+  NEG: "negative",
+  DET: "detected",
+  ND: "not detected",
+  IND: "indeterminate",
+}
+
+const INTERPRETATION_SYSTEM =
+  "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"
+
+/** One flag in words: its `display`, lowered where it is in sentence case
+ * (`Normal`, `Above range`) and kept as written otherwise (`HIGH`, `pH
+ * low`); else its code, in words where it is an HL7 v3 code and the flag
+ * names that system or none; else the code as written. */
+function flagWords(flag: Record<string, unknown>): string | undefined {
+  const display = text(flag.display)
+  if (display) {
+    return /^[A-Z][^A-Z]*$/.test(display)
+      ? display.charAt(0).toLowerCase() + display.slice(1)
+      : display
+  }
+  const code = text(flag.code)
+  if (!code) return undefined
+  const system = text(flag.system)
+  const hl7 = !system || system === INTERPRETATION_SYSTEM
+  return hl7 && Object.hasOwn(INTERPRETATION_WORDS, code)
+    ? INTERPRETATION_WORDS[code]
+    : code
+}
+
 /** A result's flag and reference range as a reader says them beside its
  * value: `normal (under 120 mg/dL)`, `high (60 to 120 mg/dL)`, `range over
- * 40 mg/dL`. The lab's own words for the flag (its `display`, else its
- * code) and the first range's bounds; undefined where the record has
- * neither. */
+ * 40 mg/dL`. The lab's own words for the flag (`flagWords`) and the first
+ * range's bounds; undefined where the record has neither. */
 export function judgementWords(
   interpretation: unknown,
   referenceRanges: unknown
 ): string | undefined {
   const flags = (Array.isArray(interpretation) ? interpretation : []).flatMap(
     (f) => {
-      const word = isBag(f) ? (text(f.display) ?? text(f.code)) : undefined
-      return word ? [word.charAt(0).toLowerCase() + word.slice(1)] : []
+      const word = isBag(f) ? flagWords(f) : undefined
+      return word ? [word] : []
     }
   )
   const [range] = Array.isArray(referenceRanges) ? referenceRanges : []

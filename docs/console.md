@@ -392,7 +392,8 @@ Under the properties, in order:
   trait's `single` variant) reads its value with its unit, to the places
   its metric declares (`displayPrecision`) as the streams table does,
   beside a lab result's flag and first reference range in words (`108
-  mg/dL` beside "normal (under 120 mg/dL)"), the metric,
+  mg/dL` beside "normal (under 120 mg/dL)"; a flag with no `display` and an
+  HL7 v3 code such as `H` reads as "high"), the metric,
   source and thing it is about as record mentions, the form, the statistic
   and period of a vendor summary, when (one time where `endsAt` equals
   `at`), the revision and the record that delivered it. A trace (the `packed` variant, told apart by declaring

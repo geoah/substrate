@@ -367,13 +367,35 @@ describe("a lab result's flag and range in words", () => {
     )
     expect(
       judgementWords([{ code: "H" }], [{ low: mg("60"), high: mg("120") }])
-    ).toBe("h (60 to 120 mg/dL)")
+    ).toBe("high (60 to 120 mg/dL)")
     expect(judgementWords([], [{ low: mg("40") }])).toBe("range over 40 mg/dL")
     expect(judgementWords(normal, undefined)).toBe("normal")
     expect(judgementWords(undefined, [{ text: "optimal" }])).toBe(
       "range optimal"
     )
     expect(judgementWords(undefined, undefined)).toBeUndefined()
+  })
+
+  it("says an HL7 flag's code in words, and keeps a lab's own spelling", () => {
+    const words = (flag: Record<string, string>) =>
+      judgementWords([flag], undefined)
+    expect(words({ code: "LL" })).toBe("critical low")
+    expect(
+      words({
+        system:
+          "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+        code: "A",
+      })
+    ).toBe("abnormal")
+    // Another system's code, and a code HL7 does not list, as written.
+    expect(words({ system: "urn:lab:flags", code: "H" })).toBe("H")
+    expect(words({ code: "X9" })).toBe("X9")
+    // A display in sentence case reads lowered; any other as written.
+    expect(words({ code: "H", display: "Above high normal" })).toBe(
+      "above high normal"
+    )
+    expect(words({ code: "H", display: "HIGH" })).toBe("HIGH")
+    expect(words({ code: "L", display: "pH Low" })).toBe("pH Low")
   })
 
   it("reads a range's small bounds to their significant digits", () => {
