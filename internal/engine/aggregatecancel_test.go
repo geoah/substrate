@@ -62,11 +62,10 @@ func sortChecks(t *testing.T, spans [][2]time.Time) int {
 // An amount's coverage and the summaries policy's choice of source pass over
 // a cell's whole input, and each checks the read's context at least once per
 // thousand elements it passes, stopping at the first check after the context
-// ends: 100,000 disjoint extents of one bucket, which amountCoverage once
-// joined with no check between its cell check and the next cell; the
-// members of a summary bucket from two sources, which the source choice once
-// scanned and filtered with none; and a raw amount's members, whose joined
-// cover was summed with none.
+// ends: 100,000 disjoint extents of one bucket, joined between one cell's
+// check and the next; the members of a summary bucket from two sources,
+// scanned and filtered; and a raw amount's members, whose joined cover is
+// summed.
 func TestAggregateCoverageAndSourceChoiceStopWhereTheirContextEnds(t *testing.T) {
 	const n = 100000
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)

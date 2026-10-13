@@ -507,9 +507,9 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	defer func() { _ = rows.Close() }()
 	var out []*aggBucket
 	// The limit counts the records the filter matches, the ones whose window
-	// is empty (no endsAt, no widening) included: counting only the windows
-	// kept let empty ones use up the rows the LIMIT read and end the read
-	// short without a word.
+	// is empty (no endsAt, no widening) included: the LIMIT reads that many
+	// rows, so counting only the windows kept would end the read short
+	// without a word.
 	matched := 0
 	for rows.Next() {
 		var kind, id string

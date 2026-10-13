@@ -1100,10 +1100,10 @@ func spendManifest() map[string]any {
 
 // A property read's anchor is a time: a record column that holds none
 // (version, title, id, body, deletedAt) or a declared string is a 422 naming
-// it, where version once failed in SQL and the others matched nothing. A
-// declared date places a record at the start of its day in the calendar's
-// zone: a spend paid on 2026-09-03 is in New York's 2026-09-03, not in
-// 2026-09-02, where UTC midnight falls there.
+// it, before any SQL compares it with the range. A declared date places a
+// record at the start of its day in the calendar's zone: a spend paid on
+// 2026-09-03 is in New York's 2026-09-03, not in 2026-09-02, where UTC
+// midnight falls there.
 func TestAggregatePropertyAnchorIsATime(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)

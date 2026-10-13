@@ -95,10 +95,10 @@ const (
 
 // A range holding no point answers in its streams' unit, where the metric
 // declares none, as a range holding points does (a 70.5 kg reading held five
-// minutes, read in the hour after it and five days later): the units are settled from
-// every selected stream before the forms are found in the range. A unit
-// asked for converts there too, where an empty range once had no measure and
-// refused it as a code's.
+// minutes, read in the hour after it and five days later): the units are
+// settled from every selected stream before the forms are found in the
+// range. A unit asked for converts there too: an empty range still has its
+// streams' measure, so a mass unit is not refused as a code's.
 func TestAggregateEmptyRangeKeepsItsUnits(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -183,8 +183,8 @@ func TestAggregateFormsAtTheCutEndsAndInSummaries(t *testing.T) {
 // reduction, not after it: a gauge of 3,000 quarter hours, one rollup row
 // each, read over its whole range and canceled as soon as the plan has read
 // the rows, answers context.Canceled having merged fewer rows than the
-// thousand steps between two checks, where it once merged all 3,000 and
-// walked their held time before the first check.
+// thousand steps between two checks. The merge and the walk of held time
+// check the context as they go, not only before they start.
 func TestAggregateStopsWhenCanceledAfterItsStatements(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -227,8 +227,8 @@ func TestAggregateStopsWhenCanceledAfterItsStatements(t *testing.T) {
 // the bucket's points stops it (finding the last point takes one); at a
 // median after a standard deviation, whose copy it reuses, the percentile's
 // own count and sort do; at a durationIn after a twa, whose spans it reuses,
-// the spans reducer does. Each once took the whole bucket, and the row was
-// made before the next check.
+// the spans reducer does. A reducer checks the context inside its own pass
+// over the bucket, so no row is made after the read is canceled.
 func TestAggregateStopsInsideAReducer(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -763,11 +763,10 @@ func TestAggregateRecordedLocalDayAtAnOddOffset(t *testing.T) {
 // A value held into a recorded-local read at an offset that is not whole
 // quarter hours is split at its own local midnight on both paths: `open` at
 // +00:01 from 23:44Z, read from 23:45Z, holds until `closed` at 23:59:30Z
-// (+00:00), 840 s on September 1 and 30 s on September 2, where the rollups
-// once put all 870 s in the day the slot's start names; and at -00:01 from
-// 23:44Z until `closed` at 00:14:30Z, local midnight at 00:01Z, 960 s and
-// 810 s. The only rows read are at +00:00, so the value carried in decides
-// the path.
+// (+00:00), 840 s on September 1 and 30 s on September 2, not all 870 s in
+// the day the slot's start names; and at -00:01 from 23:44Z until `closed`
+// at 00:14:30Z, local midnight at 00:01Z, 960 s and 810 s. The only rows
+// read are at +00:00, so the value carried in decides the path.
 func TestAggregateRecordedLocalDayCarriedAtAnOddOffset(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -849,8 +848,8 @@ func TestAggregateFirstAndLastBreakTiesByRecord(t *testing.T) {
 }
 
 // `eq` and `in` on one stream key admit what both admit, as the list's filter
-// does: `eq` source A beside `in` [source B] reads no stream, where it once
-// read both, and the same holds for a code.
+// does: `eq` source A beside `in` [source B] reads no stream, not both, and
+// the same holds for a code.
 func TestAggregateFilterConditionsIntersect(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -987,8 +986,8 @@ func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 
 // A min or a max answers the stored digits, compared exactly, on both paths
 // and in a downsample's columns, and the read says it is exact:
-// 9007199254740993 and 9007199254740992 are one float64, which once answered
-// 9007199254740990 with exact true.
+// 9007199254740993 and 9007199254740992 are one float64, so an answer from
+// the float would be 9007199254740990 and not exact.
 func TestAggregateExtremesKeepTheirDigits(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -1035,8 +1034,8 @@ func TestAggregateExtremesKeepTheirDigits(t *testing.T) {
 // A converted min or max is chosen by its converted digits on both paths and
 // in a downsample's columns: -273.14999999999999 Cel and 0.000000000000001 K
 // read in K are 0.00000000000001 and 0.000000000000001, while their floats
-// are 0 and 1e-15, so ordering the floats once answered them the wrong way
-// round with exact true.
+// are 0 and 1e-15, so ordering the floats would answer them the wrong way
+// round.
 func TestAggregateConvertedExtremesCompareTheirDigits(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -1118,8 +1117,9 @@ func TestAggregateDownsampleKeepsItsColumnCount(t *testing.T) {
 
 // The records mode's maxRecords counts the records the filter matches: two
 // instants with no endsAt (empty windows) and then a night, under
-// maxRecords 1, are refused, where the empty windows once used up the rows
-// read and the night went unread without a word.
+// maxRecords 1, are refused: counting only the windows kept would let the
+// empty ones use up the rows read and leave the night unread without a
+// word.
 func TestAggregateMaxRecordsCountsEveryMatch(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -1250,8 +1250,8 @@ func TestAggregateRecordedLocalCarryFromTheWestKeepsEveryDay(t *testing.T) {
 // (+03:00) at 00:30 local is the day's earliest point. Read together or
 // filtered to one source, each source's row runs midnight to midnight at its
 // own offset, and London's 22 hours of 24 clear the 0.9 floor and answer from
-// raw points. A shared day once ran from +03:00 to +01:00, 26 hours, and sent
-// London to its summary.
+// raw points. A day shared by both sources would run from +03:00 to +01:00,
+// 26 hours, and send London to its summary.
 func TestAggregateRecordedLocalRowsKeepTheirOwnEnds(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -1595,8 +1595,8 @@ func TestAggregateIsInexactWhileTheIndexIsRederived(t *testing.T) {
 
 // A quarter hour that holds only a null makes no row on either path: an
 // amount and a gauge each with a null at 00:20 and a reading at 00:40, read
-// in quarter hours. The null's rollup row (count 0) once made a row of count
-// 0 in [00:15, 00:30) on the rollup path, where the raw points make none.
+// in quarter hours. The null's rollup row (count 0) is kept for the hold it
+// stops, and makes no row in [00:15, 00:30), as the raw points make none.
 func TestAggregateANullAloneMakesNoRow(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)

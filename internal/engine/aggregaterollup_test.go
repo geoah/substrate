@@ -13,8 +13,8 @@ import (
 // An amount's bucket ends that cut its rollup rows are merged from the raw
 // points in time proportional to the points and the buckets, not their
 // product: 20,000 readings every 15 seconds under 5-minute buckets, each a
-// cut end, take about one context check per thousand steps of that, where
-// every bucket once scanned every point of the joined span.
+// cut end, take about one context check per thousand steps of that: no
+// bucket scans the points of another.
 func TestAggregateCutEndsTakeEachPointOnce(t *testing.T) {
 	const n = 20000
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
