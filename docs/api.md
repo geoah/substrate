@@ -1437,8 +1437,11 @@ reads that take it.
 Where `priority` or `summaries` names no `order`, the read ranks the
 selected sources by each source record's `priorities` for the metric's id
 ([observations](observations.md#the-base-kinds)), 1 first; a source the record does
-not rank, or with no record, goes last, and the stream order (by kind, then
-source path) breaks ties. An `order` in the request wins whole.
+not rank, or with no record, goes after the ranked ones, and the stream order
+(by kind, then source path) breaks ties. An `order` in the request wins
+whole, the sources it does not name after those it does. Either way a stream
+that names no source (a value typed in by hand) ranks after every named
+source, so a scale's weight wins over a typed one in a bucket both hold.
 
 `from: "prefer-raw"` reads raw points where the bucket holds at least one and
 they cover at least `minCoverage` of the row (held time for a gauge, the union

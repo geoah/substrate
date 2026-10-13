@@ -167,8 +167,8 @@ is fixed to, which writers copy onto each value), `account` (the connected
 account it syncs through, any kind binding `accountconfig`) and `priorities`
 (its rank per metric id when sources overlap, 1 first). The aggregate read's
 `priority` and `summaries` policies take `priorities` as their order when a
-request names none, an unranked source last; a request's `sources.order`
-wins.
+request names none, an unranked source after the ranked ones and a value
+naming no source after every named one; a request's `sources.order` wins.
 
 ## Writing an observation by hand
 

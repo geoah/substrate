@@ -183,3 +183,50 @@ func TestAggregateFilterSelectsAbsentStreamKeys(t *testing.T) {
 		},
 	}, "exists")
 }
+
+// A stream that names no source (a weight typed in by hand) ranks after
+// every named source under the priority and summaries policies: where no
+// order is named, after the sources the records rank and those they do not,
+// and where one is, after the sources it does not name too. A scale with no
+// priorities weighs 60 and the typed weight 63 at one instant, each beside a
+// day summary of the same; by path alone the typed weight, whose source is
+// "", would sort first.
+func TestAggregatePriorityRanksAStreamWithNoSourceLast(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	at := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	f.weighing("w/scale", "scale", "60", at, nil)
+	f.mustPut(t, f.observation, "w/typed", map[string]any{
+		"metric": f.metricRef("health/body_mass"), "form": "gauge", "value": quantity("63", "kg"),
+		"at": at.Format(time.RFC3339), "hold": "PT1M", "utcOffset": 0,
+	})
+	for id, x := range map[string]map[string]any{"day/scale": {"source": f.sourceRef("scale"), "value": quantity("60", "kg")}, "day/typed": {"value": quantity("63", "kg")}} {
+		props := map[string]any{
+			"metric": f.metricRef("health/body_mass"), "form": "summary", "statistic": "avg", "period": "day",
+			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339), "utcOffset": 0,
+		}
+		for k, v := range x {
+			props[k] = v
+		}
+		f.mustPut(t, f.observation, id, props)
+	}
+	for _, sources := range []substrate.AggregateSources{
+		{Policy: "priority"},
+		{Policy: "summaries"},
+		{Policy: "priority", Order: []string{"no-such-scale"}},
+		{Policy: "summaries", Order: []string{"no-such-scale"}},
+	} {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(at.Add(-time.Hour), at.Add(time.Hour)),
+			Reducers: reducers("max"),
+			Sources:  &sources,
+		})
+		if len(res.Rows) != 1 {
+			t.Fatalf("%+v: %d rows, want one", sources, len(res.Rows))
+		}
+		if v, _ := val(res.Rows[0], "max"); v != "60" {
+			t.Errorf("%+v answers %s, want the scale's 60 ahead of the typed 63", sources, v)
+		}
+	}
+}

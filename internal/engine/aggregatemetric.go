@@ -487,10 +487,15 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	// A source the order does not name ranks after those it does, and a
+	// stream naming no source after every named one.
 	for _, s := range out {
 		s.rank = len(order)
-		if i := slices.Index(order, s.source); i >= 0 {
+		switch i := slices.Index(order, s.source); {
+		case i >= 0:
 			s.rank = i
+		case s.source == "":
+			s.rank = len(order) + 1
 		}
 	}
 	if len(order) == 0 && p.metric != "" && (p.policy == substrate.SourcesPriority || p.policy == substrate.SourcesSummaries) {
@@ -504,7 +509,8 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 // rankByPriorities ranks the streams by their source records' priorities
 // for the metric's id, 1 first, the order the priority and summaries
 // policies take where the request names none. A source the record ranks
-// not, or with no record, goes last; the stream order breaks ties.
+// not, or with no record, goes after the ranked ones, and a stream naming no
+// source after every named one; the stream order breaks ties.
 func (ds *dataset) rankByPriorities(ctx context.Context, tx *sql.Tx, metric string, streams []*aggStream) error {
 	_, metricID, _ := vocabulary.SplitRecordPath(metric)
 	var kinds, ids []string
@@ -540,9 +546,11 @@ func (ds *dataset) rankByPriorities(ctx context.Context, tx *sql.Tx, metric stri
 		}
 	}
 	for _, s := range streams {
-		s.rank = math.MaxInt
+		s.rank = math.MaxInt - 1
 		if n, ok := ranks[s.source]; ok {
 			s.rank = n
+		} else if s.source == "" {
+			s.rank = math.MaxInt
 		}
 	}
 	return nil
