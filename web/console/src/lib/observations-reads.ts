@@ -226,9 +226,10 @@ export interface SharedRead {
  * one several-metric read (`aggregate.metrics`), in their order, up to
  * `MAX_METRICS` and while their buckets add up to at most the cap; a lane
  * alone keeps its own read. The read's filter, range, bucket, grouping and
- * sources are every lane's. Its budget is the lanes' added up (to each
- * cap), because the server holds the metrics to it together and each lane
- * keeps what its own read could spend. */
+ * sources are every lane's. Its budget is the lanes' added up, each sum
+ * held to its cap, because the server holds the metrics to it together:
+ * past a cap the lanes share it, and a request the server refuses for it is
+ * read apart (`OverlayChart`). */
 export function sharedReads(lanes: readonly LaneReadPlan[]): SharedRead[] {
   const open: { key: string; lanes: number[]; buckets: number }[] = []
   lanes.forEach((lane, at) => {

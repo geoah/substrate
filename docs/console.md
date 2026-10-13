@@ -843,21 +843,35 @@ which names each metric in `aggregate.metrics` with its own unit, reducers,
 `from` and statistic
 ([several metrics in one read](api.md#several-metrics-in-one-read)). A
 request names at most 16 metrics, whose expected buckets add up to at most
-the server's cap of 10,000; past either, the metrics take another request. Its budget is its metrics' budgets
-added up, so each metric may spend what its own read could. Each metric's
-row draws the answer's rows naming it in `group.metric`, and says on its own
-whether it is loading, refreshing or failed. Where the server refuses a
-request of several metrics, the chart reads each of them apart, so a
-refusal sits on the one metric it concerns and the others draw. Reads that
-differ in anything else go apart: a sleep metric placed by its end beside
-heart rate, or a metric from one source beside one resolved across several.
+the server's cap of 10,000; past either, the metrics take another request.
+Its budget adds up its metrics' budgets, each sum held to the server's cap,
+so once a sum passes a cap the metrics share the cap: eleven metrics at the
+default 200 groups each pass the 2,000 groups one read may make. Each
+metric's row draws the answer's rows naming it in `group.metric`, and says
+on its own whether it is loading, refreshing or failed. Where the server
+refuses a request of several metrics, for a budget they pass together or for
+any other reason, the chart reads each of them apart, so a refusal sits on
+the one metric it concerns and the others draw. A server older than
+`aggregate.metrics` refuses the key with a `400`, and the chart reads each
+metric apart there too. In the recorded-local calendar, every row of one day
+in a shared request has the same `start` and `end`, written at the offsets of
+the first and last value any of its metrics takes that day. A shared request
+answers `exact` once for all its metrics, so with Technical details on, the
+request's details say when its answer is not exact, and no metric's row does.
+Reads that differ in anything else go apart: a sleep metric placed by its end
+beside heart rate, or a metric from one source beside one resolved across
+several.
 A metric is planned once its streams are read: a metric
 being added waits under the charts already drawn, and choosing a source, a
 thing or a channel re-reads the charts, never the streams. While a changed read loads, the chart keeps drawing each
 metric's earlier answer, alone or from a shared request, and the row says
 Updating…, where that answer has the same unit and grouping and carries the
 new reducer; after a change of unit or grouping, or to a reducer the earlier
-answer lacks, the row says Reading… and draws nothing of that metric. A metric that declares no unit is read in the unit of its
+answer lacks, the row says Reading… and draws nothing of that metric. A
+change to one metric of a shared request (its reducer, unit or statistic),
+or a metric added to the request or removed from it, makes a new request:
+every metric in it is read again, across the timeline's charts, and each of
+their rows says Updating… or Reading… until it lands. A metric that declares no unit is read in the unit of its
 newest selected stream, named in the request, so the axis and the answer
 agree. Grouped by anything but source, two or more sources (a stream that
 names no source counting as one) are resolved by
