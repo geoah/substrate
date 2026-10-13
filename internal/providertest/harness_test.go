@@ -31,6 +31,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"slices"
@@ -236,6 +237,16 @@ func completeOAuth(t *testing.T, svc substrate.Service, state, code string) {
 	if _, err := svc.CompleteOAuth(context.Background(), state, code); err != nil {
 		t.Fatalf("oauth callback: %v", err)
 	}
+}
+
+// oauthState lifts the signed state out of a consent URL StartOAuth answered.
+func oauthState(t *testing.T, consent string) string {
+	t.Helper()
+	u, err := url.Parse(consent)
+	if err != nil {
+		t.Fatalf("parse the consent url: %v", err)
+	}
+	return u.Query().Get("state")
 }
 
 // --- the closure --------------------------------------------------------------

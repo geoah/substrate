@@ -3232,12 +3232,11 @@ def assert_drain_bounds_itself():
     try:
         _drive(ON_REQUEST, "the bounded-drain case")
         # The dispatcher writes `running` before each record-sourced delivery
-        # and replaces it when the delivery settles. While the budget is one
-        # millisecond the streams keep firing: gmail and drive start no walk
-        # and acknowledge no request, so every other stream's write to the
-        # account delivers them again. A read that says `running` is inside
-        # one of those deliveries and says nothing about how the bounded
-        # fire ended, so the state is read once a delivery has settled.
+        # and replaces it when the delivery settles, and the four streams'
+        # deliveries settle at different times. A read that says `running` is
+        # inside one of those deliveries and says nothing about how the
+        # bounded fire ended, so the state is read once a delivery has
+        # settled.
         owed, acct, running = 0, {}, 0
         for _ in range(180):
             acct = props(one(KIND["account"], ACCOUNT))
@@ -3442,13 +3441,23 @@ def assert_permanent_failure_is_named():
             "google-calendar-on-request", "google-calendar-scheduled"),
            "the permanent-failure case")
 
-    got = {}
+    # The trait's fields are polled in the same loop as the legacy sentences.
+    # The gmail and drive deliveries the request fired settle beside these
+    # failures, and the dispatcher writes `running` before each one, so a
+    # single read after the legacy sentences settled could land inside one of
+    # them (#757).
+    failed = ("erroring", "throttled")
+    got, acct = {}, {}
     for _ in range(48):
         acct = props(one(KIND["account"], ACCOUNT))
         got = {s: str(acct.get(s + "SyncStatus") or "")
                for s in ("contacts", "calendar")}
+        streams = _streams(acct)
         if "reconnect needed" in got["contacts"] \
-                and "not available" in got["calendar"]:
+                and "not available" in got["calendar"] \
+                and str(acct.get("syncState") or "") in failed \
+                and all(str((streams.get(s) or {}).get("state") or "") in failed
+                        for s in ("contacts", "calendar")):
             break
         time.sleep(5)
     check("reconnect needed" in got.get("contacts", ""),
@@ -3466,10 +3475,9 @@ def assert_permanent_failure_is_named():
     # nothing about Google must be able to say this account is broken and
     # why, which is `syncState: erroring` plus the two error fields — and the
     # per-stream entry, because it is the contacts and calendar streams that
-    # failed while gmail is untouched.
-    acct = props(one(KIND["account"], ACCOUNT))
+    # failed while gmail is untouched. `acct` is the loop's last read.
     streams = _streams(acct)
-    check(str(acct.get("syncState") or "") in ("erroring", "throttled"),
+    check(str(acct.get("syncState") or "") in failed,
           "the account's syncState is %r after a 401 on contacts and a 403 on "
           "calendar — the trait's account-level state is raised by a failure, "
           "never left at the last success" % acct.get("syncState"))
@@ -3481,7 +3489,7 @@ def assert_permanent_failure_is_named():
           "instant cannot be ordered against the last success")
     for stream in ("contacts", "calendar"):
         entry = streams.get(stream) or {}
-        check(str(entry.get("state") or "") in ("erroring", "throttled"),
+        check(str(entry.get("state") or "") in failed,
               "syncStreams.%s.state is %r after its injected permanent "
               "failure" % (stream, entry.get("state")))
         check(str(entry.get("message") or ""),

@@ -19,6 +19,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -297,5 +298,57 @@ func TestSyncStatusTheAccountsOwnParkWinsATie(t *testing.T) {
 		!strings.Contains(inbox.Error, "the account's own park") || inbox.Message != inbox.Error {
 		t.Fatalf("inbox lastParkedError %q, error %q, message %q; want the account's own park on a tie",
 			inbox.LastParkedError, inbox.Error, inbox.Message)
+	}
+}
+
+// Two functions keep separate streams of one record and each writes from the
+// record as its own invocation read it. A write naming one stream merges onto
+// the stored map, so the other stream's newer entry stands; a null entry
+// removes a stream. The changelog keeps the merged map: a rebuild folds the
+// same row the live write left.
+func TestSyncStreamsWriteMergesPerStream(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	lastAt := nowUTC().Add(-time.Hour).Truncate(time.Second)
+	installStreamSync(t, ds, lastAt, map[string][]string{"inbox": {"mail", "files"}})
+	actor := substrate.Actor(vocabulary.PackageActor(streamSyncPkg))
+
+	// The files delivery commits its newer entry; the mail delivery, which
+	// read the record before that, then writes its own entry alone.
+	setStreamSync(t, ds, actor, "inbox", map[string]any{"syncStreams": map[string]any{
+		"files": map[string]any{"state": "erroring", "message": "files broke", "requestedAck": "2026-10-13T10:00:00Z"},
+	}})
+	setStreamSync(t, ds, actor, "inbox", map[string]any{"syncStreams": map[string]any{
+		"mail": map[string]any{"state": "ok", "message": "mail caught up"},
+	}})
+	inbox := streamSyncStatuses(t, ds)["inbox"]
+	if files := inbox.Streams["files"]; files.State != substrate.SyncStateErroring || files.Message != "files broke" ||
+		files.RequestedAck == nil {
+		t.Fatalf("files = %+v after a write naming mail alone, want its own erroring entry kept", files)
+	}
+	if mail := inbox.Streams["mail"]; mail.State != substrate.SyncStateOK || mail.Message != "mail caught up" {
+		t.Fatalf("mail = %+v, want the entry the write named", mail)
+	}
+
+	setStreamSync(t, ds, actor, "inbox", map[string]any{"syncStreams": map[string]any{"files": nil}})
+	inbox = streamSyncStatuses(t, ds)["inbox"]
+	if _, listed := inbox.Streams["files"]; listed || inbox.Streams["mail"].Message != "mail caught up" {
+		t.Fatalf("streams = %+v after a null files entry, want files removed and mail kept", inbox.Streams)
+	}
+
+	before, err := ds.FoldSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.svc.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	after, err := ds.FoldSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("the rebuilt fold is not the live one\n%s", firstDifferenceOf(before, after))
 	}
 }

@@ -589,7 +589,15 @@ on the account, in the same patch it already makes: `lastSyncedAt` and
 dispatcher is not there to write it), `syncProgress` while a drain pages,
 `syncStreams.<name>` for each stream it owns, `syncError` and `syncErrorAt`
 when it records a failure without raising, and the acknowledgement of a
-request. The **request pair** is how Sync now works: the owner stamps
+request. A record-sourced run that meets a failure it already recorded still
+writes the failing `syncState`, and leaves an error pair the account holds as
+it stands: the settle reads a `running` it finds as a healthy run and clears
+the pair.
+A write to `syncStreams` merges one stream at a time: each entry it
+names replaces that stream's entry, a null entry removes one, and the rest
+stand, so two functions that keep separate streams of one account write
+their own entries without undoing each other's.
+The **request pair** is how Sync now works: the owner stamps
 `syncRequestedAt`; an on-request trigger on the account kind, guarded on the
 stamp being unanswered, fires the function; the function writes
 `syncRequestedAck` equal to the stamp it served. A provider with several
