@@ -1280,6 +1280,12 @@ reads that take it.
 - `summaries` reads summary points alone, from the first source in `order`
   that has one in the bucket.
 
+Where `priority` or `summaries` names no `order`, the read ranks the
+selected sources by each source record's `priorities` for the metric's id
+([observations](observations.md#the-base-kinds)), 1 first; a source the record does
+not rank, or with no record, goes last, and the stream order (by kind, then
+source path) breaks ties. An `order` in the request wins whole.
+
 `from: "prefer-raw"` reads raw points where the bucket holds at least one and
 they cover at least `minCoverage` of the row (held time for a gauge, the union
 of spans for an amount, over the row's own `start` to `end`), and the

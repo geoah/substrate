@@ -26,9 +26,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -344,7 +346,59 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 			s.rank = i
 		}
 	}
+	if len(order) == 0 && p.metric != "" && (p.policy == substrate.SourcesPriority || p.policy == substrate.SourcesSummaries) {
+		if err := ds.rankByPriorities(ctx, tx, p.metric, out); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
+}
+
+// rankByPriorities ranks the streams by their source records' priorities
+// for the metric's id, 1 first, the order the priority and summaries
+// policies take where the request names none. A source the record ranks
+// not, or with no record, goes last; the stream order breaks ties.
+func (ds *dataset) rankByPriorities(ctx context.Context, tx *sql.Tx, metric string, streams []*aggStream) error {
+	_, metricID, _ := vocabulary.SplitRecordPath(metric)
+	var kinds, ids []string
+	seen := map[string]bool{}
+	for _, s := range streams {
+		if kind, id, ok := vocabulary.SplitRecordPath(s.source); ok && !seen[s.source] {
+			seen[s.source] = true
+			kinds, ids = append(kinds, kind), append(ids, id)
+		}
+	}
+	ranks := map[string]int{}
+	if len(ids) > 0 {
+		rows, err := tx.QueryContext(ctx, `SELECT r.kind, r.id, r.props->'priorities'->>$3
+			FROM unnest($1::text[], $2::text[]) AS s(kind, id)
+			JOIN records r ON r.kind = s.kind AND r.id = s.id AND r.deleted_at IS NULL
+			WHERE jsonb_exists(r.props->'priorities', $3)`, kinds, ids, metricID)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: aggregate source priorities: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var kind, id string
+			var rank sql.NullString
+			if err := rows.Scan(&kind, &id, &rank); err != nil {
+				return err
+			}
+			if n, err := strconv.Atoi(rank.String); err == nil {
+				ranks[vocabulary.RecordPath(kind, id)] = n
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	for _, s := range streams {
+		s.rank = math.MaxInt
+		if n, ok := ranks[s.source]; ok {
+			s.rank = n
+		}
+	}
+	return nil
 }
 
 // streamRef is the record path a filter value or an order entry names for a

@@ -72,3 +72,56 @@ func TestAggregateSourcesResolveBareIDsExactly(t *testing.T) {
 		},
 	}, "kitchen")
 }
+
+// Under the priority and summaries policies a read that names no order ranks
+// the selected sources by each source record's priorities for the metric's
+// id, 1 first, an unranked source last; an order the request names wins.
+// Three scales weigh at one instant: aardvark (unranked) 60, alpha (ranked
+// 2) 70 and zeta (ranked 1) 80; by path alone aardvark would win.
+func TestAggregatePriorityTakesTheSourcesOwnRanks(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	at := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		id, value string
+		rank      any
+	}{{"aardvark", "60", nil}, {"alpha", "70", 2}, {"zeta", "80", 1}} {
+		props := map[string]any{"name": x.id}
+		if x.rank != nil {
+			props["priorities"] = map[string]any{"health/body_mass": x.rank, "health/heart_rate": 9}
+		}
+		f.mustPut(t, f.source, x.id, props)
+		f.weighing("w/"+x.id, x.id, x.value, at, nil)
+		f.mustPut(t, f.observation, "day/"+x.id, map[string]any{
+			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef(x.id), "form": "summary",
+			"statistic": "avg", "period": "day", "value": quantity(x.value, "kg"),
+			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339), "utcOffset": 0,
+		})
+	}
+	read := func(sources substrate.AggregateSources) string {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(at.Add(-time.Hour), at.Add(time.Hour)),
+			Reducers: reducers("max"),
+			Sources:  &sources,
+		})
+		if len(res.Rows) != 1 {
+			t.Fatalf("%+v: %d rows, want one", sources, len(res.Rows))
+		}
+		v, _ := val(res.Rows[0], "max")
+		return v
+	}
+	for _, x := range []struct {
+		sources substrate.AggregateSources
+		want    string
+	}{
+		{substrate.AggregateSources{Policy: "priority"}, "80"},
+		{substrate.AggregateSources{Policy: "summaries"}, "80"},
+		{substrate.AggregateSources{Policy: "priority", Order: []string{"alpha"}}, "70"},
+		{substrate.AggregateSources{Policy: "summaries", Order: []string{"aardvark", "zeta"}}, "60"},
+	} {
+		if got := read(x.sources); got != x.want {
+			t.Errorf("%+v answers %s, want %s", x.sources, got, x.want)
+		}
+	}
+}
