@@ -318,7 +318,7 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 		for _, s := range e["samples"].([]any) {
 			for field, metric := range map[string]string{
 				"heartRate": "heart_rate", "speedMetersPerSecond": "speed", "stepsPerMinute": "cadence",
-				"totalDistanceInMeters": "distance",
+				"powerInWatts": "running_power", "bikeCadenceInRPM": "cycling_cadence", "totalDistanceInMeters": "distance",
 			} {
 				if s.(map[string]any)[field] != nil {
 					samples["forerunner265/"+metric]++

@@ -507,3 +507,64 @@ func TestGarminWalksThePersonasStride(t *testing.T) {
 		t.Fatal("no walking epoch; the check read nothing")
 	}
 }
+
+// An activity's details carry what the watch records each 30 seconds: on a
+// run the speed, the step cadence, running power and the altitude; on a
+// ride the speed, the pedal cadence and the altitude; on strength and yoga
+// the heart rate alone. The altitude climbs what the summary says it
+// climbed.
+func TestGarminActivityDetailsCarryTheRoute(t *testing.T) {
+	_, _, deliveries, bodies := garminEmit(t, Options{})
+	fields := map[string][]string{
+		"RUNNING":           {"speedMetersPerSecond", "stepsPerMinute", "powerInWatts", "elevationInMeters"},
+		"CYCLING":           {"speedMetersPerSecond", "bikeCadenceInRPM", "elevationInMeters"},
+		"STRENGTH_TRAINING": nil, "YOGA": nil,
+	}
+	all := []string{"speedMetersPerSecond", "stepsPerMinute", "powerInWatts", "bikeCadenceInRPM", "elevationInMeters"}
+	seen := map[string]int{}
+	for i := range deliveries {
+		for _, d := range bodies[i]["activityDetails"] {
+			summ := d["summary"].(map[string]any)
+			typ := summ["activityType"].(string)
+			seen[typ]++
+			want := map[string]bool{}
+			for _, f := range fields[typ] {
+				want[f] = true
+			}
+			var climb, prev float64
+			samples := d["samples"].([]any)
+			for k, s := range samples {
+				m := s.(map[string]any)
+				for _, f := range all {
+					if _, has := m[f]; has != want[f] {
+						t.Fatalf("%s %v sample %d: %s present %v", typ, d["summaryId"], k, f, has)
+					}
+				}
+				if !want["elevationInMeters"] {
+					continue
+				}
+				el := gFloat(t, m["elevationInMeters"])
+				if k > 0 && el > prev {
+					climb += el - prev
+				}
+				prev = el
+				if c, ok := m["stepsPerMinute"]; ok && (gFloat(t, c) < 120 || gFloat(t, c) > 200) {
+					t.Errorf("run %v cadence %v", d["summaryId"], c)
+				}
+				if w, ok := m["powerInWatts"]; ok && (gFloat(t, w) < 80 || gFloat(t, w) > 450) {
+					t.Errorf("run %v power %v", d["summaryId"], w)
+				}
+			}
+			if want["elevationInMeters"] {
+				if gain := gFloat(t, summ["totalElevationGainInMeters"]); math.Abs(climb-gain) > 1 {
+					t.Errorf("%s %v climbs %.1f m sample by sample, its summary %v", typ, d["summaryId"], climb, gain)
+				}
+			}
+		}
+	}
+	for typ := range fields {
+		if seen[typ] == 0 {
+			t.Errorf("the default life has no %s activity", typ)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"strings"
 	"time"
 )
@@ -673,135 +674,199 @@ type garminActivity struct {
 	strain           float64
 }
 
+// garminAltitude is the ground an activity starts on in each home of the
+// persona's, in metres; elsewhere 50.
+var garminAltitude = map[string]float64{"Europe/Athens": 95, "Europe/London": 20}
+
 // activities is each workout of d as an activity summary and its details.
 func (e *garminEmitter) activities(d Date) []garminActivity {
 	x := e.p.Day(d)
-	city, ok := garminCity[x.Zone.String()]
-	if !ok {
-		parts := strings.Split(x.Zone.String(), "/")
-		city.name = parts[len(parts)-1]
-	}
 	var out []garminActivity
 	for k, w := range x.Workouts {
-		sport := garminSport[w.Sport]
-		aid := int64(21100000000 + e.p.Index(d)*100 + k)
-		a, dur := w.Start.Unix(), int64(w.Duration().Seconds())
-		var samples []map[string]any
-		var hrs []int
-		hrSum := 0
-		for t := a; t <= a+dur; t += 30 {
-			v := iround(e.noisy("hr", t, float64(w.HR(time.Unix(t, 0)))+e.hrBias, 1.4))
-			samples = append(samples, map[string]any{"startTimeInSeconds": t, "heartRate": v})
-			hrs = append(hrs, v)
-			hrSum += v
-		}
-		maxHR := 0
-		for _, v := range hrs {
-			maxHR = max(maxHR, v)
-		}
-		avgHR := float64(hrSum) / float64(len(hrs))
-		summary := map[string]any{
-			"activityName":                     city.name + " " + sport.label,
-			"durationInSeconds":                dur,
-			"startTimeInSeconds":               a,
-			"startTimeOffsetInSeconds":         garminOffset(w.Start),
-			"activityType":                     sport.activity,
-			"averageHeartRateInBeatsPerMinute": iround(avgHR),
-			"maxHeartRateInBeatsPerMinute":     maxHR,
-			"activeKilocalories":               iround(e.noisy("kcal", fmt.Sprint(d, k), float64(w.Kcal), float64(w.Kcal)*0.03)),
-			"deviceName":                       garminDevice,
-			"manual":                           false,
-			"isWebUpload":                      false,
-		}
-		var laps []any
-		if w.DistanceM > 0 {
-			dist := round(e.noisy("dist", fmt.Sprint(d, k), w.DistanceM, w.DistanceM*0.005), 2)
-			weights := make([]float64, len(hrs))
-			total := 0.0
-			for i, h := range hrs {
-				weights[i] = math.Max(0.4, 1+0.9*(float64(h)-avgHR)/avgHR)
-				if i < len(hrs)-1 {
-					total += weights[i]
-				}
-			}
-			total = math.Max(total, 1e-9)
-			cum := []float64{0}
-			run, maxSpeed := 0.0, 0.0
-			for i, wt := range weights {
-				maxSpeed = math.Max(maxSpeed, dist*wt/total/30)
-				if i < len(weights)-1 {
-					run += dist * wt / total
-					cum = append(cum, run)
-				}
-			}
-			for i, s := range samples {
-				s["totalDistanceInMeters"] = round(cum[i], 2)
-			}
-			avgSpeed := dist / float64(dur)
-			r := e.p.rng("garmin", "route", d, k)
-			hi := 260.0
-			if w.Sport == Running {
-				hi = 90
-			}
-			summary["distanceInMeters"] = dist
-			summary["averageSpeedInMetersPerSecond"] = round(avgSpeed, 3)
-			summary["maxSpeedInMetersPerSecond"] = round(maxSpeed, 3)
-			summary["averagePaceInMinutesPerKilometer"] = round(1000/avgSpeed/60, 6)
-			summary["maxPaceInMinutesPerKilometer"] = round(1000/maxSpeed/60, 6)
-			summary["totalElevationGainInMeters"] = math.Round(15 + (hi-15)*r.Float64())
-			summary["totalElevationLossInMeters"] = math.Round(15 + (hi-15)*r.Float64())
-			if ok {
-				summary["startingLatitudeInDegree"] = round(city.lat-0.004+0.008*r.Float64(), 7)
-				summary["startingLongitudeInDegree"] = round(city.lon-0.004+0.008*r.Float64(), 7)
-			}
-			if w.Sport == Running {
-				base := 166.0
-				if w.Name == "intervals" {
-					base = 172
-				}
-				cad := round(e.noisy("cadence", fmt.Sprint(d, k), base, 2), 1)
-				summary["averageRunCadenceInStepsPerMinute"] = cad
-				summary["maxRunCadenceInStepsPerMinute"] = round(cad+11+4*r.Float64(), 1)
-				summary["steps"] = iround(cad * float64(dur) / 60)
-				laps = append(laps, map[string]any{"startTimeInSeconds": a})
-				km := 1000.0
-				for i := 1; i < len(cum); i++ {
-					for cum[i] >= km {
-						frac := (km - cum[i-1]) / math.Max(1e-9, cum[i]-cum[i-1])
-						laps = append(laps, map[string]any{
-							"startTimeInSeconds": iround(float64(samples[i-1]["startTimeInSeconds"].(int64)) + 30*frac),
-						})
-						km += 1000
-					}
-				}
-			} else {
-				cad := round(e.noisy("cadence", fmt.Sprint(d, k), 84, 2), 1)
-				summary["averageBikeCadenceInRoundsPerMinute"] = cad
-				summary["maxBikeCadenceInRoundsPerMinute"] = round(cad+22+5*r.Float64(), 1)
-			}
-		}
-		for _, s := range samples {
-			el := s["startTimeInSeconds"].(int64) - a
-			s["timerDurationInSeconds"], s["clockDurationInSeconds"], s["movingDurationInSeconds"] = el, el, el
-		}
-		activity := map[string]any{"userId": garminUserID, "summaryId": fmt.Sprint(aid), "activityId": aid}
-		for k, v := range summary {
-			activity[k] = v
-		}
-		sampleList := make([]any, len(samples))
-		for i, s := range samples {
-			sampleList[i] = s
-		}
-		detail := map[string]any{
-			"userId": garminUserID, "summaryId": fmt.Sprintf("%d-detail", aid), "activityId": aid,
-			"summary": summary, "samples": sampleList,
-		}
-		if len(laps) > 0 {
-			detail["laps"] = laps
-		}
-		out = append(out, garminActivity{activity: activity, detail: detail, samples: samples, strain: w.Strain})
+		out = append(out, e.activity(d, k, w, x.Zone.String()))
 	}
 	return out
+}
+
+// activity is one workout: the heart rate every 30 seconds, and on a
+// workout with a distance the route the watch recorded beside it.
+func (e *garminEmitter) activity(d Date, k int, w *Workout, zone string) garminActivity {
+	sport := garminSport[w.Sport]
+	city, placed := garminCity[zone]
+	if !placed {
+		parts := strings.Split(zone, "/")
+		city.name = parts[len(parts)-1]
+	}
+	aid := int64(21100000000 + e.p.Index(d)*100 + k)
+	a, dur := w.Start.Unix(), int64(w.Duration().Seconds())
+	samples, avgHR, maxHR := e.heartSamples(w)
+	summary := map[string]any{
+		"activityName":                     city.name + " " + sport.label,
+		"durationInSeconds":                dur,
+		"startTimeInSeconds":               a,
+		"startTimeOffsetInSeconds":         garminOffset(w.Start),
+		"activityType":                     sport.activity,
+		"averageHeartRateInBeatsPerMinute": iround(avgHR),
+		"maxHeartRateInBeatsPerMinute":     maxHR,
+		"activeKilocalories":               iround(e.noisy("kcal", fmt.Sprint(d, k), float64(w.Kcal), float64(w.Kcal)*0.03)),
+		"deviceName":                       garminDevice,
+		"manual":                           false,
+		"isWebUpload":                      false,
+	}
+	var laps []any
+	if w.DistanceM > 0 {
+		r := e.p.rng("garmin", "route", d, k)
+		e.route(d, k, w, samples, avgHR, summary)
+		e.altitude(w, samples, summary, r, garminAltitude[zone])
+		if placed {
+			summary["startingLatitudeInDegree"] = round(city.lat-0.004+0.008*r.Float64(), 7)
+			summary["startingLongitudeInDegree"] = round(city.lon-0.004+0.008*r.Float64(), 7)
+		}
+		if w.Sport == Running {
+			laps = e.stride(d, k, w, samples, summary, r)
+		} else {
+			e.pedals(d, k, samples, summary, r)
+		}
+	}
+	for _, s := range samples {
+		el := s["startTimeInSeconds"].(int64) - a
+		s["timerDurationInSeconds"], s["clockDurationInSeconds"], s["movingDurationInSeconds"] = el, el, el
+	}
+	activity := map[string]any{"userId": garminUserID, "summaryId": fmt.Sprint(aid), "activityId": aid}
+	for k, v := range summary {
+		activity[k] = v
+	}
+	sampleList := make([]any, len(samples))
+	for i, s := range samples {
+		sampleList[i] = s
+	}
+	detail := map[string]any{
+		"userId": garminUserID, "summaryId": fmt.Sprintf("%d-detail", aid), "activityId": aid,
+		"summary": summary, "samples": sampleList,
+	}
+	if len(laps) > 0 {
+		detail["laps"] = laps
+	}
+	return garminActivity{activity: activity, detail: detail, samples: samples, strain: w.Strain}
+}
+
+// heartSamples is the workout's heart rate every 30 seconds, end included,
+// with its average and maximum.
+func (e *garminEmitter) heartSamples(w *Workout) ([]map[string]any, float64, int) {
+	a, dur := w.Start.Unix(), int64(w.Duration().Seconds())
+	var samples []map[string]any
+	sum, maxHR := 0, 0
+	for t := a; t <= a+dur; t += 30 {
+		v := iround(e.noisy("hr", t, float64(w.HR(time.Unix(t, 0)))+e.hrBias, 1.4))
+		samples = append(samples, map[string]any{"startTimeInSeconds": t, "heartRate": v})
+		sum += v
+		maxHR = max(maxHR, v)
+	}
+	return samples, float64(sum) / float64(len(samples)), maxHR
+}
+
+// route spreads the distance over the samples, faster where the heart works
+// harder: each sample's running total and its speed over the 30 seconds it
+// starts, and the summary's distance, speeds and paces.
+func (e *garminEmitter) route(d Date, k int, w *Workout, samples []map[string]any, avgHR float64, summary map[string]any) {
+	dur := int64(w.Duration().Seconds())
+	dist := round(e.noisy("dist", fmt.Sprint(d, k), w.DistanceM, w.DistanceM*0.005), 2)
+	weights := make([]float64, len(samples))
+	total := 0.0
+	for i, s := range samples {
+		weights[i] = math.Max(0.4, 1+0.9*(float64(s["heartRate"].(int))-avgHR)/avgHR)
+		if i < len(samples)-1 {
+			total += weights[i]
+		}
+	}
+	total = math.Max(total, 1e-9)
+	run, maxSpeed := 0.0, 0.0
+	for i, s := range samples {
+		speed := dist * weights[min(i, len(samples)-2)] / total / 30
+		maxSpeed = math.Max(maxSpeed, speed)
+		s["totalDistanceInMeters"] = round(run, 2)
+		s["speedMetersPerSecond"] = round(speed, 3)
+		if i < len(samples)-1 {
+			run += dist * weights[i] / total
+		}
+	}
+	avgSpeed := dist / float64(dur)
+	summary["distanceInMeters"] = dist
+	summary["averageSpeedInMetersPerSecond"] = round(avgSpeed, 3)
+	summary["maxSpeedInMetersPerSecond"] = round(maxSpeed, 3)
+	summary["averagePaceInMinutesPerKilometer"] = round(1000/avgSpeed/60, 6)
+	summary["maxPaceInMinutesPerKilometer"] = round(1000/maxSpeed/60, 6)
+}
+
+// altitude is the ground under each sample: a loop over two rises from the
+// start's altitude, whose climbs add up to the summary's elevation gain,
+// and back down to where it started.
+func (e *garminEmitter) altitude(w *Workout, samples []map[string]any, summary map[string]any, r *rand.Rand, base float64) {
+	hi := 260.0
+	if w.Sport == Running {
+		hi = 90
+	}
+	gain := math.Round(15 + (hi-15)*r.Float64())
+	summary["totalElevationGainInMeters"] = gain
+	summary["totalElevationLossInMeters"] = gain
+	last := float64(len(samples) - 1)
+	for i, s := range samples {
+		f := float64(i) / math.Max(1, last)
+		s["elevationInMeters"] = round(base+gain/4*(1-math.Cos(4*math.Pi*f)), 1)
+	}
+}
+
+// Running power is about 1.04 W per kilogram for each metre a second, on
+// the watch's stored weight for the runner.
+const (
+	garminWattsPerKgMps = 1.04
+	garminPowerKg       = 72.0
+)
+
+// stride is a run's step cadence and running power, sample by sample, with
+// the summary's cadence and steps, and a lap at every kilometre.
+func (e *garminEmitter) stride(d Date, k int, w *Workout, samples []map[string]any, summary map[string]any, r *rand.Rand) []any {
+	a, dur := w.Start.Unix(), int64(w.Duration().Seconds())
+	base := 166.0
+	if w.Name == "intervals" {
+		base = 172
+	}
+	cad := round(e.noisy("cadence", fmt.Sprint(d, k), base, 2), 1)
+	avgSpeed := summary["averageSpeedInMetersPerSecond"].(float64)
+	for _, s := range samples {
+		speed := s["speedMetersPerSecond"].(float64)
+		t := s["startTimeInSeconds"].(int64)
+		s["stepsPerMinute"] = round(e.noisy("spm", t, cad*(0.9+0.1*speed/avgSpeed), 1.5), 1)
+		s["powerInWatts"] = float64(iround(e.noisy("power", t, garminWattsPerKgMps*garminPowerKg*speed, 6)))
+	}
+	summary["averageRunCadenceInStepsPerMinute"] = cad
+	summary["maxRunCadenceInStepsPerMinute"] = round(cad+11+4*r.Float64(), 1)
+	summary["steps"] = iround(cad * float64(dur) / 60)
+	laps := []any{map[string]any{"startTimeInSeconds": a}}
+	km := 1000.0
+	for i := 1; i < len(samples); i++ {
+		before, at := samples[i-1]["totalDistanceInMeters"].(float64), samples[i]["totalDistanceInMeters"].(float64)
+		for at >= km {
+			frac := (km - before) / math.Max(1e-9, at-before)
+			laps = append(laps, map[string]any{
+				"startTimeInSeconds": iround(float64(samples[i-1]["startTimeInSeconds"].(int64)) + 30*frac),
+			})
+			km += 1000
+		}
+	}
+	return laps
+}
+
+// pedals is a ride's pedal cadence, sample by sample, with the summary's.
+func (e *garminEmitter) pedals(d Date, k int, samples []map[string]any, summary map[string]any, r *rand.Rand) {
+	cad := round(e.noisy("cadence", fmt.Sprint(d, k), 84, 2), 1)
+	avgSpeed := summary["averageSpeedInMetersPerSecond"].(float64)
+	for _, s := range samples {
+		speed := s["speedMetersPerSecond"].(float64)
+		s["bikeCadenceInRPM"] = float64(iround(e.noisy("rpm", s["startTimeInSeconds"].(int64), cad*(0.85+0.15*speed/avgSpeed), 3)))
+	}
+	summary["averageBikeCadenceInRoundsPerMinute"] = cad
+	summary["maxBikeCadenceInRoundsPerMinute"] = round(cad+22+5*r.Float64(), 1)
 }
 
 // --- the mornings and the rest -----------------------------------------------
