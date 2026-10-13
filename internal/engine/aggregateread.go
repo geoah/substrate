@@ -436,13 +436,15 @@ const aggPointLead = `p.record_id, p.ord, coalesce(p.statistic, ''), `
 // columns, and converts a non-counter's value into the read's unit.
 func (r *aggRun) scanAggPoint(rows *sql.Rows, s *aggStream, lead ...any) (aggPoint, error) {
 	var ap aggPoint
-	sp, err := scanPoint(rows, append(lead, &ap.rid, &ap.ord, &ap.stat)...)
+	var recordID string
+	var ord int64
+	sp, err := scanPoint(rows, append(lead, &recordID, &ord, &ap.stat)...)
 	if err != nil {
 		return ap, err
 	}
 	ap.Point, ap.off, ap.delta = sp.point, sp.group.offset, sp.group.delta
 	ap.Group = strconv.FormatInt(ap.off, 10)
-	ap.RecordID, ap.Ord = ap.rid, int64(ap.ord)
+	ap.RecordID, ap.Ord = recordID, ord
 	if err := r.convertPoint(&ap, s); err != nil {
 		return ap, err
 	}
@@ -518,14 +520,16 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 	if err := finishRows(rows); err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate points: %w", err)
 	}
+	// A gauge reads the value current at each span's start, a counter the
+	// last available point before it; the other forms read neither.
 	for _, x := range []struct {
-		filter string
-		dst    func(seg *aggSegment, p *aggPoint)
+		form, filter string
+		dst          func(seg *aggSegment, p *aggPoint)
 	}{
-		{"TRUE", func(seg *aggSegment, p *aggPoint) { seg.carry = p }},
-		{availablePoint, func(seg *aggSegment, p *aggPoint) { seg.prev = p }},
+		{vocabulary.FormGauge, "TRUE", func(seg *aggSegment, p *aggPoint) { seg.carry = p }},
+		{vocabulary.FormCounter, availablePoint, func(seg *aggSegment, p *aggPoint) { seg.prev = p }},
 	} {
-		if x.filter == availablePoint && s.form != vocabulary.FormCounter {
+		if s.form != x.form {
 			continue
 		}
 		rows, err := r.tx.QueryContext(r.ctx, `

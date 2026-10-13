@@ -101,8 +101,6 @@ type aggPoint struct {
 	stat   string
 	delta  bool
 	stream int
-	rid    string
-	ord    int
 }
 
 // aggSpan is one held interval, with the offset of the point that holds it.
