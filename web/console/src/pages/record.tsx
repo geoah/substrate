@@ -1,8 +1,9 @@
 /** One record, read like a document and kept live off the change feed: its
  * head, its properties as a sheet that edits in place (a value that changes
- * under the reader is marked briefly), its prose, what it is connected to,
- * where it comes from, what was merged into it and its history, top to bottom
- * on one left-aligned page. Technical mode adds the record's own facts and a
+ * under the reader is marked briefly), its prose, for a workout or a sleep
+ * what was measured during it, what it is connected to, where it comes from,
+ * what was merged into it and its history, top to bottom on one left-aligned
+ * page. Technical mode adds the record's own facts and a
  * Source toggle that shows the YAML envelope or the JSON. */
 
 import { useMemo, useState } from "react"
@@ -23,6 +24,7 @@ import { MergedSection, SourcesSection } from "@/components/record/sources"
 import { useLiveRecord } from "@/components/record/use-live-record"
 import { useRecordChanges } from "@/components/record/use-record-changes"
 import { SourceView } from "@/components/record/source-view"
+import { DuringSection } from "@/components/observations/during-section"
 import { ObservedSection } from "@/components/observations/observed-section"
 import { SyncRail } from "@/components/sync/sync-rail"
 import { Button } from "@/components/ui/button"
@@ -167,6 +169,7 @@ export function RecordDocument({
               moved={moved.has(body.name)}
             />
           )}
+          <DuringSection record={record} kind={kind} kinds={kinds} />
           {syncable && (
             <>
               <SectionHead title="Sync" hint="how this account keeps up" />

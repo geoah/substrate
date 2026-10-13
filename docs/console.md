@@ -390,9 +390,25 @@ Under the properties, in order:
   page. Both open the timeline on the record's stream. The property sheet
   under it folds the properties the section shows into one line ("12 shown
   under Measurement"), which opens them for editing, and keeps the rest (a
-  lab result's coding, specimen and report). A `form` reads in the same
-  words everywhere the console shows it: **Level**, **Amount**, **Running
-  total** or **Vendor summary**.
+  lab result's coding, specimen and report). A summary opens the timeline
+  on its own statistic. A `form` reads in the same words everywhere the
+  console shows it: **Level**, **Amount**, **Running total** or **Vendor
+  summary**.
+- **During this**, on a record of the health sample spanning `[at,
+  endsAt)` that is no measured value itself (a workout, a sleep): what was
+  measured while it lasted, about the same person. The heart rate is one
+  line over the span with its lowest-to-highest band, an aggregate read by
+  the minute (or as the timeline's automatic bucket sizes the span), the
+  record's own source ranked first where sources overlap; a click or a drag
+  zooms into part of it. A workout adds its time in five heart rate zones
+  (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute),
+  one `durationIn` read over the span. A sleep adds its stages: a
+  hypnogram, a row per stage and a block per segment, where its source
+  recorded the stages one after another (Garmin, Google Fit), and its time
+  in each stage, summed by code, which is all a source writing one span per
+  stage over the night (WHOOP, Apple Health) gives. **Open in the
+  timeline** opens the same window, heart rate and a sleep's stages
+  together.
 - **Connected to**: the records that point here, read through the
   [`referencing`](api.md#who-points-at-a-record-referencing) filter arm and
   grouped by the kind they are and the property they point through ("Tasks
