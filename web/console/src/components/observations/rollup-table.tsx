@@ -1,9 +1,8 @@
 /** The numbers under a chart, one click away: one line per row of the
  * answer (a bucket, or one group of a bucket) with its window, one column per
  * reducer with its unit, the points, the covered time, the sources that fed
- * it and whether raw points or a vendor summary served it. A row the server
- * filled in or could not answer says so. Grouped by source, a source's
- * channel has its own column. The whole table copies as
+ * it and whether raw points or a vendor summary served it. Grouped by
+ * source, a source's channel has its own column. The whole table copies as
  * tab-separated text, the exact digits and the wire's instants, folded or
  * not. */
 
@@ -12,7 +11,6 @@ import { ChevronRightIcon } from "lucide-react"
 
 import { CopyButton } from "@/components/identity/copy-button"
 import { EmptyValue } from "@/components/identity/empty-value"
-import { Pill } from "@/components/identity/pill"
 import { CodeMark, Reading } from "@/components/observations/marks"
 import { Button } from "@/components/ui/button"
 import type {
@@ -88,7 +86,6 @@ export function RollupTable({
   // Folded by default, so a timeline of several metrics reads chart after
   // chart; one click shows the numbers.
   const [open, setOpen] = useState(false)
-  const flagged = rows.some((r) => r.synthetic || r.unavailable)
   const channels = rows.some((r) => r.group?.channel)
   const count =
     rows.length === 1 ? "1 row" : `${rows.length.toLocaleString("en")} rows`
@@ -137,7 +134,6 @@ export function RollupTable({
                 <th scope="col">Covered</th>
                 <th scope="col">Sources</th>
                 <th scope="col">From</th>
-                {flagged && <th scope="col">Note</th>}
               </tr>
             </thead>
             <tbody>
@@ -193,17 +189,6 @@ export function RollupTable({
                       <EmptyValue />
                     )}
                   </td>
-                  {flagged && (
-                    <td>
-                      {row.unavailable ? (
-                        <Pill tone="warn">Not available</Pill>
-                      ) : row.synthetic ? (
-                        <Pill tone="neutral" dot={false}>
-                          Filled in
-                        </Pill>
-                      ) : null}
-                    </td>
-                  )}
                 </tr>
               ))}
             </tbody>

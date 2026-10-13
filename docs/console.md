@@ -739,8 +739,8 @@ captioned with its unit; a third unit is not drawn, and the chart names the
 metrics it leaves out and what to deselect to draw them. One crosshair marks
 the hovered bucket with a dot on every line, and one tooltip lists every
 series there with its value and unit; a chart of one series keeps the full
-readout (every reducer, the points, the covered time, the sources, whether
-a row was filled in or is no longer available). Each legend entry hides or
+readout (every reducer, the points, the covered time, the sources, and
+where it was read from). Each legend entry hides or
 shows its series, and an axis goes with the last series on it. Grouping
 applies to the whole chart: heart rate grouped by source is one line per
 device, and ungrouped it is one line resolved across them. Click a bucket or

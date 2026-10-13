@@ -7,8 +7,6 @@ import {
   bandPath,
   barPath,
   bucketAt,
-  compactNumber,
-  labelEvery,
   linePath,
   linearScale,
   niceDomain,
@@ -104,15 +102,6 @@ describe("ticks", () => {
     expect(niceTicks(-0.5, 0.5)).toEqual([-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6])
   })
 
-  it("labels compactly from a thousand", () => {
-    expect(compactNumber(0)).toBe("0")
-    expect(compactNumber(950)).toBe("950")
-    expect(compactNumber(1200)).toBe("1.2K")
-    expect(compactNumber(12000)).toBe("12K")
-    expect(compactNumber(3_400_000)).toBe("3.4M")
-    expect(compactNumber(0.25)).toBe("0.25")
-  })
-
   it("prints each tick as precisely as the step between them", () => {
     expect(tickLabels([72, 72.2, 72.4, 72.6])).toEqual([
       "72.0",
@@ -122,11 +111,6 @@ describe("ticks", () => {
     ])
     expect(tickLabels([0, 20, 40])).toEqual(["0", "20", "40"])
     expect(tickLabels([0, 5000, 10000])).toEqual(["0", "5K", "10K"])
-  })
-
-  it("labels every k-th bucket so no more than the room allows", () => {
-    expect(labelEvery(168, 10)).toBe(17)
-    expect(labelEvery(5, 10)).toBe(1)
   })
 })
 

@@ -7,8 +7,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { seriesOf } from "@/lib/observations"
-import { WEIGHT } from "@/lib/observations.test-fixtures"
+import { WEIGHT, seriesOf } from "@/lib/observations.test-fixtures"
 
 import { TimelineChart, type ChartSeries } from "./timeline-chart"
 
@@ -26,11 +25,11 @@ function chart(rows: typeof WEIGHT.rows) {
     label: "Weight",
     color: "var(--series-1)",
     points: s.points,
+    mark: "line",
+    band: true,
   }))
   return (
     <TimelineChart
-      mark="line"
-      band
       buckets={buckets}
       series={shown}
       domain={domain}

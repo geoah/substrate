@@ -130,9 +130,9 @@ export const SHAPE_WORDS: Record<ReadingShape, string> = {
 }
 
 /** What one metric record says that a reader uses: its name, its default
- * form and unit, the codes a categorical metric admits and the reducers it
- * recommends. The engine reads none of it (decision 0156); every value
- * carries its own form and unit, so these are defaults for display. */
+ * form and unit, and the codes a categorical metric admits. The engine
+ * reads none of it (decision 0156); every value carries its own form and
+ * unit, so these are defaults for display. */
 export interface MetricInfo {
   id: string
   path: string
@@ -142,15 +142,8 @@ export interface MetricInfo {
   /** The measure every value's unit belongs to (`mass`, `rate`). */
   measures?: string
   codeSet?: string[]
-  reducers?: string[]
   /** The decimal places a reader is shown. */
   displayPrecision?: number
-}
-
-function strings(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  const out = value.filter((v): v is string => typeof v === "string")
-  return out.length ? out : undefined
 }
 
 /** A metric record read as `MetricInfo`. A `codeSet` entry may be a bare
@@ -177,7 +170,6 @@ export function metricInfoOf(record: SubstrateRecord): MetricInfo {
     measures:
       typeof p.measures === "string" && p.measures ? p.measures : undefined,
     codeSet: codeSet?.length ? codeSet : undefined,
-    reducers: strings(p.reducers),
     ...(typeof p.displayPrecision === "number" &&
     Number.isInteger(p.displayPrecision)
       ? { displayPrecision: p.displayPrecision }
@@ -1164,30 +1156,16 @@ export function seriesOn(
       dropped: dropped.get(key) ?? 0,
       points: buckets.map((_, i) => {
         const row = held.get(i)
-        const off = row?.unavailable === true
         return {
           bucket: i,
           row,
-          value: off ? null : numberOf(rowValue(row, pickedKey)?.value),
-          low: off ? null : numberOf(rowValue(row, "min")?.value),
-          high: off ? null : numberOf(rowValue(row, "max")?.value),
+          value: numberOf(rowValue(row, pickedKey)?.value),
+          low: numberOf(rowValue(row, "min")?.value),
+          high: numberOf(rowValue(row, "max")?.value),
         }
       }),
     }
   })
-}
-
-/** The rows as buckets (distinct windows, oldest first, with an empty one
- * standing in for each stretch the answer skipped) and series (one per
- * value of the group key, in first-seen order), every series holding one
- * point per bucket. */
-export function seriesOf(
-  rows: readonly AggregateRow[],
-  pickedKey: string,
-  groupKey?: AggregateGroupKey
-): { buckets: Bucket[]; series: Series[] } {
-  const buckets = bucketsOf([rows])
-  return { buckets, series: seriesOn(buckets, rows, pickedKey, groupKey) }
 }
 
 function groupValue(
@@ -1195,18 +1173,6 @@ function groupValue(
   key: AggregateGroupKey | undefined
 ): string | undefined {
   return key ? group?.[key] : undefined
-}
-
-/** The unit an answer is in: the picked reducer's, else the result's. */
-export function answerUnit(
-  result: AggregateResult | undefined,
-  pickedKey: string
-): string | undefined {
-  for (const row of result?.rows ?? []) {
-    const unit = rowValue(row, pickedKey)?.unit
-    if (unit) return unit
-  }
-  return result?.unit
 }
 
 /** The sources that fed a row and have a name: the server answers `""`

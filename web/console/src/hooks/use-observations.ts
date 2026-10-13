@@ -24,7 +24,6 @@ import type { AggregateRow, KindInfo } from "@/lib/api/types"
 import {
   discoveryChunks,
   facetRead,
-  formOf,
   latestRead,
   metricInfoOf,
   metricWords,
@@ -34,12 +33,9 @@ import {
   refIdOf,
   refPathOf,
   sameRef,
-  shapeOf,
   streamsOf,
-  type Form,
   type MetricInfo,
   type ObservedPins,
-  type ReadingShape,
   type Stream,
   type StreamFacet,
   type StreamNarrowing,
@@ -97,9 +93,6 @@ export interface Observations {
   titleOf: (path: string | undefined) => string | undefined
   /** A record a group value names, in words: its title, else its id. */
   nameOf: (value: string, pin?: string) => string
-  /** How a metric is read and the form its values are stored in: from its
-   * newest stream (the value's own form, or a code), else its record. */
-  readingOf: (value: string) => { shape: ReadingShape; form?: Form }
 }
 
 /** The address's values (ids or record paths) as record paths. */
@@ -239,15 +232,6 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
       titleOf,
       nameOf: (value: string, pin?: string) =>
         titleOf(refPathOf(value, pin)) ?? refIdOf(value),
-      readingOf: (value: string) => {
-        const metric = metricOf(value)
-        // Streams are newest first, so this is the newest point's form.
-        const stream = streams.find((s) => sameRef(s.metric, value))
-        return {
-          shape: shapeOf(metric, stream),
-          form: formOf(metric, stream),
-        }
-      },
     }
   }, [
     registry.isPending,

@@ -751,7 +751,7 @@ describe("the charts", () => {
     await waitFor(() => expect(tip.textContent).toContain("Withings Body+"))
     fireEvent.keyDown(chart, { key: "ArrowRight" })
     expect(within(weight).getByRole("status").textContent).toContain(
-      "Filled in, not measured."
+      "Sep 28 to Oct 4, 2026"
     )
     fireEvent.keyDown(chart, { key: "Enter" })
     await waitFor(() => {
@@ -788,7 +788,6 @@ describe("the charts", () => {
       ])
     )
     expect(within(table).getAllByRole("row")).toHaveLength(4)
-    expect(table.textContent).toContain("Filled in")
   })
 
   it("shows a computed value to the metric's places, the exact digits on hover", async () => {

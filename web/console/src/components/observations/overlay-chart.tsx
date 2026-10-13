@@ -259,7 +259,6 @@ export function OverlayChart({
 
   function valueText(plot: Plot, row: AggregateRow, key: string): string {
     const v = rowValue(row, key)
-    if (row.unavailable) return "not available"
     if (v?.value == null && v?.code) return codeWords(v.code)
     return readingText(
       v?.value,
@@ -321,7 +320,6 @@ export function OverlayChart({
                     />
                     <dt className="truncate text-muted-foreground">
                       {d.label}
-                      {row.synthetic && " (filled in)"}
                     </dt>
                     <dd className="text-right font-medium text-foreground tabular-nums">
                       {valueText(plot, row, plot.pickedKey)}
@@ -655,17 +653,9 @@ function SeriesDetail({
           />
         )}
       </dl>
-      {row.synthetic && (
-        <p className="mt-1 text-muted-foreground">Filled in, not measured.</p>
-      )}
-      {!row.synthetic && row.count === 0 && (
+      {row.count === 0 && (
         <p className="mt-1 text-muted-foreground">
           No reading here; an earlier one still holds.
-        </p>
-      )}
-      {row.unavailable && (
-        <p className="mt-1 text-warning">
-          Not available: the points this needs have expired.
         </p>
       )}
     </div>

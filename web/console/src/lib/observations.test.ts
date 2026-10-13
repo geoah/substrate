@@ -42,7 +42,6 @@ import {
   roundDigits,
   rowValue,
   sameRef,
-  seriesOf,
   seriesOn,
   shapeOf,
   stddevOf,
@@ -75,6 +74,7 @@ import {
   WITHINGS,
   ZONES,
   metricKind,
+  seriesOf,
   observationKind,
   traceKind,
 } from "@/lib/observations.test-fixtures"

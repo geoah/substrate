@@ -12,12 +12,7 @@ import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { request } from "./http"
 import { RECORDS_PATH } from "./records"
-import type {
-  Aggregate,
-  AggregateResult,
-  Downsample,
-  RecordFilter,
-} from "./types"
+import type { Aggregate, AggregateResult, RecordFilter } from "./types"
 
 /** One aggregate read: the records filter and the `aggregate` parameter,
  * which this module encodes onto the records route. */
@@ -27,25 +22,18 @@ export interface AggregateRead {
 }
 
 /** The query string of one aggregate read, `filter` first. */
-export function aggregateSearch(
-  read: AggregateRead,
-  downsample?: Downsample
-): URLSearchParams {
+export function aggregateSearch(read: AggregateRead): URLSearchParams {
   const q = new URLSearchParams()
   if (read.filter && Object.keys(read.filter).length) {
     q.set("filter", JSON.stringify(read.filter))
   }
   q.set("aggregate", JSON.stringify(read.aggregate))
-  if (downsample) q.set("downsample", JSON.stringify(downsample))
   return q
 }
 
 /** The path one aggregate read requests. */
-export function aggregatePath(
-  read: AggregateRead,
-  downsample?: Downsample
-): string {
-  return `${RECORDS_PATH}?${aggregateSearch(read, downsample)}`
+export function aggregatePath(read: AggregateRead): string {
+  return `${RECORDS_PATH}?${aggregateSearch(read)}`
 }
 
 export function fetchAggregate(

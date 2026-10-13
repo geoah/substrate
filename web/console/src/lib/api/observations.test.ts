@@ -70,18 +70,11 @@ describe("aggregatePath", () => {
     }
   })
 
-  it("leaves out an empty filter and carries a downsample on its own", () => {
+  it("leaves out an empty filter", () => {
     const q = params(
-      aggregatePath(
-        { filter: {}, aggregate: { reducers: ["last"] } },
-        { points: 800, method: "m4" }
-      )
+      aggregatePath({ filter: {}, aggregate: { reducers: ["last"] } })
     )
     expect(q.has("filter")).toBe(false)
-    expect(JSON.parse(q.get("downsample")!)).toEqual({
-      points: 800,
-      method: "m4",
-    })
   })
 })
 

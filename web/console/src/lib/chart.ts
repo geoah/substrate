@@ -110,18 +110,6 @@ export function niceDomain(
   return { domain: [ticks[0], ticks[ticks.length - 1]], ticks }
 }
 
-/** A tick label: compact from a thousand up (`1.2K`, `12K`, `3.4M`), up to
- * two decimals below. */
-export function compactNumber(n: number): string {
-  const abs = Math.abs(n)
-  const trim = (x: number, digits: number) => Number(x.toFixed(digits))
-  if (abs >= 1e9) return `${trim(n / 1e9, 1)}B`
-  if (abs >= 1e6) return `${trim(n / 1e6, 1)}M`
-  if (abs >= 1e4) return `${trim(n / 1e3, 0)}K`
-  if (abs >= 1e3) return `${trim(n / 1e3, 1)}K`
-  return String(trim(n, abs >= 10 ? 0 : 2))
-}
-
 /** The most decimals a tick label prints before it switches to an
  * exponent. */
 const MAX_LABEL_DECIMALS = 20
@@ -286,12 +274,6 @@ export function rectPath(
   const bottom = Math.max(y0, y1)
   if (bottom - top <= 0 || width <= 0) return ""
   return `M${r(x)} ${r(bottom)}V${r(top)}H${r(x + width)}V${r(bottom)}Z`
-}
-
-/** Which of `count` items get a label so that no more than `max` do: every
- * k-th, from the first. */
-export function labelEvery(count: number, max: number): number {
-  return Math.max(1, Math.ceil(count / Math.max(1, max)))
 }
 
 /** The index of the bucket under a pixel, or -1 outside them all. */

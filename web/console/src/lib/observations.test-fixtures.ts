@@ -8,12 +8,19 @@
 
 import type {
   Aggregate,
+  AggregateGroupKey,
   AggregateResult,
   AggregateRow,
   KindInfo,
   RecordFilter,
   SubstrateRecord,
 } from "@/lib/api/types"
+import {
+  bucketsOf,
+  seriesOn,
+  type Bucket,
+  type Series,
+} from "@/lib/observations"
 
 export const AUTHORITY = "ada.example.com"
 export const OBSERVATION = `${AUTHORITY}/observations/observation`
@@ -568,4 +575,15 @@ export function observationsServer(
     return json({ records, head: 0, generation: "g" })
   }
   return { fetch, seen }
+}
+
+/** One answer alone as buckets and series, the way a chart of one read
+ * lays it out (`bucketsOf`, then `seriesOn`). */
+export function seriesOf(
+  rows: readonly AggregateRow[],
+  pickedKey: string,
+  groupKey?: AggregateGroupKey
+): { buckets: Bucket[]; series: Series[] } {
+  const buckets = bucketsOf([rows])
+  return { buckets, series: seriesOn(buckets, rows, pickedKey, groupKey) }
 }

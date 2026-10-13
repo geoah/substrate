@@ -43,7 +43,6 @@ import {
   type TimeRange,
 } from "@/lib/observations"
 import type { AxisSide, ChartMark } from "@/lib/overlay"
-import { cn } from "@/lib/utils"
 
 export type { ChartMark }
 
@@ -55,10 +54,9 @@ export interface ChartSeries {
   /** A CSS colour, a `--series-N` token. */
   color: string
   points: SeriesPoint[]
-  /** How it is drawn; the chart's `mark` where absent. */
+  /** How it is drawn; a line where absent. */
   mark?: ChartMark
-  /** Draw its lowest-to-highest band (a level); the chart's `band` where
-   * absent. */
+  /** Draw its lowest-to-highest band (a level). */
   band?: boolean
   /** The axis it reads on; the left where absent. */
   axis?: AxisSide
@@ -94,20 +92,18 @@ interface YAxis {
 function yAxisOf(
   series: readonly ChartSeries[],
   buckets: readonly Bucket[],
-  mark: ChartMark,
-  band: boolean,
   top: number
 ): YAxis {
   const values: number[] = []
   const stacks = new Map<string, ChartSeries[]>()
   for (const s of series) {
-    const m = s.mark ?? mark
+    const m = s.mark ?? "line"
     if (m === "stack") {
       const key = s.stack ?? ""
       stacks.set(key, [...(stacks.get(key) ?? []), s])
       continue
     }
-    const withBand = m === "line" && (s.band ?? band)
+    const withBand = m === "line" && s.band === true
     for (const p of s.points) {
       if (p.value !== null) values.push(p.value)
       if (withBand && p.low !== null) values.push(p.low)
@@ -121,7 +117,7 @@ function yAxisOf(
       values.push(sum)
     })
   }
-  const zero = series.some((s) => (s.mark ?? mark) !== "line")
+  const zero = series.some((s) => (s.mark ?? "line") !== "line")
   const { domain, ticks } = niceDomain(values, { zero })
   const y = linearScale(domain, [top + PLOT, top])
   return {
@@ -150,8 +146,6 @@ function useWidth(fallback: number) {
 }
 
 export function TimelineChart({
-  mark = "line",
-  band = false,
   buckets,
   series,
   domain,
@@ -159,13 +153,8 @@ export function TimelineChart({
   label,
   tooltip,
   onZoom,
-  stale = false,
   units,
 }: {
-  /** How a series that does not say is drawn. */
-  mark?: ChartMark
-  /** Draw the band of a line series that does not say (a level). */
-  band?: boolean
   buckets: Bucket[]
   series: ChartSeries[]
   /** The window read, the x axis's extent. */
@@ -176,8 +165,6 @@ export function TimelineChart({
   /** What the tooltip says about one bucket. */
   tooltip: (bucket: number) => ReactNode
   onZoom: (range: TimeRange) => void
-  /** A newer answer is loading for every series: hold this one, quieter. */
-  stale?: boolean
   /** Each axis's unit in words, captioned above it. */
   units?: { left?: string; right?: string }
 }) {
@@ -208,12 +195,8 @@ export function TimelineChart({
   // The left axis reads its series, or, with every left series hidden,
   // the grid follows the right one.
   const leftAxis =
-    lefts.length || !rights.length
-      ? yAxisOf(lefts, buckets, mark, band, top)
-      : undefined
-  const rightAxis = rights.length
-    ? yAxisOf(rights, buckets, mark, band, top)
-    : undefined
+    lefts.length || !rights.length ? yAxisOf(lefts, buckets, top) : undefined
+  const rightAxis = rights.length ? yAxisOf(rights, buckets, top) : undefined
   const grid = (leftAxis ?? rightAxis)!
   const scaleOf = (s: ChartSeries) =>
     (s.axis === "right" ? rightAxis : leftAxis)!
@@ -222,7 +205,7 @@ export function TimelineChart({
   // side, whichever axis each reads on.
   const slots: string[] = []
   for (const s of series) {
-    const m = s.mark ?? mark
+    const m = s.mark ?? "line"
     if (m === "bars") slots.push(s.key)
     else if (m === "stack") {
       const key = `stack:${s.stack ?? ""}`
@@ -242,11 +225,11 @@ export function TimelineChart({
   }
   const stacks = new Map<string, ChartSeries[]>()
   for (const s of series) {
-    if ((s.mark ?? mark) !== "stack") continue
+    if (s.mark !== "stack") continue
     const key = s.stack ?? ""
     stacks.set(key, [...(stacks.get(key) ?? []), s])
   }
-  const lines = series.filter((s) => (s.mark ?? mark) === "line")
+  const lines = series.filter((s) => (s.mark ?? "line") === "line")
 
   // The x axis is the whole range, its size's boundaries labelled whether a
   // bucket holds anything there or not. A label needs about 84px, so every
@@ -314,10 +297,7 @@ export function TimelineChart({
       onKeyDown={onKey}
       onBlur={() => setActive(null)}
       data-slot="timeline-chart"
-      className={cn(
-        "relative w-full rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        stale && "opacity-60 transition-opacity"
-      )}
+      className="relative w-full rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <svg
         width={width}
@@ -435,7 +415,7 @@ export function TimelineChart({
           />
         )}
         {series.map((s) => {
-          if ((s.mark ?? mark) !== "bars") return null
+          if (s.mark !== "bars") return null
           const { y, base } = scaleOf(s)
           return (
             <g
@@ -496,7 +476,7 @@ export function TimelineChart({
           <LineSeries
             key={s.key}
             series={s}
-            band={s.band ?? band}
+            band={s.band === true}
             mids={windows.map((w) => w.mid)}
             y={scaleOf(s).y}
           />
