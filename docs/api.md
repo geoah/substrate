@@ -1234,7 +1234,7 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 | amount | `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `stddev`, `{"percentile": q}` |
 | coded amount | `count`, `sum`, `min`, `max`, grouped by `code` |
 | counter | `count`, `first`, `last`, `min`, `max`, `increase`, `rate` |
-| summary | `count`, `first`, `last`, `avg`, `min` and `max` over the row's summaries, all of one `statistic`; `sum` where that statistic is `sum` or `count` |
+| summary | `count`, `first`, `last`, `avg`, `min` and `max` over the row's summaries, all of one `statistic`; `sum` where that statistic is `sum` or `count`, `null` otherwise |
 
 - `twa` weighs each value by the time it holds: until the next point of its
   stream, its own `hold`, or `maxGap`, whichever comes first.
@@ -1259,8 +1259,10 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
   `min` and `max` then reduce that statistic's values whatever it is, so the
   weekly mean of a daily `vendor` resting heart rate is the mean of those
   values (a summary of summaries), and `first`, `last` and `count` read that
-  statistic alone. `sum` adds only `sum` and `count` summaries; over any
-  other statistic it is a `422`.
+  statistic alone. `sum` adds only `sum` and `count` summaries. Over any
+  other statistic a read from summaries is a `422`, and under `prefer-raw` a
+  bucket that falls to such summaries answers `sum` `null`, so a source's
+  `vendor` daily total does not refuse the days its raw points cover.
 
 A row never mixes forms: a group whose streams hold two forms is a `422`
 asking to group them apart.
@@ -1502,12 +1504,13 @@ merged as one row.
   and no `bucket.fallbackTimezone`, or a `fallbackTimezone` outside the
   recorded-local calendar; `place` `end` over a gauge or a counter, in the
   records mode or on a property read; a group whose summaries hold two
-  statistics, or `sum` over a statistic other than `sum` and `count`;
-  `groupBy` `statistic` on a read that is not from summaries; `priority` over
-  two counters; a budget below zero or over its cap, or a read over a budget
-  (naming the limit); `rolling` without a `bucket`; `downsample` beside
-  `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
-  `prefer-raw`; a `fill`, `rolling` or `maxGap` on the latest read.
+  statistics, or `sum` over a statistic other than `sum` and `count` on a
+  read from summaries; `groupBy` `statistic` on a read that is not from
+  summaries; `priority` over two counters; a budget below zero or over its
+  cap, or a read over a budget (naming the limit); `rolling` without a
+  `bucket`; `downsample` beside `reducers`, `rolling`, `fill` or `bucket`;
+  `minCoverage` without `prefer-raw`; a `fill`, `rolling` or `maxGap` on the
+  latest read.
 
 ### Where this differs from the plan
 

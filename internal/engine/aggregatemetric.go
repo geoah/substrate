@@ -1029,13 +1029,26 @@ var formWhy = map[string]string{
 // or of counts. A day's average, extreme or vendor score does not add.
 var additiveStatistics = []string{"sum", "count"}
 
+// additive reports whether sum adds the group's summaries, which are of one
+// statistic (checkStatistics).
+func (g *aggGroup) additive() bool {
+	return len(g.sums) == 0 || slices.Contains(additiveStatistics, g.sums[0].stat)
+}
+
 // checkStatistics refuses a group whose summaries hold two statistics, since
-// a row reads one, and sum over a statistic that does not add. It runs once
-// the forms are found, before any point is reduced, so a read that would
-// count a night's average and maximum as two nights is refused, not answered.
+// a row reads one, and on a read from summaries sum over a statistic that
+// does not add. It runs once the forms are found, before any point is
+// reduced, so a read that would count a night's average and maximum as two
+// nights is refused, not answered. prefer-raw reads a bucket's summaries only
+// where its raw points fall short, so its sum answers null in such a bucket
+// (rowValues.number) instead of refusing the buckets raw points serve.
 func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 	if p.source == substrate.AggregateFromRaw {
 		return nil
+	}
+	split := ", or split them with groupBy statistic"
+	if p.source != substrate.AggregateFromSummaries {
+		split = ""
 	}
 	for _, g := range groups {
 		var stats, sources []string
@@ -1050,10 +1063,10 @@ func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 		slices.Sort(stats)
 		slices.Sort(sources)
 		if len(stats) > 1 {
-			return refuse("aggregate", "the summaries from %s hold the statistics %s, and a row reads one; name it with filter.properties.statistic, or split them with groupBy statistic",
-				strings.Join(sources, ", "), andList(stats))
+			return refuse("aggregate", "the summaries from %s hold the statistics %s, and a row reads one; name it with filter.properties.statistic%s",
+				strings.Join(sources, ", "), andList(stats), split)
 		}
-		if len(stats) == 0 || slices.Contains(additiveStatistics, stats[0]) {
+		if p.source != substrate.AggregateFromSummaries || g.additive() {
 			continue
 		}
 		for i, r := range p.reducers {

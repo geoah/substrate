@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,4 +109,69 @@ func TestAggregateSummariesReadOneStatistic(t *testing.T) {
 	raw := read(substrate.Filter{}, hrv, []string{"statistic"}, "count")
 	raw.Aggregate.From = substrate.AggregateFromRaw
 	f.refusedAgg(raw, "groupBy statistic")
+}
+
+// Under prefer-raw a bucket raw points cover reads them, so a sum over steps
+// answers the raw total even where the source also keeps a daily total it
+// labels `vendor`: 24 hourly chunks of 100 steps on 2 September answer 2400
+// from raw. A bucket that falls to such a total answers sum null, because a
+// vendor value does not add, and only a read from summaries refuses the sum.
+// Two statistics in one group are refused under prefer-raw as from
+// summaries, and the refusal names the statistic filter alone, since
+// groupBy statistic is a read from summaries' word.
+func TestAggregatePreferRawSumsRawStepsBesideAVendorTotal(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	day := time.Date(2026, 9, 2, 0, 0, 0, 0, plus3)
+	for h := range 24 {
+		at := day.Add(time.Duration(h) * time.Hour)
+		f.mustPut(t, f.observation, fmt.Sprintf("steps/%02d", h), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("garmin"), "form": "amount",
+			"value": quantity("100", "{steps}"), "utcOffset": 180,
+			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339),
+		})
+	}
+	for d, total := range []string{"2400", "3100"} {
+		at := day.AddDate(0, 0, d)
+		f.mustPut(t, f.observation, fmt.Sprintf("steps/total/%d", d), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("garmin"), "form": "summary",
+			"statistic": "vendor", "period": "day", "value": quantity(total, "{steps}"), "utcOffset": 180,
+			"at": at.Format(time.RFC3339), "endsAt": at.AddDate(0, 0, 1).Format(time.RFC3339),
+		})
+	}
+	read := func(from string) substrate.Aggregate {
+		return substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")}, From: from,
+			Range: rng(day, day.AddDate(0, 0, 2)), Bucket: &substrate.AggregateBucket{Calendar: "day"},
+			Reducers: reducers("sum", "count"),
+		}
+	}
+	res := f.agg(context.Background(), substrate.Filter{}, read(substrate.AggregateFromPreferRaw))
+	if len(res.Rows) != 2 {
+		t.Fatalf("prefer-raw steps: %d rows, want the 2nd from raw and the 3rd from its total", len(res.Rows))
+	}
+	if s, _ := val(res.Rows[0], "sum"); res.Rows[0].From != substrate.AggregateFromRaw || s != "2400" {
+		t.Errorf("the 2nd: sum %q from %s, want 2400 from raw", s, res.Rows[0].From)
+	}
+	if s, ok := val(res.Rows[1], "sum"); res.Rows[1].From != substrate.AggregateFromSummaries || ok {
+		t.Errorf("the 3rd: sum %q from %s, want null from summaries (a vendor total does not add)", s, res.Rows[1].From)
+	}
+	if c, _ := val(res.Rows[1], "count"); c != "1" {
+		t.Errorf("the 3rd counts %s summaries, want 1", c)
+	}
+	summaries := read(substrate.AggregateFromSummaries)
+	f.refusedAgg(substrate.AggregateQuery{Aggregate: &summaries}, "sum adds")
+
+	night := time.Date(2026, 9, 1, 22, 0, 0, 0, time.UTC)
+	f.summary("hrv/avg", "health/hrv_rmssd", "garmin", "avg", "60", "ms", night, 8*time.Hour)
+	f.summary("hrv/max", "health/hrv_rmssd", "garmin", "max", "90", "ms", night, 8*time.Hour)
+	hrv := substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/hrv_rmssd")}, From: substrate.AggregateFromPreferRaw,
+		Range: rng(day.AddDate(0, 0, -1), day.AddDate(0, 0, 2)), Reducers: reducers("last"),
+	}
+	_, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &hrv})
+	if err == nil || !strings.Contains(err.Error(), "filter.properties.statistic") || strings.Contains(err.Error(), "groupBy statistic") {
+		t.Errorf("prefer-raw over avg and max: err = %v, want a refusal naming filter.properties.statistic and not groupBy statistic", err)
+	}
 }

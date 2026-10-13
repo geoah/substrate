@@ -667,8 +667,9 @@ recorded, in minutes. `durationIn` reads raw points, so the request raises
 ```
 
 Daily steps for a year on each sample's own local day, the step chunks where
-they cover 90 percent of a day and the vendor's daily total otherwise; each
-row's `from` says which:
+they cover 90 percent of a day and the source's daily total otherwise; each
+row's `from` says which. A total adds only where its `statistic` is `sum`, so
+a day served by a total labelled `vendor` answers `null`:
 
 ```json
 {"aggregate": {

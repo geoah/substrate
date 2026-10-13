@@ -135,6 +135,11 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 	var merged float64
 	switch red.Name {
 	case substrate.ReducerSum:
+		if ev.form == vocabulary.FormSummary && !v.g.additive() {
+			// A prefer-raw bucket served by summaries that do not add.
+			v.out = append(v.out, r.value(red, 0, false, unit))
+			return nil
+		}
 		f, merged = observed.SumContext, ev.stats.Sum
 	case substrate.ReducerAvg:
 		f, merged = observed.AvgContext, ev.stats.Mean
