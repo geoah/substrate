@@ -702,16 +702,19 @@ function chartNotes(
   const notes: string[] = []
   for (const { plot, query, held } of states) {
     const own: string[] = []
-    const ranked = [
-      ...plot.sourceOrder.map(words.sourceText),
+    // A ranked read uses the reader's order. Otherwise the server decides
+    // it, so the sources are listed by name, implying no order.
+    const names = plot.sourceOrder.map(words.sourceText)
+    const overlapping = [
+      ...(plot.ranked ? names : [...names].sort((a, b) => a.localeCompare(b))),
       ...(plot.sourceless ? ["values naming no source"] : []),
     ]
-    if (plot.groupKey !== "source" && plot.spec && ranked.length > 1) {
-      const [first, ...rest] = ranked
+    if (plot.groupKey !== "source" && plot.spec && overlapping.length > 1) {
+      const [first, ...rest] = overlapping
       own.push(
         plot.ranked
           ? `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
-          : `Where sources overlap, ${listWords(ranked)} are used in the order each source’s priorities rank them for this metric.`
+          : `Where ${listWords(overlapping)} overlap, the server ranks them by each source record’s priorities for this metric, then by record path.`
       )
     }
     const dropped = all

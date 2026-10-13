@@ -194,7 +194,7 @@ describe("the timeline's requests", () => {
       expect(
         screen.getByRole("region", { name: "Heart rate" }).textContent
       ).toContain(
-        "Where sources overlap, Garmin Forerunner 265 and Apple Watch S10 are used in the order each source’s priorities rank them for this metric."
+        "Where Apple Watch S10 and Garmin Forerunner 265 overlap, the server ranks them by each source record’s priorities for this metric, then by record path."
       )
     )
     const group = screen.getByRole("radiogroup", { name: "Group by" })
