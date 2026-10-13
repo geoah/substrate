@@ -721,8 +721,17 @@ type garminActivity struct {
 }
 
 // garminAltitude is the ground an activity starts on in each home of the
-// persona's, in meters; elsewhere 50.
+// persona's, in meters.
 var garminAltitude = map[string]float64{"Europe/Athens": 95, "Europe/London": 20}
+
+// garminGround is the ground an activity starts on in zone: 50 m where
+// garminAltitude names none.
+func garminGround(zone string) float64 {
+	if m, ok := garminAltitude[zone]; ok {
+		return m
+	}
+	return 50
+}
 
 // activities is each workout of d as an activity summary and its details.
 func (e *garminEmitter) activities(d Date) []garminActivity {
@@ -763,7 +772,7 @@ func (e *garminEmitter) activity(d Date, k int, w *Workout, zone string) garminA
 	if w.DistanceM > 0 {
 		r := e.p.rng("garmin", "route", d, k)
 		e.route(d, k, w, samples, avgHR, summary)
-		e.altitude(w, samples, summary, r, garminAltitude[zone])
+		e.altitude(w, samples, summary, r, garminGround(zone))
 		if placed {
 			summary["startingLatitudeInDegree"] = round(city.lat-0.004+0.008*r.Float64(), 7)
 			summary["startingLongitudeInDegree"] = round(city.lon-0.004+0.008*r.Float64(), 7)

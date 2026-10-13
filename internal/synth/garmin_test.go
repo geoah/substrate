@@ -569,6 +569,49 @@ func TestGarminActivityDetailsCarryTheRoute(t *testing.T) {
 	}
 }
 
+// An activity starts on the ground of the zone it is in: 95 m in Athens, 20
+// in London, and 50 anywhere the persona has no altitude for.
+func TestGarminStartsAnActivityOnItsZonesGround(t *testing.T) {
+	for _, c := range []struct {
+		o    Options
+		want map[string]float64
+	}{
+		{Options{}, map[string]float64{"Europe/Athens": 95, "Europe/London": 20}},
+		{Options{Start: NewDate(2026, time.March, 1), End: NewDate(2026, time.March, 7), HomeZone: "America/New_York"}, map[string]float64{"America/New_York": 50}},
+	} {
+		p, _, deliveries, bodies := garminEmit(t, c.o)
+		seen := map[string]int{}
+		for i := range deliveries {
+			for _, d := range bodies[i]["activityDetails"] {
+				samples, _ := d["samples"].([]any)
+				if len(samples) == 0 {
+					continue
+				}
+				el, ok := samples[0].(map[string]any)["elevationInMeters"]
+				if !ok {
+					continue
+				}
+				summ := d["summary"].(map[string]any)
+				at := time.Unix(int64(gFloat(t, summ["startTimeInSeconds"])), 0)
+				zone := p.DayAt(at).Zone.String()
+				want, known := c.want[zone]
+				if !known {
+					t.Fatalf("activity %v starts in %s, which the case does not expect", d["summaryId"], zone)
+				}
+				seen[zone]++
+				if got := gFloat(t, el); got != want {
+					t.Errorf("activity %v in %s starts at %v m, want %v", d["summaryId"], zone, got, want)
+				}
+			}
+		}
+		for zone := range c.want {
+			if seen[zone] == 0 {
+				t.Errorf("no activity with an altitude in %s", zone)
+			}
+		}
+	}
+}
+
 // A Saturday evening at home the watch takes a two-minute health snapshot:
 // heart rate, breathing, stress, SpO2 and HRV every five seconds.
 func TestGarminTakesAWeeklyHealthSnapshot(t *testing.T) {
