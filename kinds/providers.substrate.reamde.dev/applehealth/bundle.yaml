@@ -1971,6 +1971,8 @@ data:
         r"(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?)?"
         r"\s*(Z|z|[+-]\d{2}(?::?\d{2})?)?$")
     NOT_ID = re.compile(r"[^A-Za-z0-9._~:@-]+")
+    # An epoch date fit() stored as its decimal text.
+    EPOCH_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 
 
     class Refused(Exception):
@@ -1994,7 +1996,11 @@ data:
     def parse_instant(value, tz):
         """The instant one of the app's dates names, as an aware UTC datetime, or
         None. A date without an offset is read in the account's time zone, else
-        UTC; a number is epoch seconds (milliseconds past 1e11)."""
+        UTC; a number is epoch seconds (milliseconds past 1e11), and so is the
+        decimal text fit() stores a number as, so a stored row and a fresh one
+        name the same instant."""
+        if isinstance(value, str) and EPOCH_RE.match(value.strip()):
+            value = float(value)
         if number(value):
             secs = float(value)
             if abs(secs) > 1e11:

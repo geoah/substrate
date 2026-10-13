@@ -603,6 +603,30 @@ func TestAppleHealthRedeliveryEmptiesBatchesInsideItsSpan(t *testing.T) {
 	}
 }
 
+// A metric row may carry its date as epoch seconds, as the app writes ECG
+// voltages and heart rate notifications. The batch keeps the number as its
+// decimal text, and a second delivery of the same rows still finds them by
+// that instant: three samples stay three rows.
+func TestAppleHealthEpochDatesMergeOnRedelivery(t *testing.T) {
+	_, ds := newAppleHealth(t, "iphone")
+	rows := []map[string]any{
+		{"qty": 1.5, "date": 1790157600, "source": adaWatch},
+		{"qty": 2.5, "date": 1790157660, "source": adaWatch},
+		{"qty": 3.5, "date": 1790157720.5, "source": adaWatch},
+	}
+	req := ahMetricRequest(t, "seconds", "step_count", "count", rows)
+	deliverAH(t, ds, req, "hook-epoch-1")
+	deliverAH(t, ds, req, "hook-epoch-2")
+	id := batchID("iphone", "step_count", "seconds", "2026-09-23T10")
+	got := rowsOf(t, mustGet(t, ds, ahBatch, id))
+	if len(got) != 3 {
+		t.Fatalf("%s holds %d rows after the same three samples twice, want 3: %v", id, len(got), got)
+	}
+	if got[0]["date"] != "1790157600" || got[2]["date"] != "1790157720.5" {
+		t.Fatalf("the epoch dates are stored as %v and %v, want their decimal text", got[0]["date"], got[2]["date"])
+	}
+}
+
 // Day buckets are midnights of the phone's zone when it sent. A delivery from
 // London on 2026-09-25, then a 30-day one from Athens on 2026-10-10: the
 // Athens span covers London's two buckets, so the month batch ends holding the
