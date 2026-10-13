@@ -134,7 +134,8 @@ data:
   # 21: `enabledRecovery` requests `read:sleep`, because `whoopwebhook`
   # reads the sleep a `recovery.updated` event names to find its cycle.
   # `whoopwebhook` drops an event WHOOP answers 401 or 403 for instead of
-  # failing the delivery.
+  # failing the delivery. `recovery` declares `cycleId`, the id the sync
+  # reads a recovery back by when no cycle row exists. ADDITIVE.
   version: 21
 ---
 # ---- the bundle document: the install unit --------------------------------
@@ -867,6 +868,15 @@ data:
       description: >-
         `cycle_id` — the physiological cycle this recovery scores, and THIS
         ROW'S IDENTITY, because a v2 recovery has no id of its own
+    cycleId:
+      type: int
+      displayName: Cycle ID
+      # The id the sync reads this recovery back by. The `cycle` reference
+      # names a row id composed from it, which cannot be read backwards, and
+      # with the cycles toggle off the cycle row never exists.
+      description: >-
+        `cycle_id` as WHOOP sends it, the number GET /v2/cycle/{cycleId}/recovery
+        reads this recovery back by
     # ---- the object's own scalars, in the v2 Recovery schema's order ------
     scoreState:
       type: enum
@@ -2064,7 +2074,7 @@ data:
             sid = rec.get("sleep_id")
             if sid in (None, ""):
                 raise ValueError("recovery record carries no sleep_id")
-            props = {"account": self.aid, "user": user_rid,
+            props = {"account": self.aid, "user": user_rid, "cycleId": int(cid),
                      "cycle": _rid(self.host, self.aid, "cycle", cid),
                      "sleep": _rid(self.host, self.aid, "sleep", sid)}
             # `created_at` is the trait's `at` and is not redeclared.
@@ -2312,10 +2322,12 @@ data:
 
     def _upstream_of(host, key, props):
         """The WHOOP id a stored row is read back by. A recovery is addressed by
-        the cycle it scores and holds that cycle only as a reference, so its
-        cycle row is read for the `cycleId`."""
+        the cycle it scores: its own `cycleId`, or on a row written before it
+        carried one, its cycle row's."""
         if key != "recovery":
             return props.get(UPSTREAM_PROPERTY[key])
+        if props.get("cycleId") not in (None, ""):
+            return props["cycleId"]
         cid = _ref_id(props.get("cycle"))
         if not cid:
             return None
@@ -3000,7 +3012,7 @@ data:
             sid = rec.get("sleep_id")
             if sid in (None, ""):
                 raise ValueError("recovery record carries no sleep_id")
-            props = {"account": self.aid, "user": self.user_rid,
+            props = {"account": self.aid, "user": self.user_rid, "cycleId": int(cid),
                      "cycle": _rid(self.host, self.aid, "cycle", cid),
                      "sleep": _rid(self.host, self.aid, "sleep", sid)}
             if rec.get("created_at"):

@@ -835,7 +835,8 @@ current cycle has no `end` and so no `endsAt`. `recovery` binds
 `sleep.sleepId` and `workout.workoutId` are v2 UUID strings, each carrying the
 retired v1 integer beside it as `v1Id`; `cycle.cycleId` and `user.userId` are
 integers; a v2 recovery has no id of its own, so its row is keyed on the cycle
-it scores. The references are `recovery.cycle`, `recovery.sleep`,
+it scores and keeps that cycle's `cycleId`, which is what the sync reads it
+back by when no cycle row exists. The references are `recovery.cycle`, `recovery.sleep`,
 `sleep.cycle`, and `user` and `account` on every mirror.
 
 **Revisions and deletions.** WHOOP's `updated_at` is the only revision an

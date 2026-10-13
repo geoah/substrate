@@ -88,6 +88,23 @@ type fakeWhoop struct {
 	// granted, when set, is the scope set the token carries: a read needing a
 	// scope outside it answers 403, as WHOOP refuses a grant without it.
 	granted []string
+	// removed is what WHOOP deleted after the fixtures were cut: a collection
+	// path to the cycle_id of the record its pages omit, and a read by id that
+	// answers 404.
+	removed map[string]float64
+	gone    map[string]bool
+}
+
+// remove makes WHOOP forget one object: the collection's pages omit the
+// record whose cycle_id is cycle, and a read of byID answers 404.
+func (f *fakeWhoop) remove(collection string, cycle float64, byID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.removed == nil {
+		f.removed, f.gone = map[string]float64{}, map[string]bool{}
+	}
+	f.removed[collection] = cycle
+	f.gone[byID] = true
 }
 
 // whoopScopeOf is the scope one read needs, from WHOOP's published
@@ -142,9 +159,17 @@ func (f *fakeWhoop) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	refused := f.granted != nil && !slices.Contains(f.granted, whoopScopeOf(r.URL.Path))
+	gone := f.gone[r.URL.Path]
+	omit, omitting := f.removed[r.URL.Path]
 	f.mu.Unlock()
 	if refused {
 		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	if gone {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": "Not Found"})
 		return
 	}
 	name := "GET" + strings.ReplaceAll(r.URL.Path, "/", "_")
@@ -170,6 +195,17 @@ func (f *fakeWhoop) handle(w http.ResponseWriter, r *http.Request) {
 			doc = seq[min(f.phase, len(seq)-1)]
 			f.mu.Unlock()
 		}
+	}
+	if m, ok := doc.(map[string]any); ok && omitting {
+		records, _ := m["records"].([]any)
+		kept := []any{}
+		for _, rec := range records {
+			if r, _ := rec.(map[string]any); r["cycle_id"] != omit {
+				kept = append(kept, rec)
+			}
+		}
+		doc = maps.Clone(m)
+		doc.(map[string]any)["records"] = kept
 	}
 	status := http.StatusOK
 	if m, ok := doc.(map[string]any); ok {
@@ -816,6 +852,37 @@ func TestWhoopSyncDeletesWhatWhoopNoLongerHas(t *testing.T) {
 	}
 	if missed := fake.missed(); len(missed) != 0 {
 		t.Fatalf("the fake had no fixture for %v", missed)
+	}
+}
+
+// TestWhoopSyncDeletesARecoveryWithCyclesOff: a recovery is read back by
+// the cycle it scores, so its row keeps WHOOP's `cycleId`. With the cycles
+// toggle off no cycle row exists to look it up on, and a recovery WHOOP
+// deleted (its webhook missed) is still read back inside the window,
+// answers 404 and is deleted.
+func TestWhoopSyncDeletesARecoveryWithCyclesOff(t *testing.T) {
+	_, ds, fake := newWhoop(t)
+	noCycles := func(props map[string]any) map[string]any {
+		props["enabledCycles"] = false
+		return props
+	}
+	whoopSync(t, ds, fake, noCycles(whoopProps(nil)))
+	if n := countLive(t, ds, whoopCycleType); n != 0 {
+		t.Fatalf("%d cycle rows with the cycles toggle off", n)
+	}
+	gone := whoopRow("recovery", whoopRescoredCycle)
+	if !whoopLive(t, ds, whoopRecoveryType, gone) {
+		t.Fatal("the first sync did not mirror the recovery WHOOP then deletes")
+	}
+
+	cycle, _ := strconv.ParseFloat(whoopRescoredCycle, 64)
+	fake.remove("/v2/recovery", cycle, "/v2/cycle/"+whoopRescoredCycle+"/recovery")
+	effects := whoopSync(t, ds, fake, noCycles(whoopSteady(nil)))
+	if got := whoopDeletes(effects)[whoopRecoveryType]; !slices.Equal(got, []string{gone}) {
+		t.Fatalf("the steady sync deleted recoveries %v, want the one WHOOP lost; read back %v", got, fake.readBacks())
+	}
+	if whoopLive(t, ds, whoopRecoveryType, gone) {
+		t.Fatal("the recovery WHOOP deleted is still mirrored")
 	}
 }
 
