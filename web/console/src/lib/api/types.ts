@@ -426,6 +426,9 @@ export interface AggregateBucket {
   /** `minute`, `hour`, `day`, `week`, `month` or `year`. */
   calendar?: string
   timezone?: string
+  /** The zone the recorded-local calendar places a value written without a
+   * UTC offset by; without it such a value is refused. */
+  fallbackTimezone?: string
   weekStart?: string
   offset?: string
   records?: AggregateRecords
@@ -509,6 +512,9 @@ export interface AggregateRow {
    * null (a coded state that held no time). */
   values: AggregateValue[] | null
   count: number
+  /** In the recorded-local calendar, the points among `count` written
+   * without a UTC offset and placed by `bucket.fallbackTimezone`. */
+  offsetless?: number
   bounded: number
   synthetic: boolean
   unavailable: boolean

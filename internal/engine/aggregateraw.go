@@ -229,7 +229,8 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 			if err := r.convertPoint(&sp.Point, og.delta, st.s); err != nil {
 				return nil, err
 			}
-			parts, err := r.spanParts(sp, og.offset)
+			off, _ := r.offsetAt(og, sp.Point.At)
+			parts, err := r.spanParts(sp, off)
 			if err != nil {
 				return nil, err
 			}
@@ -238,8 +239,8 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 				ev.spans = append(ev.spans, part.span)
 				ev.sources[st.s.source] = true
 				if b := part.bucket; b.local {
-					b.ends.hold(part.span.Start, part.span.End, si, og.offset)
-					ev.ends.hold(part.span.Start, part.span.End, si, og.offset)
+					b.ends.hold(part.span.Start, part.span.End, si, off)
+					ev.ends.hold(part.span.Start, part.span.End, si, off)
 				}
 			}
 		}
@@ -289,6 +290,9 @@ func (r *aggRun) settleRaw(out aggCells, list []*rawStream, form string) error {
 				}
 				if m.Bounded {
 					ev.bounded++
+				}
+				if m.fallback {
+					ev.offsetless++
 				}
 			}
 			var err error

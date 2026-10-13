@@ -90,6 +90,8 @@ type aggEvidence struct {
 	firstStream, lastStream int
 	count                   int64
 	bounded                 int64
+	// offsetless is the members placed by the fallback zone.
+	offsetless int64
 	// ends are a recorded-local row's own first and last points and held
 	// time, which its start and end are written at.
 	ends rowEnds

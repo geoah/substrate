@@ -58,6 +58,9 @@ type aggStream struct {
 	revision  sql.NullInt64
 	points    int64
 	rank      int
+	// offsetless says points the read takes from the stream were written
+	// without a UTC offset (discoverForms).
+	offsetless bool
 }
 
 func (s *aggStream) hold() obsHold { return obsHold{obsStream: s.obsStream, form: s.form} }
@@ -113,9 +116,11 @@ func (g *aggGroup) sourceOf(stream int, form string) string {
 // stored digits) and what the index rows carry beside it.
 type aggPoint struct {
 	observed.Point
-	off    int64
-	delta  bool
-	stream int
+	off int64
+	// fallback says off is the fallback zone's: the point recorded none.
+	fallback bool
+	delta    bool
+	stream   int
 }
 
 // aggMeta is what a read learns beside its rows.
@@ -145,6 +150,9 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	}
 	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.checkOffsets(streams); err != nil {
 		return nil, err
 	}
 	groups, err := p.groupStreams(streams)
@@ -197,6 +205,22 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 }
 
 // --- stream selection ---
+
+// checkOffsets refuses a recorded-local read of a stream holding values
+// written without a UTC offset, unless the bucket names a fallback zone to
+// place them by: such a value has no local day, and its UTC date is a guess.
+func (p *aggPlan) checkOffsets(streams []*aggStream) error {
+	if p.bucket.mode != bucketLocal || p.bucket.fallback != nil {
+		return nil
+	}
+	for _, s := range streams {
+		if s.offsetless {
+			return refuse("aggregate.bucket.fallbackTimezone", "the %s values of %s from %s include values written without a UTC offset, which the recorded-local calendar cannot place; name bucket.fallbackTimezone to place them by a zone's clock, or read in bucket.timezone",
+				s.form, s.metric, orOwner(s.source))
+		}
+	}
+	return nil
+}
 
 // checkMetric refuses a metric reference that names no metric, before
 // anything is selected: a record of a kind no observed kind's `metric`
@@ -337,33 +361,34 @@ func (p *aggPlan) windows(ctx context.Context, buckets []*aggBucket) ([][2]time.
 // its last point before the window where that value still holds into it
 // under its own hold and the request's maxGap ($12), because its held time is
 // the window's. A summary stream is one statistic's, and a stream of another
-// form has the statistic "".
+// form has the statistic "". Each code comes with whether the points holding
+// it recorded their UTC offset, which the recorded-local calendar needs.
 const discoverFormsSQL = `
-	SELECT DISTINCT s.n, f.form, x.code
+	SELECT DISTINCT s.n, f.form, x.code, x.known
 	FROM ` + discoverStreams + `
 	CROSS JOIN LATERAL (
-		SELECT r.code FROM observed_rollups r
+		SELECT r.code, r.offset_known AS known FROM observed_rollups r
 		WHERE s.statistic = '' AND r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
 		  AND r.form = f.form AND r.bucket15 >= w.wa AND r.bucket15 < w.wb AND r.n > 0
 		UNION
-		SELECT p.code FROM observed_points p
+		SELECT p.code, p.offset_known FROM observed_points p
 		WHERE ` + discoverCutEnd + ` AND p.ts >= w.a AND p.ts < LEAST(w.wa, w.b) AND ` + availablePoint + `
 		UNION
-		SELECT p.code FROM observed_points p
+		SELECT p.code, p.offset_known FROM observed_points p
 		WHERE ` + discoverCutEnd + ` AND p.ts >= GREATEST(w.wb, w.a, LEAST(w.wa, w.b)) AND p.ts < w.b AND ` + availablePoint + `
 		UNION
-		SELECT p.code FROM observed_points p
+		SELECT p.code, p.offset_known FROM observed_points p
 		WHERE ` + discoverSummary + ` AND p.ts >= w.a AND p.ts < w.b AND ` + availablePoint + `
 		UNION
-		SELECT c.code FROM (
-			SELECT p.code, p.value, p.ts, p.hold_ms FROM (
+		SELECT c.code, c.offset_known FROM (
+			SELECT p.code, p.value, p.ts, p.hold_ms, p.offset_known FROM (
 				SELECT DISTINCT r.bucket15 FROM observed_rollups r
 				WHERE f.form = 'gauge' AND s.statistic = ''
 				  AND r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
 				  AND r.form = 'gauge' AND r.bucket15 < w.a
 				ORDER BY r.bucket15 DESC LIMIT 2) rb
 			CROSS JOIN LATERAL (
-				SELECT p.code, p.value, p.ts, p.hold_ms, p.record_id, p.ord FROM observed_points p
+				SELECT p.code, p.value, p.ts, p.hold_ms, p.offset_known, p.record_id, p.ord FROM observed_points p
 				WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
 				  AND p.ts >= rb.bucket15 AND p.ts < LEAST(rb.bucket15 + interval '15 minutes', w.a) AND p.form = 'gauge'
 				ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p
@@ -372,7 +397,7 @@ const discoverFormsSQL = `
 		  AND (c.hold_ms IS NULL OR c.ts + c.hold_ms * interval '1 millisecond' > w.a)
 		  AND ($12::bigint = 0 OR c.ts + $12::bigint * interval '1 millisecond' > w.a)
 	) x
-	ORDER BY s.n, f.form, x.code`
+	ORDER BY s.n, f.form, x.code, x.known`
 
 // discoverStreams is every stream, form and window discoverFormsSQL and
 // discoverCountSQL take, as s, f and w.
@@ -462,7 +487,8 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 	for rows.Next() {
 		var k key
 		var code string
-		if err := rows.Scan(&k.n, &k.form, &code); err != nil {
+		var known bool
+		if err := rows.Scan(&k.n, &k.form, &code, &known); err != nil {
 			return nil, 0, err
 		}
 		s := found[k]
@@ -473,7 +499,10 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 			found[k] = s
 			out = append(out, s)
 		}
-		s.codes = append(s.codes, code)
+		if n := len(s.codes); n == 0 || s.codes[n-1] != code {
+			s.codes = append(s.codes, code)
+		}
+		s.offsetless = s.offsetless || !known
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, err

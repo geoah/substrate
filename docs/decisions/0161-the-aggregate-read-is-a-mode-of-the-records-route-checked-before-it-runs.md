@@ -38,7 +38,12 @@ Chosen: a mode of the records route.
   the recorded-local day, where each reading's own offset decides its date.
   `{"records": {"filter", "around"}}` uses each matched record's
   `[at, endsAt)` as a bucket. A reading with no offset is bucketed by a named
-  zone or refused, never by UTC or the server's clock.
+  zone or refused, never by UTC or the server's clock: a calendar with a
+  `timezone` places it by that zone, and the recorded-local calendar refuses
+  a stream holding one (a `422` naming the stream and
+  `bucket.fallbackTimezone`) unless the request names
+  `bucket.fallbackTimezone`, the zone it places such a reading by, each row
+  counting those readings in `offsetless`.
 - **Typed reducers**, checked against the value's form
   ([0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md)),
   each answering with its own unit.

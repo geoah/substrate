@@ -160,6 +160,10 @@ type AggregateBucket struct {
 	// Timezone is an IANA zone; absent with Calendar means the recorded-local
 	// calendar, each point placed by its own UTC offset.
 	Timezone string `json:"timezone,omitempty"`
+	// FallbackTimezone is the IANA zone the recorded-local calendar places a
+	// value written without a UTC offset by; without it such a value is
+	// refused, never placed on its UTC date.
+	FallbackTimezone string `json:"fallbackTimezone,omitempty"`
 	// WeekStart is the first day of a week, monday by default.
 	WeekStart string `json:"weekStart,omitempty"`
 	// Offset shifts each calendar bucket's start (PT4H for a day from 04:00).
@@ -337,6 +341,9 @@ type AggregateRow struct {
 	// Count is the points that fed the row (a stream's point count on the
 	// latest read, the records on a property read).
 	Count int64 `json:"count"`
+	// Offsetless counts the points among Count written without a UTC offset,
+	// which the recorded-local calendar placed by bucket.fallbackTimezone.
+	Offsetless int64 `json:"offsetless,omitempty"`
 	// Bounded counts the values written with a comparator (a lab's `<0.01`).
 	// They are counted, and for now also in every average and sum as the
 	// bound's number: a rollup row keeps their count and not their sum, so

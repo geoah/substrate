@@ -1160,7 +1160,7 @@ read takes the whole [filter grammar](#the-filter-grammar).
 | --- | --- | --- |
 | `{"every": "PT5M", "origin"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
 | `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
-| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows', else the range's |
+| `{"calendar": "day", "fallbackTimezone"?}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows', else the range's |
 | `{"records": {"filter", "around"?, "maxRecords"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations) | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
@@ -1171,8 +1171,16 @@ points by instant, so a day at another offset than the range's is cut where
 the range starts and ends: a range of 2026-09-21 at `+03:00` over points at
 `+01:00` answers 2026-09-20 from `22:00+01:00` to midnight and 2026-09-21 from
 midnight to `22:00+01:00`. A row's `start` and `end` are its own group's and
-code's, whatever else the read selects. A point without an offset was written
-at offset 0 and falls on its UTC date in the recorded-local calendar.
+code's, whatever else the read selects.
+
+A value written without a UTC offset has no recorded-local date. A
+recorded-local read of a stream holding one in the range is a `422` naming
+the stream and `bucket.fallbackTimezone`, decided before any point is
+reduced. With `fallbackTimezone` (an IANA zone) the read places each such
+value by that zone's clock at its instant, reads the stream from raw points,
+and counts the values it placed so in the row's `offsetless`. A calendar in a
+named `timezone` places every value by that zone and takes no
+`fallbackTimezone`.
 
 **The latest read.** No `bucket`, no `range` and the one reducer `last` is the
 newest point of each group, straight from the index's latest table: the
@@ -1300,6 +1308,7 @@ where summaries did.
 | `values` | one per reducer in request order (`timeInState` without states, one per code), then the rolling values |
 | `count` | the points that fed the row; on the latest read the group's point count |
 | `bounded` | the values written with a comparator (a lab's `<0.01`) |
+| `offsetless` | in the recorded-local calendar, the points among `count` written without a UTC offset, placed by `bucket.fallbackTimezone`; absent when none |
 | `synthetic` | a row `fill` made |
 | `unavailable` | a row whose range has expired index points a reducer needs; nothing expires yet, so it is always `false` |
 | `nonAdditive` | the records mode: windows may overlap |
@@ -1334,7 +1343,8 @@ bucket boundary that cuts a row, a recorded-local `minute` bucket or an `offset`
 that is not whole quarter hours, a recorded-local read of a stream with a
 point in the range, or a gauge value held into it, whose UTC offset is not
 whole quarter hours (a row at `+00:01` holds points on both sides of local
-midnight), and every summary. Raw points and rollups
+midnight) or was never written (placed by `fallbackTimezone`), and every
+summary. Raw points and rollups
 answer the same, to float rounding: `internal/observed` holds both.
 
 ### `fill`, `rolling` and `downsample`
@@ -1439,7 +1449,10 @@ merged as one row.
   reducer or a bad argument; a reducer the form does not take (naming the
   form); `circularMean` off an angle; a `unit` outside the measure (naming
   the measure); a value the read takes whose unit does not convert; a group
-  of two forms; a group whose summaries hold two statistics, or `sum` over a
+  of two forms; a recorded-local read of a stream holding a value written
+  without a UTC offset and no `bucket.fallbackTimezone`, or a
+  `fallbackTimezone` outside the recorded-local calendar; a group whose
+  summaries hold two statistics, or `sum` over a
   statistic other than `sum` and `count`; `groupBy` `statistic` on a read
   that is not from summaries; `priority` over two counters; a budget below zero or over its
   cap, or a read over a budget (naming the limit); `downsample` beside

@@ -43,11 +43,14 @@ var calendarUnits = []string{"minute", "hour", "day", "week", "month", "year"}
 
 // bucketSpec is a request's bucket, parsed.
 type bucketSpec struct {
-	mode      string
-	every     time.Duration
-	origin    time.Time
-	calendar  string
-	loc       *time.Location
+	mode     string
+	every    time.Duration
+	origin   time.Time
+	calendar string
+	loc      *time.Location
+	// fallback is the zone the recorded-local calendar places a value
+	// written without a UTC offset by; nil refuses such a value.
+	fallback  *time.Location
 	weekStart time.Weekday
 	offset    time.Duration
 	// records mode
@@ -232,6 +235,16 @@ func (p *aggPlan) parseBucket() error {
 	}
 	if modes != 1 {
 		return refuse("aggregate.bucket", "name one time mode: every, calendar or records")
+	}
+	if b.FallbackTimezone != "" {
+		if b.Calendar == "" || b.Timezone != "" {
+			return refuse("aggregate.bucket.fallbackTimezone", "a fallback zone places the values written without a UTC offset in the recorded-local calendar (calendar with no timezone); every, records and a calendar in a timezone place each value by its instant")
+		}
+		loc, err := time.LoadLocation(b.FallbackTimezone)
+		if err != nil {
+			return refuse("aggregate.bucket.fallbackTimezone", "%q is not a time zone the server knows", b.FallbackTimezone)
+		}
+		spec.fallback = loc
 	}
 	switch {
 	case b.Every != "":

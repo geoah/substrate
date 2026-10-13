@@ -539,10 +539,13 @@ same as a `null`.
 A point's `utc_offset_min` is a single record's `utcOffset`. A trace's point
 takes `utcOffsetStart` when it lies before the midpoint of the period and
 `utcOffsetEnd` from the midpoint on; a trace naming one of the two uses it
-for every point. An absent offset is 0, so a value written without one falls
-on its UTC day, and its `offset_known` is false: the point, its rollup row
-and its stream's latest row say the offset was never recorded, which a
-reader tells apart from a value written at offset 0.
+for every point. An absent offset is stored as 0 with `offset_known` false:
+the point, its rollup row and its stream's latest row say the offset was
+never recorded, which a reader tells apart from a value written at offset 0.
+The aggregate read's recorded-local calendar refuses such a value, or places
+it by the request's `bucket.fallbackTimezone`
+([api](api.md#the-four-time-modes)); a calendar in a named zone places it by
+that zone like any other.
 
 `value_base` is the value in its measure's base unit, in
 `temperature-difference` where `delta` is true (0.3 `Cel` is 0.3 `K`), and

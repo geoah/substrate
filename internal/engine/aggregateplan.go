@@ -54,7 +54,7 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 				// hour names at its offset, which holds only where the
 				// offset is whole quarter hours: at +00:01 a row from 23:45Z
 				// holds points on both sides of local midnight.
-				if r.p.bucket.mode == bucketLocal && !wholeQuarterHours(r.rowGroups[row.Group].offset) {
+				if og := r.rowGroups[row.Group]; r.p.bucket.mode == bucketLocal && (og.offsetUnknown || !wholeQuarterHours(og.offset)) {
 					g.rollups = false
 					break
 				}
@@ -146,7 +146,7 @@ func (r *aggRun) planCarries(g *aggGroup) error {
 			if p == nil || p.Unavailable || carryEnded(p, floor15(windows[i][0]), r.p.maxGap) {
 				continue
 			}
-			if !wholeQuarterHours(r.rowGroups[p.Group].offset) {
+			if og := r.rowGroups[p.Group]; og.offsetUnknown || !wholeQuarterHours(og.offset) {
 				g.rollups = false
 			}
 		}
@@ -229,6 +229,13 @@ func (r *aggRun) rollupable(g *aggGroup) bool {
 	if p.bucket.mode == bucketLocal {
 		if p.bucket.calendar == "minute" || p.bucket.offset%bucketWidth != 0 {
 			return false
+		}
+		// A value written without an offset is placed by the fallback zone's
+		// clock at its own instant, which a row does not keep.
+		for _, s := range g.raw {
+			if s.offsetless {
+				return false
+			}
 		}
 		return aligned15(p.from) && aligned15(p.to)
 	}

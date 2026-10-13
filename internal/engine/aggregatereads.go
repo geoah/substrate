@@ -56,10 +56,22 @@ func (r *aggRun) scanAggPoint(rows *sql.Rows, lead ...any) (aggPoint, error) {
 	if err != nil {
 		return ap, err
 	}
-	ap.Point, ap.off, ap.delta = sp.point, sp.group.offset, sp.group.delta
+	ap.Point, ap.delta = sp.point, sp.group.delta
+	ap.off, ap.fallback = r.offsetAt(sp.group, ap.At)
 	ap.RecordID, ap.Ord = recordID, ord
 	r.rowGroups[ap.Group] = sp.group
 	return ap, nil
+}
+
+// offsetAt is the UTC offset in minutes a value of the group at t is placed
+// by: its own, or where it recorded none and the bucket names a fallback
+// zone, that zone's at t (fallback true). Only the recorded-local calendar
+// reads it, and only that calendar takes a fallback zone.
+func (r *aggRun) offsetAt(g obsGroup, t time.Time) (offset int64, fallback bool) {
+	if !g.offsetUnknown || r.p.bucket.fallback == nil {
+		return g.offset, false
+	}
+	return offsetMinutes(t.In(r.p.bucket.fallback)), true
 }
 
 // convertPoint converts the number of a point the read takes from stream s
@@ -215,7 +227,7 @@ func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.
 }
 
 // rollupColumns are the columns of observed_rollups a read takes.
-const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.bucket15, r.n, r.bounded, r.sum, r.min, r.max, r.mean, r.m2,
+const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known, r.bucket15, r.n, r.bounded, r.sum, r.min, r.max, r.mean, r.m2,
 	r.first_ts, r.first_value::text, r.last_ts, r.last_value::text, r.covered_ms, r.held_ms, r.twa_sum, r.last_hold_ms,
 	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum, r.span_end,
 	r.first_record_id, r.first_ord, r.last_record_id, r.last_ord, r.min_value::text, r.max_value::text`
@@ -230,7 +242,7 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 			SELECT * FROM observed_rollups r
 			WHERE r.metric = $1 AND r.kind = $2 AND r.source = $3 AND r.about = $4 AND r.channel = $5 AND r.form = $6
 			  AND r.bucket15 >= w.a AND r.bucket15 < w.b) r
-		ORDER BY r.bucket15, r.code, r.unit, r.delta, r.utc_offset_min`,
+		ORDER BY r.bucket15, r.code, r.unit, r.delta, r.utc_offset_min, r.offset_known`,
 		append(s.hold().args(), from, to)...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate rollups: %w", err)
@@ -240,6 +252,7 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 	for rows.Next() {
 		var (
 			g                                    obsGroup
+			known                                bool
 			bucket                               time.Time
 			n, bounded, covered, maxGap, startGp int64
 			sum, minV, maxV, mean, m2, twa       sql.NullFloat64
@@ -253,11 +266,12 @@ func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
 			firstOrd, lastOrd                    sql.NullInt64
 			minExact, maxExact                   sql.NullString
 		)
-		if err := rows.Scan(&g.code, &g.unit, &g.delta, &g.offset, &bucket, &n, &bounded, &sum, &minV, &maxV, &mean, &m2,
+		if err := rows.Scan(&g.code, &g.unit, &g.delta, &g.offset, &known, &bucket, &n, &bounded, &sum, &minV, &maxV, &mean, &m2,
 			&firstTS, &firstV, &lastTS, &lastV, &covered, &held, &twa, &lastHold, &maxGap, &startGp, &increase, &resets, &sin, &cos,
 			&spanEnd, &firstRecord, &firstOrd, &lastRecord, &lastOrd, &minExact, &maxExact); err != nil {
 			return nil, err
 		}
+		g.offsetUnknown = !known
 		key := g.key()
 		r.rowGroups[key] = g
 		st := observed.Stats{

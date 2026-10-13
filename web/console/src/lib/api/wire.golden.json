@@ -58,6 +58,7 @@
   "AggregateBucket": {
     "calendar": false,
     "every": false,
+    "fallbackTimezone": false,
     "offset": false,
     "origin": false,
     "records": false,
@@ -127,6 +128,7 @@
     "from": false,
     "group": false,
     "nonAdditive": false,
+    "offsetless": false,
     "record": false,
     "sources": false,
     "start": true,
