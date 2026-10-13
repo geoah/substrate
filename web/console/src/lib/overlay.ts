@@ -775,16 +775,34 @@ export function groupFixed(
  * the metric's own codes. A code outside them is the quiet grey. */
 export function codeColor(code: string, codes: readonly string[]): string {
   const at = codes.indexOf(code)
-  return at >= 0 && at < 8 ? `var(--series-${at + 1})` : "var(--faint)"
+  return at >= 0 && at < SERIES_COLORS
+    ? `var(--series-${at + 1})`
+    : "var(--faint)"
 }
 
-/** The colour of each series across a chart: its place among every value
- * the chart's plots could show, so a toggle or a filter never repaints the
- * ones that stay. Past the eighth, the quiet grey. */
-export function seriesColors(universe: readonly string[]): Map<string, string> {
+/** The colours a chart has before the quiet grey. */
+const SERIES_COLORS = 8
+
+/** The colour of each series across a chart. A key in `fixed` wears the
+ * colour at its slot there (a category's code, `codeColor`); every other
+ * key, in `universe` order, takes the next slot no fixed key holds, so
+ * its colour is its place among every value the chart's plots could show
+ * and a toggle or a filter never repaints the ones that stay. Past the
+ * eighth colour, the quiet grey. */
+export function seriesColors(
+  universe: readonly string[],
+  fixed: ReadonlyMap<string, number> = new Map()
+): Map<string, string> {
+  const color = (at: number) =>
+    at >= 0 && at < SERIES_COLORS ? `var(--series-${at + 1})` : "var(--faint)"
+  const held = new Set(fixed.values())
   const out = new Map<string, string>()
-  universe.forEach((key, at) =>
-    out.set(key, at < 8 ? `var(--series-${at + 1})` : "var(--faint)")
-  )
+  for (const [key, at] of fixed) out.set(key, color(at))
+  let next = 0
+  for (const key of universe) {
+    if (out.has(key)) continue
+    while (held.has(next)) next++
+    out.set(key, color(next++))
+  }
   return out
 }

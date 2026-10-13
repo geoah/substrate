@@ -22,26 +22,31 @@ import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
-import type { AggregateResult } from "@/lib/api/types"
+import type { AggregateResult, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { recordTimelineSearch } from "@/lib/observations"
 import { isoWithOffset, windowWords } from "@/lib/observations-time"
 import {
+  APPLE,
   BODY_MASS,
   GARMIN,
+  HEART,
   LATEST,
   LATEST_CHANNELS,
   LONDON_TRIP,
   LATEST_PEOPLE,
   LEO,
   METRIC,
+  METRICS,
   MIA,
   SLEEP,
   SLEEP_STAGE,
   SOURCE,
+  SOURCES,
   STEPS,
   WEIGHT,
   WHOOP,
+  WITHINGS,
   ZONES,
   addFilter,
   latestAnswer,
@@ -82,9 +87,10 @@ function mount(
   searchParams: string,
   technical = false,
   respond: (read: SeenRead) => AggregateResult | Response = answer,
-  kindsFail = false
+  kindsFail = false,
+  stored?: SubstrateRecord[]
 ) {
-  const server = observationsServer(respond)
+  const server = observationsServer(respond, undefined, stored)
   vi.stubGlobal("fetch", vi.fn(pageFetch(server, kindsFail)))
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -1575,6 +1581,82 @@ describe("the charts", () => {
     // The fixture's metric lists rem, deep, light, awake.
     expect(fill("rem")).toBe("var(--series-1)")
     expect(fill("awake")).toBe("var(--series-4)")
+  })
+
+  it("gives another metric's series the colours its stages leave free", async () => {
+    // The shipped sleep stage metric lists six codes; the night holds four.
+    const stages = ["awake", "light", "deep", "rem", "asleep", "in_bed"]
+    const stored = [
+      ...METRICS.map((m) =>
+        m.id === "health/sleep_stage"
+          ? { ...m, properties: { ...m.properties, codeSet: stages } }
+          : m
+      ),
+      ...SOURCES,
+    ]
+    const sources = [APPLE, GARMIN, WHOOP, WITHINGS]
+    // Heart rate from four sources, grouped by source: four lines.
+    const latest = {
+      ...LATEST,
+      rows: [
+        ...LATEST.rows.filter((r) => r.group?.metric !== HEART),
+        ...sources.map((source) => ({
+          ...LATEST.rows[0],
+          group: { metric: HEART, source },
+        })),
+      ],
+    }
+    const heart: AggregateResult = {
+      ...WEIGHT,
+      metric: HEART,
+      unit: "/min",
+      rows: sources.map((source, i) => ({
+        ...WEIGHT.rows[0],
+        group: { source },
+        sources: [source],
+        values: [{ reducer: "avg", value: String(60 + i), unit: "/min" }],
+      })),
+    }
+    // Whichever metric was picked first.
+    for (const [picked, name] of [
+      ["health/heart_rate,health/sleep_stage", "Heart rate and Sleep stage"],
+      ["health/sleep_stage,health/heart_rate", "Sleep stage and Heart rate"],
+    ]) {
+      cleanup()
+      mount(
+        `?metric=${picked}&group=source&${WINDOW}`,
+        false,
+        (read) =>
+          !read.aggregate.metric
+            ? latestAnswer(read, latest)
+            : read.aggregate.metric.ref === HEART
+              ? heart
+              : answer(read),
+        false,
+        stored
+      )
+      const chart = await lane(name)
+      const strokes = () =>
+        [...chart.querySelectorAll("g[data-series] > path[stroke]")].map((p) =>
+          p.getAttribute("stroke")
+        )
+      await waitFor(() => expect(strokes()).toHaveLength(4))
+      const fills = new Map(
+        [...chart.querySelectorAll("path[data-series]")].map((p) => [
+          p.getAttribute("data-series")!.split("\u0000")[1],
+          p.getAttribute("fill"),
+        ])
+      )
+      // Each stage keeps its place in the metric's six codes.
+      expect(fills.get("awake")).toBe("var(--series-1)")
+      expect(fills.get("rem")).toBe("var(--series-4)")
+      // Each source's line has a colour of its own, none a stage's or grey.
+      expect(new Set(strokes()).size).toBe(4)
+      for (const stroke of strokes()) {
+        expect(stroke).not.toBe("var(--faint)")
+        expect([...fills.values()]).not.toContain(stroke)
+      }
+    }
   })
 
   it("stacks a coded gauge's time in each state as the engine answers it", async () => {

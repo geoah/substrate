@@ -691,7 +691,8 @@ function together(
  * `seen` each metric's own read of them, in order. */
 export function observationsServer(
   answer: (read: SeenRead) => AggregateResult | Response,
-  kinds: KindInfo[] = KINDS
+  kinds: KindInfo[] = KINDS,
+  stored: SubstrateRecord[] = [...METRICS, ...SOURCES]
 ): {
   fetch: (input: RequestInfo | URL) => Promise<Response>
   seen: SeenRead[]
@@ -715,7 +716,7 @@ export function observationsServer(
     if (filter.kinds?.includes("substrate.reamde.dev/core/kind")) {
       return json({ records: kinds, head: 0, generation: "g" })
     }
-    const records = [...METRICS, ...SOURCES].filter(
+    const records = stored.filter(
       (r) =>
         (!filter.kinds || filter.kinds.includes(r.kind)) &&
         (!filter.ids || filter.ids.includes(r.id))

@@ -839,7 +839,8 @@ standard deviation, a time in a zone or a circular mean). An amount, a
 count, a counter's increase and a time in a zone are bars, and a category
 is bars stacked per code that counts as one unit, its time, each code in
 the colour of its place in the metric's `codeSet` whatever else the chart
-draws. The series of one unit
+draws; the other series take the colours of the codes the answer does not
+hold first. The series of one unit
 share the left axis and a second unit reads on the right, each axis
 captioned with its unit; a third unit is not drawn, and the chart names the
 metrics it leaves out and what to deselect to draw them. One crosshair marks

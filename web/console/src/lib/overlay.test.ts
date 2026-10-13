@@ -961,6 +961,23 @@ describe("one metric's plot", () => {
     expect(universeOf(sleep, ["nap", "rem"])).toEqual([...codes, "nap"])
   })
 
+  it("gives a fixed key its slot and the rest the slots left free", () => {
+    const colors = seriesColors(
+      ["a", "b", "c"],
+      new Map([
+        ["rem", 0],
+        ["deep", 2],
+      ])
+    )
+    expect(colors.get("rem")).toBe("var(--series-1)")
+    expect(colors.get("deep")).toBe("var(--series-3)")
+    expect([colors.get("a"), colors.get("b"), colors.get("c")]).toEqual([
+      "var(--series-2)",
+      "var(--series-4)",
+      "var(--series-5)",
+    ])
+  })
+
   it("greys a series past the eighth colour", () => {
     const colors = seriesColors(Array.from({ length: 9 }, (_, i) => `s${i}`))
     expect(colors.get("s7")).toBe("var(--series-8)")

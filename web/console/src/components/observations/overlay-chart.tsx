@@ -624,9 +624,9 @@ export function OverlayChart({
 }
 
 /** Every series the chart's metrics answer, each with its label, its axis
- * and its colour: a colour is a series' place among every value its
- * metric could show, so a toggle or a filter never repaints the ones that
- * stay. A category metric's series come in its own order. */
+ * and its colour (`seriesColors`): a colour is a series' place among every
+ * value its metric could show, so a toggle or a filter never repaints the
+ * ones that stay. A category metric's series come in its own order. */
 function drawnSeries(
   states: readonly PlotState[],
   buckets: readonly Bucket[],
@@ -636,15 +636,12 @@ function drawnSeries(
 ): Drawn[] {
   const universe: string[] = []
   const all: Drawn[] = []
-  // A category metric's codes take the first colours, in the metric's own
-  // order, so a stage wears one colour beside any other metric
-  // (`codeColor`).
-  const coded = states.filter((st) => st.plot.groupKey === "code")
-  for (const { plot } of coded) {
-    for (const code of plot.codes ?? []) {
-      universe.push(seriesKey(plot.metric, code))
-    }
-  }
+  // The first category metric's codes the answer holds keep their place
+  // in its own codes, so a stage wears one colour beside any other metric
+  // (`codeColor`); the codes it does not hold leave their colours to the
+  // other series.
+  const coded = states.find((st) => st.plot.groupKey === "code")?.plot
+  const fixed = new Map<string, number>()
   for (const state of states) {
     const { plot } = state
     const answered = seriesOn(
@@ -659,6 +656,9 @@ function drawnSeries(
       answered.map((s) => s.key)
     )
     for (const v of own) {
+      // Where the first category's codes are fixed, those it holds wear
+      // their own colours and those it does not hold draw nothing.
+      if (plot === coded && plot.codes?.includes(v)) continue
       const key = seriesKey(plot.metric, v)
       if (!universe.includes(key)) universe.push(key)
     }
@@ -668,6 +668,8 @@ function drawnSeries(
         ? [...answered].sort((a, b) => own.indexOf(a.key) - own.indexOf(b.key))
         : answered
     for (const s of ordered) {
+      const at = plot === coded ? (plot.codes ?? []).indexOf(s.key) : -1
+      if (at >= 0) fixed.set(seriesKey(plot.metric, s.key), at)
       all.push({
         key: seriesKey(plot.metric, s.key),
         plot,
@@ -679,7 +681,7 @@ function drawnSeries(
       })
     }
   }
-  const colors = seriesColors(universe)
+  const colors = seriesColors(universe, fixed)
   for (const d of all) {
     d.color =
       colors.get(d.key) ?? (d.series.key ? "var(--faint)" : "var(--series-1)")
