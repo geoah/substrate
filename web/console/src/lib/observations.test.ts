@@ -2,7 +2,7 @@
  * reader ask for, ranges and buckets, the request each chart issues, and an
  * answer cut into buckets and series. */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import type { AggregateRow, KindInfo } from "@/lib/api/types"
 import {
@@ -31,6 +31,7 @@ import {
   presetRange,
   rangeWords,
   readChoices,
+  readerTimezone,
   recordTimelineSearch,
   reducerKey,
   reducerLabel,
@@ -325,6 +326,20 @@ describe("ranges and buckets", () => {
       timezone: "Europe/Athens",
     })
     expect(bucketOf("week")).toEqual({ calendar: "week", weekStart: "monday" })
+  })
+
+  it("reads the reader's zone, UTC where the runtime names none", () => {
+    expect(readerTimezone()).toBe("Europe/Athens")
+    // Without a zone a calendar bucket would be the recorded-local one,
+    // while the range stays in the browser's offset.
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({} as Intl.ResolvedDateTimeFormatOptions)
+    try {
+      expect(readerTimezone()).toBe("UTC")
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it("ticks the axis at the size's boundaries across the whole range", () => {

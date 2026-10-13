@@ -783,8 +783,9 @@ export function bucketEstimate(
 export const MAX_BUCKETS = 1440
 
 /** A size as the aggregate's time mode: 15 minutes is a physical window on
- * UTC instants, the rest calendar windows in the reader's zone, weeks from
- * Monday. */
+ * UTC instants, the rest calendar windows in the zone given, weeks from
+ * Monday. With no zone, a calendar window is the recorded-local one (each
+ * point's own offset). */
 export function bucketOf(size: BucketSize, timezone?: string): AggregateBucket {
   const zone = timezone ? { timezone } : {}
   switch (size) {
@@ -801,13 +802,14 @@ export function bucketOf(size: BucketSize, timezone?: string): AggregateBucket {
   }
 }
 
-/** The reader's time zone, for calendar buckets; undefined where the
- * runtime does not say. */
-export function readerTimezone(): string | undefined {
+/** The reader's time zone, for calendar buckets: the runtime's, else UTC.
+ * Never none, since a calendar bucket without a zone is the recorded-local
+ * calendar while the range stays in the browser's offset. */
+export function readerTimezone(): string {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
   } catch {
-    return undefined
+    return "UTC"
   }
 }
 
