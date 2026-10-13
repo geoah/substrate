@@ -86,7 +86,8 @@ over a gauge and `increase` over an amount are a `422` naming the form),
 one too), `TestObservedValueAndCodeAreExclusive`, and
 `TestEditingAMetricChangesNoIndexedRow` (rewriting a metric record's form,
 unit, hold and measure leaves `observed_points`, `observed_rollups` and
-`observed_latest` unchanged).
+`observed_latest` unchanged, and a reading written after the rewrite
+derives the same points as the one written before it).
 
 ## More information
 

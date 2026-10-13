@@ -735,17 +735,19 @@ func TestObservedRewriteReplacesPointsRollupsAndLatest(t *testing.T) {
 
 // Decision 0156: the write rules and the index read nothing from a metric
 // record, so rewriting one (its form, unit, hold and measure) leaves every
-// derived row as it was. A rewritten reading moves them, so the snapshot
-// sees a change where there is one.
+// derived row as it was, and the same reading written after the rewrite is
+// admitted and derives the points it derived before. A rewritten reading
+// moves the index, so the snapshot sees a change where there is one.
 func TestEditingAMetricChangesNoIndexedRow(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
-	r.mustPut(t, r.observation, "w", weighing(r.observedRepo))
-	r.mustPut(t, r.trace, "hr/06", map[string]any{
+	hr := map[string]any{
 		"metric": r.metricRef("health/heart_rate"), "source": r.sourceRef("garmin"), "form": "gauge",
 		"unit": "/min", "at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z",
 		"every": "PT10M", "values": []any{"58", "57", "59", "61", "60", "62"}, "revision": 1,
-	})
+	}
+	r.mustPut(t, r.observation, "w", weighing(r.observedRepo))
+	r.mustPut(t, r.trace, "hr/06", hr)
 	before := observedTables(t, r.db)
 	for id, props := range map[string]map[string]any{
 		"health/body_mass":  {"form": "amount", "unit": "g", "hold": "PT1M"},
@@ -758,10 +760,19 @@ func TestEditingAMetricChangesNoIndexedRow(t *testing.T) {
 	if got := observedTables(t, r.db); got != before {
 		t.Errorf("rewriting the metrics moved the observed index:\nbefore %s\nafter  %s", before, got)
 	}
+	r.mustPut(t, r.observation, "w/again", weighing(r.observedRepo))
+	r.mustPut(t, r.trace, "hr/06/again", hr)
+	for _, c := range []struct{ kind, id string }{{r.observation, "w"}, {r.trace, "hr/06"}} {
+		was, now := r.points(t, c.kind, c.id), r.points(t, c.kind, c.id+"/again")
+		if len(was) == 0 || fmt.Sprintf("%+v", now) != fmt.Sprintf("%+v", was) {
+			t.Errorf("%s written after the metric rewrite derives other points:\nbefore %+v\nafter  %+v", c.id, was, now)
+		}
+	}
+	written := observedTables(t, r.db)
 	weight := weighing(r.observedRepo)
 	weight["value"] = quantity("72.50", "kg")
 	r.mustPut(t, r.observation, "w", weight)
-	if observedTables(t, r.db) == before {
+	if observedTables(t, r.db) == written {
 		t.Error("a rewritten reading left the observed index as it was")
 	}
 }
