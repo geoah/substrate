@@ -25,6 +25,7 @@ segments and the id, which is exactly its
 GET    /api/v1/records?filter&orderBy&first&after|offset&expand&withAnnotations&count  # the list
 GET    /api/v1/records?q&mode&filter&first                                  # the ranked read
 GET    /api/v1/records?watch=1&filter&from&generation                       # the tail
+GET    /api/v1/records?aggregate&downsample&filter                          # the aggregate read
 POST   /api/v1/records                            # create; the body names `kind`, the server assigns the id
 GET    /api/v1/{authority}/{package}/{kind}/{id}  # takes no query parameter
 PUT    /api/v1/{authority}/{package}/{kind}/{id}  # upsert at the given id
