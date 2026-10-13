@@ -856,14 +856,16 @@ chart that draws them reads the list beside the aggregate.
 
 ## Resting heart rate across providers and merged
 
-Side by side, one row per source (`separate`, the default):
+Side by side, one row per source (`separate`, the default). WHOOP's value
+spans the night from its evening onset, so `place: "end"` counts each night
+in the week of the morning it ended:
 
 ```json
 {"aggregate": {
    "metric": {"ref": "ada.example.com/observations/metric/health/resting_heart_rate"},
    "from": "summaries",
    "range": {"gte": "2026-10-05T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
-   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
+   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens", "place": "end"},
    "reducers": ["avg", "min", "max", "count"]}}
 ```
 
