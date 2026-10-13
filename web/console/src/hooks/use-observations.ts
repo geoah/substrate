@@ -1,26 +1,33 @@
 /** What every observations surface reads first: the kinds binding the
  * `observed` trait, the kinds their references are pinned to, the metric
  * records (names, default forms, units, codes), the streams (one row per
- * metric, source and thing, from the latest read) and the titles of the
- * sources and the things observed.
+ * metric, source, thing and channel, from the latest read) and the titles of
+ * the sources and the things observed.
  *
- * Discovery is partitioned, because one latest read makes at most 2000
- * groups (the cap it asks for) and a repository can hold more streams than
- * that: a first read
- * lists the metrics with a point (one group each), then the streams are
- * read a few metrics at a time (`discoveryChunks`). A page's chosen
- * metrics, sources and things narrow every read on the server, except the
- * Source and About menus' own reads (`useFacetValues`), which leave out
- * the menu's own choice. */
+ * With no metric chosen, one latest read lists every stream under the
+ * chosen sources and things, at the group cap (2000). Where the server
+ * refuses it for making more groups, a first read lists the metrics with a
+ * point (one group each) and the streams are read a few metrics at a time
+ * (`discoveryChunks`). With metrics chosen, each one's streams are one read,
+ * by metric alone: adding a metric keeps the others' answers, and choosing a
+ * source or a thing re-reads no stream, since a page narrows its streams by
+ * those itself. The list of every metric is then read beside them, under the
+ * chosen sources and things, for a metric picker. The Source and About
+ * menus' own reads (`useFacetValues`) leave out the menu's own choice. */
 
 import { useMemo } from "react"
-import { useQueries, useQuery } from "@tanstack/react-query"
+import {
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { aggregateQueryOptions } from "@/lib/api/observations"
 import { recordsQueryOptions } from "@/lib/api/records"
-import type { AggregateRow, KindInfo } from "@/lib/api/types"
+import type { AggregateResult, AggregateRow, KindInfo } from "@/lib/api/types"
 import {
   metricInfoOf,
   metricWords,
@@ -38,7 +45,9 @@ import {
   discoveryChunks,
   facetRead,
   latestRead,
+  MAX_STREAM_READS,
   metricsRead,
+  overGroupCap,
   type StreamFacet,
   type StreamNarrowing,
 } from "@/lib/observations-reads"
@@ -50,13 +59,18 @@ const NO_ROWS: AggregateRow[] = []
 /** How many metric records one read lists: a catalogue is a few hundred. */
 const METRIC_PAGE = 500
 
-/** Where discovery stands, across the reads the streams come from: pending
- * until every one has answered, and failed with the first one's error. The
- * list of every metric is one of them only where no metric is chosen. */
+/** Where discovery stands, across the reads the streams come from. */
 export interface Discovery {
+  /** Nothing has answered yet, so there is nothing to show. */
   isPending: boolean
+  /** A read is on its way: the first, or a newer one while an earlier
+   * answer is shown. */
   isFetching: boolean
+  /** The streams shown are an earlier read's, under other choices, while
+   * the read of the current ones loads. */
+  isHeld: boolean
   isError: boolean
+  /** The first failed read's error. */
   error: Error | null
   refetch: () => void
 }
@@ -64,10 +78,17 @@ export interface Discovery {
 export interface Observations {
   /** The registry is still loading. */
   pending: boolean
-  /** The streams and the metric records have answered (or failed), so a
-   * metric's form, codes and sources are known: a chart asks nothing
-   * before, or it would ask in the wrong shape and ask again. */
+  /** Why the registry did not load, null where it did: with no registry no
+   * page can tell whether anything records measurements. */
+  registryError: Error | null
+  retryRegistry: () => void
+  /** Every stream read has answered (or failed) and so have the metric
+   * records, so every metric's form, codes and sources are known. */
   ready: boolean
+  /** Whether one metric's streams have been read (or their read failed) and
+   * the metric records have answered: a chart plans a metric only then, or
+   * it would ask in the wrong shape and ask again. */
+  knows: (metric: string) => boolean
   kinds: KindInfo[]
   observed: KindInfo[]
   /** The observed kinds' references, for query keys. */
@@ -83,6 +104,9 @@ export interface Observations {
    * With none chosen the list is what discovery reads from, and its failure
    * is `discovery`'s; null where it loaded. */
   metricListError: Error | null
+  /** The streams, newest first: with metrics chosen, every stream of each
+   * (whatever source or thing is chosen); with none, every stream under the
+   * chosen sources and things. */
   streams: Stream[]
   discovery: Discovery
   /** The metric a group value names, where a record says. */
@@ -97,25 +121,48 @@ export interface Observations {
   nameOf: (value: string, pin?: string) => string
 }
 
+/** What a surface asks discovery for besides its narrowing. */
+export interface DiscoveryOptions {
+  /** Read no stream and no list of metrics: a panel with nothing selected
+   * has nothing to read. On by default. */
+  enabled?: boolean
+  /** With metrics chosen, read the list of every metric beside their
+   * streams, for a metric picker. On by default; a panel that draws a
+   * selection has no picker. */
+  catalogue?: boolean
+}
+
 /** The address's values (ids or record paths) as record paths. */
 function paths(values: readonly string[] | undefined, pin?: string): string[] {
   return (values ?? []).map((v) => refPathOf(v, pin) ?? v)
 }
 
-export function useObservations(narrow: StreamNarrowing = {}): Observations {
+export function useObservations(
+  narrow: StreamNarrowing = {},
+  options: DiscoveryOptions = {}
+): Observations {
   const registry = useQuery(kindsQueryOptions)
   const kinds = registry.data ?? NO_KINDS
   const observed = useMemo(() => observedKinds(kinds), [kinds])
   const observedIds = useMemo(() => observed.map((k) => k.identity), [observed])
   const pins = useMemo(() => observedPins(observed), [observed])
-  const enabled = observedIds.length > 0
+  const enabled = options.enabled !== false && observedIds.length > 0
 
-  const chosenMetrics = paths(narrow.metrics, pins.metric)
+  const chosen = paths(narrow.metrics, pins.metric)
   const sources = paths(narrow.sources, pins.source)
   const abouts = paths(narrow.abouts, pins.about)
+
+  // No metric chosen: every stream in one read, unless it makes too many
+  // groups, and then the metrics first and their streams in batches.
+  const whole = useQuery({
+    ...aggregateQueryOptions(latestRead({ sources, abouts }), observedIds),
+    enabled: enabled && !chosen.length,
+  })
+  const split = !chosen.length && overGroupCap(whole.error)
   const catalogue = useQuery({
     ...aggregateQueryOptions(metricsRead({ sources, abouts }), observedIds),
-    enabled,
+    enabled:
+      enabled && (split || (chosen.length > 0 && options.catalogue !== false)),
   })
   const withPoints = useMemo(
     () =>
@@ -124,51 +171,36 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
       ),
     [catalogue.data]
   )
-  // The chosen metrics are read at once; with none chosen, every metric the
-  // first read found, a few at a time.
-  const toRead = chosenMetrics.length ? chosenMetrics : withPoints
+  // One read per chosen metric, so each keeps its answer while the others
+  // change; past `MAX_STREAM_READS`, a few at a time.
+  const batches = chosen.length
+    ? chosen.length <= MAX_STREAM_READS
+      ? chosen.map((m) => [m])
+      : discoveryChunks(chosen)
+    : split
+      ? discoveryChunks(withPoints)
+      : []
+  const client = useQueryClient()
   const reads = useQueries({
-    queries: discoveryChunks(toRead).map((chunk) => ({
+    queries: batches.map((batch) => ({
       ...aggregateQueryOptions(
-        latestRead({ metrics: chunk, sources, abouts }),
+        latestRead(
+          chosen.length
+            ? { metrics: batch }
+            : { metrics: batch, sources, abouts }
+        ),
         observedIds
       ),
+      // A metric chosen from every stream already read starts from them.
+      placeholderData: (prev?: AggregateResult) =>
+        prev ??
+        (chosen.length ? streamsRead(client, batch, observedIds) : undefined),
       enabled,
     })),
     combine: combineReads,
   })
-  const streams = useMemo(() => streamsOf({ rows: reads.rows }), [reads.rows])
-
-  const waitsForCatalogue = enabled && !chosenMetrics.length
-  const {
-    isPending: cataloguePending,
-    isFetching: catalogueFetching,
-    error: catalogueError,
-    refetch: refetchCatalogue,
-  } = catalogue
-  const metricListError = waitsForCatalogue ? null : catalogueError
-  const discovery = useMemo<Discovery>(() => {
-    const error = (waitsForCatalogue ? catalogueError : null) ?? reads.error
-    return {
-      isPending:
-        enabled && ((waitsForCatalogue && cataloguePending) || reads.isPending),
-      isFetching: catalogueFetching || reads.isFetching,
-      isError: Boolean(error),
-      error,
-      refetch: () => {
-        void refetchCatalogue()
-        reads.refetch()
-      },
-    }
-  }, [
-    enabled,
-    waitsForCatalogue,
-    cataloguePending,
-    catalogueFetching,
-    catalogueError,
-    refetchCatalogue,
-    reads,
-  ])
+  const rows = chosen.length || split ? reads.rows : whole.data?.rows
+  const streams = useMemo(() => streamsOf({ rows: rows ?? NO_ROWS }), [rows])
 
   const metricRecords = useQuery({
     ...recordsQueryOptions({
@@ -188,6 +220,62 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
     }
     return out
   }, [metricRecords.data])
+
+  const metricListError = chosen.length ? catalogue.error : null
+  const chosenKey = chosen.join("\n")
+  const batchKey = batches.map((b) => b.join("\n")).join("\t")
+  const {
+    isPending: wholePending,
+    isFetching: wholeFetching,
+    isPlaceholderData: wholeHeld,
+    error: wholeError,
+    refetch: refetchWhole,
+  } = whole
+  const {
+    isPending: cataloguePending,
+    isFetching: catalogueFetching,
+    error: catalogueError,
+    refetch: refetchCatalogue,
+  } = catalogue
+  const discovery = useMemo<Discovery>(() => {
+    const error = chosenKey
+      ? reads.error
+      : split
+        ? (catalogueError ?? reads.error)
+        : wholeError
+    return {
+      isPending:
+        enabled &&
+        (chosenKey
+          ? reads.results.every((r) => r.isPending)
+          : split
+            ? cataloguePending || reads.isPending
+            : wholePending),
+      isFetching: wholeFetching || catalogueFetching || reads.isFetching,
+      isHeld: !chosenKey && !split && wholeHeld,
+      isError: Boolean(error),
+      error,
+      refetch: () => {
+        if (!chosenKey) void refetchWhole()
+        void refetchCatalogue()
+        reads.refetch()
+      },
+    }
+  }, [
+    enabled,
+    chosenKey,
+    split,
+    reads,
+    wholePending,
+    wholeFetching,
+    wholeHeld,
+    wholeError,
+    refetchWhole,
+    cataloguePending,
+    catalogueFetching,
+    catalogueError,
+    refetchCatalogue,
+  ])
 
   const titlePaths = useMemo(() => {
     const out = new Set<string>()
@@ -209,14 +297,35 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
     return out
   }, [withPoints, streams])
 
+  const { error: registryError, refetch: refetchRegistry } = registry
   return useMemo(() => {
     const metricOf = (value: string) =>
       metrics.get(value) ?? metrics.get(splitRecordPath(value)?.id ?? "")
     const titleOf = (path: string | undefined) =>
       path ? titles.get(path) || undefined : undefined
+    const chosenList = chosenKey ? chosenKey.split("\n") : []
+    const batchList = batchKey
+      ? batchKey.split("\t").map((b) => b.split("\n"))
+      : []
+    const knows = (metric: string) => {
+      if (!enabled || !metricsSettled) return false
+      if (!chosenList.length) return !discovery.isPending
+      const at = batchList.findIndex((b) => b.some((m) => sameRef(m, metric)))
+      return at >= 0 && reads.results[at] !== undefined
+        ? !reads.results[at].isPending
+        : false
+    }
     return {
       pending: registry.isPending,
-      ready: metricsSettled && !discovery.isPending,
+      registryError,
+      retryRegistry: () => void refetchRegistry(),
+      ready:
+        enabled &&
+        metricsSettled &&
+        !discovery.isPending &&
+        !reads.isPending &&
+        (Boolean(chosenList.length) || !wholePending),
+      knows,
       kinds,
       observed,
       observedIds,
@@ -237,7 +346,14 @@ export function useObservations(narrow: StreamNarrowing = {}): Observations {
     }
   }, [
     registry.isPending,
+    registryError,
+    refetchRegistry,
+    enabled,
     metricsSettled,
+    chosenKey,
+    batchKey,
+    reads,
+    wholePending,
     kinds,
     observed,
     observedIds,
@@ -299,36 +415,38 @@ export function useFacetValues(
     enabled,
   })
 
-  const metricKey = metrics.join("\n")
+  const key = [metrics, sources, abouts].map((l) => l.join("\n")).join("\t")
   const values = useMemo(() => {
-    const shown = obs.streams.filter(
-      (s) =>
-        !metricKey || metricKey.split("\n").some((m) => sameRef(s.metric, m))
-    )
+    const [m, so, ab] = key.split("\t").map((l) => (l ? l.split("\n") : []))
+    const among = (list: string[], value: string | undefined) =>
+      !list.length || list.some((v) => sameRef(value, v))
+    // A menu's own values come from the streams under the page's other
+    // choices, as its read does.
+    const own = (facet: StreamFacet) =>
+      obs.streams
+        .filter(
+          (s) =>
+            among(m, s.metric) &&
+            (facet === "source" || among(so, s.source)) &&
+            (facet === "about" || among(ab, s.about))
+        )
+        .map((s) => s[facet])
     const of = (
       rows: AggregateRow[] | undefined,
-      key: "source" | "about",
-      own: (string | undefined)[]
+      facet: StreamFacet,
+      streams: (string | undefined)[]
     ) => [
       ...new Set(
-        [...(rows ?? NO_ROWS).map((r) => r.group?.[key]), ...own].filter(
+        [...(rows ?? NO_ROWS).map((r) => r.group?.[facet]), ...streams].filter(
           (v): v is string => Boolean(v)
         )
       ),
     ]
     return {
-      sources: of(
-        bySource.data?.rows,
-        "source",
-        shown.map((s) => s.source)
-      ),
-      abouts: of(
-        byAbout.data?.rows,
-        "about",
-        shown.map((s) => s.about)
-      ),
+      sources: of(bySource.data?.rows, "source", own("source")),
+      abouts: of(byAbout.data?.rows, "about", own("about")),
     }
-  }, [bySource.data, byAbout.data, obs.streams, metricKey])
+  }, [bySource.data, byAbout.data, obs.streams, key])
 
   const titlePaths = useMemo(() => {
     const out = new Set<string>()
@@ -372,8 +490,28 @@ export function useFacetValues(
   )
 }
 
-/** The stream reads as one answer: their rows in order, pending while any
- * is, and the first error. Module-level, so the combined result keeps its
+/** The streams of some metrics, out of a cached read of every stream under
+ * no other choice: the same rows their own read answers. */
+function streamsRead(
+  client: QueryClient,
+  metrics: readonly string[],
+  kinds: readonly string[]
+): AggregateResult | undefined {
+  const every = client.getQueryData<AggregateResult>(
+    aggregateQueryOptions(latestRead(), kinds).queryKey
+  )
+  if (!every) return undefined
+  return {
+    ...every,
+    rows: every.rows.filter((r) =>
+      metrics.some((m) => sameRef(r.group?.metric, m))
+    ),
+  }
+}
+
+/** The stream reads as one answer: their rows in order, each read's own
+ * state (a metric's chart waits for its read alone), pending while any is,
+ * and the first error. Module-level, so the combined result keeps its
  * identity while no read changes. */
 function combineReads(
   results: {
@@ -386,6 +524,7 @@ function combineReads(
 ) {
   return {
     rows: results.flatMap((r) => r.data?.rows ?? NO_ROWS),
+    results: results.map((r) => ({ isPending: r.isPending })),
     isPending: results.some((r) => r.isPending),
     isFetching: results.some((r) => r.isFetching),
     error: results.find((r) => r.error)?.error ?? null,

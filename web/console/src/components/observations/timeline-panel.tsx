@@ -28,6 +28,7 @@ import {
   selectionByMetric,
   shortRef,
   tokenMetric,
+  tokenNames,
 } from "@/lib/stream-table"
 import { GROUP_VALUES } from "@/lib/timeline-address"
 import { cn } from "@/lib/utils"
@@ -76,7 +77,13 @@ export function TimelinePanel({
       unit: controls.units.get(shortRef(entry.metric, own.pins.metric)),
     })
   )
-  const missing = own.ready ? selection.length - picked.length : 0
+  // A token whose metric's streams are read and name no stream of it.
+  const missing = selection.filter(
+    (t) =>
+      own.knows(tokenMetric(t)) && !own.streams.some((s) => tokenNames(t, s))
+  ).length
+  // A metric just selected waits for its streams; the others stay drawn.
+  const waiting = metrics.some((m) => !own.knows(m))
 
   return (
     <section
@@ -142,7 +149,7 @@ export function TimelinePanel({
             : `${missing} selected streams have no points any more, so the chart leaves them out.`}
         </p>
       )}
-      {!own.ready && selection.length > 0 ? (
+      {picked.length === 0 && waiting ? (
         <Skeleton className="mt-3 h-[250px] w-full" />
       ) : picked.length === 0 ? (
         <p className="mt-3 text-muted-foreground">

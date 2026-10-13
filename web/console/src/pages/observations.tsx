@@ -631,7 +631,12 @@ export function ObservationsPage() {
           table={table}
           density={density}
           fill={tableWidth === "full"}
-          loading={obs.discovery.isPending}
+          // Rows of an earlier read under other filters may match none of
+          // these: the grid waits for the read rather than say none match.
+          loading={
+            obs.discovery.isPending ||
+            (obs.discovery.isHeld && shown.length === 0)
+          }
           selected={selected}
           groups={gridGroups}
           label="Streams"

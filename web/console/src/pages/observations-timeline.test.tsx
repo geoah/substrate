@@ -322,6 +322,43 @@ describe("the timeline's requests", () => {
     )
   })
 
+  /** Leaves every read from here on unanswered. */
+  function hangReads() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {}))
+    )
+  }
+
+  it("keeps the drawn chart while a metric being added is read", async () => {
+    mount(`?metric=health/body_mass&${WINDOW}`)
+    await drawn(await lane("Weight"))
+    hangReads()
+    fireEvent.click(screen.getByRole("button", { name: /^Metrics?:/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Steps/ }))
+    expect(await screen.findByLabelText("Reading the streams")).toBeTruthy()
+    const weight = screen.getByRole("region", { name: "Weight" })
+    expect(weight.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
+      null
+    )
+  })
+
+  it("re-reads no stream when a source is chosen, and holds the chart while it reads", async () => {
+    const server = mount(`?metric=health/heart_rate&${WINDOW}`)
+    await drawn(await lane("Heart rate"))
+    const streamReads = () =>
+      server.seen.filter(
+        (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 4
+      ).length
+    const before = streamReads()
+    hangMetricReads()
+    await addFilter("Source", /Garmin Forerunner 265/)
+    const heart = screen.getByRole("region", { name: "Heart rate" })
+    await waitFor(() => expect(within(heart).getByText("Updating…")))
+    expect(heart.querySelector("[data-slot=timeline-chart] svg")).not.toBe(null)
+    expect(streamReads()).toBe(before)
+  })
+
   it("holds no kilograms under an axis in pounds while the pounds are read", async () => {
     mount(`?metric=health/body_mass&${WINDOW}`)
     const weight = await lane("Weight")
@@ -468,15 +505,12 @@ describe("the timeline's requests", () => {
     const server = mount(`?metric=health/heart_rate&${WINDOW}`)
     await lane("Heart rate")
     await addFilter("Source", /Garmin Forerunner 265/)
-    // Discovery narrows to the Garmin on the server.
+    // The chart narrows to the Garmin on the server.
     await waitFor(() =>
       expect(
-        server.seen.some(
-          (r) =>
-            r.aggregate.groupBy?.length === 4 &&
-            r.filter.properties?.source?.in?.length === 1
-        )
-      ).toBe(true)
+        charts(server.seen, "health/heart_rate").at(-1)!.filter.properties
+          ?.source?.in
+      ).toEqual([`${SOURCE}/garmin-forerunner-265`])
     )
     fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
     fireEvent.click(await screen.findByRole("option", { name: /Apple Watch/ }))
@@ -503,12 +537,9 @@ describe("the timeline's requests", () => {
     await addFilter("About", /mia/)
     await waitFor(() =>
       expect(
-        server.seen.some(
-          (r) =>
-            r.aggregate.groupBy?.length === 4 &&
-            r.filter.properties?.about?.in?.length === 1
-        )
-      ).toBe(true)
+        charts(server.seen, "health/heart_rate").at(-1)!.filter.properties
+          ?.about?.in
+      ).toEqual([MIA])
     )
     fireEvent.click(screen.getByRole("button", { name: /^About/ }))
     fireEvent.click(await screen.findByRole("option", { name: /leo/ }))
@@ -550,11 +581,12 @@ describe("the timeline's requests", () => {
     expect(note.textContent).toContain("more than 2,000 sources")
     expect(note.textContent).toContain(problem)
     expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    // The menu still offers the sources the metric's own streams name.
     fireEvent.click(screen.getByRole("button", { name: /^Source/ }))
     expect(
       await screen.findByRole("option", { name: /Garmin Forerunner 265/ })
     ).toBeTruthy()
-    expect(screen.queryByRole("option", { name: /Apple Watch/ })).toBe(null)
+    expect(screen.getByRole("option", { name: /Apple Watch/ })).toBeTruthy()
   })
 
   it("says the About list didn’t load, keeps the chart, and reads it again on a retry", async () => {
@@ -584,9 +616,10 @@ describe("the timeline's requests", () => {
       name: "The About list didn’t load",
     })
     expect(note.textContent).toContain("the database is restarting")
+    // The menu still offers the things the metric's own streams name.
     fireEvent.click(screen.getByRole("button", { name: /^About/ }))
     expect(await screen.findByRole("option", { name: /mia/ })).toBeTruthy()
-    expect(screen.queryByRole("option", { name: /leo/ })).toBe(null)
+    expect(screen.getByRole("option", { name: /leo/ })).toBeTruthy()
     fireEvent.keyDown(document.activeElement ?? document.body, {
       key: "Escape",
     })
@@ -596,8 +629,6 @@ describe("the timeline's requests", () => {
         screen.queryByRole("alert", { name: "The About list didn’t load" })
       ).toBe(null)
     )
-    fireEvent.click(screen.getByRole("button", { name: /^About/ }))
-    expect(await screen.findByRole("option", { name: /leo/ })).toBeTruthy()
     expect(screen.getByRole("region", { name: "Heart rate" })).toBe(heart)
   })
 

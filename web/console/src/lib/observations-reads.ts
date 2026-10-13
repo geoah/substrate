@@ -5,13 +5,14 @@
  * sends it. */
 
 import type { AggregateRead } from "@/lib/api/observations"
-import type {
-  Aggregate,
-  AggregateBucket,
-  AggregateFrom,
-  AggregateGroupKey,
-  AggregateReducer,
-  RecordFilter,
+import {
+  ApiError,
+  type Aggregate,
+  type AggregateBucket,
+  type AggregateFrom,
+  type AggregateGroupKey,
+  type AggregateReducer,
+  type RecordFilter,
 } from "@/lib/api/types"
 import type { ReadingShape } from "@/lib/observations"
 import { isoWithOffset, type TimeRange } from "@/lib/observations-time"
@@ -143,10 +144,20 @@ export function laneRead(spec: LaneSpec): AggregateRead {
 /** The most groups one read may ask for (`budget.maxGroups`'s cap). */
 export const MAX_GROUPS_CAP = 2000
 
+/** Whether a read was refused for making more groups than one read may. */
+export function overGroupCap(error: Error | null | undefined): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 422 &&
+    error.problems.some((p) => p.startsWith("aggregate.budget.maxGroups"))
+  )
+}
+
 /** The latest read: one row per stream, from the newest point of each,
  * narrowed to the given metrics, sources and things, at the group cap. A
- * read makes at most that many groups, which is why discovery asks for its
- * streams a few metrics at a time (`discoveryChunks`). */
+ * read makes at most that many groups, so where one read of every stream is
+ * refused for them, discovery asks a few metrics at a time
+ * (`discoveryChunks`). */
 export function latestRead(narrow: StreamNarrowing = {}): AggregateRead {
   return {
     filter: narrowedFilter(narrow),
@@ -203,7 +214,7 @@ export function facetRead(
  * discovery makes at most: eight metrics of a few hundred streams each sit
  * inside a read's 2000 groups, and past 256 metrics each read names more. */
 const METRICS_PER_READ = 8
-const MAX_STREAM_READS = 32
+export const MAX_STREAM_READS = 32
 
 /** The metrics as the batches discovery reads their streams in: at most
  * `MAX_STREAM_READS` batches of one size, at least `METRICS_PER_READ`

@@ -669,8 +669,10 @@ never by a fixed authority, so an imported `observations` or `health` sample
 under your own authority is found the same way. The rows come from one
 aggregate latest read: `GET /api/v1/records` with
 `filter={"implements":"substrate.reamde.dev/core/observed"}` and
-`aggregate={"groupBy":["metric","source","about","channel"],"reducers":["last"]}`,
-no bucket and no range. Each row shows the metric by its record's name, the
+`aggregate={"groupBy":["metric","source","about","channel"],"reducers":["last"],"budget":{"maxGroups":2000}}`,
+no bucket and no range. Where the server refuses that read for making more
+than 2,000 groups, the page lists the metrics with a point first and reads
+their streams a few metrics at a time. Each row shows the metric by its record's name, the
 source as a record mention, what it is about (**You** where it names
 nothing, which means the owner), its channel, how its newest value reads
 (**Reading**: its form in words, **Level**, **Amount**, **Running total** or
@@ -684,8 +686,10 @@ The rows sit in the grid a collection's records do
 because discovery loads every stream. **Sort** or a header click picks the
 order (`?sort=`, newest first by default). **Filters** offer metric, source,
 about, reading and channel, each a set of values to pick, several meaning any
-of them (`?filter=`); the chosen metrics, sources and things also narrow
-discovery on the server. The search box matches the rows' words
+of them (`?filter=`). Chosen metrics narrow discovery on the server to one
+latest read per metric, so adding a metric keeps the rows already read;
+with no metric chosen, the chosen sources and things narrow the one read
+instead. The search box matches the rows' words
 (`?search=`). **Columns** shows, hides and reorders the columns, and
 **Group** cuts the rows by metric, source, about, reading or channel
 (`?group=`). **Saved views** keep a filter, sort, column set and grouping on
@@ -762,7 +766,9 @@ numbers are one click below.
 
 Each metric is one aggregate read naming it, and a chart composes its
 metrics' reads on one bucket axis, each read loading, refreshing or failing
-on its own row. While a changed read loads, the chart keeps drawing the
+on its own row. A metric is planned once its streams are read: a metric
+being added waits under the charts already drawn, and choosing a source, a
+thing or a channel re-reads the charts, never the streams. While a changed read loads, the chart keeps drawing the
 earlier answer and the row says Updating…, where that answer has the same
 unit and grouping and carries the new reducer; after a change of unit or
 grouping, or to a reducer the earlier answer lacks, the row says Reading…

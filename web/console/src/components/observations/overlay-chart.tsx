@@ -142,7 +142,7 @@ export function OverlayChart({
         // holds the frame while it loads (`heldAnswer`).
         placeholderData: (prev?: AggregateResult) =>
           prev ?? heldAnswer(client, read, obs.observedIds),
-        enabled: obs.ready && Boolean(plot.read),
+        enabled: obs.knows(plot.metric) && Boolean(plot.read),
       }
     }),
   })

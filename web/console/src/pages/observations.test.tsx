@@ -181,42 +181,47 @@ async function addFilter(facet: string, value: RegExp) {
 }
 
 describe("the streams table", () => {
-  it("lists the metrics first, then reads their streams a few at a time", async () => {
+  it("lists every stream in one read", async () => {
     const server = mount()
     await rows()
-    expect(server.seen[0]).toEqual({
-      filter: { implements: "substrate.reamde.dev/core/observed" },
-      aggregate: {
-        groupBy: ["metric"],
-        reducers: ["last"],
-        budget: { maxGroups: 2000 },
-      },
-    })
-    const streamReads = server.seen.filter(
-      (r) => r.aggregate.groupBy?.length === 4
+    expect(server.seen).toEqual(
+      expect.arrayContaining([
+        {
+          filter: { implements: "substrate.reamde.dev/core/observed" },
+          aggregate: {
+            groupBy: ["metric", "source", "about", "channel"],
+            reducers: ["last"],
+            budget: { maxGroups: 2000 },
+          },
+        },
+      ])
     )
-    expect(streamReads).toHaveLength(1)
-    expect(streamReads[0].aggregate).toEqual({
-      groupBy: ["metric", "source", "about", "channel"],
-      reducers: ["last"],
-      budget: { maxGroups: 2000 },
-    })
+    // No list of metrics and no batch: the one read answered every stream.
     expect(
-      [...(streamReads[0].filter.properties?.metric?.in ?? [])].sort()
-    ).toEqual([BODY_MASS, HEART, RECOVERY, SLEEP_STAGE, STEPS_METRIC].sort())
+      server.seen.filter(
+        (r) =>
+          r.aggregate.groupBy?.join() === "metric" ||
+          r.filter.properties?.metric
+      )
+    ).toEqual([])
   })
 
-  it("lists every stream when one read of them all would be refused", async () => {
-    // More than 200 streams: the server refuses a latest read that names
-    // no metrics. Discovery never sends one.
+  it("lists the metrics, then their streams a few at a time, where one read of every stream makes too many groups", async () => {
     const server = mount("", KINDS, (read) =>
       read.aggregate.groupBy?.length === 4 && !read.filter.properties?.metric
-        ? refusal()
+        ? refusal(CAP_PROBLEM)
         : latestAnswer(read)
     )
     expect(await rows()).toHaveLength(6)
     expect(screen.queryByText(/didn’t load/)).toBe(null)
-    expect(server.seen.length).toBeGreaterThan(1)
+    expect(
+      server.seen.some((r) => r.aggregate.groupBy?.join() === "metric")
+    ).toBe(true)
+    const batches = server.seen.filter((r) => r.filter.properties?.metric)
+    expect(batches).toHaveLength(1)
+    expect(
+      [...(batches[0].filter.properties?.metric?.in ?? [])].sort()
+    ).toEqual([BODY_MASS, HEART, RECOVERY, SLEEP_STAGE, STEPS_METRIC].sort())
   })
 
   it("narrows the streams read to the chosen metric on the server", async () => {

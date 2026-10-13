@@ -21,7 +21,11 @@ import {
 } from "@/components/ui/empty"
 import type { Discovery, FacetValues } from "@/hooks/use-observations"
 import { ApiError } from "@/lib/api/types"
-import { MAX_GROUPS_CAP, type StreamFacet } from "@/lib/observations-reads"
+import {
+  MAX_GROUPS_CAP,
+  overGroupCap,
+  type StreamFacet,
+} from "@/lib/observations-reads"
 import { cn } from "@/lib/utils"
 
 /** A failed read's reason in words: a refusal's message, else the error's. */
@@ -122,15 +126,6 @@ const FACET_WORDS: Record<
     plural: "things observed",
     narrowBy: "a metric or a source",
   },
-}
-
-/** Whether a read was refused for making more groups than one read may. */
-function overGroupCap(error: Error): boolean {
-  return (
-    error instanceof ApiError &&
-    error.status === 422 &&
-    error.problems.some((p) => p.startsWith("aggregate.budget.maxGroups"))
-  )
 }
 
 /** What a page says beside its Source and About filters where a menu's own

@@ -125,7 +125,10 @@ export function ObservationsTimelinePage() {
       ].map((value) => ({ value, label: value })),
     },
   ]
-  const plots = metrics.map((metric) =>
+  // A metric is planned once its streams are read, so one being added waits
+  // while the others stay drawn.
+  const known = metrics.filter((m) => obs.knows(m))
+  const plots = known.map((metric) =>
     planPlot(obs, metric, {
       range,
       size,
@@ -258,7 +261,7 @@ export function ObservationsTimelinePage() {
       </div>
       {obs.discovery.isError ? (
         <DiscoveryError discovery={obs.discovery} />
-      ) : !obs.ready ? (
+      ) : metrics.length === 0 && !obs.ready ? (
         <Skeleton className="mt-8 h-[236px] w-full" />
       ) : metrics.length === 0 ? (
         <p className="mt-6 text-muted-foreground">
@@ -266,19 +269,27 @@ export function ObservationsTimelinePage() {
           or a sample writes its first value.
         </p>
       ) : (
-        charts.map((chart) => (
-          <OverlayChart
-            key={chart.map((p) => p.metric).join("\n")}
-            obs={obs}
-            plots={chart}
-            range={range}
-            size={size}
-            title
-            onReducer={controls.onReducer}
-            onUnit={controls.onUnit}
-            onZoom={controls.zoom}
-          />
-        ))
+        <>
+          {charts.map((chart) => (
+            <OverlayChart
+              key={chart.map((p) => p.metric).join("\n")}
+              obs={obs}
+              plots={chart}
+              range={range}
+              size={size}
+              title
+              onReducer={controls.onReducer}
+              onUnit={controls.onUnit}
+              onZoom={controls.zoom}
+            />
+          ))}
+          {known.length < metrics.length && (
+            <Skeleton
+              aria-label="Reading the streams"
+              className="mt-8 h-[236px] w-full"
+            />
+          )}
+        </>
       )}
     </TablePage>
   )
