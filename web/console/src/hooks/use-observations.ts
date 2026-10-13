@@ -26,7 +26,10 @@ import {
 import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { aggregateQueryOptions } from "@/lib/api/observations"
-import { recordsQueryOptions } from "@/lib/api/records"
+import {
+  recordsQueryOptions,
+  referenceTitlesQueryOptions,
+} from "@/lib/api/records"
 import type { AggregateResult, AggregateRow, KindInfo } from "@/lib/api/types"
 import {
   metricInfoOf,
@@ -52,6 +55,7 @@ import {
   type StreamNarrowing,
 } from "@/lib/observations-reads"
 import { splitRecordPath } from "@/lib/record-path"
+import { titleReadScope } from "@/lib/reference-titles"
 
 const NO_KINDS: KindInfo[] = []
 const NO_ROWS: AggregateRow[] = []
@@ -134,6 +138,10 @@ export interface Observations {
   titleOf: (path: string | undefined) => string | undefined
   /** A record a group value names, in words: its title, else its id. */
   nameOf: (value: string, pin?: string) => string
+  /** A source record's rank for a metric (its `priorities` under the
+   * metric's id, 1 first), where it states one: the order a priority read
+   * resolves overlapping sources in when the request names none. */
+  rankOf: (source: string, metric: string) => number | undefined
 }
 
 /** What a surface asks discovery for besides its narrowing. */
@@ -310,6 +318,21 @@ export function useObservations(
     return [...out].sort()
   }, [streams, pins.source, pins.about])
   const titles = useReferenceTitles(titlePaths, kinds)
+  // The same batch the titles come from, for the source records' ranks.
+  const known = useMemo(() => new Set(kinds.map((k) => k.identity)), [kinds])
+  const titleBatch = useQuery(
+    referenceTitlesQueryOptions(titleReadScope(titlePaths, known))
+  )
+  const ranks = useMemo(() => {
+    const out = new Map<string, Record<string, unknown>>()
+    for (const r of titleBatch.data?.records ?? []) {
+      const p = r.properties?.priorities
+      if (p && typeof p === "object") {
+        out.set(`${r.kind}/${r.id}`, p as Record<string, unknown>)
+      }
+    }
+    return out
+  }, [titleBatch.data])
 
   const metricList = useMemo(() => {
     const out = [...withPoints]
@@ -378,6 +401,11 @@ export function useObservations(
       titleOf,
       nameOf: (value: string, pin?: string) =>
         titleOf(refPathOf(value, pin)) ?? refIdOf(value),
+      rankOf: (source: string, metric: string) => {
+        const path = refPathOf(source, pins.source) ?? source
+        const rank = ranks.get(path)?.[refIdOf(metric)]
+        return typeof rank === "number" ? rank : undefined
+      },
     }
   }, [
     registry.isPending,
@@ -399,6 +427,7 @@ export function useObservations(
     discovery,
     metrics,
     titles,
+    ranks,
   ])
 }
 

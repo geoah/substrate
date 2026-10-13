@@ -59,6 +59,7 @@ import {
   reducerKey,
   reducerLabel,
   reducerName,
+  refPathOf,
   statisticWords,
 } from "@/lib/observations"
 import {
@@ -492,6 +493,18 @@ export function OverlayChart({
     technical,
     sourceText,
     aboutText: (value) => obs.nameOf(value, obs.pins.about),
+    // The order the server resolves overlapping sources in where the
+    // reader set none: each source record's rank for the metric, a source
+    // it does not rank after, then by record path.
+    serverOrder: (plot) =>
+      [...plot.sourceOrder].sort(
+        (a, b) =>
+          (obs.rankOf(a, plot.metric) ?? Infinity) -
+            (obs.rankOf(b, plot.metric) ?? Infinity) ||
+          (refPathOf(a, obs.pins.source) ?? a).localeCompare(
+            refPathOf(b, obs.pins.source) ?? b
+          )
+      ),
   })
 
   return (
@@ -860,25 +873,30 @@ function chartNotes(
     technical: boolean
     sourceText: (value: string) => string
     aboutText: (value: string) => string
+    serverOrder: (plot: Plot) => string[]
   }
 ): string[] {
   const notes: string[] = []
   for (const { plot, exact, held, rows } of states) {
     const own: string[] = []
-    // A ranked read uses the reader's order. Otherwise the server decides
-    // it, so the sources are listed by name, implying no order.
-    const names = plot.sourceOrder.map(words.sourceText)
+    // The reader's order where they set one, else the one the server takes
+    // from the source records, and a value naming no source after them all.
     const overlapping = [
-      ...(plot.ranked ? names : [...names].sort((a, b) => a.localeCompare(b))),
+      ...(plot.ranked ? plot.sourceOrder : words.serverOrder(plot)).map(
+        words.sourceText
+      ),
       ...(plot.sourceless ? ["values naming no source"] : []),
     ]
     if (plot.groupKey !== "source" && plot.spec && overlapping.length > 1) {
       const [first, ...rest] = overlapping
       own.push(
-        plot.ranked
-          ? `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
-          : `Where ${listWords(overlapping)} overlap, the server ranks ${plot.sourceless ? "the sources" : "them"} by each source record’s priorities for this metric, then by record path${plot.sourceless ? ", and values naming no source last" : ""}.`
+        `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
       )
+      if (words.technical && !plot.ranked) {
+        own.push(
+          "The server ranks the sources by each source record’s priorities for this metric, then by record path, and values naming no source last."
+        )
+      }
     }
     const dropped = all
       .filter((d) => d.plot === plot)

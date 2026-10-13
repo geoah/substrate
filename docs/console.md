@@ -918,8 +918,11 @@ the streams page's panel, whose selection is no order), the read sends no
 `order`, so the server ranks the sources by each source record's
 `priorities` for the metric, then by kind and record path
 ([the read](api.md#sources-and-from)), and a stream that names no source
-after every named one, so a scale's weight wins over a typed one; the chart
-says so. Grouped by source,
+after every named one, so a scale's weight wins over a typed one. The chart
+says which source wins in that order ("Where sources overlap, Garmin
+Forerunner 265 is used first, then Apple Watch S10"), reading each source
+record's `priorities` from the batch that reads its title, and gives the
+ranking rule itself only with Technical details on. Grouped by source,
 each keeps its own rows, and a source's channels stay apart
 (`groupBy: ["source", "channel"]`). Until you pick where to read from, a
 metric reads raw points, summaries where every one of its streams keeps

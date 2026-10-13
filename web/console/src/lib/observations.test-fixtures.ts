@@ -165,7 +165,11 @@ export const METRICS: SubstrateRecord[] = [
 ]
 
 export const SOURCES: SubstrateRecord[] = [
-  record(SOURCE, "garmin-forerunner-265", { title: "Garmin Forerunner 265" }),
+  // Ranked first for heart rate, though its path sorts after the watch's.
+  record(SOURCE, "garmin-forerunner-265", {
+    title: "Garmin Forerunner 265",
+    priorities: { "health/heart_rate": 1 },
+  }),
   record(SOURCE, "apple-watch-s10", { title: "Apple Watch S10" }),
   record(SOURCE, "withings-body-plus", { title: "Withings Body+" }),
   record(SOURCE, "whoop-4-0", { title: "WHOOP 4.0" }),

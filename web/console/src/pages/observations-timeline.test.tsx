@@ -344,17 +344,19 @@ describe("the timeline's requests", () => {
       expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
     )
     // No source chosen: no order, so the server ranks the sources by their
-    // records' priorities for the metric, and the chart says so.
+    // records' priorities for the metric, and the chart says which wins:
+    // the Garmin's record ranks it first for heart rate.
     expect(
       charts(server.seen, "health/heart_rate")[0].aggregate.sources
     ).toEqual({ policy: "priority" })
+    const heart = screen.getByRole("region", { name: "Heart rate" })
     await waitFor(() =>
-      expect(
-        screen.getByRole("region", { name: "Heart rate" }).textContent
-      ).toContain(
-        "Where Apple Watch S10 and Garmin Forerunner 265 overlap, the server ranks them by each source record’s priorities for this metric, then by record path."
+      expect(heart.textContent).toContain(
+        "Where sources overlap, Garmin Forerunner 265 is used first, then Apple Watch S10."
       )
     )
+    // The rule itself is a developer's fact.
+    expect(heart.textContent).not.toContain("record path")
     const group = screen.getByRole("radiogroup", { name: "Group by" })
     fireEvent.click(within(group).getByRole("radio", { name: "Source" }))
     await waitFor(() =>
@@ -364,6 +366,16 @@ describe("the timeline's requests", () => {
     // A source's channels stay apart, each its own series.
     expect(grouped.groupBy).toEqual(["source", "channel"])
     expect(grouped.sources).toBeUndefined()
+  })
+
+  it("gives the server's ranking rule with Technical details on", async () => {
+    mount(`?metric=health/heart_rate&${WINDOW}`, true)
+    const heart = await lane("Heart rate")
+    await waitFor(() =>
+      expect(heart.textContent).toContain(
+        "The server ranks the sources by each source record’s priorities for this metric, then by record path, and values naming no source last."
+      )
+    )
   })
 
   it("says values naming no source rank after every source", async () => {
@@ -386,7 +398,7 @@ describe("the timeline's requests", () => {
       expect(
         screen.getByRole("region", { name: "Weight" }).textContent
       ).toContain(
-        "Where Withings Body+ and values naming no source overlap, the server ranks the sources by each source record’s priorities for this metric, then by record path, and values naming no source last."
+        "Where sources overlap, Withings Body+ is used first, then values naming no source."
       )
     )
   })
