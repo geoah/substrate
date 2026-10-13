@@ -141,7 +141,9 @@ Only WHOOP writes a recovery, so its row names WHOOP whatever the `order`.
 The Garmin night ranks first, so the WHOOP, Apple and Google Fit stages that
 overlap it are dropped whole and every row names one source. Garmin writes a
 night's HRV as two summaries, its average and its maximum; the entry's
-`statistic` picks the average.
+`statistic` picks the average. Garmin's resting heart rate is a summary of
+the whole day, which ends at midnight and so lands on that day; WHOOP's,
+over the night, overlaps it and is dropped.
 
 The tiles: the latest read (no `range`, no `bucket`, `reducers: ["last"]`)
 answers the newest value of each metric from any source, with its instant:
@@ -919,7 +921,8 @@ chart that draws them reads the list beside the aggregate.
 
 Side by side, one row per source (`separate`, the default). WHOOP's value
 spans the night from its evening onset, so `place: "end"` counts each night
-in the week of the morning it ended:
+in the week of the morning it ended. Garmin's and Apple Health's are
+summaries of a day, which end at midnight and stay on that day:
 
 ```json
 {"aggregate": {
