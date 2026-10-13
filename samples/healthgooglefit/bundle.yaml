@@ -63,6 +63,9 @@ data:
     - name: written
       type: int
       description: how many observed records the delivery wrote or rewrote
+    - name: unchanged
+      type: int
+      description: how many already held what the row implies
     - name: deleted
       type: int
       description: how many earlier outputs it deleted
@@ -274,36 +277,6 @@ data:
         return t.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-    def _duration(ns):
-        """Nanoseconds as an ISO 8601 duration, PT7H48M3S."""
-        sec, frac = divmod(max(int(ns), 0), NS)
-        hours, rest = divmod(sec, 3600)
-        minutes, seconds = divmod(rest, 60)
-        out = "PT"
-        if hours:
-            out += "%dH" % hours
-        if minutes:
-            out += "%dM" % minutes
-        if seconds or frac or out == "PT":
-            out += str(seconds)
-            if frac:
-                out += "." + ("%09d" % frac).rstrip("0")
-            out += "S"
-        return out
-
-
-    def _number(value):
-        """A Fit value as exact digits: an int as itself, a float as its shortest
-        repr."""
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, int):
-            return str(value)
-        if isinstance(value, float):
-            return repr(value)
-        return None
-
-
     def _slug(text):
         return _re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-") or "unknown"
 
@@ -338,20 +311,6 @@ data:
             after = page.get("cursor") or ""
             if not after:
                 return out
-
-
-    def _outputs(host, path, kinds):
-        """The live outputs whose origin is `path`: the reconciliation's
-        stored side. `derivedFrom` points at a row too, and does not make it
-        an origin."""
-        rows = _list(host, {"kinds": list(kinds), "referencing": {"ref": path}})
-        out = []
-        for r in rows:
-            p = r.get("properties") or {}
-            if _path(p.get("origin")) == path or \
-                    any(_path(o) == path for o in (p.get("origins") or [])):
-                out.append(r)
-        return out
 
 
     class _Clock:
@@ -436,6 +395,17 @@ data:
                 self.sources[sid] = props
             return slug, _ref(SOURCE, sid)
 
+        def number(self, value):
+            """A Fit value as exact digits, a float as its shortest repr
+            written out; None for anything that is not a number."""
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+            return self.host.observed.decimal(value)
+
+        def duration(self, ns):
+            """Nanoseconds as the duration the engine stores, PT7H48M3S."""
+            return self.host.observed.duration(Decimal(max(int(ns), 0)) / NS)
+
         def convert(self, digits, fit_unit, unit):
             if fit_unit == unit:
                 return digits
@@ -451,30 +421,10 @@ data:
                 self.host.effects.put(SOURCE, sid, properties=props)
 
 
-    def _apply(host, desired, existing):
-        """Write the desired set whole and delete what it no longer names.
-        Every row is minted then patched with every key this function owns,
-        so a key an earlier write set and this one does not is cleared. A
-        revision never falls: a stored higher one is kept."""
-        held = {(r.get("kind"), r.get("id")): r for r in existing}
-        written = 0
-        for (kind, rid), props in desired.items():
-            old = held.get((kind, rid))
-            stored = _int(((old or {}).get("properties") or {}).get("revision"))
-            if stored is not None and (props.get("revision") or 0) < stored:
-                props["revision"] = stored
-            full = {k: props.get(k) for k in KEYS[kind]}
-            full["adapter"] = ADAPTER
-            host.effects.put(kind, rid, properties={k: v for k, v in full.items()
-                                                    if v is not None}, if_absent=True)
-            host.effects.patch(kind, rid, properties=full)
-            written += 1
-        deleted = 0
-        for (kind, rid) in held:
-            if (kind, rid) not in desired:
-                host.effects.delete(kind, rid)
-                deleted += 1
-        return written, deleted
+    def _apply(host, path, desired, kinds):
+        """Write the set one row implies and delete what it no longer names."""
+        return host.observed.reconcile(path, desired, owned={k: KEYS[k] for k in kinds},
+                                       adapter=ADAPTER)
 
 
     # ------------------------------------------------------------ dataset days
@@ -518,7 +468,7 @@ data:
                     "origin": _ref(DATASET, rid), "revision": _revision([p]),
                     "qualifiers": ctx.clock.qualifiers()}
             if m["shape"] == "pressure":
-                nums = [_number(_value(p, i)) for i in (0, 1)]
+                nums = [ctx.number(_value(p, i)) for i in (0, 1)]
                 if None in nums:
                     skipped += 1
                     continue
@@ -530,7 +480,7 @@ data:
                     desired[(OBSERVATION, oid)] = dict(base, metric=part["metric"],
                                                        value=part["value"], components=parts)
                 continue
-            n = _number(_value(p, 0))
+            n = ctx.number(_value(p, 0))
             if n is None:
                 skipped += 1
                 continue
@@ -568,7 +518,7 @@ data:
         spans = m["form"] == "amount"
         by_source = {}
         for p in points:
-            n = _number(_value(p, 0))
+            n = ctx.number(_value(p, 0))
             if n is None:
                 skipped += 1
                 continue
@@ -610,7 +560,6 @@ data:
 
     def _dataset(host, rid, row):
         path = DATASET + "/" + rid
-        existing = _outputs(host, path, (OBSERVATION, TRACE))
         desired, out = {}, {"skipped": 0}
         sessions = {}
         if row is not None:
@@ -655,10 +604,10 @@ data:
                     s = host.records.get(SESSION, sid)
                     if s is not None and not s.get("deletedAt"):
                         sessions[sid] = s
-        out["written"], out["deleted"] = _apply(host, desired, existing)
+        out.update(_apply(host, path, desired, (OBSERVATION, TRACE)))
         for sid, s in sorted(sessions.items()):
             sub = _session(host, sid, s)
-            for k in ("written", "deleted", "skipped"):
+            for k in ("written", "unchanged", "deleted", "skipped"):
                 out[k] = out.get(k, 0) + sub.get(k, 0)
         return out
 
@@ -700,7 +649,6 @@ data:
 
     def _session(host, rid, row):
         path = SESSION + "/" + rid
-        existing = _outputs(host, path, (OBSERVATION, SLEEP, WORKOUT))
         desired, out = {}, {"skipped": 0}
         if row is not None:
             props = row.get("properties") or {}
@@ -723,9 +671,9 @@ data:
                     base, sport=SPORTS.get(activity, "other") if activity is not None else None,
                     sportSource=str(activity) if activity is not None else None,
                     source=source, revision=revision,
-                    duration=_duration(active * 10**6) if active is not None else None)
+                    duration=ctx.duration(active * 10**6) if active is not None else None)
             ctx.flush()
-        out["written"], out["deleted"] = _apply(host, desired, existing)
+        out.update(_apply(host, path, desired, (OBSERVATION, SLEEP, WORKOUT)))
         return out
 
 
@@ -764,12 +712,12 @@ data:
         span = _ns(end) - _ns(at)
         sleep = dict(base, source=source,
                      revision=max([revision] + [s["modified"] // 1000 for s in segs]),
-                     timeInBed=_duration(span - totals[OUT_OF_BED]))
+                     timeInBed=ctx.duration(span - totals[OUT_OF_BED]))
         if segs:
             sleep.update({
-                "timeAsleep": _duration(sum(totals[c] for c in ASLEEP)),
-                "awake": _duration(totals[1]), "light": _duration(totals[4]),
-                "deep": _duration(totals[5]), "rem": _duration(totals[6])})
+                "timeAsleep": ctx.duration(sum(totals[c] for c in ASLEEP)),
+                "awake": ctx.duration(totals[1]), "light": ctx.duration(totals[4]),
+                "deep": ctx.duration(totals[5]), "rem": ctx.duration(totals[6])})
         desired[(SLEEP, _rid(ctx.host, ctx.aid, "googlefit/" + rid))] = sleep
         return skipped
 

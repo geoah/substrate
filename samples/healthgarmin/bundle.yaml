@@ -106,15 +106,17 @@ data:
 
     RECONCILED PER ORIGIN. Every row written names the mirror row it came from
     (`origin`, or `origins` on a trace), so a delivery reads what the row
-    produced before (a `referencing` read), writes the new set and deletes what
-    the row no longer implies. Epochs and respiration slices are a quarter hour
-    each and a trace is an hour, so their traces are rebuilt per hour from every
-    slice of that hour.
+    produced before (a `referencing` read) and hands the new set to
+    host.observed.reconcile, which writes what changed and deletes what the
+    row no longer implies. Epochs and respiration slices are a quarter hour
+    each and a trace is an hour, so their traces are rebuilt per hour from
+    every slice of that hour.
 
     `revision` is the mirror row's own version: the garmin provider rewrites a
     row in place when Garmin re-sends its summaryId, an identical re-send is no
     write and moves no version, so it rises exactly when the summary changed. A
-    trace built from several rows carries the highest of their versions.
+    trace built from several rows carries the highest of their versions, and
+    a rewrite never lowers a stored one.
 
     Ids are composed from Garmin's data, `garmin/<account>/<summaryId>/<role>`
     for a single record and `garmin/<account>/<source>/<metric>/<hour>` for a
@@ -146,9 +148,6 @@ data:
     ACTIVITY = GARMIN + "/activity"
     EDITED = GARMIN + "/manuallyupdatedactivity"
 
-    MAX_ID_LEN = 128
-    RE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
-    RE_DURATION = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.(\d+))?S)?$")
     HOUR = 3600
     # A trace never splits finer than an hour; a slice shorter than its period
     # ends early.
@@ -232,6 +231,22 @@ data:
               "SKATE_SKIING": "skiing"}
     STAGES = ("awake", "light", "deep", "rem")
 
+    # Every property this function sets on each output kind. A write names
+    # them all, None where the row no longer implies one, so a rewrite clears
+    # what an earlier one set.
+    OWNED = {
+        OBSERVATION: ("metric", "source", "form", "value", "code", "at", "endsAt", "statistic",
+                      "period", "periodId", "hold", "utcOffset", "delta", "origin", "revision"),
+        TRACE: ("metric", "form", "source", "about", "channel", "unit", "hold", "resetRule",
+                "wrapAt", "delta", "circular", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
+                "every", "offsets", "values", "codes", "origins", "revision"),
+        SLEEP: ("source", "origin", "revision", "isNap", "utcOffsetStart", "utcOffsetEnd", "at",
+                "endsAt", "timeInBed", "timeAsleep", "awake", "light", "deep", "rem", "scores"),
+        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "utcOffsetStart",
+                  "utcOffsetEnd", "at", "endsAt", "duration", "distance", "activeEnergy",
+                  "averageHeartRate", "maxHeartRate", "elevationGain", "notes"),
+    }
+
 
     # ------------------------------------------------------------------ helpers
 
@@ -239,48 +254,10 @@ data:
         return _dt.datetime.fromtimestamp(secs, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-    def _iso_us(us):
-        t = _dt.datetime(1970, 1, 1, tzinfo=_dt.timezone.utc) + _dt.timedelta(microseconds=us)
-        if t.microsecond:
-            return t.strftime("%Y-%m-%dT%H:%M:%S.") + ("%06d" % t.microsecond).rstrip("0") + "Z"
-        return t.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
     def _us(value):
         t = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         delta = t - _dt.datetime(1970, 1, 1, tzinfo=_dt.timezone.utc)
         return (delta.days * 86400 + delta.seconds) * 10**6 + delta.microseconds
-
-
-    def _duration(secs):
-        return "PT%dS" % int(secs)
-
-
-    def _duration_us(text):
-        m = RE_DURATION.match(text or "")
-        if not m:
-            raise ValueError("garmin: cannot read the duration %r" % text)
-        h, mi, s, frac = m.groups()
-        us = (int(h or 0) * 3600 + int(mi or 0) * 60 + int(s or 0)) * 10**6
-        if frac:
-            us += int((frac + "000000")[:6])
-        return us
-
-
-    def _format_ms(ms):
-        secs, rest = divmod(ms, 1000)
-        h, secs = divmod(secs, 3600)
-        mi, secs = divmod(secs, 60)
-        out = "PT"
-        if h:
-            out += "%dH" % h
-        if mi:
-            out += "%dM" % mi
-        if rest:
-            out += "%d.%sS" % (secs, ("%03d" % rest).rstrip("0"))
-        elif secs or out == "PT":
-            out += "%dS" % secs
-        return out
 
 
     def _digits(v):
@@ -351,10 +328,10 @@ data:
             self.skipped[what] = self.skipped.get(what, 0) + n
 
         def rid(self, *rest):
-            rid = "/".join(["garmin", self.aid] + [str(r) for r in rest])
-            if len(rid) <= MAX_ID_LEN and RE_ID.match(rid):
-                return rid
-            return self.host.ids.external("garmin", self.aid, "/".join(str(r) for r in rest))
+            return self.host.observed.record_id("garmin", self.aid, self.aid, *rest)
+
+        def duration(self, secs):
+            return None if secs is None else self.host.observed.duration(secs)
 
         def source(self, slug, name, cls, model=None):
             sid = self.rid(slug)
@@ -391,55 +368,29 @@ data:
 
         def traces(self, metric, points, source, slug, lo, hi, *, form="gauge", channel=None,
                    origins=None, revision=None):
-            """Pack points into hourly traces, each placed inside [lo, hi) seconds,
-            the span of what produced them."""
+            """Pack points into hourly traces, each inside [lo, hi) seconds, the
+            span of what produced them: a trace written from one origin never
+            claims time outside it, so the hour two origins share holds two
+            traces side by side rather than one overwriting the other. A point
+            Garmin placed outside its own span widens the span to hold it."""
             if not any(v is not None for _, v in points):
                 return
             unit, hold = METRICS[metric]
+            utc = _dt.timezone.utc
+            start = min([_dt.datetime.fromtimestamp(lo, utc)] + [at for at, _ in points])
+            end = max([_dt.datetime.fromtimestamp(hi, utc)] +
+                      [at + _dt.timedelta(milliseconds=1) for at, _ in points])
             docs = self.host.observed.trace(
                 points, metric=_ref(METRIC + "/health/" + metric), source=_ref(source), unit=unit,
-                form=form, period=PERIOD, hold=hold if form == "gauge" else None, channel=channel)
+                form=form, period=PERIOD, hold=hold if form == "gauge" else None, channel=channel,
+                start=start, end=end)
             for doc in docs:
-                _place(doc, lo * 10**6, hi * 10**6)
-                at = _dt.datetime.fromtimestamp(_us(doc["at"]) / 10**6, _dt.timezone.utc)
+                at = _dt.datetime.fromtimestamp(_us(doc["at"]) / 10**6, utc)
                 label = self.host.observed.period_id(at, PERIOD)
                 segments = [slug, metric] + ([channel] if channel else []) + [label]
-                props = {k: None for k in ("source", "about", "channel", "unit", "every", "offsets",
-                                           "values", "codes", "hold", "resetRule")}
-                props.update(doc)
-                props["origins"] = [_ref(o) for o in (origins or [self.origin])]
-                props["revision"] = revision if revision is not None else self.revision
-                self.rows[(TRACE, self.rid(*segments))] = props
-
-
-    def _place(doc, lo_us, hi_us):
-        """Narrow a trace document to [lo, hi): a trace written from one origin
-        never claims time outside it, so the hour two origins share holds two
-        traces side by side rather than one overwriting the other."""
-        at, end = _us(doc["at"]), _us(doc["endsAt"])
-        key = "codes" if doc.get("codes") is not None else "values"
-        n = len(doc[key])
-        if doc.get("every"):
-            step = _duration_us(doc["every"])
-            times = [at + i * step for i in range(n)]
-        else:
-            times = [at + o * 1000 for o in doc["offsets"]]
-        new_at = max(at, lo_us)
-        if new_at > times[0]:
-            new_at = at
-        new_end = min(end, hi_us)
-        if new_end <= times[-1]:
-            new_end = end
-        doc["at"], doc["endsAt"] = _iso_us(new_at), _iso_us(new_end)
-        offsets = [(t - new_at) // 1000 for t in times]
-        steps = {b - a for a, b in zip(offsets, offsets[1:])}
-        step = steps.pop() if len(steps) == 1 else 0
-        doc.pop("every", None)
-        doc.pop("offsets", None)
-        if n > 1 and offsets[0] == 0 and step > 0 and step * n * 1000 <= new_end - new_at:
-            doc["every"] = _format_ms(step)
-        else:
-            doc["offsets"] = offsets
+                doc["origins"] = [_ref(o) for o in (origins or [self.origin])]
+                doc["revision"] = revision if revision is not None else self.revision
+                self.rows[(TRACE, self.rid(*segments))] = doc
 
 
     # ------------------------------------------------------------------ builders
@@ -515,12 +466,12 @@ data:
             "source": _ref(src), "origin": _ref(plan.origin), "revision": plan.revision,
             "isNap": False, "utcOffsetStart": c.offset, "utcOffsetEnd": c.offset,
             "at": _iso(c.start), "endsAt": _iso(end),
-            "timeInBed": _duration(end - c.start) if end > c.start else None,
-            "timeAsleep": _duration(p["durationInSeconds"]) if p.get("durationInSeconds") is not None else None,
-            "awake": _duration(p["awakeDurationInSeconds"]) if p.get("awakeDurationInSeconds") is not None else None,
-            "light": _duration(p["lightSleepDurationInSeconds"]) if p.get("lightSleepDurationInSeconds") is not None else None,
-            "deep": _duration(p["deepSleepDurationInSeconds"]) if p.get("deepSleepDurationInSeconds") is not None else None,
-            "rem": _duration(p["remSleepInSeconds"]) if p.get("remSleepInSeconds") is not None else None,
+            "timeInBed": plan.duration(end - c.start) if end > c.start else None,
+            "timeAsleep": plan.duration(p.get("durationInSeconds")),
+            "awake": plan.duration(p.get("awakeDurationInSeconds")),
+            "light": plan.duration(p.get("lightSleepDurationInSeconds")),
+            "deep": plan.duration(p.get("deepSleepDurationInSeconds")),
+            "rem": plan.duration(p.get("remSleepInSeconds")),
             "scores": None,
         }
         overall = (p.get("overallSleepScore") or {}).get("value")
@@ -545,8 +496,8 @@ data:
             plan.rows[(SLEEP, plan.rid(c.sid, "nap", a))] = {
                 "source": _ref(src), "origin": _ref(plan.origin), "revision": plan.revision,
                 "isNap": True, "utcOffsetStart": off, "utcOffsetEnd": off,
-                "at": _iso(a), "endsAt": _iso(a + d), "timeInBed": _duration(d),
-                "timeAsleep": _duration(d), "awake": None, "light": None, "deep": None, "rem": None,
+                "at": _iso(a), "endsAt": _iso(a + d), "timeInBed": plan.duration(d),
+                "timeAsleep": plan.duration(d), "awake": None, "light": None, "deep": None, "rem": None,
                 "scores": None,
             }
 
@@ -673,7 +624,7 @@ data:
             "sportSource": kind or None, "source": _ref(src), "origin": _ref(plan.origin),
             "revision": plan.revision, "utcOffsetStart": c.offset, "utcOffsetEnd": c.offset,
             "at": _iso(c.start), "endsAt": _iso(end),
-            "duration": _duration(c.duration) if c.duration is not None else None,
+            "duration": plan.duration(c.duration),
             "distance": None, "activeEnergy": None, "averageHeartRate": None, "maxHeartRate": None,
             "elevationGain": None, "notes": props.get("activityDescription") or None,
         }
@@ -894,21 +845,10 @@ data:
         else:
             return {"output": {"skipped": "%s implies no observation" % name}}
 
-        stored = {(r.get("kind"), r.get("id")): r for r in previous}
         for sid, sprops in plan.sources.items():
             host.effects.put(SOURCE, sid, properties=sprops, if_absent=True)
-        for key, p in plan.rows.items():
-            # A revision never falls: a trace that lost the row with the highest
-            # version keeps the revision it was written with.
-            old = ((stored.get(key) or {}).get("properties") or {}).get("revision")
-            if isinstance(old, (int, float)) and not isinstance(old, bool) and old > (p.get("revision") or 0):
-                p["revision"] = int(old)
-            p["adapter"] = ADAPTER
-            host.effects.put(key[0], key[1], properties=p)
-        stale = 0
-        for key in stored:
-            if key not in plan.rows:
-                host.effects.delete(key[0], key[1])
-                stale += 1
-        return {"output": {"origin": origin, "written": len(plan.rows), "deleted": stale,
-                           "skipped": plan.skipped}}
+        counts = host.observed.reconcile([origin] + ([other] if pair else []), plan.rows,
+                                         owned=OWNED, adapter=ADAPTER, stored=previous)
+        out = {"origin": origin, "skipped": plan.skipped}
+        out.update(counts)
+        return {"output": out}

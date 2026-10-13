@@ -92,11 +92,13 @@ data:
     """WHOOP mirror rows to health records.
 
     ONE ORIGIN AT A TIME. A delivery names one mirror row. The body computes
-    every record that row implies, writes each (minted with its non-null half,
-    then patched whole, so a property the row no longer implies is cleared),
-    and deletes the records that name the row in `origin` and are no longer
-    implied. A deleted row implies nothing. A cycle's recovery takes its span
-    from the cycle, so a cycle delivery rebuilds the cycle's recoveries too.
+    every record that row implies and hands the set to
+    host.observed.reconcile, which writes each whole in one put (None for a
+    property the row no longer implies, which the put clears), leaves one
+    that already holds it unwritten, and deletes the records that name the
+    row in `origin` and are no longer implied. A deleted row implies nothing.
+    A cycle's recovery takes its span from the cycle, so a cycle delivery
+    rebuilds the cycle's recoveries too.
 
     IDS are composed from WHOOP's own identifiers, read off the mirror row
     (the row ids are hashes): `whoop/<account record id>/<cycle id>/recovery`
@@ -113,8 +115,8 @@ data:
     or a recovery whose cycle row is absent, implies nothing until it does.
 
     REVISION is WHOOP's `updated_at` in whole seconds since the epoch (for a
-    recovery, the later of its own and its cycle's). An output whose stored
-    revision is higher than the one computed is left as it is.
+    recovery, the later of its own and its cycle's). A rewrite never lowers
+    a stored revision: reconcile keeps the higher.
 
     UNITS are WHOOP's own and pass through the engine's table: kJ stay kJ, a
     stage total in milliseconds becomes minutes through host.units.convert. A
@@ -123,6 +125,7 @@ data:
     metric that means something else.
     """
     import datetime as _dt
+    from decimal import Decimal
 
     # This code's own version, stamped on every output apart from WHOOP's
     # `revision` (decision record 0162). Raise it with any change to what a
@@ -136,7 +139,6 @@ data:
     METRIC = HOME + "/observations/metric"
     SLEEP = HOME + "/health/sleep"
     WORKOUT = HOME + "/health/workout"
-    OUTPUTS = [OBSERVATION, SLEEP, WORKOUT]
 
     WHOOP = "providers.substrate.reamde.dev/whoop"
     ACCOUNT_T = WHOOP + "/account"
@@ -270,37 +272,6 @@ data:
         return -minutes if tzd[0] == "-" else minutes
 
 
-    def _decimal(value):
-        """A JSON number as the exact digits it was sent with."""
-        if isinstance(value, bool) or value is None:
-            return None
-        if isinstance(value, int):
-            return str(value)
-        text = repr(float(value))
-        return text[:-2] if text.endswith(".0") else text
-
-
-    def _duration(ms):
-        """Milliseconds as the ISO 8601 spelling the engine stores."""
-        ms = int(ms)
-        days, rest = divmod(ms, 86400000)
-        hours, rest = divmod(rest, 3600000)
-        minutes, rest = divmod(rest, 60000)
-        seconds, millis = divmod(rest, 1000)
-        out = "P" + ("%dD" % days if days else "")
-        if hours or minutes or seconds or millis or not days:
-            out += "T"
-            if hours:
-                out += "%dH" % hours
-            if minutes:
-                out += "%dM" % minutes
-            if millis:
-                out += "%d.%sS" % (seconds, ("%03d" % millis).rstrip("0"))
-            elif seconds or not (hours or minutes or days):
-                out += "%dS" % seconds
-        return out
-
-
     # ---------------------------------------------------------------- the run
 
     class _Run:
@@ -308,13 +279,24 @@ data:
             self.host = host
             self.units = {}
             self.sources = set()
-            self.wrote = 0
-            self.deleted = 0
-            self.kept = 0
+            self.counts = {"written": 0, "unchanged": 0, "deleted": 0}
             self.skipped = {}
 
         def skip(self, what):
             self.skipped[what] = self.skipped.get(what, 0) + 1
+
+        def decimal(self, value):
+            """A JSON number as the digits it was sent with. WHOOP sends a
+            whole score as a float (26.0); it is written whole (26)."""
+            if isinstance(value, bool) or value is None:
+                return None
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)
+            return self.host.observed.decimal(value)
+
+        def duration(self, ms):
+            """WHOOP's milliseconds as the spelling the engine stores."""
+            return self.host.observed.duration(Decimal(int(ms)) / 1000)
 
         def unit(self, code):
             if code not in self.units:
@@ -322,7 +304,7 @@ data:
             return self.units[code]
 
         def quantity(self, value, unit):
-            digits = _decimal(value)
+            digits = self.decimal(value)
             if digits is None:
                 return None
             return {"value": digits, "unit": self.unit(unit)}
@@ -339,28 +321,11 @@ data:
 
         def reconcile(self, origin, desired):
             """Write what one origin implies and delete what it no longer does."""
-            page = self.host.list(filter={
-                "kinds": OUTPUTS,
-                "referencing": {"ref": origin, "property": "origin"},
-            }, first=100)
-            held = {(ent.get("kind"), ent.get("id")): ent
-                    for ent in page.get("records") or []}
-            for kind, oid, props in desired:
-                stored = held.pop((kind, oid), None)
-                old = _props(stored).get("revision")
-                if old is not None and props.get("revision") is not None \
-                        and props["revision"] < old:
-                    self.kept += 1
-                    continue
-                whole = {name: props.get(name) for name in MANAGED[kind]}
-                whole["adapter"] = ADAPTER
-                mint = {k: v for k, v in whole.items() if v is not None}
-                self.host.effects.put(kind, oid, properties=mint, if_absent=True)
-                self.host.effects.patch(kind, oid, properties=whole)
-                self.wrote += 1
-            for kind, oid in sorted(held):
-                self.host.effects.delete(kind, oid)
-                self.deleted += 1
+            counts = self.host.observed.reconcile(
+                origin, {(kind, oid): props for kind, oid, props in desired},
+                owned=MANAGED, adapter=ADAPTER)
+            for key, n in counts.items():
+                self.counts[key] += n
 
         def observation(self, oid, metric, form, origin, revision, **props):
             props.update({"metric": METRIC + "/" + metric, "form": form,
@@ -495,13 +460,13 @@ data:
                         ms = stages.get(field)
                         if ms is None:
                             continue
-                        typed[code] = _duration(ms)
+                        typed[code] = self.duration(ms)
                         if code != "awake":
                             asleep += int(ms)
                     if any(stages.get(f) is not None for f, c in STAGES if c != "awake"):
-                        typed["timeAsleep"] = _duration(asleep)
+                        typed["timeAsleep"] = self.duration(asleep)
                     if stages.get("totalInBedTimeMilli") is not None:
-                        typed["timeInBed"] = _duration(stages["totalInBedTimeMilli"])
+                        typed["timeInBed"] = self.duration(stages["totalInBedTimeMilli"])
                     typed["efficiency"] = self.quantity(
                         score.get("sleepEfficiencyPercentage"), "%")
                     typed["respiratoryRate"] = self.quantity(
@@ -511,7 +476,7 @@ data:
                     for field, key in (("sleepPerformancePercentage", "sleepPerformance"),
                                        ("sleepConsistencyPercentage", "sleepConsistency")):
                         if score.get(field) is not None:
-                            scores[key] = _decimal(score[field])
+                            scores[key] = self.decimal(score[field])
                     typed["scores"] = scores or None
                 desired.append((SLEEP, base + "sleep", typed))
                 if scored and p.get("at") and p.get("endsAt"):
@@ -564,11 +529,11 @@ data:
                          "averageHeartRate": self.quantity(score.get("averageHeartRate"), "/min"),
                          "maxHeartRate": self.quantity(score.get("maxHeartRate"), "/min"),
                          "elevationGain": self.quantity(score.get("altitudeGainMeter"), "m"),
-                         "strain": _decimal(score.get("strain"))}
+                         "strain": self.decimal(score.get("strain"))}
                 a, b = _parse(p.get("at")), _parse(p.get("endsAt"))
                 if a is not None and b is not None and b > a:
-                    typed["duration"] = _duration(int((b - a).total_seconds() * 1000))
-                zones = {key: _duration(score["zoneDurations"][field])
+                    typed["duration"] = self.host.observed.duration(b - a)
+                zones = {key: self.duration(score["zoneDurations"][field])
                          for field, key in ZONES
                          if (score.get("zoneDurations") or {}).get(field) is not None}
                 typed["zoneDurations"] = zones or None
@@ -603,6 +568,6 @@ data:
             run.sleep(rid, row)
         else:
             run.workout(rid, row)
-        return {"output": {"origin": kind + "/" + rid, "wrote": run.wrote,
-                           "deleted": run.deleted, "kept": run.kept,
-                           "skipped": run.skipped}}
+        out = {"origin": kind + "/" + rid, "skipped": run.skipped}
+        out.update(run.counts)
+        return {"output": out}

@@ -142,14 +142,15 @@ data:
     # `offsets` must not keep both).
     OWNED = {
         TRACE: ("metric", "source", "form", "unit", "every", "offsets", "values", "codes", "hold",
-                "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "origins", "adapter"),
+                "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "origins", "revision"),
         OBSERVATION: ("metric", "source", "form", "value", "code", "statistic", "period", "periodId",
-                      "hold", "at", "endsAt", "utcOffset", "components", "qualifiers", "origin", "adapter"),
+                      "hold", "at", "endsAt", "utcOffset", "components", "qualifiers", "origin",
+                      "revision"),
         SLEEP: ("source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "timeInBed", "timeAsleep",
-                "awake", "light", "deep", "rem", "origin", "adapter"),
+                "awake", "light", "deep", "rem", "origin", "revision"),
         WORKOUT: ("sport", "sportSource", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
                   "duration", "distance", "activeEnergy", "averageHeartRate", "maxHeartRate", "elevationGain",
-                  "origin", "adapter"),
+                  "origin", "revision"),
     }
 
     # Health Auto Export's metric name -> (metric id under health/, shape, form,
@@ -361,7 +362,7 @@ data:
                 props["origins"] = [ref(*self.origin)]
             else:
                 props["origin"] = ref(*self.origin)
-            props["adapter"] = ADAPTER
+            props["revision"] = self.revision
             self.outputs[(kind, rid)] = props
 
         def skip(self, reason):
@@ -707,30 +708,6 @@ data:
 
     # ---- the run ----------------------------------------------------------------
 
-    def same(old, props):
-        """Whether a stored output already holds what this delivery implies,
-        `revision` aside."""
-        have = old.get("properties") or {}
-        for key in OWNED[old.get("kind")]:
-            if key not in props and have.get(key) is not None:
-                return False
-        return all(have.get(k) == v for k, v in props.items())
-
-
-    def existing_outputs(host, origin_path):
-        out, after = {}, None
-        while True:
-            query = {"filter": {"kinds": OUTPUT_KINDS, "referencing": {"ref": origin_path}}, "first": 500}
-            if after:
-                query["after"] = after
-            page = host.list(**query)
-            for rec in page.get("records") or []:
-                out[(rec.get("kind"), rec.get("id"))] = rec
-            after = page.get("cursor")
-            if not after:
-                return out
-
-
     def main(input, host):
         envelope = input.get("envelope") or {}
         change = envelope.get("change") or {}
@@ -752,22 +729,7 @@ data:
             else:
                 workout_outputs(host, w, props)
 
-        existing = existing_outputs(host, origin_path)
-        written = unchanged = deleted = 0
-        for (okind, oid), out in sorted(w.outputs.items()):
-            old = existing.get((okind, oid))
-            if old is not None and same(old, out):
-                unchanged += 1
-                continue
-            full = {k: None for k in OWNED[okind]}
-            full.update(out)
-            full["revision"] = revision
-            host.effects.put(okind, oid, properties=full)
-            written += 1
-        for (okind, oid) in sorted(existing):
-            if (okind, oid) not in w.outputs:
-                host.effects.delete(okind, oid)
-                deleted += 1
+        counts = host.observed.reconcile(origin_path, w.outputs, owned=OWNED, adapter=ADAPTER)
         if w.sources:
             display = None
             acct = host.records.get(ACCOUNT, aid) if w.outputs else None
@@ -780,7 +742,8 @@ data:
                 if cls:
                     src["class"] = cls
                 host.effects.put(SOURCE, compose("applehealth", aid, slug), properties=src, if_absent=True)
-        out = {"origin": origin_path, "written": written, "unchanged": unchanged, "deleted": deleted}
+        out = {"origin": origin_path}
+        out.update(counts)
         if w.skipped:
             out["skipped"] = w.skipped
             host.log("healthapple: %s skipped %s" % (origin_path, "; ".join(w.skipped)))

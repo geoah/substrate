@@ -433,6 +433,7 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 		}
 	}
 	hrBefore := mustGet(t, ds, healthObservation, hw(whoopRescoredCycle, "heart_rate_max"))
+	recoveryBefore := mustGet(t, ds, healthObservation, hw(whoopRescoredCycle, "recovery"))
 
 	fake.setPhase(1)
 	whoopSync(t, ds, fake, whoopSteady(map[string]string{"sleep": "2026-10-06T00:00:00Z"}))
@@ -449,11 +450,17 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	if asInt(after.Properties["revision"]) != epochSeconds(t, "2026-10-10T15:31:47.865Z") {
 		t.Errorf("the rescored strain's revision = %v, want the rescore's updated_at", after.Properties["revision"])
 	}
-	// The cycle's recovery takes its span and its revision from the cycle, so
-	// the rescore rewrites it too, though the recovery row did not move.
-	recovery := healthProps(t, ds, healthObservation, hw(whoopRescoredCycle, "recovery"))
-	if asInt(recovery["revision"]) != epochSeconds(t, "2026-10-10T15:31:47.865Z") {
-		t.Errorf("the rescored cycle's recovery carries revision %v, want the rescore's", recovery["revision"])
+	// The cycle's recovery takes its span from the cycle, so the cycle's
+	// delivery rebuilds it; the rescore moved neither the span nor the
+	// recovery's scores, so the rebuild finds it holding what it implies and
+	// leaves it unwritten, at the revision it had.
+	recovery := mustGet(t, ds, healthObservation, hw(whoopRescoredCycle, "recovery"))
+	if recovery.Version != recoveryBefore.Version ||
+		fmt.Sprint(recovery.Properties["revision"]) != fmt.Sprint(recoveryBefore.Properties["revision"]) ||
+		!sameInstant(t, recovery.Properties["endsAt"], fmt.Sprint(after.Properties["endsAt"])) {
+		t.Errorf("the rescored cycle's recovery moved to version %d revision %v ending %v (was %d, %v); want it unwritten over the cycle's span",
+			recovery.Version, recovery.Properties["revision"], recovery.Properties["endsAt"],
+			recoveryBefore.Version, recoveryBefore.Properties["revision"])
 	}
 	for _, id := range append(napOutputs, hw(whoopDeletedNap, "sleep")) {
 		kind := healthObservation
