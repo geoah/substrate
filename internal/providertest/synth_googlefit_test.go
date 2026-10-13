@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -30,7 +29,6 @@ import (
 // because a 404 tells the sync a data source is gone.
 type synthFitFake struct {
 	*fakeFit
-	mu      sync.Mutex
 	misses  []string
 	relaxed int
 	// days is every dataset read, by data source, as the UTC day it names.
@@ -52,7 +50,7 @@ func newSynthFitFake(t *testing.T, dir string) *synthFitFake {
 			return
 		}
 		path := r.URL.Path
-		paths := []string{path}
+		var relaxed []string
 		if m := fitWindowSegment.FindStringSubmatch(path); m != nil {
 			sid := strings.TrimPrefix(strings.TrimSuffix(path[:len(path)-len(m[0])], "/"), "/fitness/v1/users/me/dataSources/")
 			start, _ := strconv.ParseInt(m[1], 10, 64)
@@ -62,34 +60,17 @@ func newSynthFitFake(t *testing.T, dir string) *synthFitFake {
 			}
 			f.days[sid][time.Unix(0, start).UTC().Format(time.DateOnly)] = true
 			f.mu.Unlock()
-			paths = append(paths, fitWindowSegment.ReplaceAllString(path, "/datasets"))
+			relaxed = append(relaxed, fitWindowSegment.ReplaceAllString(path, "/datasets"))
 		}
-		pairs := synth.Query(r.URL.Query())
-		var thin []synth.Pair
-		for _, p := range pairs {
-			if !synth.PaginationParams[p.Key] {
-				thin = append(thin, p)
+		if _, raw, i, ok := synthRecording(dir, r, relaxed...); ok {
+			if i == 1 {
+				f.mu.Lock()
+				f.relaxed++
+				f.mu.Unlock()
 			}
-		}
-		for i, p := range paths {
-			for _, name := range []string{
-				synth.RecordingName(r.Method, p, pairs...),
-				synth.RecordingName(r.Method, p, thin...),
-				synth.RecordingName(r.Method, p),
-			} {
-				raw, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // a name the lookup composed under the test's own directory
-				if err != nil {
-					continue
-				}
-				if i == 1 {
-					f.mu.Lock()
-					f.relaxed++
-					f.mu.Unlock()
-				}
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(raw)
-				return
-			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(raw)
+			return
 		}
 		f.mu.Lock()
 		f.misses = append(f.misses, r.URL.String())

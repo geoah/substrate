@@ -12,12 +12,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -33,7 +31,6 @@ import (
 type synthGarminFake struct {
 	fakeAPI
 
-	mu     sync.Mutex
 	calls  map[string]int
 	served map[string]int
 	misses []string
@@ -47,22 +44,7 @@ func newSynthGarminFake(t *testing.T, dir string) *synthGarminFake {
 		if !bearer(w, r) {
 			return
 		}
-		pairs := synth.Query(r.URL.Query())
-		var thin []synth.Pair
-		for _, p := range pairs {
-			if !synth.PaginationParams[p.Key] {
-				thin = append(thin, p)
-			}
-		}
-		for _, name := range []string{
-			synth.RecordingName(r.Method, r.URL.Path, pairs...),
-			synth.RecordingName(r.Method, r.URL.Path, thin...),
-			synth.RecordingName(r.Method, r.URL.Path),
-		} {
-			raw, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // a name the lookup composed under the test's own directory
-			if err != nil {
-				continue
-			}
+		if name, raw, _, ok := synthRecording(dir, r); ok {
 			f.answer(t, w, name, raw)
 			return
 		}
@@ -163,10 +145,7 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 		t.Errorf("permissions %v", got)
 	}
 	backfilled := map[string]bool{}
-	fake.fakeAPI.mu.Lock()
-	paths := append([]string{}, fake.paths...)
-	fake.fakeAPI.mu.Unlock()
-	for _, path := range paths {
+	for _, path := range fake.seenPaths() {
 		if rest, ok := strings.CutPrefix(path, "/wellness-api/rest/backfill/"); ok {
 			backfilled[rest] = true
 		}

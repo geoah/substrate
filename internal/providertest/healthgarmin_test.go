@@ -37,22 +37,7 @@ func newHealthGarminDataset(t *testing.T) substrate.Dataset {
 // delivers it, applying the effects, and answers the output.
 func garminAdapt(t *testing.T, ds substrate.Dataset, kind, id string) map[string]any {
 	t.Helper()
-	env := map[string]any{
-		"change":     map[string]any{"op": "update", "kind": kind, "id": id},
-		"repository": map[string]any{"authority": ds.Repository().Authority},
-	}
-	if row, err := ds.Get(t.Context(), kind, id); err == nil && row.DeletedAt == nil {
-		env["record"] = map[string]any{"id": row.ID, "kind": row.Kind, "version": row.Version, "properties": row.Properties}
-	} else {
-		env["change"].(map[string]any)["op"] = "delete"
-		env["record"] = nil
-	}
-	s := newStepper(t, ds, healthGarminFn, nil)
-	s.setEnvelope(env)
-	_, out, _ := s.step(nil)
-	s.apply()
-	o, _ := out.(map[string]any)
-	return o
+	return adaptRow(t, ds, healthGarminFn, kind, id)
 }
 
 // adaptAll runs the adapter on every live row of the named mirror kinds.

@@ -61,28 +61,11 @@ func deliverAt(t *testing.T, ds substrate.Dataset, req map[string]any, fire, at 
 	t.Fatal("the provider delivery did not finish in 40 pages")
 }
 
-// adapt runs the adapter once over one mirror row as it stands, the way the
-// record trigger delivers it, applying what it stages, and returns its output.
+// adapt runs the adapter once over one mirror row as its record trigger
+// delivers it, applying what it stages, and returns its output.
 func adapt(t *testing.T, ds substrate.Dataset, kind, id string) map[string]any {
 	t.Helper()
-	row := mustGet(t, ds, kind, id)
-	raw, err := json.Marshal(row)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var record map[string]any
-	if err := json.Unmarshal(raw, &record); err != nil {
-		t.Fatal(err)
-	}
-	s := newStepper(t, ds, haAdapt, nil)
-	s.setEnvelope(map[string]any{
-		"change": map[string]any{"op": "update", "kind": kind, "id": id},
-		"record": record,
-	})
-	_, out, _ := s.step(nil)
-	s.apply()
-	m, _ := out.(map[string]any)
-	return m
+	return adaptRow(t, ds, haAdapt, kind, id)
 }
 
 // outputsOf lists the adapter's outputs that point at one mirror row.

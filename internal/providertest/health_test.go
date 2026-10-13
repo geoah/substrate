@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/samples"
@@ -50,6 +51,25 @@ func adapterOutputs(t *testing.T, ds substrate.Dataset) map[string]*substrate.Re
 		}
 	}
 	return out
+}
+
+// adaptRow hands one adapter function one mirror row on the envelope the
+// dispatcher builds for a record trigger (runner.Envelope): the row as it
+// stands, or a delete with no record once it is gone. It applies what the
+// function stages and answers the function's output.
+func adaptRow(t *testing.T, ds substrate.Dataset, fn, kind, id string) map[string]any {
+	t.Helper()
+	ch := substrate.Change{Op: substrate.OpPut, Kind: kind, RecordID: id, Actor: substrate.ActorAPI}
+	row, err := ds.Get(context.Background(), kind, id)
+	if err != nil || row.DeletedAt != nil {
+		ch.Op, row = substrate.OpDelete, nil
+	}
+	s := newStepper(t, ds, fn, map[string]any{})
+	s.setEnvelope(runner.Envelope(ch, row, ds.Repository().Authority))
+	_, out, _ := s.step(nil)
+	s.apply()
+	m, _ := out.(map[string]any)
+	return m
 }
 
 // assertAdapterStamp holds every output to the adapter version that wrote it.

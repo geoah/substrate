@@ -9,7 +9,6 @@ package providertest
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -36,24 +35,10 @@ func newSynthWhoopFake(t *testing.T, dir string) *fakeWhoop {
 		if !bearer(w, r) {
 			return
 		}
-		pairs := synth.Query(r.URL.Query())
-		var thin []synth.Pair
-		for _, p := range pairs {
-			if !synth.PaginationParams[p.Key] {
-				thin = append(thin, p)
-			}
-		}
-		for _, name := range []string{
-			synth.RecordingName(r.Method, r.URL.Path, pairs...),
-			synth.RecordingName(r.Method, r.URL.Path, thin...),
-			synth.RecordingName(r.Method, r.URL.Path),
-		} {
-			raw, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // a name the lookup composed under the test's own directory
-			if err == nil {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(raw)
-				return
-			}
+		if _, raw, _, ok := synthRecording(dir, r); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(raw)
+			return
 		}
 		f.mu.Lock()
 		f.misses = append(f.misses, r.URL.String())

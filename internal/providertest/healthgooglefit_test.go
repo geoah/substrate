@@ -7,7 +7,6 @@ package providertest
 // back.
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -59,22 +58,7 @@ func newFitHealth(t *testing.T, cutOn time.Time, toggles ...string) (substrate.D
 // delivers: the row as it stands, or a delete with no record.
 func observe(t *testing.T, ds substrate.Dataset, kind, id string) map[string]any {
 	t.Helper()
-	env := map[string]any{"change": map[string]any{"op": "update", "kind": kind, "id": id}}
-	row, err := ds.Get(context.Background(), kind, id)
-	if err == nil && row.DeletedAt == nil {
-		env["record"] = map[string]any{
-			"kind": kind, "id": id, "version": row.Version, "properties": row.Properties,
-		}
-	} else {
-		env["change"].(map[string]any)["op"] = "delete"
-		env["record"] = nil
-	}
-	s := newStepper(t, ds, fitAdaptFn, map[string]any{})
-	s.setEnvelope(env)
-	_, out, _ := s.step(nil)
-	s.apply()
-	m, _ := out.(map[string]any)
-	return m
+	return adaptRow(t, ds, fitAdaptFn, kind, id)
 }
 
 // observeAll delivers every live dataset row, then every session, the order
