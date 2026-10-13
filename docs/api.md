@@ -46,12 +46,15 @@ id may exist under two kinds as two unrelated records, and a record read is
 always scoped to its kind. There is no cross-kind read by bare id anywhere on
 the surface; a list that spans kinds names each one in `filter.kinds`.
 
-One id form needs care. A [kind declaration](vocabulary.md)'s id **is** a kind
-reference, so it carries a `/`. A client percent-encodes it, and the API
-decodes it exactly once:
+An id that holds a `/` needs care: a client percent-encodes each `/` in it,
+and the API decodes it exactly once. Unencoded, each `/` starts a path
+segment, so the path names no record. A [kind declaration](vocabulary.md)'s
+id **is** a kind reference, so it always holds one, and the ids the
+[observation adapters](observations.md#the-adapters) write hold several:
 
 ```http
 GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask
+GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fsteps%2F2026-08-26T19
 ```
 
 ### The records route

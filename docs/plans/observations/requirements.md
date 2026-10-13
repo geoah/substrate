@@ -314,11 +314,9 @@ design.
 
 A list with `at` bounded on both ends becomes the window read, which orders by
 `at` alone and refuses `count`; a list of traces returns every trace's full
-`values` array, with no `fields=` projection; a filter on an undeclared name
-answers no rows instead of a `422`; and a record id holding `/` must be
-percent-encoded in a record path, which `docs/api.md` states only for kind
-declarations. Proposal: window ordering by other properties, `fields=`, a
-`422` on an undeclared name, and a docs line for observed ids.
+`values` array, with no `fields=` projection; and a filter on an undeclared
+name answers no rows instead of a `422`. Proposal: window ordering by other
+properties, `fields=`, and a `422` on an undeclared name.
 
 ### G-53 Catalogue metrics and provider fields no adapter writes
 
