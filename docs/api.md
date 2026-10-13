@@ -545,10 +545,15 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   below 160 pounds, a stored 72.4 kg among them. The engine converts the
   operand exactly into each unit the rows hold, inside the operand's
   [measure](units.md); a stored value of another measure never matches, and an
-  operand outside a declared `measures:` is refused. Where the property
-  declares `units:`, those codes are every unit a row can hold and no row is
-  read to find them. Otherwise the grammar admits codes no list names
-  (`Mg`, `kg/h`), so each request first reads the distinct units of the
+  operand outside a declared `measures:` is refused. On a kind binding the
+  [observed](observations.md) trait, a `value` whose row says `delta: true`
+  holds a temperature difference, as the observed index reads it: the
+  filter compares it with the operand read as a difference, so
+  `{"value": {"gt": {"value": "0.3", "unit": "Cel"}}}` is a deviation above
+  0.3 K on such a row and a temperature above 0.3 °C on any other. Where the
+  property declares `units:`, those codes are every unit a row can hold and
+  no row is read to find them. Otherwise the grammar admits codes no list
+  names (`Mg`, `kg/h`), so each request first reads the distinct units of the
   filtered kinds' rows (the live ones, or the tombstones under
   `"deleted": true`): one pass over the rows the rest of the filter selects
   (its time range and every other condition; the quantity comparisons are
@@ -622,11 +627,13 @@ between 50 kg and 71000 g), in every unit a write admitted: the codes the
 property lists, else its measure's codes, else every code the table lists, and
 then any other code the read's rows hold (1 `Mg` sorts as 1000 kg, though the
 mass table lists no `Mg`), found by the same one read of the rows' units a
-filter makes. `rad` sorts through pi at 40 places; a level or an arbitrary
-unit sorts by its own number. A declared index on a quantity holds the same
-expression over the declared codes and needs `measures:` or `units:`; it
-serves the order while every stored unit is one of those codes, which
-`units:` guarantees. The engine resolves an order over the kinds the filter
+filter makes. Each kind's rows sort in the measure that kind declares, so a
+10 `Cel` temperature (283.15 K) sorts after a 20 `K` difference, and a row
+marked `delta: true` sorts as a difference. `rad` sorts through pi at 40
+places; a level or an arbitrary unit sorts by its own number. A declared
+index on a quantity holds the same expression over the declared codes and
+needs `measures:` or `units:`; it serves the order while every stored unit is
+one of those codes, which `units:` guarantees. The engine resolves an order over the kinds the filter
 selects (`kinds`, narrowed by `implements` and `purposes`), or over every kind
 when the filter names none, so another kind's declaration of the same name
 changes nothing. Where two selected kinds declare the name differently (a

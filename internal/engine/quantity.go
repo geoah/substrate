@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -106,17 +107,51 @@ func quantityText(v any) string {
 
 // --- filters ---
 
-// quantityDecl is one candidate kind's declaration of a filtered name.
+// quantityDecl is one candidate kind's declaration of a quantity name.
 type quantityDecl struct {
 	kind string
 	spec *vocabulary.QuantitySpec
+	// delta says the name is the `value` of a kind binding the observed
+	// trait's single variant, whose `delta: true` makes a temperature a
+	// difference (observedindex.go measureFor reads a row the same way).
+	delta bool
+}
+
+func (d quantityDecl) measure() string {
+	if d.spec == nil {
+		return ""
+	}
+	return d.spec.Measure
 }
 
 // quantityGroup is the candidate kinds that read a stored unit the same way:
-// those declaring the same measure, or none.
+// those declaring the same measure, or none, alike in reading `delta`.
 type quantityGroup struct {
 	measure string
+	delta   bool
 	kinds   []string
+	specs   []*vocabulary.QuantitySpec
+}
+
+// deltaSQL is true on a row whose `delta` says its temperature is a
+// difference.
+const deltaSQL = `(props->>'delta') = 'true'`
+
+// groupQuantityDecls groups the declarations by how they read a stored unit,
+// in the order the kinds come.
+func groupQuantityDecls(decls []quantityDecl) []quantityGroup {
+	var groups []quantityGroup
+	for _, d := range decls {
+		measure := d.measure()
+		i := slices.IndexFunc(groups, func(g quantityGroup) bool { return g.measure == measure && g.delta == d.delta })
+		if i < 0 {
+			groups = append(groups, quantityGroup{measure: measure, delta: d.delta})
+			i = len(groups) - 1
+		}
+		groups[i].kinds = append(groups[i].kinds, d.kind)
+		groups[i].specs = append(groups[i].specs, d.spec)
+	}
+	return groups
 }
 
 // condQuantity filters one quantity property. A comparison's operand is itself
@@ -141,19 +176,7 @@ func (ds *dataset) condQuantity(ctx context.Context, x dbx, b *builder, types []
 		return fmt.Errorf("%w: %s may hold a bounded value (<0.5), which no set of values certainly contains: compare it with eq or the comparison operators",
 			substrate.ErrValidation, key)
 	}
-	var groups []quantityGroup
-	for _, d := range decls {
-		measure := ""
-		if d.spec != nil {
-			measure = d.spec.Measure
-		}
-		i := slices.IndexFunc(groups, func(g quantityGroup) bool { return g.measure == measure })
-		if i < 0 {
-			groups = append(groups, quantityGroup{measure: measure})
-			i = len(groups) - 1
-		}
-		groups[i].kinds = append(groups[i].kinds, d.kind)
-	}
+	groups := groupQuantityDecls(decls)
 	// The rows' units are read only for a comparison: an `exists` alone needs
 	// none. The name is a literal, never a placeholder: a comparison no stored
 	// unit converts into renders FALSE and never reads the value, and a
@@ -169,7 +192,7 @@ func (ds *dataset) condQuantity(ctx context.Context, x dbx, b *builder, types []
 	compare := func(op string, raw any) (string, error) {
 		var ors []string
 		for _, g := range groups {
-			clause, err := quantityClause(b, v, g, decls, stored, op, raw, bounded)
+			clause, err := quantityClause(b, v, g, stored, op, raw, bounded)
 			if err != nil {
 				return "", fmt.Errorf("%w: %s compares against a quantity value: %w", substrate.ErrValidation, key, err)
 			}
@@ -222,7 +245,11 @@ func quantityDecls(types []*vocabulary.Kind, name string) []quantityDecl {
 		if !ok || p.Datatype != vocabulary.DatatypeQuantity || p.Repeated || p.Keyed {
 			continue
 		}
-		out = append(out, quantityDecl{kind: t.Identity, spec: p.Quantity})
+		d := quantityDecl{kind: t.Identity, spec: p.Quantity}
+		if b, ok := observedBinding(t); ok && b.Variant == vocabulary.ObservedSingle && name == "value" {
+			d.delta = d.measure() == "" || d.measure() == "temperature"
+		}
+		out = append(out, d)
 	}
 	return out
 }
@@ -357,8 +384,10 @@ func quantityValueSQL(v string) string {
 
 // quantityClause is one comparison against one operand for one group of
 // kinds: the operand converted exactly into each stored unit of its measure,
-// and the comparator's half-line read where values may carry one.
-func quantityClause(b *builder, v string, g quantityGroup, decls []quantityDecl, stored []string, op string, raw any, bounded bool) (string, error) {
+// and the comparator's half-line read where values may carry one. In a group
+// that reads `delta`, a stored temperature on a row marked a difference is
+// compared with the operand read as a difference too.
+func quantityClause(b *builder, v string, g quantityGroup, stored []string, op string, raw any, bounded bool) (string, error) {
 	if m, ok := raw.(map[string]any); ok {
 		if _, has := m[vocabulary.QuantityComparator]; has {
 			return "", fmt.Errorf("an operand is one value; a comparator belongs to a stored value")
@@ -377,17 +406,36 @@ func quantityClause(b *builder, v string, g quantityGroup, decls []quantityDecl,
 		return "", err
 	}
 	value := quantityValueSQL(v)
+	// in is the stored value minus the operand converted into s inside
+	// measure, or "" where the operand does not convert.
+	in := func(measure, s string) string {
+		t, err := vocabulary.ConvertIn(measure, ovalue, ounit, s)
+		if err != nil {
+			return ""
+		}
+		return value + ` * ` + t.Denom().String() + ` - (` + t.Num().String() + `)`
+	}
 	var arms []string
 	for _, s := range stored {
 		sm, err := vocabulary.ResolveMeasure(s, g.measure)
-		if err != nil || sm.Name != om.Name {
-			continue
-		}
-		t, err := vocabulary.ConvertIn(om.Name, ovalue, ounit, s)
 		if err != nil {
 			continue
 		}
-		arms = append(arms, `WHEN `+b.arg(s)+` THEN `+value+` * `+t.Denom().String()+` - (`+t.Num().String()+`)`)
+		var expr string
+		if sm.Name == om.Name {
+			expr = in(om.Name, s)
+		}
+		if g.delta && sm.Name == "temperature" {
+			diff := in("temperature-difference", s)
+			if diff == "" && expr == "" {
+				continue
+			}
+			expr = `(CASE WHEN ` + deltaSQL + ` THEN ` + orNull(diff) + ` ELSE ` + orNull(expr) + ` END)`
+		}
+		if expr == "" {
+			continue
+		}
+		arms = append(arms, `WHEN `+b.arg(s)+` THEN `+expr)
 	}
 	if len(arms) == 0 {
 		return `FALSE`, nil
@@ -416,30 +464,57 @@ func quantityClause(b *builder, v string, g quantityGroup, decls []quantityDecl,
 	return `(CASE ` + cmp + ` ` + arms2 + ` ELSE FALSE END)`, nil
 }
 
+// orNull is an expression, or SQL's NULL where there is none.
+func orNull(expr string) string {
+	if expr == "" {
+		return `NULL::numeric`
+	}
+	return expr
+}
+
 // --- ordering and the index expression ---
 
 // quantityProp reports the declarations of a name when EVERY candidate kind
 // (readKinds) that declares it declares one quantity, under numericProp's
 // every-not-any rule.
-func (ds *dataset) quantityProp(types []*vocabulary.Kind, name string) ([]*vocabulary.QuantitySpec, bool) {
-	var specs []*vocabulary.QuantitySpec
-	for _, t := range ds.readKinds(types) {
-		p, ok := t.Prop(name)
-		if !ok {
-			continue
-		}
-		if p.Repeated || p.Keyed || p.Datatype != vocabulary.DatatypeQuantity {
+func (ds *dataset) quantityProp(types []*vocabulary.Kind, name string) ([]quantityDecl, bool) {
+	kinds := ds.readKinds(types)
+	for _, t := range kinds {
+		if p, ok := t.Prop(name); ok && (p.Repeated || p.Keyed || p.Datatype != vocabulary.DatatypeQuantity) {
 			return nil, false
 		}
-		specs = append(specs, p.Quantity)
 	}
-	return specs, len(specs) > 0
+	decls := quantityDecls(kinds, name)
+	return decls, len(decls) > 0
 }
 
 // annotationsSQL is the pattern an ordering strips from a stored unit before
 // it reads its factor: an annotation names what is counted and never scales
 // the value, so {beats}/min orders as /min does.
 const annotationsSQL = `'\{[^}]*\}'`
+
+// quantityOrderSQL is the key an order by a quantity sorts by: the value at
+// `v` converted to its measure's base (quantityBaseSQL), read for each group
+// of kinds the way that group reads a stored unit, so a code two
+// declarations read in two measures (Cel as a temperature and as a
+// difference) keys each kind's rows in its own. With one group and no
+// `delta`, it is quantityBaseSQL itself, the declared index's text.
+func quantityOrderSQL(v string, groups []quantityGroup, stored ...string) string {
+	if len(groups) == 1 {
+		return quantityCaseSQL(v, groups[0].specs, groups[0].delta, stored...)
+	}
+	var sb strings.Builder
+	sb.WriteString(`(CASE`)
+	for _, g := range groups {
+		kinds := make([]string, len(g.kinds))
+		for i, k := range g.kinds {
+			kinds[i] = sqlLiteral(k)
+		}
+		sb.WriteString(` WHEN kind IN (` + strings.Join(kinds, `, `) + `) THEN ` + quantityCaseSQL(v, g.specs, g.delta, stored...))
+	}
+	sb.WriteString(` END)`)
+	return sb.String()
+}
 
 // quantityBaseSQL is the value at `v` converted to its measure's base, the key
 // an ordering sorts by and a declared index holds. It has an arm for each code
@@ -450,7 +525,8 @@ const annotationsSQL = `'\{[^}]*\}'`
 // lists (`Mg`, `kg/h`), and each converts by the same factor its write was
 // admitted under (vocabulary.OrderFactor), so no accepted number keys NULL. A
 // level or an arbitrary unit, which has no base, sorts by its own number; rad
-// reaches deg through pi at 40 places.
+// reaches deg through pi at 40 places. Every spec names one measure, or none:
+// quantityOrderSQL keeps declarations of two measures apart.
 //
 // Each arm gives a row the same key whichever arms beside it, so the key is a
 // function of the row and the declaration alone: a cursor minted under fewer
@@ -458,70 +534,111 @@ const annotationsSQL = `'\{[^}]*\}'`
 // and with no stored code beyond the declared ones the expression is the
 // declared index's own text.
 func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec, stored ...string) string {
-	type arm struct{ code, expr string }
-	var arms []arm
+	return quantityCaseSQL(v, specs, false, stored...)
+}
+
+// quantityArm is one code's arm of a base-value CASE: the code it keys,
+// annotations stripped, and its expression over valuePlaceholder.
+type quantityArm struct{ code, expr string }
+
+// valuePlaceholder stands for the value expression in a cached arm.
+const valuePlaceholder = "\x00value\x00"
+
+// declaredArms memoizes the arms a declaration names, by measure, unit list
+// and delta: every one is a function of the immutable unit table, and the
+// table's every code (a property naming no measure) is hundreds of parses.
+var declaredArms sync.Map
+
+// quantityCaseSQL is quantityBaseSQL for a group that may read `delta`: a
+// temperature arm then keys a row marked a difference without the offset.
+func quantityCaseSQL(v string, specs []*vocabulary.QuantitySpec, delta bool, stored ...string) string {
+	measure := ""
+	var arms []quantityArm
 	seen := map[string]bool{}
-	value := quantityValueSQL(v)
-	add := func(measure, code string) {
-		key := stripAnnotations(code)
-		if seen[key] {
-			return
-		}
-		m, err := vocabulary.ResolveMeasure(code, measure)
-		if err != nil {
-			return
-		}
-		seen[key] = true
-		switch m.Scale {
-		case vocabulary.ScaleLogarithmic, vocabulary.ScaleArbitrary:
-			arms = append(arms, arm{key, value})
-			return
-		}
-		f, o, err := vocabulary.OrderFactor(m.Name, code)
-		if err != nil {
-			arms = append(arms, arm{key, `NULL::numeric`})
-			return
-		}
-		arms = append(arms, arm{key, linearSQL(value, f, o)})
-	}
 	for _, s := range specs {
-		measure := ""
 		var listed []string
 		if s != nil {
 			measure = s.Measure
 			listed = s.Units
 		}
-		// A unit list is every unit a value may hold; a measure lists its
-		// own codes; a property naming neither may hold any code the table
-		// lists.
-		var codes []string
-		switch m, ok := vocabulary.LookupMeasure(measure); {
-		case len(listed) > 0:
-		case ok:
-			codes = m.Units
-		default:
-			codes = vocabulary.UnitCodes()
-		}
-		for _, c := range append(slices.Clone(listed), codes...) {
-			add(measure, c)
+		for _, a := range declaredArmsFor(measure, listed, delta) {
+			if !seen[a.code] {
+				seen[a.code] = true
+				arms = append(arms, a)
+			}
 		}
 	}
 	for _, c := range stored {
-		for _, s := range specs {
-			measure := ""
-			if s != nil {
-				measure = s.Measure
-			}
-			add(measure, c)
+		if a, ok := baseArm(measure, c, delta); ok && !seen[a.code] {
+			seen[a.code] = true
+			arms = append(arms, a)
 		}
 	}
+	value := quantityValueSQL(v)
 	var sb strings.Builder
 	sb.WriteString(`(CASE regexp_replace(` + v + `->>'` + vocabulary.QuantityUnit + `', ` + annotationsSQL + `, '', 'g')`)
 	for _, a := range arms {
-		sb.WriteString(` WHEN ` + sqlLiteral(a.code) + ` THEN ` + a.expr)
+		sb.WriteString(` WHEN ` + sqlLiteral(a.code) + ` THEN ` + strings.ReplaceAll(a.expr, valuePlaceholder, value))
 	}
 	sb.WriteString(` END)`)
 	return sb.String()
+}
+
+// declaredArmsFor is the arms one declaration names, in order: the declared
+// `units:` where it lists them, else its measure's codes, else every code the
+// table lists.
+func declaredArmsFor(measure string, listed []string, delta bool) []quantityArm {
+	key := measure + "|" + strings.Join(listed, " ") + "|" + strconv.FormatBool(delta)
+	if cached, ok := declaredArms.Load(key); ok {
+		return cached.([]quantityArm)
+	}
+	codes := slices.Clone(listed)
+	if len(listed) == 0 {
+		if m, ok := vocabulary.LookupMeasure(measure); ok {
+			codes = m.Units
+		} else {
+			codes = vocabulary.UnitCodes()
+		}
+	}
+	var arms []quantityArm
+	seen := map[string]bool{}
+	for _, c := range codes {
+		if a, ok := baseArm(measure, c, delta); ok && !seen[a.code] {
+			seen[a.code] = true
+			arms = append(arms, a)
+		}
+	}
+	declaredArms.Store(key, arms)
+	return arms
+}
+
+// baseArm is one code's arm: its factor to the base of the measure it reads
+// in, the value itself for a level or an arbitrary unit, NULL for a code no
+// factor reaches; false for a code the measure does not admit. With delta, a
+// temperature keys a row marked a difference by its factor alone.
+func baseArm(measure, code string, delta bool) (quantityArm, bool) {
+	m, err := vocabulary.ResolveMeasure(code, measure)
+	if err != nil {
+		return quantityArm{}, false
+	}
+	arm := quantityArm{code: stripAnnotations(code)}
+	switch m.Scale {
+	case vocabulary.ScaleLogarithmic, vocabulary.ScaleArbitrary:
+		arm.expr = valuePlaceholder
+		return arm, true
+	}
+	linear := func(measure string) string {
+		f, o, err := vocabulary.OrderFactor(measure, code)
+		if err != nil {
+			return `NULL::numeric`
+		}
+		return linearSQL(valuePlaceholder, f, o)
+	}
+	arm.expr = linear(m.Name)
+	if delta && m.Name == "temperature" {
+		arm.expr = `(CASE WHEN ` + deltaSQL + ` THEN ` + linear("temperature-difference") + ` ELSE ` + arm.expr + ` END)`
+	}
+	return arm, true
 }
 
 // quantityOrderTerms widens each quantity term of an order with an arm for
@@ -533,16 +650,17 @@ func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec, stored ...strin
 // stays the declared index's.
 func (ds *dataset) quantityOrderTerms(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, orders []substrate.Order, terms []orderTerm) ([]orderTerm, error) {
 	for i, o := range orders {
-		specs, ok := ds.quantityProp(types, o.Property)
+		decls, ok := ds.quantityProp(types, o.Property)
 		if !ok || i >= len(terms) {
 			continue
 		}
 		v := `(props->` + sqlLiteral(o.Property) + `)`
-		if terms[i].expr != quantityBaseSQL(v, specs) {
+		groups := groupQuantityDecls(decls)
+		if terms[i].expr != quantityOrderSQL(v, groups) {
 			continue
 		}
 		var open []string
-		for _, d := range quantityDecls(ds.readKinds(types), o.Property) {
+		for _, d := range decls {
 			if !quantityUnitsClosed(d.spec) {
 				open = append(open, d.kind)
 			}
@@ -554,7 +672,7 @@ func (ds *dataset) quantityOrderTerms(ctx context.Context, x dbx, b *builder, ty
 		if err != nil {
 			return nil, err
 		}
-		terms[i].expr = quantityBaseSQL(v, specs, stored...)
+		terms[i].expr = quantityOrderSQL(v, groups, stored...)
 	}
 	return terms, nil
 }

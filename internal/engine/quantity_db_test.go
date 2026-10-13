@@ -430,6 +430,55 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 	}
 }
 
+// An order across two kinds that read one code in two measures keys each
+// kind's rows in its own: a 10 Cel temperature is 283.15 K, a 10 Cel
+// difference is 10 K, whichever kind the read names first.
+func TestOrderByQuantityKeysEachKindInItsOwnMeasure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	shiftKind := quantityPackage + "/shift"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(quantityPackage, 0),
+		readingManifest(map[string]any{"change": map[string]any{"type": "quantity", "measures": "temperature"}}),
+		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "shift"}, map[string]any{
+			"properties": map[string]any{
+				"name":   map[string]any{"type": "string"},
+				"change": map[string]any{"type": "quantity", "measures": "temperature-difference"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for _, row := range []struct {
+		kind, name string
+		change     map[string]any
+	}{
+		{readingKind, "absolute", qv("10", "Cel")},
+		{shiftKind, "small", qv("10", "Cel")},
+		{shiftKind, "large", qv("20", "K")},
+	} {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: row.kind, ID: row.name, Properties: map[string]any{
+			"name": row.name, "change": row.change,
+		}}); err != nil {
+			t.Fatalf("put %s: %v", row.name, err)
+		}
+	}
+	for _, kinds := range [][]string{{readingKind, shiftKind}, {shiftKind, readingKind}} {
+		page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: kinds}, OrderBy: []substrate.Order{{Property: "change"}}, First: 10})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		var got []string
+		for _, r := range page.Records {
+			got = append(got, r.Properties["name"].(string))
+		}
+		if strings.Join(got, ",") != "small,large,absolute" {
+			t.Fatalf("kinds %v ordered %v, want small,large,absolute", kinds, got)
+		}
+	}
+}
+
 // An order sorts by the value at its measure's base, so 155 pounds sits
 // between 50 kg and 71000 g; one-row pages put a cursor at every boundary.
 // The declared index on the property holds the same expression, and Postgres

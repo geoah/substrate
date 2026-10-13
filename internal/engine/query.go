@@ -1765,8 +1765,8 @@ func (ds *dataset) orderExpr(types []*vocabulary.Kind, property string) (string,
 		}
 		// A QUANTITY sorts by the value converted to its measure's base, the
 		// expression a declared index on it holds (indices.go).
-		if specs, ok := ds.quantityProp(types, property); ok {
-			return quantityBaseSQL(`(props->`+sqlLiteral(property)+`)`, specs), nil
+		if decls, ok := ds.quantityProp(types, property); ok {
+			return quantityOrderSQL(`(props->`+sqlLiteral(property)+`)`, groupQuantityDecls(decls)), nil
 		}
 		// An INSTANT sorts as an instant. validate.go normalizes a datetime to
 		// one UTC RFC 3339 layout, but RFC3339Nano trims trailing fractional
