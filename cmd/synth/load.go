@@ -36,6 +36,17 @@ const triggerVerbs = "/api/v1/substrate.reamde.dev/core/trigger"
 type client struct {
 	server, token, authority string
 	hc                       *http.Client
+	// pause waits between polls and between posts of one delivery; nil is
+	// sleep. A test records the waits instead of spending them.
+	pause func(ctx context.Context, d time.Duration) error
+}
+
+// wait is c.pause, or sleep where none is set.
+func (c *client) wait(ctx context.Context, d time.Duration) error {
+	if c.pause != nil {
+		return c.pause(ctx, d)
+	}
+	return sleep(ctx, d)
 }
 
 func (c *client) do(ctx context.Context, method, path string, body []byte, headers map[string]string) (int, []byte, error) {
@@ -91,7 +102,7 @@ func (c *client) postWebhook(ctx context.Context, path string, body []byte, head
 		if secs, perr := strconv.Atoi(hdr.Get("Retry-After")); err == nil && perr == nil && secs >= 0 {
 			next = time.Duration(secs) * time.Second
 		}
-		if err := sleep(ctx, next); err != nil {
+		if err := c.wait(ctx, next); err != nil {
 			return st, out, err
 		}
 		wait = min(2*wait, 30*time.Second)
@@ -245,7 +256,7 @@ func (c *client) awaitSettled(ctx context.Context, id string, within time.Durati
 		if time.Now().After(deadline) {
 			return parked, fmt.Errorf("trigger %s did not settle within %s", id, within)
 		}
-		if err := sleep(ctx, wait); err != nil {
+		if err := c.wait(ctx, wait); err != nil {
 			return parked, err
 		}
 		wait = min(2*wait, 500*time.Millisecond)
@@ -625,6 +636,15 @@ func runSync(ctx context.Context, c *client, provider, base, repo, ctl, python s
 	cmd := exec.CommandContext(ctx, python, args...) //nolint:gosec // every argument is this command's own
 	cmd.Dir = tmp
 	cmd.Stdout, cmd.Stderr = stdout, stderr
+	// A canceled load interrupts the runner rather than killing it, so its
+	// own cleanup runs: it quiesces the account (a paged drain still dialing
+	// a dead mock ends the account erroring), stops the mock and removes its
+	// workdir, and only then does the deferred RemoveAll take the config.
+	// The runner leads a process group of its own, so a terminal's Ctrl-C
+	// reaches it once, through Cancel: a second interrupt aborts the quiesce.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = time.Minute
+	ownProcessGroup(cmd)
 	cmd.Env = append(os.Environ(),
 		"SUBSTRATE_TOKEN="+c.token,
 		"SUBSTRATECTL_CONFIG="+cfg,
@@ -705,6 +725,14 @@ type envelope struct {
 		} `json:"body"`
 	} `json:"request"`
 	Trigger string `json:"trigger"`
+}
+
+// withoutKey is err's text with the webhook key replaced.
+func withoutKey(err error, key string) string {
+	if key == "" {
+		return err.Error()
+	}
+	return strings.ReplaceAll(err.Error(), key, "<webhook key>")
 }
 
 // parseResume reads -resume's PROVIDER/NNNN.
@@ -810,7 +838,12 @@ func (p *poster) deliveries(ctx context.Context, provider, base string, from int
 		}
 		st, out, err := c.postWebhook(ctx, path, []byte(env.Request.Body.Text), headers)
 		if err != nil {
-			return fmt.Errorf("%s: %w; take the load up with -resume %s/%04d", filepath.Base(f), err, provider, i+1)
+			// A transport failure's *url.Error carries the URL, and a post
+			// whose delivery has no authorization header carries the key in
+			// its path: the key, the door's only credential where the
+			// provider signs nothing, stays out of the printed error.
+			return fmt.Errorf("%s: %s; take the load up with -resume %s/%04d",
+				filepath.Base(f), withoutKey(err, p.key), provider, i+1)
 		}
 		if st >= 300 {
 			return fmt.Errorf("%s: %d %s; take the load up with -resume %s/%04d", filepath.Base(f), st, truncate(out), provider, i+1)

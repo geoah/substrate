@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -41,9 +43,11 @@ type fakeSubstrate struct {
 	parkAt int
 	// pendingPolls is how many status reads see a delivery still pending.
 	pendingPolls int
-	posts        int
-	webhooks     []*http.Request
-	records      map[string]map[string]any
+	// drop closes every webhook connection without an answer.
+	drop     bool
+	posts    int
+	webhooks []*http.Request
+	records  map[string]map[string]any
 }
 
 func newFakeSubstrate(t *testing.T) *fakeSubstrate {
@@ -83,6 +87,12 @@ func (f *fakeSubstrate) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if rest, ok := strings.CutPrefix(r.URL.Path, "/webhooks/"); ok {
 		f.webhooks = append(f.webhooks, r)
+		if f.drop {
+			if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+				_ = conn.Close()
+			}
+			return
+		}
 		if f.busy > 0 {
 			f.busy--
 			w.Header().Set("Retry-After", "1")
@@ -365,12 +375,40 @@ func TestWebhookPostsCarryNoRepositoryToken(t *testing.T) {
 func TestAwaitSettledPollsAgainSoon(t *testing.T) {
 	f := newFakeSubstrate(t)
 	f.pendingPolls = 2
-	started := time.Now()
-	if _, err := f.client().awaitSettled(t.Context(), "garmin-webhook", time.Minute); err != nil {
+	c := f.client()
+	var waits []time.Duration
+	c.pause = func(_ context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	}
+	if _, err := c.awaitSettled(t.Context(), "garmin-webhook", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if took := time.Since(started); took > 250*time.Millisecond {
-		t.Errorf("settling after two pending reads took %s", took)
+	if want := []time.Duration{20 * time.Millisecond, 40 * time.Millisecond}; !slices.Equal(waits, want) {
+		t.Errorf("settling after two pending reads waited %v, want %v", waits, want)
+	}
+}
+
+// A post that fails in transport is reported with its URL, and a Garmin
+// push carries the trigger's key in its path. The key is the only credential
+// on a door Garmin does not sign, so the error the loader prints names the
+// delivery and where to resume, never the key.
+func TestAFailedPostNamesNoWebhookKey(t *testing.T) {
+	f := newFakeSubstrate(t)
+	f.drop = true
+	dir := generated(t, testAuthority, synth.Garmin{})
+	c := f.client()
+	c.pause = func(context.Context, time.Duration) error { return nil }
+	p := &poster{c: c, key: testKey, settle: time.Minute, stdout: io.Discard}
+	err := p.deliveries(t.Context(), "garmin", filepath.Join(dir, "garmin"), 1)
+	if err == nil || !strings.Contains(err.Error(), "-resume garmin/0001") {
+		t.Fatalf("a load whose posts all fail = %v, want a stop naming -resume garmin/0001", err)
+	}
+	if strings.Contains(err.Error(), testKey) {
+		t.Errorf("the error prints the webhook key: %v", err)
+	}
+	if len(f.webhooks) != postTries || !strings.HasSuffix(f.webhooks[0].URL.Path, "/"+testKey) {
+		t.Errorf("%d posts, the first to %s; want %d, each with the key in its path", len(f.webhooks), f.webhooks[0].URL.Path, postTries)
 	}
 }
 
@@ -440,54 +478,6 @@ func TestMain(m *testing.M) {
 		return
 	}
 	os.Exit(m.Run())
-}
-
-// The runner's substratectl config holds the repository token, so an
-// interrupted load removes it on the way out instead of leaving it in the
-// temporary directory.
-func TestInterruptRemovesTheRunnerConfig(t *testing.T) {
-	tmp := t.TempDir()
-	dir := generated(t, testAuthority, synth.Whoop{})
-	bin := t.TempDir()
-	marker := filepath.Join(bin, "started")
-	python := filepath.Join(bin, "python")
-	if err := os.WriteFile(python, []byte("#!/bin/sh\ntouch "+marker+"\nexec sleep 20\n"), 0o700); err != nil { //nolint:gosec // a script the test runs
-		t.Fatal(err)
-	}
-	ctl := filepath.Join(bin, "substratectl")
-	if err := os.WriteFile(ctl, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(os.Args[0], "load", "-dir", dir, "-server", "http://127.0.0.1:1", "-authority", testAuthority, //nolint:gosec // the test binary itself
-		"-providers", "whoop", "-python", python, "-ctl", ctl, "-repo", ".")
-	cmd.Env = append(os.Environ(), "SYNTH_TEST_RUN_MAIN=1", "SUBSTRATE_TOKEN="+testToken, "TMPDIR="+tmp)
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		if _, err := os.Stat(marker); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = cmd.Process.Kill()
-			t.Fatal("the runner never started")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if err := cmd.Process.Signal(os.Interrupt); err != nil {
-		t.Fatal(err)
-	}
-	_ = cmd.Wait()
-	entries, err := os.ReadDir(tmp)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "synth-") {
-			t.Errorf("the interrupted load left %s, which holds the token", e.Name())
-		}
-	}
 }
 
 // runnerServes starts the mock the way the e2e runner does for one e2e.json

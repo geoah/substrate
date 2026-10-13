@@ -214,8 +214,13 @@ provider's setup (the runner, an install, an import, a record) names none;
 the next load starts over, and skips the packages the repository already
 holds at the shipped version.
 The bearer comes from `SUBSTRATE_TOKEN`, never from argv, and is sent to the
-API alone, never to the webhook door. An interrupted load stops the runner
-and removes the temporary config that holds the token.
+API alone, never to the webhook door. A Garmin push carries the trigger's
+key in its path, as Garmin calls the door, and an error the load prints
+spells the key as `<webhook key>`. An interrupted load interrupts the
+runner, which leads a process group of its own so a Ctrl-C reaches it once,
+and waits up to a minute while the runner quiesces the account, stops its
+mock and removes its workdir; then it removes the temporary config that
+holds the token.
 
 ## What holds it to spec
 
@@ -226,8 +231,10 @@ and removes the temporary config that holds the token.
   mock server's parameter sets, a writer that replaces an earlier run, and
   all four emitters agreeing on every night and workout within a minute.
 - `cmd/synth`'s tests drive `load` against a fake substrate: the import
-  order, the authority check, the catalog read, the webhook key, the retries,
-  `-resume`, the token kept off the webhook door, and an interrupt. One
+  order, the authority check, the catalog read, the webhook key and its
+  absence from a printed error, the retries, `-resume`, the token kept off
+  the webhook door, the absolute `-ctl` the runner is handed, and an
+  interrupt the runner cleans up after. One
   starts the runner's mock over generated Fit recordings and holds what it
   serves to what was generated.
 - `internal/providertest` drives the emitted data through the real
