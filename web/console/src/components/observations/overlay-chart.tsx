@@ -81,6 +81,7 @@ import {
   unitWords,
   universeOf,
   type AxisSide,
+  type ChartMark,
   type Plot,
 } from "@/lib/overlay"
 import { listWords } from "@/lib/tools"
@@ -308,11 +309,7 @@ export function OverlayChart({
                 const row = d.series.points[b].row!
                 return (
                   <div key={d.key} className="contents">
-                    <span
-                      aria-hidden
-                      className="h-0.5 w-3 shrink-0 rounded-full"
-                      style={{ background: d.color }}
-                    />
+                    <Swatch mark={plot.mark} color={d.color} />
                     <dt className="truncate text-muted-foreground">
                       {d.label}
                     </dt>
@@ -586,17 +583,9 @@ function PlotHead({
                   )}
                   onClick={() => onToggle(d.key)}
                 >
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "shrink-0",
-                      plot.mark === "line"
-                        ? "h-0.5 w-3 rounded-full"
-                        : "size-2.5 rounded-[3px]"
-                    )}
-                    style={{
-                      background: off ? "var(--border-strong)" : d.color,
-                    }}
+                  <Swatch
+                    mark={plot.mark}
+                    color={off ? "var(--border-strong)" : d.color}
                   />
                   {d.label}
                 </button>
@@ -706,6 +695,22 @@ function chartNotes(
     }
   }
   return notes
+}
+
+/** A series' colour in the shape it is drawn: a stroke for a line, a square
+ * for bars or a stack. */
+function Swatch({ mark, color }: { mark: ChartMark; color: string }) {
+  return (
+    <span
+      aria-hidden
+      data-mark={mark}
+      className={cn(
+        "shrink-0",
+        mark === "line" ? "h-0.5 w-3 rounded-full" : "size-2.5 rounded-[3px]"
+      )}
+      style={{ background: color }}
+    />
+  )
 }
 
 /** One series at one bucket in full: every value its row carries, the

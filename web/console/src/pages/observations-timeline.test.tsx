@@ -848,6 +848,11 @@ describe("the charts", () => {
       1
     )
     expect(chart.querySelectorAll("[data-slot=chart-marker]")).toHaveLength(1)
+    // Each line's swatch is the mark it draws: a stroke, a bar's square.
+    const swatches = [...tip.querySelectorAll("[data-mark]")].map((el) =>
+      el.getAttribute("data-mark")
+    )
+    expect(swatches).toEqual(["line", "bars"])
   })
 
   it("splits a third unit into a chart of its own", async () => {
