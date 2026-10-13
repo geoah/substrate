@@ -115,13 +115,18 @@ func newEvidence(form string, raw bool) *aggEvidence {
 // --- planning ---
 
 // plan decides where each group's buckets are served from, reads the rollup
-// rows of the groups they serve, and counts the raw points the rest need
-// against maxSamples before reading them.
+// rows of the groups they serve, and counts the rows and the raw points the
+// rest need against maxSamples before reading them.
 func (r *aggRun) plan(groups []*aggGroup) error {
 	r.rows, r.rowGroups = map[*aggStream][]observed.Row{}, map[string]obsGroup{}
 	r.carries, r.series = map[*aggStream][]*observed.Point{}, map[*aggStream]*aggSeries{}
 	for _, g := range groups {
 		g.rollups = r.rollupable(g)
+	}
+	if err := r.chargeRollups(groups); err != nil {
+		return err
+	}
+	for _, g := range groups {
 		if !g.rollups {
 			continue
 		}
@@ -157,6 +162,14 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 				return err
 			}
 		}
+		if !g.rollups {
+			// Served from raw points after all: the rows it read are freed
+			// and their charge returned, and its points are charged below.
+			for _, s := range g.raw {
+				r.samples -= int64(len(r.rows[s]))
+				delete(r.rows, s)
+			}
+		}
 	}
 	want := map[*aggStream][][2]time.Time{}
 	for _, g := range groups {
@@ -186,7 +199,7 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 		}
 		total += n
 	}
-	if err := r.charge(total, "to reduce"); err != nil {
+	if err := r.charge(total, "raw points to reduce"); err != nil {
 		return err
 	}
 	for s, spans := range want {
@@ -243,20 +256,58 @@ func (r *aggRun) planCarries(g *aggGroup) error {
 	return nil
 }
 
+// rollupCountSQL counts the rollup rows of the streams ($1 to $6) in the
+// spans ($7 and $8) the reads of readRollups take.
+const rollupCountSQL = `
+	SELECT coalesce(sum(x.c), 0)::bigint
+	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS s(metric, kind, source, about, channel, form)
+	CROSS JOIN unnest($7::timestamptz[], $8::timestamptz[]) AS w(a, b)
+	CROSS JOIN LATERAL (
+		SELECT count(*) AS c FROM observed_rollups r
+		WHERE r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
+		  AND r.form = s.form AND r.bucket15 >= w.a AND r.bucket15 < w.b) x`
+
+// chargeRollups counts the rollup rows the groups served from rollups would
+// read against maxSamples, in one statement before any is read: the rows are
+// held until the read ends, and a long range of quarter hours is as many rows
+// as a dense stream is points.
+func (r *aggRun) chargeRollups(groups []*aggGroup) error {
+	ids := make([][]string, 6)
+	for _, g := range groups {
+		if !g.rollups {
+			continue
+		}
+		for _, s := range g.raw {
+			for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel, s.form} {
+				ids[i] = append(ids[i], v)
+			}
+		}
+	}
+	if len(ids[0]) == 0 {
+		return nil
+	}
+	from, to := spanArrays(r.rowSpans())
+	var n int64
+	if err := r.tx.QueryRowContext(r.ctx, rollupCountSQL, ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], from, to).Scan(&n); err != nil {
+		return fmt.Errorf("substrate/engine: aggregate rollup count: %w", err)
+	}
+	return r.charge(n, "rollup rows")
+}
+
 // wholeQuarterHours reports whether a UTC offset in minutes puts local
 // midnight on a rollup row's boundary.
 func wholeQuarterHours(offset int64) bool { return offset%int64(bucketWidth/time.Minute) == 0 }
 
-// charge counts n more raw points against maxSamples before a statement
-// reads them, and refuses the read once the points counted so far (the forms'
-// discovery, the reduction's, the coverage's) pass it. what says what the n
-// are for.
+// charge counts n more raw points or rollup rows against maxSamples before
+// a statement reads them, and refuses the read once those counted so far (the
+// forms' discovery, the rollup rows, the reduction's points, the coverage's)
+// pass it. what says what the n are.
 func (r *aggRun) charge(n int64, what string) error {
 	r.samples += n
 	if r.samples <= r.p.maxSamples {
 		return nil
 	}
-	return refuse("aggregate.budget.maxSamples", "the read needs %d raw points (%d of them %s), over %d; narrow the range, use reducers rollups serve (not percentile or durationIn, and no maxGap tighter than the data), or raise maxSamples (the cap is %d)",
+	return refuse("aggregate.budget.maxSamples", "the read needs %d raw points and rollup rows (%d of them %s), over %d; narrow the range, use reducers rollups serve (not percentile or durationIn, and no maxGap tighter than the data), or raise maxSamples (the cap is %d)",
 		r.samples, n, what, r.p.maxSamples, substrate.AggregateMaxSamplesCap)
 }
 
@@ -1498,7 +1549,7 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 	if err := r.tx.QueryRowContext(r.ctx, amountCoverageCountSQL, args...).Scan(&n); err != nil {
 		return fmt.Errorf("substrate/engine: aggregate coverage count: %w", err)
 	}
-	if err := r.charge(n, "to join the spans of amounts whose rollup rows overlap"); err != nil {
+	if err := r.charge(n, "raw spans to join where amounts' rollup rows overlap"); err != nil {
 		return err
 	}
 	rows, err := r.tx.QueryContext(r.ctx, amountCoverageSQL, args...)

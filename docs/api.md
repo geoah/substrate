@@ -1370,21 +1370,23 @@ a `422` naming the limit; a result is never cut short. The range's buckets
 and the records mode's records are counted as they are enumerated. The
 groups, the code series and series times buckets are checked after the
 statement that finds the range's forms and codes, before any point is read
-for a reduction. Each statement that reads raw points counts them first and
-adds them to the read's `maxSamples` total: finding the forms (the points at
-the range's cut ends, and its summaries), the reduction, and the raw spans
-an amount's coverage is joined from where two rollup rows may overlap, which
-is counted once the rows are merged. Rollup rows count against no budget
-(there is at most one per stream, group and quarter hour of the range), and
-neither does the one point per stream and window a gauge's value is carried
-in from. A recorded-local read can meet days its range's offsets do not name
+for a reduction. Each statement that reads raw points or rollup rows counts
+them first and adds them to the read's `maxSamples` total: finding the forms
+(the points at the range's cut ends, and its summaries), the rollup rows
+(one statement for every group they serve; a group sent to raw points after
+all gives its rows back), the reduction's raw points, and the raw spans an
+amount's coverage is joined from where two rollup rows may overlap, which is
+counted once the rows are merged. A rollup row counts as one: there is at
+most one per stream, group and quarter hour, so a year of a dense stream is
+about 35,000. The one point per stream and window a gauge's value is
+carried in from counts against no budget. A recorded-local read can meet days its range's offsets do not name
 (a point at another offset); those buckets are counted after the points are
 evaluated, before a row is made.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
 | `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
-| `maxSamples` | the raw points a read's statements take, each statement's counted before it runs and added up; the records a property read takes | 1,000,000 | 20,000,000 |
+| `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up; the records a property read takes | 1,000,000 | 20,000,000 |
 | `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row | 1,000 | 10,000 |
 

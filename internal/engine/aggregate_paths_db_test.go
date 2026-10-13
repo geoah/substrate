@@ -82,11 +82,13 @@ func (s *statements) since(mark int, fragment string) int {
 }
 
 // The statement fragments the budget tests look for: the forms' discovery,
-// the amount coverage taken from raw spans, and a property read's values.
+// the amount coverage taken from raw spans, a property read's values, and the
+// read of a stream's rollup rows.
 const (
 	discoverStatement = "SELECT DISTINCT s.n, f.form, x.code"
 	coverageStatement = "sum(x.brk) OVER"
 	propertyStatement = ")::text FROM records WHERE"
+	rollupStatement   = "r.first_record_id, r.first_ord"
 )
 
 // A range holding no point answers in its streams' unit, where the metric
@@ -282,8 +284,9 @@ func TestAggregateStopsInsideAReducer(t *testing.T) {
 // The raw spans an amount's coverage is joined from, where two rollup rows'
 // extents overlap, count against maxSamples before the statement reads them:
 // two traces over [00:00, 00:35) and [00:15, 00:50), read for an aligned
-// hour from rows, need their two spans. maxSamples 1 refuses the read and the
-// statement never runs; maxSamples 2 answers 50 minutes.
+// hour from rows, need their two rows and their two spans. maxSamples 3
+// refuses the read and the statement never runs; maxSamples 4 answers 50
+// minutes.
 func TestAggregateCoverageFallbackCountsAgainstMaxSamples(t *testing.T) {
 	t.Parallel()
 	log := &statements{}
@@ -306,20 +309,20 @@ func TestAggregateCoverageFallbackCountsAgainstMaxSamples(t *testing.T) {
 		}}
 	}
 	mark := log.mark()
-	_, err := f.ds.Aggregate(context.Background(), read(1))
-	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.budget.maxSamples") {
-		t.Fatalf("under maxSamples 1: err = %v, want a refusal naming maxSamples", err)
+	_, err := f.ds.Aggregate(context.Background(), read(3))
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "(2 of them raw spans to join") {
+		t.Fatalf("under maxSamples 3: err = %v, want a refusal of the two spans", err)
 	}
 	if n := log.since(mark, coverageStatement); n != 0 {
 		t.Errorf("the refused read ran the coverage statement %d time(s)", n)
 	}
-	q := read(2)
+	q := read(4)
 	res, err := f.ds.Aggregate(context.Background(), q)
 	if err != nil {
-		t.Fatalf("under maxSamples 2: %v", err)
+		t.Fatalf("under maxSamples 4: %v", err)
 	}
 	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT50M" {
-		t.Errorf("under maxSamples 2: %+v, want one row covering 50 minutes", res.Rows)
+		t.Errorf("under maxSamples 4: %+v, want one row covering 50 minutes", res.Rows)
 	}
 }
 
@@ -377,13 +380,13 @@ func TestAggregateFormDiscoveryCountsAgainstMaxSamples(t *testing.T) {
 	}
 }
 
-// maxSamples bounds the raw points of every statement of a read together,
-// not each statement's: an amount from 00:08 in the cut end of a range from
-// 00:07, and two overlapping traces over [00:15, 00:50) and [00:30, 01:00),
-// cost 1 point to find the forms, 1 to reduce the cut end and 3 to join the
-// coverage the rows cannot measure. Each fits under maxSamples 4 and the sum,
-// 5, does not: the read is refused before the coverage statement runs, and
-// answers under maxSamples 5.
+// maxSamples bounds the raw points and rollup rows of every statement of a
+// read together, not each statement's: an amount from 00:08 in the cut end of
+// a range from 00:07, and two overlapping traces over [00:15, 00:50) and
+// [00:30, 01:00), cost 1 point to find the forms, 3 rollup rows, 1 point to
+// reduce the cut end and 3 to join the coverage the rows cannot measure. Each
+// fits under maxSamples 7 and the sum, 8, does not: the read is refused
+// before the coverage statement runs, and answers under maxSamples 8.
 func TestAggregateMaxSamplesAddsEveryStatement(t *testing.T) {
 	t.Parallel()
 	log := &statements{}
@@ -406,9 +409,9 @@ func TestAggregateMaxSamplesAddsEveryStatement(t *testing.T) {
 		}}
 	}
 	mark := log.mark()
-	_, err := f.ds.Aggregate(context.Background(), read(4))
-	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "needs 5 raw points (3 of them to join") {
-		t.Fatalf("under maxSamples 4: err = %v, want a refusal of 5 raw points, 3 of them the coverage's", err)
+	_, err := f.ds.Aggregate(context.Background(), read(7))
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "needs 8 raw points and rollup rows (3 of them raw spans to join") {
+		t.Fatalf("under maxSamples 7: err = %v, want a refusal of 8, 3 of them the coverage's", err)
 	}
 	if n := log.since(mark, discoverStatement); n != 1 {
 		t.Errorf("the refused read ran the discovery statement %d time(s), want once: its 1 point fits", n)
@@ -416,15 +419,15 @@ func TestAggregateMaxSamplesAddsEveryStatement(t *testing.T) {
 	if n := log.since(mark, coverageStatement); n != 0 {
 		t.Errorf("the refused read ran the coverage statement %d time(s)", n)
 	}
-	res, err := f.ds.Aggregate(context.Background(), read(5))
+	res, err := f.ds.Aggregate(context.Background(), read(8))
 	if err != nil {
-		t.Fatalf("under maxSamples 5: %v", err)
+		t.Fatalf("under maxSamples 8: %v", err)
 	}
 	if len(res.Rows) != 1 || res.Rows[0].Coverage != "PT46M" {
-		t.Fatalf("under maxSamples 5: %+v, want one row covering 46 minutes", res.Rows)
+		t.Fatalf("under maxSamples 8: %+v, want one row covering 46 minutes", res.Rows)
 	}
 	if v, _ := val(res.Rows[0], "sum"); v != "7" {
-		t.Errorf("under maxSamples 5: sum %s, want 7", v)
+		t.Errorf("under maxSamples 8: sum %s, want 7", v)
 	}
 }
 
@@ -1505,5 +1508,42 @@ func TestAggregateRefusesAMetricReferenceThatNamesNone(t *testing.T) {
 		if err != nil || len(res.Rows) != 0 {
 			t.Errorf("a metric with no value: %v, %+v; want no rows", err, res)
 		}
+	}
+}
+
+// The rollup rows a read holds count against maxSamples as its raw points
+// do, before they are read: a day of heart rate every 7 minutes is 96 rows,
+// read for that aligned day with reducers rows serve. maxSamples 95 refuses
+// the read before the rows are read, naming them, and 96 answers.
+func TestAggregateRollupRowsCountAgainstMaxSamples(t *testing.T) {
+	t.Parallel()
+	log := &statements{}
+	f := aggFix{obsIndex: openObservedIndex(t, engine.WithTestQueryTracer(log)), t: t}
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.heartRate("strap", day, 7*time.Minute, 0, time.Time{}, time.Time{})
+	read := func(maxSamples int64) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+			Range:    rng(day, day.AddDate(0, 0, 1)),
+			Reducers: reducers("avg", "max"),
+			Budget:   &substrate.AggregateBudget{MaxSamples: maxSamples},
+		}}
+	}
+	mark := log.mark()
+	_, err := f.ds.Aggregate(context.Background(), read(95))
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.budget.maxSamples") || !strings.Contains(err.Error(), "96 of them rollup rows") {
+		t.Fatalf("under maxSamples 95: err = %v, want a refusal of the 96 rollup rows", err)
+	}
+	if n := log.since(mark, rollupStatement); n != 0 {
+		t.Errorf("the refused read read the rollup rows %d time(s)", n)
+	}
+	ctx, trace := engine.AggregateTraced(context.Background())
+	q := read(96)
+	res, err := f.ds.Aggregate(ctx, q)
+	if err != nil || len(res.Rows) != 1 {
+		t.Fatalf("under maxSamples 96: %v, %+v", err, res)
+	}
+	if trace.RollupRows() != 96 || trace.RawPoints() != 0 {
+		t.Errorf("the read took %d rollup rows and %d raw points, want 96 and none", trace.RollupRows(), trace.RawPoints())
 	}
 }

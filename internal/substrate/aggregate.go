@@ -73,7 +73,8 @@ const (
 	// AggregateMaxBuckets bounds groups times buckets.
 	AggregateMaxBuckets    = 1440
 	AggregateMaxBucketsCap = 10000
-	// AggregateMaxSamples bounds the raw index rows one read may take.
+	// AggregateMaxSamples bounds the raw points and rollup rows one read may
+	// take.
 	AggregateMaxSamples    = 1000000
 	AggregateMaxSamplesCap = 20000000
 	// AggregateMaxGroups bounds the groups a groupBy (or the separate
