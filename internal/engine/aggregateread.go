@@ -282,20 +282,16 @@ const rollupCountSQL = `
 // held until the read ends, and a long range of quarter hours is as many rows
 // as a dense stream is points.
 func (r *aggRun) chargeRollups(groups []*aggGroup) error {
-	ids := make([][]string, 6)
+	var streams []*aggStream
 	for _, g := range groups {
-		if !g.rollups {
-			continue
-		}
-		for _, s := range g.raw {
-			for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel, s.form} {
-				ids[i] = append(ids[i], v)
-			}
+		if g.rollups {
+			streams = append(streams, g.raw...)
 		}
 	}
-	if len(ids[0]) == 0 {
+	if len(streams) == 0 {
 		return nil
 	}
+	ids := streamKeys(streams, true)
 	from, to := spanArrays(r.rowSpans)
 	var n int64
 	if err := r.tx.QueryRowContext(r.ctx, rollupCountSQL, ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], from, to).Scan(&n); err != nil {
@@ -485,16 +481,22 @@ func (r *aggRun) convertPoint(ap *aggPoint, s *aggStream) error {
 	if err != nil {
 		return err
 	}
+	r.convertWith(&ap.Point, c)
+	return nil
+}
+
+// convertWith converts a point's number and digits with c into the read's
+// unit, the digits exactly where c allows.
+func (r *aggRun) convertWith(p *observed.Point, c *convFactor) {
 	if c.identity {
-		return nil
+		return
 	}
-	ap.Value = ap.Value*c.ff + c.fo
-	digits, exact := c.digits(ap.Exact)
+	p.Value = p.Value*c.ff + c.fo
+	digits, exact := c.digits(p.Exact)
 	if !exact {
 		r.meta.inexact = true
 	}
-	ap.Exact, ap.Unit = digits, r.u.value
-	return nil
+	p.Exact, p.Unit = digits, r.u.value
 }
 
 // conversion is the factor from a stored unit into the read's, refused with
@@ -555,64 +557,68 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 		if s.form != x.form {
 			continue
 		}
-		rows, err := r.tx.QueryContext(r.ctx, `
-			SELECT s.i, `+aggPointLead+pointColumns+`
-			FROM unnest($7::timestamptz[], $8::timestamptz[]) WITH ORDINALITY AS s(a, b, i)
-			CROSS JOIN LATERAL (
-				SELECT * FROM observed_points p
-				WHERE `+holdStreamSQL+` AND p.ts < s.a AND `+x.filter+`
-				ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`, args...)
-		if err != nil {
-			return nil, fmt.Errorf("substrate/engine: aggregate carry: %w", err)
-		}
-		for rows.Next() {
-			var i int
-			ap, err := r.scanAggPoint(rows, s, &i)
-			if err != nil {
-				_ = rows.Close()
-				return nil, err
+		err := r.readBefore(s, from, x.filter, func(rows *sql.Rows, i *int) error {
+			ap, err := r.scanAggPoint(rows, s, i)
+			if err == nil {
+				x.dst(&ser.segs[*i-1], &ap)
 			}
-			x.dst(&ser.segs[i-1], &ap)
-		}
-		if err := finishRows(rows); err != nil {
-			return nil, fmt.Errorf("substrate/engine: aggregate carry: %w", err)
+			return err
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 	return ser, nil
+}
+
+// readBefore reads, for each start, the stream's last point before it that
+// filter admits, by the order every reader takes points in; scan takes each
+// row with the index of its start, from 1.
+func (r *aggRun) readBefore(s *aggStream, starts []time.Time, filter string, scan func(rows *sql.Rows, i *int) error) error {
+	rows, err := r.tx.QueryContext(r.ctx, `
+		SELECT s.i, `+aggPointLead+pointColumns+`
+		FROM unnest($7::timestamptz[]) WITH ORDINALITY AS s(a, i)
+		CROSS JOIN LATERAL (
+			SELECT * FROM observed_points p
+			WHERE `+holdStreamSQL+` AND p.ts < s.a AND `+filter+`
+			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`,
+		append(s.hold().args(), starts)...)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: aggregate carry: %w", err)
+	}
+	for rows.Next() {
+		var i int
+		if err := scan(rows, &i); err != nil {
+			_ = rows.Close()
+			return err
+		}
+	}
+	if err := finishRows(rows); err != nil {
+		return fmt.Errorf("substrate/engine: aggregate carry: %w", err)
+	}
+	return nil
 }
 
 // readCarries is, for each window, the point current at its start (available
 // or not), its group set to its rollup row's, for HeldFromRowsCarry; nil
 // where the stream has no point before it.
 func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.Point, error) {
-	starts := make([]time.Time, len(windows))
-	for i, w := range windows {
-		starts[i] = w[0]
-	}
-	rows, err := r.tx.QueryContext(r.ctx, `
-		SELECT s.i, `+pointColumns+`
-		FROM unnest($7::timestamptz[]) WITH ORDINALITY AS s(a, i)
-		CROSS JOIN LATERAL (
-			SELECT * FROM observed_points p
-			WHERE `+holdStreamSQL+` AND p.ts < s.a
-			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`,
-		append(s.hold().args(), starts)...)
-	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: aggregate carry: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
+	starts, _ := spanArrays(windows)
 	out := make([]*observed.Point, len(windows))
-	for rows.Next() {
-		var i int
-		sp, err := scanPoint(rows, &i)
+	err := r.readBefore(s, starts, "TRUE", func(rows *sql.Rows, i *int) error {
+		var recordID, stat string
+		var ord int64
+		sp, err := scanPoint(rows, i, &recordID, &ord, &stat)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		r.rowGroups[sp.point.Group] = sp.group
 		p := sp.point
-		out[i-1] = &p
-	}
-	return out, rows.Err()
+		p.RecordID, p.Ord = recordID, ord
+		out[*i-1] = &p
+		return nil
+	})
+	return out, err
 }
 
 // rollupColumns are the columns of observed_rollups a read takes.
@@ -1416,12 +1422,7 @@ func (r *aggRun) convertStats(s observed.Stats, g obsGroup, source string) (obse
 			return p
 		}
 		q := *p
-		digits, exact := c.digits(p.Exact)
-		if !exact {
-			r.meta.inexact = true
-		}
-		q.Exact, q.Unit = digits, r.u.value
-		q.Value = p.Value*f + o
+		r.convertWith(&q, c)
 		return &q
 	}
 	s.First, s.Last = conv(s.First), conv(s.Last)
@@ -1547,12 +1548,7 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 	if len(pending) == 0 {
 		return nil
 	}
-	ids := make([][]string, 5)
-	for _, s := range g.raw {
-		for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel} {
-			ids[i] = append(ids[i], v)
-		}
-	}
+	ids := streamKeys(g.raw, false)
 	admitted := sortedKeys(r.p.codes)
 	args := []any{ids[0], ids[1], ids[2], ids[3], ids[4], a, b, wa, wb, codes, admitted, local, r.p.grouped[substrate.GroupCode], r.p.codes != nil}
 	var n int64
@@ -2075,14 +2071,7 @@ func (r *aggRun) extremaPoints(ev *aggEvidence, g *aggGroup, stat string) ([]obs
 			if err != nil {
 				return nil, err
 			}
-			if !c.identity {
-				var exact bool
-				p.Value = p.Value*c.ff + c.fo
-				if p.Exact, exact = c.digits(p.Exact); !exact {
-					r.meta.inexact = true
-				}
-				p.Unit = r.u.value
-			}
+			r.convertWith(&p, c)
 		}
 		list = append(list, p)
 	}
@@ -2123,18 +2112,14 @@ func (r *aggRun) pointValue(red substrate.AggregateReducer, p observed.Point, ok
 		out.Code = p.Code
 		return out, nil
 	}
-	digits := p.Exact
 	if p.Unit != "" && p.Unit != r.u.value {
 		c, err := r.conversion(p.Unit, false, "")
 		if err != nil {
 			return out, err
 		}
-		var exact bool
-		digits, exact = c.digits(p.Exact)
-		if !exact {
-			r.meta.inexact = true
-		}
+		r.convertWith(&p, c)
 	}
+	digits := p.Exact
 	if digits == "" {
 		digits = formatFloat(p.Value)
 		r.meta.inexact = true

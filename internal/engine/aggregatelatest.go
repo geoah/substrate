@@ -44,24 +44,7 @@ func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	byKey := map[string]*group{}
 	var list []*group
 	for _, s := range streams {
-		var key substrate.AggregateGroup
-		var parts []string
-		for _, g := range []struct {
-			word, value string
-			dst         *string
-		}{
-			{substrate.GroupMetric, s.metric, &key.Metric},
-			{substrate.GroupKind, s.kind, &key.Kind},
-			{substrate.GroupSource, s.source, &key.Source},
-			{substrate.GroupAbout, s.about, &key.About},
-			{substrate.GroupChannel, s.channel, &key.Channel},
-		} {
-			if p.grouped[g.word] {
-				*g.dst = g.value
-				parts = append(parts, g.value)
-			}
-		}
-		k := strings.Join(parts, "\x1f")
+		key, k := p.groupKey(s, false)
 		g := byKey[k]
 		if g == nil {
 			g = &group{key: key, sort: k}

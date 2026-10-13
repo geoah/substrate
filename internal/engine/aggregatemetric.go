@@ -415,12 +415,7 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 	default:
 		forms = []string{vocabulary.FormGauge, vocabulary.FormAmount, vocabulary.FormCounter, vocabulary.FormSummary}
 	}
-	ids := make([][]string, 5)
-	for _, s := range streams {
-		for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel} {
-			ids[i] = append(ids[i], v)
-		}
-	}
+	ids := streamKeys(streams, false)
 	var a, b, wa, wb []time.Time
 	for _, w := range windows {
 		a, b = append(a, w[0]), append(b, w[1])
@@ -525,29 +520,7 @@ func (p *aggPlan) groupStreams(streams []*aggStream) ([]*aggGroup, error) {
 				continue
 			}
 		}
-		var key substrate.AggregateGroup
-		var parts []string
-		for _, g := range []struct {
-			word, value string
-			dst         *string
-		}{
-			{substrate.GroupMetric, s.metric, &key.Metric},
-			{substrate.GroupKind, s.kind, &key.Kind},
-			{substrate.GroupSource, s.source, &key.Source},
-			{substrate.GroupAbout, s.about, &key.About},
-			{substrate.GroupChannel, s.channel, &key.Channel},
-		} {
-			hidden := g.word == substrate.GroupSource && p.policy == substrate.SourcesSeparate
-			if p.grouped[g.word] || hidden {
-				parts = append(parts, g.value)
-				if p.grouped[g.word] {
-					*g.dst = g.value
-				}
-			} else {
-				parts = append(parts, "")
-			}
-		}
-		k := strings.Join(parts, "\x1f")
+		key, k := p.groupKey(s, p.policy == substrate.SourcesSeparate)
 		g := byKey[k]
 		if g == nil {
 			g = &aggGroup{key: key, sortKey: k}
@@ -587,6 +560,52 @@ func (p *aggPlan) groupStreams(streams []*aggStream) ([]*aggGroup, error) {
 		}
 	}
 	return out, nil
+}
+
+// groupKey is the group a stream falls in: its value of each groupBy stream
+// key, and where hideSource, its source too, kept apart without naming it
+// (the separate policy). The sort key holds a part for every stream key,
+// empty where it does not group, so groups sort by the keys in their order.
+func (p *aggPlan) groupKey(s *aggStream, hideSource bool) (substrate.AggregateGroup, string) {
+	var key substrate.AggregateGroup
+	parts := make([]string, 0, 5)
+	for _, g := range []struct {
+		word, value string
+		dst         *string
+	}{
+		{substrate.GroupMetric, s.metric, &key.Metric},
+		{substrate.GroupKind, s.kind, &key.Kind},
+		{substrate.GroupSource, s.source, &key.Source},
+		{substrate.GroupAbout, s.about, &key.About},
+		{substrate.GroupChannel, s.channel, &key.Channel},
+	} {
+		switch {
+		case p.grouped[g.word]:
+			*g.dst = g.value
+			parts = append(parts, g.value)
+		case hideSource && g.word == substrate.GroupSource:
+			parts = append(parts, g.value)
+		default:
+			parts = append(parts, "")
+		}
+	}
+	return key, strings.Join(parts, "\x1f")
+}
+
+// streamKeys are the streams' keys as a statement's parallel arrays: metric,
+// kind, source, about and channel, and the form where withForm.
+func streamKeys(streams []*aggStream, withForm bool) [][]string {
+	n := 5
+	if withForm {
+		n = 6
+	}
+	out := make([][]string, n)
+	for _, s := range streams {
+		for i, v := range []string{s.metric, s.kind, s.source, s.about, s.channel, s.form}[:n] {
+			out[i] = append(out[i], v)
+		}
+	}
+	return out
 }
 
 // seriesOf counts the series a read can answer: one per group, or where it
