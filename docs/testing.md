@@ -630,7 +630,8 @@ runs.
 
 CodeQL runs beside them in its own workflow, on a schedule as well as on
 changes, because its queries change even when the code does not. So does
-`audit` (`ci:audit`: govulncheck and pnpm audit), in `audit.yml`, for the
+`audit` (`ci:audit`: govulncheck, pnpm audit and pip-audit over the function
+bodies' PEP 723 dependencies), in `audit.yml`, for the
 same reason: an advisory published today turns a commit red that was green
 yesterday. It is not part of `ci`, because `latest.yml`, `release-please.yml`
 and `release.yml` wait for a successful `ci` run on `main`, and an advisory

@@ -266,7 +266,7 @@ _STOP = {
     "london", "europe", "america", "asia", "africa", "australia", "pacific",
     "atlantic", "indian", "antarctica", "mountain", "eastern", "western",
     "central", "summer", "daylight", "british", "korea", "turkey", "hawaii",
-    "aleutian", "european", "standard", "chicago", "denver", "phoenix",
+    "aleutian", "european", "chicago", "denver", "phoenix",
     "seoul", "istanbul", "brussels", "amsterdam", "casablanca", "honolulu",
 }
 # A subdomain label that is the open web's grammar, not a company's name.
@@ -363,7 +363,7 @@ def from_maps() -> tuple[set[str], set[str]]:
         if "people" in d:                                # persona.local.json
             for e in [d.get("owner") or {}] + list(d.get("people") or []):
                 real = e.get("real") or {}
-                for k, v in real.items():
+                for v in real.values():
                     if isinstance(v, list):
                         for x in v:
                             add(x)
@@ -428,7 +428,7 @@ def persona_output() -> set[str]:
         for k, v in pin.items():
             if k != "real":
                 add(v)
-    for name, bucket in (d.get("buckets") or {}).items():
+    for bucket in (d.get("buckets") or {}).values():
         for v in bucket.values():
             add(v)
     return out

@@ -940,8 +940,7 @@ def main():
     ok(types <= {"person", "bot", None},
        "every user.type is a spelled enum value: %s" % sorted(t for t in types if t))
     objects = set()
-    for name, expect in (("user", "user"), ("page", "page"),
-                         ("database", "database"), ("block", "block")):
+    for name in ("user", "page", "database", "block"):
         objects |= {(name, props(r).get("object")) for r in rows[name]}
     ok(all(v in (k, None) for k, v in objects),
        "every `object` discriminator is the one-value enum of its kind: %s"

@@ -1,4 +1,5 @@
-# The vulnerability scans: govulncheck and pnpm audit (`mise run ci:audit`).
+# The vulnerability scans: govulncheck, pnpm audit and pip-audit over the
+# function bodies' PEP 723 dependencies (`mise run ci:audit`).
 #
 # Its own workflow, not a job in ci.yml. latest.yml, release-please.yml and
 # release.yml all wait for a SUCCESSFUL ci run on main, and this is the one

@@ -670,7 +670,6 @@ def main():
        % len(inside))
 
     print("--> the cases the cut was built for")
-    owner_row = by_path.get(owner_ref, (None, None))[1]
     owner_path = owner_ref
     assigned_owner = [r for r in rows["issue"]
                       if owner_path in refs(props(r).get("assignees"))]

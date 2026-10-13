@@ -33,10 +33,13 @@ uv = "0.11.19"
 # The shell linter. `.mise/*.sh` hold the dev loop and the kinds guard, and
 # they are the only code in the tree that no compiler reads.
 shellcheck = "0.11.0"
-# The Python linter, for the two Python files in the tree: `internal/runner/host.py`,
-# the function runner's Python host and the one Python file the server ships,
-# and `.mise/testtiming.py`, the reader behind `test:timing`.
+# The Python linter: `internal/runner/host.py`, the function runner's Python
+# host and the one Python file the server ships, every function body under
+# `kinds/` and `samples/`, the provider suite's Python and `.mise/*.py`.
 ruff = "0.16.2"
+# The Python dependency scanner behind `audit:python`, over what each function
+# body's PEP 723 block resolves to. Installed through uv, like yamllint.
+"pipx:pip-audit" = "2.10.1"
 # The link checker, run OFFLINE: it resolves relative links and anchors against
 # the tree and never opens a socket, so a moved doc fails the lint job instead
 # of a reader's click. An external URL is nobody's build failure.
@@ -375,11 +378,15 @@ description = "shellcheck over every tracked shell script"
 run = "git ls-files -z '*.sh' | xargs -0 sh -c 'test \"$#\" -eq 0 || shellcheck -x \"$@\"' sh"
 
 [tasks."lint:python"]
-description = "ruff over the runner's Python host"
+description = "ruff over the runner's Python host, every function body under kinds/ and samples/, the provider suite and .mise"
 # internal/runner/host.py is the long-lived child every `runtime: python`
 # function body is exec'd into: a syntax slip there takes out every Python
-# function at once, and no Go test compiles it. Config is .ruff.toml.
-run = "ruff check internal/runner/host.py .mise/testtiming.py"
+# function at once, and no Go test compiles it. The bodies are YAML literal
+# scalars, so .mise/pybodies.py writes each one out and reports ruff's
+# findings at their bundle.yaml line and column; it fails when a python
+# document's source cannot be read, rather than linting less. Config is
+# .ruff.toml.
+run = "python3 .mise/pybodies.py lint internal/runner/host.py .mise internal/providere2e"
 
 [tasks."lint:migrations"]
 description = "The shape of internal/engine/migrations and the repository migrations: naming, numbering, no gaps"
@@ -485,15 +492,15 @@ run = ".mise/commitscheck.sh"
 # Audit
 # =============================================================================
 #
-# A SEPARATE family from `lint`, because these are the two checks that need the
+# A SEPARATE family from `lint`, because these are the checks that need the
 # network: they ask a vulnerability database what is known today. That makes
 # them the one kind of check whose answer changes without the tree changing —
 # green this morning, red this afternoon, same commit — so they are their own
 # CI job, and `lint` stays something a laptop can run on a plane.
 
 [tasks.audit]
-description = "Every vulnerability scan: Go and the console"
-depends = ["audit:go", "audit:console"]
+description = "Every vulnerability scan: Go, the console and the function bodies' Python dependencies"
+depends = ["audit:go", "audit:console", "audit:python"]
 
 [tasks."audit:go"]
 description = "govulncheck over the module — advisories the code actually reaches"
@@ -510,6 +517,17 @@ depends = ["console:install"]
 # wolf gets an `|| true` bolted onto it within the month. High and critical
 # stop the line; the rest are read in the job's output.
 run = "pnpm audit --audit-level high"
+
+[tasks."audit:python"]
+description = "pip-audit over what every PEP 723 block under kinds/ and samples/ resolves to"
+# A body's `# /// script` block is what `uv sync --script` installs at
+# registration, so its dependencies ship. .mise/pybodies.py resolves each
+# block with `uv export --script` (the block's own `[tool.uv]` included) and
+# audits the whole resolved set, so a transitive advisory fails it as surely
+# as a pinned one. Nothing pins the resolution date (`exclude-newer`): uv
+# taking the latest certifi, urllib3 and idna at registration is how those
+# take their fixes.
+run = "python3 .mise/pybodies.py audit"
 
 # =============================================================================
 # Formatting

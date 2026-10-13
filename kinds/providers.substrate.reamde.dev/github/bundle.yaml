@@ -97,7 +97,11 @@ data:
   #
   # 32: the issue descriptions say "references" where they said "edges"
   # and "relationship", which docs/terms.md retired. Text only.
-  version: 32
+  #
+  # 33: `githubsync` pins requests 2.34.2, past PYSEC-2026-2275
+  # (CVE-2026-25645); `submitreview` raises its HTTP error `from` the
+  # exception that caused it.
+  version: 33
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -2733,7 +2737,7 @@ data:
     # /// script
     # requires-python = ">=3.11"
     # dependencies = [
-    #   "requests==2.32.4",
+    #   "requests==2.34.2",
     # ]
     # ///
     """GitHub sync — one page per invocation, mirrors only, references everywhere.
@@ -6318,7 +6322,7 @@ data:
             except ValueError:
                 detail = raw
             raise RuntimeError("github: reviewing %s#%d failed: HTTP %d %s"
-                               % (repo, int(number), e.code, detail[:300]))
+                               % (repo, int(number), e.code, detail[:300])) from e
         if not isinstance(body.get("id"), int):
             raise RuntimeError("github: the review answered no id")
         out = {"id": body["id"], "state": str(body.get("state") or "")}
