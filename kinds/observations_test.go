@@ -317,6 +317,7 @@ func TestHealthGaugesCarryAHold(t *testing.T) {
 		t.Fatal("no gauge metrics found")
 	}
 }
+
 // metricFormReducers is the aggregate read's reducers by form, as docs/api.md
 // "Reducers, by form" lists them; a coded metric (one with a codeSet) takes
 // the coded row.
