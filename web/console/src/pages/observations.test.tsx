@@ -364,6 +364,17 @@ describe("the streams table", () => {
     expect(within(table).getAllByRole("row").slice(1)).toHaveLength(1)
   })
 
+  it("counts the streams it shows, and says they match where it filters", async () => {
+    mount()
+    await rows()
+    expect(screen.getByText("6 streams")).toBeTruthy()
+    cleanup()
+    mount("?search=sleep")
+    const table = await screen.findByRole("table")
+    await waitFor(() => expect(table.textContent).toContain("Sleep stage"))
+    expect(screen.getByText("1 stream matches")).toBeTruthy()
+  })
+
   it("offers each facet's values by name in the filter bar", async () => {
     mount()
     await rows()

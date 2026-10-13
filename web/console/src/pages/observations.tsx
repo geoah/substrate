@@ -483,11 +483,13 @@ export function ObservationsPage() {
       <PageHeader
         title="Observations"
         meta={
-          obs.streams.length > 0 && (
+          // The rows shown, which a filter or the search narrows: a count of
+          // what the server read would change with some filters and not
+          // others.
+          shown.length > 0 && (
             <span>
-              {obs.streams.length === 1
-                ? "1 stream"
-                : `${obs.streams.length} streams`}
+              {shown.length === 1 ? "1 stream" : `${shown.length} streams`}
+              {filtered && (shown.length === 1 ? " matches" : " match")}
             </span>
           )
         }
