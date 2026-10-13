@@ -1513,8 +1513,8 @@ reads that take it.
 
 - `separate` keeps every source apart: one row per source per bucket, each
   naming its source in `sources`. It splits by source alone: one source's
-  channels and `about` values share its row, so WHOOP's day cycle and a
-  workout's heart rate reduce together. `groupBy: ["channel"]` (or
+  channels and `about` values share its row, so WHOOP's cycle heart rate
+  and a workout's reduce together. `groupBy: ["channel"]` (or
   `["about"]`) splits them, the group with no key being the streams without
   one, and the filter's `exists` picks one side.
 - `priority` resolves an ordered list (`order` names sources as the filter
