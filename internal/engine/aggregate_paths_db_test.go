@@ -1393,12 +1393,16 @@ func TestAggregatePreferRawNeedsAPointInTheBucket(t *testing.T) {
 
 // A value in another measure refuses only a read that takes it, on both
 // paths, naming its unit: heart rate from a watch in /min, a 70 kg hand entry
-// in 2020 from another source, and a 72 kg reading on the watch dated
-// 2026-10-05, its stream's newest. A read of 2026-10-01 holds neither and
-// answers the watch's readings. A read of 2026-10-05 holds the watch's kg
-// reading; a read of 2026 from a third source holds its 2020 kg reading, which
-// has no hold and still holds; a counter reading in kg beside one in kW.h is
-// the first and last of its group. Each is a 422.
+// in 2020 from another source, a 72 kg reading on the watch dated 2026-10-05,
+// its stream's newest, and one at 2026-09-30T23:00Z whose five-minute hold
+// ends before 2026-10-01. A read of 2026-10-01 takes none of them, nor a
+// lower source's kg reading inside the watch's hold under the priority
+// policy, a kg step count the code filter drops, or a kg summary of the
+// source the summaries policy ranks second, and each answers. A read of
+// 2026-10-05 holds the watch's kg reading; a read of 2026 from a third source
+// holds its 2020 kg reading, which has no hold and still holds; a counter
+// reading in kg beside one in kW.h is the first and last of its group; the
+// summaries policy ranking the kg summary first takes it. Each is a 422.
 func TestAggregateRefusesOnlyTheValuesItTakesInAnotherMeasure(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -1417,12 +1421,28 @@ func TestAggregateRefusesOnlyTheValuesItTakesInAnotherMeasure(t *testing.T) {
 		hr("watch/"+strconv.Itoa(h), "watch", strconv.Itoa(60+h), "/min", day.Add(time.Duration(h)*time.Hour), "PT5M")
 	}
 	hr("watch/mass", "watch", "72", "kg", day.AddDate(0, 0, 4), "PT5M")
+	hr("watch/late", "watch", "72", "kg", day.Add(-time.Hour), "PT5M")
+	hr("band/mass", "band", "71", "kg", day.Add(9*time.Hour+time.Minute), "PT1M")
 	hr("hand/mass", "hand", "70", "kg", time.Date(2020, 1, 1, 9, 0, 0, 0, time.UTC), "PT5M")
 	hr("old/mass", "old", "70", "kg", time.Date(2020, 1, 1, 9, 0, 0, 0, time.UTC), "")
 	for _, x := range []struct{ source, value, unit string }{{"meter", "1", "kW.h"}, {"scale", "5", "kg"}} {
 		f.mustPut(t, f.observation, x.source+"/energy", map[string]any{
 			"metric": f.metricRef("energy"), "source": f.sourceRef(x.source), "form": "counter", "resetRule": "monotonic",
 			"value": quantity(x.value, x.unit), "at": at(day.Add(9 * time.Hour)),
+		})
+	}
+	for _, x := range []struct{ code, value, unit string }{{"walk", "500", "{steps}"}, {"run", "5", "kg"}} {
+		from := day.Add(10 * time.Hour)
+		f.mustPut(t, f.observation, "pedometer/"+x.code, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("pedometer"), "form": "amount", "code": x.code,
+			"value": quantity(x.value, x.unit), "at": at(from), "endsAt": at(from.Add(10 * time.Minute)),
+		})
+	}
+	for _, x := range []struct{ source, value, unit string }{{"phone", "9000", "{steps}"}, {"scale", "5", "kg"}} {
+		f.mustPut(t, f.observation, x.source+"/steps", map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef(x.source), "form": "summary",
+			"statistic": "sum", "period": "day", "value": quantity(x.value, x.unit),
+			"at": at(day), "endsAt": at(day.AddDate(0, 0, 1)),
 		})
 	}
 	sources := func(ids ...string) substrate.Filter {
@@ -1439,12 +1459,55 @@ func TestAggregateRefusesOnlyTheValuesItTakesInAnotherMeasure(t *testing.T) {
 			Reducers: reducers("count", "avg"),
 		}
 	}
-	res, _, _ := f.bothPaths(sources("watch", "hand"), heartRate(day))
-	if len(res.Rows) != 1 || res.Unit != "/min" {
-		t.Fatalf("2026-10-01: unit %s and %d rows, want /min and the watch's one: %+v", res.Unit, len(res.Rows), res.Rows)
+	priority := heartRate(day)
+	priority.Sources = &substrate.AggregateSources{Policy: "priority", Order: []string{"watch", "band"}}
+	steps := func(policy *substrate.AggregateSources) substrate.Aggregate {
+		return substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:    rng(day, day.AddDate(0, 0, 1)),
+			Reducers: reducers("sum"),
+			Sources:  policy,
+		}
 	}
-	if c, _ := val(res.Rows[0], "count"); c != "5" {
-		t.Errorf("2026-10-01: count %s, want the watch's 5 readings", c)
+	walking := sources("pedometer")
+	walking.Properties["code"] = substrate.Cond{In: []any{"walk"}}
+	summaries := func(order ...string) substrate.Aggregate {
+		return steps(&substrate.AggregateSources{Policy: "summaries", Order: order})
+	}
+	paths := []struct {
+		name string
+		ctx  context.Context
+	}{{"rollups", context.Background()}, {"raw", engine.AggregateRaw(context.Background())}}
+	for _, x := range []struct {
+		name                string
+		filter              substrate.Filter
+		a                   substrate.Aggregate
+		unit, reducer, want string
+	}{
+		{"a kg reading whose hold ends before the range", sources("watch", "hand"), heartRate(day), "/min", "count", "5"},
+		{"a lower source's kg reading inside the watch's hold", sources("watch", "band"), priority, "/min", "count", "5"},
+		{"a kg step count the code filter drops", walking, steps(nil), "{steps}", "sum", "500"},
+		{"a kg summary the summaries policy ranks second", sources("phone", "scale"), summaries("phone", "scale"), "{steps}", "sum", "9000"},
+	} {
+		var answers []*substrate.AggregateResult
+		for _, path := range paths {
+			res, err := f.ds.Aggregate(path.ctx, substrate.AggregateQuery{Filter: x.filter, Aggregate: &x.a})
+			if err != nil {
+				t.Errorf("%s, %s: %v", x.name, path.name, err)
+				continue
+			}
+			if len(res.Rows) != 1 || res.Unit != x.unit {
+				t.Errorf("%s, %s: unit %s and %d rows, want %s and one: %+v", x.name, path.name, res.Unit, len(res.Rows), x.unit, res.Rows)
+				continue
+			}
+			if v, _ := val(res.Rows[0], x.reducer); v != x.want {
+				t.Errorf("%s, %s: %s %s, want %s", x.name, path.name, x.reducer, v, x.want)
+			}
+			answers = append(answers, res)
+		}
+		if len(answers) == 2 {
+			sameRows(t, answers[0], answers[1])
+		}
 	}
 	energy := substrate.Aggregate{
 		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("energy")},
@@ -1461,11 +1524,9 @@ func TestAggregateRefusesOnlyTheValuesItTakesInAnotherMeasure(t *testing.T) {
 		{"the watch's kg reading", sources("watch"), heartRate(day.AddDate(0, 0, 4))},
 		{"a kg reading held into the range", sources("old"), heartRate(day)},
 		{"a counter reading in kg", substrate.Filter{}, energy},
+		{"a kg summary the summaries policy ranks first", sources("phone", "scale"), summaries("scale", "phone")},
 	} {
-		for _, path := range []struct {
-			name string
-			ctx  context.Context
-		}{{"rollups", context.Background()}, {"raw", engine.AggregateRaw(context.Background())}} {
+		for _, path := range paths {
 			res, err := f.ds.Aggregate(path.ctx, substrate.AggregateQuery{Filter: x.filter, Aggregate: &x.a})
 			if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "kg") {
 				t.Errorf("%s, %s: %v, %+v; want a 422 naming kg", x.name, path.name, err, res)

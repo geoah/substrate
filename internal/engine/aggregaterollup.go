@@ -319,8 +319,11 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 					continue
 				}
 				q := ap.Point
+				if err := r.convertPoint(&q, ap.delta, s); err != nil {
+					return err
+				}
 				ck := r.codeKey(ap.Code)
-				q.Group = ck + "\x1f" + ap.Unit
+				q.Group = ck + "\x1f" + q.Unit
 				groups[q.Group] = ck
 				pts = append(pts, q)
 			}

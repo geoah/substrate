@@ -1234,9 +1234,12 @@ Every stored value is converted from its own unit, exactly where the factor
 has a finite decimal expansion. A value the read takes whose unit does not
 convert (another measure, or another annotation: `{beats}/min` and `/min`
 count different things) is a `422` naming its unit and, where the read knows
-it, its source: a point in the range, a rollup row, or a gauge's value held
-into the range. A stream's values outside the range refuse nothing, so one
-entry in the wrong measure refuses only the reads that take it.
+it, its source: a point in the range that the code filter and the source
+policy keep, a rollup row, or a gauge's value held into the range. A value
+the read drops refuses nothing: one outside the range, one whose `hold` or
+`maxGap` ends before the range, a code the filter leaves out, or a source the
+policy sets aside. One entry in the wrong measure therefore refuses only the
+reads that take it.
 
 ### Sources and `from`
 

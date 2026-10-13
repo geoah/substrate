@@ -7,7 +7,6 @@ package engine
 
 import (
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/geoah/substrate/internal/observed"
@@ -21,7 +20,8 @@ type rawStream struct {
 	// points is every point read in the windows, in time order.
 	points []aggPoint
 	// spans are a gauge's held intervals, built from every transition; each
-	// span's point carries its offset as its group (scanAggPoint).
+	// span's point carries its group's key (rowGroups), and its stored unit
+	// until placeRaw takes it.
 	spans []observed.Span
 	// prevOf is, for a counter, the last available point before each point,
 	// by the point's index.
@@ -54,7 +54,7 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 			}
 		}
 	}
-	return out, r.settleRaw(out, form)
+	return out, r.settleRaw(out, list, form)
 }
 
 // rawStreams holds each stream's points in the read's windows and, for a
@@ -183,7 +183,9 @@ func (r *aggRun) resolvePriority(list []*rawStream, form string) error {
 
 // placeRaw puts each stream's available points and held intervals into the
 // cells of the buckets they lie in, with a counter's step from the point
-// before.
+// before. A held interval's value is converted here, the code filter and
+// the priority policy having kept it; a point's in settleRaw, after the
+// summaries policy.
 func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 	out := aggCells{}
 	for si, st := range list {
@@ -223,7 +225,11 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 			if !r.admits(sp.Point.Code) {
 				continue
 			}
-			off, _ := strconv.ParseInt(sp.Point.Group, 10, 64)
+			og := r.rowGroups[sp.Point.Group]
+			if err := r.convertPoint(&sp.Point, og.delta, st.s); err != nil {
+				return nil, err
+			}
+			off := og.offset
 			for _, part := range r.spanParts(sp, off) {
 				ev := cell(out, part.bucket, r.codeKey(sp.Point.Code), form, true)
 				ev.spans = append(ev.spans, part.span)
@@ -238,11 +244,14 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 	return out, nil
 }
 
-// settleRaw orders each cell's members as every reader takes points and its
-// spans by start, and counts the cell's points and coverage.
-func (r *aggRun) settleRaw(out aggCells, form string) error {
-	for _, codes := range out {
-		for _, ev := range codes {
+// settleRaw converts each cell's members into the read's unit, orders them
+// as every reader takes points and its spans by start, and counts the cell's
+// points and coverage. It walks the cells in bucket and code order, so the
+// value a refusal names does not follow a map's order.
+func (r *aggRun) settleRaw(out aggCells, list []*rawStream, form string) error {
+	for _, b := range r.buckets {
+		for _, code := range sortedKeys(out[b]) {
+			ev := out[b][code]
 			// A cell's sorts are as long as its points and spans, so they
 			// check the context as they go.
 			if err := observed.SortStableFunc(r.ctx, ev.members, func(a, b aggPoint) int {
@@ -260,8 +269,12 @@ func (r *aggRun) settleRaw(out aggCells, form string) error {
 				return err
 			}
 			ev.count = int64(len(ev.members))
-			for _, m := range ev.members {
+			for i := range ev.members {
 				if err := r.canceled(); err != nil {
+					return err
+				}
+				m := &ev.members[i]
+				if err := r.convertPoint(&m.Point, m.delta, list[m.stream].s); err != nil {
 					return err
 				}
 				if m.Bounded {

@@ -2,8 +2,8 @@ package engine
 
 // The aggregate read's statements over the observed index
 // (aggregateread.go): a stream's raw points in the read's windows, the point
-// before each window, its rollup rows, and each point's conversion into the
-// read's unit as it is scanned.
+// before each window and its rollup rows, and the conversion of a value the
+// read takes into the read's unit.
 
 import (
 	"database/sql"
@@ -43,8 +43,12 @@ func (r *aggRun) countPoints(s *aggStream, spans [][2]time.Time) (int64, error) 
 const aggPointLead = `p.record_id, p.ord, coalesce(p.statistic, ''), `
 
 // scanAggPoint reads aggPointLead and pointColumns after any leading
-// columns, and converts a non-counter's value into the read's unit.
-func (r *aggRun) scanAggPoint(rows *sql.Rows, s *aggStream, lead ...any) (aggPoint, error) {
+// columns, and keeps the point's group (its code, unit, delta and offset) in
+// rowGroups under the point's Group. The point keeps its stored unit: the
+// read converts a value, and refuses a unit that does not convert, only
+// where it takes the value (convertPoint), so a point it drops or a carry
+// that ended before the range refuses nothing.
+func (r *aggRun) scanAggPoint(rows *sql.Rows, lead ...any) (aggPoint, error) {
 	var ap aggPoint
 	var recordID string
 	var ord int64
@@ -53,26 +57,24 @@ func (r *aggRun) scanAggPoint(rows *sql.Rows, s *aggStream, lead ...any) (aggPoi
 		return ap, err
 	}
 	ap.Point, ap.off, ap.delta = sp.point, sp.group.offset, sp.group.delta
-	ap.Group = strconv.FormatInt(ap.off, 10)
 	ap.RecordID, ap.Ord = recordID, ord
-	if err := r.convertPoint(&ap, s); err != nil {
-		return ap, err
-	}
+	r.rowGroups[ap.Group] = sp.group
 	return ap, nil
 }
 
-// convertPoint converts a point's number into the read's unit. A counter's
-// stays as stored: its steps are taken on the stored digits, in the stored
-// unit, as its rollup rows take them.
-func (r *aggRun) convertPoint(ap *aggPoint, s *aggStream) error {
-	if !ap.HasValue || ap.Unit == "" || s.form == vocabulary.FormCounter {
+// convertPoint converts the number of a point the read takes from stream s
+// into the read's unit, refused where its unit does not convert. A
+// counter's stays as stored: its steps are taken on the stored digits, in
+// the stored unit, as its rollup rows take them.
+func (r *aggRun) convertPoint(p *observed.Point, delta bool, s *aggStream) error {
+	if !p.HasValue || p.Unit == "" || s.form == vocabulary.FormCounter {
 		return nil
 	}
-	c, err := r.conversion(ap.Unit, ap.delta, s.source)
+	c, err := r.conversion(p.Unit, delta, s.source)
 	if err != nil {
 		return err
 	}
-	r.convertWith(&ap.Point, c)
+	r.convertWith(p, c)
 	return nil
 }
 
@@ -126,7 +128,7 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 	}
 	for rows.Next() {
 		var i int
-		ap, err := r.scanAggPoint(rows, s, &i)
+		ap, err := r.scanAggPoint(rows, &i)
 		if err != nil {
 			_ = rows.Close()
 			return nil, err
@@ -149,7 +151,7 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 			continue
 		}
 		err := r.readBefore(s, from, x.filter, func(rows *sql.Rows, i *int) error {
-			ap, err := r.scanAggPoint(rows, s, i)
+			ap, err := r.scanAggPoint(rows, i)
 			if err == nil {
 				x.dst(&ser.segs[*i-1], &ap)
 			}
