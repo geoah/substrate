@@ -49,7 +49,7 @@ the surface; a list that spans kinds names each one in `filter.kinds`.
 An id that holds a `/` needs care: a client percent-encodes each `/` in it,
 and the API decodes it exactly once. Unencoded, each `/` starts a path
 segment, so the path names no record. A [kind declaration](vocabulary.md)'s
-id **is** a kind reference, so it always holds one, and the ids the
+id **is** a kind reference, so it always holds two, and the ids the
 [observation adapters](observations.md#the-adapters) write hold several:
 
 ```http
