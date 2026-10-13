@@ -926,7 +926,6 @@ func TestGoogleFitDropsTheFloorOfATypeItNoLongerWalks(t *testing.T) {
 			props[k] = v
 		}
 		props["syncFloors"] = floors
-		props["syncFrequency"] = "daily"
 		acct["properties"] = props
 		s := newStepper(t, ds, googlefitSyncFn, cfg)
 		s.setEnvelope(map[string]any{"record": map[string]any{"kind": googlefitAccountType, "id": googlefitAccount}})
@@ -947,11 +946,14 @@ func TestGoogleFitDropsTheFloorOfATypeItNoLongerWalks(t *testing.T) {
 		t.Fatalf("a run Google refused weight in kept syncFloors %v", stamp["syncFloors"])
 	}
 
-	// A scheduled sweep right after: daily, synced a moment ago, no floor.
-	fake.forget()
+	// A scheduled sweep right after, with Google answering again: the stored
+	// account is hourly, synced a moment ago and holds no floor, so the sweep
+	// sends Google nothing. A run would list the data sources first.
+	fake.forbid()
+	before := len(fake.seenPaths())
 	newStepper(t, ds, googlefitSyncFn, googlefitConfig(t, ds, fake)).drainApplying(nil)
-	if got := fake.days(fitWeight); len(got) != 0 {
-		t.Fatalf("the sweep synced an account that is not due: read %s on %v", fitWeight, got)
+	if got := fake.seenPaths()[before:]; len(got) != 0 {
+		t.Fatalf("the sweep synced an account that is not due: %d requests, the first %s", len(got), got[0])
 	}
 }
 
