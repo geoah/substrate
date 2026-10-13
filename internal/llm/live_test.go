@@ -52,9 +52,9 @@ var liveLedger = livespend.New("adapter suite (internal/llm)", liveMaxRequests, 
 
 // liveMeter is a Client that charges the ledger before every completion and
 // records the usage after, so no case reaches a real endpoint unbooked. It
-// counts completions: the retries the Anthropic SDK makes inside one, after a
-// connection error or a 408, 409, 429 or 5xx, happen below it and are not
-// counted.
+// counts completions: the retries the anthropic adapter makes inside one,
+// after a connection error or a 408, 409, 429 or 5xx, happen below it and are
+// not counted.
 type liveMeter struct {
 	wire   string
 	ledger *livespend.Ledger
@@ -125,7 +125,7 @@ func liveWires() []liveWire {
 		{"anthropic", func(t *testing.T) (Client, string) {
 			t.Helper()
 			key := liveKey(t, "ANTHROPIC_API_KEY")
-			// No BaseURL: the SDK's own default endpoint.
+			// No BaseURL: the adapter's default, Anthropic's own endpoint.
 			c, err := New(WireAnthropic, Config{APIKey: key})
 			if err != nil {
 				t.Fatalf("build anthropic client: %v", err)

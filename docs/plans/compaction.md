@@ -57,8 +57,10 @@ always needs a client-side summarizer.
 - langchaingo has trimming only. genkit Go has a history hook, no
   implementation.
 - anthropic-sdk-go v1.73.0 added on-demand compaction (`BetaCompactionConfigUnionParam`,
-  `BetaCompactionBlock`, `AnthropicBetaCompact2026_09_04`). The repo is on
-  v1.63.1, which has context editing and the threshold edit type only.
+  `BetaCompactionBlock`, `AnthropicBetaCompact2026_09_04`). The repo no
+  longer uses the SDK: `internal/llm/anthropic.go` writes the Messages request
+  by hand, so on-demand compaction and context editing are each a request
+  field and an `anthropic-beta` header added there.
 - go-openai v1.42.0 has `CompactResponse` for the Responses API, with untyped
   output. Third-party OpenAI-wire gateways may not implement it.
 
@@ -289,12 +291,17 @@ call, or empty content rejects the summary. A partial summary is never saved.
 2. **In-run pressure**: clear old tool results in the in-memory list when the
    last `ContextTokens` crosses the threshold (keep the last 3 tool uses,
    replace older content with a one-line placeholder; rows untouched). On the
-   Anthropic wire this can be `clear_tool_uses_20250919` server-side instead,
-   which the current SDK already supports.
-3. **Native summarizer on Anthropic** (optional): bump anthropic-sdk-go to
-   1.73.0 or later, and let the Anthropic adapter summarize with on-demand
-   compaction. Store the signed block on the summary row as `native` and its
-   readable `content` as `content`, so a provider switch keeps the text.
+   Anthropic wire this can be `clear_tool_uses_20250919` server-side instead:
+   one `context_management.edits` entry, sent with the
+   `context-management-2025-06-27` beta header, added to the request body
+   `internal/llm/anthropic.go` builds.
+3. **Native summarizer on Anthropic** (optional): let the Anthropic adapter
+   summarize with on-demand compaction (the `compact-2026-09-04` beta). The
+   adapter speaks the Messages API on net/http, so this adds the compaction
+   request field and reads the `compaction` response block in
+   `internal/llm/anthropic.go`. Store the signed block on the summary row as
+   `native` and its readable `content` as `content`, so a provider switch
+   keeps the text.
    Not on Bedrock, not on Haiku 4.5. Only worth it once phase 1 is measured.
 
 ## Open decisions

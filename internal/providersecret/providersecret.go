@@ -7,6 +7,7 @@
 package providersecret
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
 )
@@ -35,4 +36,42 @@ func Scrub(apiKey, s string) string {
 		s = strings.ReplaceAll(s, apiKey, redacted)
 	}
 	return maskedSecret.ReplaceAllString(s, redacted)
+}
+
+// Truncate cuts an endpoint's words to at most limit bytes without splitting
+// anything Scrub removes: Scrub matches only a whole key and a whole starred
+// token, so a fragment the cut left would pass it. A cut inside a
+// whitespace-delimited token moves back to that token's start, which drops a
+// starred token or a key the cut lands in, and a key that straddles the cut
+// anyway (one holding whitespace) is dropped whole. Every key that starts
+// before the cut must be whole in s, so the caller passes limit+len(apiKey)
+// bytes where the endpoint sent that many.
+func Truncate(apiKey string, s []byte, limit int) []byte {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit
+	if !isSpace(rune(s[cut])) {
+		cut = bytes.LastIndexFunc(s[:cut], isSpace) + 1
+	}
+	key := []byte(apiKey)
+	for moved := len(key) > 0; moved; {
+		moved = false
+		for i := max(0, cut-len(key)+1); i < cut; i++ {
+			if bytes.HasPrefix(s[i:], key) {
+				cut, moved = i, true
+				break
+			}
+		}
+	}
+	return s[:cut]
+}
+
+// isSpace is the whitespace maskedSecret's \S excludes.
+func isSpace(r rune) bool {
+	switch r {
+	case ' ', '\t', '\n', '\f', '\r':
+		return true
+	}
+	return false
 }

@@ -39,8 +39,8 @@ func TestOpenAIDialConfinedToPublic(t *testing.T) {
 	}
 }
 
-// The same confinement holds on the anthropic wire, whose client is built
-// through a different SDK option.
+// The same confinement holds on the anthropic wire, whose adapter builds its
+// own net/http client.
 func TestAnthropicDialConfinedToPublic(t *testing.T) {
 	t.Setenv("SUBSTRATE_EGRESS_ALLOW", "")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
