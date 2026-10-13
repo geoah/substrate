@@ -417,10 +417,11 @@ function layoutOf(
 
   // The x axis is the whole range, its size's boundaries labelled whether a
   // bucket holds anything there or not. A label needs about 84px, so every
-  // k-th boundary is labelled.
+  // k-th boundary is labelled, k from the boundaries' real spacing: under a
+  // pixel apart, a quarter hour over a month is.
   const marks = axisTicks(domain, size)
   const spacing = marks.length > 1 ? x(marks[1]) - x(marks[0]) : right - LEFT
-  const every = Math.max(1, Math.ceil(84 / Math.max(1, spacing)))
+  const every = spacing > 0 ? Math.max(1, Math.ceil(84 / spacing)) : 1
   const labelled = labelledTicks(marks, size, every)
   const xLabels = labelled.map((i, n) => {
     const t = marks[i]

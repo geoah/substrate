@@ -52,6 +52,41 @@ describe("TimelineChart", () => {
     expect(screen.queryByRole("status")).toBe(null)
   })
 
+  it("labels a month of quarter hours across the whole month, a label's room apart", () => {
+    const { buckets, series } = seriesOf(WEIGHT.rows, "avg")
+    const view = render(
+      <TimelineChart
+        buckets={buckets}
+        series={series.map((s) => ({
+          key: s.key,
+          color: "var(--series-1)",
+          points: s.points,
+        }))}
+        // 2,880 quarter hours, past the default bucket budget.
+        domain={{
+          start: new Date(2026, 8, 1).getTime(),
+          end: new Date(2026, 9, 1).getTime(),
+        }}
+        size="15m"
+        label="Weight, Average"
+        tooltip={() => null}
+        onZoom={() => {}}
+      />
+    )
+    const labels = [
+      ...view.container.querySelectorAll("text[text-anchor=middle]"),
+    ]
+    const texts = labels.map((l) => l.textContent)
+    expect(texts[0]).toBe("Sep 1")
+    expect(texts.at(-1)).toMatch(/^Sep (2[6-9]|30)$/)
+    // Each label has its room; the first is held inside the plot.
+    const xs = labels.map((l) => Number(l.getAttribute("x")))
+    for (let i = 2; i < xs.length; i++) {
+      expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(84)
+    }
+    expect(xs[1]).toBeGreaterThan(xs[0])
+  })
+
   it("breaks the line where the answer skipped a week", () => {
     // The middle week is not in the answer at all: no row, filled or not.
     const view = render(chart([WEIGHT.rows[0], WEIGHT.rows[2]]))

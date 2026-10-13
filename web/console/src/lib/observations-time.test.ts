@@ -89,6 +89,15 @@ describe("ranges and buckets", () => {
     ).toEqual([0, 0, 0])
     // Room for every one: each is labelled.
     expect(labelledTicks(hours.slice(0, 4), "hour", 1)).toEqual([0, 1, 2, 3])
+    // Quarter hours with room every 50 hours: every third midnight.
+    const days = axisTicks(
+      { start: day.start, end: day.start + 10 * DAY },
+      "15m"
+    )
+    expect(days).toHaveLength(960)
+    expect(
+      labelledTicks(days, "15m", 200).map((i) => new Date(days[i]).getDate())
+    ).toEqual([7, 10, 13, 16])
   })
 
   it("says a point's window short: its days, its clocks, or both ends", () => {

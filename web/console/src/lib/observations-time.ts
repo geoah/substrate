@@ -178,7 +178,9 @@ const STEP_MINUTES: Partial<Record<BucketSize, number>> = {
 /** The size's boundaries inside a range, local time: every minute, five
  * minutes, quarter hour, hour, midnight, Monday or first of the month from
  * the first one at or after the range's start. The x axis labels these,
- * whether or not a bucket holds anything there. At most `limit` of them.
+ * whether or not a bucket holds anything there. At most `limit` of them:
+ * the default is twice the buckets any read may make (`MAX_BUCKETS_CAP`),
+ * so a range a chart can draw is never cut short.
  *
  * Sizes finer than a day step by elapsed time, so a day the clocks go back
  * ticks its repeated hour twice. Days, weeks and months are each worked out
@@ -187,7 +189,7 @@ const STEP_MINUTES: Partial<Record<BucketSize, number>> = {
 export function axisTicks(
   range: TimeRange,
   size: BucketSize,
-  limit = 2000
+  limit = 2 * MAX_BUCKETS_CAP
 ): number[] {
   const out: number[] = []
   const step = STEP_MINUTES[size]
@@ -233,19 +235,26 @@ const LABEL_MINUTES = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440]
 /** Which of an axis's ticks (`axisTicks`) carry a label, where a label has
  * room for one in every `every` ticks: under a day, the ticks on the
  * smallest round clock step that leaves that room (every 6 hours on 00, 06,
- * 12 and 18, never every 5 from the first); otherwise every `every`-th from
- * the first. */
+ * 12 and 18, never every 5 from the first), and where that room passes a
+ * day, every few midnights from the first; for days, weeks and months,
+ * every `every`-th from the first. */
 export function labelledTicks(
   marks: readonly number[],
   size: BucketSize,
   every: number
 ): number[] {
   const minutes = STEP_MINUTES[size]
-  const step = minutes && LABEL_MINUTES.find((m) => m >= minutes * every)
-  if (!step) return marks.flatMap((_, i) => (i % every ? [] : [i]))
+  if (!minutes) return marks.flatMap((_, i) => (i % every ? [] : [i]))
+  const room = minutes * every
+  const step = LABEL_MINUTES.find((m) => m >= room) ?? 1440
+  const days = Math.ceil(room / 1440)
+  let midnights = 0
   return marks.flatMap((t, i) => {
     const d = new Date(t)
-    return (d.getHours() * 60 + d.getMinutes()) % step ? [] : [i]
+    const clock = d.getHours() * 60 + d.getMinutes()
+    if (clock % step) return []
+    if (step < 1440) return [i]
+    return midnights++ % days ? [] : [i]
   })
 }
 
