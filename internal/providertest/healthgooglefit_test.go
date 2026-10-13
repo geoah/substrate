@@ -997,25 +997,49 @@ func TestHealthGoogleFitWritesASmallReadingWithoutAnExponent(t *testing.T) {
 }
 
 // TestHealthGoogleFitWritesNoOffsetWithoutAZone: Fit sends no offset, and an
-// account that names no zone gives none, so the adapter writes no offset
-// (the observed index marks such a value offsetless) rather than claiming
+// account that names no zone gives none, so the adapter writes no offset on
+// a trace, a reading, a stage, a sleep or a workout (the observed index
+// marks such a value offsetless) and no offset rule, rather than claiming
 // UTC; and a short afternoon sleep session is a nap, by the rule the README
 // states, since Fit sends no nap flag.
 func TestHealthGoogleFitWritesNoOffsetWithoutAZone(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
-	recordedToday := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
-	ds, _, today := newFitHealth(t, recordedToday, "enabledBody")
+	ds, _, today := newFitHealth(t, fitCutOn, "enabledActivity", "enabledBody", "enabledHeartRate", "enabledSleep")
 	mustPut(t, ds, substrate.PutInput{Kind: googlefitAccountType, ID: googlefitAccount, Properties: map[string]any{"timezone": nil}})
 	observeAll(t, ds)
-	weights := withMetric(t, ds, obsObservation, "body_mass")
-	if len(weights) == 0 {
-		t.Fatal("no weigh-in written")
+	for _, metric := range []string{"heart_rate", "steps"} {
+		if len(withMetric(t, ds, obsTrace, metric)) == 0 {
+			t.Fatalf("no %s trace written", metric)
+		}
 	}
-	for _, w := range weights {
-		if w.Properties["utcOffset"] != nil || w.Properties["qualifiers"] != nil {
-			t.Fatalf("weigh-in %s carries offset %v and qualifiers %v with no zone, want neither",
-				w.ID, w.Properties["utcOffset"], w.Properties["qualifiers"])
+	for _, metric := range []string{"body_mass", "sleep_stage"} {
+		if len(withMetric(t, ds, obsObservation, metric)) == 0 {
+			t.Fatalf("no %s observation written", metric)
+		}
+	}
+	for _, tr := range listLive(t, ds, obsTrace) {
+		if tr.Properties["utcOffsetStart"] != nil || tr.Properties["utcOffsetEnd"] != nil {
+			t.Fatalf("trace %s carries offsets %v and %v with no zone, want neither",
+				tr.ID, tr.Properties["utcOffsetStart"], tr.Properties["utcOffsetEnd"])
+		}
+	}
+	for _, o := range listLive(t, ds, obsObservation) {
+		if o.Properties["utcOffset"] != nil || o.Properties["qualifiers"] != nil {
+			t.Fatalf("observation %s carries offset %v and qualifiers %v with no zone, want neither",
+				o.ID, o.Properties["utcOffset"], o.Properties["qualifiers"])
+		}
+	}
+	for _, kind := range []string{healthSleep, healthWorkout} {
+		rows := listLive(t, ds, kind)
+		if len(rows) == 0 {
+			t.Fatalf("no %s written", kind)
+		}
+		for _, row := range rows {
+			if row.Properties["utcOffsetStart"] != nil || row.Properties["utcOffsetEnd"] != nil {
+				t.Fatalf("%s %s carries offsets %v and %v with no zone, want neither", kind, row.ID,
+					row.Properties["utcOffsetStart"], row.Properties["utcOffsetEnd"])
+			}
 		}
 	}
 	nap := today.Add(-11 * time.Hour)
