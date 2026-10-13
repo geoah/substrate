@@ -21,6 +21,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
+// aggRecordOrderCap bounds a records source policy's order.
+const aggRecordOrderCap = 100
+
 // checkRecordSources checks a records source policy's shape before the read
 // touches the repository, and reports whether it drops anything.
 func checkRecordSources(path string, s *substrate.AggregateRecordSources) (bool, error) {
@@ -42,6 +45,11 @@ func checkRecordSources(path string, s *substrate.AggregateRecordSources) (bool,
 	}
 	if len(s.Order) == 0 {
 		return false, refuse(path+".order", "priority ranks the sources the order names, first highest; name them")
+	}
+	// The policy weighs the records once per rank they hold, so the ranks
+	// are bounded.
+	if len(s.Order) > aggRecordOrderCap {
+		return false, refuse(path+".order", "an order ranks at most %d sources, not %d", aggRecordOrderCap, len(s.Order))
 	}
 	for i, m := range s.Match {
 		if m == "" || slices.Contains(s.Match[:i], m) {

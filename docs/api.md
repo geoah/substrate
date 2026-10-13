@@ -1220,8 +1220,8 @@ filter matches, so a night three devices recorded is three windows.
 
 `property` names the records' declared property that holds their source (a
 reference, a string or an enum, declared by every kind the filter selects),
-and `order` ranks its values, first highest; a reference's bare id is
-completed as the filter completes it. A record whose own `[at, endsAt)` (an
+and `order` ranks up to 100 of its values, first highest; a reference's
+bare id is completed as the filter completes it. A record whose own `[at, endsAt)` (an
 instant's `at`) overlaps a kept record of a higher-ranked source is dropped
 and makes no window. A source the order does not name ranks last, and two
 records of one rank never drop each other. `match` (optional) names
