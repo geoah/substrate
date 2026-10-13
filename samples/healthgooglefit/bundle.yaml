@@ -367,6 +367,7 @@ data:
                 if dev.get("uid"):
                     self.devices[str(dev["uid"])] = dev
             self.sources = {}
+            self.minted = set()
             self.units = {}
 
         def source_for(self, origin):
@@ -434,7 +435,9 @@ data:
             """Mint the sources once: an owner's edit to one (its name, its
             priorities) stands."""
             for sid, props in self.sources.items():
-                self.host.effects.put(SOURCE, sid, properties=props, if_absent=True)
+                if sid not in self.minted:
+                    self.host.effects.put(SOURCE, sid, properties=props, if_absent=True)
+                    self.minted.add(sid)
 
 
     def _apply(host, path, desired, kinds):
@@ -628,7 +631,12 @@ data:
                     if s is not None and not s.get("deletedAt"):
                         sessions[sid] = s
         out.update(_apply(host, path, desired, (OBSERVATION, TRACE)))
+        # The nights a day refreshes share one context: the account and its
+        # data sources are read once per delivery, not once per night.
         for sid, s in sorted(sessions.items()):
+            aid = _ref_id((s.get("properties") or {}).get("account"), ACCOUNT)
+            if ctx is None or ctx.aid != aid:
+                ctx = _Ctx(host, aid)
             sub = _session(host, sid, s, ctx)
             for k in ("written", "unchanged", "deleted", "skipped"):
                 out[k] = out.get(k, 0) + sub.get(k, 0)
@@ -672,7 +680,7 @@ data:
 
     def _session(host, rid, row, ctx=None):
         """A sleep or workout session. A dataset delivery that refreshes the
-        nights it overlaps passes the account's context it already read."""
+        nights it overlaps passes one account context to all of them."""
         path = SESSION + "/" + rid
         desired, out = {}, {"skipped": 0}
         if row is not None:

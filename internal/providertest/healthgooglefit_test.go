@@ -10,9 +10,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math/big"
+	"os/exec"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1027,5 +1029,134 @@ func TestHealthGoogleFitWritesNoOffsetWithoutAZone(t *testing.T) {
 	sl := mustGet(t, ds, healthSleep, "googlefit/"+googlefitAccount+"/nap").Properties
 	if sl["isNap"] != true || sl["utcOffsetStart"] != nil || sl["timeInBed"] != "PT40M" {
 		t.Fatalf("the afternoon session = %v, want a nap of 40 minutes with no offset", sl)
+	}
+}
+
+// fitReadProbe runs the shipped adapter's source (stdin) under python3 with
+// the real host.observed (argv[1]) over a host that answers from memory: a
+// sleep stream, a sleep day overlapping two nights, and stage observations
+// of a deleted day naming both. For each delivery it prints how many nights
+// were rebuilt and how often the account was read and its data sources
+// listed.
+const fitReadProbe = `
+import json, sys, types, importlib.util
+from decimal import Decimal
+spec = importlib.util.spec_from_file_location("host", sys.argv[1])
+hostmod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hostmod)
+fit = types.ModuleType("adaptgooglefit")
+exec(compile(sys.stdin.read(), "adaptgooglefit", "exec"), fit.__dict__)
+A = "acct"
+ACCOUNT = {"ref": fit.ACCOUNT + "/" + A}
+STREAM = {"kind": fit.DATASOURCE, "id": A + "/sleep", "properties": {
+    "account": ACCOUNT, "dataStreamId": "derived:com.google.sleep.segment:merged",
+    "dataStreamName": "merged", "type": "derived", "dataType": {"name": fit.SLEEP_TYPE}}}
+H = 3600 * 10**9
+DAY0 = 1791244800 * 10**9
+DAY = {"kind": fit.DATASET, "id": A + "/sleep/day", "properties": {
+    "account": ACCOUNT, "dataSource": {"ref": fit.DATASOURCE + "/" + STREAM["id"]},
+    "at": "2026-10-06T00:00:00Z", "endsAt": "2026-10-07T00:00:00Z", "point": [
+        {"startTimeNanos": str(DAY0 + 2 * H), "endTimeNanos": str(DAY0 + 4 * H),
+         "value": [{"intVal": 4}], "modifiedTimeMillis": "1791300000000"},
+        {"startTimeNanos": str(DAY0 + 13 * H), "endTimeNanos": str(DAY0 + 14 * H),
+         "value": [{"intVal": 5}], "modifiedTimeMillis": "1791300000000"}]}}
+NIGHTS = [
+    {"kind": fit.SESSION, "id": A + "/n1", "properties": {
+        "account": ACCOUNT, "activityType": fit.SLEEP_ACTIVITY, "modifiedTimeMillis": 1791300000000,
+        "at": "2026-10-05T22:00:00Z", "endsAt": "2026-10-06T06:00:00Z"}},
+    {"kind": fit.SESSION, "id": A + "/n2", "properties": {
+        "account": ACCOUNT, "activityType": fit.SLEEP_ACTIVITY, "modifiedTimeMillis": 1791300000000,
+        "at": "2026-10-06T13:00:00Z", "endsAt": "2026-10-06T14:00:00Z"}},
+]
+class Host:
+    def __init__(self):
+        self.effects = hostmod.Effects()
+        self.observed = hostmod.Observed(self)
+        self.ids = hostmod.Ids()
+        self.records = self
+        self.units = self
+        self.reads = {"accounts": 0, "datasources": 0}
+    def get(self, kind, rid):
+        if kind == fit.ACCOUNT:
+            self.reads["accounts"] += 1
+            return {"kind": kind, "id": rid, "properties": {}}
+        if kind == fit.DATASOURCE:
+            return STREAM
+        return next((s for s in NIGHTS if kind == fit.SESSION and s["id"] == rid), None)
+    def list(self, **query):
+        flt = query.get("filter") or {}
+        kinds = flt.get("kinds") or []
+        if kinds == [fit.DATASOURCE]:
+            self.reads["datasources"] += 1
+            return {"records": [STREAM]}
+        if kinds == [fit.SESSION]:
+            return {"records": NIGHTS}
+        if kinds == [fit.DATASET]:
+            return {"records": [DAY]}
+        if kinds == [fit.OBSERVATION] and (flt.get("referencing") or {}).get("property") == "derivedFrom":
+            return {"records": [{"kind": fit.OBSERVATION, "id": "stage/" + s["id"],
+                                 "properties": {"origin": {"ref": fit.SESSION + "/" + s["id"]}}} for s in NIGHTS]}
+        return {"records": []}
+    def convert(self, value, from_unit, to_unit, measure=None):
+        return format(Decimal(value) / 60, "f")
+    def canonical(self, code):
+        return code
+nights = []
+rebuild = fit._session
+def counted(host, rid, row, ctx=None):
+    nights.append(rid)
+    return rebuild(host, rid, row, ctx)
+fit._session = counted
+out = {}
+for name, record in (("sleep day", DAY), ("deleted day", None)):
+    del nights[:]
+    host = Host()
+    fit.main({"envelope": {"change": {"kind": fit.DATASET, "id": DAY["id"]}, "record": record}}, host)
+    out[name] = dict(host.reads, nights=len(nights))
+print(json.dumps(out))
+`
+
+// TestHealthGoogleFitReadsTheAccountOncePerDelivery: a sleep day rebuilds
+// every night it overlaps, and a deleted day every night its stages named.
+// The nights share one context, so the delivery reads the account and lists
+// its data sources once, however many nights it rebuilds.
+func TestHealthGoogleFitReadsTheAccountOncePerDelivery(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is not on PATH")
+	}
+	t.Parallel()
+	var source string
+	for _, d := range loadDocs(t, samplesDir+"/healthgooglefit/bundle.yaml") {
+		if data, _ := d["data"].(map[string]any); d["kind"] == typeFunction && data != nil {
+			source, _ = data["source"].(string)
+		}
+	}
+	if source == "" {
+		t.Fatal("no function source in the healthgooglefit bundle")
+	}
+	cmd := exec.Command(python, "-c", fitReadProbe, "../runner/host.py")
+	cmd.Stdin = strings.NewReader(source)
+	raw, err := cmd.Output()
+	if err != nil {
+		var stderr string
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = string(ee.Stderr)
+		}
+		t.Fatalf("probe: %v\n%s", err, stderr)
+	}
+	var out map[string]map[string]int
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode the probe: %v\n%s", err, raw)
+	}
+	for _, delivery := range []string{"sleep day", "deleted day"} {
+		got := out[delivery]
+		if got["nights"] != 2 {
+			t.Fatalf("the %s rebuilt %d nights, want the two it touches", delivery, got["nights"])
+		}
+		if got["accounts"] != 1 || got["datasources"] != 1 {
+			t.Errorf("the %s read the account %d times and listed its data sources %d times, want once each",
+				delivery, got["accounts"], got["datasources"])
+		}
 	}
 }
