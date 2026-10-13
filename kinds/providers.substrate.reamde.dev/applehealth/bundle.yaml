@@ -385,8 +385,8 @@ data:
       type: string
       repeated: true
       displayName: Too big to write
-      description: "records too big for one function response, skipped
-        unwritten, as `<kind> <id> (<bytes> bytes)`; at most 20"
+      description: "records too big for one function response, skipped unwritten,
+        as `<kind> <id> (<bytes> bytes)`; at most 20"
 ---
 # Keyed `<account>/<metric>/<grouping>/<period>`: the period is the UTC hour
 # for seconds and minutes, the UTC day for hours, the UTC month for days and
