@@ -482,18 +482,47 @@ metadata:
   id: health/cadence
 data:
   properties:
-    name: Cadence
+    name: Step cadence
     description: >-
-      Steps or pedal strokes per minute during a workout. No Garmin code is
-      listed: the activity sample field was not verified.
+      Steps per minute during a walk or a run. Pedal revolutions on a ride
+      are cycling_cadence: the two never pool. A writer copies the hold, PT10S,
+      onto each value of a workout's stream. No Garmin code is listed: the
+      activity sample field was not verified.
     codes:
       - system: healthconnect
         code: StepsCadenceRecord
       - system: googlefit
         code: com.google.step_count.cadence
+    measures: rate
+    unit: "/min"
+    form: gauge
+    hold: PT10S
+    reducers:
+      - avg
+      - max
+      - twa
+    displayPrecision: 0
+    category: workout
+---
+kind: samples.substrate.reamde.dev/observations/metric
+metadata:
+  id: health/cycling_cadence
+data:
+  properties:
+    name: Cycling cadence
+    description: >-
+      Pedal revolutions per minute during a ride. Steps per minute are cadence:
+      the two never pool. A writer copies the hold, PT10S, onto each value
+      of a workout's stream. No Garmin code is listed: the activity sample
+      field was not verified.
+    codes:
       - system: healthkit
         code: HKQuantityTypeIdentifierCyclingCadence
         display: Cycling cadence
+      - system: healthconnect
+        code: CyclingPedalingCadenceRecord
+      - system: googlefit
+        code: com.google.cycling.pedaling.cadence
     measures: rate
     unit: "/min"
     form: gauge
