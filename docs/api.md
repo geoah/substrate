@@ -1431,6 +1431,16 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
   and `first`, `last` and `count` read that statistic alone. `sum` adds only
   `sum` and `count` summaries; over any other statistic a read from
   summaries is a `422`.
+- Under `priority` and `summaries` each bucket takes the summaries of the
+  source the policy keeps there, so the one-statistic rule holds per source:
+  each source's summaries are of one statistic, and two sources may differ.
+  A read of WHOOP's nightly HRV (`vendor`) and Garmin's (`avg`), with
+  `filter.properties.statistic` `{"in": ["avg", "vendor"]}` and `priority`
+  over `[garmin, whoop]`, answers each night from Garmin and the nights
+  Garmin missed from WHOOP; the row's `sources` say which. A row that would
+  take two statistics (a week of nights each source filled alone) is a `422`
+  naming each source's statistic: read by the bucket each source fills alone,
+  or name one statistic.
 - Under `prefer-raw` one series holds raw rows and summary rows, so a bucket
   that falls to summaries answers a reducer only from the statistic that is
   the same quantity over raw points: `sum` from `sum`, `avg` from `avg`,
@@ -1790,9 +1800,10 @@ merged as one row.
   and no `bucket.fallbackTimezone`, or a `fallbackTimezone` outside the
   recorded-local calendar; `place` `end` over a gauge or a counter, in the
   records mode or on a property read; a group whose summaries hold two
-  statistics, or `sum` over a statistic other than `sum` and `count` on a
-  read from summaries; `groupBy` `statistic` on a bucketed read that is not
-  from summaries; `priority` over two counters; a budget below zero or over its
+  statistics (under `priority` and `summaries`, a source whose summaries
+  hold two, or a row that would take two), or `sum` over a statistic other
+  than `sum` and `count` on a read from summaries; `groupBy` `statistic` on
+  a bucketed read that is not from summaries; `priority` over two counters; a budget below zero or over its
   cap, or a read over a budget (naming the limit); `rolling` without a
   `bucket`; `downsample` beside `reducers`, `rolling`, `fill` or `bucket`;
   `minCoverage` without `prefer-raw`; on the latest read, `fill`,

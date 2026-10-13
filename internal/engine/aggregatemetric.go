@@ -100,6 +100,10 @@ type aggGroup struct {
 	coded   bool
 	// rollups says the group's raw buckets are served from observed_rollups.
 	rollups bool
+	// mixedStatistics says the group's sources hold different statistics,
+	// one each, which the priority and summaries policies admit
+	// (checkStatistics) and each row holds to one (rowStatistic).
+	mixedStatistics bool
 }
 
 // sourceOf is the source of the stream-th raw stream of the group, or of its
@@ -1246,20 +1250,64 @@ var formWhy = map[string]string{
 // or of counts. A day's average, extreme or vendor score does not add.
 var additiveStatistics = []string{"sum", "count"}
 
-// additive reports whether sum adds the group's summaries, which are of one
-// statistic (checkStatistics).
+// additive reports whether sum adds the group's summaries: every statistic
+// they hold adds.
 func (g *aggGroup) additive() bool {
-	return len(g.sums) == 0 || slices.Contains(additiveStatistics, g.sums[0].stat)
+	for _, s := range g.sums {
+		if !slices.Contains(additiveStatistics, s.stat) {
+			return false
+		}
+	}
+	return true
+}
+
+// rowStatistic is the one statistic a summary row's members hold, or an
+// error naming the two it would mix. Under the priority and summaries
+// policies a group's sources may hold different statistics (each source
+// one, checkStatistics): a bucket where the policy keeps one source's
+// summaries reads its statistic, and one that keeps two sources' of
+// different statistics, a week of nights each source filled alone, is
+// refused rather than averaged across methods.
+func (r *aggRun) rowStatistic(g *aggGroup, ev *aggEvidence, b *aggBucket) (string, error) {
+	if ev.form != vocabulary.FormSummary || len(g.sums) == 0 {
+		return "", nil
+	}
+	stat := g.sums[0].stat
+	if !g.mixedStatistics {
+		return stat, nil
+	}
+	by := map[string][]string{}
+	for _, m := range ev.members {
+		s := g.sums[m.stream]
+		if !slices.Contains(by[s.stat], orOwner(s.source)) {
+			by[s.stat] = append(by[s.stat], orOwner(s.source))
+		}
+		stat = s.stat
+	}
+	if len(by) < 2 {
+		return stat, nil
+	}
+	var parts []string
+	for _, st := range sortedKeys(by) {
+		parts = append(parts, fmt.Sprintf("%s from %s", orNoStatistic(st), strings.Join(by[st], ", ")))
+	}
+	from, to := r.p.rangeOf(b)
+	return "", refuse(r.p.at, "the row from %s to %s takes the summaries %s, and a row reads one statistic; read a bucket each source's summaries fill alone (a day, a night), or name one statistic with %s",
+		from.Format(time.RFC3339), to.Format(time.RFC3339), andList(parts), r.p.statisticPath())
 }
 
 // checkStatistics refuses a group whose summaries hold two statistics, since
 // a row reads one, and on a read from summaries sum over a statistic that
-// does not add. It runs once the forms are found, before any point is
-// reduced, so a read that would count a night's average and maximum as two
-// nights is refused, not answered. prefer-raw reads a bucket's summaries only
-// where its raw points fall short, so a reducer over a statistic that is not
-// its own answers null in such a bucket (rowValues.mixes) instead of
-// refusing the buckets raw points serve.
+// does not add. Under the priority and summaries policies each bucket takes
+// the summaries of the source the policy keeps there, so the rule holds per
+// source: two sources may hold two statistics (WHOOP's nightly HRV is
+// `vendor`, Garmin's `avg`), and a row that would take both is refused where
+// it is answered (rowStatistic). It runs once the forms are found, before
+// any point is reduced, so a read that would count a night's average and
+// maximum as two nights is refused, not answered. prefer-raw reads a bucket's
+// summaries only where its raw points fall short, so a reducer over a
+// statistic that is not its own answers null in such a bucket
+// (rowValues.mixes) instead of refusing the buckets raw points serve.
 func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 	if p.source == substrate.AggregateFromRaw {
 		return nil
@@ -1268,8 +1316,10 @@ func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 	if p.source != substrate.AggregateFromSummaries {
 		split = ""
 	}
+	perSource := p.policy == substrate.SourcesPriority || p.policy == substrate.SourcesSummaries
 	for _, g := range groups {
 		var stats, sources []string
+		bySource := map[string][]string{}
 		for _, s := range g.sums {
 			if !slices.Contains(stats, s.stat) {
 				stats = append(stats, s.stat)
@@ -1277,10 +1327,23 @@ func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 			if !slices.Contains(sources, orOwner(s.source)) {
 				sources = append(sources, orOwner(s.source))
 			}
+			if !slices.Contains(bySource[orOwner(s.source)], s.stat) {
+				bySource[orOwner(s.source)] = append(bySource[orOwner(s.source)], s.stat)
+			}
 		}
 		slices.Sort(stats)
 		slices.Sort(sources)
-		if len(stats) > 1 {
+		switch {
+		case len(stats) > 1 && perSource:
+			for _, source := range sources {
+				if own := bySource[source]; len(own) > 1 {
+					slices.Sort(own)
+					return refuse(p.at, "the summaries from %s hold the statistics %s, and a row reads one; name it with %s%s",
+						source, andList(own), p.statisticPath(), split)
+				}
+			}
+			g.mixedStatistics = true
+		case len(stats) > 1:
 			return refuse(p.at, "the summaries from %s hold the statistics %s, and a row reads one; name it with %s%s",
 				strings.Join(sources, ", "), andList(stats), p.statisticPath(), split)
 		}
@@ -1289,8 +1352,14 @@ func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 		}
 		for i, r := range p.reducers {
 			if r.Name == substrate.ReducerSum {
+				var not []string
+				for _, st := range stats {
+					if !slices.Contains(additiveStatistics, st) {
+						not = append(not, orNoStatistic(st))
+					}
+				}
 				return p.refuse(p.reducerPath(i), "sum adds summaries whose statistic is sum or count; the summaries from %s are %s, so read them with count, first, last, avg, min or max",
-					strings.Join(sources, ", "), orNoStatistic(stats[0]))
+					strings.Join(sources, ", "), andList(not))
 			}
 		}
 	}

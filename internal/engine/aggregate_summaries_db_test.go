@@ -258,3 +258,69 @@ func TestAggregatePreferRawAnswersEachReducerFromItsOwnStatistic(t *testing.T) {
 		}
 	}
 }
+
+// Under the priority and summaries policies each bucket takes the summaries
+// of the source the policy keeps there, so the one-statistic rule holds per
+// source: Garmin keeps a night's HRV as avg (and a max), WHOOP as vendor,
+// and a read of avg and vendor ranked [garmin, whoop] answers one row a
+// night, the night Garmin missed from WHOOP. A source holding two
+// statistics is still refused, and so is a row that would take two (a week
+// of nights each source filled alone); the separate policy keeps each
+// source's own rows.
+func TestAggregatePriorityFallsBackAcrossSourcesOfDifferentStatistics(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	night := time.Date(2026, 9, 1, 22, 0, 0, 0, time.UTC)
+	for n, v := range []string{"60", "", "64"} {
+		if v == "" {
+			continue
+		}
+		at := night.AddDate(0, 0, n)
+		f.summary(fmt.Sprintf("garmin/avg/%d", n), "health/hrv_rmssd", "garmin", "avg", v, "ms", at, 8*time.Hour)
+		f.summary(fmt.Sprintf("garmin/max/%d", n), "health/hrv_rmssd", "garmin", "max", "99", "ms", at, 8*time.Hour)
+	}
+	for n, v := range []string{"71", "72", "73"} {
+		f.summary(fmt.Sprintf("whoop/%d", n), "health/hrv_rmssd", "whoop", "vendor", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
+	}
+	read := func(policy string, stats []any, bucket substrate.AggregateBucket) (*substrate.AggregateResult, error) {
+		sources := &substrate.AggregateSources{Policy: policy, Order: []string{"garmin", "whoop"}}
+		if policy == "separate" {
+			sources.Order = nil
+		}
+		return f.ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Filter: substrate.Filter{Properties: map[string]substrate.Cond{"statistic": {In: stats}}},
+			Aggregate: &substrate.Aggregate{
+				Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/hrv_rmssd")}, From: "summaries",
+				Range: rng(night.Add(-24*time.Hour), night.AddDate(0, 0, 4)), Bucket: &bucket,
+				Reducers: reducers("last"),
+				Sources:  sources,
+			},
+		})
+	}
+	byEnd := substrate.AggregateBucket{Calendar: "day", Timezone: "UTC", Place: "end"}
+	for _, policy := range []string{"priority", "summaries"} {
+		res, err := read(policy, []any{"avg", "vendor"}, byEnd)
+		if err != nil {
+			t.Fatalf("%s over avg and vendor: %v", policy, err)
+		}
+		var got []string
+		for _, row := range res.Rows {
+			v, _ := val(row, "last")
+			got = append(got, row.Start.Format("01-02")+"="+v+" "+strings.TrimPrefix(strings.Join(row.Sources, ","), f.source+"/"))
+		}
+		if want := "09-02=60 garmin 09-03=72 whoop 09-04=64 garmin"; strings.Join(got, " ") != want {
+			t.Errorf("%s over avg and vendor by night: %s, want %s", policy, strings.Join(got, " "), want)
+		}
+	}
+	if _, err := read("priority", []any{"avg", "max", "vendor"}, byEnd); err == nil || !strings.Contains(err.Error(), "the summaries from "+f.sourcePath("garmin")+" hold the statistics avg and max") {
+		t.Errorf("garmin's avg and max under priority: %v, want a refusal naming garmin's two statistics", err)
+	}
+	week := substrate.AggregateBucket{Calendar: "week", Timezone: "UTC", Place: "end"}
+	if _, err := read("priority", []any{"avg", "vendor"}, week); err == nil || !strings.Contains(err.Error(), "avg from "+f.sourcePath("garmin")+" and vendor from "+f.sourcePath("whoop")) {
+		t.Errorf("a week of nights from both sources: %v, want a refusal naming each source's statistic", err)
+	}
+	res, err := read("separate", []any{"avg", "vendor"}, byEnd)
+	if err != nil || len(res.Rows) != 5 {
+		t.Errorf("separate over avg and vendor: %v rows (%v), want garmin's two nights and whoop's three", rowsOf(res), err)
+	}
+}

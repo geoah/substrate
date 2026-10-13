@@ -48,8 +48,11 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 		}
 	}
 	sort.Strings(row.Sources)
-	var err error
-	if row.Values, err = r.values(ev, g, code, start.Location()); err != nil {
+	stat, err := r.rowStatistic(g, ev, b)
+	if err != nil {
+		return row, err
+	}
+	if row.Values, err = r.values(ev, g, code, stat, start.Location()); err != nil {
 		return row, err
 	}
 	if tr := traceOf(r.ctx); tr != nil {
@@ -62,8 +65,8 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 // reducer over a row is as long as the row's points or spans, so the copies
 // it reads (taken once per row) and the reducer itself check the context as
 // they go (observed's Context forms).
-func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string, zone *time.Location) ([]substrate.AggregateValue, error) {
-	v := &rowValues{r: r, ev: ev, g: g, code: code, zone: zone}
+func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code, stat string, zone *time.Location) ([]substrate.AggregateValue, error) {
+	v := &rowValues{r: r, ev: ev, g: g, code: code, stat: stat, zone: zone}
 	tr := traceOf(r.ctx)
 	for _, red := range r.p.reducers {
 		if err := r.ctx.Err(); err != nil {
@@ -116,18 +119,20 @@ func (v *rowValues) mixes(red substrate.AggregateReducer) bool {
 	if v.r.p.source != substrate.AggregateFromPreferRaw || v.ev.form != vocabulary.FormSummary || red.Name == substrate.ReducerCount {
 		return false
 	}
-	return len(v.g.sums) == 0 || preferRawStatistic[red.Name] != v.g.sums[0].stat
+	return preferRawStatistic[red.Name] != v.stat
 }
 
 // rowValues is one row's reducers being answered: its evidence, the values
 // answered so far, and the copy of its points the raw reducers read, taken
-// once. A summary row's points are one statistic's (checkStatistics), so
+// once. A summary row's points are one statistic's (rowStatistic), so
 // every reducer reads all of them.
 type rowValues struct {
-	r      *aggRun
-	ev     *aggEvidence
-	g      *aggGroup
-	code   string
+	r    *aggRun
+	ev   *aggEvidence
+	g    *aggGroup
+	code string
+	// stat is a summary row's one statistic (rowStatistic).
+	stat   string
 	points []observed.Point
 	copied bool
 	out    []substrate.AggregateValue
