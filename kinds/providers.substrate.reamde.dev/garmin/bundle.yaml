@@ -3150,6 +3150,10 @@ data:
     outage resumes where it stopped, and a deeper `backfillDepth` extends the
     walk instead of starting it again.
 
+    The user id and permissions are one invocation of their own: its effects
+    commit before the next invocation asks for a backfill window, so the
+    summaries Garmin pushes in answer find the account.
+
     A run stops at its own budget well inside the engine's two-minute drain cap;
     the hourly schedule continues a walk that has windows left. The body pins
     the origin the access token may travel to: https://apis.garmin.com, or a
@@ -3486,6 +3490,10 @@ data:
             cur["phase"] = "backfill"
             if cur.get("anchor") is None:
                 cur["anchor"] = int(time.time())
+            # Staged effects commit only when the invocation returns, and a
+            # push is matched on the committed `userId`: hand the page back
+            # before asking Garmin for summaries it will push.
+            return {"more": host.page.more(cur)}
 
         anchor = int(cur["anchor"])
         floor = _floor(props, anchor)

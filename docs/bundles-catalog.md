@@ -949,8 +949,10 @@ Garmin signs nothing, so the trigger's key is the only credential: set
 `garmin-client-id` header, a push naming another app's client id is refused.
 
 **Each summary is matched to its account by `userId`.** `garminsync` reads the
-user id from `GET /rest/user/id` on the first sync, so a push for an account
-that has not synced yet has nothing to match. A delivery none of whose
+user id from `GET /rest/user/id` on the first sync and commits it in an
+invocation of its own, before it asks for any backfill window. A push for an
+account whose first sync has not committed the id has nothing to match. A
+delivery none of whose
 summaries names a known user fails with an error naming the user id, and parks
 for a retry; a delivery that mixes users writes the known ones and lists the
 rest in its output.

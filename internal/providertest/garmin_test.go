@@ -675,7 +675,18 @@ func TestGarminSyncRequestsBackfillWindows(t *testing.T) {
 	fake := newFakeGarmin(t)
 	base := fake.ts.URL + "/wellness-api"
 
-	syncGarmin(t, ds, garminConfig(t, ds, base, nil))
+	// The first invocation records the user id and hands back its cursor
+	// before any backfill request, so the id is committed by the time Garmin
+	// pushes what the backfill asks for, and those pushes match the account.
+	s := newStepper(t, ds, garminSyncFn, garminConfig(t, ds, base, nil))
+	s.setEnvelope(map[string]any{"record": map[string]any{"kind": garminAccountType, "id": garminAccountID}})
+	effects, _, cur := s.step(nil)
+	if user := stampOf(effects, garminAccountID); cur == nil || user["userId"] != garminUser || fake.askedCount() != 0 {
+		t.Fatalf("the first invocation staged %v, continued %v, and asked %d backfill windows; want the user id alone, a cursor and none",
+			user, cur != nil, fake.askedCount())
+	}
+	s.apply()
+	s.drainApplying(cur)
 	acct := mustGet(t, ds, garminAccountType, garminAccountID)
 	if acct.Properties["userId"] != garminUser {
 		t.Fatalf("userId = %v, want %s", acct.Properties["userId"], garminUser)

@@ -29,9 +29,11 @@ data:
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/garmin/garminpush
 ---
 # The first sync: an account whose OAuth just landed and that has never
-# synced. It records the Garmin user id the pushes are matched on, so no push
-# for the account is written before it has run. Every optional property is
-# read through the `in` idiom, because CEL indexing an absent key throws.
+# synced. It records the Garmin user id the pushes are matched on and commits
+# it before it asks for any backfill. A push that arrives before then names a
+# user no account holds yet, fails, and parks for a retry. Every optional
+# property is read through the `in` idiom, because CEL indexing an absent key
+# throws.
 kind: substrate.reamde.dev/core/trigger
 metadata:
   id: garmin-on-connect
