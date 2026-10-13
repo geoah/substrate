@@ -484,10 +484,11 @@ func whoopHookConfig(t *testing.T, ds substrate.Dataset, fake *fakeWhoop) map[st
 
 // --- the tests --------------------------------------------------------------------
 
-// TestWhoopWebhookFixturesAreSignedAsWhoopDocuments pins the scheme the
-// `whoop-webhook` trigger declares to the recorded deliveries: every one
-// verifies under the fixture secret over the timestamp header plus the body,
-// except 08, which another secret signed.
+// TestWhoopWebhookFixturesAreSignedAsWhoopDocuments is a fixture-integrity
+// check, and no product code runs in it: every recorded delivery verifies
+// under the fixture secret over the timestamp header plus the body, by
+// WHOOP's documented scheme, except 08, which another secret signed. The
+// door's own check runs in TestWhoopWebhookThroughTheDoor.
 func TestWhoopWebhookFixturesAreSignedAsWhoopDocuments(t *testing.T) {
 	t.Parallel()
 	secret := whoopSecret(t)

@@ -1,8 +1,9 @@
 # WHOOP developer API v2: notes for the `healthwhoop` adapter
 
-The provider already exists (`kinds/providers.substrate.reamde.dev/whoop`,
-version 18) and pulls `/v2/cycle`, `/v2/recovery`, `/v2/activity/sleep`,
-`/v2/activity/workout` and the two `/v2/user/*` calls. These fixtures give
+The provider (`kinds/providers.substrate.reamde.dev/whoop`; its version is
+the `version:` in that bundle's package header) pulls `/v2/cycle`,
+`/v2/recovery`, `/v2/activity/sleep`, `/v2/activity/workout` and the two
+`/v2/user/*` calls. These fixtures give
 the adapter a 30-day series (local dates 2026-09-11 to 2026-10-10), a second
 sync that sees a rescore and two deletions, and the webhook deliveries WHOOP
 would send in between. Researched 2026-10-11.
@@ -91,13 +92,13 @@ All facts in this section are [verified] on
   webhook "may be missed", so WHOOP recommends a reconciliation job that
   re-reads the API.
 
-What this means here [inferred, from `map-providers.md`]: the door's `202`
-fits; the trigger must declare `x-whoop-signature` and
-`x-whoop-signature-timestamp` in `source.webhook.headers` or the function
-never sees them; the function cannot read the OAuth client secret, so the
-verifier needs its own copy in a core `secret` record. The mirror keys a
-recovery by cycle id, so `recovery.deleted` (a sleep UUID) needs a lookup by
-the recovery's `sleep` reference.
+What this means here [repo]: the door's `202` fits. The `whoop-webhook`
+trigger declares WHOOP's signature, and the server checks it against the
+config record's client secret before it stores the request (decision 0164),
+so `whoopwebhook` never sees the secret. The mirror keys a recovery by cycle
+id, so `recovery.deleted` (a sleep UUID) needs a lookup by the recovery's
+`sleep` reference, and `recovery.updated` needs the sleep read, which is why
+the recovery toggle also requests `read:sleep`.
 
 ## Objects, units and time
 

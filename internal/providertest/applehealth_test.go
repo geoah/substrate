@@ -910,6 +910,10 @@ func ahDoor(t *testing.T, svc substrate.Service, ds substrate.Dataset, key strin
 	return srv, srv.URL + "/webhooks/" + ds.Repository().Authority + "/" + ahTrigger
 }
 
+// ahClient posts to the door with a deadline, so a door that hangs fails
+// the one test instead of holding the package until its timeout.
+var ahClient = &http.Client{Timeout: 30 * time.Second}
+
 // postAH posts one body the way the app does: JSON, the bearer key, the
 // automation headers and the account header.
 func postAH(t *testing.T, url, key string, body []byte, headers map[string]any) (int, string) {
@@ -926,7 +930,7 @@ func postAH(t *testing.T, url, key string, body []byte, headers map[string]any) 
 			r.Header.Set(k, s)
 		}
 	}
-	res, err := http.DefaultClient.Do(r)
+	res, err := ahClient.Do(r)
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
