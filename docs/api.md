@@ -1225,10 +1225,10 @@ inside, and its number is taken in proportion to the time inside, linearly:
 exact for a stage whose value is its duration, an approximation for an
 amount spread unevenly over its span. Each row counts such amounts in
 `count` and says how many it cut in `prorated`. A summary, a gauge's point
-and a counter's reading land in a window by their instant, so a night's
-recovery stamped at the instant the night ends falls outside it (the window
-is `[at, endsAt)`): widen the window by `around` to take it ([a night and
-its recovery](observations.md#reading)). The records mode reads amounts from
+and a counter's reading land in a window by their instant, so a value
+stamped at the instant a window ends falls outside it (the window is
+`[at, endsAt)`): widen the window by `around` to take it
+([reading](observations.md#reading)). The records mode reads amounts from
 raw points.
 
 **The records' source policy.** Several sources write one night or one run

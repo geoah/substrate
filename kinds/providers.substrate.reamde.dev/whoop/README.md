@@ -19,7 +19,7 @@ fires `whoopwebhook`). They are the contract; this file is not.
 | `config` | the WHOOP OAuth app: client id, sealed secret, data API origin |
 | `account` | one connected WHOOP account, its toggles and every cursor |
 | `user` | one WHOOP member, from the profile and body measurement calls |
-| `cycle` | one physiological cycle, the wake-to-wake day WHOOP scores strain over |
+| `cycle` | one physiological cycle, from one sleep onset to the next: the day WHOOP scores strain over |
 | `recovery` | the verdict on one cycle, keyed on the cycle it scores |
 | `sleep` | one sleep, a night or a nap |
 | `workout` | one recorded activity: sport, strain, zones and distance |
