@@ -36,7 +36,9 @@ name, by the bare id a filter and `sources.order` take:
 A source's record path is `ada.example.com/observations/source/<id>`, and a
 metric's is `ada.example.com/observations/metric/health/<name>`. The answers
 below shorten both to the id after `source/` or `metric/`, and cut keys a
-screen does not use; `...` marks a cut.
+screen does not use; `...` marks a cut. A record's reference property keeps
+its wire shape, `{"ref": "<path>"}`, with the path cut to
+`.../source/<id>`.
 
 ## Sending a request
 
@@ -221,16 +223,16 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/health/sleep"],
 ```text
 {"records": [
    {"id": "applehealth/iphone/apple-watch/sleep/2026-09-21T22:52:00Z",
-    "properties": {"source": "applehealth/iphone/apple-watch", "at": "2026-09-21T22:39:00Z", "endsAt": "2026-09-22T06:24:00Z",
+    "properties": {"source": {"ref": ".../source/applehealth/iphone/apple-watch"}, "at": "2026-09-21T22:39:00Z", "endsAt": "2026-09-22T06:24:00Z",
                    "utcOffsetStart": 60, "utcOffsetEnd": 60, "timeInBed": "PT7H45M", "timeAsleep": "PT7H28M8S",
                    "deep": "PT1H31M37S", "rem": "PT1H49M", "light": "PT4H7M31S", "awake": "PT16M52S",
                    "efficiency": {"value": "96.37", "unit": "%"}, "latency": "PT13M", "isNap": false, ...}},
    {"id": "garmin/ada/x4b2c9e1-6ab1b204/sleep",
-    "properties": {"source": "garmin/ada/account", "utcOffsetStart": 60, "scores": {"overall": "82"}, ...}},
+    "properties": {"source": {"ref": ".../source/garmin/ada/account"}, "utcOffsetStart": 60, "scores": {"overall": "82"}, ...}},
    {"id": "googlefit/e2e/Sleep1790030340000",
-    "properties": {"source": "googlefit/e2e/google-pixel-watch-2.8d1f3c7a", "utcOffsetStart": 180, ...}},
+    "properties": {"source": {"ref": ".../source/googlefit/e2e/google-pixel-watch-2.8d1f3c7a"}, "utcOffsetStart": 180, ...}},
    {"id": "whoop/e2e/0915234f-c9d5-4cd7-b894-ab927380b68c/sleep",
-    "properties": {"source": "whoop/e2e", "timeAsleep": "PT7H30M49.542S", "disturbances": 11,
+    "properties": {"source": {"ref": ".../source/whoop/e2e"}, "timeAsleep": "PT7H30M49.542S", "disturbances": 11,
                    "scores": {"sleepPerformance": "98", "sleepConsistency": "86"}, ...}}], ...}
 ```
 
@@ -411,19 +413,19 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/health/workout"],
 ```text
 {"records": [
    {"id": "applehealth/iphone/9931515A-49DA-4850-A20D-956A5228C096",
-    "properties": {"source": "applehealth/iphone/apple-watch", "sport": "running", "sportSource": "Outdoor Run",
+    "properties": {"source": {"ref": ".../source/applehealth/iphone/apple-watch"}, "sport": "running", "sportSource": "Outdoor Run",
                    "duration": "PT36M43S", "distance": {"value": "5.945", "unit": "km"},
                    "activeEnergy": {"value": "377.2", "unit": "kcal"}, "averageHeartRate": {"value": "142", "unit": "/min"}, ...}},
    {"id": "garmin/ada/21100007000/workout",
-    "properties": {"source": "garmin/ada/forerunner265", "sport": "running", "sportSource": "RUNNING",
+    "properties": {"source": {"ref": ".../source/garmin/ada/forerunner265"}, "sport": "running", "sportSource": "RUNNING",
                    "at": "2026-09-22T06:47:00Z", "endsAt": "2026-09-22T07:24:00Z", "utcOffsetStart": 60,
                    "duration": "PT37M", "distance": {"value": "6007.81", "unit": "m"},
                    "activeEnergy": {"value": "368", "unit": "kcal"}, "averageHeartRate": {"value": "143", "unit": "/min"},
                    "maxHeartRate": {"value": "159", "unit": "/min"}, "elevationGain": {"value": "35", "unit": "m"}, ...}},
    {"id": "googlefit/e2e/strava-15179005962",
-    "properties": {"source": "googlefit/e2e/com-strava", "sport": "running", "sportSource": "8", "duration": "PT35M53S", ...}},
+    "properties": {"source": {"ref": ".../source/googlefit/e2e/com-strava"}, "sport": "running", "sportSource": "8", "duration": "PT35M53S", ...}},
    {"id": "whoop/e2e/c953c21f-cb2c-403a-964a-33b0c2e58afd/workout",
-    "properties": {"source": "whoop/e2e", "sport": "running", "strain": "10.6036",
+    "properties": {"source": {"ref": ".../source/whoop/e2e"}, "sport": "running", "strain": "10.6036",
                    "totalEnergy": {"value": "1620.28426", "unit": "kJ"},
                    "zoneDurations": {"zone3": "PT29M29.83S", "zone4": "PT4M29.973S", ...}, ...}}], ...}
 ```
@@ -729,14 +731,14 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"
 ```text
 {"records": [
    {"id": "garmin/ada/x4b2c9e1-6ab8aec4/systolic_blood_pressure",
-    "properties": {"at": "2026-09-27T05:51:00Z", "value": {"value": "118", "unit": "mm[Hg]"}, "source": "garmin/ada/account",
+    "properties": {"at": "2026-09-27T05:51:00Z", "value": {"value": "118", "unit": "mm[Hg]"}, "source": {"ref": ".../source/garmin/ada/account"},
                    "components": [{"metric": {"ref": ".../metric/health/systolic_blood_pressure"}, "value": {"value": "118", "unit": "mm[Hg]"}},
                                   {"metric": {"ref": ".../metric/health/diastolic_blood_pressure"}, "value": {"value": "68", "unit": "mm[Hg]"}}],
                    "recordingMethod": "automatic", ...}},
    {"id": "googlefit-bdc260a3bb2334ce971b24bf9b102a7a",
-    "properties": {"at": "2026-09-27T05:51:00Z", "value": {"value": "121", ...}, "source": "googlefit/e2e/withings-bpm-connect.7c03d5e1", ...}},
+    "properties": {"at": "2026-09-27T05:51:00Z", "value": {"value": "121", ...}, "source": {"ref": ".../source/googlefit/e2e/withings-bpm-connect.7c03d5e1"}, ...}},
    {"id": "applehealth/iphone/withings/systolic_blood_pressure/2026-09-27T05:51:30Z",
-    "properties": {"at": "2026-09-27T05:51:30Z", "value": {"value": "118", ...}, "source": "applehealth/iphone/withings", ...}}], ...}
+    "properties": {"at": "2026-09-27T05:51:30Z", "value": {"value": "118", ...}, "source": {"ref": ".../source/applehealth/iphone/withings"}, ...}}], ...}
 ```
 
 One Sunday reading reached the repository three times, once through each
@@ -790,13 +792,13 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/health/labresult"],
                    "conversion": {"formula": "ngsp-to-ifcc", "parameters": {"slope": "10.929", "intercept": "2.15"}, ...}, ...}},
    ...,
    {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass/as/health/ldl_cholesterol",
-    "properties": {"metric": "health/ldl_cholesterol", "value": {"value": "2.897", "unit": "mmol/L"},
+    "properties": {"metric": {"ref": ".../metric/health/ldl_cholesterol"}, "value": {"value": "2.897", "unit": "mmol/L"},
                    "referenceRanges": [{"high": {"value": "2.586", "unit": "mmol/L"}}],
                    "interpretation": [{"code": "H", "display": "High"}],
                    "derivedFrom": [{"ref": "ada.example.com/health/labresult/harborpoint/2026-08-31/ldl_cholesterol_mass"}],
                    "conversion": {"formula": "molar-mass", "parameters": {"molarMass": "386.65"}, "version": "1"}, ...}},
    {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass",
-    "properties": {"metric": "health/ldl_cholesterol_mass", "value": {"value": "112", "unit": "mg/dL"},
+    "properties": {"metric": {"ref": ".../metric/health/ldl_cholesterol_mass"}, "value": {"value": "112", "unit": "mg/dL"},
                    "coding": {"system": "http://loinc.org", "code": "13457-7"},
                    "referenceRanges": [{"high": {"value": "100", "unit": "mg/dL"}}],
                    "interpretation": [{"code": "H", "display": "High"}], "status": "final", ...}},
