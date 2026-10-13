@@ -22,7 +22,7 @@ import (
 var testNow = time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
 
 // fakeSubstrate implements the REST subset the CLI talks to (the contract
-// "REST wire contract"): the records route in its three modes over the kind
+// "REST wire contract"): the records route in its four modes over the kind
 // registry and one data kind, the record path, tokens, changes.
 type fakeSubstrate struct {
 	mu      sync.Mutex
