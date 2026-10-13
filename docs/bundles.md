@@ -420,9 +420,16 @@ Beside `erroring` it writes `tokenError` (the provider's HTTP status and RFC
 that declares both `writer: oauth`; a good refresh or a reconnect clears them.
 A provider that answers `invalid_grant` has rejected the refresh token itself,
 so the loop stops refreshing that credential until a reconnect stores a new
-one; every other failure is retried on the next pass.
-An invocation that refreshes a token on the spot reports a failure the same way,
-and keeps trying whatever the loop does.
+one. Any 4xx answer other than 408 and 429, `invalid_grant` included, also
+backs the credential off: neither the loop nor an invocation asks the provider
+again for a minute, then two, doubling up to six hours, and meanwhile an
+invocation gets the last refusal as the account's `tokenError`. A reconnect or
+a good refresh ends the backoff. It lives in memory, so a restart starts it
+over. A 5xx, a 408, a 429 or a network failure is retried on the next pass.
+An invocation that refreshes a token on the spot reports a failure the same
+way. Two refreshes of one credential never overlap: the second waits for the
+first and uses the token it stored. Every token call gives up after 30
+seconds.
 Deleting a connected account revokes best-effort against the declared
 `revocationEndpoint`, deletes the stored credential, and only then releases the
 record. A function never sees any of it — its injected config carries a

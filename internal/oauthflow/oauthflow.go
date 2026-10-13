@@ -4,6 +4,12 @@
 // best-effort revocation — against endpoints DECLARED ON DATA (a bundle's
 // oauth2-trait configuration record), never a compiled-in provider table.
 // Bundles declare auth; this package and the engine's storage run it.
+//
+// Every call the default client makes (exchange, refresh, revoke, account
+// info) ends after CallTimeout, connect to last body byte. The endpoints are
+// a repository's to choose, and the engine's refresh loop walks every
+// repository in turn, so one endpoint that accepts and never answers would
+// otherwise stop every repository's refresh until a restart.
 package oauthflow
 
 import (
@@ -27,6 +33,14 @@ import (
 
 // StateTTL bounds how long a signed state is accepted.
 const StateTTL = 15 * time.Minute
+
+// CallTimeout bounds one call of the default client, the 30 s the
+// embeddings client allows itself too.
+const CallTimeout = 30 * time.Second
+
+// callTimeout is CallTimeout as the default client reads it, a variable only
+// so a test can shorten it.
+var callTimeout = CallTimeout
 
 // ErrBadState is returned for a forged, malformed, or expired state.
 var ErrBadState = errors.New("oauthflow: invalid oauth state")
@@ -77,7 +91,11 @@ func (c *Client) now() time.Time {
 }
 
 // defaultClient is the client for every credential-bearing call this package
-// makes when a caller supplied no seam. It holds two guards at once.
+// makes when a caller supplied no seam. It holds three guards at once.
+//
+// Timeout: callTimeout ends a call whose endpoint accepts the connection and
+// never answers; the package doc says why one such endpoint matters to every
+// repository.
 //
 // CheckRedirect: `http.DefaultClient` FOLLOWS redirects, and a POST body is
 // replayed to the redirect target on a 307/308 — which for Revoke below means
@@ -96,6 +114,7 @@ func (c *Client) now() time.Time {
 // package init before a test's t.Setenv.
 func defaultClient() *http.Client {
 	return &http.Client{
+		Timeout:   callTimeout,
 		Transport: egress.Transport(),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return fmt.Errorf("oauthflow: refusing to follow a redirect to %s on a credential-bearing request", req.URL.Host)
@@ -278,6 +297,23 @@ func (e *TokenError) Error() string {
 func GrantRefused(err error) bool {
 	var te *TokenError
 	return errors.As(err, &te) && te.Code == "invalid_grant"
+}
+
+// Refused reports whether err is the token endpoint refusing the request
+// itself: a 4xx answer other than 408 (Request Timeout) and 429 (Too Many
+// Requests), `invalid_grant` included. The same request meets the same
+// refusal, so a caller that retries it backs off instead of asking at once.
+// A transport error, a 5xx, a 408 and a 429 may pass on their own.
+func Refused(err error) bool {
+	var te *TokenError
+	if !errors.As(err, &te) {
+		return false
+	}
+	switch te.Status {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	}
+	return te.Status >= 400 && te.Status < 500
 }
 
 // sanitizeErrorCode keeps only [a-z0-9_-] (case-folded), bounded to 40
