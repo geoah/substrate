@@ -13,14 +13,14 @@ import (
 )
 
 // THE RECORDS ROUTE. Every "read some records" question is one route,
-// `GET /api/v1/records`, in three modes told apart by their parameters:
+// `GET /api/v1/records`, in four modes told apart by their parameters:
 //
 //	?filter&orderBy&first&after|offset&expand&withAnnotations&count  the list
 //	?q&mode&filter&first                                  the ranked read
 //	?watch=1&filter&from&generation                       the tail
 //	?aggregate&downsample&filter                          the aggregate read
 //
-// The three share `filter`, and each names which of its arms it honors and
+// The four share `filter`, and each names which of its arms it honors and
 // refuses the rest by name: a silently ignored parameter returns unfiltered
 // rows that look filtered. The list carries the whole grammar; the ranked
 // read pushes `filter.kinds` alone into the ranking, because both arms cap

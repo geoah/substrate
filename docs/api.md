@@ -7,7 +7,7 @@ which lists, ranks or tails them depending on its parameters, and are written
 at the **record path**, `/api/v1/{authority}/{package}/{kind}/{id}`, which is
 the record's reference value. A new kind never adds an endpoint: the routes
 are the same for every package. This page is the surface: the records route and
-its three modes, the record path, the filter grammar, pagination, the five
+its four modes, the record path, the filter grammar, pagination, the five
 mutations, discovery, search and the errors. Authentication has a page of its
 own, [users and tokens](auth.md).
 
@@ -56,7 +56,7 @@ GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%
 ### The records route
 
 `GET /api/v1/records` is every "read some records" question, in **four modes**
-told apart by their parameters. The three share `filter`
+told apart by their parameters. The four share `filter`
 ([the grammar](#the-filter-grammar)), and that is where the sharing ends: each
 mode names the parameters and the filter arms it honors and **refuses the rest
 by name** (`400 bad_request`), because a silently ignored parameter returns
@@ -65,10 +65,10 @@ learn, not one uniform grammar.
 
 | Mode | Selected by | Parameters | Filter arms | Answer |
 | --- | --- | --- | --- | --- |
-| **list** | neither `q` nor `watch=1` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations`, `count` | all of them | `{records, cursor?, head, generation, included?, matches?, count?}` |
+| **list** | none of `q`, `watch=1`, `aggregate` and `downsample` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations`, `count` | all of them | `{records, cursor?, head, generation, included?, matches?, count?}` |
 | **ranked** | `q` | `q`, `mode`, `filter`, `first` | `kinds` and `purposes` | `{records, scores, pending}` |
 | **watch** | `watch=1` | `watch`, `filter`, `from`, `generation` | `kinds` alone | the ndjson tail |
-| **aggregate** | `aggregate` (or `downsample`) | `aggregate`, `downsample`, `filter` | a metric read: `kinds`, `implements` and the stream properties; a property read: all of them | `{metric?, property?, unit?, bucket?, from?, exact, rows, sources?, head}` ([the aggregate read](#the-aggregate-read)) |
+| **aggregate** | `aggregate` (or `downsample`) | `aggregate`, `downsample`, `filter` | a metric read: `kinds`, `implements` and the stream properties; a property read: all of them | `{metric?, property?, unit?, units?, bucket?, from?, exact, rows, sources?, head}` ([the aggregate read](#the-aggregate-read)) |
 
 A kind named in `filter.kinds` that this repository never declared is
 `404 not_found`, exactly as the record path answers for an unknown kind.
