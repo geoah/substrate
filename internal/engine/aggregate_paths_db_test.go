@@ -1203,3 +1203,38 @@ func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
 		t.Errorf("the widened nap's time-weighted heart rate = %s, want %v", v, (60*120+80*15)/135.0)
 	}
 }
+
+// A gauge's value carried into a recorded-local read from an offset west of
+// the range's keeps every day of the range on the rollup path: daily body
+// mass at 12:00Z (+00:00) read for five days at +03:00 carries 09-20's
+// reading into 21:00Z, the evening of a day the range does not name, and the
+// fifth day's reading still answers its row on both paths.
+func TestAggregateRecordedLocalCarryFromTheWestKeepsEveryDay(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	noon := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	for d := range 9 {
+		f.mustPut(t, f.observation, "mass/"+strconv.Itoa(d), map[string]any{
+			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
+			"value": quantity(strconv.Itoa(70+d), "kg"), "at": at(noon.AddDate(0, 0, d)), "utcOffset": 0,
+		})
+	}
+	plus3 := time.FixedZone("", 3*3600)
+	from := time.Date(2026, 9, 21, 0, 0, 0, 0, plus3)
+	res, _, rollupRows := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:    rng(from, from.AddDate(0, 0, 5)),
+		Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+		Reducers: reducers("count", "first", "twa"),
+	})
+	if rollupRows == 0 {
+		t.Fatalf("the read took no rollup row; it must reach the rollup path")
+	}
+	last := res.Rows[len(res.Rows)-1]
+	if c, _ := val(last, "count"); c != "1" || last.Start.Format(time.DateOnly) != "2026-09-25" {
+		t.Errorf("the range's last day: %s count %s, want 2026-09-25 with its reading", last.Start.Format(time.RFC3339), c)
+	}
+	if v, _ := val(last, "first"); v != "77" {
+		t.Errorf("the range's last day's first = %q, want 77", v)
+	}
+}

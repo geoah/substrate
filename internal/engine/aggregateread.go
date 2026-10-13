@@ -1667,10 +1667,12 @@ func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) time.Time
 	end := next
 	switch {
 	case r.p.bucket.mode == bucketLocal:
+		// The day's end is computed, not looked up: a bucket made here would
+		// stand for held time that may never land in it.
 		og := r.rowGroups[carry.Group]
 		shift := time.Duration(og.offset) * time.Minute
-		_, b := localBucketAt(r.buckets, slot.UTC().Add(shift), r.p.bucket)
-		if e := b.end.Add(-shift); e.Before(end) {
+		day := calNext(calStart(slot.UTC().Add(shift), r.p.bucket), r.p.bucket)
+		if e := day.Add(-shift); e.Before(end) {
 			end = e
 		}
 	case r.p.bucket.mode == bucketRecords:
