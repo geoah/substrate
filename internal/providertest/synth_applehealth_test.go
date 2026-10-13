@@ -81,6 +81,9 @@ func synthAHRequest(t *testing.T, path string) (map[string]any, string) {
 }
 
 func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
+	// The repository first: newHealthApple skips without python3 and goes
+	// parallel before any data is generated.
+	ds := newHealthApple(t)
 	// Saturday to Monday: two weigh-ins, the Sunday blood pressure, a strength
 	// session, the long run and maybe yoga.
 	p, err := synth.NewPersona(synth.Options{
@@ -134,7 +137,6 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	// dense metric, source and UTC hour.
 	batches, traces := map[string]bool{}, map[string]int{}
 	var hrv, nights, stages int
-	ds := newHealthApple(t)
 	for i, f := range files {
 		req, trigger := synthAHRequest(t, f)
 		if trigger != "applehealth-webhook" {

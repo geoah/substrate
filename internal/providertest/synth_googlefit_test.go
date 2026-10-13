@@ -150,6 +150,7 @@ func synthFitHours(points []map[string]any, origin string) int {
 
 func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	requireUV(t)
+	t.Parallel()
 	// Three local days ending two days ago, so the default 30-day walk
 	// covers them, the UTC evening before the first included, whenever this
 	// runs.

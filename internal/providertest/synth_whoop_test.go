@@ -84,6 +84,9 @@ func synthWhoopRecords(t *testing.T, out *synth.Output, prefix string) []map[str
 }
 
 func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
+	// The repository first: newHealthWhoop skips without uv and goes
+	// parallel before any data is generated.
+	ds, _ := newHealthWhoop(t)
 	// Friday to Monday across the end of the cold: a sick day's nap WHOOP
 	// cannot score, a scored Sunday nap, the long run and maybe yoga.
 	p, err := synth.NewPersona(synth.Options{
@@ -113,7 +116,6 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 		t.Fatalf("the days hold %d workouts and %d naps, %d of them unscorable; pick days that hold each", workouts, naps, unscorable)
 	}
 
-	ds, _ := newHealthWhoop(t)
 	fake := newSynthWhoopFake(t, filepath.Join(dir, "whoop", "recordings"))
 	effects := whoopSync(t, ds, fake, whoopProps(nil))
 	healthDrain(t, ds)
