@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // bothPaths runs one read from rollups where they serve and once from raw
@@ -1545,5 +1547,48 @@ func TestAggregateRollupRowsCountAgainstMaxSamples(t *testing.T) {
 	}
 	if trace.RollupRows() != 96 || trace.RawPoints() != 0 {
 		t.Errorf("the read took %d rollup rows and %d raw points, want 96 and none", trace.RollupRows(), trace.RawPoints())
+	}
+}
+
+// A read while the background pass still owes the observed index of a kind
+// it selects answers exact false: the index holds the previous points of
+// every record the pass has not reached. A re-derivation owed for another
+// kind, outside the filter, leaves the answer exact.
+func TestAggregateIsInexactWhileTheIndexIsRederived(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.heartRate("strap", day, time.Hour, 0, time.Time{}, time.Time{})
+	engine.DrainIndexReprojection(t, f.ds)
+	read := func(kinds ...string) []bool {
+		t.Helper()
+		var out []bool
+		for _, a := range []substrate.Aggregate{
+			{Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")}, Range: rng(day, day.AddDate(0, 0, 1)), Reducers: reducers("count", "max")},
+			{Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")}, Reducers: reducers("last")},
+		} {
+			res, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Filter: substrate.Filter{Kinds: kinds}, Aggregate: &a})
+			if err != nil {
+				t.Fatalf("aggregate: %v", err)
+			}
+			out = append(out, res.Exact)
+		}
+		return out
+	}
+	if got := read(); !slices.Equal(got, []bool{true, true}) {
+		t.Fatalf("with nothing owed: exact %v, want true", got)
+	}
+	if _, err := f.db.Exec(`INSERT INTO index_reprojections (repository, kind, refs, fts, observed) VALUES ($1, $2, false, false, true)`,
+		testdb.Repository(t), f.trace); err != nil {
+		t.Fatalf("owe a re-derivation: %v", err)
+	}
+	if got := read(); !slices.Equal(got, []bool{false, false}) {
+		t.Errorf("with the trace kind owed: exact %v, want false", got)
+	}
+	if got := read(f.trace); !slices.Equal(got, []bool{false, false}) {
+		t.Errorf("with the trace kind owed, filtered to it: exact %v, want false", got)
+	}
+	if got := read(f.observation); !slices.Equal(got, []bool{true, true}) {
+		t.Errorf("with the trace kind owed, filtered to observations: exact %v, want true", got)
 	}
 }

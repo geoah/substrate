@@ -1269,7 +1269,7 @@ which served it; the row's `form` is `summary` where summaries did.
 | `unit` | the values' unit (a coded read's durations unit) |
 | `bucket` | the bucket as the read applied it, defaults filled in; a downsample's computed columns |
 | `from` | the request's `from` |
-| `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value) or a conversion rounded to 20 significant digits. `min` and `max` compare the stored digits exactly and answer the winner's, so they are exact unless their conversion rounds |
+| `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value) or a conversion rounded to 20 significant digits. `min` and `max` compare the stored digits exactly and answer the winner's, so they are exact unless their conversion rounds. Also `false` on a metric, downsample or latest read while the background pass re-derives the observed index of a kind the read selects ([observations](observations.md#the-observed-index)): until the pass reaches a record, the rows hold the points its previous declaration derived |
 | `rows` | one per bucket and group, ordered by bucket, then group, then code |
 | `sources` | every source that fed a row, by record path |
 | `head` | `{changelog, generation}`: the changelog position and history generation the read was served at, as a list page's `head` and `generation` |

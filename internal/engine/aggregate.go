@@ -175,11 +175,39 @@ func (ds *dataset) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*
 	if err != nil {
 		return nil, err
 	}
+	if p.kind != aggProperty {
+		pending, err := ds.observedPending(ctx, tx, p.q.Filter)
+		if err != nil {
+			return nil, err
+		}
+		if pending {
+			res.Exact = false
+		}
+	}
 	res.Head = substrate.AggregateHead{Changelog: head.Int64, Generation: ds.historyGeneration()}
 	if res.Rows == nil {
 		res.Rows = []substrate.AggregateRow{}
 	}
 	return res, nil
+}
+
+// observedPending reports whether the background pass still owes the
+// observed index of a kind the filter admits (reprojection.go): until it
+// reaches a record, the index holds the points the record's previous
+// declaration derived, so the answer is not the one the records give, and
+// the read says so with exact false.
+func (ds *dataset) observedPending(ctx context.Context, tx *sql.Tx, f substrate.Filter) (bool, error) {
+	kinds, err := ds.aggregateKinds(f)
+	if err != nil {
+		return false, err
+	}
+	var pending bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM index_reprojections
+		WHERE observed AND ($1::text[] IS NULL OR kind = ANY($1::text[])))`, kinds).Scan(&pending)
+	if err != nil {
+		return false, fmt.Errorf("substrate/engine: aggregate: read the observed re-derivations owed: %w", err)
+	}
+	return pending, nil
 }
 
 // aggregateTimeout bounds every statement of the read inside the caller's
