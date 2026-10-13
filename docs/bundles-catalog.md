@@ -1696,10 +1696,11 @@ or is skipped and named in the function's `skipped` result, never guessed.
 Values are converted into the metric's unit through the engine's unit table
 (`host.units`), which reads HealthKit's spellings (`lb`, `mi`, `hr`,
 `mmol<180.1558800000541>/L` and the rest) as [aliases](units.md#aliases).
-The adapter reads two itself: `ft` is a foot, which the table reads as the
-femtotonne, and `st` a stone, which UCUM spells as the stere. The app's
-`count` is the metric's own counted unit, which the table refuses as a bare
-spelling.
+The adapter maps four spellings itself. `count/min` and `bpm` become `/min`,
+which is also how the table reads them. `ft` is a foot, which the table reads
+as the femtotonne, and `st` a stone, which UCUM spells as the stere. The
+app's `count` is the metric's own counted unit, which the table refuses as a
+bare spelling.
 
 | App metric | Metric | Written as | Unit |
 | --- | --- | --- | --- |
