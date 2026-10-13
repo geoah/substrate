@@ -85,6 +85,11 @@ export interface LaneSpec {
   about: string[]
   /** Channels the read is narrowed to; absent or empty for every one. */
   channels?: string[]
+  /** The read takes streams on more than one channel (no channel counting
+   * as one), so it groups by channel too and each is a series of its own:
+   * a channel no `in` can name (none) is told apart this way. Grouped by
+   * source, the read groups by channel anyway. */
+  byChannel?: boolean
 }
 
 /** The reducers a lane asks for: the reader's, then (on a level) the
@@ -106,6 +111,17 @@ export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
   return spec.group === "metric" ? undefined : spec.group
 }
 
+/** What a lane's read groups by: by source, each source's channels apart;
+ * otherwise its chart's key, and the channel where the read takes several. */
+export function laneGroupBy(spec: LaneSpec): AggregateGroupKey[] {
+  const groupKey = laneGroupKey(spec)
+  if (groupKey === "source") return ["source", "channel"]
+  return [
+    ...(groupKey ? [groupKey] : []),
+    ...(spec.byChannel ? ["channel" as const] : []),
+  ]
+}
+
 /** The aggregate read one lane issues. Grouped by anything but source, two
  * or more sources (a stream naming none counts as one) are resolved by
  * priority in the reader's order, so one line is one thing: the default
@@ -113,6 +129,7 @@ export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
  * Grouped by source, each keeps its own rows. */
 export function laneRead(spec: LaneSpec): AggregateRead {
   const groupKey = laneGroupKey(spec)
+  const groupBy = laneGroupBy(spec)
   const ranked = spec.sourceOrder.length + (spec.sourceless ? 1 : 0)
   const aggregate: Aggregate = {
     metric: { ref: spec.metricPath },
@@ -122,9 +139,7 @@ export function laneRead(spec: LaneSpec): AggregateRead {
       lt: isoWithOffset(spec.range.end),
     },
     bucket: spec.bucket,
-    ...(groupKey
-      ? { groupBy: groupKey === "source" ? ["source", "channel"] : [groupKey] }
-      : {}),
+    ...(groupBy.length ? { groupBy } : {}),
     reducers: laneReducers(spec),
     ...(groupKey !== "source" && ranked > 1
       ? { sources: { policy: "priority", order: spec.sourceOrder } }

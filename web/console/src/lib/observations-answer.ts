@@ -124,7 +124,8 @@ export function bucketsOf(
 }
 
 /** One answer's series on a bucket axis (`bucketsOf`): one per value of the
- * group key, in first-seen order, each holding one point per bucket. A
+ * group key and channel, in first-seen order, each holding one point per
+ * bucket. A
  * bucket the answer has no row in is a point with no value, so a line
  * breaks there. */
 export function seriesOn(
@@ -141,7 +142,8 @@ export function seriesOn(
   const dropped = new Map<string, number>()
   for (const row of rows) {
     const value = groupValue(row.group, groupKey) ?? ""
-    const channel = groupKey ? row.group?.channel || undefined : undefined
+    // A row carries a channel only where its read grouped by one.
+    const channel = row.group?.channel || undefined
     const key = channelKey(value, channel)
     if (!byKey.has(key)) {
       keys.push(key)

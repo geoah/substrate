@@ -33,6 +33,7 @@ import {
   HEART,
   KINDS,
   LATEST,
+  LATEST_CHANNELS,
   LATEST_PEOPLE,
   MIA,
   RECOVERY,
@@ -748,6 +749,51 @@ describe("selecting streams", () => {
     expect(
       server.seen.filter((r) => r.aggregate.groupBy?.join() === "metric")
     ).toEqual([])
+  })
+
+  it("draws a selected stream on no channel without the source's other channels", async () => {
+    // One day of WHOOP heart rate: 60 on its cycles, 140 in its workouts,
+    // 100 where the read merges the two.
+    const day = (value: string, channel?: string): AggregateRow => ({
+      start: "2026-10-04T00:00:00Z",
+      end: "2026-10-05T00:00:00Z",
+      form: "gauge",
+      group: channel ? { channel } : {},
+      values: [{ reducer: "avg", value, unit: "/min" }],
+      count: 10,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const server = mount(
+      `?timeline=true&${WINDOW}&select=${token("health/heart_rate", "whoop-4-0")}`,
+      KINDS,
+      (read) => {
+        if (!read.aggregate.metric) return latestAnswer(read, LATEST_CHANNELS)
+        const rows = read.aggregate.groupBy?.includes("channel")
+          ? [day("60"), day("140", "workout")]
+          : [day("100")]
+        return { ...LATEST_CHANNELS, rows }
+      }
+    )
+    const panel = await screen.findByRole("region", {
+      name: "Timeline of the selected streams",
+    })
+    await waitFor(() =>
+      expect(server.seen.some((r) => r.aggregate.metric)).toBe(true)
+    )
+    expect(
+      server.seen.find((r) => r.aggregate.metric)!.aggregate.groupBy
+    ).toEqual(["channel"])
+    fireEvent.click(
+      await within(panel).findByRole("button", { name: "Show the numbers" })
+    )
+    const table = within(panel).getByRole("table", {
+      name: "Heart rate in numbers",
+    })
+    expect(within(table).getAllByRole("row")).toHaveLength(2)
+    expect(table.textContent).toContain("60")
+    expect(table.textContent).not.toContain("140")
   })
 
   it("keeps a selected stream in the chart while a filter hides its row", async () => {

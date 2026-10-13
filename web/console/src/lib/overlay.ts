@@ -226,6 +226,8 @@ export interface Plot {
   spec?: LaneSpec
   read?: AggregateRead
   groupKey?: AggregateGroupKey
+  /** The read groups by channel too, so each channel is a series. */
+  byChannel: boolean
   /** The column the chart draws, a reducer key. */
   pickedKey: string
   /** Why the plot asks nothing, in words; absent where it reads. */
@@ -234,8 +236,9 @@ export interface Plot {
   sourceOrder: string[]
   /** The read takes a stream naming no source too, after every named one. */
   sourceless: boolean
-  /** The series a selection names, where the read, grouped by source or
-   * about, answers others too: the chart draws these alone (`plotRows`). */
+  /** The series a selection names, where the read, grouped by source,
+   * about or channel, answers others too: the chart draws these alone
+   * (`plotRows`). */
   only?: string[]
   /** Streams a selection leaves out that the read takes anyway and folds
    * into a selected series: a read narrows sources, things and channels
@@ -340,44 +343,54 @@ export function planPlot(
   const unit = picked !== stored ? picked : undefined
   const asked = picked ?? (info?.unit ? undefined : stored)
   const codes = info?.codeSet
-  // The groups the read makes, as it groups: grouped by source, each
-  // source's channels apart; by about, the owner's streams among them.
-  const groups =
+  // The key a chart's series are told apart by, as `laneGroupKey` has it,
+  // and whether the read groups by channel too: grouped by source always,
+  // otherwise where the streams it takes are on more than one channel (no
+  // channel counting as one), which no `in` can tell apart.
+  const groupKey: AggregateGroupKey | undefined =
     shape === "coded"
-      ? codes?.length || 4
-      : scope.group === "source"
-        ? new Set(selected.map((s) => channelKey(s.source ?? "", s.channel)))
-            .size || 1
-        : scope.group === "about"
-          ? new Set(selected.map((s) => s.about ?? "")).size || 1
-          : 1
+      ? "code"
+      : scope.group === "metric"
+        ? undefined
+        : scope.group
+  const channelsTaken = new Set(selected.map((s) => s.channel ?? "")).size
+  const byChannel = groupKey === "source" || channelsTaken > 1
+  // The part of a series a stream decides: its source or its thing where
+  // the chart is grouped by one, and its channel where the read groups by
+  // channel. Spelled as the answer's groups are, record paths.
+  const partOf = (s: Pick<Stream, "source" | "about" | "channel">) => {
+    const base =
+      groupKey === "source"
+        ? (refPathOf(s.source, obs.pins.source) ?? s.source ?? "")
+        : groupKey === "about"
+          ? (refPathOf(s.about, obs.pins.about) ?? s.about ?? "")
+          : ""
+    return byChannel ? channelKey(base, s.channel) : base
+  }
+  // The groups the read makes, as it groups: a category per code, each
+  // source's or thing's channels apart where it groups by channel.
+  const groups =
+    (shape === "coded" ? codes?.length || 4 : 1) *
+    (new Set(selected.map(partOf)).size || 1)
   const estimate = bucketEstimate(scope.range, scope.size, groups)
   const metricPath = obs.metricPath(metric)
   const sourceOrder = chosenSources.length
     ? chosenSources
     : distinct(selected.map((s) => s.source))
 
-  // Grouped by source (each source's channels apart) or by about, a stream
-  // the selection leaves out answers a series of its own unless it shares
-  // a selected one, so its rows can be dropped; a stream sharing a selected
-  // series, and any under another grouping, folds into that line.
-  const apart =
-    shape !== "coded" && (scope.group === "source" || scope.group === "about")
-  const seriesOf = (s: Stream) =>
-    scope.group === "about"
-      ? (refPathOf(s.about, obs.pins.about) ?? s.about ?? "")
-      : channelKey(
-          refPathOf(s.source, obs.pins.source) ?? s.source ?? "",
-          s.channel
-        )
+  // Where the read groups by what a stream decides (its source, its thing
+  // or its channel), a stream the selection leaves out answers a series of
+  // its own unless it shares a selected one, so its rows can be dropped; a
+  // stream sharing a selected series folds into that line.
+  const apart = groupKey === "source" || groupKey === "about" || byChannel
   const extra = scope.streams
     ? selected.filter((s) => !own.some((o) => o.key === s.key))
     : []
   // The owner's series and a sourceless stream's are "", which is kept.
-  const named = [...new Set(own.map(seriesOf))]
+  const named = [...new Set(own.map(partOf))]
   const only =
-    apart && extra.some((s) => !named.includes(seriesOf(s))) ? named : undefined
-  const mixedIn = extra.filter((s) => !only || named.includes(seriesOf(s)))
+    apart && extra.some((s) => !named.includes(partOf(s))) ? named : undefined
+  const mixedIn = extra.filter((s) => !only || named.includes(partOf(s)))
 
   const spec: LaneSpec | undefined = metricPath
     ? {
@@ -394,6 +407,7 @@ export function planPlot(
         ...(sourceless ? { sourceless } : {}),
         about: chosenAbouts.map((a) => refPathOf(a, obs.pins.about) ?? a),
         ...(channels.length ? { channels: [...channels] } : {}),
+        ...(byChannel && groupKey !== "source" ? { byChannel } : {}),
       }
     : undefined
 
@@ -426,6 +440,7 @@ export function planPlot(
     spec,
     read: spec && !blocked ? laneRead(spec) : undefined,
     groupKey: spec ? laneGroupKey(spec) : undefined,
+    byChannel,
     pickedKey: spec ? reducerKey(laneReducers(spec)[0]) : reducer,
     blocked,
     sourceOrder,
@@ -461,34 +476,41 @@ export function planPlot(
 /** The rows of one plot's answer the chart draws and tabulates: every
  * row, but those of a series the selection leaves out (`Plot.only`). */
 export function plotRows(
-  plot: Pick<Plot, "only" | "groupKey">,
+  plot: Pick<Plot, "only" | "groupKey" | "byChannel">,
   rows: readonly AggregateRow[]
 ): readonly AggregateRow[] {
   const only = plot.only
   if (!only) return rows
-  return rows.filter((r) =>
-    only.includes(
-      plot.groupKey === "about"
-        ? (r.group?.about ?? "")
-        : channelKey(r.group?.source ?? "", r.group?.channel)
+  return rows.filter((r) => {
+    const base =
+      plot.groupKey === "source"
+        ? (r.group?.source ?? "")
+        : plot.groupKey === "about"
+          ? (r.group?.about ?? "")
+          : ""
+    return only.includes(
+      plot.byChannel ? channelKey(base, r.group?.channel) : base
     )
-  )
+  })
 }
 
 /** Every value one plot's series could take, in a stable order: its
  * sources, its things (the owner first), its categories (the metric's own
- * order, then any the answer names besides), or its one series. */
+ * order), or its one series, then any other the answer names (a channel's
+ * series beside them). */
 export function universeOf(
   plot: Pick<Plot, "groupKey" | "sources" | "abouts" | "codes">,
   answered: readonly string[]
 ): string[] {
-  if (plot.groupKey === "source") return [...plot.sources].sort()
-  if (plot.groupKey === "about") return ["", ...[...plot.abouts].sort()]
-  if (plot.groupKey === "code") {
-    const codes = plot.codes ?? []
-    return [...codes, ...[...answered].filter((k) => !codes.includes(k)).sort()]
-  }
-  return [""]
+  const base =
+    plot.groupKey === "source"
+      ? [...plot.sources].sort()
+      : plot.groupKey === "about"
+        ? ["", ...[...plot.abouts].sort()]
+        : plot.groupKey === "code"
+          ? [...(plot.codes ?? [])]
+          : [""]
+  return [...base, ...[...answered].filter((k) => !base.includes(k)).sort()]
 }
 
 /** The key one series is told apart by across a chart's metrics. */

@@ -169,15 +169,17 @@ export function OverlayChart({
   const buckets = bucketsOf(states.map((s) => s.rows))
   const sourceText = (value: string) => obs.nameOf(value, obs.pins.source)
   function labelOf(plot: Plot, s: Series): string {
-    if (plot.groupKey === "source" && s.value) {
-      const name = sourceText(s.value)
-      return s.channel ? `${name} (${s.channel})` : name
-    }
-    if (plot.groupKey === "about") {
-      return s.value ? obs.nameOf(s.value, obs.pins.about) : "You"
-    }
-    if (plot.groupKey === "code" && s.value) return codeWords(s.value)
-    return plot.name
+    const name =
+      plot.groupKey === "source" && s.value
+        ? sourceText(s.value)
+        : plot.groupKey === "about"
+          ? s.value
+            ? obs.nameOf(s.value, obs.pins.about)
+            : "You"
+          : plot.groupKey === "code" && s.value
+            ? codeWords(s.value)
+            : plot.name
+    return s.channel ? `${name} (${s.channel})` : name
   }
 
   // Every value each metric could show, in order, so a toggle or a filter
@@ -233,7 +235,11 @@ export function OverlayChart({
     mark: d.plot.mark,
     band: d.plot.band && lonely(d.plot),
     axis: d.side,
-    stack: d.plot.mark === "stack" ? d.plot.metric : undefined,
+    // A channel's categories stack apart from another channel's.
+    stack:
+      d.plot.mark === "stack"
+        ? seriesKey(d.plot.metric, d.series.channel ?? "")
+        : undefined,
     stale: d.stale,
   }))
   const legend = all.length > 1 || drawn.some((p) => p.groupKey)

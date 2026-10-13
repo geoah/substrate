@@ -274,6 +274,31 @@ export const LATEST_PEOPLE: AggregateResult = {
   ],
 }
 
+/** The latest read with WHOOP's heart rate twice: on no channel (its
+ * cycles) and on its `workout` channel. */
+export const LATEST_CHANNELS: AggregateResult = {
+  ...LATEST,
+  rows: [
+    ...LATEST.rows,
+    row({
+      start: "2026-10-07T05:00:00Z",
+      end: "2026-10-07T05:00:00Z",
+      form: "gauge",
+      group: { metric: HEART, source: WHOOP },
+      values: [{ reducer: "last", value: "58", unit: "/min" }],
+      count: 300,
+    }),
+    row({
+      start: "2026-10-06T18:00:00Z",
+      end: "2026-10-06T18:00:00Z",
+      form: "gauge",
+      group: { metric: HEART, source: WHOOP, channel: "workout" },
+      values: [{ reducer: "last", value: "141", unit: "/min" }],
+      count: 120,
+    }),
+  ],
+}
+
 /** Heart rate zones, weekly, five `durationIn` reducers in minutes. */
 export const ZONES: AggregateResult = {
   metric: HEART,

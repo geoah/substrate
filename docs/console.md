@@ -712,8 +712,9 @@ its selected sources, and to its things and channels where every selected
 stream names one; each keeps its own reducer and unit (`?reducer=`,
 `?unit=`). A stream the read takes that the selection leaves out (WHOOP's
 heart rate on no channel, beside its selected workouts) is left out of the
-chart where it would draw a line of its own, grouped by source or about, and
-named under the chart where it joins a selected line. The panel reads the
+chart where it would draw a line of its own (grouped by source or about, or
+on another channel), and named under the chart where it joins a selected
+line. The panel reads the
 selected metrics' streams on its own and nothing while no stream is
 selected; where that read fails, it says why and offers to try again.
 
@@ -751,7 +752,10 @@ readout (every reducer, the points, the covered time, the sources, and
 where it was read from). Each legend entry hides or
 shows its series, and an axis goes with the last series on it. Grouping
 applies to the whole chart: heart rate grouped by source is one line per
-device, and ungrouped it is one line resolved across them. Click a bucket or
+device, and ungrouped it is one line resolved across them. A source's
+channels never merge: where the streams a read takes are on more than one
+channel (no channel counting as one), the read groups by channel too and
+each channel is a line of its own, named after it ("Heart rate (workout)"). Click a bucket or
 drag across several to zoom in; from the keyboard the arrow keys move
 between buckets and Enter zooms.
 

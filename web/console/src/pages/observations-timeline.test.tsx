@@ -30,6 +30,7 @@ import {
   BODY_MASS,
   GARMIN,
   LATEST,
+  LATEST_CHANNELS,
   LATEST_PEOPLE,
   LEO,
   METRIC,
@@ -852,6 +853,45 @@ describe("the charts", () => {
     await waitFor(() =>
       expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
     )
+  })
+
+  it("draws a source's channels as lines of their own, each named", async () => {
+    const day = (value: string, channel?: string) => ({
+      start: "2026-10-04T00:00:00+03:00",
+      end: "2026-10-05T00:00:00+03:00",
+      form: "gauge",
+      group: channel ? { channel } : {},
+      values: [{ reducer: "avg", value, unit: "/min" }],
+      count: 10,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const server = mount(
+      `?metric=health/heart_rate&source=whoop-4-0&${WINDOW}`,
+      false,
+      (read) => {
+        if (!read.aggregate.metric) return latestAnswer(read, LATEST_CHANNELS)
+        return {
+          ...ZONES,
+          rows: read.aggregate.groupBy?.includes("channel")
+            ? [day("60"), day("140", "workout")]
+            : [day("100")],
+        }
+      }
+    )
+    const heart = await lane("Heart rate")
+    const legend = await within(heart).findByRole("list", {
+      name: "Legend, Heart rate",
+    })
+    expect(
+      within(legend)
+        .getAllByRole("button")
+        .map((b) => b.textContent)
+    ).toEqual(["Heart rate", "Heart rate (workout)"])
+    expect(
+      charts(server.seen, "health/heart_rate").at(-1)!.aggregate.groupBy
+    ).toEqual(["channel"])
   })
 
   it("hides a series from its legend entry and shows it again", async () => {

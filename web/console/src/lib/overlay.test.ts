@@ -508,6 +508,56 @@ describe("one metric's plot", () => {
     expect(plotRows(byAbout, answer)).toEqual([answer[0], answer[2]])
   })
 
+  it("keeps a selected stream on no channel apart from the source's other channels", () => {
+    const garmin = streamsOf(LATEST).find(
+      (s) => s.metric === HEART && s.source === GARMIN
+    )!
+    const whoop = (channel?: string): Stream => ({
+      ...garmin,
+      key: `whoop-${channel ?? ""}`,
+      source: WHOOP,
+      ...(channel ? { channel } : {}),
+    })
+    const cycle = whoop()
+    const workout = whoop("workout")
+    // WHOOP's heart rate on no channel: no `in` names it, so the read
+    // narrowed to WHOOP takes its workouts too, and groups by channel to
+    // tell them apart.
+    const obs = source([garmin, cycle, workout])
+    const scope: PlotScope = {
+      ...SCOPE,
+      sources: [WHOOP],
+      streams: [cycle],
+    }
+    const row = (channel?: string) => ({
+      start: "2026-10-01T00:00:00+03:00",
+      end: "2026-10-02T00:00:00+03:00",
+      group: channel ? { channel } : {},
+      values: [{ reducer: "avg", value: "60", unit: "/min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const answer = [row(), row("workout")]
+    const merged = planPlot(obs, HEART, scope)
+    expect(merged.read?.aggregate.groupBy).toEqual(["channel"])
+    expect(merged.mixedIn).toEqual([])
+    expect(plotRows(merged, answer)).toEqual([answer[0]])
+    // Grouped by about, each thing's channels stay apart the same way.
+    const byAbout = planPlot(obs, HEART, { ...scope, group: "about" })
+    expect(byAbout.read?.aggregate.groupBy).toEqual(["about", "channel"])
+    expect(plotRows(byAbout, answer)).toEqual([answer[0]])
+    // Where every stream the read takes is on one channel, nothing splits.
+    const alone = planPlot(source([garmin, workout]), HEART, {
+      ...SCOPE,
+      sources: [WHOOP],
+      channels: ["workout"],
+      streams: [workout],
+    })
+    expect(alone.read?.aggregate.groupBy).toBeUndefined()
+  })
+
   it("keeps a series' colour whichever series a filter or a toggle hides", () => {
     const bySource = planPlot(source(), HEART, { ...SCOPE, group: "source" })
     expect(bySource.groupKey).toBe("source")
