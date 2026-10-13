@@ -405,7 +405,7 @@ each. A reference column holds the target's record path
 | --- | --- | --- |
 | `observed_points` | value: one per observation, one per point of a trace | the stream, `form`, `ts` and `ts_end`, `utc_offset_min`, `offset_known`, `unit`, `delta`, `value` (float8), `value_exact` (the stored digits), `value_base` (in the measure's base unit), `code`, `statistic`, `bounded`, `quality`, and the parameters a hold and a counter step read: `hold_ms`, `reset_rule`, `reset_at`, `wrap_at`, `circular`, `revision` |
 | `observed_rollups` | stream, form, 15-minute bucket and group (`code`, `unit`, `delta`, `utc_offset_min`, `offset_known`) | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord`, `min_value`, `max_value` |
-| `observed_latest` | stream and `statistic` | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `offset_known`, `record_id`, `revision`, and `points`, the stream's count of available points |
+| `observed_latest` | stream and `statistic` | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `offset_known`, `record_id`, `revision`, and `points`, the row's count of available points |
 
 The rules every column follows are written once, as Go, in
 `internal/observed`: the engine computes each rollup row with it, and the
@@ -419,8 +419,8 @@ A tombstone deletes them (a tombstone keeps its `refs` rows, and loses its
 points: a deleted reading is in no aggregate); a put onto the tombstone
 derives them again; a purge leaves nothing. At the end of the transaction the
 rollup rows of every bucket the old and the new points touched are computed
-again from `observed_points`, once, and so is the latest row of every stream
-they touched. A rebuild and a boot import compute every rollup and latest row
+again from `observed_points`, once, and so is every latest row (a stream and
+a statistic) they touched. A rebuild and a boot import compute every rollup and latest row
 after the replay. Either reads a bucket's points in pages of at most 20,000,
 in `(ts, record_id, ord)` order, into a running state
 (`internal/observed.BucketBuilder`), so a dense bucket is never held in
@@ -443,6 +443,7 @@ reaches a row, its points are the ones the previous declaration derived. A
 tombstone and a purge in that window still take the record's points with
 them, whatever the kind now declares: a purged row is gone before the pass
 could find it.
+
 `observed_index` records the version of the rules the tables were derived
 by (`observedIndexVersion` in `internal/engine/observedindex.go`). An open
 whose binary derives by newer rules, or finds none recorded (a repository
@@ -500,9 +501,8 @@ A rollup row covers one 15-minute bucket aligned on UTC, which every offset
 in use divides, so a civil day at a point's own offset is a run of whole
 rows. Within a bucket a stream's points of one form split into **groups** by
 `code`, `unit`, `delta`, `utc_offset_min` and `offset_known`, and each group
-is one row. The
-statistics are in the row's own `unit`, so two units with no common base
-never add; a reader converts each row to the unit it asks for.
+is one row. The statistics are in the row's own `unit`, so two units with no
+common base never add; a reader converts each row to the unit it asks for.
 
 - A gauge's held time is built from every point of the bucket, whatever its
   code: each available point holds until the next point (an unavailable one
