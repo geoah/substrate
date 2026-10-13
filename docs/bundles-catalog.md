@@ -1108,9 +1108,10 @@ day, and `last2d`, `last30d` (the default), `last90d` and `last1y` reach that
 far back. There is no `all`, because every day is one request per data
 source. A walk the two-minute drain budget cuts off saves the day it reached
 in `syncFloors` and reports `ok (N pending)`; the 15-minute schedule treats it
-as due, so the tick rate is the backfill rate. Once nothing is left over, the
-account syncs at its `syncFrequency`: `off`, `hourly` (the default) or
-`daily`.
+as due, so the tick rate is the backfill rate. A run drops the saved day of a
+data type it does not walk, because its toggle is off or Google refused it.
+Once nothing is left over, the account syncs at its `syncFrequency`: `off`,
+`hourly` (the default) or `daily`.
 
 **Sessions** come from Google's own sync token, kept in
 `syncTokens.sessions`. With no token the list answers what changed in the

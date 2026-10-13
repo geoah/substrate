@@ -79,6 +79,9 @@ type fakeFit struct {
 	feed    map[string]map[string]any
 	window  map[string]any
 	revoked bool
+	// forbidden answers a dataset read of these data sources 403, the answer
+	// to a grant missing the data type's scope.
+	forbidden map[string]bool
 	// ranges is every dataset read, by data source, as the UTC day its range
 	// starts on.
 	ranges map[string][]string
@@ -256,6 +259,11 @@ func (f *fakeFit) start(t *testing.T) {
 			start, end := fitInt(lo), fitInt(hi)
 			q := r.URL.Query()
 			f.mu.Lock()
+			if f.forbidden[sid] {
+				f.mu.Unlock()
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
 			f.ranges[sid] = append(f.ranges[sid], time.Unix(0, start).UTC().Format(time.DateOnly))
 			if q.Get("pageToken") != "" {
 				f.pageTokens++
@@ -789,6 +797,61 @@ func TestGoogleFitStopsOnTheDrainBudgetAndResumes(t *testing.T) {
 	if acct["syncFloors"] != nil || acct["lastCompletedAt"] == nil || acct["syncStatus"] != "ok" {
 		t.Fatalf("after the resumed walk: floors %v, completed %v, status %v",
 			acct["syncFloors"], acct["lastCompletedAt"], acct["syncStatus"])
+	}
+}
+
+// TestGoogleFitDropsTheFloorOfATypeItNoLongerWalks: a floor in syncFloors is
+// a cut-off walk's resume day, and any floor makes the account due on every
+// tick. A run that does not walk a type, because its toggle is off or Google
+// refused it, drops that type's floor, so the account goes back to its
+// cadence instead of a full sync every fifteen minutes.
+func TestGoogleFitDropsTheFloorOfATypeItNoLongerWalks(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	install(t, ds, googlefitDir, nil)
+	today := utcToday()
+	fake := newFakeFit(t, today, fitCutOn)
+	googlefitAccountWith(t, ds, "enabledBody")
+	cut := today.AddDate(0, 0, -20).Format(time.RFC3339)
+
+	run := func(floors map[string]any) map[string]any {
+		t.Helper()
+		cfg := googlefitConfig(t, ds, fake)
+		acct := cfg["accounts"].([]any)[0].(map[string]any)
+		props := map[string]any{}
+		for k, v := range acct["properties"].(map[string]any) {
+			props[k] = v
+		}
+		props["syncFloors"] = floors
+		props["syncFrequency"] = "daily"
+		acct["properties"] = props
+		s := newStepper(t, ds, googlefitSyncFn, cfg)
+		s.setEnvelope(map[string]any{"record": map[string]any{"kind": googlefitAccountType, "id": googlefitAccount}})
+		return accountStamp(t, s.drainApplying(nil), googlefitAccountType, googlefitAccount)
+	}
+
+	// Heart rate was cut off at a floor, then switched off.
+	if stamp := run(map[string]any{"heartRateBpm": cut}); stamp["syncFloors"] != nil {
+		t.Fatalf("a run with heart rate off kept syncFloors %v", stamp["syncFloors"])
+	}
+	// Weight was cut off at a floor, and Google now refuses its data source.
+	fake.mu.Lock()
+	fake.forbidden = map[string]bool{fitWeight: true}
+	fake.mu.Unlock()
+	stamp := run(map[string]any{"weight": cut})
+	if !strings.Contains(fmt.Sprint(stamp["syncMessage"]), "weight") {
+		t.Fatalf("the refused type is not named: %v", stamp["syncMessage"])
+	}
+	if stamp["syncFloors"] != nil {
+		t.Fatalf("a run Google refused weight in kept syncFloors %v", stamp["syncFloors"])
+	}
+
+	// A scheduled sweep right after: daily, synced a moment ago, no floor.
+	fake.forget()
+	newStepper(t, ds, googlefitSyncFn, googlefitConfig(t, ds, fake)).drainApplying(nil)
+	if got := fake.days(fitWeight); len(got) != 0 {
+		t.Fatalf("the sweep synced an account that is not due: read %s on %v", fitWeight, got)
 	}
 }
 

@@ -1473,9 +1473,17 @@ data:
         if cursors:
             patch["syncCursors"] = cursors
         # An unfinished type keeps the day it got to, so the next run resumes
-        # there rather than recomputing a floor off a clock that moved.
+        # there rather than recomputing a floor off a clock that moved. Any
+        # floor makes the account due on every tick (_due), so a type this
+        # run did not walk (switched off) or abandoned (a 403) keeps none.
         floors = dict(props.get("syncFloors") or {})
         for key, _ in (cur.get("drained") or []):
+            floors.pop(key, None)
+        if cur.get("typeNames") is not None:
+            for key in list(floors):
+                if key not in cur["typeNames"]:
+                    floors.pop(key)
+        for key, _ in (cur.get("failed") or []):
             floors.pop(key, None)
         for key in (cur.get("types") or []):
             day = (cur.get("at") or {}).get(key)
