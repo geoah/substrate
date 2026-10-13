@@ -958,7 +958,12 @@ in `repository_migrations` (`version`, `name`, `applied_at`, one row per
 repository), and never runs again on that database. The ledger is checked the
 way `schema_migrations` is: a recorded version this binary does not carry, a
 recorded name that differs, or a pending version below one already recorded
-refuses that repository's open by name, and the API answers `503`. A
+refuses that repository's open by name, and the API answers `503`. A row
+a migration rewrites whose kind the binary's registry does not yet hold keeps
+its refs rows and observed points as they stand, and its kind is queued in
+`index_reprojections`, so the background pass after the open re-derives the
+refs rows, search bands and observed points of every row of it under the
+loaded vocabulary. A
 migration is written to find nothing to do the second time, because a
 repository directory imported into a fresh database carries its changelog and
 not the database's ledger, so every migration runs once more there. That is
