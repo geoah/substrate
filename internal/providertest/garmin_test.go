@@ -475,6 +475,83 @@ func TestGarminPushRefusesAnUnknownUser(t *testing.T) {
 	}
 }
 
+// pushGarminOutput drains one delivery like pushGarmin and returns the last
+// invocation's output.
+func pushGarminOutput(t *testing.T, ds substrate.Dataset, cfg map[string]any, fire string, req map[string]any) map[string]any {
+	t.Helper()
+	s := newStepper(t, ds, garminPushFn, cfg)
+	s.setEnvelope(garminEnvelope(fire, req))
+	var resume any
+	for {
+		_, out, cur := s.step(resume)
+		s.apply()
+		if cur == nil {
+			m, _ := out.(map[string]any)
+			return m
+		}
+		resume = cur
+	}
+}
+
+// TestGarminPushHonorsPauseTogglesAndShape: what the owner turned off is not
+// written, a paused account writes nothing, the body composition spellings
+// some deliveries use land under Garmin's documented names, and a value of
+// the wrong type or a field no kind declares is left out and counted in the
+// output instead of failing the row.
+func TestGarminPushHonorsPauseTogglesAndShape(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds := newGarminDataset(t, nil)
+	dailies := loadGarminFixture(t, "push_dailies.json")
+	comps := loadGarminFixture(t, "push_bodyComps.json")
+	both := map[string]any{"dailies": dailies.body["dailies"][:2], "bodyComps": comps.body["bodyComps"][:2]}
+
+	// Paused: nothing lands, whatever the toggles say.
+	paused := garminConfig(t, ds, "", map[string]any{"userId": garminUser, "syncPaused": true})
+	out := pushGarminOutput(t, ds, paused, "webhook-paused", dailies.withBody(t, both))
+	if n := countLive(t, ds, garminPackage+"/daily") + countLive(t, ds, garminPackage+"/bodycomp"); n != 0 {
+		t.Fatalf("a paused account had %d rows written (output %v)", n, out)
+	}
+	if !strings.Contains(fmt.Sprint(out["skipped"]), "paused or switched off:4") {
+		t.Fatalf("the paused delivery's output %v does not count the four summaries it skipped", out)
+	}
+
+	// Dailies switched off: the body composition beside them lands.
+	noDailies := garminConfig(t, ds, "", map[string]any{"userId": garminUser, "enabledDailies": false})
+	pushGarmin(t, ds, noDailies, "webhook-toggle", dailies.withBody(t, both))
+	if n := countLive(t, ds, garminPackage+"/daily"); n != 0 {
+		t.Fatalf("%d daily rows with enabledDailies off", n)
+	}
+	if n := countLive(t, ds, garminPackage+"/bodycomp"); n != 2 {
+		t.Fatalf("%d body composition rows beside the switched-off dailies, want 2", n)
+	}
+
+	// The alias spellings, a string where an int is declared, and a field
+	// no kind declares.
+	cfg := garminConfig(t, ds, "", map[string]any{"userId": garminUser})
+	comp := map[string]any{
+		"userId": garminUser, "summaryId": "alias-1", "measurementTimeInSeconds": 1789099361,
+		"weightInGrams": "heavy", "percentFat": 18.4, "percentHydration": 57.9, "bmi": 24.8,
+		"visceralFatRating": 7,
+	}
+	out = pushGarminOutput(t, ds, cfg, "webhook-shape", comps.withBody(t, map[string]any{"bodyComps": []any{comp}}))
+	row := bySummaryID(t, ds, "bodycomp")["alias-1"]
+	if row == nil {
+		t.Fatalf("the aliased body composition was not written (output %v)", out)
+	}
+	for field, want := range map[string]float64{"bodyFatInPercent": 18.4, "bodyWaterInPercent": 57.9, "bodyMassIndex": 24.8} {
+		if got, _ := row.Properties[field].(float64); got != want {
+			t.Errorf("%s = %v, want the aliased %v", field, row.Properties[field], want)
+		}
+	}
+	if v, ok := row.Properties["weightInGrams"]; ok && v != nil {
+		t.Errorf("weightInGrams = %v, want the string left out", v)
+	}
+	if fmt.Sprint(out["dropped"]) != "1" || !strings.Contains(fmt.Sprint(out["unknownFields"]), "bodycomp.visceralFatRating") {
+		t.Fatalf("output %v, want one dropped value and bodycomp.visceralFatRating among the unknown fields", out)
+	}
+}
+
 // TestGarminPushPagesALargeDelivery: a body worth more than one invocation's
 // frame is written over several invocations of one chain, and nothing is
 // lost or written twice. Eight copies of the 36-minute run's detail are
