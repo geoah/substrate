@@ -234,8 +234,8 @@ export interface Plot {
   sourceOrder: string[]
   /** The read takes a stream naming no source too, after every named one. */
   sourceless: boolean
-  /** The series a selection names, where the read, grouped by source,
-   * answers others too: the chart draws these alone (`plotRows`). */
+  /** The series a selection names, where the read, grouped by source or
+   * about, answers others too: the chart draws these alone (`plotRows`). */
   only?: string[]
   /** Streams a selection leaves out that the read takes anyway and folds
    * into a selected series: a read narrows sources, things and channels
@@ -357,23 +357,26 @@ export function planPlot(
     ? chosenSources
     : distinct(selected.map((s) => s.source))
 
-  // Grouped by source, the answer keeps each source's channels apart, so
-  // the rows of a stream the selection leaves out can be dropped; any other
-  // grouping folds it into a selected series.
+  // Grouped by source (each source's channels apart) or by about, a stream
+  // the selection leaves out answers a series of its own unless it shares
+  // a selected one, so its rows can be dropped; a stream sharing a selected
+  // series, and any under another grouping, folds into that line.
+  const apart =
+    shape !== "coded" && (scope.group === "source" || scope.group === "about")
   const seriesOf = (s: Stream) =>
-    channelKey(
-      refPathOf(s.source, obs.pins.source) ?? s.source ?? "",
-      s.channel
-    )
+    scope.group === "about"
+      ? (refPathOf(s.about, obs.pins.about) ?? s.about ?? "")
+      : channelKey(
+          refPathOf(s.source, obs.pins.source) ?? s.source ?? "",
+          s.channel
+        )
   const extra = scope.streams
     ? selected.filter((s) => !own.some((o) => o.key === s.key))
     : []
-  const bySource = shape !== "coded" && scope.group === "source"
-  const named = own.map(seriesOf)
+  // The owner's series and a sourceless stream's are "", which is kept.
+  const named = [...new Set(own.map(seriesOf))]
   const only =
-    bySource && extra.some((s) => !named.includes(seriesOf(s)))
-      ? distinct(named)
-      : undefined
+    apart && extra.some((s) => !named.includes(seriesOf(s))) ? named : undefined
   const mixedIn = extra.filter((s) => !only || named.includes(seriesOf(s)))
 
   const spec: LaneSpec | undefined = metricPath
@@ -458,13 +461,17 @@ export function planPlot(
 /** The rows of one plot's answer the chart draws and tabulates: every
  * row, but those of a series the selection leaves out (`Plot.only`). */
 export function plotRows(
-  plot: Pick<Plot, "only">,
+  plot: Pick<Plot, "only" | "groupKey">,
   rows: readonly AggregateRow[]
 ): readonly AggregateRow[] {
   const only = plot.only
   if (!only) return rows
   return rows.filter((r) =>
-    only.includes(channelKey(r.group?.source ?? "", r.group?.channel))
+    only.includes(
+      plot.groupKey === "about"
+        ? (r.group?.about ?? "")
+        : channelKey(r.group?.source ?? "", r.group?.channel)
+    )
   )
 }
 

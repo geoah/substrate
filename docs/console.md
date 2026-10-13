@@ -707,9 +707,9 @@ about or category (`?by=`). Each metric is one aggregate read narrowed to
 its selected sources, and to its things and channels where every selected
 stream names one; each keeps its own reducer and unit (`?reducer=`,
 `?unit=`). A stream the read takes that the selection leaves out (WHOOP's
-heart rate on no channel, beside its selected workouts) is left out of a
-chart grouped by source, and named under any other chart, whose line it
-joins.
+heart rate on no channel, beside its selected workouts) is left out of the
+chart where it would draw a line of its own, grouped by source or about, and
+named under the chart where it joins a selected line.
 
 **The timeline** (`/observations/timeline`) draws the chosen metrics over one
 range on one time axis. They overlay in one chart while they fit two units

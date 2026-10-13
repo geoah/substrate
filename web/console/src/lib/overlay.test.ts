@@ -22,7 +22,9 @@ import {
   GARMIN,
   HEART,
   LATEST,
+  LEO,
   METRIC,
+  MIA,
   RECOVERY,
   SLEEP_STAGE,
   SOURCE,
@@ -462,6 +464,48 @@ describe("one metric's plot", () => {
     expect(merged.only).toBeUndefined()
     expect(merged.mixedIn).toEqual([cycle])
     expect(plotRows(merged, answer)).toBe(answer)
+  })
+
+  it("draws only the selected things where the read, grouped by about, takes others too", () => {
+    const garmin = streamsOf(LATEST).find(
+      (s) => s.metric === HEART && s.source === GARMIN
+    )!
+    const stream = (src: string, about?: string): Stream => ({
+      ...garmin,
+      key: `${src}-${about ?? "owner"}`,
+      source: src,
+      about,
+    })
+    const yours = stream(GARMIN)
+    const mia = stream(GARMIN, MIA)
+    const leo = stream(APPLE, LEO)
+    const appleYours = stream(APPLE)
+    // Your Garmin and Leo's Apple Watch: you name no thing, so the read
+    // narrows sources alone and takes Mia's Garmin and your Apple Watch too.
+    const obs = source([yours, mia, leo, appleYours])
+    const scope: PlotScope = {
+      ...SCOPE,
+      group: "about",
+      sources: [GARMIN, APPLE],
+      streams: [yours, leo],
+    }
+    const byAbout = planPlot(obs, HEART, scope)
+    expect(byAbout.groupKey).toBe("about")
+    expect(byAbout.only).toEqual(["", LEO])
+    // Your Apple Watch joins your line; Mia's Garmin is a line of its own.
+    expect(byAbout.mixedIn).toEqual([appleYours])
+    const row = (about?: string) => ({
+      start: "2026-10-01T00:00:00+03:00",
+      end: "2026-10-02T00:00:00+03:00",
+      group: about ? { about } : {},
+      values: [{ reducer: "avg", value: "60", unit: "/min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const answer = [row(), row(MIA), row(LEO)]
+    expect(plotRows(byAbout, answer)).toEqual([answer[0], answer[2]])
   })
 
   it("keeps a series' colour whichever series a filter or a toggle hides", () => {
