@@ -51,7 +51,7 @@ import type { AggregateFrom } from "@/lib/api/types"
 import { distinct, sameRef } from "@/lib/observations"
 import { FROM_CHOICES } from "@/lib/observations-reads"
 import { nightBucket } from "@/lib/observations-time"
-import { planPlot, splitCharts } from "@/lib/overlay"
+import { groupFixed, planPlot, splitCharts } from "@/lib/overlay"
 import { shortRef } from "@/lib/stream-table"
 import { ARRAY, FROM_VALUES, GROUP_VALUES } from "@/lib/timeline-address"
 
@@ -264,6 +264,7 @@ export function ObservationsTimelinePage() {
           <GroupControl
             value={group}
             onChange={(next) => void setGroup(next === "metric" ? null : next)}
+            fixed={groupFixed(plots)}
           />
           <Labelled label="Read from">
             <Segmented

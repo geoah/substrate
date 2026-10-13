@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
 import { nightBucket, type RangePreset } from "@/lib/observations-time"
-import { planPlot } from "@/lib/overlay"
+import { groupFixed, planPlot } from "@/lib/overlay"
 import {
   selectedStreams,
   selectionByMetric,
@@ -132,6 +132,7 @@ export function TimelinePanel({
         <GroupControl
           value={by}
           onChange={(next) => void setBy(next === "metric" ? null : next)}
+          fixed={groupFixed(plots)}
         />
         <span className="flex-1" />
         {selection.length > 0 && (

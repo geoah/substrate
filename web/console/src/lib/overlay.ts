@@ -752,6 +752,16 @@ export function seriesKey(metric: string, value: string): string {
   return `${metric}\u0000${value}`
 }
 
+/** Why Group by does nothing for `plots`, where every one is a category:
+ * a category's stacks are always its codes (`planPlot`). */
+export function groupFixed(
+  plots: readonly Pick<Plot, "shape">[]
+): string | undefined {
+  return plots.length > 0 && plots.every((p) => p.shape === "coded")
+    ? "A category metric is always grouped by its categories."
+    : undefined
+}
+
 /** A category's colour, the same on every surface that draws it (the
  * timeline's stacks, a sleep's hypnogram and its stage bars): its place in
  * the metric's own codes. A code outside them is the quiet grey. */

@@ -62,21 +62,28 @@ export function DayControl({
   )
 }
 
+/** What to group the series by. Where every metric drawn is a category,
+ * whose stacks are always its codes, the choice does nothing: `fixed` says
+ * why, and the control shows Metric, disabled, beside the reason. */
 export function GroupControl({
   value,
   onChange,
+  fixed,
 }: {
   value: GroupChoice
   onChange: (next: GroupChoice) => void
+  fixed?: string
 }) {
   return (
     <Labelled label="Group by">
       <Segmented
         label="Group by"
-        value={value}
+        value={fixed ? "metric" : value}
         options={GROUP_CHOICES}
         onChange={onChange}
+        disabled={Boolean(fixed)}
       />
+      {fixed && <span className="text-[12.5px] text-faint">{fixed}</span>}
     </Labelled>
   )
 }

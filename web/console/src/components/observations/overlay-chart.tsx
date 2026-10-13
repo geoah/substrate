@@ -900,7 +900,14 @@ function chartNotes(
         `Also reads ${listWords(named)}, which the selection leaves out: a read narrows sources, things and channels each on its own.`
       )
     }
-    if (plot.shape === "coded") own.push("Stacked by category.")
+    if (plot.shape === "coded") {
+      // Grouped by source or about, it says it leaves this one be.
+      own.push(
+        plot.spec && plot.spec.group !== "metric"
+          ? "Stacked by category: Group by does not apply to a category metric."
+          : "Stacked by category."
+      )
+    }
     if (!held && overfull(plot, rows)) {
       own.push(
         "Some spans are longer than one bucket and count whole in the bucket they start in, so a bucket can hold more time than it lasts. Pick Day to see each night whole."

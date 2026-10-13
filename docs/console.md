@@ -779,7 +779,9 @@ workout's trace, by the minute, and reads in days where it would read in
 hours and a sleep metric is drawn, since a source may write a night's
 time in each stage as one span over the whole night), where a day, week or month starts (where
 you were, or your time zone), what to group by (metric,
-source or about; a category metric is always grouped by code), where to read from (automatic, raw points,
+source or about; a category metric is always grouped by code, so where
+every metric drawn is one, **Group by** is disabled and says so, and beside
+other metrics its chart says Group by does not apply to it), where to read from (automatic, raw points,
 vendor summaries, or raw where a bucket is covered), and the sources,
 things and channels to keep. Under each chart, each metric's numbers as a table that
 copies as tab-separated text; with Technical details on, each request itself

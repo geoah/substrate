@@ -579,6 +579,38 @@ describe("the timeline's requests", () => {
     ).toEqual(["Metric", "Source", "About"])
   })
 
+  it("says Group by does nothing where every metric is a category", async () => {
+    mount(`?metric=health/sleep_stage&group=source&${WINDOW}`)
+    const sleep = await lane("Sleep stage")
+    const group = screen.getByRole("radiogroup", { name: "Group by" })
+    await waitFor(() =>
+      expect(group.getAttribute("aria-disabled")).toBe("true")
+    )
+    expect(
+      within(group)
+        .getByRole("radio", { name: "Metric" })
+        .getAttribute("aria-checked")
+    ).toBe("true")
+    expect(
+      screen.getByText("A category metric is always grouped by its categories.")
+    ).toBeTruthy()
+    // Beside a metric it does cut, the category's chart says it stays.
+    cleanup()
+    mount(`?metric=health/sleep_stage,health/body_mass&group=source&${WINDOW}`)
+    const both = await lane("Sleep stage and Weight")
+    expect(
+      await within(both).findByText(
+        "Sleep stage: stacked by category: Group by does not apply to a category metric."
+      )
+    ).toBeTruthy()
+    expect(
+      screen
+        .getByRole("radiogroup", { name: "Group by" })
+        .getAttribute("aria-disabled")
+    ).toBe(null)
+    expect(sleep).toBeTruthy()
+  })
+
   it("keeps a metric's reducer when another metric is picked", async () => {
     const server = mount(
       `?metric=health/body_mass&reducer=health%2Fbody_mass~max&${WINDOW}`
