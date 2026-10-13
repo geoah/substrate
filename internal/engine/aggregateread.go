@@ -101,6 +101,9 @@ type aggEvidence struct {
 	// ends are a recorded-local row's own first and last points and held
 	// time, which its start and end are written at.
 	ends rowEnds
+	// extremes are a rollup-served downsample column's min and max and where
+	// they lie (aggExtreme), so each answers the instant it was taken at.
+	extremes [2]*aggExtreme
 }
 
 // aggSteps are a counter's steps in one row: their increase, exactly, the
@@ -157,6 +160,11 @@ func (r *aggRun) eval(groups []*aggGroup) (raws, sums []aggCells, err error) {
 			if sums[gi], err = r.evalRaw(g, g.sums, vocabulary.FormSummary); err != nil {
 				return nil, nil, err
 			}
+		}
+	}
+	if r.p.kind == aggDownsample {
+		if err := r.extremeInstants(groups, raws); err != nil {
+			return nil, nil, err
 		}
 	}
 	return raws, sums, nil

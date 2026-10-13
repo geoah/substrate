@@ -1481,11 +1481,13 @@ where summaries did.
 | `unavailable` | a row whose range has expired index points a reducer needs; nothing expires yet, so it is always `false` |
 | `nonAdditive` | the records mode: windows may overlap |
 
-A value is `{reducer, value, unit?, code?, rolling?, of?, n?}`. `value` is a
-decimal string, or `null` where the reducer has no answer (an average of no
-points). A coded `first` or `last` answers its `code` with `value` `null`. A
-rolling value names the reducer it rolls over in `of`, the window in
-`rolling`, and in `n` the buckets of the window that held a value.
+A value is `{reducer, value, unit?, code?, at?, rolling?, of?, n?}`. `value`
+is a decimal string, or `null` where the reducer has no answer (an average of
+no points). A coded `first` or `last` answers its `code` with `value` `null`.
+On a downsample, `at` is the instant a column's `first`, `last`, `min` or
+`max` was taken at, in the row's offset. A rolling value names the reducer
+it rolls over in `of`, the window in `rolling`, and in `n` the buckets of
+the window that held a value.
 
 ### Where a bucket is served from
 
@@ -1565,9 +1567,15 @@ day's own window reaches back no further than the read's lookback, and its
 `downsample={"points": 800, "method": "m4"}` beside an `aggregate` naming a
 `metric` and a `range` cuts the range into at most `points` columns, each
 answering `first`, `last`, `min` and `max`: the four values a chart needs per
-pixel column. A column is widened to whole quarter hours where the range
-allows, so its rows are whole rollup rows; the response's `bucket` names the
-width. It is refused beside `reducers`, `rolling`, `fill` and `bucket`.
+pixel column. Each of the four carries `at`, the instant its point was taken
+at, so a chart draws them in time order where they lie in the column; of
+equal extremes, the earliest. A column is widened to whole quarter hours
+where the range allows, so its rows are whole rollup rows; the response's
+`bucket` names the width. A rollup row keeps its extremes and not their
+instants, so a column served from rows finds each extreme's point in the
+quarter hour holding it, one statement for the read, its points counted
+against `maxSamples`. It is refused beside `reducers`, `rolling`, `fill` and
+`bucket`.
 
 ### The property read
 

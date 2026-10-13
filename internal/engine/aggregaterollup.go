@@ -76,6 +76,7 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 					}
 				}
 				r.mergeStats(ev, st, g.form, si)
+				r.offerExtremes(ev, st, rowCand(s, si, row, og))
 				ev.sources[s.source] = true
 				switch {
 				case g.form == vocabulary.FormAmount && row.First != nil:
@@ -363,6 +364,7 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 				}
 				ev := cell(out, b, groups[key], g.form, false)
 				r.mergeStats(ev, conv, g.form, si)
+				r.offerExtremes(ev, conv, pointCand(pts, key, *st, si))
 				if st.N > 0 {
 					ev.sources[s.source] = true
 				}

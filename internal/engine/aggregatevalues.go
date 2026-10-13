@@ -45,7 +45,7 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 	}
 	sort.Strings(row.Sources)
 	var err error
-	if row.Values, err = r.values(ev, g, code); err != nil {
+	if row.Values, err = r.values(ev, g, code, start.Location()); err != nil {
 		return row, err
 	}
 	if tr := traceOf(r.ctx); tr != nil {
@@ -58,8 +58,8 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 // reducer over a row is as long as the row's points or spans, so the copies
 // it reads (taken once per row) and the reducer itself check the context as
 // they go (observed's Context forms).
-func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.AggregateValue, error) {
-	v := &rowValues{r: r, ev: ev, g: g, code: code}
+func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string, zone *time.Location) ([]substrate.AggregateValue, error) {
+	v := &rowValues{r: r, ev: ev, g: g, code: code, zone: zone}
 	tr := traceOf(r.ctx)
 	for _, red := range r.p.reducers {
 		if err := r.ctx.Err(); err != nil {
@@ -103,6 +103,18 @@ type rowValues struct {
 	points []observed.Point
 	copied bool
 	out    []substrate.AggregateValue
+	// zone is where a downsample's instants are written: the row's start's.
+	zone *time.Location
+}
+
+// stamp writes, on a downsample, the instant a value was taken at, in the
+// row's zone.
+func (v *rowValues) stamp(value *substrate.AggregateValue, at *time.Time) {
+	if v.r.p.kind != aggDownsample || at == nil {
+		return
+	}
+	t := at.In(v.zone)
+	value.At = &t
 }
 
 // everything is the window a row's reducers read its points over: the
@@ -188,6 +200,7 @@ func (v *rowValues) extreme(red substrate.AggregateReducer) error {
 	r, ev := v.r, v.ev
 	var digits string
 	var ok bool
+	var at *time.Time
 	switch {
 	case ev.raw:
 		best := observed.MinPointContext
@@ -202,15 +215,16 @@ func (v *rowValues) extreme(red substrate.AggregateReducer) error {
 		if p, ok, err = best(r.ctx, list, everything); err != nil {
 			return err
 		}
-		digits = p.Exact
+		digits, at = p.Exact, &p.At
 	case red.Name == substrate.ReducerMin:
-		digits, ok = ev.stats.MinExact, ev.stats.Values > 0
+		digits, ok, at = ev.stats.MinExact, ev.stats.Values > 0, ev.extremes[0].at()
 	default:
-		digits, ok = ev.stats.MaxExact, ev.stats.Values > 0
+		digits, ok, at = ev.stats.MaxExact, ev.stats.Values > 0, ev.extremes[1].at()
 	}
 	value := substrate.AggregateValue{Reducer: red, Unit: r.u.value}
 	if ok {
 		value.Value = &digits
+		v.stamp(&value, at)
 	}
 	v.out = append(v.out, value)
 	return nil
@@ -244,6 +258,9 @@ func (v *rowValues) point(red substrate.AggregateReducer) error {
 	value, err := r.pointValue(red, p, ok)
 	if err != nil {
 		return err
+	}
+	if ok {
+		v.stamp(&value, &p.At)
 	}
 	v.out = append(v.out, value)
 	return nil

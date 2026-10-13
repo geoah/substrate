@@ -489,6 +489,10 @@ type AggregateValue struct {
 	Unit string `json:"unit,omitempty"`
 	// Code is a coded first or last, or the state a timeInState value is for.
 	Code string `json:"code,omitempty"`
+	// At is, on a downsample, the instant the column's first, last, min or
+	// max was taken at, so a chart draws each where it lies in the column;
+	// of equal extremes, the earliest.
+	At *time.Time `json:"at,omitempty"`
 	// Rolling and Of mark a rolling value: Of is the reducer it rolls over
 	// Rolling buckets. N is the buckets in the window with a value of Of,
 	// fewer than Rolling where the window holds a gap.

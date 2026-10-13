@@ -608,6 +608,9 @@ export interface AggregateValue {
   /** The code a coded `first` or `last` answers, or the state a
    * `timeInState` value is the time of. */
   code?: string
+  /** On a downsample, the instant a column's `first`, `last`, `min` or
+   * `max` was taken at (of equal extremes, the earliest). */
+  at?: string
   /** A rolling value: `of` rolled over `rolling` buckets, `n` of which held
    * a value. */
   rolling?: number

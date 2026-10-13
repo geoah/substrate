@@ -530,6 +530,7 @@ const aggregateValue: Shape<AggregateValue> = {
   value: true,
   unit: false,
   code: false,
+  at: false,
   rolling: false,
   of: false,
   n: false,
