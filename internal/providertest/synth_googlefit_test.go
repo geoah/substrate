@@ -132,11 +132,15 @@ func synthFitHours(points []map[string]any, origin string) int {
 func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
-	// Three local days ending two days ago, so the default 30-day walk
-	// covers them, the UTC evening before the first included, whenever this
-	// runs.
-	end := utcToday().AddDate(0, 0, -2)
-	start := end.AddDate(0, 0, -2)
+	// Three local days around the latest Wednesday or Saturday (a glucose
+	// meter morning, a weigh-in and a workout either side) that ends two or
+	// more days ago, so the default 30-day walk covers them, the UTC evening
+	// before the first included, whenever this runs.
+	meter := utcToday().AddDate(0, 0, -3)
+	for meter.Weekday() != time.Wednesday && meter.Weekday() != time.Saturday {
+		meter = meter.AddDate(0, 0, -1)
+	}
+	start, end := meter.AddDate(0, 0, -1), meter.AddDate(0, 0, 1)
 	p, err := synth.NewPersona(synth.Options{
 		Start: synth.NewDate(start.Year(), start.Month(), start.Day()),
 		End:   synth.NewDate(end.Year(), end.Month(), end.Day()),
@@ -179,8 +183,8 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 			glucose++
 		}
 	}
-	if workouts == 0 || weighIns == 0 {
-		t.Fatalf("the three days hold %d workouts and %d weigh-ins; the window needs both", workouts, weighIns)
+	if workouts == 0 || weighIns == 0 || glucose == 0 {
+		t.Fatalf("the three days hold %d workouts, %d weigh-ins and %d glucose readings; the window needs each", workouts, weighIns, glucose)
 	}
 
 	_, ds := newCoreDataset(t)
@@ -297,14 +301,11 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	}
 	wantObs := map[string]int{
 		"health/body_mass": weighIns, "health/body_fat_fraction": weighIns, "health/height": 1,
-		"health/spo2": nights, "health/sleep_stage": stages,
+		"health/spo2": nights, "health/sleep_stage": stages, "health/blood_glucose": glucose,
 	}
 	if pressures > 0 {
 		wantObs["health/systolic_blood_pressure"] = pressures
 		wantObs["health/diastolic_blood_pressure"] = pressures
-	}
-	if glucose > 0 {
-		wantObs["health/blood_glucose"] = glucose
 	}
 	for metric, want := range wantObs {
 		if byMetric[metric] != want {
@@ -334,7 +335,7 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	for _, s := range listLive(t, ds, obsSource) {
 		sources[strings.TrimPrefix(s.ID, "googlefit/"+googlefitAccount+"/")] = true
 	}
-	for _, slug := range []string{fitWatchSlug, fitScaleSlug, "manual"} {
+	for _, slug := range []string{fitWatchSlug, fitScaleSlug, "ascensia-contour-next-one.5e2a91c7", "manual"} {
 		if !sources[slug] {
 			t.Errorf("no source %s among %v", slug, sources)
 		}
