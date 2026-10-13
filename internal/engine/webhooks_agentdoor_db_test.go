@@ -261,3 +261,80 @@ func TestAnAgentWebhookChecksItsBundlesClientSecret(t *testing.T) {
 		t.Fatalf("the stored signed request opened %d threads in all, want 2", n)
 	}
 }
+
+// A request admitted while its trigger called a function rides up to the
+// function's 8 MiB. Pointed at an agent afterwards, the trigger holds the
+// stored request to the agent's 1 MiB before the loop runs it: a retry by
+// hand and the dispatcher's resume each park it on its first attempt with
+// no thread and no model turn, and a body of exactly 1 MiB, which rides as
+// base64, still runs.
+func TestAnAgentWebhookStoredForAFunctionIsHeldToOneMiB(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	keeper := vocabulary.RecordPath(kindAgent, crewPackage+"/keeper")
+	hook := putWebhookTrigger(t, ds, vocabulary.RecordPath(kindFunction, crewPackage+"/keyecho"), map[string]any{})
+	authority := testdb.Repository(t)
+	receive := func(name string, req substrate.WebhookRequest) string {
+		t.Helper()
+		fid, err := ds.svc.receiveWebhook(ctx, authority, hook, "", req, webhookFireHeld)
+		if err != nil {
+			t.Fatalf("receive %s for the function: %v", name, err)
+		}
+		return fid
+	}
+	// 0xff is no UTF-8 byte, so the body rides the envelope as base64.
+	binary := func(n int) substrate.WebhookRequest {
+		return substrate.WebhookRequest{
+			Method: "POST", ContentType: "application/octet-stream",
+			Headers: map[string]string{"content-type": "application/octet-stream"},
+			Body:    bytes.Repeat([]byte{0xff}, n),
+		}
+	}
+	retried := receive("a 2 MiB body", binary(2<<20))
+	resumed := receive("two inline parts of 600 KiB", substrate.WebhookRequest{
+		Method: "POST", ContentType: "multipart/form-data", Headers: map[string]string{},
+		Parts: []substrate.WebhookPart{
+			{Name: "a", Value: string(bytes.Repeat([]byte("a"), 600<<10))},
+			{Name: "b", Value: string(bytes.Repeat([]byte("b"), 600<<10))},
+		},
+	})
+	fits := receive("a 1 MiB body", binary(1<<20))
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger, ID: hook,
+		Properties: map[string]any{"source": map[string]any{"webhook": map[string]any{}}, "callable": keeper},
+	}); err != nil {
+		t.Fatalf("point the trigger at the agent: %v", err)
+	}
+	byFire := func() map[string]substrate.TriggerFailure {
+		t.Helper()
+		rows, err := ds.TriggerFailures(ctx, hook)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]substrate.TriggerFailure{}
+		for _, r := range rows {
+			out[r.FireID] = r
+		}
+		return out
+	}
+	const capped = "an agent callable reads at most 1 MiB"
+	if _, err := ds.RetryTriggerFailure(ctx, hook, byFire()[retried].ID); !errors.Is(err, substrate.ErrParked) || !strings.Contains(err.Error(), capped) {
+		t.Fatalf("a hand's retry of the 2 MiB body: err = %v, want parked, %q", err, capped)
+	}
+	fake.script("keep", fakeTurn{content: "read it"})
+	ds.runPendingWebhooks(ctx)
+	rows := byFire()
+	if r, ok := rows[resumed]; !ok || r.Attempts != 1 || !strings.Contains(r.LastError, capped) {
+		t.Fatalf("the resumed 1.2 MiB form: %+v (present %v), want parked on attempt 1, %q", r, ok, capped)
+	}
+	if r, ok := rows[fits]; ok {
+		t.Fatalf("the 1 MiB body did not run: %+v", r)
+	}
+	if n := threadCountOf(t, ds, crewPackage+"/keeper"); n != 1 {
+		t.Fatalf("keeper threads: %d, want 1, the 1 MiB body's", n)
+	}
+	if n := len(fake.requestsOf("keep")); n != 1 {
+		t.Fatalf("model turns: %d, want 1, the 1 MiB body's", n)
+	}
+}

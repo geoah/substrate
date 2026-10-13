@@ -333,7 +333,10 @@ rides inline; a multipart request may total 32 MiB. An [agent](agents.md)
 callable reads the request in its user message, which is stored as an
 `llm/message` record and sent to the model, so a request bound for one
 carries at most 1 MiB inline, its body or its parts' values together, and
-the door answers a larger one `413`. An authenticated wake
+the door answers a larger one `413`. A retry or a resume runs a stored
+request through the callable the trigger names at that time, so a larger
+request stored for a function parks without a model turn once the trigger
+names an agent. An authenticated wake
 (`POST …/trigger/{id}/wake`) carries no `request`.
 
 **One `kind`, everywhere.** A kind is named by a reference:

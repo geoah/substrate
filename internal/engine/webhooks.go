@@ -31,8 +31,16 @@ const webhookFirePrefix = "hook-"
 // the request in its user message, which is an llm/message record in the
 // changelog and a turn sent to the model provider, so it is held to the 1 MiB
 // an authenticated agent call's body may carry. A function callable reads
-// the door's 8 MiB.
+// the door's 8 MiB. The door checks it at admission and agentFire before
+// every run, because a stored request runs through the callable its
+// trigger names at that time.
 const maxAgentWebhookInline = 1 << 20
+
+// errAgentWebhookTooLarge parks a stored webhook request whose inline bytes
+// pass maxAgentWebhookInline when its trigger now calls an agent: the door
+// admitted it for a function. It is deterministic, because the stored bytes
+// are as large on every attempt.
+var errAgentWebhookTooLarge = errors.New("webhook request too large for an agent callable")
 
 // errWebhookRefused is every refusal the door must not explain: no such
 // repository, no such trigger, a trigger of another source, a disabled one, an
@@ -704,6 +712,31 @@ func webhookInlineBytes(req substrate.WebhookRequest) int {
 	for _, p := range req.Parts {
 		if p.Data == nil {
 			n += len(p.Value)
+		}
+	}
+	return n
+}
+
+// deliveredInlineBytes is webhookInlineBytes over a delivered envelope's
+// request, as fireEnvelope restored it: the body's raw bytes, counted from
+// its text or its padded base64 without decoding, or the multipart inline
+// part values. A file part rides by digest.
+func deliveredInlineBytes(envelope map[string]any) int {
+	req, _ := envelope["request"].(map[string]any)
+	n := 0
+	if body, _ := req["body"].(map[string]any); body != nil {
+		if text, ok := body["text"].(string); ok {
+			n += len(text)
+		} else if enc, ok := body["base64"].(string); ok {
+			n += base64.StdEncoding.DecodedLen(len(enc)) - strings.Count(enc[max(len(enc)-2, 0):], "=")
+		}
+	}
+	parts, _ := req["parts"].([]any)
+	for _, raw := range parts {
+		if part, ok := raw.(map[string]any); ok {
+			if value, ok := part["value"].(string); ok {
+				n += len(value)
+			}
 		}
 	}
 	return n

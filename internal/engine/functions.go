@@ -1923,7 +1923,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		}
 		lastErr = err
 		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) ||
-			errors.Is(err, errAgentThreadOpened) || errors.Is(err, errWebhookUnverified) {
+			errors.Is(err, errAgentThreadOpened) || errors.Is(err, errWebhookUnverified) || errors.Is(err, errAgentWebhookTooLarge) {
 			attempts = attempt + 1
 			break
 		}
