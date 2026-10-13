@@ -183,6 +183,20 @@ CREATE TABLE IF NOT EXISTS observed_latest (
     PRIMARY KEY (repository, metric, kind, source, about, channel, statistic)
 );
 
+-- observed_index: which derivation rules (engine/observedindex.go
+-- observedIndexVersion) the three tables were derived under. An open whose
+-- binary carries newer rules asks the background re-derivation for every row
+-- of every observed kind and records its version here; a rebuild and a boot
+-- import derive the tables whole and record theirs. No row reads as version
+-- 0: an index derived under no recorded rules, such as a repository written
+-- before this migration.
+CREATE TABLE IF NOT EXISTS observed_index (
+    repository     text        NOT NULL DEFAULT current_setting('substrate.repository'),
+    version        integer     NOT NULL,
+    derived_at     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (repository)
+);
+
 -- Repository-scoped like every table a dataset writes, with 0011's row
 -- level security: the `repository` column defaults to the connection's
 -- setting and the policy holds each row to it.
@@ -198,6 +212,12 @@ DROP POLICY IF EXISTS observed_rollups_repository ON observed_rollups;
 CREATE POLICY observed_rollups_repository ON observed_rollups FOR ALL
     USING (repository = current_setting('substrate.repository', true))
     WITH CHECK (repository = current_setting('substrate.repository', true));
+ALTER TABLE observed_index ENABLE ROW LEVEL SECURITY;
+ALTER TABLE observed_index FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS observed_index_repository ON observed_index;
+CREATE POLICY observed_index_repository ON observed_index FOR ALL
+    USING (repository = current_setting('substrate.repository', true))
+    WITH CHECK (repository = current_setting('substrate.repository', true));
 ALTER TABLE observed_latest ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observed_latest FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS observed_latest_repository ON observed_latest;
@@ -206,8 +226,9 @@ CREATE POLICY observed_latest_repository ON observed_latest FOR ALL
     WITH CHECK (repository = current_setting('substrate.repository', true));
 
 -- The grants 0001 gave `ON ALL TABLES` covered the tables that existed then,
--- so a later table carries its own. The app role writes all three in the
--- write's transaction; erasing a repository runs on the maint pool.
+-- so a later table carries its own. The app role writes the three index
+-- tables in the write's transaction and rewrites its one observed_index row;
+-- erasing a repository runs on the maint pool.
 DO $$
 DECLARE
     sch text := current_schema();
@@ -230,10 +251,17 @@ BEGIN
     IF to_regrole('substrate_maint') IS NOT NULL THEN
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.observed_latest TO substrate_maint', sch);
     END IF;
+    IF to_regrole('substrate_app') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE ON TABLE %I.observed_index TO substrate_app', sch);
+    END IF;
+    IF to_regrole('substrate_maint') IS NOT NULL THEN
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.observed_index TO substrate_maint', sch);
+    END IF;
 END $$;
 
 -- The background re-derivation (engine/reprojection.go) gains the observed
 -- index as its third: a kind that starts or stops binding `observed`, or
--- whose rows predate this table, has every row's points re-derived behind
--- the open or the apply that asked for it.
+-- whose rows were derived under older rules or none (observed_index), has
+-- every row's points re-derived behind the open or the apply that asked for
+-- it.
 ALTER TABLE index_reprojections ADD COLUMN IF NOT EXISTS observed boolean NOT NULL DEFAULT false;

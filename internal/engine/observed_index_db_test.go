@@ -1160,7 +1160,8 @@ func TestObservedIndexFollowsTheBinding(t *testing.T) {
 }
 
 // A repository directory imported at boot folds its observed index the way
-// the live writes left it.
+// the live writes left it, and records the rules it derived it under, so the
+// open after the import asks the background pass to derive nothing again.
 func TestBootImportReproducesTheObservedIndex(t *testing.T) {
 	t.Parallel()
 	svc, ds, _ := newDatasetWithDSN(t)
@@ -1172,7 +1173,14 @@ func TestBootImportReproducesTheObservedIndex(t *testing.T) {
 	id := repositoryIDOf(t, ds)
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
-	svc2 := mustReopen(t, engine.MigratedDSN(t), copyRepositoryDir(t, root, id))
+	var rederived atomic.Int64
+	svc2 := reopenWith(t, engine.MigratedDSN(t), copyRepositoryDir(t, root, id),
+		engine.WithTestReprojectionHook(func(_ context.Context, kind string) error {
+			if kind == obsSampleObservation || kind == obsSampleTrace {
+				rederived.Add(1)
+			}
+			return nil
+		}))
 	ds2, err := svc2.Dataset(context.Background(), testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the imported repository: %v", err)
@@ -1180,6 +1188,77 @@ func TestBootImportReproducesTheObservedIndex(t *testing.T) {
 	engine.DrainIndexReprojection(t, ds2)
 	if after := foldOf(t, ds2); string(after) != string(before) {
 		t.Fatalf("the imported fold is not the original\n%s", firstDifference(before, after))
+	}
+	if n := rederived.Load(); n != 0 {
+		t.Errorf("the open after the import re-derived the observed index the import had derived (%d pages)", n)
+	}
+}
+
+// A repository whose observed index was derived under older rules than the
+// binary's (observed_index.version) has every row of every observed kind
+// derived again behind its next open, and records the binary's version; the
+// open after that derives nothing.
+func TestObservedIndexRederivesWhenItsRulesChange(t *testing.T) {
+	t.Parallel()
+	var pages atomic.Int64
+	hook := engine.WithTestReprojectionHook(func(_ context.Context, kind string) error {
+		if kind == obsSampleObservation || kind == obsSampleTrace {
+			pages.Add(1)
+		}
+		return nil
+	})
+	svc, ds, dsn := newDatasetWithDSN(t, hook)
+	writeObservedHistory(t, ds)
+	engine.DrainIndexReprojection(t, ds)
+	db := rawDB(t, dsn)
+	want := observedTables(t, db)
+	version := func() int {
+		t.Helper()
+		var v int
+		if err := db.QueryRow(`SELECT version FROM observed_index`).Scan(&v); err != nil {
+			t.Fatalf("read the observed index version: %v", err)
+		}
+		return v
+	}
+	current := version()
+	if current < 1 {
+		t.Fatalf("the repository's observed index is at version %d", current)
+	}
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	reopen := func() {
+		t.Helper()
+		svc := reopenWith(t, dsn, root, hook)
+		ds, err := svc.Dataset(context.Background(), testdb.Repository(t))
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		engine.DrainIndexReprojection(t, ds)
+		_ = svc.Close()
+	}
+	// The rows an older binary derived differ from what this one derives.
+	for _, q := range []string{
+		`UPDATE observed_index SET version = version - 1`,
+		`UPDATE observed_points SET value_base = value_base + 1`,
+		`UPDATE observed_rollups SET n = n + 100`,
+		`UPDATE observed_latest SET hold_ms = 1`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	pages.Store(0)
+	reopen()
+	if got := observedTables(t, db); got != want {
+		t.Fatalf("the re-derived index is not the one these rules derive\n%s", firstDifference([]byte(want), []byte(got)))
+	}
+	if v := version(); v != current || pages.Load() == 0 {
+		t.Errorf("after the re-derivation the version is %d (want %d) and the pass took %d pages", v, current, pages.Load())
+	}
+	pages.Store(0)
+	reopen()
+	if n := pages.Load(); n != 0 {
+		t.Errorf("an open at the current version re-derived the observed index (%d pages)", n)
 	}
 }
 

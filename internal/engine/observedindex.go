@@ -30,7 +30,10 @@ package engine
 // offset was recorded.
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -41,6 +44,106 @@ import (
 	"github.com/geoah/substrate/internal/observed"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
+
+// observedIndexVersion names the rules the three tables are derived by:
+// deriveObserved and observed.GaugeHold for the points, observed.BucketBuilder
+// for the rollup rows, latestOrder and obsLatestKey for the latest rows. A
+// change to any of them that changes what a stored row derives bumps it, and
+// every repository's next open re-derives every row of every observed kind
+// (checkObservedIndex). A change that only adds a column bumps it too, since
+// the stored rows hold the column's default.
+const observedIndexVersion = 1
+
+// checkObservedIndex is the open ladder's step: where observed_index records
+// older rules than this binary's, or none (a repository written before
+// migration 0012), it requests the background re-derivation of every row of
+// every observed kind and records this binary's version, in one transaction.
+// The request is the pass's durable work list (index_reprojections), so a
+// pass a shutdown stops resumes at the next open, and a row a write lands on
+// meanwhile derives under these rules anyway. A rebuild and a boot import
+// derive the tables whole and record the version themselves
+// (rederiveObservedAll), so the open after one requests nothing.
+//
+// A read-only process skips it and serves the index it finds. A newer
+// version than the binary's is left alone, as checkSearchIndex leaves one.
+func (ds *dataset) checkObservedIndex(ctx context.Context) error {
+	if ds.svc.readOnly {
+		return nil
+	}
+	var have int
+	err := ds.db.QueryRowContext(ctx, `SELECT version FROM observed_index`).Scan(&have)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		have = 0
+	case err != nil:
+		return fmt.Errorf("substrate/engine: repository %s: read the observed index version: %w", ds.info.ID, err)
+	}
+	if have >= observedIndexVersion {
+		return nil
+	}
+	var kinds []string
+	err = ds.inRawTx(ctx, func(t *txn) error {
+		var err error
+		if kinds, err = t.observedKindsHoldingRows(); err != nil {
+			return err
+		}
+		owed := make([]indexReprojection, len(kinds))
+		for i, kind := range kinds {
+			owed[i] = indexReprojection{kind: kind, observed: indexFilter{moved: true, every: true}}
+		}
+		if err := t.requestReprojections(owed); err != nil {
+			return err
+		}
+		return t.markObservedIndexed()
+	})
+	if err != nil {
+		return fmt.Errorf("substrate/engine: repository %s: request the observed index re-derivation: %w", ds.info.ID, err)
+	}
+	if len(kinds) > 0 {
+		ds.svc.log.Info("substrate: the observed index was derived under older rules; re-deriving it behind the open",
+			"repository", logSafeID(ds.info.ID), "from", have, "to", observedIndexVersion, "kinds", len(kinds))
+	}
+	return nil
+}
+
+// observedKindsHoldingRows is every kind whose stored declaration binds
+// core's `observed` and that holds a row, live or tombstoned. It reads the
+// declaration rows rather than the registry, so a parked package's kinds,
+// whose rows the fold still derives (fold.go foldView), are in it.
+func (t *txn) observedKindsHoldingRows() ([]string, error) {
+	rows, err := t.query(`
+		SELECT d.id FROM records d
+		WHERE d.kind = $1 AND d.deleted_at IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM jsonb_array_elements_text(
+				CASE WHEN jsonb_typeof(d.props->'traits') = 'array' THEN d.props->'traits' ELSE '[]'::jsonb END) tr
+			WHERE tr = $2 OR starts_with(tr, $2 || '('))
+		  AND EXISTS (SELECT 1 FROM records r WHERE r.kind = d.id)
+		ORDER BY d.id`, kindKind, vocabulary.TraitObservedCore)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for rows.Next() {
+		var kind string
+		if err := rows.Scan(&kind); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		out = append(out, kind)
+	}
+	return out, finishRows(rows)
+}
+
+// markObservedIndexed records that the three tables were derived under this
+// binary's rules.
+func (t *txn) markObservedIndexed() error {
+	_, err := t.exec(`
+		INSERT INTO observed_index (version) VALUES ($1)
+		ON CONFLICT (repository) DO UPDATE SET version = EXCLUDED.version, derived_at = now()`,
+		observedIndexVersion)
+	return err
+}
 
 // obsStream is one stream.
 type obsStream struct {

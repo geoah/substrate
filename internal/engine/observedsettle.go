@@ -725,7 +725,8 @@ func (t *txn) upsertLatest(rows []latestRow) error {
 
 // rederiveObservedAll recomputes every rollup and latest row from the points,
 // after a replay folded them: the latest rows in one statement, the rollup
-// rows stream by stream, a page of points at a time.
+// rows stream by stream, a page of points at a time. The replay derived every
+// point under this binary's rules, so it records their version.
 func (t *txn) rederiveObservedAll() error {
 	for _, table := range []string{"observed_rollups", "observed_latest"} {
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {
@@ -766,7 +767,7 @@ func (t *txn) rederiveObservedAll() error {
 			return fmt.Errorf("substrate/engine: rebuild the observed rollups: %w", err)
 		}
 	}
-	return nil
+	return t.markObservedIndexed()
 }
 
 // rederiveHold recomputes every rollup row of one stream from its points,

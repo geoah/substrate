@@ -443,8 +443,14 @@ reaches a row, its points are the ones the previous declaration derived. A
 tombstone and a purge in that window still take the record's points with
 them, whatever the kind now declares: a purged row is gone before the pass
 could find it.
-Repository migration `0003_derive_observed_index` asks the same pass to
-derive the index of a repository written before the tables existed.
+`observed_index` records the version of the rules the tables were derived
+by (`observedIndexVersion` in `internal/engine/observedindex.go`). An open
+whose binary derives by newer rules, or finds none recorded (a repository
+written before the tables existed), asks the same pass to derive every row
+of every observed kind again and records its own version. A rebuild and a
+boot import derive the tables whole and record theirs, so the open after one
+asks for nothing. A change to the derivation, the rollup statistics or the
+latest rule that changes what a stored row derives bumps the version.
 
 ### Points, nulls and offsets
 

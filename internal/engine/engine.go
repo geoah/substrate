@@ -1146,6 +1146,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.checkSearchIndex,
+		ds.checkObservedIndex,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,

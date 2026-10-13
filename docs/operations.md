@@ -626,6 +626,14 @@ it trusts:
   is tried again after a pause of up to a minute. A reindex a shutdown
   interrupts starts again at the next open; `repository rebuild` finishes
   it, because the replay indexes every row.
+- **The observed index is re-derived in the background** when the binary
+  derives it by newer rules than the ones recorded in `observed_index`, or
+  when none are recorded (a repository written before migration 0012). The
+  open asks the pass above for every row of every kind that binds the
+  `observed` trait and logs `substrate: the observed index was derived under
+  older rules; re-deriving it behind the open` with `from`, `to` and `kinds`.
+  A rebuild and a boot import derive the index whole and record the rules
+  they used, so the open after one asks for nothing.
 - Persisted function bodies re-warm in the background. One that no longer
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.
@@ -964,11 +972,7 @@ migration, `0001_qualify_bare_declaration_names`, writes the full identity
 into every stored `kind:` pin, `trait:` pin, `traits:` binding and function
 allowlist entry a binary before
 [decision 0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)
-stored bare, resolving each word the way that binary did. The third,
-`0003_derive_observed_index`, writes no record: it asks the background pass
-below to derive the [observed index](observations.md#the-observed-index) for
-every row of a kind that binds the `observed` trait, because rows written
-before migration 0012 created the index have no points.
+stored bare, resolving each word the way that binary did.
 
 **A schema migration never changes what the fold holds.** The fold is every
 table `repository rebuild` clears and fills again from the changelog

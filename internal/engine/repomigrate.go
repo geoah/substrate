@@ -77,7 +77,6 @@ type repositoryMigration struct {
 var repositoryMigrations = []repositoryMigration{
 	{Version: 1, Name: "qualify_bare_declaration_names", Run: migrateQualifyBareDeclarationNames},
 	{Version: 2, Name: "qualify_bare_selector_kinds", Run: migrateQualifyBareSelectorKinds},
-	{Version: 3, Name: "derive_observed_index", Run: migrateDeriveObservedIndex},
 }
 
 // ErrRepositoryMigrationsNewer is the per-repository downgrade refusal beside

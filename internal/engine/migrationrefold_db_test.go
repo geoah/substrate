@@ -18,8 +18,7 @@ package engine_test
 // binary at that stage could have run, as an installation upgraded in place
 // holds them. The second open runs no repository migration the installation
 // already ran, so a migration whose effect a repository migration would mask
-// (repository migration 3 re-derives the whole observed index) is held to
-// the fold the installation really keeps. A last stage at the newest
+// is held to the fold the installation really keeps. A last stage at the newest
 // migration keeps the whole ledger and runs nothing, so the fold the source's
 // own writes left is held to the rebuild with nothing re-derived first.
 //
@@ -92,7 +91,6 @@ const refoldLedgerTable = "0005_repository_migrations"
 var refoldLedgerFloors = map[string]string{
 	"qualify_bare_declaration_names": "0005_repository_migrations",
 	"qualify_bare_selector_kinds":    "0005_repository_migrations",
-	"derive_observed_index":          "0012_observed_index",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its
@@ -312,8 +310,8 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 		t.Fatalf("open the staged repository: %v", err)
 	}
 	// A stage behind the search index's table reindexes at this open, and a
-	// stage behind the observed index derives it behind the open (repository
-	// migration 3), so the fold is read once both have settled.
+	// stage behind the observed index's tables derives it behind the open
+	// (checkObservedIndex), so the fold is read once both have settled.
 	<-engine.SearchReindexDone(ds)
 	engine.DrainIndexReprojection(t, ds)
 	live = refoldSnapshot(t, db, omit)
