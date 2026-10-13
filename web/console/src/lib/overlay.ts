@@ -294,10 +294,11 @@ export function planPlot(
       : undefined
   const codes = info?.codeSet
   // The address may spell a record by id or by path; the plot uses the
-  // spelling its streams carry.
+  // spelling its streams carry. The chosen sources keep the reader's order,
+  // which a priority read prefers them in.
   const sources = distinct(own.map((s) => s.source))
-  const chosenSources = sources.filter((l) =>
-    scope.sources.some((s) => sameRef(l, s))
+  const chosenSources = distinct(
+    scope.sources.map((s) => sources.find((l) => sameRef(l, s)))
   )
   const abouts = distinct(own.map((s) => s.about))
   const chosenAbouts = abouts.filter((l) =>

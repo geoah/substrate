@@ -12,6 +12,7 @@ import {
   type Stream,
 } from "@/lib/observations"
 import {
+  APPLE,
   BODY_MASS,
   GARMIN,
   HEART,
@@ -266,6 +267,24 @@ describe("one metric's plot", () => {
     expect(
       planPlot(source(), BODY_MASS, { ...SCOPE, unit: "[lb_av]" })
     ).toMatchObject({ unit: "[lb_av]", outputUnit: "[lb_av]" })
+  })
+
+  it("prefers the chosen sources in the order they were chosen", () => {
+    // The Garmin wrote last; the reader chose the Apple Watch first.
+    const planned = planPlot(source(), HEART, {
+      ...SCOPE,
+      sources: ["apple-watch-s10", GARMIN],
+    })
+    expect(planned.sourceOrder).toEqual([APPLE, GARMIN])
+    expect(planned.read?.aggregate.sources).toEqual({
+      policy: "priority",
+      order: [APPLE, GARMIN],
+    })
+    // With none chosen, the newest source leads.
+    expect(planPlot(source(), HEART, SCOPE).sourceOrder).toEqual([
+      GARMIN,
+      APPLE,
+    ])
   })
 
   it("narrows to the chosen channels", () => {
