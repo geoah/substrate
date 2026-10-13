@@ -27,6 +27,13 @@ const (
 	maxConcurrentWebhooks = 8
 )
 
+// A sender has this long from its headers to the end of its body, so one
+// that stalls mid-body cannot hold a delivery slot.
+var (
+	webhookInlineDeadline    = 30 * time.Second
+	webhookMultipartDeadline = 2 * time.Minute
+)
+
 var webhookSem = make(chan struct{}, maxConcurrentWebhooks)
 
 // The headers a delivery never carries into a callable: whatever credential
@@ -45,11 +52,32 @@ var webhookHeaderDenylist = map[string]bool{
 // read into transport facts here and handed to the service, which answers
 // 404 for every refusal alike and 202 with the fire id once the delivery is
 // on its way; the callable's output is never a response.
+//
+// The service's checks run before the door takes a slot or reads a byte, so
+// a request for no such webhook holds neither: eight of them with bodies that
+// never finish would otherwise hold every slot and close the door for every
+// repository.
 func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
+	// The deadline runs from the start and stays set on every refusal, so
+	// net/http's drain of a refused request's unread body ends with it too.
+	deadline := webhookInlineDeadline
+	if mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mediaType == "multipart/form-data" {
+		deadline = webhookMultipartDeadline
+	}
+	clear := bodyDeadline(w, deadline)
+	authority, trigger, key := pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r)
+	if err := h.svc.CheckWebhook(r.Context(), authority, trigger, key); err != nil {
+		// net/http reads the rest of a body before it answers, unless the
+		// answer closes the connection: a refusal reads none of it.
+		w.Header().Set("Connection", "close")
+		writeWebhookError(w, r, err)
+		return
+	}
 	select {
 	case webhookSem <- struct{}{}:
 		defer func() { <-webhookSem }()
 	default:
+		w.Header().Set("Connection", "close")
 		writeUnavailable(w, time.Second, "webhook door is busy, retry")
 		return
 	}
@@ -58,16 +86,23 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, codeBadRequest, err.Error())
 		return
 	}
-	fid, err := h.svc.ReceiveWebhook(r.Context(), pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r), req)
+	clear()
+	fid, err := h.svc.ReceiveWebhook(r.Context(), authority, trigger, key, req)
 	if err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
-			writeError(w, http.StatusNotFound, codeNotFound, "no such webhook")
-			return
-		}
-		writeSubstrateError(w, r, err)
+		writeWebhookError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, substrate.WebhookAccepted{Fire: fid})
+}
+
+// writeWebhookError answers a service refusal as the door's one 404 and
+// anything else as the error it is.
+func writeWebhookError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, substrate.ErrNotFound) {
+		writeError(w, http.StatusNotFound, codeNotFound, "no such webhook")
+		return
+	}
+	writeSubstrateError(w, r, err)
 }
 
 // webhookKey reads the credential from wherever the sender could put it: the
@@ -89,7 +124,8 @@ func webhookKey(r *http.Request) string {
 
 // readWebhookRequest turns the HTTP request into the seam's transport facts,
 // or names the HTTP status that refuses it: 431 for headers past the cap, 413
-// for a body past its bound, 400 for multipart the reader cannot parse.
+// for a body past its bound, 400 for multipart the reader cannot parse or a
+// body that did not arrive within its deadline.
 func readWebhookRequest(w http.ResponseWriter, r *http.Request) (substrate.WebhookRequest, int, error) {
 	req := substrate.WebhookRequest{Method: r.Method, Headers: map[string]string{}, Query: map[string][]string{}}
 	size := 0
@@ -144,7 +180,8 @@ func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string) (
 	if boundary == "" {
 		return nil, http.StatusBadRequest, errors.New("multipart/form-data without a boundary")
 	}
-	mr := multipart.NewReader(http.MaxBytesReader(w, r.Body, maxWebhookBody), boundary)
+	body := http.MaxBytesReader(w, r.Body, maxWebhookBody)
+	mr := multipart.NewReader(body, boundary)
 	var parts []substrate.WebhookPart
 	inline := 0
 	for {
@@ -183,6 +220,16 @@ func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string) (
 			part.Value = string(data)
 		}
 		parts = append(parts, part)
+	}
+	// The closing boundary need not end the body. Whatever follows it is read
+	// here, under the deadline, rather than left to net/http's drain before
+	// the answer, which has none once the caller clears it.
+	if _, err := io.Copy(io.Discard, body); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			return nil, http.StatusRequestEntityTooLarge, errors.New("webhook multipart body exceeds 32 MiB")
+		}
+		return nil, http.StatusBadRequest, errors.New("webhook multipart body unreadable")
 	}
 	if parts == nil {
 		parts = []substrate.WebhookPart{}

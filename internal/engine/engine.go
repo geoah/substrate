@@ -632,6 +632,11 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// has. It assumes NO role: it exists precisely because the bound roles own
 	// nothing and may not create, so the DSN's own user is the point.
 	admin.SetMaxOpenConns(4)
+	// database/sql keeps two idle connections by default, so a burst past two
+	// would dial, authenticate and close the rest; idle ones go back to the
+	// cluster on the shared pool's schedule.
+	admin.SetMaxIdleConns(4)
+	admin.SetConnMaxIdleTime(repositoryConnIdle)
 	if o.blobs == nil {
 		fsBlobs, err := blobbytes.NewFS(o.dataRoot)
 		if err != nil {
@@ -767,6 +772,11 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// process (writerlease.go): a cap of four would leave three for a
 	// registration that already holds one of them itself.
 	maint.SetMaxOpenConns(5)
+	// Every authenticated request reads the token here, so the pool keeps what
+	// it opened rather than database/sql's default of two idle connections,
+	// which made a burst of console requests dial and close the rest.
+	maint.SetMaxIdleConns(5)
+	maint.SetConnMaxIdleTime(repositoryConnIdle)
 	s.maint = maint
 	repoConns := o.repositoryConns
 	if repoConns == 0 {

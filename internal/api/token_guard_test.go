@@ -66,7 +66,7 @@ func TestAuthBodyIsBounded(t *testing.T) {
 	rec := env.do(t, http.MethodPost, loginPath, "", map[string]any{
 		"repository": fakeRepository, "password": strings.Repeat("a", 2<<20), "totpCode": "000000",
 	})
-	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+	wantErrorCode(t, rec, http.StatusRequestEntityTooLarge, codeBadRequest)
 	if env.svc.loginCalls != 0 {
 		t.Fatalf("Login called %d times; an oversized body must be refused", env.svc.loginCalls)
 	}

@@ -126,8 +126,7 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in substrate.PutInput
-	if err := decodeRecordBody(r, &in); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readRecordJSON(w, r, &in) {
 		return
 	}
 	in.Kind = ti.Identity
@@ -156,8 +155,7 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in substrate.PatchInput
-	if err := decodeRecordBody(r, &in); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readRecordJSON(w, r, &in) {
 		return
 	}
 	ctx := r.Context()

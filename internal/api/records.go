@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 
@@ -234,9 +233,8 @@ func rankedFilterArm(f substrate.Filter) string {
 func (h *handler) postRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxRequestBody))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	raw, ok := readBody(w, r, jsonBody)
+	if !ok {
 		return
 	}
 	var in substrate.PutInput

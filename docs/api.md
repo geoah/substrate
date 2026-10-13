@@ -1131,8 +1131,14 @@ request body and answers `201` with the manifest, whose `digest`
 (`blob-sha256-<hex>`) is the blob's address; `PUT /api/v1/blobs/{digest}`
 does the same and answers `400` when the body does not hash to the digest.
 `GET /api/v1/blobs/{digest}` answers `200` with the bytes, the manifest's
-media type as `Content-Type` and the digest as `ETag`
-([the blob store](operations.md#the-blob-store)).
+media type as `Content-Type`, the digest as `ETag`,
+`Cache-Control: private, max-age=31536000, immutable` (a digest names the same
+bytes forever) and `Vary: Authorization` (the token decides which
+repository answers)
+([the blob store](operations.md#the-blob-store)). A `GET` whose
+`If-None-Match` names that `ETag` answers `304` with no body, and the server
+reads no bytes for it. A `PUT` body has 10 minutes to arrive, and one that
+has not answers `400`. A `GET` response has 10 minutes to be read.
 
 **A read hashes what it serves.** The server reads the whole blob and checks
 its SHA-256 and its size against the digest and the manifest before it sends
@@ -1175,7 +1181,8 @@ reach the server.
 | Answer | When |
 | --- | --- |
 | `202 {"fire": "hook-…"}` | the request is recorded in the repository's changelog and the fire is on its way; a restart resumes it under the same id, which names its `triggerrun` row |
-| `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them |
+| `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them, given before the body is read |
+| `400` | a multipart body the server cannot parse, or a body not received within 30 seconds (2 minutes for multipart) |
 | `413` | a non-multipart body over 1 MiB, or a multipart request over 32 MiB |
 | `431` | headers over 16 KiB |
 | `503` + `Retry-After` | more than eight deliveries in flight |
@@ -1213,9 +1220,13 @@ The code set is closed. The client-error codes:
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
 
-`bad_request` is also the code on a `405` (a wrong method at an `/api` path)
-and on the `413` and `431` a webhook request past its body or header cap
-receives ([webhooks](#webhooks)).
+`bad_request` is also the code on a `405` (a wrong method at an `/api` path),
+on a `413` (a request body past its cap) and on the `431` a webhook request
+past its header cap receives ([webhooks](#webhooks)). A JSON request body is
+capped at 1 MiB, and the vocabulary batch (`POST /api/v1/vocabulary/apply` and
+`POST /api/v1/vocabulary/plan`) at 32 MiB. A body that has not arrived 30
+seconds after its headers (2 minutes for the vocabulary batch) answers `400`
+with code `bad_request`.
 
 The server-error family is split so a client can tell "try again" from "never
 going to work": `internal` (500, an unexpected fault), `function_failed` (500, a

@@ -138,8 +138,7 @@ func writeAuthFailure(w http.ResponseWriter, r *http.Request, err error) {
 // registration leaves no row to expire and nothing to sweep.
 func (h *handler) postRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	var req registerBeginRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	repository := repositoryOf(r, req.Repository)
@@ -165,8 +164,7 @@ func (h *handler) postRegisterBegin(w http.ResponseWriter, r *http.Request) {
 // ends logged in. Everything durable happens here or not at all.
 func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 	var req substrate.RegisterRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	repository := repositoryOf(r, req.Repository)
@@ -203,8 +201,7 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 // session beside it: the console holds a token like every other client.
 func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	req.Repository = repositoryOf(r, req.Repository)
@@ -230,8 +227,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 // in the body; a bearer token is not evidence here and never will be.
 func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 	var req passwordRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	repository := repositoryOf(r, req.Repository)
@@ -256,8 +252,7 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 // writing nothing — an abandoned re-enrollment cannot lock anyone out.
 func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 	var req totpBeginRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	repository := repositoryOf(r, req.Repository)
@@ -282,8 +277,7 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 // code from the new seed.
 func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 	var req totpRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	repository := repositoryOf(r, req.Repository)
@@ -331,8 +325,7 @@ func (h *handler) factorsPresented(w http.ResponseWriter, password, code string)
 // same secret-shown-once, a different door.
 func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 	var req mintRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	if req.Label == "" {

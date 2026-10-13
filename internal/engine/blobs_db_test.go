@@ -189,6 +189,40 @@ func TestBlobGetIsRepositoryScoped(t *testing.T) {
 	wantErr(t, err, substrate.ErrNotFound, "cross-repository blob read")
 }
 
+// StatBlob is GetBlob's manifest without the bytes, under the same scoping
+// and the same refusals: what a conditional read answers from.
+func TestBlobStatReadsTheManifest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	data := []byte("a statted payload")
+	info, err := ds.PutBlob(ctx, owner, substrate.BlobUpload{Name: "notes.txt", MediaType: "text/plain"}, data, "")
+	if err != nil {
+		t.Fatalf("put blob: %v", err)
+	}
+	got, err := ds.StatBlob(ctx, info.Digest)
+	if err != nil {
+		t.Fatalf("stat blob: %v", err)
+	}
+	want := substrate.BlobInfo{Digest: info.Digest, Size: int64(len(data)), Name: "notes.txt", MediaType: "text/plain", Status: substrate.BlobStored}
+	if *got != want {
+		t.Fatalf("stat = %+v, want %+v", *got, want)
+	}
+	_, err = ds.StatBlob(ctx, substrate.BlobDigestPrefix+strings.Repeat("0", 64))
+	wantErr(t, err, substrate.ErrNotFound, "stat of an unknown digest")
+	_, err = ds.StatBlob(ctx, "not-a-digest")
+	wantErr(t, err, substrate.ErrValidation, "stat of a malformed digest")
+	if _, err := svc.CreateRepository(ctx, "statother.example.com"); err != nil {
+		t.Fatalf("create repository B: %v", err)
+	}
+	dsB, err := svc.Dataset(ctx, "statother.example.com")
+	if err != nil {
+		t.Fatalf("open repository B: %v", err)
+	}
+	_, err = dsB.StatBlob(ctx, info.Digest)
+	wantErr(t, err, substrate.ErrNotFound, "cross-repository blob stat")
+}
+
 func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	// This test asserts immediate collection of a never-referenced orphan, so it
 	// disables the unreferenced-upload grace.

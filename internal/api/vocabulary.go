@@ -63,8 +63,7 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 	// Strict at the request wrapper: a misspelled `documents` key
 	// is a bad_request naming it, never an empty batch that applies nothing.
 	// The documents themselves stay open maps — the loader is their admission.
-	if err := decodeJSONStrict(http.MaxBytesReader(nil, r.Body, maxVocabularyApplyBody), &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, vocabularyBody) {
 		return
 	}
 	ctx := r.Context()
@@ -140,8 +139,7 @@ func holdWaitingMappings(ctx context.Context, ds substrate.Dataset, docs []map[s
 // that verb's preview.
 func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 	var req vocabularyPlanRequest
-	if err := decodeJSONStrict(http.MaxBytesReader(nil, r.Body, maxVocabularyApplyBody), &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, vocabularyBody) {
 		return
 	}
 	ctx := r.Context()

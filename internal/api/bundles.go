@@ -74,8 +74,7 @@ const (
 func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, id string) {
 	ds := DatasetFrom(r.Context())
 	var in substrate.PatchInput
-	if err := decodeRecordBody(r, &in); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readRecordJSON(w, r, &in) {
 		return
 	}
 	// A bundle PATCH carries a state transition and nothing else: the authored
@@ -191,8 +190,7 @@ func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body bindRequest
-	if err := decodeBody(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &body, jsonBody) {
 		return
 	}
 	if body.Input == "" {
@@ -233,8 +231,7 @@ type oauthStartRequest struct {
 func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	var req oauthStartRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	if req.Record == "" {

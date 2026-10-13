@@ -20,7 +20,8 @@ package engine
 // bearer knows a hash — so exactly four reads run on the BYPASSRLS pool with
 // an explicit `repository` predicate: `repositoryByID` (login),
 // `credentialOf` + `authMaterial` (the factors), and `tokenByHash` (every
-// authenticated request). Everything they lead to runs scoped.
+// authenticated request, joined to its repositories row so one round trip
+// answers both). Everything they lead to runs scoped.
 
 import (
 	"context"
@@ -33,6 +34,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -77,14 +79,41 @@ const (
 	argonSaltLen        = 16
 )
 
+// argonSlots bounds the argon2id derivations running at once, process-wide.
+// Each holds argonMemory (64 MiB) for about 300 ms, and a login runs one
+// before it knows whether the repository exists, so the 32 attempts the
+// global auth bucket admits at once would hold 2 GiB without it. Every
+// derivation waits on the same slots, the unknown repository's included, so
+// the queue says nothing about which repositories exist.
+var argonSlots = make(chan struct{}, max(1, min(4, runtime.GOMAXPROCS(0)/2)))
+
+// argonIDKey is the derivation argonKey runs, a variable so a test can count
+// how many run at once.
+var argonIDKey = argon2.IDKey
+
+// argonKey is argon2.IDKey under one of argonSlots. A caller that leaves
+// while it waits for a slot gets its context's error and derives nothing.
+func argonKey(ctx context.Context, password, salt []byte, times, memory uint32, threads uint8, keyLen uint32) ([]byte, error) {
+	select {
+	case argonSlots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-argonSlots }()
+	return argonIDKey(password, salt, times, memory, threads, keyLen), nil
+}
+
 // hashPassword renders a password as the PHC-style string the sealed row
 // holds: the parameters, the salt and the digest, all in one line.
-func hashPassword(password string) (string, error) {
+func hashPassword(ctx context.Context, password string) (string, error) {
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	sum := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	sum, err := argonKey(ctx, []byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
 		argon2.Version, argonMemory, argonTime, argonThreads,
 		base64.RawStdEncoding.EncodeToString(salt),
@@ -92,9 +121,10 @@ func hashPassword(password string) (string, error) {
 }
 
 // verifyPassword checks a password against a stored hash in constant time. A
-// malformed or unreadable stored hash verifies FALSE — it never errors into a
-// path that could be read as success.
-func verifyPassword(stored, password string) bool {
+// malformed or unreadable stored hash, or a caller that left before an argon2id
+// slot freed, verifies FALSE: it never errors into a path that could be read
+// as success.
+func verifyPassword(ctx context.Context, stored, password string) bool {
 	parts := strings.Split(stored, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false
@@ -116,7 +146,10 @@ func verifyPassword(stored, password string) bool {
 	if err != nil || len(want) == 0 {
 		return false
 	}
-	got := argon2.IDKey([]byte(password), salt, times, memory, threads, uint32(len(want)))
+	got, err := argonKey(ctx, []byte(password), salt, times, memory, threads, uint32(len(want)))
+	if err != nil {
+		return false
+	}
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
@@ -128,7 +161,7 @@ var dummyPasswordHash = func() string {
 	if _, err := rand.Read(raw); err != nil {
 		panic("substrate/engine: no entropy for the password timing equalizer: " + err.Error())
 	}
-	h, err := hashPassword(hex.EncodeToString(raw))
+	h, err := hashPassword(context.Background(), hex.EncodeToString(raw))
 	if err != nil {
 		panic("substrate/engine: no argon2id for the password timing equalizer: " + err.Error())
 	}
@@ -381,7 +414,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if err != nil {
 		return zero, err
 	}
-	hash, err := hashPassword(in.Password)
+	hash, err := hashPassword(ctx, in.Password)
 	if err != nil {
 		return zero, err
 	}
@@ -510,7 +543,7 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 			}
 		}
 	}
-	passwordOK := verifyPassword(material.passwordHash, in.Password)
+	passwordOK := verifyPassword(ctx, material.passwordHash, in.Password)
 	step, codeOK := totpVerify(key, in.TOTPCode, s.now(), material.totp.Step)
 	// The dev escape hatch (WithInsecureDisableTOTP): the code is still
 	// evaluated above, so the work and the timing are unchanged, and only the
@@ -577,7 +610,7 @@ func (s *service) ChangePassword(ctx context.Context, in substrate.LoginInput, n
 	// argon2 stays OUTSIDE the write's lock; the verified refs ride in as the
 	// compare-and-swap baseline so a concurrent rotation is a conflict, not a
 	// silent overwrite.
-	hash, err := hashPassword(newPassword)
+	hash, err := hashPassword(ctx, newPassword)
 	if err != nil {
 		return err
 	}
@@ -658,7 +691,7 @@ func (s *service) ResetUser(ctx context.Context, repository, newPassword string)
 	if err != nil {
 		return zero, err
 	}
-	hash, err := hashPassword(newPassword)
+	hash, err := hashPassword(ctx, newPassword)
 	if err != nil {
 		return zero, err
 	}
@@ -923,15 +956,8 @@ func (s *service) Authenticate(ctx context.Context, tokenSecret string) (substra
 	if _, err := hex.DecodeString(rest); err != nil {
 		return nil, zero, fmt.Errorf("%w: malformed token", substrate.ErrAuth)
 	}
-	repoID, info, err := s.tokenByHash(ctx, hashToken(tokenSecret))
+	repo, info, err := s.tokenByHash(ctx, hashToken(tokenSecret))
 	if err != nil {
-		return nil, zero, err
-	}
-	repo, err := s.repositoryByID(ctx, repoID)
-	if err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
-			return nil, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
-		}
 		return nil, zero, err
 	}
 	ds, err := s.open(ctx, repo)
@@ -944,28 +970,37 @@ func (s *service) Authenticate(ctx context.Context, tokenSecret string) (substra
 	return ds, info, nil
 }
 
+// tokenRepositoryColumns is repositoryColumns qualified for tokenByHash's
+// join, derived so the two lists cannot drift apart.
+var tokenRepositoryColumns = "p." + strings.ReplaceAll(repositoryColumns, ", ", ", p.")
+
 // tokenByHash is the cross-repository lookup — the fourth and last
 // maint-pool path. It matches on the jsonb containment operator so the
-// records props index serves it rather than a scan of every repository.
-func (s *service) tokenByHash(ctx context.Context, hash string) (string, substrate.TokenInfo, error) {
+// records props index serves it rather than a scan of every repository, and
+// joins the repositories row the token lives in, so a request costs one round
+// trip on the maintenance pool. A token whose repository row is gone matches
+// nothing.
+func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, substrate.TokenInfo, error) {
 	var zero substrate.TokenInfo
-	var repoID string
 	var info substrate.TokenInfo
 	var label, got, expires sql.NullString
-	err := s.maint.QueryRowContext(ctx, `
-		SELECT repository, id, props->>'label', props->>'hash', props->>'expiresAt', created_at
-		FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props @> jsonb_build_object('hash', $2::text)`,
-		kindToken, hash).
-		Scan(&repoID, &info.ID, &label, &got, &expires, &info.Created)
+	row := s.maint.QueryRowContext(ctx, `
+		SELECT `+tokenRepositoryColumns+`,
+		       r.id, r.props->>'label', r.props->>'hash', r.props->>'expiresAt', r.created_at
+		FROM records r JOIN repositories p ON p.id = r.repository
+		WHERE r.kind = $1 AND r.deleted_at IS NULL AND r.props @> jsonb_build_object('hash', $2::text)`,
+		kindToken, hash)
+	repo, err := scanRepositoryRow(func(dest ...any) error {
+		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &info.Created)...)
+	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
+		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
 	}
 	if err != nil {
-		return "", zero, err
+		return Repository{}, zero, err
 	}
 	if subtle.ConstantTimeCompare([]byte(got.String), []byte(hash)) != 1 {
-		return "", zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
+		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
 	}
 	info.Label = label.String
 	// Expiry is SERVER-ENFORCED here: a token past its stamp authenticates as
@@ -974,12 +1009,12 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (string, substra
 	if expires.Valid && expires.String != "" {
 		exp, perr := time.Parse(time.RFC3339, expires.String)
 		if perr != nil {
-			return "", zero, fmt.Errorf("%w: token expiry unreadable", substrate.ErrAuth)
+			return Repository{}, zero, fmt.Errorf("%w: token expiry unreadable", substrate.ErrAuth)
 		}
 		if nowUTC().After(exp) {
-			return "", zero, fmt.Errorf("%w: token expired", substrate.ErrAuth)
+			return Repository{}, zero, fmt.Errorf("%w: token expired", substrate.ErrAuth)
 		}
 		info.ExpiresAt = &exp
 	}
-	return repoID, info, nil
+	return repo, info, nil
 }

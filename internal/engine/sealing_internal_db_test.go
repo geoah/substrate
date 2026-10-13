@@ -430,7 +430,7 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 	}
 
 	const newPassword = "a-fresh-passphrase-1"
-	hash, err := hashPassword(newPassword)
+	hash, err := hashPassword(ctx, newPassword)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +464,7 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !verifyPassword(final.passwordHash, newPassword) {
+	if !verifyPassword(ctx, final.passwordHash, newPassword) {
 		t.Fatal("A's password change did not survive B's stale write")
 	}
 	if final.totp.Secret != matA.totp.Secret {
@@ -503,7 +503,7 @@ func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
 
 	// The password change now writes, carrying the STALE step it read. The write
 	// must bump it to the stored value, not regress to the stale one.
-	hash, err := hashPassword("another-good-passphrase")
+	hash, err := hashPassword(ctx, "another-good-passphrase")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,7 +580,7 @@ func TestConcurrentCredentialChangesNeitherSilentlyLost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	passwordIsNew := verifyPassword(final.passwordHash, newPassword)
+	passwordIsNew := verifyPassword(ctx, final.passwordHash, newPassword)
 	seedIsNew := final.totp.Secret == newSeed
 	switch {
 	case errA == nil: // the password change won
