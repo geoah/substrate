@@ -1250,9 +1250,12 @@ things) is a `422` naming its source and unit.
 - `summaries` reads summary points alone, from the first source in `order`
   that has one in the bucket.
 
-`from: "prefer-raw"` reads raw points where they cover at least `minCoverage`
-of a row (held time for a gauge, the union of spans for an amount, over the
-row's own `start` to `end`) and the summaries otherwise. A bucket never mixes the two, and each row's `from` says
+`from: "prefer-raw"` reads raw points where the bucket holds at least one
+and they cover at least `minCoverage` of the row (held time for a gauge, the
+union of spans for an amount, over the row's own `start` to `end`), and the
+summaries otherwise. A gauge's value held in from an earlier bucket, under
+its `hold` and `maxGap`, adds held time but is no reading of the bucket: a
+day with no reading of its own is served by its summary. A bucket never mixes the two, and each row's `from` says
 which served it; the row's `form` is `summary` where summaries did.
 
 ### The response

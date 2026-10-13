@@ -1346,3 +1346,42 @@ func TestAggregateRecordedLocalRowsTheRangeCutsSaySo(t *testing.T) {
 		}
 	}
 }
+
+// prefer-raw serves a bucket from raw points only where it holds one: heart
+// rate every three hours on 2030-01-01 and none after, beside a day summary
+// of 70 on 2030-01-02. The last reading holds through 01-02, which is held
+// time over the whole day, but no point of 01-02 is in it, so the summary
+// serves the day.
+func TestAggregatePreferRawNeedsAPointInTheBucket(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	for h := 0; h < 24; h += 3 {
+		f.mustPut(t, f.observation, "hr/"+strconv.Itoa(h), map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "gauge",
+			"value": quantity(strconv.Itoa(60+h), "/min"), "at": at(day.Add(time.Duration(h) * time.Hour)),
+		})
+	}
+	f.mustPut(t, f.observation, "hr/day2", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("strap"), "form": "summary",
+		"statistic": "avg", "period": "day", "value": quantity("70", "/min"),
+		"at": at(day.AddDate(0, 0, 1)), "endsAt": at(day.AddDate(0, 0, 2)),
+	})
+	res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+		From:     "prefer-raw",
+		Range:    rng(day, day.AddDate(0, 0, 2)),
+		Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC"},
+		Reducers: reducers("count", "avg"),
+	})
+	if len(res.Rows) != 2 {
+		t.Fatalf("%d rows, want two days: %+v", len(res.Rows), res.Rows)
+	}
+	if row := res.Rows[0]; row.From != "raw" {
+		t.Errorf("2030-01-01, eight readings: from %s, want raw", row.From)
+	}
+	row := res.Rows[1]
+	if v, _ := val(row, "avg"); row.From != "summaries" || v != "70" {
+		t.Errorf("2030-01-02, no reading: from %s, avg %q, want the summary's 70", row.From, v)
+	}
+}

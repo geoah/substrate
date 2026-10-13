@@ -44,8 +44,8 @@ Chosen: a mode of the records route.
   each answering with its own unit.
 - **`from`**: `raw` (the default), `summaries` or `prefer-raw`. One bucket
   never mixes raw points and vendor summaries. `prefer-raw` uses raw points
-  where a bucket's coverage reaches `minCoverage` (default 0.9) and the
-  summary otherwise, and each row says which it used.
+  where a bucket holds one and its coverage reaches `minCoverage` (default
+  0.9) and the summary otherwise, and each row says which it used.
 - **Source policies** (`separate` by default, `priority` with an ordered
   list, `summaries`) resolve per stored interval before bucketing, so a total
   does not change with the bucket width.

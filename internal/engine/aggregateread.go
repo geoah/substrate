@@ -695,7 +695,9 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 }
 
 // choose picks a bucket's evidence: raw points or summaries, never both;
-// prefer-raw takes raw where its coverage reaches minCoverage.
+// prefer-raw takes raw where the bucket holds a raw point and its coverage
+// reaches minCoverage. A gauge's coverage counts a value held in from before
+// the bucket, which alone is no reading of it.
 func (r *aggRun) choose(b *aggBucket, raw, sums *aggEvidence) (*aggEvidence, string) {
 	switch {
 	case raw == nil && sums == nil:
@@ -705,7 +707,7 @@ func (r *aggRun) choose(b *aggBucket, raw, sums *aggEvidence) (*aggEvidence, str
 	case raw == nil:
 		return sums, substrate.AggregateFromSummaries
 	}
-	if length := b.length(&raw.ends, r.p.from, r.p.to).Milliseconds(); length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
+	if length := b.length(&raw.ends, r.p.from, r.p.to).Milliseconds(); raw.count > 0 && length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
 		return raw, substrate.AggregateFromRaw
 	}
 	return sums, substrate.AggregateFromSummaries
