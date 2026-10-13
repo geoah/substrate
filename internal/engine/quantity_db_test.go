@@ -413,22 +413,35 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 			}
 		})
 	}
-	// Unfiltered, the label's string weight still decides: the text order.
-	page, err := ds.List(ctx, substrate.Query{
-		OrderBy: []substrate.Order{{Property: "score"}}, First: 50,
-		Filter: substrate.Filter{Kinds: []string{readingKind, labelKind}},
-	})
-	if err != nil {
-		t.Fatalf("list across both kinds: %v", err)
-	}
-	var mixed []string
-	for _, r := range page.Records {
-		if n, ok := r.Properties["name"].(string); ok {
-			mixed = append(mixed, n)
+	// The readings' names in the order a read answers, whatever else it holds.
+	ordered := func(q substrate.Query) []string {
+		t.Helper()
+		q.First = 50
+		page, err := ds.List(ctx, q)
+		if err != nil {
+			t.Fatalf("list: %v", err)
 		}
+		var out []string
+		for _, r := range page.Records {
+			if r.Kind == readingKind {
+				out = append(out, r.Properties["name"].(string))
+			}
+		}
+		return out
 	}
-	if want := "nine,ten,grams"; strings.Join(mixed, ",") != want {
-		t.Fatalf("across kinds that disagree, ordered %v, want the text order %s", mixed, want)
+	// Two named kinds that disagree (an int score and a string one) keep the
+	// text order: 10, 100, 9.
+	if got := ordered(substrate.Query{
+		OrderBy: []substrate.Order{{Property: "score"}},
+		Filter:  substrate.Filter{Kinds: []string{readingKind, labelKind}},
+	}); strings.Join(got, ",") != "nine,ten,grams" {
+		t.Fatalf("across kinds that disagree, ordered %v, want the text order nine,ten,grams", got)
+	}
+	// A read that names no kind resolves the order over every kind, so the
+	// label's string weight turns the quantity order into the text order of
+	// the stored objects: unit g before kg, then value "10" before "9".
+	if got := ordered(substrate.Query{OrderBy: []substrate.Order{{Property: "weight"}}}); strings.Join(got, ",") != "grams,ten,nine" {
+		t.Fatalf("with no kind named, ordered by weight %v, want the text order grams,ten,nine", got)
 	}
 }
 
