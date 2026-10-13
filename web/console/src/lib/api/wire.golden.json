@@ -61,6 +61,7 @@
     "fallbackTimezone": false,
     "offset": false,
     "origin": false,
+    "place": false,
     "records": false,
     "timezone": false,
     "weekStart": false

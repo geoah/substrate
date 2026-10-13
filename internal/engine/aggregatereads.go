@@ -31,7 +31,7 @@ func (r *aggRun) countPoints(s *aggStream, spans [][2]time.Time) (int64, error) 
 		SELECT coalesce(sum(x.c), 0)::bigint FROM unnest($8::timestamptz[], $9::timestamptz[]) AS s(a, b)
 		CROSS JOIN LATERAL (
 			SELECT count(*) AS c FROM observed_points p
-			WHERE `+aggStreamSQL+` AND p.ts >= s.a AND p.ts < s.b) x`,
+			WHERE `+aggStreamSQL+` AND `+placedIn(r.p.bucket.placeEnd, "s.a", "s.b")+`) x`,
 		append(s.args(), from, to)...).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("substrate/engine: aggregate count: %w", err)
@@ -133,7 +133,7 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 		FROM unnest($8::timestamptz[], $9::timestamptz[]) WITH ORDINALITY AS s(a, b, i)
 		CROSS JOIN LATERAL (
 			SELECT * FROM observed_points p
-			WHERE `+aggStreamSQL+` AND p.ts >= s.a AND p.ts < s.b OFFSET 0) p
+			WHERE `+aggStreamSQL+` AND `+placedIn(r.p.bucket.placeEnd, "s.a", "s.b")+` OFFSET 0) p
 		ORDER BY s.i, p.ts, p.record_id, p.ord`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate points: %w", err)

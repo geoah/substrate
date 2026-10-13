@@ -167,9 +167,20 @@ type AggregateBucket struct {
 	// WeekStart is the first day of a week, monday by default.
 	WeekStart string `json:"weekStart,omitempty"`
 	// Offset shifts each calendar bucket's start (PT4H for a day from 04:00).
-	Offset  string            `json:"offset,omitempty"`
+	Offset string `json:"offset,omitempty"`
+	// Place is where a value with a span lands: "start" (the default), the
+	// bucket its start lies in, or "end", the bucket its last instant lies
+	// in, so a night lands on the day it ends. A gauge's and a counter's
+	// points are instants and are refused under "end".
+	Place   string            `json:"place,omitempty"`
 	Records *AggregateRecords `json:"records,omitempty"`
 }
+
+// The places of a value with a span.
+const (
+	AggregatePlaceStart = "start"
+	AggregatePlaceEnd   = "end"
+)
 
 // AggregateRecords is the records time mode: the records the filter matches
 // inside the range are the buckets, each widened by Around.

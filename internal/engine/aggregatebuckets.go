@@ -50,7 +50,9 @@ type bucketSpec struct {
 	loc      *time.Location
 	// fallback is the zone the recorded-local calendar places a value
 	// written without a UTC offset by; nil refuses such a value.
-	fallback  *time.Location
+	fallback *time.Location
+	// placeEnd places a value with a span by its last instant (place end).
+	placeEnd  bool
 	weekStart time.Weekday
 	offset    time.Duration
 	// records mode
@@ -248,6 +250,16 @@ func (p *aggPlan) parseBucket() error {
 	}
 	if modes != 1 {
 		return refuse("aggregate.bucket", "name one time mode: every, calendar or records")
+	}
+	switch b.Place {
+	case "", substrate.AggregatePlaceStart:
+	case substrate.AggregatePlaceEnd:
+		if b.Records != nil {
+			return refuse("aggregate.bucket.place", "the records mode's windows take each point inside them; place is the every and calendar modes'")
+		}
+		spec.placeEnd = true
+	default:
+		return refuse("aggregate.bucket.place", "%q is not a place; a value lands by its start or its end", b.Place)
 	}
 	if b.FallbackTimezone != "" {
 		if b.Calendar == "" || b.Timezone != "" {

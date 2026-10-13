@@ -479,7 +479,10 @@ func (p *aggPlan) windows(ctx context.Context, buckets []*aggBucket) ([][2]time.
 // the window's. A summary stream is one statistic's, and a stream of another
 // form has the statistic "". Each code comes with whether the points holding
 // it recorded their UTC offset, which the recorded-local calendar needs.
-const discoverFormsSQL = `
+// Under place end a point is found by where it is placed (placedIn), and the
+// read passes the window's end as its whole rows' ends, so no row answers.
+func discoverFormsSQL(placeEnd bool) string {
+	return `
 	SELECT DISTINCT s.n, f.form, x.code, x.known
 	FROM ` + discoverStreams + `
 	CROSS JOIN LATERAL (
@@ -488,13 +491,13 @@ const discoverFormsSQL = `
 		  AND r.form = f.form AND r.bucket15 >= w.wa AND r.bucket15 < w.wb AND r.n > 0
 		UNION
 		SELECT p.code, p.offset_known FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND p.ts >= w.a AND p.ts < LEAST(w.wa, w.b) AND ` + availablePoint + `
+		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "w.a", "LEAST(w.wa, w.b)") + ` AND ` + availablePoint + `
 		UNION
 		SELECT p.code, p.offset_known FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND p.ts >= GREATEST(w.wb, w.a, LEAST(w.wa, w.b)) AND p.ts < w.b AND ` + availablePoint + `
+		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + ` AND ` + availablePoint + `
 		UNION
 		SELECT p.code, p.offset_known FROM observed_points p
-		WHERE ` + discoverSummary + ` AND p.ts >= w.a AND p.ts < w.b AND ` + availablePoint + `
+		WHERE ` + discoverSummary + ` AND ` + placedIn(placeEnd, "w.a", "w.b") + ` AND ` + availablePoint + `
 		UNION
 		SELECT c.code, c.offset_known FROM (
 			SELECT p.code, p.value, p.ts, p.hold_ms, p.offset_known FROM (
@@ -514,6 +517,7 @@ const discoverFormsSQL = `
 		  AND ($12::bigint = 0 OR c.ts + $12::bigint * interval '1 millisecond' > w.a)
 	) x
 	ORDER BY s.n, f.form, x.code, x.known`
+}
 
 // discoverStreams is every stream, form and window discoverFormsSQL and
 // discoverCountSQL take, as s, f and w.
@@ -538,19 +542,32 @@ const discoverSummary = `f.form = 'summary'
 // and its summaries, before it runs: they count against
 // maxSamples like any raw point a read takes. The gauge's carry is one point
 // per stream and window and is not counted.
-const discoverCountSQL = `
+func discoverCountSQL(placeEnd bool) string {
+	return `
 	SELECT coalesce(sum(x.c), 0)::bigint
 	FROM ` + discoverStreams + `
 	CROSS JOIN LATERAL (
 		SELECT count(*) AS c FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND p.ts >= w.a AND p.ts < LEAST(w.wa, w.b)
+		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "w.a", "LEAST(w.wa, w.b)") + `
 		UNION ALL
 		SELECT count(*) FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND p.ts >= GREATEST(w.wb, w.a, LEAST(w.wa, w.b)) AND p.ts < w.b
+		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + `
 		UNION ALL
 		SELECT count(*) FROM observed_points p
-		WHERE ` + discoverSummary + ` AND p.ts >= w.a AND p.ts < w.b
+		WHERE ` + discoverSummary + ` AND ` + placedIn(placeEnd, "w.a", "w.b") + `
 	) x`
+}
+
+// placedIn matches a point p placed in [a, b), two SQL instants: by its
+// start, or under place end by its last instant, which is before ts_end
+// where the point has a span. A point placed by its end may start before a,
+// so the index range it reads is the stream's points before b.
+func placedIn(placeEnd bool, a, b string) string {
+	if !placeEnd {
+		return `p.ts >= ` + a + ` AND p.ts < ` + b
+	}
+	return `p.ts < ` + b + ` AND CASE WHEN p.ts_end > p.ts THEN p.ts_end > ` + a + ` AND p.ts_end <= ` + b + ` ELSE p.ts >= ` + a + ` END`
+}
 
 // discoverForms turns each selected stream into one stream per form its
 // points hold inside the windows, with the codes they carry, in one
@@ -581,16 +598,20 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 	var a, b, wa, wb []time.Time
 	for _, w := range windows {
 		a, b = append(a, w[0]), append(b, w[1])
+		if p.bucket.placeEnd {
+			wa, wb = append(wa, w[1]), append(wb, w[1])
+			continue
+		}
 		wa, wb = append(wa, ceil15(w[0])), append(wb, floor15(w[1]))
 	}
-	if err := tx.QueryRowContext(ctx, discoverCountSQL, ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms).Scan(&samples); err != nil {
+	if err := tx.QueryRowContext(ctx, discoverCountSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms).Scan(&samples); err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms count: %w", err)
 	}
 	if samples > p.maxSamples {
 		return nil, 0, refuse("aggregate.budget.maxSamples", "finding the forms the range holds reads %d raw points at its cut ends and in its summaries, over %d; align the range to quarter hours, narrow it, or raise maxSamples (the cap is %d)",
 			samples, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
-	rows, err := tx.QueryContext(ctx, discoverFormsSQL, ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms, p.maxGap.Milliseconds())
+	rows, err := tx.QueryContext(ctx, discoverFormsSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms, p.maxGap.Milliseconds())
 	if err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms: %w", err)
 	}
@@ -1064,6 +1085,10 @@ func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
 		return err
 	}
 	for _, g := range groups {
+		if p.bucket.placeEnd && len(g.raw) > 0 && (g.form == vocabulary.FormGauge || g.form == vocabulary.FormCounter) {
+			return refuse("aggregate.bucket.place", "place end puts an amount or a summary in the bucket its span ends in; the %s values of %s are instants, read them by start",
+				g.form, aggMetricName(p))
+		}
 		var forms []string
 		if len(g.raw) > 0 {
 			f := g.form

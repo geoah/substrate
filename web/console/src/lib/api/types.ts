@@ -431,6 +431,9 @@ export interface AggregateBucket {
   fallbackTimezone?: string
   weekStart?: string
   offset?: string
+  /** Where a value with a span lands: `start` (the default) or `end`, the
+   * bucket its last instant lies in, so a night lands on the day it ends. */
+  place?: string
   records?: AggregateRecords
 }
 

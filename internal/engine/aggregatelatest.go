@@ -140,6 +140,9 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	case bucketRecords:
 		return nil, refuse("aggregate.bucket.records", "a property read buckets by its anchor; the records mode is the metric read's")
 	}
+	if p.bucket.placeEnd {
+		return nil, refuse("aggregate.bucket.place", "a property read places a record by its anchor; name endsAt as the anchor to place it by its end")
+	}
 	name, anchor := p.a.Property.Name, p.a.Property.Anchor
 	if anchor == "" {
 		anchor = substrate.PropAt

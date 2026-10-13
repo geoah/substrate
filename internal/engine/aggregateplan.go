@@ -220,6 +220,11 @@ func (r *aggRun) rollupable(g *aggGroup) bool {
 	if p.policy == substrate.SourcesPriority && len(g.raw) > 1 {
 		return false
 	}
+	// A row holds the points that start in its quarter hour, and place end
+	// places them by their end.
+	if p.bucket.placeEnd {
+		return false
+	}
 	for _, red := range p.reducers {
 		switch red.Name {
 		case substrate.ReducerPercentile, substrate.ReducerDurationIn:

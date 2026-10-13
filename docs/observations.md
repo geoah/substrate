@@ -692,6 +692,27 @@ Weight weekly with a four-week rolling mean, from rollup rows alone:
    "unit": "kg"}}
 ```
 
+Nightly heart rate variability per wake day, each source's nightly value
+with the 30-night baseline before it: `place` `end` puts a night on the day
+it ends, however late it starts; the statistic filter keeps Garmin's
+average and WHOOP's `vendor` value and leaves out Garmin's maximum, so each
+source's row reads one statistic; and the rolling window ending at the
+previous day leaves the night out of its own baseline (its `n` says how many
+nights the window held):
+
+```json
+{"filter": {"properties": {"statistic": {"in": ["avg", "vendor"]}}},
+ "aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/hrv_rmssd"},
+   "from": "summaries",
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
+   "groupBy": ["source"],
+   "reducers": ["last"],
+   "rolling": {"buckets": 30, "reducers": ["avg"], "through": "previous"},
+   "unit": "ms"}}
+```
+
 Sleep stages per night: the coded stage amounts summed by code inside each
 `health/sleep` record, one row per night and code, each carrying the night's
 `record`:

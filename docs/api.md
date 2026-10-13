@@ -1168,14 +1168,22 @@ read takes the whole [filter grammar](#the-filter-grammar).
 
 | `bucket` | Buckets | A row's `start` and `end` |
 | --- | --- | --- |
-| `{"every": "PT5M", "origin"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
-| `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
-| `{"calendar": "day", "fallbackTimezone"?}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows', else the range's |
+| `{"every": "PT5M", "origin"?, "place"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
+| `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?, "place"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
+| `{"calendar": "day", "fallbackTimezone"?, "place"?}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows', else the range's |
 | `{"records": {"filter", "around"?, "maxRecords"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations) | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
 week's, month's or year's start by less than a day (`PT4H` for a vendor day
-from 04:00). A bucket that the range cuts is clipped to the range, and its
+from 04:00). `place` says where a value with a span lands: `start` (the
+default) puts it in the bucket its start lies in, `end` in the bucket its
+last instant lies in, so a night from 23:00 to 07:00, or from 00:30 to
+08:00, lands on the day it ends and each day holds one night. A span ending
+at midnight lands on the day before. Under `end` the read takes the values
+whose end lies in the range, wherever they start (a night started the
+evening before the range counts), reads amounts from raw points, and is a
+`422` where it would take a gauge's or a counter's points, which are
+instants; the records mode and the property read refuse it. A bucket that the range cuts is clipped to the range, and its
 `start` or `end` says so. In the recorded-local calendar the range selects
 points by instant, so a day at another offset than the range's is cut where
 the range starts and ends: a range of 2026-09-21 at `+03:00` over points at
@@ -1484,7 +1492,9 @@ merged as one row.
   the measure); a value the read takes whose unit does not convert; a group
   of two forms; a recorded-local read of a stream holding a value written
   without a UTC offset and no `bucket.fallbackTimezone`, or a
-  `fallbackTimezone` outside the recorded-local calendar; a group whose
+  `fallbackTimezone` outside the recorded-local calendar; `place` `end`
+  over a gauge or a counter, in the records mode or on a property read; a
+  group whose
   summaries hold two statistics, or `sum` over a
   statistic other than `sum` and `count`; `groupBy` `statistic` on a read
   that is not from summaries; `priority` over two counters; a budget below zero or over its

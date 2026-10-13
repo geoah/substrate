@@ -197,7 +197,7 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 			if ap.Unavailable || !r.admits(ap.Code) {
 				continue
 			}
-			buckets, err := r.bucketsOf(ap.At, ap.off)
+			buckets, err := r.bucketsOf(r.placed(ap.Point), ap.off)
 			if err != nil {
 				return nil, err
 			}
@@ -395,6 +395,16 @@ func (c cover) holds(t time.Time) bool {
 func (c cover) overlaps(a, b time.Time) bool {
 	i := sort.Search(len(c), func(i int) bool { return c[i][1].After(a) })
 	return i < len(c) && c[i][0].Before(b)
+}
+
+// placed is the instant a point is placed at: its start, or under place end
+// its last instant where it has a span, so a span ending at midnight lands on
+// the day before.
+func (r *aggRun) placed(p observed.Point) time.Time {
+	if r.p.bucket.placeEnd && p.End.After(p.At) {
+		return p.End.Add(-time.Nanosecond)
+	}
+	return p.At
 }
 
 // bucketsOf names the buckets a point at t with the offset lands in: the
