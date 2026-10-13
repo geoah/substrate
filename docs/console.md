@@ -400,14 +400,20 @@ Under the properties, in order:
   measured while it lasted, about the same person. The heart rate is one
   line over the span with its lowest-to-highest band, an aggregate read by
   the minute (or as the timeline's automatic bucket sizes the span), the
-  record's own source ranked first where sources overlap; a click or a drag
+  record's own source ranked first where sources overlap, and the sources
+  that drew it named under it (where the record's own source kept no heart
+  rate, as WHOOP's sleeps keep none, it says so); its tooltip lists the
+  average, lowest and highest, each value with its unit; a click or a drag
   zooms into part of it, until the page moves to another record. A workout adds its time in five heart rate zones
   (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute),
   one `durationIn` read over the span. A sleep adds its stages: a
-  hypnogram, a row per stage and a block per segment, where its source
+  hypnogram on the heart rate chart's time axis (the same width, margins
+  and labelled times), a row per stage and a block per segment, where its source
   recorded the stages one after another (Garmin, Google Fit), and its time
   in each stage, summed by code, which is all a source writing one span per
-  stage over the night (WHOOP, Apple Health) gives. **Open in the
+  stage over the night (WHOOP, Apple Health) gives. Each stage wears one
+  colour on the hypnogram, its time bar and the timeline: its place in the
+  stage metric's `codeSet`. **Open in the
   timeline** opens the same window, heart rate and a sleep's stages
   together.
 - **Connected to**: the records that point here, read through the
@@ -806,7 +812,9 @@ no row or filled a gap, with its lowest-to-highest band where its metric shows
 one line and the reducer answers in the metric's own unit (not a count, a
 standard deviation, a time in a zone or a circular mean). An amount, a
 count, a counter's increase and a time in a zone are bars, and a category
-is bars stacked per code that counts as one unit, its time. The series of one unit
+is bars stacked per code that counts as one unit, its time, each code in
+the colour of its place in the metric's `codeSet` whatever else the chart
+draws. The series of one unit
 share the left axis and a second unit reads on the right, each axis
 captioned with its unit; a third unit is not drawn, and the chart names the
 metrics it leaves out and what to deselect to draw them. One crosshair marks

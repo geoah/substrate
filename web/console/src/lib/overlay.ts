@@ -752,6 +752,14 @@ export function seriesKey(metric: string, value: string): string {
   return `${metric}\u0000${value}`
 }
 
+/** A category's colour, the same on every surface that draws it (the
+ * timeline's stacks, a sleep's hypnogram and its stage bars): its place in
+ * the metric's own codes. A code outside them is the quiet grey. */
+export function codeColor(code: string, codes: readonly string[]): string {
+  const at = codes.indexOf(code)
+  return at >= 0 && at < 8 ? `var(--series-${at + 1})` : "var(--faint)"
+}
+
 /** The colour of each series across a chart: its place among every value
  * the chart's plots could show, so a toggle or a filter never repaints the
  * ones that stay. Past the eighth, the quiet grey. */

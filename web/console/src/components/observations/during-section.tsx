@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useWidth } from "@/hooks/use-width"
 import { aggregateQueryOptions } from "@/lib/api/observations"
-import { recordsQueryOptions } from "@/lib/api/records"
+import { recordQueryOptions, recordsQueryOptions } from "@/lib/api/records"
 import {
   ApiError,
   type AggregateResult,
@@ -33,17 +33,22 @@ import {
   stageListParams,
   stageRows,
   stageSegments,
+  SLEEP_STAGE_CODES,
   stageTotalsRead,
   zonesRead,
   type During,
   type StageSegment,
 } from "@/lib/during"
-import { linearScale } from "@/lib/chart"
 import { displayName, lowerFirst } from "@/lib/kind-names"
+import { useReferenceTitles } from "@/hooks/use-reference-titles"
 import {
   codeWords,
+  distinct,
   HEART_RATE_ZONES,
+  metricInfoOf,
   readingText,
+  refIdOf,
+  sameRef,
   reducerChoiceWords,
   zoneKey,
 } from "@/lib/observations"
@@ -57,10 +62,15 @@ import {
 } from "@/lib/observations-time"
 import {
   bucketsOf,
+  namedSources,
   numberOf,
   rowValue,
   seriesOn,
 } from "@/lib/observations-answer"
+import { codeColor } from "@/lib/overlay"
+import { splitRecordPath } from "@/lib/record-path"
+import { AXIS_LEFT, timeAxis } from "@/lib/time-axis"
+import { listWords } from "@/lib/tools"
 import { unitSymbol } from "@/lib/units"
 
 export function DuringSection({
@@ -79,6 +89,7 @@ export function DuringSection({
   if (!during) return null
   return (
     <DuringParts
+      kinds={kinds}
       // The record page stays mounted across records of one route, and a
       // zoom into one record's span means nothing on another's.
       key={`${record.kind}/${record.id}`}
@@ -99,7 +110,15 @@ function noMetric(error: Error | null): boolean {
   )
 }
 
-function DuringParts({ during, noun }: { during: During; noun: string }) {
+function DuringParts({
+  during,
+  noun,
+  kinds,
+}: {
+  during: During
+  noun: string
+  kinds: readonly KindInfo[]
+}) {
   const timezone = useMemo(() => readerTimezone(), [])
   // A zoom reads part of the span; the zones and the stages stay whole.
   const [view, setView] = useState<TimeRange>()
@@ -110,6 +129,13 @@ function DuringParts({ during, noun }: { during: During; noun: string }) {
       during.observed
     )
   )
+  // The sources that drew the line, by title: the record's own source may
+  // keep no heart rate (WHOOP's sleeps), and the line is then another's.
+  const curveSources = useMemo(
+    () => distinct((curve.data?.rows ?? []).flatMap(namedSources)).sort(),
+    [curve.data]
+  )
+  const titles = useReferenceTitles(curveSources, [...kinds])
   const zones = useQuery({
     ...aggregateQueryOptions(zonesRead(during), during.observed),
     enabled: during.zones,
@@ -122,6 +148,15 @@ function DuringParts({ during, noun }: { during: During; noun: string }) {
     ...recordsQueryOptions(stageListParams(during)),
     enabled: Boolean(during.stage),
   })
+  // The stage metric's own codes give each stage the colour the timeline
+  // gives it; the shipped order stands in until the record answers.
+  const stageMetric = useQuery({
+    ...stageMetricQuery(during.stage),
+    enabled: Boolean(during.stage),
+  })
+  const codes =
+    (stageMetric.data?.kind && metricInfoOf(stageMetric.data).codeSet) ||
+    SLEEP_STAGE_CODES
   const open = (
     <Button
       variant="ghost"
@@ -156,6 +191,18 @@ function DuringParts({ during, noun }: { during: During; noun: string }) {
           onZoom={setView}
           onReset={() => setView(undefined)}
         />
+        {curveSources.length > 0 && (
+          <p className="text-[12.5px] text-muted-foreground">
+            {sourcesWords(
+              curveSources.map((p) => titles.get(p) || refIdOf(p)),
+              Boolean(
+                during.source &&
+                !curveSources.some((p) => sameRef(p, during.source))
+              ),
+              noun
+            )}
+          </p>
+        )}
       </Part>
       {during.zones && (
         <Part title="Time in heart rate zones">
@@ -178,12 +225,13 @@ function DuringParts({ during, noun }: { during: During; noun: string }) {
                 <Hypnogram
                   window={during.window}
                   segments={stageSegments(stages.data.records)}
+                  codes={codes}
                 />
               )}
               {totals.error && !noMetric(totals.error) ? (
                 <Failed error={totals.error} />
               ) : (
-                <StageTotals answer={totals.data} />
+                <StageTotals answer={totals.data} codes={codes} />
               )}
               {stages.error && <Failed error={stages.error} />}
             </>
@@ -192,6 +240,26 @@ function DuringParts({ during, noun }: { during: During; noun: string }) {
       )}
     </section>
   )
+}
+
+/** Which sources the heart rate line is drawn from, and where the record's
+ * own source is not among them, that it kept none. */
+function sourcesWords(
+  names: readonly string[],
+  ownMissing: boolean,
+  noun: string
+): string {
+  const from = `Heart rate from ${listWords([...names])}`
+  return ownMissing
+    ? `${from}: this ${noun}’s own source kept none for it.`
+    : `${from}.`
+}
+
+/** The read of the record a metric reference names. */
+function stageMetricQuery(path: string | undefined) {
+  const parts = path ? splitRecordPath(path) : undefined
+  const [authority = "", pkg = "", name = ""] = parts?.kind.split("/") ?? []
+  return recordQueryOptions(authority, pkg, name, parts?.id ?? "")
 }
 
 function Part({ title, children }: { title: string; children: ReactNode }) {
@@ -285,10 +353,23 @@ function HeartCurve({
                   {windowWords(buckets[b].start, buckets[b].end)}
                 </p>
                 {row ? (
-                  <p className="mt-1">
-                    Average {value("avg")}, lowest {value("min")}, highest{" "}
-                    {value("max")}
-                  </p>
+                  // A value and its unit never break apart.
+                  <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
+                    {(
+                      [
+                        ["Average", "avg"],
+                        ["Lowest", "min"],
+                        ["Highest", "max"],
+                      ] as const
+                    ).map(([word, key]) => (
+                      <div key={key} className="contents">
+                        <dt className="text-faint">{word}</dt>
+                        <dd className="text-right whitespace-nowrap tabular-nums">
+                          {value(key)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
                 ) : (
                   <p className="mt-1 text-muted-foreground">
                     Nothing measured.
@@ -313,7 +394,13 @@ function Bars({
   items,
 }: {
   label: string
-  items: { key: string; name: ReactNode; minutes: number | null }[]
+  items: {
+    key: string
+    name: ReactNode
+    minutes: number | null
+    /** The bar's colour; the first series colour where absent. */
+    color?: string
+  }[]
 }) {
   const most = Math.max(0, ...items.map((i) => i.minutes ?? 0))
   return (
@@ -326,9 +413,10 @@ function Bars({
           <dt className="text-muted-foreground">{item.name}</dt>
           <div aria-hidden className="h-2 rounded-full bg-hover">
             <div
-              className="h-2 rounded-full bg-[var(--series-1)]"
+              className="h-2 rounded-full"
               style={{
                 width: most ? `${((item.minutes ?? 0) / most) * 100}%` : 0,
+                background: item.color ?? "var(--series-1)",
               }}
             />
           </div>
@@ -368,8 +456,15 @@ function ZoneBars({ answer }: { answer?: AggregateResult }) {
   )
 }
 
-/** The minutes in each stage, by the code's words. */
-function StageTotals({ answer }: { answer?: AggregateResult }) {
+/** The minutes in each stage, by the code's words, each bar in its
+ * stage's colour. */
+function StageTotals({
+  answer,
+  codes,
+}: {
+  answer?: AggregateResult
+  codes: readonly string[]
+}) {
   const rows = (answer?.rows ?? []).filter((r) => r.group?.code)
   if (!rows.length) {
     return (
@@ -385,37 +480,38 @@ function StageTotals({ answer }: { answer?: AggregateResult }) {
         key: r.group!.code!,
         name: <CodeMark code={r.group!.code} />,
         minutes: numberOf(rowValue(r, "sum")?.value),
+        color: codeColor(r.group!.code!, codes),
       }))}
     />
   )
 }
 
 const HYPNO_ROW = 18
-const HYPNO_LEFT = 64
 const HYPNO_AXIS = 18
 
 /** A night's stages in order: a row per stage, a block per segment over
- * the sleep's span, so the night reads left to right. Drawn only where the
- * segments never overlap (`hypnogramOf`). */
+ * the sleep's span, so the night reads left to right, on the heart rate
+ * chart's time axis above it (`timeAxis`): the same width, margins and
+ * labelled times. Drawn only where the segments never overlap
+ * (`hypnogramOf`). */
 function Hypnogram({
   window,
   segments,
+  codes,
 }: {
   window: TimeRange
   segments: StageSegment[]
+  codes: readonly string[]
 }) {
-  const { ref, width } = useWidth(520)
+  const { ref, width } = useWidth(720)
   const night = hypnogramOf(segments)
   if (!night) return null
   const rows = stageRows(night)
-  const x = linearScale(
-    [window.start, window.end],
-    [HYPNO_LEFT, Math.max(HYPNO_LEFT + 40, width - 8)]
-  )
+  const { x, labels } = timeAxis(window, autoBucket(window), width)
   const height = rows.length * HYPNO_ROW + HYPNO_AXIS
   const words = rows.map(codeWords).join(", ")
   return (
-    <div ref={ref} className="w-full max-w-[720px]">
+    <div ref={ref} className="w-full">
       <svg
         width={width}
         height={height}
@@ -427,7 +523,7 @@ function Hypnogram({
         {rows.map((code, i) => (
           <text
             key={code}
-            x={HYPNO_LEFT - 8}
+            x={AXIS_LEFT - 8}
             y={i * HYPNO_ROW + HYPNO_ROW / 2}
             textAnchor="end"
             dominantBaseline="middle"
@@ -449,7 +545,7 @@ function Hypnogram({
               width={Math.max(1, x1 - x0)}
               height={HYPNO_ROW - 4}
               rx={2}
-              fill={`var(--series-${(row % 8) + 1})`}
+              fill={codeColor(s.code, codes)}
             >
               <title>
                 {`${codeWords(s.code)}, ${clockWords(s.start)} to ${clockWords(s.end)}`}
@@ -457,21 +553,17 @@ function Hypnogram({
             </rect>
           )
         })}
-        <text
-          x={HYPNO_LEFT}
-          y={height - 4}
-          className="fill-faint text-[11.5px] tabular-nums"
-        >
-          {clockWords(window.start)}
-        </text>
-        <text
-          x={x(window.end)}
-          y={height - 4}
-          textAnchor="end"
-          className="fill-faint text-[11.5px] tabular-nums"
-        >
-          {clockWords(window.end)}
-        </text>
+        {labels.map((l) => (
+          <text
+            key={l.i}
+            x={l.at}
+            y={height - 4}
+            textAnchor="middle"
+            className="fill-faint text-[11.5px] tabular-nums"
+          >
+            {l.text}
+          </text>
+        ))}
       </svg>
     </div>
   )

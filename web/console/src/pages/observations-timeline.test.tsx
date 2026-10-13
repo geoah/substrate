@@ -1489,6 +1489,25 @@ describe("the charts", () => {
     expect(legend.textContent).toContain("Awake")
   })
 
+  it("keeps each stage's colour beside another metric", async () => {
+    // Heart rate comes first, yet the stages keep the colours they wear
+    // alone and on a sleep's page.
+    mount(`?metric=health/heart_rate,health/sleep_stage&${WINDOW}`)
+    const chart = await lane("Heart rate and Sleep stage")
+    await waitFor(() =>
+      expect(
+        chart.querySelectorAll("path[data-series][fill^='var(--series']")
+      ).toHaveLength(4)
+    )
+    const fill = (code: string) =>
+      [...chart.querySelectorAll("path[data-series]")]
+        .find((p) => p.getAttribute("data-series")?.endsWith(code))
+        ?.getAttribute("fill")
+    // The fixture's metric lists rem, deep, light, awake.
+    expect(fill("rem")).toBe("var(--series-1)")
+    expect(fill("awake")).toBe("var(--series-4)")
+  })
+
   it("stacks a coded gauge's time in each state as the engine answers it", async () => {
     // A coded gauge reads a bare `timeInState`. Grouped by code, the
     // engine answers each row with its own state's value, the reducer

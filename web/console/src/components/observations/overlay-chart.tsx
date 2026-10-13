@@ -623,6 +623,15 @@ function drawnSeries(
 ): Drawn[] {
   const universe: string[] = []
   const all: Drawn[] = []
+  // A category metric's codes take the first colours, in the metric's own
+  // order, so a stage wears one colour beside any other metric
+  // (`codeColor`).
+  const coded = states.filter((st) => st.plot.groupKey === "code")
+  for (const { plot } of coded) {
+    for (const code of plot.codes ?? []) {
+      universe.push(seriesKey(plot.metric, code))
+    }
+  }
   for (const state of states) {
     const { plot } = state
     const answered = seriesOn(
@@ -636,7 +645,10 @@ function drawnSeries(
       plot,
       answered.map((s) => s.key)
     )
-    for (const v of own) universe.push(seriesKey(plot.metric, v))
+    for (const v of own) {
+      const key = seriesKey(plot.metric, v)
+      if (!universe.includes(key)) universe.push(key)
+    }
     // Categories stack and list in the metric's own order.
     const ordered =
       plot.groupKey === "code"

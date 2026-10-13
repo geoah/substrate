@@ -36,14 +36,8 @@ import {
   tickLabels,
   type Scale,
 } from "@/lib/chart"
-import {
-  axisTicks,
-  bucketWords,
-  dayBucket,
-  labelledTicks,
-  type BucketSize,
-  type TimeRange,
-} from "@/lib/observations-time"
+import type { BucketSize, TimeRange } from "@/lib/observations-time"
+import { AXIS_LEFT, timeAxis } from "@/lib/time-axis"
 import type { Bucket, SeriesPoint } from "@/lib/observations-answer"
 import type { AxisSide, ChartMark } from "@/lib/overlay"
 
@@ -72,10 +66,7 @@ const TOP = 10
 const CAPTION = 14
 const PLOT = 200
 const AXIS = 26
-const LEFT = 52
-const RIGHT = 14
-/** The right margin where a second axis needs its labels. */
-const RIGHT_AXIS = 52
+const LEFT = AXIS_LEFT
 const GAP = 2
 const MAX_BAR = 24
 
@@ -376,11 +367,8 @@ function layoutOf(
   const rights = series.filter((s) => s.axis === "right")
   const top = captioned ? TOP + CAPTION : TOP
   const height = top + PLOT + AXIS
-  const right = Math.max(
-    LEFT + 40,
-    width - (rights.length ? RIGHT_AXIS : RIGHT)
-  )
-  const x = linearScale([domain.start, domain.end], [LEFT, right])
+  const axis = timeAxis(domain, size, width, rights.length > 0)
+  const { x, right } = axis
   const windows = buckets.map((b) => {
     const x0 = x(Math.max(b.start, domain.start))
     const x1 = x(Math.min(b.end, domain.end))
@@ -426,28 +414,7 @@ function layoutOf(
   }
   const lines = series.filter((s) => (s.mark ?? "line") === "line")
 
-  // The x axis is the whole range, its size's boundaries labelled whether a
-  // bucket holds anything there or not. A label needs about 84px, so every
-  // k-th boundary is labelled, k from the boundaries' real spacing: under a
-  // pixel apart, a quarter hour over a month is.
-  const marks = axisTicks(domain, size)
-  const spacing = marks.length > 1 ? x(marks[1]) - x(marks[0]) : right - LEFT
-  const every = spacing > 0 ? Math.max(1, Math.ceil(84 / spacing)) : 1
-  const labelled = labelledTicks(marks, size, every)
-  // A day, week or month names a slot, not an instant: its label sits under
-  // the middle of the slot, where its bars and points are drawn.
-  const slotted = dayBucket(size)
-  const xLabels = labelled.map((i, n) => {
-    const t = marks[i]
-    const previous = n > 0 ? marks[labelled[n - 1]] : undefined
-    const mid = slotted
-      ? (x(Math.max(t, domain.start)) +
-          x(Math.min(marks[i + 1] ?? domain.end, domain.end))) /
-        2
-      : x(t)
-    const at = Math.min(Math.max(mid, LEFT + 28), right - 28)
-    return { i, at, text: bucketWords(t, size, previous) }
-  })
+  const xLabels = axis.labels
 
   return {
     top,

@@ -201,7 +201,8 @@ interface Seen {
 function mount(
   rec: SubstrateRecord,
   kind: KindInfo,
-  stages: SubstrateRecord[] = SEGMENTS
+  stages: SubstrateRecord[] = SEGMENTS,
+  curve: AggregateResult = CURVE
 ) {
   const seen: Seen[] = []
   vi.stubGlobal(
@@ -219,7 +220,7 @@ function mount(
         : aggregate.metric?.ref === STAGE
           ? TOTALS
           : aggregate.bucket
-            ? CURVE
+            ? curve
             : ZONES
       return new Response(JSON.stringify(body), { status: 200 })
     })
@@ -297,9 +298,14 @@ describe("during a workout", () => {
     })
     act(() => chart.focus())
     fireEvent.keyDown(chart, { key: "ArrowRight" })
-    expect(within(chart).getByRole("status").textContent).toContain(
-      "Average 75 /min, lowest 70 /min, highest 140 /min"
+    const tip = within(chart).getByRole("status")
+    expect(tip.textContent).toContain(
+      "Average75 /minLowest70 /minHighest140 /min"
     )
+    // A value and its unit never break apart.
+    for (const value of tip.querySelectorAll("dd")) {
+      expect(value.className).toContain("whitespace-nowrap")
+    }
     fireEvent.keyDown(chart, { key: "Enter" })
     await waitFor(() =>
       expect(seen.filter((s) => s.aggregate?.bucket)).toHaveLength(2)
@@ -379,6 +385,64 @@ describe("during a sleep", () => {
     const link = screen.getByText("Open in the timeline").closest("a")!
     expect(JSON.parse(link.getAttribute("data-search")!).metric).toBe(
       `${HEART},${STAGE}`
+    )
+  })
+
+  it("draws the stages on the heart rate's time axis, each stage in its timeline colour", async () => {
+    mount(NIGHT, SLEEP)
+    const heart = await screen.findByRole("group", {
+      name: "Heart rate during this sleep",
+    })
+    const stages = await screen.findByRole("group", { name: "Sleep stages" })
+    const night = await within(stages).findByRole("img", {
+      name: /^Sleep stages from/,
+    })
+    const labels = (root: Element) =>
+      [...root.querySelectorAll("text[text-anchor=middle]")].map((t) => [
+        t.textContent,
+        t.getAttribute("x"),
+      ])
+    // The same times under both, at the same places.
+    expect(labels(night).length).toBeGreaterThan(2)
+    expect(labels(night)).toEqual(labels(heart.querySelector("svg")!))
+    // The health sample's codes in order: awake, light, deep, rem.
+    const fill = (code: string) =>
+      night.querySelector(`rect[data-stage=${code}]`)!.getAttribute("fill")
+    expect(fill("awake")).toBe("var(--series-1)")
+    expect(fill("light")).toBe("var(--series-2)")
+    expect(fill("deep")).toBe("var(--series-3)")
+    expect(fill("rem")).toBe("var(--series-4)")
+    // Each stage's bar wears its stage's colour too.
+    await waitFor(() => expect(stages.textContent).toContain("Deep"))
+    const bars = within(stages).getByLabelText("Time in each sleep stage")
+    const colours = [...bars.querySelectorAll("[style]")].map(
+      (b) => (b as HTMLElement).style.background
+    )
+    // Awake, light, deep and rem, as the totals answer them.
+    expect(colours).toEqual([
+      "var(--series-1)",
+      "var(--series-2)",
+      "var(--series-3)",
+      "var(--series-4)",
+    ])
+  })
+
+  it("names the sources the heart rate line is drawn from", async () => {
+    const APPLE_WATCH = `${AUTHORITY}/observations/source/apple-watch`
+    const fromWatches = answer(
+      CURVE.rows.map((r) => ({ ...r, sources: [APPLE_WATCH, GARMIN] }))
+    )
+    mount(
+      { ...NIGHT, properties: { ...NIGHT.properties, source: { ref: WHOOP } } },
+      SLEEP,
+      SPANS,
+      fromWatches
+    )
+    const heart = await screen.findByRole("group", { name: "Heart rate" })
+    await waitFor(() =>
+      expect(heart.textContent).toContain(
+        "Heart rate from apple-watch and garmin-forerunner-265: this sleep’s own source kept none for it."
+      )
     )
   })
 

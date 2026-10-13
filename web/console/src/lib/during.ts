@@ -233,6 +233,17 @@ export function hypnogramOf(
   return [...segments]
 }
 
+/** The health sample's sleep stage codes, in its metric's own order: a
+ * stage's colour where the metric record has not been read (`codeColor`). */
+export const SLEEP_STAGE_CODES = [
+  "awake",
+  "light",
+  "deep",
+  "rem",
+  "asleep",
+  "in_bed",
+]
+
 /** The rows of a hypnogram, top to bottom: awake and in bed above, then
  * REM, sleep the source did not stage, light and deep. A code outside them
  * goes last. */
