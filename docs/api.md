@@ -1568,13 +1568,13 @@ server verifies the provider's signature before it stores anything
 
 | Answer | When |
 | --- | --- |
-| `202 {"fire": "hook-…"}` | the request is recorded in the repository's changelog and the fire is on its way; a restart resumes it under the same id, which names its `triggerrun` row |
+| `202 {"fire": "hook-…"}` | the request is recorded in the repository's changelog and the fire is on its way; a restart resumes it under the same id, which names its `triggerrun` row. A repeat of a signed request the door admitted, inside its timestamp's `maxSkew`, gets the first request's fire id and stores nothing |
 | `401 auth` | the trigger declares a key and a signature, the request carries the key, and its signature is missing or wrong, its timestamp is missing or stale, its body is multipart, or the signing secret does not resolve; the body says `webhook signature refused` and nothing is stored |
 | `404 not_found` | no such repository, trigger or key, a disabled trigger, a trigger of another source, or a request the signature of a trigger with no key refuses: one answer for all of them |
 | `408` | the body did not arrive within two minutes of the headers |
 | `413` | a non-multipart body over 8 MiB, a multipart request over 32 MiB, or more than 1 MiB of body or inline part values for a trigger whose callable is an agent |
 | `431` | headers over 16 KiB |
-| `503` + `Retry-After` | more than eight deliveries in flight |
+| `503` + `Retry-After` | more than eight deliveries in flight, or a repeat of a signed request the door is still recording |
 
 A multipart/form-data request's file parts are stored in the repository's
 blob store (`PUT /api/v1/blobs`) before the fire; the callable reads their
