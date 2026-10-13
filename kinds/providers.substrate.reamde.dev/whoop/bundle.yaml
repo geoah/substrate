@@ -119,24 +119,19 @@ data:
   # 17: the `syncError` and `syncErrorAt` descriptions say a later
   # run that ends `ok`, or a reconnect, clears the pair. Text only.
   #
-  # 19: the `whoopwebhook` function and the `whoop-webhook` trigger check
-  # WHOOP's signed webhooks and rewrite or delete one mirror row per event;
-  # the `webhooksecret` setting holds the signing secret. `whoopsync` deletes
-  # a row whose object WHOOP answers 404 for when read back by id, and never
-  # writes a payload older than the stored row's `updatedAt`. ADDITIVE.
-  #
-  # 20: the `whoop-webhook` trigger declares WHOOP's signature and the door
-  # verifies it against the config record's client secret (decision record
-  # 0164). `whoopwebhook` no longer checks it, and the `webhooksecret`
-  # setting, a second copy of the client secret every function was handed,
-  # is gone.
-  #
-  # 21: `enabledRecovery` requests `read:sleep`, because `whoopwebhook`
-  # reads the sleep a `recovery.updated` event names to find its cycle.
-  # `whoopwebhook` drops an event WHOOP answers 401 or 403 for instead of
-  # failing the delivery. `recovery` declares `cycleId`, the id the sync
-  # reads a recovery back by when no cycle row exists. Both functions import
-  # their row mapping from the bundle's `whoop_mirror` module. ADDITIVE.
+  # 21: the `whoopwebhook` function and the `whoop-webhook` trigger. The
+  # trigger declares WHOOP's signature and the door verifies it against the
+  # config record's client secret (decision record 0164), so no function
+  # sees the secret. `whoopwebhook` rewrites or deletes the one mirror row
+  # an event names, and drops an event WHOOP answers 401 or 403 for.
+  # `enabledRecovery` requests `read:sleep`, because a `recovery.updated`
+  # event names a sleep, which is read to find the recovery's cycle.
+  # `whoopsync` deletes a row whose object WHOOP answers 404 for when read
+  # back by id, and never writes a payload older than the stored row's
+  # `updatedAt`. `recovery` declares `cycleId`, the id a recovery is read
+  # back by when no cycle row exists. Both functions import their row
+  # mapping from the bundle's `whoop_mirror` module. ADDITIVE. Versions 19
+  # and 20 were never released.
   version: 21
 ---
 # ---- the bundle document: the install unit --------------------------------
