@@ -953,8 +953,7 @@ user id from `GET /rest/user/id` on the first sync, so a push for an account
 that has not synced yet has nothing to match. A delivery none of whose
 summaries names a known user fails with an error naming the user id, and parks
 for a retry; a delivery that mixes users writes the known ones and lists the
-rest in its output. An account carried over from Garmin's OAuth 1.0a can set
-`userAccessToken`, which older pushes carry instead of a user id.
+rest in its output.
 
 **One row per `summaryId`, rewritten whole.** A row's id is
 `<account id>/<summaryId>` (a hash when that would leave the id alphabet), and

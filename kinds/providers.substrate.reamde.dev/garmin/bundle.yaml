@@ -251,14 +251,6 @@ data:
         the Garmin user id, from GET /rest/user/id at the first sync. It is
         stable across reconnects, every push carries it, and a push is written
         to the account whose `userId` it names
-    userAccessToken:
-      type: string
-      writer: owner
-      displayName: OAuth 1.0a user access token
-      description: >-
-        only for a connection carried over from Garmin's OAuth 1.0a: the user
-        access token older pushes carry instead of a user id, matched when
-        no account's `userId` is
     permissions:
       type: string
       repeated: true
@@ -2532,8 +2524,7 @@ data:
     Garmin POSTs each summary type to the endpoint the `garmin-webhook` trigger
     serves, as `{"<summary type>": [<summary>, ...]}`. It signs nothing, so the
     trigger's key is the only credential; every summary is matched to a
-    connected account by the `userId` it carries (or, on a connection carried
-    over from OAuth 1.0a, by `userAccessToken`). When no summary in the body
+    connected account by the `userId` it carries. When no summary in the body
     names a known user the whole delivery fails with an error naming the user
     ids, so it parks and can be retried once the account is connected; a body
     that mixes known and unknown users writes the known ones and lists the rest
@@ -2888,32 +2879,29 @@ data:
 
 
     def _accounts(cfg):
-        by_user, by_token = {}, {}
+        by_user = {}
         for acct in cfg.get("accounts") or []:
             props = acct.get("properties") or {}
             if props.get("userId"):
                 by_user.setdefault(str(props["userId"]), acct)
-            if props.get("userAccessToken"):
-                by_token.setdefault(str(props["userAccessToken"]), acct)
-        return by_user, by_token
+        return by_user
 
 
-    def _match(entry, by_user, by_token):
+    def _match(entry, by_user):
+        """The account a summary is for, by its `userId` alone: every mirror
+        row requires that id, so a summary without one has no row to be."""
         if not isinstance(entry, dict):
             return None
         uid = entry.get("userId")
         if uid not in (None, "") and str(uid) in by_user:
             return by_user[str(uid)]
-        tok = entry.get("userAccessToken")
-        if tok not in (None, "") and str(tok) in by_token:
-            return by_token[str(tok)]
         return None
 
 
     def _who(entry):
         if not isinstance(entry, dict):
             return "(not an object)"
-        return str(entry.get("userId") or entry.get("userAccessToken") or "(no userId)")
+        return str(entry.get("userId") or "(no userId)")
 
 
     def _permissions(value):
@@ -3043,7 +3031,7 @@ data:
         cfg = input.get("config") or {}
         body = _body(req)
         _check_client(req, cfg)
-        by_user, by_token = _accounts(cfg)
+        by_user = _accounts(cfg)
         accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
         keys = [k for k in ORDER if isinstance(body.get(k), list)] + \
             [k for k in LIFECYCLE if isinstance(body.get(k), list)]
@@ -3054,7 +3042,7 @@ data:
             # repository no longer holds is nothing to retry.
             entries = [e for k in keys if k not in LIFECYCLE for e in body[k]]
             unknown = sorted({_who(e) for k in keys for e in body[k]
-                              if _match(e, by_user, by_token) is None})
+                              if _match(e, by_user) is None})
             data_users = {_who(e) for e in entries}
             if data_users and data_users <= set(unknown):
                 raise RuntimeError(
@@ -3078,7 +3066,7 @@ data:
             entries = body[key]
             while cur["n"] < len(entries):
                 entry = entries[cur["n"]]
-                acct = _match(entry, by_user, by_token)
+                acct = _match(entry, by_user)
                 if acct is None:
                     _skip(cur, "unknown user")
                 elif key in LIFECYCLE:

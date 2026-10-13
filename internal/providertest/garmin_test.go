@@ -420,6 +420,26 @@ func TestGarminPushRefusesAnUnknownUser(t *testing.T) {
 		t.Fatalf("%d rows written for an unknown user", n)
 	}
 
+	// A summary is matched by its userId alone. One carrying only an OAuth
+	// 1.0a `userAccessToken` is an unknown user even where an account holds
+	// that token: the row would have no userId, which every mirror requires.
+	tokenOnly := map[string]any{}
+	for k, v := range f.body["bodyComps"][0] {
+		if k != "userId" {
+			tokenOnly[k] = v
+		}
+	}
+	tokenOnly["userAccessToken"] = "oauth1-token"
+	s, err = engine.NewStepper(ds, garminPushFn, garminConfig(t, ds, "", map[string]any{"userAccessToken": "oauth1-token"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetEnvelope(garminEnvelope("webhook-token", f.withBody(t, map[string]any{"bodyComps": []any{tokenOnly}})))
+	effects, _, _, err := s.Step(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "no connected account has Garmin user id") || len(effects) != 0 {
+		t.Fatalf("a summary naming only a userAccessToken answered %v with %d effects, want the unknown-user refusal", err, len(effects))
+	}
+
 	// A mixed delivery: the known user's summaries land, the stranger's do not.
 	cfg = garminConfig(t, ds, "", map[string]any{"userId": garminUser})
 	entries := f.body["bodyComps"]
