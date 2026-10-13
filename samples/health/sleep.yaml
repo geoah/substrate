@@ -1,4 +1,5 @@
-# one night or one nap as a session. The stage segments themselves are coded
+# one night or one nap as a session. The stage segments, or the stage totals
+# of a device that reports only totals, are coded
 # `amount` observations of `health/sleep_stage` beside it (`asleep` for sleep
 # the device did not stage, never an `in_bed` span over the whole night,
 # which is `timeInBed`); this record holds

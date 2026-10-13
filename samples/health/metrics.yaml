@@ -1029,9 +1029,14 @@ data:
       Which stage of sleep, as a code over a span: awake, light, deep or rem;
       asleep for sleep the source did not stage; in_bed for time in bed that
       is not asleep and is no other code, such as Health Connect's awake in
-      bed. One source's spans never overlap, so summed by code they are the
-      time in each stage. A night's whole time in bed is the sleep's timeInBed
-      and never an in_bed span: summed by code, the night would count twice.
+      bed. A source that reports when each stage happened writes one value
+      per segment, and its segments never overlap. A source that reports only
+      a total per stage, such as WHOOP, writes each total over the whole sleep,
+      so its spans overlap and the values, not the spans, are the time in
+      each stage; a window narrower than the night spreads such a total evenly
+      across the night. Summed by code over the night, both are the time in
+      each stage. A night's whole time in bed is the sleep's timeInBed and
+      never an in_bed span: summed by code, the night would count twice.
     codes:
       - system: healthkit
         code: HKCategoryTypeIdentifierSleepAnalysis
