@@ -1132,12 +1132,12 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | `property` | `{"name", "anchor"?, "utcOffset"?, "groupBy"?, "sources"?}`: reduce a declared number or duration of the filtered kinds instead, placed in time by `anchor` ([the property read](#the-property-read)) | `anchor` is `at` |
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
-| `reducers` | the reducers, each a name or a one-key object with its argument | required |
+| `reducers` | the reducers, each a name or a one-key object with its argument | required, except on a downsample and on a `metrics` read whose every entry names its own |
 | `groupBy` | any of `source`, `about`, `code`, `metric`, `kind`, `channel`, and `statistic` on a read from summaries or the latest read | |
 | `from` | `raw` (gauges, amounts, counters), `summaries` (summary points) or `prefer-raw` | `raw` |
 | `minCoverage` | `prefer-raw`'s floor, 0 to 1 | `0.9` |
 | `sources` | `{"policy", "order"?}`: `separate`, `priority` or `summaries` | `separate` |
-| `unit` | a unit of the metric's measure for the values, or a duration unit for `durationIn` and `timeInState` | the metric record's `unit`, else the first stream's |
+| `unit` | a unit of the metric's measure for the values, or a duration unit for `durationIn` and `timeInState`; refused beside `metrics`, whose entries name their own | the metric record's `unit`, else the first stream's |
 | `maxGap` | an ISO 8601 duration capping how long a gauge's value holds after its point | none |
 | `fill` | `null`, `zero` or `locf` | none |
 | `rolling` | `{"buckets", "reducers"?, "through"?}`: `avg`, `sum`, `min`, `max` or `stddev` over a window of buckets ending at this bucket (`through: "current"`) or the one before it (`"previous"`) | `reducers` is `["avg"]`, `through` is `current` |
