@@ -22,10 +22,17 @@
 -- The hold, the counter contract and the circular flag ride on every point,
 -- because a stream spans records and the rollups are computed from the
 -- points alone.
+--
+-- Every record id column sorts COLLATE "C", byte order: points at one
+-- instant are ordered by record id, and the database's own collation (en_US
+-- in the pgvector image) orders case and punctuation differently from Go's
+-- string comparison, which internal/observed.Before and every reader in Go
+-- use. Under it a rollup row, a raw read and the latest row would each pick
+-- a different first or last point of a tie.
 CREATE TABLE IF NOT EXISTS observed_points (
     repository     text        NOT NULL DEFAULT current_setting('substrate.repository'),
     kind           text        NOT NULL,
-    record_id      text        NOT NULL,
+    record_id      text        COLLATE "C" NOT NULL,
     ord            integer     NOT NULL,
     metric         text        NOT NULL,
     source         text        NOT NULL DEFAULT '',
@@ -80,8 +87,9 @@ CREATE INDEX IF NOT EXISTS observed_points_stream_idx
 --     digits stored.
 --   - `first_record_id`, `first_ord`, `last_record_id` and `last_ord`, the
 --     record id and index of the first and last point. Points at one instant
---     are ordered by record id and index, so two rows whose first (or last)
---     points share an instant are ordered as the raw points are.
+--     are ordered by record id (byte order) and index, so two rows whose
+--     first (or last) points share an instant are ordered as the raw points
+--     are.
 --   - `span_end`, the latest end of an amount row's spans. Its `covered_ms`
 --     is the union of the spans, all inside [first_ts, span_end), so a read
 --     joining two rows adds their lengths where those extents do not
@@ -113,11 +121,11 @@ CREATE TABLE IF NOT EXISTS observed_rollups (
     m2             float8,
     first_ts       timestamptz,
     first_value    numeric,
-    first_record_id text,
+    first_record_id text       COLLATE "C",
     first_ord      integer,
     last_ts        timestamptz,
     last_value     numeric,
-    last_record_id text,
+    last_record_id text        COLLATE "C",
     last_ord       integer,
     covered_ms     bigint      NOT NULL,
     span_end       timestamptz,
@@ -160,7 +168,7 @@ CREATE TABLE IF NOT EXISTS observed_latest (
     bounded        boolean     NOT NULL,
     hold_ms        bigint,
     utc_offset_min integer     NOT NULL,
-    record_id      text        NOT NULL,
+    record_id      text        COLLATE "C" NOT NULL,
     revision       bigint,
     points         bigint      NOT NULL,
     PRIMARY KEY (repository, metric, kind, source, about, channel)

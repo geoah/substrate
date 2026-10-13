@@ -275,8 +275,7 @@ func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 	rows, err := db.Query(`
 		SELECT metric, kind, source, about, channel, form, ts, ts_end, value, value_exact::text, value_base, code,
 		       unit, delta, utc_offset_min, bounded, hold_ms, reset_rule, reset_at, wrap_at::text, circular, record_id, ord
-		FROM observed_points WHERE form <> 'summary'
-		ORDER BY metric, kind, source, about, channel, form, ts, record_id, ord`)
+		FROM observed_points WHERE form <> 'summary'`)
 	if err != nil {
 		t.Fatalf("read the points: %v", err)
 	}
@@ -317,6 +316,17 @@ func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 		p.Group = sp.group
 		out = append(out, sp)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	// In the specification's order, not the database's: a stream's points by
+	// observed.Before, whatever collation the database sorts text in.
+	sort.SliceStable(out, func(i, j int) bool {
+		if a, b := strings.Join(out[i].hold[:], "\x1f"), strings.Join(out[j].hold[:], "\x1f"); a != b {
+			return a < b
+		}
+		return observed.Before(out[i].point, out[j].point)
+	})
 	return out
 }
 
@@ -808,6 +818,43 @@ func TestObservedLatestTieBreakAndAMovedPoint(t *testing.T) {
 	}
 	if l, ok := r.latest(t, "health/body_mass", r.source+"/other-scale"); !ok || l.recordID != "x" || l.points != 1 {
 		t.Errorf("the new stream after the move = %+v", l)
+	}
+	checkRollupsMatchSpec(t, r.db)
+}
+
+// Points at one instant are ordered by record id in byte order on every path
+// (observed.Before): the rollup row's first and last point, the gauge's held
+// time and the latest row, whatever collation the database sorts text in. The
+// ids differ in case and in punctuation, which en_US orders the other way.
+func TestObservedTiesAtOneInstantFollowByteOrder(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	ids := []string{"tie/a1", "tie/B1", "tie/b-2", "tie/b1"}
+	for i, id := range ids {
+		r.mustPut(t, r.observation, id, map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef("probe"), "form": "gauge",
+			"value": quantity(fmt.Sprintf("2%d", i), "Cel"), "at": "2026-10-07T06:00:00Z",
+		})
+	}
+	byBytes := append([]string(nil), ids...)
+	sort.Strings(byBytes)
+	first, last := byBytes[0], byBytes[len(byBytes)-1]
+	var dbFirst, dbLast string
+	if err := r.db.QueryRow(`SELECT min(record_id), max(record_id) FROM observed_points WHERE record_id LIKE 'tie/%'`).
+		Scan(&dbFirst, &dbLast); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("the database orders the ids from %s to %s; byte order from %s to %s", dbFirst, dbLast, first, last)
+	if l, ok := r.latest(t, "air_temperature", r.source+"/probe"); !ok || l.recordID != last {
+		t.Errorf("the latest row is %q (%v), want %q, the greatest id in byte order", l.recordID, ok, last)
+	}
+	var rowFirst, rowLast string
+	if err := r.db.QueryRow(`SELECT first_record_id, last_record_id FROM observed_rollups WHERE metric = $1`,
+		r.metric+"/air_temperature").Scan(&rowFirst, &rowLast); err != nil {
+		t.Fatal(err)
+	}
+	if rowFirst != first || rowLast != last {
+		t.Errorf("the rollup row runs from %q to %q, want %q to %q in byte order", rowFirst, rowLast, first, last)
 	}
 	checkRollupsMatchSpec(t, r.db)
 }

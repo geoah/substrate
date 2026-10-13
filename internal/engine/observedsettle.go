@@ -198,7 +198,8 @@ type pointKey struct {
 }
 
 // pointOrder is that order, and pointAfter the keyset predicate past a key
-// bound at $7 to $9.
+// bound at $7 to $9. record_id sorts COLLATE "C" (migration 0012), so a tie
+// at one instant is in observed.Before's byte order.
 const (
 	pointOrder = `p.ts, p.record_id, p.ord`
 	pointAfter = `(p.ts, p.record_id, p.ord) > ($7, $8, $9)`

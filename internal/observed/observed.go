@@ -87,9 +87,11 @@ type Point struct {
 }
 
 // Before orders two points as every reader of the index does: by instant,
-// then by record id, then by index in the record. A rollup row's first and
-// last point are the first and last of its group in this order, so a reader
-// merging rows picks the same first and last as one reading the raw points.
+// then by record id compared byte by byte, then by index in the record. A
+// rollup row's first and last point are the first and last of its group in
+// this order, so a reader merging rows picks the same first and last as one
+// reading the raw points. The index's record id columns sort COLLATE "C" so
+// that SQL orders a tie the same way.
 func Before(a, b Point) bool {
 	if !a.At.Equal(b.At) {
 		return a.At.Before(b.At)

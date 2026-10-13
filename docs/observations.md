@@ -476,6 +476,11 @@ on its UTC day.
 null for an arbitrary unit, a level and `rad`, which convert to nothing.
 `bounded` is true where the value carries a comparator (a lab's `<0.01`).
 
+Points at one instant are ordered by record id, compared byte by byte (the
+record id columns sort `COLLATE "C"`), then by their index in the record.
+Every reader uses that order: a rollup row's first and last point, a raw
+read and the latest row pick the same point of a tie.
+
 ### Rollup rows
 
 A rollup row covers one 15-minute bucket aligned on UTC, which every offset
