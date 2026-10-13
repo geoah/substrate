@@ -19,8 +19,9 @@ func unitsCall(t *testing.T, host string, params map[string]any) hostCall {
 }
 
 // A conversion reads at most vocabulary.MaxDecimalDigits digits, refused by
-// name before any arithmetic, and none once the invocation's context is done:
-// the host-call loop serves it synchronously, so an unbounded one held the
+// name before any arithmetic, answers at most that many, so a body can write
+// the answer back, and reads none once the invocation's context is done: the
+// host-call loop serves it synchronously, so an unbounded one held the
 // invocation past its timeout.
 func TestUnitsConvertIsBounded(t *testing.T) {
 	ctx := context.Background()
@@ -29,12 +30,16 @@ func TestUnitsConvertIsBounded(t *testing.T) {
 	if !handled || err == nil || !strings.Contains(err.Error(), "at most") {
 		t.Fatalf("a value of %d digits: handled %v, err %v; want a refusal naming the bound", len(long), handled, err)
 	}
-	out, _, err := serveUnits(ctx, unitsCall(t, hostUnitsConvert, map[string]any{"value": long[1:], "from": "kg", "to": "g"}))
+	out, _, err := serveUnits(ctx, unitsCall(t, hostUnitsConvert, map[string]any{"value": long[1:], "from": "g", "to": "kg"}))
 	if err != nil {
 		t.Fatalf("a value at the bound: %v", err)
 	}
-	if got := out.(map[string]any)["value"].(string); got != long[1:]+"000" {
-		t.Fatalf("a value at the bound converted to %.20s...", got)
+	if got, want := out.(map[string]any)["value"].(string), long[4:]+"."+long[1:4]; got != want {
+		t.Fatalf("a value at the bound converted to %.20s..., want %.20s...", got, want)
+	}
+	_, _, err = serveUnits(ctx, unitsCall(t, hostUnitsConvert, map[string]any{"value": long[1:], "from": "kg", "to": "g"}))
+	if err == nil || !strings.Contains(err.Error(), "at most 1000 digits") {
+		t.Fatalf("an answer of 1003 integer digits: %v, want a refusal naming the bound", err)
 	}
 	done, cancel := context.WithCancel(ctx)
 	cancel()
