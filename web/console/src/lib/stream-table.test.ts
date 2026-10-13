@@ -94,14 +94,14 @@ describe("the filter bar's fields", () => {
   it("reads the chosen values from the address's filter tokens", () => {
     const tokens = [
       encodeFilter(choiceFilter("source", [GARMIN, APPLE])),
-      encodeFilter(choiceFilter("form", ["gauge"])),
+      encodeFilter(choiceFilter("shape", ["gauge"])),
       encodeFilter({ field: "nonsense", op: "eq", value: "x" }),
     ]
     expect(streamChoices(tokens)).toEqual({
       metric: [],
       source: [GARMIN, APPLE],
       about: [],
-      form: ["gauge"],
+      shape: ["gauge"],
       channel: [],
     })
   })
@@ -181,7 +181,7 @@ describe("sorting and grouping", () => {
   })
 
   it("keeps the order a stream came in where the column ties", () => {
-    const sorted = sortStreams(rows, "form:asc")
+    const sorted = sortStreams(rows, "shape:asc")
     const levels = sorted.filter((r) => r.shape === "gauge").map((r) => r.key)
     expect(levels).toEqual(
       rows.filter((r) => r.shape === "gauge").map((r) => r.key)
@@ -301,7 +301,7 @@ describe("a saved view of the table", () => {
       "select",
       "metric",
       "source",
-      "form",
+      "shape",
       "latest",
       "when",
       "count",

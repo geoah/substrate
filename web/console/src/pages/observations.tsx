@@ -6,7 +6,7 @@
  *
  * The rows sit in the records grid every collection uses, with its
  * machinery: a sort in the address, the filter bar over the stream columns
- * (metric, source, about, form, channel, each a set of values to pick), a
+ * (metric, source, about, reading, channel, each a set of values to pick), a
  * search, column options, grouping, and saved views kept on the console
  * preference record under their own collection key (`lib/stream-table.ts`).
  * The metric is the row's link: it opens the timeline narrowed to that
@@ -292,7 +292,7 @@ export function ObservationsPage() {
             ...named("about", values.abouts, obs.pins.about),
           ]
         : [],
-      form: distinct(rows.map((r) => r.shape)).map((value) => ({
+      shape: distinct(rows.map((r) => r.shape)).map((value) => ({
         value,
         label: SHAPE_WORDS[value as ReadingShape],
       })),
@@ -310,7 +310,7 @@ export function ObservationsPage() {
     if (field === "metric") return obs.metricName(key)
     if (field === "source") return obs.nameOf(key, obs.pins.source)
     if (field === "about") return obs.nameOf(key, obs.pins.about)
-    if (field === "form") return SHAPE_WORDS[key as ReadingShape] ?? key
+    if (field === "shape") return SHAPE_WORDS[key as ReadingShape] ?? key
     return key
   }
 
@@ -733,7 +733,7 @@ function GroupValue({
   if (field === "source") {
     return <GroupRecord value={value} pin={obs.pins.source} />
   }
-  if (field === "form") return <ShapeWord shape={value as ReadingShape} />
+  if (field === "shape") return <ShapeWord shape={value as ReadingShape} />
   return <span>{value}</span>
 }
 
@@ -871,11 +871,13 @@ function streamColumns(
       meta: { label: "Channel", width: 100 },
     },
     {
-      id: "form",
-      header: ({ column }) => <GridColumnHeader column={column} label="Form" />,
+      id: "shape",
+      header: ({ column }) => (
+        <GridColumnHeader column={column} label="Reading" />
+      ),
       accessorFn: (r) => r.shape,
       cell: ({ row }) => <ShapeWord shape={row.original.shape} />,
-      meta: { label: "Form", width: 124 },
+      meta: { label: "Reading", width: 124 },
     },
     {
       id: "latest",

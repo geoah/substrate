@@ -672,9 +672,9 @@ aggregate latest read: `GET /api/v1/records` with
 `aggregate={"groupBy":["metric","source","about","channel"],"reducers":["last"]}`,
 no bucket and no range. Each row shows the metric by its record's name, the
 source as a record mention, what it is about (**You** where it names
-nothing, which means the owner), its channel, the form of its newest value
-in words (**Level**, **Amount**, **Running total**, **Vendor summary**,
-**Category**), that value in its unit to the metric's places (the stored
+nothing, which means the owner), its channel, how its newest value reads
+(**Reading**: its form in words, **Level**, **Amount**, **Running total** or
+**Vendor summary**, or **Category** for a coded stream), that value in its unit to the metric's places (the stored
 digits on hover, and as stored with Technical details on; a category is
 the one a coded `last` answers in `code`), when, and how many points the
 stream holds.
@@ -683,11 +683,11 @@ The rows sit in the grid a collection's records do
 ([A collection](#a-collection)), with the same controls, applied in the page
 because discovery loads every stream. **Sort** or a header click picks the
 order (`?sort=`, newest first by default). **Filters** offer metric, source,
-about, form and channel, each a set of values to pick, several meaning any
+about, reading and channel, each a set of values to pick, several meaning any
 of them (`?filter=`); the chosen metrics, sources and things also narrow
 discovery on the server. The search box matches the rows' words
 (`?search=`). **Columns** shows, hides and reorders the columns, and
-**Group** cuts the rows by metric, source, about, form or channel
+**Group** cuts the rows by metric, source, about, reading or channel
 (`?group=`). **Saved views** keep a filter, sort, column set and grouping on
 the console preference record under the collection key
 `observations/streams`; a view is lit while the address matches it and never

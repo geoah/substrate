@@ -329,7 +329,7 @@ describe("the streams table", () => {
     )
   })
 
-  it("narrows to the chosen sources and forms from the address", async () => {
+  it("narrows to the chosen sources and readings from the address", async () => {
     mount(`?filter=${filter("source", "withings-body-plus")}`)
     const table = await screen.findByRole("table")
     await waitFor(() =>
@@ -337,7 +337,7 @@ describe("the streams table", () => {
     )
     expect(table.textContent).toContain("Weight")
     cleanup()
-    mount(`?filter=${filter("form", "summary")}`)
+    mount(`?filter=${filter("shape", "summary")}`)
     const again = await screen.findByRole("table")
     await waitFor(() => expect(again.textContent).toContain("Recovery"))
     expect(within(again).getAllByRole("row").slice(1)).toHaveLength(1)

@@ -1,6 +1,6 @@
 /** The streams table (`/observations`) in the records lists' terms: its
  * rows, the fields its filter bar offers (each a set of values to pick:
- * metrics, sources, things, forms, channels), the sort and grouping it
+ * metrics, sources, things, readings, channels), the sort and grouping it
  * applies in the page (discovery loads every stream at once), the
  * selection it keeps in the address, and the shape a saved view of it
  * names. Pure functions of the streams and the address. */
@@ -38,14 +38,15 @@ export interface StreamRow extends Stream {
   shape: ReadingShape
 }
 
-/** The stream columns a reader filters and groups by. */
-export type StreamField = "metric" | "source" | "about" | "form" | "channel"
+/** The stream columns a reader filters and groups by. `shape` is how a
+ * stream reads: its form, or a category for a coded one. */
+export type StreamField = "metric" | "source" | "about" | "shape" | "channel"
 
 export const STREAM_FIELDS: readonly StreamField[] = [
   "metric",
   "source",
   "about",
-  "form",
+  "shape",
   "channel",
 ]
 
@@ -53,7 +54,7 @@ export const FIELD_LABELS: Record<StreamField, string> = {
   metric: "Metric",
   source: "Source",
   about: "About",
-  form: "Form",
+  shape: "Reading",
   channel: "Channel",
 }
 
@@ -104,7 +105,7 @@ export function streamChoices(tokens: readonly string[] | null): StreamChoices {
     metric: [],
     source: [],
     about: [],
-    form: [],
+    shape: [],
     channel: [],
   }
   for (const f of decodeFilters(tokens ? [...tokens] : null)) {
@@ -154,7 +155,7 @@ export function streamMatches(
   ) {
     return false
   }
-  if (choices.form.length && !choices.form.includes(row.shape)) return false
+  if (choices.shape.length && !choices.shape.includes(row.shape)) return false
   if (choices.channel.length && !choices.channel.includes(row.channel ?? "")) {
     return false
   }
@@ -184,7 +185,7 @@ export const SORTABLE = [
   "source",
   "about",
   "channel",
-  "form",
+  "shape",
   "latest",
   "when",
   "count",
@@ -227,7 +228,7 @@ function sortValue(
         : ""
     case "channel":
       return row.channel?.toLowerCase()
-    case "form":
+    case "shape":
       return SHAPE_WORDS[row.shape].toLowerCase()
     case "latest":
       return numberOf(row.value) ?? row.code ?? undefined
@@ -273,7 +274,7 @@ export const STREAM_GROUPS: readonly StreamField[] = [
   "metric",
   "source",
   "about",
-  "form",
+  "shape",
   "channel",
 ]
 
@@ -290,7 +291,7 @@ export function streamGroupKey(row: StreamRow, group: StreamField): string {
       return row.source ?? ""
     case "about":
       return row.about ?? ""
-    case "form":
+    case "shape":
       return row.shape
     case "channel":
       return row.channel ?? ""
