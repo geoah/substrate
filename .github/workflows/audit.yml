@@ -1,5 +1,6 @@
 # The vulnerability scans: govulncheck, pnpm audit and pip-audit over the
-# function bodies' PEP 723 dependencies (`mise run ci:audit`).
+# function bodies' PEP 723 dependencies (`mise run ci:audit`), and grype over
+# the built image (`mise run ci:audit:image`).
 #
 # Its own workflow, not a job in ci.yml. latest.yml, release-please.yml and
 # release.yml all wait for a SUCCESSFUL ci run on main, and this is the one
@@ -72,3 +73,26 @@ jobs:
             ~/.cache/go-build
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
+  # grype over the image the Dockerfile builds: its Alpine packages and the
+  # binaries it copies in, which no other scan reads. Never on a pull request:
+  # the job builds the whole image, and its answer moves with Alpine's
+  # advisories far more often than with a diff, so a push to main and the
+  # weekly run are where it is asked.
+  audit-image:
+    name: audit image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Only grype is installed; the build runs inside docker.
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          experimental: true
+          version: 2026.9.2
+          install_args: grype
+      - run: mise run ci:audit:image

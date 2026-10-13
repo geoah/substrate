@@ -27,15 +27,23 @@
 #   docker buildx build --platform linux/amd64,linux/arm64 \
 #     --provenance=false --sbom=false \
 #     -t ghcr.io/geoah/substrate:<tag> --push .
+#
+# Every base image is an exact tag plus its index digest (the multi-arch
+# manifest list), so a base refresh arrives as a Dependabot pull request,
+# never unannounced on the next build. The tag is what `lint:toolchain` holds
+# to .mise.toml; the digest is what the build pulls. The Alpine packages the
+# runtime stage upgrades and adds are the branch's current ones at build
+# time, so a security fix ships without waiting for a new digest.
 ARG ARTIFACTS=source
 
 # ---- web build ----------------------------------------------------------
 # The console is web/console (React + Vite + shadcn/ui + Tailwind), a
 # self-contained app with only an `@`→src alias — no workspace package to
 # stage. dist/ is arch-independent; build it once on the native arch, never qemu.
-# The major here is held to .mise.toml's node pin by `lint:toolchain`, because
-# this stage must build the console on the node the console is TESTED on.
-FROM --platform=$BUILDPLATFORM node:26-alpine AS web
+# The version here is held to .mise.toml's node pin by `lint:toolchain`,
+# exactly, because this stage must build the console on the node the console
+# is TESTED on.
+FROM --platform=$BUILDPLATFORM node:26.11.1-alpine3.24@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS web
 WORKDIR /web/console
 RUN npm install --global corepack@0.34.0
 RUN corepack enable
@@ -46,8 +54,10 @@ RUN pnpm build
 
 # ---- go build -----------------------------------------------------------
 # Runs on the native build arch and cross-compiles, so the multi-arch build
-# never emulates the Go toolchain.
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
+# never emulates the Go toolchain. The version is held to .mise.toml's go pin
+# and to go.mod's `go` line by `lint:toolchain`: this image sets
+# GOTOOLCHAIN=local, so a go.mod that asks for a newer Go fails here.
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS build
 ARG TARGETOS TARGETARCH
 # What this image will call itself when asked (discovery's `server.version`).
 # It has to be handed in: .dockerignore drops .git, so the toolchain records
@@ -112,11 +122,11 @@ FROM ${ARTIFACTS} AS artifacts
 # are the release's own `.sha256` files for that version; a bumped pin with
 # stale checksums fails this stage rather than shipping an unverified binary.
 # It runs on the native build arch and only downloads, so no stage emulates.
-FROM --platform=$BUILDPLATFORM alpine:3.24 AS uv
+FROM --platform=$BUILDPLATFORM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS uv
 ARG TARGETARCH
-ARG UV_VERSION=0.11.19
-ARG UV_SHA256_AMD64=c4c0d0a383413261af5f0f0743e1292f4aafbe907987ed83bd0ac66f0a3d7e20
-ARG UV_SHA256_ARM64=767629b64cdf078c32e42819db28d5ca868b8dc7e3a879967fadc3e4f7f66be3
+ARG UV_VERSION=0.11.33
+ARG UV_SHA256_AMD64=3e95b84d8a8b3390c91584d4fd0c4d326e951da2b8fb15a76719368af2795424
+ARG UV_SHA256_ARM64=e256e5cf23f8c2e7d4d83f029acd662cbe7275ff24268ce1d6d2ba9016855268
 RUN set -eu; \
     case "$TARGETARCH" in \
       amd64) target=x86_64-unknown-linux-musl; sum="$UV_SHA256_AMD64" ;; \
@@ -146,8 +156,13 @@ RUN set -eu; \
 # pre-populate uv's cache with the common provider SDKs
 # (google-api-python-client, requests, …) via `uv cache` — a documented cache
 # warm, NOT a hard dependency: nothing in the base image imports them.
-FROM alpine:3.24
-RUN apk add --no-cache ca-certificates tzdata python3
+#
+# `python3~3.14` holds the minor every function body runs on: an Alpine
+# refresh that moves python3 to another minor fails this build instead of
+# shipping a different Python with no reviewed edit.
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+# Alpine publishes fixed packages before a new base digest carries them.
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata python3~3.14
 # The tarball's entries carry the release builder's uid, so the copy sets
 # root as owner: a binary on PATH writable by some other uid is one it can
 # replace.

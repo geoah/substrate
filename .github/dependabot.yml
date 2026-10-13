@@ -4,12 +4,19 @@
 # and its grouping and digest handling are better, but it is a GitHub App
 # somebody has to install and keep authorized on the org. This file is the
 # whole setup for Dependabot, it works the moment it lands on main, and it now
-# does the two things Renovate used to be needed for here — pinning actions to
-# commit SHAs and updating base-image digests. If the volume of pull requests
-# ever becomes the problem, that is the moment to reconsider, not before.
+# does the two things Renovate used to be needed for here: it keeps the
+# actions' commit SHAs current, and the tags and digests the Dockerfile's base
+# images are pinned to. If the volume of pull requests ever becomes the
+# problem, that is the moment to reconsider, not before.
 #
-# Everything is grouped and weekly. One PR per dependency per week, across four
+# Everything is grouped and weekly. One PR per dependency per week, across five
 # ecosystems, would be a repository nobody reads.
+#
+# Every ecosystem waits seven days after a release before proposing it
+# (`cooldown`), so a hijacked release or a moved tag has a week to be found
+# and pulled before a bump here proposes it. The cooldown applies to version
+# updates only: security updates are not delayed by it, and they arrive
+# whenever Dependabot security updates are on in the repository's settings.
 version: 2
 
 updates:
@@ -19,6 +26,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       # The version is folded from these titles on merge, so a title nothing
@@ -44,6 +53,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
@@ -56,10 +67,11 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
     ignore:
-      # shadcn output is regenerated through the CLI, never hand-upgraded, and
-      # a bumped registry dependency here would land as an unreviewable diff
-      # across src/components/ui.
-      - dependency-name: shadcn
+      # typescript-eslint 8 declares a peer of typescript <6.1.0, so a
+      # TypeScript 7 bump breaks `console:lint`. Lift this once a
+      # typescript-eslint release accepts 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   # ---- The workflows' actions ---------------------------------------------
   # Every action is pinned to a commit SHA (see .github/workflows/*), which is
@@ -70,6 +82,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: ci
     labels: [type/dependencies, area/ci]
@@ -87,12 +101,18 @@ updates:
         patterns: ["*"]
 
   # ---- The images the build stands on -------------------------------------
+  # Each FROM is an exact tag plus its digest, so a base refresh is a digest
+  # bump here and a new node or Go is a tag bump. The tag bump fails
+  # `lint:toolchain` until the pin in .mise.toml follows, pushed onto the
+  # Dependabot branch: the image must build on what CI tests.
   - package-ecosystem: docker
     directories:
       - /
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: chore
     labels: [type/dependencies, area/ci]
@@ -106,5 +126,30 @@ updates:
         update-types: [minor, patch]
         patterns: ["*"]
       base-images-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # ---- The database compose.yaml runs -------------------------------------
+  # compose.yaml's pgvector image is the copy `lint:toolchain` holds every
+  # other one to (the CI Postgres, the dev box, the test containers), so its
+  # pull request fails that check until each copy follows. A Postgres major is
+  # a data directory migration for every compose deployment, so it arrives on
+  # its own, as a prompt to plan one, and is never merged as a bump.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+    labels: [type/dependencies, area/ci]
+    groups:
+      compose-images:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        patterns: ["*"]
+      compose-images-security:
         applies-to: security-updates
         patterns: ["*"]

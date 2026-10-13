@@ -2,6 +2,12 @@
 #
 # The CI scripts' own tests.
 #
+# .mise/toolchaincheck.sh is the tenth: it holds every copy of a toolchain pin
+# to its source, so a wrong pass is an image, a CI job or a laptop on a
+# version nobody reviewed. Each of its rules runs against a scratch copy of
+# the files it reads with one thing broken (one copy of one pin moved, or uv
+# added to an `apk add`), and must name it.
+#
 # .mise/cipostgres.sh is the ninth: it starts the database jobs' Postgres and
 # says when it is ready, so a wrong answer is a suite run against a server
 # still in its init scripts, or a job that hangs to its timeout on a pull
@@ -58,6 +64,7 @@ gocache="$PWD/.mise/gocache.sh"
 imagemain="$PWD/.mise/imagemain.sh"
 releasegate="$PWD/.mise/releasegate.sh"
 cipostgres="$PWD/.mise/cipostgres.sh"
+toolchaincheck="$PWD/.mise/toolchaincheck.sh"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -455,7 +462,17 @@ for task, by in sorted(covered.items()):
         findings.append(f"{task} is listed as run inside {by}, which `ci` does not depend on")
 print("\n".join(findings))
 PY
-pipeline() { python3 "$tmp/pipeline.py" "$1" "$2" "$3" 2>&1; }
+# stderr joins the findings only when the run failed: a version manager's
+# shim writes its own warnings there (mise's soft min_version), and a run
+# that succeeded reports its findings on stdout.
+pipeline() {
+  local out
+  if out="$(python3 "$tmp/pipeline.py" "$1" "$2" "$3" 2>"$tmp/pipeline.err")"; then
+    printf '%s' "$out"
+  else
+    printf '%s\n%s' "$out" "$(cat "$tmp/pipeline.err")"
+  fi
+}
 found="$(pipeline .mise.toml .github/workflows .github/rulesets/main.json)"
 [ -z "$found" ] || flag "the pipeline: ${found}"
 # The rules themselves, on scratch copies: a renamed required job, a second
@@ -579,7 +596,15 @@ for name, task in sorted(tasks.items()):
             findings.append(f"{name} runs a database suite outside .mise/dblock.sh: {shlex.join(words)}")
 print("\n".join(findings))
 PY
-dbslot() { python3 "$tmp/dbslot.py" "$1" 2>&1; }
+# stderr only when the run fails: a mise shim's version warning is not a finding.
+dbslot() {
+  local out
+  if out="$(python3 "$tmp/dbslot.py" "$1" 2>"$tmp/dbslot.err")"; then
+    printf '%s' "$out"
+  else
+    printf '%s\n%s' "$out" "$(cat "$tmp/dbslot.err")"
+  fi
+}
 found="$(dbslot .mise.toml)"
 [ -z "$found" ] || flag "the database slot: ${found}"
 # The rule itself, on scratch copies: each line below with its prefix taken
@@ -1256,5 +1281,131 @@ gate dispatch-release-green 0 workflow_dispatch hold=false "$(printf 'pr list\na
 # reads an empty `skip-github-release`.
 gate run-gh-fails 1 workflow_run "" "pr list" FAKE_GH_FAIL=1
 gate unknown-event 2 pull_request "" ""
+
+# --- the toolchain pins -----------------------------------------------------
+
+# A scratch repository holding every file the guard reads: the pins, the
+# workflows, and each file that names the pgvector image. A scenario copies
+# it, edits files in the copy and runs the guard there. The edits are
+# patterns rather than versions, so a pin bump does not break them, and an
+# edit that changes nothing is itself a failure: a scenario whose edit no
+# longer matches would pass while testing nothing. No pattern below spells
+# the pgvector image whole, because the guard reads this file as one more
+# copy of it.
+tcseed="$tmp/toolchain-seed"
+mkdir -p "$tcseed"
+shopt -s nullglob
+{
+  printf '%s\n' Dockerfile .mise.toml go.mod compose.yaml web/console/package.json \
+    .github/workflows/*.yml .github/workflows/*.yaml
+  git grep --untracked -I -l -F 'pgvector/pgvector:' -- ':!.mise/toolchaincheck.sh'
+} | sort -u | while IFS= read -r f; do
+  mkdir -p "$tcseed/$(dirname "$f")"
+  cp "$f" "$tcseed/$f"
+done
+shopt -u nullglob
+git init --quiet "$tcseed"
+
+# toolchain <name> <expected exit> <expected stderr, or -> <files> <sed
+# expression>: the seed copied, every file <files> names (a glob, read in the
+# seed) edited, the guard run in the copy. An empty expression edits nothing.
+toolchain() {
+  local name="$1" expected="$2" want="$3" files="$4" expr="$5" dir="$tmp/toolchain-$1" status f edited=""
+  cp -R "$tcseed" "$dir"
+  if [ -n "$expr" ]; then
+    # shellcheck disable=SC2086 # the glob is expanded in the seed, on purpose
+    for f in $(cd "$tcseed" && printf '%s\n' $files); do
+      sed "$expr" "$tcseed/$f" >"$dir/$f"
+      cmp -s "$tcseed/$f" "$dir/$f" || edited=1
+    done
+    if [ -z "$edited" ]; then
+      flag "toolchain ${name}: the edit to ${files} changed nothing, so the scenario tests nothing"
+      return
+    fi
+  fi
+  (cd "$dir" && "$toolchaincheck" >/dev/null 2>"$tmp/stderr")
+  status=$?
+  [ "$status" -eq "$expected" ] ||
+    flag "toolchain ${name}: exit ${status}, expected ${expected}: $(cat "$tmp/stderr")"
+  if [ "$want" != "-" ] && ! grep -qF "$want" "$tmp/stderr"; then
+    flag "toolchain ${name}: expected '${want}' in: $(cat "$tmp/stderr")"
+  fi
+}
+
+# The tree as it is passes, so each scenario below fails for its own edit.
+toolchain baseline 0 - Dockerfile ''
+# A digest on a tag with no variant suffix is not read as part of the
+# version: golang:1.27.2@sha256:... is go 1.27.2.
+toolchain digest-cut 0 - Dockerfile 's/\(golang:[0-9.]*\)-[^@[:space:]]*@/\1@/'
+# A tag that spells less than the pin is refused. These two passed when a
+# tag was compared as a prefix of the pin.
+toolchain node-major 1 'but .mise.toml pins node' Dockerfile 's/\(node:[0-9]*\)\.[0-9.]*-/\1-/'
+toolchain go-minor 1 'but .mise.toml pins go' Dockerfile 's/\(golang:[0-9]*\.[0-9]*\)\.[0-9]*-/\1-/'
+# Two alpine stages on one tag and two digests are two bases.
+toolchain alpine-digest 1 'pulls more than one alpine base' Dockerfile \
+  's/\(alpine:[0-9.]*@sha256:\)[0-9a-f]*\( AS uv\)/\1deadbeef\2/'
+# go.mod's go line past the pin, and a toolchain line past it that carries
+# a comment, which go.mod allows.
+toolchain gomod-go 1 'go.mod says go 0.0.1' go.mod 's/^go .*/go 0.0.1/'
+toolchain gomod-no-go 1 'go.mod has no go line' go.mod '/^go /d'
+toolchain gomod-toolchain 1 'go.mod says toolchain go0.0.1' go.mod 's|^go .*|&\
+toolchain go0.0.1 // upgrade|'
+toolchain gomod-toolchain-indented 1 'go.mod says toolchain go0.0.1' go.mod 's|^go .*|&\
+  toolchain go0.0.1|'
+# The console's pnpm and the image's uv, each moved alone, and uv taken
+# from apk instead of the pinned release.
+toolchain pnpm 1 'activates pnpm 0.0.1, but .mise.toml pins' web/console/package.json \
+  's/"packageManager": "pnpm@[^"]*"/"packageManager": "pnpm@0.0.1"/'
+toolchain uv-pin 1 'the Dockerfile downloads uv 0.0.1' Dockerfile 's/^ARG UV_VERSION=.*/ARG UV_VERSION=0.0.1/'
+toolchain apk-uv 1 'installs uv from apk' Dockerfile 's/\(apk add --no-cache\)/\1 uv/'
+# One copy of the pgvector image moved alone, and compose.yaml without one.
+toolchain pgvector 1 'these differ: .mise/dev.sh:' .mise/dev.sh 's/\(pgvector\/pgvector:\)[^"]*/\1drift/'
+toolchain pgvector-none 1 'compose.yaml runs no' compose.yaml 's/image: pgvector\/pgvector:.*/image: postgres:16/'
+# A quoted compose image is the same image.
+toolchain pgvector-quoted 0 - compose.yaml 's/image: \(pgvector\/pgvector:.*\)/image: "\1"/'
+# One workflow's mise moved alone, the same with its `uses:` quoted, one
+# whose version sits under `env:` instead of `with:`, and no step at all.
+toolchain mise-version 1 'the workflows install more than one mise' .github/workflows/audit.yml \
+  's/^\([[:space:]]*version:\).*/\1 2000.1.1/'
+toolchain mise-quoted 1 'the workflows install more than one mise' .github/workflows/audit.yml \
+  's/uses: \(jdx\/mise-action@[0-9a-f]*\)/uses: "\1"/;s/^\([[:space:]]*version:\).*/\1 2000.1.1/'
+toolchain mise-unpinned 1 'with no version: input' .github/workflows/audit.yml '/^[[:space:]]*version:/d'
+toolchain mise-env 1 'with no version: input' .github/workflows/audit.yml 's/^\([[:space:]]*\)with:$/\1env:/'
+# A comment after `with:` is still the step's inputs.
+toolchain mise-with-comment 0 - .github/workflows/audit.yml 's/^\([[:space:]]*with:\)$/\1 # inputs/'
+# A .yaml workflow is a workflow: GitHub runs either extension. audit.yml
+# renamed, with its mise moved.
+tcdir="$tmp/toolchain-mise-yaml"
+cp -R "$tcseed" "$tcdir"
+sed 's/^\([[:space:]]*version:\).*/\1 2000.1.1/' "$tcseed/.github/workflows/audit.yml" >"$tcdir/.github/workflows/audit.yaml"
+rm "$tcdir/.github/workflows/audit.yml"
+if (cd "$tcdir" && "$toolchaincheck" >/dev/null 2>"$tmp/stderr"); then
+  flag "toolchain mise-yaml: a .yaml workflow's mise version was not read"
+fi
+grep -qF 'the workflows install more than one mise' "$tmp/stderr" ||
+  flag "toolchain mise-yaml: expected 'the workflows install more than one mise' in: $(cat "$tmp/stderr")"
+# An anchored mise-action with its own version, and an alias of it with no
+# `with:` at all.
+tcdir="$tmp/toolchain-mise-anchor"
+cp -R "$tcseed" "$tcdir"
+cat >"$tcdir/.github/workflows/anchor.yml" <<'YAML'
+jobs:
+  anchored:
+    steps:
+      - uses: &mise "jdx/mise-action@0000000000000000000000000000000000000000" # v0
+        with:
+          version: 2000.1.1
+      - uses: *mise
+YAML
+if (cd "$tcdir" && "$toolchaincheck" >/dev/null 2>"$tmp/stderr"); then
+  flag "toolchain mise-anchor: an anchored and an aliased mise-action were not read"
+fi
+for want in 'the workflows install more than one mise' 'installs whatever mise is newest: .github/workflows/anchor.yml:7'; do
+  grep -qF "$want" "$tmp/stderr" || flag "toolchain mise-anchor: expected '${want}' in: $(cat "$tmp/stderr")"
+done
+toolchain mise-none 1 'no jdx/mise-action step' '.github/workflows/*.yml' '/jdx\/mise-action@/d'
+# min_version moved alone, and missing.
+toolchain mise-min 1 "min_version is 2000.1.1" .mise.toml 's/soft = "[^"]*"/soft = "2000.1.1"/'
+toolchain mise-min-none 1 'sets no min_version' .mise.toml '/^min_version/d'
 
 exit "$fail"
