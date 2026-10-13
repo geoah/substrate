@@ -644,34 +644,51 @@ export function bucketWords(
 /** The size's boundaries inside a range, local time: every quarter hour,
  * hour, midnight, Monday or first of the month from the first one at or
  * after the range's start. The x axis labels these, whether or not a bucket
- * holds anything there. At most `limit` of them. */
+ * holds anything there. At most `limit` of them.
+ *
+ * Quarter hours and hours step by elapsed time, so a day the clocks go back
+ * ticks its repeated hour twice. Days, weeks and months are each worked out
+ * from the calendar date, so a day whose midnight the clocks skip starts at
+ * its first instant and the next day at midnight again. */
 export function axisTicks(
   range: TimeRange,
   size: BucketSize,
   limit = 2000
 ): number[] {
-  const d = new Date(range.start)
-  d.setSeconds(0, 0)
-  if (size === "15m") {
-    d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15)
-  } else {
-    if (d.getMinutes() > 0) d.setHours(d.getHours() + 1)
-    d.setMinutes(0)
-    if (size !== "hour") {
-      if (d.getHours() > 0) d.setDate(d.getDate() + 1)
-      d.setHours(0)
-      if (size === "week") d.setDate(d.getDate() + ((8 - d.getDay()) % 7))
-      if (size === "month" && d.getDate() > 1) d.setMonth(d.getMonth() + 1, 1)
-    }
-  }
   const out: number[] = []
-  while (d.getTime() < range.end && out.length < limit) {
-    if (d.getTime() >= range.start) out.push(d.getTime())
-    if (size === "15m") d.setMinutes(d.getMinutes() + 15)
-    else if (size === "hour") d.setHours(d.getHours() + 1)
-    else if (size === "day") d.setDate(d.getDate() + 1)
-    else if (size === "week") d.setDate(d.getDate() + 7)
-    else d.setMonth(d.getMonth() + 1)
+  if (size === "15m" || size === "hour") {
+    const d = new Date(range.start)
+    d.setSeconds(0, 0)
+    const step = size === "15m" ? 15 : 60
+    const minutes = Math.ceil(d.getMinutes() / step) * step
+    let t = d.getTime() + (minutes - d.getMinutes()) * 60_000
+    for (; t < range.end && out.length < limit; t += step * 60_000) {
+      if (t >= range.start) out.push(t)
+    }
+    return out
+  }
+  const s = new Date(range.start)
+  let y = s.getFullYear()
+  let m = s.getMonth()
+  let day = s.getDate()
+  if (new Date(y, m, day).getTime() < range.start) day += 1
+  if (size === "week") day += (8 - new Date(y, m, day).getDay()) % 7
+  if (size === "month") {
+    const first = new Date(y, m, day)
+    y = first.getFullYear()
+    m = first.getMonth() + (first.getDate() > 1 ? 1 : 0)
+    day = 1
+  }
+  for (let k = 0; out.length < limit; k++) {
+    const t = (
+      size === "day"
+        ? new Date(y, m, day + k)
+        : size === "week"
+          ? new Date(y, m, day + 7 * k)
+          : new Date(y, m + k, 1)
+    ).getTime()
+    if (t >= range.end) break
+    out.push(t)
   }
   return out
 }

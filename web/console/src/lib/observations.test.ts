@@ -346,6 +346,34 @@ describe("ranges and buckets", () => {
     expect(new Date(weeks[0]).getDate()).toBe(5)
   })
 
+  it("ticks every hour of a day the clocks go back, the repeated one twice", () => {
+    // The suite runs in Europe/Athens (vite.config.ts): on 2026-10-25 the
+    // clocks go from 04:00 back to 03:00, so the day holds 25 hours.
+    const day = dayRange("2026-10-25", "2026-10-25")!
+    expect(day.end - day.start).toBe(25 * 3_600_000)
+    const hours = axisTicks(day, "hour")
+    expect(hours).toHaveLength(25)
+    expect(hours.map((t) => isoWithOffset(t).slice(11))).toContain(
+      "03:00:00+03:00"
+    )
+    expect(hours.map((t) => isoWithOffset(t).slice(11))).toContain(
+      "03:00:00+02:00"
+    )
+    expect(axisTicks(day, "15m")).toHaveLength(100)
+    // And the day the clocks go forward holds 23.
+    expect(
+      axisTicks(dayRange("2026-03-29", "2026-03-29")!, "hour")
+    ).toHaveLength(23)
+    // Day ticks stay at midnight on either side of the change.
+    const days = axisTicks(dayRange("2026-10-24", "2026-10-27")!, "day")
+    expect(days.map((t) => isoWithOffset(t))).toEqual([
+      "2026-10-24T00:00:00+03:00",
+      "2026-10-25T00:00:00+03:00",
+      "2026-10-26T00:00:00+02:00",
+      "2026-10-27T00:00:00+02:00",
+    ])
+  })
+
   it("rounds a computed value for display and keeps stored digits", () => {
     expect(roundDigits("63.1666666666667", 0)).toBe("63")
     expect(roundDigits("61.9372442", 2)).toBe("61.94")
