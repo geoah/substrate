@@ -373,18 +373,14 @@ func calStart(t time.Time, s bucketSpec) time.Time {
 	var start time.Time
 	switch s.calendar {
 	case "minute", "hour":
-		// The wall clock's minute or hour; across a repeated hour time.Date
-		// names the first, so step on to the one holding t.
-		step := time.Minute
-		start = time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), w.Minute(), 0, 0, s.loc)
+		// Back from t by the wall clock's part below the unit. Rebuilding the
+		// start with time.Date names one pass of a repeated hour, the second
+		// east of UTC, which lies after a t in the first.
+		back := time.Duration(w.Second())*time.Second + time.Duration(w.Nanosecond())
 		if s.calendar == "hour" {
-			step = time.Hour
-			start = time.Date(w.Year(), w.Month(), w.Day(), w.Hour(), 0, 0, 0, s.loc)
+			back += time.Duration(w.Minute()) * time.Minute
 		}
-		for !start.Add(step).After(t) {
-			start = start.Add(step)
-		}
-		return start
+		return t.Add(-back)
 	case "day":
 		start = time.Date(w.Year(), w.Month(), w.Day(), 0, 0, off, 0, s.loc)
 	case "week":
