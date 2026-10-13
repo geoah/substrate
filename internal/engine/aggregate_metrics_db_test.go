@@ -171,6 +171,9 @@ func TestAggregateSeveralMetricsAreCheckedBeforeTheyRun(t *testing.T) {
 		{"summaries holding two statistics", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: hr}, {Ref: rhr, From: substrate.AggregateFromSummaries},
 		}, Reducers: reducers("last")}), "hold the statistics avg and max"},
+		{"a statistic on a metric read raw", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
+			{Ref: hr}, {Ref: rhr, Statistic: "avg"},
+		}, Reducers: reducers("last")}), "aggregate.metrics[1].statistic: a statistic narrows the metric's summaries, and from raw reads none"},
 		{"a metric named twice", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: hr}, {Ref: hr, Unit: "/s"},
 		}, Reducers: reducers("last")}), "aggregate.metrics[1].ref"},

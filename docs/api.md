@@ -1318,7 +1318,8 @@ a row of its own.
 - An entry names the metric by its record path in `ref`, the unit its values
   answer in (the metric record's `unit` by default), its `reducers` and
   `from` (the read's by default), and `statistic`, the one summary statistic
-  its summaries are read at. The read's own `unit` is refused beside
+  its summaries are read at. `statistic` is refused on an entry read from
+  `raw`, which reads no summaries. The read's own `unit` is refused beside
   `metrics`, because a unit belongs to one measure.
 - The filter and every other option are the read's and apply to every
   metric. `filter.properties.statistic` narrows every metric's summaries
@@ -1707,7 +1708,8 @@ merged as one row.
 - `422`: two selectors, or a bucketed metric read with neither; a `metric.ref`
   that names no metric; no range or no reducers; `metrics` empty, over 16, naming
   a metric twice, beside the read's `unit`, on the latest read or beside
-  `downsample`; an unknown reducer or a bad
+  `downsample`; an entry's `statistic` where the entry reads `raw`; an
+  unknown reducer or a bad
   argument; a reducer the form does not take (naming the form); `circularMean`
   off an angle; a `unit` outside the measure (naming the measure); a value the
   read takes whose unit does not convert; a group of two forms; a

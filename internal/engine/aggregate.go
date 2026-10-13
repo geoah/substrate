@@ -439,6 +439,9 @@ func (p *aggPlan) forMetric(at string, m substrate.AggregateMetricRead) (*aggPla
 	if err := mp.parseFrom(from); err != nil {
 		return nil, err
 	}
+	if mp.statistic != "" && mp.source == substrate.AggregateFromRaw {
+		return nil, refuse(at+".statistic", "a statistic narrows the metric's summaries, and from raw reads none; read it from summaries or prefer-raw, or leave statistic out")
+	}
 	if err := mp.parseMetricOptions(); err != nil {
 		return nil, err
 	}
