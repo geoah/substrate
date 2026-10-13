@@ -179,6 +179,20 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 		t.Fatalf("downsample: ok %v, %s", ok, out)
 	}
 
+	// A model sends "" or {} for an argument it does not mean: an empty
+	// aggregate leaves a get a get, and an empty downsample beside a bucketed
+	// read is no downsample.
+	for _, filler := range []any{"", map[string]any{}} {
+		out, ok, _ = ds.runQueryTool(ctx, wide, map[string]any{"id": "w/0", "kind": observation, "aggregate": filler})
+		if !ok || !strings.Contains(out, `"record"`) {
+			t.Fatalf("a get beside aggregate %#v: ok %v, %s; want the record", filler, ok, out)
+		}
+		out, ok, rows = ds.runQueryTool(ctx, wide, map[string]any{"aggregate": daily, "downsample": filler})
+		if !ok || rows != 3 {
+			t.Fatalf("a bucketed read beside downsample %#v: ok %v rows %d, %s; want the three days", filler, ok, rows, out)
+		}
+	}
+
 	for name, x := range map[string]struct {
 		scope queryScope
 		args  map[string]any

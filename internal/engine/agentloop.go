@@ -1408,7 +1408,7 @@ func (ds *dataset) scopeKinds(scope queryScope) []string {
 // allowlist, a kind outside it is refused by name, and an expanded referent
 // of a kind outside it is dropped from `included`.
 func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[string]any) (string, bool, int) {
-	if args["aggregate"] != nil {
+	if argSet(args["aggregate"]) {
 		// The aggregate read takes none of the other arms' arguments, refused
 		// by name as the records route refuses them (decision 0161), so a
 		// model never reads an answer to a question it did not ask.
@@ -1563,8 +1563,8 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 var aggregateRefuses = []string{"id", "q", "mode", "first", "after", "orderBy", "expand"}
 
 // argSet reports whether a tool argument carries a value: a model filling
-// every optional argument sends null, "", 0 or an empty list for the ones it
-// does not mean.
+// every optional argument sends null, "", 0 or an empty list or object for
+// the ones it does not mean.
 func argSet(v any) bool {
 	switch x := v.(type) {
 	case nil:
@@ -1670,7 +1670,8 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 	if msg := decodeFilterArgument(args, &q.Filter); msg != "" {
 		return toolError(msg), false, 0
 	}
-	if buf, err := jsonArgument(args, "downsample"); err != nil || buf != nil {
+	if argSet(args["downsample"]) {
+		buf, err := jsonArgument(args, "downsample")
 		q.Downsample = &substrate.Downsample{}
 		if err == nil {
 			err = strictjson.DecodeBytes(buf, q.Downsample, false)
