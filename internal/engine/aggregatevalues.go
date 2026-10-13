@@ -72,6 +72,10 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string, zone *time.Lo
 		if tr != nil && tr.beforeReducer != nil {
 			tr.beforeReducer()
 		}
+		if v.mixes(red) {
+			v.out = append(v.out, substrate.AggregateValue{Reducer: red, Unit: r.u.value})
+			continue
+		}
 		var err error
 		switch red.Name {
 		case substrate.ReducerCount:
@@ -93,6 +97,26 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string, zone *time.Lo
 		}
 	}
 	return v.out, nil
+}
+
+// preferRawStatistic is, for each reducer, the summary statistic that is the
+// same quantity as the reducer over raw points.
+var preferRawStatistic = map[string]string{
+	substrate.ReducerSum: "sum", substrate.ReducerAvg: "avg", substrate.ReducerMin: "min",
+	substrate.ReducerMax: "max", substrate.ReducerLast: "last",
+}
+
+// mixes reports whether a prefer-raw bucket that fell to summaries holds a
+// statistic other than the one the reducer reads over raw points
+// (preferRawStatistic), so that one series never answers a day's average as
+// its maximum: such a reducer answers null there, and first always does.
+// count counts the summaries whatever they hold. A read from summaries
+// reduces whatever statistic it selects (checkStatistics).
+func (v *rowValues) mixes(red substrate.AggregateReducer) bool {
+	if v.r.p.source != substrate.AggregateFromPreferRaw || v.ev.form != vocabulary.FormSummary || red.Name == substrate.ReducerCount {
+		return false
+	}
+	return len(v.g.sums) == 0 || preferRawStatistic[red.Name] != v.g.sums[0].stat
 }
 
 // rowValues is one row's reducers being answered: its evidence, the values
@@ -156,11 +180,6 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 	var merged float64
 	switch red.Name {
 	case substrate.ReducerSum:
-		if ev.form == vocabulary.FormSummary && !v.g.additive() {
-			// A prefer-raw bucket served by summaries that do not add.
-			v.out = append(v.out, r.value(red, 0, false, unit))
-			return nil
-		}
 		f, merged = observed.SumContext, ev.stats.Sum
 	case substrate.ReducerAvg:
 		f, merged = observed.AvgContext, ev.stats.Mean

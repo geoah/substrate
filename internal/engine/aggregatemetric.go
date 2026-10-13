@@ -1217,8 +1217,9 @@ func (g *aggGroup) additive() bool {
 // does not add. It runs once the forms are found, before any point is
 // reduced, so a read that would count a night's average and maximum as two
 // nights is refused, not answered. prefer-raw reads a bucket's summaries only
-// where its raw points fall short, so its sum answers null in such a bucket
-// (rowValues.number) instead of refusing the buckets raw points serve.
+// where its raw points fall short, so a reducer over a statistic that is not
+// its own answers null in such a bucket (rowValues.mixes) instead of
+// refusing the buckets raw points serve.
 func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 	if p.source == substrate.AggregateFromRaw {
 		return nil

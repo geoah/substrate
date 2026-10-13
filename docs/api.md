@@ -1398,7 +1398,7 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 | amount | `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `stddev`, `{"percentile": q}` |
 | coded amount | `count`, `sum`, `min`, `max`, grouped by `code` |
 | counter | `count`, `first`, `last`, `min`, `max`, `increase`, `rate` |
-| summary | `count`, `first`, `last`, `avg`, `min` and `max` over the row's summaries, all of one `statistic`; `sum` where that statistic is `sum` or `count`, `null` otherwise |
+| summary | `count`, `first`, `last`, `avg`, `min` and `max` over the row's summaries, all of one `statistic`; `sum` where that statistic is `sum` or `count`; under `prefer-raw`, only the reducer the statistic matches, `null` otherwise |
 
 - `twa` weighs each value by the time it holds: until the next point of its
   stream, its own `hold`, or `maxGap`, whichever comes first.
@@ -1420,13 +1420,20 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
   two (a night's `avg` and `max` from one source) is a `422` naming them:
   pick one with `filter.properties.statistic`, or split them with
   `groupBy: ["statistic"]`, which a bucketed read takes only from summaries.
-  `avg`, `min` and `max` then reduce that statistic's values whatever it is,
-  so the weekly mean of a daily `vendor` resting heart rate is the mean of
-  those values (a summary of summaries), and `first`, `last` and `count` read
-  that statistic alone. `sum` adds only `sum` and `count` summaries. Over any
-  other statistic a read from summaries is a `422`, and under `prefer-raw` a
-  bucket that falls to such summaries answers `sum` `null`, so a source's
-  `vendor` daily total does not refuse the days its raw points cover.
+  On a read from summaries, `avg`, `min` and `max` then reduce that
+  statistic's values whatever it is, so the weekly mean of a daily `vendor`
+  resting heart rate is the mean of those values (a summary of summaries),
+  and `first`, `last` and `count` read that statistic alone. `sum` adds only
+  `sum` and `count` summaries; over any other statistic a read from
+  summaries is a `422`.
+- Under `prefer-raw` one series holds raw rows and summary rows, so a bucket
+  that falls to summaries answers a reducer only from the statistic that is
+  the same quantity over raw points: `sum` from `sum`, `avg` from `avg`,
+  `min` from `min`, `max` from `max` and `last` from `last`. Over any other
+  statistic the reducer answers `null`, `first` is always `null` there, and
+  `count` counts the summaries. A series of daily maxima therefore never
+  answers a day's average where the raw points ran out, and a source's
+  `vendor` daily total refuses none of the days its raw points cover.
 
 A row never mixes forms: a group whose streams hold two forms is a `422`
 asking to group them apart.

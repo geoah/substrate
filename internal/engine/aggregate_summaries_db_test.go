@@ -191,3 +191,70 @@ func TestAggregatePreferRawSumsRawStepsBesideAVendorTotal(t *testing.T) {
 		t.Errorf("prefer-raw over avg and max: err = %v, want a refusal naming filter.properties.statistic and not groupBy statistic", err)
 	}
 }
+
+// Under prefer-raw a bucket that falls to summaries answers each reducer
+// only from the statistic that is the same quantity over raw points (sum
+// from sum, avg from avg, min from min, max from max, last from last) and
+// null over any other, so a series of daily maxima never answers a day's
+// average where the raw points ran out. first is null there, and count
+// counts the summaries. A read from summaries still reduces the statistic
+// it selects, whatever it is.
+func TestAggregatePreferRawAnswersEachReducerFromItsOwnStatistic(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for i, v := range []string{"60", "150"} {
+		f.mustPut(t, f.observation, fmt.Sprintf("hr/%d", i), map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "gauge",
+			"value": quantity(v, "/min"), "at": day.Add(time.Duration(8+i) * time.Hour).Format(time.RFC3339), "hold": "PT4M", "utcOffset": 0,
+		})
+	}
+	for stat, v := range map[string]string{"avg": "70", "max": "160"} {
+		next := day.AddDate(0, 0, 1)
+		f.mustPut(t, f.observation, "hr/day/"+stat, map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "summary",
+			"statistic": stat, "period": "day", "value": quantity(v, "/min"),
+			"at": next.Format(time.RFC3339), "endsAt": next.AddDate(0, 0, 1).Format(time.RFC3339), "utcOffset": 0,
+		})
+	}
+	zero := 0.0
+	read := func(from, stat string) *substrate.AggregateResult {
+		a := substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")}, From: from,
+			Range: rng(day, day.AddDate(0, 0, 2)), Bucket: &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC"},
+			Reducers: reducers("count", "avg", "min", "max", "first", "last"),
+		}
+		if from == "prefer-raw" {
+			a.MinCoverage = &zero
+		}
+		return f.agg(context.Background(), substrate.Filter{Properties: map[string]substrate.Cond{"statistic": {Eq: stat}}}, a)
+	}
+	values := func(row substrate.AggregateRow) string {
+		var out []string
+		for _, name := range []string{"count", "avg", "min", "max", "first", "last"} {
+			v, ok := val(row, name)
+			if !ok {
+				v = "null"
+			}
+			out = append(out, name+"="+v)
+		}
+		return strings.Join(out, " ")
+	}
+	for _, x := range []struct {
+		from, stat string
+		want       []string
+	}{
+		{"prefer-raw", "avg", []string{"count=2 avg=105 min=60 max=150 first=60 last=150", "count=1 avg=70 min=null max=null first=null last=null"}},
+		{"prefer-raw", "max", []string{"count=2 avg=105 min=60 max=150 first=60 last=150", "count=1 avg=null min=null max=160 first=null last=null"}},
+		{"summaries", "avg", []string{"count=1 avg=70 min=70 max=70 first=70 last=70"}},
+	} {
+		res := read(x.from, x.stat)
+		var got []string
+		for _, row := range res.Rows {
+			got = append(got, values(row))
+		}
+		if strings.Join(got, "; ") != strings.Join(x.want, "; ") {
+			t.Errorf("from %s, statistic %s:\n got %q\nwant %q", x.from, x.stat, got, x.want)
+		}
+	}
+}
