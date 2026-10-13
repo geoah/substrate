@@ -112,19 +112,19 @@ type aggTrace struct {
 	rows int64
 }
 
-// everyThousand is a Go-side loop's context check: it answers ctx's error on
-// its first call and on every thousandth after. The statement timeout bounds
-// the SQL, not the work after it, so a long loop stops when its caller does.
-func everyThousand(ctx context.Context) func() error {
-	n := 0
-	return func() error {
-		i := n
-		n++
-		if i&(1<<10-1) != 0 {
-			return nil
-		}
-		return ctx.Err()
+// everyThousand counts a Go-side loop's steps and answers the context's
+// error on the first step and on every thousandth after. The statement
+// timeout bounds the SQL, not the work after it, so a long loop stops when
+// its caller does.
+type everyThousand int
+
+func (n *everyThousand) check(ctx context.Context) error {
+	i := *n
+	*n++
+	if i&(1<<10-1) != 0 {
+		return nil
 	}
+	return ctx.Err()
 }
 
 func traceOf(ctx context.Context) *aggTrace {

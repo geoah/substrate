@@ -38,6 +38,10 @@ type aggRun struct {
 	carries map[*aggStream][]*observed.Point
 	// series are the raw points read, by stream.
 	series map[*aggStream]*aggSeries
+	// windows are the spans the read takes points from (aggPlan.windows);
+	// rowSpans are the rollup rows they meet, and fragments the bucket ends
+	// that cut a row (plan).
+	windows, rowSpans, fragments [][2]time.Time
 	// bounds are the records mode's window starts and ends, sorted, where a
 	// carry walked across empty rows is cut (chunkEnd).
 	bounds []time.Time
@@ -50,7 +54,7 @@ type aggRun struct {
 	// against maxSamples (charge).
 	samples int64
 	// steps counts the reduction's steps between context checks (canceled).
-	steps int
+	steps everyThousand
 }
 
 // aggSeries is one stream's raw points: each span read, with the point
@@ -126,6 +130,9 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 	for _, g := range groups {
 		g.rollups = r.rollupable(g)
 	}
+	if err := r.planSpans(); err != nil {
+		return err
+	}
 	if err := r.chargeRollups(groups); err != nil {
 		return err
 	}
@@ -179,15 +186,15 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 		for _, s := range g.raw {
 			if g.rollups {
 				if g.form != vocabulary.FormGauge {
-					want[s] = r.fragments()
+					want[s] = r.fragments
 				}
 				continue
 			}
-			want[s] = r.segments()
+			want[s] = r.windows
 		}
 		if r.p.source != substrate.AggregateFromRaw {
 			for _, s := range g.sums {
-				want[s] = r.segments()
+				want[s] = r.windows
 			}
 		}
 	}
@@ -232,7 +239,7 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 // 23:44Z, held into the slot from 23:45Z, crosses local midnight at 23:59Z.
 // It runs before the raw points are counted, so they are budgeted.
 func (r *aggRun) planCarries(g *aggGroup) error {
-	windows := r.segments()
+	windows := r.windows
 	for _, s := range g.raw {
 		c, err := r.readCarries(s, windows)
 		if err != nil {
@@ -289,7 +296,7 @@ func (r *aggRun) chargeRollups(groups []*aggGroup) error {
 	if len(ids[0]) == 0 {
 		return nil
 	}
-	from, to := spanArrays(r.rowSpans())
+	from, to := spanArrays(r.rowSpans)
 	var n int64
 	if err := r.tx.QueryRowContext(r.ctx, rollupCountSQL, ids[0], ids[1], ids[2], ids[3], ids[4], ids[5], from, to).Scan(&n); err != nil {
 		return fmt.Errorf("substrate/engine: aggregate rollup count: %w", err)
@@ -358,9 +365,6 @@ func ceil15(t time.Time) time.Time {
 	return f.Add(bucketWidth)
 }
 
-// segments are the spans a raw stream is read over: the read's windows.
-func (r *aggRun) segments() [][2]time.Time { return r.p.windows(r.buckets) }
-
 // split is a bucket's whole rollup rows and the ends that cut a row.
 func split(b *aggBucket) (whole [2]time.Time, frags [][2]time.Time) {
 	cs, fe := ceil15(b.start), floor15(b.end)
@@ -376,24 +380,43 @@ func split(b *aggBucket) (whole [2]time.Time, frags [][2]time.Time) {
 	return [2]time.Time{cs, fe}, frags
 }
 
-// fragments are the bucket ends an amount's or a counter's rollup-served
-// read takes from raw points.
-func (r *aggRun) fragments() [][2]time.Time {
+// planSpans joins the rollup rows the read's windows meet, each window from
+// the row holding its start to the row holding its end, and the bucket ends
+// an amount's or a counter's rollup-served read takes from raw points. A
+// recorded-local read has no cut end: its rows land whole in a day.
+func (r *aggRun) planSpans() error {
+	rows := make([][2]time.Time, 0, len(r.windows))
+	for _, w := range r.windows {
+		rows = append(rows, [2]time.Time{floor15(w[0]), ceil15(w[1])})
+	}
+	var err error
+	if r.rowSpans, err = r.cover(rows); err != nil {
+		return err
+	}
 	if r.p.bucket.mode == bucketLocal {
 		return nil
 	}
-	var spans [][2]time.Time
+	var frags [][2]time.Time
 	for _, b := range r.buckets {
-		_, frags := split(b)
-		spans = append(spans, frags...)
+		_, f := split(b)
+		frags = append(frags, f...)
 	}
-	return joinSpans(spans)
+	r.fragments, err = r.cover(frags)
+	return err
 }
 
-func joinSpans(spans [][2]time.Time) [][2]time.Time {
-	sort.Slice(spans, func(i, j int) bool { return spans[i][0].Before(spans[j][0]) })
-	var out [][2]time.Time
+// joinSpans sorts intervals by start, in place, and joins those that overlap
+// or touch. The sort checks ctx and the join calls check once per interval:
+// a cover can be as long as a stream's points.
+func joinSpans(ctx context.Context, spans [][2]time.Time, check func() error) (cover, error) {
+	if err := observed.SortStableFunc(ctx, spans, func(a, b [2]time.Time) int { return a[0].Compare(b[0]) }); err != nil {
+		return nil, err
+	}
+	var out cover
 	for _, s := range spans {
+		if err := check(); err != nil {
+			return nil, err
+		}
 		if n := len(out); n > 0 && !s[0].After(out[n-1][1]) {
 			if s[1].After(out[n-1][1]) {
 				out[n-1][1] = s[1]
@@ -402,7 +425,7 @@ func joinSpans(spans [][2]time.Time) [][2]time.Time {
 		}
 		out = append(out, s)
 	}
-	return out
+	return out, nil
 }
 
 // --- reads ---
@@ -598,20 +621,10 @@ const rollupColumns = `r.code, r.unit, r.delta, r.utc_offset_min, r.bucket15, r.
 	r.max_gap_ms, r.start_gap_ms, r.increase::text, r.resets, r.sin_sum, r.cos_sum, r.span_end,
 	r.first_record_id, r.first_ord, r.last_record_id, r.last_ord, r.min_value::text, r.max_value::text`
 
-// rowSpans are the rollup rows the read's windows meet: each window from the
-// row holding its start to the row holding its end, joined.
-func (r *aggRun) rowSpans() [][2]time.Time {
-	var spans [][2]time.Time
-	for _, w := range r.segments() {
-		spans = append(spans, [2]time.Time{floor15(w[0]), ceil15(w[1])})
-	}
-	return joinSpans(spans)
-}
-
 // readRollups reads one stream's rollup rows over the read's windows: the
 // range, or every records-mode window, which is not clipped to the range.
 func (r *aggRun) readRollups(s *aggStream) ([]observed.Row, error) {
-	from, to := spanArrays(r.rowSpans())
+	from, to := spanArrays(r.rowSpans)
 	rows, err := r.tx.QueryContext(r.ctx, `SELECT `+rollupColumns+`
 		FROM unnest($7::timestamptz[], $8::timestamptz[]) AS w(a, b)
 		CROSS JOIN LATERAL (
@@ -822,14 +835,7 @@ func cell(m aggCells, b *aggBucket, code, form string, raw bool) *aggEvidence {
 // slot or interval this package copies or walks; what runs in observed (a
 // reducer, a sort, a priority resolution) checks the context through its
 // Context forms, as often.
-func (r *aggRun) canceled() error {
-	n := r.steps
-	r.steps++
-	if n&(1<<10-1) != 0 {
-		return nil
-	}
-	return r.ctx.Err()
-}
+func (r *aggRun) canceled() error { return r.steps.check(r.ctx) }
 
 // evalRaw reduces a group's streams from raw points: held intervals built
 // per stream from every transition, the source policy resolved over the
@@ -1170,28 +1176,11 @@ func pointEnd(ap aggPoint) time.Time {
 // cover is a sorted, joined set of intervals.
 type cover [][2]time.Time
 
-// cover joins the intervals as joinSpans does, checking the context as it
-// sorts and joins them: a cover is as long as a stream's points. It sorts
+// cover joins the intervals (joinSpans) under the read's context. It sorts
 // spans in place, so a caller hands over a slice whose order it does not
 // need, and is spared a copy as long as the cover.
 func (r *aggRun) cover(spans [][2]time.Time) (cover, error) {
-	if err := observed.SortStableFunc(r.ctx, spans, func(a, b [2]time.Time) int { return a[0].Compare(b[0]) }); err != nil {
-		return nil, err
-	}
-	var out cover
-	for _, s := range spans {
-		if err := r.canceled(); err != nil {
-			return nil, err
-		}
-		if n := len(out); n > 0 && !s[0].After(out[n-1][1]) {
-			if s[1].After(out[n-1][1]) {
-				out[n-1][1] = s[1]
-			}
-			continue
-		}
-		out = append(out, s)
-	}
-	return out, nil
+	return joinSpans(r.ctx, spans, r.canceled)
 }
 
 // holds reports whether t lies inside the cover.
@@ -1379,7 +1368,7 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 		}
 		if g.form == vocabulary.FormGauge {
-			for i, w := range r.segments() {
+			for i, w := range r.windows {
 				if err := r.walkHeld(out, g, s, si, rows, w, r.carries[s][i]); err != nil {
 					return nil, err
 				}

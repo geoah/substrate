@@ -131,7 +131,11 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err != nil {
 		return nil, err
 	}
-	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, p.windows(buckets))
+	windows, err := p.windows(ctx, buckets)
+	if err != nil {
+		return nil, err
+	}
+	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +163,10 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if res.Unit == "" {
 		res.Unit = units.duration
 	}
-	r := &aggRun{ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, meta: aggMeta{sources: map[string]bool{}}, nSeries: series, samples: samples}
+	r := &aggRun{
+		ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, windows: windows,
+		meta: aggMeta{sources: map[string]bool{}}, nSeries: series, samples: samples,
+	}
 	if err := r.plan(groups); err != nil {
 		return nil, err
 	}
@@ -294,15 +301,16 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 
 // windows are the spans a metric read takes points from: the range, or each
 // records-mode window, overlapping ones joined.
-func (p *aggPlan) windows(buckets []*aggBucket) [][2]time.Time {
+func (p *aggPlan) windows(ctx context.Context, buckets []*aggBucket) ([][2]time.Time, error) {
 	if p.bucket.mode != bucketRecords {
-		return [][2]time.Time{{p.from, p.to}}
+		return [][2]time.Time{{p.from, p.to}}, nil
 	}
-	var spans [][2]time.Time
+	spans := make([][2]time.Time, 0, len(buckets))
 	for _, b := range buckets {
 		spans = append(spans, [2]time.Time{b.start, b.end})
 	}
-	return joinSpans(spans)
+	var steps everyThousand
+	return joinSpans(ctx, spans, func() error { return steps.check(ctx) })
 }
 
 // discoverFormsSQL answers, for each stream ($1 to $5, numbered n), form

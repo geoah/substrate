@@ -19,7 +19,7 @@ import (
 // before a row is made, and the rows answered never exceed it. Both loops
 // check ctx as they go.
 func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) ([]substrate.AggregateRow, error) {
-	canceled := everyThousand(ctx)
+	var steps everyThousand
 	type series struct {
 		key  string
 		rows map[int]*aggOut
@@ -52,7 +52,7 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 			}
 		}
 		for bi, b := range buckets {
-			if err := canceled(); err != nil {
+			if err := steps.check(ctx); err != nil {
 				return nil, err
 			}
 			o := s.rows[bi]
