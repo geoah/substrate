@@ -491,7 +491,8 @@ type AggregateValue struct {
 	Code string `json:"code,omitempty"`
 	// At is, on a downsample, the instant the column's first, last, min or
 	// max was taken at, so a chart draws each where it lies in the column;
-	// of equal extremes, the earliest.
+	// of equal extremes, the earliest. A min or max served from rollup rows
+	// leaves it out where finding it would pass maxSamples.
 	At *time.Time `json:"at,omitempty"`
 	// Rolling and Of mark a rolling value: Of is the reducer it rolls over
 	// Rolling buckets. N is the buckets in the window with a value of Of,

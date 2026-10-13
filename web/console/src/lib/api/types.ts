@@ -609,7 +609,9 @@ export interface AggregateValue {
    * `timeInState` value is the time of. */
   code?: string
   /** On a downsample, the instant a column's `first`, `last`, `min` or
-   * `max` was taken at (of equal extremes, the earliest). */
+   * `max` was taken at (of equal extremes, the earliest). A `min` or `max`
+   * served from rollup rows leaves it out where finding it would pass
+   * `maxSamples`. */
   at?: string
   /** A rolling value: `of` rolled over `rolling` buckets, `n` of which held
    * a value. */

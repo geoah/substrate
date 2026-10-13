@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -150,6 +151,108 @@ func TestAggregateDownsampleSaysWhereItsValuesLie(t *testing.T) {
 	for _, v := range bucketed.Rows[0].Values {
 		if v.At != nil {
 			t.Errorf("a bucketed read's %s carries at %s", v.Reducer.String(), v.At)
+		}
+	}
+}
+
+// A downsample answers its values when finding its extremes' instants
+// would pass maxSamples: two hours of heart rate at 1 Hz are eight rollup
+// rows of 900 points, and finding each column's min and max in them reads
+// up to 14400 points, so under maxSamples 1000 the read answers from the
+// eight rows, its min and max carrying no instant and its first and last
+// theirs, and under the default budget every value carries one. A min held
+// both by a row the look-up skips (steps at 00:20 the next day) and by a
+// later point of the cut end [00:30, 00:37) read raw (00:33) carries no
+// instant either, since the row's is the earlier.
+func TestAggregateDownsampleAnswersWhereItsInstantsDoNotFit(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	var offsets []int64
+	var vals []any
+	for s := range 2 * 3600 {
+		offsets = append(offsets, int64(s)*1000)
+		vals = append(vals, strconv.Itoa(55+(s/60*7)%61))
+	}
+	f.series("hr/dense", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("garmin"),
+		"form": "gauge", "unit": "/min", "hold": "PT4M", "utcOffsetStart": 0, "utcOffsetEnd": 0,
+	}, start, start.Add(2*time.Hour), offsets, vals)
+	next := start.AddDate(0, 0, 1)
+	for m := range 37 {
+		at, value := next.Add(time.Duration(m)*time.Minute), "5"
+		switch m {
+		case 5:
+			value = "9"
+		case 20, 33:
+			value = "3"
+		}
+		f.mustPut(t, f.observation, "steps/"+at.Format("1504"), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("phone"), "form": "amount",
+			"value": quantity(value, "{steps}"), "at": at.Format(time.RFC3339), "endsAt": at.Add(time.Minute).Format(time.RFC3339), "utcOffset": 0,
+		})
+	}
+	downsample := func(metric string, from, to time.Time, points int, budget int64) (*substrate.AggregateResult, engine.AggregateTrace) {
+		t.Helper()
+		a := &substrate.Aggregate{Metric: &substrate.AggregateMetric{Ref: f.metricPath(metric)}, Range: rng(from, to)}
+		if budget > 0 {
+			a.Budget = &substrate.AggregateBudget{MaxSamples: budget}
+		}
+		ctx, trace := engine.AggregateTraced(context.Background())
+		res, err := f.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: a, Downsample: &substrate.Downsample{Points: points}})
+		if err != nil {
+			t.Fatalf("downsample under maxSamples %d: %v", budget, err)
+		}
+		return res, trace
+	}
+
+	full, _ := downsample("health/heart_rate", start, start.Add(2*time.Hour), 8, 0)
+	tight, trace := downsample("health/heart_rate", start, start.Add(2*time.Hour), 8, 1000)
+	if trace.RollupRows() != 8 || trace.RawPoints() != 0 {
+		t.Fatalf("the tight read took %d rollup rows and %d raw points; want the eight rows alone", trace.RollupRows(), trace.RawPoints())
+	}
+	if len(tight.Rows) != 8 || len(full.Rows) != 8 {
+		t.Fatalf("columns: %d under maxSamples 1000, %d under the default budget; want 8 each", len(tight.Rows), len(full.Rows))
+	}
+	for i, row := range tight.Rows {
+		for _, r := range []string{"first", "last", "min", "max"} {
+			got, gotAt := valueAt(row, r)
+			want, wantAt := valueAt(full.Rows[i], r)
+			if got != want {
+				t.Errorf("column %d %s = %s under maxSamples 1000, %s under the default budget", i, r, got, want)
+			}
+			if wantAt == "" {
+				t.Errorf("column %d %s carries no instant under the default budget", i, r)
+			}
+			switch r {
+			case "min", "max":
+				if gotAt != "" {
+					t.Errorf("column %d %s carries %s under maxSamples 1000; the look-up does not fit, so it carries none", i, r, gotAt)
+				}
+			default:
+				if gotAt != wantAt {
+					t.Errorf("column %d %s at %q under maxSamples 1000, want %s", i, r, gotAt, wantAt)
+				}
+			}
+		}
+	}
+
+	for _, c := range []struct {
+		budget int64
+		min    [2]string
+		max    [2]string
+	}{
+		{0, [2]string{"3", "2026-09-02T00:20:00Z"}, [2]string{"9", "2026-09-02T00:05:00Z"}},
+		{25, [2]string{"3", ""}, [2]string{"9", ""}},
+	} {
+		res, trace := downsample("health/steps", next, next.Add(37*time.Minute), 1, c.budget)
+		if trace.RollupRows() == 0 || trace.RawPoints() == 0 {
+			t.Fatalf("maxSamples %d: the tie took %d rollup rows and %d raw points; want rows and the cut end's points", c.budget, trace.RollupRows(), trace.RawPoints())
+		}
+		lo, loAt := valueAt(res.Rows[0], "min")
+		hi, hiAt := valueAt(res.Rows[0], "max")
+		if got := [2][2]string{{lo, loAt}, {hi, hiAt}}; got != [2][2]string{c.min, c.max} {
+			t.Errorf("maxSamples %d: min and max %v, want %v and %v", c.budget, got, c.min, c.max)
 		}
 	}
 }

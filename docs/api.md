@@ -1488,9 +1488,10 @@ A value is `{reducer, value, unit?, code?, at?, rolling?, of?, n?}`. `value`
 is a decimal string, or `null` where the reducer has no answer (an average of
 no points). A coded `first` or `last` answers its `code` with `value` `null`.
 On a downsample, `at` is the instant a column's `first`, `last`, `min` or
-`max` was taken at, in the row's offset. A rolling value names the reducer
-it rolls over in `of`, the window in `rolling`, and in `n` the buckets of
-the window that held a value.
+`max` was taken at, in the row's offset; a `min` or `max` served from rollup
+rows may leave it out ([downsample](#fill-rolling-and-downsample)). A
+rolling value names the reducer it rolls over in `of`, the window in
+`rolling`, and in `n` the buckets of the window that held a value.
 
 ### Where a bucket is served from
 
@@ -1577,8 +1578,12 @@ where the range allows, so its rows are whole rollup rows; the response's
 `bucket` names the width. A rollup row keeps its extremes and not their
 instants, so a column served from rows finds each extreme's point in the
 quarter hour holding it, one statement for the read, its points counted
-against `maxSamples`. It is refused beside `reducers`, `rolling`, `fill` and
-`bucket`.
+against `maxSamples`. Where those points would pass what the read has left
+of `maxSamples`, the read skips that statement: it answers the same values,
+and the `min` and `max` served from rows carry no `at`. A dense stream hits
+this first: at one point a second a row holds 900 points, so 800 columns
+need about 1.4 million. It is refused beside `reducers`, `rolling`, `fill`
+and `bucket`.
 
 ### The property read
 

@@ -6,7 +6,9 @@ package engine
 // a column served from rows keeps, for each extreme, the rows holding it and
 // the cut ends' points that do, and one statement finds each row's point
 // holding the extreme. Of equal extremes the earliest point answers, as the
-// raw path's does.
+// raw path's does. The instants are an addition to the values, so the
+// look-up runs only where the budget has room for it and never refuses a
+// read the values alone fit.
 
 import (
 	"fmt"
@@ -100,14 +102,19 @@ func (x *aggExtreme) offer(isMax bool, value float64, digits string, c *extremeC
 }
 
 // at is the instant the extreme was taken at: the earliest of its
-// candidates' points, nil where none was found.
+// candidates' points, nil where a candidate row's point is not known (the
+// look-up did not run, or found none), since an equal extreme earlier than
+// every known one may lie in it.
 func (x *aggExtreme) at() *time.Time {
 	if x == nil {
 		return nil
 	}
 	var best *extremeCand
 	for _, c := range x.cands {
-		if c.point != nil && (best == nil || pointBefore(*c.point, c.stream, *best.point, best.stream)) {
+		if c.point == nil {
+			return nil
+		}
+		if best == nil || pointBefore(*c.point, c.stream, *best.point, best.stream) {
 			best = c
 		}
 	}
@@ -135,8 +142,10 @@ const extremeAtSQL = `
 		ORDER BY p.ts, p.record_id, p.ord LIMIT 1) p`
 
 // extremeInstants looks up, in one statement, the point each candidate row
-// of the groups' rollup-served cells holds its extreme at. The rows' points
-// count against maxSamples first: the statement reads at most them.
+// of the groups' rollup-served cells holds its extreme at. The statement
+// reads at most the rows' points, which count against maxSamples; where
+// they would pass what the read has left of it, the look-up does not run
+// and those extremes answer no instant.
 func (r *aggRun) extremeInstants(groups []*aggGroup, raws []aggCells) error {
 	var rows []*extremeCand
 	var n int64
@@ -162,12 +171,10 @@ func (r *aggRun) extremeInstants(groups []*aggGroup, raws []aggCells) error {
 			}
 		}
 	}
-	if len(rows) == 0 {
+	if len(rows) == 0 || r.samples+n > r.p.maxSamples {
 		return nil
 	}
-	if err := r.charge(n, "raw points of the rollup rows holding the columns' extremes"); err != nil {
-		return err
-	}
+	r.samples += n
 	var metric, kind, source, about, channel, form, code, unit, digits []string
 	var starts []time.Time
 	var delta, known []bool
