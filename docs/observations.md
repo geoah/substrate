@@ -771,6 +771,30 @@ night's own offsets, so a night slept abroad reads in the time it happened:
    "unit": "min"}}
 ```
 
+A night and its recovery: WHOOP stamps a cycle's recovery, and its heart
+rate variability, resting heart rate, SpO2 and skin temperature, at the
+cycle's start, the instant the night before it ends. A records-mode window
+is `[at, endsAt)`, so that instant is outside its night, and `around`
+widens each night's window by a minute after its end to take it. Each row
+carries the night's `record` beside its recovery:
+
+```json
+{"filter": {"kinds": ["ada.example.com/observations/observation"]},
+ "aggregate": {
+   "metric": {"ref": "ada.example.com/observations/metric/health/whoop_recovery"},
+   "from": "summaries",
+   "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+   "bucket": {"records": {
+     "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"source": {"eq": "whoop-4-0"}}},
+     "around": {"after": "PT1M"}}},
+   "reducers": ["last"],
+   "unit": "%"}}
+```
+
+The widening is the read's choice and reaches every metric the same way:
+a value stamped in the minute after the night counts in it, and an amount
+running past the night's end counts at most one minute more of its span.
+
 Training time and distance per sport per week, from the workout records
 themselves (a property read): each run once where several devices recorded
 it, the Garmin's first, and each week on the local days the runs began:

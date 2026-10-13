@@ -558,3 +558,43 @@ func TestAggregateRecordWindowsAreWrittenAtTheRecordsOffsets(t *testing.T) {
 		Reducers: reducers("count"),
 	}}, "aggregate.bucket.records.utcOffsets.start")
 }
+
+// A records-mode window is [at, endsAt): WHOOP stamps a cycle's recovery at
+// the instant the night before it ends, so the night's window leaves it out,
+// and widening the window by a minute after its end takes it, the night and
+// its recovery on one row (docs/observations.md, a night and its recovery).
+func TestAggregateRecordWindowTakesItsRecoveryWhenWidened(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 10, 9, 21, 30, 0, 0, time.UTC)
+	end := time.Date(2026, 10, 10, 5, 45, 0, 160000000, time.UTC)
+	f.mustPut(t, f.sleepKind(), "whoop/night", map[string]any{
+		"source": f.sourceRef("whoop"), "at": start.Format(time.RFC3339Nano), "endsAt": end.Format(time.RFC3339Nano),
+	})
+	f.mustPut(t, f.observation, "whoop/recovery", map[string]any{
+		"metric": f.metricRef("health/whoop_recovery"), "source": f.sourceRef("whoop"), "form": "summary",
+		"statistic": "vendor", "period": "night", "value": quantity("78", "%"),
+		"at": end.Format(time.RFC3339Nano), "endsAt": end.Add(24 * time.Hour).Format(time.RFC3339Nano), "utcOffset": 180,
+	})
+	read := func(around *substrate.AggregateAround) *substrate.AggregateResult {
+		return f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/whoop_recovery")},
+			From:   "summaries",
+			Range:  rng(start.Add(-time.Hour), end),
+			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+				Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}, Around: around,
+			}},
+			Reducers: reducers("last"),
+		})
+	}
+	if res := read(nil); len(res.Rows) != 0 {
+		t.Errorf("the night's own window: %d rows, want none (the recovery is stamped at its end)", len(res.Rows))
+	}
+	res := read(&substrate.AggregateAround{After: "PT1M"})
+	if len(res.Rows) != 1 || res.Rows[0].Record == nil || res.Rows[0].Record.Ref != f.sleepKind()+"/whoop/night" {
+		t.Fatalf("widened: %+v, want the night's one row", res.Rows)
+	}
+	if v, _ := val(res.Rows[0], "last"); v != "78" {
+		t.Errorf("the night's recovery = %s, want 78", v)
+	}
+}

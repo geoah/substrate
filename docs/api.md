@@ -1206,8 +1206,9 @@ amount spread unevenly over its span. Each row counts such amounts in
 `count` and says how many it cut in `prorated`. A summary, a gauge's point
 and a counter's reading land in a window by their instant, so a night's
 recovery stamped at the instant the night ends falls outside it (the window
-is `[at, endsAt)`): widen the window by `around` to take it. The records
-mode reads amounts from raw points.
+is `[at, endsAt)`): widen the window by `around` to take it ([a night and
+its recovery](observations.md#reading)). The records mode reads amounts from
+raw points.
 
 **The records' source policy.** Several sources write one night or one run
 as a record each, and the records mode makes a window of every record the
