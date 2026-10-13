@@ -117,9 +117,9 @@ func (pol *recordPolicy) rankOf(source string) int {
 }
 
 // propertyText is the SQL text of a declared scalar string, enum or
-// reference property every kind of types declares (” where a record holds
-// none), with the declaration a reference's bare ids complete against: its
-// pin where every kind pins one kind, none otherwise.
+// reference property every kind of types declares (empty where a record
+// holds none), with the declaration a reference's bare ids complete
+// against: its pin where every kind pins one kind, none otherwise.
 func propertyText(types []*vocabulary.Kind, path, name string) (string, *vocabulary.Property, error) {
 	if col, _ := columnFor(name); col != "" {
 		return "", nil, refuse(path, "%s is a record column; name a declared property", name)
