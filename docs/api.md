@@ -1124,7 +1124,7 @@ tool's `filter`, `aggregate` and `downsample` arguments
 ([agents](agents.md#tools)), and a person with
 [`substratectl aggregate`](substratectl.md#reading), which has a flag for
 each field. A function's and an agent's read is refused before it runs where
-it would answer more rows than their read budget holds.
+its series times buckets pass the rows left of their read budget.
 
 ### The request
 

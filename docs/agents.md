@@ -230,9 +230,9 @@ entry could name only a function.
   looks up. A metric read naming no kinds reads the allowlist's observed
   kinds; a property read names its own. Before it runs, its
   `budget.maxBuckets` (and on the latest read `budget.maxGroups`) is lowered
-  to the rows left, so a read that would answer more rows than the budget
-  holds is refused before it takes a point; the rows it answers count against
-  the row budget. It requires `permissions.reads`, a
+  to the rows left, so a read whose series times buckets could pass the
+  budget is refused before it takes a point; the rows it answers count
+  against the row budget. It requires `permissions.reads`, a
   load error otherwise, and every arm is held to that allowlist: a get outside
   it answers like an absent id, a kind outside it in `filter.kinds` or `kinds`
   is refused by name, an expanded referent outside it is left out, and a list
