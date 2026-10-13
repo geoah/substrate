@@ -222,9 +222,13 @@ The table prints one line per row: start and end; then, where any row
 carries them, the group (`GROUP`, a summary's statistic and a property
 read's group properties included), the record a records-mode window came
 from (`RECORD`), the sources of a row whose group names none (`SOURCES`, so
-the rows the separate policy splits by source tell apart); the form, `from`
-and coverage; the values placed by `--fallback-timezone` (`OFFSETLESS`) and
-the amounts a window cut (`PRORATED`); then each value as
+the rows the separate policy splits by source tell apart), the form
+(`FORM`), whether raw points or summaries served it (`FROM`), the time its
+points cover (`COVERAGE`), the values placed by `--fallback-timezone`
+(`OFFSETLESS`), the amounts a window cut (`PRORATED`) and `FLAGS`: `filled`
+for a row `--fill` made, `unavailable` for a row whose index points expired,
+`overlaps` for a records-mode window whose sums do not add, and `bounded=N`
+for values written with a comparator; then each value as
 `reducer=value unit`. A coded first or last prints its code as the value, a
 `timeInState` value names its state (`timeInState:closed=3.5 h`), and a
 rolling value names its window and `n`, the buckets in it with a value

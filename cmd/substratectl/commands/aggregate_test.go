@@ -140,17 +140,17 @@ func TestAggregateDownsampleSendsTheParameter(t *testing.T) {
 }
 
 // The table prints one line per row: the bucket, the group, the form, which
-// points served it, the coverage, then each value with its unit. A filled
-// row's values are null and print as "-"; a coded last prints its code and a
-// timeInState value names its state.
+// points served it, the coverage, its flags, then each value with its unit.
+// A filled row says so and its values are null, printed as "-"; a coded last
+// prints its code and a timeInState value names its state.
 func TestAggregateTablePrintsValuesWithUnits(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	out, _ := h.mustRun("aggregate", heartRate, "--reducer", "durationIn:95,114", "--reducer", "percentile:0.05")
 	want := "" +
-		"START                       END                         GROUP                                                              FORM    FROM   COVERAGE     VALUES\n" +
-		"2026-04-06T00:00:00+03:00   2026-04-13T00:00:00+03:00   source=ada.example.com/observations/source/garmin-forerunner-265   gauge   raw    P6DT22H10M   durationIn:95,114=612.4 min   percentile:0.05=52 /min\n" +
-		"2026-04-13T00:00:00+03:00   2026-04-20T00:00:00+03:00   source=ada.example.com/observations/source/garmin-forerunner-265   -       -      -            durationIn:95,114=-           percentile:0.05=-\n"
+		"START                       END                         GROUP                                                              FORM    FROM   COVERAGE     FLAGS    VALUES\n" +
+		"2026-04-06T00:00:00+03:00   2026-04-13T00:00:00+03:00   source=ada.example.com/observations/source/garmin-forerunner-265   gauge   raw    P6DT22H10M   -        durationIn:95,114=612.4 min   percentile:0.05=52 /min\n" +
+		"2026-04-13T00:00:00+03:00   2026-04-20T00:00:00+03:00   source=ada.example.com/observations/source/garmin-forerunner-265   -       -      -            filled   durationIn:95,114=-           percentile:0.05=-\n"
 	if out != want {
 		t.Fatalf("table:\n%s\nwant:\n%s", out, want)
 	}
@@ -163,8 +163,8 @@ func TestAggregateTablePrintsValuesWithUnits(t *testing.T) {
 	  "head": {"changelog": 41, "generation": "gen-test"}}`
 	out, _ = h.mustRun("aggregate", "ada.example.com/observations/metric/home/door", "--reducer", "last", "--reducer", "timeInState")
 	want = "" +
-		"START                  END                    FORM    FROM   COVERAGE   VALUES\n" +
-		"2026-10-01T07:12:00Z   2026-10-01T07:12:00Z   gauge   -      -          last=open   timeInState:closed=3.5 h\n"
+		"START                  END                    FORM    VALUES\n" +
+		"2026-10-01T07:12:00Z   2026-10-01T07:12:00Z   gauge   last=open   timeInState:closed=3.5 h\n"
 	if out != want {
 		t.Fatalf("coded table:\n%s\nwant:\n%s", out, want)
 	}
@@ -370,9 +370,9 @@ func TestAggregateTableTellsRowsApart(t *testing.T) {
 			   "sources": ["ada.example.com/observations/source/whoop"], "values": [{"reducer": "avg", "value": "64.1", "unit": "/min"}],
 			   "count": 12, "bounded": 0, "synthetic": false, "unavailable": false}], ` + head + `}`,
 			"" +
-				"START                       END                         SOURCES                                      FORM    FROM   COVERAGE   VALUES\n" +
-				"2026-10-01T00:00:00+03:00   2026-10-02T00:00:00+03:00   ada.example.com/observations/source/garmin   gauge   raw    -          avg=63.7 /min\n" +
-				"2026-10-01T00:00:00+03:00   2026-10-02T00:00:00+03:00   ada.example.com/observations/source/whoop    gauge   raw    -          avg=64.1 /min\n",
+				"START                       END                         SOURCES                                      FORM    FROM   VALUES\n" +
+				"2026-10-01T00:00:00+03:00   2026-10-02T00:00:00+03:00   ada.example.com/observations/source/garmin   gauge   raw    avg=63.7 /min\n" +
+				"2026-10-01T00:00:00+03:00   2026-10-02T00:00:00+03:00   ada.example.com/observations/source/whoop    gauge   raw    avg=64.1 /min\n",
 		},
 		"statistics, properties, offsetless and prorated": {
 			`{"metric": "m", "exact": true, "rows": [
@@ -383,9 +383,9 @@ func TestAggregateTableTellsRowsApart(t *testing.T) {
 			   "group": {"kind": "k", "properties": {"sport": "running", "device": "d"}}, "prorated": 1,
 			   "values": [{"reducer": "sum", "value": "30", "unit": "min"}], "count": 2, "bounded": 0, "synthetic": false, "unavailable": false}], ` + head + `}`,
 			"" +
-				"START                  END                    GROUP                           FORM      FROM   COVERAGE   OFFSETLESS   PRORATED   VALUES\n" +
-				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   source=s,statistic=avg          summary   -      -          2            0          max=88 /min\n" +
-				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   kind=k,device=d,sport=running   -         -      -          0            1          sum=30 min\n",
+				"START                  END                    GROUP                           FORM      OFFSETLESS   PRORATED   VALUES\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   source=s,statistic=avg          summary   2            0          max=88 /min\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   kind=k,device=d,sport=running   -         0            1          sum=30 min\n",
 		},
 		"coded values": {
 			`{"metric": "door", "exact": true, "rows": [
@@ -397,8 +397,8 @@ func TestAggregateTableTellsRowsApart(t *testing.T) {
 			              {"reducer": "avg", "of": "last", "rolling": 3, "value": null, "code": "open"}],
 			   "count": 0, "bounded": 0, "synthetic": true, "unavailable": false}], ` + head + `}`,
 			"" +
-				"START                  END                    FORM    FROM   COVERAGE   VALUES\n" +
-				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   gauge   -      -          last=open   timeInState:closed=-   rolling(3,n=2,avg of timeInState:closed)=2.5 h   rolling(3,n=0,avg of timeInState:closed)=-   rolling(3,avg of last:open)=-\n",
+				"START                  END                    FORM    FLAGS    VALUES\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   gauge   filled   last=open   timeInState:closed=-   rolling(3,n=2,avg of timeInState:closed)=2.5 h   rolling(3,n=0,avg of timeInState:closed)=-   rolling(3,avg of last:open)=-\n",
 		},
 		"several metrics": {
 			`{"units": {"m/hr": "/min", "m/steps": "{steps}"}, "exact": true, "rows": [
@@ -407,9 +407,38 @@ func TestAggregateTableTellsRowsApart(t *testing.T) {
 			  {"start": "2026-10-01T00:00:00Z", "end": "2026-10-02T00:00:00Z", "form": "amount", "group": {"metric": "m/steps"},
 			   "values": [{"reducer": "sum", "value": "9000", "unit": "{steps}"}], "count": 9, "bounded": 0, "synthetic": false, "unavailable": false}], ` + head + `}`,
 			"" +
-				"START                  END                    GROUP            FORM     FROM   COVERAGE   VALUES\n" +
-				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   metric=m/hr      gauge    -      -          avg=64 /min\n" +
-				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   metric=m/steps   amount   -      -          sum=9000 {steps}\n",
+				"START                  END                    GROUP            FORM     VALUES\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   metric=m/hr      gauge    avg=64 /min\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   metric=m/steps   amount   sum=9000 {steps}\n",
+		},
+		// A property read carries no form, from or coverage, so the table
+		// prints none of the three.
+		"a property read": {
+			`{"property": "distance", "unit": "km", "exact": true, "rows": [
+			  {"start": "2026-09-01T00:00:00Z", "end": "2026-10-01T00:00:00Z", "group": {"properties": {"sport": "running"}},
+			   "values": [{"reducer": "sum", "value": "84.2", "unit": "km"}], "count": 12, "bounded": 0, "synthetic": false, "unavailable": false}], ` + head + `}`,
+			"" +
+				"START                  END                    GROUP           VALUES\n" +
+				"2026-09-01T00:00:00Z   2026-10-01T00:00:00Z   sport=running   sum=84.2 km\n",
+		},
+		// A filled, an expired, an overlapping and a bounded row each say so
+		// in FLAGS, and a plain row beside them prints a dash.
+		"flags": {
+			`{"metric": "m", "exact": true, "rows": [
+			  {"start": "2026-10-01T00:00:00Z", "end": "2026-10-02T00:00:00Z", "form": "gauge", "from": "raw", "coverage": "PT1H",
+			   "values": [{"reducer": "avg", "value": "60", "unit": "/min"}], "count": 2, "bounded": 0, "synthetic": false, "unavailable": false},
+			  {"start": "2026-10-02T00:00:00Z", "end": "2026-10-03T00:00:00Z", "form": "gauge",
+			   "values": [{"reducer": "avg", "value": "60", "unit": "/min"}], "count": 0, "bounded": 0, "synthetic": true, "unavailable": false},
+			  {"start": "2026-10-03T00:00:00Z", "end": "2026-10-04T00:00:00Z", "form": "gauge",
+			   "values": [{"reducer": "avg", "value": null, "unit": "/min"}], "count": 0, "bounded": 0, "synthetic": false, "unavailable": true},
+			  {"start": "2026-10-04T00:00:00Z", "end": "2026-10-05T00:00:00Z", "form": "gauge", "from": "raw", "coverage": "PT1H", "nonAdditive": true,
+			   "values": [{"reducer": "avg", "value": "0.01", "unit": "/min"}], "count": 3, "bounded": 2, "synthetic": false, "unavailable": false}], ` + head + `}`,
+			"" +
+				"START                  END                    FORM    FROM   COVERAGE   FLAGS                VALUES\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   gauge   raw    PT1H       -                    avg=60 /min\n" +
+				"2026-10-02T00:00:00Z   2026-10-03T00:00:00Z   gauge   -      -          filled               avg=60 /min\n" +
+				"2026-10-03T00:00:00Z   2026-10-04T00:00:00Z   gauge   -      -          unavailable          avg=-\n" +
+				"2026-10-04T00:00:00Z   2026-10-05T00:00:00Z   gauge   raw    PT1H       overlaps,bounded=2   avg=0.01 /min\n",
 		},
 	} {
 		h.fake.aggregateAnswer = x.answer

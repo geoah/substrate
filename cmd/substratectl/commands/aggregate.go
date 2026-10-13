@@ -125,10 +125,13 @@ statistic have no flags and are written in a body.
 
 The table prints one line per row: its start and end, then the group
 (GROUP), the record of a records-mode window (RECORD), the sources that fed a
-row whose group names none (SOURCES), the form, whether raw points or
-summaries served it, the time its points cover, the values placed by
---fallback-timezone (OFFSETLESS) and the amounts a window cut (PRORATED),
-each column where a row carries it, then each value as reducer=value unit
+row whose group names none (SOURCES), the form (FORM), whether raw points or
+summaries served it (FROM), the time its points cover (COVERAGE), the values
+placed by --fallback-timezone (OFFSETLESS), the amounts a window cut
+(PRORATED) and FLAGS (filled for a row --fill made, unavailable for a row
+whose index points expired, overlaps for a records-mode window whose sums do
+not add, bounded=N for values written with a comparator), each column where
+a row carries it, then each value as reducer=value unit
 ("-" where a reducer has no answer; a coded first or last prints its code,
 a timeInState value names its state, and a rolling value its window and the
 n buckets in it with a value). -o json and -o yaml print the answer whole.`,
@@ -632,15 +635,19 @@ func parseAggregateBody(raw []byte) (substrate.AggregateQuery, error) {
 }
 
 func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
-	var grouped, recorded, sourced, offsetless, prorated bool
+	var grouped, recorded, sourced, formed, served, covered, offsetless, prorated, flagged bool
 	for _, row := range res.Rows {
 		grouped = grouped || row.Group != nil
 		recorded = recorded || row.Record != nil
 		// The separate policy splits rows by source without a group: the
 		// sources are what tell two rows of one bucket apart.
 		sourced = sourced || (len(row.Sources) > 0 && (row.Group == nil || row.Group.Source == ""))
+		formed = formed || row.Form != ""
+		served = served || row.From != ""
+		covered = covered || row.Coverage != ""
 		offsetless = offsetless || row.Offsetless > 0
 		prorated = prorated || row.Prorated > 0
+		flagged = flagged || rowFlags(row) != ""
 	}
 	tw := newTable(w)
 	header := []string{"START", "END"}
@@ -653,12 +660,23 @@ func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
 	if sourced {
 		header = append(header, "SOURCES")
 	}
-	header = append(header, "FORM", "FROM", "COVERAGE")
+	if formed {
+		header = append(header, "FORM")
+	}
+	if served {
+		header = append(header, "FROM")
+	}
+	if covered {
+		header = append(header, "COVERAGE")
+	}
 	if offsetless {
 		header = append(header, "OFFSETLESS")
 	}
 	if prorated {
 		header = append(header, "PRORATED")
+	}
+	if flagged {
+		header = append(header, "FLAGS")
 	}
 	header = append(header, "VALUES")
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
@@ -677,12 +695,22 @@ func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
 		if sourced {
 			cells = append(cells, dash(strings.Join(row.Sources, ",")))
 		}
-		cells = append(cells, dash(row.Form), dash(row.From), dash(row.Coverage))
+		for _, col := range []struct {
+			shown bool
+			value string
+		}{{formed, row.Form}, {served, row.From}, {covered, row.Coverage}} {
+			if col.shown {
+				cells = append(cells, dash(col.value))
+			}
+		}
 		if offsetless {
 			cells = append(cells, strconv.FormatInt(row.Offsetless, 10))
 		}
 		if prorated {
 			cells = append(cells, strconv.FormatInt(row.Prorated, 10))
+		}
+		if flagged {
+			cells = append(cells, dash(rowFlags(row)))
 		}
 		for _, v := range row.Values {
 			cells = append(cells, valueLabel(v))
@@ -690,6 +718,27 @@ func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
 		fmt.Fprintln(tw, strings.Join(cells, "\t"))
 	}
 	return tw.Flush()
+}
+
+// rowFlags names what makes a row other than plain data: filled (a row fill
+// made), unavailable (expired index points its reducers need), overlaps (a
+// records-mode window that may overlap another, whose sums do not add) and
+// bounded=N (values written with a comparator).
+func rowFlags(row substrate.AggregateRow) string {
+	var flags []string
+	if row.Synthetic {
+		flags = append(flags, "filled")
+	}
+	if row.Unavailable {
+		flags = append(flags, "unavailable")
+	}
+	if row.NonAdditive {
+		flags = append(flags, "overlaps")
+	}
+	if row.Bounded > 0 {
+		flags = append(flags, "bounded="+strconv.FormatInt(row.Bounded, 10))
+	}
+	return strings.Join(flags, ",")
 }
 
 // groupLabel is a row's group as key=value pairs, in the order the wire
