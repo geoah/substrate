@@ -1174,7 +1174,7 @@ gauge's, an amount's or a counter's values carry none and are kept.
 | `{"every": "PT5M", "origin"?, "place"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
 | `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?, "place"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
 | `{"calendar": "day", "fallbackTimezone"?, "place"?}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows', else the range's |
-| `{"records": {"filter", "around"?, "maxRecords"?, "sources"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations), less the records `sources` drops | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
+| `{"records": {"filter", "around"?, "maxRecords"?, "sources"?, "utcOffsets"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations), less the records `sources` drops | the record's window, in the range's offset, or with `utcOffsets` (`{"start": "utcOffsetStart", "end"?: "utcOffsetEnd"}`, the records' declared `int` properties holding minutes east of UTC; `end` is `start`'s where absent) `start` at the record's start offset and `end` at its end offset, the range's where the record holds none; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
 week's, month's or year's start by less than a day (`PT4H` for a vendor day
@@ -1607,7 +1607,8 @@ merged as one row.
   latest read; a records source policy that is not `separate` or
   `priority`, a `priority` without `property` or `order`, or a `property`
   or `match` entry the selected kinds do not all declare as a single
-  string, enum or reference; `sources` on a property read; on a property
+  string, enum or reference; a `utcOffsets` property the selected kinds do
+  not all declare as an `int`; `sources` on a property read; on a property
   read, a `utcOffset` outside the recorded-local calendar, the
   recorded-local calendar without one, a record holding no offset there
   without `bucket.fallbackTimezone`, or a `property.groupBy` property that is

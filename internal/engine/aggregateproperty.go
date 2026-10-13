@@ -128,7 +128,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	}
 	offsetExpr := `NULL::bigint`
 	if local {
-		if offsetExpr, err = propertyOffset(types, prop.UTCOffset); err != nil {
+		if offsetExpr, err = propertyOffset(types, "aggregate.property.utcOffset", prop.UTCOffset); err != nil {
 			return nil, err
 		}
 	}
@@ -487,9 +487,8 @@ func ratStdDev(sum, sumsq *big.Rat, n int64) (*big.Rat, bool) {
 
 // propertyOffset is the SQL of a declared int property every kind of types
 // declares, read as each record's UTC offset in minutes; NULL where the
-// record holds none.
-func propertyOffset(types []*vocabulary.Kind, name string) (string, error) {
-	const path = "aggregate.property.utcOffset"
+// record holds none or one past the 18 hours an offset reaches.
+func propertyOffset(types []*vocabulary.Kind, path, name string) (string, error) {
 	if col, _ := columnFor(name); col != "" {
 		return "", refuse(path, "%s is a record column; name a declared int property holding minutes east of UTC", name)
 	}
@@ -500,7 +499,8 @@ func propertyOffset(types []*vocabulary.Kind, name string) (string, error) {
 		}
 	}
 	lit := sqlLiteral(name)
-	return `(CASE WHEN jsonb_typeof(props->` + lit + `) = 'number' THEN (props->>` + lit + `)::numeric::bigint END)`, nil
+	return `(CASE WHEN jsonb_typeof(props->` + lit + `) = 'number' AND abs((props->>` + lit + `)::numeric) <= 1080
+		THEN (props->>` + lit + `)::numeric::bigint END)`, nil
 }
 
 // propertyAnchor is the SQL instant a property read places each record at:

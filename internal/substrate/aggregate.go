@@ -214,12 +214,24 @@ const (
 
 // AggregateRecords is the records time mode: the records the filter matches
 // inside the range are the buckets, each widened by Around. Sources keeps
-// one source's record where several sources' records overlap.
+// one source's record where several sources' records overlap, and
+// UTCOffsets names the properties a window's start and end are written at.
 type AggregateRecords struct {
 	Filter     Filter                  `json:"filter"`
 	Around     *AggregateAround        `json:"around,omitempty"`
 	MaxRecords int                     `json:"maxRecords,omitempty"`
 	Sources    *AggregateRecordSources `json:"sources,omitempty"`
+	UTCOffsets *AggregateRecordOffsets `json:"utcOffsets,omitempty"`
+}
+
+// AggregateRecordOffsets names the records' declared int properties holding
+// their UTC offset in minutes where they start and where they end
+// (utcOffsetStart, utcOffsetEnd); End is Start's where absent. A row's start
+// and end are written at its record's offsets, the range's where the record
+// holds none.
+type AggregateRecordOffsets struct {
+	Start string `json:"start"`
+	End   string `json:"end,omitempty"`
 }
 
 // AggregateAround widens each record's window, two ISO 8601 durations.

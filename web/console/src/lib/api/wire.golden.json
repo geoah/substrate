@@ -104,6 +104,10 @@
     "ref": true,
     "version": true
   },
+  "AggregateRecordOffsets": {
+    "end": false,
+    "start": true
+  },
   "AggregateRecordSources": {
     "match": false,
     "order": false,
@@ -114,7 +118,8 @@
     "around": false,
     "filter": true,
     "maxRecords": false,
-    "sources": false
+    "sources": false,
+    "utcOffsets": false
   },
   "AggregateResult": {
     "bucket": false,

@@ -77,8 +77,8 @@ type aggBucket struct {
 	// range reaches before its first may be two buckets: the lookback one,
 	// holding the whole day the read takes, and the part in the range.
 	lookback bool
-	// zone is where start and end are written.
-	zone *time.Location
+	// zone is where start is written, and end too unless endZone is set.
+	zone, endZone *time.Location
 	// record is the records mode's matched record.
 	record *substrate.AggregateRecord
 	// ends are a recorded-local bucket's first and last points and held time
@@ -194,7 +194,11 @@ func (b *aggBucket) aligned() bool {
 // where the range starts and ends, and its start or end says so.
 func (b *aggBucket) shown(ends *rowEnds, rangeFrom, rangeTo time.Time) (time.Time, time.Time) {
 	if !b.local {
-		return b.start.In(b.zone), b.end.In(b.zone)
+		endZone := b.zone
+		if b.endZone != nil {
+			endZone = b.endZone
+		}
+		return b.start.In(b.zone), b.end.In(endZone)
 	}
 	startOff, endOff, ok := ends.offsets()
 	if !ok {
@@ -367,6 +371,9 @@ func (p *aggPlan) parseBucket() error {
 		var err error
 		if spec.bySource, err = checkRecordSources("aggregate.bucket.records.sources", b.Records.Sources); err != nil {
 			return err
+		}
+		if o := b.Records.UTCOffsets; o != nil && o.Start == "" {
+			return refuse("aggregate.bucket.records.utcOffsets.start", "name the records' declared int property holding their UTC offset where they start, such as utcOffsetStart")
 		}
 		spec.maxRecords = substrate.AggregateMaxRecords
 		if n := b.Records.MaxRecords; n != 0 {
@@ -593,14 +600,28 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		return nil, err
 	}
 	const path = "aggregate.bucket.records.sources"
-	cols := `kind, id, version, at, ends_at, '', '[]'`
+	source, match := `''`, `'[]'`
 	var pol *recordPolicy
 	if s.bySource {
 		if pol, err = newRecordPolicy(types, path, s.records.Sources); err != nil {
 			return nil, err
 		}
-		cols = `kind, id, version, at, ends_at, ` + pol.source + `, ` + pol.match
+		source, match = pol.source, pol.match
 	}
+	offStart, offEnd := `NULL::bigint`, `NULL::bigint`
+	if o := s.records.UTCOffsets; o != nil {
+		end := o.End
+		if end == "" {
+			end = o.Start
+		}
+		if offStart, err = propertyOffset(types, "aggregate.bucket.records.utcOffsets.start", o.Start); err != nil {
+			return nil, err
+		}
+		if offEnd, err = propertyOffset(types, "aggregate.bucket.records.utcOffsets.end", end); err != nil {
+			return nil, err
+		}
+	}
+	cols := `kind, id, version, at, ends_at, ` + source + `, ` + match + `, ` + offStart + `, ` + offEnd
 	base := b.clone()
 	inRange := func(b *builder) string { return `at >= ` + b.arg(p.from) + ` AND at < ` + b.arg(p.to) }
 	b.add(inRange(b))
@@ -624,7 +645,8 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		var version int64
 		var at time.Time
 		var endsAt sql.NullTime
-		if err := rows.Scan(&kind, &id, &version, &at, &endsAt, &source, &match); err != nil {
+		var startOff, endOff sql.NullInt64
+		if err := rows.Scan(&kind, &id, &version, &at, &endsAt, &source, &match, &startOff, &endOff); err != nil {
 			return nil, err
 		}
 		if matched++; matched > limit {
@@ -641,8 +663,14 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		var w *aggBucket
 		if start, stop := at.Add(-s.before), end.Add(s.after); stop.After(start) {
 			w = &aggBucket{
-				start: start.UTC(), end: stop.UTC(), zone: p.from.Location(),
+				start: start.UTC(), end: stop.UTC(), zone: p.from.Location(), endZone: p.from.Location(),
 				record: &substrate.AggregateRecord{Ref: kind + "/" + id, Version: version},
+			}
+			if startOff.Valid {
+				w.zone = time.FixedZone("", int(startOff.Int64)*60)
+			}
+			if endOff.Valid {
+				w.endZone = time.FixedZone("", int(endOff.Int64)*60)
 			}
 		}
 		out = append(out, w)

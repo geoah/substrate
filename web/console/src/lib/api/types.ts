@@ -457,6 +457,16 @@ export interface AggregateRecords {
   maxRecords?: number
   /** Keeps one source's record where several sources' records overlap. */
   sources?: AggregateRecordSources
+  /** The properties a row's start and end are written at. */
+  utcOffsets?: AggregateRecordOffsets
+}
+
+/** The records' declared int properties holding their UTC offset in minutes
+ * where they start and end (`end` is `start`'s where absent); a record
+ * holding none is written at the range's offset. */
+export interface AggregateRecordOffsets {
+  start: string
+  end?: string
 }
 
 export interface AggregateAround {

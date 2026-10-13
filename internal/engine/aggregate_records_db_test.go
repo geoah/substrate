@@ -499,3 +499,62 @@ func TestAggregatePropertyPlacesARecordByItsOwnOffset(t *testing.T) {
 		t.Errorf("with a fallback zone:\n got %s\nwant %s", got, want)
 	}
 }
+
+// A records-mode row is written at its record's own offsets where the
+// request names the properties holding them: a night begun in London
+// (+01:00) and ended in Athens (+03:00), read with a range written at
+// +03:00, starts at 23:00+01:00 and ends at 07:00+03:00, where it happened.
+// Without utcOffsets, or for a record holding none, a row is written at the
+// range's offset.
+func TestAggregateRecordWindowsAreWrittenAtTheRecordsOffsets(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 14, 22, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 9, 15, 4, 0, 0, 0, time.UTC)
+	f.mustPut(t, f.sleepKind(), "travel", map[string]any{
+		"source": f.sourceRef("whoop"), "at": start.Format(time.RFC3339), "endsAt": end.Format(time.RFC3339),
+		"utcOffsetStart": 60, "utcOffsetEnd": 180,
+	})
+	f.mustPut(t, f.sleepKind(), "unknown", map[string]any{
+		"source": f.sourceRef("whoop"), "at": start.AddDate(0, 0, 1).Format(time.RFC3339), "endsAt": end.AddDate(0, 0, 1).Format(time.RFC3339),
+	})
+	for _, day := range []int{0, 1} {
+		f.stageAt(fmt.Sprintf("stage/%d", day), "whoop", "light", start.AddDate(0, 0, day).Add(time.Hour), time.Hour)
+	}
+	plus3 := time.FixedZone("", 3*3600)
+	read := func(offsets *substrate.AggregateRecordOffsets) string {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+			Range:  rng(time.Date(2026, 9, 14, 0, 0, 0, 0, plus3), time.Date(2026, 9, 17, 0, 0, 0, 0, plus3)),
+			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+				Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}, UTCOffsets: offsets,
+			}},
+			Reducers: reducers("count"),
+		})
+		var out []string
+		for _, row := range res.Rows {
+			out = append(out, row.Start.Format(time.RFC3339)+".."+row.End.Format(time.RFC3339))
+		}
+		return strings.Join(out, " ")
+	}
+	if got, want := read(&substrate.AggregateRecordOffsets{Start: "utcOffsetStart", End: "utcOffsetEnd"}),
+		"2026-09-14T23:00:00+01:00..2026-09-15T07:00:00+03:00 2026-09-16T01:00:00+03:00..2026-09-16T07:00:00+03:00"; got != want {
+		t.Errorf("at the records' offsets:\n got %s\nwant %s", got, want)
+	}
+	if got, want := read(&substrate.AggregateRecordOffsets{Start: "utcOffsetStart"}),
+		"2026-09-14T23:00:00+01:00..2026-09-15T05:00:00+01:00 2026-09-16T01:00:00+03:00..2026-09-16T07:00:00+03:00"; got != want {
+		t.Errorf("at the start's offset:\n got %s\nwant %s", got, want)
+	}
+	if got, want := read(nil),
+		"2026-09-15T01:00:00+03:00..2026-09-15T07:00:00+03:00 2026-09-16T01:00:00+03:00..2026-09-16T07:00:00+03:00"; got != want {
+		t.Errorf("at the range's offset:\n got %s\nwant %s", got, want)
+	}
+	f.refusedAgg(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+		Range:  rng(start, end),
+		Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+			Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}, UTCOffsets: &substrate.AggregateRecordOffsets{Start: "timeAsleep"},
+		}},
+		Reducers: reducers("count"),
+	}}, "aggregate.bucket.records.utcOffsets.start")
+}

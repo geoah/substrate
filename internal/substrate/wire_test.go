@@ -99,8 +99,10 @@ var wireTypes = map[string]any{
 	"AggregateRecords":  AggregateRecords{},
 	"AggregateAround":   AggregateAround{},
 	"AggregateSources":  AggregateSources{},
-	// The records' source policy, on the records mode and the property read.
+	// The records' source policy, on the records mode and the property read,
+	// and the properties a records-mode row's ends are written at.
 	"AggregateRecordSources": AggregateRecordSources{},
+	"AggregateRecordOffsets": AggregateRecordOffsets{},
 	"AggregateRolling":       AggregateRolling{},
 	"AggregateBudget":        AggregateBudget{},
 	"Downsample":             Downsample{},

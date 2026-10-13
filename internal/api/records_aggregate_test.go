@@ -185,8 +185,8 @@ func TestRecordsAggregateCarriesTheTimeOptions(t *testing.T) {
 }
 
 // The options that read records decode strictly and reach the dataset as
-// written: the records mode's and the property read's source policies, and
-// the property read's offset and groups.
+// written: the records mode's and the property read's source policies, the
+// records mode's offsets, and the property read's offset and groups.
 func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
@@ -194,7 +194,8 @@ func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 	sources := `{"policy":"priority","order":["whoop-4-0","garmin-forerunner-265"],"property":"source","match":["sport"]}`
 	body := `{"metric":{"ref":"ada.example.com/observations/metric/health/sleep_stage"},` +
 		`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
-		`"bucket":{"records":{"filter":{"kinds":["ada.example.com/health/sleep"]},"sources":` + sources + `}},` +
+		`"bucket":{"records":{"filter":{"kinds":["ada.example.com/health/sleep"]},"sources":` + sources + `,` +
+		`"utcOffsets":{"start":"utcOffsetStart","end":"utcOffsetEnd"}}},` +
 		`"reducers":["sum"]}`
 	rec := env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
@@ -203,7 +204,8 @@ func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 		return got != nil && got.Policy == want.Policy && strings.Join(got.Order, ",") == strings.Join(want.Order, ",") &&
 			got.Property == want.Property && strings.Join(got.Match, ",") == strings.Join(want.Match, ",")
 	}
-	if b := ds.lastAggregate.Aggregate.Bucket; b == nil || b.Records == nil || !sameSources(b.Records.Sources) {
+	if b := ds.lastAggregate.Aggregate.Bucket; b == nil || b.Records == nil || !sameSources(b.Records.Sources) ||
+		b.Records.UTCOffsets == nil || b.Records.UTCOffsets.Start != "utcOffsetStart" || b.Records.UTCOffsets.End != "utcOffsetEnd" {
 		t.Fatalf("bucket = %+v", b)
 	}
 
