@@ -14,7 +14,7 @@ package engine
 // the changelog.
 //
 // The fold writes the points of one record (syncObserved, from foldRecordOp,
-// and dropObserved, from the tombstone and the purge) and records which
+// and dropObservedOf, from the tombstone and the purge) and records which
 // buckets and streams their old and new points touched. The rollups and the
 // latest rows are recomputed from the points once, at the end of the
 // transaction (settleObserved): inTx and inRawTx call it, and a rebuild

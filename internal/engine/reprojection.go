@@ -18,15 +18,18 @@ package engine
 // transaction reads next, and records the `fts` half here for the pass it
 // starts after its commit (kickIndexReprojection).
 //
-// Both derivations are PER TOP-LEVEL PROPERTY: deriveRefs walks each
-// declared property's value on its own and ftsBands reads each declared
-// property's value on its own, so a row that carries none of the properties
-// whose declaration moved derives the same refs rows and the same bands
-// under either declaration. The request names those properties, index by
-// index, and the pass reads only the rows that carry one, in pages, each
-// its own transaction under the shared registry-dependency lock, as the
+// The refs and `fts` derivations are PER TOP-LEVEL PROPERTY: deriveRefs
+// walks each declared property's value on its own and ftsBands reads each
+// declared property's value on its own, so a row that carries none of the
+// properties whose declaration moved derives the same refs rows and the
+// same bands under either declaration. The request names those properties,
+// index by index, and the pass reads only the rows that carry one, in pages,
+// each its own transaction under the shared registry-dependency lock, as the
 // open-time search reindex does (searchindex.go). A kind declared on one
-// side only names no property, and every row is re-derived.
+// side only names no property, and every row is re-derived. The observed
+// index is not per property: its shape is the kind's binding of the trait
+// and the measure its `value` declares (observedShape), so a request for it
+// re-derives every row of the kind or none.
 //
 // The request rows are written in the transaction that moves the
 // declarations, the upgrade's or the apply's, and each
@@ -185,8 +188,8 @@ func (s reprojectionSet) list() []indexReprojection {
 }
 
 // withEveryRow is a copy of the set in which each named kind re-derives
-// both indexes for every row, for kinds no declaration describes on either
-// side, such as the rows of a package that does not parse.
+// all three indexes for every row, for kinds no declaration describes on
+// either side, such as the rows of a package that does not parse.
 func (s reprojectionSet) withEveryRow(kinds []string) reprojectionSet {
 	out := make(reprojectionSet, len(s)+len(kinds))
 	for kind, r := range s {
@@ -704,7 +707,7 @@ func (ds *dataset) reprojectionPage(ctx context.Context, p indexReprojection, af
 // as the fold reads them (fold.go foldView), and reports how many it wrote
 // and which ids it did not lock: a row a write holds, under skipLocked, or
 // one that is gone. Each index re-derives the rows its own filter names: a
-// row carrying only a property the other index reads derives the same rows
+// row carrying only a property another index reads derives the same rows
 // here, and is not written. A kind the registry no longer declares derives
 // no refs rows, so its stale ones go, and its `fts` lands at the
 // unknown-kind bands, which is what a rebuild folds for it. The caller holds

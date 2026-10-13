@@ -1537,8 +1537,7 @@ func (r obsIndex) rebuildMatches(t *testing.T) {
 // reads its empty code as an unavailable point on every path: the points a
 // derivation inserts, the count a deletion takes back, the rollups, the latest
 // row and the rebuild. Unrelated patches leave the live tables the rebuilt
-// ones; before, each re-derivation of such a row added one point to its
-// stream's count.
+// ones, so a re-derivation of such a row never moves its stream's count.
 func TestObservedEmptyCodeIsReadOnceAsUnavailable(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
@@ -1711,8 +1710,7 @@ func (p *pointReads) most() (int64, string) {
 // points each in one 15-minute bucket of their streams; with a page of 50,
 // no read of points the engine sends answers more than 50 rows through the
 // writes, a patch and a rebuild, and the rows are the specification's and
-// the rebuild's. Before, a write read the whole bucket and a rebuild doubled
-// its page until the bucket fit.
+// the rebuild's.
 func TestObservedRollupRecomputeReadsBoundedPages(t *testing.T) {
 	t.Parallel()
 	const page = 50
