@@ -341,7 +341,7 @@ observation.
 | `sleep` | one night or nap: the span, `timeInBed`, `timeAsleep`, the stage durations `awake`, `light`, `deep` and `rem`, `latency`, `efficiency`, `respiratoryRate`, `disturbances` and the device's `scores` by their own names |
 | `workout` | one session: `sport`, the span, `duration`, `distance`, `energy`, `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` by zone name, and the device's original `file` as a blob |
 | `labreport` | one report from a lab: `lab`, `accession`, `orderedAt`, `issuedAt`, `status`, the original `file` and the owner's `review` |
-| `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges`, `interpretation`, `status` and `provenance` |
+| `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age}`), `interpretation`, `status` and `provenance` |
 
 The catalogue (`samples/health/metrics.yaml`) is 61 `metric` records with ids
 `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose

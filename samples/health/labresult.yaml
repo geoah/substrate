@@ -192,20 +192,19 @@ data:
     method:
       type: string
       description: the method the lab used, where it says
+    # each bound a quantity, its unit held to the unit table, so a reader
+    # converts a range to the result's unit before it compares them
     referenceRanges:
       type: object
       repeated: true
       description: the reference ranges the lab reported with this result
       fields:
         low:
-          type: decimal
-          description: the lower bound
+          type: quantity
+          description: the lower bound, with its unit
         high:
-          type: decimal
-          description: the upper bound
-        unit:
-          type: string
-          description: the unit both bounds are in
+          type: quantity
+          description: the upper bound, with its unit
         text:
           type: string
           description: the range as the lab wrote it, such as optimal

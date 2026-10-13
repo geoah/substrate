@@ -81,14 +81,11 @@ data:
         its own
       fields:
         low:
-          type: decimal
-          description: the lower bound
+          type: quantity
+          description: the lower bound, with its unit
         high:
-          type: decimal
-          description: the upper bound
-        unit:
-          type: string
-          description: the unit both bounds are in
+          type: quantity
+          description: the upper bound, with its unit
         text:
           type: string
           description: where the range comes from, such as a guideline
