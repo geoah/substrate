@@ -148,6 +148,7 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 		"an undeclared comparator": {"weight": qv("1", "kg", "<")},
 		"an ambiguous unit":        {"pulse": qv("1", "J/s")},
 		"a stray member":           {"weight": map[string]any{"value": "1", "unit": "kg", "scale": "2"}},
+		"more digits than numeric": {"pulse": qv("1."+strings.Repeat("1", 16384), "m")},
 	} {
 		props := map[string]any{"name": "bad"}
 		for k, v := range bad {

@@ -608,6 +608,31 @@ func TestCanonicalDecimal(t *testing.T) {
 	}
 }
 
+// A quantity's digits are bounded: Postgres numeric holds at most 16383
+// fractional digits, and big.Rat reads a decimal in time quadratic in its
+// length.
+func TestQuantityDigitsAreBounded(t *testing.T) {
+	at := strings.Repeat("9", vocabulary.MaxQuantityDigits)
+	for in, want := range map[string]string{
+		at:              at,
+		"-0." + at[1:]:  "-0." + at[1:],
+		"+0072.50":      "72.50",
+		"0000" + at[4:]: at[4:],
+	} {
+		if got, err := vocabulary.QuantityDigits(in); err != nil || got != want {
+			t.Errorf("QuantityDigits(%.20s...) = %.20s..., %v", in, got, err)
+		}
+	}
+	for _, in := range []string{at + "9", "1." + at, "-" + at + ".5", strings.Repeat("1", 1<<20)} {
+		if _, err := vocabulary.QuantityDigits(in); err == nil || !strings.Contains(err.Error(), "at most") {
+			t.Errorf("QuantityDigits of %d characters: %v, want a refusal naming the bound", len(in), err)
+		}
+	}
+	if _, err := vocabulary.QuantityDigits("1e3"); err == nil || !strings.Contains(err.Error(), "exponent") {
+		t.Errorf("an exponent: %v", err)
+	}
+}
+
 func TestRatDecimal(t *testing.T) {
 	for _, c := range []struct {
 		in    string

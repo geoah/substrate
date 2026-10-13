@@ -5,8 +5,12 @@ package runner
 // never a Python copy of it, so a body and the write path that will hold its
 // effects agree on every code. The three calls read nothing from the
 // repository, so they are not reads: they charge no budget and need no grant.
+// The host-call loop serves them synchronously, so each is bounded instead: a
+// value of at most vocabulary.MaxQuantityDigits digits and a code of at most
+// the grammar's components, and none once the invocation's context is done.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -22,7 +26,13 @@ const (
 )
 
 // serveUnits answers one unit host call; handled is false for any other call.
-func serveUnits(call hostCall) (out any, handled bool, err error) {
+func serveUnits(ctx context.Context, call hostCall) (out any, handled bool, err error) {
+	switch call.Host {
+	case hostUnitsConvert, hostUnitsCanonical, hostUnitsMeasure:
+		if err := ctx.Err(); err != nil {
+			return nil, true, fmt.Errorf("%s: %w", call.Host, err)
+		}
+	}
 	switch call.Host {
 	case hostUnitsConvert:
 		var in struct {
@@ -80,9 +90,10 @@ func unitCode(call hostCall) (string, error) {
 // temperature); `measure` names the one to convert in
 // (`temperature-difference` for a deviation). The answer is every digit when
 // the value has a finite decimal expansion, else ConvertedDigits significant
-// digits with `exact: false`.
+// digits with `exact: false`. The value holds at most
+// vocabulary.MaxQuantityDigits digits, refused by name before any arithmetic.
 func convertUnits(value, from, to, measure string) (map[string]any, error) {
-	digits, err := vocabulary.CanonicalDecimal(value)
+	digits, err := vocabulary.QuantityDigits(value)
 	if err != nil {
 		return nil, fmt.Errorf("%s: value: %w", hostUnitsConvert, err)
 	}

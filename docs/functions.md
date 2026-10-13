@@ -652,7 +652,7 @@ host.ids.external(provider, account, external_id)
 host.ids.url(url)
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
-host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str
+host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str; .exact
 host.units.canonical(code)                        # "bpm" -> "/min"
 host.units.measure(code)                          # "kg" -> "mass"
 host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
@@ -791,13 +791,15 @@ its value at all, so a body that needs one refuses in its own words
 `canonical` and `measure` are host calls answered by the same unit table
 the write path holds a quantity to ([units](units.md)); there is no Python
 copy of it. They read nothing from the repository, so no grant gates them
-and no budget is charged. `convert` takes the value as digits (a `str`, an
-`int` or a `Decimal`; a `float` is written as its shortest repr), reads
-aliases on both units (`°C`, `kWh`, `mmHg`) and answers a decimal `str`:
-every digit when the result has a finite decimal expansion (72.4 kg is
-159.61467782185136844 lb, rounded, but 37 Cel is exactly 98.6 [degF]), else
-20 significant digits. Without `measure` the units are read as `MeasureOf`
-reads them, so Cel to [degF] is an absolute temperature;
+and no budget is charged; a value holds at most 1000 digits, and a call made
+after the invocation's deadline is refused. `convert` takes the value as
+digits (a `str`, an `int` or a `Decimal`; a `float` is written as its
+shortest repr), reads aliases on both units (`°C`, `kWh`, `mmHg`) and
+answers a decimal `str`: every digit when the result has a finite decimal
+expansion (37 Cel is exactly 98.6 [degF]), else 20 significant digits (72.4
+kg is 159.61467782185136844 lb, rounded). The answer's `exact` attribute is
+`False` exactly when it was rounded. Without `measure` the units are read as
+`MeasureOf` reads them, so Cel to [degF] is an absolute temperature;
 `measure="temperature-difference"` converts a deviation without the offset.
 A conversion across measures (`kg` to `J`) raises a `HostError` carrying the
 engine's refusal.

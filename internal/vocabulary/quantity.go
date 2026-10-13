@@ -186,6 +186,30 @@ func CanonicalDecimal(s string) (string, error) {
 	return out, nil
 }
 
+// MaxQuantityDigits bounds the digits of a quantity value, its integer and
+// fraction parts together. Every filter, order and index casts the value to
+// Postgres numeric, which holds at most 16383 fractional digits, and big.Rat
+// reads a decimal in time quadratic in its length; no measurement needs more.
+const MaxQuantityDigits = 1000
+
+// QuantityDigits is CanonicalDecimal held to MaxQuantityDigits: the digits a
+// quantity value stores, a filter's operand compares and a unit conversion
+// reads. The length is checked before anything else reads the text.
+func QuantityDigits(s string) (string, error) {
+	tooLong := fmt.Errorf("a quantity value holds at most %d digits", MaxQuantityDigits)
+	if len(s) > MaxQuantityDigits+2 {
+		return "", tooLong
+	}
+	c, err := CanonicalDecimal(s)
+	if err != nil {
+		return "", err
+	}
+	if len(strings.Trim(strings.ReplaceAll(c, ".", ""), "-")) > MaxQuantityDigits {
+		return "", tooLong
+	}
+	return c, nil
+}
+
 // parseQuantitySpec reads a quantity property's own keys: `measures`,
 // `units`, `comparator`, and `min`/`max` as quantity values. inherited is a
 // refinement's spec, which the property's own keys override.
@@ -306,7 +330,7 @@ func parseQuantityBound(raw any, s *QuantitySpec) (*QuantityBound, error) {
 	default:
 		return nil, fmt.Errorf("%s is the bound's digits (\"40\")", QuantityValue)
 	}
-	c, err := CanonicalDecimal(digits)
+	c, err := QuantityDigits(digits)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", QuantityValue, err)
 	}

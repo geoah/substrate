@@ -736,6 +736,14 @@ def _instant(us):
     return t.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+class Converted(str):
+    """A converted value's decimal digits, a str, with `exact`: False where the
+    result has no finite decimal expansion and was rounded to 20 significant
+    digits."""
+
+    exact = True
+
+
 class Units:
     """The engine's unit table, asked over the host call: every code, alias and
     factor is the one the write path holds an effect to. Errors are the
@@ -746,16 +754,21 @@ class Units:
 
     def convert(self, value, from_unit, to_unit, measure=None):
         """Convert exact digits between two units of one measure -> a decimal
-        str. Aliases are read (`°C`, `kWh`, `mmHg`). Every digit comes back
-        when the result has a finite decimal expansion; one without is rounded
-        to 20 significant digits. `measure` names the measure to convert in
-        where the units' own reading is not meant: a deviation in Cel converts
-        to [degF] in `temperature-difference`, without the offset."""
+        str whose `exact` says whether it is every digit. Aliases are read
+        (`°C`, `kWh`, `mmHg`). Every digit comes back when the result has a
+        finite decimal expansion; one without is rounded to 20 significant
+        digits and `exact` is False. The value holds at most 1000 digits.
+        `measure` names the measure to convert in where the units' own reading
+        is not meant: a deviation in Cel converts to [degF] in
+        `temperature-difference`, without the offset."""
         params = {"value": _decimal_text("units.convert", value),
                   "from": from_unit, "to": to_unit}
         if measure is not None:
             params["measure"] = measure
-        return self._host._call("units.convert", params).get("value")
+        out = self._host._call("units.convert", params)
+        converted = Converted(out.get("value"))
+        converted.exact = out.get("exact") is not False
+        return converted
 
     def canonical(self, code):
         """The code the engine stores for a unit spelling: `bpm` is `/min`,

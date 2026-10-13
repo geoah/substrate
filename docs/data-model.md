@@ -395,7 +395,7 @@ amount beside a currency picker.
 
 **Quantities.** A `quantity` value is a measured amount in a unit, and holds
 three members: `value`, the exact digits written as a string, as a `decimal`
-is (a bare JSON number is refused); `unit`, a case-sensitive
+is (a bare JSON number is refused), at most 1000 of them; `unit`, a case-sensitive
 [UCUM](https://ucum.org) code; and, only where the property declares
 `comparator: true`, `comparator`, one of `<`, `<=`, `>=` and `>`, which says
 the true value lies in that half-line. A lab's "below 0.5 ng/mL" is:
