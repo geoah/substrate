@@ -604,6 +604,12 @@ describe("PropertySheet dates", () => {
       },
     })
 
+  it("says a date month first, as the record's other sections do", () => {
+    renderSheet(withDates(), dated)
+    // A year away from now, so neither relative nor this year's.
+    expect(row("birthday").textContent).toContain("Mar 14, 1990")
+  })
+
   it("picks a date from the calendar in one click", async () => {
     renderSheet(withDates(), dated)
     fireEvent.click(valueOf("birthday")!)

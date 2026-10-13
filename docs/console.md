@@ -343,7 +343,10 @@ here throughout, and says to change it at the provider.
 **The properties** are a sheet: one row per property, its label (and
 its key, with Technical details on) on the left and its value on the right,
 with empty properties folded into one line that expands. A duration reads in
-words (`1h 51m 31s`), the stored text on hover. A quantity reads to two
+words (`1h 51m 31s`), the stored text on hover. A date reads as every
+table, chart and record section says one, month first: Today, Tomorrow,
+a weekday within the coming week, else `Oct 5` (`Oct 5, 2025` outside
+this year), with its clock where it has one. A quantity reads to two
 decimal places (`97.18 %`, a kind's property declaring none of its own),
 the stored digits on hover; with Technical details on, as stored. Clicking a value
 edits it in place, with the control its datatype earns: a text box, a number,
