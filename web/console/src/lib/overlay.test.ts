@@ -231,7 +231,7 @@ describe("where a metric reads from", () => {
     expect(planned.read?.aggregate.from).toBe("prefer-raw")
     // What a summary takes comes first; the rest read raw points alone.
     expect(planned.reducerMenu.slice(0, 7)).toEqual([
-      { value: "avg", label: "Average" },
+      { value: "avg", label: "Average", hint: "Each reading counts once" },
       { value: "min", label: "Lowest" },
       { value: "max", label: "Highest" },
       { value: "first", label: "First" },
@@ -293,10 +293,17 @@ describe("where a metric reads from", () => {
       disabled: true,
       hint: "Needs raw points: set Read from to Raw",
     })
-    // A raw read leaves the summaries out, and offers the level's every one.
+    // A raw read leaves the summaries out, and offers the level's every one,
+    // none disabled and the two averages saying how they differ.
     const raw = planPlot(obs, HEART, { ...scope, from: "raw" })
     expect(raw.reducers).toContain("twa")
-    expect(raw.reducerMenu.every((o) => !o.hint)).toBe(true)
+    expect(raw.reducerMenu.every((o) => !o.disabled && !o.raw)).toBe(true)
+    expect(
+      raw.reducerMenu.filter((o) => o.hint).map((o) => [o.value, o.hint])
+    ).toEqual([
+      ["avg", "Each reading counts once"],
+      ["twa", "Each reading weighed by how long it held"],
+    ])
   })
 
   it("reads one statistic of summaries that keep several, the average by default", () => {

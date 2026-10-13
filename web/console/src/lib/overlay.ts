@@ -625,9 +625,17 @@ function menuOf(
     statistic?: string
   }
 ): ReducerOption[] {
+  // A level's plain average counts each reading once, so a source that
+  // reads more often in a workout pulls it up; the time-weighted one does
+  // not. Which is the default is open; the menu says what each is.
+  const AVERAGES: Record<string, string> = {
+    avg: "Each reading counts once",
+    twa: "Each reading weighed by how long it held",
+  }
   const option = (value: string): ReducerOption => ({
     value,
     label: reducerChoiceWords(value),
+    ...(shape === "gauge" && AVERAGES[value] ? { hint: AVERAGES[value] } : {}),
   })
   const own = reducerOptions(shape, form, info, read.statistic)
   if (read.from === "raw" || !read.summaries || shape === "summary") {

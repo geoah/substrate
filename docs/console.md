@@ -813,7 +813,10 @@ with the median and the 90th percentile for a level or an amount, the
 circular mean for an angle, and for a heart rate the time in each of five
 zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
 minute); a vendor summary defaults to its average, or its total where it
-keeps a sum or a count. Where a vendor summary may serve a bucket, the reducers a
+keeps a sum or a count. For a level, the menu says what its two averages
+are: **Average**, the default, counts each reading once, so a source that
+reads more often in a workout weighs more, and **Time-weighted average**
+weighs each reading by how long it held. Where a vendor summary may serve a bucket, the reducers a
 summary takes come first and the rest read raw points alone: picking one
 (the time-weighted average, a percentile, a zone) reads the metric from raw
 points and the chart says whose summaries it leaves out, and where you
