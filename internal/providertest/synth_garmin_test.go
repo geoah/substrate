@@ -211,9 +211,6 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 			}
 		}
 	}
-	if n := parkedFailures(t, ds); n != 0 {
-		t.Fatalf("%d deliveries parked", n)
-	}
 
 	// The mirror: one row per summary, every delivered field verbatim, and the
 	// counts the three days imply.
@@ -256,12 +253,10 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 		t.Errorf("the pushes left the account %v: %v", acct["syncState"], acct["syncMessage"])
 	}
 
-	// The adapter, every mirror row once, as its record trigger delivers them.
-	adaptAll(t, ds, "daily", "epoch", "sleep", "bodycomp", "stressdetail", "usermetric", "pulseox",
-		"respiration", "hrv", "bloodpressure", "skintemp", "activity", "activitydetail")
-	if n := parkedFailures(t, ds); n != 0 {
-		t.Fatalf("%d adapter deliveries parked", n)
-	}
+	// The adapter, as the sample's own trigger delivers every mirror row the
+	// pushes wrote; a refused write parks and fails the drain.
+	assertTriggers(t, ds, "healthgarmin-on-mirror")
+	healthDrain(t, ds)
 
 	// Observations: Garmin's daily totals, a coded amount per stage segment,
 	// the night's HRV average and high, its skin temperature, every weigh-in's

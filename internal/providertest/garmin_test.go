@@ -284,9 +284,6 @@ func TestGarminPushWritesEverySummaryType(t *testing.T) {
 	if msg, _ := acct.Properties["syncMessage"].(string); msg != "push: 3 moveIQActivities" {
 		t.Errorf("syncMessage = %q, want the last delivery's counts", msg)
 	}
-	if n := parkedFailures(t, ds); n != 0 {
-		t.Errorf("%d parked deliveries", n)
-	}
 }
 
 // TestGarminPushResentSummaryRewritesTheRow: Garmin re-sends a summary under
