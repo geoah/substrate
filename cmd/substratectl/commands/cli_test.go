@@ -1677,7 +1677,7 @@ func TestStreamChangesSkipsHeartbeats(t *testing.T) {
 {"seq":11,"ts":"2026-08-02T12:00:00Z","actor":"api","op":"put","recordId":"t9","type":"samples.substrate.reamde.dev/tasks/task"}
 `)
 	var buf bytes.Buffer
-	if err := streamChanges(&buf, body); err != nil {
+	if err := streamChanges(&buf, new(bytes.Buffer), body); err != nil {
 		t.Fatalf("streamChanges: %v", err)
 	}
 	got := buf.String()

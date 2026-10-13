@@ -15,6 +15,7 @@ const (
 	ctxKeyDataset ctxKey = iota
 	ctxKeyActor
 	ctxKeyPeer
+	ctxKeyRequestID
 )
 
 // actorHeader names the door the caller writes as. A token carries no actor
@@ -69,10 +70,13 @@ func bearerSecret(r *http.Request) string {
 // account's address, or a SHIPPED kind declaration (the authority chokepoint,
 // engine/seed.go). This header is the only place a request names an actor, so
 // it is the only place that has to say no.
-func (h *handler) authenticate(r *http.Request) (context.Context, int, string, string) {
+// On a refusal ctx is nil and status, code and msg are the answer; cause is
+// set on a 503 alone, the service's error behind it, which is logged and never
+// shown.
+func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int, code, msg string, cause error) {
 	secret := bearerSecret(r)
 	if secret == "" {
-		return nil, http.StatusUnauthorized, codeAuth, "missing bearer token"
+		return nil, http.StatusUnauthorized, codeAuth, "missing bearer token", nil
 	}
 	ds, tok, err := h.svc.Authenticate(r.Context(), secret)
 	if err != nil {
@@ -81,9 +85,9 @@ func (h *handler) authenticate(r *http.Request) (context.Context, int, string, s
 		// must not masquerade as "invalid token", or a bricked open reads as a
 		// bad credential. Report it as a service condition instead.
 		if errors.Is(err, substrate.ErrAuth) {
-			return nil, http.StatusUnauthorized, codeAuth, "invalid token"
+			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
 		}
-		return nil, http.StatusServiceUnavailable, codeUnavailable, "repository temporarily unavailable"
+		return nil, http.StatusServiceUnavailable, codeUnavailable, "repository temporarily unavailable", err
 	}
 	// Expiry is server-enforced. The engine's Authenticate is the
 	// authoritative gate — it never hands back a dataset for an expired token —
@@ -91,7 +95,7 @@ func (h *handler) authenticate(r *http.Request) (context.Context, int, string, s
 	// implementation: a token past its expiry is an auth failure, not a
 	// forbidden, since the credential itself is spent.
 	if exp := tok.ExpiresAt; exp != nil && h.now().After(*exp) {
-		return nil, http.StatusUnauthorized, codeAuth, "token expired"
+		return nil, http.StatusUnauthorized, codeAuth, "token expired", nil
 	}
 	actor := substrate.ActorAPI
 	if want := strings.TrimSpace(r.Header.Get(actorHeader)); want != "" {
@@ -100,21 +104,22 @@ func (h *handler) authenticate(r *http.Request) (context.Context, int, string, s
 				"actor " + want + " is reserved: the " + substrate.HostActorNamespace +
 					" namespace, the " + substrate.BundleActorPrefix + ", " +
 					substrate.FunctionActorPrefix + " and " + substrate.AgentActorPrefix +
-					" paths, and the retired connector: spelling, are the substrate's own writing hands"
+					" paths, and the retired connector: spelling, are the substrate's own writing hands", nil
 		}
 		actor = substrate.Actor(want)
 	}
-	return withRequestAuth(r.Context(), ds, tok, actor), 0, "", ""
+	return withRequestAuth(r.Context(), ds, tok, actor), 0, "", "", nil
 }
 
 func (h *handler) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, status, code, msg := h.authenticate(r)
+		ctx, status, code, msg, cause := h.authenticate(r)
 		if ctx == nil {
-			// A 503 is transient: Retry-After is mandatory on every
-			// unavailable, the auth path included.
+			// The cause of a 503 is a database or an open failing, which the
+			// client is not shown, so the log is the only place it surfaces.
 			if status == http.StatusServiceUnavailable {
-				w.Header().Set("Retry-After", "1")
+				writeUnavailableCause(w, r, cause, msg)
+				return
 			}
 			writeError(w, status, code, msg)
 			return

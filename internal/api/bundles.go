@@ -7,8 +7,6 @@ import (
 	"net/url"
 	"text/template"
 
-	"github.com/go-chi/chi/v5/middleware"
-
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -255,13 +253,14 @@ func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 //
 // Failures reflect NO provider detail to the browser — only a correlation id
 // the operator joins against the server log, where the fixed message + the
-// engine's real error are recorded.
+// engine's real error are recorded. The correlation is the request's id, the
+// one its X-Request-Id carries.
 func (h *handler) getOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	record, err := h.svc.CompleteOAuth(r.Context(), q.Get("state"), q.Get("code"))
 	if err != nil {
-		corr := middleware.GetReqID(r.Context())
-		slog.Warn("oauth callback failed", "correlation", corr, "error", err)
+		corr := requestIDFrom(r.Context())
+		slog.Warn("oauth callback failed", append(requestLogAttrs(r), "correlation", corr, "error", err)...)
 		h.writeOAuthReturnPage(w, oauthOutcome{correlation: corr})
 		return
 	}
@@ -287,15 +286,19 @@ type oauthOutcome struct {
 //	         correlation:"<id>"}, origin); fallback
 //	         window.location.replace(base+"/registry?error=<id>")
 //
-// origin is the console scheme+host (targetOrigin); base is its full URL. With
-// no configured console (local dev) origin is "*" and no redirect is rendered
-// — the page just says the tab can be closed.
+// origin is the console scheme+host (targetOrigin); base is its full URL.
+// With no configured console the target is the page's own origin, which is
+// where this server serves the console, and no redirect is rendered: the
+// page just says the tab can be closed. It is never "*", which would hand
+// the outcome to whatever window became the opener.
 func (h *handler) writeOAuthReturnPage(w http.ResponseWriter, o oauthOutcome) {
-	origin := "*"
+	// originJS is a JavaScript expression: a quoted origin, or the page's own.
+	originJS := "window.location.origin"
 	base := ""
 	if h.consoleURL != "" {
 		if u, err := url.Parse(h.consoleURL); err == nil && u.Scheme != "" && u.Host != "" {
-			origin = u.Scheme + "://" + u.Host
+			quoted, _ := json.Marshal(u.Scheme + "://" + u.Host)
+			originJS = string(quoted)
 			base = h.consoleURL
 		}
 	}
@@ -319,7 +322,6 @@ func (h *handler) writeOAuthReturnPage(w http.ResponseWriter, o oauthOutcome) {
 	// json.Marshal produces safe JS string/object literals — the record path
 	// and correlation id are interpolated ONLY through it, never raw.
 	msgJSON, _ := json.Marshal(msg)
-	originJSON, _ := json.Marshal(origin)
 	redirectJS := ""
 	if redirect != "" {
 		rj, _ := json.Marshal(redirect)
@@ -347,7 +349,7 @@ func (h *handler) writeOAuthReturnPage(w http.ResponseWriter, o oauthOutcome) {
 <script nonce="` + nonce + `">
 (function(){
   var msg = ` + string(msgJSON) + `;
-  try { if (window.opener) { window.opener.postMessage(msg, ` + string(originJSON) + `); } } catch (e) {}
+  try { if (window.opener) { window.opener.postMessage(msg, ` + originJS + `); } } catch (e) {}
   try { window.close(); } catch (e) {}
   setTimeout(function(){ ` + redirectJS + ` }, 150);
 })();

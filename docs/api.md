@@ -1243,6 +1243,11 @@ until the server restarts (its directory fell behind its tables and the
 server could not repair it while running) also answers `unavailable`, with a
 30-second `Retry-After` and a message that names the restart.
 
+Every response carries an `X-Request-Id` header: 16 characters the server
+mints for the request, never one the caller sent. The server's log line about
+a failed request names the same id as `request`, so a failure a client reports
+can be found in the log. A handler that panics answers `500 internal`.
+
 The same problem object appears in the [watch stream](changelog.md)'s terminal
 error frame and as an agent tool's error, so an error means the same thing
 wherever it surfaces. An unmatched path under an API prefix is that same

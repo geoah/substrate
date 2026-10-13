@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -97,18 +98,54 @@ func TestOAuthCallbackFailureReturnPage(t *testing.T) {
 	}
 }
 
-// With no configured console (local dev) the target origin is "*" and the page
-// renders no redirect — it just says the tab can be closed.
+// With no configured console the page posts to its own origin, where this
+// server serves the console, and never to "*", which would hand the outcome
+// to whatever window became the opener. It renders no redirect: it just says
+// the tab can be closed.
 func TestOAuthCallbackNoConsoleURL(t *testing.T) {
 	rec := getCallback(callbackHandler(callbackRecord, nil, ""))
 	body := rec.Body.String()
-	if !strings.Contains(body, `postMessage(msg, "*")`) {
-		t.Fatalf("local dev must post to targetOrigin *\n%s", body)
+	if !strings.Contains(body, `postMessage(msg, window.location.origin)`) {
+		t.Fatalf("with no console URL the page must post to its own origin\n%s", body)
+	}
+	if strings.Contains(body, `"*"`) {
+		t.Fatalf("the page posts to targetOrigin *\n%s", body)
 	}
 	if strings.Contains(body, "window.location.replace") {
 		t.Fatalf("local dev must render no redirect\n%s", body)
 	}
 	if !strings.Contains(body, "you can close this tab") {
 		t.Fatalf("local dev must still render the close hint\n%s", body)
+	}
+}
+
+// The failure's correlation is the request's own id, the one X-Request-Id
+// carries and the server's log line names. It once was chi's request id: the
+// host's name, a per-process counter, and whatever X-Request-Id the caller
+// sent.
+func TestOAuthCallbackCorrelationIsTheRequestID(t *testing.T) {
+	logs := captureLogs(t)
+	req := httptest.NewRequest(http.MethodGet, callbackPath, nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set(requestIDHeader, "caller-chosen")
+	rec := httptest.NewRecorder()
+	callbackHandler("", context.DeadlineExceeded, "https://console.example.com").ServeHTTP(rec, req)
+
+	id := rec.Header().Get(requestIDHeader)
+	if !requestIDPattern.MatchString(id) {
+		t.Fatalf("X-Request-Id = %q, want the server's own id", id)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"correlation":"` + id + `"`, "/registry?error=" + id} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("failure page missing %q\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "caller-chosen") {
+		t.Fatalf("the page took the caller's X-Request-Id\n%s", body)
+	}
+	warns := logs.at(slog.LevelWarn)
+	if len(warns) != 1 || warns[0].attrs["correlation"] != id || warns[0].attrs["request"] != id {
+		t.Fatalf("WARN lines = %+v, want one naming correlation and request %s", warns, id)
 	}
 }

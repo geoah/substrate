@@ -489,6 +489,11 @@ The ndjson framing is pinned so a client can parse a stream unambiguously:
 {"error": {"code": "internal", "message": "…"}}
 ```
 
+A stream also ends cleanly, with no error frame, when the server shuts down:
+every row it sent is a row the client holds, so the client resumes with the
+`from` and `generation` it last read. A client that leaves a frame unread for
+60 seconds is disconnected.
+
 The changelog has a **horizon**: the oldest seq still resumable. Requesting `from=`
 a seq below the horizon is a `compacted` error (HTTP 410), and so is a cursor
 the changelog cannot verify: above the head, under another history generation,

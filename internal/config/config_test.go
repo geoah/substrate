@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -47,10 +48,10 @@ func TestValidateCredentialKey(t *testing.T) {
 		t.Fatalf("ValidateCredentialKey rejected base64 of 32 bytes: %v", err)
 	}
 	data := Data{Root: t.TempDir(), ChangelogSegmentBytes: MinChangelogSegmentBytes}
-	if err := (Config{CredentialKey: good, Data: data, RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
+	if err := (Config{Port: "8080", CredentialKey: good, Data: data, RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("Config.Validate rejected a good key: %v", err)
 	}
-	if err := (Config{CredentialKey: "", Data: data}).Validate(); err == nil {
+	if err := (Config{Port: "8080", CredentialKey: "", Data: data}).Validate(); err == nil {
 		t.Fatal("Config.Validate accepted an unset credential key")
 	}
 }
@@ -139,12 +140,12 @@ func TestRepositoryConnectionsRefusesACapUnderTheFloor(t *testing.T) {
 	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	for _, n := range []int{-1, 0, 1, MinRepositoryConnections - 1} {
-		if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: n}).Validate(); err == nil ||
+		if err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: n}).Validate(); err == nil ||
 			!strings.Contains(err.Error(), "SUBSTRATE_REPOSITORY_CONNECTIONS") {
 			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_REPOSITORY_CONNECTIONS", n, err)
 		}
 	}
-	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
+	if err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("the floor itself was refused: %v", err)
 	}
 }
@@ -156,12 +157,12 @@ func TestTriggerIntervalRefusesZeroAndNegative(t *testing.T) {
 	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	for _, d := range []time.Duration{0, -time.Second} {
-		err := (Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: d}).Validate()
+		err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: d}).Validate()
 		if err == nil || !strings.Contains(err.Error(), "SUBSTRATE_TRIGGER_INTERVAL") {
 			t.Fatalf("a tick of %s: err = %v, want a refusal naming SUBSTRATE_TRIGGER_INTERVAL", d, err)
 		}
 	}
-	if err := (Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
+	if err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("a one-second tick was refused: %v", err)
 	}
 }
@@ -173,7 +174,7 @@ func TestTriggerLaneWorkersRefusesZeroAndAboveTheProcessCeiling(t *testing.T) {
 	t.Parallel()
 	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, HealthFailingAfter: time.Hour}
+	base := Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, HealthFailingAfter: time.Hour}
 	for _, n := range []int{-1, 0, MaxTriggerLaneWorkers + 1} {
 		refused := base
 		refused.TriggerLaneWorkers = n
@@ -197,7 +198,7 @@ func TestHealthFailingAfterRefusesZeroAndNegative(t *testing.T) {
 	t.Parallel()
 	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4}
+	base := Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4}
 	for _, d := range []time.Duration{0, -time.Minute} {
 		refused := base
 		refused.HealthFailingAfter = d
@@ -219,7 +220,7 @@ func TestDigestBytesPerSecondRefusesANegativeOrTinyCap(t *testing.T) {
 	t.Parallel()
 	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}
+	base := Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}
 	for _, n := range []int64{-1, 8, MinDigestBytesPerSecond - 1} {
 		refused := base
 		refused.DigestBytesPerSecond = n
@@ -304,5 +305,77 @@ func TestLoadBindsLoopbackByDefault(t *testing.T) {
 	}
 	if addr, err := c.ListenAddress(); err != nil || addr != "127.0.0.1:8080" {
 		t.Fatalf("default ListenAddress = %q, %v; want 127.0.0.1:8080", addr, err)
+	}
+}
+
+// A port, a log level or a URL the server cannot use was once taken in
+// silence: a console URL without a scheme made the OAuth return page post to
+// "*", PORT=abc failed at the listener only after minutes of boot, and
+// LOG_LEVEL=trace ran at info. Validate refuses each before the boot, naming
+// the variable, and admits every value that worked before.
+func TestValidateRefusesAPortLogLevelOrURLTheServerCannotUse(t *testing.T) {
+	t.Parallel()
+	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	base := Config{
+		Port: "8080", LogLevel: "info", CredentialKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", Data: data,
+		RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour,
+	}
+	badURLs := []string{
+		"substrate.example.com", "//substrate.example.com", "/console", "ftp://substrate.example.com", "https://",
+		"https://:8080", "http//substrate.example.com", "https://substrate.example.com:65536", "https://substrate.example.com:0",
+	}
+	refused := map[string][]func(*Config){
+		"PORT": {
+			func(c *Config) { c.Port = "" }, func(c *Config) { c.Port = "0" }, func(c *Config) { c.Port = "65536" },
+			func(c *Config) { c.Port = "abc" }, func(c *Config) { c.Port = "-1" }, func(c *Config) { c.Port = "+80" },
+			func(c *Config) { c.Port = "http" },
+		},
+		"LOG_LEVEL": {
+			func(c *Config) { c.LogLevel = "trace" }, func(c *Config) { c.LogLevel = "warning" }, func(c *Config) { c.LogLevel = " info" },
+		},
+	}
+	for _, raw := range badURLs {
+		refused["SUBSTRATE_CONSOLE_URL"] = append(refused["SUBSTRATE_CONSOLE_URL"], func(c *Config) { c.ConsoleURL = raw })
+		refused["SUBSTRATE_OAUTH_CALLBACK_URL"] = append(refused["SUBSTRATE_OAUTH_CALLBACK_URL"], func(c *Config) { c.OAuthCallbackURL = raw })
+	}
+	for name, edits := range refused {
+		for _, edit := range edits {
+			c := base
+			edit(&c)
+			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), name+" is ") {
+				t.Errorf("%+v: err = %v, want a refusal naming %s", c, err, name)
+			}
+		}
+	}
+
+	admitted := []func(*Config){
+		func(c *Config) { c.Port = "1" }, func(c *Config) { c.Port = "65535" },
+		func(c *Config) { c.LogLevel = "" }, func(c *Config) { c.LogLevel = "DEBUG" }, func(c *Config) { c.LogLevel = "Warn" },
+		func(c *Config) { c.LogLevel = "error" },
+		func(c *Config) { c.ConsoleURL = "http://localhost:5173" },
+		func(c *Config) { c.ConsoleURL = "https://[::1]:8443" },
+		func(c *Config) { c.ConsoleURL = "https://substrate.example.com/console/" },
+		func(c *Config) { c.OAuthCallbackURL = "https://substrate.example.com/api/v1/oauth/callback" },
+		func(c *Config) { c.OAuthCallbackURL = "HTTP://127.0.0.1:8080/api/v1/oauth/callback" },
+	}
+	for _, edit := range admitted {
+		c := base
+		edit(&c)
+		if err := c.Validate(); err != nil {
+			t.Errorf("%+v was refused: %v", c, err)
+		}
+	}
+}
+
+// LOG_LEVEL reads case-insensitively, and empty is the info default.
+func TestParseLogLevel(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]slog.Level{
+		"": slog.LevelInfo, "info": slog.LevelInfo, "DEBUG": slog.LevelDebug, "Warn": slog.LevelWarn, "error": slog.LevelError,
+	} {
+		got, err := ParseLogLevel(in)
+		if err != nil || got != want {
+			t.Errorf("ParseLogLevel(%q) = %v, %v; want %v", in, got, err, want)
+		}
 	}
 }

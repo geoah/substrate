@@ -12,7 +12,7 @@ import (
 )
 
 // httpMetrics is the FIRST middleware on the router: it wraps everything
-// after it, Recoverer included, so a recovered panic is observed as the 500
+// after it, recoverer included, so a recovered panic is observed as the 500
 // it answered rather than lost. The route label is chi's pattern, read AFTER
 // the handler ran (before it, nothing has been matched yet): `/api/v1/{kind}`
 // for every kind, never the path with the id in it, so the series count is

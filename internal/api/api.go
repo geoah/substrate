@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/metrics"
@@ -52,8 +51,8 @@ type Config struct {
 	Catalog *catalog.Catalog
 	// ConsoleURL is the console the OAuth callback return-page reports back to:
 	// its scheme+host is the postMessage targetOrigin, its full base the
-	// fallback redirect target. Empty (local dev) posts to "*" and renders no
-	// redirect.
+	// fallback redirect target. Empty posts to the page's own origin, where
+	// this server serves the console, and renders no redirect.
 	ConsoleURL string
 	// InviteCode gates the ONE door into a fresh substrate: set, the register
 	// endpoints admit only a request that presents it. EMPTY, THE DOOR READS
@@ -83,6 +82,12 @@ type Config struct {
 	// deployment that turns it on keeps the path off its ingress: it is for
 	// the scraper on the pod network, not the internet.
 	Metrics bool
+	// Draining closes when the server starts to shut down. The watch streams
+	// and the export never end on their own, and http.Server.Shutdown waits
+	// for every open request, so they end when it closes: a watch after
+	// flushing what it has (its client resumes from its cursor), an export
+	// cut short. Nil never closes.
+	Draining <-chan struct{}
 }
 
 type handler struct {
@@ -93,6 +98,7 @@ type handler struct {
 	totpDisabled bool
 	catalog      *catalog.Catalog
 	consoleURL   string
+	draining     <-chan struct{}
 }
 
 // New builds the router.
@@ -113,6 +119,7 @@ func New(cfg Config) http.Handler {
 		totpDisabled: cfg.TOTPDisabled,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
+		draining:     cfg.Draining,
 	}
 
 	r := chi.NewRouter()
@@ -127,7 +134,10 @@ func New(cfg Config) http.Handler {
 	//
 	// securityHeaders is first so that every response carries them, the
 	// router's own 404 and 405 and a recovered panic's 500 among them.
-	r.Use(securityHeaders, httpMetrics, peerAddress, middleware.RequestID, middleware.Recoverer)
+	// requestID sits outside recoverer so a panic's log line names the
+	// request, and both sit inside httpMetrics so a recovered panic is
+	// counted as the 500 it answered.
+	r.Use(securityHeaders, httpMetrics, peerAddress, requestID, recoverer)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

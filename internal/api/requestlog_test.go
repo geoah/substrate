@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
 	"github.com/geoah/substrate/samples"
 )
@@ -114,7 +116,111 @@ func TestRequestFailedLogNamesTheRoute(t *testing.T) {
 		"route":      recordsPath,
 		"repository": fakeRepository,
 		"error":      errBoom.Error(),
+		// The id the response carries, so a client's report joins this line.
+		"request": rec.Header().Get(requestIDHeader),
 	})
+}
+
+// A 503 is a server condition too (a full disk under the data root fails
+// every write as unavailable), and once it went unlogged: the client was told
+// to retry every second and the operator's log stayed empty. Every 503 is now
+// one WARN line naming the request and the cause, a refusal only a restart
+// lifts is an ERROR, and a client's own cancellation is a DEBUG.
+func TestAnUnavailableAnswerIsLoggedOnce(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		clientGone bool
+		level      slog.Level
+		msg        string
+		retryAfter string
+	}{
+		{"unavailable", fmt.Errorf("%w: write changelog: no space left on device", substrate.ErrUnavailable), false, slog.LevelWarn, "request answered unavailable", "1"},
+		{"restart_required", fmt.Errorf("%w: the directory is behind the tables", substrate.ErrRestartRequired), false, slog.LevelError, "request refused until the server restarts", "30"},
+		{"client_canceled", fmt.Errorf("%w: %w", substrate.ErrUnavailable, context.Canceled), true, slog.LevelDebug, "request canceled by the client", "1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			tok := env.svc.token(fakeRepository)
+			env.svc.datasets[fakeRepository].errs["Put"] = tc.err
+			logs := captureLogs(t)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.clientGone {
+				cancel()
+			}
+			rec := serveWith(env.h, ctx, http.MethodPost, recordsPath, tok,
+				`{"kind":"`+personKind+`","properties":{"title":"x"}}`)
+			wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
+			if got := rec.Header().Get("Retry-After"); got != tc.retryAfter {
+				t.Fatalf("Retry-After = %q, want %s", got, tc.retryAfter)
+			}
+			wantOneLogLine(t, logs, tc.level, tc.msg, map[string]string{
+				"method": http.MethodPost, "route": recordsPath, "repository": fakeRepository,
+				"error": tc.err.Error(), "request": rec.Header().Get(requestIDHeader),
+			})
+		})
+	}
+}
+
+// The bearer check's 503 masks its cause from the client (a token lookup the
+// database refused, a repository that will not open), so the log is the only
+// place the cause appears, under the same levels and Retry-After rule as
+// every other 503.
+func TestTheBearerChecksUnavailableLogsItsCause(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		level      slog.Level
+		msg        string
+		retryAfter string
+	}{
+		{"lookup_failed", errors.New("token lookup: connection refused"), slog.LevelWarn, "request answered unavailable", "1"},
+		{"restart_required", fmt.Errorf("open: %w", substrate.ErrRestartRequired), slog.LevelError, "request refused until the server restarts", "30"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			tok := env.svc.token(fakeRepository)
+			env.svc.authErr = tc.err
+			logs := captureLogs(t)
+
+			rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
+			wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
+			if body := rec.Body.String(); strings.Contains(body, tc.err.Error()) {
+				t.Fatalf("the 503 showed the client its cause: %s", body)
+			}
+			if got := rec.Header().Get("Retry-After"); got != tc.retryAfter {
+				t.Fatalf("Retry-After = %q, want %s", got, tc.retryAfter)
+			}
+			wantOneLogLine(t, logs, tc.level, tc.msg, map[string]string{
+				"method": http.MethodGet, "route": recordsPath, "error": tc.err.Error(),
+				"request": rec.Header().Get(requestIDHeader),
+			})
+		})
+	}
+}
+
+// wantOneLogLine requires exactly one line at level, with msg and attrs, and
+// nothing at any level above it.
+func wantOneLogLine(t *testing.T, logs *logCapture, level slog.Level, msg string, attrs map[string]string) {
+	t.Helper()
+	lines := logs.at(level)
+	if len(lines) != 1 || lines[0].msg != msg {
+		t.Fatalf("%s lines = %+v, want exactly one %q", level, lines, msg)
+	}
+	for k, want := range attrs {
+		if got := lines[0].attrs[k]; got != want {
+			t.Errorf("%s line %s = %q, want %q (attrs %v)", level, k, got, want, lines[0].attrs)
+		}
+	}
+	for _, above := range []slog.Level{slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
+		if above > level && len(logs.at(above)) != 0 {
+			t.Fatalf("%s lines = %+v beside the %s line", above, logs.at(above), level)
+		}
+	}
 }
 
 // A client that goes away mid-request is not a server fault, so its

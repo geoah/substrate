@@ -20,6 +20,25 @@ const (
 	changeBatch = 500
 )
 
+// streamWriteDeadline is how long one frame of a stream, or one write of the
+// export, may take to reach its client. The server sets no WriteTimeout,
+// which would cut every stream at a fixed age, so this is what frees a
+// handler whose client stopped reading: the stalled write fails and the
+// stream ends. Twice the heartbeat, so an idle stream never comes near it. A
+// variable only so a test can wait less than a minute for a stall.
+var streamWriteDeadline = 60 * time.Second
+
+// isDraining reports whether the server has started to shut down
+// (Config.Draining).
+func (h *handler) isDraining() bool {
+	select {
+	case <-h.draining:
+		return true
+	default:
+		return false
+	}
+}
+
 // retentionHorizon is the oldest seq still resumable: a `from=` below it is a
 // `compacted` error. Retention is full today, so the horizon is 0
 // and nothing has been compacted away — but it is POLICY, not a wire
@@ -126,6 +145,11 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 // feed's contract; per-collection watches stay plain rows. Every row the
 // filter matches is emitted: a token reads its whole repository, so there is
 // no per-row gate left to apply.
+//
+// The stream ends cleanly, after a flush, when the server starts to shut
+// down (Config.Draining): every row written is a row the client holds, so it
+// resumes from the last seq it read. Each frame has streamWriteDeadline to
+// reach the client.
 func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds substrate.Dataset, f substrate.ChangeFilter, annotate bool) {
 	ctx := r.Context()
 	flusher, ok := w.(http.Flusher)
@@ -133,6 +157,10 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 		writeError(w, http.StatusInternalServerError, codeInternal, "streaming unsupported")
 		return
 	}
+	rc := http.NewResponseController(w)
+	// frame gives the next write its own deadline. A writer that cannot take
+	// one (a test recorder) writes without.
+	frame := func() { _ = rc.SetWriteDeadline(time.Now().Add(streamWriteDeadline)) }
 
 	// Subscribe before reading the head so nothing committed in between is
 	// missed. The cursor check runs before any 200/stream bytes, so a
@@ -151,6 +179,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	w.WriteHeader(http.StatusOK)
 
 	enc := json.NewEncoder(w)
+	frame()
 	if err := enc.Encode(bookmarkFrame{Bookmark: from, Generation: rs.head.Generation}); err != nil {
 		return
 	}
@@ -177,18 +206,22 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			}
 			for i := range rows {
 				cursor = rows[i].Seq
+				frame()
 				if err := enc.Encode(rows[i]); err != nil {
 					return errClientGone
 				}
 			}
 			flusher.Flush()
-			if len(changes) < changeBatch {
+			// A backlog stops between batches once the server is
+			// shutting down; the loop below then ends the stream.
+			if len(changes) < changeBatch || h.isDraining() {
 				return nil
 			}
 		}
 	}
 	if err := drain(); err != nil {
 		if !errors.Is(err, errClientGone) {
+			frame()
 			writeWatchError(enc, flusher, err)
 		}
 		return
@@ -200,17 +233,22 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 		select {
 		case <-ctx.Done():
 			return
+		case <-h.draining:
+			flusher.Flush()
+			return
 		case _, open := <-signals:
 			if !open {
 				return
 			}
 			if err := drain(); err != nil {
 				if !errors.Is(err, errClientGone) {
+					frame()
 					writeWatchError(enc, flusher, err)
 				}
 				return
 			}
 		case <-ticker.C:
+			frame()
 			if _, err := w.Write([]byte("{}\n")); err != nil {
 				return
 			}
