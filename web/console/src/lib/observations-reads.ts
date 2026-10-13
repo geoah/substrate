@@ -205,7 +205,7 @@ export function overGroupCap(error: Error | null | undefined): boolean {
 /** The keys discovery's latest read groups by: a stream's, and the
  * statistic, so a stream whose summaries keep several says which
  * (`streamsOf` folds them into one stream). */
-export const STREAM_GROUPS: AggregateGroupKey[] = [
+export const LATEST_GROUP_BY: AggregateGroupKey[] = [
   "metric",
   "source",
   "about",
@@ -222,7 +222,7 @@ export function latestRead(narrow: StreamNarrowing = {}): AggregateRead {
   return {
     filter: narrowedFilter(narrow),
     aggregate: {
-      groupBy: [...STREAM_GROUPS],
+      groupBy: [...LATEST_GROUP_BY],
       reducers: ["last"],
       budget: { maxGroups: MAX_GROUPS_CAP },
     },
