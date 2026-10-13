@@ -44,7 +44,7 @@ failure)
       cat <<EOF
 The weekly \`llm live\` job (.github/workflows/llm-live.yml) failed on main: ${run_url}
 
-The job runs \`mise run test:llm\` against the real OpenAI and Anthropic APIs. The failing case in the run's log names the cause: a provider refusing a request an adapter sends, a changed response or stream shape, a missing or revoked key, or the suite's request or token ceiling. The run summary lists what each provider was sent.
+The job runs \`mise run test:llm\` through OpenRouter, on the OpenAI wire and the Anthropic wire. The failing case in the run's log names the cause: a provider refusing a request an adapter sends, a changed response or stream shape, a missing or revoked key, or the suite's request or token ceiling. The run summary lists what each provider was sent.
 
 Every failing run comments here, and the next passing run closes this issue. docs/testing.md describes the job.
 EOF
