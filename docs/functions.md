@@ -723,9 +723,11 @@ trips the allowlist. It answers the result dict, and pays one call and its
 rows against the read budget. Before the read runs, its `budget.maxBuckets`
 (and on the latest read `budget.maxGroups`) is lowered to the rows left. The
 read checks its series times buckets, the rows it could answer, against that
-before it takes a point, so a read that could pass the row budget (a sparse
-year of days against 500 rows left) is refused before it runs, and that
-refusal is a budget trip like any other.
+before it takes a point, so a read that could pass the row budget is refused
+before it runs, however few points it holds: a read by day over 2025 and
+2026 makes 730 buckets, over the default 500 rows. That refusal is a budget
+trip like any other. A larger `budget.maxBuckets` does not help, because it
+is lowered again; a larger `permissions.reads.budgets.rows` does.
 
 ```python
 res = host.records.aggregate({
