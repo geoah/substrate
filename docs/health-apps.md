@@ -258,6 +258,16 @@ On 2026-10-11 the band is 51.2 plus or minus 1.9, and the day's 50 sits
 inside it. The London days are labelled at `+01:00`, each on the day Ada
 lived it.
 
+The read keeps the default `place`, `start`, because Garmin's resting heart
+rate is a summary of a calendar day. Garmin's 19 September runs 26 hours,
+from midnight in Athens to midnight in London. Under `place: "end"` the read
+dates that end at the summary's one offset, `+03:00`, which makes it 02:00
+on 20 September: the summary would land on the 20th and leave the 19th
+without a row ([the four time modes](api.md#the-four-time-modes)).
+WHOOP's value is a summary of a night: a read of WHOOP alone sends
+`"place": "end"`, so each night lands on the day it ends. In this read
+`priority` drops every WHOOP night, because Garmin's days overlap them all.
+
 The window reaches before the range, so the first day's baseline is already
 30 days deep. A short window against the long one (a 7-day mean against the
 30-day band) is a second read with `"buckets": 7`: `rolling` takes one
