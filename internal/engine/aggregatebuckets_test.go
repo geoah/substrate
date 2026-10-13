@@ -230,3 +230,29 @@ func TestAggregateBucketSearchComparesLogBuckets(t *testing.T) {
 		t.Errorf("%d comparisons placing %d instants among %d buckets, want at most %d", steps, n+1, n, limit)
 	}
 }
+
+// A point is placed among a UTC bucket mode's buckets by bucketsOf in steps
+// that grow with the log of the buckets, counted by the read's own step
+// counter: 10,000 points over 10,000 one-minute buckets, where a scan from
+// the first bucket takes 5,000 steps a point on average.
+func TestAggregateUTCBucketsPlaceAPointInLogSteps(t *testing.T) {
+	const n = 10000
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(n * time.Minute)
+	var buckets []*aggBucket
+	for i := range n {
+		at := start.Add(time.Duration(i) * time.Minute)
+		buckets = append(buckets, &aggBucket{start: at, end: at.Add(time.Minute), zone: time.UTC})
+	}
+	r := &aggRun{ctx: context.Background(), p: &aggPlan{bucket: bucketSpec{mode: bucketEvery}, from: start, readFrom: start, to: end}, buckets: buckets}
+	for i := range n {
+		at := start.Add(time.Duration(i)*time.Minute + 30*time.Second)
+		got, err := r.bucketsOf(at, 0)
+		if err != nil || len(got) != 1 || got[0] != buckets[i] {
+			t.Fatalf("a point at %s: %d buckets (%v), want bucket %d", at.Format(time.RFC3339), len(got), err, i)
+		}
+	}
+	if limit := n * (bits.Len(uint(n)) + 1); int(r.steps) > limit {
+		t.Errorf("%d steps placing %d points among %d buckets, want at most %d", r.steps, n, n, limit)
+	}
+}

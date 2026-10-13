@@ -427,6 +427,9 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			}
 		}
 	}
+	if tr := traceOf(ctx); tr != nil {
+		tr.placeSteps += int64(steps)
+	}
 	buckets = lr.buckets
 	if cells := nGroups * int64(answered(buckets)); local && cells > int64(p.maxBuckets) {
 		return nil, refuse("aggregate.budget.maxBuckets", "the records fall in %d recorded-local buckets, times %d groups is %d, over %d; narrow the range or raise maxBuckets",

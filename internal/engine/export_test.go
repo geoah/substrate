@@ -660,6 +660,9 @@ func (a AggregateTrace) BeforeReducer(hook func()) { a.t.beforeReducer = hook }
 // Rows is the rows the reads assembled, every reducer answered.
 func (a AggregateTrace) Rows() int64 { return a.t.rows }
 
+// PlaceSteps is the steps the property reads counted placing their records.
+func (a AggregateTrace) PlaceSteps() int64 { return a.t.placeSteps }
+
 // AggregateTraced counts what each aggregate read under the context takes.
 func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
 	t := &aggTrace{}

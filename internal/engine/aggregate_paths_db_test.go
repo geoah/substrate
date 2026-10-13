@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math/bits"
 	"slices"
 	"strconv"
 	"strings"
@@ -981,6 +982,41 @@ func TestAggregatePropertyBudgetsBeforeTheScan(t *testing.T) {
 	}
 	if n := log.since(mark, propertyStatement); n != 1 {
 		t.Errorf("within the budget the value statement ran %d time(s), want once", n)
+	}
+}
+
+// A property read places each record among its buckets in steps that grow
+// with the log of the buckets: 500 spends a minute apart over 500 one-minute
+// UTC buckets take at most 10 comparisons each, where a scan from the first
+// bucket takes 250 on average.
+func TestAggregatePropertyPlacesARecordInLogSteps(t *testing.T) {
+	t.Parallel()
+	const n = 500
+	_, ds := newDataset(t)
+	ctx := context.Background()
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, []map[string]any{vocabularyPackage(moneyPackage), spendManifest()}); err != nil {
+		t.Fatalf("install the spend kind: %v", err)
+	}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for i := range n {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: moneyPackage + "/spend", ID: strconv.Itoa(i), Properties: map[string]any{
+			"price": moneyValue(100, "EUR"), "paidAt": start.Add(time.Duration(i)*time.Minute + 30*time.Second).Format(time.RFC3339),
+		}})
+	}
+	traced, tr := engine.AggregateTraced(ctx)
+	res, err := ds.Aggregate(traced, substrate.AggregateQuery{
+		Filter: substrate.Filter{Kinds: []string{moneyPackage + "/spend"}},
+		Aggregate: &substrate.Aggregate{
+			Property: &substrate.AggregateProperty{Name: "price", Anchor: "paidAt"},
+			Range:    rng(start, start.Add(n*time.Minute)), Bucket: &substrate.AggregateBucket{Every: "PT1M"},
+			Reducers: reducers("count"),
+		},
+	})
+	if err != nil || len(res.Rows) != n {
+		t.Fatalf("a spend a minute: %v rows (%v), want %d", rowsOf(res), err, n)
+	}
+	if limit := int64(n * (bits.Len(uint(n)) + 1)); tr.PlaceSteps() > limit {
+		t.Errorf("%d steps placing %d records among %d buckets, want at most %d", tr.PlaceSteps(), n, n, limit)
 	}
 }
 

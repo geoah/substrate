@@ -167,6 +167,9 @@ type aggTrace struct {
 	beforeReducer func()
 	// rows is the rows a metric read assembled, every reducer answered.
 	rows int64
+	// placeSteps is the steps a property read counted placing its records
+	// in buckets, the comparisons a bucket search makes included.
+	placeSteps int64
 }
 
 // everyThousand counts a Go-side loop's steps and answers the context's
