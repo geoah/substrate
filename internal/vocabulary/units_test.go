@@ -576,6 +576,19 @@ func TestFormatQuantity(t *testing.T) {
 		{map[string]any{"value": "5", "unit": "ug/m3"}, "5 μg/m³"},
 		{map[string]any{"value": "12", "unit": "kW.h"}, "12 kWh"},
 		{map[string]any{"value": "120", "unit": "mm[Hg]"}, "120 mmHg"},
+		// A prefix on a code the table prints whole prints the same way.
+		{map[string]any{"value": "5", "unit": "kV.A{reactive}"}, "5 kvar"},
+		{map[string]any{"value": "5", "unit": "kV.A"}, "5 kVA"},
+		{map[string]any{"value": "3", "unit": "MW.h"}, "3 MWh"},
+		// An annotation that is a unit's identity prints.
+		{map[string]any{"value": "1", "unit": "W{reactive}"}, "1 W reactive"},
+		{map[string]any{"value": "5", "unit": "10*3{copies}"}, "5 10³ copies"},
+		{map[string]any{"value": "5", "unit": "10*3{copies}/mL"}, "5 10³ copies/mL"},
+		{map[string]any{"value": "7", "unit": "kg{body_wt}"}, "7 kg"},
+		// An exponent prints as the number it is.
+		{map[string]any{"value": "2", "unit": "m+2"}, "2 m²"},
+		{map[string]any{"value": "2", "unit": "m02"}, "2 m²"},
+		{map[string]any{"value": "2", "unit": "s-1"}, "2 s⁻¹"},
 	} {
 		if got := vocabulary.FormatQuantity(c.v); got != c.want {
 			t.Errorf("FormatQuantity(%v) = %q, want %q", c.v, got, c.want)

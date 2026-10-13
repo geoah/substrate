@@ -311,7 +311,6 @@ type unitNode struct {
 	atom   *atom
 	exp    int
 	expSet bool
-	expRaw string
 	note   *string
 }
 
@@ -489,7 +488,7 @@ func (p *parser) component() (node, error) {
 		if err != nil {
 			return nil, p.errf("exponent %q is not an integer", exp)
 		}
-		u.exp, u.expSet, u.expRaw = n, true, exp
+		u.exp, u.expSet = n, true
 	}
 	if err := p.simpleUnit(head, &u); err != nil {
 		return nil, err
@@ -667,14 +666,28 @@ func evalComponent(n node) (value, error) {
 
 // --- rendering ---
 
+// identityAnnotation says an annotation is a measure's identity (reactive
+// power's `reactive`), which a print keeps.
+func identityAnnotation(note string) bool {
+	for _, d := range measureDefs {
+		if d.annotation != "" && d.annotation == note {
+			return true
+		}
+	}
+	return false
+}
+
 var superscripts = map[rune]rune{
 	'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
 	'-': '⁻', '+': '⁺',
 }
 
-// renderPrint writes the tree with print symbols: `kg.m/s2` as `kg·m/s²`. An
-// annotation that stands alone prints as its text, and one beside a unit is
-// dropped, because it qualifies what the symbol already says.
+// renderPrint writes the tree with print symbols: `kg.m/s2` as `kg·m/s²`, an
+// exponent as the number it is (`m+2` as `m²`). An annotation that stands
+// alone prints as its text, and so does one on a power of ten (`10*3{copies}`
+// counts copies) or one that is a measure's identity (`W{reactive}`). Any
+// other beside a unit is dropped, because it qualifies what the symbol
+// already says (`kg{body_wt}`).
 func renderPrint(t *termNode) string {
 	var b strings.Builder
 	if t.reciprocal {
@@ -701,10 +714,13 @@ func renderPrintTerm(b *strings.Builder, t *termNode) {
 				}
 			}
 			b.WriteString(x.atom.def.print)
-			if x.expSet && x.expRaw != "1" {
-				for _, r := range x.expRaw {
+			if x.expSet && x.exp != 1 {
+				for _, r := range strconv.Itoa(x.exp) {
 					b.WriteRune(superscripts[r])
 				}
+			}
+			if x.note != nil && (x.atom.def.code == "10*" || x.atom.def.code == "10^" || identityAnnotation(*x.note)) {
+				b.WriteString(" " + *x.note)
 			}
 		case numberNode:
 			b.WriteString(x.digits)

@@ -98,6 +98,9 @@ func (u Unit) Code() string { return u.code }
 // Print is the unit's print symbol: `°C` for Cel, `μg` for ug, `kWh` for
 // kW.h, `beats/min` for {beats}/min. It is for display; a stored value holds
 // the code.
+//
+// A code that differs from one unitPrints names only by a prefix on its first
+// atom prints that way too: `kV.A{reactive}` is `kvar`, `MW.h` is `MWh`.
 func (u Unit) Print() string {
 	if p, ok := unitPrints[u.code]; ok {
 		return p
@@ -105,7 +108,34 @@ func (u Unit) Print() string {
 	if u.local != nil {
 		return u.local.print
 	}
+	if p, ok := prefixedPrint(u); ok {
+		return p
+	}
 	return renderPrint(u.tree)
+}
+
+// prefixedPrint is the print of a code that is a unitPrints code with a
+// prefix on its first atom, the prefix's print before the code's.
+func prefixedPrint(u Unit) (string, bool) {
+	t, err := loadTable()
+	if err != nil || u.tree == nil || u.tree.reciprocal || len(u.tree.parts) == 0 {
+		return "", false
+	}
+	first, ok := u.tree.parts[0].(unitNode)
+	if !ok || first.prefix == "" {
+		return "", false
+	}
+	for _, code := range t.prints[u.plain()] {
+		if u.code != first.prefix+code {
+			continue
+		}
+		for _, p := range prefixDefs {
+			if p.code == first.prefix {
+				return p.print + unitPrints[code], true
+			}
+		}
+	}
+	return "", false
 }
 
 // annotations is the unit's annotation identity: two units convert only when
@@ -307,7 +337,10 @@ type unitTable struct {
 	rows     map[string][]unitRow // code -> its rows, in table order
 	plain    map[string][]string  // prefix-free key (Unit.plain) -> measures listing a code of it
 	// primary is primaryMeasure by prefix-free key, so `mK` reads as `K` does.
-	primary      map[string]string
+	primary map[string]string
+	// prints are the unitPrints codes whose first atom has no prefix, by
+	// prefix-free key, for prefixedPrint.
+	prints       map[string][]string
 	bases        map[string]Unit
 	codesInOrder []string
 }
@@ -331,6 +364,7 @@ func buildTable() (*unitTable, error) {
 		measures: make([]Measure, 0, len(measureDefs)),
 		byName:   map[string]*Measure{}, rows: map[string][]unitRow{},
 		plain: map[string][]string{}, bases: map[string]Unit{}, primary: map[string]string{},
+		prints: map[string][]string{},
 	}
 	parse := parseUnit
 	for _, d := range measureDefs {
@@ -398,6 +432,18 @@ func buildTable() (*unitTable, error) {
 			if !slices.ContainsFunc(rows, func(r unitRow) bool { return r.measure == p }) {
 				return nil, fmt.Errorf("primaryMeasure sends %s to %s, which does not list it", code, p)
 			}
+		}
+	}
+	for code := range unitPrints {
+		u, err := parse(code)
+		if err != nil {
+			return nil, fmt.Errorf("unitPrints names %s: %w", code, err)
+		}
+		if u.tree == nil || u.tree.reciprocal || len(u.tree.parts) == 0 {
+			continue
+		}
+		if first, ok := u.tree.parts[0].(unitNode); ok && first.prefix == "" {
+			t.prints[u.plain()] = append(t.prints[u.plain()], code)
 		}
 	}
 	for code, measure := range primaryMeasure {
