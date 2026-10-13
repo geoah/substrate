@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,6 +76,28 @@ func TestAggregateCalendarHourAndMinuteAcrossARepeatedHour(t *testing.T) {
 			if w.Second() != 0 || (x.calendar == "hour" && w.Minute() != 0) {
 				t.Errorf("%s: bucket %d starts at %s, inside a wall-clock %s", label, i+1, w.Format(time.RFC3339), x.calendar)
 			}
+		}
+	}
+}
+
+// A negative budget is refused as negative, not as over its cap.
+func TestAggregateRefusesANegativeBudget(t *testing.T) {
+	for _, x := range []struct {
+		name string
+		a    substrate.Aggregate
+	}{
+		{"maxBuckets", substrate.Aggregate{Budget: &substrate.AggregateBudget{MaxBuckets: -5}}},
+		{"maxSamples", substrate.Aggregate{Budget: &substrate.AggregateBudget{MaxSamples: -5}}},
+		{"maxGroups", substrate.Aggregate{Budget: &substrate.AggregateBudget{MaxGroups: -5}}},
+		{"maxRecords", substrate.Aggregate{Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{MaxRecords: -5}}}},
+	} {
+		a := x.a
+		a.Metric = &substrate.AggregateMetric{Ref: "a.example.com/observations/metric/m"}
+		a.Range = &substrate.AggregateRange{Gte: "2026-09-01T00:00:00Z", Lt: "2026-09-02T00:00:00Z"}
+		a.Reducers = []substrate.AggregateReducer{{Name: substrate.ReducerCount}}
+		_, err := planAggregate(substrate.AggregateQuery{Aggregate: &a})
+		if err == nil || !strings.Contains(err.Error(), x.name+": -5 is negative") {
+			t.Errorf("%s -5: %v, want it refused as negative", x.name, err)
 		}
 	}
 }

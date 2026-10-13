@@ -402,13 +402,17 @@ func (p *aggPlan) parseCommon() error {
 	}
 	p.maxBuckets, p.maxGroups, p.maxSamples = substrate.AggregateMaxBuckets, substrate.AggregateMaxGroups, substrate.AggregateMaxSamples
 	if b := a.Budget; b != nil {
-		switch {
-		case b.MaxBuckets < 0 || b.MaxBuckets > substrate.AggregateMaxBucketsCap:
-			return refuse("aggregate.budget.maxBuckets", "%d is over the cap of %d", b.MaxBuckets, substrate.AggregateMaxBucketsCap)
-		case b.MaxSamples < 0 || b.MaxSamples > substrate.AggregateMaxSamplesCap:
-			return refuse("aggregate.budget.maxSamples", "%d is over the cap of %d", b.MaxSamples, substrate.AggregateMaxSamplesCap)
-		case b.MaxGroups < 0 || b.MaxGroups > substrate.AggregateMaxGroupsCap:
-			return refuse("aggregate.budget.maxGroups", "%d is over the cap of %d", b.MaxGroups, substrate.AggregateMaxGroupsCap)
+		for _, x := range []struct {
+			path   string
+			n, cap int64
+		}{
+			{"aggregate.budget.maxBuckets", int64(b.MaxBuckets), substrate.AggregateMaxBucketsCap},
+			{"aggregate.budget.maxSamples", b.MaxSamples, substrate.AggregateMaxSamplesCap},
+			{"aggregate.budget.maxGroups", int64(b.MaxGroups), substrate.AggregateMaxGroupsCap},
+		} {
+			if err := checkBudget(x.path, x.n, x.cap); err != nil {
+				return err
+			}
 		}
 		if b.MaxBuckets > 0 {
 			p.maxBuckets = b.MaxBuckets
@@ -419,6 +423,18 @@ func (p *aggPlan) parseCommon() error {
 		if b.MaxGroups > 0 {
 			p.maxGroups = b.MaxGroups
 		}
+	}
+	return nil
+}
+
+// checkBudget refuses a budget below zero or over its cap; zero is the
+// default.
+func checkBudget(path string, n, limit int64) error {
+	switch {
+	case n < 0:
+		return refuse(path, "%d is negative; leave it out for the default, or name 1 to %d", n, limit)
+	case n > limit:
+		return refuse(path, "%d is over the cap of %d", n, limit)
 	}
 	return nil
 }

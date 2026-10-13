@@ -267,8 +267,8 @@ func (p *aggPlan) parseBucket() error {
 		}
 		spec.maxRecords = substrate.AggregateMaxRecords
 		if n := b.Records.MaxRecords; n != 0 {
-			if n < 0 || n > substrate.AggregateMaxRecordsCap {
-				return refuse("aggregate.bucket.records.maxRecords", "%d is over the cap of %d", n, substrate.AggregateMaxRecordsCap)
+			if err := checkBudget("aggregate.bucket.records.maxRecords", int64(n), substrate.AggregateMaxRecordsCap); err != nil {
+				return err
 			}
 			spec.maxRecords = n
 		}
