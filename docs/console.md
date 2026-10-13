@@ -896,7 +896,10 @@ each keeps its own rows, and a source's channels stay apart
 metric reads raw points, summaries where every one of its streams keeps
 vendor summaries alone, and `prefer-raw` where some keep summaries, since a
 raw read takes no summary and WHOOP's summary-only heart rate would draw
-nothing; with Technical details on, the chart says so. A stream may keep
+nothing; with Technical details on, the chart says so. Where one line then
+reads a summary in some buckets and raw points in others (Garmin's
+nightly HRV average on one day, its five-minute trace on the next), the
+chart says the line mixes the two. A stream may keep
 both: Garmin's HRV keeps each night's average and highest beside its
 five-minute trace, and reads `prefer-raw`. A row reads one statistic of the
 summaries, so where a metric's summaries keep several (WHOOP's average and

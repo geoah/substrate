@@ -712,6 +712,22 @@ export function overfull(
   return [...held.values()].some((b) => b.time > b.length + 60_000)
 }
 
+/** Whether one series of `rows` reads some buckets from vendor summaries
+ * and others from raw points, as a `prefer-raw` read does bucket by bucket
+ * (Garmin's nightly HRV average on one day, its five-minute trace on the
+ * next): the line then mixes two measures of the metric. */
+export function mixedFrom(rows: readonly AggregateRow[]): boolean {
+  const seen = new Map<string, Set<string>>()
+  for (const row of rows) {
+    if (row.from !== "summaries" && row.from !== "raw") continue
+    const key = JSON.stringify(row.group ?? {})
+    const froms = seen.get(key) ?? new Set<string>()
+    froms.add(row.from)
+    seen.set(key, froms)
+  }
+  return [...seen.values()].some((froms) => froms.size > 1)
+}
+
 /** Every value one plot's series could take, in a stable order: its
  * sources, its things (the owner first), its categories (the metric's own
  * order), or its one series, then any other the answer names (a channel's

@@ -81,6 +81,7 @@ import {
 import {
   assignAxes,
   leftOutWords,
+  mixedFrom,
   overfull,
   plotRows,
   seriesColors,
@@ -898,6 +899,11 @@ function chartNotes(
     if (plot.fromReason === "raw-only" && plot.summarySources.length) {
       own.push(
         `Reads raw points alone: no vendor summary takes ${lowerFirst(choiceWords(plot))}, so ${listWords(plot.summarySources.map(words.sourceText))}’s summaries are left out.`
+      )
+    }
+    if (!held && mixedFrom(rows)) {
+      own.push(
+        "Some buckets read a vendor summary and others raw points, so a line mixes the two."
       )
     }
     if (words.technical && plot.fromReason === "some-summaries") {

@@ -39,6 +39,7 @@ import {
   fromOf,
   leftOutWords,
   markOf,
+  mixedFrom,
   overfull,
   planPlot,
   plotRows,
@@ -496,6 +497,40 @@ describe("one metric's plot", () => {
       overfull(stage, [
         row(hour[0], hour[1], "light", "45"),
         row(hour[0], hour[1], "deep", "15"),
+      ])
+    ).toBe(false)
+  })
+
+  it("says where a line reads summaries in some buckets and raw points in others", () => {
+    const row = (start: string, from: string, source?: string) => ({
+      start,
+      end: start,
+      from,
+      group: source ? { source } : {},
+      values: [{ reducer: "avg", value: "80", unit: "ms" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    // Garmin's HRV: a nightly summary on Sep 19, its trace on Sep 18.
+    expect(
+      mixedFrom([
+        row("2026-09-18T00:00:00+03:00", "raw"),
+        row("2026-09-19T00:00:00+03:00", "summaries"),
+      ])
+    ).toBe(true)
+    expect(
+      mixedFrom([
+        row("2026-09-18T00:00:00+03:00", "raw"),
+        row("2026-09-19T00:00:00+03:00", "raw"),
+      ])
+    ).toBe(false)
+    // Two series, each read one way, mix nothing.
+    expect(
+      mixedFrom([
+        row("2026-09-18T00:00:00+03:00", "raw", GARMIN),
+        row("2026-09-18T00:00:00+03:00", "summaries", WHOOP),
       ])
     ).toBe(false)
   })

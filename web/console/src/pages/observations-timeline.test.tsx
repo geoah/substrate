@@ -1398,6 +1398,17 @@ describe("the charts", () => {
     ).toHaveLength(3)
   })
 
+  it("says where a line reads a summary in some buckets and raw points in others", async () => {
+    // STEPS answers raw points on two days and Garmin's daily total on one.
+    mount(`?metric=health/steps&${WINDOW}`)
+    const steps = await lane("Steps")
+    expect(
+      await within(steps).findByText(
+        "Some buckets read a vendor summary and others raw points, so a line mixes the two."
+      )
+    ).toBeTruthy()
+  })
+
   it("reads a metric with a summary stream raw where covered, and says so in technical mode", async () => {
     const whoopHeart = {
       ...LATEST.rows[0],
