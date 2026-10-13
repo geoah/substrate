@@ -74,7 +74,8 @@ const (
 	ahWithings = "Withings"
 )
 
-// The cadences, as the demo brief asked for them.
+// The cadences: what the app sends at Time Grouping Minutes for a watch
+// that samples heart rate about every 5 minutes at rest.
 const (
 	ahHRStep     = 5 * time.Minute
 	ahStepsStep  = 5 * time.Minute

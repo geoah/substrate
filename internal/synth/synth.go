@@ -104,16 +104,17 @@ type Emitter interface {
 	Emit(p *Persona) (*Output, error)
 }
 
-// registry holds every emitter a provider file registered from its init,
-// so adding a provider is one file and never an edit here.
-var registry = map[string]Emitter{}
+// registered holds every emitter a provider file registered from its init.
+var registered = map[string]Emitter{}
 
-func register(e Emitter) { registry[e.Name()] = e }
+func register(e Emitter) { registered[e.Name()] = e }
 
 func init() { register(Manual{}) }
 
 // loadOrder is the order the demo loads providers: the OAuth ones first so
-// their syncs run while the pushes post, the hand-entered records last.
+// their syncs run while the pushes post, the hand-entered records last. An
+// emitter it does not list loads after `manual`, so a new provider is listed
+// here too.
 var loadOrder = []string{"whoop", "googlefit", "garmin", "applehealth", "manual"}
 
 // Emitters is every emitter, in load order; one registered under a name
@@ -122,20 +123,20 @@ func Emitters() []Emitter {
 	var out []Emitter
 	seen := map[string]bool{}
 	for _, n := range loadOrder {
-		if e, ok := registry[n]; ok {
+		if e, ok := registered[n]; ok {
 			out = append(out, e)
 			seen[n] = true
 		}
 	}
 	var rest []string
-	for n := range registry {
+	for n := range registered {
 		if !seen[n] {
 			rest = append(rest, n)
 		}
 	}
 	sort.Strings(rest)
 	for _, n := range rest {
-		out = append(out, registry[n])
+		out = append(out, registered[n])
 	}
 	return out
 }
