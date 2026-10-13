@@ -133,9 +133,15 @@ interface ChartRequest {
 
 /** A read of several metrics the server refused: each of its metrics is
  * read on its own instead, so a refusal of one stays on that metric's row
- * and a budget the metrics pass only apart is never in the way. */
+ * and a budget the metrics pass only apart is never in the way. A server
+ * older than `aggregate.metrics` answers it with a 400 naming the key
+ * (`aggregate: unknown field "metrics"`), and reads each metric alone. */
 function refusedTogether(error: Error | null | undefined): boolean {
-  return error instanceof ApiError && error.status === 422
+  return (
+    error instanceof ApiError &&
+    (error.status === 422 ||
+      (error.status === 400 && error.message.includes('"metrics"')))
+  )
 }
 
 function lowerFirst(text: string): string {

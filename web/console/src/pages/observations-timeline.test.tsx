@@ -298,6 +298,42 @@ describe("the timeline's requests", () => {
     ).toEqual([BODY_MASS, `${METRIC}/health/steps`])
   })
 
+  it("reads each metric apart where the server predates several-metric reads", async () => {
+    const server = mount(`?metric=health/body_mass,health/steps&${WINDOW}`)
+    // A server without aggregate.metrics refuses the key as unknown.
+    const served = globalThis.fetch
+    const together: string[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://test")
+        const aggregate = url.searchParams.get("aggregate") ?? ""
+        if (!aggregate.includes('"metrics"')) return served(input)
+        together.push(aggregate)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                code: "bad_request",
+                message: 'aggregate: unknown field "metrics"',
+              },
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          )
+        )
+      })
+    )
+    const chart = await lane("Weight and Steps")
+    await drawn(chart)
+    expect(together).toHaveLength(1)
+    expect(
+      server.sent.flatMap((r) =>
+        r.aggregate.metric ? [r.aggregate.metric.ref] : []
+      )
+    ).toEqual([BODY_MASS, `${METRIC}/health/steps`])
+    expect(chart.textContent).not.toContain("unknown field")
+  })
+
   it("resolves overlapping sources by priority unless grouped by source", async () => {
     const server = mount(`?metric=health/heart_rate&${WINDOW}`)
     await waitFor(() =>
