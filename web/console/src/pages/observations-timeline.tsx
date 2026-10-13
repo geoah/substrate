@@ -20,6 +20,10 @@ import { parseAsStringLiteral, useQueryState } from "nuqs"
 import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import {
+  BucketControl,
+  GroupControl,
+} from "@/components/observations/chart-controls"
+import {
   DiscoveryError,
   FacetListErrors,
   MetricListError,
@@ -43,16 +47,7 @@ import { useFacetValues, useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
 import type { AggregateFrom } from "@/lib/api/types"
 import { distinct, sameRef } from "@/lib/observations"
-import {
-  FROM_CHOICES,
-  GROUP_CHOICES,
-  type GroupChoice,
-} from "@/lib/observations-reads"
-import {
-  BUCKET_CHOICES,
-  BUCKET_SIZE_WORDS,
-  type BucketChoice,
-} from "@/lib/observations-time"
+import { FROM_CHOICES } from "@/lib/observations-reads"
 import { planPlot, splitCharts } from "@/lib/overlay"
 import { shortRef } from "@/lib/stream-table"
 import { ARRAY, FROM_VALUES, GROUP_VALUES } from "@/lib/timeline-address"
@@ -80,7 +75,7 @@ export function ObservationsTimelinePage() {
   const sources = distinct(sourceParam.map((v) => shortRef(v, pins.source)))
   const abouts = distinct(aboutParam.map((v) => shortRef(v, pins.about)))
   const controls = useTimelineControls("7d")
-  const { range, size, bucket } = controls
+  const { range, size } = controls
   const [group, setGroup] = useQueryState(
     "group",
     parseAsStringLiteral(GROUP_VALUES).withDefault("metric")
@@ -246,30 +241,11 @@ export function ObservationsTimelinePage() {
           />
         )}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <Labelled label="Bucket">
-            <Segmented
-              label="Bucket"
-              value={bucket}
-              options={BUCKET_CHOICES.map((b) => ({
-                value: b.value,
-                label:
-                  b.value === "auto" && bucket === "auto"
-                    ? `Automatic: ${BUCKET_SIZE_WORDS[size]}`
-                    : b.label,
-              }))}
-              onChange={(next: BucketChoice) => controls.onBucket(next)}
-            />
-          </Labelled>
-          <Labelled label="Group by">
-            <Segmented
-              label="Group by"
-              value={group}
-              options={GROUP_CHOICES}
-              onChange={(next: GroupChoice) =>
-                void setGroup(next === "metric" ? null : next)
-              }
-            />
-          </Labelled>
+          <BucketControl controls={controls} />
+          <GroupControl
+            value={group}
+            onChange={(next) => void setGroup(next === "metric" ? null : next)}
+          />
           <Labelled label="Read from">
             <Segmented
               label="Read from"

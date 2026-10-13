@@ -7,22 +7,18 @@ import { useMemo } from "react"
 import { XIcon } from "lucide-react"
 import { parseAsStringLiteral, useQueryState } from "nuqs"
 
+import {
+  BucketControl,
+  GroupControl,
+} from "@/components/observations/chart-controls"
 import { DiscoveryError } from "@/components/observations/discovery-error"
 import { OverlayChart } from "@/components/observations/overlay-chart"
-import { Labelled } from "@/components/observations/picker"
 import { RangePicker } from "@/components/observations/range-picker"
 import { Button } from "@/components/ui/button"
-import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
-import { GROUP_CHOICES, type GroupChoice } from "@/lib/observations-reads"
-import {
-  BUCKET_CHOICES,
-  BUCKET_SIZE_WORDS,
-  type BucketChoice,
-  type RangePreset,
-} from "@/lib/observations-time"
+import type { RangePreset } from "@/lib/observations-time"
 import { planPlot } from "@/lib/overlay"
 import {
   selectedStreams,
@@ -47,7 +43,7 @@ export function TimelinePanel({
   className?: string
 }) {
   const controls = useTimelineControls(PANEL_RANGE)
-  const { range, size, bucket } = controls
+  const { range, size } = controls
   // `?group=` is the grid's grouping on this page; the chart's is `?by=`.
   const [by, setBy] = useQueryState(
     "by",
@@ -116,30 +112,11 @@ export function TimelinePanel({
           onPreset={controls.onPreset}
           onCustom={controls.onCustom}
         />
-        <Labelled label="Bucket">
-          <Segmented
-            label="Bucket"
-            value={bucket}
-            options={BUCKET_CHOICES.map((b) => ({
-              value: b.value,
-              label:
-                b.value === "auto" && bucket === "auto"
-                  ? `Automatic: ${BUCKET_SIZE_WORDS[size]}`
-                  : b.label,
-            }))}
-            onChange={(next: BucketChoice) => controls.onBucket(next)}
-          />
-        </Labelled>
-        <Labelled label="Group by">
-          <Segmented
-            label="Group by"
-            value={by}
-            options={GROUP_CHOICES}
-            onChange={(next: GroupChoice) =>
-              void setBy(next === "metric" ? null : next)
-            }
-          />
-        </Labelled>
+        <BucketControl controls={controls} />
+        <GroupControl
+          value={by}
+          onChange={(next) => void setBy(next === "metric" ? null : next)}
+        />
         <span className="flex-1" />
         {selection.length > 0 && (
           <Button
