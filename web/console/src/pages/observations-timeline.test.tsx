@@ -334,6 +334,47 @@ describe("the timeline's requests", () => {
     )
   })
 
+  it("reads one statistic of WHOOP's summaries, the average until the reader picks", async () => {
+    // WHOOP keeps each cycle's average and maximum heart rate; a row reads
+    // one, and the server refuses a read of both.
+    const summary = (statistic: string) => ({
+      ...LATEST.rows[0],
+      form: "summary",
+      group: {
+        metric: `${METRIC}/health/heart_rate`,
+        source: WHOOP,
+        statistic,
+      },
+    })
+    const latest = {
+      ...LATEST,
+      rows: [...LATEST.rows, summary("avg"), summary("max")],
+    }
+    const server = mount(
+      `?metric=health/heart_rate&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric ? answer(read) : latestAnswer(read, latest)
+    )
+    const heart = await lane("Heart rate")
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/heart_rate")[0].filter.properties?.statistic
+    ).toEqual({ eq: "avg" })
+    fireEvent.click(
+      within(heart).getByRole("button", { name: "Statistic: Average" })
+    )
+    fireEvent.click(await screen.findByRole("option", { name: /Highest/ }))
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(2)
+    )
+    expect(
+      charts(server.seen, "health/heart_rate")[1].filter.properties?.statistic
+    ).toEqual({ eq: "max" })
+  })
+
   it("groups by metric, source or thing; a category metric always by code", async () => {
     const server = mount(`?metric=health/body_mass&group=code&${WINDOW}`)
     await waitFor(() =>
@@ -491,7 +532,7 @@ describe("the timeline's requests", () => {
     await drawn(await lane("Heart rate"))
     const streamReads = () =>
       server.seen.filter(
-        (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 4
+        (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 5
       ).length
     const before = streamReads()
     hangMetricReads()
@@ -635,7 +676,7 @@ describe("the timeline's requests", () => {
         server.seen.some(
           (r) =>
             !r.aggregate.metric &&
-            r.aggregate.groupBy?.length === 4 &&
+            r.aggregate.groupBy?.length === 5 &&
             r.filter.properties?.source
         )
       ).toBe(true)
@@ -712,7 +753,7 @@ describe("the timeline's requests", () => {
     const server = mount(`?metric=health/body_mass&${WINDOW}`)
     await lane("Weight")
     const streamReads = server.seen.filter(
-      (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 4
+      (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 5
     )
     expect(streamReads.map((r) => r.filter.properties)).toEqual([
       { metric: { in: [`${METRIC}/health/body_mass`] } },

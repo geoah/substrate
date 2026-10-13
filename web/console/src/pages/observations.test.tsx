@@ -207,7 +207,7 @@ describe("the streams table", () => {
         {
           filter: { implements: "substrate.reamde.dev/core/observed" },
           aggregate: {
-            groupBy: ["metric", "source", "about", "channel"],
+            groupBy: ["metric", "source", "about", "channel", "statistic"],
             reducers: ["last"],
             budget: { maxGroups: 2000 },
           },
@@ -226,7 +226,7 @@ describe("the streams table", () => {
 
   it("lists the metrics, then their streams a few at a time, where one read of every stream makes too many groups", async () => {
     const server = mount("", KINDS, (read) =>
-      read.aggregate.groupBy?.length === 4 && !read.filter.properties?.metric
+      read.aggregate.groupBy?.length === 5 && !read.filter.properties?.metric
         ? refusal(CAP_PROBLEM)
         : latestAnswer(read)
     )
@@ -244,14 +244,14 @@ describe("the streams table", () => {
 
   it("keeps the streams of a read over the group cap while they are read again", async () => {
     const server = mount("", KINDS, (read) =>
-      read.aggregate.groupBy?.length === 4 && !read.filter.properties?.metric
+      read.aggregate.groupBy?.length === 5 && !read.filter.properties?.metric
         ? refusal(CAP_PROBLEM)
         : latestAnswer(read)
     )
     expect(await rows()).toHaveLength(6)
     const refused = () =>
       server.seen.filter(
-        (r) => r.aggregate.groupBy?.length === 4 && !r.filter.properties?.metric
+        (r) => r.aggregate.groupBy?.length === 5 && !r.filter.properties?.metric
       ).length
     const before = refused()
     // A write to an observed record lands, and every read is asked again;
@@ -275,7 +275,7 @@ describe("the streams table", () => {
   it("asks a failed batch again, never the read over the group cap, when told to try again", async () => {
     let failed = false
     const server = mount("", KINDS, (read) => {
-      if (read.aggregate.groupBy?.length !== 4) return latestAnswer(read)
+      if (read.aggregate.groupBy?.length !== 5) return latestAnswer(read)
       if (!read.filter.properties?.metric) return refusal(CAP_PROBLEM)
       if (failed) return latestAnswer(read)
       failed = true
@@ -286,7 +286,7 @@ describe("the streams table", () => {
     expect(await rows()).toHaveLength(6)
     expect(
       server.seen.filter(
-        (r) => r.aggregate.groupBy?.length === 4 && !r.filter.properties?.metric
+        (r) => r.aggregate.groupBy?.length === 5 && !r.filter.properties?.metric
       )
     ).toHaveLength(1)
   })
@@ -296,7 +296,7 @@ describe("the streams table", () => {
     const table = await screen.findByRole("table")
     await waitFor(() => expect(table.textContent).toContain("Weight"))
     const streamReads = server.seen.filter(
-      (r) => r.aggregate.groupBy?.length === 4
+      (r) => r.aggregate.groupBy?.length === 5
     )
     expect(streamReads.map((r) => r.filter.properties)).toEqual([
       { metric: { in: [BODY_MASS] } },
@@ -886,7 +886,7 @@ describe("selecting streams", () => {
     // Every stream read is the table's, narrowed to the Garmin.
     const streamReads = () =>
       server.seen.filter(
-        (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 4
+        (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 5
       )
     expect(streamReads().length).toBeGreaterThan(0)
     expect(

@@ -51,7 +51,7 @@ describe("discovery's reads", () => {
     expect(latestRead()).toEqual({
       filter: { implements: OBSERVED },
       aggregate: {
-        groupBy: ["metric", "source", "about", "channel"],
+        groupBy: ["metric", "source", "about", "channel", "statistic"],
         reducers: ["last"],
         budget: { maxGroups: 2000 },
       },

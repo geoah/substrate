@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
 import {
+  defaultStatistic,
   formOf,
   metricInfoOf,
   observedKinds,
@@ -22,6 +23,7 @@ import {
   roundDigits,
   sameRef,
   shapeOf,
+  statisticChoices,
   streamSearch,
   streamsOf,
 } from "@/lib/observations"
@@ -30,6 +32,7 @@ import {
   GARMIN,
   HEART,
   MIA,
+  WHOOP,
   RECOVERY,
   SLEEP_STAGE,
   STEPS_METRIC,
@@ -278,6 +281,59 @@ describe("the latest read's streams", () => {
       source: GARMIN,
       channel: "workout",
     })
+  })
+
+  it("folds a stream's statistics into one stream that names them", () => {
+    // WHOOP's heart rate keeps each cycle's average and maximum: the latest
+    // read groups by statistic and answers a row for each.
+    const summary = (statistic: string, value: string, start: string) => ({
+      ...LATEST.rows[0],
+      start,
+      end: start,
+      form: "summary",
+      group: { metric: HEART, source: WHOOP, statistic },
+      values: [{ reducer: "last", value, unit: "/min" }],
+      count: 30,
+    })
+    const streams = streamsOf({
+      rows: [
+        summary("max", "171", "2026-10-07T04:00:00Z"),
+        summary("avg", "64", "2026-10-07T04:00:00Z"),
+        LATEST.rows[0],
+      ],
+    })
+    expect(streams).toHaveLength(2)
+    expect(streams.find((s) => s.source === WHOOP)).toMatchObject({
+      statistics: ["avg", "max"],
+      // One instant: the default statistic's value.
+      value: "64",
+      count: 60,
+    })
+    expect(streams.find((s) => s.source === GARMIN)?.statistics).toBeUndefined()
+  })
+
+  it("reads the average by default, else the one statistic, else the vendor's", () => {
+    expect(defaultStatistic(["max", "avg"])).toBe("avg")
+    expect(defaultStatistic(["max"])).toBe("max")
+    expect(defaultStatistic(["max", "vendor"])).toBe("vendor")
+    expect(defaultStatistic(["min", "max"])).toBe("max")
+    expect(defaultStatistic([])).toBeUndefined()
+    expect(statisticChoices(["max", "vendor", "avg", "max"])).toEqual([
+      "avg",
+      "max",
+      "vendor",
+    ])
+  })
+
+  it("opens the timeline on a summary's own statistic", () => {
+    const search = recordTimelineSearch({
+      metric: { ref: HEART },
+      source: { ref: WHOOP },
+      statistic: "max",
+      at: "2026-10-06T19:41:00Z",
+      endsAt: "2026-10-07T19:38:00Z",
+    })!
+    expect(search.statistic).toBe(`${encodeURIComponent(HEART)}~max`)
   })
 
   it("opens the timeline on the record's stream and window", () => {

@@ -525,6 +525,9 @@ export interface Stream extends StreamForm {
   /** Every point the stream holds. */
   count?: number
   coverage?: string
+  /** The statistics its vendor summaries keep (`avg`, `max`, `vendor`),
+   * where it keeps any. */
+  statistics?: string[]
 }
 
 /** The key one stream is told apart by, in the URL and the table. */
@@ -566,9 +569,17 @@ export function recordTimelineSearch(
     !Number.isNaN(endsAt) && endsAt > at
       ? { start: at, end: endsAt }
       : daysEnding(at, 30)
+  // A summary opens on its own statistic.
+  const statistic =
+    typeof properties.statistic === "string" && properties.statistic
+      ? properties.statistic
+      : undefined
   // Record paths, the spelling the latest read's groups carry.
   return {
     ...streamSearch({ metric, source, about, channel }),
+    ...(statistic
+      ? { statistic: `${encodeURIComponent(metric)}~${statistic}` }
+      : {}),
     range: "custom",
     start: new Date(window.start).toISOString(),
     end: new Date(window.end).toISOString(),
@@ -617,23 +628,48 @@ function lastValue(row: AggregateRow): AggregateValue | undefined {
   return values.find((v) => reducerName(v.reducer) === "last") ?? values[0]
 }
 
+/** The statistic a read of several takes until the reader picks: the
+ * average where the summaries keep one, the one they keep, else the
+ * vendor's own, else the first by name. */
+export function defaultStatistic(
+  statistics: readonly string[]
+): string | undefined {
+  if (statistics.includes("avg")) return "avg"
+  if (statistics.length === 1) return statistics[0]
+  if (statistics.includes("vendor")) return "vendor"
+  return [...statistics].sort()[0]
+}
+
+/** The statistics as a menu lists them: the default first, the rest by
+ * name. */
+export function statisticChoices(statistics: readonly string[]): string[] {
+  const first = defaultStatistic(statistics)
+  if (first === undefined) return []
+  return [first, ...[...new Set(statistics)].filter((s) => s !== first).sort()]
+}
+
 /** The latest read's rows as streams, newest first. A row with no metric in
- * its group answers no stream and is dropped. */
+ * its group answers no stream and is dropped. A stream whose summaries keep
+ * several statistics answers a row per statistic (the read groups by
+ * `statistic`); they are one stream, its newest point the newest row's (the
+ * default statistic's at one instant), its points all of theirs. */
 export function streamsOf(
   result: Pick<AggregateResult, "rows"> | undefined
 ): Stream[] {
-  const out: Stream[] = []
+  const byKey = new Map<string, { stream: Stream; statistic?: string }>()
   for (const row of result?.rows ?? []) {
     const metric = row.group?.metric
     if (!metric) continue
     const value = lastValue(row)
-    out.push({
-      key: streamKey(
-        metric,
-        row.group?.source,
-        row.group?.about,
-        row.group?.channel
-      ),
+    const key = streamKey(
+      metric,
+      row.group?.source,
+      row.group?.about,
+      row.group?.channel
+    )
+    const statistic = row.group?.statistic || undefined
+    const stream: Stream = {
+      key,
       metric,
       source: row.group?.source,
       about: row.group?.about,
@@ -647,7 +683,40 @@ export function streamsOf(
       ...(row.end && row.end !== row.start ? { end: row.end } : {}),
       count: row.count,
       coverage: row.coverage,
+      ...(statistic ? { statistics: [statistic] } : {}),
+    }
+    const held = byKey.get(key)
+    if (!held) {
+      byKey.set(key, { stream, statistic })
+      continue
+    }
+    const statistics = [
+      ...new Set([
+        ...(held.stream.statistics ?? []),
+        ...(statistic ? [statistic] : []),
+      ]),
+    ].sort()
+    const count =
+      held.stream.count === undefined && stream.count === undefined
+        ? undefined
+        : (held.stream.count ?? 0) + (stream.count ?? 0)
+    const gap = Date.parse(stream.at) - Date.parse(held.stream.at)
+    const newer =
+      gap > 0 ||
+      (gap === 0 &&
+        statistic !== undefined &&
+        statistic === defaultStatistic(statistics))
+    const next = newer ? { stream, statistic } : held
+    byKey.set(key, {
+      statistic: next.statistic,
+      stream: {
+        ...next.stream,
+        count,
+        ...(statistics.length ? { statistics } : {}),
+      },
     })
   }
-  return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  return [...byKey.values()]
+    .map((h) => h.stream)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
 }

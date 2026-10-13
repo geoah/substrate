@@ -173,6 +173,7 @@ export function ObservationsTimelinePage() {
       channels,
       reducer: controls.reducerOf(metric),
       unit: controls.unitOf(metric),
+      statistic: controls.statisticOf(metric),
     })
   )
   const charts = splitCharts(plots)
@@ -309,6 +310,7 @@ export function ObservationsTimelinePage() {
               title
               onReducer={controls.onReducer}
               onUnit={controls.onUnit}
+              onStatistic={controls.onStatistic}
               onZoom={controls.zoom}
             />
           ))}

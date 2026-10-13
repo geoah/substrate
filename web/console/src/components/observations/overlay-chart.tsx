@@ -56,6 +56,7 @@ import {
   reducerKey,
   reducerLabel,
   reducerName,
+  statisticWords,
 } from "@/lib/observations"
 import {
   coverageWords,
@@ -137,6 +138,7 @@ export function OverlayChart({
   title = false,
   onReducer,
   onUnit,
+  onStatistic,
   onZoom,
   className,
 }: {
@@ -150,6 +152,7 @@ export function OverlayChart({
   title?: boolean
   onReducer: (metric: string, value: string) => void
   onUnit: (metric: string, value: string) => void
+  onStatistic: (metric: string, value: string) => void
   onZoom: (range: TimeRange) => void
   className?: string
 }) {
@@ -392,6 +395,7 @@ export function OverlayChart({
             technical={technical}
             onReducer={onReducer}
             onUnit={onUnit}
+            onStatistic={onStatistic}
           />
         ))}
       </div>
@@ -532,6 +536,7 @@ function PlotHead({
   technical,
   onReducer,
   onUnit,
+  onStatistic,
 }: {
   state: PlotState
   /** The metric's own series, in legend order. */
@@ -546,6 +551,7 @@ function PlotHead({
   technical: boolean
   onReducer: (metric: string, value: string) => void
   onUnit: (metric: string, value: string) => void
+  onStatistic: (metric: string, value: string) => void
 }) {
   const { plot, query, rows, pending, failed, stale, held } = state
   return (
@@ -583,6 +589,22 @@ function PlotHead({
             )
           }
         />
+        {plot.statistic && (
+          <Picker
+            label="Statistic"
+            options={plot.statistics.map((value) => ({
+              value,
+              label: statisticWords(value),
+            }))}
+            selected={[plot.statistic]}
+            onChange={([next]) =>
+              onStatistic(
+                plot.metric,
+                next && next !== plot.statistics[0] ? next : ""
+              )
+            }
+          />
+        )}
         {plot.units.length > 1 && (
           <Picker
             label="Unit"
@@ -713,6 +735,11 @@ function chartNotes(
     if (plot.shape === "coded") own.push("Stacked by category.")
     if (plot.fromReason === "summaries-only") {
       own.push("Read from the vendor's summaries, the only values it has.")
+    }
+    if (plot.statistic && plot.statisticLeftOut.length) {
+      own.push(
+        `Reads the summaries’ ${lowerFirst(statisticWords(plot.statistic))} alone; ${listWords(plot.statisticLeftOut.map(words.sourceText))} ${plot.statisticLeftOut.length === 1 ? "keeps" : "keep"} another statistic and ${plot.statisticLeftOut.length === 1 ? "is" : "are"} left out.`
+      )
     }
     if (plot.fromReason === "raw-only" && plot.summarySources.length) {
       own.push(

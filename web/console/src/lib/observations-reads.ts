@@ -43,12 +43,15 @@ export const FROM_CHOICES: readonly { value: AggregateFrom; label: string }[] =
   ]
 
 /** What a read narrows its streams to: record paths of metrics, sources
- * and things observed, and channels. An empty list narrows nothing. */
+ * and things observed, and channels. An empty list narrows nothing. A
+ * `statistic` narrows the vendor summaries to it and keeps every other
+ * form's values. */
 export interface StreamNarrowing {
   metrics?: readonly string[]
   sources?: readonly string[]
   abouts?: readonly string[]
   channels?: readonly string[]
+  statistic?: string
 }
 
 /** The observed filter, narrowed server-side by `properties`. */
@@ -60,6 +63,7 @@ function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
   if (narrow.channels?.length) {
     properties.channel = { in: [...narrow.channels] }
   }
+  if (narrow.statistic) properties.statistic = { eq: narrow.statistic }
   return {
     implements: OBSERVED_TRAIT_IDENTITY,
     ...(Object.keys(properties).length ? { properties } : {}),
@@ -92,6 +96,9 @@ export interface LaneSpec {
   about: string[]
   /** Channels the read is narrowed to; absent or empty for every one. */
   channels?: string[]
+  /** The one statistic of the vendor summaries the read takes, where they
+   * keep several: a row reads one, and the server refuses two. */
+  statistic?: string
   /** The buckets the read may make, counting every group, where that is
    * past the server's default (`MAX_BUCKETS`). */
   maxBuckets?: number
@@ -162,6 +169,7 @@ export function laneRead(spec: LaneSpec): AggregateRead {
       sources: spec.sources,
       abouts: spec.about,
       channels: spec.channels,
+      statistic: spec.statistic,
     }),
     aggregate,
   }
@@ -179,16 +187,27 @@ export function overGroupCap(error: Error | null | undefined): boolean {
   )
 }
 
-/** The latest read: one row per stream, from the newest point of each,
- * narrowed to the given metrics, sources and things, at the group cap. A
- * read makes at most that many groups, so where one read of every stream is
- * refused for them, discovery asks a few metrics at a time
+/** The keys discovery's latest read groups by: a stream's, and the
+ * statistic, so a stream whose summaries keep several says which
+ * (`streamsOf` folds them into one stream). */
+export const STREAM_GROUPS: AggregateGroupKey[] = [
+  "metric",
+  "source",
+  "about",
+  "channel",
+  "statistic",
+]
+
+/** The latest read: one row per stream and statistic, from the newest
+ * point of each, narrowed to the given metrics, sources and things, at the
+ * group cap. A read makes at most that many groups, so where one read of
+ * every stream is refused for them, discovery asks a few metrics at a time
  * (`discoveryChunks`). */
 export function latestRead(narrow: StreamNarrowing = {}): AggregateRead {
   return {
     filter: narrowedFilter(narrow),
     aggregate: {
-      groupBy: ["metric", "source", "about", "channel"],
+      groupBy: [...STREAM_GROUPS],
       reducers: ["last"],
       budget: { maxGroups: MAX_GROUPS_CAP },
     },

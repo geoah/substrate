@@ -678,8 +678,10 @@ measurements yet, or nothing has been measured, the page says so and offers
 **Providers**. The rows come from one
 aggregate latest read: `GET /api/v1/records` with
 `filter={"implements":"substrate.reamde.dev/core/observed"}` and
-`aggregate={"groupBy":["metric","source","about","channel"],"reducers":["last"],"budget":{"maxGroups":2000}}`,
-no bucket and no range. Where the server refuses that read for making more
+`aggregate={"groupBy":["metric","source","about","channel","statistic"],"reducers":["last"],"budget":{"maxGroups":2000}}`,
+no bucket and no range: a stream whose vendor summaries keep several
+statistics answers a row for each, and the page folds them into one row
+that knows them. Where the server refuses that read for making more
 than 2,000 groups, the page lists the metrics with a point first and reads
 their streams a few metrics at a time, and does not ask the refused read
 again under the same filters. Each row shows the metric by its record's name, the
@@ -835,7 +837,14 @@ each keeps its own rows, and a source's channels stay apart
 metric reads raw points, summaries where every one of its streams keeps
 vendor summaries, and `prefer-raw` where some do, since a raw read takes no
 summary and WHOOP's summary-only heart rate would draw nothing; with
-Technical details on, the chart says so. A metric that answers no values
+Technical details on, the chart says so. A row reads one statistic of the
+summaries, so where a metric's summaries keep several (WHOOP's average and
+highest heart rate per cycle) the read names one in
+`filter.properties.statistic`: the average where they keep it, else the one
+kept, else the vendor's own, and **Statistic** picks another
+(`?statistic=`). A source whose summaries keep none of it is left out, and
+the chart says so; a summary's record opens the timeline on its own
+statistic. A metric that answers no values
 says why and what helps. A category metric is always grouped by code: a
 coded gauge asks for the time in each category (the bare `timeInState`), a
 coded amount for its total. A read the console expects to make more than

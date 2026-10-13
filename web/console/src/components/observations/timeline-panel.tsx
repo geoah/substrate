@@ -79,6 +79,7 @@ export function TimelinePanel({
       streams: entry.streams,
       reducer: controls.reducerOf(entry.metric),
       unit: controls.unitOf(entry.metric),
+      statistic: controls.statisticOf(entry.metric),
     })
   )
   // A token whose metric's streams were read and name no stream of it; a
@@ -158,6 +159,7 @@ export function TimelinePanel({
           size={size}
           onReducer={controls.onReducer}
           onUnit={controls.onUnit}
+          onStatistic={controls.onStatistic}
           onZoom={controls.zoom}
         />
       )}

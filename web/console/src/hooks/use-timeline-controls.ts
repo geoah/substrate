@@ -1,6 +1,6 @@
 /** The controls every timeline shares, in the address: the range (a preset
  * or a custom window), the bucket, where a day starts, and each metric's
- * reducer and output unit. The timeline page and the streams page's
+ * reducer, output unit and summary statistic. The timeline page and the streams page's
  * Timeline panel read them the same way and differ only in the preset they
  * open on; what each groups by, and the panel's selection, stay with the
  * page. */
@@ -41,16 +41,18 @@ export interface TimelineControls {
   /** Where a day, week or month bucket starts: where each value was
    * recorded (the default), or the reader's zone. */
   days: DayBoundary
-  /** A metric's picked reducer and output unit, whichever way the address
-   * spells the metric. */
+  /** A metric's picked reducer, output unit and summary statistic,
+   * whichever way the address spells the metric. */
   reducerOf: (metric: string) => string | undefined
   unitOf: (metric: string) => string | undefined
+  statisticOf: (metric: string) => string | undefined
   onPreset: (preset: RangePreset) => void
   onCustom: (range: TimeRange) => void
   onBucket: (bucket: BucketChoice) => void
   onDays: (days: DayBoundary) => void
   onReducer: (metric: string, value: string) => void
   onUnit: (metric: string, value: string) => void
+  onStatistic: (metric: string, value: string) => void
   /** Reads a window: a custom range, the bucket back to automatic. */
   zoom: (range: TimeRange) => void
 }
@@ -74,6 +76,10 @@ export function useTimelineControls(
   )
   const [reducerTokens, setReducerTokens] = useQueryState("reducer", ARRAY)
   const [unitTokens, setUnitTokens] = useQueryState("unit", ARRAY)
+  const [statisticTokens, setStatisticTokens] = useQueryState(
+    "statistic",
+    ARRAY
+  )
   // Presets count back from when the page opened, so a re-render never
   // moves the window (and never re-asks).
   const [now] = useState(() => Date.now())
@@ -81,6 +87,7 @@ export function useTimelineControls(
 
   const reducers = readChoices(reducerTokens)
   const units = readChoices(unitTokens)
+  const statistics = readChoices(statisticTokens)
   const custom =
     rangeParam === "custom" ? customRange(startParam, endParam) : undefined
   const preset: RangePreset | "custom" = custom
@@ -105,6 +112,7 @@ export function useTimelineControls(
     days,
     reducerOf: (metric) => choiceOf(reducers, metric),
     unitOf: (metric) => choiceOf(units, metric),
+    statisticOf: (metric) => choiceOf(statistics, metric),
     onPreset: (p) => {
       void setRangeParam(p === defaultRange ? null : p)
       void setStart(null)
@@ -120,6 +128,10 @@ export function useTimelineControls(
     onUnit: (metric, value) => {
       const next = writeChoice(unitTokens, metric, value)
       void setUnitTokens(next.length ? next : null)
+    },
+    onStatistic: (metric, value) => {
+      const next = writeChoice(statisticTokens, metric, value)
+      void setStatisticTokens(next.length ? next : null)
     },
     zoom: (next) => {
       onCustom(next)

@@ -1,6 +1,7 @@
 /** The timeline's choices as the address keeps them: the URL keys' parsers
  * and values, a custom range, and the per-metric choices (a reducer, a
- * unit), shared by the timeline page and the streams page's panel. */
+ * unit, a statistic), shared by the timeline page and the streams page's
+ * panel. */
 
 import { parseAsArrayOf, parseAsString } from "nuqs"
 
@@ -40,8 +41,8 @@ export function customRange(
 
 // ── per-metric choices in the address ──────────────────────────────────────
 
-/** Per-metric choices (a reducer, a unit) as URL tokens `<metric>~<value>`,
- * the metric URI-encoded since an id may hold a `~`. */
+/** Per-metric choices (a reducer, a unit, a statistic) as URL tokens
+ * `<metric>~<value>`, the metric URI-encoded since an id may hold a `~`. */
 export function readChoices(
   tokens: readonly string[] | null
 ): Map<string, string> {

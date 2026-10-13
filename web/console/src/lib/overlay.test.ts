@@ -296,6 +296,55 @@ describe("where a metric reads from", () => {
     expect(raw.reducerMenu.every((o) => !o.hint)).toBe(true)
   })
 
+  it("reads one statistic of summaries that keep several, the average by default", () => {
+    const streams = streamsOf(LATEST)
+    const garmin = streams.find(
+      (s) => s.metric === HEART && s.source === GARMIN
+    )!
+    const whoop: Stream = {
+      ...garmin,
+      key: "whoop-heart",
+      source: WHOOP,
+      form: "summary",
+      statistics: ["avg", "max"],
+    }
+    const obs = source([whoop, ...streams])
+    const scope = { ...SCOPE, streams: [whoop, garmin] }
+    const planned = planPlot(obs, HEART, scope)
+    expect(planned.statistics).toEqual(["avg", "max"])
+    expect(planned.statistic).toBe("avg")
+    expect(planned.read?.filter?.properties?.statistic).toEqual({ eq: "avg" })
+    expect(
+      planPlot(obs, HEART, { ...scope, statistic: "max" }).read?.filter
+        ?.properties?.statistic
+    ).toEqual({ eq: "max" })
+    // A raw read takes no summary, so it names no statistic.
+    const raw = planPlot(obs, HEART, { ...scope, from: "raw" })
+    expect(raw.statistic).toBeUndefined()
+    expect(raw.read?.filter?.properties).toBeUndefined()
+    // A source whose summaries keep another statistic is left out, and the
+    // chart says so; one statistic alone needs no narrowing.
+    const garminDaily: Stream = {
+      ...whoop,
+      key: "garmin-daily",
+      source: GARMIN,
+      statistics: ["vendor"],
+    }
+    const mixed = planPlot(source([whoop, garminDaily, ...streams]), HEART, {
+      ...SCOPE,
+      streams: [whoop, garminDaily, garmin],
+    })
+    expect(mixed.statistics).toEqual(["avg", "max", "vendor"])
+    expect(mixed.statisticLeftOut).toEqual([GARMIN])
+    const one = planPlot(source([garminDaily, ...streams]), HEART, {
+      ...SCOPE,
+      streams: [garminDaily, garmin],
+    })
+    expect(one.statistics).toEqual(["vendor"])
+    expect(one.statistic).toBeUndefined()
+    expect(one.read?.filter?.properties).toBeUndefined()
+  })
+
   it("lets the reader's pick win", () => {
     const planned = planPlot(source(), RECOVERY, { ...SCOPE, from: "raw" })
     expect(planned.from).toBe("raw")

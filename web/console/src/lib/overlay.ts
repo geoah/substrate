@@ -20,6 +20,7 @@ import {
   channelKey,
   DEFAULT_PRECISION,
   distinct,
+  statisticChoices,
   formOf,
   rawOnly,
   reducerChoiceWords,
@@ -209,9 +210,11 @@ export interface PlotScope {
   abouts: readonly string[]
   /** The channels chosen; absent or empty for every one. */
   channels?: readonly string[]
-  /** This metric's picked reducer and output unit, where the reader picked. */
+  /** This metric's picked reducer, output unit and summary statistic,
+   * where the reader picked. */
   reducer?: string
   unit?: string
+  statistic?: string
   /** The streams the plot is drawn from, newest first: a selection's, else
    * every stream of the metric. They decide the form it is read in. */
   streams?: readonly Stream[]
@@ -289,6 +292,15 @@ export interface Plot {
   fromReason?: "summaries-only" | "some-summaries" | "raw-only"
   /** The sources among its streams that keep vendor summaries. */
   summarySources: string[]
+  /** The statistics those summaries keep, the default first: a row reads
+   * one, so where they keep several the reader picks (`statistic`). */
+  statistics: string[]
+  /** The statistic its summaries are read in, where they keep several and
+   * the read takes them: sent as `filter.properties.statistic`. */
+  statistic?: string
+  /** The sources whose summaries keep none of that statistic, which the
+   * read leaves out. */
+  statisticLeftOut: string[]
   /** Where its buckets are recorded-local days, weeks or months: their size
    * and the range the reader asked for, which the read widens
    * (`readRange`). */
@@ -355,7 +367,19 @@ export function planPlot(
   const form = formOf(info, newest)
   const auto = fromOf(selected)
   const askedFrom: AggregateFrom = scope.from ?? auto.from
+  // A row reads one statistic of the summaries (the server refuses two), so
+  // where they keep several the read names one: the reader's, else the
+  // average, the one kept, or the vendor's own.
+  const summaryStreams = selected.filter((s) => s.form === "summary")
+  const statistics = statisticChoices(
+    summaryStreams.flatMap((s) => s.statistics ?? [])
+  )
+  const statistic =
+    scope.statistic && statistics.includes(scope.statistic)
+      ? scope.statistic
+      : statistics[0]
   const reducerMenu = menuOf(shape, form, info, {
+    statistic,
     from: askedFrom,
     // Past a raw read, a bucket may be served by a summary, and the server
     // refuses a reducer a summary does not take.
@@ -371,6 +395,14 @@ export function planPlot(
       : reducers[0]
   const rawPick = Boolean(reducerMenu.find((o) => o.value === reducer)?.raw)
   const from: AggregateFrom = rawPick ? "raw" : askedFrom
+  const narrowsStatistic = from !== "raw" && statistics.length > 1
+  const statisticLeftOut = narrowsStatistic
+    ? distinct(
+        summaryStreams
+          .filter((s) => s.statistics && !s.statistics.includes(statistic!))
+          .map((s) => s.source)
+      )
+    : []
   // The server answers in the picked unit, else the metric's, else its
   // first stream's, which need not be the newest: where the metric names
   // no unit, the read names the one the axis is captioned with. A time in
@@ -469,6 +501,7 @@ export function planPlot(
         ...(sourceless ? { sourceless } : {}),
         about: chosenAbouts.map((a) => refPathOf(a, obs.pins.about) ?? a),
         ...(channels.length ? { channels: [...channels] } : {}),
+        ...(narrowsStatistic ? { statistic } : {}),
         ...(byChannel && groupKey !== "source" ? { byChannel } : {}),
         // Past the default, the read asks for the cap: the estimate is a
         // guess (a month as 30 days, four codes where none are listed),
@@ -540,9 +573,10 @@ export function planPlot(
         : auto.reason
           ? { fromReason: auto.reason }
           : {}),
-    summarySources: distinct(
-      selected.filter((s) => s.form === "summary").map((s) => s.source)
-    ),
+    summarySources: distinct(summaryStreams.map((s) => s.source)),
+    statistics,
+    ...(narrowsStatistic ? { statistic } : {}),
+    statisticLeftOut,
     ...(local ? { local: { size: scope.size, range: scope.range } } : {}),
   }
 }
