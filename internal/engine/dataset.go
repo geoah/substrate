@@ -541,6 +541,12 @@ type txn struct {
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
 	interactionThread bool
+	// migrating marks a repository migration's transaction (repomigrate.go):
+	// it folds before the stored vocabulary loads, so a row whose kind the
+	// registry does not yet hold keeps its derived indexes as they stand,
+	// and unprojected names its kind for the pass behind the open.
+	migrating   bool
+	unprojected map[string]bool
 	// movingRecords marks a kind move carrying a record from one kind to
 	// another (move.go, record 0078). The row was admitted once already, under
 	// the old kind, so the CREATION-only contracts (an interaction's batch, a
