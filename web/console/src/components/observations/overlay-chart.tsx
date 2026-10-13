@@ -38,6 +38,7 @@ import {
   aggregateCurl,
   aggregateQueryOptions,
   heldAnswer,
+  type AggregateRead,
 } from "@/lib/api/observations"
 import {
   ApiError,
@@ -58,7 +59,6 @@ import {
   rowValue,
   seriesOn,
   windowWords,
-  type AggregateRead,
   type BucketSize,
   type Series,
   type TimeRange,

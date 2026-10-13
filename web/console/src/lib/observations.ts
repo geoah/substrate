@@ -8,10 +8,13 @@
  * Everything here is a pure function of the registry, the metric records,
  * the URL state and the answer. */
 
+import type { AggregateRead } from "@/lib/api/observations"
 import type {
   Aggregate,
   AggregateBucket,
+  AggregateFrom,
   AggregateGroup,
+  AggregateGroupKey,
   AggregateReducer,
   AggregateResult,
   AggregateRow,
@@ -25,14 +28,6 @@ import { recordTitle } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
 import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { formatQuantity } from "@/lib/units"
-
-/** Where an aggregate reads from: raw points, vendor `summary` points, or
- * raw where a bucket is covered and the summary otherwise. */
-export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
-
-/** A stream key a result may be grouped by. */
-export type AggregateGroupKey =
-  "source" | "about" | "code" | "metric" | "kind" | "channel"
 
 // ── discovery ──────────────────────────────────────────────────────────────
 
@@ -830,13 +825,6 @@ export const FROM_CHOICES: readonly { value: AggregateFrom; label: string }[] =
     { value: "summaries", label: "Summaries" },
     { value: "prefer-raw", label: "Prefer raw" },
   ]
-
-/** One aggregate read: the records filter and the `aggregate` parameter,
- * which `lib/api/observations.ts` encodes onto the records route. */
-export interface AggregateRead {
-  filter?: RecordFilter
-  aggregate: Aggregate
-}
 
 /** What one chart of the timeline asks for. */
 export interface LaneSpec {

@@ -15,9 +15,12 @@ import { EmptyValue } from "@/components/identity/empty-value"
 import { Pill } from "@/components/identity/pill"
 import { CodeMark, Reading } from "@/components/observations/marks"
 import { Button } from "@/components/ui/button"
-import type { AggregateReducer, AggregateRow } from "@/lib/api/types"
+import type {
+  AggregateGroupKey,
+  AggregateReducer,
+  AggregateRow,
+} from "@/lib/api/types"
 import {
-  type AggregateGroupKey,
   coverageWords,
   namedSources,
   reducerKey,

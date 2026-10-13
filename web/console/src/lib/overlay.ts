@@ -9,6 +9,12 @@
  * its metrics' reads. Everything here is a pure function of the registry's
  * metric records, the streams, the reader's choices and the answers. */
 
+import type { AggregateRead } from "@/lib/api/observations"
+import type {
+  AggregateFrom,
+  AggregateGroupKey,
+  AggregateRow,
+} from "@/lib/api/types"
 import {
   DEFAULT_PRECISION,
   channelKey,
@@ -25,9 +31,6 @@ import {
   refPathOf,
   sameRef,
   shapeOf,
-  type AggregateFrom,
-  type AggregateGroupKey,
-  type AggregateRead,
   type BucketSize,
   type Form,
   type GroupChoice,
@@ -38,7 +41,6 @@ import {
   type Stream,
   type TimeRange,
 } from "@/lib/observations"
-import type { AggregateRow } from "@/lib/api/types"
 import { listWords } from "@/lib/tools"
 import { unitChoices } from "@/lib/unit-choices"
 import { unitSymbol } from "@/lib/units"

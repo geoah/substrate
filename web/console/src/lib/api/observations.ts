@@ -10,11 +10,21 @@
 
 import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
-import type { AggregateRead } from "@/lib/observations"
-
 import { request } from "./http"
 import { RECORDS_PATH } from "./records"
-import type { AggregateResult, Downsample } from "./types"
+import type {
+  Aggregate,
+  AggregateResult,
+  Downsample,
+  RecordFilter,
+} from "./types"
+
+/** One aggregate read: the records filter and the `aggregate` parameter,
+ * which this module encodes onto the records route. */
+export interface AggregateRead {
+  filter?: RecordFilter
+  aggregate: Aggregate
+}
 
 /** The query string of one aggregate read, `filter` first. */
 export function aggregateSearch(

@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useFacetValues, useObservations } from "@/hooks/use-observations"
+import type { AggregateFrom } from "@/lib/api/types"
 import {
   BUCKET_CHOICES,
   BUCKET_SIZE_WORDS,
@@ -53,7 +54,6 @@ import {
   readerTimezone,
   sameRef,
   writeChoice,
-  type AggregateFrom,
   type BucketChoice,
   type GroupChoice,
   type RangePreset,

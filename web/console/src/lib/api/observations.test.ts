@@ -5,7 +5,7 @@
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { latestRead, type AggregateRead } from "@/lib/observations"
+import { latestRead } from "@/lib/observations"
 import { LATEST, OBSERVATION, TRACE } from "@/lib/observations.test-fixtures"
 
 import {
@@ -13,6 +13,7 @@ import {
   aggregatePath,
   aggregateQueryOptions,
   heldAnswer,
+  type AggregateRead,
 } from "./observations"
 import { recordWriteReaches } from "./records"
 

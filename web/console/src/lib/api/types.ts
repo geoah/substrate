@@ -360,6 +360,14 @@ export type AggregateReducer =
   | { durationIn: number[] }
   | { timeInState: string[] }
 
+/** Where an aggregate reads from: raw points, vendor `summary` points, or
+ * raw where a bucket is covered and the summary otherwise. */
+export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
+
+/** A stream key a result may be grouped by. */
+export type AggregateGroupKey =
+  "source" | "about" | "code" | "metric" | "kind" | "channel"
+
 /** The `aggregate` parameter of `GET /records` (`substrate.Aggregate`,
  * decision 0161). Exactly one of `metric` and `property`, except the latest
  * read (no `bucket`, no `range`, the one reducer `last`), which may name
@@ -367,14 +375,13 @@ export type AggregateReducer =
 export interface Aggregate {
   metric?: AggregateMetric
   property?: AggregateProperty
-  /** `raw` (the default), `summaries` or `prefer-raw`. */
-  from?: string
+  /** `raw` by default. */
+  from?: AggregateFrom
   /** prefer-raw's coverage floor, 0 to 1 (default 0.9). */
   minCoverage?: number
   range?: AggregateRange
   bucket?: AggregateBucket
-  /** `source`, `about`, `code`, `metric`, `kind`, `channel`. */
-  groupBy?: string[]
+  groupBy?: AggregateGroupKey[]
   reducers?: AggregateReducer[]
   sources?: AggregateSources
   /** A unit of the metric's measure, or a duration unit for `durationIn` and
