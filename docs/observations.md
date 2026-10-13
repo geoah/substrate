@@ -198,12 +198,18 @@ data:
     value:
       value: "72.1"
       unit: kg
+    hold: P1D
+    recordingMethod: manual
     at: 2026-10-09T07:02:00+03:00
     utcOffset: 180
 ```
 
 `bin/substratectl apply -f weight.yaml` writes it. The `metric` must exist
 (`mustExist: true`); the `source` need not, so a writer may create it after.
+`hold` copies the `health/body_mass` metric's, so the weighing stands for a
+day; without one it stands until the next weighing, and a read counts it as
+covering every day between ([holds](#what-the-health-sample-adds)).
+`recordingMethod: manual` says a person entered it.
 
 ## Writing a trace
 
