@@ -593,6 +593,31 @@ describe("the streams table's machinery", () => {
     expect(bodyRows()[0].textContent).toContain("1,812")
   })
 
+  it("keeps the last view in this browser and restores it on a bare address", async () => {
+    const server = mount()
+    await rows()
+    fireEvent.click(screen.getByRole("button", { name: "Points" }))
+    await waitFor(() => expect(server.param("sort")).toBe("count:asc"))
+    cleanup()
+    // A bare address: the sort comes back, written in place.
+    const again = mount()
+    await rows()
+    await waitFor(() => expect(again.param("sort")).toBe("count:asc"))
+    expect(again.urls.at(-1)?.options.history).toBe("replace")
+    expect(bodyRows()[0].textContent).toContain("Recovery")
+    cleanup()
+    // An address that names a sort keeps it.
+    window.history.replaceState(null, "", "/observations?sort=metric:asc")
+    try {
+      const named = mount("?sort=metric:asc")
+      await rows()
+      expect(named.urls.some((u) => u.searchParams.has("sort"))).toBe(false)
+      expect(bodyRows()[0].textContent).toContain("Heart rate")
+    } finally {
+      window.history.replaceState(null, "", "/")
+    }
+  })
+
   it("groups the rows by a stream column, each group under a head", async () => {
     const server = mount()
     await rows()
@@ -751,6 +776,30 @@ describe("selecting streams", () => {
     expect(
       server.seen.some((r) => r.aggregate.metric?.ref === STEPS_METRIC)
     ).toBe(false)
+  })
+
+  it("says a selected stream that has gone, and clears the selection", async () => {
+    const server = mount(
+      `?timeline=true&${WINDOW}&select=${token("health/heart_rate", "garmin-forerunner-265")},${token("health/heart_rate", "gone-watch")}`,
+      KINDS,
+      answer
+    )
+    const panel = await screen.findByRole("region", {
+      name: "Timeline of the selected streams",
+    })
+    expect(
+      await within(panel).findByText(
+        "1 selected stream has no points any more, so the chart leaves it out."
+      )
+    ).toBeTruthy()
+    expect(within(panel).getByText("1 stream over time")).toBeTruthy()
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Clear the selection" })
+    )
+    await waitFor(() => expect(server.param("select")).toBe(null))
+    expect(
+      await within(panel).findByText(/Select streams in the table/)
+    ).toBeTruthy()
   })
 
   it("says why the panel's own read failed, never that a stream has no points", async () => {
