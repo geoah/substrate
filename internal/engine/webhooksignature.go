@@ -209,9 +209,6 @@ func parseWebhookSignature(raw any) (*webhookSignature, error) {
 // lowercases it. A credential header the door strips before the service sees
 // a request could never be read, so naming one is refused.
 func signatureHeaderName(field, name string) (string, error) {
-	if name == "" {
-		return "", nil
-	}
 	if !webhookHeaderPattern.MatchString(name) {
 		return "", fmt.Errorf("source.webhook.signature.%s: a header name, 1 to 64 characters of [A-Za-z0-9-]", field)
 	}

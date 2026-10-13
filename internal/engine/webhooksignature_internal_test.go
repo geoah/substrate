@@ -111,6 +111,19 @@ func TestWebhookSignatureDeclarationIsAdmittedAtParse(t *testing.T) {
 	}
 }
 
+// signatureHeaderName refuses an empty name like any other off the header
+// alphabet: its callers handle an absent header before they ask, so an empty
+// one reaching it is a mistake to refuse, never a header to accept.
+func TestSignatureHeaderNameRefusesAnEmptyName(t *testing.T) {
+	t.Parallel()
+	if got, err := signatureHeaderName("signatureHeader", ""); err == nil {
+		t.Fatalf("an empty header name read as %q", got)
+	}
+	if got, err := signatureHeaderName("signatureHeader", "X-Sig"); err != nil || got != "x-sig" {
+		t.Fatalf("X-Sig = %q, %v", got, err)
+	}
+}
+
 // A signed timestamp is Unix time in seconds, or in milliseconds from 10^11
 // up, and nothing else.
 func TestWebhookTimestampReadsSecondsAndMilliseconds(t *testing.T) {
