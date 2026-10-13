@@ -320,14 +320,22 @@ export function OverlayChart({
   const notes: string[] = []
   for (const { plot, query } of states) {
     const own: string[] = []
-    if (
-      plot.groupKey !== "source" &&
-      plot.spec &&
-      plot.sourceOrder.length > 1
-    ) {
-      const [first, ...rest] = plot.sourceOrder.map(sourceText)
+    const ranked = [
+      ...plot.sourceOrder.map(sourceText),
+      ...(plot.sourceless ? ["values naming no source"] : []),
+    ]
+    if (plot.groupKey !== "source" && plot.spec && ranked.length > 1) {
+      const [first, ...rest] = ranked
       own.push(
         `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
+      )
+    }
+    const dropped = all
+      .filter((d) => d.plot === plot)
+      .reduce((n, d) => n + d.series.dropped, 0)
+    if (dropped > 0) {
+      own.push(
+        `${dropped === 1 ? "1 row shares" : `${dropped} rows share`} a bucket with another row of the same series and ${dropped === 1 ? "is" : "are"} left out of the chart; the table below lists every row.`
       )
     }
     if (plot.shape === "coded") own.push("Stacked by category.")

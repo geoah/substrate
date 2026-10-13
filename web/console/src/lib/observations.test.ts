@@ -72,6 +72,7 @@ import {
   WEIGHT,
   WEIGHING,
   WHOOP,
+  WITHINGS,
   ZONES,
   metricKind,
   observationKind,
@@ -624,6 +625,27 @@ describe("an answer as buckets and series", () => {
       seriesOf([{ ...rows[0], group: { code: "deep" } }], "timeInState", "code")
         .series[0].points[0].value
     ).toBe(null)
+  })
+
+  it("counts the rows a series cannot draw where two share its bucket", () => {
+    // Two sources kept apart in a read grouped by nothing.
+    const day = (source: string, value: string) => ({
+      start: "2026-10-01T00:00:00+03:00",
+      end: "2026-10-02T00:00:00+03:00",
+      sources: [source],
+      values: [{ reducer: "avg", value, unit: "kg" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const rows = [day("", "80"), day(WITHINGS, "70")]
+    const [series] = seriesOn(bucketsOf([rows]), rows, "avg")
+    expect(series.points.map((p) => p.value)).toEqual([80])
+    expect(series.dropped).toBe(1)
+    expect(
+      seriesOn(bucketsOf([rows.slice(1)]), rows.slice(1), "avg")[0].dropped
+    ).toBe(0)
   })
 
   it("reads a row answered with no values as one with none", () => {

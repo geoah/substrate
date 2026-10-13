@@ -23,6 +23,7 @@ import {
   SOURCE,
   STEPS_METRIC,
   WHOOP,
+  WITHINGS,
 } from "@/lib/observations.test-fixtures"
 import {
   COUNT_UNIT,
@@ -285,6 +286,32 @@ describe("one metric's plot", () => {
       GARMIN,
       APPLE,
     ])
+  })
+
+  it("resolves a stream naming no source with the named ones, after them", () => {
+    const streams = streamsOf(LATEST)
+    const scale = streams.find((s) => s.metric === BODY_MASS)!
+    const typed: Stream = {
+      ...scale,
+      key: "typed-weight",
+      source: undefined,
+      at: "2026-10-07T08:00:00Z",
+    }
+    const planned = planPlot(source([typed, ...streams]), BODY_MASS, SCOPE)
+    expect(planned.sourceless).toBe(true)
+    // One line: the scale first, then what names no source.
+    expect(planned.read?.aggregate.groupBy).toBeUndefined()
+    expect(planned.read?.aggregate.sources).toEqual({
+      policy: "priority",
+      order: [WITHINGS],
+    })
+    // A chosen source leaves the unnamed stream out of the read.
+    const narrowed = planPlot(source([typed, ...streams]), BODY_MASS, {
+      ...SCOPE,
+      sources: [WITHINGS],
+    })
+    expect(narrowed.sourceless).toBe(false)
+    expect(narrowed.read?.aggregate.sources).toBeUndefined()
   })
 
   it("narrows to the chosen channels", () => {

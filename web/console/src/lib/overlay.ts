@@ -223,6 +223,8 @@ export interface Plot {
   blocked?: string
   /** The sources in the order a priority read prefers them. */
   sourceOrder: string[]
+  /** The read takes a stream naming no source too, after every named one. */
+  sourceless: boolean
   /** The series the plot could show grouped by source (each source's
    * channels apart) or by about, for colours that hold while a filter or a
    * toggle hides some. */
@@ -305,6 +307,14 @@ export function planPlot(
     scope.abouts.some((a) => sameRef(l, a))
   )
   const channels = scope.channels ?? []
+  // The streams the read selects: the filter narrows each key apart.
+  const selected = own.filter(
+    (s) =>
+      (!chosenSources.length || chosenSources.includes(s.source ?? "")) &&
+      (!chosenAbouts.length || chosenAbouts.includes(s.about ?? "")) &&
+      (!channels.length || channels.includes(s.channel ?? ""))
+  )
+  const sourceless = selected.some((s) => !s.source)
   const groups =
     shape === "coded"
       ? codes?.length || 4
@@ -315,7 +325,9 @@ export function planPlot(
           : 1
   const estimate = bucketEstimate(scope.range, scope.size, groups)
   const metricPath = obs.metricPath(metric)
-  const sourceOrder = chosenSources.length ? chosenSources : sources
+  const sourceOrder = chosenSources.length
+    ? chosenSources
+    : distinct(selected.map((s) => s.source))
 
   const spec: LaneSpec | undefined = metricPath
     ? {
@@ -329,6 +341,7 @@ export function planPlot(
         group: scope.group,
         sources: chosenSources.map((s) => refPathOf(s, obs.pins.source) ?? s),
         sourceOrder,
+        ...(sourceless ? { sourceless } : {}),
         about: chosenAbouts.map((a) => refPathOf(a, obs.pins.about) ?? a),
         ...(channels.length ? { channels: [...channels] } : {}),
       }
@@ -366,6 +379,7 @@ export function planPlot(
     pickedKey: spec ? reducerKey(laneReducers(spec)[0]) : reducer,
     blocked,
     sourceOrder,
+    sourceless,
     // Every stream it could draw, whichever are drawn, so a source filter
     // or a legend toggle never repaints the series that stay; a selection
     // is its own palette. Spelled as the answer's groups are, record paths.

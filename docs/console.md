@@ -758,7 +758,8 @@ Each metric is one aggregate read naming it, and a chart composes its
 metrics' reads on one bucket axis, each read loading, refreshing or failing
 on its own row. Grouped by anything but source, two or more sources are
 resolved by `sources.policy: priority` in the order you chose them (or the
-newest first), and the chart says which source wins; grouped by source,
+newest first), a stream that names no source counting as one ranked after
+them, and the chart says which source wins; grouped by source,
 each keeps its own rows, and a source's channels stay apart
 (`groupBy: ["source", "channel"]`). Until you pick where to read from, a
 metric reads raw points, summaries where every one of its streams keeps

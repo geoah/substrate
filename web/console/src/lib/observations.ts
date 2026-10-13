@@ -825,6 +825,9 @@ export interface LaneSpec {
   /** Sources in the reader's order, for the priority policy: record paths
    * or ids, which `sources.order` takes alike. */
   sourceOrder: string[]
+  /** The read selects a stream naming no source too. `sources.order` cannot
+   * name it, so the priority policy ranks it after every named source. */
+  sourceless?: boolean
   /** `about` values the read is narrowed to; empty for everything. */
   about: string[]
   /** Channels the read is narrowed to; absent or empty for every one. */
@@ -851,10 +854,13 @@ export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
 }
 
 /** The aggregate read one lane issues. Grouped by anything but source, two
- * or more sources are resolved by priority in the reader's order, so one
- * line is one thing; grouped by source, each keeps its own rows. */
+ * or more sources (a stream naming none counts as one) are resolved by
+ * priority in the reader's order, so one line is one thing: the default
+ * policy answers a row per source, and a series draws one row per bucket.
+ * Grouped by source, each keeps its own rows. */
 export function laneRead(spec: LaneSpec): AggregateRead {
   const groupKey = laneGroupKey(spec)
+  const ranked = spec.sourceOrder.length + (spec.sourceless ? 1 : 0)
   const properties: NonNullable<RecordFilter["properties"]> = {}
   if (spec.sources.length) properties.source = { in: spec.sources }
   if (spec.about.length) properties.about = { in: spec.about }
@@ -871,7 +877,7 @@ export function laneRead(spec: LaneSpec): AggregateRead {
       ? { groupBy: groupKey === "source" ? ["source", "channel"] : [groupKey] }
       : {}),
     reducers: laneReducers(spec),
-    ...(groupKey !== "source" && spec.sourceOrder.length > 1
+    ...(groupKey !== "source" && ranked > 1
       ? { sources: { policy: "priority", order: spec.sourceOrder } }
       : {}),
     ...(spec.unit ? { unit: spec.unit } : {}),
@@ -1010,6 +1016,9 @@ export interface Series {
   /** The source's channel, where the answer is grouped by one. */
   channel?: string
   points: SeriesPoint[]
+  /** Rows of this series that met a bucket already holding one, which the
+   * series does not draw. A read the console plans answers none. */
+  dropped: number
 }
 
 export interface SeriesPoint {
@@ -1108,6 +1117,7 @@ export function seriesOn(
   const keys: string[] = []
   const channels = new Map<string, string | undefined>()
   const byKey = new Map<string, Map<number, AggregateRow>>()
+  const dropped = new Map<string, number>()
   for (const row of rows) {
     const value = groupValue(row.group, groupKey) ?? ""
     const channel = groupKey ? row.group?.channel || undefined : undefined
@@ -1119,7 +1129,9 @@ export function seriesOn(
     }
     const i = at.get(`${Date.parse(row.start)}\n${Date.parse(row.end)}`)
     const held = byKey.get(key)!
-    if (i !== undefined && !held.has(i)) held.set(i, row)
+    if (i === undefined) continue
+    if (held.has(i)) dropped.set(key, (dropped.get(key) ?? 0) + 1)
+    else held.set(i, row)
   }
   return keys.map((key) => {
     const held = byKey.get(key)!
@@ -1129,6 +1141,7 @@ export function seriesOn(
       key,
       value: groupKey ? value || undefined : undefined,
       ...(channel ? { channel } : {}),
+      dropped: dropped.get(key) ?? 0,
       points: buckets.map((_, i) => {
         const row = held.get(i)
         const off = row?.unavailable === true
