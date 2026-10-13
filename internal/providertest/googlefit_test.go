@@ -421,6 +421,21 @@ func utcToday() time.Time {
 	return time.Now().UTC().Truncate(24 * time.Hour)
 }
 
+// installFit installs the closure with the walk's clock pinned at noon UTC on
+// today: the sync takes the last day of its window and its backfill floor
+// from that instant, which is the day the fake's recordings were shifted to.
+// A test that read the clock itself would disagree with the sync about the
+// window whenever 00:00 UTC passed between the two reads.
+func installFit(t *testing.T, ds substrate.Dataset, today time.Time, rewrites ...[2]string) {
+	t.Helper()
+	pin := [2]string{
+		"    now = _now_dt()\n    types = _enabled(props)",
+		fmt.Sprintf("    now = _dt.datetime(%d, %d, %d, 12, tzinfo=UTC)\n    types = _enabled(props)",
+			today.Year(), today.Month(), today.Day()),
+	}
+	installRewired(t, ds, googlefitDir, append([][2]string{pin}, rewrites...)...)
+}
+
 // TestGoogleFitClosureAdmits: the closure loads through the ordinary
 // resolver, its function may write every kind it writes and read the two it
 // checks before a delete, and the client input is injected.
@@ -455,8 +470,10 @@ func TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	today := utcToday()
+	// The day the recordings were cut on, not the wall clock's: the walk's
+	// window is the test's to choose, so this holds on any run date.
+	today := fitCutOn
+	installFit(t, ds, today)
 	fake := newFakeFit(t, today, fitCutOn)
 	googlefitAccountWith(t, ds, fitAllToggles...)
 
@@ -588,8 +605,8 @@ func TestGoogleFitIncrementalSyncRereadsOnlyTheOverlap(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
 	today := utcToday()
+	installFit(t, ds, today)
 	fake := newFakeFit(t, today, fitCutOn)
 	googlefitAccountWith(t, ds, "enabledBody", "enabledHeartRate", "enabledSleep")
 
@@ -648,8 +665,8 @@ func TestGoogleFitRereadRewritesAChangedDayAndDeletesAnEmptiedOne(t *testing.T) 
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
 	today := utcToday()
+	installFit(t, ds, today)
 	// The recordings' 2026-10-04 is today, so 2026-10-03 is yesterday.
 	recordedToday := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
 	fake := newFakeFit(t, today, recordedToday)
@@ -709,8 +726,8 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
 	today := utcToday()
+	installFit(t, ds, today)
 	fake := newFakeFit(t, today, fitCutOn)
 	googlefitAccountWith(t, ds, "enabledSleep")
 	walk := googlefitAccount + "/" + fitDeletedWalk
@@ -760,8 +777,8 @@ func TestGoogleFitStopsOnTheDrainBudgetAndResumes(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
 	today := utcToday()
+	installFit(t, ds, today)
 	fake := newFakeFit(t, today, fitCutOn)
 	googlefitAccountWith(t, ds, "enabledBody")
 
@@ -814,8 +831,8 @@ func TestGoogleFitDropsTheFloorOfATypeItNoLongerWalks(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
 	today := utcToday()
+	installFit(t, ds, today)
 	fake := newFakeFit(t, today, fitCutOn)
 	googlefitAccountWith(t, ds, "enabledBody")
 	cut := today.AddDate(0, 0, -20).Format(time.RFC3339)
@@ -867,8 +884,8 @@ func TestGoogleFitWalkCheckpointsBetweenInvocations(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	installRewired(t, ds, googlefitDir, [2]string{"EFFECT_BYTES = 4 << 20", "EFFECT_BYTES = 1"})
 	today := utcToday()
+	installFit(t, ds, today, [2]string{"EFFECT_BYTES = 4 << 20", "EFFECT_BYTES = 1"})
 	fake := newFakeFit(t, today, fitCutOn)
 	googlefitAccountWith(t, ds, "enabledHeartRate", "enabledBody")
 
@@ -912,8 +929,9 @@ func TestGoogleFitRevokedGrantStampsErroring(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	fake := newFakeFit(t, utcToday(), fitCutOn)
+	today := utcToday()
+	installFit(t, ds, today)
+	fake := newFakeFit(t, today, fitCutOn)
 	fake.revoked = true
 	googlefitAccountWith(t, ds, "enabledBody", "enabledSleep")
 
