@@ -1120,8 +1120,11 @@ GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
 
 A function reads the same body with
 [`host.records.aggregate`](functions.md#the-sdk), an agent with the `query`
-tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
-[`substratectl aggregate`](substratectl.md#reading).
+tool's `filter`, `aggregate` and `downsample` arguments
+([agents](agents.md#tools)), and a person with
+[`substratectl aggregate`](substratectl.md#reading), which has a flag for
+each field. A function's and an agent's read is refused before it runs where
+it would answer more rows than their read budget holds.
 
 ### The request
 

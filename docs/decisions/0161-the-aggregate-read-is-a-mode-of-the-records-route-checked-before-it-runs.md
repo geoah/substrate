@@ -92,7 +92,8 @@ The mode is refused beside `q`, `watch`, `count`, `orderBy`, `first`,
 streams, build held intervals, resolve the source policy, clip to the range,
 filter intervals by code or threshold, reduce, fill, roll. Functions call it
 as `host.records.aggregate`, agents through the `query` tool's `aggregate`
-argument, and the CLI as `substratectl aggregate`.
+argument (`filter` and `downsample` beside it, the other arms' arguments
+refused as the route refuses them), and the CLI as `substratectl aggregate`.
 
 A second route would repeat the records route's filter, row-level security
 and allow-list, and split 0079's one read. Client-side reduction pages
