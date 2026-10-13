@@ -1013,8 +1013,20 @@ func TestAppleHealthWebhookDoor(t *testing.T) {
 		t.Fatalf("retry: %v", err)
 	}
 	ex := awaitExport(t, ds, fire)
-	if ex.Properties["automationAggregation"] != "hours" || !strings.Contains(fmt.Sprint(ex.Properties["userAgent"]), "10.0.4") {
+	if !strings.Contains(fmt.Sprint(ex.Properties["userAgent"]), "10.0.4") {
 		t.Fatalf("export headers = %v", ex.Properties)
+	}
+	// Every app header the function records on the receipt reaches it
+	// through the door. The door keeps only the headers the shipped trigger
+	// declares, so one the trigger stopped declaring is missing here.
+	for name, prop := range map[string]string{
+		"automation-name": "automationName", "automation-id": "automationId",
+		"automation-aggregation": "automationAggregation", "automation-period": "automationPeriod",
+		"session-id": "sessionId",
+	} {
+		if want := headers[name]; ex.Properties[prop] != want {
+			t.Errorf("the app's %s header reached the receipt as %s = %v, want %v", name, prop, ex.Properties[prop], want)
+		}
 	}
 	// App 10.0.4 sends merged series with `source: ""` and distance with no
 	// source key at all; the mirror keeps the difference.
