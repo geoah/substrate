@@ -147,7 +147,7 @@ states.`,
 					return err
 				}
 				defer resp.Body.Close()
-				return streamChanges(a.out, resp.Body)
+				return streamChanges(a.out, a.errOut, resp.Body)
 			}
 			page, err := cl.list(ctx, col.pkg(), col.Name, q)
 			if err != nil {

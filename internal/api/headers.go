@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"net/http"
 )
@@ -69,4 +70,33 @@ func noStore(next http.Handler) http.Handler {
 // (130 bits) from crypto/rand, an alphabet the CSP nonce grammar accepts.
 func scriptNonce() string {
 	return rand.Text()
+}
+
+// requestIDHeader carries the id the server minted for a request back on its
+// response, so a client's report of a failure names the server's log line
+// about it: every line requestLogAttrs builds carries the same id as
+// `request`.
+const requestIDHeader = "X-Request-Id"
+
+// requestIDLen is the length of a request id: 16 base32 characters, 80
+// random bits.
+const requestIDLen = 16
+
+// requestID mints a fresh random id for every request, binds it to the
+// request's context and sets it on the response before the handler runs. An
+// inbound X-Request-Id is ignored: an id the caller chose could repeat
+// another request's and forge the join, and the id must carry nothing about
+// the host or how many requests it has served.
+func requestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := rand.Text()[:requestIDLen]
+		w.Header().Set(requestIDHeader, id)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKeyRequestID, id)))
+	})
+}
+
+// requestIDFrom returns the request's id, empty outside the router.
+func requestIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(ctxKeyRequestID).(string)
+	return id
 }

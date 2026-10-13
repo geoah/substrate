@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -136,19 +139,11 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 // because a line without them cannot be traced to anything. A failure that is
 // the client's own cancellation is logged at DEBUG instead: the client went
 // away, the server did nothing wrong, and the body written after it reaches
-// nobody.
+// nobody. A 503 is logged by writeUnavailableCause.
 func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 	status, p := problemFor(err)
 	if status == http.StatusServiceUnavailable {
-		retryAfter := time.Second
-		if errors.Is(err, substrate.ErrRestartRequired) {
-			// An operator has to act, so the refusal is an ERROR line on
-			// every request, and a client is told to come back later than
-			// a moment's wait.
-			slog.Error("request refused until the server restarts", append(requestLogAttrs(r), "error", err)...)
-			retryAfter = restartRetryAfter
-		}
-		writeUnavailable(w, retryAfter, p.Message)
+		writeUnavailableCause(w, r, err, p.Message)
 		return
 	}
 	if status >= http.StatusInternalServerError {
@@ -161,6 +156,27 @@ func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 	writeJSON(w, status, substrate.ErrorEnvelope{Error: p})
 }
 
+// writeUnavailableCause answers a 503 whose cause is err, and logs it once
+// with the request, because the cause (a full disk under the data root, a
+// database that refused the token lookup) is a server condition the operator
+// must see. A refusal only a restart lifts is an ERROR, and its client is
+// told to come back later than a moment's wait. Any other is a WARN, and a
+// client's own cancellation a DEBUG.
+func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, msg string) {
+	retryAfter := time.Second
+	attrs := append(requestLogAttrs(r), "error", err)
+	switch {
+	case errors.Is(err, substrate.ErrRestartRequired):
+		slog.Error("request refused until the server restarts", attrs...)
+		retryAfter = restartRetryAfter
+	case clientCanceled(r.Context(), err):
+		slog.Debug("request canceled by the client", attrs...)
+	default:
+		slog.Warn("request answered unavailable", attrs...)
+	}
+	writeUnavailable(w, retryAfter, msg)
+}
+
 // clientCanceled reports whether err is the request's own cancellation. Both
 // halves are needed: a context.Canceled while the request's context is still
 // live came from a context the server canceled, which is a server fault, and
@@ -170,8 +186,8 @@ func clientCanceled(ctx context.Context, err error) bool {
 }
 
 // requestLogAttrs names the request a log line is about: its method, chi's
-// route pattern (the path when no route matched) and, once the bearer check
-// has run, the repository.
+// route pattern (the path when no route matched), the id its response
+// carries in X-Request-Id and, once the bearer check has run, the repository.
 func requestLogAttrs(r *http.Request) []any {
 	route := r.URL.Path
 	if rctx := chi.RouteContext(r.Context()); rctx != nil {
@@ -180,8 +196,79 @@ func requestLogAttrs(r *http.Request) []any {
 		}
 	}
 	attrs := []any{"method", r.Method, "route", route}
+	if id := requestIDFrom(r.Context()); id != "" {
+		attrs = append(attrs, "request", id)
+	}
 	if ds := DatasetFrom(r.Context()); ds != nil {
 		attrs = append(attrs, "repository", ds.Repository().ID)
 	}
 	return attrs
 }
+
+// recoverer turns a handler's panic into a 500 with the error envelope and
+// one ERROR line carrying the request and the stack, so a fault in one
+// request neither ends the process nor goes unlogged. http.ErrAbortHandler
+// passes through untouched: it is how a handler cuts its response short on
+// purpose (the export), and net/http closes the connection on it without a
+// line of its own.
+func recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sw := &startedWriter{ResponseWriter: w}
+		defer func() {
+			rvr := recover()
+			if rvr == nil {
+				return
+			}
+			if err, ok := rvr.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				panic(rvr)
+			}
+			slog.Error("request panicked", append(requestLogAttrs(r),
+				"panic", fmt.Sprint(rvr), "stack", string(debug.Stack()))...)
+			if sw.started {
+				// The status and part of the body are already out, so an
+				// envelope now would be appended to them and the response
+				// would end looking complete. Aborting closes the connection
+				// instead, which the client reads as a cut response.
+				panic(http.ErrAbortHandler)
+			}
+			writeError(w, http.StatusInternalServerError, codeInternal, "internal error")
+		}()
+		next.ServeHTTP(sw, r)
+	})
+}
+
+// startedWriter records whether the status line has gone out, for the
+// recoverer. A final status, a body write and a flush each send it, and
+// chi's wrapper leaves its Status at 0 after a flush, so it cannot say.
+// Flush, ReadFrom and Unwrap keep what the streams, io.Copy's sendfile path
+// and http.ResponseController reach through the writer.
+type startedWriter struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (s *startedWriter) WriteHeader(code int) {
+	if code >= http.StatusOK || code == http.StatusSwitchingProtocols {
+		s.started = true
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *startedWriter) Write(b []byte) (int, error) {
+	s.started = true
+	return s.ResponseWriter.Write(b)
+}
+
+func (s *startedWriter) Flush() {
+	s.started = true
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (s *startedWriter) ReadFrom(src io.Reader) (int64, error) {
+	s.started = true
+	return io.Copy(s.ResponseWriter, src)
+}
+
+func (s *startedWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }

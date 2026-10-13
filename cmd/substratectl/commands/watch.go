@@ -26,7 +26,11 @@ The stream is resumable: --from takes the sequence number to resume after and
 --generation the history generation it was read under. The opening line
 prints both, and every printed line starts with the sequence it can be resumed
 from. A cursor from a history the server has since replaced (a restore of an
-older repository directory) is refused with the head to resume from instead.`,
+older repository directory) is refused with the head to resume from instead.
+
+The server ends the stream when it shuts down; the last line, on stderr,
+names the --from and --generation to resume with. A stream the server ends
+with an error exits 1 with the server's problem and the same cursor.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -56,7 +60,7 @@ older repository directory) is refused with the head to resume from instead.`,
 				return err
 			}
 			defer resp.Body.Close()
-			return streamChanges(a.out, resp.Body)
+			return streamChanges(a.out, a.errOut, resp.Body)
 		},
 	}
 	f := cmd.Flags()

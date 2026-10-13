@@ -131,16 +131,14 @@ func TestExportRefusesWithAStatusBeforeTheFirstByte(t *testing.T) {
 // A failure after the first byte cannot change the status, so the response is
 // aborted: the client reads an unexpected end of the body, and the bytes it
 // did get hold no snapshot.json. The request goes through the real router,
-// with chi's Recoverer mounted, because that middleware is what could swallow
-// the abort: it does not, its recover re-panics http.ErrAbortHandler
-// (chi v5.3.1 middleware/recoverer.go lines 26 to 29: `if rvr ==
-// http.ErrAbortHandler { panic(rvr) }`), and the net/http server then closes
-// the connection without the terminating chunk.
+// with recoverer mounted, because that middleware is what could swallow the
+// abort: it does not, it re-panics http.ErrAbortHandler, and the net/http
+// server then closes the connection without the terminating chunk.
 func TestExportAbortsTheResponseWhenTheStreamFailsMidway(t *testing.T) {
 	env, ds, tok := exportEnv(t)
 	ds.exportFailMidway = true
-	// env.h is New(Config{...}): the router with peerAddress, RequestID and
-	// Recoverer, not the bare handler.
+	// env.h is New(Config{...}): the router with peerAddress, requestID and
+	// recoverer, not the bare handler.
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/export", nil)

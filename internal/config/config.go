@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -136,7 +138,8 @@ type Config struct {
 	// ConsoleURL is the console origin the OAuth callback return-page posts its
 	// completion message to and falls back to redirecting into. The scheme+host
 	// is the postMessage targetOrigin; the full base is the fallback redirect
-	// target. Empty (local dev) uses targetOrigin "*" and renders no redirect.
+	// target. Empty posts to the return-page's own origin, where this server
+	// serves the console, and renders no redirect.
 	ConsoleURL string `envconfig:"SUBSTRATE_CONSOLE_URL" default:""`
 
 	// Metrics serves the Prometheus exposition at GET /metrics, unauthenticated
@@ -170,13 +173,15 @@ func Load() (Config, error) {
 	return c, err
 }
 
-// Validate refuses a configuration the service cannot run safely, before any
-// repository opens.
 // MinDigestBytesPerSecond is the smallest cap SUBSTRATE_DIGEST_BYTES_PER_SECOND
 // admits above zero: 64 KiB per second, under which a value is a unit
 // mistake rather than a rate anyone wants.
 const MinDigestBytesPerSecond int64 = 64 << 10
 
+// Validate refuses a configuration the service cannot run safely, before any
+// repository opens. A setting that would otherwise be dropped in silence (a
+// console URL without a scheme) or fail only after the boot (a port the
+// listener cannot take) is refused here too, naming the variable.
 func (c Config) Validate() error {
 	if err := c.Data.Validate(); err != nil {
 		return err
@@ -199,7 +204,54 @@ func (c Config) Validate() error {
 	if c.HealthFailingAfter <= 0 {
 		return fmt.Errorf("SUBSTRATE_HEALTH_FAILING_AFTER is %s: it is how long every delivery of a trigger must have parked before the trigger reads failing and its alert opens, and it must be a positive duration (1h is the default)", c.HealthFailingAfter)
 	}
+	if p, err := strconv.ParseUint(c.Port, 10, 16); err != nil || p == 0 {
+		return fmt.Errorf("PORT is %q: it is the TCP port the server listens on, a number from 1 to 65535 (8080 is the default)", c.Port)
+	}
+	if _, err := ParseLogLevel(c.LogLevel); err != nil {
+		return err
+	}
+	if err := httpURL("SUBSTRATE_CONSOLE_URL", c.ConsoleURL, "https://substrate.example.com"); err != nil {
+		return err
+	}
+	if err := httpURL("SUBSTRATE_OAUTH_CALLBACK_URL", c.OAuthCallbackURL, "https://substrate.example.com/api/v1/oauth/callback"); err != nil {
+		return err
+	}
 	return ValidateCredentialKey(c.CredentialKey)
+}
+
+// ParseLogLevel reads LOG_LEVEL: debug, info, warn or error, in any case.
+// Empty is info, the default.
+func ParseLogLevel(level string) (slog.Level, error) {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "", "info":
+		return slog.LevelInfo, nil
+	case "warn":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	}
+	return slog.LevelInfo, fmt.Errorf("LOG_LEVEL is %q: it is debug, info, warn or error (info is the default)", level)
+}
+
+// httpURL refuses a set value that is not an absolute http or https URL with
+// a host, and a port from 1 to 65535 when it names one, naming the variable
+// and an example. url.Parse takes any run of digits as a port, which a
+// browser then refuses as a postMessage target. Empty is unset, which each
+// setting reads its own way.
+func httpURL(name, raw, example string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" {
+		port := u.Port()
+		if p, perr := strconv.ParseUint(port, 10, 16); port == "" || (perr == nil && p > 0) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s is %q: it must be an absolute http or https URL with a host, such as %s", name, raw, example)
 }
 
 // ListenAddress is the host:port the server binds, or a refusal naming the

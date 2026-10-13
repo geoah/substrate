@@ -8,10 +8,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -179,15 +177,8 @@ func run() error {
 		slog.Warn("orphan collection is on: the gc sweep tombstones a mapping target whose sources have all been gone for this long",
 			"grace", cfg.OrphanGrace)
 	}
-	if cfg.OAuthCallbackURL != "" {
-		stateKey := cfg.OAuthStateKey
-		if stateKey == "" {
-			// A per-boot key keeps the facility usable in dev; in-flight
-			// consents do not survive a restart until the env pins one.
-			stateKey = randomStateKey()
-			slog.Warn("no SUBSTRATE_OAUTH_STATE_KEY: oauth states will not survive a restart")
-		}
-		opts = append(opts, engine.WithOAuth(stateKey, cfg.OAuthCallbackURL, nil))
+	if opt := oauthOption(cfg); opt != nil {
+		opts = append(opts, opt)
 	}
 	if cfg.InsecureDisableTOTP {
 		// Loud, and at boot: from here on a password is the whole credential.
@@ -259,6 +250,9 @@ func run() error {
 		// Loud, and at boot: anyone who can reach this port may create a user.
 		slog.Warn("no SUBSTRATE_INVITE_CODE: registration asks for no invite code — set one before anyone else can reach this substrate")
 	}
+	// Closed by the server's shutdown (newServer), so the streams it would
+	// otherwise wait on end first.
+	draining := make(chan struct{})
 	handler := api.New(api.Config{
 		Service:      svc,
 		WebDir:       cfg.WebDir,
@@ -267,6 +261,7 @@ func run() error {
 		InviteCode:   cfg.InviteCode,
 		TOTPDisabled: cfg.InsecureDisableTOTP,
 		Metrics:      cfg.Metrics,
+		Draining:     draining,
 	})
 	if cfg.Metrics {
 		// Loud, and at boot, like the other doors: this port answers /metrics
@@ -277,33 +272,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	httpSrv := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		slog.Info("listening", "address", ln.Addr().String())
-		errCh <- httpSrv.Serve(ln)
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case sig := <-stopCh:
-		slog.Info("shutting down", "signal", sig.String())
-	case <-ctx.Done():
-		// A signal that landed as the boot returned.
-		slog.Info("shutting down", "cause", context.Cause(ctx).Error())
-	}
-	cancel()
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
+	return serve(ctx, newServer(handler, draining), ln, stopCh, cancel, shutdownBudget)
 }
 
 // bootHeartbeatEvery is how often a boot that has not reached the listener
@@ -572,6 +541,28 @@ func maintainOAuth(ctx context.Context, svc substrate.Service) {
 	}
 }
 
+// oauthOption turns the host OAuth facility on when a callback URL is set,
+// and is nil otherwise.
+func oauthOption(cfg config.Config) engine.Option {
+	if cfg.OAuthCallbackURL == "" {
+		if cfg.OAuthStateKey != "" {
+			// Inert rather than refused: the key signs nothing until a
+			// callback URL turns the facility on, and refusing would stop a
+			// boot for no safety gain.
+			slog.Warn("SUBSTRATE_OAUTH_STATE_KEY is set without SUBSTRATE_OAUTH_CALLBACK_URL: the OAuth facility is off and the key is unused")
+		}
+		return nil
+	}
+	stateKey := cfg.OAuthStateKey
+	if stateKey == "" {
+		// A per-boot key keeps the facility usable in dev; in-flight
+		// consents do not survive a restart until the env pins one.
+		stateKey = randomStateKey()
+		slog.Warn("no SUBSTRATE_OAUTH_STATE_KEY: oauth states will not survive a restart")
+	}
+	return engine.WithOAuth(stateKey, cfg.OAuthCallbackURL, nil)
+}
+
 // randomStateKey mints a per-boot HMAC key for the dev path with no
 // configured one.
 func randomStateKey() string {
@@ -595,15 +586,9 @@ func drainEmbeds(ctx context.Context, svc substrate.Service) {
 	}
 }
 
+// setupLogger sets the process logger at level. An unknown level logs at
+// info until Validate refuses it.
 func setupLogger(level string) {
-	lvl := slog.LevelInfo
-	switch strings.ToLower(level) {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	}
+	lvl, _ := config.ParseLogLevel(level)
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
 }

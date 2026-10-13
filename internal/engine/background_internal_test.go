@@ -23,7 +23,7 @@ func backgroundService(logs *syncBuffer) *service {
 }
 
 // A PANIC IN A DETACHED TASK MUST NOT KILL THE PROCESS. These goroutines carry
-// no request, so chi's Recoverer never sees them: without the recover in spawn
+// no request, so the API's recoverer never sees them: without the recover in spawn
 // a panicking judge takes down every request in flight. The log has to name the
 // task, or the crash becomes an unexplained gap in the work instead.
 func TestSpawnContainsAPanicAndLogsIt(t *testing.T) {
