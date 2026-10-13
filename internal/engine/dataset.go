@@ -179,6 +179,9 @@ type dataset struct {
 	// webhookReplays is the door's memory of the signatures it admitted
 	// (webhooksignature.go): memory only, so a restart clears it.
 	webhookReplays webhookReplays
+	// webhookSecretWarnings paces the door's warning for a signing secret
+	// that does not resolve (webhooksignature.go).
+	webhookSecretWarnings webhookSecretWarnings
 	// interruptedRerun is where this open's one walk over the agent
 	// deliveries the last stop interrupted stands (agents.go
 	// rerunInterruptedAgentRuns): rerunNotStarted until a dispatcher pass

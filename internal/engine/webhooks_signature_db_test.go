@@ -5,14 +5,17 @@ package engine_test
 // refused request leaves the repository as it found it.
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -243,6 +246,68 @@ func TestWebhookSignatureRepeatIsOneDelivery(t *testing.T) {
 	}
 	if n := invoked.Load(); n != 2 {
 		t.Fatalf("the callable ran %d times, want twice", n)
+	}
+}
+
+// doorLog is a log sink the test reads while the service's background loops
+// still write to it.
+type doorLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *doorLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *doorLog) lines(substr string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []string
+	for _, line := range strings.Split(l.buf.String(), "\n") {
+		if strings.Contains(line, substr) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// Anyone can reach the unresolvable-secret check with a fresh timestamp and
+// 32 random bytes, so the door logs it once per trigger per minute and the
+// next line counts the refusals it did not log.
+func TestWebhookUnresolvableSecretIsLoggedOncePerMinute(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var logs doorLog
+	var clock atomic.Int64
+	clock.Store(time.Now().UnixNano())
+	now := func() time.Time { return time.Unix(0, clock.Load()).UTC() }
+	svc, ds, _ := newHookDatasetWithOptions(t,
+		[]engine.Option{engine.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))), engine.WithTestWebhookClock(now)},
+		nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
+	putHookTrigger(t, ds, "hook-unfilled", "hookecho", signedSource("", vocabulary.RecordPath("substrate.reamde.dev/core/secret", "hooks/missing")))
+	authority := testdb.Repository(t)
+	const warning = "signing secret does not resolve"
+	probe := func() {
+		t.Helper()
+		_, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-unfilled", "", signedHook(`{"n":"probe"}`, "a-guess", now()))
+		if !errors.Is(err, substrate.ErrNotFound) || !strings.Contains(err.Error(), "signing secret unresolvable") {
+			t.Fatalf("err = %v, want the door's refusal for an unresolvable secret", err)
+		}
+	}
+	for range 5 {
+		probe()
+	}
+	if got := logs.lines(warning); len(got) != 1 {
+		t.Fatalf("five refusals inside a minute logged %d lines, want 1: %q", len(got), got)
+	}
+	clock.Add(int64(time.Minute))
+	probe()
+	got := logs.lines(warning)
+	if len(got) != 2 || !strings.Contains(got[1], "unlogged=4") {
+		t.Fatalf("a refusal a minute later logged %q, want a second line counting the 4 unlogged", got)
 	}
 }
 

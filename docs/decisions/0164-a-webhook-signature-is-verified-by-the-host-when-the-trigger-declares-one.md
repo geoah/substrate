@@ -62,8 +62,9 @@ On a trigger with no key the refusal is the door's one `404`, so a POST
 cannot tell that the repository has the trigger installed. On a keyed
 trigger, where the request has already matched the key, it is `401` with the
 body `webhook signature refused`, which tells the owner's sender that the
-signature is what failed. An unresolvable secret is logged for the operator;
-the other reasons are not.
+signature is what failed. An unresolvable secret is logged for the operator,
+at most once a minute per trigger because any sender reaches that check; the
+other reasons are not logged.
 
 A callable verifies only what the host cannot: a scheme outside the block,
 such as a prefixed header (`sha256=…`) or a signature list (`t=…,v1=…`).

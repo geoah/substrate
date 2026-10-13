@@ -40,6 +40,10 @@ const (
 	// milliseconds: 10^11 seconds is the year 5138 and 10^11 milliseconds is
 	// 1973, so the two units cannot be confused for a real request.
 	webhookTimestampMillisFloor = 100_000_000_000
+	// webhookSecretWarnEvery is how often one trigger's unresolvable signing
+	// secret is logged. Any sender reaches that check with a fresh timestamp
+	// and 32 random bytes, so a line per request would let it fill the log.
+	webhookSecretWarnEvery = time.Minute
 	// maxWebhookReplays bounds the signatures one repository's door
 	// remembers. Past it the one closest to leaving its window is forgotten
 	// early, which reopens that one request to a replay.
@@ -341,8 +345,10 @@ func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req
 	}
 	key, err := ds.webhookSigningKey(ctx, tr)
 	if errors.Is(err, errSigningKeyUnresolved) {
-		ds.svc.log.Warn("substrate: webhook refused, its trigger's signing secret does not resolve",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "error", err)
+		if due, unlogged := ds.webhookSecretWarnings.due(tr.ID, ds.svc.webhookNow()); due {
+			ds.svc.log.Warn("substrate: webhook refused, its trigger's signing secret does not resolve",
+				"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "error", err, "unlogged", unlogged)
+		}
 		return p, signatureRefusedSecret, nil
 	}
 	if err != nil {
@@ -415,6 +421,33 @@ func (sig *webhookSignature) expected(key, stamp string, body []byte) []byte {
 		}
 	}
 	return mac.Sum(nil)
+}
+
+// webhookSecretWarnings paces the warning for a trigger whose signing secret
+// does not resolve to one line per trigger per webhookSecretWarnEvery, each
+// line counting the refusals since the last one that went unlogged.
+type webhookSecretWarnings struct {
+	mu       sync.Mutex
+	last     map[string]time.Time
+	unlogged map[string]int
+}
+
+// due reports whether the trigger's refusal at now is logged, and how many
+// of its refusals since its last line were not.
+func (w *webhookSecretWarnings) due(triggerID string, now time.Time) (bool, int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.last == nil {
+		w.last, w.unlogged = map[string]time.Time{}, map[string]int{}
+	}
+	if last, ok := w.last[triggerID]; ok && now.Sub(last) < webhookSecretWarnEvery {
+		w.unlogged[triggerID]++
+		return false, 0
+	}
+	n := w.unlogged[triggerID]
+	w.last[triggerID] = now
+	delete(w.unlogged, triggerID)
+	return true, n
 }
 
 // webhookReplays is the door's memory of the signatures it admitted under a

@@ -1156,7 +1156,8 @@ match, whose timestamp is missing or outside `maxSkew`, whose body is
 multipart (the door keeps no raw bytes of one), or whose secret does not
 resolve: a missing or empty `secret` record, or a bundle whose `config` holds
 no client secret yet. A secret that does not resolve is also logged for the
-operator. The key is checked first and a wrong one answers `404`, so a
+operator, at most once a minute per trigger, the line counting the refusals
+since the last one: anyone who posts reaches that check. The key is checked first and a wrong one answers `404`, so a
 trigger may carry both. A store that fails while the door reads the secret
 refuses nothing: the door answers `500` and stores nothing, and the sender's
 retry is checked afresh.
