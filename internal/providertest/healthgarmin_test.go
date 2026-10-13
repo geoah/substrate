@@ -247,7 +247,9 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	if w.Properties["sportSource"] != act["activityType"] || storedRefPath(w.Properties["source"]) != obsSource+"/"+acct+"/forerunner265" {
 		t.Errorf("workout %v", w.Properties)
 	}
+	// The source is named for the product, not Garmin's deviceName token.
 	if src := mustGet(t, ds, obsSource, acct+"/forerunner265"); src.Properties["class"] != "watch" ||
+		src.Properties["name"] != "Garmin Forerunner 265" || src.Properties["hardwareModel"] != "forerunner265" ||
 		storedRefPath(src.Properties["account"]) != garminAccountKind+"/"+garminAccountID {
 		t.Errorf("device source %v", src.Properties)
 	}

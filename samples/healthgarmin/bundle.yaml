@@ -15,7 +15,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthgarmin
-  version: 2
+  version: 3
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # The provider is a requirement like the samples: the function reads its
@@ -145,7 +145,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthgarmin-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthgarmin@2"
+    ADAPTER = "healthgarmin@3"
 
     SAMPLE = "samples.substrate.reamde.dev"
     OBSERVATION = SAMPLE + "/observations/observation"
@@ -319,6 +319,25 @@ data:
         return s or "device"
 
 
+    # Garmin's device families by the word deviceName starts with, as Garmin
+    # spells them on the box. A word not here is capitalized.
+    FAMILIES = {"forerunner": "Forerunner", "fenix": "fēnix", "epix": "epix",
+                "venu": "Venu", "vivoactive": "vívoactive", "vivosmart": "vívosmart",
+                "vivomove": "vívomove", "instinct": "Instinct", "enduro": "Enduro",
+                "edge": "Edge", "approach": "Approach", "descent": "Descent",
+                "lily": "Lily", "index": "Index", "quatix": "quatix", "tactix": "tactix"}
+
+
+    def _product(name):
+        """deviceName as the product is named: `forerunner265` is Forerunner
+        265, `fenix7s` fēnix 7S. A name of another shape is kept as sent."""
+        m = re.fullmatch(r"([a-z]+)(\d+)([a-z]*)", str(name or ""))
+        if m is None:
+            return str(name or "")
+        family, number, suffix = m.groups()
+        return "%s %s%s" % (FAMILIES.get(family, family.capitalize()), number, suffix.upper())
+
+
     def _seconds_map(m):
         """A Garmin sample map, seconds after the start as string keys, as sorted
         (seconds, value) pairs. A key that is not a number is dropped."""
@@ -466,7 +485,7 @@ data:
                 return plan.source("manual", "Garmin Connect manual entry", "manual"), "manual"
             return plan.source("unknown-device", "Unknown Garmin device", None), "unknown-device"
         slug = _slug(name)
-        return plan.source(slug, "Garmin %s" % name, "watch", name), slug
+        return plan.source(slug, "Garmin %s" % _product(name), "watch", name), slug
 
 
     def build_daily(c, account):

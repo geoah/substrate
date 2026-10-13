@@ -2190,7 +2190,8 @@ instead of until the next morning.
 class `service`, for everything Garmin pushes without naming a device
 (dailies, sleeps, a scale's weigh-ins, a cuff's pressure), and
 `garmin/<account id>/<deviceName>` for each device an activity names
-(`forerunner265`, class `watch`). An activity that names no device (or
+(`forerunner265`, class `watch`), named for the product (`Garmin Forerunner
+265`, `Garmin fēnix 7S`) with the `deviceName` itself as `hardwareModel`. An activity that names no device (or
 `unknown`) is `.../unknown-device`, so its samples never share the stream
 the daily's heart rate fills, and a hand-entered one is `.../manual`. Each
 points at the Garmin account and is written once, so the owner's edits to

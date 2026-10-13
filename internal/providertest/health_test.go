@@ -39,7 +39,7 @@ const (
 const (
 	healthAppleAdapter     = "healthapple@2"
 	healthWhoopAdapter     = "healthwhoop@4"
-	healthGarminAdapter    = "healthgarmin@2"
+	healthGarminAdapter    = "healthgarmin@3"
 	healthGoogleFitAdapter = "healthgooglefit@4"
 )
 
