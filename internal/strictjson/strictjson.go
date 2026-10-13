@@ -19,8 +19,8 @@ import (
 // DecodeBytes is the shared strict decode: exact-key check, unknown-field
 // refusal, and an END-OF-STREAM check. `useNumber` decodes JSON numbers as
 // json.Number rather than float64, for a caller that must see the exact
-// decimal text before any float rounding; every caller in the tree today
-// decodes without it.
+// decimal text before any float rounding, such as one that passes a filter
+// operand (an `any`) on to the server.
 //
 // The end-of-stream check requires a SECOND decode to return io.EOF rather than
 // trusting Decoder.More() (codex regress #16): More() reports whether another
