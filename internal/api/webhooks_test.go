@@ -47,6 +47,13 @@ func webhookHandler(fid string, err error) (*webhookSvc, http.Handler) {
 	return svc, New(Config{Service: svc})
 }
 
+// webhookHandlerReading is webhookHandler with its own read timeout; each
+// handler has its own slots, so tests that hold them run in parallel.
+func webhookHandlerReading(fid string, timeout time.Duration) http.Handler {
+	svc := &webhookSvc{fakeService: newFakeService(), fid: fid}
+	return New(Config{Service: svc, WebhookReadTimeout: timeout})
+}
+
 func postHook(h http.Handler, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -218,14 +225,14 @@ func TestWebhookInlineCapIsEightMiB(t *testing.T) {
 	}
 }
 
-// A sender that trickles its body holds its slot for webhookReadTimeout at
+// A sender that trickles its body holds its slot for the read timeout at
 // most. Eight such connections take every slot and turn the next delivery
 // away with 503; once the deadline passes each is answered 408 and the door
 // admits again, although the eight are still open.
 func TestWebhookTrickledBodyGivesUpItsSlot(t *testing.T) {
-	defer func(d time.Duration) { webhookReadTimeout = d }(webhookReadTimeout)
-	webhookReadTimeout = 3 * time.Second
-	_, h := webhookHandler("f", nil)
+	t.Parallel()
+	const webhookReadTimeout = time.Second
+	h := webhookHandlerReading("f", webhookReadTimeout)
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 	post := func() int {
@@ -277,9 +284,9 @@ func TestWebhookTrickledBodyGivesUpItsSlot(t *testing.T) {
 // bound in time. A body whose second half arrives two deadlines after its
 // headers is answered 408 when it is JSON and 202 when it is multipart.
 func TestWebhookMultipartBodyGetsItsBoundsShareOfTime(t *testing.T) {
-	defer func(d time.Duration) { webhookReadTimeout = d }(webhookReadTimeout)
-	webhookReadTimeout = time.Second
-	_, h := webhookHandler("hook-slow", nil)
+	t.Parallel()
+	const webhookReadTimeout = 400 * time.Millisecond
+	h := webhookHandlerReading("hook-slow", webhookReadTimeout)
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 	var form bytes.Buffer

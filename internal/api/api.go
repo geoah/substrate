@@ -76,6 +76,9 @@ type Config struct {
 	// requests per (client IP, repository), per repository and globally; zero
 	// selects the default.
 	AuthInterval time.Duration
+	// WebhookReadTimeout is how long a webhook delivery may take to send a
+	// body held to the inline cap; zero selects two minutes.
+	WebhookReadTimeout time.Duration
 	// Metrics mounts the Prometheus exposition at GET /metrics, unauthenticated
 	// and DB-free like /healthz (SUBSTRATE_METRICS=1). The instruments record
 	// either way; this decides only whether the port SERVES them. Off, the
@@ -93,6 +96,11 @@ type handler struct {
 	totpDisabled bool
 	catalog      *catalog.Catalog
 	consoleURL   string
+	// webhookSem holds the webhook door's in-flight deliveries
+	// (maxConcurrentWebhooks), and webhookReadTimeout bounds each body's
+	// read.
+	webhookSem         chan struct{}
+	webhookReadTimeout time.Duration
 }
 
 // New builds the router.
@@ -113,6 +121,12 @@ func New(cfg Config) http.Handler {
 		totpDisabled: cfg.TOTPDisabled,
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
+
+		webhookSem:         make(chan struct{}, maxConcurrentWebhooks),
+		webhookReadTimeout: cfg.WebhookReadTimeout,
+	}
+	if h.webhookReadTimeout <= 0 {
+		h.webhookReadTimeout = defaultWebhookReadTimeout
 	}
 
 	r := chi.NewRouter()

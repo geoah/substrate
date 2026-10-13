@@ -27,30 +27,28 @@ const (
 	maxWebhookInline      = 8 << 20
 	maxWebhookBody        = 32 << 20
 	maxWebhookHeaderBytes = 16 << 10
-	// maxConcurrentWebhooks bounds in-flight deliveries process-wide, the
-	// PUT /blobs pattern: a burst past it is answered 503 with Retry-After
-	// rather than buffered.
+	// maxConcurrentWebhooks bounds in-flight deliveries per handler, which
+	// a server builds once, so process-wide: the PUT /blobs pattern, a burst
+	// past it answered 503 with Retry-After rather than buffered.
 	maxConcurrentWebhooks = 8
+	// defaultWebhookReadTimeout bounds how long a delivery holding a slot may
+	// take to send a body held to the inline cap (Config.WebhookReadTimeout).
+	// The server sets no whole-request read deadline, so without it a sender
+	// trickling bytes holds its slot for as long as it likes, and eight of
+	// them close the door to every repository. Two minutes carries the 8 MiB
+	// inline cap at about 560 kbit/s.
+	defaultWebhookReadTimeout = 2 * time.Minute
 )
 
-var webhookSem = make(chan struct{}, maxConcurrentWebhooks)
-
-// webhookReadTimeout bounds how long a delivery holding a slot may take to
-// send a body held to the inline cap. The server sets no whole-request read
-// deadline, so without this a sender trickling bytes holds its slot for as
-// long as it likes, and eight of them close the door to every repository.
-// Two minutes carries the 8 MiB inline cap at about 560 kbit/s.
-var webhookReadTimeout = 2 * time.Minute
-
-// webhookBodyTimeout is the read deadline for r's body: webhookReadTimeout,
+// webhookBodyTimeout is the read deadline for r's body: the read timeout,
 // and for a multipart request the same time per byte of its larger bound
 // (eight minutes for 32 MiB), so a sender at the rate the inline cap needs
 // meets either deadline.
-func webhookBodyTimeout(r *http.Request) time.Duration {
+func (h *handler) webhookBodyTimeout(r *http.Request) time.Duration {
 	if mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mediaType == "multipart/form-data" {
-		return webhookReadTimeout * (maxWebhookBody / maxWebhookInline)
+		return h.webhookReadTimeout * (maxWebhookBody / maxWebhookInline)
 	}
-	return webhookReadTimeout
+	return h.webhookReadTimeout
 }
 
 // The headers a delivery never carries into a callable: whatever credential
@@ -73,8 +71,8 @@ var webhookHeaderDenylist = map[string]bool{
 // never a response.
 func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	select {
-	case webhookSem <- struct{}{}:
-		defer func() { <-webhookSem }()
+	case h.webhookSem <- struct{}{}:
+		defer func() { <-h.webhookSem }()
 	default:
 		writeUnavailable(w, time.Second, "webhook door is busy, retry")
 		return
@@ -84,7 +82,7 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	// body keeps it, which bounds the server's read of what is left. A
 	// writer that cannot take a deadline (a test's recorder) has no
 	// connection to hold.
-	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(webhookBodyTimeout(r)))
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(h.webhookBodyTimeout(r)))
 	req, status, err := readWebhookRequest(w, r)
 	if err != nil {
 		writeError(w, status, codeBadRequest, err.Error())
