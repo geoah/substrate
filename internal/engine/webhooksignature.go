@@ -300,82 +300,108 @@ func refuseSignature(reason string) error {
 
 // checkWebhookSignature verifies the request against the trigger's declared
 // signature, measuring the timestamp against at, the door's receipt time. A
-// trigger declaring none passes.
-func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) error {
-	reason, err := ds.webhookSignatureRefusal(ctx, tr, req, at)
+// trigger declaring none passes with a zero presentedSignature.
+func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) (presentedSignature, error) {
+	p, reason, err := ds.webhookSignatureRefusal(ctx, tr, req, at)
 	if err != nil {
-		return err
+		return presentedSignature{}, err
 	}
 	if reason != "" {
-		return refuseSignature(reason)
+		return presentedSignature{}, refuseSignature(reason)
 	}
-	return nil
+	return p, nil
 }
 
 // webhookSignatureRefusal is the reason the trigger's declared signature
 // refuses the request received at at, one of the signatureRefused words, or
-// "" when it verifies or none is declared. The MAC compare is constant-time.
-// err is a store fault met while resolving the key, which decides nothing
-// about the request.
-func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) (string, error) {
+// "" when it verifies or none is declared, with what the request presented.
+// The MAC compare is constant-time. err is a store fault met while resolving
+// the key, which decides nothing about the request.
+func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) (presentedSignature, string, error) {
 	sig := tr.WebhookSignature
 	if sig == nil {
-		return "", nil
+		return presentedSignature{}, "", nil
 	}
-	// The door parses a multipart body into parts and keeps no raw bytes,
-	// so there is nothing byte-exact to compute a MAC over.
-	if req.Parts != nil {
-		return signatureRefusedMultipart, nil
-	}
-	provided := strings.TrimSpace(req.Headers[sig.Header])
-	if provided == "" {
-		return signatureRefusedMissing, nil
-	}
-	var stamp string
-	if sig.TimestampHeader != "" {
-		stamp = strings.TrimSpace(req.Headers[sig.TimestampHeader])
-		signedAt, ok := parseWebhookTimestamp(stamp)
-		if !ok {
-			return signatureRefusedTimestamp, nil
-		}
-		if at.Sub(signedAt).Abs() > sig.MaxSkew {
-			return signatureRefusedStale, nil
-		}
-	}
-	var got []byte
-	var err error
-	if sig.Encoding == "hex" {
-		got, err = hex.DecodeString(provided)
-	} else {
-		got, err = base64.StdEncoding.DecodeString(provided)
-	}
-	if err != nil || len(got) != sha256.Size {
-		return signatureRefusedInvalid, nil
+	p, reason := sig.presented(req, at)
+	if reason != "" {
+		return p, reason, nil
 	}
 	key, err := ds.webhookSigningKey(ctx, tr)
 	if errors.Is(err, errSigningKeyUnresolved) {
 		ds.svc.log.Warn("substrate: webhook refused, its trigger's signing secret does not resolve",
 			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "error", err)
-		return signatureRefusedSecret, nil
+		return p, signatureRefusedSecret, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("substrate: webhook %s: resolve the signing secret: %w", logSafeID(tr.ID), err)
+		return p, "", fmt.Errorf("substrate: webhook %s: resolve the signing secret: %w", logSafeID(tr.ID), err)
 	}
+	if !hmac.Equal(sig.expected(key, p.stamp, req.Body), p.mac) {
+		return p, signatureRefusedInvalid, nil
+	}
+	return p, "", nil
+}
+
+// presentedSignature is what a request presents to its trigger's declared
+// signature: the decoded MAC, the timestamp header's value as sent, and the
+// instant it names, zero when the declaration signs no timestamp.
+type presentedSignature struct {
+	mac      []byte
+	stamp    string
+	signedAt time.Time
+}
+
+// presented reads the request's signature under the declaration, received
+// at at, or names the refusal: every check that needs no key, so a request
+// that fails one costs no key lookup.
+func (sig *webhookSignature) presented(req substrate.WebhookRequest, at time.Time) (presentedSignature, string) {
+	var p presentedSignature
+	// The door parses a multipart body into parts and keeps no raw bytes,
+	// so there is nothing byte-exact to compute a MAC over.
+	if req.Parts != nil {
+		return p, signatureRefusedMultipart
+	}
+	provided := strings.TrimSpace(req.Headers[sig.Header])
+	if provided == "" {
+		return p, signatureRefusedMissing
+	}
+	if sig.TimestampHeader != "" {
+		p.stamp = strings.TrimSpace(req.Headers[sig.TimestampHeader])
+		signedAt, ok := parseWebhookTimestamp(p.stamp)
+		if !ok {
+			return p, signatureRefusedTimestamp
+		}
+		if at.Sub(signedAt).Abs() > sig.MaxSkew {
+			return p, signatureRefusedStale
+		}
+		p.signedAt = signedAt
+	}
+	var err error
+	if sig.Encoding == "hex" {
+		p.mac, err = hex.DecodeString(provided)
+	} else {
+		p.mac, err = base64.StdEncoding.DecodeString(provided)
+	}
+	if err != nil || len(p.mac) != sha256.Size {
+		return p, signatureRefusedInvalid
+	}
+	return p, ""
+}
+
+// expected is the MAC the provider computes under key over the declared
+// message: its literals, the timestamp header's value as sent and the body.
+func (sig *webhookSignature) expected(key, stamp string, body []byte) []byte {
 	mac := hmac.New(sha256.New, []byte(key))
-	for _, p := range sig.Message {
-		switch p.field {
+	for _, part := range sig.Message {
+		switch part.field {
 		case "body":
-			mac.Write(req.Body)
+			mac.Write(body)
 		case "timestamp":
 			mac.Write([]byte(stamp))
 		default:
-			mac.Write([]byte(p.literal))
+			mac.Write([]byte(part.literal))
 		}
 	}
-	if !hmac.Equal(mac.Sum(nil), got) {
-		return signatureRefusedInvalid, nil
-	}
-	return "", nil
+	return mac.Sum(nil)
 }
 
 // requestSignatureVerified is the stored request's key saying the door
@@ -428,7 +454,7 @@ func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger,
 	if err != nil {
 		return err
 	}
-	reason, err := ds.webhookSignatureRefusal(ctx, tr, stored, at)
+	_, reason, err := ds.webhookSignatureRefusal(ctx, tr, stored, at)
 	if err != nil {
 		return err
 	}
