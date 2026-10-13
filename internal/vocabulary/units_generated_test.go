@@ -28,8 +28,9 @@ import (
 var updateGenerated = flag.Bool("update", false, "rewrite the console's unit table and docs/units.md from the engine's")
 
 const (
-	consoleUnitTable = "../../web/console/src/lib/units.table.json"
-	unitsPage        = "../../docs/units.md"
+	consoleUnitTable  = "../../web/console/src/lib/units.table.json"
+	consolePrintCases = "../../web/console/src/lib/units.prints.json"
+	unitsPage         = "../../docs/units.md"
 )
 
 type consoleMeasure struct {
@@ -42,10 +43,24 @@ type consoleMeasure struct {
 	Note      string   `json:"note,omitempty"`
 }
 
+type consolePrint struct {
+	Prefixes    map[string]string `json:"prefixes"`
+	Atoms       map[string]string `json:"atoms"`
+	Prints      map[string]string `json:"prints"`
+	Wholes      []string          `json:"wholes"`
+	Annotations []string          `json:"annotations"`
+}
+
 type consoleTable struct {
 	Measures []consoleMeasure `json:"measures"`
 	// Symbols is every listed code's print symbol.
 	Symbols map[string]string `json:"symbols"`
+	// SymbolCodes are the print symbols a person may type for a listed code:
+	// each one no code and no alias spells, so reading one never turns a
+	// stored code into another (`pt` is the picotonne, never the pint).
+	SymbolCodes map[string]string `json:"symbolCodes"`
+	// Print is what the engine's print renderer reads beside the grammar.
+	Print consolePrint `json:"print"`
 	// Primary is where a code two measures list reads undeclared.
 	Primary map[string]string `json:"primary"`
 	// Aliases are the input spellings and the codes they map to.
@@ -55,8 +70,10 @@ type consoleTable struct {
 
 func renderConsoleTable(t *testing.T) []byte {
 	t.Helper()
-	tbl := consoleTable{Symbols: map[string]string{}, Primary: map[string]string{}, Aliases: vocabulary.UnitAliases(),
-		Comparators: vocabulary.QuantityComparators}
+	rules := vocabulary.UnitPrintRules()
+	tbl := consoleTable{Symbols: map[string]string{}, SymbolCodes: map[string]string{}, Primary: map[string]string{},
+		Aliases: vocabulary.UnitAliases(), Comparators: vocabulary.QuantityComparators,
+		Print: consolePrint{rules.Prefixes, rules.Atoms, rules.Prints, rules.Wholes, rules.Annotations}}
 	seen := map[string]int{}
 	for _, m := range vocabulary.Measures() {
 		tbl.Measures = append(tbl.Measures, consoleMeasure{
@@ -67,6 +84,22 @@ func renderConsoleTable(t *testing.T) []byte {
 			tbl.Symbols[code] = vocabulary.UnitSymbol(code)
 			seen[code]++
 		}
+	}
+	aliases, refused := vocabulary.UnitAliases(), vocabulary.RefusedUnitSpellings()
+	shared := map[string]bool{}
+	for code, symbol := range tbl.Symbols {
+		_, alias := aliases[symbol]
+		_, spent := refused[symbol]
+		if _, err := vocabulary.ParseUnit(symbol); symbol == "" || symbol == code || alias || spent || err == nil {
+			continue
+		}
+		if _, dup := tbl.SymbolCodes[symbol]; dup {
+			shared[symbol] = true
+		}
+		tbl.SymbolCodes[symbol] = code
+	}
+	for symbol := range shared {
+		delete(tbl.SymbolCodes, symbol)
 	}
 	for code, n := range seen {
 		if n > 1 {
@@ -88,19 +121,60 @@ func renderConsoleTable(t *testing.T) []byte {
 }
 
 func TestConsoleUnitsMatchTheEngine(t *testing.T) {
-	want := renderConsoleTable(t)
-	if *updateGenerated {
-		if err := os.WriteFile(consoleUnitTable, want, 0o644); err != nil {
-			t.Fatal(err)
+	for path, want := range map[string][]byte{
+		consoleUnitTable:  renderConsoleTable(t),
+		consolePrintCases: renderPrintCases(t),
+	} {
+		if *updateGenerated {
+			if err := os.WriteFile(path, want, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read the console's copy: %v (rewrite it with -update)", err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("%s differs from the engine's unit table: rewrite it with -update, never by hand", path)
 		}
 	}
-	got, err := os.ReadFile(consoleUnitTable)
-	if err != nil {
-		t.Fatalf("read the console's copy: %v (rewrite it with -update)", err)
+}
+
+// printCaseCompounds are codes no table row lists, which the console renders
+// with the engine's rules: units.test.ts holds its symbol for each of them,
+// and for every listed code and alias target, to the engine's.
+var printCaseCompounds = []string{
+	"uL", "fL", "dm3", "cm3", "m+2", "m02", "s-1", "/ms", "GJ", "Mg", "mK", "MHz", "TBy", "kN.m", "mrad",
+	"kg/h", "ug/min", "g/(kg)", "umol/mol", "mmol/(kg.h)", "kcal/(kg.h)", "[lb_av]/[ft_i]3", "mSv/h",
+	"u[IU]/mL", "k[IU]", "10*3/mL", "10^3/mL", "10*3{copies}", "10*3{copies}/mL", "kg{body_wt}", "mL{total}",
+	"{beats}/min", "{steps}", "{steps}/h", "kV.A", "kV.A{reactive}", "W{reactive}", "MW.h", "kA.h", "mGy",
+	"kBq", "cm[Hg]", "pt", "ft", "/(s.m2)", "(10*3{copies})",
+}
+
+// renderPrintCases is the engine's print symbol of every case the console
+// is held to.
+func renderPrintCases(t *testing.T) []byte {
+	t.Helper()
+	cases := map[string]string{}
+	for _, code := range append(append(vocabulary.UnitCodes(), printCaseCompounds...), aliasTargets()...) {
+		cases[code] = vocabulary.UnitSymbol(code)
 	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("%s differs from the engine's unit table: rewrite it with -update, never by hand", consoleUnitTable)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cases); err != nil {
+		t.Fatal(err)
 	}
+	return buf.Bytes()
+}
+
+func aliasTargets() []string {
+	var out []string
+	for _, code := range vocabulary.UnitAliases() {
+		out = append(out, code)
+	}
+	return out
 }
 
 func TestUnitsPage(t *testing.T) {

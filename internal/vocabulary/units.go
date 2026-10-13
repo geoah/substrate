@@ -925,6 +925,45 @@ func OrderFactor(measure, code string) (factor, offset *big.Rat, err error) {
 	return factor, offset, nil
 }
 
+// PrintRules are what Unit.Print reads beside the grammar, for a client that
+// renders a print symbol itself: each prefix's and atom's print, the print of
+// every code unitPrints names, the ones of them whose first atom carries no
+// prefix (prefixedPrint's), and the annotations that are a measure's
+// identity.
+type PrintRules struct {
+	Prefixes    map[string]string
+	Atoms       map[string]string
+	Prints      map[string]string
+	Wholes      []string
+	Annotations []string
+}
+
+// UnitPrintRules answers the print rules.
+func UnitPrintRules() PrintRules {
+	r := PrintRules{Prefixes: map[string]string{}, Atoms: map[string]string{}, Prints: map[string]string{}}
+	for _, p := range prefixDefs {
+		r.Prefixes[p.code] = p.print
+	}
+	for _, a := range atomDefs {
+		r.Atoms[a.code] = a.print
+	}
+	for code, print := range unitPrints {
+		r.Prints[code] = print
+	}
+	if t, err := loadTable(); err == nil {
+		for _, codes := range t.prints {
+			r.Wholes = append(r.Wholes, codes...)
+		}
+	}
+	sort.Strings(r.Wholes)
+	for _, d := range measureDefs {
+		if d.annotation != "" {
+			r.Annotations = append(r.Annotations, d.annotation)
+		}
+	}
+	return r
+}
+
 // UnitSymbol is a code's print symbol, or the code itself when it does not
 // parse.
 func UnitSymbol(code string) string {

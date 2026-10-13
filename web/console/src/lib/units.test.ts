@@ -5,6 +5,8 @@
 
 import { beforeEach, describe, expect, it } from "vitest"
 
+import prints from "./units.prints.json"
+
 import {
   MEASURES,
   canonicalDecimal,
@@ -51,7 +53,7 @@ describe("the unit table", () => {
     expect(unitSymbol("{count}")).toBe("count")
   })
 
-  it("prints a simple compound the way the engine does, else the code", () => {
+  it("prints a compound the way the engine does", () => {
     expect(unitSymbol("{beats}/min")).toBe("beats/min")
     expect(unitSymbol("{steps}")).toBe("steps")
     expect(unitSymbol("ug/min")).toBe("μg/min")
@@ -59,11 +61,19 @@ describe("the unit table", () => {
     expect(unitSymbol("cm3")).toBe("cm³")
     expect(unitSymbol("s-1")).toBe("s⁻¹")
     expect(unitSymbol("GJ")).toBe("GJ")
-    expect(unitSymbol("kcal/(kg.h)")).toBe("kcal/(kg.h)")
-    // An unlisted power-of-ten compound reads as its code; a listed one
-    // carries the engine's symbol (number-concentration lists 10*3/uL).
-    expect(unitSymbol("10*3/mL")).toBe("10*3/mL")
+    expect(unitSymbol("uL")).toBe("μL")
+    expect(unitSymbol("kcal/(kg.h)")).toBe("kcal/(kg·h)")
+    expect(unitSymbol("10*3/mL")).toBe("10³/mL")
     expect(unitSymbol("10*3/uL")).toBe("10³/μL")
+    expect(unitSymbol("kV.A{reactive}")).toBe("kvar")
+    // A code naming an atom the table does not carry prints as itself.
+    expect(unitSymbol("furlong/h")).toBe("furlong/h")
+  })
+
+  it("prints every code the engine's own print is pinned for", () => {
+    for (const [code, print] of Object.entries(prints)) {
+      expect([code, unitSymbol(code)]).toEqual([code, print])
+    }
   })
 
   it("places a listed code in its measure, the primary one where two list it", () => {
@@ -129,6 +139,17 @@ describe("canonicalUnit", () => {
   it("leaves what it cannot read for the server", () => {
     expect(canonicalUnit("GJ")).toBe("GJ")
     expect(canonicalUnit("furlong")).toBe("furlong")
+  })
+
+  it("never reads a code as another code's print symbol", () => {
+    // pt is the picotonne and ft the femtotonne: a stored value in either
+    // edits back to itself, never to a pint or a foot.
+    expect(canonicalUnit("pt")).toBe("pt")
+    expect(canonicalUnit("ft")).toBe("ft")
+    expect(parseQuantityText(formatQuantityText(q("2", "pt")))).toEqual({
+      value: q("2", "pt"),
+    })
+    expect(canonicalUnit("count")).toBe("count")
   })
 })
 

@@ -13,9 +13,10 @@
  *
  * The table is `units.table.json`, which a Go test writes from the engine's
  * own table (`TestConsoleUnitsMatchTheEngine`), so it is imported and never
- * edited. The console cannot parse UCUM: the grammar admits compounds the
- * table does not list (`GJ`, `kcal/(kg.h)`), and those are shown as written
- * and left to the server to judge. */
+ * edited. It carries the print rules too, so `unitSymbol` renders a compound
+ * the table does not list (`GJ`, `kcal/(kg.h)`) as the engine's titles do,
+ * held to the engine's own answers by `units.prints.json`. The console does
+ * not judge such a code: whether it belongs to a measure is the server's. */
 
 import table from "./units.table.json"
 
@@ -67,6 +68,10 @@ export const COMPARATORS: readonly Comparator[] =
 const SYMBOLS: Record<string, string> = table.symbols
 const PRIMARY: Record<string, string> = table.primary
 const ALIASES: Record<string, string> = table.aliases
+/** The print symbols a person may type for a listed code. None of them is a
+ * code or an alias itself, so reading one never turns a stored code into
+ * another (`pt` stays the picotonne). */
+const SYMBOL_CODES: Record<string, string> = table.symbolCodes
 
 const BY_NAME = new Map(MEASURES.map((m) => [m.name, m]))
 
@@ -75,22 +80,6 @@ const LISTED_IN = new Map<string, string[]>()
 for (const m of MEASURES) {
   for (const code of m.units) {
     LISTED_IN.set(code, [...(LISTED_IN.get(code) ?? []), m.name])
-  }
-}
-
-/** A print symbol to the one listed code it prints for. A symbol two codes
- * share, or one that is itself a listed code, reads as nothing here. */
-const BY_SYMBOL = new Map<string, string>()
-{
-  const shared = new Set<string>()
-  for (const [code, symbol] of Object.entries(SYMBOLS)) {
-    if (!symbol || symbol === code) continue
-    if (BY_SYMBOL.has(symbol)) shared.add(symbol)
-    BY_SYMBOL.set(symbol, code)
-  }
-  for (const symbol of shared) BY_SYMBOL.delete(symbol)
-  for (const symbol of [...BY_SYMBOL.keys()]) {
-    if (Object.hasOwn(SYMBOLS, symbol)) BY_SYMBOL.delete(symbol)
   }
 }
 
@@ -141,64 +130,152 @@ const SUPERSCRIPT: Record<string, string> = {
   "-": "⁻",
 }
 
-/** One component of a compound code as the engine prints it, or undefined
- * where only the grammar could say. An annotation alone prints as its text
- * (`{beats}`), one beside a listed unit is dropped (`mL{total}`), digits stay
- * digits, and a listed unit raised to a power wears it in superscript. */
-function componentSymbol(part: string): string | undefined {
-  if (/^\d+$/.test(part)) return part
-  if (Object.hasOwn(SYMBOLS, part)) return SYMBOLS[part]
-  const note = /^\{([^{}]*)\}$/.exec(part)
-  if (note) return note[1]
-  const annotated = /^(.+?)\{[^{}]*\}$/.exec(part)
-  if (annotated && Object.hasOwn(SYMBOLS, annotated[1])) {
-    return SYMBOLS[annotated[1]]
-  }
-  const powered = /^(.*[^\d-])(-?\d+)$/.exec(part)
-  if (powered && Object.hasOwn(SYMBOLS, powered[1])) {
-    const exp = [...powered[2]].map((c) => SUPERSCRIPT[c]).join("")
-    return `${SYMBOLS[powered[1]]}${exp}`
-  }
-  return undefined
+const PRINT = table.print
+const PREFIX_PRINTS: Record<string, string> = PRINT.prefixes
+/** The prefixes longest first, so `da` is tried before `d`. */
+const PREFIXES = Object.keys(PREFIX_PRINTS).sort((a, b) => b.length - a.length)
+const ATOM_PRINTS: Record<string, string> = PRINT.atoms
+const PRINTS: Record<string, string> = PRINT.prints
+const WHOLES = new Set(PRINT.wholes)
+const IDENTITY_NOTES = new Set(PRINT.annotations)
+const POWERS_OF_TEN = new Set(["10*", "10^"])
+
+type PrintNode =
+  | { kind: "unit"; prefix: string; atom: string; exp?: number; note?: string }
+  | { kind: "number"; digits: string; note?: string }
+  | { kind: "note"; text: string }
+  | { kind: "group"; term: PrintTerm }
+
+interface PrintTerm {
+  reciprocal: boolean
+  parts: PrintNode[]
+  ops: string[]
 }
 
-/** A code's print symbol, as the server's titles print it: `°C` for Cel, `μg`
- * for ug, `kWh` for kW.h, `beats/min` for {beats}/min, nothing for `1`. A code
- * the console cannot read (a group, a power of ten) prints as itself. */
-export function unitSymbol(code: string): string {
-  if (Object.hasOwn(SYMBOLS, code)) return SYMBOLS[code]
-  // Split on the top-level `.` and `/`, never inside brackets or braces.
-  const parts: string[] = []
-  const ops: string[] = []
-  let depth = 0
-  let start = 0
-  for (let i = 0; i < code.length; i++) {
-    const c = code[i]
-    if (c === "(") return code
-    if (c === "[" || c === "{") depth++
-    else if (c === "]" || c === "}") depth--
-    else if (depth === 0 && (c === "." || c === "/")) {
-      if (i === 0 && c === "/") {
-        ops.push("/")
-        start = 1
-        continue
-      }
-      parts.push(code.slice(start, i))
-      ops.push(c)
-      start = i + 1
+/** A code read into the components the engine's print renderer walks
+ * (`internal/vocabulary/unitsgrammar.go`), or undefined where an atom is not
+ * one the table carries. It holds nothing to the grammar's bounds: a stored
+ * code already passed them. */
+function readPrintTerm(code: string): PrintTerm | undefined {
+  let i = 0
+  const annotation = (): string | undefined => {
+    const end = code.indexOf("}", i + 1)
+    if (end < 0) return undefined
+    const text = code.slice(i + 1, end)
+    i = end + 1
+    return text
+  }
+  const term = (): PrintTerm | undefined => {
+    const t: PrintTerm = { reciprocal: false, parts: [], ops: [] }
+    for (;;) {
+      const part = component()
+      if (!part) return undefined
+      t.parts.push(part)
+      const c = code[i]
+      if (c !== "." && c !== "/") return t
+      t.ops.push(c)
+      i++
     }
   }
-  parts.push(code.slice(start))
-  const printed = parts.map(componentSymbol)
-  if (printed.some((p) => p === undefined || p === "")) return code
-  const lead = code.startsWith("/") ? "/" : ""
-  const rest = lead ? ops.slice(1) : ops
-  return (
-    lead +
-    printed
-      .map((p, i) => (i === 0 ? p : `${rest[i - 1] === "." ? "·" : "/"}${p}`))
-      .join("")
-  )
+  const component = (): PrintNode | undefined => {
+    const c = code[i]
+    if (c === "(") {
+      i++
+      const inner = term()
+      if (!inner || code[i] !== ")") return undefined
+      i++
+      return { kind: "group", term: inner }
+    }
+    if (c === "{") {
+      const text = annotation()
+      return text === undefined ? undefined : { kind: "note", text }
+    }
+    const start = i
+    let depth = 0
+    while (i < code.length) {
+      const ch = code[i]
+      if (depth === 0 && ".()/{}".includes(ch)) break
+      if (ch === "[") depth++
+      else if (ch === "]") depth--
+      i++
+    }
+    const symbol = code.slice(start, i)
+    if (!symbol || depth !== 0) return undefined
+    let note: string | undefined
+    if (code[i] === "{") {
+      note = annotation()
+      if (note === undefined) return undefined
+    }
+    if (/^\d+$/.test(symbol)) return { kind: "number", digits: symbol, note }
+    const powered = /^(.*?[^\d+-])([+-]?\d+)$/.exec(symbol)
+    const head = powered ? powered[1] : symbol
+    const exp = powered ? Number(powered[2]) : undefined
+    if (Object.hasOwn(ATOM_PRINTS, head)) {
+      return { kind: "unit", prefix: "", atom: head, exp, note }
+    }
+    for (const prefix of PREFIXES) {
+      const atom = head.slice(prefix.length)
+      if (head.startsWith(prefix) && atom && Object.hasOwn(ATOM_PRINTS, atom)) {
+        return { kind: "unit", prefix, atom, exp, note }
+      }
+    }
+    return undefined
+  }
+  if (code[0] === "/") i++
+  const t = term()
+  if (!t || i !== code.length) return undefined
+  t.reciprocal = code[0] === "/"
+  return t
+}
+
+function renderPrintTerm(t: PrintTerm): string {
+  let out = t.reciprocal ? "/" : ""
+  t.parts.forEach((part, n) => {
+    if (n > 0) out += t.ops[n - 1] === "." ? "·" : "/"
+    switch (part.kind) {
+      case "unit":
+        out += PREFIX_PRINTS[part.prefix] ?? ""
+        out += ATOM_PRINTS[part.atom]
+        if (part.exp !== undefined && part.exp !== 1) {
+          out += [...String(part.exp)].map((c) => SUPERSCRIPT[c]).join("")
+        }
+        if (
+          part.note !== undefined &&
+          (POWERS_OF_TEN.has(part.atom) || IDENTITY_NOTES.has(part.note))
+        ) {
+          out += ` ${part.note}`
+        }
+        break
+      case "number":
+        out += part.digits
+        if (part.note !== undefined) out += ` ${part.note}`
+        break
+      case "note":
+        out += part.text
+        break
+      case "group":
+        out += `(${renderPrintTerm(part.term)})`
+        break
+    }
+  })
+  return out
+}
+
+/** A code's print symbol, as the server's titles print it (`Unit.Print`):
+ * `°C` for Cel, `μg` for ug, `kWh` for kW.h, `kvar` for kV.A{reactive},
+ * `beats/min` for {beats}/min, `μL` for uL, nothing for `1`. A code naming an
+ * atom the table does not carry prints as itself. */
+export function unitSymbol(code: string): string {
+  if (Object.hasOwn(PRINTS, code)) return PRINTS[code]
+  if (Object.hasOwn(SYMBOLS, code)) return SYMBOLS[code]
+  const term = readPrintTerm(code)
+  if (!term) return code
+  const first = term.parts[0]
+  if (!term.reciprocal && first?.kind === "unit" && first.prefix) {
+    const whole = code.slice(first.prefix.length)
+    if (WHOLES.has(whole)) return PREFIX_PRINTS[first.prefix] + PRINTS[whole]
+  }
+  return renderPrintTerm(term)
 }
 
 /** A unit as the picker offers it: the symbol a reader knows, with the code
@@ -241,14 +318,15 @@ function engineUnit(input: string): string {
 
 /** What a person types as the code a quantity stores: the engine's own
  * reading (aliases, micro signs, superscripts), and then a listed unit's
- * print symbol (`lb`, `mph`, `ft³`) as its code. The second step is the
- * console's alone, so a value it sends always carries a code; the server
- * reads codes and aliases only. Anything else comes back as typed, for the
- * server to judge. */
+ * print symbol (`mph`, `ft³`) as its code where no code and no alias spells
+ * it. The second step is the console's alone, so a value it sends always
+ * carries a code; the server reads codes and aliases only. Anything else
+ * comes back as typed, for the server to judge. */
 export function canonicalUnit(input: string): string {
   const code = engineUnit(input)
   if (Object.hasOwn(SYMBOLS, code)) return code
-  return BY_SYMBOL.get(input.trim()) ?? code
+  const typed = input.trim()
+  return Object.hasOwn(SYMBOL_CODES, typed) ? SYMBOL_CODES[typed] : code
 }
 
 const DECIMAL = /^[+-]?\d+(\.\d+)?$/
