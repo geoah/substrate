@@ -322,6 +322,16 @@ export function OverlayChart({
     return s.channel ? `${name} (${s.channel})` : name
   }
 
+  // A read that landed with no rows beside a metric that has some: the
+  // chart draws nothing of it and no axis for it, so its row says so.
+  const empty = (state: PlotState) =>
+    buckets.length > 0 &&
+    Boolean(state.plot.read) &&
+    !state.pending &&
+    !state.failed &&
+    !state.held &&
+    state.rows.length === 0
+
   const all = drawnSeries(states, buckets, sideOf, labelOf, local?.size)
   const shown = all.filter((d) => !hidden.has(d.key))
   // A level's band is drawn where its metric shows one line: under several,
@@ -483,10 +493,11 @@ export function OverlayChart({
           <PlotHead
             key={state.plot.metric}
             state={state}
+            empty={empty(state)}
             series={all.filter((d) => d.plot === state.plot)}
             named={!title || drawn.length > 1}
             axis={
-              twoAxes
+              twoAxes && !empty(state)
                 ? `${sideOf(state.plot) === "left" ? "Left" : "Right"} axis, ${unitWords(state.plot.unit)}`
                 : undefined
             }
@@ -635,6 +646,7 @@ function drawnSeries(
  * why it reads nothing, and a failed read's reason. */
 function PlotHead({
   state,
+  empty,
   series,
   named,
   axis,
@@ -647,6 +659,8 @@ function PlotHead({
   onStatistic,
 }: {
   state: PlotState
+  /** Its read landed with no rows while the chart draws other metrics. */
+  empty: boolean
   /** The metric's own series, in legend order. */
   series: Drawn[]
   /** Name the metric: the chart's title does not already. */
@@ -762,6 +776,11 @@ function PlotHead({
       )}
       {plot.blocked && (
         <p className="text-[12.5px] text-muted-foreground">{plot.blocked}</p>
+      )}
+      {empty && (
+        <p className="text-[12.5px] text-muted-foreground">
+          Nothing measured in this range.
+        </p>
       )}
       {!pending &&
         !failed &&

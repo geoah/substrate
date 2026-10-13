@@ -1240,6 +1240,28 @@ describe("the charts", () => {
     ).toContain("Right axis, steps")
   })
 
+  it("says a metric with no rows measured nothing, beside one that draws", async () => {
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}`, false, (read) =>
+      read.aggregate.metric?.ref === BODY_MASS
+        ? { ...WEIGHT, rows: [] }
+        : overlaid(read)
+    )
+    const chart = await lane("Weight and Steps")
+    await waitFor(() =>
+      expect(chart.querySelector("[data-axis=right]")).not.toBe(null)
+    )
+    const weight = within(chart).getByRole("group", { name: "Weight" })
+    await waitFor(() =>
+      expect(weight.textContent).toContain("Nothing measured in this range.")
+    )
+    // The chart draws no axis for it, so its row claims none.
+    expect(weight.textContent).not.toContain("Left axis")
+    expect(chart.querySelector("[data-axis=left]")).toBe(null)
+    expect(
+      within(chart).getByRole("group", { name: "Steps" }).textContent
+    ).toContain("Right axis, steps")
+  })
+
   it("lists every series at the hovered bucket in one tooltip, each with its unit", async () => {
     mount(`?metric=health/body_mass,health/steps&${WINDOW}`, false, overlaid)
     const chart = await lane("Weight and Steps")

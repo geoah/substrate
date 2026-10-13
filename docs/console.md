@@ -840,7 +840,9 @@ Its budget adds up its metrics' budgets, each sum held to the server's cap,
 so once a sum passes a cap the metrics share the cap: eleven metrics at the
 default 200 groups each pass the 2,000 groups one read may make. Each
 metric's row draws the answer's rows naming it in `group.metric`, and says
-on its own whether it is loading, refreshing or failed. Where the server
+on its own whether it is loading, refreshing or failed, and where its read
+lands with no rows beside a metric that draws, that nothing was measured in
+the range, with no axis claimed for it. Where the server
 refuses a request of several metrics, for a budget they pass together or for
 any other reason, the chart reads each of them apart, so a refusal sits on
 the one metric it concerns and the others draw. A server older than
