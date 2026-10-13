@@ -1661,7 +1661,9 @@ ECG and a heart rate notification, which carry none, by their name and
 start. The `export` receipt, at the webhook fire id, holds the automation's
 headers, the body's size and SHA-256 (the body itself is not kept), the
 count per section, the metric names, the time span covered, the sections a
-toggle dropped and the fields no declaration has a place for. Every mirror
+toggle dropped, the fields no declaration has a place for, and how many
+records the delivery wrote (`written`), left as they were (`unchanged`) and
+deleted (`deleted`, the batches its spans emptied). Every mirror
 names the receipt of the delivery that last changed it in `export` and its
 arrival in `receivedAt`.
 

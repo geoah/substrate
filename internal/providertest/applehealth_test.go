@@ -598,8 +598,12 @@ func TestAppleHealthRedeliveryEmptiesBatchesInsideItsSpan(t *testing.T) {
 	if got := countLive(t, ds, ahBatch); got != 3 {
 		t.Fatalf("%d batches after the redelivery, want 3", got)
 	}
-	if num(t, out["written"]) != 3 {
-		t.Fatalf("redelivery output = %v, want 3 written: two rewritten batches and one deleted", out)
+	if num(t, out["written"]) != 2 || num(t, out["deleted"]) != 1 {
+		t.Fatalf("redelivery output = %v, want 2 written (the rewritten batches) and 1 deleted", out)
+	}
+	ex := mustGet(t, ds, ahExport, "hook-again").Properties
+	if num(t, ex["written"]) != 2 || num(t, ex["deleted"]) != 1 {
+		t.Fatalf("the receipt counts %v written and %v deleted, want 2 and 1", ex["written"], ex["deleted"])
 	}
 }
 

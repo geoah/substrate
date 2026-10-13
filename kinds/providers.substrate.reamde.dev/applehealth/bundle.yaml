@@ -192,7 +192,7 @@ data:
       writer: connector
       displayName: Sync message
       description: "what the last delivery wrote: records written, records
-        left unchanged, metric rows read"
+        deleted, records left unchanged, metric rows read"
     lastSyncedAt:
       type: datetime
       writer: connector
@@ -381,6 +381,11 @@ data:
       displayName: Unchanged
       description: "records this delivery implied that already held what it
         carried"
+    deleted:
+      type: int
+      displayName: Deleted
+      description: "metric batches this delivery deleted because it carried
+        no row for them inside their metric's span"
     oversized:
       type: string
       repeated: true
@@ -1730,6 +1735,9 @@ data:
     - name: unchanged
       type: int
       description: "records that already held what the delivery carried"
+    - name: deleted
+      type: int
+      description: "metric batches deleted so far, each left with no row"
     - name: remaining
       type: int
       description: "records still to write on the next page"
@@ -2471,6 +2479,7 @@ data:
         i = int(cur.get("next") or 0)
         written = int(cur.get("written") or 0)
         unchanged = int(cur.get("unchanged") or 0)
+        deleted = int(cur.get("deleted") or 0)
         oversized = list(cur.get("oversized") or [])
         used_bytes = used_units = 0
         total = len(d.units)
@@ -2493,7 +2502,7 @@ data:
                 host.effects.patch(unit.kind, unit.id, properties=receipt,
                                    if_version=host.version(stored))
                 host.effects.delete(unit.kind, unit.id)
-                written += 1
+                deleted += 1
             else:
                 size = len(json.dumps(props))
                 if size > OVERSIZE_BYTES:
@@ -2520,9 +2529,10 @@ data:
                 "syncState": "running", "lastSyncStartedAt": received,
                 "syncProgress": {"phase": "writing", "done": i, "total": total, "pending": total - i}})
             return {"output": {"export": fire_id, "account": aid, "written": written,
-                               "unchanged": unchanged, "remaining": total - i},
+                               "unchanged": unchanged, "deleted": deleted,
+                               "remaining": total - i},
                     "more": host.page.more({"next": i, "written": written, "unchanged": unchanged,
-                                            "oversized": oversized})}
+                                            "deleted": deleted, "oversized": oversized})}
 
         dropped = sorted(d.dropped)
         export = {
@@ -2533,6 +2543,7 @@ data:
             "counts": d.counts,
             "written": written,
             "unchanged": unchanged,
+            "deleted": deleted,
             "droppedRows": d.dropped_rows,
         }
         for header, prop in (("session-id", "sessionId"), ("automation-name", "automationName"),
@@ -2556,8 +2567,9 @@ data:
         host.effects.put(EXPORT, fire_id, properties=export)
 
         now = datetime.datetime.now(UTC)
-        message = "%d records written, %d unchanged, from %d metric rows of %d metrics" % (
-            written, unchanged, d.counts["metricRows"], len(d.metric_names))
+        message = ("%d records written, %d deleted, %d unchanged, from %d metric rows "
+                   "of %d metrics" % (written, deleted, unchanged, d.counts["metricRows"],
+                                      len(d.metric_names)))
         host.effects.patch(ACCOUNT, aid, properties={
             "syncState": "ok", "syncMessage": message, "lastSyncedAt": rfc3339(now),
             "lastSyncStartedAt": received,
@@ -2568,7 +2580,7 @@ data:
             host.log("applehealth: dropped fields the declaration has no place for: %s"
                      % ", ".join(dropped[:20]))
         out = {"export": fire_id, "account": aid, "written": written, "unchanged": unchanged,
-               "remaining": 0}
+               "deleted": deleted, "remaining": 0}
         if dropped:
             out["droppedFields"] = dropped[:MAX_DROPPED]
         if oversized:
