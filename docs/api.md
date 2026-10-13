@@ -1495,7 +1495,10 @@ where summaries did.
 
 A value is `{reducer, value, unit?, code?, at?, rolling?, of?, n?}`. `value`
 is a decimal string, or `null` where the reducer has no answer (an average of
-no points). A coded `first` or `last` answers its `code` with `value` `null`.
+no points). The read never rounds for display: an average or a conversion
+carries up to 20 significant digits (`72.272608695652173913`), and a client
+shows it at the metric record's `displayPrecision` decimal places. A coded
+`first` or `last` answers its `code` with `value` `null`.
 On a downsample, `at` is the instant a column's `first`, `last`, `min` or
 `max` was taken at, in the row's offset; a `min` or `max` served from rollup
 rows may leave it out ([downsample](#fill-rolling-and-downsample)). A
