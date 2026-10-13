@@ -2,13 +2,16 @@ package providertest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
@@ -39,6 +42,82 @@ const (
 	healthGarminAdapter    = "healthgarmin@2"
 	healthGoogleFitAdapter = "healthgooglefit@2"
 )
+
+// asFloat reads a number however it reached the test: a float64 from
+// encoding/json, an int or int64 from Go, a json.Number from a decoder that
+// keeps the digits, or digits in a string, as Fit sends its instants.
+// Anything else fails the test, so an absent value never reads as zero.
+func asFloat(t *testing.T, v any) float64 {
+	t.Helper()
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			t.Fatalf("%v is not a number: %v", v, err)
+		}
+		return f
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		if err != nil {
+			t.Fatalf("%q is not a number: %v", n, err)
+		}
+		return f
+	}
+	t.Fatalf("%v (%T) is not a number", v, v)
+	return 0
+}
+
+// asInt is asFloat for a whole number, read without a float's rounding.
+func asInt(t *testing.T, v any) int64 {
+	t.Helper()
+	switch n := v.(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			t.Fatalf("%v is not a whole number: %v", v, err)
+		}
+		return i
+	case string:
+		i, err := strconv.ParseInt(n, 10, 64)
+		if err != nil {
+			t.Fatalf("%q is not a whole number: %v", n, err)
+		}
+		return i
+	}
+	f := asFloat(t, v)
+	if f != math.Trunc(f) || math.Abs(f) > 1<<53 {
+		t.Fatalf("%v is not a whole number a float64 holds exactly", v)
+	}
+	return int64(f)
+}
+
+// asInstant reads a stored datetime, whatever spelling the engine stored it
+// in, or an RFC 3339 string; anything else fails the test.
+func asInstant(t *testing.T, v any) time.Time {
+	t.Helper()
+	at, err := time.Parse(time.RFC3339Nano, fmt.Sprint(v))
+	if err != nil {
+		t.Fatalf("%v is not an instant: %v", v, err)
+	}
+	return at
+}
+
+// sameInstant reports whether a stored datetime is want. A value that is no
+// datetime, an absent one included, is not, so the caller names the field.
+func sameInstant(got any, want time.Time) bool {
+	at, err := time.Parse(time.RFC3339Nano, fmt.Sprint(got))
+	return err == nil && at.Equal(want)
+}
 
 // adapterOutputs is every observation, trace, sleep and workout an adapter
 // wrote, by "<kind>/<id>": the kinds that carry its `adapter` stamp.

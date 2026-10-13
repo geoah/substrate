@@ -229,16 +229,6 @@ func rowsOf(t *testing.T, row *substrate.Record) []map[string]any {
 	return out
 }
 
-// num reads a JSON number property.
-func num(t *testing.T, v any) float64 {
-	t.Helper()
-	f, ok := v.(float64)
-	if !ok {
-		t.Fatalf("want a number, got %T %v", v, v)
-	}
-	return f
-}
-
 // obj reads a nested object property by path.
 func obj(t *testing.T, v any, path ...string) any {
 	t.Helper()
@@ -290,7 +280,7 @@ func TestAppleHealthMinuteHeartRateAndSteps(t *testing.T) {
 	if got := countLive(t, ds, ahBatch); got != wantBatches {
 		t.Fatalf("%d metric batches, want %d (one per metric and UTC hour)", got, wantBatches)
 	}
-	if num(t, out["written"]) != float64(wantBatches) {
+	if asFloat(t, out["written"]) != float64(wantBatches) {
 		t.Fatalf("output %v, want %d written", out, wantBatches)
 	}
 
@@ -318,10 +308,10 @@ func TestAppleHealthMinuteHeartRateAndSteps(t *testing.T) {
 	text := ahBodyText(t, req)
 	sum := sha256.Sum256([]byte(text))
 	ex := mustGet(t, ds, ahExport, "hook-minutes")
-	if num(t, ex.Properties["byteSize"]) != float64(len(text)) || ex.Properties["bodySha256"] != hex.EncodeToString(sum[:]) {
+	if asFloat(t, ex.Properties["byteSize"]) != float64(len(text)) || ex.Properties["bodySha256"] != hex.EncodeToString(sum[:]) {
 		t.Fatalf("export names the body as %v bytes %v", ex.Properties["byteSize"], ex.Properties["bodySha256"])
 	}
-	if num(t, obj(t, ex.Properties["counts"], "metrics")) != 5 || num(t, obj(t, ex.Properties["counts"], "metricRows")) != float64(wantRows) {
+	if asFloat(t, obj(t, ex.Properties["counts"], "metrics")) != 5 || asFloat(t, obj(t, ex.Properties["counts"], "metricRows")) != float64(wantRows) {
 		t.Fatalf("export counts = %v, want 5 metrics and %d rows", ex.Properties["counts"], wantRows)
 	}
 	names := []string{}
@@ -389,12 +379,12 @@ func TestAppleHealthSleepAndWorkouts(t *testing.T) {
 		run.EndsAt == nil || !run.EndsAt.Equal(time.Date(2026, 10, 7, 5, 41, 56, 0, time.UTC)) {
 		t.Fatalf("run = %v at %v to %v", run.Properties, run.At, run.EndsAt)
 	}
-	if num(t, obj(t, run.Properties["distance"], "qty")) != 6.1 || obj(t, run.Properties["distance"], "units") != "km" ||
-		num(t, obj(t, run.Properties["heartRate"], "max", "qty")) != 173 || num(t, run.Properties["duration"]) != 2179 {
+	if asFloat(t, obj(t, run.Properties["distance"], "qty")) != 6.1 || obj(t, run.Properties["distance"], "units") != "km" ||
+		asFloat(t, obj(t, run.Properties["heartRate"], "max", "qty")) != 173 || asFloat(t, run.Properties["duration"]) != 2179 {
 		t.Fatalf("run quantities = %v %v", run.Properties["distance"], run.Properties["heartRate"])
 	}
 	hrData, _ := run.Properties["heartRateData"].([]any)
-	if len(hrData) != 37 || obj(t, hrData[0], "source") != "Garmin Connect" || num(t, obj(t, hrData[0], "max")) != 107 {
+	if len(hrData) != 37 || obj(t, hrData[0], "source") != "Garmin Connect" || asFloat(t, obj(t, hrData[0], "max")) != 107 {
 		t.Fatalf("run heartRateData = %d rows, first %v", len(hrData), hrData)
 	}
 	walk := mustGet(t, ds, ahWorkout, "iphone/3E24A55C-AED2-46E5-BA55-1C209B348C0E")
@@ -402,7 +392,7 @@ func TestAppleHealthSleepAndWorkouts(t *testing.T) {
 	steps, _ := walk.Properties["stepCount"].([]any)
 	if len(route) != 105 || len(steps) != 27 || obj(t, walk.Properties["avgSpeed"], "units") != "kmph" ||
 		obj(t, walk.Properties["metadata"], "HKTimeZone") != "Europe/Athens" ||
-		num(t, obj(t, route[0], "latitude")) != 37.972587 {
+		asFloat(t, obj(t, route[0], "latitude")) != 37.972587 {
 		t.Fatalf("walk: route %d, steps %d, avgSpeed %v, metadata %v", len(route), len(steps),
 			walk.Properties["avgSpeed"], walk.Properties["metadata"])
 	}
@@ -448,7 +438,7 @@ func TestAppleHealthBodyMeasurements(t *testing.T) {
 		t.Fatalf("weigh-ins on 2026-10-03 = %d (want 2), rows without source = %d (want 1)", oct3, noSource)
 	}
 	for _, row := range byName["blood_pressure"] {
-		if num(t, row["systolic"]) < 90 || num(t, row["diastolic"]) < 50 {
+		if asFloat(t, row["systolic"]) < 90 || asFloat(t, row["diastolic"]) < 50 {
 			t.Fatalf("blood pressure row = %v", row)
 		}
 	}
@@ -472,7 +462,7 @@ func TestAppleHealthCorrectedRedelivery(t *testing.T) {
 	}
 	req := ahRequest(t, "delivery_4_redelivery_corrected.json")
 	out, _ := deliverAH(t, ds, req, "hook-again")
-	if num(t, out["written"]) != 3 || num(t, out["unchanged"]) != float64(len(before)-3) {
+	if asFloat(t, out["written"]) != 3 || asFloat(t, out["unchanged"]) != float64(len(before)-3) {
 		t.Fatalf("redelivery output = %v, want 3 written and %d unchanged", out, len(before)-3)
 	}
 
@@ -598,11 +588,11 @@ func TestAppleHealthRedeliveryEmptiesBatchesInsideItsSpan(t *testing.T) {
 	if got := countLive(t, ds, ahBatch); got != 3 {
 		t.Fatalf("%d batches after the redelivery, want 3", got)
 	}
-	if num(t, out["written"]) != 2 || num(t, out["deleted"]) != 1 {
+	if asFloat(t, out["written"]) != 2 || asFloat(t, out["deleted"]) != 1 {
 		t.Fatalf("redelivery output = %v, want 2 written (the rewritten batches) and 1 deleted", out)
 	}
 	ex := mustGet(t, ds, ahExport, "hook-again").Properties
-	if num(t, ex["written"]) != 2 || num(t, ex["deleted"]) != 1 {
+	if asFloat(t, ex["written"]) != 2 || asFloat(t, ex["deleted"]) != 1 {
 		t.Fatalf("the receipt counts %v written and %v deleted, want 2 and 1", ex["written"], ex["deleted"])
 	}
 }
@@ -754,7 +744,7 @@ func TestAppleHealthDailyBucketsAcrossZones(t *testing.T) {
 		t.Fatalf("the fixture puts %d Athens days in September UTC, want 21 (11 September to 1 October)", want["2026-09"])
 	}
 	sleep := rowsOf(t, mustGet(t, ds, ahBatch, batchID("iphone", "sleep_analysis", "days", "2026-09")))
-	if num(t, sleep[0]["totalSleep"]) <= 0 || num(t, sleep[0]["deep"]) <= 0 || sleep[0]["inBedStart"] == nil {
+	if asFloat(t, sleep[0]["totalSleep"]) <= 0 || asFloat(t, sleep[0]["deep"]) <= 0 || sleep[0]["inBedStart"] == nil {
 		t.Fatalf("an aggregated night lost its stage hours: %v", sleep[0])
 	}
 }
@@ -767,7 +757,7 @@ func TestAppleHealthOtherSections(t *testing.T) {
 	_, ds := newAppleHealth(t, "iphone")
 	req := ahRequest(t, "delivery_7_other_sections.json")
 	out, _ := deliverAH(t, ds, req, "hook-other")
-	if num(t, out["written"]) != 11 {
+	if asFloat(t, out["written"]) != 11 {
 		t.Fatalf("output = %v, want 11 written", out)
 	}
 	for kind, n := range map[string]int{ahStateOfMind: 2, ahMedication: 2, ahSymptom: 2, ahCycleEvent: 2, ahECG: 1, ahHRNotification: 2} {
@@ -776,7 +766,7 @@ func TestAppleHealthOtherSections(t *testing.T) {
 		}
 	}
 	mood := mustGet(t, ds, ahStateOfMind, "iphone/6F1D2C1A-0B7E-4C59-9A8E-1D2B3C4D5E6F")
-	if mood.Properties["kind"] != "momentary_emotion" || num(t, mood.Properties["valence"]) != 0.42 ||
+	if mood.Properties["kind"] != "momentary_emotion" || asFloat(t, mood.Properties["valence"]) != 0.42 ||
 		fmt.Sprint(mood.Properties["labels"]) != "[calm hopeful]" {
 		t.Fatalf("state of mind = %v", mood.Properties)
 	}
@@ -800,7 +790,7 @@ func TestAppleHealthOtherSections(t *testing.T) {
 	ecg := mustGet(t, ds, ahECG, "iphone/2026-10-07T09:10:00Z")
 	volts, _ := ecg.Properties["voltageMeasurements"].([]any)
 	if len(volts) != 4 || obj(t, volts[0], "date") != "1791364200.0" || obj(t, volts[0], "units") != "mcV" ||
-		num(t, ecg.Properties["numberOfVoltageMeasurements"]) != 4 {
+		asFloat(t, ecg.Properties["numberOfVoltageMeasurements"]) != 4 {
 		t.Fatalf("ecg = %v voltages %v", ecg.Properties["classification"], volts)
 	}
 	observed := mustGet(t, ds, ahHRNotification, "iphone/high-heart-rate/2026-10-07T23:10:00Z")
@@ -808,12 +798,12 @@ func TestAppleHealthOtherSections(t *testing.T) {
 		t.Fatalf("observed notification = %v", observed.Properties)
 	}
 	documented := mustGet(t, ds, ahHRNotification, "iphone/heartratenotifications/2026-10-07T20:10:00Z")
-	if num(t, obj(t, documented.Properties["heartRate"].([]any)[0], "timestamp", "interval", "duration")) != 5 {
+	if asFloat(t, obj(t, documented.Properties["heartRate"].([]any)[0], "timestamp", "interval", "duration")) != 5 {
 		t.Fatalf("documented notification = %v", documented.Properties)
 	}
 
 	again, _ := deliverAH(t, ds, ahRequest(t, "delivery_7_other_sections.json"), "hook-other-again")
-	if num(t, again["written"]) != 0 || num(t, again["unchanged"]) != 11 {
+	if asFloat(t, again["written"]) != 0 || asFloat(t, again["unchanged"]) != 11 {
 		t.Fatalf("the same delivery again = %v, want nothing written", again)
 	}
 }
@@ -1083,7 +1073,7 @@ func TestAppleHealthDeliveryNearTheCap(t *testing.T) {
 	}
 	ex := awaitExport(t, ds, fire)
 	hours := (n - 1) / 3600
-	if num(t, ex.Properties["written"]) != float64(hours+1) || num(t, obj(t, ex.Properties["counts"], "metricRows")) != float64(n) {
+	if asFloat(t, ex.Properties["written"]) != float64(hours+1) || asFloat(t, obj(t, ex.Properties["counts"], "metricRows")) != float64(n) {
 		t.Fatalf("export = %v, want %d batches from %d rows", ex.Properties, hours+1, n)
 	}
 	total := 0

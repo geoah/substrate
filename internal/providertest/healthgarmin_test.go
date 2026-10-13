@@ -55,26 +55,6 @@ func quantity(v any) string {
 	return fmt.Sprint(m["value"], " ", m["unit"])
 }
 
-func garminAsInt(t *testing.T, v any) int64 {
-	t.Helper()
-	switch n := v.(type) {
-	case json.Number:
-		i, err := n.Int64()
-		if err != nil {
-			t.Fatalf("%v is not an integer", v)
-		}
-		return i
-	case float64:
-		return int64(n)
-	case int64:
-		return n
-	case int:
-		return int64(n)
-	}
-	t.Fatalf("%v (%T) is not a number", v, v)
-	return 0
-}
-
 // TestHealthGarminWritesTheProposalsRows: the proposal's table for Garmin
 // (docs/plans/observations/proposal/02b-garmin.md) out of one push of each
 // summary type: an hourly heart rate trace with irregular offsets and the
@@ -116,7 +96,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	stats, _ := irregular.Properties["stats"].(map[string]any)
 	values, _ := irregular.Properties["values"].([]any)
 	offsets, _ := irregular.Properties["offsets"].([]any)
-	if len(values) != 2 || len(offsets) != 2 || stats == nil || garminAsInt(t, stats["count"]) != 2 {
+	if len(values) != 2 || len(offsets) != 2 || stats == nil || asInt(t, stats["count"]) != 2 {
 		t.Errorf("trace %s: %d values at %d offsets, stats %v; want the hour's two samples", irregular.ID, len(values), len(offsets), stats)
 	}
 	if refs := refIDs(irregular, "origins"); len(refs) != 1 || !strings.HasPrefix(refs[0], garminAccountID+"/") {
@@ -179,7 +159,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	p := sum.Properties
 	if p["form"] != "summary" || p["statistic"] != "sum" || p["period"] != "day" ||
 		p["periodId"] != daily["calendarDate"] || quantity(p["value"]) != fmt.Sprint(daily["steps"], " {steps}") ||
-		garminAsInt(t, p["utcOffset"]) != 180 || sum.EndsAt == nil {
+		asInt(t, p["utcOffset"]) != 180 || sum.EndsAt == nil {
 		t.Errorf("daily steps summary %v, want a sum over the day", p)
 	}
 	// The five day totals are sums, so a summaries read's sum takes them;
@@ -348,7 +328,7 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 			t.Errorf("%s is gone after the fuller re-send", k)
 			continue
 		}
-		if garminAsInt(t, now.Properties["revision"]) <= garminAsInt(t, r.Properties["revision"]) {
+		if asInt(t, now.Properties["revision"]) <= asInt(t, r.Properties["revision"]) {
 			t.Errorf("%s: revision %v -> %v, want it higher", k, r.Properties["revision"], now.Properties["revision"])
 		}
 	}
@@ -363,7 +343,7 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 	garminAdapt(t, ds, garminPackage+"/manuallyupdatedactivity", garminAccountID+"/"+run)
 	now := mustGet(t, ds, healthWorkout, wid)
 	if quantity(now.Properties["distance"]) != "5000 m" ||
-		garminAsInt(t, now.Properties["revision"]) <= garminAsInt(t, was.Properties["revision"]) ||
+		asInt(t, now.Properties["revision"]) <= asInt(t, was.Properties["revision"]) ||
 		!strings.HasSuffix(storedRefPath(now.Properties["origin"]), "/manuallyupdatedactivity/"+garminAccountID+"/"+run) {
 		t.Errorf("the edit did not replace the workout: %v -> %v", was.Properties, now.Properties)
 	}
@@ -560,7 +540,7 @@ func TestHealthGarminSplitsTracesAtAnOffsetChange(t *testing.T) {
 	}
 	slices.SortFunc(traces, func(a, b *substrate.Record) int { return a.At.Compare(*b.At) })
 	half := time.Unix(hour+1800, 0).UTC()
-	if garminAsInt(t, traces[0].Properties["utcOffsetStart"]) != 180 || garminAsInt(t, traces[1].Properties["utcOffsetStart"]) != 60 ||
+	if asInt(t, traces[0].Properties["utcOffsetStart"]) != 180 || asInt(t, traces[1].Properties["utcOffsetStart"]) != 60 ||
 		!traces[1].At.Equal(half) || !traces[0].EndsAt.Equal(half) {
 		t.Errorf("split traces %s (%v..%v, %v) and %s (%v..%v, %v)",
 			traces[0].ID, traces[0].At, traces[0].EndsAt, traces[0].Properties["utcOffsetStart"],
@@ -682,7 +662,7 @@ func TestHealthGarminCoversEveryMirrorKind(t *testing.T) {
 		}
 	}
 	after := mustGet(t, ds, obsObservation, vo2)
-	if after.Properties["form"] != "gauge" || garminAsInt(t, after.Properties["utcOffset"]) != 180 ||
+	if after.Properties["form"] != "gauge" || asInt(t, after.Properties["utcOffset"]) != 180 ||
 		!after.At.Equal(time.Date(2026, 9, 11, 21, 0, 0, 0, time.UTC)) || quantity(after.Properties["value"]) != "49 mL/(kg.min)" {
 		t.Errorf("VO2 max after its daily: %v at %v, want 49 at the local midnight 2026-09-11T21:00Z, +180", after.Properties, after.At)
 	}
@@ -880,7 +860,7 @@ func TestHealthGarminKeepsAnHoursRevisionWhenASliceArrivesAfterADelete(t *testin
 		t.Fatal(err)
 	}
 	garminAdapt(t, ds, raised.Kind, raised.ID)
-	if rev := garminAsInt(t, mustGet(t, ds, obsTrace, id).Properties["revision"]); rev != raised.Version {
+	if rev := asInt(t, mustGet(t, ds, obsTrace, id).Properties["revision"]); rev != raised.Version {
 		t.Fatalf("after the delete the hour's trace is at revision %d, want the deleted slice's %d", rev, raised.Version)
 	}
 
@@ -891,7 +871,7 @@ func TestHealthGarminKeepsAnHoursRevisionWhenASliceArrivesAfterADelete(t *testin
 	}
 	garminAdapt(t, ds, arrived.Kind, arrived.ID)
 	tr := mustGet(t, ds, obsTrace, id).Properties
-	if rev := garminAsInt(t, tr["revision"]); rev != raised.Version {
+	if rev := asInt(t, tr["revision"]); rev != raised.Version {
 		t.Fatalf("the hour's trace is at revision %d, want the stored %d kept", rev, raised.Version)
 	}
 	if origins, _ := tr["origins"].([]any); len(origins) != len(inHour)-1 {

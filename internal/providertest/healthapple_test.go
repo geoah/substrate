@@ -100,15 +100,6 @@ func strs(v any) []string {
 	return out
 }
 
-func unixOf(t *testing.T, s string) float64 {
-	t.Helper()
-	at, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return float64(at.Unix())
-}
-
 // A day of per-minute data: heart rate as hourly gauge traces per source at
 // irregular offsets, steps as amount traces whose buckets end in a null where
 // the next minute has no row, distance and energy converted into the metric's
@@ -120,10 +111,10 @@ func TestHealthAppleMinuteTraces(t *testing.T) {
 
 	hr := mustGet(t, ds, obsTrace, "applehealth/iphone/apple-watch/heart_rate/2026-10-07T07")
 	p := hr.Properties
-	if p["form"] != "gauge" || p["unit"] != "/min" || p["hold"] != "PT4M" || num(t, p["utcOffsetStart"]) != 180 ||
+	if p["form"] != "gauge" || p["unit"] != "/min" || p["hold"] != "PT4M" || asFloat(t, p["utcOffsetStart"]) != 180 ||
 		storedRefPath(p["metric"]) != healthMetrics+"heart_rate" ||
 		storedRefPath(p["source"]) != obsSource+"/applehealth/iphone/apple-watch" ||
-		num(t, p["revision"]) != unixOf(t, received) {
+		asFloat(t, p["revision"]) != float64(asInstant(t, received).Unix()) {
 		t.Fatalf("heart rate trace = %v", p)
 	}
 	if got := refIDs(hr, "origins"); len(got) != 1 || got[0] != "iphone/heart_rate/minutes/2026-10-07T07" {
@@ -143,7 +134,7 @@ func TestHealthAppleMinuteTraces(t *testing.T) {
 		t.Fatalf("offsets %v values %v, want %v %v", p["offsets"], p["values"], wantOffsets, wantValues)
 	}
 	stats, _ := p["stats"].(map[string]any)
-	if stats == nil || num(t, stats["count"]) != float64(len(wantValues)) {
+	if stats == nil || asFloat(t, stats["count"]) != float64(len(wantValues)) {
 		t.Fatalf("the engine's stats = %v, want a count of %d", p["stats"], len(wantValues))
 	}
 
@@ -172,7 +163,7 @@ func TestHealthAppleMinuteTraces(t *testing.T) {
 	}
 	// physical_effort has no health metric: its batches write nothing and say so.
 	out := adapt(t, ds, ahBatch, "iphone/physical_effort/minutes/2026-10-07T04")
-	if num(t, out["written"]) != 0 || !strings.Contains(fmt.Sprint(out["skipped"]), "physical_effort: no health metric maps it") {
+	if asFloat(t, out["written"]) != 0 || !strings.Contains(fmt.Sprint(out["skipped"]), "physical_effort: no health metric maps it") {
 		t.Fatalf("physical_effort output = %v", out)
 	}
 }
@@ -189,7 +180,7 @@ func TestHealthAppleRedelivery(t *testing.T) {
 	for _, row := range listLive(t, ds, obsTrace) {
 		before[row.ID] = row.Version
 	}
-	if out := adapt(t, ds, ahBatch, "iphone/heart_rate/minutes/2026-10-07T07"); num(t, out["written"]) != 0 || num(t, out["unchanged"]) == 0 {
+	if out := adapt(t, ds, ahBatch, "iphone/heart_rate/minutes/2026-10-07T07"); asFloat(t, out["written"]) != 0 || asFloat(t, out["unchanged"]) == 0 {
 		t.Fatalf("an unchanged row re-run wrote %v", out)
 	}
 	deliverAt(t, ds, ahRequest(t, "delivery_4_redelivery_corrected.json"), "hook-again", second)
@@ -202,7 +193,7 @@ func TestHealthAppleRedelivery(t *testing.T) {
 			changed = append(changed, "+"+row.ID)
 		case v != row.Version:
 			changed = append(changed, row.ID)
-			if num(t, row.Properties["revision"]) != unixOf(t, second) {
+			if asFloat(t, row.Properties["revision"]) != float64(asInstant(t, second).Unix()) {
 				t.Fatalf("%s changed at revision %v", row.ID, row.Properties["revision"])
 			}
 		}
@@ -292,8 +283,8 @@ func TestHealthAppleTwoTimeZonesSplitATrace(t *testing.T) {
 		t.Fatalf("%d traces for the hour, want 2", len(parts))
 	}
 	a, b := parts[0], parts[1]
-	if a.ID != "applehealth/iphone/apple-watch/heart_rate/2026-10-07T07" || num(t, a.Properties["utcOffsetStart"]) != 180 ||
-		num(t, b.Properties["utcOffsetStart"]) != 60 || !a.EndsAt.Equal(*b.At) ||
+	if a.ID != "applehealth/iphone/apple-watch/heart_rate/2026-10-07T07" || asFloat(t, a.Properties["utcOffsetStart"]) != 180 ||
+		asFloat(t, b.Properties["utcOffsetStart"]) != 60 || !a.EndsAt.Equal(*b.At) ||
 		!strings.HasPrefix(b.ID, "applehealth/iphone/apple-watch/heart_rate/2026-10-07T07:") {
 		t.Fatalf("split = %s (%v, ends %v) and %s (%v, at %v)", a.ID, a.Properties["utcOffsetStart"], a.EndsAt,
 			b.ID, b.Properties["utcOffsetStart"], b.At)
@@ -311,7 +302,7 @@ func TestHealthAppleBodyObservations(t *testing.T) {
 
 	weight := mustGet(t, ds, obsObservation, "applehealth/iphone/garmin-connect/body_mass/2026-09-11T04:02:41Z").Properties
 	if weight["form"] != "gauge" || obj(t, weight["value"], "value") != "72.26" || obj(t, weight["value"], "unit") != "kg" ||
-		num(t, weight["utcOffset"]) != 180 || storedRefPath(weight["origin"]) != ahBatch+"/iphone/weight_body_mass/seconds/2026-09-11T04" {
+		asFloat(t, weight["utcOffset"]) != 180 || storedRefPath(weight["origin"]) != ahBatch+"/iphone/weight_body_mass/seconds/2026-09-11T04" {
 		t.Fatalf("weigh-in = %v", weight)
 	}
 	if c := mustGet(t, ds, obsSource, "applehealth/iphone/garmin-connect").Properties["class"]; c != "service" {

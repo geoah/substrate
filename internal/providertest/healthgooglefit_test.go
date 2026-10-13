@@ -120,15 +120,6 @@ func decimalSum(t *testing.T, values []any) *big.Rat {
 	return sum
 }
 
-func parseInstant(t *testing.T, v any) time.Time {
-	t.Helper()
-	at, err := time.Parse(time.RFC3339Nano, fmt.Sprint(v))
-	if err != nil {
-		t.Fatalf("instant %v: %v", v, err)
-	}
-	return at
-}
-
 // fitIDAlphabet is the record-id alphabet host.observed.record_id keeps a
 // composed id readable in.
 var fitIDAlphabet = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
@@ -176,7 +167,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	}
 	recordedNights := 0
 	for _, s := range fake.window["session"].([]any) {
-		if fitNumber(s.(map[string]any)["activityType"]) == 72 {
+		if asFloat(t, s.(map[string]any)["activityType"]) == 72 {
 			recordedNights++
 		}
 	}
@@ -195,13 +186,13 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 			tr["form"], tr["unit"], tr["hold"], len(values), len(offsets), want)
 	}
 	for i := 1; i < len(offsets); i++ {
-		gap := fitNumber(offsets[i]) - fitNumber(offsets[i-1])
+		gap := asFloat(t, offsets[i]) - asFloat(t, offsets[i-1])
 		if gap < 30000 || gap > 120000 {
 			t.Fatalf("offsets %v and %v are not about a minute apart", offsets[i-1], offsets[i])
 		}
 	}
 	stats, _ := tr["stats"].(map[string]any)
-	if fitNumber(stats["count"]) != float64(len(values)) || stats["min"] == nil || stats["max"] == nil {
+	if asFloat(t, stats["count"]) != float64(len(values)) || stats["min"] == nil || stats["max"] == nil {
 		t.Fatalf("the trace's stats = %v, want the engine's over its %d points", stats, len(values))
 	}
 	if tr["utcOffsetStart"] != athensOffset(t, hour) {
@@ -264,7 +255,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	if len(quals) != 1 || quals[0].(map[string]any)["code"] != "timezone:"+fitZone {
 		t.Fatalf("the weigh-in's qualifiers = %v, want the offset rule", quals)
 	}
-	at := parseInstant(t, first["at"])
+	at := asInstant(t, first["at"])
 	if first["utcOffset"] != athensOffset(t, at) {
 		t.Fatalf("utcOffset = %v, want %s's at %s", first["utcOffset"], fitZone, at)
 	}
@@ -289,7 +280,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 		byCode := map[string]time.Duration{}
 		for _, st := range rows {
 			v, _ := st.Properties["value"].(map[string]any)
-			span := parseInstant(t, st.Properties["endsAt"]).Sub(parseInstant(t, st.Properties["at"]))
+			span := asInstant(t, st.Properties["endsAt"]).Sub(asInstant(t, st.Properties["at"]))
 			mins, _ := new(big.Rat).SetString(fmt.Sprint(v["value"]))
 			diff := new(big.Rat).Sub(mins, new(big.Rat).SetFrac64(span.Milliseconds(), 60000))
 			if st.Properties["form"] != "amount" || v["unit"] != "min" ||
@@ -317,7 +308,7 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	for _, row := range withMetric(t, ds, obsObservation, "sleep_stage") {
 		codes[fmt.Sprint(row.Properties["code"])]++
 		session := strings.TrimPrefix(storedRefPath(row.Properties["origin"]), googlefitSessionType+"/")
-		readable := fmt.Sprintf("googlefit/%s/stage/%d", session, parseInstant(t, row.Properties["at"]).UnixNano())
+		readable := fmt.Sprintf("googlefit/%s/stage/%d", session, asInstant(t, row.Properties["at"]).UnixNano())
 		if want := fitReadingIDOf(readable); row.ID != want {
 			t.Fatalf("stage %s, want the id %s its session and start compose", row.ID, want)
 		}
@@ -407,7 +398,7 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 
 	now := mustGet(t, ds, obsObservation, evening)
 	value, _ := now.Properties["value"].(map[string]any)
-	if fmt.Sprint(value["value"]) != "71.76" || fitNumber(now.Properties["revision"]) <= fitNumber(old.Properties["revision"]) {
+	if fmt.Sprint(value["value"]) != "71.76" || asFloat(t, now.Properties["revision"]) <= asFloat(t, old.Properties["revision"]) {
 		t.Fatalf("the re-read weigh-in = %v at revision %v (was %v)", value, now.Properties["revision"], old.Properties["revision"])
 	}
 	// The evening weigh-in was entered by hand in the Fit app, which Fit
@@ -566,7 +557,7 @@ func TestHealthGoogleFitKeepsAnAmountsEnd(t *testing.T) {
 	obs := steps[0].Properties
 	value, _ := obs["value"].(map[string]any)
 	if obs["form"] != "amount" || fmt.Sprint(value["value"]) != "30" || value["unit"] != "{steps}" ||
-		!parseInstant(t, obs["at"]).Equal(crossing) || !parseInstant(t, obs["endsAt"]).Equal(crossing.Add(time.Minute)) ||
+		!asInstant(t, obs["at"]).Equal(crossing) || !asInstant(t, obs["endsAt"]).Equal(crossing.Add(time.Minute)) ||
 		storedRefPath(obs["origin"]) != googlefitDatasetType+"/"+dayRow {
 		t.Fatalf("the delta across the hour = %v", obs)
 	}
@@ -636,7 +627,7 @@ func fitReadings(t *testing.T, ds substrate.Dataset, metric string) map[string]*
 	out := map[string]*substrate.Record{}
 	for _, r := range withMetric(t, ds, obsObservation, metric) {
 		src := storedRefPath(r.Properties["source"])
-		key := src[strings.LastIndex(src, "/")+1:] + " " + parseInstant(t, r.Properties["at"]).Format(time.RFC3339Nano)
+		key := src[strings.LastIndex(src, "/")+1:] + " " + asInstant(t, r.Properties["at"]).Format(time.RFC3339Nano)
 		if _, dup := out[key]; dup {
 			t.Fatalf("two %s observations for %s", metric, key)
 		}
@@ -1006,7 +997,7 @@ func TestHealthGoogleFitWritesASmallReadingWithoutAnExponent(t *testing.T) {
 	googlefitAccountWith(t, ds, "enabledBody")
 	googlefitSync(t, ds, fake)
 	day := recorded.Add(today.Sub(fitCutOn)).Truncate(24 * time.Hour)
-	if out := observe(t, ds, googlefitDatasetType, fitDatasetRow(fitWeight, day)); fitNumber(out["written"]) != 1 {
+	if out := observe(t, ds, googlefitDatasetType, fitDatasetRow(fitWeight, day)); asFloat(t, out["written"]) != 1 {
 		t.Fatalf("the delivery wrote %v, want the one reading", out)
 	}
 	values := fitValues(fitReadings(t, ds, "body_mass"))

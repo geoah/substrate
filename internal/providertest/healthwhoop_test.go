@@ -96,41 +96,9 @@ func quantityOf(t *testing.T, props map[string]any, name string) (string, string
 	return value, unit
 }
 
-func sameInstant(t *testing.T, got any, want string) bool {
-	t.Helper()
-	a, err1 := time.Parse(time.RFC3339Nano, fmt.Sprint(got))
-	b, err2 := time.Parse(time.RFC3339Nano, want)
-	return err1 == nil && err2 == nil && a.Equal(b)
-}
-
-func epochSeconds(t *testing.T, instant string) int64 {
-	t.Helper()
-	ts, err := time.Parse(time.RFC3339Nano, instant)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ts.Unix()
-}
-
 // metricOf is the metric id an observation names.
 func metricOf(props map[string]any) string {
 	return strings.TrimPrefix(storedRefPath(props["metric"]), obsMetric+"/")
-}
-
-// asInt reads a stored integer however JSON decoded it.
-func asInt(v any) int64 {
-	switch n := v.(type) {
-	case int64:
-		return n
-	case int:
-		return int64(n)
-	case float64:
-		return int64(n)
-	case string:
-		i, _ := strconv.ParseInt(n, 10, 64)
-		return i
-	}
-	return math.MinInt64
 }
 
 // TestHealthWhoopWritesTheProposalsTable runs the thirty days through the
@@ -145,7 +113,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 	recoveryOrigin := whoopRecoveryType + "/" + whoopRow("recovery", whoopExampleCycle)
 	cycleStart, cycleEnd := "2026-10-06T19:41:00.862Z", "2026-10-07T19:38:00.174Z"
 	// The later of the recovery's and the cycle's updated_at.
-	recoveryRevision := epochSeconds(t, "2026-10-07T19:58:00.853Z")
+	recoveryRevision := asInstant(t, "2026-10-07T19:58:00.853Z").Unix()
 	for _, c := range []struct{ role, metric, value, unit string }{
 		{"recovery", "health/whoop_recovery", "67", "%"},
 		{"hrv", "health/hrv_rmssd", "61.3", "ms"},
@@ -162,10 +130,10 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 			t.Errorf("%s is %v %v/%v/%v period %v, want %s summary vendor cycle %s",
 				c.role, metricOf(p), p["form"], p["statistic"], p["period"], p["periodId"], c.metric, whoopExampleCycle)
 		}
-		if !sameInstant(t, p["at"], cycleStart) || !sameInstant(t, p["endsAt"], cycleEnd) {
+		if !sameInstant(p["at"], asInstant(t, cycleStart)) || !sameInstant(p["endsAt"], asInstant(t, cycleEnd)) {
 			t.Errorf("%s spans %v to %v, want the cycle %s to %s", c.role, p["at"], p["endsAt"], cycleStart, cycleEnd)
 		}
-		if asInt(p["utcOffset"]) != 180 || asInt(p["revision"]) != recoveryRevision {
+		if asInt(t, p["utcOffset"]) != 180 || asInt(t, p["revision"]) != recoveryRevision {
 			t.Errorf("%s utcOffset %v revision %v, want 180 and %d", c.role, p["utcOffset"], p["revision"], recoveryRevision)
 		}
 		if storedRefPath(p["origin"]) != recoveryOrigin {
@@ -189,10 +157,10 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 	// Heart rate: the cycle's average and maximum over the cycle, and a run's
 	// over the run on the `workout` channel, each with the statistic it is.
 	cycleOrigin := whoopCycleType + "/" + whoopRow("cycle", whoopExampleCycle)
-	cycleRevision := epochSeconds(t, "2026-10-07T19:58:00.853Z")
+	cycleRevision := asInstant(t, "2026-10-07T19:58:00.853Z").Unix()
 	workoutOrigin := whoopWorkoutType + "/" + whoopRow("workout", whoopExampleWorkout)
 	runStart, runEnd := "2026-10-10T04:08:05.615Z", "2026-10-10T04:48:18.355Z"
-	runRevision := epochSeconds(t, "2026-10-10T05:04:18.468Z")
+	runRevision := asInstant(t, "2026-10-10T05:04:18.468Z").Unix()
 	for _, c := range []struct {
 		id, value, statistic, period, periodID, channel, start, end, origin string
 		revision                                                            int64
@@ -214,10 +182,10 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 		if got, _ := p["channel"].(string); got != c.channel {
 			t.Errorf("%s is on channel %q, want %q", c.id, got, c.channel)
 		}
-		if !sameInstant(t, p["at"], c.start) || !sameInstant(t, p["endsAt"], c.end) {
+		if !sameInstant(p["at"], asInstant(t, c.start)) || !sameInstant(p["endsAt"], asInstant(t, c.end)) {
 			t.Errorf("%s spans %v to %v, want %s to %s", c.id, p["at"], p["endsAt"], c.start, c.end)
 		}
-		if asInt(p["utcOffset"]) != 180 || asInt(p["revision"]) != c.revision || storedRefPath(p["origin"]) != c.origin {
+		if asInt(t, p["utcOffset"]) != 180 || asInt(t, p["revision"]) != c.revision || storedRefPath(p["origin"]) != c.origin {
 			t.Errorf("%s utcOffset %v revision %v origin %v, want 180, %d and %s",
 				c.id, p["utcOffset"], p["revision"], p["origin"], c.revision, c.origin)
 		}
@@ -263,7 +231,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 			t.Errorf("stage %s = %s %s, want %v min", code, v, u, ms/60000)
 		}
 		if p["code"] != code || p["form"] != "amount" || metricOf(p) != "health/sleep_stage" ||
-			p["periodId"] != whoopExampleSleep || !sameInstant(t, p["at"], "2026-10-06T19:41:00.271Z") {
+			p["periodId"] != whoopExampleSleep || !sameInstant(p["at"], asInstant(t, "2026-10-06T19:41:00.271Z")) {
 			t.Errorf("stage %s is %v", code, p)
 		}
 	}
@@ -347,7 +315,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 			t.Errorf("strain of %s carries periodId %v", cycle, p["periodId"])
 		}
 		at, _ := time.Parse(time.RFC3339Nano, fmt.Sprint(p["at"]))
-		days[cycle] = at.Add(time.Duration(asInt(p["utcOffset"])) * time.Minute).Format(time.DateOnly)
+		days[cycle] = at.Add(time.Duration(asInt(t, p["utcOffset"])) * time.Minute).Format(time.DateOnly)
 	}
 	if days[whoopEarlyCycle] != "2026-09-19" || days[whoopLateCycle] != "2026-09-19" {
 		t.Errorf("the two cycles start on local days %v, want both 2026-09-19", days)
@@ -355,7 +323,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 
 	// The current cycle has no end: its span ends at its updatedAt.
 	current := healthProps(t, ds, obsObservation, hw(whoopCurrentCycle, "strain"))
-	if !sameInstant(t, current["endsAt"], "2026-10-10T14:42:00.093Z") {
+	if !sameInstant(current["endsAt"], asInstant(t, "2026-10-10T14:42:00.093Z")) {
 		t.Errorf("the current cycle's strain ends %v, want its updatedAt", current["endsAt"])
 	}
 	// The unscored night implies a sleep and nothing else.
@@ -437,11 +405,11 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	if v, _ := quantityOf(t, after.Properties, "value"); v != "13.6118" {
 		t.Errorf("the rescored strain = %s, want 13.6118", v)
 	}
-	if asInt(after.Properties["revision"]) <= asInt(before.Properties["revision"]) || after.Version <= before.Version {
+	if asInt(t, after.Properties["revision"]) <= asInt(t, before.Properties["revision"]) || after.Version <= before.Version {
 		t.Errorf("the rescore moved revision %v -> %v and version %d -> %d, want both higher",
 			before.Properties["revision"], after.Properties["revision"], before.Version, after.Version)
 	}
-	if asInt(after.Properties["revision"]) != epochSeconds(t, "2026-10-10T15:31:47.865Z") {
+	if asInt(t, after.Properties["revision"]) != asInstant(t, "2026-10-10T15:31:47.865Z").Unix() {
 		t.Errorf("the rescored strain's revision = %v, want the rescore's updated_at", after.Properties["revision"])
 	}
 	// The cycle's recovery takes its span from the cycle, so the cycle's
@@ -451,7 +419,7 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	recovery := mustGet(t, ds, obsObservation, hw(whoopRescoredCycle, "recovery"))
 	if recovery.Version != recoveryBefore.Version ||
 		fmt.Sprint(recovery.Properties["revision"]) != fmt.Sprint(recoveryBefore.Properties["revision"]) ||
-		!sameInstant(t, recovery.Properties["endsAt"], fmt.Sprint(after.Properties["endsAt"])) {
+		!sameInstant(recovery.Properties["endsAt"], asInstant(t, after.Properties["endsAt"])) {
 		t.Errorf("the rescored cycle's recovery moved to version %d revision %v ending %v (was %d, %v); want it unwritten over the cycle's span",
 			recovery.Version, recovery.Properties["revision"], recovery.Properties["endsAt"],
 			recoveryBefore.Version, recoveryBefore.Properties["revision"])
@@ -476,7 +444,7 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 	// The rescore rewrites the cycle's heart rate at the same ids.
 	hrAfter := mustGet(t, ds, obsObservation, hw(whoopRescoredCycle, "heart_rate_max"))
 	if v, _ := quantityOf(t, hrAfter.Properties, "value"); v != "168" || hrAfter.Version <= hrBefore.Version ||
-		asInt(hrAfter.Properties["revision"]) != epochSeconds(t, "2026-10-10T15:31:47.865Z") {
+		asInt(t, hrAfter.Properties["revision"]) != asInstant(t, "2026-10-10T15:31:47.865Z").Unix() {
 		t.Errorf("the rescored cycle's maximum heart rate is %s at version %d (was %d), revision %v; want 168 at a higher version and the rescore's revision",
 			v, hrAfter.Version, hrBefore.Version, hrAfter.Properties["revision"])
 	}

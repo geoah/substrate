@@ -129,7 +129,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	}
 	user := mustGet(t, ds, whoopUserType, whoopRow("user", whoopMember)).Properties
 	if user["email"] != p.Person.Email || user["heightMeter"] == nil || user["weightKilogram"] == nil ||
-		asInt(user["maxHeartRate"]) != int64(p.Person.MaxHR) {
+		asInt(t, user["maxHeartRate"]) != int64(p.Person.MaxHR) {
 		t.Errorf("the member row is %v", user)
 	}
 	cycles := synthWhoopRecords(t, out, "GET_v2_cycle")
@@ -140,7 +140,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	for _, c := range cycles {
 		id := strconv.FormatInt(int64(c["id"].(float64)), 10)
 		row := mustGet(t, ds, whoopCycleType, whoopRow("cycle", id)).Properties
-		if !sameInstant(t, row["at"], c["start"].(string)) || row["timezoneOffset"] != "+03:00" || row["scoreState"] != "scored" {
+		if !sameInstant(row["at"], asInstant(t, c["start"])) || row["timezoneOffset"] != "+03:00" || row["scoreState"] != "scored" {
 			t.Errorf("cycle %s mirrored as %v", id, row)
 		}
 		if c["end"] == nil {
@@ -148,7 +148,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 			if row["endsAt"] != nil {
 				t.Errorf("the open cycle %s has endsAt %v", id, row["endsAt"])
 			}
-		} else if !sameInstant(t, row["endsAt"], c["end"].(string)) {
+		} else if !sameInstant(row["endsAt"], asInstant(t, c["end"])) {
 			t.Errorf("cycle %s ends %v, generated %v", id, row["endsAt"], c["end"])
 		}
 	}

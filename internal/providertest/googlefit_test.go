@@ -150,12 +150,8 @@ func readFitJSON(t *testing.T, path string) map[string]any {
 	return doc
 }
 
-// fitNumber reads a stored int, which a record serves as a JSON number.
-func fitNumber(v any) float64 {
-	n, _ := v.(float64)
-	return n
-}
-
+// fitInt reads one of Fit's int64 strings inside the fake, which answers
+// from a handler with no test to fail; a test reads values with asInt.
 func fitInt(v any) int64 {
 	n, _ := strconv.ParseInt(fmt.Sprint(v), 10, 64)
 	return n
@@ -576,15 +572,15 @@ func TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions(t *testing.T) {
 		t.Fatalf("the 2026-10-07 heart rate row holds %d points, want 1223", len(points))
 	}
 	for i := 1; i < len(points); i++ {
-		if fitInt(points[i]["endTimeNanos"]) < fitInt(points[i-1]["endTimeNanos"]) {
+		if asInt(t, points[i]["endTimeNanos"]) < asInt(t, points[i-1]["endTimeNanos"]) {
 			t.Fatalf("heart rate points are not in end-time order at %d", i)
 		}
 	}
 	start := day(time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC))
-	if first := fitInt(points[0]["startTimeNanos"]); first < start.UnixNano() {
+	if first := asInt(t, points[0]["startTimeNanos"]); first < start.UnixNano() {
 		t.Fatalf("the row holds a point from the day before (%d < %d)", first, start.UnixNano())
 	}
-	if !fitSameInstant(busy.Properties["at"], start) || !fitSameInstant(busy.Properties["endsAt"], start.Add(24*time.Hour)) {
+	if !sameInstant(busy.Properties["at"], start) || !sameInstant(busy.Properties["endsAt"], start.Add(24*time.Hour)) {
 		t.Fatalf("the row's span = %v to %v, want the UTC day %s", busy.Properties["at"], busy.Properties["endsAt"], start)
 	}
 	value, _ := points[0]["value"].([]any)
@@ -741,7 +737,7 @@ func TestGoogleFitRereadRewritesAChangedDayAndDeletesAnEmptiedOne(t *testing.T) 
 	}
 	var evening map[string]any
 	for _, p := range fitPoints(row) {
-		if fitInt(p["startTimeNanos"]) == 1791052863000000000+today.Sub(recordedToday).Nanoseconds() {
+		if asInt(t, p["startTimeNanos"]) == 1791052863000000000+today.Sub(recordedToday).Nanoseconds() {
 			evening = p
 		}
 	}
@@ -797,16 +793,16 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 	run := mustGet(t, ds, googlefitSessionType, googlefitAccount+"/strava-16238731866").Properties
 	app, _ := run["application"].(map[string]any)
 	if app["packageName"] != "com.strava" || app["version"] != "421.9" ||
-		fitNumber(run["activityType"]) != 8 || fitNumber(run["activeTimeMillis"]) != 2409000 ||
+		asFloat(t, run["activityType"]) != 8 || asFloat(t, run["activeTimeMillis"]) != 2409000 ||
 		run["name"] != "Morning run" {
 		t.Fatalf("the Strava run = %v", run)
 	}
-	if !fitSameInstant(run["at"], time.UnixMilli(1789186117000).Add(shift)) ||
-		!fitSameInstant(run["endsAt"], time.UnixMilli(1789188589000).Add(shift)) {
+	if !sameInstant(run["at"], time.UnixMilli(1789186117000).Add(shift)) ||
+		!sameInstant(run["endsAt"], time.UnixMilli(1789188589000).Add(shift)) {
 		t.Fatalf("the Strava run spans %v to %v", run["at"], run["endsAt"])
 	}
 	sleep := mustGet(t, ds, googlefitSessionType, googlefitAccount+"/Sleep1789070381000").Properties
-	if fitNumber(sleep["activityType"]) != 72 {
+	if asFloat(t, sleep["activityType"]) != 72 {
 		t.Fatalf("the first night's session = %v", sleep)
 	}
 	tokens, _ := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties["syncTokens"].(map[string]any)
@@ -1032,11 +1028,4 @@ func TestGoogleFitRevokedGrantStampsErroring(t *testing.T) {
 	if n := countLive(t, ds, googlefitSourceType) + countLive(t, ds, googlefitDatasetType); n != 0 {
 		t.Fatalf("a revoked grant wrote %d mirror rows", n)
 	}
-}
-
-// fitSameInstant compares a stored datetime with an instant, whatever spelling
-// the engine stored it in.
-func fitSameInstant(v any, want time.Time) bool {
-	got, err := time.Parse(time.RFC3339Nano, fmt.Sprint(v))
-	return err == nil && got.Equal(want)
 }

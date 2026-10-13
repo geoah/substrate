@@ -99,9 +99,9 @@ func synthFitKept(t *testing.T, out *synth.Output) map[string][]map[string]any {
 		if err := json.Unmarshal(f.Body, &page); err != nil {
 			t.Fatalf("%s: %v", f.Path, err)
 		}
-		lo, hi := fitInt(page.MinStartTimeNs), fitInt(page.MaxEndTimeNs)
+		lo, hi := asInt(t, page.MinStartTimeNs), asInt(t, page.MaxEndTimeNs)
 		for _, p := range page.Point {
-			if s := fitInt(p["startTimeNanos"]); s >= lo && s < hi {
+			if s := asInt(t, p["startTimeNanos"]); s >= lo && s < hi {
 				kept[page.DataSourceID] = append(kept[page.DataSourceID], p)
 			}
 		}
@@ -110,20 +110,22 @@ func synthFitKept(t *testing.T, out *synth.Output) map[string][]map[string]any {
 }
 
 // synthFitDays is the UTC days one data source's kept points start on.
-func synthFitDays(points []map[string]any) map[string]bool {
+func synthFitDays(t *testing.T, points []map[string]any) map[string]bool {
+	t.Helper()
 	out := map[string]bool{}
 	for _, p := range points {
-		out[time.Unix(0, fitInt(p["startTimeNanos"])).UTC().Format(time.DateOnly)] = true
+		out[time.Unix(0, asInt(t, p["startTimeNanos"])).UTC().Format(time.DateOnly)] = true
 	}
 	return out
 }
 
 // synthFitHours is the UTC hours the points of one origin start in.
-func synthFitHours(points []map[string]any, origin string) int {
+func synthFitHours(t *testing.T, points []map[string]any, origin string) int {
+	t.Helper()
 	hours := map[int64]bool{}
 	for _, p := range points {
 		if origin == "" || p["originDataSourceId"] == origin {
-			hours[fitInt(p["startTimeNanos"])/int64(time.Hour)] = true
+			hours[asInt(t, p["startTimeNanos"])/int64(time.Hour)] = true
 		}
 	}
 	return len(hours)
@@ -233,7 +235,7 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 		if read != 31 {
 			t.Errorf("%s was read on %d days, want the 31 of the walk", sid, read)
 		}
-		wantRows[sid] = len(synthFitDays(kept[sid]))
+		wantRows[sid] = len(synthFitDays(t, kept[sid]))
 	}
 
 	// The mirror: every listed source, a dataset row per day with points per
@@ -258,7 +260,7 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	row := mustGet(t, ds, googlefitDatasetType, fitDatasetRow(fitHeartRate, middle))
 	var onDay int
 	for _, pt := range hrKept {
-		if time.Unix(0, fitInt(pt["startTimeNanos"])).UTC().Format(time.DateOnly) == middle.Format(time.DateOnly) {
+		if time.Unix(0, asInt(t, pt["startTimeNanos"])).UTC().Format(time.DateOnly) == middle.Format(time.DateOnly) {
 			onDay++
 		}
 	}
@@ -280,12 +282,12 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 		traces[strings.TrimPrefix(storedRefPath(tr.Properties["metric"]), obsMetric+"/")+" "+src]++
 	}
 	wantTraces := map[string]int{
-		"health/heart_rate " + fitWatchSlug:      synthFitHours(hrKept, watchHR),
-		"health/steps " + fitWatchSlug:           synthFitHours(kept[fitSteps], ""),
-		"health/energy_expended " + fitWatchSlug: synthFitHours(kept[kcal], ""),
+		"health/heart_rate " + fitWatchSlug:      synthFitHours(t, hrKept, watchHR),
+		"health/steps " + fitWatchSlug:           synthFitHours(t, kept[fitSteps], ""),
+		"health/energy_expended " + fitWatchSlug: synthFitHours(t, kept[kcal], ""),
 	}
 	if pressures > 0 {
-		wantTraces["health/heart_rate withings-bpm-connect.7c03d5e1"] = synthFitHours(hrKept, cuffHR)
+		wantTraces["health/heart_rate withings-bpm-connect.7c03d5e1"] = synthFitHours(t, hrKept, cuffHR)
 	}
 	for k, want := range wantTraces {
 		if traces[k] != want {
@@ -350,8 +352,8 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	sent, _ := first["value"].([]any)[0].(map[string]any)["fpVal"].(float64)
 	obs := mustGet(t, ds, obsObservation, fitReadingID(
 		fitDatasetRow("derived:com.google.weight:com.google.android.gms:merge_weight",
-			time.Unix(0, fitInt(first["startTimeNanos"])).UTC().Truncate(24*time.Hour)),
-		fitScaleSlug, "body_mass", time.Unix(0, fitInt(first["startTimeNanos"])))).Properties
+			time.Unix(0, asInt(t, first["startTimeNanos"])).UTC().Truncate(24*time.Hour)),
+		fitScaleSlug, "body_mass", time.Unix(0, asInt(t, first["startTimeNanos"])))).Properties
 	value, _ := obs["value"].(map[string]any)
 	if v, _ := strconv.ParseFloat(value["value"].(string), 64); v != sent || value["unit"] != "kg" {
 		t.Errorf("the first weigh-in is %v, the scale sent %v kg", value, sent)
