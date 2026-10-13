@@ -93,6 +93,7 @@ import {
   type Plot,
 } from "@/lib/overlay"
 import { listWords } from "@/lib/tools"
+import { everydayUnits } from "@/lib/unit-choices"
 import { unitLabel } from "@/lib/units"
 import { cn } from "@/lib/utils"
 
@@ -750,9 +751,14 @@ function PlotHead({
         {plot.units.length > 1 && (
           <Picker
             label="Unit"
-            options={plot.units.map((value) => ({
+            // Everyday units by their symbols; with Technical details on,
+            // every unit the server converts to, the picker adding each code.
+            options={(technical
+              ? plot.units
+              : everydayUnits(plot.units, plot.stored, plot.outputUnit)
+            ).map((value) => ({
               value,
-              label: unitLabel(value),
+              label: unitLabel(value, false),
             }))}
             selected={[plot.outputUnit ?? plot.stored ?? ""]}
             onChange={([next]) =>

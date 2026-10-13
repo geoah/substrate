@@ -783,7 +783,13 @@ as JSON and as a `curl` command.
 its name, which axis it reads on, its reducer (**Show**) and its output unit
 (the units of the stored unit's measure the server converts it to: never
 another annotation, another assay unit, a level or a factor of pi; minutes,
-seconds or hours for a time in a range), and its legend. **Show** offers
+seconds or hours for a time in a range), and its legend. **Unit** names each
+unit by its symbol (`lb`, not `[lb_av]`) and offers the units a stored unit is
+read in day to day where there is such a list (kilograms, pounds and stones
+for a weight in kilograms); with Technical details on it offers every unit
+the server converts to, each with its code. A quantity's hover gives its
+symbol (`19 score`), and the text a write takes (`19 {score}`) only with
+Technical details on. **Show** offers
 every reducer the metric's form takes ([the table](api.md#reducers-by-form)),
 with the median and the 90th percentile for a level or an amount, the
 circular mean for an angle, and for a heart rate the time in each of five

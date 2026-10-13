@@ -287,12 +287,13 @@ function printSymbol(code: string): string {
   return renderPrintTerm(term)
 }
 
-/** A unit as the picker offers it: the symbol a reader knows, with the code
- * beside it where the two differ (`°C (Cel)`, `lb ([lb_av])`). */
-export function unitLabel(code: string): string {
+/** A unit as a picker offers it: the symbol a reader knows, with the code
+ * beside it where the two differ and `code` asks for it (an editor, which
+ * writes the code, or Technical details): `°C (Cel)`, `lb ([lb_av])`. */
+export function unitLabel(code: string, withCode = true): string {
   const symbol = unitSymbol(code)
-  if (!symbol) return `no unit (${code})`
-  return symbol === code ? code : `${symbol} (${code})`
+  if (!symbol) return withCode ? `no unit (${code})` : "no unit"
+  return symbol === code || !withCode ? symbol : `${symbol} (${code})`
 }
 
 /** The units a declaration admits, as the picker groups them: the listed

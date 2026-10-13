@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 
 import { MEASURES } from "@/lib/units"
 
-import { converts, unitChoices } from "./unit-choices"
+import { converts, everydayUnits, unitChoices } from "./unit-choices"
 
 describe("the units a reading may be shown in", () => {
   it("narrows the output unit to the stored unit's measure", () => {
@@ -52,6 +52,27 @@ describe("the units a reading may be shown in", () => {
     expect(unitChoices("Cel", "temperature-difference")).toEqual([
       "K",
       "Cel",
+      "[degF]",
+    ])
+  })
+})
+
+describe("the units a chart offers day to day", () => {
+  it("offers body weight in kilograms, pounds and stones, and keeps a pick", () => {
+    const mass = unitChoices("kg", "mass")
+    expect(mass).toContain("ug")
+    expect(everydayUnits(mass, "kg")).toEqual(["kg", "[lb_av]", "[stone_av]"])
+    // A unit picked from the address stays offered.
+    expect(everydayUnits(mass, "kg", "t")).toEqual([
+      "kg",
+      "t",
+      "[lb_av]",
+      "[stone_av]",
+    ])
+    // A stored unit with no everyday list keeps the measure's.
+    expect(everydayUnits(["Cel", "K", "[degF]"], "Cel")).toEqual([
+      "Cel",
+      "K",
       "[degF]",
     ])
   })

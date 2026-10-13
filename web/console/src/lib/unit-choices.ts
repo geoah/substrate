@@ -153,3 +153,29 @@ export function unitChoices(
   if (!measure || !measure.units.includes(stored)) return [stored]
   return measure.units.filter((code) => converts(measure, stored, code))
 }
+
+/** The units a stored unit is read in day to day, where its measure lists
+ * many no one picks for it: a body weight in kilograms is weighed in pounds
+ * and stones, never micrograms or tonnes. A unit this does not name keeps
+ * its measure's full list. */
+const EVERYDAY: Record<string, readonly string[]> = {
+  kg: ["kg", "[lb_av]", "[stone_av]"],
+  g: ["g", "kg", "mg", "[oz_av]", "[lb_av]"],
+  m: ["m", "km", "[mi_i]", "[ft_i]"],
+  km: ["km", "m", "[mi_i]"],
+  L: ["L", "mL", "[gal_us]", "[foz_us]"],
+  mL: ["mL", "L", "[foz_us]", "[cup_us]"],
+}
+
+/** The units a chart's Unit menu offers of `units` (`unitChoices`): the
+ * everyday ones for the stored unit, with any `picked` among them, in the
+ * table's order; all of them where the stored unit has no everyday list. */
+export function everydayUnits(
+  units: readonly string[],
+  stored: string | undefined,
+  picked?: string
+): string[] {
+  const everyday = stored ? EVERYDAY[stored] : undefined
+  if (!everyday) return [...units]
+  return units.filter((u) => everyday.includes(u) || u === picked)
+}

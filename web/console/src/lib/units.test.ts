@@ -96,6 +96,9 @@ describe("the unit table", () => {
     expect(unitLabel("kg")).toBe("kg")
     expect(unitLabel("1")).toBe("no unit (1)")
     expect(unitLabel("GJ")).toBe("GJ")
+    // A chart's menu names the symbol alone.
+    expect(unitLabel("[lb_av]", false)).toBe("lb")
+    expect(unitLabel("1", false)).toBe("no unit")
   })
 })
 

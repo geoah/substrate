@@ -650,7 +650,7 @@ describe("the timeline's requests", () => {
     )
 
     fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
-    fireEvent.click(await screen.findByRole("option", { name: /\[lb_av\]/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /^lb$/ }))
     await waitFor(() =>
       expect(
         charts(server.seen, "health/body_mass").at(-1)!.aggregate.unit
@@ -748,6 +748,30 @@ describe("the timeline's requests", () => {
     expect(streamReads()).toBe(before)
   })
 
+  it("offers body weight in the units people weigh in, by their symbols", async () => {
+    mount(`?metric=health/body_mass&${WINDOW}`)
+    const weight = await lane("Weight")
+    fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
+    await screen.findByRole("option", { name: /^lb$/ })
+    // The stored unit is the one chosen.
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "kg(chosen)",
+      "lb",
+      "st",
+    ])
+  })
+
+  it("offers every unit, each with its code, with Technical details on", async () => {
+    mount(`?metric=health/body_mass&${WINDOW}`, true)
+    const weight = await lane("Weight")
+    fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
+    await screen.findByRole("option", { name: /lb_av/ })
+    const names = screen.getAllByRole("option").map((o) => o.textContent)
+    // The symbol, then the code the picker adds.
+    expect(names).toContain("lb[lb_av]")
+    expect(names).toContain("μgug")
+  })
+
   it("holds no kilograms under an axis in pounds while the pounds are read", async () => {
     mount(`?metric=health/body_mass&${WINDOW}`)
     const weight = await lane("Weight")
@@ -755,7 +779,7 @@ describe("the timeline's requests", () => {
     expect(within(weight).getAllByText(/72\.6/).length).toBeGreaterThan(0)
     hangMetricReads()
     fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
-    fireEvent.click(await screen.findByRole("option", { name: /\[lb_av\]/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /^lb$/ }))
     await waitFor(() => expect(within(weight).getByText("Reading…")))
     expect(within(weight).queryByText("Updating…")).toBe(null)
     expect(within(weight).queryAllByText(/72\.6/)).toEqual([])
@@ -1577,7 +1601,7 @@ describe("the charts", () => {
     // A unit read anew draws the chart anew in the same window, and that
     // chart leaves the focus where the reader put it.
     fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
-    fireEvent.click(await screen.findByRole("option", { name: /\[lb_av\]/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /^lb$/ }))
     await waitFor(() =>
       expect(
         charts(server.seen, "health/body_mass").at(-1)!.aggregate.unit
