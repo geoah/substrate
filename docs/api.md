@@ -1624,7 +1624,7 @@ and `bucket`.
 
 ### The property read
 
-`{"property": {"name": "price", "anchor": "paidAt"}}` reduces a declared
+`{"property": {"name": "amount", "anchor": "paidAt"}}` reduces a declared
 `int`, `float`, `decimal`, `quantity`, `money` or `duration` property of the
 filtered kinds with `count`, `sum`, `avg`, `min`, `max` and `stddev`, in
 exact arithmetic: money grouped by currency (each row's `group.currency`,
@@ -1636,7 +1636,9 @@ is. The anchor is `at`, `endsAt`, `dueAt`, `createdAt`, `updatedAt`, a
 declared `datetime`, or a declared `date`, which places its record at the
 start of its day in the calendar's `timezone` (UTC in the `every` mode and
 with no bucket); any other column or property is a `422` naming it. The
-records mode is refused.
+records mode is refused. Spending per month, from an `expense` kind a
+repository declares itself with a `money` property `amount` and a
+`datetime` property `paidAt` (no sample ships one):
 
 ```json
 {"filter": {"kinds": ["ada.example.com/finance/expense"]},
