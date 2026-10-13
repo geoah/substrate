@@ -380,6 +380,15 @@ describe("ranges and buckets", () => {
     expect(roundDigits("72.40", 2)).toBe("72.40")
     expect(roundDigits("9812", 0)).toBe("9812")
     expect(readingText("160.011509893784", "[lb_av]", 1)).toBe("160.0 lb")
+    // Half up on the digits themselves, which a binary float is not.
+    expect(roundDigits("1.005", 2)).toBe("1.01")
+    expect(roundDigits("2.675", 2)).toBe("2.68")
+    expect(roundDigits("-1.005", 2)).toBe("-1.01")
+    expect(roundDigits("9.995", 2)).toBe("10.00")
+    expect(roundDigits("0.5", 0)).toBe("1")
+    // Rounded to nothing, a value has no sign.
+    expect(roundDigits("-0.004", 2)).toBe("0.00")
+    expect(roundDigits("-0.4", 0)).toBe("0")
   })
 
   it("labels buckets as finely as their size", () => {
