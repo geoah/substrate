@@ -242,7 +242,6 @@ export interface Plot {
   metric: string
   name: string
   shape: ReadingShape
-  form?: Form
   reducer: string
   /** The reducers it may ask for, the default first. */
   reducers: string[]
@@ -552,7 +551,6 @@ export function planPlot(
     metric,
     name,
     shape,
-    form,
     reducer,
     reducers,
     reducerMenu,

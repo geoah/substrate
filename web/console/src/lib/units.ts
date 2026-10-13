@@ -85,9 +85,6 @@ for (const m of MEASURES) {
   }
 }
 
-/** The worked value, in the YAML a document carries. */
-export const QUANTITY_EXAMPLE = '{value: "72.5", unit: kg}'
-
 /** The worked value, as the text an editor takes. */
 export const QUANTITY_TEXT_EXAMPLE = "72.5 kg"
 
@@ -556,11 +553,6 @@ export function parseQuantityText(text: string): {
       ...(comparator ? { comparator } : {}),
     },
   }
-}
-
-/** The unit a stored value is in, or undefined. */
-export function quantityUnit(value: unknown): string | undefined {
-  return isQuantity(value) ? value.unit : undefined
 }
 
 /** The worked value for a declaration, in the YAML a document carries: the
