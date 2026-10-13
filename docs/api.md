@@ -1232,9 +1232,12 @@ measure, except a duration unit beside `durationIn` or `timeInState`, which
 sets the durations' unit (`s` otherwise). `count` has no unit, `stddev` is a
 difference (a temperature's has no offset), and `circularMean` is in `deg`.
 Every stored value is converted from its own unit, exactly where the factor
-has a finite decimal expansion. A stream whose unit does not convert (another
-measure, or another annotation: `{beats}/min` and `/min` count different
-things) is a `422` naming its source and unit.
+has a finite decimal expansion. A value the read takes whose unit does not
+convert (another measure, or another annotation: `{beats}/min` and `/min`
+count different things) is a `422` naming its unit and, where the read knows
+it, its source: a point in the range, a rollup row, or a gauge's value held
+into the range. A stream's values outside the range refuse nothing, so one
+entry in the wrong measure refuses only the reads that take it.
 
 ### Sources and `from`
 
@@ -1405,11 +1408,11 @@ merged as one row.
 - `422`: two selectors, or a bucketed metric read with neither; no range or
   no reducers; an unknown reducer or a bad argument; a reducer the form does
   not take (naming the form); `circularMean` off an angle; a `unit` outside
-  the measure (naming the measure); a stream whose unit does not convert; a
-  group of two forms; `priority` over two counters; a budget over its cap or
-  a read over a budget (naming the limit); `downsample` beside `reducers`,
-  `rolling`, `fill` or `bucket`; `minCoverage` without `prefer-raw`; a `fill`,
-  `rolling` or `maxGap` on the latest read.
+  the measure (naming the measure); a value the read takes whose unit does
+  not convert; a group of two forms; `priority` over two counters; a budget
+  over its cap or a read over a budget (naming the limit); `downsample`
+  beside `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
+  `prefer-raw`; a `fill`, `rolling` or `maxGap` on the latest read.
 
 ### Where this differs from the plan
 

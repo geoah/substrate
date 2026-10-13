@@ -1385,3 +1385,86 @@ func TestAggregatePreferRawNeedsAPointInTheBucket(t *testing.T) {
 		t.Errorf("2030-01-02, no reading: from %s, avg %q, want the summary's 70", row.From, v)
 	}
 }
+
+// A value in another measure refuses only a read that takes it, on both
+// paths, naming its unit: heart rate from a watch in /min, a 70 kg hand entry
+// in 2020 from another source, and a 72 kg reading on the watch dated
+// 2026-10-05, its stream's newest. A read of 2026-10-01 holds neither and
+// answers the watch's readings. A read of 2026-10-05 holds the watch's kg
+// reading; a read of 2026 from a third source holds its 2020 kg reading, which
+// has no hold and still holds; a counter reading in kg beside one in kW.h is
+// the first and last of its group. Each is a 422.
+func TestAggregateRefusesOnlyTheValuesItTakesInAnotherMeasure(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	hr := func(id, source, value, unit string, at time.Time, hold string) {
+		props := map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef(source), "form": "gauge",
+			"value": quantity(value, unit), "at": at.Format(time.RFC3339),
+		}
+		if hold != "" {
+			props["hold"] = hold
+		}
+		f.mustPut(t, f.observation, id, props)
+	}
+	for h := 8; h <= 12; h++ {
+		hr("watch/"+strconv.Itoa(h), "watch", strconv.Itoa(60+h), "/min", day.Add(time.Duration(h)*time.Hour), "PT5M")
+	}
+	hr("watch/mass", "watch", "72", "kg", day.AddDate(0, 0, 4), "PT5M")
+	hr("hand/mass", "hand", "70", "kg", time.Date(2020, 1, 1, 9, 0, 0, 0, time.UTC), "PT5M")
+	hr("old/mass", "old", "70", "kg", time.Date(2020, 1, 1, 9, 0, 0, 0, time.UTC), "")
+	for _, x := range []struct{ source, value, unit string }{{"meter", "1", "kW.h"}, {"scale", "5", "kg"}} {
+		f.mustPut(t, f.observation, x.source+"/energy", map[string]any{
+			"metric": f.metricRef("energy"), "source": f.sourceRef(x.source), "form": "counter", "resetRule": "monotonic",
+			"value": quantity(x.value, x.unit), "at": at(day.Add(9 * time.Hour)),
+		})
+	}
+	sources := func(ids ...string) substrate.Filter {
+		var in []any
+		for _, id := range ids {
+			in = append(in, f.sourcePath(id))
+		}
+		return substrate.Filter{Properties: map[string]substrate.Cond{"source": {In: in}}}
+	}
+	heartRate := func(from time.Time) substrate.Aggregate {
+		return substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")},
+			Range:    rng(from, from.AddDate(0, 0, 1)),
+			Reducers: reducers("count", "avg"),
+		}
+	}
+	res, _, _ := f.bothPaths(sources("watch", "hand"), heartRate(day))
+	if len(res.Rows) != 1 || res.Unit != "/min" {
+		t.Fatalf("2026-10-01: unit %s and %d rows, want /min and the watch's one: %+v", res.Unit, len(res.Rows), res.Rows)
+	}
+	if c, _ := val(res.Rows[0], "count"); c != "5" {
+		t.Errorf("2026-10-01: count %s, want the watch's 5 readings", c)
+	}
+	energy := substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("energy")},
+		Range:    rng(day, day.AddDate(0, 0, 1)),
+		Reducers: reducers("first", "last"),
+		GroupBy:  []string{"source"},
+		Unit:     "W.h",
+	}
+	for _, x := range []struct {
+		name   string
+		filter substrate.Filter
+		a      substrate.Aggregate
+	}{
+		{"the watch's kg reading", sources("watch"), heartRate(day.AddDate(0, 0, 4))},
+		{"a kg reading held into the range", sources("old"), heartRate(day)},
+		{"a counter reading in kg", substrate.Filter{}, energy},
+	} {
+		for _, path := range []struct {
+			name string
+			ctx  context.Context
+		}{{"rollups", context.Background()}, {"raw", engine.AggregateRaw(context.Background())}} {
+			res, err := f.ds.Aggregate(path.ctx, substrate.AggregateQuery{Filter: x.filter, Aggregate: &x.a})
+			if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "kg") {
+				t.Errorf("%s, %s: %v, %+v; want a 422 naming kg", x.name, path.name, err, res)
+			}
+		}
+	}
+}

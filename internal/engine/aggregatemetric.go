@@ -79,6 +79,19 @@ type aggGroup struct {
 	rollups bool
 }
 
+// sourceOf is the source of the stream-th raw stream of the group, or of its
+// summaries for a summary row: what a refusal names.
+func (g *aggGroup) sourceOf(stream int, form string) string {
+	list := g.raw
+	if form == vocabulary.FormSummary {
+		list = g.sums
+	}
+	if stream < 0 || stream >= len(list) {
+		return ""
+	}
+	return list[stream].source
+}
+
 // aggPoint is one point as the read holds it: the observed point (its value
 // converted to the read's unit, except a counter's, whose steps read the
 // stored digits) and what the index rows carry beside it.
@@ -582,7 +595,8 @@ type convFactor struct {
 	identity bool
 }
 
-// factor is the conversion of a stored unit into the values' unit.
+// factor is the conversion of a stored unit into the values' unit. The
+// metric read refuses through aggRun.conversion, which names the value.
 func (u *aggUnits) factor(unit string, delta bool) (*convFactor, error) {
 	k := convKey{unit, delta}
 	if c, ok := u.conv[k]; ok {
@@ -629,7 +643,10 @@ func (c *convFactor) digits(s string) (string, bool) {
 }
 
 // aggregateUnits settles the read's units and refuses a unit outside the
-// metric's measure, naming the measure.
+// metric's measure, naming the measure. A stored unit that does not convert
+// is refused where the read takes a value in it (aggRun.conversion), not here:
+// a stream's unit is its newest point's, and a point outside the range
+// refuses nothing.
 func (ds *dataset) aggregateUnits(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream) (*aggUnits, error) {
 	u := &aggUnits{duration: "s"}
 	var metricUnit string
@@ -693,14 +710,6 @@ func (ds *dataset) aggregateUnits(ctx context.Context, tx *sql.Tx, p *aggPlan, s
 			u.value = metricUnit
 		case first != nil:
 			u.value = first.unit
-		}
-	}
-	for _, s := range streams {
-		if s.unit == "" {
-			continue
-		}
-		if _, err := u.factor(s.unit, s.delta); err != nil {
-			return nil, refuse("aggregate.unit", "the stream from %s stores %s, which does not convert to %s: %v", orOwner(s.source), s.unit, u.value, err)
 		}
 	}
 	return u, nil

@@ -389,7 +389,7 @@ func (r *aggRun) scanAggPoint(rows *sql.Rows, s *aggStream, lead ...any) (aggPoi
 	ap.Point, ap.off, ap.delta = sp.point, sp.group.offset, sp.group.delta
 	ap.Group = strconv.FormatInt(ap.off, 10)
 	ap.RecordID, ap.Ord = ap.rid, int64(ap.ord)
-	if err := r.convertPoint(&ap, s.form); err != nil {
+	if err := r.convertPoint(&ap, s); err != nil {
 		return ap, err
 	}
 	return ap, nil
@@ -398,13 +398,13 @@ func (r *aggRun) scanAggPoint(rows *sql.Rows, s *aggStream, lead ...any) (aggPoi
 // convertPoint converts a point's number into the read's unit. A counter's
 // stays as stored: its steps are taken on the stored digits, in the stored
 // unit, as its rollup rows take them.
-func (r *aggRun) convertPoint(ap *aggPoint, form string) error {
-	if !ap.HasValue || ap.Unit == "" || form == vocabulary.FormCounter {
+func (r *aggRun) convertPoint(ap *aggPoint, s *aggStream) error {
+	if !ap.HasValue || ap.Unit == "" || s.form == vocabulary.FormCounter {
 		return nil
 	}
-	c, err := r.u.factor(ap.Unit, ap.delta)
+	c, err := r.conversion(ap.Unit, ap.delta, s.source)
 	if err != nil {
-		return refuse("aggregate.unit", "a point stored in %s does not convert to %s: %v", ap.Unit, r.u.value, err)
+		return err
 	}
 	if c.identity {
 		return nil
@@ -416,6 +416,21 @@ func (r *aggRun) convertPoint(ap *aggPoint, form string) error {
 	}
 	ap.Exact, ap.Unit = digits, r.u.value
 	return nil
+}
+
+// conversion is the factor from a stored unit into the read's, refused with
+// a 422 naming the value's unit, and its source where the caller knows it:
+// the read refuses a value it takes, never a stream for its other points.
+func (r *aggRun) conversion(unit string, delta bool, source string) (*convFactor, error) {
+	c, err := r.u.factor(unit, delta)
+	if err != nil {
+		from := ""
+		if source != "" {
+			from = " from " + source
+		}
+		return nil, refuse("aggregate.unit", "a value%s stored in %s does not convert to %s: %v", from, unit, r.u.value, err)
+	}
+	return c, nil
 }
 
 // readSeries reads one stream's points over the spans, with the point current
@@ -942,7 +957,7 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				ev.sources[st.s.source] = true
 				if prev := st.prevOf[i]; prev != nil {
 					d, reset := observed.Step(prev.Point, ap.Point)
-					c, err := r.u.factor(ap.Unit, false)
+					c, err := r.conversion(ap.Unit, false, st.s.source)
 					if err != nil {
 						return nil, err
 					}
@@ -1258,7 +1273,7 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			if len(targets) == 0 {
 				continue
 			}
-			st, err := r.convertStats(row.Stats, og, g.form)
+			st, err := r.convertStats(row.Stats, og, s.source)
 			if err != nil {
 				return nil, err
 			}
@@ -1316,13 +1331,13 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 // the read's: an affine map moves the sum by the count, the mean and the
 // extremes by the offset, m2 by the factor squared; a counter's increase is a
 // difference and takes the factor alone.
-func (r *aggRun) convertStats(s observed.Stats, g obsGroup, form string) (observed.Stats, error) {
+func (r *aggRun) convertStats(s observed.Stats, g obsGroup, source string) (observed.Stats, error) {
 	if g.unit == "" {
 		return s, nil
 	}
-	c, err := r.u.factor(g.unit, g.delta)
+	c, err := r.conversion(g.unit, g.delta, source)
 	if err != nil {
-		return s, refuse("aggregate.unit", "a rollup row stored in %s does not convert to %s: %v", g.unit, r.u.value, err)
+		return s, err
 	}
 	if c.identity {
 		return s, nil
@@ -1554,7 +1569,7 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 				for _, key := range sortedKeys(stats) {
 					st := stats[key]
 					unit := strings.SplitN(key, "\x1f", 2)[1]
-					conv, err := r.convertStats(*st, obsGroup{unit: unit}, g.form)
+					conv, err := r.convertStats(*st, obsGroup{unit: unit}, s.source)
 					if err != nil {
 						return err
 					}
@@ -1641,7 +1656,7 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, si int, rows 
 			}
 			ms, valueMs := h.Ms, h.ValueMs
 			if og.unit != "" {
-				c, err := r.u.factor(og.unit, og.delta)
+				c, err := r.conversion(og.unit, og.delta, s.source)
 				if err != nil {
 					return err
 				}
@@ -1738,7 +1753,7 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 	}
 	sort.Strings(row.Sources)
 	var err error
-	if row.Values, err = r.values(ev, code); err != nil {
+	if row.Values, err = r.values(ev, g, code); err != nil {
 		return row, err
 	}
 	if tr := traceOf(r.ctx); tr != nil {
@@ -1751,7 +1766,7 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 // reducer over a row is as long as the row's points or spans, so the copies
 // it reads (taken once per row) and the reducer itself check the context as
 // they go (observed's Context forms).
-func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValue, error) {
+func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.AggregateValue, error) {
 	var out []substrate.AggregateValue
 	all := observed.Window{From: time.Unix(-1<<40, 0), To: time.Unix(1<<40, 0)}
 	points := map[string][]observed.Point{}
@@ -1843,7 +1858,7 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 				}
 				var list []observed.Point
 				var p observed.Point
-				if list, err = r.extremaPoints(ev, stat); err == nil {
+				if list, err = r.extremaPoints(ev, g, stat); err == nil {
 					p, ok, err = best(r.ctx, list, all)
 				}
 				digits = p.Exact
@@ -1875,7 +1890,11 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 			case red.Name == substrate.ReducerLast && ev.stats.Last != nil:
 				p, ok = *ev.stats.Last, true
 			}
-			out = append(out, r.pointValue(red, p, ok))
+			if err == nil {
+				var v substrate.AggregateValue
+				v, err = r.pointValue(red, p, ok)
+				out = append(out, v)
+			}
 		case substrate.ReducerStdDev:
 			if ev.raw {
 				err = reduce(red, "", r.u.value, observed.StdDevContext)
@@ -1976,7 +1995,7 @@ func (r *aggRun) values(ev *aggEvidence, code string) ([]substrate.AggregateValu
 // unit. A counter's members keep their stored digits, because its steps are
 // taken on them (convertPoint), so they are converted here, each from its
 // own unit, as a rollup row's extremes are (convertStats).
-func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) ([]observed.Point, error) {
+func (r *aggRun) extremaPoints(ev *aggEvidence, g *aggGroup, stat string) ([]observed.Point, error) {
 	var list []observed.Point
 	for _, m := range ev.members {
 		if err := r.canceled(); err != nil {
@@ -1987,7 +2006,11 @@ func (r *aggRun) extremaPoints(ev *aggEvidence, stat string) ([]observed.Point, 
 		}
 		p := m.Point
 		if ev.form == vocabulary.FormCounter && p.HasValue && p.Unit != "" {
-			if c, err := r.u.factor(p.Unit, m.delta); err == nil && !c.identity {
+			c, err := r.conversion(p.Unit, m.delta, g.sourceOf(m.stream, ev.form))
+			if err != nil {
+				return nil, err
+			}
+			if !c.identity {
 				var exact bool
 				p.Value = p.Value*c.ff + c.fo
 				if p.Exact, exact = c.digits(p.Exact); !exact {
@@ -2024,26 +2047,27 @@ func (r *aggRun) value(red substrate.AggregateReducer, v float64, ok bool, unit 
 }
 
 // pointValue writes a first or last: its code, or its digits in the read's
-// unit.
-func (r *aggRun) pointValue(red substrate.AggregateReducer, p observed.Point, ok bool) substrate.AggregateValue {
+// unit. A counter's raw point arrives in its stored unit (convertPoint).
+func (r *aggRun) pointValue(red substrate.AggregateReducer, p observed.Point, ok bool) (substrate.AggregateValue, error) {
 	out := substrate.AggregateValue{Reducer: red}
 	if !ok {
 		out.Unit = r.u.value
-		return out
+		return out, nil
 	}
 	if !p.HasValue {
 		out.Code = p.Code
-		return out
+		return out, nil
 	}
 	digits := p.Exact
 	if p.Unit != "" && p.Unit != r.u.value {
-		c, err := r.u.factor(p.Unit, false)
-		if err == nil {
-			var exact bool
-			digits, exact = c.digits(p.Exact)
-			if !exact {
-				r.meta.inexact = true
-			}
+		c, err := r.conversion(p.Unit, false, "")
+		if err != nil {
+			return out, err
+		}
+		var exact bool
+		digits, exact = c.digits(p.Exact)
+		if !exact {
+			r.meta.inexact = true
 		}
 	}
 	if digits == "" {
@@ -2054,7 +2078,7 @@ func (r *aggRun) pointValue(red substrate.AggregateReducer, p observed.Point, ok
 	if p.Code != "" {
 		out.Code = p.Code
 	}
-	return out
+	return out, nil
 }
 
 // duration writes a time in the read's duration unit.
