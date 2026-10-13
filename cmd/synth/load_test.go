@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -426,5 +429,62 @@ func TestLoadResumesAtADelivery(t *testing.T) {
 	}
 	if _, err := f.runLoad(t, "-dir", dir, "-resume", "whoop/0001"); err == nil {
 		t.Error("a resume at a provider with nothing generated was taken")
+	}
+}
+
+// TestMain runs the command itself when a test re-executes this binary.
+func TestMain(m *testing.M) {
+	if os.Getenv("SYNTH_TEST_RUN_MAIN") == "1" {
+		main()
+		return
+	}
+	os.Exit(m.Run())
+}
+
+// The runner's substratectl config holds the repository token, so an
+// interrupted load removes it on the way out instead of leaving it in the
+// temporary directory.
+func TestInterruptRemovesTheRunnerConfig(t *testing.T) {
+	tmp := t.TempDir()
+	dir := generated(t, testAuthority, synth.Whoop{})
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "started")
+	python := filepath.Join(bin, "python")
+	if err := os.WriteFile(python, []byte("#!/bin/sh\ntouch "+marker+"\nexec sleep 20\n"), 0o700); err != nil { //nolint:gosec // a script the test runs
+		t.Fatal(err)
+	}
+	ctl := filepath.Join(bin, "substratectl")
+	if err := os.WriteFile(ctl, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "load", "-dir", dir, "-server", "http://127.0.0.1:1", "-authority", testAuthority, //nolint:gosec // the test binary itself
+		"-providers", "whoop", "-python", python, "-ctl", ctl, "-repo", ".")
+	cmd.Env = append(os.Environ(), "SYNTH_TEST_RUN_MAIN=1", "SUBSTRATE_TOKEN="+testToken, "TMPDIR="+tmp)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = cmd.Process.Kill()
+			t.Fatal("the runner never started")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "synth-") {
+			t.Errorf("the interrupted load left %s, which holds the token", e.Name())
+		}
 	}
 }

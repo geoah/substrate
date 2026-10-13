@@ -12,11 +12,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -289,7 +291,10 @@ func load(args []string, stdout, stderr io.Writer) error {
 		*key = os.Getenv("SYNTH_WEBHOOK_KEY")
 	}
 	c := &client{server: strings.TrimRight(*server, "/"), token: token, authority: *authority, hc: &http.Client{Timeout: 2 * time.Minute}}
-	ctx := context.Background()
+	// An interrupt cancels the load instead of ending the process, so the
+	// runner is stopped and the config holding the token is removed.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	ems, err := emitters(*providers, *authority)
 	if err != nil {
 		return err
