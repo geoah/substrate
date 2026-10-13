@@ -214,6 +214,13 @@ description = "Where a `go test -json` run spent its time: per-package wall and 
 # Not a gate: the numbers are the machine's. It is how a regression is found.
 run = "python3 .mise/testtiming.py"
 
+[tasks.bench]
+description = "The benchmarks of the engine's pure hot paths and the changelog line encoding"
+# Not a gate, and not in CI: the numbers are the machine's. It is the before
+# and the after of a change to one of the paths (docs/testing.md). -run=NONE
+# runs no test beside them; -short skips every suite that wants a database.
+run = "go test -count=1 -short -run=NONE -bench=. -benchmem ./internal/engine/ ./internal/changelogfile/"
+
 [tasks."test:llm"]
 description = "The LIVE suite: real completions from real providers, when the keys are there"
 # Every case skips itself unless its key is in the environment, so this exits 0

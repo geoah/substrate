@@ -232,6 +232,19 @@ moves, so the upgrade under test never runs and the case passes vacuously.
 for a declaration that pins no version. Run any new case against the un-fixed
 code once; a boot-upgrade test that passes both ways is proving nothing.
 
+## Benchmarks
+
+```bash
+mise run bench
+```
+
+The engine's pure hot paths, which every write, dispatcher look or mapped read
+runs: a schedule's due occurrences for each rule the cursor is tested on, cold
+(the first walk after an open) and warm; a write's row delta and refs rows; a
+union property's deduplication; and the changelog line encoding. None needs a
+database, and nothing gates on the numbers, which are the machine's. Run it
+before and after a change to one of those paths.
+
 ## The race detector
 
 ```bash

@@ -1341,11 +1341,33 @@ func (ds *dataset) catchUpOnOwnConnection(ctx context.Context, head int64) (int6
 	return n, mirrorSealedFromTable(ctx, db, ds.sealedFiles(), ds.dir)
 }
 
-// directoryErr is the standing refusal after a post-commit step failed.
+// directoryErr is the standing refusal after a post-commit step failed. It
+// reads it under writerMu, so it waits out a commit in flight: a commit that
+// publishes a registry holds writerMu until it has published or latched,
+// which is what lockSettledRegistry stands on.
 func (ds *dataset) directoryErr() error {
 	ds.writerMu.Lock()
 	defer ds.writerMu.Unlock()
 	return ds.fileErr
+}
+
+// doorDirectoryErr is directoryErr without writerMu, for a write's door
+// (inTxOn), which holds nothing yet and must not wait out another write's
+// commit (#835). A latch that lands after this read still refuses the
+// write at its commit, which reads fileErr under writerMu.
+func (ds *dataset) doorDirectoryErr() error {
+	if err := ds.latchedErr.Load(); err != nil {
+		return *err
+	}
+	return nil
+}
+
+// setFileErr latches err as the repository's standing refusal, for the
+// readers under writerMu (fileErr) and for doorDirectoryErr alike. Called
+// with writerMu held.
+func (ds *dataset) setFileErr(err error) {
+	ds.fileErr = err
+	ds.latchedErr.Store(&err)
 }
 
 // --- the steps of a commit (dataset.go commitAndMirror) ------------------------
@@ -1634,7 +1656,7 @@ func (ds *dataset) latchDirectoryErr(cause error) {
 	if ds.fileErr != nil {
 		return
 	}
-	ds.fileErr = fmt.Errorf("%w: repository %s: %w", ErrChangelogFileBehind, ds.info.ID, cause)
+	ds.setFileErr(fmt.Errorf("%w: repository %s: %w", ErrChangelogFileBehind, ds.info.ID, cause))
 	ds.svc.log.Error("substrate: the repository directory fell behind the tables; refusing writes until restart",
 		"repository", ds.scope.Repository, "error", cause)
 }

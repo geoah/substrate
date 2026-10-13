@@ -10,6 +10,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -160,6 +161,10 @@ type options struct {
 	// digestBytesPerSecond caps the background digest's rate
 	// (WithDigestBytesPerSecond); zero is no cap.
 	digestBytesPerSecond int64
+	// digestYieldMax bounds the background digest's wait for invocations
+	// before each read (export_test.go WithTestDigestYieldMax); zero is
+	// digestYieldMax. Tests only.
+	digestYieldMax time.Duration
 	// operator is OpenOperator's: a substratectl process, which digests no
 	// changelog segment in the background (segmentdigest.go). Its commands
 	// end in seconds or read every line themselves, and the snapshot holds
@@ -238,7 +243,8 @@ func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.seg
 // finished changelog segments behind its opens, over every repository it
 // has open (SUBSTRATE_DIGEST_BYTES_PER_SECOND, segmentdigest.go). Zero is
 // no cap; not given is DefaultDigestBytesPerSecond. The digests also pause
-// while any function body or agent loop runs, whatever the cap.
+// while any function body or agent loop runs, whatever the cap, for at most
+// 30 seconds before each read.
 func WithDigestBytesPerSecond(n int64) Option { return func(o *options) { o.digestBytesPerSecond = n } }
 
 // WithRepositoryConnections caps the Postgres connections every repository
@@ -520,6 +526,9 @@ type service struct {
 	// this process, nested ones included (segmentdigest.go
 	// invocationStarted): what the background digest yields to.
 	invocations atomic.Int64
+	// digestYieldMax is the longest the background digest waits for
+	// invocations to return before one read (segmentdigest.go yield).
+	digestYieldMax time.Duration
 	// testDigestPaceHook is the options' digest pace hook. Tests only.
 	testDigestPaceHook func(repository string, bytes int64)
 }
@@ -686,6 +695,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		digestUnread:      !o.operator && !o.dirReadOnly,
 
 		digestBucket:       digestBucket{rate: o.digestBytesPerSecond},
+		digestYieldMax:     cmp.Or(o.digestYieldMax, digestYieldMax),
 		testDigestPaceHook: o.digestPaceHook,
 
 		searchReindexBatch:    o.searchReindexBatch,

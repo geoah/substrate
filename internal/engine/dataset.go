@@ -113,8 +113,13 @@ type dataset struct {
 	// after the commit failed (ErrChangelogFileBehind): the directory is
 	// behind the tables and only the boot check repairs it. A finished
 	// segment the background digest found damaged latches it too
-	// (ErrChangelogDamaged).
-	fileErr error
+	// (ErrChangelogDamaged). latchedErr holds the same error for a write's
+	// door (doorDirectoryErr), which reads it without writerMu: a write's
+	// first step must not wait out another write's commit, which holds
+	// writerMu across its fsyncs and the Postgres commit (#835). Both are
+	// written together, under writerMu, by setFileErr alone.
+	fileErr    error
+	latchedErr atomic.Pointer[error]
 	// unread is the Log openDirectory opened the writer over, whose finished
 	// segments taken on their sidecars' word the server digests after the
 	// open; digestCancel and digestDone, under digestMu, are that digest's
@@ -172,6 +177,11 @@ type dataset struct {
 	// clears it and another process's passes never show in it.
 	activityMu sync.Mutex
 	activity   map[string]*triggerActivity
+	// scheduleCursors, under scheduleCursorsMu, is each schedule trigger's
+	// position in its RRULE, by trigger id (schedulecursor.go). Memory
+	// only: the first walk after an open starts at the rule's anchor.
+	scheduleCursorsMu sync.Mutex
+	scheduleCursors   map[string]*scheduleCursor
 	// resumingWebhooks is set while a dispatcher pass's resume of pending
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
@@ -622,7 +632,7 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	}
 	// A directory that fell behind the tables refuses every write until a
 	// restart: the boot check is the one repair path (repodir.go).
-	if err := ds.directoryErr(); err != nil {
+	if err := ds.doorDirectoryErr(); err != nil {
 		return err
 	}
 	// The write gate before the pool connection (writegate.go): a background

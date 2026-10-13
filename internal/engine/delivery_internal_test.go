@@ -120,8 +120,9 @@ func TestDueFiresAreOldestFirstAndBounded(t *testing.T) {
 	src := &scheduleSource{Recurrence: "FREQ=HOURLY", Timezone: "UTC", StartsAt: &anchor}
 	after := anchor.Add(30 * time.Minute)
 	now := anchor.Add(6*time.Hour + 30*time.Minute)
+	ds := &dataset{}
 
-	due, err := src.dueFires(anchor, after, now, 4)
+	due, err := ds.dueFires("hourly", src, anchor, after, now, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +134,7 @@ func TestDueFiresAreOldestFirstAndBounded(t *testing.T) {
 			t.Fatalf("occurrence %d is %s, want %s", i, at, want)
 		}
 	}
-	due, err = src.dueFires(anchor, after, now, 10)
+	due, err = ds.dueFires("hourly", src, anchor, after, now, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func TestDueFiresAreOldestFirstAndBounded(t *testing.T) {
 		t.Fatalf("%d occurrences, want the 6 that are overdue", len(due))
 	}
 	// Nothing overdue: an empty list, not the anchor.
-	due, err = src.dueFires(anchor, now, now, 10)
+	due, err = ds.dueFires("hourly", src, anchor, now, now, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

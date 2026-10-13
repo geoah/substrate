@@ -1337,7 +1337,7 @@ func processRecordTriggers(t *testing.T, ds *dataset) {
 	}
 	_, records := ds.dispatchable(triggers, false)
 	for _, lt := range records {
-		if _, err := ds.processRecordTrigger(context.Background(), lt.trigger, newPassDeadline()); err != nil {
+		if _, err := ds.processRecordTrigger(context.Background(), lt.trigger, newPassDeadline(), nil); err != nil {
 			t.Fatalf("process %s: %v", lt.ID, err)
 		}
 	}

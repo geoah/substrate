@@ -31,6 +31,7 @@ const (
 	digestPackage  = "digest.test.dev/pace"
 	digestNoteType = digestPackage + "/note"
 	digestNapFn    = digestPackage + "/nap"
+	digestHangFn   = digestPackage + "/hang"
 	// digestNoteBytes is the prose one note carries, and digestHistoryMB the
 	// history the fixture writes unless SUBSTRATE_DIGEST_TEST_MB says more:
 	// enough segments for a digest to be in progress while a function runs.
@@ -41,8 +42,9 @@ const (
 	digestTestRate = 2 << 20
 )
 
-// digestConnector is a kind that holds prose, for bulk, and a function that
-// sleeps for `args.seconds` and returns.
+// digestConnector is a kind that holds prose, for bulk, a function that
+// sleeps for `args.seconds` and returns, and one that sleeps for longer than
+// any test runs.
 func digestConnector() enginetest.Manifest {
 	return enginetest.Manifest{Name: "pace", Authority: digestPackage, Manifests: []map[string]any{
 		vocabulary.PackageManifest(digestPackage, 0),
@@ -58,6 +60,16 @@ func digestConnector() enginetest.Manifest {
 				"    time.sleep(float((input.get(\"args\") or {}).get(\"seconds\") or 0))\n" +
 				"    return {}\n",
 			"timeout":     "PT30S",
+			"permissions": map[string]any{"writes": []any{digestNoteType}},
+		}),
+		vocabulary.FunctionManifest(digestPackage, "hang", map[string]any{
+			"description": "sleeps for an hour, past its own timeout",
+			"runtime":     vocabulary.RuntimePython,
+			"source": "import time\n" +
+				"def main(input, host):\n" +
+				"    time.sleep(3600)\n" +
+				"    return {}\n",
+			"timeout":     "PT60S",
 			"permissions": map[string]any{"writes": []any{digestNoteType}},
 		}),
 	}}
@@ -283,5 +295,78 @@ func TestAnInvocationIsNotSlowedByTheDigest(t *testing.T) {
 	}
 	if got := samples.last(); got != unread {
 		t.Fatalf("the digest read %d bytes, want the %d it owed", got, unread)
+	}
+}
+
+// A body that never returns holds the digest back for at most the bound per
+// read, not for its whole run: beside a body that is still sleeping, the
+// digest reads the rest of the history and finishes (#872).
+func TestTheDigestFinishesBesideABodyThatNeverReturns(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root, repo, unread := digestHistory(t)
+	samples := &paceSamples{}
+	invoked := make(chan time.Time, 1)
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(root),
+		engine.WithChangelogSegmentBytes(4<<20), engine.WithDigestBytesPerSecond(digestTestRate),
+		engine.WithTestDigestYieldMax(250*time.Millisecond),
+		engine.WithTestDigestPaceHook(samples.hook),
+		engine.WithTestInvokeHook(func(fn string) {
+			if fn == digestHangFn {
+				select {
+				case invoked <- time.Now():
+				default:
+				}
+			}
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodyCtx, stopBody := context.WithCancel(ctx)
+	returned := make(chan struct{})
+	var bodyErr error
+	go func() {
+		defer close(returned)
+		_, _, bodyErr = ds.CallFunction(bodyCtx, substrate.ActorAPI, digestHangFn, map[string]any{})
+	}()
+	// The body is killed before the service closes, so the close does not
+	// wait out its timeout.
+	defer func() {
+		stopBody()
+		<-returned
+	}()
+	var began time.Time
+	select {
+	case began = <-invoked:
+	case <-time.After(time.Minute):
+		t.Fatal("the body was never invoked")
+	}
+	if got := samples.last(); got >= unread {
+		t.Fatalf("the digest read all %d bytes before the body began; raise the history or lower the cap", unread)
+	}
+	// Well inside the body's own 60 s timeout: a digest held for the
+	// body's whole run finishes only after the timeout kills it.
+	select {
+	case <-engine.SegmentDigestDone(ds):
+	case <-returned:
+		t.Fatalf("the body returned (%v) before the digest finished: the digest waited for it", bodyErr)
+	case <-time.After(40 * time.Second):
+		t.Fatalf("the digest did not finish beside a body that never returns: %d of %d bytes read", samples.last(), unread)
+	}
+	select {
+	case <-returned:
+		t.Fatalf("the body returned (%v) before the digest finished: the digest waited for it", bodyErr)
+	default:
+	}
+	if got := samples.last(); got != unread {
+		t.Fatalf("the digest read %d bytes, want the %d it owed", got, unread)
+	}
+	if read := samples.readBetween(began, time.Now()); read < unread/2 {
+		t.Fatalf("the digest read %d bytes while the body ran, want most of the %d it owed", read, unread)
 	}
 }

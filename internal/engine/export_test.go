@@ -256,6 +256,13 @@ func WithTestDigestPaceHook(fn func(repository string, bytes int64)) Option {
 	return func(o *options) { o.digestPaceHook = fn }
 }
 
+// WithTestDigestYieldMax sets the longest the background digest waits for
+// invocations to return before one read (segmentdigest.go yield), in place
+// of digestYieldMax.
+func WithTestDigestYieldMax(d time.Duration) Option {
+	return func(o *options) { o.digestYieldMax = d }
+}
+
 // SegmentDigestDone is closed when the dataset's background digest of its
 // changelog segments has returned, finished or stopped; a dataset whose open
 // started none returns a closed channel.
