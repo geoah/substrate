@@ -64,7 +64,8 @@ func (f *fakeSubstrate) client() *client {
 	return &client{server: f.ts.URL, token: testToken, authority: testAuthority, hc: f.ts.Client()}
 }
 
-func (f *fakeSubstrate) log() []string {
+// seen is every request the fake answered, as `METHOD /path`, in order.
+func (f *fakeSubstrate) seen() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string{}, f.requests...)
@@ -206,16 +207,16 @@ func TestLoadImportsTheSamplesBeforeTheManualRecords(t *testing.T) {
 	if out, err := f.runLoad(t, "-dir", dir, "-providers", "manual"); err != nil {
 		t.Fatalf("load: %v\n%s", err, out)
 	}
-	log := f.log()
+	seen := f.seen()
 	firstPut := -1
-	for i, r := range log {
+	for i, r := range seen {
 		if strings.HasPrefix(r, "PUT ") {
 			firstPut = i
 			break
 		}
 	}
 	for _, s := range []string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health"} {
-		i := indexOf(log, "POST /api/v1/catalog/"+s+"/import")
+		i := indexOf(seen, "POST /api/v1/catalog/"+s+"/import")
 		if i < 0 || firstPut < 0 || i > firstPut {
 			t.Errorf("%s imported at request %d, the first record written at %d", s, i, firstPut)
 		}
@@ -231,7 +232,7 @@ func TestLoadRefusesRecordsGeneratedForAnotherAuthority(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "other.example.com") || !strings.Contains(err.Error(), "-authority "+testAuthority) {
 		t.Fatalf("load = %v, want a refusal naming both authorities\n%s", err, out)
 	}
-	for _, r := range f.log() {
+	for _, r := range f.seen() {
 		if strings.HasPrefix(r, "PUT ") {
 			t.Fatalf("the refused load wrote %s", r)
 		}
@@ -254,7 +255,7 @@ func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
 	if len(imported) != 0 {
 		t.Errorf("a repository holding every sample imported %v", imported)
 	}
-	for _, r := range f.log() {
+	for _, r := range f.seen() {
 		if strings.HasSuffix(r, "/import") {
 			t.Errorf("a held sample was imported again: %s", r)
 		}
@@ -280,8 +281,8 @@ func TestLoadTakesTheWebhookKeyFromTheOwner(t *testing.T) {
 		!strings.Contains(err.Error(), "-key") || !strings.Contains(err.Error(), "SYNTH_WEBHOOK_KEY") {
 		t.Fatalf("a load with no key = %v, want a refusal naming -key and SYNTH_WEBHOOK_KEY\n%s", err, out)
 	}
-	if log := f.log(); len(log) != 0 {
-		t.Fatalf("a load with no key made %d requests: %v", len(log), log)
+	if seen := f.seen(); len(seen) != 0 {
+		t.Fatalf("a load with no key made %d requests: %v", len(seen), seen)
 	}
 
 	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
@@ -422,7 +423,7 @@ func TestLoadResumesAtADelivery(t *testing.T) {
 	if len(f.webhooks) != 1 || !strings.HasSuffix(f.webhooks[0].URL.Path, "/applehealth-webhook") {
 		t.Errorf("a resume at the second delivery posted %d", len(f.webhooks))
 	}
-	for _, r := range f.log() {
+	for _, r := range f.seen() {
 		if strings.Contains(r, "/catalog/") || strings.HasPrefix(r, "PUT ") {
 			t.Errorf("a resume ran setup again: %s", r)
 		}
