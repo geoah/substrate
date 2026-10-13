@@ -772,10 +772,12 @@ its name, which axis it reads on, its reducer (**Show**) and its output unit
 (the units of the stored unit's measure the server converts it to: never
 another annotation, another assay unit, a level or a factor of pi; minutes,
 seconds or hours for a time in a range), and its legend. **Show** offers
-every reducer the metric's form takes ([the table](api.md#reducers-by-form)):
-a level adds the median, the 90th percentile and, for a heart rate, the time
-in each of five zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171
-to 220 a minute). Where a vendor summary may serve a bucket, the reducers a
+every reducer the metric's form takes ([the table](api.md#reducers-by-form)),
+with the median and the 90th percentile for a level or an amount, the
+circular mean for an angle, and for a heart rate the time in each of five
+zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
+minute); a vendor summary defaults to its average, or its total where it
+keeps a sum or a count. Where a vendor summary may serve a bucket, the reducers a
 summary takes come first and the rest read raw points alone: picking one
 (the time-weighted average, a percentile, a zone) reads the metric from raw
 points and the chart says whose summaries it leaves out, and where you
