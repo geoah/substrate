@@ -41,7 +41,7 @@ func TestCoerceQuantity(t *testing.T) {
 		{"a bound converted exactly", mass, quantityValue("317.51463", "kg"), quantityValue("317.51463", "kg")},
 		{"a comparator where declared", lab, quantityValue("0.5", "ng/mL", "<"), quantityValue("0.5", "ng/mL", "<")},
 		{"a null comparator", lab, map[string]any{"value": "1", "unit": "mg/dL", "comparator": nil}, quantityValue("1", "mg/dL")},
-		{"undeclared: a unit names its measure", nil, quantityValue("62", "bpm"), quantityValue("62", "{beats}/min")},
+		{"undeclared: a unit names its measure", nil, quantityValue("62", "bpm"), quantityValue("62", "/min")},
 		{"undeclared: a compound", nil, quantityValue("3", "kg/h"), quantityValue("3", "kg/h")},
 	} {
 		got, err := coerceScalar(quantityProperty(tc.spec), tc.in)

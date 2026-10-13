@@ -455,8 +455,8 @@ func TestCanonicalUnitAppliesAliases(t *testing.T) {
 	for in, want := range map[string]string{
 		"°C": "Cel", "℃": "Cel", "degC": "Cel", "°F": "[degF]", "℉": "[degF]", "degF": "[degF]",
 		"µg": "ug", "μg": "ug", "mcg": "ug", "µg/dL": "ug/dL", "μmol/L": "umol/L",
-		"mmHg": "mm[Hg]", "bpm": "{beats}/min", "rpm": "{rev}/min", "kWh": "kW.h", "Wh": "W.h",
-		"Cal": "[Cal]", "ppm": "[ppm]", "m³": "m3", "kg/m²": "kg/m2", "count/min": "{count}/min",
+		"mmHg": "mm[Hg]", "bpm": "/min", "rpm": "/min", "kWh": "kW.h", "Wh": "W.h",
+		"Cal": "[Cal]", "ppm": "[ppm]", "m³": "m3", "kg/m²": "kg/m2", "count/min": "/min",
 		"kg": "kg", " kg ": "kg", "Cel": "Cel", "kW.h/(100.km)": "kW.h/(100.km)",
 	} {
 		got, err := vocabulary.CanonicalUnit(in)
@@ -478,10 +478,40 @@ func TestCanonicalUnitAppliesAliases(t *testing.T) {
 
 // HealthKit's HKUnit strings, as Health Auto Export sends them, read as the
 // codes they mean, so an adapter passes the app's unit straight to the table.
+// An alias adds no annotation to a count or a rate: the heart rate a writer
+// sends as bpm is the bare /min the catalogue holds, and a bare count, which
+// names nothing counted, is refused with the annotation to write instead. An
+// annotated code a writer sends stays its own unit.
+func TestCountAndRateAliasesAddNoAnnotation(t *testing.T) {
+	for _, alias := range []string{"bpm", "rpm", "count/min"} {
+		code, err := vocabulary.CanonicalUnit(alias)
+		if err != nil || code != "/min" {
+			t.Fatalf("CanonicalUnit(%q) = %q, %v; want /min", alias, code, err)
+		}
+		if got := convertTo(t, "", "62", code, "/min"); got.Cmp(rat(t, "62")) != 0 {
+			t.Errorf("62 %s = %s /min", alias, got.RatString())
+		}
+	}
+	if code, err := vocabulary.CanonicalUnit("count"); err == nil || !strings.Contains(err.Error(), "{steps}") {
+		t.Errorf("CanonicalUnit(count) = %q, %v; want a refusal naming the annotation to write", code, err)
+	}
+	refusesConvert(t, "", "{beats}/min", "/min", "an annotated rate converts only to the same annotation")
+	refusesConvert(t, "", "{beats}/min", "{steps}/min", "two annotations never convert")
+	for alias, code := range vocabulary.UnitAliases() {
+		u, err := vocabulary.ParseUnit(code)
+		if err != nil {
+			t.Fatalf("alias %s: %v", alias, err)
+		}
+		if strings.Contains(code, "{") && alias != "var" {
+			t.Errorf("alias %q adds an annotation (%s)", alias, u.Code())
+		}
+	}
+}
+
 func TestCanonicalUnitReadsHealthKitSpellings(t *testing.T) {
 	for in, want := range map[string]string{
 		// The aliases HealthKit needs.
-		"count": "{count}", "count/min": "{count}/min", "hr": "h",
+		"count/min": "/min", "hr": "h",
 		"lb": "[lb_av]", "oz": "[oz_av]",
 		"in": "[in_i]", "yd": "[yd_i]", "mi": "[mi_i]", "km/hr": "km/h", "mi/hr": "[mi_i]/h", "kmph": "km/h",
 		"mL/(kg*min)": "mL/(kg.min)", "ml/(kg·min)": "mL/(kg.min)",

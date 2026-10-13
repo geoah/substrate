@@ -231,9 +231,12 @@ func soleUnit(t *termNode) (unitNode, bool) {
 // CanonicalUnit maps an input spelling to the code a quantity stores: an alias
 // (`°C`, `mmHg`, `bpm`, `kWh`, `mcg`) to its code, both micro signs and the
 // superscript digits to their ASCII spellings (`μg/m³` is `ug/m3`), and refuses
-// what the grammar does not read.
+// what the grammar does not read and the spellings refusedSpellings names.
 func CanonicalUnit(input string) (string, error) {
 	s := strings.TrimSpace(input)
+	if why, refused := refusedSpellings[s]; refused {
+		return "", fmt.Errorf("%q: %s", s, why)
+	}
 	if alias, ok := unitAliases[s]; ok {
 		s = alias
 	} else if n := normalizeUnitCharacters(s); n != s {
@@ -258,6 +261,16 @@ func normalizeUnitCharacters(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// RefusedUnitSpellings lists the spellings CanonicalUnit refuses by name, each
+// with what to write instead.
+func RefusedUnitSpellings() map[string]string {
+	out := make(map[string]string, len(refusedSpellings))
+	for k, v := range refusedSpellings {
+		out[k] = v
+	}
+	return out
 }
 
 // UnitAliases lists every input alias and the code it maps to.

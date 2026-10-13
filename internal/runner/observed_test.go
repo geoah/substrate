@@ -57,7 +57,7 @@ def main(input, host):
 		"fahrenheit": "98.6",
 		"deviation":  "0.54",
 		"kcal":       "0.048425925925925925926",
-		"bpm":        "{beats}/min",
+		"bpm":        "/min",
 		"measure":    "amount-concentration",
 	} {
 		if out[key] != want {

@@ -205,6 +205,13 @@ func renderUnitsPage(t *testing.T) []byte {
 	w("A writer may send these spellings; the stored value always holds the code. Both\n")
 	w("micro signs (U+00B5 and U+03BC) read as `u` and the superscript digits ² and ³\n")
 	w("as `2` and `3` anywhere in a code, so `μg/m³` is stored as `ug/m3`.\n\n")
+	w("An alias adds no annotation to a count or a rate. `bpm`, `rpm` and `count/min`\n")
+	w("are `/min`, the bare rate a heart rate, a cadence or a breathing rate is stored\n")
+	w("in, so a writer's common spelling converts to it. An annotation is part of a\n")
+	w("unit: a writer that knows what was counted writes it (`{beats}/min`), and that\n")
+	w("code converts only to the same annotation, never to `/min` or `{steps}/min`.\n")
+	w("`var` is the one alias that carries an annotation, because `{reactive}` is the\n")
+	w("reactive-power measure's identity rather than a thing counted.\n\n")
 	w("| Alias | Code |\n")
 	w("| --- | --- |\n")
 	aliases := vocabulary.UnitAliases()
@@ -215,6 +222,18 @@ func renderUnitsPage(t *testing.T) []byte {
 	sort.Strings(keys)
 	for _, k := range keys {
 		w("| %s | %s |\n", code(k), code(aliases[k]))
+	}
+	w("\nThese spellings are refused by name, because no code states what they mean:\n\n")
+	w("| Spelling | Why |\n")
+	w("| --- | --- |\n")
+	refused := vocabulary.RefusedUnitSpellings()
+	keys = keys[:0]
+	for k := range refused {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		w("| %s | %s |\n", code(k), sentence(refused[k]))
 	}
 	return []byte(b.String())
 }

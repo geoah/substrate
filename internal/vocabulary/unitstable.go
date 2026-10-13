@@ -564,11 +564,14 @@ var primaryMeasure = map[string]string{
 // buildTable refuses one the grammar reads, and TestUnitAliasesSpellNoUCUMCode
 // refuses one over an atom UCUM defines and the grammar does not carry yet.
 //
-// `count/min` is `{count}/min` and never `/min`, and `count` is `{count}` and
-// never `1`: an annotation is part of the unit and two units that differ in
-// one never convert, so a vendor's bare count per minute stays apart from
-// heart rate, breathing rate and every other rate until a writer that knows
-// what was counted converts it itself.
+// An alias adds no annotation to a count or a rate: `bpm`, `rpm` and
+// `count/min` are `/min`, the bare rate the catalogue's heart rate, cadence
+// and breathing rate hold, so a writer's common spelling compares with them.
+// An annotation is part of a unit, and only the writer that knows what was
+// counted writes one (`{beats}/min`), which then converts to nothing but the
+// same annotation. A bare `count` would have to add one, so it is refused
+// (refusedSpellings). `var` is the exception that proves it: its annotation
+// is the reactive-power measure's identity, not a thing counted.
 //
 // HealthKit spells a foot `ft` and a stone `st`, which are not here: `ft` is
 // a UCUM code, the femtotonne, and `st` is the stere, a cubic meter, so a
@@ -577,11 +580,11 @@ var unitAliases = map[string]string{
 	"°C": "Cel", "℃": "Cel", "degC": "Cel",
 	"°F": "[degF]", "℉": "[degF]", "degF": "[degF]",
 	"mcg": "ug", "mmHg": "mm[Hg]", "inHg": "[in_i'Hg]",
-	"bpm": "{beats}/min", "rpm": "{rev}/min", "count/min": "{count}/min",
+	"bpm": "/min", "rpm": "/min", "count/min": "/min",
 	"kWh": "kW.h", "Wh": "W.h", "Cal": "[Cal]", "ppm": "[ppm]", "ppb": "[ppb]",
 	"VA": "V.A", "var": "V.A{reactive}",
 	// HealthKit's HKUnit spellings, which Health Auto Export sends as written.
-	"count": "{count}", "hr": "h", "IU": "[IU]", "dBASPL": "dB[SPL]", "cmAq": "cm[H2O]",
+	"hr": "h", "IU": "[IU]", "dBASPL": "dB[SPL]", "cmAq": "cm[H2O]",
 	"in": "[in_i]", "yd": "[yd_i]", "mi": "[mi_i]", "km/hr": "km/h", "mi/hr": "[mi_i]/h",
 	"lb": "[lb_av]", "oz": "[oz_av]",
 	"mL/(kg*min)": "mL/(kg.min)",
@@ -590,6 +593,13 @@ var unitAliases = map[string]string{
 	"mmol<180.1558800000541>/L": "mmol/L", "mmol<180.15588000005408>/L": "mmol/L",
 	// Health Auto Export's own spellings of HealthKit units.
 	"ml/(kg·min)": "mL/(kg.min)", "kmph": "km/h",
+}
+
+// refusedSpellings are spellings writers send that no code states, each with
+// what to write instead. HealthKit's `count` names nothing counted: the steps
+// metric holds `{steps}`, and a `{count}` never converts to it.
+var refusedSpellings = map[string]string{
+	"count": "a bare count names nothing counted: write the annotation for what was counted, such as `{steps}` or `{floors}`",
 }
 
 // unitCharacters are the characters an alias lookup rewrites before it tries

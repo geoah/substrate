@@ -653,7 +653,7 @@ host.ids.url(url)
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
 host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str
-host.units.canonical(code)                        # "bpm" -> "{beats}/min"
+host.units.canonical(code)                        # "bpm" -> "/min"
 host.units.measure(code)                          # "kg" -> "mass"
 host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
                     hold=None, about=None, channel=None, reset_rule=None)

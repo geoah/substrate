@@ -113,7 +113,7 @@ describe("unitsFor", () => {
 describe("canonicalUnit", () => {
   it("maps the engine's aliases and spellings to codes", () => {
     expect(canonicalUnit("°C")).toBe("Cel")
-    expect(canonicalUnit("bpm")).toBe("{beats}/min")
+    expect(canonicalUnit("bpm")).toBe("/min")
     expect(canonicalUnit("µg")).toBe("ug")
     expect(canonicalUnit("μg")).toBe("ug")
     expect(canonicalUnit("m³")).toBe("m3")
@@ -237,7 +237,7 @@ describe("the text", () => {
 
   it("reads what a person types", () => {
     expect(parseQuantityText("37 °C").value).toEqual(q("37", "Cel"))
-    expect(parseQuantityText("62 bpm").value).toEqual(q("62", "{beats}/min"))
+    expect(parseQuantityText("62 bpm").value).toEqual(q("62", "/min"))
     expect(parseQuantityText("155 lb").value).toEqual(q("155", "[lb_av]"))
     expect(parseQuantityText("72.5kg").value).toEqual(q("72.5", "kg"))
     expect(parseQuantityText("1eV").value).toEqual(q("1", "eV"))

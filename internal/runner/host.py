@@ -758,8 +758,8 @@ class Units:
         return self._host._call("units.convert", params).get("value")
 
     def canonical(self, code):
-        """The code the engine stores for a unit spelling: `bpm` is
-        `{beats}/min`, `°C` is `Cel`, `kWh` is `kW.h`."""
+        """The code the engine stores for a unit spelling: `bpm` is `/min`,
+        `°C` is `Cel`, `kWh` is `kW.h`."""
         return self._host._call("units.canonical", {"code": code}).get("code")
 
     def measure(self, code):

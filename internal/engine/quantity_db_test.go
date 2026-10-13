@@ -113,7 +113,7 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 		t.Fatalf("get: %v", err)
 	}
 	for name, want := range map[string]map[string]any{
-		"weight": qv("72.50", "kg"), "temp": qv("98.6", "[degF]"), "pulse": qv("62", "{beats}/min"),
+		"weight": qv("72.50", "kg"), "temp": qv("98.6", "[degF]"), "pulse": qv("62", "/min"),
 		"result": qv("0.5", "ng/mL", "<"),
 	} {
 		v, _ := got.Properties[name].(map[string]any)
@@ -301,7 +301,8 @@ func TestFilterByAnnotatedRateKeepsTheAnnotation(t *testing.T) {
 	}{
 		{"gt in beats per minute", substrate.Cond{Gt: qv("61", "{beats}/min")}, []string{"beats62"}},
 		{"lt in beats per second", substrate.Cond{Lt: qv("2", "{beats}/s")}, []string{"beats1hz", "beats62"}},
-		{"bpm is its code", substrate.Cond{Eq: qv("60", "bpm")}, []string{"beats1hz"}},
+		{"bpm is the bare rate", substrate.Cond{Eq: qv("70", "bpm")}, []string{"bare70"}},
+		{"beats per minute is its code", substrate.Cond{Eq: qv("60", "{beats}/min")}, []string{"beats1hz"}},
 		{"a bare rate reaches the bare row alone", substrate.Cond{Gt: qv("0", "/min")}, []string{"bare70"}},
 		{"another measure in an undeclared property", substrate.Cond{Gt: qv("0", "g")}, []string{"kilograms"}},
 	} {

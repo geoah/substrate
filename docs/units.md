@@ -689,16 +689,23 @@ A writer may send these spellings; the stored value always holds the code. Both
 micro signs (U+00B5 and U+03BC) read as `u` and the superscript digits ² and ³
 as `2` and `3` anywhere in a code, so `μg/m³` is stored as `ug/m3`.
 
+An alias adds no annotation to a count or a rate. `bpm`, `rpm` and `count/min`
+are `/min`, the bare rate a heart rate, a cadence or a breathing rate is stored
+in, so a writer's common spelling converts to it. An annotation is part of a
+unit: a writer that knows what was counted writes it (`{beats}/min`), and that
+code converts only to the same annotation, never to `/min` or `{steps}/min`.
+`var` is the one alias that carries an annotation, because `{reactive}` is the
+reactive-power measure's identity rather than a thing counted.
+
 | Alias | Code |
 | --- | --- |
 | `Cal` | `[Cal]` |
 | `IU` | `[IU]` |
 | `VA` | `V.A` |
 | `Wh` | `W.h` |
-| `bpm` | `{beats}/min` |
+| `bpm` | `/min` |
 | `cmAq` | `cm[H2O]` |
-| `count` | `{count}` |
-| `count/min` | `{count}/min` |
+| `count/min` | `/min` |
 | `dBASPL` | `dB[SPL]` |
 | `degC` | `Cel` |
 | `degF` | `[degF]` |
@@ -720,10 +727,16 @@ as `2` and `3` anywhere in a code, so `μg/m³` is stored as `ug/m3`.
 | `oz` | `[oz_av]` |
 | `ppb` | `[ppb]` |
 | `ppm` | `[ppm]` |
-| `rpm` | `{rev}/min` |
+| `rpm` | `/min` |
 | `var` | `V.A{reactive}` |
 | `yd` | `[yd_i]` |
 | `°C` | `Cel` |
 | `°F` | `[degF]` |
 | `℃` | `Cel` |
 | `℉` | `[degF]` |
+
+These spellings are refused by name, because no code states what they mean:
+
+| Spelling | Why |
+| --- | --- |
+| `count` | A bare count names nothing counted: write the annotation for what was counted, such as `{steps}` or `{floors}` |
