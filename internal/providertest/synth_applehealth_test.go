@@ -22,11 +22,23 @@ import (
 )
 
 // synthAHDoorHeaders is what the door keeps of a request: the headers that
-// describe the body and the ones the trigger declares (triggers.yaml).
-var synthAHDoorHeaders = map[string]bool{
-	"content-type": true, "content-length": true, "content-encoding": true, "user-agent": true, "date": true,
-	"x-substrate-account": true, "automation-name": true, "automation-id": true,
-	"automation-aggregation": true, "automation-period": true, "session-id": true,
+// describe the body, which it keeps for every trigger (engine/webhooks.go),
+// and the ones the shipped applehealth-webhook trigger declares.
+func synthAHDoorHeaders(t *testing.T) map[string]bool {
+	t.Helper()
+	kept := map[string]bool{"content-type": true, "content-length": true, "content-encoding": true, "user-agent": true, "date": true}
+	for _, doc := range loadDocs(t, appleHealthDir+"/triggers.yaml") {
+		if doc["metadata"].(map[string]any)["id"] != ahTrigger {
+			continue
+		}
+		webhook := doc["data"].(map[string]any)["properties"].(map[string]any)["source"].(map[string]any)["webhook"].(map[string]any)
+		for _, h := range webhook["headers"].([]any) {
+			kept[strings.ToLower(h.(string))] = true
+		}
+		return kept
+	}
+	t.Fatalf("%s declares no %s trigger", appleHealthDir, ahTrigger)
+	return nil
 }
 
 // synthAHDense is every app metric the adapter packs into hourly traces.
@@ -70,9 +82,10 @@ func synthAHRequest(t *testing.T, path string) (map[string]any, string) {
 	if !strings.HasPrefix(fmt.Sprint(headers["authorization"]), "Bearer ") {
 		t.Fatalf("%s carries no Authorization header for the loader to put the key in", path)
 	}
+	declared := synthAHDoorHeaders(t)
 	kept := map[string]any{}
 	for k, v := range headers {
-		if synthAHDoorHeaders[k] {
+		if declared[k] {
 			kept[k] = v
 		}
 	}
