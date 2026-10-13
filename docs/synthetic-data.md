@@ -26,7 +26,8 @@ intervals, strength, a long run that grows with the block, yoga, a ride every
 other week), weighs in four mornings a week, takes her blood pressure on
 Sundays, checks her fasting glucose on a home meter on Wednesday and Saturday
 mornings, and has three lab panels: two from an Athens lab in SI units and
-one from a US lab in mg/dL and ng/mL, on the metrics' mass twins.
+one from a US lab in mg/dL, ng/mL and %, on the metrics' mass twins and the
+NGSP HbA1c (`health/hba1c`).
 
 `Persona.Day(d)` is the ground truth for one local day: the night that ended
 that morning with its stages, the workouts with their heart-rate curves, the
