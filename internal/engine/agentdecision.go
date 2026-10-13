@@ -241,17 +241,17 @@ func (t *txn) requireThreadKinds() error {
 // ordinal from its in-memory counter; replay stays honest because history
 // orders by creation, and the ordinal is display.
 func (t *txn) nextThreadTurn(threadID string) (int64, error) {
-	probe, err := json.Marshal(map[string]any{
-		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, threadID)),
-	})
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
 	if err != nil {
 		return 0, err
 	}
 	var next int64
 	err = t.row(`
-		SELECT coalesce(max((props->>'turn')::bigint), -1) + 1 FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props @> $2::jsonb`,
-		typeMessage, string(probe)).Scan(&next)
+		SELECT coalesce(max((e.props->>'turn')::bigint), -1) + 1 FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread,
+		b.args...).Scan(&next)
 	return next, err
 }
 
@@ -316,19 +316,18 @@ func (ds *dataset) admitResume(ctx context.Context, threadID string, decider sub
 // resolution writes exactly one system row, so counting them bounds how
 // often a transition cycle can wake the agent.
 func (ds *dataset) systemRowsInLastHour(ctx context.Context, threadID string) (int, error) {
-	probe, err := json.Marshal(map[string]any{
-		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, threadID)),
-		"role":       msgRoleSystem,
-	})
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(ctx, ds.db, b, "e", threadID)
 	if err != nil {
 		return 0, err
 	}
 	var n int
 	err = ds.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props @> $2::jsonb
-		  AND created_at > $3`,
-		typeMessage, string(probe), nowUTC().Add(-time.Hour)).Scan(&n)
+		SELECT count(*) FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		  AND e.props->>'role' = `+b.arg(msgRoleSystem)+` AND e.created_at > `+b.arg(nowUTC().Add(-time.Hour)),
+		b.args...).Scan(&n)
 	return n, err
 }
 

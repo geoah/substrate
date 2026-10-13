@@ -422,7 +422,8 @@ func indexStatement(t *vocabulary.Kind, name string, exprs []string) indexStmt {
 // already indexes exactly this expression on its own is not doubled: the
 // declared index IS this index, and `declared` is how the caller says so.
 // Repeated and keyed references hold lists and maps, which the expression
-// does not read; their filter stays on the containment index.
+// does not read; their filter reads refs, or probes the row by containment
+// where refs cannot answer (query.go condReference).
 func referenceIndexStatements(t *vocabulary.Kind, declared map[string]bool) []indexStmt {
 	var stmts []indexStmt
 	for _, name := range t.PropOrder {

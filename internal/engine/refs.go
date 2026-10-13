@@ -210,6 +210,38 @@ func referencePathSQL(column, property string) string {
 		column, lit, sqlLiteral(vocabulary.ReferenceValueKey), column, lit)
 }
 
+// refsAtSiteSQL renders "the records row `alias` holds, at its own top-level
+// reference `property`, a pointer at one of targets" as an EXISTS over the
+// refs index. Row level security runs a clause it cannot prove leakproof only
+// on the rows its policy admits, and jsonb containment, `->` and `->>` are not
+// leakproof, so a probe of `props` for a pointer reads every row of the kind.
+// The refs columns are plain text, equality on them is leakproof, and
+// refs_dst_idx leads with the target.
+//
+// The site is the one deriveRefs gives a top-level reference: path "", and
+// ord 0 when the declaration is single (scalar). A repeated reference derives
+// one row per item at ord i, so it leaves ord free. srcKinds, when given,
+// holds the arm to the kinds declaring `property` in the shape asked about,
+// because a kind declaring the same name in the other shape derives rows at
+// the same (property, path).
+//
+// The caller owns the refsPending check: until a re-derivation the
+// declaration owes has run, the refs rows may follow the previous declaration
+// and only the row's properties say where it points.
+func refsAtSiteSQL(b *builder, alias string, srcKinds []string, property string, scalar bool, targets []refTarget) string {
+	var sb strings.Builder
+	sb.WriteString(`EXISTS (SELECT 1 FROM refs r WHERE r.src_kind = ` + alias + `.kind AND r.src = ` + alias + `.id`)
+	if len(srcKinds) > 0 {
+		sb.WriteString(` AND r.src_kind = ANY(` + b.textArray(srcKinds) + `)`)
+	}
+	sb.WriteString(` AND r.path = ''`)
+	if scalar {
+		sb.WriteString(` AND r.ord = 0`)
+	}
+	sb.WriteString(` AND ` + referencingWhere(b, targets, property) + `)`)
+	return sb.String()
+}
+
 // splitReferenceValue reads a stored reference value in EITHER shape: the flat
 // path a declaration without link data stores, or the `{ref, <props>...}`
 // object a declaration with `properties:` stores. It is the one reader of the

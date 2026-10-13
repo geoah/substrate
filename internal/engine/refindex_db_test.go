@@ -8,7 +8,8 @@ package engine
 // containment index, the planner prices a two-dozen-value `in` at the default
 // jsonb selectivity — tens of thousands of rows for a handful — and on a large
 // repository chooses a parallel seq scan that runs for tens of seconds. A
-// repeated reference keeps its containment probes, and the reverse read
+// repeated reference reads refs over a records list (readplan_db_test.go)
+// and keeps its containment probes elsewhere, and the reverse read
 // (`referencing`) walks refs_dst_idx.
 
 import (
@@ -136,7 +137,7 @@ func TestAScalarReferenceFilterIsOneEqualityOnItsIndex(t *testing.T) {
 		t.Fatalf("the reference index carries no statement comment: %v", comment)
 	}
 	// The repeated reference gets none: its value is a list the expression
-	// does not read, and its filter stays on the containment index.
+	// does not read, and its filter reads refs.
 	var n int
 	if err := ds.db.QueryRowContext(ctx, `SELECT count(*) FROM pg_indexes WHERE indexname = $1`,
 		"idx_"+derivedID(pointer, "ref", "alsoSeen")).Scan(&n); err != nil {
@@ -194,7 +195,8 @@ func TestAScalarReferenceFilterIsOneEqualityOnItsIndex(t *testing.T) {
 		t.Fatalf("eq on a scalar reference did not compile to the indexed equality:\n%s", where)
 	}
 
-	// A REPEATED reference keeps the containment probes, both spellings.
+	// Over no records table (this builder's), a REPEATED reference keeps the
+	// containment probes, both spellings.
 	b = &builder{}
 	if _, err := ds.buildFilter(ctx, ds.db, b, substrate.Filter{
 		Kinds:      []string{pointer},

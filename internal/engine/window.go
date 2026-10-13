@@ -126,13 +126,11 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 		page.More = true
 		got = got[:first]
 	}
-	for _, row := range got {
-		e, err := ds.hydrate(ctx, tx, row, q.WithAnnotations)
-		if err != nil {
-			return nil, err
-		}
-		page.Rows = append(page.Rows, e)
+	hydrated, err := ds.hydrateRows(ctx, tx, got, q.WithAnnotations)
+	if err != nil {
+		return nil, err
 	}
+	page.Rows = append(page.Rows, hydrated...)
 
 	// --- the series: every candidate, whole.
 	if len(seriesKinds) > 0 {
@@ -152,35 +150,40 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 			return nil, fmt.Errorf("%w: more than %d series match this window read; narrow the filter",
 				substrate.ErrValidation, substrate.WindowSeriesBudget)
 		}
-		for _, row := range rows {
-			e, err := ds.hydrate(ctx, tx, row, false)
-			if err != nil {
-				return nil, err
-			}
-			page.Series = append(page.Series, e)
+		series, err := ds.hydrateRows(ctx, tx, rows, false)
+		if err != nil {
+			return nil, err
 		}
+		page.Series = append(page.Series, series...)
 	}
 
 	// --- the overrides: whatever their kind and wherever their own `at`
 	// went, a row whose recurrenceOf names one of the series and whose
 	// originalAt falls in the window claims that slot. Found through the refs
 	// index the way the reverse read is, restricted to kinds that bind the
-	// override trait.
+	// override trait. The series are named per kind, as plain dst_kind and
+	// dst columns, so the read seeks refs_dst_idx: a spelled path
+	// (`dst_kind || '/' || dst`) is an expression no index holds, and `||` is
+	// not leakproof.
 	if len(page.Series) > 0 {
 		var overrideKinds []string
 		for _, t := range ds.registry().Implementing(vocabulary.TraitOverrideCore) {
 			overrideKinds = append(overrideKinds, t.Identity)
 		}
 		if len(overrideKinds) > 0 {
-			paths := make([]string, 0, len(page.Series))
+			byKind := map[string][]string{}
 			for _, s := range page.Series {
-				paths = append(paths, vocabulary.RecordPath(s.Kind, s.ID))
+				byKind[s.Kind] = append(byKind[s.Kind], s.ID)
+			}
+			targets := make([]refTarget, 0, len(byKind))
+			for _, kind := range sortedKeys(byKind) {
+				targets = append(targets, refTarget{kind: kind, ids: byKind[kind]})
 			}
 			ob := &builder{}
 			ob.add(`deleted_at IS NULL`)
 			ob.add(`kind = ANY(` + ob.textArray(overrideKinds) + `)`)
-			ob.add(`EXISTS (SELECT 1 FROM refs r WHERE r.src_kind = records.kind AND r.src = records.id AND r.property = ` +
-				ob.arg(vocabulary.PropRecurrenceOf) + ` AND (r.dst_kind || '/' || r.dst) = ANY(` + ob.textArray(paths) + `))`)
+			ob.add(`(kind, id) IN (SELECT r.src_kind, r.src FROM refs r WHERE ` +
+				referencingWhere(ob, targets, vocabulary.PropRecurrenceOf) + `)`)
 			originalAt := `(props->>` + sqlLiteral(vocabulary.PropOriginalAt) + `)::timestamptz`
 			ob.add(originalAt + ` >= ` + ob.arg(q.From))
 			ob.add(originalAt + ` < ` + ob.arg(q.To))
@@ -190,13 +193,11 @@ func (ds *dataset) Window(ctx context.Context, q substrate.WindowQuery) (*substr
 			if err != nil {
 				return nil, fmt.Errorf("substrate/engine: window overrides: %w", err)
 			}
-			for _, row := range rows {
-				e, err := ds.hydrate(ctx, tx, row, false)
-				if err != nil {
-					return nil, err
-				}
-				page.Overrides = append(page.Overrides, e)
+			overrides, err := ds.hydrateRows(ctx, tx, rows, false)
+			if err != nil {
+				return nil, err
 			}
+			page.Overrides = append(page.Overrides, overrides...)
 		}
 	}
 
