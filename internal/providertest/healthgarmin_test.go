@@ -775,8 +775,10 @@ func TestHealthGarminWritesAnActivitysSamples(t *testing.T) {
 	if want, _ := new(big.Rat).SetString(total); want == nil || sum.Cmp(want) != 0 {
 		t.Errorf("the run's distance traces sum to %s m, want Garmin's %s", sum.FloatString(2), total)
 	}
-	for _, key := range []string{"forerunner265/heart_rate", "forerunner265/speed", "forerunner265/cadence",
-		"unknown-device/heart_rate", "unknown-device/speed", "unknown-device/cycling_cadence", "unknown-device/distance"} {
+	for _, key := range []string{
+		"forerunner265/heart_rate", "forerunner265/speed", "forerunner265/cadence",
+		"unknown-device/heart_rate", "unknown-device/speed", "unknown-device/cycling_cadence", "unknown-device/distance",
+	} {
 		if len(traces[key]) == 0 {
 			t.Errorf("no %s traces: %v", key, slices.Sorted(maps.Keys(traces)))
 		}

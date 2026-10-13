@@ -563,10 +563,12 @@ print(json.dumps({"counts": counts, "effects": [e for e in fake.effects._staged]
 	want := []map[string]any{
 		{"action": "put", "kind": "ada.example.com/observations/observation", "id": "changed", "properties": map[string]any{
 			"origin": map[string]any{"ref": "providers.example.com/garmin/daily/ada/d1"}, "value": "2", "note": nil,
-			"revision": float64(9), "adapter": "a@1"}},
+			"revision": float64(9), "adapter": "a@1",
+		}},
 		{"action": "put", "kind": "ada.example.com/observations/observation", "id": "new", "properties": map[string]any{
 			"origin": map[string]any{"ref": "providers.example.com/garmin/daily/ada/d1"}, "value": "5", "note": nil,
-			"revision": float64(8), "adapter": "a@1"}},
+			"revision": float64(8), "adapter": "a@1",
+		}},
 		{"action": "delete", "kind": "ada.example.com/observations/observation", "id": "gone"},
 	}
 	if !equalJSON(out.Effects, want) {
