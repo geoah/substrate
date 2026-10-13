@@ -29,7 +29,7 @@ their shape is hard to change once clients exist
 
 Chosen: a mode of the records route.
 
-- **Selector.** Exactly one of `metric` (a full reference; the index is
+- **Selector.** At most one of `metric` (a full reference; the index is
   read), `metrics` (up to 16 full references read over one range, bucket,
   `groupBy` and sources policy, each with its own unit, reducers, `from`
   and summary statistic, checked each on its own and held to the budgets
@@ -42,7 +42,8 @@ Chosen: a mode of the records route.
   is a property of its kind, so the recorded-local calendar places a
   property read's record by the declared offset property `property.utcOffset`
   names, and refuses a record holding none as it refuses an offsetless
-  reading.
+  reading. A bucketed read names one of the three; the latest read may name
+  none and select its streams by `filter` alone.
 - **Four named time modes.** `{"every", "origin"}` is a physical window on
   UTC instants. `{"calendar", "timezone"}` is a calendar window in a named
   zone, 23 or 25 hours across a clock change. `{"calendar"}` with no zone is

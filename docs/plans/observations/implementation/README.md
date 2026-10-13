@@ -137,7 +137,7 @@ a request and its answer.
 
 | Key | Fields | Arrived |
 | --- | --- | --- |
-| selector | exactly one of `metric` (`{ref}`), `metrics` (`[{ref, unit?, reducers?, from?, statistic?}]`, at most 16) and `property` (`{name, anchor?, utcOffset?, groupBy?, sources?}`) | `metrics`, `property.utcOffset`, `property.groupBy`, `property.sources`: review |
+| selector | at most one of `metric` (`{ref}`), `metrics` (`[{ref, unit?, reducers?, from?, statistic?}]`, at most 16) and `property` (`{name, anchor?, utcOffset?, groupBy?, sources?}`); the latest read may name none and select by `filter` | `metrics`, `property.utcOffset`, `property.groupBy`, `property.sources`: review |
 | `from`, `minCoverage` | `raw` (default), `summaries` or `prefer-raw`; prefer-raw's floor, default 0.9 | |
 | `range` | `{gte, lt}` | |
 | `bucket` | `{every, origin?, place?}`; `{calendar, timezone?, fallbackTimezone?, weekStart?, offset?, place?}` (`calendar` in `minute`, `hour`, `day`, `week`, `month`, `year`; no `timezone` is the recorded-local day); `{records: {filter, around?: {before, after}, maxRecords?, sources?, utcOffsets?: {start, end?}}}` | `fallbackTimezone`, `place`, `records.sources`, `records.utcOffsets`: review |

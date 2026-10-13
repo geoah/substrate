@@ -1155,7 +1155,9 @@ its series times buckets pass the rows left of their read budget.
 | `rolling` | `{"buckets", "reducers"?, "through"?}`: `avg`, `sum`, `min`, `max` or `stddev` over a window of buckets ending at this bucket (`through: "current"`) or the one before it (`"previous"`) | `reducers` is `["avg"]`, `through` is `current` |
 | `budget` | `{"maxBuckets"?, "maxSamples"?, "maxGroups"?}` | see [budgets](#budgets) |
 
-Exactly one of `metric`, `metrics` and `property`; two is a `422`. A metric read's
+At most one of `metric`, `metrics` and `property`; two is a `422`, and a
+bucketed read with none is a `422` too. The latest read may name none and
+select its streams by `filter` alone. A metric read's
 `filter` takes `kinds` and `implements` (a kind that does not bind `observed`
 is refused by name) and `eq` or `in` on the stream properties `source`,
 `about`, `metric` and `channel`; `eq` beside `in` on one property admits what
