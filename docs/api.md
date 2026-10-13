@@ -1424,7 +1424,10 @@ lookup per stream. An amount's or a counter's bucket boundary that cuts a row
 (a range starting at 10:07, a records window) is read from raw points and
 merged in, and in the records mode an amount is read from raw points alone,
 because a window takes the part of an amount that started in a row before
-it. The read finds those amounts by the stream's longest
+it. Each of those points counts against `maxSamples`, where a rollup row
+would count once per quarter hour, so a records-mode read of a dense
+amount over many long windows costs more than an `every` or `calendar`
+read of the same span. The read finds those amounts by the stream's longest
 span among its amounts that meet the windows, one statement before the
 forms are found. The index orders a span by its end alone, so that
 statement visits every value with a span the selected streams hold from
