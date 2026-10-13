@@ -51,11 +51,21 @@ revocation is manual:
 
 ## Upgrading from version 18
 
-Version 21 adds the `whoopwebhook` function and the `whoop-webhook` trigger,
-and changes nothing an installed account holds. Taking the upgrade (the
-console's Registry page, or `substratectl install
-providers.substrate.reamde.dev/whoop`) writes the trigger; then register the
-webhook URL above. An account that has recoveries on and sleeps off
-reconnects once: `enabledRecovery` now asks for `read:sleep`, and until the
-grant carries it, `whoopwebhook` drops that account's `recovery.updated`
-events and names WHOOP's `403` in its output.
+Version 21 adds the `whoopwebhook` function, the `whoop-webhook` trigger and
+the `recovery.cycleId` property, and changes no property an installed
+repository holds. Taking the upgrade (the console's Registry page, or
+`substratectl install providers.substrate.reamde.dev/whoop`) writes the
+trigger; then register the webhook URL above.
+
+`whoopsync` now deletes mirror rows. When a stream that has a cursor drains
+its window, the sync reads back by id up to 25 rows the mirror holds in that
+window and the walk did not return, and deletes each row WHOOP answers `404`
+for. Where the
+[WHOOP to health](../../../docs/bundles-catalog.md#whoop-to-health-sample)
+sample is installed, the health records built from a deleted row are deleted
+with it.
+
+An account that has recoveries on and sleeps off reconnects once:
+`enabledRecovery` now asks for `read:sleep`, and until the grant carries it,
+`whoopwebhook` drops that account's `recovery.updated` events and names
+WHOOP's `403` in its output.
