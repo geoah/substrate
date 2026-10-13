@@ -13,6 +13,7 @@ import {
   DEFAULT_PRECISION,
   channelKey,
   MAX_BUCKETS,
+  SUMMARY_REDUCERS,
   bucketEstimate,
   bucketOf,
   formOf,
@@ -276,25 +277,6 @@ export function planPlot(
     ? scope.streams.filter((s) => sameRef(s.metric, metric))
     : every
   const palette = scope.streams ? own : every
-  // Newest first. A stream that keeps raw points says how the metric is
-  // measured; a vendor summary only where every stream keeps one.
-  const newest = own.find((s) => s.form !== "summary") ?? own[0]
-  const shape = shapeOf(info, newest)
-  const form = formOf(info, newest)
-  const auto = fromOf(own)
-  const from: AggregateFrom = scope.from ?? auto.from
-  const reducers = reducerOptions(shape, form)
-  const reducer =
-    scope.reducer && reducers.includes(scope.reducer)
-      ? scope.reducer
-      : reducers[0]
-  const stored = info?.unit ?? own.find((s) => s.unit)?.unit
-  const units = unitChoices(stored, info?.measures)
-  const unit =
-    scope.unit && scope.unit !== stored && units.includes(scope.unit)
-      ? scope.unit
-      : undefined
-  const codes = info?.codeSet
   // The address may spell a record by id or by path; the plot uses the
   // spelling its streams carry. The chosen sources keep the reader's order,
   // which a priority read prefers them in.
@@ -315,6 +297,30 @@ export function planPlot(
       (!channels.length || channels.includes(s.channel ?? ""))
   )
   const sourceless = selected.some((s) => !s.source)
+  // Newest first. A stream that keeps raw points says how the metric is
+  // measured; a vendor summary only where every stream keeps one.
+  const newest = own.find((s) => s.form !== "summary") ?? own[0]
+  const shape = shapeOf(info, newest)
+  const form = formOf(info, newest)
+  const auto = fromOf(selected)
+  const from: AggregateFrom = scope.from ?? auto.from
+  // Past a raw read, a bucket may be served by a summary, and the server
+  // refuses a reducer a summary does not take.
+  const summaries = from !== "raw" && selected.some((s) => s.form === "summary")
+  const reducers = reducerOptions(shape, form).filter(
+    (r) => !summaries || SUMMARY_REDUCERS.includes(r)
+  )
+  const reducer =
+    scope.reducer && reducers.includes(scope.reducer)
+      ? scope.reducer
+      : reducers[0]
+  const stored = info?.unit ?? own.find((s) => s.unit)?.unit
+  const units = unitChoices(stored, info?.measures)
+  const unit =
+    scope.unit && scope.unit !== stored && units.includes(scope.unit)
+      ? scope.unit
+      : undefined
+  const codes = info?.codeSet
   const groups =
     shape === "coded"
       ? codes?.length || 4
@@ -401,7 +407,7 @@ export function planPlot(
     from,
     ...(scope.from ? {} : auto.reason ? { fromReason: auto.reason } : {}),
     summarySources: distinct(
-      own.filter((s) => s.form === "summary").map((s) => s.source)
+      selected.filter((s) => s.form === "summary").map((s) => s.source)
     ),
   }
 }

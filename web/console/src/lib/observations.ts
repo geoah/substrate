@@ -275,6 +275,19 @@ export function reducerOptions(shape: ReadingShape, form?: Form): string[] {
   }
 }
 
+/** The reducers a vendor summary takes (docs/api.md, "Reducers, by
+ * form"). A read that may serve a bucket from a summary is held to these
+ * besides its form's own. */
+export const SUMMARY_REDUCERS: readonly string[] = [
+  "count",
+  "first",
+  "last",
+  "sum",
+  "min",
+  "max",
+  "avg",
+]
+
 export const REDUCER_WORDS: Record<string, string> = {
   avg: "Average",
   twa: "Time-weighted average",

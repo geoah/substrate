@@ -724,7 +724,8 @@ as JSON and as a `curl` command.
 
 **One chart, several metrics.** Above the chart, one row per metric holds
 its name, which axis it reads on, its reducer (from the ones its form
-allows) and its output unit (from the stored unit's measure), and its
+allows, held to the ones a summary takes where a vendor summary may serve a
+bucket) and its output unit (from the stored unit's measure), and its
 legend. A level is a line with its lowest-to-highest band where its metric
 shows one line, an amount or a count is bars, and a category is bars
 stacked per code that counts as one unit, its time. The series of one unit

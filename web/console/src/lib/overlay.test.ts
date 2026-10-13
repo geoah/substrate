@@ -234,6 +234,31 @@ describe("where a metric reads from", () => {
     expect(planned.fromReason).toBe("some-summaries")
     expect(planned.summarySources).toEqual([WHOOP])
     expect(planned.read?.aggregate.from).toBe("prefer-raw")
+    // A summary in range answers only what a summary takes: no twa, no
+    // stddev, and an address asking for one reads the default.
+    expect(planned.reducers).toEqual([
+      "avg",
+      "min",
+      "max",
+      "first",
+      "last",
+      "count",
+    ])
+    expect(
+      planPlot(source([whoop, ...streams]), HEART, {
+        ...SCOPE,
+        streams: [whoop, garmin],
+        reducer: "twa",
+      }).reducer
+    ).toBe("avg")
+    // A raw read leaves the summaries out, and offers the level's every one.
+    expect(
+      planPlot(source([whoop, ...streams]), HEART, {
+        ...SCOPE,
+        streams: [whoop, garmin],
+        from: "raw",
+      }).reducers
+    ).toContain("twa")
   })
 
   it("lets the reader's pick win", () => {
