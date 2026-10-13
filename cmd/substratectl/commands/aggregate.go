@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -23,35 +24,51 @@ import (
 // only when the command line names it (pflag's Changed), so an unset flag
 // sends nothing and the server applies its own default.
 type aggregateFlags struct {
-	output          string
-	body            string
-	filter          string
-	kinds           []string
-	property        string
-	anchor          string
-	gte             string
-	lt              string
-	every           string
-	origin          string
-	calendar        string
-	timezone        string
-	weekStart       string
-	offset          string
-	reducers        []string
-	groupBy         []string
-	policy          string
-	order           []string
-	unit            string
-	from            string
-	minCoverage     float64
-	maxGap          string
-	fill            string
-	rolling         int
-	rollingReducers []string
-	maxBuckets      int
-	maxSamples      int64
-	maxGroups       int
-	downsample      int
+	output           string
+	body             string
+	filter           string
+	kinds            []string
+	statistic        string
+	property         string
+	anchor           string
+	utcOffset        string
+	propertyGroupBy  []string
+	gte              string
+	lt               string
+	every            string
+	origin           string
+	calendar         string
+	timezone         string
+	fallbackTimezone string
+	weekStart        string
+	offset           string
+	place            string
+	records          []string
+	recordsFilter    string
+	aroundBefore     string
+	aroundAfter      string
+	maxRecords       int
+	recordOffsets    []string
+	recordPolicy     string
+	recordOrder      []string
+	recordSource     string
+	recordMatch      []string
+	reducers         []string
+	groupBy          []string
+	policy           string
+	order            []string
+	unit             string
+	from             string
+	minCoverage      float64
+	maxGap           string
+	fill             string
+	rolling          int
+	rollingReducers  []string
+	rollingThrough   string
+	maxBuckets       int
+	maxSamples       int64
+	maxGroups        int
+	downsample       int
 }
 
 // aggregateCommand is the aggregate read (decision 0161): the records route
@@ -61,28 +78,41 @@ type aggregateFlags struct {
 func (a *app) aggregateCommand() *cobra.Command {
 	var o aggregateFlags
 	cmd := &cobra.Command{
-		Use:   "aggregate [metric]",
-		Short: "Reduce a metric or a numeric property into time buckets",
+		Use:   "aggregate [metric...]",
+		Short: "Reduce metrics or a numeric property into time buckets",
 		Long: `Reduce a metric's observed points, or a declared number of the filtered
 kinds, into time buckets.
 
 The argument is the metric record's full path,
 <authority>/<package>/<kind>/<id>, such as
-ada.example.com/observations/metric/health/heart_rate. --property names a
-declared number of the filtered kinds instead (--anchor the datetime property
-that places a record in time). Without either, --filter or --body must say
-what to read: the latest read across metrics is a filter on
+ada.example.com/observations/metric/health/heart_rate. Several arguments
+read several metrics over one range and bucket (aggregate.metrics), each row
+naming its metric. --property names a declared number of the filtered kinds
+instead (--anchor the datetime property that places a record in time,
+--utc-offset the int property holding its UTC offset for the recorded-local
+calendar, --property-group-by the string, enum or reference properties to
+group by). With none of them, the latest read across metrics is a filter on
 properties.metric with --group-by metric,source --reducer last.
 
-The range is --gte and --lt, two RFC 3339 instants. The bucket is --every
-(an ISO 8601 duration, counted from --origin) or --calendar (minute, hour,
-day, week, month or year) with --timezone, --week-start and --offset; a
-calendar with no timezone is the recorded-local calendar.
+The range is --gte and --lt, two RFC 3339 instants. The bucket is one of
+three time modes: --every (an ISO 8601 duration, counted from --origin);
+--calendar (minute, hour, day, week, month or year) with --timezone,
+--week-start and --offset, where a calendar with no timezone is the
+recorded-local calendar and --fallback-timezone places a value written
+without a UTC offset; or --records, the kinds whose records the read's
+buckets are, with --records-filter, --around-before, --around-after,
+--max-records and --records-utc-offsets START[,END]. --place end lands a
+value with a span in the bucket it ends in.
 
 --reducer is repeatable: count, sum, avg, twa, min, max, first, last,
 stddev, increase, rate, circularMean, or one with its argument:
 percentile:0.05, durationIn:95,114 (the [low, high) bounds in the values'
 unit), timeInState:open,closed (bare timeInState is every state).
+--statistic reads a summary at one statistic (filter.properties.statistic).
+--policy and --order choose among the sources of points; --record-policy,
+--record-order, --record-source and --record-match choose among the
+sources of records (bucket.records.sources, or property.sources beside
+--property).
 
 A flag the command line does not name sends nothing, and the server applies
 its default.
@@ -90,26 +120,28 @@ its default.
 --body FILE (or -f, "-" for stdin) reads the request as JSON: either
 {"filter": ..., "aggregate": ..., "downsample": ...} or the aggregate body
 alone. A flag given beside it replaces that one field of the body, and a
-list flag the whole list. The records time mode (bucket.records) has no
-flags and is written in a body.
+list flag the whole list. Each metrics entry's own unit, reducers, from and
+statistic have no flags and are written in a body.
 
-The table prints one line per row: its start and end, the group, the
-form, whether raw points or summaries served it, the time its points cover,
-then each value as reducer=value unit ("-" where a reducer has no answer; a
-coded first or last prints its code). -o json and -o yaml print the answer
-whole.`,
-		Args: cobra.MaximumNArgs(1),
+The table prints one line per row: its start and end, then the group
+(GROUP), the record of a records-mode window (RECORD), the sources that fed a
+row whose group names none (SOURCES), the form, whether raw points or
+summaries served it, the time its points cover, the values placed by
+--fallback-timezone (OFFSETLESS) and the amounts a window cut (PRORATED),
+each column where a row carries it, then each value as reducer=value unit
+("-" where a reducer has no answer; a coded first or last prints its code,
+a timeInState value names its state, and a rolling value its window and the
+n buckets in it with a value). -o json and -o yaml print the answer whole.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := outputFormat(o.output); err != nil {
+				return err
+			}
 			ctx := cmd.Context()
 			cl, err := a.client()
 			if err != nil {
 				return err
 			}
-			metric := ""
-			if len(args) == 1 {
-				metric = args[0]
-			}
-			q, err := a.aggregateQuery(ctx, cmd.Flags(), &o, metric)
+			q, err := a.aggregateQuery(ctx, cmd.Flags(), &o, args)
 			if err != nil {
 				return err
 			}
@@ -125,18 +157,33 @@ whole.`,
 	f.StringVarP(&o.body, "body", "f", "", `read the request from this JSON file ("-" reads stdin)`)
 	f.StringVar(&o.filter, "filter", "", `records filter as JSON (substrate.Filter), e.g. '{"properties":{"source":{"eq":"..."}}}'`)
 	f.StringSliceVar(&o.kinds, "kinds", nil, "only these kinds (comma-separated, each <authority>/<package>/<name>)")
+	f.StringVar(&o.statistic, "statistic", "", "read summaries at this statistic alone (avg, max, sum, ...): filter.properties.statistic")
 	f.StringVar(&o.property, "property", "", "read this declared number of the filtered kinds instead of a metric")
 	f.StringVar(&o.anchor, "anchor", "", "with --property: the datetime property that places a record in time")
+	f.StringVar(&o.utcOffset, "utc-offset", "", "with --property: the int property holding a record's UTC offset in minutes")
+	f.StringSliceVar(&o.propertyGroupBy, "property-group-by", nil, "with --property: group by these string, enum or reference properties")
 	f.StringVar(&o.gte, "gte", "", "range start, inclusive (RFC 3339)")
 	f.StringVar(&o.lt, "lt", "", "range end, exclusive (RFC 3339)")
 	f.StringVar(&o.every, "every", "", "fixed bucket width, an ISO 8601 duration (PT5M, P1D)")
 	f.StringVar(&o.origin, "origin", "", "with --every: the instant buckets count from (RFC 3339)")
 	f.StringVar(&o.calendar, "calendar", "", "calendar bucket: minute|hour|day|week|month|year")
 	f.StringVar(&o.timezone, "timezone", "", "with --calendar: an IANA zone (absent: the recorded-local calendar)")
+	f.StringVar(&o.fallbackTimezone, "fallback-timezone", "", "recorded-local calendar: the IANA zone a value written without a UTC offset is placed by")
 	f.StringVar(&o.weekStart, "week-start", "", "with --calendar week: the first day of a week (monday, sunday)")
 	f.StringVar(&o.offset, "offset", "", "with --calendar: shift each bucket's start, an ISO 8601 duration (PT4H)")
+	f.StringVar(&o.place, "place", "", "where a value with a span lands: start (the default) or end, the bucket it ends in")
+	f.StringSliceVar(&o.records, "records", nil, "records time mode: the kinds whose records are the buckets (comma-separated)")
+	f.StringVar(&o.recordsFilter, "records-filter", "", "records time mode: the records' filter as JSON (substrate.Filter)")
+	f.StringVar(&o.aroundBefore, "around-before", "", "records time mode: widen each window this far before its start (ISO 8601)")
+	f.StringVar(&o.aroundAfter, "around-after", "", "records time mode: widen each window this far after its end (ISO 8601)")
+	f.IntVar(&o.maxRecords, "max-records", 0, "records time mode: the most records the filter may match")
+	f.StringSliceVar(&o.recordOffsets, "records-utc-offsets", nil, "records time mode: START[,END], the records' int UTC offset properties")
+	f.StringVar(&o.recordPolicy, "record-policy", "", "sources of records: separate|priority (with --records or --property)")
+	f.StringSliceVar(&o.recordOrder, "record-order", nil, "with --record-policy priority: the sources in order (repeatable)")
+	f.StringVar(&o.recordSource, "record-source", "", "with --record-policy priority: the records' property holding their source")
+	f.StringSliceVar(&o.recordMatch, "record-match", nil, "with --record-policy priority: properties two records must share to overlap")
 	f.StringArrayVar(&o.reducers, "reducer", nil, "a reducer (repeatable): avg, percentile:0.05, durationIn:95,114, timeInState:open,closed")
-	f.StringSliceVar(&o.groupBy, "group-by", nil, "group rows by source, about, code, metric, kind or channel (repeatable or comma-separated)")
+	f.StringSliceVar(&o.groupBy, "group-by", nil, "group rows by source, about, code, metric, kind, channel or statistic (repeatable or comma-separated)")
 	f.StringVar(&o.policy, "policy", "", "source policy: separate|priority|summaries")
 	f.StringSliceVar(&o.order, "order", nil, "with --policy priority: the sources in order, by id or record path (repeatable)")
 	f.StringVar(&o.unit, "unit", "", "convert values (a unit of the metric's measure) or durations (min, h) to this unit")
@@ -146,6 +193,7 @@ whole.`,
 	f.StringVar(&o.fill, "fill", "", "make buckets dense: null|zero|locf")
 	f.IntVar(&o.rolling, "rolling", 0, "add rolling values over this bucket and the N-1 before it")
 	f.StringArrayVar(&o.rollingReducers, "rolling-reducer", nil, "with --rolling: a reducer the rolling values use (repeatable)")
+	f.StringVar(&o.rollingThrough, "rolling-through", "", "with --rolling: current (the default) or previous, a window that leaves the bucket out")
 	f.IntVar(&o.maxBuckets, "max-buckets", 0, "budget: the most groups times buckets the read may answer")
 	f.Int64Var(&o.maxSamples, "max-samples", 0, "budget: the most raw index rows the read may take")
 	f.IntVar(&o.maxGroups, "max-groups", 0, "budget: the most groups --group-by may produce")
@@ -155,7 +203,7 @@ whole.`,
 
 // aggregateQuery builds the records route's parameters: the body, if any,
 // then each flag the command line named laid over it.
-func (a *app) aggregateQuery(ctx context.Context, fs *pflag.FlagSet, o *aggregateFlags, metric string) (url.Values, error) {
+func (a *app) aggregateQuery(ctx context.Context, fs *pflag.FlagSet, o *aggregateFlags, metrics []string) (url.Values, error) {
 	var req substrate.AggregateQuery
 	if fs.Changed("body") {
 		raw, err := a.readAggregateBody(o.body)
@@ -168,39 +216,41 @@ func (a *app) aggregateQuery(ctx context.Context, fs *pflag.FlagSet, o *aggregat
 	}
 	if fs.Changed("filter") {
 		var flt substrate.Filter
-		if err := decodeStrict([]byte(o.filter), &flt); err != nil {
+		if err := strictjson.DecodeBytes([]byte(o.filter), &flt, true); err != nil {
 			return nil, fmt.Errorf("parse --filter as JSON: %w", err)
 		}
 		req.Filter = flt
 	}
 	if fs.Changed("kinds") {
-		refs := make([]string, 0, len(o.kinds))
-		for _, k := range o.kinds {
-			col, err := a.resolveCollection(ctx, k)
-			if err != nil {
-				return nil, err
-			}
-			refs = append(refs, col.pkg()+"/"+col.Name)
+		refs, err := a.kindRefs(ctx, o.kinds)
+		if err != nil {
+			return nil, err
 		}
 		req.Filter.Kinds = refs
+	}
+	if fs.Changed("statistic") {
+		if req.Filter.Properties == nil {
+			req.Filter.Properties = map[string]substrate.Cond{}
+		}
+		req.Filter.Properties["statistic"] = substrate.Cond{Eq: o.statistic}
 	}
 	if req.Aggregate == nil {
 		req.Aggregate = &substrate.Aggregate{}
 	}
-	if err := o.apply(fs, req.Aggregate, metric); err != nil {
+	if err := o.apply(fs, req.Aggregate, metrics); err != nil {
 		return nil, err
 	}
-	filter, err := json.Marshal(req.Filter)
-	if err != nil {
-		return nil, fmt.Errorf("encode filter: %w", err)
-	}
-	if req.Aggregate.Metric == nil && req.Aggregate.Property == nil && string(filter) == "{}" {
-		return nil, errors.New("name what to read: a metric record path as the argument, --property, --filter or --body")
+	if err := a.applyRecords(ctx, fs, o, req.Aggregate); err != nil {
+		return nil, err
 	}
 	if fs.Changed("downsample") {
 		req.Downsample = &substrate.Downsample{Points: o.downsample, Method: "m4"}
 	}
 	q := url.Values{}
+	filter, err := json.Marshal(req.Filter)
+	if err != nil {
+		return nil, fmt.Errorf("encode filter: %w", err)
+	}
 	if string(filter) != "{}" {
 		q.Set("filter", string(filter))
 	}
@@ -219,56 +269,108 @@ func (a *app) aggregateQuery(ctx context.Context, fs *pflag.FlagSet, o *aggregat
 	return q, nil
 }
 
+// kindRefs resolves each kind a flag names to its full reference.
+func (a *app) kindRefs(ctx context.Context, kinds []string) ([]string, error) {
+	refs := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		col, err := a.resolveCollection(ctx, k)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, col.pkg()+"/"+col.Name)
+	}
+	return refs, nil
+}
+
+// The flags of each time mode: a read takes one mode.
+var (
+	everyFlags    = []string{"every", "origin"}
+	calendarFlags = []string{"calendar", "timezone", "fallback-timezone", "week-start", "offset"}
+	recordsFlags  = []string{"records", "records-filter", "around-before", "around-after", "max-records", "records-utc-offsets"}
+	// recordSourceFlags choose among the sources of records: the records
+	// mode's windows, or a property read's records.
+	recordSourceFlags = []string{"record-policy", "record-order", "record-source", "record-match"}
+)
+
+func anySet(set func(string) bool, names []string) bool {
+	for _, n := range names {
+		if set(n) {
+			return true
+		}
+	}
+	return false
+}
+
 // apply lays the named flags over agg, one field each. A list flag replaces
 // the whole list.
-func (o *aggregateFlags) apply(fs *pflag.FlagSet, agg *substrate.Aggregate, metric string) error {
+func (o *aggregateFlags) apply(fs *pflag.FlagSet, agg *substrate.Aggregate, metrics []string) error {
 	set := fs.Changed
-	switch {
-	case metric != "" && set("property"):
-		return errors.New("name a metric or --property, not both")
-	case metric != "":
-		if strings.Count(metric, "/") < 3 {
-			return fmt.Errorf("a metric is named by its record path, <authority>/<package>/<kind>/<id>, got %q", metric)
+	for _, m := range metrics {
+		if strings.Count(m, "/") < 3 {
+			return fmt.Errorf("a metric is named by its record path, <authority>/<package>/<kind>/<id>, got %q", m)
 		}
-		agg.Metric, agg.Property = &substrate.AggregateMetric{Ref: metric}, nil
-	case set("property"):
-		agg.Metric, agg.Property = nil, &substrate.AggregateProperty{Name: o.property}
 	}
-	if set("anchor") {
-		if agg.Property == nil {
-			return errors.New("--anchor names the time property of --property; give --property beside it")
+	switch {
+	case len(metrics) > 0 && set("property"):
+		return errors.New("name metrics or --property, not both")
+	case len(metrics) == 1:
+		agg.Metric, agg.Metrics, agg.Property = &substrate.AggregateMetric{Ref: metrics[0]}, nil, nil
+	case len(metrics) > 1:
+		agg.Metric, agg.Metrics, agg.Property = nil, make([]substrate.AggregateMetricRead, len(metrics)), nil
+		for i, m := range metrics {
+			agg.Metrics[i] = substrate.AggregateMetricRead{Ref: m}
 		}
-		agg.Property.Anchor = o.anchor
+	case set("property"):
+		agg.Metric, agg.Metrics, agg.Property = nil, nil, &substrate.AggregateProperty{Name: o.property}
+	}
+	for _, name := range []string{"anchor", "utc-offset", "property-group-by"} {
+		if set(name) && agg.Property == nil {
+			return fmt.Errorf("--%s is an option of the property read; give --property beside it", name)
+		}
+	}
+	if p := agg.Property; p != nil {
+		setString(set, "anchor", &p.Anchor, o.anchor)
+		setString(set, "utc-offset", &p.UTCOffset, o.utcOffset)
+		if set("property-group-by") {
+			p.GroupBy = o.propertyGroupBy
+		}
 	}
 
 	if set("gte") || set("lt") {
 		if agg.Range == nil {
 			agg.Range = &substrate.AggregateRange{}
 		}
-		if set("gte") {
-			agg.Range.Gte = o.gte
-		}
-		if set("lt") {
-			agg.Range.Lt = o.lt
-		}
+		setString(set, "gte", &agg.Range.Gte, o.gte)
+		setString(set, "lt", &agg.Range.Lt, o.lt)
 	}
 	if r := agg.Range; r != nil {
 		if r.Gte == "" || r.Lt == "" {
-			return errors.New("the range needs both --gte and --lt")
+			if set("gte") || set("lt") {
+				return errors.New("the range needs both --gte and --lt")
+			}
+			return errors.New("the range needs both gte and lt")
 		}
-		for _, bound := range [][2]string{{"--gte", r.Gte}, {"--lt", r.Lt}} {
-			if _, err := time.Parse(time.RFC3339, bound[1]); err != nil {
-				return fmt.Errorf("%s %q is not an RFC 3339 instant, such as 2026-04-06T00:00:00+03:00", bound[0], bound[1])
+		for _, bound := range []struct{ flag, field, v string }{{"gte", "range.gte", r.Gte}, {"lt", "range.lt", r.Lt}} {
+			if _, err := time.Parse(time.RFC3339, bound.v); err != nil {
+				name := bound.field
+				if set(bound.flag) {
+					name = "--" + bound.flag
+				}
+				return fmt.Errorf("%s %q is not an RFC 3339 instant, such as 2026-04-06T00:00:00+03:00", name, bound.v)
 			}
 		}
 	}
 
-	fixed := set("every") || set("origin")
-	calendar := set("calendar") || set("timezone") || set("week-start") || set("offset")
-	if fixed && calendar {
-		return errors.New("--every and --origin are one time mode, --calendar, --timezone, --week-start and --offset another; give one")
+	modes := 0
+	for _, flags := range [][]string{everyFlags, calendarFlags, recordsFlags} {
+		if anySet(set, flags) {
+			modes++
+		}
 	}
-	if fixed || calendar {
+	if modes > 1 {
+		return errors.New("--every and --origin are one time mode; --calendar, --timezone, --fallback-timezone, --week-start and --offset another; --records and its flags a third; give one")
+	}
+	if modes > 0 || set("place") {
 		if agg.Bucket == nil {
 			agg.Bucket = &substrate.AggregateBucket{}
 		}
@@ -277,8 +379,10 @@ func (o *aggregateFlags) apply(fs *pflag.FlagSet, agg *substrate.Aggregate, metr
 		setString(set, "origin", &b.Origin, o.origin)
 		setString(set, "calendar", &b.Calendar, o.calendar)
 		setString(set, "timezone", &b.Timezone, o.timezone)
+		setString(set, "fallback-timezone", &b.FallbackTimezone, o.fallbackTimezone)
 		setString(set, "week-start", &b.WeekStart, o.weekStart)
 		setString(set, "offset", &b.Offset, o.offset)
+		setString(set, "place", &b.Place, o.place)
 	}
 
 	if set("group-by") {
@@ -315,15 +419,20 @@ func (o *aggregateFlags) apply(fs *pflag.FlagSet, agg *substrate.Aggregate, metr
 		}
 		agg.Rolling.Buckets = o.rolling
 	}
-	if set("rolling-reducer") {
-		if agg.Rolling == nil {
-			return errors.New("--rolling-reducer needs --rolling N, the buckets it rolls over")
+	for _, name := range []string{"rolling-reducer", "rolling-through"} {
+		if set(name) && agg.Rolling == nil {
+			return fmt.Errorf("--%s needs --rolling N, the buckets it rolls over", name)
 		}
+	}
+	if set("rolling-reducer") {
 		rs, err := parseReducers("--rolling-reducer", o.rollingReducers)
 		if err != nil {
 			return err
 		}
 		agg.Rolling.Reducers = rs
+	}
+	if set("rolling-through") {
+		agg.Rolling.Through = o.rollingThrough
 	}
 
 	if set("max-buckets") || set("max-samples") || set("max-groups") {
@@ -339,6 +448,77 @@ func (o *aggregateFlags) apply(fs *pflag.FlagSet, agg *substrate.Aggregate, metr
 		if set("max-groups") {
 			agg.Budget.MaxGroups = o.maxGroups
 		}
+	}
+	return nil
+}
+
+// applyRecords lays the records time mode's flags over agg's bucket, and the
+// record source flags over the property read's sources or the records mode's.
+func (a *app) applyRecords(ctx context.Context, fs *pflag.FlagSet, o *aggregateFlags, agg *substrate.Aggregate) error {
+	set := fs.Changed
+	if anySet(set, recordsFlags) {
+		b := agg.Bucket
+		if b.Records == nil {
+			b.Records = &substrate.AggregateRecords{}
+		}
+		r := b.Records
+		if set("records-filter") {
+			var flt substrate.Filter
+			if err := strictjson.DecodeBytes([]byte(o.recordsFilter), &flt, true); err != nil {
+				return fmt.Errorf("parse --records-filter as JSON: %w", err)
+			}
+			r.Filter = flt
+		}
+		if set("records") {
+			refs, err := a.kindRefs(ctx, o.records)
+			if err != nil {
+				return err
+			}
+			r.Filter.Kinds = refs
+		}
+		if set("around-before") || set("around-after") {
+			if r.Around == nil {
+				r.Around = &substrate.AggregateAround{}
+			}
+			setString(set, "around-before", &r.Around.Before, o.aroundBefore)
+			setString(set, "around-after", &r.Around.After, o.aroundAfter)
+		}
+		if set("max-records") {
+			r.MaxRecords = o.maxRecords
+		}
+		if set("records-utc-offsets") {
+			if n := len(o.recordOffsets); n < 1 || n > 2 {
+				return errors.New("--records-utc-offsets names the records' start offset property, and their end's after a comma: utcOffsetStart,utcOffsetEnd")
+			}
+			r.UTCOffsets = &substrate.AggregateRecordOffsets{Start: o.recordOffsets[0]}
+			if len(o.recordOffsets) == 2 {
+				r.UTCOffsets.End = o.recordOffsets[1]
+			}
+		}
+	}
+	if !anySet(set, recordSourceFlags) {
+		return nil
+	}
+	var src **substrate.AggregateRecordSources
+	switch {
+	case agg.Property != nil:
+		src = &agg.Property.Sources
+	case agg.Bucket != nil && agg.Bucket.Records != nil:
+		src = &agg.Bucket.Records.Sources
+	default:
+		return errors.New("--record-policy, --record-order, --record-source and --record-match choose among records: give --property or the records time mode (--records) beside them")
+	}
+	if *src == nil {
+		*src = &substrate.AggregateRecordSources{}
+	}
+	rs := *src
+	setString(set, "record-policy", &rs.Policy, o.recordPolicy)
+	if set("record-order") {
+		rs.Order = o.recordOrder
+	}
+	setString(set, "record-source", &rs.Property, o.recordSource)
+	if set("record-match") {
+		rs.Match = o.recordMatch
 	}
 	return nil
 }
@@ -427,8 +607,8 @@ func (a *app) readAggregateBody(name string) ([]byte, error) {
 
 // parseAggregateBody reads a request document: an AggregateQuery when it
 // carries any of `filter`, `aggregate` and `downsample`, else the aggregate
-// body alone. The decode is strict, as the server's is, so a misspelled key
-// is refused here instead of dropped.
+// body alone. The decode is the server's, so a misspelled key is refused
+// here instead of dropped.
 func parseAggregateBody(raw []byte) (substrate.AggregateQuery, error) {
 	var req substrate.AggregateQuery
 	var keys map[string]json.RawMessage
@@ -438,37 +618,29 @@ func parseAggregateBody(raw []byte) (substrate.AggregateQuery, error) {
 	_, hasFilter := keys["filter"]
 	_, hasAggregate := keys["aggregate"]
 	_, hasDownsample := keys["downsample"]
+	// The server's own strict decode, keeping every number's digits (a
+	// filter's operands are `any`).
 	if hasFilter || hasAggregate || hasDownsample {
-		return req, decodeStrict(raw, &req)
+		return req, strictjson.DecodeBytes(raw, &req, true)
 	}
 	var agg substrate.Aggregate
-	if err := decodeStrict(raw, &agg); err != nil {
+	if err := strictjson.DecodeBytes(raw, &agg, true); err != nil {
 		return req, err
 	}
 	req.Aggregate = &agg
 	return req, nil
 }
 
-// decodeStrict decodes one JSON value, refusing an unknown key and keeping
-// every number's digits (a filter's operands are `any`).
-func decodeStrict(raw []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	dec.UseNumber()
-	if err := dec.Decode(v); err != nil {
-		return err
-	}
-	if dec.More() {
-		return errors.New("trailing data after the JSON value")
-	}
-	return nil
-}
-
 func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
-	grouped, recorded := false, false
+	var grouped, recorded, sourced, offsetless, prorated bool
 	for _, row := range res.Rows {
 		grouped = grouped || row.Group != nil
 		recorded = recorded || row.Record != nil
+		// The separate policy splits rows by source without a group: the
+		// sources are what tell two rows of one bucket apart.
+		sourced = sourced || (len(row.Sources) > 0 && (row.Group == nil || row.Group.Source == ""))
+		offsetless = offsetless || row.Offsetless > 0
+		prorated = prorated || row.Prorated > 0
 	}
 	tw := newTable(w)
 	header := []string{"START", "END"}
@@ -478,7 +650,17 @@ func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
 	if recorded {
 		header = append(header, "RECORD")
 	}
-	header = append(header, "FORM", "FROM", "COVERAGE", "VALUES")
+	if sourced {
+		header = append(header, "SOURCES")
+	}
+	header = append(header, "FORM", "FROM", "COVERAGE")
+	if offsetless {
+		header = append(header, "OFFSETLESS")
+	}
+	if prorated {
+		header = append(header, "PRORATED")
+	}
+	header = append(header, "VALUES")
 	fmt.Fprintln(tw, strings.Join(header, "\t"))
 	for _, row := range res.Rows {
 		cells := []string{row.Start.Format(time.RFC3339), row.End.Format(time.RFC3339)}
@@ -492,7 +674,16 @@ func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
 			}
 			cells = append(cells, dash(ref))
 		}
+		if sourced {
+			cells = append(cells, dash(strings.Join(row.Sources, ",")))
+		}
 		cells = append(cells, dash(row.Form), dash(row.From), dash(row.Coverage))
+		if offsetless {
+			cells = append(cells, strconv.FormatInt(row.Offsetless, 10))
+		}
+		if prorated {
+			cells = append(cells, strconv.FormatInt(row.Prorated, 10))
+		}
 		for _, v := range row.Values {
 			cells = append(cells, valueLabel(v))
 		}
@@ -502,7 +693,7 @@ func printAggregateTable(w io.Writer, res *substrate.AggregateResult) error {
 }
 
 // groupLabel is a row's group as key=value pairs, in the order the wire
-// declares the keys.
+// declares the keys, then a property read's group properties by name.
 func groupLabel(g *substrate.AggregateGroup) string {
 	if g == nil {
 		return ""
@@ -515,34 +706,57 @@ func groupLabel(g *substrate.AggregateGroup) string {
 		{substrate.GroupMetric, g.Metric},
 		{substrate.GroupKind, g.Kind},
 		{substrate.GroupChannel, g.Channel},
+		{substrate.GroupStatistic, g.Statistic},
 		{"currency", g.Currency},
 	} {
 		if kv[1] != "" {
 			parts = append(parts, kv[0]+"="+kv[1])
 		}
 	}
+	names := make([]string, 0, len(g.Properties))
+	for name := range g.Properties {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		parts = append(parts, name+"="+g.Properties[name])
+	}
 	return strings.Join(parts, ",")
 }
 
-// valueLabel is one value as reducer=value unit. A timeInState value names
-// the state it is for, and a coded first or last prints its code.
+// valueLabel is one value as reducer=value unit. A coded first or last
+// answers its code as the value; any other value's code is the state it is
+// for, written on the reducer that owns it: the value's own, or for a rolling
+// value the reducer it rolls over. A rolling value names its window and n,
+// the buckets in it with a value.
 func valueLabel(v substrate.AggregateValue) string {
 	label := reducerLabel(v.Reducer)
-	if v.Code != "" && v.Value != nil {
+	coded := v.Code != "" && v.Rolling == 0 && v.Value == nil &&
+		(v.Reducer.Name == substrate.ReducerFirst || v.Reducer.Name == substrate.ReducerLast)
+	if v.Code != "" && !coded && v.Rolling == 0 {
 		label = v.Reducer.Name + ":" + v.Code
 	}
 	if v.Rolling > 0 {
-		if v.Of != nil {
-			label += " of " + reducerLabel(*v.Of)
+		window := strconv.Itoa(v.Rolling)
+		if v.N != nil {
+			window += ",n=" + strconv.Itoa(*v.N)
 		}
-		label = fmt.Sprintf("rolling(%d,%s)", v.Rolling, label)
+		label = "rolling(" + window + "," + label
+		if v.Of != nil {
+			of := reducerLabel(*v.Of)
+			if v.Code != "" {
+				of = v.Of.Name + ":" + v.Code
+			}
+			label += " of " + of
+		}
+		label += ")"
 	}
 	switch {
 	case v.Value != nil && v.Unit != "":
 		return label + "=" + *v.Value + " " + v.Unit
 	case v.Value != nil:
 		return label + "=" + *v.Value
-	case v.Code != "":
+	case coded:
 		return label + "=" + v.Code
 	}
 	return label + "=-"

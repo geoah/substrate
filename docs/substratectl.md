@@ -140,15 +140,17 @@ document (`kind`, `metadata`, `data`, and the server-set `status`),
 flat; the envelope is the CLI's YAML form. `status` is ignored on input, so the
 output applies back unchanged.
 
-`substratectl aggregate [metric]` is the aggregate read
+`substratectl aggregate [metric...]` is the aggregate read
 ([0161](decisions/0161-the-aggregate-read-is-a-mode-of-the-records-route-checked-before-it-runs.md)):
 it reduces a metric's observed points, or a declared number of the filtered
 kinds (`--property`), into time buckets. The argument is the metric record's
-full path. The flags build the request one field each, and a flag left out
-sends nothing, so the server's default applies. `--reducer` is repeatable and
-takes a name or a name with its argument: `percentile:0.05`,
-`durationIn:95,114`, `timeInState:open,closed`. Heart rate zones per week in
-Athens, one watch preferred over the other:
+full path; several arguments read several metrics over one range and bucket
+(`aggregate.metrics`), each row naming its metric. The flags build the
+request one field each, and a flag left out sends nothing, so the server's
+default applies. `--reducer` is repeatable and takes a name or a name with
+its argument: `percentile:0.05`, `durationIn:95,114`,
+`timeInState:open,closed`. Heart rate zones per week in Athens, one watch
+preferred over the other:
 
 ```
 substratectl aggregate ada.example.com/observations/metric/health/heart_rate \
@@ -176,13 +178,55 @@ substratectl aggregate --group-by metric,source --reducer last \
   --filter '{"properties":{"metric":{"in":["ada.example.com/observations/metric/health/body_mass","ada.example.com/observations/metric/health/body_fat_fraction"]}}}'
 ```
 
+Time spent asleep per stage in each night, the nights the records of
+`health/sleep` are, WHOOP's night kept where two sources recorded one:
+
+```
+substratectl aggregate ada.example.com/observations/metric/health/sleep_stage \
+  --gte 2026-09-01T00:00:00+03:00 --lt 2026-10-01T00:00:00+03:00 \
+  --records ada.example.com/health/sleep \
+  --records-utc-offsets utcOffsetStart,utcOffsetEnd \
+  --record-policy priority --record-order whoop-4-0 --record-source source \
+  --group-by code --reducer sum --unit min
+```
+
+Each field the read takes has a flag:
+
+| Flags | Fields |
+| --- | --- |
+| `--kinds`, `--filter`, `--statistic` | `filter.kinds`, the whole filter, `filter.properties.statistic` |
+| `--property`, `--anchor`, `--utc-offset`, `--property-group-by` | `property.name`, `.anchor`, `.utcOffset`, `.groupBy` |
+| `--gte`, `--lt` | `range` |
+| `--every`, `--origin` | the fixed time mode |
+| `--calendar`, `--timezone`, `--fallback-timezone`, `--week-start`, `--offset` | the calendar time mode |
+| `--records`, `--records-filter`, `--around-before`, `--around-after`, `--max-records`, `--records-utc-offsets` | the records time mode, `bucket.records` |
+| `--place` | `bucket.place` |
+| `--policy`, `--order` | `sources`, among the sources of points |
+| `--record-policy`, `--record-order`, `--record-source`, `--record-match` | `bucket.records.sources`, or `property.sources` beside `--property` |
+| `--reducer`, `--group-by`, `--unit`, `--from`, `--min-coverage`, `--max-gap`, `--fill` | the fields of those names |
+| `--rolling`, `--rolling-reducer`, `--rolling-through` | `rolling` |
+| `--max-buckets`, `--max-samples`, `--max-groups` | `budget` |
+| `--downsample N` | `downsample`, N chart columns instead of buckets |
+
 `--body FILE` (`-f`; `-` reads stdin) sends a JSON request instead, either
 `{"filter": ..., "aggregate": ..., "downsample": ...}` or the aggregate body
-alone, and a flag given beside it replaces that one field. The records time
-mode (`bucket.records`) has no flags and is written this way. `--downsample N`
-asks for N chart columns instead of buckets. The table prints one line per
-row: start, end, group, form, `from`, coverage, then each value as
-`reducer=value unit`. `-o json` and `-o yaml` print the answer whole.
+alone, decoded as strictly as the server decodes it, and a flag given beside
+it replaces that one field. Each `metrics` entry's own `unit`, `reducers`,
+`from` and `statistic` have no flags and are written this way. The command
+checks `-o` before it sends the read.
+
+The table prints one line per row: start and end; then, where any row
+carries them, the group (`GROUP`, a summary's statistic and a property
+read's group properties included), the record a records-mode window came
+from (`RECORD`), the sources of a row whose group names none (`SOURCES`, so
+the rows the separate policy splits by source tell apart); the form, `from`
+and coverage; the values placed by `--fallback-timezone` (`OFFSETLESS`) and
+the amounts a window cut (`PRORATED`); then each value as
+`reducer=value unit`. A coded first or last prints its code as the value, a
+`timeInState` value names its state (`timeInState:closed=3.5 h`), and a
+rolling value names its window and `n`, the buckets in it with a value
+(`rolling(7,n=6,avg of sum)=8123 {steps}`). `-o json` and `-o yaml` print the
+answer whole.
 
 ## Writing
 

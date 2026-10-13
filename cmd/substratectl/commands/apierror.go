@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -56,6 +57,11 @@ func (e *apiError) headline() string {
 	}
 	switch e.Code {
 	case "validation":
+		// A read's 422 refuses the request (an aggregate read checks its
+		// forms, units and budgets before it runs); nothing was written.
+		if e.Method == http.MethodGet {
+			return "the substrate refused this read as invalid"
+		}
 		return "the substrate rejected this write as invalid"
 	case "conflict":
 		return "the record changed since it was read"

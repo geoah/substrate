@@ -950,8 +950,9 @@ func (f *fakeSubstrate) handleAggregate(w http.ResponseWriter, r *http.Request) 
 	answer := f.aggregateAnswer
 	f.mu.Unlock()
 	if agg.Budget != nil && agg.Budget.MaxBuckets > substrate.AggregateMaxBucketsCap {
-		writeError(w, http.StatusUnprocessableEntity, "validation",
-			fmt.Sprintf("budget.maxBuckets %d is over the cap %d", agg.Budget.MaxBuckets, substrate.AggregateMaxBucketsCap), nil)
+		// The engine's refusal, word for word (internal/engine/aggregate.go).
+		writeValidation(w, []string{fmt.Sprintf("aggregate.budget.maxBuckets: %d is over the cap of %d",
+			agg.Budget.MaxBuckets, substrate.AggregateMaxBucketsCap)})
 		return
 	}
 	if answer == "" {

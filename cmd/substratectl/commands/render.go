@@ -135,6 +135,16 @@ func printAs(a *app, output string, v any, human func() error) error {
 	case "yaml":
 		return printYAML(a.out, v)
 	}
+	return outputFormat(output)
+}
+
+// outputFormat refuses an -o printAs cannot print, so a command whose read
+// is costly checks it before the read runs.
+func outputFormat(output string) error {
+	switch output {
+	case "", "table", "json", "yaml":
+		return nil
+	}
 	return fmt.Errorf("unknown output format %q: use table, json or yaml", output)
 }
 

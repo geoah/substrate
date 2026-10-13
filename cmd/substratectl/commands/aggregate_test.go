@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -198,7 +199,6 @@ func TestAggregateRefusals(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{}, "name what to read"},
 		{[]string{heartRate, "--property", "amount"}, "not both"},
 		{[]string{"heart_rate"}, "record path"},
 		{[]string{heartRate, "--anchor", "at"}, "--anchor"},
@@ -209,6 +209,14 @@ func TestAggregateRefusals(t *testing.T) {
 		{[]string{heartRate, "--reducer", "percentile"}, "percentile takes"},
 		{[]string{heartRate, "--reducer", "avg:1"}, "avg takes no argument"},
 		{[]string{heartRate, "--rolling-reducer", "avg"}, "--rolling N"},
+		{[]string{heartRate, "--rolling-through", "previous"}, "--rolling N"},
+		{[]string{heartRate, "--utc-offset", "utcOffset"}, "--utc-offset is an option of the property read"},
+		{[]string{heartRate, "--records", "ada.example.com/health/sleep", "--calendar", "day"}, "give one"},
+		{[]string{heartRate, "--fallback-timezone", "Europe/Athens", "--every", "PT1H"}, "give one"},
+		{[]string{heartRate, "--record-policy", "priority"}, "choose among records"},
+		{[]string{heartRate, "--records", "ada.example.com/health/sleep", "--records-utc-offsets", "a,b,c"}, "--records-utc-offsets names"},
+		{[]string{heartRate, "--filter", `{"kinds":["x"]}}`}, "trailing data"},
+		{[]string{heartRate, "-o", "yml"}, `unknown output format "yml"`},
 	} {
 		before := len(h.fake.requests)
 		_, _, err := h.run(append([]string{"aggregate"}, tc.args...)...)
@@ -220,13 +228,195 @@ func TestAggregateRefusals(t *testing.T) {
 		}
 	}
 
+	// A refused body names the body's field, never a flag it did not set.
+	for body, want := range map[string]string{
+		`{"metric":{"ref":"` + heartRate + `"},"range":{"gte":"2026-10-01T00:00:00Z"}}`:                   "the range needs both gte and lt",
+		`{"metric":{"ref":"` + heartRate + `"},"range":{"gte":"2026-10-01","lt":"2026-10-02T00:00:00Z"}}`: `range.gte "2026-10-01" is not an RFC 3339 instant`,
+		`{"Metric":{"ref":"` + heartRate + `"},"reducers":["avg"]}`:                                       `unknown field "Metric"`,
+		`{"metric":{"ref":"` + heartRate + `"},"unit":"kg","unit":"lb"}`:                                  `duplicate field "unit"`,
+	} {
+		h.stdin.WriteString(body)
+		before := len(h.fake.requests)
+		if _, _, err := h.run("aggregate", "-f", "-"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("body %s: err = %v, want it to mention %q", body, err, want)
+		}
+		if len(h.fake.requests) != before {
+			t.Errorf("body %s sent a request: %v", body, h.fake.requests[before:])
+		}
+	}
+
 	_, _, err := h.run("aggregate", heartRate, "--max-buckets", "20000")
-	if err == nil || !strings.Contains(err.Error(), "budget.maxBuckets 20000 is over the cap 10000") {
+	if err == nil || !strings.Contains(err.Error(), "aggregate.budget.maxBuckets: 20000 is over the cap of 10000") {
 		t.Fatalf("the server's 422 should be surfaced with its message, got %v", err)
 	}
 	var ae *apiError
 	if !errors.As(err, &ae) || ae.Status != http.StatusUnprocessableEntity {
 		t.Fatalf("err = %#v, want the server's 422", err)
+	}
+	// A read's refusal is headlined as a refused read, never a write.
+	var buf bytes.Buffer
+	renderError(&buf, err)
+	if got := buf.String(); !strings.HasPrefix(got, "error: the substrate refused this read as invalid\n") ||
+		!strings.Contains(got, "request: GET "+pathRecords) {
+		t.Fatalf("rendered:\n%s", got)
+	}
+}
+
+// Every field the read gained has its flag, sent in the struct's order: the
+// property read's options, the records time mode, the record sources, the
+// statistic filter, the bucket's place and fallback zone, a rolling window's
+// end, several metrics, and a latest read that names no filter at all.
+func TestAggregateFlagsBuildEveryField(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	days := []string{"--gte", "2026-09-01T00:00:00+03:00", "--lt", "2026-10-01T00:00:00+03:00"}
+	for name, x := range map[string]struct {
+		args             []string
+		filter, aggregte string
+	}{
+		"a property read": {
+			append([]string{
+				"--property", "duration", "--anchor", "endsAt", "--utc-offset", "utcOffsetEnd",
+				"--property-group-by", "sport,source", "--kinds", "ada.example.com/health/workout",
+				"--calendar", "day", "--fallback-timezone", "Europe/Athens", "--reducer", "sum",
+				"--record-policy", "priority", "--record-order", "whoop,garmin", "--record-source", "source", "--record-match", "sport",
+				"--rolling", "7", "--rolling-reducer", "avg", "--rolling-through", "previous", "--fill", "zero", "--max-groups", "50",
+			}, days...),
+			`{"kinds":["ada.example.com/health/workout"]}`,
+			`{"property":{"name":"duration","anchor":"endsAt","utcOffset":"utcOffsetEnd","groupBy":["sport","source"],` +
+				`"sources":{"policy":"priority","order":["whoop","garmin"],"property":"source","match":["sport"]}},` +
+				`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
+				`"bucket":{"calendar":"day","fallbackTimezone":"Europe/Athens"},"reducers":["sum"],"fill":"zero",` +
+				`"rolling":{"buckets":7,"reducers":["avg"],"through":"previous"},"budget":{"maxGroups":50}}`,
+		},
+		"the records time mode": {
+			append([]string{
+				"ada.example.com/observations/metric/health/sleep_stage",
+				"--records", "ada.example.com/health/sleep", "--records-filter", `{"properties":{"isNap":{"eq":false}}}`,
+				"--around-before", "PT1H", "--around-after", "PT1M", "--max-records", "40",
+				"--records-utc-offsets", "utcOffsetStart,utcOffsetEnd",
+				"--record-policy", "priority", "--record-order", "whoop", "--record-source", "source",
+				"--group-by", "code", "--reducer", "sum", "--unit", "min",
+			}, days...),
+			``,
+			`{"metric":{"ref":"ada.example.com/observations/metric/health/sleep_stage"},` +
+				`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
+				`"bucket":{"records":{"filter":{"kinds":["ada.example.com/health/sleep"],"properties":{"isNap":{"eq":false}}},` +
+				`"around":{"before":"PT1H","after":"PT1M"},"maxRecords":40,` +
+				`"sources":{"policy":"priority","order":["whoop"],"property":"source"},` +
+				`"utcOffsets":{"start":"utcOffsetStart","end":"utcOffsetEnd"}}},` +
+				`"groupBy":["code"],"reducers":["sum"],"unit":"min"}`,
+		},
+		"a fixed bucket placed by its end, at one statistic": {
+			append([]string{
+				heartRate, "--every", "PT1H", "--origin", "2026-01-01T00:00:00Z", "--place", "end",
+				"--statistic", "avg", "--from", "prefer-raw", "--min-coverage", "0.5", "--group-by", "statistic",
+			}, days...),
+			`{"properties":{"statistic":{"eq":"avg"}}}`,
+			`{"metric":{"ref":"` + heartRate + `"},"from":"prefer-raw","minCoverage":0.5,` +
+				`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
+				`"bucket":{"every":"PT1H","origin":"2026-01-01T00:00:00Z","place":"end"},"groupBy":["statistic"]}`,
+		},
+		"several metrics": {
+			append([]string{heartRate, "ada.example.com/observations/metric/health/steps", "--calendar", "day", "--timezone", "UTC", "--reducer", "avg"}, days...),
+			``,
+			`{"metrics":[{"ref":"` + heartRate + `"},{"ref":"ada.example.com/observations/metric/health/steps"}],` +
+				`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
+				`"bucket":{"calendar":"day","timezone":"UTC"},"reducers":["avg"]}`,
+		},
+		"a latest read naming no filter": {
+			[]string{"--reducer", "last", "--group-by", "metric,source"},
+			``,
+			`{"groupBy":["metric","source"],"reducers":["last"]}`,
+		},
+	} {
+		h.mustRun(append([]string{"aggregate"}, x.args...)...)
+		q := h.fake.lastQuery
+		if got := q.Get("aggregate"); got != x.aggregte {
+			t.Errorf("%s: aggregate =\n%s\nwant\n%s", name, got, x.aggregte)
+		}
+		if got := q.Get("filter"); got != x.filter {
+			t.Errorf("%s: filter = %s, want %s", name, got, x.filter)
+		}
+	}
+
+	// A metric argument replaces the body's metrics, and two arguments its
+	// metric.
+	h.stdin.WriteString(`{"metrics":[{"ref":"a.example.com/observations/metric/x","unit":"kg"}],"reducers":["avg"]}`)
+	h.mustRun("aggregate", "-f", "-", heartRate)
+	if got := h.fake.lastQuery.Get("aggregate"); got != `{"metric":{"ref":"`+heartRate+`"},"reducers":["avg"]}` {
+		t.Fatalf("one metric over a body's metrics: %s", got)
+	}
+}
+
+// The table names what tells two rows apart: the sources of rows the
+// separate policy split without a group, a summary's statistic and a property
+// read's group properties, and the counts a row carries of values placed by
+// the fallback zone and of amounts a window cut. A value's code is its answer
+// only on a coded first or last; elsewhere it names the state the value is
+// for, on the reducer that owns it, and a rolling value names its window and
+// n.
+func TestAggregateTableTellsRowsApart(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	head := `"head": {"changelog": 41, "generation": "gen-test"}`
+	for name, x := range map[string]struct{ answer, want string }{
+		"two sources without a group": {
+			`{"metric": "m", "unit": "/min", "exact": true, "rows": [
+			  {"start": "2026-10-01T00:00:00+03:00", "end": "2026-10-02T00:00:00+03:00", "form": "gauge", "from": "raw",
+			   "sources": ["ada.example.com/observations/source/garmin"], "values": [{"reducer": "avg", "value": "63.7", "unit": "/min"}],
+			   "count": 10, "bounded": 0, "synthetic": false, "unavailable": false},
+			  {"start": "2026-10-01T00:00:00+03:00", "end": "2026-10-02T00:00:00+03:00", "form": "gauge", "from": "raw",
+			   "sources": ["ada.example.com/observations/source/whoop"], "values": [{"reducer": "avg", "value": "64.1", "unit": "/min"}],
+			   "count": 12, "bounded": 0, "synthetic": false, "unavailable": false}], ` + head + `}`,
+			"" +
+				"START                       END                         SOURCES                                      FORM    FROM   COVERAGE   VALUES\n" +
+				"2026-10-01T00:00:00+03:00   2026-10-02T00:00:00+03:00   ada.example.com/observations/source/garmin   gauge   raw    -          avg=63.7 /min\n" +
+				"2026-10-01T00:00:00+03:00   2026-10-02T00:00:00+03:00   ada.example.com/observations/source/whoop    gauge   raw    -          avg=64.1 /min\n",
+		},
+		"statistics, properties, offsetless and prorated": {
+			`{"metric": "m", "exact": true, "rows": [
+			  {"start": "2026-10-01T00:00:00Z", "end": "2026-10-02T00:00:00Z", "form": "summary",
+			   "group": {"source": "s", "statistic": "avg"}, "sources": ["s"], "offsetless": 2,
+			   "values": [{"reducer": "max", "value": "88", "unit": "/min"}], "count": 3, "bounded": 0, "synthetic": false, "unavailable": false},
+			  {"start": "2026-10-01T00:00:00Z", "end": "2026-10-02T00:00:00Z",
+			   "group": {"kind": "k", "properties": {"sport": "running", "device": "d"}}, "prorated": 1,
+			   "values": [{"reducer": "sum", "value": "30", "unit": "min"}], "count": 2, "bounded": 0, "synthetic": false, "unavailable": false}], ` + head + `}`,
+			"" +
+				"START                  END                    GROUP                           FORM      FROM   COVERAGE   OFFSETLESS   PRORATED   VALUES\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   source=s,statistic=avg          summary   -      -          2            0          max=88 /min\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   kind=k,device=d,sport=running   -         -      -          0            1          sum=30 min\n",
+		},
+		"coded values": {
+			`{"metric": "door", "exact": true, "rows": [
+			  {"start": "2026-10-01T00:00:00Z", "end": "2026-10-02T00:00:00Z", "form": "gauge",
+			   "values": [{"reducer": "last", "value": null, "code": "open"},
+			              {"reducer": "timeInState", "value": null, "unit": "h", "code": "closed"},
+			              {"reducer": "avg", "of": "timeInState", "rolling": 3, "n": 2, "value": "2.5", "unit": "h", "code": "closed"},
+			              {"reducer": "avg", "of": "timeInState", "rolling": 3, "n": 0, "value": null, "unit": "h", "code": "closed"},
+			              {"reducer": "avg", "of": "last", "rolling": 3, "value": null, "code": "open"}],
+			   "count": 0, "bounded": 0, "synthetic": true, "unavailable": false}], ` + head + `}`,
+			"" +
+				"START                  END                    FORM    FROM   COVERAGE   VALUES\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   gauge   -      -          last=open   timeInState:closed=-   rolling(3,n=2,avg of timeInState:closed)=2.5 h   rolling(3,n=0,avg of timeInState:closed)=-   rolling(3,avg of last:open)=-\n",
+		},
+		"several metrics": {
+			`{"units": {"m/hr": "/min", "m/steps": "{steps}"}, "exact": true, "rows": [
+			  {"start": "2026-10-01T00:00:00Z", "end": "2026-10-02T00:00:00Z", "form": "gauge", "group": {"metric": "m/hr"},
+			   "values": [{"reducer": "avg", "value": "64", "unit": "/min"}], "count": 9, "bounded": 0, "synthetic": false, "unavailable": false},
+			  {"start": "2026-10-01T00:00:00Z", "end": "2026-10-02T00:00:00Z", "form": "amount", "group": {"metric": "m/steps"},
+			   "values": [{"reducer": "sum", "value": "9000", "unit": "{steps}"}], "count": 9, "bounded": 0, "synthetic": false, "unavailable": false}], ` + head + `}`,
+			"" +
+				"START                  END                    GROUP            FORM     FROM   COVERAGE   VALUES\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   metric=m/hr      gauge    -      -          avg=64 /min\n" +
+				"2026-10-01T00:00:00Z   2026-10-02T00:00:00Z   metric=m/steps   amount   -      -          sum=9000 {steps}\n",
+		},
+	} {
+		h.fake.aggregateAnswer = x.answer
+		out, _ := h.mustRun("aggregate", heartRate)
+		if out != x.want {
+			t.Errorf("%s:\n%s\nwant:\n%s", name, out, x.want)
+		}
 	}
 }
 
