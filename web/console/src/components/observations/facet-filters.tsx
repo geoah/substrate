@@ -2,7 +2,8 @@
  * metrics, sources and things the streams name), in the collection toolbar's
  * anatomy: each active filter one `facet | values | ×` control that reopens
  * its choices, a dashed "Add filter" that offers the facets, and "Clear all".
- * Several values of one facet are an either-or. */
+ * Several values of one facet are an either-or; an `ordered` facet's values
+ * also rank, in the order they were picked. */
 
 import { useState } from "react"
 import { ListFilterIcon, XIcon } from "lucide-react"
@@ -30,6 +31,8 @@ export interface Facet {
   /** The facet in words ("Source"). */
   label: string
   options: ChoiceOption[]
+  /** Its values rank in the order they were picked, a new one last. */
+  ordered?: boolean
 }
 
 function summary(facet: Facet, values: readonly string[]): string {
@@ -82,6 +85,7 @@ function ActiveFacet({
       <PopoverContent align="start" className="w-72 p-0">
         <ChoiceList
           multiple
+          ordered={facet.ordered}
           label={facet.label}
           options={facet.options}
           selected={values}
@@ -148,6 +152,7 @@ export function FacetFilters({
             {pending ? (
               <ChoiceList
                 multiple
+                ordered={pending.ordered}
                 label={pending.label}
                 options={pending.options}
                 selected={selected[pending.name] ?? []}

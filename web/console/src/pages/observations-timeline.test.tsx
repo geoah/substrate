@@ -178,6 +178,48 @@ describe("the timeline's requests", () => {
     expect(grouped.sources).toBeUndefined()
   })
 
+  it("prefers the sources in the order they were picked, not the menu's", async () => {
+    const server = mount(`?metric=health/heart_rate&${WINDOW}`)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    const menu = () => screen.findByRole("listbox", { name: "Source" })
+    const pick = async (name: string) =>
+      fireEvent.click(
+        // A chosen row's name says so after the words.
+        within(await menu()).getByRole("option", {
+          name: new RegExp(`^${name}`),
+        })
+      )
+    const order = () =>
+      charts(server.seen, "health/heart_rate").at(-1)!.aggregate.sources
+    fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+    fireEvent.click(await screen.findByRole("option", { name: "Source" }))
+    const offered = within(await menu())
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "")
+    expect(offered).toEqual(["Garmin Forerunner 265", "Apple Watch S10"])
+    // The menu's last first, then the rest from the active filter.
+    await pick(offered[1])
+    fireEvent.click(await screen.findByRole("button", { name: /^Source/ }))
+    await pick(offered[0])
+    await waitFor(() =>
+      expect(order()).toEqual({
+        policy: "priority",
+        order: [`${SOURCE}/apple-watch-s10`, `${SOURCE}/garmin-forerunner-265`],
+      })
+    )
+    // Unpicked and picked again, Apple goes last.
+    await pick(offered[1])
+    await pick(offered[1])
+    await waitFor(() =>
+      expect(order()).toEqual({
+        policy: "priority",
+        order: [`${SOURCE}/garmin-forerunner-265`, `${SOURCE}/apple-watch-s10`],
+      })
+    )
+  })
+
   it("narrows to a stream's source by its path", async () => {
     const server = mount(
       `?metric=health/heart_rate&source=apple-watch-s10&${WINDOW}`

@@ -96,6 +96,24 @@ describe("ChoiceList", () => {
     ).toBe("true")
   })
 
+  it("puts a new pick last where the chosen values rank", () => {
+    const onChange = mount({
+      multiple: true,
+      ordered: true,
+      selected: ["done"],
+    })
+    fireEvent.click(screen.getByText("Suggested"))
+    expect(onChange).toHaveBeenLastCalledWith(["done", "proposed"])
+    cleanup()
+    const again = mount({
+      multiple: true,
+      ordered: true,
+      selected: ["done", "proposed", "open"],
+    })
+    fireEvent.click(screen.getByText("Suggested"))
+    expect(again).toHaveBeenLastCalledWith(["done", "open"])
+  })
+
   it("offers a filter box once the list is long, searching the words", () => {
     const many = Array.from({ length: 10 }, (_, i) => ({
       value: `v${i}`,

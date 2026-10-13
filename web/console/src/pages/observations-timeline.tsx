@@ -93,8 +93,10 @@ export function ObservationsTimelinePage() {
   const values = useFacetValues(obs, { metrics, sources, abouts })
   const facets: Facet[] = [
     {
+      // The picked order is the priority order a read resolves sources in.
       name: "source",
       label: "Source",
+      ordered: true,
       options: values.sources.map((value) => ({
         value,
         label: values.nameOf(value, obs.pins.source),
