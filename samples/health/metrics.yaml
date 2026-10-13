@@ -870,7 +870,7 @@ data:
       - system: healthkit
         code: HKQuantityTypeIdentifierBodyMassIndex
       - system: garmin
-        code: bmi
+        code: bodyMassIndex
         display: Body composition BMI
     measures: body-mass-index
     unit: kg/m2
