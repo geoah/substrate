@@ -78,9 +78,17 @@ Chosen: a mode of the records route.
   not bind `observed`, and the policy takes its own `order`, apart from the
   points' policy, so a read may take one source's nights and another's
   stages.
-- **Budgets.** `maxBuckets` (groups times buckets, default 1,440, cap
-  10,000), `maxSamples` and a statement timeout inside the caller's deadline
-  are checked before the read runs. Over budget is a `422` naming the limit;
+- **`fill` and `rolling`.** `fill` makes a group's buckets dense (`null`,
+  `zero` or `locf`), and `rolling` adds `avg`, `sum`, `min`, `max` or
+  `stddev` over a window of buckets ending at each bucket or the one before
+  it, reading the buckets the window needs before the range.
+- **Budgets.** `maxBuckets` (series times buckets, default 1,440, cap
+  10,000), `maxSamples` (the raw points and rollup rows the statements take,
+  each statement's counted before it runs), `maxGroups`, and a statement
+  timeout inside the caller's deadline. Each budget is checked before the
+  work it bounds: the groups, the series and the buckets after the
+  statements that select the streams and find the range's forms and codes,
+  and before any point is reduced. Over budget is a `422` naming the limit;
   a result is never truncated.
 - **One response shape**, `AggregateResult` in `internal/substrate`, pinned
   by the wire golden and mirrored in `types.ts`: per-row `start` and `end`
@@ -88,7 +96,7 @@ Chosen: a mode of the records route.
   `unavailable`, plus `exact` and the changelog `head`.
 
 The mode is refused beside `q`, `watch`, `count`, `orderBy`, `first`,
-`after`, `offset` and `expand`. Its evaluation order is fixed: select
+`after`, `offset`, `expand` and `withAnnotations`. Its evaluation order is fixed: select
 streams, build held intervals, resolve the source policy, clip to the range,
 filter intervals by code or threshold, reduce, fill, roll. Functions call it
 as `host.records.aggregate`, agents through the `query` tool's `aggregate`
@@ -104,24 +112,25 @@ budgets before it runs.
 
 - Good, because a screen is one request, and the console, a function and an
   agent get the same answer.
-- Good, because a wrong reducer, unit or budget is refused before any work.
+- Good, because a wrong reducer, unit or budget is refused before any
+  point is reduced.
 - Bad, because the records route's allow-list gains another mode with its
   own refusals.
-- Bad, because joins beyond a matched record's range, moving averages,
-  continuous queries and grouping by a property of the `about` record are
-  left out; a function does them.
+- Bad, because joins beyond a matched record's range, continuous queries
+  and grouping by a property of the `about` record are left out; a function
+  does them.
 - Bad, because a budget refusal pushes a client to narrower requests instead
   of a degraded answer.
 
 ### Confirmation
 
-`TestWireGolden` (internal/substrate) holds the response's field names and
-the console's vitest holds `types.ts` to them. Tests the work package 4
-implementers will write: `TestAggregateRefusesOverBudgetBeforeRunning`,
+`TestWireGoldenMatchesStructs` (internal/substrate) holds the request's and
+the response's field names and the console's vitest holds `types.ts` to
+them. In internal/engine: `TestAggregateRefusesOverBudgetBeforeRunning`,
 `TestAggregateNeverMixesRawAndSummariesInABucket`,
-`TestAggregatePriorityResolvesBeforeBucketing` (one total at 5-minute and at
-daily buckets) and `TestAggregateIsRefusedBesideListParameters`, with the
-mode carried by `internal/api/fake_test.go`.
+and `TestAggregatePriorityResolvesBeforeBucketing` (one total at 5-minute
+and at daily buckets). In internal/api, against the hand-written fake:
+`TestAggregateIsRefusedBesideListParameters`.
 
 ## More information
 

@@ -42,9 +42,9 @@ Chosen: the first.
   for a trace, the source segment naming the device within the account so
   two devices on one account never share an id. The
   id alphabet admits `/`, `:` and `@` up to 128 characters
-  (`internal/vocabulary/naming.go`); only a segment outside the alphabet, or
-  an id past the limit, is hashed with `host.ids.external`, and the hash
-  replaces that one segment.
+  (`internal/vocabulary/naming.go`); only an id outside the alphabet or
+  past the limit is hashed: `host.observed.record_id` replaces it whole with
+  `host.ids.external(provider, account, <the readable id>)`.
 - Two rows are one measurement only when their upstream identity is exactly
   equal. Nothing deduplicates on a similar timestamp or value: two
   deliveries of one device without a shared identity are two sources, and
@@ -87,11 +87,16 @@ and nobody can undo it from the stored rows.
 
 ### Confirmation
 
-Tests the work package 2 and 5 implementers will write:
-`TestObservedWriteRefusesAFallingRevision` (internal/engine), and per adapter
-against its mock upstream, an identical re-sync that changes nothing, a
-rescored record that converges, a stale delivery that is refused and an
-upstream deletion that removes its outputs, the phase 1 checks in
+`TestObservedWriteRefusesAFallingRevision` (internal/engine) refuses a
+falling revision. Per adapter, against its mock upstream
+(internal/providertest): `TestHealthWhoopRerunChangesNothing` and
+`TestHealthWhoopFollowsARescoreAndADeletion`,
+`TestHealthGoogleFitRereadsConverge`, `TestHealthGarminReSendsReconcile`
+and `TestHealthGarminReadsADeletedActivityAsAbsent`, and
+`TestHealthAppleRedelivery` and `TestHealthAppleDeletedBatchDeletesItsOutputs`
+hold an identical re-sync that changes nothing, a rescored record that
+converges and an upstream deletion that removes its outputs, the phase 1
+checks in
 [review and decisions](../plans/observations/proposal/05-review-and-decisions.md).
 
 ## More information

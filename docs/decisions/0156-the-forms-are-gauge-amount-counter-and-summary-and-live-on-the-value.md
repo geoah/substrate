@@ -33,9 +33,9 @@ Chosen: the four forms, on the value, with the reading rules beside them.
 | Form | Is | Legal reducers |
 | --- | --- | --- |
 | `gauge` | a level at an instant, held until its hold ends ([0158](0158-a-gauge-carries-a-hold-a-null-ends-it-and-its-mean-is-time-weighted.md)) | `avg`, `twa`, `min`, `max`, `first`, `last`, `count`, `stddev`, `percentile`, `durationIn`, `circularMean`; coded: `count`, `first`, `last`, `timeInState` |
-| `amount` | a quantity accrued over `[at, endsAt)` | `sum`, `count`, `min`, `max` |
-| `counter` | a running total ([0157](0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md)) | `increase`, `rate`, `last` |
-| `summary` | a statistic over a stated period, with `statistic` and `period` | read as is, never pooled with the other three |
+| `amount` | a quantity accrued over `[at, endsAt)` | `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `stddev`, `percentile`; coded: `count`, `sum`, `min`, `max`, by code |
+| `counter` | a running total ([0157](0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md)) | `count`, `first`, `last`, `min`, `max`, `increase`, `rate` |
+| `summary` | a statistic over a stated period, with `statistic` and `period` | `count`, `first`, `last`, `avg`, `min`, `max` over one `statistic`, and `sum` over a `sum` or `count` statistic; never pooled with the other three |
 
 A reducer the form does not admit is a `422` naming the form.
 
@@ -68,7 +68,7 @@ collided with a trace's spacing property.
 ### Consequences
 
 - Good, because `sum` over a gauge and `avg` over a counter are refused
-  before the read runs.
+  before any point is reduced.
 - Good, because a derived row is a function of its own record and the
   declaration alone, so a correction touches only its own buckets.
 - Bad, because every reading repeats what its metric already says (form,
@@ -80,12 +80,13 @@ collided with a trace's spacing property.
 
 ### Confirmation
 
-Tests the work package 2 and 4 implementers will write:
-`TestAggregateRefusesAReducerTheFormDoesNotAdmit` (`sum` over a gauge and
-`avg` over a counter are `422` naming the form),
-`TestObservedValueAndCodeAreExclusive`, and
-`TestEditingAMetricChangesNoIndexedRow` (rewriting a metric record leaves
-`observed_points` and `observed_rollups` unchanged).
+In internal/engine: `TestAggregateRefusesOverBudgetBeforeRunning` (`sum`
+over a gauge and `increase` over an amount are a `422` naming the form),
+`TestAggregateCounterIncreaseAndRateAcrossAReset` (`avg` over a counter is
+one too), `TestObservedValueAndCodeAreExclusive`, and
+`TestEditingAMetricChangesNoIndexedRow` (rewriting a metric record's form,
+unit, hold and measure leaves `observed_points`, `observed_rollups` and
+`observed_latest` unchanged).
 
 ## More information
 

@@ -51,9 +51,10 @@ the engine computes it when it computes the row: the recompute reads the
 stream's last available point before the bucket and differences it under
 the later reading's contract. The increase of a run of whole buckets is
 therefore the sum of their rows, and `rate` is that sum over the sum of
-their `covered_ms`, naming its unit (a `kW.h` counter reads as `kW`).
-Nothing extrapolates to the range's boundaries; a partial bucket says it is
-partial.
+their `covered_ms`, in the counter's unit over a second (a `kW.h`
+counter's rate is in `kW.h/s`). Nothing extrapolates to the range's
+boundaries; a partial bucket's `coverage` says how much of it the steps
+span.
 
 The step is computed when the row is, rather than at read with a window
 function, so every reader of the rows (the aggregate read, the CLI, a

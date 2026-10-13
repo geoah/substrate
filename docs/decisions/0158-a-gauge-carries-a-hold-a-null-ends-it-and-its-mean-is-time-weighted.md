@@ -30,7 +30,8 @@ are different and none of them is zero (finding 6)
 Chosen: the first.
 
 - `hold` on a gauge value is how long it stands after its timestamp when no
-  newer point exists. Absent means until the next point. A periodic sensor
+  newer point exists. Absent means until the next point. A single gauge
+  with an `endsAt` holds no longer than that span. A periodic sensor
   sets twice its period, an on-change sensor its heartbeat, a button press
   `PT0S`.
 - `maxGap` on a request caps every hold: a hold expires at `maxGap` inside a
@@ -68,12 +69,15 @@ value in a trace that its source never sent at that time, and a bridged
 
 ### Confirmation
 
-Tests the work package 4 implementers will write, after the executable
-specification the brief puts before the SQL: `TestTwaWeighsHeldTime`,
+In internal/observed, the specification the read and the rollups are held
+to: `TestASilentSensorHoldsUntilMaxGapOrItsHold` (`twa` weighs a three-hour
+flat reading three hours, and a `maxGap` or a `hold` ends it),
 `TestANullInATraceEndsTheHold`, `TestMaxGapEndsAHoldInsideAGap`,
-`TestTheStartPointIsReadNotCopied` (a range that starts mid-hold takes the
-earlier point's value, and no trace holds a copy of it) and
-`TestTimeInStateBuildsIntervalsBeforeFiltering`.
+`TestTheStartPointIsCarriedIn` (a range that starts mid-hold takes the
+earlier point's value), `TestGaugeHoldEndsAtTheEnd`,
+`TestTimeInStateBuildsIntervalsBeforeFiltering` and
+`TestRollupServesTwaOnlyWithinMaxGap`. That no trace holds a copy of an
+earlier point is held by review only.
 
 ## More information
 

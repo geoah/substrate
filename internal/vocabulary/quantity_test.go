@@ -158,3 +158,18 @@ data: {authority: g.example.com, package: g, base: quantity, measures: mass, uni
 `, "kg measures mass, not length")
 	})
 }
+
+// Decision 0163: money is never a unit. A currency code is no UCUM code, so
+// a quantity in one is refused on write and in a declaration, and money stays
+// the `money` datatype's.
+func TestQuantityRefusesACurrencyAsAUnit(t *testing.T) {
+	for _, code := range []string{"EUR", "USD", "GBP", "JPY", "CHF", "XAU", "EUR/kg", "[EUR]"} {
+		if canon, err := vocabulary.CanonicalUnit(code); err == nil {
+			t.Errorf("CanonicalUnit(%q) = %q, want a refusal", code, canon)
+		}
+		var spec *vocabulary.QuantitySpec
+		if m, err := spec.CheckUnit(code); err == nil {
+			t.Errorf("CheckUnit(%q) = %s, want a refusal", code, m.Name)
+		}
+	}
+}

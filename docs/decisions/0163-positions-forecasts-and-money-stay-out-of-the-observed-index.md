@@ -65,8 +65,8 @@ Chosen: all three out of the index.
 
 ### Confirmation
 
-`TestQuantityRefusesACurrencyAsAUnit` (internal/vocabulary, to be written in
-work package 1) holds that a currency code such as `EUR` is not a unit. That
+`TestQuantityRefusesACurrencyAsAUnit` (internal/vocabulary) holds that a
+currency code such as `EUR` is no unit a quantity takes. That
 the shipped samples declare no latitude or longitude metric and no forecast
 kind, and that adapters write neither into the index, is held by review only.
 

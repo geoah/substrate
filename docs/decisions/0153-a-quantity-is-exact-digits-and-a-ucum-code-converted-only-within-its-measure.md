@@ -74,7 +74,7 @@ scale, its codes, and an exact rational factor from each code to the base
   (`m[IU]/L` to `[IU]/L`), because labs send one analyte both ways. `[IU]`
   never reaches `[arb'U]` or a proper unit.
 - Logarithmic units (`dB`, `dB[SPL]`, `[pH]`) are stored and compared in
-  their own unit, convert to nothing, and refuse `sum`.
+  their own unit and convert to nothing.
 - `dBm` has no UCUM spelling and every radio API reports it, so it is a local
   code with a documented definition: `dB[W]` plus 30, exactly.
 - The table grows by release only. A code is added, never removed and never
@@ -112,6 +112,8 @@ removed unit would rescale history.
   that uses it does not load on an older binary.
 - Bad, because the engine's table, the console's copy and the host SDK's
   `host.units.*` must agree.
+- Bad, because nothing refuses `sum` over a level yet: a `61 dB` amount
+  and a `62 dB` amount sum to `123 dB`, a number with no physical meaning.
 
 ### Confirmation
 
@@ -135,6 +137,8 @@ regenerates the table with exact fractions.
 settled `measures:`, the prefix rule and `dBm`. The proposal
 ([under the hood](../plans/observations/proposal/04-under-the-hood.md)) also
 let a metric record name the measure of an ambiguous compound; this record
-leaves that out, because the engine reads nothing from a metric
+leaves that out of the write path, which reads nothing from a metric. The
+aggregate read does take the metric's `measures` as the measure it converts
+into
 ([0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md)).
 Revisit if users need units faster than releases can add them.

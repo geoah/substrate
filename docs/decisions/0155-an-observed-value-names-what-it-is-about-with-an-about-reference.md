@@ -73,12 +73,13 @@ would copy the room onto millions of rows and go stale when the sensor moves.
 
 ### Confirmation
 
-Tests the work package 2 and 3 implementers will write:
-`TestObservedAboutAdmitsAnyKind` writes readings about records of two
-unrelated kinds and about nobody; `TestObservedAboutIsInTheStreamKey` writes
-one source's readings about two rooms and reads them back from
-`observed_rollups` as two streams. That no base kind declares `location` is
-held by review only.
+In internal/engine: `TestObservedAboutAdmitsAnyKind` writes readings about
+records of two unrelated kinds and about nobody;
+`TestObservedIndexDerivesThePointsOfEveryShape` keeps a reading's `about` on
+its point; `TestAggregateFilterSelectsAbsentStreamKeys` reads one source's
+readings about a kitchen and about nobody back as two groups, and selects
+either by `about`. That no base kind declares `location` is held by review
+only.
 
 ## More information
 

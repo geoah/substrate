@@ -756,6 +756,12 @@ func TestAggregateCounterIncreaseAndRateAcrossAReset(t *testing.T) {
 			t.Errorf("day one's increase = %s kW.h, want 1.595 (0.445, 0.9 and the 0.25 after the reset)", v)
 		}
 	}
+	// Decision 0156: a running total is read by its increase; its mean is a
+	// 422 naming the form.
+	f.refusedAgg(substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("energy")}, Range: rng(start, start.AddDate(0, 0, 2)),
+		Reducers: reducers("avg"),
+	}}, "avg does not apply to a counter")
 }
 
 // Hours the door was open per week: the intervals are built from every

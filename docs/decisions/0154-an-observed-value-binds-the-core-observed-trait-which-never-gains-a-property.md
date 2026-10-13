@@ -41,7 +41,8 @@ value (`form`, `value` or `unit` with `values`, `code` or `codes`,
 `delta`, `circular`, `wrapAt`) and `revision`; `packed` adds `every`,
 `offsets` and the managed `stats`. Health writes no `about`, `code` or
 counter field and pays nothing for declaring them. The host checks what a
-trait cannot say: exactly one of `value` and `code`, equal lengths of
+trait cannot say: `value` or `code` and never both (an amount may carry
+its category in `code` beside `value`), equal lengths of
 `offsets` and `values`, a form from the four
 ([0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md)),
 and a `revision` that never falls. The loader also holds each binding kind's
