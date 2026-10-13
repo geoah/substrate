@@ -378,14 +378,30 @@ describe("one metric's plot", () => {
     })
   })
 
-  it("asks nothing past the bucket budget and says why", () => {
+  it("asks nothing past the bucket cap and says why", () => {
     const planned = planPlot(source(), HEART, {
       ...SCOPE,
       range: presetRange("1y", Date.parse("2026-10-07T12:00:00Z")),
       size: "15m",
     })
     expect(planned.read).toBeUndefined()
-    expect(planned.blocked).toMatch(/more than the 1,440 one read may hold/)
+    expect(planned.blocked).toMatch(/more than the 10,000 one read may hold/)
+  })
+
+  it("raises the read's bucket budget past the default, up to the cap", () => {
+    // 30 days at 15 minutes: 2,880 buckets, over the default 1,440.
+    const month = presetRange("30d", Date.parse("2026-10-07T12:00:00Z"))
+    const planned = planPlot(source(), HEART, {
+      ...SCOPE,
+      range: month,
+      size: "15m",
+    })
+    expect(planned.blocked).toBeUndefined()
+    expect(planned.read?.aggregate.budget).toEqual({ maxBuckets: 10000 })
+    // Inside the default, the read names no budget.
+    expect(planPlot(source(), HEART, SCOPE).read?.aggregate.budget).toBe(
+      undefined
+    )
   })
 
   it("counts each source's channels against the budget, as the read groups", () => {
@@ -411,13 +427,14 @@ describe("one metric's plot", () => {
       end: Date.parse("2026-10-12T00:00:00+03:00"),
     }
     const scope = { ...SCOPE, range: nine, group: "source" as const }
+    // Seven series times 216 hours is 1,512, past the default: the read
+    // raises its budget.
     const planned = planPlot(source(streams), HEART, scope)
-    expect(planned.read).toBeUndefined()
-    expect(planned.blocked).toMatch(/about 1,512 buckets/)
+    expect(planned.read?.aggregate.budget).toEqual({ maxBuckets: 10000 })
     // Without the second channel it fits: 6 times 216 hours.
     expect(
-      planPlot(source(streams.slice(0, 6)), HEART, scope).read
-    ).toBeDefined()
+      planPlot(source(streams.slice(0, 6)), HEART, scope).read?.aggregate.budget
+    ).toBeUndefined()
   })
 
   it("draws only the selected streams where the read takes others too", () => {

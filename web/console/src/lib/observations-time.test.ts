@@ -64,6 +64,22 @@ describe("ranges and buckets", () => {
     expect(bucketEstimate(presetRange("1y", now), "15m")).toBeGreaterThan(1440)
   })
 
+  it("reads a few hours in minutes, as a trace's window opens", () => {
+    const at = Date.parse("2026-10-11T05:25:00Z")
+    const minutes = (n: number) => ({ start: at, end: at + n * 60_000 })
+    // A 35-minute workout trace: a bucket per minute, not three.
+    expect(autoBucket(minutes(35))).toBe("1m")
+    expect(bucketEstimate(minutes(35), "1m")).toBe(35)
+    expect(autoBucket(minutes(120))).toBe("1m")
+    expect(autoBucket(minutes(6 * 60))).toBe("5m")
+    expect(autoBucket(minutes(12 * 60))).toBe("15m")
+    expect(bucketOf("1m")).toEqual({ every: "PT1M" })
+    expect(bucketOf("5m")).toEqual({ every: "PT5M" })
+    expect(axisTicks(minutes(5), "1m")).toEqual(
+      [0, 1, 2, 3, 4].map((i) => at + i * 60_000)
+    )
+  })
+
   it("spells each size as the aggregate's time mode", () => {
     expect(bucketOf("15m", "Europe/Athens")).toEqual({ every: "PT15M" })
     expect(bucketOf("day", "Europe/Athens")).toEqual({

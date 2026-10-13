@@ -36,6 +36,7 @@ import {
   bucketEstimate,
   bucketOf,
   MAX_BUCKETS,
+  MAX_BUCKETS_CAP,
   type BucketSize,
   type TimeRange,
 } from "@/lib/observations-time"
@@ -408,13 +409,17 @@ export function planPlot(
         about: chosenAbouts.map((a) => refPathOf(a, obs.pins.about) ?? a),
         ...(channels.length ? { channels: [...channels] } : {}),
         ...(byChannel && groupKey !== "source" ? { byChannel } : {}),
+        // Past the default, the read asks for the cap: the estimate is a
+        // guess (a month as 30 days, four codes where none are listed),
+        // and the cap is what holds a read back.
+        ...(estimate > MAX_BUCKETS ? { maxBuckets: MAX_BUCKETS_CAP } : {}),
       }
     : undefined
 
   const blocked = !metricPath
     ? "No record names this metric, so it can’t be read here."
-    : estimate > MAX_BUCKETS
-      ? `This read would make about ${estimate.toLocaleString("en")} buckets counting every group, more than the ${MAX_BUCKETS.toLocaleString("en")} one read may hold. Pick a larger bucket or a shorter range.`
+    : estimate > MAX_BUCKETS_CAP
+      ? `This read would make about ${estimate.toLocaleString("en")} buckets counting every group, more than the ${MAX_BUCKETS_CAP.toLocaleString("en")} one read may hold. Pick a larger bucket or a shorter range.`
       : scope.sources.length > 0 && chosenSources.length === 0
         ? "None of the chosen sources wrote this metric."
         : scope.abouts.length > 0 && chosenAbouts.length === 0

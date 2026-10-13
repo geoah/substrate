@@ -167,12 +167,20 @@ export function bucketWords(
   return clock === "00:00" ? dayWords(t) : `${dayWords(t)}, ${clock}`
 }
 
-/** The size's boundaries inside a range, local time: every quarter hour,
- * hour, midnight, Monday or first of the month from the first one at or
- * after the range's start. The x axis labels these, whether or not a bucket
- * holds anything there. At most `limit` of them.
+/** Each size finer than a day, in minutes: these step by elapsed time. */
+const STEP_MINUTES: Partial<Record<BucketSize, number>> = {
+  "1m": 1,
+  "5m": 5,
+  "15m": 15,
+  hour: 60,
+}
+
+/** The size's boundaries inside a range, local time: every minute, five
+ * minutes, quarter hour, hour, midnight, Monday or first of the month from
+ * the first one at or after the range's start. The x axis labels these,
+ * whether or not a bucket holds anything there. At most `limit` of them.
  *
- * Quarter hours and hours step by elapsed time, so a day the clocks go back
+ * Sizes finer than a day step by elapsed time, so a day the clocks go back
  * ticks its repeated hour twice. Days, weeks and months are each worked out
  * from the calendar date, so a day whose midnight the clocks skip starts at
  * its first instant and the next day at midnight again. */
@@ -182,10 +190,10 @@ export function axisTicks(
   limit = 2000
 ): number[] {
   const out: number[] = []
-  if (size === "15m" || size === "hour") {
+  const step = STEP_MINUTES[size]
+  if (step) {
     const d = new Date(range.start)
     d.setSeconds(0, 0)
-    const step = size === "15m" ? 15 : 60
     const minutes = Math.ceil(d.getMinutes() / step) * step
     let t = d.getTime() + (minutes - d.getMinutes()) * 60_000
     for (; t < range.end && out.length < limit; t += step * 60_000) {
@@ -234,12 +242,14 @@ export function secondWords(t: number): string {
 
 // ── buckets ────────────────────────────────────────────────────────────────
 
-export type BucketSize = "15m" | "hour" | "day" | "week" | "month"
+export type BucketSize = "1m" | "5m" | "15m" | "hour" | "day" | "week" | "month"
 export type BucketChoice = "auto" | BucketSize
 
 export const BUCKET_CHOICES: readonly { value: BucketChoice; label: string }[] =
   [
     { value: "auto", label: "Automatic" },
+    { value: "1m", label: "1 min" },
+    { value: "5m", label: "5 min" },
     { value: "15m", label: "15 min" },
     { value: "hour", label: "Hour" },
     { value: "day", label: "Day" },
@@ -249,6 +259,8 @@ export const BUCKET_CHOICES: readonly { value: BucketChoice; label: string }[] =
 
 /** Each size in words, for the automatic choice's label: "Automatic: day". */
 export const BUCKET_SIZE_WORDS: Record<BucketSize, string> = {
+  "1m": "1 min",
+  "5m": "5 min",
   "15m": "15 min",
   hour: "hour",
   day: "day",
@@ -261,6 +273,8 @@ const DAY_MS = 24 * HOUR_MS
 
 /** Each size's length, a month counted as 30 days: for estimates only. */
 export const BUCKET_MS: Record<BucketSize, number> = {
+  "1m": 60_000,
+  "5m": 5 * 60_000,
   "15m": 15 * 60_000,
   hour: HOUR_MS,
   day: DAY_MS,
@@ -270,9 +284,13 @@ export const BUCKET_MS: Record<BucketSize, number> = {
 
 /** The size a range reads at when nobody picked one: under 200 buckets
  * for every preset (96 for a day, 168 for a week, 30 for a month, 27 and 53
- * weeks for six months and a year). */
+ * weeks for six months and a year), and minutes for a window of a few
+ * hours, such as a workout's trace (at most 120 of one minute, 96 of
+ * five). */
 export function autoBucket(range: TimeRange): BucketSize {
   const span = range.end - range.start
+  if (span <= 2 * HOUR_MS) return "1m"
+  if (span <= 8 * HOUR_MS) return "5m"
   if (span <= DAY_MS + HOUR_MS) return "15m"
   if (span <= 8 * DAY_MS) return "hour"
   if (span <= 62 * DAY_MS) return "day"
@@ -301,13 +319,20 @@ export function bucketEstimate(
  * with a `422` before reading anything. */
 export const MAX_BUCKETS = 1440
 
-/** A size as the aggregate's time mode: 15 minutes is a physical window on
- * UTC instants, the rest calendar windows in the zone given, weeks from
- * Monday. With no zone, a calendar window is the recorded-local one (each
- * point's own offset). */
+/** The most `budget.maxBuckets` may raise it to. */
+export const MAX_BUCKETS_CAP = 10000
+
+/** A size as the aggregate's time mode: a size in minutes is a physical
+ * window on UTC instants, the rest calendar windows in the zone given,
+ * weeks from Monday. With no zone, a calendar window is the recorded-local
+ * one (each point's own offset). */
 export function bucketOf(size: BucketSize, timezone?: string): AggregateBucket {
   const zone = timezone ? { timezone } : {}
   switch (size) {
+    case "1m":
+      return { every: "PT1M" }
+    case "5m":
+      return { every: "PT5M" }
     case "15m":
       return { every: "PT15M" }
     case "hour":

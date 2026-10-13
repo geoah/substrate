@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { MAX_BUCKETS } from "@/lib/observations-time"
+import { MAX_BUCKETS, MAX_BUCKETS_CAP } from "@/lib/observations-time"
 import {
   discoveryChunks,
   facetRead,
@@ -157,6 +157,7 @@ describe("one chart's request", () => {
     const constant = (name: string) =>
       Number(new RegExp(`\\b${name}\\s*=\\s*(\\d+)`).exec(go)?.[1])
     expect(MAX_BUCKETS).toBe(constant("AggregateMaxBuckets"))
+    expect(MAX_BUCKETS_CAP).toBe(constant("AggregateMaxBucketsCap"))
     expect(MAX_GROUPS_CAP).toBe(constant("AggregateMaxGroupsCap"))
   })
 

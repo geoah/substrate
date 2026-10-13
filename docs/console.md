@@ -726,8 +726,9 @@ and otherwise split into as few charts as hold them two units each: heart
 rate, HRV and steps are two charts, heart rate with HRV and then steps. One
 row of controls scopes every chart: the metrics, the range (today, the last
 7 or 30 days, 6 months, a year, or a custom range of days on the calendar),
-the bucket (automatic from the range, 15 minutes, an hour, a day, a week, a
-month; calendar buckets in your time zone), what to group by (metric,
+the bucket (automatic from the range, 1, 5 or 15 minutes, an hour, a day, a
+week, a month; calendar buckets in your time zone; automatic reads a window
+of two hours or less, such as a workout's trace, by the minute), what to group by (metric,
 source, about or category), where to read from (automatic, raw points,
 vendor summaries, or raw where a bucket is covered), and the sources,
 things and channels to keep. Under each chart, each metric's numbers as a table that
@@ -798,9 +799,10 @@ Technical details on, the chart says so. A metric that answers no values
 says why and what helps. A category metric is always grouped by code: a
 coded gauge asks for the time in each category (the bare `timeInState`), a
 coded amount for its total. A read the console expects to make more than
-1,440 buckets, counting every group, is not asked for, and its row says to
-pick a larger bucket; a refusal the server makes anyway is shown with its
-reason. The read itself is [the aggregate read](api.md#the-aggregate-read).
+1,440 buckets (the server's default), counting every group, raises its
+budget to the server's cap (`budget.maxBuckets: 10000`); one past the cap
+is not asked for, and its row says to pick a larger bucket; a refusal the
+server makes anyway is shown with its reason. The read itself is [the aggregate read](api.md#the-aggregate-read).
 
 ## History
 

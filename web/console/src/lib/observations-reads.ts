@@ -85,6 +85,9 @@ export interface LaneSpec {
   about: string[]
   /** Channels the read is narrowed to; absent or empty for every one. */
   channels?: string[]
+  /** The buckets the read may make, counting every group, where that is
+   * past the server's default (`MAX_BUCKETS`). */
+  maxBuckets?: number
   /** The read takes streams on more than one channel (no channel counting
    * as one), so it groups by channel too and each is a series of its own:
    * a channel no `in` can name (none) is told apart this way. Grouped by
@@ -145,6 +148,7 @@ export function laneRead(spec: LaneSpec): AggregateRead {
       ? { sources: { policy: "priority", order: spec.sourceOrder } }
       : {}),
     ...(spec.unit ? { unit: spec.unit } : {}),
+    ...(spec.maxBuckets ? { budget: { maxBuckets: spec.maxBuckets } } : {}),
   }
   return {
     filter: narrowedFilter({

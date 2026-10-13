@@ -752,13 +752,23 @@ describe("the timeline's requests", () => {
     expect(screen.getByRole("region", { name: "Heart rate" })).toBe(heart)
   })
 
-  it("holds back a read past the bucket budget and says why", async () => {
+  it("holds back a read past the bucket cap and says why", async () => {
     const server = mount("?metric=health/heart_rate&range=1y&bucket=15m")
     const heart = await lane("Heart rate")
     expect(
-      await within(heart).findByText(/more than the 1,440 one read may hold/)
+      await within(heart).findByText(/more than the 10,000 one read may hold/)
     ).toBeTruthy()
     expect(charts(server.seen, "health/heart_rate")).toEqual([])
+  })
+
+  it("reads 30 days in quarter hours, past the default bucket budget", async () => {
+    const server = mount("?metric=health/heart_rate&range=30d&bucket=15m")
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/heart_rate")[0].aggregate.budget
+    ).toEqual({ maxBuckets: 10000 })
   })
 })
 
