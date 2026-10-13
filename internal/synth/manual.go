@@ -105,18 +105,15 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 		}
 	}
 	// A hotel scale on the trip, typed in by hand.
-	if p.Options.Trip != nil {
-		d := p.Options.Trip.Start.Add(2)
-		if !d.After(p.Options.Trip.End) {
-			t := p.Day(d).atRest(d.At(p.Zone(d), 7, 25), 5*time.Minute)
-			_, off := t.Zone()
-			docs = append(docs, doc("observations/observation", "manual/"+d.String()+"-weight", map[string]any{
-				"metric": ref("observations/metric", "health/body_mass"),
-				"source": ref("observations/source", "manual"),
-				"form":   "gauge", "value": map[string]any{"value": "72.0", "unit": "kg"},
-				"at": t.Format(time.RFC3339), "utcOffset": off / 60,
-			}))
-		}
+	if d, ok := p.TripRunDay(); ok {
+		t := p.Day(d).atRest(d.At(p.Zone(d), 7, 25), 5*time.Minute)
+		_, off := t.Zone()
+		docs = append(docs, doc("observations/observation", "manual/"+d.String()+"-weight", map[string]any{
+			"metric": ref("observations/metric", "health/body_mass"),
+			"source": ref("observations/source", "manual"),
+			"form":   "gauge", "value": map[string]any{"value": "72.0", "unit": "kg"},
+			"at": t.Format(time.RFC3339), "utcOffset": off / 60,
+		}))
 	}
 	var b strings.Builder
 	for i, d := range docs {

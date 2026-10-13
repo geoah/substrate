@@ -2,6 +2,7 @@ package synth
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -284,5 +285,35 @@ func TestWorkoutHeartRateWarmsUpAndSettles(t *testing.T) {
 	}
 	if yoga == 0 {
 		t.Fatal("no yoga in the default life; the yoga check read nothing")
+	}
+}
+
+// The trip's run and the hotel weigh-in fall on the trip's third day,
+// whichever trip the options name.
+func TestPersonaTripRunFollowsTheTrip(t *testing.T) {
+	trip := &Span{NewDate(2026, time.August, 3), NewDate(2026, time.August, 7), "Europe/London"}
+	p, err := NewPersona(Options{Trip: trip})
+	if err != nil {
+		t.Fatal(err)
+	}
+	day, ok := p.TripRunDay()
+	if !ok || day != NewDate(2026, time.August, 5) {
+		t.Fatalf("the trip's run day is %s (%v), want 2026-08-05", day, ok)
+	}
+	for _, d := range p.Days() {
+		if !p.Trip(d) {
+			continue
+		}
+		ws := p.Day(d).Workouts
+		if (d == day) != (len(ws) == 1) {
+			t.Errorf("%s on the trip has %d workouts", d, len(ws))
+		}
+	}
+	out, err := Manual{}.Emit(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out.Files[0].Body), "manual/2026-08-05-weight") {
+		t.Error("the hotel weigh-in is not on the trip's run day")
 	}
 }

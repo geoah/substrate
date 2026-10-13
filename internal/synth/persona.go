@@ -201,6 +201,17 @@ func (p *Persona) Ill(d Date) bool { return p.Options.Illness != nil && p.Option
 // Trip reports whether d falls in the trip.
 func (p *Persona) Trip(d Date) bool { return p.Options.Trip != nil && p.Options.Trip.Contains(d) }
 
+// TripRunDay is the trip's third day: the morning run in a park and the
+// weigh-in typed in from the hotel scale. False when there is no trip or it
+// is shorter.
+func (p *Persona) TripRunDay() (Date, bool) {
+	if p.Options.Trip == nil {
+		return Date{}, false
+	}
+	d := p.Options.Trip.Start.Add(2)
+	return d, !d.After(p.Options.Trip.End)
+}
+
 // Index is the day's position in the range, 0 for the first.
 func (p *Persona) Index(d Date) int { return d.Sub(p.Options.Start) }
 
@@ -853,7 +864,7 @@ func (p *Persona) workoutsFor(d Date, ill, trip bool, wake time.Time) []*Workout
 		}
 	}
 	if trip {
-		if d == (Date{2026, time.September, 22}) {
+		if run, ok := p.TripRunDay(); ok && d == run {
 			return []*Workout{mk(7, 40, 38, Running, 6400+r.NormFloat64()*200, 146, 164, 380, 10.4, "easy run")}
 		}
 		return nil
