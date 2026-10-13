@@ -211,11 +211,6 @@ func fitUpload(ms int64, every, lag time.Duration) int64 {
 	return (ms/step+1)*step + lag.Milliseconds()
 }
 
-func fitRound(v float64, places int) float64 {
-	f := math.Pow(10, float64(places))
-	return math.Round(v*f) / f
-}
-
 type fitEmitter struct {
 	p       *Persona
 	days    []Date
@@ -363,7 +358,7 @@ func (e *fitEmitter) heartRate() {
 		}
 		if day.Sleep != nil {
 			at := fitMs(day.Sleep.End)
-			v := fitRound(e.noisy("rhr", d.String(), float64(day.RestingHR), 0.8), 1)
+			v := round(e.noisy("rhr", d.String(), float64(day.RestingHR), 0.8), 1)
 			rhr.add(at, at, rhr.sid, []any{fitFp(v)}, at+3*3600_000)
 		}
 	}
@@ -392,7 +387,7 @@ func (e *fitEmitter) steps() {
 			}
 			// A stride on foot; a run or a ride carries its own distance below.
 			if w := day.WorkoutAt(b.Start); w == nil || (w.Sport != Running && w.Sport != Cycling) {
-				dist.add(sa, sb, fitRawDist, []any{fitFp(fitRound(float64(v)*0.74, 1))}, up)
+				dist.add(sa, sb, fitRawDist, []any{fitFp(round(float64(v)*StrideM, 1))}, up)
 			}
 		}
 		for _, w := range day.Workouts {
@@ -401,7 +396,7 @@ func (e *fitEmitter) steps() {
 				if w.Sport == Running {
 					origin = fitRawStravaDist
 				}
-				dist.add(fitMs(w.Start), fitMs(w.End), origin, []any{fitFp(fitRound(w.DistanceM, 1))}, fitMs(w.End)+25*60_000)
+				dist.add(fitMs(w.Start), fitMs(w.End), origin, []any{fitFp(round(w.DistanceM, 1))}, fitMs(w.End)+25*60_000)
 			}
 		}
 	}
@@ -417,19 +412,19 @@ func (e *fitEmitter) energy() {
 		base := float64(day.BMRKcal()) / 24
 		for a := day.Start(); a.Before(day.EndTime()); a = a.Add(time.Hour) {
 			b := a.Add(time.Hour)
-			v := base + 0.04*float64(day.StepsIn(a, b))
+			v := base + KcalPerStep*float64(day.StepsIn(a, b))
 			for _, w := range day.Workouts {
 				lo, hi := fitMaxTime(a, w.Start), fitMinTime(b, w.End)
 				if hi.After(lo) {
 					v += float64(w.Kcal) * hi.Sub(lo).Seconds() / math.Max(1, w.Duration().Seconds())
 				}
 			}
-			v = fitRound(v*scale*(1+e.noisy("kcal", a.Format(time.RFC3339), 0, 0.01)), 3)
+			v = round(v*scale*(1+e.noisy("kcal", a.Format(time.RFC3339), 0, 0.01)), 3)
 			kcal.add(fitMs(a), fitMs(b), fitRawKcal, []any{fitFp(v)}, fitUpload(fitMs(b), 30*time.Minute, 2*time.Minute))
 		}
 		lo, hi := fitMs(day.Start()), fitMs(day.EndTime())
 		bmr.add(lo, hi, "derived:com.google.calories.bmr:com.google.android.gms:from_height&weight",
-			[]any{fitFp(fitRound(float64(day.BMRKcal())*float64(hi-lo)/86_400_000, 3))}, lo+6*3600_000)
+			[]any{fitFp(round(float64(day.BMRKcal())*float64(hi-lo)/86_400_000, 3))}, lo+6*3600_000)
 	}
 }
 
@@ -457,9 +452,9 @@ func (e *fitEmitter) body() {
 			continue
 		}
 		at := fitMs(day.WeighInAt) + 17_000
-		weight.add(at, at, fitRawWeight, []any{fitFp(fitRound(e.noisy("weight", d.String(), day.WeightKg+0.15, 0.05), 2))}, at+4*60_000)
+		weight.add(at, at, fitRawWeight, []any{fitFp(round(e.noisy("weight", d.String(), day.WeightKg+0.15, 0.05), 2))}, at+4*60_000)
 		if day.BodyFatPct != 0 {
-			fat.add(at, at, fitRawFat, []any{fitFp(fitRound(e.noisy("fat", d.String(), day.BodyFatPct+0.4, 0.15), 1))}, at+4*60_000)
+			fat.add(at, at, fitRawFat, []any{fitFp(round(e.noisy("fat", d.String(), day.BodyFatPct+0.4, 0.15), 1))}, at+4*60_000)
 		}
 	}
 	first := e.days[0]
@@ -475,7 +470,7 @@ func (e *fitEmitter) oxygenAndPressure() {
 		day := e.p.Day(d)
 		if day.Sleep != nil {
 			at := fitMs(day.Sleep.End)
-			v := math.Min(100, fitRound(e.noisy("spo2", d.String(), day.Sleep.SpO2Avg, 0.3), 1))
+			v := math.Min(100, round(e.noisy("spo2", d.String(), day.Sleep.SpO2Avg, 0.3), 1))
 			spo2.add(at, at, fitRawSpO2, []any{fitFp(v), fitFp(0), fitUnset(), fitUnset(), fitUnset()}, at+40*60_000)
 		}
 		if r := day.BloodPressure; r != nil {
@@ -589,7 +584,7 @@ func (e *fitEmitter) activity() {
 			}
 			if perMin > 0 {
 				heart.add(sa, sb, "derived:com.google.heart_minutes:com.google.android.gms:from_heart_rate<-merge_heart_rate_bpm",
-					[]any{fitFp(fitRound(perMin*float64(sb-sa)/60_000, 1))}, up)
+					[]any{fitFp(round(perMin*float64(sb-sa)/60_000, 1))}, up)
 			}
 		}
 	}

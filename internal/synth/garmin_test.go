@@ -3,6 +3,7 @@ package synth
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -482,5 +483,27 @@ func TestGarminThreeDaysIsSmall(t *testing.T) {
 	}
 	if deliveries[0].Name != "dailies_2026-09-12" {
 		t.Errorf("the first delivery is %s", deliveries[0].Name)
+	}
+}
+
+// The watch walks the persona's stride: a quarter hour with steps and no
+// workout covers the steps times StrideM, as every other emitter's does.
+func TestGarminWalksThePersonasStride(t *testing.T) {
+	_, _, deliveries, bodies := garminEmit(t, Options{Start: NewDate(2026, time.September, 15), End: NewDate(2026, time.September, 15)})
+	checked := 0
+	for i := range deliveries {
+		for _, e := range bodies[i]["epochs"] {
+			steps := gInt(t, e, "steps")
+			if e["activityType"] != "WALKING" || steps < 200 {
+				continue
+			}
+			checked++
+			if per := gFloat(t, e["distanceInMeters"]) / float64(steps); math.Abs(per-StrideM) > 0.01 {
+				t.Errorf("epoch %v walks %.3f m a step, the persona's stride is %.2f", e["summaryId"], per, StrideM)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no walking epoch; the check read nothing")
 	}
 }

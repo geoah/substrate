@@ -182,11 +182,6 @@ func garminOffset(t time.Time) int {
 	return off
 }
 
-func roundTo(v float64, places int) float64 {
-	f := math.Pow(10, float64(places))
-	return math.Round(v*f) / f
-}
-
 func iround(v float64) int { return int(math.Round(v)) }
 
 // span is the day's [start, end) in seconds.
@@ -253,10 +248,10 @@ func (e *garminEmitter) epochs(d Date, a, b int64, off int) []map[string]any {
 			case w != nil && w.Sport == Running:
 				g.dist += w.DistanceM / w.Duration().Minutes()
 			case w == nil:
-				g.dist += float64(n) * 0.76
+				g.dist += float64(n) * StrideM
 			}
-			// persona's ActiveKcal: 0.04 kcal a step, plus each workout's own
-			g.kcal += float64(n) * 0.04
+			// the persona's ActiveKcal: each step, plus each workout's own
+			g.kcal += float64(n) * KcalPerStep
 			if w != nil {
 				g.kcal += float64(w.Kcal) / w.Duration().Minutes()
 			}
@@ -288,14 +283,14 @@ func (e *garminEmitter) epochs(d Date, a, b int64, off int) []map[string]any {
 				"activityType":             g.etype,
 				"activeKilocalories":       iround(g.kcal * e.kcalScale),
 				"steps":                    steps,
-				"distanceInMeters":         roundTo(g.dist*scale, 2),
+				"distanceInMeters":         round(g.dist*scale, 2),
 				"durationInSeconds":        900,
 				"activeTimeInSeconds":      60 * g.minutes,
 				"startTimeInSeconds":       t,
 				"startTimeOffsetInSeconds": off,
-				"met":                      roundTo(met, 4),
+				"met":                      round(met, 4),
 				"intensity":                g.intensity,
-				"meanMotionIntensity":      roundTo(meanMI, 2),
+				"meanMotionIntensity":      round(meanMI, 2),
 				"maxMotionIntensity":       maxMI,
 			})
 		}
@@ -412,7 +407,7 @@ func (e *garminEmitter) dayOf(d Date, acts []garminActivity) (daily map[string]a
 		"activeKilocalories":                 akcal,
 		"bmrKilocalories":                    iround(e.noisy("bmr", d, float64(x.BMRKcal())*float64(b-a)/86400, 4)),
 		"steps":                              steps,
-		"distanceInMeters":                   roundTo(dist, 1),
+		"distanceInMeters":                   round(dist, 1),
 		"durationInSeconds":                  b - a,
 		"activeTimeInSeconds":                active,
 		"startTimeInSeconds":                 a,
@@ -535,7 +530,7 @@ func (e *garminEmitter) night(d Date) garminNight {
 	respSleep := map[string]float64{}
 	for _, smp := range x.RespirationNight(15 * time.Minute) {
 		k := smp.At.Unix() - a
-		respSleep[fmt.Sprint(k)] = roundTo(e.noisy("resp", a+k, smp.Value, 0.3), 2)
+		respSleep[fmt.Sprint(k)] = round(e.noisy("resp", a+k, smp.Value, 0.3), 2)
 	}
 	deepFrac := float64(totals[Deep]) / math.Max(1, float64(asleep))
 	score := 25 + 25*clamp01((float64(asleep)/3600-5.5)/3) + 20*clamp01((s.Efficiency-0.85)/0.12) +
@@ -654,7 +649,7 @@ func (e *garminEmitter) night(d Date) garminNight {
 		},
 		skin: map[string]any{
 			"userId": garminUserID, "summaryId": garminSID(a), "calendarDate": d.String(),
-			"avgDeviationCelsius": roundTo(e.noisy("skin", d, s.SkinTempDevC, 0.05), 2),
+			"avgDeviationCelsius": round(e.noisy("skin", d, s.SkinTempDevC, 0.05), 2),
 			"durationInSeconds":   end - a, "startTimeInSeconds": a, "startTimeOffsetInSeconds": off,
 		},
 	}
@@ -664,7 +659,7 @@ func (e *garminEmitter) night(d Date) garminNight {
 		night.resp = append(night.resp, map[string]any{
 			"userId": garminUserID, "summaryId": garminSID(t), "startTimeInSeconds": t,
 			"durationInSeconds": 900, "startTimeOffsetInSeconds": off,
-			"timeOffsetEpochToBreaths": map[string]float64{"0": roundTo(e.noisy("resp-slice", t, v, 0.3), 2)},
+			"timeOffsetEpochToBreaths": map[string]float64{"0": round(e.noisy("resp-slice", t, v, 0.3), 2)},
 		})
 	}
 	return night
@@ -720,7 +715,7 @@ func (e *garminEmitter) activities(d Date) []garminActivity {
 		}
 		var laps []any
 		if w.DistanceM > 0 {
-			dist := roundTo(e.noisy("dist", fmt.Sprint(d, k), w.DistanceM, w.DistanceM*0.005), 2)
+			dist := round(e.noisy("dist", fmt.Sprint(d, k), w.DistanceM, w.DistanceM*0.005), 2)
 			weights := make([]float64, len(hrs))
 			total := 0.0
 			for i, h := range hrs {
@@ -740,7 +735,7 @@ func (e *garminEmitter) activities(d Date) []garminActivity {
 				}
 			}
 			for i, s := range samples {
-				s["totalDistanceInMeters"] = roundTo(cum[i], 2)
+				s["totalDistanceInMeters"] = round(cum[i], 2)
 			}
 			avgSpeed := dist / float64(dur)
 			r := e.p.rng("garmin", "route", d, k)
@@ -749,24 +744,24 @@ func (e *garminEmitter) activities(d Date) []garminActivity {
 				hi = 90
 			}
 			summary["distanceInMeters"] = dist
-			summary["averageSpeedInMetersPerSecond"] = roundTo(avgSpeed, 3)
-			summary["maxSpeedInMetersPerSecond"] = roundTo(maxSpeed, 3)
-			summary["averagePaceInMinutesPerKilometer"] = roundTo(1000/avgSpeed/60, 6)
-			summary["maxPaceInMinutesPerKilometer"] = roundTo(1000/maxSpeed/60, 6)
+			summary["averageSpeedInMetersPerSecond"] = round(avgSpeed, 3)
+			summary["maxSpeedInMetersPerSecond"] = round(maxSpeed, 3)
+			summary["averagePaceInMinutesPerKilometer"] = round(1000/avgSpeed/60, 6)
+			summary["maxPaceInMinutesPerKilometer"] = round(1000/maxSpeed/60, 6)
 			summary["totalElevationGainInMeters"] = math.Round(15 + (hi-15)*r.Float64())
 			summary["totalElevationLossInMeters"] = math.Round(15 + (hi-15)*r.Float64())
 			if ok {
-				summary["startingLatitudeInDegree"] = roundTo(city.lat-0.004+0.008*r.Float64(), 7)
-				summary["startingLongitudeInDegree"] = roundTo(city.lon-0.004+0.008*r.Float64(), 7)
+				summary["startingLatitudeInDegree"] = round(city.lat-0.004+0.008*r.Float64(), 7)
+				summary["startingLongitudeInDegree"] = round(city.lon-0.004+0.008*r.Float64(), 7)
 			}
 			if w.Sport == Running {
 				base := 166.0
 				if w.Name == "intervals" {
 					base = 172
 				}
-				cad := roundTo(e.noisy("cadence", fmt.Sprint(d, k), base, 2), 1)
+				cad := round(e.noisy("cadence", fmt.Sprint(d, k), base, 2), 1)
 				summary["averageRunCadenceInStepsPerMinute"] = cad
-				summary["maxRunCadenceInStepsPerMinute"] = roundTo(cad+11+4*r.Float64(), 1)
+				summary["maxRunCadenceInStepsPerMinute"] = round(cad+11+4*r.Float64(), 1)
 				summary["steps"] = iround(cad * float64(dur) / 60)
 				laps = append(laps, map[string]any{"startTimeInSeconds": a})
 				km := 1000.0
@@ -780,9 +775,9 @@ func (e *garminEmitter) activities(d Date) []garminActivity {
 					}
 				}
 			} else {
-				cad := roundTo(e.noisy("cadence", fmt.Sprint(d, k), 84, 2), 1)
+				cad := round(e.noisy("cadence", fmt.Sprint(d, k), 84, 2), 1)
 				summary["averageBikeCadenceInRoundsPerMinute"] = cad
-				summary["maxBikeCadenceInRoundsPerMinute"] = roundTo(cad+22+5*r.Float64(), 1)
+				summary["maxBikeCadenceInRoundsPerMinute"] = round(cad+22+5*r.Float64(), 1)
 			}
 		}
 		for _, s := range samples {
@@ -817,8 +812,8 @@ func (e *garminEmitter) morning(d Date) map[string]map[string]any {
 	out := map[string]map[string]any{}
 	if x.WeightKg != 0 {
 		t := x.WeighInAt.Unix()
-		kg := roundTo(e.noisy("weight", d, x.WeightKg+e.scaleBias, 0.05), 2)
-		fat := roundTo(e.noisy("fat", d, x.BodyFatPct, 0.3), 1)
+		kg := round(e.noisy("weight", d, x.WeightKg+e.scaleBias, 0.05), 2)
+		fat := round(e.noisy("fat", d, x.BodyFatPct, 0.3), 1)
 		out["bodyComps"] = map[string]any{
 			"userId":                         garminUserID,
 			"summaryId":                      garminSID(t),
@@ -826,10 +821,10 @@ func (e *garminEmitter) morning(d Date) map[string]map[string]any {
 			"measurementTimeOffsetInSeconds": garminOffset(x.WeighInAt),
 			"weightInGrams":                  iround(kg * 1000),
 			"bodyFatInPercent":               fat,
-			"bodyWaterInPercent":             roundTo(e.noisy("water", d, 73.0*(1-fat/100)*0.72+1.0, 0.2), 1),
+			"bodyWaterInPercent":             round(e.noisy("water", d, 73.0*(1-fat/100)*0.72+1.0, 0.2), 1),
 			"muscleMassInGrams":              iround(kg * 1000 * (1 - fat/100) * e.noisy("muscle", d, 0.62, 0.004)),
 			"boneMassInGrams":                iround(e.noisy("bone", d, 2650, 10)),
-			"bodyMassIndex":                  roundTo(kg/(e.p.Person.HeightM*e.p.Person.HeightM), 1),
+			"bodyMassIndex":                  round(kg/(e.p.Person.HeightM*e.p.Person.HeightM), 1),
 		}
 	}
 	if bp := x.BloodPressure; bp != nil {
@@ -852,7 +847,7 @@ func (e *garminEmitter) morning(d Date) map[string]map[string]any {
 // last one written, and every Sunday; nil otherwise.
 func (e *garminEmitter) userMetric(d Date, last *[2]float64) map[string]any {
 	x := e.p.Day(d)
-	vo2 := roundTo(x.VO2Max+e.vo2Bias, 1)
+	vo2 := round(x.VO2Max+e.vo2Bias, 1)
 	now := [2]float64{vo2, float64(x.FitnessAge)}
 	if *last == now && d.Weekday() != time.Sunday {
 		return nil
@@ -869,7 +864,7 @@ func (e *garminEmitter) userMetric(d Date, last *[2]float64) map[string]any {
 // day the persona strolls at home and well.
 func (e *garminEmitter) moveIQ(d Date, strolls *int) map[string]any {
 	x := e.p.Day(d)
-	if x.Trip || x.Ill || e.p.rng("stroll", d).Float64() >= 0.55 {
+	if x.Trip || x.Ill || !x.Strolls() {
 		return nil
 	}
 	*strolls++

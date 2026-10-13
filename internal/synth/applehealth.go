@@ -153,12 +153,6 @@ func ahUUID(p *Persona, key ...any) string {
 	return x[:8] + "-" + x[8:12] + "-" + x[12:16] + "-" + x[16:20] + "-" + x[20:]
 }
 
-// ahRound keeps n decimals.
-func ahRound(v float64, n int) float64 {
-	f := math.Pow(10, float64(n))
-	return math.Round(v*f) / f
-}
-
 // ahMetric is one metric object.
 func ahMetric(name, units string, rows []map[string]any) map[string]any {
 	return map[string]any{"name": name, "units": units, "data": rows}
@@ -254,7 +248,7 @@ func (e *ahDay) heartRate() []map[string]any {
 		if !skip && t.Before(end) {
 			v := e.noisy("hr", i, float64(e.day.HR(t)), 2)
 			if e.day.WorkoutAt(t) != nil {
-				avg := ahRound(v, 6)
+				avg := round(v, 6)
 				rows = append(rows, map[string]any{
 					"Min": math.Floor(avg - math.Abs(r.NormFloat64()*3) - 1), "Avg": avg,
 					"Max": math.Ceil(avg + math.Abs(r.NormFloat64()*3) + 1), "date": e.date(t), "source": ahWatch,
@@ -293,7 +287,7 @@ func (e *ahDay) buckets() []ahBucket {
 func (e *ahDay) steps(buckets []ahBucket) []map[string]any {
 	rows := make([]map[string]any, 0, len(buckets))
 	for _, b := range buckets {
-		rows = append(rows, map[string]any{"qty": ahRound(b.read, 10), "date": e.date(b.start), "source": b.src})
+		rows = append(rows, map[string]any{"qty": round(b.read, 10), "date": e.date(b.start), "source": b.src})
 	}
 	return rows
 }
@@ -306,7 +300,7 @@ func (e *ahDay) distance(buckets []ahBucket) []map[string]any {
 		watch, phone := false, false
 		for _, s := range buckets {
 			if !s.start.Before(a) && s.start.Before(b) && !e.running(s.start) {
-				meters += s.read * 0.74
+				meters += s.read * StrideM
 				watch = watch || s.src == ahWatch
 				phone = phone || s.src == ahIPhone
 			}
@@ -328,7 +322,7 @@ func (e *ahDay) distance(buckets []ahBucket) []map[string]any {
 		case watch:
 			label = ahWatch
 		}
-		rows = append(rows, map[string]any{"qty": ahRound(meters/1000, 10), "date": e.date(a), "source": label})
+		rows = append(rows, map[string]any{"qty": round(meters/1000, 10), "date": e.date(a), "source": label})
 	}
 	return rows
 }
@@ -379,7 +373,7 @@ func (e *ahDay) activeEnergy(buckets []ahBucket) []map[string]any {
 		kcal := 0.0
 		for _, s := range buckets {
 			if !s.start.Before(a) && s.start.Before(b) {
-				kcal += float64(s.steps) * 0.04
+				kcal += float64(s.steps) * KcalPerStep
 			}
 		}
 		for _, w := range e.day.Workouts {
@@ -389,7 +383,7 @@ func (e *ahDay) activeEnergy(buckets []ahBucket) []map[string]any {
 			continue
 		}
 		kcal = math.Max(0.05, kcal*e.noisy("aekcal", k, 1, 0.04))
-		rows = append(rows, map[string]any{"qty": ahRound(kcal*4.184, 10), "date": e.date(a), "source": ahWatch})
+		rows = append(rows, map[string]any{"qty": round(kcal*4.184, 10), "date": e.date(a), "source": ahWatch})
 	}
 	return rows
 }
@@ -412,7 +406,7 @@ func (e *ahDay) basalEnergy() []map[string]any {
 	rows := make([]map[string]any, 0, len(hours))
 	for k, a := range hours {
 		kcal := e.noisy("basal", k, weights[k]*scale, 0.6)
-		rows = append(rows, map[string]any{"qty": ahRound(kcal*4.184, 10), "date": e.date(a), "source": ahWatch})
+		rows = append(rows, map[string]any{"qty": round(kcal*4.184, 10), "date": e.date(a), "source": ahWatch})
 	}
 	return rows
 }
@@ -434,7 +428,7 @@ func (e *ahDay) hrv() []map[string]any {
 	var rows []map[string]any
 	for k, t := range []time.Time{s.Start.Add(80 * time.Minute), mid, s.End.Add(-50 * time.Minute)} {
 		v := e.noisy("hrv", k, s.HRVRMSSDMs*1.3, s.HRVRMSSDMs*0.09)
-		rows = append(rows, map[string]any{"qty": ahRound(math.Max(8, v), 6), "date": e.date(t.Truncate(time.Minute))})
+		rows = append(rows, map[string]any{"qty": round(math.Max(8, v), 6), "date": e.date(t.Truncate(time.Minute))})
 	}
 	return rows
 }
@@ -442,7 +436,7 @@ func (e *ahDay) hrv() []map[string]any {
 func (e *ahDay) respiratory() []map[string]any {
 	var rows []map[string]any
 	for _, s := range e.day.RespirationNight(ahRespStep) {
-		rows = append(rows, map[string]any{"qty": ahRound(e.noisy("resp", s.At.Unix(), s.Value, 0.3), 1), "date": e.date(s.At)})
+		rows = append(rows, map[string]any{"qty": round(e.noisy("resp", s.At.Unix(), s.Value, 0.3), 1), "date": e.date(s.At)})
 	}
 	return rows
 }
@@ -462,8 +456,8 @@ func (e *ahDay) body() (weight, fat []map[string]any) {
 		return nil, nil
 	}
 	at := e.date(e.day.WeighInAt.Add(time.Duration(e.rng("weighsec").IntN(60)) * time.Second))
-	return []map[string]any{{"qty": ahRound(e.noisy("weight", 0, e.day.WeightKg, 0.2), 2), "date": at, "source": ahWithings}},
-		[]map[string]any{{"qty": ahRound(e.noisy("fat", 0, e.day.BodyFatPct, 0.4), 1), "date": at, "source": ahWithings}}
+	return []map[string]any{{"qty": round(e.noisy("weight", 0, e.day.WeightKg, 0.2), 2), "date": at, "source": ahWithings}},
+		[]map[string]any{{"qty": round(e.noisy("fat", 0, e.day.BodyFatPct, 0.4), 1), "date": at, "source": ahWithings}}
 }
 
 func (e *ahDay) pressure() []map[string]any {
@@ -532,7 +526,7 @@ func (e *ahDay) workouts() []any {
 			mx := math.Ceil(avg + math.Abs(r.NormFloat64()*3) + 1)
 			lo, hi, sum = math.Min(lo, mn), math.Max(hi, mx), sum+avg
 			hrd = append(hrd, map[string]any{
-				"date": e.date(s.At.Add(lead)), "Min": mn, "Avg": ahRound(avg, 6), "Max": mx, "units": "bpm", "source": ahWatch,
+				"date": e.date(s.At.Add(lead)), "Min": mn, "Avg": round(avg, 6), "Max": mx, "units": "bpm", "source": ahWatch,
 			})
 		}
 		var rec []map[string]any
@@ -546,7 +540,7 @@ func (e *ahDay) workouts() []any {
 		}
 		avgHR := math.Round(sum / float64(max(1, len(hrd))))
 		outdoor := w.Sport == Running || w.Sport == Cycling || w.Sport == Walking
-		kcal := ahRound(e.noisy("wokcal", n, float64(w.Kcal), float64(w.Kcal)*0.04), 1)
+		kcal := round(e.noisy("wokcal", n, float64(w.Kcal), float64(w.Kcal)*0.04), 1)
 		entry := map[string]any{
 			"id":                 ahUUID(e.p, "workout", e.d, n),
 			"name":               ahWorkoutNames[w.Sport],
@@ -574,7 +568,7 @@ func (e *ahDay) workouts() []any {
 			if w.Sport == Yoga {
 				met = 2.6
 			}
-			entry["totalEnergy"] = ahQty(ahRound(kcal+float64(e.p.Person.BMRKcal)/1440*w.Duration().Minutes(), 1), "kcal")
+			entry["totalEnergy"] = ahQty(round(kcal+float64(e.p.Person.BMRKcal)/1440*w.Duration().Minutes(), 1), "kcal")
 			entry["intensity"] = ahQty(met, "MET")
 		}
 		if w.DistanceM > 0 {
@@ -583,9 +577,9 @@ func (e *ahDay) workouts() []any {
 			if w.Sport == Cycling {
 				climb = 6
 			}
-			entry["distance"] = ahQty(ahRound(km, 3), "km")
-			entry["elevationUp"] = ahQty(ahRound(math.Abs(e.noisy("woelev", n, km*climb, 8)), 1), "m")
-			entry["avgSpeed"] = ahQty(ahRound(km/w.Duration().Hours(), 2), "kmph")
+			entry["distance"] = ahQty(round(km, 3), "km")
+			entry["elevationUp"] = ahQty(round(math.Abs(e.noisy("woelev", n, km*climb, 8)), 1), "m")
+			entry["avgSpeed"] = ahQty(round(km/w.Duration().Hours(), 2), "kmph")
 		}
 		out = append(out, entry)
 	}

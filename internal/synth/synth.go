@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -198,4 +199,10 @@ func JSON(v any) []byte {
 		panic(fmt.Sprintf("synth: encoding: %v", err))
 	}
 	return buf.Bytes()
+}
+
+// round keeps places decimals.
+func round(v float64, places int) float64 {
+	f := math.Pow(10, float64(places))
+	return math.Round(v*f) / f
 }

@@ -226,6 +226,15 @@ func (p *Persona) Noisy(key string, value, sd float64) float64 {
 	return value + p.rng("noisy", key).NormFloat64()*sd
 }
 
+// The body's constants every emitter shares, so two providers' readings of
+// the same walk differ by their device noise and nothing else.
+const (
+	// StrideM is the length of one step on foot, in metres.
+	StrideM = 0.74
+	// KcalPerStep is the active energy one step on foot burns.
+	KcalPerStep = 0.04
+)
+
 // Sample is one measured instant.
 type Sample struct {
 	At    time.Time
@@ -522,7 +531,7 @@ func (d *Day) stepsMinute(t time.Time) int {
 		rate = 75 // lunch walk
 	case h >= 17.75 && h < 18.0 && !weekend && !d.Trip:
 		rate = 100 // walk home
-	case h >= 19.0 && h < 19.4 && d.persona.rng("stroll", d.Date).Float64() < 0.55:
+	case h >= 19.0 && h < 19.4 && d.Strolls():
 		rate = 85 // an evening stroll, most days
 	case d.Trip && h >= 10 && h < 18:
 		if d.persona.rng("tripwalk", d.Date, lt.Hour(), lt.Minute()/10).Float64() < 0.6 {
@@ -543,6 +552,9 @@ func (d *Day) stepsMinute(t time.Time) int {
 	}
 	return max(0, int(math.Round(rate*(1+r.NormFloat64()*0.25))))
 }
+
+// Strolls reports whether the evening holds a stroll, as most do.
+func (d *Day) Strolls() bool { return d.persona.rng("stroll", d.Date).Float64() < 0.55 }
 
 // StepsIn counts steps in [a, b).
 func (d *Day) StepsIn(a, b time.Time) int {
@@ -578,7 +590,7 @@ func (d *Day) StepsTotal() int {
 
 // ActiveKcal is the day's active energy.
 func (d *Day) ActiveKcal() int {
-	k := float64(d.StepsTotal()) * 0.04
+	k := float64(d.StepsTotal()) * KcalPerStep
 	for _, w := range d.Workouts {
 		k += float64(w.Kcal)
 	}
