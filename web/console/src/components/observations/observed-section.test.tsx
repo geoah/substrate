@@ -29,6 +29,7 @@ import {
   traceKind,
   LATEST,
   METRIC,
+  METRICS,
 } from "@/lib/observations.test-fixtures"
 
 vi.mock("@tanstack/react-router", () => ({
@@ -103,6 +104,21 @@ describe("a trace", () => {
     expect(fact("Average")).toBe("131.6 /min")
     expect(fact("Standard deviation")).toBe("34.87 /min")
     expect(fact("Covered")).toBe("59m 58s")
+  })
+
+  it("reads its stats to its metric's declared places", async () => {
+    const whole: SubstrateRecord = {
+      ...METRICS.find((m) => m.id === "health/heart_rate")!,
+    }
+    whole.properties = { ...whole.properties, displayPrecision: 0 }
+    const view = mount(HEART_TRACE, traceKind, [whole])
+    const stats = view.container.querySelector(
+      "[data-slot=trace-stats]"
+    ) as HTMLElement
+    const fact = (label: string) =>
+      within(stats).getByText(label).nextElementSibling?.textContent
+    await waitFor(() => expect(fact("Average")).toBe("132 /min"))
+    expect(fact("Standard deviation")).toBe("35 /min")
   })
 
   it("follows its box's width as the page around it changes", () => {
