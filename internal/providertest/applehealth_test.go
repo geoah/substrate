@@ -678,6 +678,42 @@ func TestAppleHealthSkipsARecordTooBigForAFrame(t *testing.T) {
 	}
 }
 
+// A record the owner deleted is absent to the next delivery: its stored
+// rows are not merged back, and a record re-sent as it was is written again
+// rather than counted unchanged and left deleted.
+func TestAppleHealthDeletedRecordsAreAbsent(t *testing.T) {
+	_, ds := newAppleHealth(t, "iphone")
+	ctx := context.Background()
+	deliverAH(t, ds, ahMetricRequest(t, "minutes", "heart_rate", "count/min", heartRows(
+		"2026-10-01 10:05:00 +0000", "2026-10-01 10:15:00 +0000",
+		"2026-10-01 10:25:00 +0000", "2026-10-01 10:35:00 +0000")), "hook-1")
+	batch := batchID("iphone", "heart_rate", "minutes", "2026-10-01T10")
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, ahBatch, batch, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the batch: %v", err)
+	}
+	deliverAH(t, ds, ahMetricRequest(t, "minutes", "heart_rate", "count/min", heartRows(
+		"2026-10-01 10:25:00 +0000", "2026-10-01 10:35:00 +0000")), "hook-2")
+	rows := rowsOf(t, mustGet(t, ds, ahBatch, batch))
+	if len(rows) != 2 || rows[0]["date"] != "2026-10-01 10:25:00 +0000" {
+		t.Fatalf("the deleted batch came back holding %v, want only the two rows the delivery carried", rows)
+	}
+
+	req := ahRequest(t, "delivery_2_sleep_and_workouts.json")
+	deliverAH(t, ds, req, "hook-3")
+	workouts := listLive(t, ds, ahWorkout)
+	if len(workouts) == 0 {
+		t.Fatal("the fixture wrote no workouts")
+	}
+	gone := workouts[0].ID
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, ahWorkout, gone, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the workout: %v", err)
+	}
+	out, _ := deliverAH(t, ds, req, "hook-4")
+	if !whoopLive(t, ds, ahWorkout, gone) {
+		t.Fatalf("the deleted workout, re-sent as it was, stayed deleted (output %v)", out)
+	}
+}
+
 // Day buckets are midnights of the phone's zone when it sent. A delivery from
 // London on 2026-09-25, then a 30-day one from Athens on 2026-10-10: the
 // Athens span covers London's two buckets, so the month batch ends holding the

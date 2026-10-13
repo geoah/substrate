@@ -1650,7 +1650,9 @@ last row), keeps the rest, and leaves a batch whose rows did not change
 unwritten. A batch inside that span the delivery carries no row for is read
 back and deleted, so a sample deleted in Health leaves the mirror with the
 next export that spans it; a delivery reads back at most 1000 such periods per
-metric, six weeks of hour batches. A change of units replaces the batch whole. A workout and a state of mind entry are keyed by
+metric, six weeks of hour batches. A change of units replaces the batch whole.
+A record deleted here is absent to later deliveries: one that carries it again
+writes it again, without the rows the deleted batch held. A workout and a state of mind entry are keyed by
 their HealthKit id; a medication dose, a symptom, a cycle tracking entry, an
 ECG and a heart rate notification, which carry none, by their name and
 start. The `export` receipt, at the webhook fire id, holds the automation's

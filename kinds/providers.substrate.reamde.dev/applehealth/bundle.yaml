@@ -2479,7 +2479,10 @@ data:
                 break
             unit = d.units[i]
             stored = host.records.get(unit.kind, unit.id)
-            props = unit.build(stored)
+            # A read by id answers a tombstone too. A deleted record is absent
+            # to the builders (its rows are not merged back, and a record sent
+            # again is written again); the guard still names its version.
+            props = unit.build(None if stored is None or stored.get("deletedAt") else stored)
             if props is ABSENT:
                 pass
             elif props is None:
