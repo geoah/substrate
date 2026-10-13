@@ -721,20 +721,28 @@ statistics answers a row for each, and the page folds them into one row
 that knows them. Where the server refuses that read for making more
 than 2,000 groups, the page lists the metrics with a point first and reads
 their streams a few metrics at a time, and does not ask the refused read
-again under the same filters. Each row shows the metric by its record's name, the
-source as a record mention, what it is about (**You** where it names
-nothing, which means the owner), its channel, how its newest value reads
-(**Reading**: its form in words, **Level**, **Amount**, **Running total** or
-**Vendor summary**, or **Category** for a coded stream, and under it the
-statistics its vendor summaries keep, such as "Summaries: average,
-highest"), that value in its unit to the metric's places (the stored
-digits on hover, and as stored with Technical details on; a category is
-the one a coded `last` answers in `code`), when, and how many points the
-stream holds. A summary's value follows the statistic it is: "Average 74
-/min". An amount's or a vendor summary's newest point covers a
-window, and **When** says which (`Oct 7, 09:45 to 10:00`), so a quarter
-hour's steps never reads as the day's. A long metric name and a window
-wrap to a second line rather than lose their ends.
+again under the same filters. Each row shows:
+
+- **Metric**: the metric, by its record's name.
+- **Source**: the source, as a record mention.
+- **About**: what it is about, **You** where it names nothing, which means
+  the owner.
+- **Channel**: its channel.
+- **Reading**: how its newest value reads, its form in words: **Level**,
+  **Amount**, **Running total** or **Vendor summary**, or **Category** for a
+  coded stream. Under it are the statistics its vendor summaries keep, such
+  as "Summaries: average, highest".
+- **Latest**: that value in its unit, to the metric's places. Hover shows
+  the stored digits, and with Technical details on the value is shown as
+  stored. A category shows the code a coded `last` answers. A summary's
+  value follows the statistic it is: "Average 74 /min".
+- **When**: when it was taken. An amount's or a vendor summary's newest
+  point covers a window, and **When** says which (`Oct 7, 09:45 to 10:00`),
+  so a quarter hour's steps never reads as the day's.
+- **Points**: how many points the stream holds.
+
+A long metric name and a window wrap to a second line rather than lose
+their ends.
 
 The rows sit in the grid a collection's records do
 ([A collection](#a-collection)), with the same controls, applied in the page
@@ -786,63 +794,74 @@ metric under the chosen sources and things and writes it into the address
 (`?metric=`), so a later read never swaps the chart. They overlay in one chart while they fit two units
 and otherwise split into as few charts as hold them two units each: heart
 rate, HRV and steps are two charts, heart rate with HRV and then steps. One
-row of controls scopes every chart: the metrics, the range (today, the last
-7 or 30 days, 6 months, a year, or a custom range of days on the calendar),
-the bucket (automatic from the range, 1, 5 or 15 minutes, an hour, a day, a
-week, a month; automatic reads a window of two hours or less, such as a
-workout's trace, by the minute, and reads in days where it would read in
-hours and a sleep metric is drawn, since a source may write a night's
-time in each stage as one span over the whole night), where a day, week or month starts (where
-you were, or your time zone), what to group by (metric,
-source or about; a category metric is always grouped by code, so where
-every metric drawn is one, **Group by** is disabled and says so, and beside
-other metrics its chart says Group by does not apply to it), where to read from (automatic, raw points,
-vendor summaries, or raw where a bucket is covered), and the sources,
-things and channels to keep. Under each chart, each metric's numbers as a table that
-copies as tab-separated text (the exact digits; on screen a value's digits
-are in groups of three, `12,008 kJ`, a time of a minute or more in seconds,
-minutes or hours reads in words as a sleep's page reads it, `4h 42m 36s`
-for `282.6 min`, and the covered time is to the minute from an hour up); the table shows up to a dozen rows whole and scrolls past
-that. With Technical details on, each request itself
-as JSON and as a `curl` command.
+row of controls scopes every chart:
+
+- the metrics;
+- the range: today, the last 7 or 30 days, 6 months, a year, or a custom
+  range of days on the calendar;
+- the bucket: automatic from the range, 1, 5 or 15 minutes, an hour, a day,
+  a week or a month. Automatic reads a window of two hours or less, such as
+  a workout's trace, by the minute. It reads in days where it would read in
+  hours and a sleep metric is drawn, since a source may write a night's time
+  in each stage as one span over the whole night;
+- where a day, week or month starts: where you were, or your time zone;
+- what to group by: metric, source or about. A category metric is always
+  grouped by code. Where every metric drawn is one, **Group by** is
+  disabled and says so, and beside other metrics its chart says Group by
+  does not apply to it;
+- where to read from: automatic, raw points, vendor summaries, or raw where
+  a bucket is covered;
+- the sources, things and channels to keep.
+
+Under each chart, a table holds each metric's numbers and copies them as
+tab-separated text, the exact digits. On screen a value's digits are in
+groups of three (`12,008 kJ`). A time of a minute or more in seconds,
+minutes or hours reads in words, as a sleep's page reads it (`4h 42m 36s`
+for `282.6 min`). The covered time is to the minute from an hour up. The
+table shows up to a dozen rows whole and scrolls past that.
+With Technical details on, each request follows it, as JSON and as a `curl`
+command.
 
 **One chart, several metrics.** Above the chart, one row per metric holds
-its name, how it reads (**Reading**: Level, Amount and so on), which axis it reads on, its reducer (**Show**) and its output unit
-(the units of the stored unit's measure the server converts it to: never
-another annotation, another assay unit, a level or a factor of pi; minutes,
-seconds or hours for a time in a range), and its legend; a metric drawn
-as one series has no separate legend, its name being the entry that hides
-and shows it. **Unit** names each
-unit by its symbol (`lb`, not `[lb_av]`) and offers the units a stored unit is
-read in day to day where there is such a list (kilograms, pounds and stones
-for a weight in kilograms); with Technical details on it offers every unit
-the server converts to, each with its code. A quantity's hover gives its
-symbol and stored digits (`19 score`), and the text a write takes
-(`19 {score}`) only with Technical details on. **Show** offers
-every reducer the metric's form takes ([the table](api.md#reducers-by-form)),
-with the median and the 90th percentile for a level or an amount, the
-circular mean for an angle, and for a heart rate the time in each of five
-zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a
-minute); a vendor summary defaults to its average, or its total where it
-keeps a sum or a count. For a level, the menu says what its two averages
-are: **Average**, the default, counts each reading once, so a source that
-reads more often in a workout weighs more, and **Time-weighted average**
-weighs each reading by how long it held, beside why it reads raw points
-alone where it does. Where a vendor summary may serve a bucket, the reducers a
-summary takes come first and the rest read raw points alone: picking one
-(the time-weighted average, a percentile, a zone) reads the metric from raw
-points and the chart says whose summaries it leaves out, and where you
-picked where to read from yourself it is listed disabled, with the reason.
-A level is a line, joined across a bucket its hold covered with no reading
-of its own (a day between two weigh-ins) and broken where the answer has
-no row or filled a gap, with its lowest-to-highest band where its metric shows
+its name, how it reads (**Reading**: Level, Amount and so on), which axis
+it reads on, its reducer (**Show**), its output unit and its legend. A
+metric drawn as one series has no separate legend: its name is the entry
+that hides and shows it. The output unit is one of the units of the stored
+unit's measure the server converts it to: never another annotation, another
+assay unit, a level or a factor of pi; minutes, seconds or hours for a time
+in a range. **Unit** names each unit by its symbol (`lb`, not `[lb_av]`).
+Where the stored unit has a list of units it is read in day to day,
+**Unit** offers that list (kilograms, pounds and stones for a weight in
+kilograms). With Technical details on, it offers every unit the server
+converts to, each with its code. A quantity's hover gives its symbol and
+stored digits (`19 score`), and the text a write takes (`19 {score}`) only
+with Technical details on.
+**Show** offers every reducer the metric's form takes
+([the table](api.md#reducers-by-form)). For a level or an amount these
+include the median and the 90th percentile, for an angle the circular mean,
+and for a heart rate the time in each of five zones (95 to 114, 114 to 133,
+133 to 152, 152 to 171 and 171 to 220 a minute). A vendor summary defaults
+to its average, or its total where it keeps a sum or a count. For a level,
+the menu says what its two averages are. **Average**, the default, counts
+each reading once, so a source that reads more often in a workout weighs
+more. **Time-weighted average** weighs each reading by how long it held,
+and the menu says so beside why it reads raw points alone where it does.
+Where a vendor summary may serve a bucket, the reducers a summary takes
+come first and the rest read raw points alone. Picking one of the rest (the
+time-weighted average, a percentile, a zone) reads the metric from raw
+points, and the chart says whose summaries it leaves out. Where you picked
+where to read from yourself, such a reducer is listed disabled, with the
+reason.
+A level is a line, with its lowest-to-highest band where its metric shows
 one line and the reducer answers in the metric's own unit (not a count, a
-standard deviation, a time in a zone or a circular mean). An amount, a
-count, a counter's increase and a time in a zone are bars, and a category
-is bars stacked per code that counts as one unit, its time, each code in
-the colour of its place in the metric's `codeSet` whatever else the chart
-draws; the other series take the colours of the codes the answer does not
-hold first. The series of one unit
+standard deviation, a time in a zone or a circular mean). The line joins
+across a bucket its hold covered with no reading of its own (a day between
+two weigh-ins), and breaks where the answer has no row or filled a gap. An
+amount, a count, a counter's increase and a time in a zone are bars. A
+category is bars stacked per code that counts as one unit, its time, each
+code in the colour of its place in the metric's `codeSet` whatever else the
+chart draws. The other series take the colours of the codes the answer does
+not hold first. The series of one unit
 share the left axis and a second unit reads on the right, each axis
 captioned with its unit; a third unit is not drawn, and the chart names the
 metrics it leaves out and what to deselect to draw them. One crosshair marks
@@ -901,10 +920,10 @@ the one metric it concerns and the others draw. A server older than
 `aggregate.metrics` refuses the key with a `400`, and the chart reads each
 metric apart there too. In the recorded-local calendar, every row of one day,
 week or month in a shared request has the same `start` and `end`, written at
-the offsets of the first and last value any of its metrics takes in it, so
-the tooltip and the table caption them by the bucket (**Day's UTC offset**,
-**Week's UTC offset**, **Month's UTC offset**), the bucket's across the
-metrics read together rather than the metric's own. A shared request
+the offsets of the first and last value any of its metrics takes in it. The
+tooltip and the table caption them by the bucket (**Day's UTC offset**,
+**Week's UTC offset**, **Month's UTC offset**): the bucket's offsets across
+the metrics read together, not the metric's own. A shared request
 answers `exact` once for all its metrics, so with Technical details on, the
 request's details say when its answer is not exact, and no metric's row does.
 Reads that differ in anything else go apart: a sleep metric placed by its end
@@ -913,12 +932,12 @@ several.
 A metric is planned once its streams are read: a metric
 being added waits under the charts already drawn, a metric whose stream
 read fails is a note with a retry above the charts of the others, and choosing a source, a
-thing or a channel re-reads the charts, never the streams. While a changed read loads, the chart keeps drawing each
-metric's earlier answer, alone or from a shared request, and the row says
-Updating…, where that answer has the same unit, grouping and summary
-statistic and carries the new reducer; after a change of unit, grouping or
-statistic, or to a reducer the earlier answer lacks, the row says Reading…
-and draws nothing of that metric. A
+thing or a channel re-reads the charts, never the streams. While a changed
+read loads, the chart keeps drawing a metric's earlier answer, alone or from
+a shared request, if that answer has the same unit, grouping and summary
+statistic and carries the new reducer. The row then says Updating… After a
+change of unit, grouping or statistic, or to a reducer the earlier answer
+lacks, the row says Reading… and draws nothing of that metric. A
 change to one metric of a shared request (its reducer, unit or statistic),
 or a metric added to the request or removed from it, makes a new request:
 every metric in it is read again, across the timeline's charts, and each of
@@ -930,14 +949,14 @@ names no source counting as one) are resolved by
 the read sends them as `order`, in the order you picked them, each new
 pick last; the Source filter lists the chosen sources in that order, each
 with a move up and a move down, and the chart says which source wins.
-Picking a source leaves out a stream that names none. With no source picked (and always in
-the streams page's panel, whose selection is no order), the read sends no
-`order`, so the server ranks the sources by each source record's
-`priorities` for the metric, then by kind and record path
+Picking a source leaves out a stream that names none. With no source
+picked, and always in the streams page's panel, whose selection is no
+order, the read sends no `order`. The server then ranks the sources by each
+source record's `priorities` for the metric, then by kind and record path
 ([the read](api.md#sources-and-from)), and a stream that names no source
 after every named one, so a scale's weight wins over a typed one. The chart
 says which source wins in that order ("Where sources overlap, Garmin
-Forerunner 265 is used first, then Apple Watch S10"), reading each source
+Forerunner 265 is used first, then Apple Watch S10"). It reads each source
 record's `priorities` from the batch that reads its title, and gives the
 ranking rule itself only with Technical details on. Grouped by source,
 each keeps its own rows, and a source's channels stay apart
@@ -970,10 +989,10 @@ says why and what helps. A category metric is always grouped by code: a
 coded gauge asks for the time in each category (the bare `timeInState`), a
 coded amount for its total. A read the console expects to make more than
 1,440 buckets (the server's default), counting every group, raises its
-budget to the server's cap (`budget.maxBuckets: 10000`), and a shared
-request adds up its metrics' budgets to at most the cap; one past the cap
-is not asked for, and its row says to pick a larger bucket; a refusal the
-server makes anyway is shown with its reason. The read itself is [the aggregate read](api.md#the-aggregate-read).
+budget to the server's cap (`budget.maxBuckets: 10000`). A shared request
+adds up its metrics' budgets to at most the cap. The console does not ask
+for a read past the cap, and the metric's row says to pick a larger bucket.
+A refusal the server makes anyway is shown with its reason. The read itself is [the aggregate read](api.md#the-aggregate-read).
 
 ## History
 
