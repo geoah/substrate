@@ -177,9 +177,16 @@ func plainTerm(t *termNode, sign int, parts *[]string) {
 // ParseUnit reads one case-sensitive UCUM code over the table's atoms and
 // prefixes, or one of the substrate's own codes (dBm). Aliases are not read
 // here: CanonicalUnit maps them first.
+//
+// A code the table lists answers the parse the table made when it loaded,
+// shared: nothing mutates a parsed Unit.
 func ParseUnit(code string) (Unit, error) {
-	if _, err := loadTable(); err != nil {
+	t, err := loadTable()
+	if err != nil {
 		return Unit{}, err
+	}
+	if rows := t.rows[code]; len(rows) > 0 {
+		return rows[0].unit, nil
 	}
 	return parseUnit(code)
 }

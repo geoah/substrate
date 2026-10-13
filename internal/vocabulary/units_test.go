@@ -661,3 +661,13 @@ func TestRatDecimal(t *testing.T) {
 		}
 	}
 }
+
+// A code the table lists is parsed once, when the table loads.
+func TestParseUnitReadsAListedCodeFromTheTable(t *testing.T) {
+	if _, err := vocabulary.ParseUnit("kg"); err != nil {
+		t.Fatal(err)
+	}
+	if allocs := testing.AllocsPerRun(10, func() { _, _ = vocabulary.ParseUnit("[lb_av]") }); allocs > 2 {
+		t.Fatalf("ParseUnit of a listed code costs %.0f allocations", allocs)
+	}
+}

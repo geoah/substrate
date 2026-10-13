@@ -190,3 +190,14 @@ func TestQuantityStrandsIsTheWritePath(t *testing.T) {
 		t.Fatal("a list holding one refused value does not strand")
 	}
 }
+
+// The declared arms of a base-value expression are the unit table's, which
+// never changes, so a property naming no measure does not parse every table
+// code on every ordered read.
+func TestQuantityBaseSQLDoesNotReparseTheTable(t *testing.T) {
+	undeclared := []*vocabulary.QuantitySpec{nil}
+	quantityBaseSQL(`(props->'x')`, undeclared)
+	if allocs := testing.AllocsPerRun(5, func() { quantityBaseSQL(`(props->'x')`, undeclared) }); allocs > 5000 {
+		t.Fatalf("an undeclared quantity's order expression costs %.0f allocations a read", allocs)
+	}
+}
