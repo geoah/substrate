@@ -806,7 +806,6 @@ func (t *txn) rederiveHold(h obsHold) error {
 		prev    *observed.Point
 		cur     *streamedBucket
 		pending []rollupRow
-		failed  error
 	)
 	finish := func() {
 		if cur == nil {
@@ -828,11 +827,12 @@ func (t *txn) rederiveHold(h obsHold) error {
 		}
 		cur.add(sp)
 	}
-	flush := func() {
-		if failed == nil && len(pending) > 0 {
-			failed = t.insertRollups(h, pending)
-			pending = nil
-		}
+	// A failed insert aborts the transaction, so it is returned at once: the
+	// next read would answer only the abort.
+	flush := func() error {
+		rows := pending
+		pending = nil
+		return t.insertRollups(h, rows)
 	}
 	// The first page starts before every point; each later one after the
 	// last point read.
@@ -843,13 +843,14 @@ func (t *txn) rederiveHold(h obsHold) error {
 			return err
 		}
 		if len(pending) >= observedInsertBatch {
-			flush()
+			if err := flush(); err != nil {
+				return err
+			}
 		}
 		if n < page {
 			break
 		}
 	}
 	finish()
-	flush()
-	return failed
+	return flush()
 }

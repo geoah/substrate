@@ -1833,3 +1833,38 @@ func TestObservedRollupRecomputeReadsOnOnlyFullBuckets(t *testing.T) {
 	reads.armed.Store(false)
 	checkRollupsMatchSpec(t, r.db)
 }
+
+// A rebuild whose insert of rollup rows fails stops there and answers that
+// failure, not the aborted transaction's refusal of the next read: a stream
+// of 2,200 one-point buckets, read in pages of 100, writes its rows in
+// batches of 2,000 with pages left to read, and the database refuses the
+// insert.
+func TestObservedRebuildAnswersAFailedRollupInsert(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t, engine.WithTestObservedPageSize(100))
+	const n = 2200
+	values := make([]any, n)
+	for i := range values {
+		values[i] = fmt.Sprintf("%d", 20+i%5)
+	}
+	start := mustTime(t, "2026-09-01T00:00:00Z")
+	r.mustPut(t, r.trace, "long", map[string]any{
+		"metric": r.metricRef("air_temperature"), "source": r.sourceRef("long"), "form": "gauge", "unit": "Cel",
+		"at": start.Format(time.RFC3339), "endsAt": start.Add(n * 15 * time.Minute).Format(time.RFC3339),
+		"every": "PT15M", "values": values,
+	})
+	for _, q := range []string{
+		`CREATE FUNCTION refuse_rollups() RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN RAISE EXCEPTION 'the test refuses this rollup insert'; END $$`,
+		`CREATE TRIGGER refuse_rollups BEFORE INSERT ON observed_rollups
+			FOR EACH STATEMENT EXECUTE FUNCTION refuse_rollups()`,
+	} {
+		if _, err := r.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	_, err := r.svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t))
+	if err == nil || !strings.Contains(err.Error(), "the test refuses this rollup insert") {
+		t.Fatalf("rebuild = %v, want the refused insert", err)
+	}
+}
