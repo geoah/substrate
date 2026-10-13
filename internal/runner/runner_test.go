@@ -1323,3 +1323,41 @@ func TestListReferencingIsHeldToTheAllowlist(t *testing.T) {
 		}
 	}
 }
+
+// TestListReferencingTheDeliveredRecordIsAllowed: a trigger fires a body on
+// kinds its reads do not grant, and host.observed.reconcile finds what the
+// body produced from the delivered record by a reverse read from it. That
+// read passes; one from another record of the same kind, or from the same
+// path in a call that carries no delivery, still trips.
+func TestListReferencingTheDeliveredRecordIsAllowed(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "reverse.g.test", Runtime: "python", TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"}, ReadRows: 10,
+	}
+	delivery := testInput()
+	delivery.Envelope["change"] = map[string]any{"kind": "g.test/secret/thing", "id": "x", "op": "delete", "seq": int64(7)}
+	delivery.Envelope["record"] = nil
+	call := Input{Mode: ModeCall, Args: map[string]any{}}
+	for _, x := range []struct {
+		name   string
+		in     Input
+		target string
+		trips  bool
+	}{
+		{"the delivered record", delivery, "g.test/secret/thing/x", false},
+		{"another record of its kind", delivery, "g.test/secret/thing/y", true},
+		{"the same path in a call", call, "g.test/secret/thing/x", true},
+	} {
+		spec.Source = "def main(input, host):\n    host.records._host.list(filter={\"kinds\": [\"widget\"], \"referencing\": {\"ref\": \"" +
+			x.target + "\"}})\n    return {\"effects\": []}\n"
+		backend := widgetBackend()
+		_, err := r.Invoke(context.Background(), spec, x.in, backend)
+		if x.trips && (!errors.Is(err, ErrReadForbidden) || len(backend.orderBys) != 0) {
+			t.Errorf("%s: err = %v, lists served %d; want a read trip before the backend", x.name, err, len(backend.orderBys))
+		}
+		if !x.trips && (err != nil || len(backend.orderBys) != 1) {
+			t.Errorf("%s: err = %v, lists served %d; want the one list", x.name, err, len(backend.orderBys))
+		}
+	}
+}

@@ -754,7 +754,11 @@ delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
 empty, so every `list` and `search` is refused and every `get` answers absent.
 A `list` whose `filter.referencing` names a record of a kind outside the
-allowlist trips as one naming that kind in `filter.kinds` does.
+allowlist trips as one naming that kind in `filter.kinds` does. The record
+the delivery's envelope names is the exception, a delete's included: a
+`list` or `aggregate` may name it, which is how `host.observed.reconcile`
+finds what the body wrote from that record before, whatever kinds the
+trigger fires on.
 A forbidden kind answers exactly like an absent id, same nil shape and same
 budget charge, so a disallowed `get` is never an existence or kind oracle.
 Calls are charged before they run, `first` and `k` clamp to the remaining row
@@ -870,7 +874,9 @@ where one delivery answers for several); `outputs` maps `(kind, id)` to the
 properties the row implies now; `owned` maps each output kind to every
 property the body sets on it. It reads the stored records of those kinds
 whose `origin` or `origins` names the path, page by page (another
-reference, such as `derivedFrom`, does not count). It then reads by id each
+reference, such as `derivedFrom`, does not count). That read needs no grant
+for the row the delivery's envelope names; every other origin's kind must
+be in `permissions.reads`. It then reads by id each
 output that read did not find, 500 ids to a call against the read budget,
 because another origin may hold it: an hour's trace built from several rows
 names all of them. Then it:
