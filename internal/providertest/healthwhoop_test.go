@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/samples"
 )
 
 const (
@@ -518,31 +517,9 @@ func TestHealthWhoopAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
 	healthDrain(t, ds)
 	before := adapterOutputs(t, ds)
 	assertAdapterStamp(t, before, healthWhoopAdapter)
-	// health_test.go's upgradeAdapter raises @1 to @2, and this adapter
-	// ships at @2, so the upgrade here raises it to @3.
-	docs := loadDocs(t, samplesDir+"/healthwhoop/bundle.yaml")
-	rewriteSource(t, docs, `ADAPTER = "healthwhoop@2"`, `ADAPTER = "healthwhoop@3"`)
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.BundleActor(samples.Authority, "healthwhoop"), docs); err != nil {
-		t.Fatalf("upgrade healthwhoop: %v", err)
-	}
+	next := upgradeAdapter(t, ds, healthWhoopAdapter)
 	replayAdapter(t, ds, healthWhoopRun)
-	after := adapterOutputs(t, ds)
-	if len(after) != len(before) {
-		t.Fatalf("%d outputs after the upgrade, %d before", len(after), len(before))
-	}
-	for key, was := range before {
-		now := after[key]
-		switch {
-		case now == nil:
-			t.Fatalf("%s is gone after the upgrade", key)
-		case now.Properties["adapter"] != "healthwhoop@3" || now.Version <= was.Version:
-			t.Fatalf("%s: adapter %v at version %d (was %d), want healthwhoop@3 at a higher version",
-				key, now.Properties["adapter"], now.Version, was.Version)
-		case fmt.Sprint(now.Properties["revision"]) != fmt.Sprint(was.Properties["revision"]):
-			t.Fatalf("%s: revision %v, was %v; an adapter-only rewrite keeps the upstream's",
-				key, now.Properties["revision"], was.Properties["revision"])
-		}
-	}
+	assertAdapterRewrite(t, ds, next, before)
 }
 
 // TestHealthWhoopKeepsAnAccountIdWithSlashes: a record id may hold slashes,

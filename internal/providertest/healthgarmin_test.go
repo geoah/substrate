@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math/big"
 	"slices"
 	"strings"
 	"testing"
@@ -207,10 +208,32 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 		t.Fatal("no daily steps summary")
 	}
 	p := sum.Properties
-	if p["form"] != "summary" || p["statistic"] != "vendor" || p["period"] != "day" ||
+	if p["form"] != "summary" || p["statistic"] != "sum" || p["period"] != "day" ||
 		p["periodId"] != daily["calendarDate"] || quantity(p["value"]) != fmt.Sprint(daily["steps"], " {steps}") ||
 		garminAsInt(t, p["utcOffset"]) != 180 || sum.EndsAt == nil {
-		t.Errorf("daily steps summary %v", p)
+		t.Errorf("daily steps summary %v, want a sum over the day", p)
+	}
+	// The five day totals are sums, so a summaries read's sum takes them;
+	// resting heart rate is Garmin's own figure, vendor.
+	for _, role := range []string{"distance", "floors", "active_energy", "basal_energy"} {
+		if row := out[obsObservation+"/"+acct+"/"+daily["summaryId"].(string)+"/"+role]; row == nil || row.Properties["statistic"] != "sum" {
+			t.Errorf("daily %s summary %v, want statistic sum", role, row)
+		}
+	}
+	if row := out[obsObservation+"/"+acct+"/"+daily["summaryId"].(string)+"/resting_heart_rate"]; row == nil || row.Properties["statistic"] != "vendor" {
+		t.Errorf("daily resting heart rate %v, want statistic vendor", row)
+	}
+	dayStart := time.Unix(int64(daily["startTimeInSeconds"].(float64)), 0).UTC()
+	read, err := ds.Aggregate(t.Context(), substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: garminHealthMetric + "steps"}, From: substrate.AggregateFromSummaries,
+		Range:    &substrate.AggregateRange{Gte: dayStart.Format(time.RFC3339), Lt: dayStart.Add(24 * time.Hour).Format(time.RFC3339)},
+		Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerSum}},
+	}})
+	if err != nil {
+		t.Fatalf("the summaries read of the day's steps: %v", err)
+	}
+	if len(read.Rows) != 1 || read.Rows[0].Values[0].Value == nil || *read.Rows[0].Values[0].Value != fmt.Sprint(daily["steps"]) {
+		t.Errorf("the summaries read's sum of the day's steps is %+v, want Garmin's total %v", read.Rows, daily["steps"])
 	}
 
 	// A night: the sleep record and one coded amount per stage segment.
@@ -238,15 +261,31 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 		if row.Properties["form"] != "amount" || storedRefPath(row.Properties["metric"]) != garminHealthMetric+"sleep_stage" {
 			t.Errorf("stage %s: %v", key, row.Properties)
 		}
+		// Minutes, the unit every adapter writes a stage in.
 		v, _ := row.Properties["value"].(map[string]any)
-		var secs int64
-		if _, err := fmt.Sscan(fmt.Sprint(v["value"]), &secs); err != nil || v["unit"] != "s" {
-			t.Errorf("stage %s value %v", key, v)
+		minutes, ok := new(big.Rat).SetString(fmt.Sprint(v["value"]))
+		span := row.EndsAt.Sub(*row.At)
+		if !ok || v["unit"] != "min" || new(big.Rat).Sub(new(big.Rat).Mul(minutes, big.NewRat(60, 1)), big.NewRat(int64(span.Seconds()), 1)).Abs(new(big.Rat)).Cmp(big.NewRat(1, 1000000)) > 0 {
+			t.Errorf("stage %s value %v over %s, want its minutes", key, v, span)
 		}
-		summed[row.Properties["code"].(string)] += secs
+		summed[row.Properties["code"].(string)] += int64(span.Seconds())
+		// The night is ENHANCED_TENTATIVE: Garmin may still revise it.
+		if row.Properties["quality"] != "estimated" || row.Properties["recordingMethod"] != "automatic" {
+			t.Errorf("stage %s quality %v recorded %v, want a tentative night's estimated and automatic",
+				key, row.Properties["quality"], row.Properties["recordingMethod"])
+		}
 	}
 	if stages != segments || !maps.Equal(summed, seconds) {
 		t.Errorf("%d stage rows summing %v, want %d segments summing %v", stages, summed, segments, seconds)
+	}
+	// Efficiency is time asleep over time in bed, where Garmin sends both.
+	nightRow := out[healthSleep+"/"+acct+"/"+sid+"/sleep"].Properties
+	asleep, err1 := parseISODuration(fmt.Sprint(nightRow["timeAsleep"]))
+	inBed, err2 := parseISODuration(fmt.Sprint(nightRow["timeInBed"]))
+	eff, _ := nightRow["efficiency"].(map[string]any)
+	wantEff := new(big.Rat).SetFrac64(int64(asleep.Seconds())*100, int64(inBed.Seconds())).FloatString(2)
+	if err1 != nil || err2 != nil || eff == nil || eff["value"] != wantEff || eff["unit"] != "%" {
+		t.Errorf("the night's efficiency is %v, want %s %% (%v asleep of %v in bed)", nightRow["efficiency"], wantEff, asleep, inBed)
 	}
 
 	// A workout, from the activity, on its device's source.
@@ -261,6 +300,23 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	if src := mustGet(t, ds, obsSource, acct+"/forerunner265"); src.Properties["class"] != "watch" ||
 		storedRefPath(src.Properties["account"]) != garminAccountType+"/"+garminAccountID {
 		t.Errorf("device source %v", src.Properties)
+	}
+
+	// What Garmin pushes without naming a device (dailies, sleeps, weigh-ins)
+	// is the Garmin Connect account's, a service rather than a watch.
+	if src := mustGet(t, ds, obsSource, acct+"/account"); src.Properties["class"] != "service" ||
+		src.Properties["name"] != "Garmin Connect" {
+		t.Errorf("account source %v, want Garmin Connect, a service", src.Properties)
+	}
+	assertCatalogueHolds(t, ds)
+
+	// Garmin's final version of the night clears the tentative marker.
+	pushGarmin(t, ds, cfg, "webhook-final", loadGarminFixture(t, "push_sleeps_2026-10-07_final.json").request)
+	adaptAll(t, ds, "sleep")
+	for key, row := range outputs(t, ds) {
+		if strings.HasPrefix(key, obsObservation+"/"+acct+"/"+sid+"/stage/") && row.Properties["quality"] != nil {
+			t.Errorf("stage %s of the final night keeps quality %v", key, row.Properties["quality"])
+		}
 	}
 
 	// A weigh-in in Garmin's grams lands in the catalogue's kilograms.
@@ -383,10 +439,10 @@ func TestHealthGarminAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
 	}
 	adaptAll(t, ds, "daily", "epoch", "sleep", "activity")
 	before := adapterOutputs(t, ds)
-	assertAdapterStamp(t, before, "healthgarmin@1")
-	upgradeAdapter(t, ds, "healthgarmin")
+	assertAdapterStamp(t, before, healthGarminAdapter)
+	next := upgradeAdapter(t, ds, healthGarminAdapter)
 	replayAdapter(t, ds, "healthgarmin-on-mirror")
-	assertAdapterRewrite(t, ds, "healthgarmin", before)
+	assertAdapterRewrite(t, ds, next, before)
 }
 
 // garminEditedRun pushes the London run and its edit in Garmin Connect (the
@@ -608,5 +664,198 @@ func TestHealthGarminCoversEveryMirrorKind(t *testing.T) {
 	}
 	if resp != len(hours) {
 		t.Errorf("%d respiration traces, want one for each of the %d hours the slices fall in", resp, len(hours))
+	}
+	assertCatalogueHolds(t, ds)
+
+	acct := "garmin/" + garminAccountID
+	// The night's HRV and skin temperature cover the sleep, the period word
+	// every adapter uses for one.
+	for _, row := range listLive(t, ds, obsObservation) {
+		metric := strings.TrimPrefix(storedRefPath(row.Properties["metric"]), garminHealthMetric)
+		if (metric == "hrv_rmssd" || metric == "skin_temperature_deviation") && row.Properties["form"] == "summary" &&
+			row.Properties["period"] != "sleep" {
+			t.Errorf("%s %s covers period %v, want sleep", metric, row.ID, row.Properties["period"])
+		}
+	}
+
+	// A blood pressure's two numbers carry each other as components, and the
+	// cuff's sourceType says how it was taken.
+	for _, bp := range loadGarminFixture(t, "push_bloodPressures.json").body["bloodPressures"] {
+		method := map[string]string{"DEVICE": "automatic", "MANUAL": "manual"}[bp["sourceType"].(string)]
+		for _, metric := range []string{"systolic_blood_pressure", "diastolic_blood_pressure"} {
+			row := mustGet(t, ds, obsObservation, acct+"/"+bp["summaryId"].(string)+"/"+metric).Properties
+			parts, _ := row["components"].([]any)
+			var named []string
+			for _, part := range parts {
+				named = append(named, strings.TrimPrefix(storedRefPath(part.(map[string]any)["metric"]), garminHealthMetric))
+			}
+			if strings.Join(named, " ") != "systolic_blood_pressure diastolic_blood_pressure" || row["recordingMethod"] != method {
+				t.Errorf("%s of %s has components %v recorded %v, want both numbers and %s", metric, bp["summaryId"], named, row["recordingMethod"], method)
+			}
+		}
+	}
+
+	// VO2 max is a level Garmin dates, never times: a gauge at the local
+	// midnight of its calendarDate, at that day's offset. With no daily for
+	// the date the offset is unknown, so the reading is written at the UTC
+	// midnight with none, and the daily's arrival moves it.
+	vo2 := acct + "/x4b2c9e1-6aa46bd0/vo2_max"
+	before := mustGet(t, ds, obsObservation, vo2)
+	if before.Properties["form"] != "gauge" || before.Properties["utcOffset"] != nil ||
+		!before.At.Equal(time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("VO2 max before its daily: %s at %v offset %v, want a gauge at 2026-09-12T00:00Z with no offset",
+			before.Properties["form"], before.At, before.Properties["utcOffset"])
+	}
+	pushGarmin(t, ds, cfg, "webhook-dailies", loadGarminFixture(t, "push_dailies.json").request)
+	for _, d := range listLive(t, ds, garminPackage+"/daily") {
+		if d.Properties["calendarDate"] == "2026-09-12" {
+			garminAdapt(t, ds, d.Kind, d.ID)
+		}
+	}
+	after := mustGet(t, ds, obsObservation, vo2)
+	if after.Properties["form"] != "gauge" || garminAsInt(t, after.Properties["utcOffset"]) != 180 ||
+		!after.At.Equal(time.Date(2026, 9, 11, 21, 0, 0, 0, time.UTC)) || quantity(after.Properties["value"]) != "49 mL/(kg.min)" {
+		t.Errorf("VO2 max after its daily: %v at %v, want 49 at the local midnight 2026-09-11T21:00Z, +180", after.Properties, after.At)
+	}
+}
+
+// TestHealthGarminWritesAnActivitysSamples: an activity's detail samples are
+// traces on the source of the device that recorded it: heart rate, speed,
+// step cadence and the distance each sample adds, which sums to Garmin's own
+// distance, so a reader builds splits and a pace curve from stored rows. A
+// ride's cadence is pedal cadence, a metric of its own. An activity naming
+// no device gets a source of its own, never the account's, so its samples
+// never land in the stream the daily's heart rate fills.
+func TestHealthGarminWritesAnActivitysSamples(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds := newHealthGarminDataset(t)
+	cfg := garminConfig(t, ds, "", map[string]any{"userId": garminUser})
+	f := loadGarminFixture(t, "push_activityDetails_21004995534.json")
+	pushGarmin(t, ds, cfg, "webhook-run", f.request)
+	// The same samples as a ride a day later, from a device Garmin did not name.
+	raw, err := json.Marshal(f.body["activityDetails"][0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ride map[string]any
+	if err := json.Unmarshal(raw, &ride); err != nil {
+		t.Fatal(err)
+	}
+	ride["summaryId"], ride["activityId"] = "21004995599-detail", 21004995599
+	summary := ride["summary"].(map[string]any)
+	summary["deviceName"], summary["activityType"] = "unknown", "ROAD_BIKING"
+	summary["startTimeInSeconds"] = summary["startTimeInSeconds"].(float64) + 86400
+	for _, s := range ride["samples"].([]any) {
+		sample := s.(map[string]any)
+		sample["startTimeInSeconds"] = sample["startTimeInSeconds"].(float64) + 86400
+		if spm, ok := sample["stepsPerMinute"]; ok {
+			sample["bikeCadenceInRPM"] = spm.(float64) / 2
+			delete(sample, "stepsPerMinute")
+		}
+	}
+	pushGarmin(t, ds, cfg, "webhook-ride", f.withBody(t, map[string]any{"activityDetails": []any{ride}}))
+	acts := loadGarminFixture(t, "push_activities.json")
+	unnamed := acts.body["activities"][0]
+	unnamed["deviceName"] = "unknown"
+	pushGarmin(t, ds, cfg, "webhook-unnamed", acts.withBody(t, map[string]any{"activities": []any{unnamed}}))
+	adaptAll(t, ds, "activitydetail", "activity")
+
+	acct := "garmin/" + garminAccountID
+	traces := map[string][]*substrate.Record{}
+	for _, row := range listLive(t, ds, obsTrace) {
+		parts := strings.Split(row.ID, "/")
+		traces[parts[2]+"/"+parts[3]] = append(traces[parts[2]+"/"+parts[3]], row)
+	}
+	// The run's distance, sample by sample, adds up to the last cumulative
+	// total Garmin sent.
+	samples := f.body["activityDetails"][0]["samples"].([]any)
+	total := fmt.Sprint(samples[len(samples)-1].(map[string]any)["totalDistanceInMeters"])
+	sum := new(big.Rat)
+	for _, row := range traces["forerunner265/distance"] {
+		if row.Properties["form"] != "amount" || row.Properties["unit"] != "m" {
+			t.Errorf("distance trace %s is %v in %v, want an amount in m", row.ID, row.Properties["form"], row.Properties["unit"])
+		}
+		for _, v := range row.Properties["values"].([]any) {
+			if v == nil {
+				continue
+			}
+			r, ok := new(big.Rat).SetString(fmt.Sprint(v))
+			if !ok {
+				t.Fatalf("distance value %v", v)
+			}
+			sum.Add(sum, r)
+		}
+	}
+	if want, _ := new(big.Rat).SetString(total); want == nil || sum.Cmp(want) != 0 {
+		t.Errorf("the run's distance traces sum to %s m, want Garmin's %s", sum.FloatString(2), total)
+	}
+	for _, key := range []string{"forerunner265/heart_rate", "forerunner265/speed", "forerunner265/cadence",
+		"unknown-device/heart_rate", "unknown-device/speed", "unknown-device/cycling_cadence", "unknown-device/distance"} {
+		if len(traces[key]) == 0 {
+			t.Errorf("no %s traces: %v", key, slices.Sorted(maps.Keys(traces)))
+		}
+	}
+	for _, key := range []string{"unknown-device/cadence", "forerunner265/cycling_cadence"} {
+		if len(traces[key]) != 0 {
+			t.Errorf("%d %s traces, want none", len(traces[key]), key)
+		}
+	}
+	for key := range traces {
+		if strings.HasPrefix(key, "account/") {
+			t.Errorf("an activity wrote %s traces on the account's source", key)
+		}
+	}
+	assertCatalogueHolds(t, ds)
+	device := mustGet(t, ds, obsSource, acct+"/unknown-device").Properties
+	if device["class"] != nil || storedRefPath(device["account"]) != garminAccountType+"/"+garminAccountID {
+		t.Errorf("the unnamed device's source is %v", device)
+	}
+	w := mustGet(t, ds, healthWorkout, acct+"/"+unnamed["summaryId"].(string)+"/workout").Properties
+	if storedRefPath(w["source"]) != obsSource+"/"+acct+"/unknown-device" {
+		t.Errorf("the unnamed device's workout is on %v", w["source"])
+	}
+}
+
+// TestHealthGarminRebuildsAnHourWhenASliceGoes: an hour's step trace is
+// built from every epoch slice in it, so deleting one slice's mirror row
+// rebuilds the hour without it, and deleting the last deletes the trace.
+func TestHealthGarminRebuildsAnHourWhenASliceGoes(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds := newHealthGarminDataset(t)
+	cfg := garminConfig(t, ds, "", map[string]any{"userId": garminUser})
+	f := loadGarminFixture(t, "push_epochs.json")
+	first := int64(f.body["epochs"][0]["startTimeInSeconds"].(float64))
+	hour := first - first%3600
+	var inHour []map[string]any
+	for _, e := range f.body["epochs"] {
+		if st := int64(e["startTimeInSeconds"].(float64)); st >= hour && st < hour+3600 {
+			inHour = append(inHour, e)
+		}
+	}
+	pushGarmin(t, ds, cfg, "webhook-1", f.withBody(t, map[string]any{"epochs": inHour}))
+	adaptAll(t, ds, "epoch")
+	id := "garmin/" + garminAccountID + "/account/steps/" + time.Unix(hour, 0).UTC().Format("2006-01-02T15")
+	rows := listLive(t, ds, garminPackage+"/epoch")
+	if len(rows) < 2 {
+		t.Fatalf("%d epoch rows in the hour, want at least two", len(rows))
+	}
+	before := len(mustGet(t, ds, obsTrace, id).Properties["origins"].([]any))
+	for i, row := range rows {
+		if _, err := ds.Delete(t.Context(), substrate.ActorAPI, row.Kind, row.ID, substrate.DeleteInput{}); err != nil {
+			t.Fatal(err)
+		}
+		garminAdapt(t, ds, row.Kind, row.ID)
+		if i == len(rows)-1 {
+			break
+		}
+		left := mustGet(t, ds, obsTrace, id).Properties
+		if n := len(left["origins"].([]any)); n != before-i-1 {
+			t.Fatalf("after deleting %d slices the hour's trace names %d origins, want %d", i+1, n, before-i-1)
+		}
+	}
+	if live(t, ds, obsTrace, id) {
+		t.Fatal("the hour's trace outlived every slice it was built from")
 	}
 }

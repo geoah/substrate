@@ -29,6 +29,12 @@ mirror row is delivered again, and each output is rewritten under the new
 version at the revision it already holds. Rows Garmin never resends are not
 reprocessed any other way.
 
+Garmin pushes no deletion, so a summary or activity deleted in Garmin
+Connect keeps its mirror row and the records built from it. Delete the
+mirror row to remove them (`bin/substratectl delete
+providers.substrate.reamde.dev/garmin/<kind> <id>`): the trigger delivers the
+delete and the adapter deletes what it built.
+
 What each Garmin field becomes, how traces are cut into hours, the ids, and
 what is skipped:
 [docs/bundles-catalog.md#garmin-to-health-sample](../../docs/bundles-catalog.md#garmin-to-health-sample).

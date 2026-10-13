@@ -316,7 +316,16 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 	}
 	samples["account/respiratory_rate"] = len(want["respiration"])
 	for _, e := range want["activitydetail"] {
-		samples["forerunner265/heart_rate"] += len(e["samples"].([]any))
+		for _, s := range e["samples"].([]any) {
+			for field, metric := range map[string]string{
+				"heartRate": "heart_rate", "speedMetersPerSecond": "speed", "stepsPerMinute": "cadence",
+				"totalDistanceInMeters": "distance",
+			} {
+				if s.(map[string]any)[field] != nil {
+					samples["forerunner265/"+metric]++
+				}
+			}
+		}
 	}
 	points := map[string]int{}
 	for _, row := range listLive(t, ds, obsTrace) {
@@ -357,10 +366,12 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 			t.Errorf("%d %s, want %d", got, kind, n)
 		}
 	}
-	for _, id := range []string{"garmin/" + garminAccountID + "/account", "garmin/" + garminAccountID + "/forerunner265"} {
+	for id, class := range map[string]string{
+		"garmin/" + garminAccountID + "/account": "service", "garmin/" + garminAccountID + "/forerunner265": "watch",
+	} {
 		src := mustGet(t, ds, healthSource, id).Properties
-		if src["manufacturer"] != "Garmin" || src["class"] != "watch" {
-			t.Errorf("source %s is %v", id, src)
+		if src["manufacturer"] != "Garmin" || src["class"] != class {
+			t.Errorf("source %s is %v, want class %s", id, src, class)
 		}
 	}
 

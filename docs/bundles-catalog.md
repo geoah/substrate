@@ -1027,6 +1027,12 @@ and a half hours) and the door refuses it past that. Ping mode avoids the
 door's cap when one push carries several large activities, because a ping
 carries only the callback URL; it does not avoid the 6 MiB skip. `garminpush`
 writes any body the door admits over several invocations of one chain.
+Garmin pushes no deletion: a summary or activity deleted in Garmin Connect
+stays mirrored, and so do the health records the
+[adapter](#garmin-to-health-sample) built from it. A re-send of a summary
+clears the fields it no longer carries. To remove one, delete its mirror row
+(`substratectl delete providers.substrate.reamde.dev/garmin/<kind> <id>`):
+the adapter's delete trigger removes what it built.
 
 ## Google Fit
 
@@ -1694,7 +1700,15 @@ the cause is fixed. A section whose toggle is off, and every delivery while
 `syncPaused` is true, is dropped unwritten. Since Last Sync misses samples the
 phone writes back-dated (a resting heart rate, another app's backfill); a
 manual Previous 7 Days export catches them up, and overlapping deliveries
-rewrite the same records. The provider's
+rewrite the same records. The app sends no deletion. A sample deleted on the
+phone drops out of a metric batch only when a later export re-sends the
+batch's surviving samples on both sides of it; one at the edge of what a
+delivery covers, a lone weigh-in, an emptied hour, and a deleted workout or
+other id-keyed record stay mirrored, and so do the health records the
+[adapter](#apple-health-to-health-sample) built from them. To remove one,
+delete its mirror row (`substratectl delete
+providers.substrate.reamde.dev/applehealth/<kind> <id>`): the adapter's
+delete trigger removes what it built. The provider's
 [README](../kinds/providers.substrate.reamde.dev/applehealth/README.md) has
 the setup as steps.
 
@@ -2081,27 +2095,30 @@ so import it after installing the provider and importing `health`.
 - **Functions (1)**: `adaptgarmin` rebuilds what one mirror row implies.
 - **Triggers (1)**: `healthgarmin-on-mirror` delivers every create, update and
   delete of the fifteen Garmin mirror kinds that carry measurements (every
-  kind but `notice`), coalescing a burst on one row.
+  kind but `notice` and `moveiq`), coalescing a burst on one row.
 
 | Garmin field | Metric | Form | Unit |
 | --- | --- | --- | --- |
 | `daily.timeOffsetHeartRateSamples` | `heart_rate` | gauge trace, hold PT4M | `/min` |
-| `daily.steps`, `distanceInMeters`, `floorsClimbed`, `activeKilocalories`, `bmrKilocalories`, `restingHeartRateInBeatsPerMinute` | `steps`, `distance`, `floors`, `active_energy`, `basal_energy`, `resting_heart_rate` | summary, `vendor`, day | `{steps}`, `m`, `{floors}`, `kcal`, `kcal`, `/min` |
-| `daily.averageStressLevel` | `garmin_stress` | summary, `avg`, day | `1` |
+| `daily.steps`, `distanceInMeters`, `floorsClimbed`, `activeKilocalories`, `bmrKilocalories` | `steps`, `distance`, `floors`, `active_energy`, `basal_energy` | summary, `sum`, day | `{steps}`, `m`, `{floors}`, `kcal`, `kcal` |
+| `daily.restingHeartRateInBeatsPerMinute` | `resting_heart_rate` | summary, `vendor`, day | `/min` |
+| `daily.averageStressLevel` | `garmin_stress` | summary, `avg`, day | `{score}` |
 | `epoch.steps`, `distanceInMeters`, `activeKilocalories`, summed per slice | `steps`, `distance`, `active_energy` | amount trace | `{steps}`, `m`, `kcal` |
-| `sleep` | a `health/sleep` (and one per nap) | | |
-| `sleep.sleepLevelsMap` segments | `sleep_stage`, coded `awake`, `light`, `deep`, `rem` | amount | `s` |
-| `bodycomp` weight, muscle, bone; fat, water; BMI | `body_mass`, `muscle_mass`, `bone_mass`; `body_fat_fraction`, `body_water_fraction`; `bmi` | gauge | `kg` (from grams); `%`; `kg/m2` |
-| `bloodpressure.systolic`, `diastolic`, `pulse` | `systolic_blood_pressure`, `diastolic_blood_pressure`, `heart_rate` | gauge | `mm[Hg]`, `/min` |
+| `sleep` | a `health/sleep` (and one per nap, `isNap` true), with `efficiency` the time asleep over the span | | |
+| `sleep.sleepLevelsMap` segments | `sleep_stage`, coded `awake`, `light`, `deep`, `rem` | amount; `quality: estimated` while `validation` is tentative; `recordingMethod` `manual` for a `MANUAL` night, else `automatic` | `min` |
+| `bodycomp` weight, muscle, bone; fat, water; BMI | `body_mass`, `muscle_mass`, `bone_mass`; `body_fat_fraction`, `body_water_fraction`; `bmi` | gauge, hold P1D | `kg` (from grams); `%`; `kg/m2` |
+| `bloodpressure.systolic`, `diastolic`, `pulse` | `systolic_blood_pressure`, `diastolic_blood_pressure`, `heart_rate` | gauge, the two pressures each with both as `components`, `recordingMethod` from `sourceType` | `mm[Hg]`, `/min` |
 | `stressdetail` stress and Body Battery values | `garmin_stress`, `garmin_body_battery` | gauge trace, hold PT6M | `{score}` |
-| `usermetric.vo2Max` | `vo2_max` | summary, `vendor`, day | `mL/(kg.min)` |
-| `pulseox.timeOffsetSpo2Values` | `spo2` | gauge trace, or one gauge for a spot check | `%` |
-| `respiration.timeOffsetEpochToBreaths` | `respiratory_rate` | gauge trace | `/min` |
-| `healthsnapshot` heart rate, respiration, stress, SpO2, RMSSD | `heart_rate`, `respiratory_rate`, `garmin_stress`, `spo2`, `hrv_rmssd` | gauge trace on channel `snapshot` | as above, `ms` |
-| `hrv.lastNightAvg`, `lastNight5MinHigh`; `hrvValues` | `hrv_rmssd` | summary `avg` and `max`, night; gauge trace | `ms` |
-| `skintemp.avgDeviationCelsius` | `skin_temperature_deviation` | summary, `avg`, night, `delta` | `K` |
+| `usermetric.vo2Max` | `vo2_max` | gauge at the local midnight of `calendarDate` | `mL/(kg.min)` |
+| `pulseox.timeOffsetSpo2Values` | `spo2` | gauge trace, or one gauge for a spot check, hold PT20M | `%` |
+| `respiration.timeOffsetEpochToBreaths` | `respiratory_rate` | gauge trace, hold PT30M | `/min` |
+| `healthsnapshot` heart rate, respiration, stress, SpO2, RMSSD | `heart_rate`, `respiratory_rate`, `garmin_stress`, `spo2`, `hrv_rmssd` | gauge trace on channel `snapshot`, each metric's hold | as above, `ms` |
+| `hrv.lastNightAvg`, `lastNight5MinHigh`; `hrvValues` | `hrv_rmssd` | summary `avg` and `max`, period `sleep`; gauge trace, hold PT10M | `ms` |
+| `skintemp.avgDeviationCelsius` | `skin_temperature_deviation` | summary, `avg`, period `sleep`, `delta` | `K` |
 | `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout`: `sport` (the `activityType` mapped onto the workout code set, `other` where it has no value, so `PADDELBALL` is `other`), `sportSource` (the `activityType`), `activeEnergy` from `activeKilocalories` | | |
-| `activitydetail.samples` heart rate, speed, cadence, power | `heart_rate`, `speed`, `cadence`, `running_power` | gauge trace | `/min`, `m/s`, `/min`, `W` |
+| `activitydetail.samples` heart rate, speed, step cadence, power | `heart_rate`, `speed`, `cadence`, `running_power` | gauge trace, each metric's hold | `/min`, `m/s`, `/min`, `W` |
+| `activitydetail.samples` pedal cadence (a ride) | `cycling_cadence` | gauge trace, hold PT10S | `/min` |
+| `activitydetail.samples.totalDistanceInMeters` | `distance` | amount trace, each sample's step from the one before, summing to the activity's distance | `m` |
 
 **Traces are an hour, from one origin.** A trace covers one metric from one
 source over one UTC hour, split where the UTC offset changes, and it never
@@ -2115,16 +2132,36 @@ amounts sum the slice's activity types. Ids are
 is `.../stage/<start second>`), hashed only where Garmin's data would leave
 the id alphabet.
 
-**Sources** are `garmin/<account id>/account`, the account's devices, for
-everything Garmin pushes without naming a device (dailies, sleeps, weigh-ins,
-pressure), and `garmin/<account id>/<deviceName>` for each device an activity
-names (`forerunner265`); a hand-entered activity is `.../manual`. Each points
-at the Garmin account and is written once, so the owner's edits to it stand.
+**Every gauge carries its metric's hold** from the health catalogue (heart
+rate PT4M, HRV PT10M, SpO2 PT20M, respiration PT30M, stress and Body
+Battery PT6M, an activity's speed, cadence and power PT10S, the body
+measurements P1D), so a night's last reading stops standing at the hold
+instead of until the next morning.
+
+**Sources** are `garmin/<account id>/account`, named `Garmin Connect` with
+class `service`, for everything Garmin pushes without naming a device
+(dailies, sleeps, a scale's weigh-ins, a cuff's pressure), and
+`garmin/<account id>/<deviceName>` for each device an activity names
+(`forerunner265`, class `watch`). An activity that names no device (or
+`unknown`) is `.../unknown-device`, so its samples never share the stream
+the daily's heart rate fills, and a hand-entered one is `.../manual`. Each
+points at the Garmin account and is written once, so the owner's edits to
+it stand.
+
+**Day totals and VO2 max.** The five day totals are `sum` summaries over the
+day, so a `from: summaries` read's `sum` answers Garmin's total and a
+`prefer-raw` read falls back to it; resting heart rate is Garmin's own figure
+and stays `vendor`. A user metric carries a date and no instant: its VO2 max
+is a gauge at the local midnight of `calendarDate`, taking the start and the
+offset of that date's daily summary. With no daily for the date it stands at
+the UTC midnight with no `utcOffset` (the index marks it offsetless), and the
+daily's delivery rebuilds it at the local one.
 
 **Reconciled per origin.** Every row written names the mirror row it came
 from (`origin`, or `origins` on a trace). A delivery reads what that row
-produced before, writes the new set and deletes what the row no longer
-implies; a deleted mirror row takes its outputs with it. `revision` is the
+produced before and hands the new set to `host.observed.reconcile`, which
+writes what changed and deletes what the row no longer implies; a deleted
+mirror row takes its outputs with it. `revision` is the
 mirror row's own version, which the garmin provider moves only when a re-send
 changes the summary: an identical re-send writes nothing, and a fuller one
 rewrites the same ids at a higher revision. A trace built from several rows
@@ -2139,10 +2176,10 @@ left unwritten: those with no catalogue metric (minimum, maximum and average
 daily heart rate, intensity and stress durations, Body Battery charge and
 drain, goals, fitness age, cycling VO2 max, MET and motion intensity, Body
 Battery events, a snapshot's SDRR), positions and elevation samples (no
-`geopoint` yet), air temperature, Garmin's `unmeasurable` sleep level, and a
-sleep's own SpO2 and respiration maps, which the Pulse Ox and respiration
-summaries already carry. Move IQ events and lifecycle notices imply no
-observation. A user metric carries a date and no instant, so its VO2 max
-covers the UTC day of `calendarDate` with no `utcOffset`.
+`geopoint` and no altitude metric yet), a ride's power (the catalogue has
+only running power), air temperature, Garmin's `unmeasurable` sleep level,
+and a sleep's own SpO2 and respiration maps, which the Pulse Ox and
+respiration summaries already carry. Move IQ events and lifecycle notices
+imply no observation. Garmin sends no sleep latency, so none is written.
 
 Next: [substratectl](substratectl.md), the command line over all of it.

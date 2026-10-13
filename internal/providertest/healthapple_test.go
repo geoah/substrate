@@ -464,10 +464,10 @@ func TestHealthAppleAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
 	deliverAt(t, ds, ahRequest(t, "delivery_1_heart_rate_steps_minutes.json"), "hook-minutes", "2026-10-08T05:31:02Z")
 	deliverAt(t, ds, ahRequest(t, "delivery_2_sleep_and_workouts.json"), "hook-night", "2026-10-08T05:20:13Z")
 	before := adapterOutputs(t, ds)
-	assertAdapterStamp(t, before, "healthapple@1")
-	upgradeAdapter(t, ds, "healthapple")
+	assertAdapterStamp(t, before, healthAppleAdapter)
+	next := upgradeAdapter(t, ds, healthAppleAdapter)
 	replayAdapter(t, ds, "healthapple-on-mirror")
-	assertAdapterRewrite(t, ds, "healthapple", before)
+	assertAdapterRewrite(t, ds, next, before)
 }
 
 // The app's day buckets are its own aggregates: summaries, never raw points,

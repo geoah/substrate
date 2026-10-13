@@ -427,10 +427,10 @@ func TestHealthGoogleFitAdapterUpgradeRewritesUnchangedMirrors(t *testing.T) {
 	ds, _, _ := newFitHealth(t, fitCutOn, "enabledActivity", "enabledBody", "enabledSleep")
 	observeAll(t, ds)
 	before := adapterOutputs(t, ds)
-	assertAdapterStamp(t, before, "healthgooglefit@1")
-	upgradeAdapter(t, ds, "healthgooglefit")
+	assertAdapterStamp(t, before, healthGoogleFitAdapter)
+	next := upgradeAdapter(t, ds, healthGoogleFitAdapter)
 	replayAdapter(t, ds, "healthgooglefit-on-mirror")
-	assertAdapterRewrite(t, ds, "healthgooglefit", before)
+	assertAdapterRewrite(t, ds, next, before)
 }
 
 // TestHealthGoogleFitKeepsAnAmountsEnd: a step delta covers
