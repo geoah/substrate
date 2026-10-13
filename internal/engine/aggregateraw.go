@@ -129,8 +129,8 @@ func (r *aggRun) rawStreams(streams []*aggStream, form string) ([]*rawStream, er
 
 // resolvePriority applies the priority policy over the range, before any
 // bucket: a gauge's held intervals by observed.Prioritize, a lower stream's
-// point inside a higher one's hold dropped; another form's point dropped
-// where it overlaps a higher stream's point.
+// point inside a higher one's hold, or at a higher one's instant, dropped;
+// another form's point dropped where it overlaps a higher stream's point.
 func (r *aggRun) resolvePriority(list []*rawStream, form string) error {
 	if form != vocabulary.FormGauge {
 		var higher [][2]time.Time
@@ -191,6 +191,13 @@ func (r *aggRun) resolvePriority(list []*rawStream, form string) error {
 				return err
 			}
 			higher = append(higher, [2]time.Time{sp.Start, sp.End})
+		}
+		// A reading held for no time (hold PT0S, a blood pressure) has no
+		// span, so its own instant covers a lower source's reading there.
+		for _, ap := range kept {
+			if !ap.Unavailable {
+				higher = append(higher, [2]time.Time{ap.At, ap.At.Add(time.Nanosecond)})
+			}
 		}
 		st.spans = resolved[i]
 	}

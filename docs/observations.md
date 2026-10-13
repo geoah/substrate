@@ -405,6 +405,10 @@ value and a blood pressure, which are points. A gauge value written without
 a hold stands until the next value of its stream, often a day later, and the
 coverage, the time-weighted mean and the priority policy all read it as
 still standing ([decision 0158](decisions/0158-a-gauge-carries-a-hold-a-null-ends-it-and-its-mean-is-time-weighted.md)).
+A `PT0S` value holds no time, so under `priority` it covers only its own
+instant: a blood pressure two apps deliver at one instant is the higher
+source's alone, and one stamped seconds apart is kept twice
+([G-31](plans/observations/requirements.md#g-31-one-device-under-several-sources)).
 
 ## The adapters
 

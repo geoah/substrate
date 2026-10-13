@@ -1476,7 +1476,9 @@ reads that take it.
   does: a record path, or a bare id completed exactly, so an entry no stream
   holds ranks nothing) per stored interval before any bucket is cut: the first
   source holds where it has a value, the next fills what it does not cover,
-  and a lower source's point inside a higher source's hold is dropped. An amount
+  and a lower source's point inside a higher source's hold, or at the instant
+  of a higher source's point (a `PT0S` reading, such as a blood pressure two
+  apps deliver), is dropped. An amount
   or a summary of a lower source is dropped whole where it overlaps a higher
   source's. A total therefore does not depend on the bucket width. Two
   counters are refused under `priority`.

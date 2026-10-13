@@ -259,3 +259,50 @@ func TestAggregateSourcesListNoPathForAStreamWithNoSource(t *testing.T) {
 		}
 	}
 }
+
+// A gauge held for no time (hold PT0S, as the catalogue's blood pressures
+// are) has no held interval, so priority keeps one reading per instant by
+// the instant itself: a cuff read by two apps at one instant is one reading,
+// the higher source's. A reading seconds apart is another instant and stays.
+func TestAggregatePriorityDropsALowerReadingAtTheSameInstant(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	at := time.Date(2026, 9, 27, 5, 51, 0, 0, time.UTC)
+	pressure := func(id, source, value string, at time.Time) {
+		f.mustPut(t, f.observation, id, map[string]any{
+			"metric": f.metricRef("health/systolic_blood_pressure"), "source": f.sourceRef(source), "form": "gauge",
+			"value": quantity(value, "mm[Hg]"), "at": at.Format(time.RFC3339), "hold": "PT0S", "utcOffset": 0,
+		})
+	}
+	pressure("bp/garmin", "garmin", "118", at)
+	pressure("bp/fit", "fit", "121", at)
+	pressure("bp/apple", "apple", "119", at.Add(30*time.Second))
+	read := func(order ...string) substrate.AggregateRow {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/systolic_blood_pressure")},
+			Range:    rng(at.Add(-time.Hour), at.Add(time.Hour)),
+			Reducers: reducers("count", "min", "max"),
+			Sources:  &substrate.AggregateSources{Policy: "priority", Order: order},
+		})
+		if len(res.Rows) != 1 {
+			t.Fatalf("priority %v: %d rows, want one", order, len(res.Rows))
+		}
+		return res.Rows[0]
+	}
+	for _, x := range []struct {
+		order               []string
+		count, lo, hi, from string
+	}{
+		{[]string{"garmin", "fit"}, "2", "118", "119", "garmin"},
+		{[]string{"fit", "garmin"}, "2", "119", "121", "fit"},
+		{[]string{"apple", "fit", "garmin"}, "2", "119", "121", "fit"},
+	} {
+		row := read(x.order...)
+		count, _ := val(row, "count")
+		lo, _ := val(row, "min")
+		hi, _ := val(row, "max")
+		if count != x.count || lo != x.lo || hi != x.hi || !slices.Contains(row.Sources, f.sourcePath(x.from)) || len(row.Sources) != 2 {
+			t.Errorf("priority %v: count %s, min %s, max %s, sources %v; want %s, %s, %s from %s", x.order, count, lo, hi, row.Sources, x.count, x.lo, x.hi, x.from)
+		}
+	}
+}
