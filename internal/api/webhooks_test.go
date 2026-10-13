@@ -272,6 +272,53 @@ func TestWebhookTrickledBodyGivesUpItsSlot(t *testing.T) {
 	}
 }
 
+// A multipart request is held to four times the inline cap, so its body
+// gets four times the inline read deadline: one sending rate carries either
+// bound in time. A body whose second half arrives two deadlines after its
+// headers is answered 408 when it is JSON and 202 when it is multipart.
+func TestWebhookMultipartBodyGetsItsBoundsShareOfTime(t *testing.T) {
+	defer func(d time.Duration) { webhookReadTimeout = d }(webhookReadTimeout)
+	webhookReadTimeout = time.Second
+	_, h := webhookHandler("hook-slow", nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	var form bytes.Buffer
+	mw := multipart.NewWriter(&form)
+	_ = mw.WriteField("transcription", strings.Repeat("buy milk ", 64))
+	_ = mw.Close()
+	slow := func(contentType string, body []byte, finish bool) string {
+		t.Helper()
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = c.Close() }()
+		half := len(body) / 2
+		if _, err := fmt.Fprintf(c, "POST /webhooks/geoah.example.com/t HTTP/1.1\r\nHost: example.com\r\n"+
+			"Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", contentType, len(body), body[:half]); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * webhookReadTimeout)
+		if finish {
+			if _, err := c.Write(body[half:]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		line, err := bufio.NewReader(c).ReadString('\n')
+		if err != nil {
+			t.Fatalf("%s: read the answer: %v", contentType, err)
+		}
+		return line
+	}
+	if line := slow("application/json", []byte(`{"transcription":"buy milk"}`), false); !strings.HasPrefix(line, "HTTP/1.1 408") {
+		t.Fatalf("a JSON body past its deadline was answered %q, want 408", line)
+	}
+	if line := slow(mw.FormDataContentType(), form.Bytes(), true); !strings.HasPrefix(line, "HTTP/1.1 202") {
+		t.Fatalf("a multipart body inside four deadlines was answered %q, want 202", line)
+	}
+}
+
 // multipart/form-data is decomposed here: text fields inline, a part with a
 // filename or a non-text media type as bytes for the blob store, in order.
 func TestWebhookMultipartParts(t *testing.T) {
