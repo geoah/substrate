@@ -79,7 +79,8 @@ func liveKeys(t *testing.T) (string, string) {
 // chainMeter is internal/llm's live meter on the engine's side of the
 // package boundary: it charges the ledger before every completion and records
 // the usage after, so a refused completion never reaches the wire. It counts
-// completions; the retries the Anthropic SDK makes inside one happen below it.
+// completions; the retries the anthropic adapter makes inside one happen
+// below it.
 type chainMeter struct {
 	wire   string
 	ledger *livespend.Ledger

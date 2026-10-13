@@ -51,3 +51,52 @@ func TestScrubWithNoKeyStillCatchesTheMaskedForm(t *testing.T) {
 		t.Fatalf("the masked pass missed a starred token: %v", got)
 	}
 }
+
+// A quote cut short must not keep part of what Scrub removes: Scrub matches
+// only the whole key and the whole starred token, so a fragment left at the
+// cut would reach the sink. Every cut position across each shape is tried.
+func TestTruncateNeverSplitsWhatScrubRemoves(t *testing.T) {
+	t.Parallel()
+	const key = "sk-proj-notarealkey000000000000000000000000000cdef"
+	for name, quoted := range map[string]string{
+		"quoted whole":         key,
+		"quoted inside a JSON": `{"key":"` + key + `"}`,
+		"self-masked":          key[:8] + strings.Repeat("*", 32) + key[len(key)-4:],
+	} {
+		body := "Incorrect API key provided: " + quoted + " and then some more words"
+		start := strings.Index(body, quoted)
+		for limit := start; limit <= start+len(quoted); limit++ {
+			cut := Truncate(key, []byte(body), limit)
+			if len(cut) > limit {
+				t.Fatalf("%s at %d: %d bytes kept", name, limit, len(cut))
+			}
+			got := Scrub(key, string(cut))
+			if strings.Contains(got, "sk-") || strings.Contains(got, "cdef") {
+				t.Fatalf("%s at %d: a fragment of the key survived: %q", name, limit, got)
+			}
+			if !strings.HasPrefix(got, "Incorrect API key provided: ") {
+				t.Fatalf("%s at %d: the words before the key were dropped: %q", name, limit, got)
+			}
+		}
+	}
+}
+
+func TestTruncateCuts(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		key, s string
+		limit  int
+		want   string
+	}{
+		"short enough":             {"", "aaa bbb", 7, "aaa bbb"},
+		"a cut at a space":         {"", "aaa bbb ccc", 7, "aaa bbb"},
+		"a cut inside a token":     {"", "aaa bbb ccc", 6, "aaa "},
+		"no whitespace at all":     {"", "aaaaaaaaaa", 4, ""},
+		"a key holding whitespace": {"sk-a b", "x sk-a b y", 7, "x "},
+		"overlapping keys":         {"a a", "x a a a y", 6, "x "},
+	} {
+		if got := string(Truncate(tc.key, []byte(tc.s), tc.limit)); got != tc.want {
+			t.Errorf("%s: Truncate(%q, %q, %d) = %q, want %q", name, tc.key, tc.s, tc.limit, got, tc.want)
+		}
+	}
+}
