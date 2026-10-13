@@ -223,6 +223,12 @@ describe("the timeline's requests", () => {
     expect(within(weight).getByText("72.6 kg")).toBeTruthy()
     expect(within(steps).getAllByRole("row")).toHaveLength(4)
     expect(within(steps).getByText("9812 steps")).toBeTruthy()
+    // A shared day's offsets are the day's across both metrics, and the
+    // column says so.
+    const head = within(weight).getByRole("columnheader", {
+      name: "Day’s UTC offset",
+    })
+    expect(head.getAttribute("title")).toContain("across Weight and Steps")
     // With Technical details on, the one request, named for both.
     const requests = chart.querySelectorAll("[data-slot=lane-request]")
     expect(requests).toHaveLength(1)

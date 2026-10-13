@@ -124,6 +124,9 @@ interface PlotState {
   /** An earlier read's answer drawn while this one loads: what it lacks or
    * drops says nothing of this read. */
   held: boolean
+  /** The other metrics its request reads: a recorded-local row's offsets
+   * are then the day's across all of them, not this metric's own. */
+  together: string[]
 }
 
 /** One request a chart makes, the metrics it is drawn for, and where it
@@ -277,6 +280,7 @@ export function OverlayChart({
       failed: false,
       stale: false,
       held: false,
+      together: [],
     }
     if (!plot.read) return { ...blank, pending: false }
     const source = sourceOf(plot)
@@ -288,8 +292,12 @@ export function OverlayChart({
       : undefined
     // An answer held for the request's other metrics holds none of this.
     const pending = query.isPending || (query.isPlaceholderData && !answer)
+    const own = plot.read.aggregate.metric?.ref
     return {
       plot,
+      together: (read.aggregate.metrics ?? [])
+        .filter((m) => m.ref !== own)
+        .map((m) => obs.metricName(m.ref)),
       rows: plotRows(plot, answer?.rows ?? []),
       pending,
       failed: query.isError,
@@ -332,6 +340,7 @@ export function OverlayChart({
     !state.held &&
     state.rows.length === 0
 
+  const stateOf = (plot: Plot) => states.find((st) => st.plot === plot)
   const all = drawnSeries(states, buckets, sideOf, labelOf, local?.size)
   const shown = all.filter((d) => !hidden.has(d.key))
   // A level's band is drawn where its metric shows one line: under several,
@@ -407,6 +416,7 @@ export function OverlayChart({
           {row ? (
             <SeriesDetail
               plot={only.plot}
+              dayOffsets={Boolean(stateOf(only.plot)?.together.length)}
               row={row}
               valueText={valueText}
               sourceText={sourceText}
@@ -438,7 +448,12 @@ export function OverlayChart({
       <>
         {head}
         {offsets.length > 0 && (
-          <p className="text-faint">UTC offset {offsets.join("; ")}</p>
+          <p className="text-faint">
+            {byPlot.some(({ plot }) => stateOf(plot)?.together.length)
+              ? "Day’s UTC offset"
+              : "UTC offset"}{" "}
+            {offsets.join("; ")}
+          </p>
         )}
         {byPlot.length === 0 && (
           <p className="mt-1 text-muted-foreground">Nothing measured.</p>
@@ -551,7 +566,7 @@ export function OverlayChart({
           />
         </div>
       )}
-      {states.map(({ plot, rows }) =>
+      {states.map(({ plot, rows, together }) =>
         rows.length > 0 ? (
           <RollupTable
             key={plot.metric}
@@ -564,6 +579,9 @@ export function OverlayChart({
             caption={drawn.length > 1 ? plot.name : undefined}
             precision={plot.precision}
             local={Boolean(plot.local)}
+            offsetsAcross={
+              together.length ? listWords([plot.name, ...together]) : undefined
+            }
             fallbackZone={plot.read?.aggregate.bucket?.fallbackTimezone}
           />
         ) : null
@@ -913,11 +931,15 @@ function Swatch({ mark, color }: { mark: ChartMark; color: string }) {
  * points, the covered time, the sources and where the row came from. */
 function SeriesDetail({
   plot,
+  dayOffsets,
   row,
   valueText,
   sourceText,
 }: {
   plot: Plot
+  /** The row's offsets are the day's across the metrics its request
+   * reads, not this metric's own. */
+  dayOffsets: boolean
   row: AggregateRow
   valueText: (plot: Plot, row: AggregateRow, key: string) => string
   sourceText: (id: string) => string
@@ -939,7 +961,10 @@ function SeriesDetail({
         ))}
         <TipLine label="Points" value={row.count.toLocaleString("en")} />
         {plot.local && (
-          <TipLine label="UTC offset" value={offsetWords(row.start, row.end)} />
+          <TipLine
+            label={dayOffsets ? "Day’s UTC offset" : "UTC offset"}
+            value={offsetWords(row.start, row.end)}
+          />
         )}
         {row.offsetless ? (
           <TipLine

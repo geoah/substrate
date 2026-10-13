@@ -70,6 +70,7 @@ export function RollupTable({
   caption,
   precision,
   local = false,
+  offsetsAcross,
   fallbackZone,
 }: {
   rows: readonly AggregateRow[]
@@ -87,6 +88,10 @@ export function RollupTable({
   precision?: number
   /** The rows are recorded-local days, weeks or months. */
   local?: boolean
+  /** The metrics the rows' request reads together, in words: a row's
+   * offsets are then those of the day's first and last value across them,
+   * not this metric's own. */
+  offsetsAcross?: string
   /** The zone that placed a point written without a UTC offset. */
   fallbackZone?: string
 }) {
@@ -129,7 +134,17 @@ export function RollupTable({
             <thead className="sticky top-0 bg-background">
               <tr className="[&>th]:h-[34px] [&>th]:border-b [&>th]:border-border [&>th]:px-2.5 [&>th]:text-left [&>th]:text-[12.5px] [&>th]:font-medium [&>th]:whitespace-nowrap [&>th]:text-faint">
                 <th scope="col">When</th>
-                {local && <th scope="col">UTC offset</th>}
+                {local &&
+                  (offsetsAcross ? (
+                    <th
+                      scope="col"
+                      title={`The UTC offsets of the day’s first and last value across ${offsetsAcross}, read together`}
+                    >
+                      Day’s UTC offset
+                    </th>
+                  ) : (
+                    <th scope="col">UTC offset</th>
+                  ))}
                 {groupKey && <th scope="col">{GROUP_WORDS[groupKey]}</th>}
                 {channels && <th scope="col">Channel</th>}
                 {reducers.map((r) => (
