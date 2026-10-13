@@ -174,7 +174,7 @@ func TestQuantityNarrows(t *testing.T) {
 // strands exactly when the candidate declaration's next write would refuse it.
 func TestQuantityStrandsIsTheWritePath(t *testing.T) {
 	cand := quantityProperty(&vocabulary.QuantitySpec{Measure: "mass", Units: []string{"kg"}})
-	strands := quantityStrands([]fieldStep{{key: "weight"}}, cand, cand)
+	strands := quantityRefuses([]fieldStep{{key: "weight"}}, cand)
 	for raw, want := range map[string]bool{
 		`{"value": "70", "unit": "kg"}`:                    false,
 		`{"value": "154", "unit": "[lb_av]"}`:              true,
@@ -185,25 +185,35 @@ func TestQuantityStrandsIsTheWritePath(t *testing.T) {
 			t.Fatalf("strands(%s) = %v, want %v", raw, got, want)
 		}
 	}
-	list := quantityStrands([]fieldStep{{key: "history", repeated: true}}, cand, cand)
+	list := quantityRefuses([]fieldStep{{key: "history", repeated: true}}, cand)
 	if !list([]byte(`[{"value": "1", "unit": "kg"}, {"value": "1", "unit": "g"}]`)) {
 		t.Fatal("a list holding one refused value does not strand")
 	}
-	// A value the candidate admits strands where it reads in another measure:
-	// a difference in Cel would become an absolute temperature.
+	// A value the candidate admits is reread where it reads in another
+	// measure: a difference in Cel would become an absolute temperature. The
+	// candidate refuses nothing here, so the two counts never share a row.
 	difference := quantityProperty(&vocabulary.QuantitySpec{Measure: "temperature-difference"})
-	reread := quantityStrands([]fieldStep{{key: "weight"}}, difference, quantityProperty(nil))
+	reread := quantityRereads([]fieldStep{{key: "weight"}}, difference, quantityProperty(nil))
+	refused := quantityRefuses([]fieldStep{{key: "weight"}}, quantityProperty(nil))
 	for raw, want := range map[string]bool{
 		`{"value": "0.3", "unit": "Cel"}`: true,
 		`{"value": "0.3", "unit": "K"}`:   true,
 	} {
 		if got := reread([]byte(raw)); got != want {
-			t.Fatalf("dropping temperature-difference: strands(%s) = %v, want %v", raw, got, want)
+			t.Fatalf("dropping temperature-difference: rereads(%s) = %v, want %v", raw, got, want)
+		}
+		if refused([]byte(raw)) {
+			t.Fatalf("dropping temperature-difference: %s is refused, want it admitted and reread", raw)
 		}
 	}
-	mass := quantityStrands([]fieldStep{{key: "weight"}}, quantityProperty(&vocabulary.QuantitySpec{Measure: "mass"}), quantityProperty(nil))
+	mass := quantityRereads([]fieldStep{{key: "weight"}}, quantityProperty(&vocabulary.QuantitySpec{Measure: "mass"}), quantityProperty(nil))
 	if mass([]byte(`{"value": "70", "unit": "kg"}`)) {
-		t.Fatal("dropping mass strands a kg that reads as mass either way")
+		t.Fatal("dropping mass rereads a kg that reads as mass either way")
+	}
+	// A value the candidate refuses is the refusal's to count, not the
+	// reread's.
+	if quantityRereads([]fieldStep{{key: "weight"}}, quantityProperty(&vocabulary.QuantitySpec{Measure: "power"}), quantityProperty(nil))([]byte(`{"value": "5", "unit": "J/s"}`)) {
+		t.Fatal("dropping power rereads a J/s the candidate refuses as ambiguous")
 	}
 }
 

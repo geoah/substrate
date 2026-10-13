@@ -754,40 +754,64 @@ func quantityNarrows(cur, cand *vocabulary.QuantitySpec) bool {
 	return false
 }
 
-// quantityStrands judges one stored root value for a quantity narrowing: true
+// quantityRefuses judges one stored root value for a quantity narrowing: true
 // when a quantity under the declared path is one the candidate declaration's
-// write coercion refuses, so the count and the next write cannot disagree, or
-// one whose unit the candidate reads in another measure than the current
-// declaration does, so a stored difference is never silently reread.
-func quantityStrands(path []fieldStep, cur, cand *vocabulary.Property) func([]byte) bool {
-	measure := func(p *vocabulary.Property) string {
-		if p == nil || p.Quantity == nil {
-			return ""
+// write coercion refuses, so the count and the next write cannot disagree.
+func quantityRefuses(path []fieldStep, cand *vocabulary.Property) func([]byte) bool {
+	return quantityLeaves(path, func(leaf map[string]any) bool {
+		_, err := coerceQuantity(cand, leaf)
+		return err != nil
+	})
+}
+
+// quantityRereads judges one stored root value for a measure change: true
+// when a quantity the candidate admits has a unit the candidate reads in
+// another measure than the current declaration does, so a stored difference
+// is never silently reread as an absolute temperature. A value the candidate
+// refuses is quantityRefuses' to count.
+func quantityRereads(path []fieldStep, cur, cand *vocabulary.Property) func([]byte) bool {
+	return quantityLeaves(path, func(leaf map[string]any) bool {
+		coerced, err := coerceQuantity(cand, leaf)
+		if err != nil {
+			return false
 		}
-		return p.Quantity.Measure
-	}
+		unit, _ := coerced.(map[string]any)[vocabulary.QuantityUnit].(string)
+		was, errWas := vocabulary.ResolveMeasure(unit, specMeasure(cur.Quantity))
+		now, _ := vocabulary.ResolveMeasure(unit, specMeasure(cand.Quantity))
+		return errWas == nil && was.Name != now.Name
+	})
+}
+
+// quantityLeaves is true when judge holds for any quantity-shaped value under
+// the declared path of one stored root value.
+func quantityLeaves(path []fieldStep, judge func(map[string]any) bool) func([]byte) bool {
 	return func(raw []byte) bool {
 		var root any
 		if err := json.Unmarshal(raw, &root); err != nil {
 			return false
 		}
 		for _, leaf := range leavesAtPath(root, path) {
-			if _, ok := leaf.(map[string]any); !ok {
-				continue
-			}
-			coerced, err := coerceQuantity(cand, leaf)
-			if err != nil {
-				return true
-			}
-			unit, _ := coerced.(map[string]any)[vocabulary.QuantityUnit].(string)
-			was, errWas := vocabulary.ResolveMeasure(unit, measure(cur))
-			now, _ := vocabulary.ResolveMeasure(unit, measure(cand))
-			if errWas == nil && was.Name != now.Name {
+			if m, ok := leaf.(map[string]any); ok && judge(m) {
 				return true
 			}
 		}
 		return false
 	}
+}
+
+// quantityMeasureChanges reports whether the candidate names another measure
+// than the current declaration, a dropped one included: the one change that
+// may reread a value it still admits.
+func quantityMeasureChanges(cur, cand *vocabulary.QuantitySpec) bool {
+	return specMeasure(cur) != specMeasure(cand)
+}
+
+// specMeasure is the measure a quantity declaration names, or "".
+func specMeasure(s *vocabulary.QuantitySpec) string {
+	if s == nil {
+		return ""
+	}
+	return s.Measure
 }
 
 // quantityChange names what a narrowing quantity declaration changed, for the

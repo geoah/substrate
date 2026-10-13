@@ -1208,13 +1208,23 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 	// write coercion itself, row by row in Go: a unit's measure is the unit
 	// grammar's to answer, which SQL cannot parse.
 	if candP.Datatype == vocabulary.DatatypeQuantity && quantityNarrows(curP.Quantity, candP.Quantity) {
+		change := quantityChange(curP.Quantity, candP.Quantity)
 		out = append(out, narrowing{
 			format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it refuses; rewrite them first",
-				ident, subject, quantityChange(curP.Quantity, candP.Quantity)),
+				ident, subject, change),
 			query:   propValuesQuery,
 			args:    []any{ident, path[0].key},
-			strands: quantityStrands(path, curP, candP),
+			strands: quantityRefuses(path, candP),
 		})
+		if quantityMeasureChanges(curP.Quantity, candP.Quantity) {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: %s declares %s while %%d live records hold a value it reads in another measure; rewrite them first",
+					ident, subject, change),
+				query:   propValuesQuery,
+				args:    []any{ident, path[0].key},
+				strands: quantityRereads(path, curP, candP),
+			})
+		}
 	}
 	return out
 }
@@ -1252,12 +1262,21 @@ func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabular
 		})
 	}
 	if candL.Datatype == vocabulary.DatatypeQuantity && quantityNarrows(curL.Quantity, candL.Quantity) {
+		change, path := quantityChange(curL.Quantity, candL.Quantity), []fieldStep{{key: lname}}
 		out = append(out, narrowing{
 			format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it refuses; rewrite them first",
-				ident, pname, lname, quantityChange(curL.Quantity, candL.Quantity)),
+				ident, pname, lname, change),
 			query: linkPropValuesQuery, args: []any{ident, pname, lname},
-			strands: quantityStrands([]fieldStep{{key: lname}}, curL, candL),
+			strands: quantityRefuses(path, candL),
 		})
+		if quantityMeasureChanges(curL.Quantity, candL.Quantity) {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it reads in another measure; rewrite them first",
+					ident, pname, lname, change),
+				query: linkPropValuesQuery, args: []any{ident, pname, lname},
+				strands: quantityRereads(path, curL, candL),
+			})
+		}
 	}
 	return out
 }

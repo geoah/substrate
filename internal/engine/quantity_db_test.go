@@ -672,7 +672,7 @@ func TestDroppingAQuantityMeasureIsANarrowing(t *testing.T) {
 		},
 		"a difference read as a temperature": {
 			map[string]any{"drift": map[string]any{"type": "quantity"}, "output": declared["output"]},
-			"declares no measures while 1 live records hold a value it refuses",
+			"declares no measures while 1 live records hold a value it reads in another measure",
 		},
 	} {
 		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(tc.override)})

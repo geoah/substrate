@@ -403,7 +403,8 @@ once. The narrowing diffs that refuse:
   `max:`, or turning `comparator:` off, while records hold a value the new
   declaration refuses or reads in another measure (a `Cel` stored under
   `temperature-difference` would read as an absolute temperature without
-  it). The count runs the write path's own quantity check over each stored
+  it). The refusal counts the two cases apart and names each. The count runs
+  the write path's own quantity check over each stored
   value in Go, because whether a unit belongs to a measure is the unit
   grammar's question, which SQL cannot ask. Dropping `units:`, or turning
   `comparator:` on, only widens and admits
