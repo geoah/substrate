@@ -846,3 +846,71 @@ func TestHealthGarminRebuildsAnHourWhenASliceGoes(t *testing.T) {
 		t.Fatal("the hour's trace outlived every slice it was built from")
 	}
 }
+
+// TestHealthGarminKeepsAnHoursRevisionWhenASliceArrivesAfterADelete: an
+// hour's trace keeps the revision of a slice Garmin re-sent after that slice
+// is deleted, and a new slice in the hour is delivered without the trace
+// holding it. Its delivery reads the trace by id and writes it at the stored
+// revision; written at the remaining slices' lower one, the write path would
+// refuse it and the delivery would park.
+func TestHealthGarminKeepsAnHoursRevisionWhenASliceArrivesAfterADelete(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds := newHealthGarminDataset(t)
+	cfg := garminConfig(t, ds, "", map[string]any{"userId": garminUser})
+	f := loadGarminFixture(t, "push_epochs.json")
+	first := int64(f.body["epochs"][0]["startTimeInSeconds"].(float64))
+	hour := first - first%3600
+	var inHour []map[string]any
+	for _, e := range f.body["epochs"] {
+		if st := int64(e["startTimeInSeconds"].(float64)); st >= hour && st < hour+3600 {
+			inHour = append(inHour, e)
+		}
+	}
+	if len(inHour) < 3 {
+		t.Fatalf("%d slices in the first hour, want at least three", len(inHour))
+	}
+	late := inHour[len(inHour)-1]
+	pushGarmin(t, ds, cfg, "webhook-1", f.withBody(t, map[string]any{"epochs": inHour[:len(inHour)-1]}))
+	adaptAll(t, ds, "epoch")
+	slice := func(summaryID any) *substrate.Record {
+		for _, row := range listLive(t, ds, garminPackage+"/epoch") {
+			if row.Properties["summaryId"] == summaryID {
+				return row
+			}
+		}
+		t.Fatalf("no epoch row for %v", summaryID)
+		return nil
+	}
+	id := "garmin/" + garminAccountID + "/account/steps/" + time.Unix(hour, 0).UTC().Format("2006-01-02T15")
+
+	resent := maps.Clone(inHour[0])
+	resent["steps"] = 999
+	pushGarmin(t, ds, cfg, "webhook-2", f.withBody(t, map[string]any{"epochs": []map[string]any{resent}}))
+	raised := slice(resent["summaryId"])
+	if raised.Version < 2 {
+		t.Fatalf("the re-sent slice is at version %d, want it raised", raised.Version)
+	}
+	garminAdapt(t, ds, raised.Kind, raised.ID)
+	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, raised.Kind, raised.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	garminAdapt(t, ds, raised.Kind, raised.ID)
+	if rev := garminAsInt(t, mustGet(t, ds, obsTrace, id).Properties["revision"]); rev != raised.Version {
+		t.Fatalf("after the delete the hour's trace is at revision %d, want the deleted slice's %d", rev, raised.Version)
+	}
+
+	pushGarmin(t, ds, cfg, "webhook-3", f.withBody(t, map[string]any{"epochs": []map[string]any{late}}))
+	arrived := slice(late["summaryId"])
+	if arrived.Version >= raised.Version {
+		t.Fatalf("the new slice is at version %d, want it below %d", arrived.Version, raised.Version)
+	}
+	garminAdapt(t, ds, arrived.Kind, arrived.ID)
+	tr := mustGet(t, ds, obsTrace, id).Properties
+	if rev := garminAsInt(t, tr["revision"]); rev != raised.Version {
+		t.Fatalf("the hour's trace is at revision %d, want the stored %d kept", rev, raised.Version)
+	}
+	if origins, _ := tr["origins"].([]any); len(origins) != len(inHour)-1 {
+		t.Fatalf("the hour's trace names %d origins, want the %d live slices", len(origins), len(inHour)-1)
+	}
+}

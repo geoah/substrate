@@ -849,7 +849,10 @@ where one delivery answers for several); `outputs` maps `(kind, id)` to the
 properties the row implies now; `owned` maps each output kind to every
 property the body sets on it. It reads the stored records of those kinds
 whose `origin` or `origins` names the path, page by page (another
-reference, such as `derivedFrom`, does not count), and then:
+reference, such as `derivedFrom`, does not count). It then reads by id each
+output that read did not find, 500 ids to a call against the read budget,
+because another origin may hold it: an hour's trace built from several rows
+names all of them. Then it:
 
 - writes each output in one put naming every owned property, `None` for
   one the row no longer implies, which the put clears;
@@ -859,7 +862,8 @@ reference, such as `derivedFrom`, does not count), and then:
   because the write path refuses a falling revision and a delivery that
   reads its rows as they stand computes a lower one only when a row it was
   built from went away;
-- deletes every stored output `outputs` does not name.
+- deletes every output the origin's read holds that `outputs` does not
+  name, and never one only the read by id found.
 
 It answers `{"written": n, "unchanged": n, "deleted": n}`, stamps `adapter`
 on every output where given, and takes `stored=` where the body has

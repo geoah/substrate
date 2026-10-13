@@ -512,7 +512,10 @@ print(json.dumps({
 // a changed one whole (every owned property named, None where the origin no
 // longer implies it) at the higher of the given and the stored revision,
 // deletes what the origin no longer implies, and leaves a record that only
-// points at the origin some other way, or names another origin, alone.
+// points at the origin some other way, or names another origin, alone. An
+// output the origin's read does not hold is read by id: one another origin
+// holds at a higher revision (an hour's trace a deleted slice raised) keeps
+// that revision, which the write path would otherwise refuse.
 func TestObservedReconcileWritesWhatAnOriginImplies(t *testing.T) {
 	var out struct {
 		Counts  map[string]int   `json:"counts"`
@@ -539,26 +542,38 @@ pages = [
             derivedFrom=[{"ref": ORIGIN}], value="4"),
     ]},
 ]
+by_id = [
+    rec("shared", origins=[{"ref": "providers.example.com/garmin/epoch/ada/e2"}], value="6", revision=12),
+    {"kind": "ada.example.com/health/sleep", "id": "new", "properties": {"revision": 99}},
+]
 class Fake:
     def __init__(self):
         self.effects = host.Effects()
         self.queries = []
     def list(self, **query):
         self.queries.append(query)
+        if "ids" in query["filter"]:
+            return {"records": [r for r in by_id if r["id"] in query["filter"]["ids"]]}
         return pages[int(query.get("after") or 0)]
 fake = Fake()
 counts = host.Observed(fake).reconcile(ORIGIN, {
     (OBS, "same"): {"origin": {"ref": ORIGIN}, "value": "1", "note": "kept", "revision": 8},
     (OBS, "changed"): {"origin": {"ref": ORIGIN}, "value": "2", "revision": 8},
     (OBS, "new"): {"origin": {"ref": ORIGIN}, "value": "5", "revision": 8},
+    (OBS, "shared"): {"origin": {"ref": ORIGIN}, "value": "6", "revision": 8},
 }, owned={OBS: ("origin", "value", "note", "revision")}, adapter="a@1")
 print(json.dumps({"counts": counts, "effects": [e for e in fake.effects._staged], "queries": fake.queries}))
 `, &out)
-	if want := map[string]int{"written": 2, "unchanged": 1, "deleted": 1}; !equalJSON(out.Counts, want) {
+	if want := map[string]int{"written": 3, "unchanged": 1, "deleted": 1}; !equalJSON(out.Counts, want) {
 		t.Errorf("counts %v, want %v", out.Counts, want)
 	}
-	if len(out.Queries) != 2 || out.Queries[1]["after"] != "1" {
-		t.Errorf("queries %v, want two pages", out.Queries)
+	if len(out.Queries) != 3 || out.Queries[1]["after"] != "1" {
+		t.Fatalf("queries %v, want two pages and one read by id", out.Queries)
+	}
+	if byID := out.Queries[2]["filter"]; !equalJSON(byID, map[string]any{
+		"kinds": []any{"ada.example.com/observations/observation"}, "ids": []any{"new", "shared"},
+	}) {
+		t.Errorf("the read by id = %v, want the two outputs the origin's read did not hold", byID)
 	}
 	want := []map[string]any{
 		{"action": "put", "kind": "ada.example.com/observations/observation", "id": "changed", "properties": map[string]any{
@@ -568,6 +583,10 @@ print(json.dumps({"counts": counts, "effects": [e for e in fake.effects._staged]
 		{"action": "put", "kind": "ada.example.com/observations/observation", "id": "new", "properties": map[string]any{
 			"origin": map[string]any{"ref": "providers.example.com/garmin/daily/ada/d1"}, "value": "5", "note": nil,
 			"revision": float64(8), "adapter": "a@1",
+		}},
+		{"action": "put", "kind": "ada.example.com/observations/observation", "id": "shared", "properties": map[string]any{
+			"origin": map[string]any{"ref": "providers.example.com/garmin/daily/ada/d1"}, "value": "6", "note": nil,
+			"revision": float64(12), "adapter": "a@1",
 		}},
 		{"action": "delete", "kind": "ada.example.com/observations/observation", "id": "gone"},
 	}

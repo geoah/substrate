@@ -1067,13 +1067,16 @@ class Observed:
         an entry of whose `origins`, names one of the paths (another
         reference to the path, such as `derivedFrom`, does not count), read
         page by page; `stored` passes records the body already read instead.
-        An output whose stored properties already hold what it would be
-        written with, `revision` aside, is not written. A written output's
-        `revision` is the higher of the one given and the one stored: the
-        write path refuses a falling revision, and a delivery reads its rows
-        as they stand now, so a lower one means a row the output was built
-        from went away, never that the delivery is stale. Every stored output
-        `outputs` does not name is deleted."""
+        An output the stored side does not hold is read by its id, 500 to a
+        call, because another origin may hold it: an hour's trace built from
+        several rows names all of them. An output whose stored properties
+        already hold what it would be written with, `revision` aside, is not
+        written. A written output's `revision` is the higher of the one given
+        and the one stored: the write path refuses a falling revision, and a
+        delivery reads its rows as they stand now, so a lower one means a row
+        the output was built from went away, never that the delivery is
+        stale. Every stored output of the stored side that `outputs` does not
+        name is deleted."""
         fn = "observed.reconcile"
         if self._host is None:
             raise ValueError("%s: reads the origin's outputs through the host; call host.observed" % fn)
@@ -1082,34 +1085,35 @@ class Observed:
             raise ValueError("%s: origins is a record path or a list of them, got %r" % (fn, origins))
         if not isinstance(owned, dict) or not owned:
             raise ValueError("%s: owned maps each output kind to the properties the body sets" % fn)
+        for kind, _ in outputs:
+            if kind not in owned:
+                raise ValueError("%s: %s is not a kind owned names" % (fn, kind))
         if stored is None:
             stored = []
             for path in paths:
-                after = None
-                while True:
-                    query = {"filter": {"kinds": list(owned), "referencing": {"ref": path}}, "first": 500}
-                    if after:
-                        query["after"] = after
-                    page = self._host.list(**query)
-                    stored.extend(page.get("records") or [])
-                    after = page.get("cursor")
-                    if not after:
-                        break
+                stored.extend(self._pages({"kinds": list(owned), "referencing": {"ref": path}}))
         held = {}
         for rec in stored:
             props = rec.get("properties") or {}
             named = [_ref_path(props.get("origin"))] + [_ref_path(o) for o in props.get("origins") or []]
             if rec.get("kind") in owned and any(p in paths for p in named):
                 held[(rec.get("kind"), rec.get("id"))] = rec
+        others = {}
+        rest = sorted(key for key in outputs if key not in held)
+        for i in range(0, len(rest), 500):
+            chunk = rest[i:i + 500]
+            flt = {"kinds": sorted({k for k, _ in chunk}), "ids": sorted({r for _, r in chunk})}
+            for rec in self._pages(flt):
+                key = (rec.get("kind"), rec.get("id"))
+                if key in outputs and key not in held:
+                    others[key] = rec
         counts = {"written": 0, "unchanged": 0, "deleted": 0}
         for kind, rid in sorted(outputs):
-            if kind not in owned:
-                raise ValueError("%s: %s is not a kind owned names" % (fn, kind))
             full = {name: None for name in owned[kind]}
             full.update(outputs[(kind, rid)])
             if adapter is not None:
                 full["adapter"] = adapter
-            old = held.pop((kind, rid), None)
+            old = held.pop((kind, rid), None) or others.get((kind, rid))
             have = (old or {}).get("properties") or {}
             if old is not None and all(_same_value(have.get(k), v) for k, v in full.items() if k != "revision"):
                 counts["unchanged"] += 1
@@ -1124,6 +1128,19 @@ class Observed:
             self._host.effects.delete(kind, rid)
             counts["deleted"] += 1
         return counts
+
+    def _pages(self, flt):
+        """Every live record a filter matches, read 500 to a page."""
+        out, after = [], None
+        while True:
+            query = {"filter": flt, "first": 500}
+            if after:
+                query["after"] = after
+            page = self._host.list(**query)
+            out.extend(page.get("records") or [])
+            after = page.get("cursor")
+            if not after:
+                return out
 
     def period_id(self, at, period):
         """The label a trace id ends with: `at` in UTC at the period's
