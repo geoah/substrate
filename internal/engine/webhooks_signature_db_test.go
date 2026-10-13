@@ -284,6 +284,85 @@ func TestWebhookSignatureUnderTheOAuthClientSecret(t *testing.T) {
 	}
 }
 
+// A store that fails while the door reads the signing secret decides nothing
+// about the request. The door answers it as the store's failure, never the
+// signature refusal a sender reads as final, and stores nothing. A stored
+// request whose recheck meets the same failure is a transient fault: a retry
+// by hand answers the store's error, the dispatcher's resume spends every
+// attempt on it before it parks, and neither is parked as refused. Both run
+// once the store answers again. The fault is the `sealed` table renamed away
+// under the secret record's value.
+func TestWebhookSigningSecretStoreFaultIsNotARefusal(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds, dsn := newHookDatasetWithDSN(t, nil, pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource))
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
+	putHookTrigger(t, ds, "hook-fault", "hookecho", keptSignatureSource(true, "PT5M"))
+	putHookTrigger(t, ds, "hook-fault-stored", "hookecho", keptSignatureSource(false, ""))
+	authority := testdb.Repository(t)
+	byHand, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-fault-stored", "", signedHook(`{"n":"by-hand"}`, hookSigningSecret, time.Now()))
+	if err != nil {
+		t.Fatalf("receive the stored request: %v", err)
+	}
+	resumed, err := engine.ReceiveWebhookHeld(ctx, svc, authority, "hook-fault-stored", "", signedHook(`{"n":"resumed"}`, hookSigningSecret, time.Now()))
+	if err != nil {
+		t.Fatalf("receive the stored request: %v", err)
+	}
+	putHookTrigger(t, ds, "hook-fault-stored", "hookecho", keptSignatureSource(true, "PT5M"))
+
+	db := rawDB(t, dsn)
+	if _, err := db.Exec(`ALTER TABLE sealed RENAME TO sealed_unreachable`); err != nil {
+		t.Fatal(err)
+	}
+	before := traceOf(t, dsn)
+	_, err = engine.ReceiveWebhookSync(ctx, svc, authority, "hook-fault", "", signedHook(`{"n":"fault"}`, hookSigningSecret, time.Now()))
+	if err == nil || errors.Is(err, substrate.ErrAuth) || errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("a store fault at the door: err = %v, want the store's error, neither a refusal nor the door's 404", err)
+	}
+	if after := traceOf(t, dsn); after != before {
+		t.Fatalf("the faulted request stored something: before %+v, after %+v", before, after)
+	}
+	_, err = ds.RetryTriggerFailure(ctx, "hook-fault-stored", failuresByFire(t, ds, "hook-fault-stored")[byHand].ID)
+	if err == nil || strings.Contains(err.Error(), "webhook signature refused at delivery") {
+		t.Fatalf("a store fault on a retry by hand: err = %v, want the store's error, not the refusal", err)
+	}
+	dispatch(t, ds)
+	deadline := time.Now().Add(30 * time.Second)
+	var row substrate.TriggerFailure
+	for {
+		row = failuresByFire(t, ds, "hook-fault-stored")[resumed]
+		if row.LastError != engine.WebhookPendingError {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the dispatcher pass never settled the pending entry")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if row.Attempts != 3 || strings.Contains(row.LastError, "refused at delivery") {
+		t.Fatalf("the resume parked as %+v, want three attempts spent on the store's error", row)
+	}
+
+	if _, err := db.Exec(`ALTER TABLE sealed_unreachable RENAME TO sealed`); err != nil {
+		t.Fatal(err)
+	}
+	for _, fid := range []string{byHand, resumed} {
+		if _, err := ds.RetryTriggerFailure(ctx, "hook-fault-stored", failuresByFire(t, ds, "hook-fault-stored")[fid].ID); err != nil {
+			t.Fatalf("%s, once the store answers: %v", fid, err)
+		}
+		if got := hookEcho(t, ds, "hook-echo"); got["record"] != fid {
+			t.Fatalf("the retry of %s echoed %v", fid, got)
+		}
+	}
+	fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-fault", "", signedHook(`{"n":"recovered"}`, hookSigningSecret, time.Now()))
+	if err != nil {
+		t.Fatalf("the door, once the store answers: %v", err)
+	}
+	if got := hookEcho(t, ds, "hook-echo"); got["record"] != fid {
+		t.Fatalf("the recovered delivery echoed %v", got)
+	}
+}
+
 // putHookTrigger writes a webhook trigger on fn the way the owner does,
 // outside any bundle, so a test can rewrite its source between deliveries.
 func putHookTrigger(t *testing.T, ds substrate.Dataset, id, fn string, source map[string]any) {

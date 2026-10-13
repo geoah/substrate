@@ -478,6 +478,11 @@ func (t *txn) sealedRefOf(ref string, owner eref) (bool, error) {
 	return true, nil
 }
 
+// errSecretUnreadable marks a stored secret ref whose sealed row is missing
+// or does not open under the repository's DEK: a fault in what is stored,
+// which no retry repairs, told apart from the store failing to answer.
+var errSecretUnreadable = errors.New("substrate/engine: stored secret unreadable")
+
 // openSecretValue resolves one stored secret value to its material: a secret
 // ref reads its sealed row, and any other value passes through unchanged.
 func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, error) {
@@ -491,14 +496,14 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 			`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, stored).
 			Scan(&payload, &owner.Kind, &owner.ID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", fmt.Errorf("substrate/engine: secret ref has no sealed row")
+			return "", fmt.Errorf("%w: the ref has no sealed row", errSecretUnreadable)
 		}
 		if err != nil {
 			return "", err
 		}
 		raw, err := ds.openPayload(payload, sealedAAD(stored, owner.Kind, owner.ID))
 		if err != nil {
-			return "", fmt.Errorf("substrate/engine: open stored secret: %w", err)
+			return "", fmt.Errorf("%w: %w", errSecretUnreadable, err)
 		}
 		return string(raw), nil
 	default:

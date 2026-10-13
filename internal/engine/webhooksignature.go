@@ -276,9 +276,11 @@ func checkWebhookSecretSource(reg *vocabulary.Registry, t *trigger, pkg string) 
 
 // errWebhookSignature is the door's answer to a request its trigger's
 // signature check refuses: a missing or wrong signature, a stale or missing
-// timestamp, a multipart body, or a key the host cannot resolve. One terse
-// answer, because the sender is unauthenticated; the reason is logged for an
-// unresolvable key alone, which is the operator's to fix.
+// timestamp, a multipart body, or a key the trigger's configuration does not
+// supply. One terse answer, because the sender is unauthenticated; the reason
+// is logged for an unresolvable key alone, which is the operator's to fix. A
+// store that fails to answer while the key is read is no refusal: it reaches
+// the caller as itself, a 5xx at the door and a retry on delivery.
 var errWebhookSignature = fmt.Errorf("%w: webhook signature refused", substrate.ErrAuth)
 
 // The fixed words a refusal's reason is, wrapped into errWebhookSignature
@@ -300,7 +302,11 @@ func refuseSignature(reason string) error {
 // signature, measuring the timestamp against at, the door's receipt time. A
 // trigger declaring none passes.
 func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) error {
-	if reason := ds.webhookSignatureRefusal(ctx, tr, req, at); reason != "" {
+	reason, err := ds.webhookSignatureRefusal(ctx, tr, req, at)
+	if err != nil {
+		return err
+	}
+	if reason != "" {
 		return refuseSignature(reason)
 	}
 	return nil
@@ -309,29 +315,31 @@ func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req s
 // webhookSignatureRefusal is the reason the trigger's declared signature
 // refuses the request received at at, one of the signatureRefused words, or
 // "" when it verifies or none is declared. The MAC compare is constant-time.
-func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) string {
+// err is a store fault met while resolving the key, which decides nothing
+// about the request.
+func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) (string, error) {
 	sig := tr.WebhookSignature
 	if sig == nil {
-		return ""
+		return "", nil
 	}
 	// The door parses a multipart body into parts and keeps no raw bytes,
 	// so there is nothing byte-exact to compute a MAC over.
 	if req.Parts != nil {
-		return signatureRefusedMultipart
+		return signatureRefusedMultipart, nil
 	}
 	provided := strings.TrimSpace(req.Headers[sig.Header])
 	if provided == "" {
-		return signatureRefusedMissing
+		return signatureRefusedMissing, nil
 	}
 	var stamp string
 	if sig.TimestampHeader != "" {
 		stamp = strings.TrimSpace(req.Headers[sig.TimestampHeader])
 		signedAt, ok := parseWebhookTimestamp(stamp)
 		if !ok {
-			return signatureRefusedTimestamp
+			return signatureRefusedTimestamp, nil
 		}
 		if at.Sub(signedAt).Abs() > sig.MaxSkew {
-			return signatureRefusedStale
+			return signatureRefusedStale, nil
 		}
 	}
 	var got []byte
@@ -342,13 +350,16 @@ func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req
 		got, err = base64.StdEncoding.DecodeString(provided)
 	}
 	if err != nil || len(got) != sha256.Size {
-		return signatureRefusedInvalid
+		return signatureRefusedInvalid, nil
 	}
 	key, err := ds.webhookSigningKey(ctx, tr)
-	if err != nil {
+	if errors.Is(err, errSigningKeyUnresolved) {
 		ds.svc.log.Warn("substrate: webhook refused, its trigger's signing secret does not resolve",
 			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "error", err)
-		return signatureRefusedSecret
+		return signatureRefusedSecret, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("substrate: webhook %s: resolve the signing secret: %w", logSafeID(tr.ID), err)
 	}
 	mac := hmac.New(sha256.New, []byte(key))
 	for _, p := range sig.Message {
@@ -362,9 +373,9 @@ func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req
 		}
 	}
 	if !hmac.Equal(mac.Sum(nil), got) {
-		return signatureRefusedInvalid
+		return signatureRefusedInvalid, nil
 	}
-	return ""
+	return "", nil
 }
 
 // requestSignatureVerified is the stored request's key saying the door
@@ -417,7 +428,11 @@ func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger,
 	if err != nil {
 		return err
 	}
-	if reason := ds.webhookSignatureRefusal(ctx, tr, stored, at); reason != "" {
+	reason, err := ds.webhookSignatureRefusal(ctx, tr, stored, at)
+	if err != nil {
+		return err
+	}
+	if reason != "" {
 		return refuse(reason)
 	}
 	return nil
@@ -538,10 +553,20 @@ func parseWebhookTimestamp(s string) (time.Time, bool) {
 	return time.Unix(n, 0).UTC(), true
 }
 
+// errSigningKeyUnresolved marks a signing key the trigger's configuration
+// does not supply: no oauth2 block or client record, no secret record, an
+// empty value, or a sealed value that does not open. The door refuses the
+// request on it. Any other error from webhookSigningKey is the store failing
+// to answer, which refuses nothing.
+var errSigningKeyUnresolved = errors.New("signing secret unresolvable")
+
 // webhookSigningKey resolves the trigger's signing secret inside the host: the
 // OAuth client secret of the callable's bundle, or the value of a core
 // `secret` record. Neither is handed to the callable by this path.
 func (ds *dataset) webhookSigningKey(ctx context.Context, tr *trigger) (string, error) {
+	unresolved := func(format string, args ...any) error {
+		return fmt.Errorf("%w: "+format, append([]any{errSigningKeyUnresolved}, args...)...)
+	}
 	sig := tr.WebhookSignature
 	if sig.OAuthClient {
 		pkg := ""
@@ -553,24 +578,33 @@ func (ds *dataset) webhookSigningKey(ctx context.Context, tr *trigger) (string, 
 		}
 		b, ok := ds.registry().BundleOf(pkg)
 		if !ok || b.OAuth2 == nil {
-			return "", fmt.Errorf("the callable's package %s declares no oauth2 block", pkg)
+			return "", unresolved("the callable's package %s declares no oauth2 block", pkg)
 		}
 		_, secret, err := ds.oauthClientOf(ctx, b)
-		return secret, err
+		switch {
+		case errors.Is(err, substrate.ErrGuard), errors.Is(err, substrate.ErrNotFound), errors.Is(err, errSecretUnreadable):
+			return "", unresolved("%w", err)
+		case err != nil:
+			return "", err
+		}
+		return secret, nil
 	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: kindSecret, ID: sig.SecretRecord})
 	if err != nil {
 		return "", err
 	}
 	if row == nil || row.DeletedAt != nil {
-		return "", fmt.Errorf("no secret record %s", logSafeID(sig.SecretRecord))
+		return "", unresolved("no secret record %s", logSafeID(sig.SecretRecord))
 	}
 	value, err := ds.openSecretValue(ctx, propString(row, propSettingValue))
-	if err != nil {
+	switch {
+	case errors.Is(err, errSecretUnreadable):
+		return "", unresolved("%w", err)
+	case err != nil:
 		return "", err
 	}
 	if value == "" {
-		return "", errors.New("the secret record holds no value")
+		return "", unresolved("the secret record holds no value")
 	}
 	return value, nil
 }
