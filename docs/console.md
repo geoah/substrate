@@ -681,7 +681,8 @@ aggregate latest read: `GET /api/v1/records` with
 `aggregate={"groupBy":["metric","source","about","channel"],"reducers":["last"],"budget":{"maxGroups":2000}}`,
 no bucket and no range. Where the server refuses that read for making more
 than 2,000 groups, the page lists the metrics with a point first and reads
-their streams a few metrics at a time. Each row shows the metric by its record's name, the
+their streams a few metrics at a time, and does not ask the refused read
+again under the same filters. Each row shows the metric by its record's name, the
 source as a record mention, what it is about (**You** where it names
 nothing, which means the owner), its channel, how its newest value reads
 (**Reading**: its form in words, **Level**, **Amount**, **Running total** or
@@ -732,8 +733,8 @@ selected; where that read fails, it says why and offers to try again.
 
 **The timeline** (`/observations/timeline`) draws the chosen metrics over one
 range on one time axis. Opened with no metric, it draws the newest stream's
-metric and writes it into the address (`?metric=`), so a later read never
-swaps the chart. They overlay in one chart while they fit two units
+metric under the chosen sources and things and writes it into the address
+(`?metric=`), so a later read never swaps the chart. They overlay in one chart while they fit two units
 and otherwise split into as few charts as hold them two units each: heart
 rate, HRV and steps are two charts, heart rate with HRV and then steps. One
 row of controls scopes every chart: the metrics, the range (today, the last
