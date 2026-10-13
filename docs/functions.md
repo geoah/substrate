@@ -656,7 +656,8 @@ host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str; .e
 host.units.canonical(code)                        # "bpm" -> "/min"
 host.units.measure(code)                          # "kg" -> "mass"
 host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
-                    hold=None, about=None, channel=None, reset_rule=None)
+                    hold=None, about=None, channel=None, reset_rule=None,
+                    wrap_at=None, delta=None, circular=None, start=None, end=None)
 host.observed.local_day(at, utc_offset_minutes)   # "2026-10-07"
 host.observed.period_id(at, period)               # "2026-10-07T06"
 host.version(record)                              # an int, for if_version
@@ -811,9 +812,18 @@ each `at` a timezone-aware `datetime` and a value `None` where the source had
 nothing, into the property maps a trace kind (one binding core's
 `observed(packed)`) admits: one map per fixed UTC period (`period`, aligned to
 the epoch, so `PT1H` is the UTC hour), split where the points' UTC offset
-changes so each map has one offset, with `every` where the points are
-regularly spaced from the period's start and `offsets` in milliseconds
-otherwise. Ids are the caller's: compose each from
+changes so each map has one offset, and split again before a map passes
+20,000 points or 1 MiB less 64 KiB of JSON (the 64 KiB is left for the
+properties the body adds, such as `origins`). A map takes `every` where the
+points are regularly spaced from its start and `offsets` in milliseconds
+otherwise, and names the key it does not use as `None` (`every` or
+`offsets`, `values` or `codes`, and `unit` on a trace of codes), so a put
+over a period stored in the other shape replaces that shape. `start` and
+`end` bound the span the delivery covers: each map claims only the part of
+its period inside `[start, end)`, so two deliveries that share an hour write
+two maps side by side, and a point outside them raises. A counter with
+`reset_rule="wrap"` needs `wrap_at`; `delta=True` marks temperature
+differences and `circular=True` angles. Ids are the caller's: compose each from
 `period_id(doc["at"], period)`, which writes `at` in UTC at the period's
 resolution (`2026-10-07T06` for `PT1H`) and adds the finer fields a split
 part's later start needs (`2026-10-07T06:40`). `local_day(at, offset)` is the

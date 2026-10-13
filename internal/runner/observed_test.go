@@ -123,6 +123,40 @@ cases = {
     "counter": (o.trace([(dt.datetime(2026, 10, 7, 14, m, tzinfo=utc), v)
                          for m, v in ((0, "18342.112"), (15, "18342.391"), (30, "18342.655"), (45, "0.204"))],
                         metric=metric, source=source, unit="kW.h", form="counter", reset_rule="monotonic"), "PT1H"),
+    # a 16-bit pulse counter that wraps to zero
+    "wrap": (o.trace([(dt.datetime(2026, 10, 7, 14, m, tzinfo=utc), v) for m, v in ((0, 65000), (30, 120))],
+                     metric=metric, source=source, unit="{count}", form="counter", reset_rule="wrap",
+                     wrap_at=65536), "PT1H"),
+    # a deviation in kelvin and a wind direction, flagged on every document
+    "delta": (o.trace([(dt.datetime(2026, 10, 7, 3, tzinfo=utc), "0.3")], metric=metric, source=source,
+                      unit="K", form="gauge", delta=True), "PT1H"),
+    "circular": (o.trace([(dt.datetime(2026, 10, 7, 3, tzinfo=utc), 270)], metric=metric, source=source,
+                         unit="deg", form="gauge", circular=True), "PT1H"),
+    # a day at 1 Hz in one period: more points than one trace holds
+    "long": (o.trace([(dt.datetime(2026, 10, 7, tzinfo=utc) + dt.timedelta(seconds=s), 60 + s % 7)
+                      for s in range(86400)],
+                     metric=metric, source=source, unit="/min", form="gauge", period="P1D"), "P1D"),
+    # long digits: fewer points than the limit, more bytes than one trace holds
+    "wide": (o.trace([(dt.datetime(2026, 10, 7, 6, tzinfo=utc) + dt.timedelta(milliseconds=150 * s),
+                       "1." + str(s).zfill(6) * 15) for s in range(19000)],
+                     metric=metric, source=source, unit="W", form="gauge"), "PT1H"),
+    # a delivery covering 05:00 to 05:15, its first reading at 05:03
+    "bounded": (o.trace([(dt.datetime(2026, 10, 11, 5, m, tzinfo=utc), v) for m, v in ((3, 66), (8, 58), (13, 59))],
+                        metric=metric, source=source, unit="ms", form="gauge", hold="PT10M",
+                        start=dt.datetime(2026, 10, 11, 5, tzinfo=utc), end=dt.datetime(2026, 10, 11, 5, 15, tzinfo=utc)),
+                "PT1H"),
+    # one covering 05:20 to 05:40, a reading every five minutes from its start
+    "bounded later": (o.trace([(dt.datetime(2026, 10, 11, 5, m, tzinfo=utc), 60) for m in (20, 25, 30, 35)],
+                              metric=metric, source=source, unit="ms", form="gauge",
+                              start=dt.datetime(2026, 10, 11, 5, 20, tzinfo=utc),
+                              end=dt.datetime(2026, 10, 11, 5, 40, tzinfo=utc)), "PT1H"),
+    # one hour written twice: irregular, then regular; numbers, then codes
+    "rewrite offsets": (o.trace([(dt.datetime(2026, 10, 7, 6, 0, s, tzinfo=utc), 1) for s in (0, 7, 30)],
+                                metric=metric, source=source, unit="W", form="gauge"), "PT1H"),
+    "rewrite every": (o.trace([(dt.datetime(2026, 10, 7, 6, 0, s, tzinfo=utc), 1) for s in (0, 10, 20)],
+                              metric=metric, source=source, unit="W", form="gauge"), "PT1H"),
+    "rewrite codes": (o.trace([(dt.datetime(2026, 10, 7, 6, 0, s, tzinfo=utc), "on") for s in (0, 7, 30)],
+                              metric=metric, source=source, unit=None, form="gauge"), "PT1H"),
 }
 out = {}
 for name, (docs, period) in cases.items():
@@ -225,6 +259,81 @@ func TestObservedTraceBuilderOutputPassesTheEngine(t *testing.T) {
 	if counter := built["counter"].Docs; len(counter) != 1 || counter[0]["resetRule"] != "monotonic" || counter[0]["every"] != "PT15M" {
 		t.Errorf("counter: %v", counter)
 	}
+	if wrap := built["wrap"].Docs; len(wrap) != 1 || wrap[0]["resetRule"] != "wrap" || wrap[0]["wrapAt"] != "65536" {
+		t.Errorf("wrap: %v, want resetRule wrap and wrapAt 65536", wrap)
+	}
+	if d := built["delta"].Docs; len(d) != 1 || d[0]["delta"] != true {
+		t.Errorf("delta: %v", d)
+	}
+	if c := built["circular"].Docs; len(c) != 1 || c[0]["circular"] != true {
+		t.Errorf("circular: %v", c)
+	}
+	// A day at 1 Hz splits at the point limit into regular parts that cover
+	// the day end to end.
+	long := built["long"].Docs
+	total := 0
+	for i, doc := range long {
+		n := len(doc["values"].([]any))
+		total += n
+		if n > vocabulary.MaxTracePoints || doc["every"] != "PT1S" {
+			t.Errorf("long[%d]: %d points every %v", i, n, doc["every"])
+		}
+		if i > 0 && doc["at"] != long[i-1]["endsAt"] {
+			t.Errorf("long[%d] starts at %v, the part before it ends at %v", i, doc["at"], long[i-1]["endsAt"])
+		}
+	}
+	if len(long) != 5 || total != 86400 || long[0]["at"] != "2026-10-07T00:00:00Z" || long[4]["endsAt"] != "2026-10-08T00:00:00Z" {
+		t.Errorf("long: %d documents holding %d points from %v to %v, want 5 holding 86400 over the day",
+			len(long), total, long[0]["at"], long[len(long)-1]["endsAt"])
+	}
+	if wide := built["wide"].Docs; len(wide) < 2 {
+		t.Errorf("wide: %d documents; 19000 values of 92 digits are more than 1 MiB", len(wide))
+	}
+	if b := built["bounded"]; len(b.Docs) != 1 || b.Docs[0]["at"] != "2026-10-11T05:00:00Z" ||
+		b.Docs[0]["endsAt"] != "2026-10-11T05:15:00Z" || !equalJSON(b.Docs[0]["offsets"], []any{180000, 480000, 780000}) {
+		t.Errorf("bounded: %v, want [05:00, 05:15) with offsets from 05:00", b.Docs)
+	}
+	if b := built["bounded later"]; len(b.Docs) != 1 || b.Docs[0]["at"] != "2026-10-11T05:20:00Z" ||
+		b.Docs[0]["endsAt"] != "2026-10-11T05:40:00Z" || b.Docs[0]["every"] != "PT5M" || b.IDs[0] != "2026-10-11T05:20" {
+		t.Errorf("bounded later: %v %v, want [05:20, 05:40) every PT5M, labelled 2026-10-11T05:20", b.Docs, b.IDs)
+	}
+}
+
+// TestObservedTraceBuilderRewritesAPeriodOfAnotherShape: a body that puts
+// the builder's output over a period stored in the other shape (offsets then
+// every, numbers then codes) is admitted, because each document names the
+// pair key it does not use as null and a put of a null clears it.
+func TestObservedTraceBuilderRewritesAPeriodOfAnotherShape(t *testing.T) {
+	built := builtTraces(t)
+	for _, c := range []struct{ stored, written string }{
+		{"rewrite offsets", "rewrite every"},
+		{"rewrite every", "rewrite offsets"},
+		{"rewrite offsets", "rewrite codes"},
+		{"rewrite codes", "rewrite every"},
+	} {
+		stored := map[string]any{}
+		for k, v := range built[c.stored].Docs[0] {
+			if v != nil {
+				stored[k] = v
+			}
+		}
+		for k, v := range built[c.written].Docs[0] {
+			if v == nil {
+				delete(stored, k)
+				continue
+			}
+			stored[k] = v
+		}
+		at, _ := time.Parse(time.RFC3339Nano, stored["at"].(string))
+		endsAt, _ := time.Parse(time.RFC3339Nano, stored["endsAt"].(string))
+		delete(stored, "at")
+		delete(stored, "endsAt")
+		if problems := vocabulary.CheckObserved(vocabulary.ObservedRecord{
+			Variant: vocabulary.ObservedPacked, At: &at, EndsAt: &endsAt, Props: stored,
+		}); len(problems) > 0 {
+			t.Errorf("%s put over %s is refused: %v", c.written, c.stored, problems)
+		}
+	}
 }
 
 func equalJSON(a, b any) bool {
@@ -256,6 +365,13 @@ cases = {
     "coded with a unit": lambda: o.trace([(at, "open")], metric="m", source=None, unit="W", form="gauge"),
     "no unit": lambda: o.trace([(at, 1)], metric="m", source=None, unit=None, form="gauge"),
     "far offset": lambda: o.local_day(at, 1200),
+    "wrap without wrap_at": lambda: o.trace([(at, 1)], metric="m", source=None, unit="{count}", form="counter",
+                                            reset_rule="wrap"),
+    "wrap_at without wrap": lambda: o.trace([(at, 1)], metric="m", source=None, unit="{count}", form="counter",
+                                            reset_rule="monotonic", wrap_at=100),
+    "outside the bounds": lambda: o.trace([(at, 1)], metric="m", source=None, unit="W", form="gauge",
+                                          start=at + dt.timedelta(minutes=1)),
+    "coded delta": lambda: o.trace([(at, "open")], metric="m", source=None, unit=None, form="gauge", delta=True),
 }
 out = {}
 for name, call in cases.items():
@@ -277,13 +393,17 @@ print(json.dumps(out))
 		t.Fatalf("decode: %v\n%s", err, raw)
 	}
 	for name, want := range map[string]string{
-		"naive":             "is a timezone-aware datetime",
-		"summary":           "a summary is one value per record",
-		"held counter":      "only a gauge holds its value; a counter does not",
-		"mixed":             "mixes a code into a trace of numbers",
-		"coded with a unit": "a trace of codes carries no unit",
-		"no unit":           "names the unit every value is in",
-		"far offset":        "whole minutes within 1080 either way",
+		"naive":                "is a timezone-aware datetime",
+		"summary":              "a summary is one value per record",
+		"held counter":         "only a gauge holds its value; a counter does not",
+		"mixed":                "mixes a code into a trace of numbers",
+		"coded with a unit":    "a trace of codes carries no unit",
+		"no unit":              "names the unit every value is in",
+		"far offset":           "whole minutes within 1080 either way",
+		"wrap without wrap_at": "a wrapping counter names the value it wraps at",
+		"wrap_at without wrap": "pass reset_rule=\"wrap\"",
+		"outside the bounds":   "is outside [start, end)",
+		"coded delta":          "a trace of codes has none",
 	} {
 		if !strings.Contains(out[name], want) {
 			t.Errorf("%s: %q, want it to say %q", name, out[name], want)

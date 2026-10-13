@@ -397,7 +397,9 @@ unchanged is not rewritten.
 `host.units.convert`, `host.units.canonical` and `host.units.measure` ask the
 engine's unit table over the host call. `host.observed.trace` packs a body's
 own timestamped points into trace documents that pass the rules above, one
-per fixed UTC period, split where the UTC offset changes; `period_id` gives
+per fixed UTC period, split where the UTC offset changes and before a
+document passes the size limits, narrowed to the span a delivery covers when
+the body names one; `period_id` gives
 the label a trace id ends with and `local_day` the civil date at an offset.
 [Functions](functions.md#the-sdk) has the signatures and an example.
 

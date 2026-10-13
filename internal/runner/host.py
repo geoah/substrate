@@ -648,6 +648,12 @@ _US = {"W": 7 * 86400 * 10**6, "D": 86400 * 10**6, "H": 3600 * 10**6, "M": 60 * 
 _MAX_UTC_OFFSET = 1080
 _TRACE_FORMS = ("gauge", "amount", "counter")
 _RESET_RULES = ("monotonic", "signed", "wrap")
+# The write's limits on one trace (vocabulary.MaxTracePoints and
+# MaxTraceBytes). The builder fills the byte limit less 64 KiB, which it
+# leaves for the properties a writer adds to each document (origins,
+# revision, adapter).
+_MAX_TRACE_POINTS = 20000
+_TRACE_BYTES_BUDGET = (1 << 20) - (64 << 10)
 
 
 def _decimal_text(fn, value):
@@ -786,7 +792,8 @@ class Observed:
     compute, never write; a body stages what they return with host.effects."""
 
     def trace(self, points, *, metric, source, unit, form, period="PT1H", hold=None,
-              about=None, channel=None, reset_rule=None):
+              about=None, channel=None, reset_rule=None, wrap_at=None, delta=None,
+              circular=None, start=None, end=None):
         """Pack points into the trace documents a kind binding
         `observed(packed)` admits -> a list of property maps, oldest first,
         each ready for host.effects.put(<trace kind>, <id>, properties).
@@ -797,8 +804,24 @@ class Observed:
         fixed UTC period (`period`, aligned to the epoch: PT1H is the UTC
         hour) and is split where the points' UTC offset changes, so every
         document has one offset; a later part of a split period starts at its
-        first point. Points regularly spaced from the period's start are
-        written with `every`, anything else with `offsets` in milliseconds.
+        first point. A part is split again before it passes 20,000 points or
+        the byte budget, so the write never refuses it for its size. Points
+        regularly spaced from the document's start are written with `every`,
+        anything else with `offsets` in milliseconds.
+
+        `start` and `end`, timezone-aware datetimes read to the millisecond,
+        bound the span this delivery covers: each document claims only the
+        part of its period inside [start, end), so two deliveries that share
+        an hour write two documents side by side. A point outside them
+        raises.
+
+        Each document names both keys of every exclusive pair, the one it
+        does not use as None (`every` or `offsets`, `values` or `codes`, and
+        `unit` on a trace of codes), so a put of it over a stored trace of the
+        other shape replaces that shape whole.
+
+        `reset_rule="wrap"` needs `wrap_at`, the value a counter wraps to zero
+        at; `delta` and `circular` mark temperature differences and angles.
         `metric`, `source` and `about` are reference values (a full record
         path or {"ref": path}). Ids are the caller's: compose each from
         `period_id(document["at"], period)`."""
@@ -819,6 +842,27 @@ class Observed:
                 raise ValueError("%s: only a counter resets; a %s does not" % (fn, form))
             if reset_rule not in _RESET_RULES:
                 raise ValueError("%s: reset_rule is one of %s, got %r" % (fn, ", ".join(_RESET_RULES), reset_rule))
+        if wrap_at is not None:
+            if reset_rule != "wrap":
+                raise ValueError("%s: wrap_at is the value a wrapping counter returns to zero at: "
+                                 "pass reset_rule=\"wrap\"" % fn)
+            wrap_at = _decimal_text(fn, wrap_at)
+            if decimal.Decimal(wrap_at) <= 0:
+                raise ValueError("%s: wrap_at is above zero, got %s" % (fn, wrap_at))
+        elif reset_rule == "wrap":
+            raise ValueError("%s: a wrapping counter names the value it wraps at: pass wrap_at" % fn)
+        for name, flag in (("delta", delta), ("circular", circular)):
+            if flag is not None and not isinstance(flag, bool):
+                raise ValueError("%s: %s is True, False or None, got %r" % (fn, name, flag))
+        lo = hi = None
+        if start is not None:
+            lo = _epoch_us(_aware(fn, "start", start))
+            lo -= lo % 1000
+        if end is not None:
+            hi = _epoch_us(_aware(fn, "end", end))
+            hi += -hi % 1000
+        if lo is not None and hi is not None and hi <= lo:
+            raise ValueError("%s: end is after start" % fn)
         coded, pts = None, []
         for i, point in enumerate(points):
             if not isinstance(point, (tuple, list)) or len(point) != 2:
@@ -838,7 +882,10 @@ class Observed:
                         raise ValueError("%s: point %d's code is empty" % (fn, i))
                 else:
                     v = _decimal_text(fn, v)
-            pts.append((_epoch_us(at), i, offset, v))
+            t = _epoch_us(at)
+            if (lo is not None and t < lo) or (hi is not None and t >= hi):
+                raise ValueError("%s: point %d at %s is outside [start, end)" % (fn, i, _instant(t)))
+            pts.append((t, i, offset, v))
         if not pts:
             return []
         coded = bool(coded)
@@ -848,46 +895,72 @@ class Observed:
             raise ValueError("%s: a trace of numbers names the unit every value is in" % fn)
         if coded and form == "counter":
             raise ValueError("%s: a counter is a running total, a number, never a code" % fn)
+        if coded and (delta or circular):
+            raise ValueError("%s: delta and circular describe numbers; a trace of codes has none" % fn)
         pts.sort()
-        # Pieces: one per fixed period, split where the offset changes. A
-        # later piece of a split period starts at its first point, floored to
-        # the millisecond its offsets count in.
+        # Pieces: one per fixed period, split where the offset changes and
+        # before a piece passes the point limit. A later piece of a split
+        # period starts at its first point, floored to the millisecond its
+        # offsets count in, and a split never falls inside one millisecond.
         pieces = []
         for t, _, offset, v in pts:
             period_start = t - t % p_us
             last = pieces[-1] if pieces else None
             if last is None or last["period"] != period_start:
-                pieces.append({"period": period_start, "start": period_start, "offset": offset, "points": []})
-            elif last["offset"] != offset:
+                first = period_start if lo is None else max(period_start, lo)
+                pieces.append({"period": period_start, "start": first, "offset": offset, "points": []})
+            elif t // 1000 > last["points"][-1][0] // 1000 and (
+                    last["offset"] != offset or len(last["points"]) >= _MAX_TRACE_POINTS):
                 pieces.append({"period": period_start, "start": t - t % 1000, "offset": offset, "points": []})
             pieces[-1]["points"].append((t, v))
-        docs = []
-        for i, piece in enumerate(pieces):
-            nxt = pieces[i + 1] if i + 1 < len(pieces) else None
-            end = nxt["start"] if nxt and nxt["period"] == piece["period"] else piece["period"] + p_us
-            start, times = piece["start"], [t for t, _ in piece["points"]]
-            props = {"metric": metric, "form": form, "at": _instant(start), "endsAt": _instant(end),
-                     "utcOffsetStart": piece["offset"], "utcOffsetEnd": piece["offset"]}
-            if source is not None:
-                props["source"] = source
-            if about is not None:
-                props["about"] = about
-            if channel is not None:
-                props["channel"] = channel
-            if not coded:
-                props["unit"] = unit
-            if hold is not None:
-                props["hold"] = hold
-            if reset_rule is not None:
-                props["resetRule"] = reset_rule
+        common = {"metric": metric, "form": form, "source": source, "about": about, "channel": channel,
+                  "unit": None if coded else unit, "hold": hold, "resetRule": reset_rule,
+                  "wrapAt": wrap_at, "delta": delta, "circular": circular}
+        keep = ("metric", "form", "unit")  # written as given, None included
+
+        def build(piece_start, piece_end, offset, piece_points):
+            props = {"metric": metric, "form": form, "at": _instant(piece_start), "endsAt": _instant(piece_end),
+                     "utcOffsetStart": offset, "utcOffsetEnd": offset}
+            for key, value in common.items():
+                if value is not None or key in keep:
+                    props[key] = value
+            times = [t for t, _ in piece_points]
             steps = {b - a for a, b in zip(times, times[1:])}
             every = steps.pop() if len(steps) == 1 else 0
-            if len(times) > 1 and times[0] == start and every > 0 and every * len(times) <= end - start:
-                props["every"] = _format_duration(every)
+            if len(times) > 1 and times[0] == piece_start and every > 0 \
+                    and every * len(times) <= piece_end - piece_start:
+                props["every"], props["offsets"] = _format_duration(every), None
             else:
-                props["offsets"] = [(t - start) // 1000 for t in times]
-            props["codes" if coded else "values"] = [v for _, v in piece["points"]]
-            docs.append(props)
+                props["every"], props["offsets"] = None, [(t - piece_start) // 1000 for t in times]
+            listed = [v for _, v in piece_points]
+            props["codes"], props["values"] = (listed, None) if coded else (None, listed)
+            return props
+
+        docs = []
+
+        def emit(piece_start, piece_end, offset, piece_points):
+            doc = build(piece_start, piece_end, offset, piece_points)
+            if len(json.dumps(doc, separators=(",", ":"))) > _TRACE_BYTES_BUDGET:
+                # Halve at a millisecond boundary nearest the middle.
+                cuts = [k for k in range(1, len(piece_points))
+                        if piece_points[k][0] // 1000 > piece_points[k - 1][0] // 1000]
+                if cuts:
+                    k = min(cuts, key=lambda c: abs(c - len(piece_points) // 2))
+                    cut = piece_points[k][0] - piece_points[k][0] % 1000
+                    emit(piece_start, cut, offset, piece_points[:k])
+                    emit(cut, piece_end, offset, piece_points[k:])
+                    return
+            docs.append(doc)
+
+        for i, piece in enumerate(pieces):
+            nxt = pieces[i + 1] if i + 1 < len(pieces) else None
+            if nxt and nxt["period"] == piece["period"]:
+                piece_end = nxt["start"]
+            else:
+                piece_end = piece["period"] + p_us
+                if hi is not None:
+                    piece_end = min(piece_end, hi)
+            emit(piece["start"], piece_end, piece["offset"], piece["points"])
         return docs
 
     def local_day(self, at, utc_offset_minutes):
