@@ -253,6 +253,33 @@ describe("the timeline's requests", () => {
     expect(read.aggregate.sources).toBeUndefined()
   })
 
+  it("keeps a metric's reducer when another metric is picked", async () => {
+    const server = mount(
+      `?metric=health/body_mass&reducer=health%2Fbody_mass~max&${WINDOW}`
+    )
+    await drawn(await lane("Weight"))
+    const weight = () => charts(server.seen, "health/body_mass").at(-1)!
+    expect(weight().aggregate.reducers?.[0]).toBe("max")
+    fireEvent.click(screen.getByRole("button", { name: /^Metrics?:/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Steps/ }))
+    await waitFor(() =>
+      expect(charts(server.seen, "health/steps").length).toBeGreaterThan(0)
+    )
+    expect(weight().aggregate.reducers?.[0]).toBe("max")
+  })
+
+  it("names a source chosen by id by its title, chosen in its menu", async () => {
+    mount(`?metric=health/heart_rate&source=apple-watch-s10&${WINDOW}`)
+    await lane("Heart rate")
+    const control = screen.getByRole("button", { name: /^Source/ })
+    await waitFor(() =>
+      expect(control.textContent).toContain("Apple Watch S10")
+    )
+    fireEvent.click(control)
+    const apple = await screen.findByRole("option", { name: /Apple Watch/ })
+    expect(apple.getAttribute("data-chosen")).toBe("true")
+  })
+
   it("narrows to a stream's channel from the address, and lets it go", async () => {
     const server = mount(
       `?metric=health/heart_rate&source=garmin-forerunner-265&channel=workout&${WINDOW}`

@@ -79,8 +79,8 @@ export function TimelinePanel({
       abouts: entry.abouts,
       channels: entry.channels,
       streams: entry.streams,
-      reducer: controls.reducers.get(shortRef(entry.metric, own.pins.metric)),
-      unit: controls.units.get(shortRef(entry.metric, own.pins.metric)),
+      reducer: controls.reducerOf(entry.metric),
+      unit: controls.unitOf(entry.metric),
     })
   )
   // A token whose metric's streams were read and name no stream of it; a

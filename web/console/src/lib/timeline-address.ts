@@ -4,6 +4,7 @@
 
 import { parseAsArrayOf, parseAsString } from "nuqs"
 
+import { sameRef } from "@/lib/observations"
 import {
   BUCKET_CHOICES,
   RANGE_PRESETS,
@@ -55,14 +56,29 @@ export function readChoices(
   return out
 }
 
-/** The tokens with one metric's choice set, or cleared with "". */
+/** One metric's choice, whichever way the address spells the metric (an
+ * id or a record path). */
+export function choiceOf(
+  choices: ReadonlyMap<string, string>,
+  metric: string
+): string | undefined {
+  const exact = choices.get(metric)
+  if (exact !== undefined) return exact
+  for (const [m, v] of choices) if (sameRef(m, metric)) return v
+  return undefined
+}
+
+/** The tokens with one metric's choice set, or cleared with "", in place of
+ * any other spelling of the metric. */
 export function writeChoice(
   tokens: readonly string[] | null,
   metric: string,
   value: string
 ): string[] {
   const choices = readChoices(tokens)
+  for (const m of [...choices.keys()]) {
+    if (m === metric || sameRef(m, metric)) choices.delete(m)
+  }
   if (value) choices.set(metric, value)
-  else choices.delete(metric)
   return [...choices].map(([m, v]) => `${encodeURIComponent(m)}~${v}`)
 }

@@ -39,7 +39,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useFacetValues, useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
 import type { AggregateFrom } from "@/lib/api/types"
-import { sameRef } from "@/lib/observations"
+import { distinct, sameRef } from "@/lib/observations"
 import {
   FROM_CHOICES,
   GROUP_CHOICES,
@@ -61,12 +61,21 @@ const FROM_PICKS: readonly { value: AggregateFrom | "auto"; label: string }[] =
 
 export function ObservationsTimelinePage() {
   const [metricParam, setMetricParam] = useQueryState("metric", ARRAY)
-  const [sources, setSources] = useQueryState("source", ARRAY)
-  const [abouts, setAbouts] = useQueryState("about", ARRAY)
+  const [sourceParam, setSources] = useQueryState("source", ARRAY)
+  const [aboutParam, setAbouts] = useQueryState("about", ARRAY)
   // A stream's channel, where a row of the streams table named one.
   const [channels, setChannels] = useQueryState("channel", ARRAY)
   // The chosen metrics, sources and things narrow discovery on the server.
-  const obs = useObservations({ metrics: metricParam, sources, abouts })
+  const obs = useObservations({
+    metrics: metricParam,
+    sources: sourceParam,
+    abouts: aboutParam,
+  })
+  // One spelling of each record, by id where its pin allows, so a metric's
+  // choices, a picked option and a linked value all match.
+  const { pins } = obs
+  const sources = distinct(sourceParam.map((v) => shortRef(v, pins.source)))
+  const abouts = distinct(aboutParam.map((v) => shortRef(v, pins.about)))
   const controls = useTimelineControls("7d")
   const { range, size, bucket } = controls
   const [group, setGroup] = useQueryState(
@@ -80,7 +89,9 @@ export function ObservationsTimelinePage() {
 
   const metricOptions = useMemo(() => {
     // Every metric with a point, whichever are chosen.
-    const names = new Map(obs.metrics.map((m) => [m, obs.metricName(m)]))
+    const names = new Map(
+      obs.metrics.map((m) => [shortRef(m, obs.pins.metric), obs.metricName(m)])
+    )
     return [...names]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label))
@@ -91,7 +102,11 @@ export function ObservationsTimelinePage() {
   const fallback = obs.streams[0]
     ? shortRef(obs.streams[0].metric, obs.pins.metric)
     : undefined
-  const metrics = metricParam.length ? metricParam : fallback ? [fallback] : []
+  const metrics = metricParam.length
+    ? distinct(metricParam.map((m) => shortRef(m, pins.metric)))
+    : fallback
+      ? [fallback]
+      : []
   useEffect(() => {
     if (metricParam.length || !fallback) return
     void setMetricParam([fallback], { history: "replace" })
@@ -106,16 +121,16 @@ export function ObservationsTimelinePage() {
       label: "Source",
       ordered: true,
       options: values.sources.map((value) => ({
-        value,
-        label: values.nameOf(value, obs.pins.source),
+        value: shortRef(value, pins.source),
+        label: values.nameOf(value, pins.source),
       })),
     },
     {
       name: "about",
       label: "About",
       options: values.abouts.map((value) => ({
-        value,
-        label: values.nameOf(value, obs.pins.about),
+        value: shortRef(value, pins.about),
+        label: values.nameOf(value, pins.about),
       })),
     },
     {
@@ -126,7 +141,11 @@ export function ObservationsTimelinePage() {
       options: [
         ...new Set([
           ...obs.streams
-            .filter((s) => metrics.some((m) => sameRef(s.metric, m)))
+            .filter(
+              (s) =>
+                metrics.some((m) => sameRef(s.metric, m)) &&
+                (!sources.length || sources.some((v) => sameRef(s.source, v)))
+            )
             .flatMap((s) => (s.channel ? [s.channel] : [])),
           ...channels,
         ]),
@@ -146,8 +165,8 @@ export function ObservationsTimelinePage() {
       sources,
       abouts,
       channels,
-      reducer: controls.reducers.get(metric),
-      unit: controls.units.get(metric),
+      reducer: controls.reducerOf(metric),
+      unit: controls.unitOf(metric),
     })
   )
   const charts = splitCharts(plots)
@@ -206,10 +225,7 @@ export function ObservationsTimelinePage() {
             label="Metrics"
             multiple
             options={metricOptions}
-            // The address may name a metric by id; the picker by path.
-            selected={metrics.map(
-              (m) => metricOptions.find((o) => sameRef(o.value, m))?.value ?? m
-            )}
+            selected={metrics}
             onChange={(next) => void setMetricParam(next.length ? next : null)}
           />
           <RangePicker

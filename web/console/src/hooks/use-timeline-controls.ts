@@ -20,6 +20,7 @@ import {
   ARRAY,
   BUCKET_VALUES,
   RANGE_VALUES,
+  choiceOf,
   customRange,
   readChoices,
   writeChoice,
@@ -34,10 +35,10 @@ export interface TimelineControls {
   size: BucketSize
   /** The zone calendar buckets are cut in. */
   timezone: string
-  /** Each metric's picked reducer and output unit, by the address's
-   * spelling of the metric. */
-  reducers: Map<string, string>
-  units: Map<string, string>
+  /** A metric's picked reducer and output unit, whichever way the address
+   * spells the metric. */
+  reducerOf: (metric: string) => string | undefined
+  unitOf: (metric: string) => string | undefined
   onPreset: (preset: RangePreset) => void
   onCustom: (range: TimeRange) => void
   onBucket: (bucket: BucketChoice) => void
@@ -67,6 +68,8 @@ export function useTimelineControls(
   const [now] = useState(() => Date.now())
   const timezone = useMemo(() => readerTimezone(), [])
 
+  const reducers = readChoices(reducerTokens)
+  const units = readChoices(unitTokens)
   const custom =
     rangeParam === "custom" ? customRange(startParam, endParam) : undefined
   const preset: RangePreset | "custom" = custom
@@ -88,8 +91,8 @@ export function useTimelineControls(
     bucket,
     size: bucketSizeOf(bucket, range),
     timezone,
-    reducers: readChoices(reducerTokens),
-    units: readChoices(unitTokens),
+    reducerOf: (metric) => choiceOf(reducers, metric),
+    unitOf: (metric) => choiceOf(units, metric),
     onPreset: (p) => {
       void setRangeParam(p === defaultRange ? null : p)
       void setStart(null)
