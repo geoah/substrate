@@ -216,10 +216,12 @@ entry could name only a function.
   ([0133](decisions/0133-a-kind-declares-its-purpose.md)), so a wide grant
   does not answer with a thread's own messages or other machinery; naming an
   internal kind or `purposes: [internal]` reaches it. Otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
-  `referencing` included; an object, or the object as a JSON string, as
-  `orderBy`, `aggregate` and `downsample` may be too), `orderBy`, `first`,
-  `after` and `expand` list a page, which answers `{records, cursor, head, generation, included?,
-  matches?}` exactly as the route does. A `filter` bounding `at` on both
+  `referencing` included), `orderBy`, `first`, `after` and `expand` list a
+  page, which answers `{records, cursor, head, generation, included?,
+  matches?}` exactly as the route does. `filter`, `orderBy`, `aggregate` and
+  `downsample` each take their JSON value (a list for `orderBy`, an object
+  for the rest) or the same value encoded as a JSON string, and any other
+  type is refused. A `filter` bounding `at` on both
   ends is the [window read](api.md#the-window-read), computed occurrences
   included. `aggregate` is the [aggregate read](api.md#the-aggregate-read)
   instead of a list, with `filter`, `kind` and `downsample` beside it; `id`,
