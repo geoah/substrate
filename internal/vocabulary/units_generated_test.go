@@ -1,16 +1,18 @@
 package vocabulary_test
 
-// THE TWO COPIES OF THE UNIT TABLE, written from it.
+// THE COPIES OF THE UNIT TABLE, written from it.
 //
 // The console lists measures and units in its quantity picker, renders print
-// symbols and reads the aliases a person types (web/console/src/lib/units.ts,
-// which imports units.table.json). docs/units.md lists every measure and code
-// for a reader. Both are written from vocabulary.Measures() by these tests, so
-// neither can drift: a table change fails them until
+// symbols with the engine's print rules and reads the aliases a person types
+// (web/console/src/lib/units.ts, which imports units.table.json), and its
+// tests hold those symbols to the engine's own (units.prints.json).
+// docs/units.md lists every measure and code for a reader. All three are
+// written from the table by these tests, so none can drift: a table change
+// fails them until
 //
 //	go test ./internal/vocabulary/ -run 'TestConsoleUnitsMatchTheEngine|TestUnitsPage' -update
 //
-// rewrites both. Do not edit either by hand.
+// rewrites them. Do not edit any by hand.
 
 import (
 	"bytes"
@@ -247,7 +249,7 @@ func renderUnitsPage(t *testing.T) []byte {
 	w("absolute temperature); `difference` by the factor alone (a temperature\n")
 	w("difference: 0.3 `Cel` is 0.54 `[degF]`); `logarithmic` converts to nothing but\n")
 	w("itself; `arbitrary` converts only to the same assay unit under another metric\n")
-	w("prefix (`m[IU]/L` to `[IU]/L`, a substrate extension that UCUM does not make);\n")
+	w("prefix (`m[IU]/L` to `[IU]/L`, a substrate rule UCUM does not have);\n")
 	w("`count` converts only between units counting the same annotation.\n\n")
 
 	w("## Codes by measure\n\n")

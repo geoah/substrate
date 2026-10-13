@@ -15,7 +15,14 @@ package vocabulary
 // never an edit here. TestUnitTableOnlyGrows pins every measure, code, factor
 // and offset as shipped.
 //
-// The console carries a copy of the measures, codes, print symbols and aliases
+// Growing moves stored values too. A code no row lists takes its measure from
+// the table (units.go, rules 4 and 5), so a new measure, or a code listed in a
+// new place, can move an unlisted code stored under a property that declares
+// no measure: a second measure of kg/h's dimension would make every stored
+// kg/h ambiguous, refusing its next write and keying its order NULL. A change
+// that adds a measure checks the unlisted codes TestMeasureOf pins.
+//
+// The console carries a copy of the measures, codes, print rules and aliases
 // (web/console/src/lib/units.ts) that TestConsoleUnitsMatchTheEngine holds to
 // this one, and docs/units.md is written from it by TestUnitsPage.
 

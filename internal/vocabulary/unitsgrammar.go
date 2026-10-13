@@ -68,10 +68,6 @@ type value struct {
 	// counted says an annotation or a factor stands as a component on its own
 	// (`{steps}`, `{beats}/min`): the term counts things.
 	counted bool
-	// symbols counts the simple units, so a term of numbers and annotations
-	// alone is told apart from one that names something.
-	symbols int
-	// pi in an atom definition is an atom like any other; this marks the use.
 }
 
 func unitValue() value {
@@ -157,7 +153,6 @@ func (v *value) mul(o value, exp int) error {
 	}
 	v.specials = append(v.specials, o.specials...)
 	v.counted = v.counted || o.counted
-	v.symbols += o.symbols
 	return nil
 }
 
@@ -220,7 +215,6 @@ func loadAtoms() {
 		resolving[code] = true
 		defer delete(resolving, code)
 		a := &atom{def: d, val: unitValue()}
-		a.val.symbols = 1
 		switch {
 		case d.class == atomPi:
 			a.val.pi = 1

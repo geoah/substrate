@@ -472,7 +472,7 @@ What converts, and what never does:
   `/min`. An annotation alone (`{steps}`) is a `count`.
 - An arbitrary unit (`[IU]`, `[arb'U]`) is defined by an assay and converts
   only to the same atom and annotation under another metric prefix, so
-  `m[IU]/L` converts to `[IU]/L`. This is a substrate extension: UCUM converts
+  `m[IU]/L` converts to `[IU]/L`. This is a substrate rule: UCUM converts
   no arbitrary unit at all. `[IU]` never reaches `[arb'U]` or a proper unit.
 - A level (`dB`, `dB[SPL]`, `dB[W]`, `dBm`, `[pH]`) converts to nothing but
   itself. `dBm` is the substrate's own code, 10 lg(P/1 mW) dB, because UCUM

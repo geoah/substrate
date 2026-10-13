@@ -99,7 +99,7 @@ The scales: `ratio` converts by a factor; `affine` by a factor and an offset (an
 absolute temperature); `difference` by the factor alone (a temperature
 difference: 0.3 `Cel` is 0.54 `[degF]`); `logarithmic` converts to nothing but
 itself; `arbitrary` converts only to the same assay unit under another metric
-prefix (`m[IU]/L` to `[IU]/L`, a substrate extension that UCUM does not make);
+prefix (`m[IU]/L` to `[IU]/L`, a substrate rule UCUM does not have);
 `count` converts only between units counting the same annotation.
 
 ## Codes by measure

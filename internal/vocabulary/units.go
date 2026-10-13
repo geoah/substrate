@@ -29,7 +29,6 @@ package vocabulary
 //     code by this rule: its codes are the ones rules 1 and 4 give it.
 
 import (
-	"errors"
 	"fmt"
 	"math/big"
 	"slices"
@@ -324,11 +323,6 @@ func UnitAliases() map[string]string {
 type unitRow struct {
 	measure string
 	unit    Unit
-	// factor and offset convert a value to the measure's base:
-	// base = value * factor + offset. Nil factor: no rational factor exists
-	// (levels, arbitrary units, rad against deg).
-	factor *big.Rat
-	offset *big.Rat
 }
 
 type unitTable struct {
@@ -402,9 +396,6 @@ func buildTable() (*unitTable, error) {
 				return nil, fmt.Errorf("measure %s: %w", d.name, err)
 			}
 			row := unitRow{measure: d.name, unit: u}
-			if d.base != "" {
-				row.factor, row.offset = baseFactor(m.Scale, u, base)
-			}
 			if d.scale != ScaleLogarithmic && d.scale != ScaleArbitrary && d.scale != ScaleCount && u.val.dim != m.dim {
 				return nil, fmt.Errorf("measure %s: %s has dimension %s, the measure %s", d.name, code, u.val.dim, m.dim)
 			}
@@ -462,24 +453,6 @@ func buildTable() (*unitTable, error) {
 		}
 	}
 	return t, nil
-}
-
-// baseFactor is the exact conversion of u to base on a scale, or nil where no
-// rational number states it.
-func baseFactor(scale Scale, u, base Unit) (factor, offset *big.Rat) {
-	switch scale {
-	case ScaleLogarithmic, ScaleArbitrary:
-		return nil, nil
-	}
-	if u.val.pi != base.val.pi {
-		return nil, nil
-	}
-	factor = new(big.Rat).Quo(u.val.factor, base.val.factor)
-	offset = new(big.Rat)
-	if scale == ScaleAffine && u.offset != nil {
-		offset.Set(u.offset)
-	}
-	return factor, offset
 }
 
 // Measures lists every measure, in table order.
@@ -547,9 +520,6 @@ func ResolveMeasure(code, declared string) (Measure, error) {
 	return out, nil
 }
 
-// errNoMeasure marks a valid code no measure admits.
-var errNoMeasure = errors.New("no measure")
-
 func (t *unitTable) resolve(u Unit, declared string) (*Measure, error) {
 	if declared != "" {
 		m, ok := t.byName[declared]
@@ -598,7 +568,7 @@ func (t *unitTable) resolve(u Unit, declared string) (*Measure, error) {
 	}
 	switch len(candidates) {
 	case 0:
-		return nil, fmt.Errorf("%w: %s (dimension %s) measures nothing the unit table names", errNoMeasure, u.code, u.val.dim)
+		return nil, fmt.Errorf("%s (dimension %s) measures nothing the unit table names", u.code, u.val.dim)
 	case 1:
 		return t.byName[candidates[0]], nil
 	}
@@ -657,7 +627,7 @@ func (t *unitTable) admits(m *Measure, u Unit) error {
 func (t *unitTable) dimensionAdmits(m *Measure, u Unit) error {
 	switch m.Scale {
 	case ScaleLogarithmic, ScaleArbitrary, ScaleCount:
-		return fmt.Errorf("%w", errNoMeasure)
+		return fmt.Errorf("a %s measure admits no code by its dimension", m.Scale)
 	}
 	if u.val.dim != m.dim {
 		return fmt.Errorf("%s (dimension %s) is not %s (dimension %s)", u.code, u.val.dim, m.Name, m.dim)
@@ -870,16 +840,33 @@ func ToBase(measure, code string) (factor, offset *big.Rat, err error) {
 	case ScaleLogarithmic, ScaleArbitrary:
 		return nil, nil, fmt.Errorf("%s is a %s unit: it has no base to convert to", code, m.Scale)
 	}
-	base := t.bases[m.Name]
-	if u.val.pi != base.val.pi {
+	if u.val.pi != t.bases[m.Name].val.pi {
 		return nil, nil, fmt.Errorf("%s reaches %s only through pi: no rational number states it", code, m.Base)
 	}
-	factor = new(big.Rat).Quo(u.val.factor, base.val.factor)
+	factor, offset = t.toBase(m, u, nil)
+	return factor, offset, nil
+}
+
+// toBase is the one formula from a unit to its measure's base:
+// base = value * factor + offset, the factor the ratio of the two units'
+// factors and the offset an absolute temperature's zero. A power of pi
+// between them is read at pi, which only an order key passes (OrderFactor).
+func (t *unitTable) toBase(m *Measure, u Unit, pi *big.Rat) (factor, offset *big.Rat) {
+	factor = new(big.Rat).Quo(u.val.factor, t.bases[m.Name].val.factor)
+	for n := u.val.pi - t.bases[m.Name].val.pi; n != 0 && pi != nil; {
+		if n > 0 {
+			factor.Mul(factor, pi)
+			n--
+		} else {
+			factor.Quo(factor, pi)
+			n++
+		}
+	}
 	offset = new(big.Rat)
 	if m.Scale == ScaleAffine && u.offset != nil {
 		offset.Set(u.offset)
 	}
-	return factor, offset, nil
+	return factor, offset
 }
 
 // orderPi is pi to 40 places, the value OrderFactor reads it at.
@@ -903,25 +890,11 @@ func OrderFactor(measure, code string) (factor, offset *big.Rat, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	base := t.bases[m.Name]
-	if m.Scale == ScaleLogarithmic || m.Scale == ScaleArbitrary || u.val.pi == base.val.pi {
+	if m.Scale == ScaleLogarithmic || m.Scale == ScaleArbitrary || u.val.pi == t.bases[m.Name].val.pi {
 		return ToBase(m.Name, code)
 	}
 	pi, _ := new(big.Rat).SetString(orderPi)
-	factor = new(big.Rat).Quo(u.val.factor, base.val.factor)
-	for n := u.val.pi - base.val.pi; n != 0; {
-		if n > 0 {
-			factor.Mul(factor, pi)
-			n--
-		} else {
-			factor.Quo(factor, pi)
-			n++
-		}
-	}
-	offset = new(big.Rat)
-	if m.Scale == ScaleAffine && u.offset != nil {
-		offset.Set(u.offset)
-	}
+	factor, offset = t.toBase(m, u, pi)
 	return factor, offset, nil
 }
 

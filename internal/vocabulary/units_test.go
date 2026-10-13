@@ -188,6 +188,7 @@ func TestQuantityConvertsOnlyWithinAMeasure(t *testing.T) {
 	for code, want := range map[string]string{
 		"Gy": "absorbed-dose", "mGy": "absorbed-dose", "Sv": "dose-equivalent", "uSv": "dose-equivalent",
 		"Bq": "radioactivity", "MBq": "radioactivity", "Ci": "radioactivity", "J/kg": "specific-energy",
+		"mSv": "dose-equivalent", "cGy": "absorbed-dose",
 		"uSv/h": "dose-equivalent-rate", "Hz": "frequency", "kHz": "frequency",
 	} {
 		if m, err := vocabulary.MeasureOf(code); err != nil || m.Name != want {
@@ -305,9 +306,9 @@ func TestLevelsConvertToNothingButThemselves(t *testing.T) {
 	}
 }
 
-// The substrate's own extension, labeled as one: an arbitrary unit converts to the same
-// atom and annotation under another metric prefix, and to nothing else. UCUM
-// itself converts an arbitrary unit to nothing.
+// The substrate's own rule, which UCUM does not have: an arbitrary unit
+// converts to the same atom and annotation under another metric prefix, and to
+// nothing else. UCUM itself converts an arbitrary unit to nothing.
 func TestArbitraryUnitsConvertOnlyByPrefix(t *testing.T) {
 	for _, c := range []struct{ value, from, to, want string }{
 		{"5", "m[IU]/L", "[IU]/L", "0.005"},

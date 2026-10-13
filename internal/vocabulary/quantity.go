@@ -63,22 +63,6 @@ func (b QuantityBound) String() string {
 	return FormatQuantity(map[string]any{QuantityValue: b.Value, QuantityUnit: b.Unit})
 }
 
-// Equal reports whether two specs declare the same thing.
-func (s *QuantitySpec) Equal(o *QuantitySpec) bool {
-	if s == nil || o == nil {
-		return s == o
-	}
-	return s.Measure == o.Measure && slices.Equal(s.Units, o.Units) && s.Comparator == o.Comparator &&
-		boundEqual(s.Min, o.Min) && boundEqual(s.Max, o.Max)
-}
-
-func boundEqual(a, b *QuantityBound) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
-}
-
 // CheckUnit holds a stored or written unit code to the declaration: its
 // measure, and the listed units.
 func (s *QuantitySpec) CheckUnit(code string) (Measure, error) {
