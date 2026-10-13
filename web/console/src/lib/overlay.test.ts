@@ -4,8 +4,12 @@
  * vendor summaries is read, and which colour each series wears. */
 
 import { describe, expect, it } from "vitest"
+import { parseAllDocuments } from "yaml"
+
+import catalogue from "../../../../samples/health/metrics.yaml?raw"
 
 import {
+  metricInfoOf,
   presetRange,
   streamsOf,
   type MetricInfo,
@@ -42,44 +46,28 @@ import {
   type PlotSource,
 } from "./overlay"
 
-const INFOS: Record<string, MetricInfo> = {
-  [HEART]: {
-    id: "health/heart_rate",
-    path: HEART,
-    name: "Heart rate",
-    form: "gauge",
-    unit: "/min",
-  },
-  [STEPS_METRIC]: {
-    id: "health/steps",
-    path: STEPS_METRIC,
-    name: "Steps",
-    form: "amount",
-    unit: "{steps}",
-  },
-  [BODY_MASS]: {
-    id: "health/body_mass",
-    path: BODY_MASS,
-    name: "Weight",
-    form: "gauge",
-    unit: "kg",
-  },
-  [SLEEP_STAGE]: {
-    id: "health/sleep_stage",
-    path: SLEEP_STAGE,
-    name: "Sleep stage",
-    form: "amount",
-    unit: "min",
-    codeSet: ["rem", "deep", "light", "awake"],
-  },
-  [RECOVERY]: {
-    id: "health/whoop_recovery",
-    path: RECOVERY,
-    name: "Recovery",
-    form: "summary",
-    unit: "%",
-  },
-}
+/** The shipped health catalogue's metric records, read as the console reads
+ * a repository's, under the fixtures' metric kind. */
+const INFOS: Record<string, MetricInfo> = Object.fromEntries(
+  parseAllDocuments(catalogue).flatMap((doc) => {
+    const d = doc.toJS() as {
+      metadata?: { id?: string }
+      data?: { properties?: Record<string, unknown> }
+    } | null
+    const id = d?.metadata?.id
+    if (!id || !d?.data?.properties) return []
+    const info = metricInfoOf({
+      id,
+      kind: METRIC,
+      properties: d.data.properties,
+      labels: {},
+      version: 1,
+      createdAt: "2026-10-07T04:12:31Z",
+      updatedAt: "2026-10-07T04:12:31Z",
+    })
+    return [[info.path, info]]
+  })
+)
 
 function source(streams: Stream[] = streamsOf(LATEST)): PlotSource {
   return {
@@ -395,13 +383,9 @@ describe("one metric's plot", () => {
   it("orders categories by the metric's own codes, then the rest", () => {
     const sleep = planPlot(source(), SLEEP_STAGE, SCOPE)
     expect(sleep.groupKey).toBe("code")
-    expect(universeOf(sleep, ["awake", "nap", "rem"])).toEqual([
-      "rem",
-      "deep",
-      "light",
-      "awake",
-      "nap",
-    ])
+    const codes = INFOS[SLEEP_STAGE].codeSet!
+    expect(codes).toContain("rem")
+    expect(universeOf(sleep, ["nap", "rem"])).toEqual([...codes, "nap"])
   })
 
   it("greys a series past the eighth colour", () => {
