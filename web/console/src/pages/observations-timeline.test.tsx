@@ -290,12 +290,19 @@ describe("the timeline's requests", () => {
       )
     )
     // Asked once together, then once each.
-    expect(server.sent.filter((r) => r.aggregate.metrics)).toHaveLength(1)
-    expect(
+    const alone = () =>
       server.sent.flatMap((r) =>
         r.aggregate.metric ? [r.aggregate.metric.ref] : []
       )
-    ).toEqual([BODY_MASS, `${METRIC}/health/steps`])
+    expect(server.sent.filter((r) => r.aggregate.metrics)).toHaveLength(1)
+    expect(alone()).toEqual([BODY_MASS, `${METRIC}/health/steps`])
+    // A record write refreshes the reads apart, never the refused one: a
+    // refetch would clear its refusal and drop the reads apart until it
+    // came back.
+    await act(() => server.client.invalidateQueries({ queryKey: ["records"] }))
+    await waitFor(() => expect(alone()).toHaveLength(4))
+    expect(server.sent.filter((r) => r.aggregate.metrics)).toHaveLength(1)
+    expect(within(steps).getByText(problem)).toBeTruthy()
   })
 
   it("reads each metric apart where the server predates several-metric reads", async () => {
