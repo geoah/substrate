@@ -676,8 +676,9 @@ func TestAppleHealthSkipsARecordTooBigForAFrame(t *testing.T) {
 		t.Fatal("the oversized workout was written")
 	}
 	ex := mustGet(t, ds, ahExport, "hook-long-ride")
-	if !strings.Contains(fmt.Sprint(ex.Properties["oversized"]), "iphone/W-LONG") ||
-		!strings.Contains(fmt.Sprint(out["oversized"]), "iphone/W-LONG") {
+	named := ahWorkout + " iphone/W-LONG ("
+	if !strings.Contains(fmt.Sprint(ex.Properties["oversized"]), named) ||
+		!strings.Contains(fmt.Sprint(out["oversized"]), named) {
 		t.Fatalf("the receipt %v and the output %v do not name the skipped workout", ex.Properties["oversized"], out["oversized"])
 	}
 }

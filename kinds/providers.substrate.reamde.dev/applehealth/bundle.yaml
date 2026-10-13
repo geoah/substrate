@@ -2507,8 +2507,7 @@ data:
                 size = len(json.dumps(props))
                 if size > OVERSIZE_BYTES:
                     if len(oversized) < MAX_OVERSIZED:
-                        oversized.append("%s %s (%d bytes)" % (unit.kind.rsplit("/", 1)[-1],
-                                                               unit.id, size))
+                        oversized.append("%s %s (%d bytes)" % (unit.kind, unit.id, size))
                     host.log("applehealth: %s %s is %d bytes, more than one response "
                              "holds; skipped" % (unit.kind, unit.id, size))
                 else:
