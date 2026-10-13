@@ -692,12 +692,16 @@ repository [synthetic data](synthetic-data.md) loads (`garmin/ada/forerunner265`
 `whoop/e2e`).
 
 Heart rate zones per week for six months is
-[the aggregate read's first example](api.md#the-aggregate-read) with one
-`durationIn` reducer per zone (95 to 114, 114 to 133, 133 to 152, 152 to 171
-and 171 to 220 a minute). `durationIn` reads raw points: six months of the synthetic data's
-heart rate is fewer than 100,000 of them, inside the default `maxSamples` of
-1,000,000, while the 182 days of a one-second stream are 15.7 million, which
-needs `budget.maxSamples` raised toward its cap of 20,000,000.
+[the aggregate read's first example](api.md#the-aggregate-read) with its
+range widened from one week to 26 and one `durationIn` reducer per zone (95
+to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute).
+`durationIn` reads raw points, and `maxSamples` counts every selected
+source's points, not only the ones the policy keeps. The synthetic data
+writes about 950 heart rate points a day across Apple Health, Garmin and
+Google Fit, so 26 weeks of it are about 170,000, inside the default
+`maxSamples` of 1,000,000. The 182 days of a one-second stream are 15.7
+million, which needs `budget.maxSamples` raised toward its cap of
+20,000,000.
 
 Daily steps for a year on each sample's own local day. Under the default
 `separate` policy each source is a row of its own, and `prefer-raw` serves
