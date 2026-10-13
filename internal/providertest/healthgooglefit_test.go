@@ -443,14 +443,29 @@ func TestHealthGoogleFitTriggerDeliversMirrorRows(t *testing.T) {
 	if n := len(withMetric(t, ds, obsObservation, "body_mass")); n != 13 {
 		t.Fatalf("%d weight observations after the trigger drained, want the 13 weigh-ins from the recorded 2026-09-04 on", n)
 	}
+	// Today's weigh-in, found by the dataset row it came from: its id is
+	// hashed past 128 bytes, so it does not name the row.
+	emptied := googlefitDatasetType + "/" + fitDatasetRow(fitWeight, today)
+	var gone []string
+	for _, row := range withMetric(t, ds, obsObservation, "body_mass") {
+		if storedRefPath(row.Properties["origin"]) == emptied {
+			gone = append(gone, row.ID)
+		}
+	}
+	if len(gone) != 1 {
+		t.Fatalf("%d observations from today's weigh-in, want 1", len(gone))
+	}
 
 	fake.dropPoints(fitWeight, recordedToday)
 	googlefitSync(t, ds, fake)
 	drainTriggers(t, ds)
-	for _, row := range withMetric(t, ds, obsObservation, "body_mass") {
-		if strings.Contains(row.ID, fitDatasetRow(fitWeight, today)) {
-			t.Fatalf("%s survived the delete of its day", row.ID)
+	for _, id := range gone {
+		if live(t, ds, obsObservation, id) {
+			t.Fatalf("%s survived the delete of its day", id)
 		}
+	}
+	if n := len(withMetric(t, ds, obsObservation, "body_mass")); n != 12 {
+		t.Fatalf("%d weight observations after the day emptied, want 12", n)
 	}
 	if n := parkedFailures(t, ds); n != 0 {
 		t.Fatalf("%d deliveries parked", n)
