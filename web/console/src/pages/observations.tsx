@@ -85,6 +85,7 @@ import {
   SHAPE_WORDS,
   bucketSizeOf,
   coverageWords,
+  distinct,
   presetRange,
   readChoices,
   readerTimezone,
@@ -160,10 +161,6 @@ function customRange(
   return Number.isNaN(a) || Number.isNaN(b) || b <= a
     ? undefined
     : { start: a, end: b }
-}
-
-function distinct(values: (string | undefined)[]): string[] {
-  return [...new Set(values.filter((v): v is string => Boolean(v)))]
 }
 
 export function ObservationsPage() {

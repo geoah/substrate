@@ -23,6 +23,7 @@ import type {
   RecordFilter,
   SubstrateRecord,
 } from "@/lib/api/types"
+import { readReference } from "@/lib/api/types"
 import { declaredProperties } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
@@ -102,6 +103,11 @@ export function sameRef(a: string | undefined, b: string | undefined): boolean {
  * value itself where it is no path. */
 export function refIdOf(value: string): string {
   return splitRecordPath(value)?.id ?? value
+}
+
+/** The values that are set, once each, in the order they first come. */
+export function distinct(values: readonly (string | undefined)[]): string[] {
+  return [...new Set(values.filter((v): v is string => Boolean(v)))]
 }
 
 // ── metrics and forms ──────────────────────────────────────────────────────
@@ -222,12 +228,10 @@ export function readingText(
   return (unit && formatQuantity({ value: shown, unit })) || shown
 }
 
-/** A metric id read as words when no record names it:
- * `health/heart_rate` is "Heart rate". */
+/** A metric id read as words when no record names it, its last segment
+ * as a code is: `health/heart_rate` is "Heart rate". */
 export function metricWords(id: string): string {
-  const last = id.slice(id.lastIndexOf("/") + 1).replaceAll(/[_-]+/g, " ")
-  const words = last.trim() || id
-  return words.charAt(0).toUpperCase() + words.slice(1)
+  return codeWords(id.slice(id.lastIndexOf("/") + 1) || id)
 }
 
 /** What a stream's newest point says of its form: the latest read's row
@@ -382,18 +386,7 @@ export function channelKey(value: string, channel?: string): string {
 export function recordTimelineSearch(
   properties: Record<string, unknown>
 ): Record<string, string> | undefined {
-  const ref = (key: string) => {
-    const v = properties[key]
-    if (typeof v === "string") return v || undefined
-    if (
-      v &&
-      typeof v === "object" &&
-      typeof (v as { ref?: unknown }).ref === "string"
-    ) {
-      return (v as { ref: string }).ref
-    }
-    return undefined
-  }
+  const ref = (key: string) => readReference(properties[key])?.path
   const metric = ref("metric")
   const at = typeof properties.at === "string" ? Date.parse(properties.at) : NaN
   if (!metric || Number.isNaN(at)) return undefined
@@ -408,16 +401,7 @@ export function recordTimelineSearch(
   const window: TimeRange =
     !Number.isNaN(endsAt) && endsAt > at
       ? { start: at, end: endsAt }
-      : (() => {
-          const d = new Date(at)
-          const y = d.getFullYear()
-          const m = d.getMonth()
-          const day = d.getDate()
-          return {
-            start: new Date(y, m, day - 29).getTime(),
-            end: new Date(y, m, day + 1).getTime(),
-          }
-        })()
+      : daysEnding(at, 30)
   // Record paths, the spelling the latest read's groups carry.
   return {
     ...streamSearch({ metric, source, about, channel }),
@@ -504,30 +488,32 @@ export interface TimeRange {
   end: number
 }
 
-function startOfDay(t: number): Date {
+/** The `days` local days ending with the one holding `t`: from the first
+ * one's start to the start of the day after `t`'s. */
+export function daysEnding(t: number, days: number): TimeRange {
   const d = new Date(t)
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const y = d.getFullYear()
+  const m = d.getMonth()
+  const day = d.getDate()
+  return {
+    start: new Date(y, m, day - days + 1).getTime(),
+    end: new Date(y, m, day + 1).getTime(),
+  }
 }
 
 /** A preset as the local days it covers, ending with today:
  * `[the first day's midnight, tomorrow's midnight)`. */
 export function presetRange(preset: RangePreset, now = Date.now()): TimeRange {
-  const today = startOfDay(now)
+  if (preset === "today") return daysEnding(now, 1)
+  if (preset === "7d") return daysEnding(now, 7)
+  if (preset === "30d") return daysEnding(now, 30)
+  const today = new Date(now)
   const y = today.getFullYear()
   const m = today.getMonth()
   const d = today.getDate()
-  const end = new Date(y, m, d + 1).getTime()
   const start =
-    preset === "today"
-      ? today
-      : preset === "7d"
-        ? new Date(y, m, d - 6)
-        : preset === "30d"
-          ? new Date(y, m, d - 29)
-          : preset === "6m"
-            ? new Date(y, m - 6, d + 1)
-            : new Date(y - 1, m, d + 1)
-  return { start: start.getTime(), end }
+    preset === "6m" ? new Date(y, m - 6, d + 1) : new Date(y - 1, m, d + 1)
+  return { start: start.getTime(), end: daysEnding(now, 1).end }
 }
 
 /** Two local calendar days (`YYYY-MM-DD`) as the window from the first's
@@ -818,6 +804,30 @@ export const FROM_CHOICES: readonly { value: AggregateFrom; label: string }[] =
     { value: "prefer-raw", label: "Prefer raw" },
   ]
 
+/** What a read narrows its streams to: record paths of metrics, sources
+ * and things observed, and channels. An empty list narrows nothing. */
+export interface StreamNarrowing {
+  metrics?: readonly string[]
+  sources?: readonly string[]
+  abouts?: readonly string[]
+  channels?: readonly string[]
+}
+
+/** The observed filter, narrowed server-side by `properties`. */
+function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
+  const properties: NonNullable<RecordFilter["properties"]> = {}
+  if (narrow.metrics?.length) properties.metric = { in: [...narrow.metrics] }
+  if (narrow.sources?.length) properties.source = { in: [...narrow.sources] }
+  if (narrow.abouts?.length) properties.about = { in: [...narrow.abouts] }
+  if (narrow.channels?.length) {
+    properties.channel = { in: [...narrow.channels] }
+  }
+  return {
+    implements: OBSERVED_TRAIT_IDENTITY,
+    ...(Object.keys(properties).length ? { properties } : {}),
+  }
+}
+
 /** What one chart of the timeline asks for. */
 export interface LaneSpec {
   /** The metric record's path. */
@@ -872,10 +882,6 @@ export function laneGroupKey(spec: LaneSpec): AggregateGroupKey | undefined {
 export function laneRead(spec: LaneSpec): AggregateRead {
   const groupKey = laneGroupKey(spec)
   const ranked = spec.sourceOrder.length + (spec.sourceless ? 1 : 0)
-  const properties: NonNullable<RecordFilter["properties"]> = {}
-  if (spec.sources.length) properties.source = { in: spec.sources }
-  if (spec.about.length) properties.about = { in: spec.about }
-  if (spec.channels?.length) properties.channel = { in: spec.channels }
   const aggregate: Aggregate = {
     metric: { ref: spec.metricPath },
     from: spec.from,
@@ -894,31 +900,12 @@ export function laneRead(spec: LaneSpec): AggregateRead {
     ...(spec.unit ? { unit: spec.unit } : {}),
   }
   return {
-    filter: {
-      implements: OBSERVED_TRAIT_IDENTITY,
-      ...(Object.keys(properties).length ? { properties } : {}),
-    },
+    filter: narrowedFilter({
+      sources: spec.sources,
+      abouts: spec.about,
+      channels: spec.channels,
+    }),
     aggregate,
-  }
-}
-
-/** What a page narrows its streams to: record paths of metrics, sources
- * and things observed. An empty list narrows nothing. */
-export interface StreamNarrowing {
-  metrics?: readonly string[]
-  sources?: readonly string[]
-  abouts?: readonly string[]
-}
-
-/** The observed filter, narrowed server-side by `properties`. */
-function narrowedFilter(narrow: StreamNarrowing): RecordFilter {
-  const properties: NonNullable<RecordFilter["properties"]> = {}
-  if (narrow.metrics?.length) properties.metric = { in: [...narrow.metrics] }
-  if (narrow.sources?.length) properties.source = { in: [...narrow.sources] }
-  if (narrow.abouts?.length) properties.about = { in: [...narrow.abouts] }
-  return {
-    implements: OBSERVED_TRAIT_IDENTITY,
-    ...(Object.keys(properties).length ? { properties } : {}),
   }
 }
 

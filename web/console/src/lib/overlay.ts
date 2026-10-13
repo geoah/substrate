@@ -22,6 +22,7 @@ import {
   SUMMARY_REDUCERS,
   bucketEstimate,
   bucketOf,
+  distinct,
   formOf,
   laneGroupKey,
   laneRead,
@@ -248,10 +249,6 @@ export interface Plot {
   fromReason?: "summaries-only" | "some-summaries"
   /** The sources among its streams that keep vendor summaries. */
   summarySources: string[]
-}
-
-function distinct(values: (string | undefined)[]): string[] {
-  return [...new Set(values.filter((v): v is string => Boolean(v)))]
 }
 
 /** Where a metric reads from when the reader picked nothing, from the

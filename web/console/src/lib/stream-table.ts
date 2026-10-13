@@ -9,6 +9,7 @@ import type { DeclaredProperty } from "@/lib/definition"
 import { decodeFilters, type ActiveFilter } from "@/lib/filters"
 import {
   SHAPE_WORDS,
+  distinct,
   durationMs,
   numberOf,
   refIdOf,
@@ -475,9 +476,6 @@ export function selectionByMetric(
     entry.streams.push(stream)
   }
   for (const entry of out) {
-    const distinct = (values: (string | undefined)[]) => [
-      ...new Set(values.filter((v): v is string => Boolean(v))),
-    ]
     entry.sources = distinct(entry.streams.map((s) => s.source))
     entry.abouts = entry.streams.every((s) => s.about)
       ? distinct(entry.streams.map((s) => s.about))

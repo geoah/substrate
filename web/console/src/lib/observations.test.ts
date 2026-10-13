@@ -21,6 +21,8 @@ import {
   formOf,
   isoWithOffset,
   laneRead,
+  MAX_BUCKETS,
+  MAX_GROUPS_CAP,
   discoveryChunks,
   facetRead,
   latestRead,
@@ -78,6 +80,11 @@ import {
   observationKind,
   traceKind,
 } from "@/lib/observations.test-fixtures"
+
+const serverBudgets = import.meta.glob<string>(
+  "../../../../internal/substrate/aggregate.go",
+  { query: "?raw", import: "default", eager: true }
+)
 
 const OBSERVED = "substrate.reamde.dev/core/observed"
 const DAY = 86_400_000
@@ -506,6 +513,16 @@ describe("one chart's request", () => {
       "min",
       "max",
     ])
+  })
+
+  it("holds its budgets to the server's", () => {
+    // The server's defaults and caps (internal/substrate/aggregate.go): a
+    // read past them is refused before anything is read.
+    const [go] = Object.values(serverBudgets)
+    const constant = (name: string) =>
+      Number(new RegExp(`\\b${name}\\s*=\\s*(\\d+)`).exec(go)?.[1])
+    expect(MAX_BUCKETS).toBe(constant("AggregateMaxBuckets"))
+    expect(MAX_GROUPS_CAP).toBe(constant("AggregateMaxGroupsCap"))
   })
 
   it("counts groups times buckets against the budget", () => {
