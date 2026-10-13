@@ -21,7 +21,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthgooglefit
-  version: 3
+  version: 4
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -135,7 +135,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthgooglefit-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthgooglefit@3"
+    ADAPTER = "healthgooglefit@4"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -220,6 +220,11 @@ data:
     # The datasource row's device type onto the source kind's class; a phone
     # and the rest have no class there.
     CLASSES = {"watch": "watch", "scale": "scale"}
+    # Fit has no device type for a glucose meter or a blood pressure cuff (one
+    # reports `unknown`), so a device whose type names no class and that
+    # carries one of these data types is a `meter`. The device's every data
+    # source is read, so the class does not hang on which batch came first.
+    METER_TYPES = ("com.google.blood_glucose", "com.google.blood_pressure")
 
     # A device uid a source slug keeps as written. Any other uid is digested,
     # so two uids that differ only in case or punctuation stay two devices.
@@ -342,7 +347,7 @@ data:
             self.host, self.aid = host, aid
             acct = host.records.get(ACCOUNT, aid) or {}
             self.clock = _Clock((acct.get("properties") or {}).get("timezone"))
-            self.streams, self.devices = {}, {}
+            self.streams, self.devices, self.carries = {}, {}, {}
             for r in _list(host, {"kinds": [DATASOURCE],
                                   "referencing": {"ref": ACCOUNT + "/" + aid,
                                                   "property": "account"}}):
@@ -351,6 +356,8 @@ data:
                 dev = p.get("device") or {}
                 if dev.get("uid"):
                     self.devices[str(dev["uid"])] = dev
+                    self.carries.setdefault(str(dev["uid"]), set()).add(
+                        (p.get("dataType") or {}).get("name"))
             self.sources = {}
             self.minted = set()
             self.units = {}
@@ -372,7 +379,7 @@ data:
                                   _device_token(dev, origin))
                 return self._source(slug, {
                     "name": " ".join(x for x in (dev.get("manufacturer"), dev.get("model")) if x),
-                    "class": CLASSES.get(dev.get("type") or ""),
+                    "class": self.device_class(dev),
                     "manufacturer": dev.get("manufacturer"),
                     "hardwareModel": dev.get("model")})
             parts = origin.split(":")
@@ -381,6 +388,17 @@ data:
                                                "class": "manual"})
             package = parts[2] if len(parts) > 2 and "." in parts[2] else ""
             return self.app_source(package)
+
+        def device_class(self, dev):
+            """The source class of a device: its type's, else `meter` for a
+            device that carries a glucose or blood pressure data type."""
+            known = CLASSES.get(dev.get("type") or "")
+            if known:
+                return known
+            carries = self.carries.get(str(dev.get("uid") or "")) or set()
+            if any(t in carries for t in METER_TYPES):
+                return "meter"
+            return None
 
         def app_source(self, package):
             if not package:

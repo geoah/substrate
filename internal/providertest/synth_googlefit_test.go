@@ -334,8 +334,21 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 		}
 	}
 	sources := map[string]bool{}
+	classes := map[string]any{}
 	for _, s := range listLive(t, ds, obsSource) {
-		sources[strings.TrimPrefix(s.ID, "googlefit/"+googlefitAccount+"/")] = true
+		slug := strings.TrimPrefix(s.ID, "googlefit/"+googlefitAccount+"/")
+		sources[slug] = true
+		classes[slug] = s.Properties["class"]
+	}
+	// Fit names no device type for a glucose meter or a blood pressure cuff,
+	// so the adapter classes a device by the data it carries.
+	for slug, want := range map[string]string{
+		fitWatchSlug: "watch", fitScaleSlug: "scale", "ascensia-contour-next-one.5e2a91c7": "meter",
+		"withings-bpm-connect.7c03d5e1": "meter", "manual": "manual",
+	} {
+		if classes[slug] != want {
+			t.Errorf("source %s is class %v, want %s", slug, classes[slug], want)
+		}
 	}
 	for _, slug := range []string{fitWatchSlug, fitScaleSlug, "ascensia-contour-next-one.5e2a91c7", "manual"} {
 		if !sources[slug] {

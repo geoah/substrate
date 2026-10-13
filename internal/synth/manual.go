@@ -60,13 +60,13 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 		return map[string]any{"kind": a + "/" + kind, "metadata": map[string]any{"id": id}, "data": map[string]any{"properties": props}}
 	}
 	docs := []map[string]any{
-		doc("observations/source", "manual", map[string]any{"name": "Entered by hand", "class": "app"}),
+		doc("observations/source", "manual", map[string]any{"name": "Entered by hand", "class": "manual"}),
 	}
 	sources := map[string]bool{}
 	for _, panel := range p.Labs() {
 		if !sources[panel.Slug] {
 			sources[panel.Slug] = true
-			docs = append(docs, doc("observations/source", panel.Slug, map[string]any{"name": panel.Lab, "class": "service"}))
+			docs = append(docs, doc("observations/source", panel.Slug, map[string]any{"name": panel.Lab, "class": "lab"}))
 		}
 		loc := p.Zone(panel.Date)
 		rid := panel.Slug + "/" + panel.Date.String()

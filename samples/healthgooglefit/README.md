@@ -79,7 +79,9 @@ counted; out-of-bed time is left out of `timeInBed`.
   the account's `datasource` rows (by id, else by a listed device's `uid`
   inside the id): `googlefit/<account id>/<manufacturer-model>.<device>`,
   named for its manufacturer and model, with `class` `watch` or `scale`
-  where the device type maps. `<device>` is the device's `uid` when it is 1
+  where the device type maps, else `meter` where the device carries a
+  glucose or blood pressure data type (Fit has no device type for a meter
+  or a cuff). `<device>` is the device's `uid` when it is 1
   to 32 lowercase letters and digits, else the first 16 hex digits of the
   uid's SHA-256, else, for a device listed with no uid, of the full
   `originDataSourceId`'s. Two devices of one model are therefore two sources,

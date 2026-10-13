@@ -121,6 +121,38 @@ func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 
 // The hotel weigh-in is on the trip's third day, and only a range holding
 // that day writes it, though a range holding any trip day keeps the trip.
+// A source's class says what sort of source it is, from the source kind's
+// own values: a lab is `lab` and the hand entry `manual`, as the Garmin and
+// Google Fit adapters class the hand entries they see, so an app that
+// filters sources by class finds them.
+func TestManualSourcesCarryTheirClass(t *testing.T) {
+	t.Parallel()
+	classes := map[string]string{}
+	for _, doc := range manualDocs(t, Options{}) {
+		if !strings.HasSuffix(doc["kind"].(string), "/observations/source") {
+			continue
+		}
+		id := doc["metadata"].(map[string]any)["id"].(string)
+		classes[id], _ = doc["data"].(map[string]any)["properties"].(map[string]any)["class"].(string)
+	}
+	if classes["manual"] != "manual" {
+		t.Errorf("the hand entry is class %q, want manual", classes["manual"])
+	}
+	labs := 0
+	for id, class := range classes {
+		if id == "manual" {
+			continue
+		}
+		labs++
+		if class != "lab" {
+			t.Errorf("lab %s is class %q, want lab", id, class)
+		}
+	}
+	if labs == 0 {
+		t.Fatal("no lab source written")
+	}
+}
+
 func TestManualWeighsInAtTheHotelInsideTheRange(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
