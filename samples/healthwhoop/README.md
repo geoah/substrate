@@ -29,9 +29,18 @@ set (`weightlifting` is `strength`), `other` where the name has no value of
 its own (`padel`), and the name itself is `sportSource`. Its kilojoules are
 `totalEnergy`: WHOOP's figure includes the resting energy.
 
-A cycle runs from one sleep onset to the next, so a cycle's summaries and its
-recovery's start the evening before the morning WHOOP scores the recovery: a
-calendar-day read files that recovery under the previous date.
+A recovery's five readings (`health/whoop_recovery`, `hrv_rmssd`,
+`resting_heart_rate`, `spo2` and `skin_temperature`) measure the night the
+recovery scores, so they span that sleep, with `period` `sleep` and the
+sleep's id as `periodId`, which the night's sleep performance and
+respiratory rate carry too. A day read with `bucket.place` `end` puts them
+on the wake day, beside the nightly summaries of the other sources. A
+recovery whose sleep row is absent (sleeps toggled off) spans its cycle
+until the sleep arrives.
+
+A cycle runs from one sleep onset to the next, so a cycle's strain, energy
+and heart rate start the evening before: `place` `start` files them under
+that evening's date.
 
 The trigger starts at the changelog's head, so a mirror that already held
 rows when this sample was imported is converted by replaying the trigger from

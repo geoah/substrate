@@ -204,6 +204,21 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	if len(estimated) != 3 {
 		t.Errorf("%d estimated recovery scores, want the first three: %v", len(estimated), estimated)
 	}
+	// Every recovery spans the night it scores, the sleep the recovery names,
+	// so a day read places it on the wake day beside the other sources'
+	// nightly summaries.
+	for _, row := range listLive(t, ds, whoopRecoveryType) {
+		cid := strconv.FormatInt(asInt(t, row.Properties["cycleId"]), 10)
+		night := mustGet(t, ds, whoopSleepType, strings.TrimPrefix(storedRefPath(row.Properties["sleep"]), whoopSleepType+"/")).Properties
+		for _, role := range []string{"recovery", "hrv", "resting_heart_rate", "spo2", "skin_temperature"} {
+			obs := healthProps(t, ds, obsObservation, hw(cid, role))
+			if obs["period"] != "sleep" || obs["periodId"] != night["sleepId"] ||
+				!sameInstant(obs["at"], asInstant(t, night["at"])) || !sameInstant(obs["endsAt"], asInstant(t, night["endsAt"])) {
+				t.Errorf("cycle %s's %s spans %v to %v over %v %v, want the night %v from %v to %v",
+					cid, role, obs["at"], obs["endsAt"], obs["period"], obs["periodId"], night["sleepId"], night["at"], night["endsAt"])
+			}
+		}
+	}
 	for kind, want := range map[string]int{healthSleep: sleeps, healthWorkout: workouts, obsSource: 1, obsTrace: 0} {
 		if n := countLive(t, ds, kind); n != want {
 			t.Errorf("%d %s, want %d", n, kind, want)

@@ -1978,8 +1978,9 @@ that deletes a mirror row WHOOP deleted.
   implies and hands the set to `host.observed.reconcile`, which writes what
   changed and deletes the records naming that row in `origin` that it no
   longer implies. A deleted mirror row implies nothing, so its records go with
-  it. A cycle delivery rebuilds the cycle's recoveries too, because a
-  recovery's records span its cycle.
+  it. A sleep delivery rebuilds the recoveries that name the sleep, because
+  a recovery's records span its night, and a cycle delivery rebuilds the
+  cycle's recoveries whose sleep row is absent.
 - **Triggers (1)**: `healthwhoop-on-mirror` fires `adaptwhoop` on every
   create, update and delete of a WHOOP `cycle`, `recovery`, `sleep` or
   `workout` row. It starts at the changelog's head: to convert rows the mirror
@@ -1989,11 +1990,11 @@ that deletes a mirror row WHOOP deleted.
 
 | WHOOP field | Written as | Form | Unit |
 | --- | --- | --- | --- |
-| recovery `recoveryScore` | `health/whoop_recovery` | summary, `vendor`, period `cycle` | `%` |
-| recovery `hrvRmssdMilli` | `health/hrv_rmssd` | summary, `vendor`, period `cycle` | `ms` |
-| recovery `restingHeartRate` | `health/resting_heart_rate` | summary, `vendor`, period `cycle` | `/min` |
-| recovery `spo2Percentage` | `health/spo2` | summary, `vendor`, period `cycle` | `%` |
-| recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `cycle` | `Cel` |
+| recovery `recoveryScore` | `health/whoop_recovery` | summary, `vendor`, period `sleep`, over the night it scores | `%` |
+| recovery `hrvRmssdMilli` | `health/hrv_rmssd` | summary, `vendor`, period `sleep`, over the night it scores | `ms` |
+| recovery `restingHeartRate` | `health/resting_heart_rate` | summary, `vendor`, period `sleep`, over the night it scores | `/min` |
+| recovery `spo2Percentage` | `health/spo2` | summary, `vendor`, period `sleep`, over the night it scores | `%` |
+| recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `sleep`, over the night it scores | `Cel` |
 | cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `{score}` |
 | cycle `kilojoule` | `health/energy_expended` | amount | `kJ`, never converted |
 | cycle `averageHeartRate`, `maxHeartRate` | `health/heart_rate` | summary, `avg` and `max`, period `cycle` | `/min` |
@@ -2011,19 +2012,24 @@ the mirror row: `whoop/<account record id>/<cycle id>/recovery` (and `hrv`,
 `.../<sleep id>/sleep_performance` and `respiratory_rate`, and
 `whoop/<account>/<workout id>/workout`; the heart rate summaries are
 `heart_rate_avg` and `heart_rate_max` under the cycle id or the workout id. A
-cycle's and a recovery's observations span the cycle and carry its id in
-`periodId`, so two cycles on one date stay two; a workout's heart rate spans
-the workout and carries the workout id. The current cycle has no end yet, so
-its span ends at the cycle's `updatedAt` and moves as WHOOP rescores it. A recovery whose cycle row
-is absent (cycles toggled off) writes nothing until the cycle row lands.
-A cycle runs from one sleep onset to the next, so a cycle's and its
-recovery's `at` is the evening the member fell asleep: a calendar-day read
-files the recovery scored on waking under the previous date. Read a
-recovery by `periodId`, or by a range that starts the evening before, until
-an observation carries the date it belongs to.
+cycle's observations span the cycle and carry its id in `periodId`, so two
+cycles on one date stay two; a workout's heart rate spans the workout and
+carries the workout id. The current cycle has no end yet, so its span ends
+at the cycle's `updatedAt` and moves as WHOOP rescores it.
+A recovery's observations measure the night the recovery scores: they span
+the sleep the recovery names and carry the sleep's id in `periodId`, as the
+night's sleep performance and respiratory rate do. A day read with
+`bucket.place` `end` therefore puts them on the wake day, the way it places
+Garmin's nightly summaries, and a records-mode window over the
+WHOOP night holds them. A recovery whose sleep row is absent (sleeps toggled
+off, or the sleep in a later page) spans its cycle with `period` `cycle`
+until the sleep row lands; one whose cycle row is absent too writes nothing.
+A cycle runs from one sleep onset to the next, so a cycle's `at` is the
+evening the member fell asleep, and `place` `start` files its strain and
+energy under that evening's date.
 Every record carries `origin` (the mirror row), `revision` (WHOOP's
 `updated_at` in seconds since the epoch, for a recovery the later of its own
-and its cycle's) and the UTC offset WHOOP recorded. While WHOOP is still
+and its sleep's) and the UTC offset WHOOP recorded. While WHOOP is still
 calibrating the member, the recovery score is written with `quality:
 estimated`. The source is `whoop/<account record id>`, class `watch`, pointing
 at the WHOOP account: the API names no hardware model.

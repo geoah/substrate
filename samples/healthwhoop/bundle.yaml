@@ -27,7 +27,9 @@ data:
   # 3: a workout's sport maps onto the workout code set and its kilojoules
   # are `totalEnergy`, strain is in `{score}`, and every output is written
   # through host.observed.reconcile; ADAPTER is healthwhoop@3.
-  version: 3
+  # 4: a recovery's five readings span the sleep it scores, not its cycle;
+  # ADAPTER is healthwhoop@4.
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # One function and its record trigger (triggers.yaml). No inputs and no
@@ -74,12 +76,14 @@ data:
   runtime: python
   timeout: PT30S
   permissions:
-    # The mirror rows a row depends on (a recovery's cycle, a cycle's
-    # recoveries) and the outputs that name an origin, for the deletions.
+    # The mirror rows a row depends on (a recovery's sleep and cycle, a
+    # sleep's and a cycle's recoveries) and the outputs that name an origin,
+    # for the deletions.
     reads:
       kinds:
         - providers.substrate.reamde.dev/whoop/cycle
         - providers.substrate.reamde.dev/whoop/recovery
+        - providers.substrate.reamde.dev/whoop/sleep
         - samples.substrate.reamde.dev/observations/observation
         - samples.substrate.reamde.dev/health/sleep
         - samples.substrate.reamde.dev/health/workout
@@ -100,8 +104,9 @@ data:
     property the row no longer implies, which the put clears), leaves one
     that already holds it unwritten, and deletes the records that name the
     row in `origin` and are no longer implied. A deleted row implies nothing.
-    A cycle's recovery takes its span from the cycle, so a cycle delivery
-    rebuilds the cycle's recoveries too.
+    A recovery takes its span from the sleep it scores, so a sleep delivery
+    rebuilds the recoveries that name the sleep, and a cycle delivery
+    rebuilds the cycle's recoveries whose sleep is absent.
 
     IDS are composed from WHOOP's own identifiers, read off the mirror row
     (the row ids are hashes): `whoop/<account record id>/<cycle id>/recovery`
@@ -114,12 +119,23 @@ data:
     SPANS. A summary of a cycle spans the cycle, and a workout's heart rate
     spans the workout. The current cycle has no end yet, so its span ends at
     the cycle's `updatedAt`, the last moment WHOOP scored it, and moves
-    forward as WHOOP rescores it. A cycle that has not moved past its start,
-    or a recovery whose cycle row is absent, implies nothing until it does.
+    forward as WHOOP rescores it. A cycle that has not moved past its start
+    implies nothing until it does.
+
+    A recovery's five readings measure the night: they span the sleep the
+    recovery names, with `period: sleep` and the sleep's id as `periodId`,
+    the same as the night's sleep performance and respiratory rate. A day
+    read then places them on the wake day with `bucket.place: end`, the way
+    it places the other sources' nightly summaries. A recovery whose sleep
+    row is absent (the sleep toggle is off, or the sleep is in a later page)
+    spans its cycle with `period: cycle`, and is counted as `recovery without
+    its sleep` until the sleep arrives; one whose cycle is absent too
+    implies nothing.
 
     REVISION is WHOOP's `updated_at` in whole seconds since the epoch (for a
-    recovery, the later of its own and its cycle's). A rewrite never lowers
-    a stored revision: reconcile keeps the higher.
+    recovery, the later of its own and its sleep's, or its cycle's where it
+    spans the cycle). A rewrite never lowers a stored revision: reconcile
+    keeps the higher.
 
     UNITS are WHOOP's own and pass through the engine's table: kJ stay kJ, a
     stage total in milliseconds becomes minutes through host.units.convert. A
@@ -136,7 +152,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthwhoop-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthwhoop@3"
+    ADAPTER = "healthwhoop@4"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -383,13 +399,14 @@ data:
                     desired.extend(self.heart_rate(base, origin, revision, score,
                                                    "cycle", common))
             self.reconcile(origin, desired)
-            # A recovery's span is its cycle's, so the cycle's recoveries are
-            # rebuilt with it, a deleted cycle's included.
+            # A recovery whose sleep is absent spans its cycle, so those of
+            # the cycle's recoveries are rebuilt with it, a deleted cycle's
+            # included. One whose sleep is live does not read the cycle.
             page = self.host.records.list(RECOVERY_T,
                                           where={"cycle": {"eq": rid}}, first=10)
             for rec in page.get("records") or []:
                 self.recovery(str(rec.get("id") or ""), rec,
-                              row if _live(row) else None, have_cycle=True)
+                              cycle=row if _live(row) else None, from_cycle=True)
 
         def cycle_span(self, p):
             """[at, endsAt] of a cycle, or None while it has no length yet."""
@@ -400,27 +417,46 @@ data:
                 return None
             return start, end
 
-        # -- a recovery: five summaries over its cycle -----------------------
-        def recovery(self, rid, row, cycle=None, have_cycle=False):
+        # -- a recovery: five summaries over the night it scores -------------
+        def recovery(self, rid, row, cycle=None, from_cycle=False,
+                     night=None, from_sleep=False):
+            """The five readings of one recovery. `from_cycle` is a cycle
+            delivery's rebuild, with `cycle` that cycle's current row, and
+            leaves a recovery whose sleep is live to the sleep. `from_sleep`
+            is a sleep delivery's, with `night` that sleep's current row."""
             origin = RECOVERY_T + "/" + rid
             desired = []
             if _live(row):
                 p = _props(row)
-                if not have_cycle:
-                    cid = _ref_id(p.get("cycle"), CYCLE_T)
-                    cycle = self.host.records.get(CYCLE_T, cid) if cid else None
-                cp = _props(cycle) if _live(cycle) else None
-                span = self.cycle_span(cp) if cp is not None else None
+                if not from_sleep:
+                    sid = _ref_id(p.get("sleep"), SLEEP_T)
+                    night = self.host.records.get(SLEEP_T, sid) if sid else None
+                np = _props(night) if _live(night) else None
+                span = self.sleep_span(np) if np is not None else None
+                if span is not None and from_cycle:
+                    return
+                if span is not None:
+                    common = {"period": "sleep", "periodId": str(np.get("sleepId")),
+                              "utcOffset": _offset(np.get("timezoneOffset"))}
+                    revision = _seconds(p.get("updatedAt"), np.get("updatedAt"))
+                else:
+                    if not from_cycle:
+                        cid = _ref_id(p.get("cycle"), CYCLE_T)
+                        cycle = self.host.records.get(CYCLE_T, cid) if cid else None
+                    cp = _props(cycle) if _live(cycle) else None
+                    span = self.cycle_span(cp) if cp is not None else None
+                    if span is not None:
+                        self.skip("recovery without its sleep")
+                        common = {"period": "cycle", "periodId": str(cp.get("cycleId")),
+                                  "utcOffset": _offset(cp.get("timezoneOffset"))}
+                        revision = _seconds(p.get("updatedAt"), cp.get("updatedAt"))
                 if span is None:
-                    self.skip("recovery without a cycle span")
+                    self.skip("recovery without a sleep or cycle span")
                 elif p.get("scoreState") == "scored":
                     score = p.get("score") or {}
-                    aid, cid = _ref_id(p.get("account"), ACCOUNT_T), str(cp.get("cycleId"))
-                    revision = _seconds(p.get("updatedAt"), cp.get("updatedAt"))
-                    common = {"source": self.source(aid), "statistic": "vendor",
-                              "period": "cycle", "periodId": cid,
-                              "at": span[0], "endsAt": span[1],
-                              "utcOffset": _offset(cp.get("timezoneOffset"))}
+                    aid, cid = _ref_id(p.get("account"), ACCOUNT_T), str(p.get("cycleId"))
+                    common.update({"source": self.source(aid), "statistic": "vendor",
+                                   "at": span[0], "endsAt": span[1]})
                     for field, metric, unit, role in RECOVERY_READINGS:
                         value = self.quantity(score.get(field), unit)
                         if value is None:
@@ -434,6 +470,14 @@ data:
                             "whoop/%s/%s/%s" % (aid, cid, role), metric, "summary",
                             origin, revision, value=value, **common, **extra))
             self.reconcile(origin, desired)
+
+        def sleep_span(self, p):
+            """[at, endsAt] of a sleep, or None while it has no length."""
+            start, end = p.get("at"), p.get("endsAt")
+            a, b = _parse(start), _parse(end)
+            if a is None or b is None or b <= a:
+                return None
+            return start, end
 
         # -- a sleep: the typed sleep, its stage totals and two scores -------
         def sleep(self, rid, row):
@@ -509,6 +553,13 @@ data:
                                 value=value, statistic="vendor", period="sleep",
                                 **common))
             self.reconcile(origin, desired)
+            # A recovery spans the sleep it scores, so the recoveries that
+            # name this sleep are rebuilt with it, a deleted sleep's included.
+            page = self.host.records.list(RECOVERY_T,
+                                          where={"sleep": {"eq": rid}}, first=10)
+            for rec in page.get("records") or []:
+                self.recovery(str(rec.get("id") or ""), rec,
+                              night=row if _live(row) else None, from_sleep=True)
 
         # -- a workout: the typed workout ------------------------------------
         def workout(self, rid, row):
