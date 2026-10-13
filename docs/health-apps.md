@@ -660,9 +660,12 @@ account's zone, Athens, even in London
 
 ## Weight in kg and lb
 
-Weight reads in any mass unit; the read converts each stored value exactly
-where the factor allows and says so in `exact`. Weekly, the Withings
-scale's weigh-ins by one path, and the ones Ada typed in by hand:
+Weight reads in any mass unit, and the read converts each stored value.
+`exact` is `false` where any value came from a float64 reduction or a
+conversion that rounds ([the response](api.md#the-response)). In kg below
+it is `false` because of `avg`: no value needs converting, so `min` and
+`max` answer the stored digits. Weekly, the Withings scale's weigh-ins by
+one path, and the ones Ada typed in by hand:
 
 ```json
 {"filter": {"properties": {"source": {"in": ["applehealth/iphone/withings", "manual"]}}},
@@ -705,8 +708,10 @@ The same read with `"unit": "[lb_av]"`:
                       {"reducer": "count", "value": "4"}], ...}, ...]}
 ```
 
-A value carries up to 20 significant digits; the app rounds it to the
-metric record's `displayPrecision`.
+In `[lb_av]` the read is not `exact` without `avg` either: a pound is
+0.45359237 kg, so dividing by it rounds `min` and `max` to 20 significant
+digits. The app rounds each value to the metric record's
+`displayPrecision`.
 
 The read names one of the scale's paths because the Withings scale reaches
 the repository through Apple Health, Google Fit and Garmin as three sources
