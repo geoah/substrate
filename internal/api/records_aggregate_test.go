@@ -134,3 +134,23 @@ func TestAggregateIsRefusedBesideListParameters(t *testing.T) {
 	rec = env.do(t, http.MethodGet, aggregatePath(t, a), tok, nil)
 	wantStatus(t, rec, http.StatusInternalServerError)
 }
+
+// A metric read's filter takes a summary's statistic beside the stream keys,
+// and the route hands it to the dataset as written.
+func TestRecordsAggregateTakesTheStatisticFilter(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	a := substrate.Aggregate{
+		Metric:  &substrate.AggregateMetric{Ref: "ada.example.com/observations/metric/health/hrv_rmssd"},
+		From:    substrate.AggregateFromSummaries,
+		GroupBy: []string{substrate.GroupStatistic},
+	}
+	f, _ := json.Marshal(substrate.Filter{Properties: map[string]substrate.Cond{"statistic": {In: []any{"avg", "max"}}}})
+	rec := env.do(t, http.MethodGet, aggregatePath(t, a, "filter="+url.QueryEscape(string(f))), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	q := ds.lastAggregate
+	if c, ok := q.Filter.Properties["statistic"]; !ok || len(c.In) != 2 || q.Aggregate.GroupBy[0] != "statistic" {
+		t.Fatalf("the dataset saw filter %+v groupBy %v", q.Filter, q.Aggregate.GroupBy)
+	}
+}

@@ -1132,7 +1132,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
 | `reducers` | the reducers, each a name or a one-key object with its argument | required |
-| `groupBy` | any of `source`, `about`, `code`, `metric`, `kind`, `channel` | |
+| `groupBy` | any of `source`, `about`, `code`, `metric`, `kind`, `channel`, and `statistic` on a read from summaries | |
 | `from` | `raw` (gauges, amounts, counters), `summaries` (summary points) or `prefer-raw` | `raw` |
 | `minCoverage` | `prefer-raw`'s floor, 0 to 1 | `0.9` |
 | `sources` | `{"policy", "order"?}`: `separate`, `priority` or `summaries` | `separate` |
@@ -1148,7 +1148,9 @@ is refused by name) and `eq` or `in` on the stream properties `source`,
 `about`, `metric` and `channel`, each a record path or `{ref}`; `eq` beside
 `in` on one property admits what both admit, as the list's filter does.
 `code` filters the intervals by code after they are built from every
-transition, so a door's `closed` still ends the `open` before it. Any other
+transition, so a door's `closed` still ends the `open` before it.
+`statistic` (`eq` or `in`) narrows the summaries to those statistics; a
+gauge's, an amount's or a counter's values carry none and are kept. Any other
 arm is a `400`. A property
 read takes the whole [filter grammar](#the-filter-grammar).
 
@@ -1199,7 +1201,7 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 | amount | `count`, `sum`, `avg`, `min`, `max`, `first`, `last`, `stddev`, `{"percentile": q}` |
 | coded amount | `count`, `sum`, `min`, `max`, grouped by `code` |
 | counter | `count`, `first`, `last`, `min`, `max`, `increase`, `rate` |
-| summary | `count`, `first`, `last`, and `sum`, `min`, `max`, `avg` over the summaries whose `statistic` is that reducer |
+| summary | `count`, `first`, `last`, `avg`, `min` and `max` over the row's summaries, all of one `statistic`; `sum` where that statistic is `sum` or `count` |
 
 - `twa` weighs each value by the time it holds: until the next point of its
   stream, its own `hold`, or `maxGap`, whichever comes first.
@@ -1217,6 +1219,15 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
   answer when the angles cancel.
 - A `{"timeInState": [...]}` with `groupBy: ["code"]` answers each row's own
   code.
+- A row reads the summaries of one `statistic`. A group whose summaries hold
+  two (a night's `avg` and `max` from one source) is a `422` naming them:
+  pick one with `filter.properties.statistic`, or split them with
+  `groupBy: ["statistic"]`, which only a read from summaries takes. `avg`,
+  `min` and `max` then reduce that statistic's values whatever it is, so the
+  weekly mean of a daily `vendor` resting heart rate is the mean of those
+  values (a summary of summaries), and `first`, `last` and `count` read that
+  statistic alone. `sum` adds only `sum` and `count` summaries; over any
+  other statistic it is a `422`.
 
 A row never mixes forms: a group whose streams hold two forms is a `422`
 asking to group them apart.
@@ -1281,7 +1292,7 @@ where summaries did.
 | --- | --- |
 | `start`, `end` | the bucket, each with its own offset |
 | `form` | the form of the points that fed the row; absent on a property read |
-| `group` | present with `groupBy`: a record path for `source`, `about` and `metric`, the kind for `kind`, the code for `code`; a money property's `currency` |
+| `group` | present with `groupBy`: a record path for `source`, `about` and `metric`, the kind for `kind`, the code for `code`, the summaries' statistic for `statistic`; a money property's `currency` |
 | `record` | `{ref, version}`, the records mode's matched record |
 | `from` | `raw` or `summaries` |
 | `sources` | the sources that fed the row |
@@ -1428,7 +1439,9 @@ merged as one row.
   reducer or a bad argument; a reducer the form does not take (naming the
   form); `circularMean` off an angle; a `unit` outside the measure (naming
   the measure); a value the read takes whose unit does not convert; a group
-  of two forms; `priority` over two counters; a budget below zero or over its
+  of two forms; a group whose summaries hold two statistics, or `sum` over a
+  statistic other than `sum` and `count`; `groupBy` `statistic` on a read
+  that is not from summaries; `priority` over two counters; a budget below zero or over its
   cap, or a read over a budget (naming the limit); `downsample` beside
   `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
   `prefer-raw`; a `fill`, `rolling` or `maxGap` on the latest read.

@@ -610,6 +610,9 @@ func (p *aggPlan) parseMetricOptions() error {
 	if p.bucket.mode == bucketRecords && p.rolling != nil {
 		return refuse("aggregate.rolling", "the records time mode's windows are not a sequence of buckets; a rolling window has nothing to roll over")
 	}
+	if p.grouped[substrate.GroupStatistic] && p.source != substrate.AggregateFromSummaries {
+		return refuse("aggregate.groupBy", "groupBy statistic splits summaries, and this read is from %s; read from summaries, or name one statistic with filter.properties.statistic", p.source)
+	}
 	return nil
 }
 

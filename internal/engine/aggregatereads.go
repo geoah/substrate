@@ -28,11 +28,11 @@ func (r *aggRun) countPoints(s *aggStream, spans [][2]time.Time) (int64, error) 
 	from, to := spanArrays(spans)
 	var n int64
 	err := r.tx.QueryRowContext(r.ctx, `
-		SELECT coalesce(sum(x.c), 0)::bigint FROM unnest($7::timestamptz[], $8::timestamptz[]) AS s(a, b)
+		SELECT coalesce(sum(x.c), 0)::bigint FROM unnest($8::timestamptz[], $9::timestamptz[]) AS s(a, b)
 		CROSS JOIN LATERAL (
 			SELECT count(*) AS c FROM observed_points p
-			WHERE `+holdStreamSQL+` AND p.ts >= s.a AND p.ts < s.b) x`,
-		append(s.hold().args(), from, to)...).Scan(&n)
+			WHERE `+aggStreamSQL+` AND p.ts >= s.a AND p.ts < s.b) x`,
+		append(s.args(), from, to)...).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("substrate/engine: aggregate count: %w", err)
 	}
@@ -40,7 +40,7 @@ func (r *aggRun) countPoints(s *aggStream, spans [][2]time.Time) (int64, error) 
 }
 
 // aggPointLead are the columns read before pointColumns.
-const aggPointLead = `p.record_id, p.ord, coalesce(p.statistic, ''), `
+const aggPointLead = `p.record_id, p.ord, `
 
 // scanAggPoint reads aggPointLead and pointColumns after any leading
 // columns, and keeps the point's group (its code, unit, delta and offset) in
@@ -52,7 +52,7 @@ func (r *aggRun) scanAggPoint(rows *sql.Rows, lead ...any) (aggPoint, error) {
 	var ap aggPoint
 	var recordID string
 	var ord int64
-	sp, err := scanPoint(rows, append(lead, &recordID, &ord, &ap.stat)...)
+	sp, err := scanPoint(rows, append(lead, &recordID, &ord)...)
 	if err != nil {
 		return ap, err
 	}
@@ -111,17 +111,17 @@ func (r *aggRun) conversion(unit string, delta bool, source string) (*convFactor
 // at each span's start and the last available point before it.
 func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, error) {
 	from, to := spanArrays(spans)
-	args := append(s.hold().args(), from, to)
+	args := append(s.args(), from, to)
 	ser := &aggSeries{segs: make([]aggSegment, len(spans))}
 	for i, sp := range spans {
 		ser.segs[i].from, ser.segs[i].to = sp[0], sp[1]
 	}
 	rows, err := r.tx.QueryContext(r.ctx, `
 		SELECT s.i, `+aggPointLead+pointColumns+`
-		FROM unnest($7::timestamptz[], $8::timestamptz[]) WITH ORDINALITY AS s(a, b, i)
+		FROM unnest($8::timestamptz[], $9::timestamptz[]) WITH ORDINALITY AS s(a, b, i)
 		CROSS JOIN LATERAL (
 			SELECT * FROM observed_points p
-			WHERE `+holdStreamSQL+` AND p.ts >= s.a AND p.ts < s.b OFFSET 0) p
+			WHERE `+aggStreamSQL+` AND p.ts >= s.a AND p.ts < s.b OFFSET 0) p
 		ORDER BY s.i, p.ts, p.record_id, p.ord`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate points: %w", err)
@@ -170,12 +170,12 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 func (r *aggRun) readBefore(s *aggStream, starts []time.Time, filter string, scan func(rows *sql.Rows, i *int) error) error {
 	rows, err := r.tx.QueryContext(r.ctx, `
 		SELECT s.i, `+aggPointLead+pointColumns+`
-		FROM unnest($7::timestamptz[]) WITH ORDINALITY AS s(a, i)
+		FROM unnest($8::timestamptz[]) WITH ORDINALITY AS s(a, i)
 		CROSS JOIN LATERAL (
 			SELECT * FROM observed_points p
-			WHERE `+holdStreamSQL+` AND p.ts < s.a AND `+filter+`
+			WHERE `+aggStreamSQL+` AND p.ts < s.a AND `+filter+`
 			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`,
-		append(s.hold().args(), starts)...)
+		append(s.args(), starts)...)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: aggregate carry: %w", err)
 	}
@@ -199,9 +199,9 @@ func (r *aggRun) readCarries(s *aggStream, windows [][2]time.Time) ([]*observed.
 	starts, _ := spanArrays(windows)
 	out := make([]*observed.Point, len(windows))
 	err := r.readBefore(s, starts, "TRUE", func(rows *sql.Rows, i *int) error {
-		var recordID, stat string
+		var recordID string
 		var ord int64
-		sp, err := scanPoint(rows, i, &recordID, &ord, &stat)
+		sp, err := scanPoint(rows, i, &recordID, &ord)
 		if err != nil {
 			return err
 		}

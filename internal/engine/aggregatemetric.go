@@ -39,9 +39,12 @@ import (
 
 // aggStream is one selected stream: its observed_latest row, and on a
 // bucketed read one form its points hold inside the read's windows with the
-// codes those points carry ("" for a point without one).
+// codes those points carry ("" for a point without one). A summary's
+// statistic is part of the stream: a source that keeps a night's average and
+// maximum has a stream of each, and every other form's stat is "".
 type aggStream struct {
 	obsStream
+	stat      string
 	form      string
 	unit      string
 	code      string
@@ -49,7 +52,6 @@ type aggStream struct {
 	delta     bool
 	value     sql.NullString
 	ts, tsEnd time.Time
-	statistic sql.NullString
 	bounded   bool
 	offset    int64
 	recordID  string
@@ -59,6 +61,20 @@ type aggStream struct {
 }
 
 func (s *aggStream) hold() obsHold { return obsHold{obsStream: s.obsStream, form: s.form} }
+
+// aggStreamSQL matches the points of one aggStream, its seven columns bound
+// at $1 to $7 (args).
+const aggStreamSQL = streamFormSQL + ` AND coalesce(p.statistic, '') = $7`
+
+func (s *aggStream) args() []any { return append(s.hold().args(), s.stat) }
+
+// aggStreamLess orders streams as observed_latest keys them.
+func aggStreamLess(a, b *aggStream) bool {
+	if a.obsStream != b.obsStream {
+		return streamLess(a.obsStream, b.obsStream)
+	}
+	return a.stat < b.stat
+}
 
 // coded reports whether the stream's points in the read's windows hold
 // codes: a coded gauge holds a code instead of a number, a coded amount a
@@ -98,7 +114,6 @@ func (g *aggGroup) sourceOf(stream int, form string) string {
 type aggPoint struct {
 	observed.Point
 	off    int64
-	stat   string
 	delta  bool
 	stream int
 }
@@ -252,18 +267,25 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		}
 		b.add(name + ` = ANY(` + b.textArray(vals) + `)`)
 	}
+	// A statistic narrows the summaries; every other form's values carry
+	// none and are kept.
+	if c, ok := p.q.Filter.Properties[substrate.GroupStatistic]; ok {
+		vals, err := condStrings("filter.properties.statistic", c)
+		if err != nil {
+			return nil, err
+		}
+		b.add(`(statistic = '' OR statistic = ANY(` + b.textArray(vals) + `))`)
+	}
 	where := "TRUE"
 	if len(b.where) > 0 {
 		where = strings.Join(b.where, " AND ")
 	}
-	// observed_latest keeps a row per summary statistic; the read takes one
-	// row per stream, its newest point and every statistic's points.
-	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT ON (metric, kind, source, about, channel)
-		metric, kind, source, about, channel, form, unit, code, delta, value::text,
-		ts, ts_end, nullif(statistic, ''), bounded, utc_offset_min, record_id, revision,
-		(sum(points) OVER (PARTITION BY metric, kind, source, about, channel))::bigint
+	// observed_latest keeps a row per stream and summary statistic, and each
+	// row is a stream of the read.
+	rows, err := tx.QueryContext(ctx, `SELECT metric, kind, source, about, channel, statistic, form, unit, code, delta, value::text,
+		ts, ts_end, bounded, utc_offset_min, record_id, revision, points
 		FROM observed_latest WHERE `+where+`
-		ORDER BY metric, kind, source, about, channel, ts DESC, record_id DESC`, b.args...)
+		ORDER BY metric, kind, source, about, channel, statistic`, b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate streams: %w", err)
 	}
@@ -271,8 +293,8 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	var out []*aggStream
 	for rows.Next() {
 		s := &aggStream{}
-		if err := rows.Scan(&s.metric, &s.kind, &s.source, &s.about, &s.channel, &s.form, &s.unit, &s.code, &s.delta, &s.value,
-			&s.ts, &s.tsEnd, &s.statistic, &s.bounded, &s.offset, &s.recordID, &s.revision, &s.points); err != nil {
+		if err := rows.Scan(&s.metric, &s.kind, &s.source, &s.about, &s.channel, &s.stat, &s.form, &s.unit, &s.code, &s.delta, &s.value,
+			&s.ts, &s.tsEnd, &s.bounded, &s.offset, &s.recordID, &s.revision, &s.points); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -306,21 +328,22 @@ func (p *aggPlan) windows(ctx context.Context, buckets []*aggBucket) ([][2]time.
 	return joinSpans(ctx, spans, func() error { return steps.check(ctx) })
 }
 
-// discoverFormsSQL answers, for each stream ($1 to $5, numbered n), form
-// ($10) and window ($6 and $7, with the ends of the whole rollup rows inside
-// it at $8 and $9), the codes of the stream's available points of that form
+// discoverFormsSQL answers, for each stream ($1 to $6, numbered n), form
+// ($11) and window ($7 and $8, with the ends of the whole rollup rows inside
+// it at $9 and $10), the codes of the stream's available points of that form
 // inside the window. The whole rows answer by the rollup key, so a range the
-// rows serve reads no point; the window's cut ends (discoverCutEnds) and a
+// rows serve reads no point; the window's cut ends (discoverCutEnd) and a
 // summary, which has no rows, answer by the points. A gauge also answers by
 // its last point before the window where that value still holds into it
-// under its own hold and the request's maxGap ($11), because its held time is
-// the window's.
+// under its own hold and the request's maxGap ($12), because its held time is
+// the window's. A summary stream is one statistic's, and a stream of another
+// form has the statistic "".
 const discoverFormsSQL = `
 	SELECT DISTINCT s.n, f.form, x.code
 	FROM ` + discoverStreams + `
 	CROSS JOIN LATERAL (
 		SELECT r.code FROM observed_rollups r
-		WHERE r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
+		WHERE s.statistic = '' AND r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
 		  AND r.form = f.form AND r.bucket15 >= w.wa AND r.bucket15 < w.wb AND r.n > 0
 		UNION
 		SELECT p.code FROM observed_points p
@@ -330,14 +353,12 @@ const discoverFormsSQL = `
 		WHERE ` + discoverCutEnd + ` AND p.ts >= GREATEST(w.wb, w.a, LEAST(w.wa, w.b)) AND p.ts < w.b AND ` + availablePoint + `
 		UNION
 		SELECT p.code FROM observed_points p
-		WHERE f.form = 'summary'
-		  AND p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
-		  AND p.ts >= w.a AND p.ts < w.b AND p.form = 'summary' AND ` + availablePoint + `
+		WHERE ` + discoverSummary + ` AND p.ts >= w.a AND p.ts < w.b AND ` + availablePoint + `
 		UNION
 		SELECT c.code FROM (
 			SELECT p.code, p.value, p.ts, p.hold_ms FROM (
 				SELECT DISTINCT r.bucket15 FROM observed_rollups r
-				WHERE f.form = 'gauge'
+				WHERE f.form = 'gauge' AND s.statistic = ''
 				  AND r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
 				  AND r.form = 'gauge' AND r.bucket15 < w.a
 				ORDER BY r.bucket15 DESC LIMIT 2) rb
@@ -349,15 +370,15 @@ const discoverFormsSQL = `
 			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) c
 		WHERE (c.value IS NOT NULL OR c.code <> '')
 		  AND (c.hold_ms IS NULL OR c.ts + c.hold_ms * interval '1 millisecond' > w.a)
-		  AND ($11::bigint = 0 OR c.ts + $11::bigint * interval '1 millisecond' > w.a)
+		  AND ($12::bigint = 0 OR c.ts + $12::bigint * interval '1 millisecond' > w.a)
 	) x
 	ORDER BY s.n, f.form, x.code`
 
 // discoverStreams is every stream, form and window discoverFormsSQL and
 // discoverCountSQL take, as s, f and w.
-const discoverStreams = `unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, n)
-	CROSS JOIN unnest($10::text[]) AS f(form)
-	CROSS JOIN unnest($6::timestamptz[], $7::timestamptz[], $8::timestamptz[], $9::timestamptz[]) AS w(a, b, wa, wb)`
+const discoverStreams = `unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, statistic, n)
+	CROSS JOIN unnest($11::text[]) AS f(form)
+	CROSS JOIN unnest($7::timestamptz[], $8::timestamptz[], $9::timestamptz[], $10::timestamptz[]) AS w(a, b, wa, wb)`
 
 // discoverCutEnd matches a point p of stream s and form f inside a cut end of
 // window w: the part before the first whole row, [a, wa), and the part after
@@ -365,7 +386,12 @@ const discoverStreams = `unnest($1::text[], $2::text[], $3::text[], $4::text[], 
 // with no whole row is read once. A summary is read over its whole window
 // instead, so its cut ends are not read apart.
 const discoverCutEnd = `p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
-		  AND p.form = f.form AND f.form <> 'summary'`
+		  AND p.form = f.form AND f.form <> 'summary' AND s.statistic = ''`
+
+// discoverSummary matches a summary point p of stream s, its statistic's.
+const discoverSummary = `f.form = 'summary'
+		  AND p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.form = 'summary' AND coalesce(p.statistic, '') = s.statistic`
 
 // discoverCountSQL counts the points discoverFormsSQL reads, its cut ends
 // and its summaries, before it runs: they count against
@@ -382,9 +408,7 @@ const discoverCountSQL = `
 		WHERE ` + discoverCutEnd + ` AND p.ts >= GREATEST(w.wb, w.a, LEAST(w.wa, w.b)) AND p.ts < w.b
 		UNION ALL
 		SELECT count(*) FROM observed_points p
-		WHERE f.form = 'summary'
-		  AND p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
-		  AND p.ts >= w.a AND p.ts < w.b AND p.form = 'summary'
+		WHERE ` + discoverSummary + ` AND p.ts >= w.a AND p.ts < w.b
 	) x`
 
 // discoverForms turns each selected stream into one stream per form its
@@ -409,19 +433,23 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 		forms = []string{vocabulary.FormGauge, vocabulary.FormAmount, vocabulary.FormCounter, vocabulary.FormSummary}
 	}
 	ids := streamKeys(streams, false)
+	stats := make([]string, len(streams))
+	for i, s := range streams {
+		stats[i] = s.stat
+	}
 	var a, b, wa, wb []time.Time
 	for _, w := range windows {
 		a, b = append(a, w[0]), append(b, w[1])
 		wa, wb = append(wa, ceil15(w[0])), append(wb, floor15(w[1]))
 	}
-	if err := tx.QueryRowContext(ctx, discoverCountSQL, ids[0], ids[1], ids[2], ids[3], ids[4], a, b, wa, wb, forms).Scan(&samples); err != nil {
+	if err := tx.QueryRowContext(ctx, discoverCountSQL, ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms).Scan(&samples); err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms count: %w", err)
 	}
 	if samples > p.maxSamples {
 		return nil, 0, refuse("aggregate.budget.maxSamples", "finding the forms the range holds reads %d raw points at its cut ends and in its summaries, over %d; align the range to quarter hours, narrow it, or raise maxSamples (the cap is %d)",
 			samples, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
-	rows, err := tx.QueryContext(ctx, discoverFormsSQL, ids[0], ids[1], ids[2], ids[3], ids[4], a, b, wa, wb, forms, p.maxGap.Milliseconds())
+	rows, err := tx.QueryContext(ctx, discoverFormsSQL, ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms, p.maxGap.Milliseconds())
 	if err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms: %w", err)
 	}
@@ -537,7 +565,7 @@ func (p *aggPlan) groupStreams(streams []*aggStream) ([]*aggGroup, error) {
 				if list[i].rank != list[j].rank {
 					return list[i].rank < list[j].rank
 				}
-				return streamLess(list[i].obsStream, list[j].obsStream)
+				return aggStreamLess(list[i], list[j])
 			})
 		}
 		order(g.raw)
@@ -561,7 +589,7 @@ func (p *aggPlan) groupStreams(streams []*aggStream) ([]*aggGroup, error) {
 // empty where it does not group, so groups sort by the keys in their order.
 func (p *aggPlan) groupKey(s *aggStream, hideSource bool) (substrate.AggregateGroup, string) {
 	var key substrate.AggregateGroup
-	parts := make([]string, 0, 5)
+	parts := make([]string, 0, 6)
 	for _, g := range []struct {
 		word, value string
 		dst         *string
@@ -571,6 +599,7 @@ func (p *aggPlan) groupKey(s *aggStream, hideSource bool) (substrate.AggregateGr
 		{substrate.GroupSource, s.source, &key.Source},
 		{substrate.GroupAbout, s.about, &key.About},
 		{substrate.GroupChannel, s.channel, &key.Channel},
+		{substrate.GroupStatistic, s.stat, &key.Statistic},
 	} {
 		switch {
 		case p.grouped[g.word]:
@@ -828,9 +857,67 @@ var formWhy = map[string]string{
 	"summary":      "a summary is a statistic its source computed",
 }
 
+// additiveStatistics are the summary statistics sum adds: a total of totals
+// or of counts. A day's average, extreme or vendor score does not add.
+var additiveStatistics = []string{"sum", "count"}
+
+// checkStatistics refuses a group whose summaries hold two statistics, since
+// a row reads one, and sum over a statistic that does not add. It runs once
+// the forms are found, before any point is reduced, so a read that would
+// count a night's average and maximum as two nights is refused, not answered.
+func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
+	if p.source == substrate.AggregateFromRaw {
+		return nil
+	}
+	for _, g := range groups {
+		var stats, sources []string
+		for _, s := range g.sums {
+			if !slices.Contains(stats, s.stat) {
+				stats = append(stats, s.stat)
+			}
+			if !slices.Contains(sources, orOwner(s.source)) {
+				sources = append(sources, orOwner(s.source))
+			}
+		}
+		slices.Sort(stats)
+		slices.Sort(sources)
+		if len(stats) > 1 {
+			return refuse("aggregate", "the summaries from %s hold the statistics %s, and a row reads one; name it with filter.properties.statistic, or split them with groupBy statistic",
+				strings.Join(sources, ", "), andList(stats))
+		}
+		if len(stats) == 0 || slices.Contains(additiveStatistics, stats[0]) {
+			continue
+		}
+		for i, r := range p.reducers {
+			if r.Name == substrate.ReducerSum {
+				return refuse(fmt.Sprintf("aggregate.reducers[%d]", i), "sum adds summaries whose statistic is sum or count; the summaries from %s are %s, so read them with count, first, last, avg, min or max",
+					strings.Join(sources, ", "), orNoStatistic(stats[0]))
+			}
+		}
+	}
+	return nil
+}
+
+func andList(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
+}
+
+func orNoStatistic(stat string) string {
+	if stat == "" {
+		return "of no statistic"
+	}
+	return stat
+}
+
 // checkForms refuses a reducer a group's form does not take, naming the form,
 // and the circular mean of a value that is not an angle.
 func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
+	if err := p.checkStatistics(groups); err != nil {
+		return err
+	}
 	for _, g := range groups {
 		var forms []string
 		if len(g.raw) > 0 {

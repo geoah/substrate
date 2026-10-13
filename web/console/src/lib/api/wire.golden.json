@@ -76,7 +76,8 @@
     "currency": false,
     "kind": false,
     "metric": false,
-    "source": false
+    "source": false,
+    "statistic": false
   },
   "AggregateHead": {
     "changelog": true,

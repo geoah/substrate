@@ -364,9 +364,16 @@ export type AggregateReducer =
  * raw where a bucket is covered and the summary otherwise. */
 export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
 
-/** A stream key a result may be grouped by. */
+/** A stream key a result may be grouped by; `statistic` on a read from
+ * summaries only. */
 export type AggregateGroupKey =
-  "source" | "about" | "code" | "metric" | "kind" | "channel"
+  | "source"
+  | "about"
+  | "code"
+  | "metric"
+  | "kind"
+  | "channel"
+  | "statistic"
 
 /** The `aggregate` parameter of `GET /records` (`substrate.Aggregate`,
  * decision 0161). Exactly one of `metric` and `property`, except the latest
@@ -510,7 +517,8 @@ export interface AggregateRow {
 }
 
 /** A row's group: a record path for `source`, `about` and `metric`, the kind
- * reference for `kind`, the code for `code`, a money property's currency. */
+ * reference for `kind`, the code for `code`, the summaries' statistic for
+ * `statistic`, a money property's currency. */
 export interface AggregateGroup {
   source?: string
   about?: string
@@ -518,6 +526,7 @@ export interface AggregateGroup {
   metric?: string
   kind?: string
   channel?: string
+  statistic?: string
   currency?: string
 }
 

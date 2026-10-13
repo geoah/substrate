@@ -354,15 +354,17 @@ type AggregateRow struct {
 
 // AggregateGroup is a row's group: one key per groupBy word, a record path
 // for source, about and metric, the kind reference for kind, the code for
-// code; the currency of a money property.
+// code, a summary's statistic for statistic; the currency of a money
+// property.
 type AggregateGroup struct {
-	Source   string `json:"source,omitempty"`
-	About    string `json:"about,omitempty"`
-	Code     string `json:"code,omitempty"`
-	Metric   string `json:"metric,omitempty"`
-	Kind     string `json:"kind,omitempty"`
-	Channel  string `json:"channel,omitempty"`
-	Currency string `json:"currency,omitempty"`
+	Source    string `json:"source,omitempty"`
+	About     string `json:"about,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Metric    string `json:"metric,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Channel   string `json:"channel,omitempty"`
+	Statistic string `json:"statistic,omitempty"`
+	Currency  string `json:"currency,omitempty"`
 }
 
 // AggregateRecord is the record a records-mode row's window came from, at the
@@ -388,22 +390,24 @@ type AggregateValue struct {
 	Of      *AggregateReducer `json:"of,omitempty"`
 }
 
-// The stream keys a groupBy and the latest read name.
+// The stream keys a groupBy and the latest read name. A summary's statistic
+// is a key too: a source may keep a night's average and maximum apart.
 const (
-	GroupSource  = "source"
-	GroupAbout   = "about"
-	GroupCode    = "code"
-	GroupMetric  = "metric"
-	GroupKind    = "kind"
-	GroupChannel = "channel"
+	GroupSource    = "source"
+	GroupAbout     = "about"
+	GroupCode      = "code"
+	GroupMetric    = "metric"
+	GroupKind      = "kind"
+	GroupChannel   = "channel"
+	GroupStatistic = "statistic"
 )
 
 // AggregateGroupBy lists the groupBy words.
-var AggregateGroupBy = []string{GroupSource, GroupAbout, GroupCode, GroupMetric, GroupKind, GroupChannel}
+var AggregateGroupBy = []string{GroupSource, GroupAbout, GroupCode, GroupMetric, GroupKind, GroupChannel, GroupStatistic}
 
 // AggregateFilterProperties are the properties a metric read's filter may
-// narrow: the stream keys and the code.
-var AggregateFilterProperties = []string{"source", "about", "metric", "channel", "code"}
+// narrow: the stream keys, the code and a summary's statistic.
+var AggregateFilterProperties = []string{"source", "about", "metric", "channel", "code", "statistic"}
 
 // AggregateFilterArm names the first filter arm a metric read does not take,
 // or "": it narrows by `kinds`, `implements` and the stream properties alone,

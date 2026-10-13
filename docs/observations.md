@@ -616,8 +616,9 @@ row whose readings have no reading before them holds no step, and its
 `observed_latest` holds each stream's newest available point, one row per
 summary `statistic` (the empty string for the other forms). A night's `avg`
 and `max` summaries at one instant are two rows, so neither stands for the
-other. The aggregate read takes one row per stream: the newest of its rows,
-and the sum of their `points`.
+other. The aggregate read takes each row as a stream of its own, so a row of
+a bucketed read reads one statistic, and the latest read answers the newest
+of a group's rows with the sum of their `points`.
 
 Two points at one instant go to the greater record id in byte order, then
 the later point of one trace: the point the `last` reducer answers. A

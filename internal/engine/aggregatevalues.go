@@ -51,7 +51,7 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 // it reads (taken once per row) and the reducer itself check the context as
 // they go (observed's Context forms).
 func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.AggregateValue, error) {
-	v := &rowValues{r: r, ev: ev, g: g, code: code, points: map[string][]observed.Point{}}
+	v := &rowValues{r: r, ev: ev, g: g, code: code}
 	tr := traceOf(r.ctx)
 	for _, red := range r.p.reducers {
 		if err := r.ctx.Err(); err != nil {
@@ -84,14 +84,16 @@ func (r *aggRun) values(ev *aggEvidence, g *aggGroup, code string) ([]substrate.
 }
 
 // rowValues is one row's reducers being answered: its evidence, the values
-// answered so far, and the copies of its points the raw reducers read, each
-// taken once per statistic.
+// answered so far, and the copy of its points the raw reducers read, taken
+// once. A summary row's points are one statistic's (checkStatistics), so
+// every reducer reads all of them.
 type rowValues struct {
 	r      *aggRun
 	ev     *aggEvidence
 	g      *aggGroup
 	code   string
-	points map[string][]observed.Point
+	points []observed.Point
+	copied bool
 	out    []substrate.AggregateValue
 }
 
@@ -99,31 +101,20 @@ type rowValues struct {
 // points are the row's already.
 var everything = observed.Window{From: time.Unix(-1<<40, 0), To: time.Unix(1<<40, 0)}
 
-// pts are the row's raw points of a statistic, every statistic for "".
-func (v *rowValues) pts(stat string) ([]observed.Point, error) {
-	if list, ok := v.points[stat]; ok {
-		return list, nil
+// pts are the row's raw points.
+func (v *rowValues) pts() ([]observed.Point, error) {
+	if v.copied {
+		return v.points, nil
 	}
-	var list []observed.Point
+	list := make([]observed.Point, 0, len(v.ev.members))
 	for _, m := range v.ev.members {
 		if err := v.r.canceled(); err != nil {
 			return nil, err
 		}
-		if stat == "" || m.stat == stat {
-			list = append(list, m.Point)
-		}
+		list = append(list, m.Point)
 	}
-	v.points[stat] = list
+	v.points, v.copied = list, true
 	return list, nil
-}
-
-// statOf is the statistic a summary row's reducer reads, the reducer's own
-// name; "" on any other form.
-func (v *rowValues) statOf(name string) string {
-	if v.ev.form == vocabulary.FormSummary {
-		return name
-	}
-	return ""
 }
 
 // float answers a float64 reduction, which makes the read inexact.
@@ -133,17 +124,17 @@ func (v *rowValues) float(red substrate.AggregateReducer, f float64, ok bool, un
 }
 
 // number answers sum, avg, stddev, percentile and circularMean: over the
-// raw points of the reducer's statistic, or from the merged rollup rows.
+// raw points, a summary row's included, or from the merged rollup rows.
 func (v *rowValues) number(red substrate.AggregateReducer) error {
 	r, ev := v.r, v.ev
-	stat, unit := "", r.u.value
+	unit := r.u.value
 	var f func(context.Context, []observed.Point, observed.Window) (float64, bool, error)
 	var merged float64
 	switch red.Name {
 	case substrate.ReducerSum:
-		stat, f, merged = v.statOf("sum"), observed.SumContext, ev.stats.Sum
+		f, merged = observed.SumContext, ev.stats.Sum
 	case substrate.ReducerAvg:
-		stat, f, merged = v.statOf("avg"), observed.AvgContext, ev.stats.Mean
+		f, merged = observed.AvgContext, ev.stats.Mean
 	case substrate.ReducerStdDev:
 		f, merged = observed.StdDevContext, math.Sqrt(ev.stats.M2/float64(max(ev.stats.Values, 1)))
 	case substrate.ReducerPercentile:
@@ -165,7 +156,7 @@ func (v *rowValues) number(red substrate.AggregateReducer) error {
 		v.float(red, merged, ev.stats.Values > 0, unit)
 		return nil
 	}
-	list, err := v.pts(stat)
+	list, err := v.pts()
 	if err != nil {
 		return err
 	}
@@ -186,11 +177,11 @@ func (v *rowValues) extreme(red substrate.AggregateReducer) error {
 	var ok bool
 	switch {
 	case ev.raw:
-		stat, best := v.statOf("min"), observed.MinPointContext
+		best := observed.MinPointContext
 		if red.Name == substrate.ReducerMax {
-			stat, best = v.statOf("max"), observed.MaxPointContext
+			best = observed.MaxPointContext
 		}
-		list, err := r.extremaPoints(ev, v.g, stat)
+		list, err := r.extremaPoints(ev, v.g)
 		if err != nil {
 			return err
 		}
@@ -220,7 +211,7 @@ func (v *rowValues) point(red substrate.AggregateReducer) error {
 	var ok bool
 	switch {
 	case ev.raw:
-		list, err := v.pts("")
+		list, err := v.pts()
 		if err != nil {
 			return err
 		}
@@ -333,14 +324,11 @@ func (v *rowValues) counter(red substrate.AggregateReducer) {
 // unit. A counter's members keep their stored digits, because its steps are
 // taken on them (convertPoint), so they are converted here, each from its
 // own unit, as a rollup row's extremes are (convertStats).
-func (r *aggRun) extremaPoints(ev *aggEvidence, g *aggGroup, stat string) ([]observed.Point, error) {
+func (r *aggRun) extremaPoints(ev *aggEvidence, g *aggGroup) ([]observed.Point, error) {
 	var list []observed.Point
 	for _, m := range ev.members {
 		if err := r.canceled(); err != nil {
 			return nil, err
-		}
-		if stat != "" && m.stat != stat {
-			continue
 		}
 		p := m.Point
 		if ev.form == vocabulary.FormCounter && p.HasValue && p.Unit != "" {

@@ -1099,13 +1099,20 @@ func TestObservedLatestKeepsOneRowPerStatistic(t *testing.T) {
 	read, err := r.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
 		Metric: &substrate.AggregateMetric{Ref: r.metric + "/health/heart_rate"}, From: substrate.AggregateFromSummaries,
 		Range:    &substrate.AggregateRange{Gte: "2026-10-05T00:00:00Z", Lt: "2026-10-08T00:00:00Z"},
+		GroupBy:  []string{substrate.GroupStatistic},
 		Reducers: []substrate.AggregateReducer{{Name: "count"}},
 	}})
 	if err != nil {
 		t.Fatalf("the summaries read: %v", err)
 	}
-	if len(read.Rows) != 1 || read.Rows[0].Values[0].Value == nil || *read.Rows[0].Values[0].Value != "3" {
-		t.Errorf("the summaries read answers %+v, want a count of 3", read.Rows)
+	var counts []string
+	for _, row := range read.Rows {
+		if row.Group != nil && row.Values[0].Value != nil {
+			counts = append(counts, row.Group.Statistic+"="+*row.Values[0].Value)
+		}
+	}
+	if got, want := strings.Join(counts, " "), "avg=2 max=1"; got != want {
+		t.Errorf("the summaries read counts %q, want %q", got, want)
 	}
 	r.rebuildMatches(t)
 }
