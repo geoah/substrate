@@ -799,11 +799,11 @@ data:
 
     import requests
 
-    AUTHORITY = "providers.substrate.reamde.dev/googlefit"
-    ACCOUNT_KIND = AUTHORITY + "/account"
-    DATASOURCE_KIND = AUTHORITY + "/datasource"
-    DATASET_KIND = AUTHORITY + "/dataset"
-    SESSION_KIND = AUTHORITY + "/session"
+    PKG = "providers.substrate.reamde.dev/googlefit"
+    ACCOUNT_KIND = PKG + "/account"
+    DATASOURCE_KIND = PKG + "/datasource"
+    DATASET_KIND = PKG + "/dataset"
+    SESSION_KIND = PKG + "/session"
 
     DEFAULT_API_BASE = "https://www.googleapis.com/fitness/v1"
     API_HOSTS = ("www.googleapis.com", "fitness.googleapis.com")

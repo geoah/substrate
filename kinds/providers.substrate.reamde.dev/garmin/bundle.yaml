@@ -3052,7 +3052,7 @@ data:
             msg = "Garmin reports the user disconnected this app in Garmin Connect"
             patch.update({"deregisteredAt": gone, "syncState": "erroring",
                           "syncMessage": msg, "syncError": msg, "syncErrorAt": now})
-        host.effects.patch(acct.get("kind") or acct.get("type") or ACCOUNT_KIND, aid,
+        host.effects.patch(acct.get("kind") or ACCOUNT_KIND, aid,
                            properties=patch)
 
 
