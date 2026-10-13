@@ -974,6 +974,48 @@ describe("the timeline's requests", () => {
     expect(note.textContent).toContain(problem)
   })
 
+  it("draws the other metrics where one metric's streams fail, and reads it again on a retry", async () => {
+    let failures = 1
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}`, false, (read) => {
+      const metrics = read.filter.properties?.metric as
+        { in?: string[] } | undefined
+      if (
+        !read.aggregate.metric &&
+        !read.aggregate.metrics &&
+        metrics?.in?.join() === BODY_MASS &&
+        failures > 0
+      ) {
+        failures--
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: "unavailable",
+              message: "the database is restarting",
+            },
+          }),
+          { status: 503, headers: { "Content-Type": "application/json" } }
+        )
+      }
+      return answer(read)
+    })
+    const steps = await lane("Steps")
+    await waitFor(() =>
+      expect(steps.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
+        null
+      )
+    )
+    expect(screen.queryByText("The streams didn’t load")).toBe(null)
+    const note = await screen.findByRole("alert", {
+      name: "Weight: the streams didn’t load",
+    })
+    expect(note.textContent).toContain("the database is restarting")
+    fireEvent.click(within(note).getByRole("button", { name: "Try again" }))
+    await lane("Weight and Steps")
+    expect(
+      screen.queryByRole("alert", { name: "Weight: the streams didn’t load" })
+    ).toBe(null)
+  })
+
   it("narrows discovery to the chosen metric and still offers the others", async () => {
     const server = mount(`?metric=health/body_mass&${WINDOW}`)
     await lane("Weight")

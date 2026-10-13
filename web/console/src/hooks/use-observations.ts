@@ -59,6 +59,15 @@ const NO_ROWS: AggregateRow[] = []
 /** How many metric records one read lists: a catalogue is a few hundred. */
 const METRIC_PAGE = 500
 
+/** A chosen metric whose own stream read failed while another chosen
+ * metric's answered: its streams are missing, and a page says so where its
+ * chart would be (`StreamReadErrors`) and draws the others. */
+export interface StreamReadFailure {
+  metric: string
+  error: Error
+  retry: () => void
+}
+
 /** Where discovery stands, across the reads the streams come from. */
 export interface Discovery {
   /** Nothing has answered yet, so there is nothing to show. */
@@ -70,7 +79,8 @@ export interface Discovery {
    * the read of the current ones loads. */
   isHeld: boolean
   isError: boolean
-  /** The first failed read's error. */
+  /** The first failed read's error. With metrics chosen, only where every
+   * metric's read failed: one metric's failure is `failedMetrics`'. */
   error: Error | null
   refetch: () => void
 }
@@ -89,6 +99,11 @@ export interface Observations {
    * the metric records have answered: a chart plans a metric only then, or
    * it would ask in the wrong shape and ask again. */
   knows: (metric: string) => boolean
+  /** The chosen metrics whose stream read failed while another's answered,
+   * in the order chosen. Empty where none failed or every one did. */
+  failedMetrics: StreamReadFailure[]
+  /** Whether a metric is among `failedMetrics`: a page plans it not. */
+  failed: (metric: string) => boolean
   kinds: KindInfo[]
   observed: KindInfo[]
   /** The observed kinds' references, for query keys. */
@@ -242,8 +257,11 @@ export function useObservations(
     refetch: refetchCatalogue,
   } = catalogue
   const discovery = useMemo<Discovery>(() => {
+    // One chosen metric's failure leaves the others' streams to show.
     const error = chosenKey
-      ? reads.error
+      ? reads.results.every((r) => r.error)
+        ? reads.error
+        : null
       : split
         ? (catalogueError ?? reads.error)
         : wholeError
@@ -311,14 +329,24 @@ export function useObservations(
     const batchList = batchKey
       ? batchKey.split("\t").map((b) => b.split("\n"))
       : []
+    const batchOf = (metric: string) =>
+      reads.results[
+        batchList.findIndex((b) => b.some((m) => sameRef(m, metric)))
+      ]
     const knows = (metric: string) => {
       if (!enabled || !metricsSettled) return false
       if (!chosenList.length) return !discovery.isPending
-      const at = batchList.findIndex((b) => b.some((m) => sameRef(m, metric)))
-      return at >= 0 && reads.results[at] !== undefined
-        ? !reads.results[at].isPending
-        : false
+      const read = batchOf(metric)
+      return read ? !read.isPending : false
     }
+    const failedMetrics: StreamReadFailure[] = discovery.isError
+      ? []
+      : chosenList.flatMap((metric) => {
+          const read = batchOf(metric)
+          return read?.error
+            ? [{ metric, error: read.error, retry: read.refetch }]
+            : []
+        })
     return {
       pending: registry.isPending,
       registryError,
@@ -330,6 +358,9 @@ export function useObservations(
         !reads.isPending &&
         (Boolean(chosenList.length) || !wholePending),
       knows,
+      failedMetrics,
+      failed: (metric: string) =>
+        failedMetrics.some((f) => sameRef(f.metric, metric)),
       kinds,
       observed,
       observedIds,
@@ -514,9 +545,10 @@ function streamsRead(
 }
 
 /** The stream reads as one answer: their rows in order, each read's own
- * state (a metric's chart waits for its read alone), pending while any is,
- * and the first error. Module-level, so the combined result keeps its
- * identity while no read changes. */
+ * state (a metric's chart waits for its read alone, and a failed read is
+ * said and retried on its own), pending while any is, and the first error.
+ * Module-level, so the combined result keeps its identity while no read
+ * changes. */
 function combineReads(
   results: {
     data?: { rows: AggregateRow[] }
@@ -528,7 +560,11 @@ function combineReads(
 ) {
   return {
     rows: results.flatMap((r) => r.data?.rows ?? NO_ROWS),
-    results: results.map((r) => ({ isPending: r.isPending })),
+    results: results.map((r) => ({
+      isPending: r.isPending,
+      error: r.error,
+      refetch: () => void r.refetch(),
+    })),
     isPending: results.some((r) => r.isPending),
     isFetching: results.some((r) => r.isFetching),
     error: results.find((r) => r.error)?.error ?? null,

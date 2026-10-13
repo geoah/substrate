@@ -42,6 +42,7 @@ import {
   FacetListErrors,
   MetricListError,
   RegistryError,
+  StreamReadErrors,
 } from "@/components/observations/discovery-error"
 import {
   AboutMark,
@@ -632,6 +633,7 @@ export function ObservationsPage() {
           onRetry={() => obs.discovery.refetch()}
         />
       )}
+      <StreamReadErrors obs={obs} className={cn("mt-2.5", GUTTER_MX)} />
       {panel && (
         <TimelinePanel
           selection={selection}

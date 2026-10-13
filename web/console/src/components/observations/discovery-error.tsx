@@ -1,7 +1,9 @@
 /** What the observations pages say where discovery failed: the streams did
  * not load, the server's reason, each problem it named (a refused read's
  * `problems`, such as `aggregate.budget.maxGroups`), and a retry. Never
- * "nothing has been measured", which would be a different fact. Where only
+ * "nothing has been measured", which would be a different fact. Where one
+ * chosen metric's streams failed and another's loaded, a note per metric
+ * says so where its chart would be (`StreamReadErrors`). Where only
  * the list of every metric failed, a note beside the metric picker says so
  * (`MetricListError`) and the chosen streams stay; where only a Source or
  * About menu's own read failed, a note beside the filters does
@@ -19,7 +21,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import type { Discovery, FacetValues } from "@/hooks/use-observations"
+import type {
+  Discovery,
+  FacetValues,
+  Observations,
+} from "@/hooks/use-observations"
 import { ApiError } from "@/lib/api/types"
 import {
   MAX_GROUPS_CAP,
@@ -237,6 +243,63 @@ export function FacetListErrors({
           onRetry={() => values.retry(facet)}
         />
       ))}
+    </div>
+  )
+}
+
+/** A note for each chosen metric whose own stream read failed while
+ * another's answered: that metric is left out, and the note names it,
+ * gives the server's reason and each problem it named, and retries its read
+ * alone. The other metrics stay drawn. */
+export function StreamReadErrors({
+  obs,
+  className,
+}: {
+  obs: Pick<Observations, "failedMetrics" | "metricName">
+  className?: string
+}) {
+  if (!obs.failedMetrics.length) return null
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      {obs.failedMetrics.map((failure) => (
+        <StreamReadError
+          key={failure.metric}
+          name={obs.metricName(failure.metric)}
+          error={failure.error}
+          onRetry={failure.retry}
+        />
+      ))}
+    </div>
+  )
+}
+
+function StreamReadError({
+  name,
+  error,
+  onRetry,
+}: {
+  name: string
+  error: Error
+  onRetry: () => void
+}) {
+  const title = useId()
+  return (
+    <div
+      role="alert"
+      aria-labelledby={title}
+      data-slot="stream-read-error"
+      className="flex flex-col items-start gap-1 rounded-md border border-border px-3 py-2 text-[12.5px]"
+    >
+      <p id={title} className="font-medium">
+        {`${name}: the streams didn’t load`}
+      </p>
+      <p className="text-muted-foreground">
+        {`It is left out until its streams load; the other metrics are shown. ${reasonOf(error)}`}
+      </p>
+      <Problems error={error} />
+      <Button variant="outline" size="sm" className="mt-1" onClick={onRetry}>
+        Try again
+      </Button>
     </div>
   )
 }

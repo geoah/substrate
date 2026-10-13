@@ -719,7 +719,9 @@ about, reading and channel, each a set of values to pick, several meaning any
 of them (`?filter=`). Chosen metrics narrow discovery on the server to one
 latest read per metric, so adding a metric keeps the rows already read;
 with no metric chosen, the chosen sources and things narrow the one read
-instead. The search box matches the rows' words
+instead. Where one chosen metric's stream read fails and another's
+answers, a note names the metric, gives the reason and retries that read
+alone, and the other metrics' rows stay. The search box matches the rows' words
 (`?search=`). **Columns** shows, hides and reorders the columns, and
 **Group** cuts the rows by metric, source, about, reading or channel
 (`?group=`). **Saved views** keep a filter, sort, column set and grouping on
@@ -749,7 +751,9 @@ chart where it would draw a line of its own (grouped by source or about, or
 on another channel), and named under the chart where it joins a selected
 line. The panel reads the
 selected metrics' streams on its own and nothing while no stream is
-selected; where that read fails, it says why and offers to try again.
+selected; where that read fails, it says why and offers to try again, and
+where one selected metric's read fails, the note names that metric and the
+others draw.
 
 **The timeline** (`/observations/timeline`) draws the chosen metrics over one
 range on one time axis. Opened with no metric, it draws the newest stream's
@@ -850,7 +854,8 @@ Reads that differ in anything else go apart: a sleep metric placed by its end
 beside heart rate, or a metric from one source beside one resolved across
 several.
 A metric is planned once its streams are read: a metric
-being added waits under the charts already drawn, and choosing a source, a
+being added waits under the charts already drawn, a metric whose stream
+read fails is a note with a retry above the charts of the others, and choosing a source, a
 thing or a channel re-reads the charts, never the streams. While a changed read loads, the chart keeps drawing each
 metric's earlier answer, alone or from a shared request, and the row says
 Updating…, where that answer has the same unit, grouping and summary

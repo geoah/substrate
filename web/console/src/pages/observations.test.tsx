@@ -927,6 +927,31 @@ describe("selecting streams", () => {
     await rows()
   })
 
+  it("draws the other selected metric where one metric's streams fail", async () => {
+    const heart = token("health/heart_rate", "garmin-forerunner-265")
+    const weight = token("health/body_mass", "withings-body-plus")
+    mount(`?timeline=true&${WINDOW}&select=${heart},${weight}`, KINDS, (read) =>
+      // The panel reads each selected metric's streams on its own.
+      !read.aggregate.metric &&
+      !read.aggregate.metrics &&
+      read.filter.properties?.metric?.in?.join() === BODY_MASS
+        ? unavailable()
+        : answer(read)
+    )
+    const panel = await screen.findByRole("region", {
+      name: "Timeline of the selected streams",
+    })
+    const note = await within(panel).findByRole("alert", {
+      name: "Weight: the streams didn’t load",
+    })
+    expect(note.textContent).toContain("the database is restarting")
+    expect(
+      await within(panel).findByRole("group", { name: "Heart rate" })
+    ).toBeTruthy()
+    expect(panel.textContent).not.toContain("The streams didn’t load")
+    expect(panel.textContent).not.toContain("no points any more")
+  })
+
   it("reads nothing for an empty selection, and no list of metrics for one", async () => {
     const server = mount(
       `?timeline=true&${WINDOW}&filter=${filter("source", GARMIN)}`,

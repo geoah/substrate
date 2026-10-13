@@ -29,6 +29,7 @@ import {
   FacetListErrors,
   MetricListError,
   RegistryError,
+  StreamReadErrors,
 } from "@/components/observations/discovery-error"
 import {
   FacetFilters,
@@ -158,8 +159,9 @@ export function ObservationsTimelinePage() {
     },
   ]
   // A metric is planned once its streams are read, so one being added waits
-  // while the others stay drawn.
-  const known = metrics.filter((m) => obs.knows(m))
+  // while the others stay drawn; one whose read failed is said apart.
+  const known = metrics.filter((m) => obs.knows(m) && !obs.failed(m))
+  const waiting = metrics.filter((m) => !obs.knows(m)).length
   const plots = known.map((metric) =>
     planPlot(obs, metric, {
       range,
@@ -302,6 +304,7 @@ export function ObservationsTimelinePage() {
         )
       ) : (
         <>
+          <StreamReadErrors obs={obs} className="mt-4" />
           {charts.map((chart) => (
             <OverlayChart
               key={chart.map((p) => p.metric).join("\n")}
@@ -317,7 +320,7 @@ export function ObservationsTimelinePage() {
               onZoom={controls.zoom}
             />
           ))}
-          {known.length < metrics.length && (
+          {waiting > 0 && (
             <Skeleton
               role="status"
               aria-label="Reading the streams"

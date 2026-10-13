@@ -12,7 +12,10 @@ import {
   DayControl,
   GroupControl,
 } from "@/components/observations/chart-controls"
-import { DiscoveryError } from "@/components/observations/discovery-error"
+import {
+  DiscoveryError,
+  StreamReadErrors,
+} from "@/components/observations/discovery-error"
 import { OverlayChart } from "@/components/observations/overlay-chart"
 import { RangePicker } from "@/components/observations/range-picker"
 import { Button } from "@/components/ui/button"
@@ -63,7 +66,10 @@ export function TimelinePanel({
     { metrics },
     { enabled: metrics.length > 0, catalogue: false }
   )
-  const picked = selectedStreams(selection, own.streams)
+  // A metric whose stream read failed is said apart, and the others draw.
+  const picked = selectedStreams(selection, own.streams).filter(
+    (s) => !own.failed(s.metric)
+  )
   const plots = selectionByMetric(picked).map((entry) =>
     // By id where the pin allows, so a metric's reducer and unit read
     // short in the address.
@@ -90,6 +96,7 @@ export function TimelinePanel({
     : selection.filter(
         (t) =>
           own.knows(tokenMetric(t)) &&
+          !own.failed(tokenMetric(t)) &&
           !own.streams.some((s) => tokenNames(t, s))
       ).length
   // A metric just selected waits for its streams; the others stay drawn.
@@ -141,11 +148,13 @@ export function TimelinePanel({
             : `${missing} selected streams have no points any more, so the chart leaves them out.`}
         </p>
       )}
+      <StreamReadErrors obs={own} className="mt-3" />
       {failed ? (
         <DiscoveryError className="mt-3" discovery={own.discovery} />
       ) : picked.length === 0 && waiting ? (
         <Skeleton className="mt-3 h-[250px] w-full" />
-      ) : picked.length === 0 ? (
+      ) : picked.length === 0 &&
+        own.failedMetrics.length ? null : picked.length === 0 ? (
         <p className="mt-3 text-muted-foreground">
           Select streams in the table to draw them here, in one chart. Streams
           of one unit share an axis; a second unit reads on the right.
