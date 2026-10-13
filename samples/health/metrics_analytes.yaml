@@ -342,7 +342,7 @@ data:
         version: "1"
 ---
 # hba1c and hba1c_ifcc relate by the IFCC and NGSP master equation, not a
-# molar mass: IFCC mmol/mol = (NGSP %% - 2.15) x 10.929.
+# molar mass: IFCC mmol/mol = (NGSP % - 2.15) x 10.929.
 kind: samples.substrate.reamde.dev/health/analyte
 metadata:
   id: health/hba1c
