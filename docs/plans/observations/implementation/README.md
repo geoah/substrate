@@ -30,10 +30,8 @@ result. What is left:
 - The Garmin and Google Fit providers are tested against mock upstreams
   only, and Garmin and Apple Health push no deletion.
 - A WHOOP night (`health/sleep`) carries no reference to its cycle's
-  recovery, and WHOOP's nightly values (heart rate variability, resting
-  heart rate, SpO2, skin temperature) are summaries of the cycle that
-  begins at waking, so a day bucket by `place` `end` puts them a day after
-  their night, where Garmin's nightly summaries need `end`.
+  recovery; the recovery's readings span the night and carry the night's
+  sleep id as `periodId`, so they join the night by window and by id.
 - The console has no raw-line view of a downsample, no reference-range
   marker on a lab chart, no "today" view and no y scale on a stream's
   sparkline.

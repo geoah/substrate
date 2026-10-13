@@ -66,15 +66,16 @@ and `first` query parameters unencoded.
 ## Today
 
 A day screen shows the day's totals, the vendor scores for the day, last
-night's sleep and the newest body readings. Three reads fill it. The day and
-the night are two reads because `bucket.place` belongs to the whole read: a
-night counts on the day it ends (`place: "end"`), while WHOOP writes a day's
-recovery and resting heart rate as summaries over the cycle that starts when
-the night ends, which `place: "end"` would put on the next day.
+night's sleep and the newest body readings. Two reads fill it. The day and
+its night are one read: `place: "end"` puts each value with a span on the
+day its span ends, so last night counts on the morning it ended, and a day's
+totals, whose spans end inside the day, stay on their own day. Every source
+writes a nightly summary over the night, WHOOP's recovery included, so one
+placement serves them all.
 
-The day, on the local day Ada lived it (`calendar: "day"` with no `timezone`
-is the recorded-local calendar), each metric from the first source in
-`order` that holds it:
+The day and the night, on the local day Ada lived it (`calendar: "day"` with
+no `timezone` is the recorded-local calendar), each metric from the first
+source in `order` that holds it:
 
 ```json
 {"aggregate": {
@@ -82,9 +83,12 @@ is the recorded-local calendar), each metric from the first source in
      {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"], "from": "prefer-raw"},
      {"ref": "ada.example.com/observations/metric/health/active_energy", "reducers": ["sum"], "unit": "kcal", "from": "prefer-raw"},
      {"ref": "ada.example.com/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
-     {"ref": "ada.example.com/observations/metric/health/whoop_recovery", "from": "summaries", "statistic": "vendor"}],
+     {"ref": "ada.example.com/observations/metric/health/whoop_recovery", "from": "summaries", "statistic": "vendor"},
+     {"ref": "ada.example.com/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
+     {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "avg"}],
    "range": {"gte": "2026-10-11T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
-   "bucket": {"calendar": "day"},
+   "bucket": {"calendar": "day", "place": "end"},
+   "groupBy": ["code"],
    "sources": {"policy": "priority",
                "order": ["garmin/ada/account", "garmin/ada/forerunner265", "whoop/e2e",
                          "applehealth/iphone/apple-watch", "applehealth/iphone/iphone"]},
@@ -92,15 +96,26 @@ is the recorded-local calendar), each metric from the first source in
 ```
 
 ```text
-{"units": {"health/active_energy": "kcal", "health/resting_heart_rate": "/min",
-           "health/steps": "{steps}", "health/whoop_recovery": "%"},
- "bucket": {"calendar": "day"}, "exact": false,
+{"units": {"health/active_energy": "kcal", "health/hrv_rmssd": "ms", "health/resting_heart_rate": "/min",
+           "health/sleep_stage": "h", "health/steps": "{steps}", "health/whoop_recovery": "%"},
+ "bucket": {"calendar": "day", "place": "end"}, "exact": false,
  "rows": [{"start": "2026-10-11T00:00:00+03:00", "end": "2026-10-12T00:00:00+03:00",
            "group": {"metric": "health/active_energy"}, "from": "raw", "sources": ["garmin/ada/account"],
            "values": [{"reducer": "sum", "value": "1871", "unit": "kcal"}], "count": 96, ...},
           {"start": "2026-10-11T00:00:00+03:00", ...,
+           "group": {"metric": "health/hrv_rmssd"}, "from": "summaries", "sources": ["garmin/ada/account"],
+           "values": [{"reducer": "last", "value": "62", "unit": "ms"}], "count": 1, ...},
+          {"start": "2026-10-11T00:00:00+03:00", ...,
            "group": {"metric": "health/resting_heart_rate"}, "from": "summaries", "sources": ["garmin/ada/account"],
            "values": [{"reducer": "last", "value": "50", "unit": "/min"}], "count": 1, ...},
+          {..., "group": {"metric": "health/sleep_stage", "code": "awake"}, "sources": ["garmin/ada/account"],
+           "values": [{"reducer": "sum", "value": "0.136666666666667", "unit": "h"}], "count": 5, ...},
+          {..., "group": {"metric": "health/sleep_stage", "code": "deep"},
+           "values": [{"reducer": "sum", "value": "1.72611111111111", "unit": "h"}], "count": 6, ...},
+          {..., "group": {"metric": "health/sleep_stage", "code": "light"},
+           "values": [{"reducer": "sum", "value": "4.69194444444445", "unit": "h"}], "count": 12, ...},
+          {..., "group": {"metric": "health/sleep_stage", "code": "rem"},
+           "values": [{"reducer": "sum", "value": "1.69527777777778", "unit": "h"}], "count": 5, ...},
           {"start": "2026-10-11T00:00:00+03:00", ...,
            "group": {"metric": "health/steps"}, "from": "raw", "sources": ["garmin/ada/account"],
            "values": [{"reducer": "sum", "value": "23687", "unit": "{steps}"}], "count": 96, ...},
@@ -112,35 +127,6 @@ is the recorded-local calendar), each metric from the first source in
 Garmin's 15-minute step and energy chunks covered the whole day, so
 `prefer-raw` read them and not Garmin's daily total (which also says 23,687).
 Only WHOOP writes a recovery, so its row names WHOOP whatever the `order`.
-
-The night, on the day it ended:
-
-```json
-{"aggregate": {
-   "metrics": [
-     {"ref": "ada.example.com/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
-     {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "avg", "reducers": ["last"]}],
-   "range": {"gte": "2026-10-11T00:00:00+03:00", "lt": "2026-10-12T00:00:00+03:00"},
-   "bucket": {"calendar": "day", "place": "end"},
-   "groupBy": ["code"],
-   "sources": {"policy": "priority", "order": ["garmin/ada/account", "whoop/e2e", "applehealth/iphone/apple-watch"]}}}
-```
-
-```text
-{"units": {"health/hrv_rmssd": "ms", "health/sleep_stage": "h"},
- "bucket": {"calendar": "day", "place": "end"},
- "rows": [{"start": "2026-10-11T00:00:00+03:00", ..., "group": {"metric": "health/hrv_rmssd"},
-           "from": "summaries", "sources": ["garmin/ada/account"],
-           "values": [{"reducer": "last", "value": "62", "unit": "ms"}], "count": 1, ...},
-          {..., "group": {"metric": "health/sleep_stage", "code": "awake"}, "sources": ["garmin/ada/account"],
-           "values": [{"reducer": "sum", "value": "0.136666666666667", "unit": "h"}], "count": 5, ...},
-          {..., "group": {"metric": "health/sleep_stage", "code": "deep"},
-           "values": [{"reducer": "sum", "value": "1.72611111111111", "unit": "h"}], "count": 6, ...},
-          {..., "group": {"metric": "health/sleep_stage", "code": "light"},
-           "values": [{"reducer": "sum", "value": "4.69194444444445", "unit": "h"}], "count": 12, ...},
-          {..., "group": {"metric": "health/sleep_stage", "code": "rem"},
-           "values": [{"reducer": "sum", "value": "1.69527777777778", "unit": "h"}], "count": 5, ...}], ...}
-```
 
 The Garmin night ranks first, so the WHOOP, Apple and Google Fit stages that
 overlap it are dropped whole and every row names one source. Garmin writes a
@@ -916,7 +902,7 @@ The lowest of the month and the record that holds it is a list read ordered
 by value. A filter that bounds `at` on both ends turns a list into the window
 read, which orders by `at` alone, so the month is `at` from its start and
 `endsAt` before its end. That bound fits interval observations only, such as
-WHOOP's per-cycle summaries here:
+WHOOP's per-night summaries here:
 
 ```http
 GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"],
@@ -928,14 +914,15 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/observations/observation"
 ```text
 {"records": [
    {"id": "whoop/e2e/744890628/resting_heart_rate",
-    "properties": {"at": "2026-09-29T03:46:00.868Z", "endsAt": "2026-09-30T03:49:00.11Z", "utcOffset": 180,
+    "properties": {"at": "2026-09-28T20:11:00.823Z", "endsAt": "2026-09-29T03:46:00.868Z", "utcOffset": 180,
                    "value": {"value": "47", "unit": "/min"}, "form": "summary", "statistic": "vendor",
-                   "period": "cycle", "periodId": "744890628", ...}}],
+                   "period": "sleep", "periodId": "d2f5a65a-24c4-42ca-9294-42f2881b3370", ...}}],
  "cursor": "...", ...}
 ```
 
-WHOOP's lowest of September was 47, in the cycle that began on the morning
-of 29 September.
+WHOOP's lowest of September was 47, in the night that ended on the morning
+of 29 September. The record's id keeps the cycle the recovery scored
+(744890628); its `periodId` is the night's sleep id.
 
 An instant has no `endsAt`, so the same filter over
 `health/systolic_blood_pressure` answers no records at all. For an instant

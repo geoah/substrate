@@ -88,7 +88,7 @@ relabel a stored value.
 | `gauge` | a level at an instant, held until its `hold` ends, its `endsAt`, or the next point | 62 /min, 72.4 kg, a door `open` |
 | `amount` | a quantity accrued over `[at, endsAt)` | 412 steps in a quarter hour, 94 minutes of `rem` |
 | `counter` | a running total under one of three contracts ([decision 0157](decisions/0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md)) | a meter at 18342.655 kW.h |
-| `summary` | a statistic over a stated period, computed by the source | WHOOP's recovery of 67 % for one cycle |
+| `summary` | a statistic over a stated period, computed by the source | WHOOP's recovery of 67 % for one night |
 
 A categorical value is a gauge with `code` set instead of `value`, or an
 amount with `code` beside `value`: the amount is the quantity and the code its
@@ -691,8 +691,8 @@ in `observed_points`.
 ## Reading
 
 One record is a list read, as for any kind: today's WHOOP recovery is
-`filter.properties.periodId` equal to the cycle id beside `metric` equal to
-the `health/whoop_recovery` metric, and every body weight under 155 lb is
+`filter.properties.periodId` equal to last night's sleep id beside `metric`
+equal to the `health/whoop_recovery` metric, and every body weight under 155 lb is
 `metric` equal to the `health/body_mass` metric and `value` less than
 `{"value": "155", "unit": "[lb_av]"}` (without the metric, muscle and bone
 mass rows match too). Everything bucketed is the records route's
@@ -770,9 +770,9 @@ window held):
 ```
 
 WHOOP writes a night's heart rate variability (its `vendor` value) as a
-summary of the cycle that begins when the night ends, so `place` `end` puts
-it on the next day. The same read of `whoop/e2e` with `statistic` `vendor`
-leaves `place` at its default, `start`, to land each night on its wake day.
+summary over the night, as Garmin does, so the same read of `whoop/e2e` with
+`statistic` `vendor` keeps `place` `end` and lands each night on its wake
+day.
 
 Sleep stages per night: the coded stage amounts summed by code inside each
 `health/sleep` record that is not a nap, one row per night and code, each
@@ -798,11 +798,9 @@ reads in the time it happened:
    "unit": "min"}}
 ```
 
-A night and its recovery: WHOOP stamps a cycle's recovery, and its heart
-rate variability, resting heart rate, SpO2 and skin temperature, at the
-cycle's start, the instant the night before it ends. A records-mode window
-is `[at, endsAt)`, so that instant is outside its night, and `around`
-widens each night's window by a minute after its end to take it. Each row
+A night and its recovery: WHOOP writes a recovery, and its heart rate
+variability, resting heart rate, SpO2 and skin temperature, over the night
+it scores, so each WHOOP night's records-mode window holds them. Each row
 carries the night's `record` beside its recovery:
 
 ```json
@@ -813,15 +811,16 @@ carries the night's `record` beside its recovery:
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"records": {
      "filter": {"kinds": ["ada.example.com/health/sleep"],
-                "properties": {"source": {"eq": "whoop/e2e"}, "isNap": {"eq": false}}},
-     "around": {"after": "PT1M"}}},
+                "properties": {"source": {"eq": "whoop/e2e"}, "isNap": {"eq": false}}}}},
    "reducers": ["last"],
    "unit": "%"}}
 ```
 
-The widening is the read's choice and reaches every metric the same way:
-a value stamped in the minute after the night counts in it, and an amount
-running past the night's end counts at most one minute more of its span.
+A window is `[at, endsAt)`, so a source that stamps a nightly value at the
+instant the night ends puts it outside its night; `around` widens each
+window (`{"after": "PT1M"}`) to take it, and reaches every metric the same
+way: an amount running past the night's end counts at most one minute more
+of its span.
 
 Training time and distance per sport per week, from the workout records
 themselves (a property read): each session once where several devices

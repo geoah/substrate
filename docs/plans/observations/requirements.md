@@ -94,7 +94,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | Id | Need | Status | Request, or what is missing |
 | --- | --- | --- | --- |
 | R-SCORE-1 | Vendor scores under their own names, scales and bands (must) [S1] [S12c] [S13] [S13b] [S23] | partly | Each vendor score is a metric of its own in `{score}` or `%` (`whoop_recovery`, `whoop_strain`, `garmin_stress`, `garmin_body_battery`) with its `algorithm`. A metric carries no bands or colours: [G-50](#g-50-reducers-and-filter-arms). |
-| R-SCORE-2 | The contributors behind a score (should) [S5] [S6b] [S12c] | partly | WHOOP's recovery, HRV and resting heart rate share a `periodId` (the cycle id) and come in one `metrics` read; no reference links a score to its inputs. |
+| R-SCORE-2 | The contributors behind a score (should) [S5] [S6b] [S12c] | partly | WHOOP's recovery, HRV, resting heart rate, sleep performance and respiratory rate share a `periodId` (the night's sleep id) and a span (the night), and come in one `metrics` read; no reference links a score to its inputs. |
 | R-SCORE-3 | Intraday vendor curves and their states (should) [S13b] | partly | Garmin stress and Body Battery are gauge traces; Garmin's sentinel values (-1, -2) are written as nulls, so the "too active to measure" state is lost. |
 | R-SCORE-4 | Scores the app computes itself from raw inputs (must) [S38] [S39] [S41] | partly | Inputs and baselines come in one read; the write-back is one record per request ([C-14](#c-14-multi-record-writes)), and a recompute on a changed input needs the time ranges a change touched ([G-32](#g-32-change-feed-time-ranges)). |
 
@@ -106,7 +106,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | R-LAB-2 | One analyte's trend across labs and years, in one unit (must) | supported | The health sample's `convertlab` function writes every lab result in its paired metric (molar mass, or the NGSP and IFCC equation for HbA1c), so a read of either metric holds every lab's result. [Labs](../../health-apps.md#labs-in-both-unit-systems) |
 | R-LAB-3 | High and low flags, with censored values (must) | supported | `interpretation`, `referenceRanges` (quantities, converted with a derived result) and `comparator`; a read counts bounded values in `bounded`. |
 | R-LAB-4 | Preliminary, final and corrected results (should) | partly | `status` and `revision` are stored and a corrected input rewrites its derived results; no aggregate read filters on `status`: [G-50](#g-50-reducers-and-filter-arms). |
-| R-GLU-1 | CGM day view, time in ranges, wear, mean, CV and GMI (must) [S35b] [S36] | partly | `durationIn` bands, `avg`, `stddev` and `coverage` answer it over one glucose metric. Meter and monitor readings are not converted between unit systems the way lab results are: the demo's Contour meter reads 5.3125 mmol/L on average in September through Google Fit (`blood_glucose`) and 95.625 mg/dL through Apple Health (`blood_glucose_mass`), and neither metric reads in the other's unit. GMI and the target range are the app's. |
+| R-GLU-1 | CGM day view, time in ranges, wear, mean, CV and GMI (must) [S35b] [S36] | partly | `durationIn` bands, `avg`, `stddev` and `coverage` answer it over one glucose metric. Meter and monitor readings are not converted between unit systems the way lab results are: the demo's Contour meter reads 5.3125 mmol/L on average in September through Google Fit (`blood_glucose`) and 95.625 mg/dL through Apple Health (`blood_glucose_mass`), and neither metric reads in the other's unit ([other open items](#other-open-items)). GMI and the target range are the app's. |
 | R-GLU-2 | Glucose response to a meal or another recorded event (should) [S35] | follow-up | No meal or journal record to anchor a window ([G-33](#g-33-kinds-an-app-writes-about-the-person)), and no filter on a reading's meal qualifier ([C-12](#c-12-qualifier-filters)). |
 
 ## Apps: body and activity goals
@@ -124,7 +124,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | --- | --- | --- | --- |
 | R-UNIT-1 | One unit preference, applied by every app (must) [S45] | partly | Every read takes `unit`, and `GET /api/v1/units` serves the unit table and its exact factors. No preference record: [G-34](#g-34-unit-preference). |
 | R-UNIT-2 | Pace in min/km or min/mi (must) | partly | Speed is stored as `m/s` gauges and the unit table has a `pace` measure, but a speed read does not answer in pace, and no adapter writes `health/pace`. A workout's mean pace is its duration over its distance, computed by the app. |
-| R-UNIT-3 | Glucose and lab values in mass or molar units (must) | partly | Lab results: supported through `convertlab` ([R-LAB-2](#apps-labs-and-glucose)). Meter and monitor readings: one metric per unit system. |
+| R-UNIT-3 | Glucose and lab values in mass or molar units (must) | partly | Lab results: supported through `convertlab` ([R-LAB-2](#apps-labs-and-glucose)). Meter and monitor readings: one metric per unit system, so one meter read through two providers is two series ([other open items](#other-open-items)). |
 | R-UNIT-4 | Temperature deviations in Celsius or Fahrenheit (must) [S5] | supported | A value with `delta: true` converts by scale alone: Garmin's skin temperature deviation of 0.03 K reads 0.054 [degF]. |
 | R-UNIT-5 | Fractions shown as percent (should) | supported | `fraction` holds `1` and `%`; a score is `{score}` and never converts to `%`. |
 
@@ -216,7 +216,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | P-37 | Packed sample arrays inside one record (must) [oura-spec] [fhir-dt] | supported | `trace`. |
 | P-38 | Categorical samples (must) [hc-sessions] [oura-spec] | supported | `code` and `codeSet`. |
 | P-39 | Compound values: correlations and components (must) [hk-corr] [fhir-obs] [withings-spec] | supported | `components`. |
-| P-40 | Parent and child: workout to samples, sleep to stages, laps, route (must) [hk-workout] [hk-query] [hk-route] [hc-sessions] [fhir-obs] [whoop-spec] | partly | The records mode joins by window, and a night's stages share its `origin`; no reference links a WHOOP night to its cycle and recovery; laps and routes are out of scope. |
+| P-40 | Parent and child: workout to samples, sleep to stages, laps, route (must) [hk-workout] [hk-query] [hk-route] [hc-sessions] [fhir-obs] [whoop-spec] | partly | The records mode joins by window, and a night's stages share its `origin`; a WHOOP night's recovery lies inside the night's window and carries its sleep id as `periodId`, but no reference links a WHOOP night to its cycle and recovery; laps and routes are out of scope. |
 | P-41 | Session statistics consistent with the children (should) [hk-workout] [whoop-spec] | partly | Nothing checks a session's figures against its samples; each row carries `coverage`. |
 | P-42 | Stored summaries tagged with statistic and period (must) [gh-dp] | supported | `summary` with `statistic`, `period` and `periodId`; `from: "summaries"`. |
 | P-43 | Lineage of derived values (should) [fhir-obs] [oura-spec] | supported | `derivedFrom` and `conversion`. |
@@ -389,6 +389,17 @@ and one transaction on the records route.
 - A date property for a WHOOP cycle and a read that buckets on it, so a
   cycle's day does not depend on where its `at` falls.
 - A reference from a WHOOP night to its cycle and recovery (P-40).
+- One glucose meter's readings land in two metrics by unit:
+  `blood_glucose_mass` in mg/dL through Apple Health and `blood_glucose` in
+  mmol/L through Google Fit, so a CGM or glucose app with both providers sees
+  two disjoint series, and a read of `blood_glucose` in mg/dL is a `422`
+  (R-GLU-1, R-UNIT-3). Proposal, for the owner to decide: the Apple adapter
+  writes meter and monitor readings to `blood_glucose` in mmol/L, dividing a
+  mass concentration by glucose's molar mass (180.156 g/mol, from the
+  analyte records), with `conversion` `{formula: molar-mass}` and the
+  received unit in `sourceUnit`; reading an amount concentration in mg/dL
+  then becomes the unit preference of
+  [G-34](#g-34-unit-preference).
 - A recorded-local row's bounds are written at the offsets of its own
   values, so consecutive days at two offsets overlap in instants: on the demo
   2026-09-24 (London) ends at `2026-09-25T00:00:00+01:00` while 2026-09-25
