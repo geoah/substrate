@@ -28,6 +28,7 @@ var wantFeatureSurfaces = map[string][]string{
 	"changefeed": {surfaceREST},
 	"search":     {surfaceREST},
 	"aggregate":  {surfaceREST},
+	"units":      {surfaceREST},
 	"embeddings": {surfaceREST},
 	"agents":     {surfaceREST},
 }
@@ -203,6 +204,7 @@ func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 		"changefeed":            substrate.StabilityStable,
 		"search":                substrate.StabilityBeta,
 		"aggregate":             substrate.StabilityAlpha,
+		"units":                 substrate.StabilityAlpha,
 		"embeddings":            substrate.StabilityAlpha,
 		substrate.FeatureAgents: substrate.AgentStability,
 	}

@@ -883,9 +883,10 @@ surface, and the key stays a list so a second surface, should one come, lands
 as a new name beside it rather than a reshaped document. The example above is
 abridged; the full list, and it is the same for every deployment of a given
 build, is `triggers`, `functions`, `bundles`, `blobs`, `export`, `changefeed`,
-`search`, `aggregate`, `embeddings` and `agents`. `grammar.collection` is the records
-route and `grammar.recordPath` the record path, so a client checks the two
-shapes it must agree with the substrate about before it addresses anything.
+`search`, `aggregate`, `units`, `embeddings` and `agents`. `grammar.collection`
+is the records route and `grammar.recordPath` the record path, so a client
+checks the two shapes it must agree with the substrate about before it
+addresses anything.
 
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
