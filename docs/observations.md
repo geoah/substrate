@@ -114,8 +114,14 @@ Their names are frozen: a sample's kind cannot be moved by an upgrade, and
 | `trace` | `temporal(range)`, `observed(packed)` | the values of one metric from one source over one fixed period |
 | `source` | | the device, app, service or lab a value came from |
 
-**`metric`** is a catalogue entry and a guide for writers. The engine reads
-nothing from it. `name` is its heading and `description` its prose; `codes`
+**`metric`** is a catalogue entry and a guide for writers. The write rules
+and the observed index read nothing from it: each value carries its own form,
+unit and hold. The [aggregate read](api.md#the-aggregate-read) takes two of
+its properties: `measures`, the measure every value of the read converts
+into (a stream whose unit is outside it is a `422`), and `unit`, the unit the
+read answers in when the request names none. Editing either changes every
+aggregate answer for the metric and no stored value. `name` is its heading
+and `description` its prose; `codes`
 lists it in other code systems (`{system, code, version, display}`, `system`
 being `http://loinc.org`, `healthkit`, `healthconnect`, `googlefit`, `whoop`,
 `garmin`, `withings`, `homeassistant` or `cf`); `measures` is the measure
@@ -123,13 +129,12 @@ from the [unit table](units.md) its values belong to, and `unit` the code
 writers store; `codeSet` lists a categorical metric's codes; `form` and
 `hold` are the defaults a writer copies onto each value; `reducers` names the
 reducers that answer something useful; `compatibility` names the class values
-pool within where the measure alone is not enough (`ngsp` and `ifcc` on the
-two HbA1c metrics, whose measures already keep them apart);
-`displayPrecision` is the decimal places a reader shows; `category` groups it
-for navigation; `algorithm` (`{vendor, name, version}`) names a vendor's
-scoring method. The sample ships six metrics several domains share:
-`air_temperature`, `relative_humidity`, `energy`, `power`, `illuminance` and
-`atmospheric_pressure`.
+pool within where the measure alone is not enough, such as serum against
+whole-blood glucose, and nothing in the engine reads it; `displayPrecision`
+is the decimal places a reader shows; `category` groups it for navigation;
+`algorithm` (`{vendor, name, version}`) names a vendor's scoring method. The sample ships
+six metrics several domains share: `air_temperature`, `relative_humidity`,
+`energy`, `power`, `illuminance` and `atmospheric_pressure`.
 
 **`observation`** declares the trait's single properties and adds:
 `periodId`, the source's own identity for a summary's period (a WHOOP cycle
@@ -338,7 +343,9 @@ common labs. A lab analyte reported in both unit systems is two metrics, the
 amount concentration unsuffixed (`ldl_cholesterol`, mmol/L) and the mass
 concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because the
 two are different measures and only a derived observation bridges them. HbA1c
-is `hba1c` (NGSP %) and `hba1c_ifcc` (mmol/mol). The codes were written from
+is `hba1c` (NGSP %, measure `fraction`) and `hba1c_ifcc` (IFCC mmol/mol,
+measure `amount-fraction`): the two relate by a formula, not a unit, so a
+read of one in the other's unit is refused. The codes were written from
 the vendors' published documentation without a check against a live account;
 a metric's description marks the least certain ones.
 

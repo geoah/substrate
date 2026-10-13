@@ -53,9 +53,13 @@ score) says `statistic: vendor`, not `mean` and not a new word such as
 `form`, `unit`, `hold`, `resetRule` with `resetAt`, `delta` (a temperature
 difference rather than a temperature), `circular` (an angle averaged on the
 circle) and `wrapAt` are on the observation and the trace. The `metric`
-record keeps names, codes, display and recommended reducers, and the engine
-reads nothing from it. An edit to a metric therefore cannot relabel an
-indexed number, and projecting one record never reads another.
+record keeps names, codes, display and recommended reducers, and the write
+rules and the observed index read nothing from it. An edit to a metric
+therefore cannot relabel an indexed number, and projecting one record never
+reads another. The aggregate read takes the metric's `measures` and `unit`:
+the measure it converts every value into and the unit it answers in when the
+request names none. An edit to either changes the answers, never a stored
+value.
 
 `gauge` and `amount` are the OpenMetrics and Home Assistant words. The form
 says what the number means, not when it was taken, and `interval` also

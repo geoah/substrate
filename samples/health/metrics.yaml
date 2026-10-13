@@ -5,8 +5,11 @@
 # `health/`, and the import puts them after the kinds land: editable,
 # deletable, and left in place if this sample is removed.
 #
-# The engine reads nothing from them (decision record 0156): `form`, `unit`,
-# `hold` and the reducers are advice an adapter copies onto each value.
+# The write rules and the observed index read nothing from them (decision
+# record 0156): `form`, `unit`, `hold` and the reducers are advice an adapter
+# copies onto each value. The aggregate read takes a metric's `measures` and
+# `unit` as the measure it converts into and the unit it answers in by
+# default.
 #
 # Two rules the ids follow. A lab analyte reported in both unit systems is
 # two metrics, the amount concentration unsuffixed (`ldl_cholesterol`, mmol/L)

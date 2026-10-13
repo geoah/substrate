@@ -15,10 +15,13 @@
 #   trace        many values over a fixed period, binding observed(packed)
 #   source       the device, app, service or lab a value came from
 #
-# The engine reads nothing from a metric or a source: what an indexed number
-# means (its form, unit, hold, counter contract, delta and circular flags) is
-# on the observation or trace itself, so editing a metric never relabels a
-# stored value (decision record 0156).
+# The write rules and the observed index read nothing from a metric or a
+# source: what an indexed number means (its form, unit, hold, counter
+# contract, delta and circular flags) is on the observation or trace itself,
+# so editing a metric never relabels a stored value (decision record 0156).
+# The aggregate read takes a metric's `measures` and `unit` as the measure it
+# converts into and the unit it answers in by default, and a source's
+# `priorities` as the priority policy's default order.
 #
 # A domain never edits a base kind: health-only context is a `qualifiers`
 # code on an observation, and health-only definition data is a health kind

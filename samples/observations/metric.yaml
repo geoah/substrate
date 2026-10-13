@@ -1,11 +1,13 @@
 # the catalogue entry for one observable thing. Writers find a metric by a
 # code they know (a LOINC code, a HealthKit identifier, a Home Assistant
 # device class) and point every value at it; readers find it by name. The
-# engine reads nothing from it: form, unit, hold and the counter contract are
-# advice a writer copies onto each value, and the value is what the index
-# reads (decision record 0156). A domain ships its own metrics with a
-# package-prefixed id (`health/heart_rate`); this package ships the physical
-# ones several domains share (metrics.yaml).
+# write rules and the index read nothing from it: form, unit, hold and the
+# counter contract are advice a writer copies onto each value, and the value
+# is what the index reads (decision record 0156). The aggregate read takes
+# its `measures` and `unit`: the measure every value converts into and the
+# unit a read answers in when it names none. A domain ships its own metrics
+# with a package-prefixed id (`health/heart_rate`); this package ships the
+# physical ones several domains share (metrics.yaml).
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: samples.substrate.reamde.dev/observations/metric
@@ -57,11 +59,11 @@ data:
     measures:
       type: string
       description: the measure every value's unit belongs to, from the unit
-        table, such as mass
+        table, such as mass; the aggregate read converts into it
     unit:
       type: string
-      description: the unit writers store values in, a UCUM code such as kg
-        or /min
+      description: the unit writers store values in and the aggregate read
+        answers in by default, a UCUM code such as kg or /min
     codeSet:
       type: string
       repeated: true
@@ -89,8 +91,9 @@ data:
       repeated: true
       description: the reducers that answer something useful for this metric,
         such as avg or durationIn
-    # NGSP and IFCC HbA1c share a measure (fraction) and never pool; serum and
-    # whole-blood glucose share one and never pool. The class says so.
+    # serum and whole-blood glucose share a measure and are not
+    # interchangeable. The class says so to a reader that combines metrics;
+    # nothing in the engine reads it.
     compatibility:
       type: string
       description: the class within which values may be pooled, where the
