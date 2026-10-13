@@ -2,10 +2,13 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeFS is a filesystem as two maps: a regular file's size, and a
@@ -271,7 +274,7 @@ func TestTrustStoreEnv(t *testing.T) {
 // store the boot line promises. Asserted as a relation rather than a value, so
 // it holds on a Mac with the python.org build and on a Linux CI runner alike.
 func TestPythonChildEnvCarriesTheChosenTrustStore(t *testing.T) {
-	trust, err := pythonTrust()
+	trust, err := pythonTrust(context.Background())
 	if err != nil {
 		t.Skipf("no interpreter to probe: %v", err)
 	}
@@ -304,7 +307,7 @@ def main(input, host):
 // isolation test skips offline: a host with no CA package at all is a host
 // choice, not a regression.
 func TestThisHostsInterpreterHasATrustStore(t *testing.T) {
-	trust, err := pythonTrust()
+	trust, err := pythonTrust(context.Background())
 	if err != nil {
 		t.Skipf("no interpreter to probe: %v", err)
 	}
@@ -317,5 +320,178 @@ func TestThisHostsInterpreterHasATrustStore(t *testing.T) {
 	}
 	if trust.Injected && !strings.HasPrefix(trust.Path, "/etc/") {
 		t.Fatalf("the runner chose a bundle outside the system list: %+v", trust)
+	}
+}
+
+// A python3 that never answers (#831): a version manager's shim waiting on a
+// lock hung the boot, which asks before the listener opens, and every
+// function start behind it. Both questions give up at the bound with an error
+// that says so. The stand-in is a shell whose child holds stdout open, the
+// case where killing the shell alone would leave the read waiting.
+func TestPythonProbesGiveUpOnAStuckInterpreter(t *testing.T) {
+	dir := t.TempDir()
+	stuck := filepath.Join(dir, "python3")
+	if err := os.WriteFile(stuck, []byte("#!/bin/sh\nsleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	type result struct {
+		err  error
+		took time.Duration
+	}
+	run := func(probe func() error) <-chan result {
+		ch := make(chan result, 1)
+		go func() {
+			begun := time.Now()
+			err := probe()
+			ch <- result{err, time.Since(begun)}
+		}()
+		return ch
+	}
+	// Both at once, so the test waits out one bound rather than two.
+	probes := []struct {
+		name string
+		ch   <-chan result
+		want string
+	}{{
+		name: "locatePython",
+		ch:   run(func() error { _, err := locatePython(context.Background()); return err }),
+		want: "runner: locate python3: python3 did not answer within 5s",
+	}, {
+		name: "probeTrust",
+		ch:   run(func() error { _, err := probeTrust(context.Background(), stuck); return err }),
+		want: "runner: probe the interpreter's certificate store: " + stuck + " did not answer within 5s",
+	}}
+	for _, p := range probes {
+		select {
+		case r := <-p.ch:
+			if r.err == nil || r.err.Error() != p.want {
+				t.Errorf("%s: error = %v, want %q", p.name, r.err, p.want)
+			}
+			if r.took > pythonProbeTimeout+3*time.Second {
+				t.Errorf("%s: gave up after %s, want about %s", p.name, r.took, pythonProbeTimeout)
+			}
+		case <-time.After(pythonProbeTimeout + 15*time.Second):
+			t.Fatalf("%s: still waiting on a python3 that never answers", p.name)
+		}
+	}
+}
+
+// Only an answer is kept. A probe that failed, a timeout included, runs again
+// at the next call, so a stall at boot does not disable functions until a
+// restart; once one answers, nothing runs again.
+func TestProbeMemoKeepsOnlyAnAnswer(t *testing.T) {
+	var m probeMemo[string]
+	stalled := errors.New("python3 did not answer within 5s")
+	calls := 0
+	probe := func(context.Context) (string, error) {
+		calls++
+		if calls == 1 {
+			return "", stalled
+		}
+		return "/usr/bin/python3", nil
+	}
+	ctx := context.Background()
+	if _, err := m.get(ctx, probe); !errors.Is(err, stalled) {
+		t.Fatalf("first call: error = %v, want the probe's", err)
+	}
+	for range 2 {
+		got, err := m.get(ctx, probe)
+		if err != nil || got != "/usr/bin/python3" {
+			t.Fatalf("got %q, %v; want the second probe's answer", got, err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("probe ran %d times, want 2: once failing, once answering, then never again", calls)
+	}
+}
+
+// Callers that arrive while a probe runs wait for it rather than each
+// starting one, so N function starts against a stuck interpreter wait one
+// bound, not N in a row. A late caller whose context is already done proves
+// it joined: it returns at once, and the probe never ran for it.
+func TestProbeMemoSharesAProbeInFlight(t *testing.T) {
+	var m probeMemo[string]
+	stalled := errors.New("stalled")
+	var calls atomic.Int32
+	entered, release := make(chan struct{}), make(chan struct{})
+	probe := func(context.Context) (string, error) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return "", stalled
+	}
+	first := make(chan error, 1)
+	go func() { _, err := m.get(context.Background(), probe); first <- err }()
+	<-entered
+
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range 2 {
+		if _, err := m.get(gone, probe); !errors.Is(err, context.Canceled) {
+			t.Fatalf("a caller during the probe: error = %v, want its own context's", err)
+		}
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("probe ran %d times while one was in flight, want 1", n)
+	}
+	close(release)
+	if err := <-first; !errors.Is(err, stalled) {
+		t.Fatalf("the first caller: error = %v, want the probe's", err)
+	}
+	// The failure was not kept: the next caller probes again.
+	if _, err := m.get(context.Background(), probe); !errors.Is(err, stalled) || calls.Load() != 2 {
+		t.Fatalf("after a failed probe: error = %v with %d probes, want a second probe", err, calls.Load())
+	}
+}
+
+// The probe answers everyone waiting on it, so the caller that started it
+// canceling must neither cut it short nor hand its own cancellation to the
+// others: that caller leaves at once, and a caller still waiting gets the
+// answer, which is kept.
+func TestProbeMemoOutlivesTheCallerThatStartedIt(t *testing.T) {
+	var m probeMemo[string]
+	var calls atomic.Int32
+	entered, release := make(chan struct{}), make(chan struct{})
+	probe := func(ctx context.Context) (string, error) {
+		calls.Add(1)
+		close(entered)
+		<-release
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		return "/usr/bin/python3", nil
+	}
+	starter, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() { _, err := m.get(starter, probe); first <- err }()
+	<-entered
+	cancel()
+	select {
+	case err := <-first:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("the canceled starter: error = %v, want its own context's", err)
+		}
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("the canceled starter is still waiting on the probe")
+	}
+
+	second := make(chan string, 1)
+	go func() {
+		got, err := m.get(context.Background(), probe)
+		if err != nil {
+			got = err.Error()
+		}
+		second <- got
+	}()
+	close(release)
+	if got := <-second; got != "/usr/bin/python3" {
+		t.Fatalf("a caller still waiting got %q, want the probe's answer", got)
+	}
+	if got, err := m.get(context.Background(), probe); err != nil || got != "/usr/bin/python3" || calls.Load() != 1 {
+		t.Fatalf("after the answer: %q, %v with %d probes, want it kept from one probe", got, err, calls.Load())
 	}
 }

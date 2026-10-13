@@ -166,7 +166,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 	}
 
 	uvCache := filepath.Join(base, "uv-cache")
-	interpreter, err := pythonInterpreter()
+	interpreter, err := pythonInterpreter(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 		"PYTHONUNBUFFERED=1",
 		"PYTHONDONTWRITEBYTECODE=1",
 		"TMPDIR=" + tmpDir,
-	}, trustEnv()...)...)
+	}, trustEnv(ctx)...)...)
 	p, err := r.startCmd(cmd, policyFor(spec, work, extraExec...))
 	if err != nil {
 		return nil, fmt.Errorf("runner: start python: %w", err)
@@ -242,7 +242,7 @@ func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string
 	// certificate store the body will: an interpreter with no trust store
 	// would otherwise fail the resolve too, and a uv that falls back to its own
 	// roots would trust a different set than the bodies it provisions.
-	env := childEnv(append([]string{"UV_CACHE_DIR=" + uvCache, "TMPDIR=" + tmpDir}, trustEnv()...)...)
+	env := childEnv(append([]string{"UV_CACHE_DIR=" + uvCache, "TMPDIR=" + tmpDir}, trustEnv(pctx)...)...)
 	uvBin, err2 := exec.LookPath("uv")
 	if err = err2; err != nil {
 		return "", fmt.Errorf("runner: uv is not on PATH: %w", err)
@@ -270,7 +270,7 @@ func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string
 	// version manager's SHIM, which the resolve is not granted and which uv
 	// reports as a hard failure rather than skipping. This is the same reason
 	// the body execs a resolved interpreter instead of `python3`.
-	interpreter, err2 := pythonInterpreter()
+	interpreter, err2 := pythonInterpreter(pctx)
 	if err = err2; err != nil {
 		return "", err
 	}

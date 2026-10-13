@@ -195,5 +195,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
         case "$host" in ""|0.0.0.0|::|localhost) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac; \
         wget -q -O /dev/null "http://${host}:${PORT}/healthz" || exit 1
 
-USER substrate
+# The `substrate` user created above, by number: a Kubernetes pod with
+# runAsNonRoot and no runAsUser refuses an image whose user is a name, because
+# the kubelet cannot tell from a name that it is not root.
+USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/substrate"]

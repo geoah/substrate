@@ -1,13 +1,12 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
-	"sync"
 )
 
 // What a function body verifies a TLS peer against.
@@ -198,9 +197,9 @@ func (hostFS) entries(path string) []string {
 	return names
 }
 
-// pythonTrust probes ONCE per process, like pythonInterpreter: the answer is a
-// property of the host's interpreter, and a body start must not pay an exec
-// for it.
+// pythonTrust keeps its first answer for the process, like pythonInterpreter:
+// the answer is a property of the host's interpreter, and a body start must
+// not pay an exec for it. A failed probe is not kept (probeMemo).
 //
 // It probes the BASE interpreter even though a PEP 723 body runs on the venv
 // interpreter uv built. That is sound because `uv sync --script` builds the
@@ -212,14 +211,22 @@ func (hostFS) entries(path string) []string {
 // The probe runs under childEnv(), not the substrate's environment, so it sees
 // exactly what a body will: a host-set SSL_CERT_FILE that the child-env
 // allowlist does not pass through must not make the probe optimistic.
-var pythonTrust = sync.OnceValues(func() (TrustStore, error) {
-	interpreter, err := pythonInterpreter()
-	if err != nil {
-		return TrustStore{}, err
-	}
-	cmd := exec.Command(interpreter, "-c", trustProbe)
-	cmd.Env = childEnv()
-	out, err := cmd.Output()
+func pythonTrust(ctx context.Context) (TrustStore, error) {
+	return trustMemo.get(ctx, func(ctx context.Context) (TrustStore, error) {
+		interpreter, err := pythonInterpreter(ctx)
+		if err != nil {
+			return TrustStore{}, err
+		}
+		return probeTrust(ctx, interpreter)
+	})
+}
+
+var trustMemo probeMemo[TrustStore]
+
+// probeTrust asks interpreter where its OpenSSL looks for certificates, under
+// pythonProbeTimeout, and chooses the store a body will use.
+func probeTrust(ctx context.Context, interpreter string) (TrustStore, error) {
+	out, err := probePython(ctx, childEnv(), interpreter, "-c", trustProbe)
 	if err != nil {
 		return TrustStore{}, fmt.Errorf("runner: probe the interpreter's certificate store: %w", err)
 	}
@@ -228,13 +235,13 @@ var pythonTrust = sync.OnceValues(func() (TrustStore, error) {
 		return TrustStore{}, fmt.Errorf("runner: probe the interpreter's certificate store: %w", err)
 	}
 	return chooseTrust(paths, systemCertBundles, hostFS{}), nil
-})
+}
 
 // Trust reports what function bodies will verify TLS against, for the boot
 // log. An operator who reads "function sandbox active" and nothing else has no
 // way to learn that every network body on this host fails its handshake before
 // it sends a byte.
-func (r *Runner) Trust() (TrustStore, error) { return pythonTrust() }
+func (r *Runner) Trust(ctx context.Context) (TrustStore, error) { return pythonTrust(ctx) }
 
 // env is the certificate-store assignment a child carries, and it is EMPTY
 // unless the runner chose the store: an interpreter that already has one is
@@ -253,8 +260,8 @@ func (t TrustStore) env() []string {
 // a body that declares no `network:` needs no trust store, so failing a start
 // over it would break the functions that work to report on the ones that do
 // not.
-func trustEnv() []string {
-	trust, err := pythonTrust()
+func trustEnv(ctx context.Context) []string {
+	trust, err := pythonTrust(ctx)
 	if err != nil {
 		return nil
 	}

@@ -85,6 +85,32 @@ func TestBootLineWhenEverythingApplies(t *testing.T) {
 	if !strings.Contains(attr(attrs, "kernel"), "ABI v4") {
 		t.Fatalf("the line does not report the ABI it got: %q", attr(attrs, "kernel"))
 	}
+	// Below ABI 6 every layer is there and signals are still only half
+	// confined, so the line that says "active" says that too.
+	if !strings.Contains(attr(attrs, "kernel"), "signals: the substrate's pid and group only") {
+		t.Fatalf("the line does not say how far signals are confined: %q", attr(attrs, "kernel"))
+	}
+}
+
+// An allowlist entry that parses as neither a CIDR nor an address is dropped
+// by its gate, so the boot names it and the variable it sits in; a clean
+// allowlist, or none, says nothing.
+func TestBootLineNamesIgnoredEgressAllowEntries(t *testing.T) {
+	msg, attrs, ok := egressAllowReport("SUBSTRATE_SANDBOX_EGRESS_ALLOW", "127.0.0.1, 10.0.0.0/33,beeper.local")
+	if !ok {
+		t.Fatal("two unparseable entries produced no line")
+	}
+	if !strings.Contains(msg, "SUBSTRATE_SANDBOX_EGRESS_ALLOW") || attr(attrs, "variable") != "SUBSTRATE_SANDBOX_EGRESS_ALLOW" {
+		t.Fatalf("the line does not name the variable: %q %v", msg, attrs)
+	}
+	if got := attr(attrs, "ignored"); got != "10.0.0.0/33, beeper.local" {
+		t.Fatalf("ignored = %q, want both entries and not the valid one", got)
+	}
+	for _, raw := range []string{"", "127.0.0.0/8, ::1"} {
+		if _, _, ok := egressAllowReport("SUBSTRATE_EGRESS_ALLOW", raw); ok {
+			t.Fatalf("%q produced a line, but every entry parses", raw)
+		}
+	}
 }
 
 // Off is the operator's own choice, so it warns rather than erroring: but it

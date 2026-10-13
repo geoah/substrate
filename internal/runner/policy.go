@@ -1,12 +1,15 @@
 package runner
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/geoah/substrate/internal/sandbox"
 )
@@ -128,8 +131,16 @@ func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
 // runner execs the real binary and the grant below names the tree it actually
 // needs. On the image, where python3 is /usr/bin/python3, this resolves to
 // itself and changes nothing.
-var pythonInterpreter = sync.OnceValues(func() (string, error) {
-	out, err := exec.Command("python3", "-c", "import sys; print(sys.executable)").Output()
+func pythonInterpreter(ctx context.Context) (string, error) {
+	return interpreterMemo.get(ctx, locatePython)
+}
+
+var interpreterMemo probeMemo[string]
+
+// locatePython asks python3 for sys.executable, once, under
+// pythonProbeTimeout.
+func locatePython(ctx context.Context) (string, error) {
+	out, err := probePython(ctx, nil, "python3", "-c", "import sys; print(sys.executable)")
 	if err != nil {
 		return "", fmt.Errorf("runner: locate python3: %w", err)
 	}
@@ -138,7 +149,91 @@ var pythonInterpreter = sync.OnceValues(func() (string, error) {
 		return "", fmt.Errorf("runner: python3 reported no executable path")
 	}
 	return path, nil
-})
+}
+
+// pythonProbeTimeout bounds each question the runner asks the interpreter. The
+// boot asks before the listener opens (the trust line) and every python
+// start asks first, so a version manager's shim waiting on a lock, or an
+// interpreter on a stalled mount, would otherwise hang the boot and every
+// function start with no line saying why.
+const pythonProbeTimeout = 5 * time.Second
+
+// probePython runs interpreter with args under pythonProbeTimeout and returns
+// its stdout. env nil is this process's environment. A probe that outlives the
+// bound is killed with its whole process group, because a shell shim's own
+// child would otherwise keep the pipe open and the wait with it.
+func probePython(ctx context.Context, env []string, interpreter string, args ...string) ([]byte, error) {
+	pctx, cancel := context.WithTimeout(ctx, pythonProbeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(pctx, interpreter, args...)
+	cmd.Env = env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	if err != nil && ctx.Err() == nil && pctx.Err() != nil {
+		return nil, fmt.Errorf("%s did not answer within %s", interpreter, pythonProbeTimeout)
+	}
+	return out, err
+}
+
+// probeMemo keeps a probe's first answer and nothing else: a probe that
+// failed, a timeout included, runs again at the next call, so a stall at boot
+// does not disable functions until a restart. A caller that arrives while a
+// probe runs waits for that one and shares its result, so concurrent starts
+// do not queue one timeout behind another.
+type probeMemo[T any] struct {
+	mu     sync.Mutex
+	done   bool
+	val    T
+	flight *probeFlight[T]
+}
+
+// probeFlight is one probe in progress; finished closes once val and err are
+// set.
+type probeFlight[T any] struct {
+	finished chan struct{}
+	val      T
+	err      error
+}
+
+// get returns the kept answer, or waits for a probe to give one. The probe
+// answers every caller waiting on it, so it runs detached from the
+// cancellation of the one that started it, bounded by its own timeout, and
+// each caller stops waiting when its own context ends.
+func (m *probeMemo[T]) get(ctx context.Context, probe func(context.Context) (T, error)) (T, error) {
+	m.mu.Lock()
+	if m.done {
+		defer m.mu.Unlock()
+		return m.val, nil
+	}
+	f := m.flight
+	if f == nil {
+		f = &probeFlight[T]{finished: make(chan struct{})}
+		m.flight = f
+		go m.run(context.WithoutCancel(ctx), f, probe)
+	}
+	m.mu.Unlock()
+	select {
+	case <-f.finished:
+		return f.val, f.err
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
+	}
+}
+
+// run is one probe, recorded for every caller waiting on f.
+func (m *probeMemo[T]) run(ctx context.Context, f *probeFlight[T], probe func(context.Context) (T, error)) {
+	f.val, f.err = probe(ctx)
+	m.mu.Lock()
+	m.flight = nil
+	if f.err == nil {
+		m.done, m.val = true, f.val
+	}
+	m.mu.Unlock()
+	close(f.finished)
+}
 
 // runtimeRoot is the tree an interpreter needs granted, given its binary: the
 // directory holding it, and, when that directory is a `bin`, its parent, so

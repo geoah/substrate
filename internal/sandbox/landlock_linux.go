@@ -52,13 +52,25 @@ const (
 // instead of a ruleset.
 const llCreateRulesetVersion = 1
 
-// rulesetAttr is struct landlock_ruleset_attr. Only handled_access_fs is
-// passed (size 8, the ABI 1 struct): the kernel accepts a short struct and
-// zero-fills the rest, and neither the network nor the scope fields are used,
-// Landlock's network rules are TCP PORT rules, useless against connectors that
-// all speak 443, and scoping is ABI 6.
-type rulesetAttr struct {
-	HandledAccessFS uint64
+// rulesetFor is the struct landlock_ruleset_attr a ruleset is created with at
+// one ABI, and the size to pass for it. The kernel accepts a short struct and
+// zero-fills the rest, and refuses one whose bytes past its own struct are not
+// zero, so the struct stops where the ABI's fields do.
+//
+// handled_access_net stays zero at every ABI: Landlock's network rules are TCP
+// PORT rules, useless against connectors that all speak 443. Below
+// SignalScopeABI only handled_access_fs is passed (size 8, the ABI 1 struct).
+// From it, `scoped` confines the body's signals and abstract unix socket
+// connects to its own domain: the stub creates one domain per body process,
+// so another body and the substrate are both outside it, and the body's own
+// children are inside.
+func rulesetFor(abi int) (unix.LandlockRulesetAttr, uintptr) {
+	attr := unix.LandlockRulesetAttr{Access_fs: handledFor(abi)}
+	if abi < SignalScopeABI {
+		return attr, unsafe.Offsetof(attr.Access_net)
+	}
+	attr.Scoped = unix.LANDLOCK_SCOPE_SIGNAL | unix.LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET
+	return attr, unsafe.Sizeof(attr)
 }
 
 // pathBeneathAttr is struct landlock_path_beneath_attr, which is PACKED: the
@@ -134,10 +146,10 @@ func applyLandlock(p Policy) error {
 		}
 		return nil
 	}
-	handled := handledFor(abi)
-	attr := rulesetAttr{HandledAccessFS: handled}
+	attr, size := rulesetFor(abi)
+	handled := attr.Access_fs
 	fd, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET,
-		uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0)
+		uintptr(unsafe.Pointer(&attr)), size, 0)
 	if errno != 0 {
 		return fmt.Errorf("create ruleset: %w", errno)
 	}

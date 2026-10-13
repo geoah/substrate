@@ -52,6 +52,29 @@ services:
     # to escalate. Drop the line and the boot log says what stops working.
     cap_add:
       - SYS_PTRACE
+    # Everything else leaves the bounding set, and no exec here gains a
+    # privilege. The server runs as uid 65532 and holds no effective
+    # capability either way, so these bound what a setuid binary or a file
+    # capability, if one ever landed in the image, could reach. On this
+    # service only: the postgres image's entrypoint needs CHOWN and SETUID to
+    # initialize its volume.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # A function body has no process or memory ceiling of its own: the
+    # sandbox cannot write a cgroup. The container's are what keep a runaway
+    # body from taking the host's pid table and memory, and Postgres with
+    # them. They bound the substrate together with its bodies, so a body that
+    # reaches one takes the substrate down too, and the restart policy brings
+    # it back. Size the memory ceiling to the host, leaving room for Postgres.
+    pids_limit: 4096
+    # mem_limit: 4g
+    # A stop waits up to 10 s for requests in flight, then for the background
+    # passes in flight, then up to 10 s for the engine's detached tasks and up
+    # to 10 s more for the repository pool to close. Docker's default of 10 s
+    # would SIGKILL it partway.
+    stop_grace_period: 30s
     volumes:
       # The data root: one directory per repository with its changelog
       # segments, sealed files and blob bytes. This volume is the backup unit

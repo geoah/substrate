@@ -84,6 +84,51 @@ the console it serves renders in headless Chrome (it registers a throwaway
 repository to reach the signed-in pages). CI runs it over every image it
 builds.
 
+**Container settings.** `compose.yaml` runs the substrate service with
+`cap_drop: [ALL]` and `cap_add: [SYS_PTRACE]` (the connect gate needs that one
+capability, see [the function sandbox](#the-function-sandbox)),
+`security_opt: [no-new-privileges:true]`, `pids_limit: 4096` and
+`stop_grace_period: 30s`, with a commented `mem_limit` to size to the host.
+The server runs as uid 65532 with no effective capability, so the first two
+bound what a setuid binary or a file capability could reach if one ever
+landed in the image. The limits are the only process and memory ceiling a
+function body has, because the sandbox cannot write a cgroup, and they bound
+the substrate together with its bodies: a runaway body cannot exhaust the
+host or Postgres, and a body that reaches a limit takes the substrate down
+until the restart policy brings it back. The Postgres service keeps Docker's
+defaults, because its entrypoint needs `CHOWN` and `SETUID` to initialize a
+volume.
+
+The Kubernetes equivalent, on the substrate's container:
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+    add: [SYS_PTRACE]
+  seccompProfile:
+    type: RuntimeDefault
+resources:
+  limits:
+    memory: 4Gi
+```
+
+The image's user is numeric (`USER 65532:65532`), so `runAsNonRoot` needs no
+`runAsUser`. A container has no process limit of its own in Kubernetes: the
+kubelet's `podPidsLimit` sets one per pod. `readOnlyRootFilesystem: true`
+works only with writable volumes at `/tmp`, where the server stages a blob
+upload, and at `$HOME` (`/home/substrate`), where the runner keeps every
+installation's work directory and uv's cache.
+
+**Stopping takes up to about 30 s.** On `SIGTERM` the server waits up to 10 s
+for requests in flight, then for the background passes in flight, then up to
+10 s for the engine's detached tasks and up to 10 s more for the repository
+pool to close. Docker's default stop timeout is 10 s, after which it sends
+`SIGKILL`, so `compose.yaml` sets `stop_grace_period: 30s`. Kubernetes'
+default `terminationGracePeriodSeconds` is 30.
+
 ## Configuration
 
 There is no settings surface: configuration is the environment, read once at
@@ -114,8 +159,8 @@ boot.
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers. Unset, the OAuth facility is off and no flow can start. |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
-| `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. The body sees `EACCES`; the failed call's error names the gate and the value to set (`the sandbox's connect gate refused 10.0.0.7:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7`), and the server logs `egress blocked by the sandbox's connect gate` at `WARN` at most once per destination per body process. |
-| `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llm/provider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. A refused dial fails with `egress blocked by the server's dial gate: 10.0.0.7:4000; allow it with SUBSTRATE_EGRESS_ALLOW=10.0.0.7`. |
+| `SUBSTRATE_SANDBOX_EGRESS_ALLOW` | —                                   | A comma-separated list of CIDRs (or bare addresses) a network body may reach despite the private-range block. A body that declares `permissions.network` reaches the public internet but not the deployment's own loopback, link-local or RFC1918 ranges, so a local provider (a loopback Ollama) needs its address listed here. The Beeper provider is one: Beeper Desktop serves its API on a private address, so every Beeper sync is refused until that address is listed ([its setup](../kinds/providers.substrate.reamde.dev/beeper/README.md#operator-setup)). Empty blocks every private range. The body sees `EACCES`; the failed call's error names the gate and the value to set (`the sandbox's connect gate refused 10.0.0.7:5432; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=10.0.0.7`), and the server logs `egress blocked by the sandbox's connect gate` at `WARN` at most once per destination per body process. An entry that is neither a CIDR nor an address is ignored, and the boot warns naming it. |
+| `SUBSTRATE_EGRESS_ALLOW`       | —                                      | A comma-separated list of CIDRs (or bare addresses) the SERVER may dial for a repository-chosen URL despite the private-range block. An `llm/provider` row's `baseURL` is written by the repository owner, so the engine confines its completion and embedding dials to public destinations, refusing the deployment's own loopback, link-local, RFC1918 and CGNAT ranges at connect time (issue #241). A local provider (a loopback Ollama) needs its address listed here. Empty blocks every private range. This is the server's own dials; `SUBSTRATE_SANDBOX_EGRESS_ALLOW` is the separate escape for a function body's dials. A refused dial fails with `egress blocked by the server's dial gate: 10.0.0.7:4000; allow it with SUBSTRATE_EGRESS_ALLOW=10.0.0.7`. These dials honor `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`: with a proxy set, the server dials the proxy, so the gate checks the proxy's address and never the destination's. A proxy on a private address has to be listed here, and from then on the proxy alone decides what a repository-chosen URL reaches. An entry that is neither a CIDR nor an address is ignored, and the boot warns naming it. |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up apart from the
 data root: without it, sealed material is unreadable
@@ -124,10 +169,9 @@ data root: without it, sealed material is unreadable
 ## The repository directory
 
 Every repository owns one directory under the data root, named by its
-authority, which is the repository's id everywhere
-([decision 0052](decisions/0052-the-authority-is-the-repository-id.md)), and
-that directory is the truth on disk and the unit a backup copies
-([decision 0051](decisions/0051-a-repository-directory-is-the-backup-unit.md)):
+authority, which is the repository's id everywhere, and that directory is the
+truth on disk and the unit a backup copies
+([decision 0052](decisions/0052-the-authority-is-the-repository-id.md)):
 
 ```
 $SUBSTRATE_DATA_ROOT/

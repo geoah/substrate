@@ -77,6 +77,21 @@ func TestReportNamesAnUnsupportedPlatform(t *testing.T) {
 	if got := gone.String(); !contains(got, "connect gate: unavailable") || !contains(got, "pidfd_getfd") {
 		t.Fatalf("an unserviceable gate reads as %q", got)
 	}
+	// Below Landlock ABI 6 the syscall filter is the only signal layer, and
+	// the line says so rather than letting "available" imply the whole of it.
+	for _, tc := range []struct {
+		report Report
+		want   string
+	}{
+		{Report{OS: "linux", LandlockABI: 6, Seccomp: true, ConnectGate: true}, "signals: scoped to the body"},
+		{Report{OS: "linux", LandlockABI: 6, ConnectGate: true}, "signals: scoped to the body"},
+		{linux, "signals: the substrate's pid and group only (landlock ABI v6 scopes the rest)"},
+		{Report{OS: "linux", LandlockABI: 4, ConnectGate: true}, "signals: unscoped"},
+	} {
+		if got := tc.report.String(); !strings.HasSuffix(got, tc.want) {
+			t.Fatalf("ABI v%d, seccomp %v reads as %q, want it to end %q", tc.report.LandlockABI, tc.report.Seccomp, got, tc.want)
+		}
+	}
 	// This build's own platform must agree with the constructor.
 	if New(ModeBestEffort).Report().OS != runtime.GOOS {
 		t.Fatal("the report does not name the platform it ran on")

@@ -59,18 +59,19 @@ func guard(address string, allow []netip.Prefix) error {
 		}
 	}
 	if Blocked(addr) {
-		return &BlockedError{Gate: dialGate, Var: allowVar, Addr: netip.AddrPortFrom(addr, ap.Port())}
+		return &BlockedError{Gate: dialGate, Var: AllowVar, Addr: netip.AddrPortFrom(addr, ap.Port())}
 	}
 	return nil
 }
 
-// dialGate and allowVar are what a refusal names. The server's dials and a
+// dialGate and AllowVar are what a refusal names. The server's dials and a
 // function body's dials are refused by two gates read from two variables, and
 // an operator who sets the wrong one restarts the server for nothing (issue
 // #886), so the refusal carries both.
 const (
 	dialGate = "the server's dial gate"
-	allowVar = "SUBSTRATE_EGRESS_ALLOW"
+	// AllowVar is the operator's allowlist for the server's own dials.
+	AllowVar = "SUBSTRATE_EGRESS_ALLOW"
 )
 
 // BlockedError is guard's refusal of a destination Blocked marks as the
@@ -100,30 +101,36 @@ func (e *BlockedError) Error() string {
 // SUBSTRATE_SANDBOX_EGRESS_ALLOW, the same escape for a network function body;
 // the two are separate variables because the two gates are separate planes.
 func operatorAllow() []netip.Prefix {
-	return parseAllow(os.Getenv(allowVar))
+	prefixes, _ := ParseAllow(os.Getenv(AllowVar))
+	return prefixes
 }
 
-// parseAllow turns the comma-separated allowlist into prefixes, dropping a token
-// that is neither a CIDR nor a bare address rather than failing the dial: a
-// malformed entry tightens the gate, it does not open it.
-func parseAllow(raw string) []netip.Prefix {
+// ParseAllow turns a comma-separated allowlist into prefixes. It is the one
+// parser for both gates' variables, SUBSTRATE_EGRESS_ALLOW and
+// SUBSTRATE_SANDBOX_EGRESS_ALLOW. A token that is neither a CIDR nor a bare
+// address is dropped rather than failing the dial, because a malformed entry
+// tightens the gate rather than opening it, and is returned in dropped, so
+// the boot can name the typo instead of leaving it to look like a refusal
+// nobody configured.
+func ParseAllow(raw string) (prefixes []netip.Prefix, dropped []string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil
+		return nil, nil
 	}
-	var out []netip.Prefix
 	for _, tok := range strings.Split(raw, ",") {
 		tok = strings.TrimSpace(tok)
 		if tok == "" {
 			continue
 		}
 		if p, err := netip.ParsePrefix(tok); err == nil {
-			out = append(out, p.Masked())
+			prefixes = append(prefixes, p.Masked())
 			continue
 		}
 		if a, err := netip.ParseAddr(tok); err == nil {
-			out = append(out, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
+			prefixes = append(prefixes, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
+			continue
 		}
+		dropped = append(dropped, tok)
 	}
-	return out
+	return prefixes, dropped
 }
