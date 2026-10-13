@@ -17,7 +17,13 @@
  * a panel above the grid drawing the selected streams in one chart of up to
  * two units (`components/observations/timeline-panel.tsx`). */
 
-import { useEffect, useMemo, useState, type MouseEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent,
+} from "react"
 import { Link } from "@tanstack/react-router"
 import type { SortingState, Updater } from "@tanstack/react-table"
 import { ChartLineIcon } from "lucide-react"
@@ -296,22 +302,26 @@ export function ObservationsPage() {
     [shown, selection]
   )
   const [anchor, setAnchor] = useState<string | null>(null)
-  function pick(row: StreamRow, checked: boolean, shift: boolean) {
-    const at = shown.findIndex((r) => r.key === row.key)
-    const from = shift && anchor ? shown.findIndex((r) => r.key === anchor) : at
-    const next = selectRange(
-      selection,
-      shown,
-      from < 0 ? at : from,
-      at,
-      checked,
-      pins
-    )
-    setAnchor(row.key)
-    void setSelection(next.length ? next : null)
-  }
+  const pick = useCallback(
+    (row: StreamRow, checked: boolean, shift: boolean) => {
+      const at = shown.findIndex((r) => r.key === row.key)
+      const from =
+        shift && anchor ? shown.findIndex((r) => r.key === anchor) : at
+      const next = selectRange(
+        selection,
+        shown,
+        from < 0 ? at : from,
+        at,
+        checked,
+        pins
+      )
+      setAnchor(row.key)
+      void setSelection(next.length ? next : null)
+    },
+    [shown, anchor, selection, pins, setSelection]
+  )
   const headState = selectionState(selection, shown)
-  function pickAll() {
+  const pickAll = useCallback(() => {
     const next = selectRange(
       selection,
       shown,
@@ -321,7 +331,7 @@ export function ObservationsPage() {
       pins
     )
     void setSelection(next.length ? next : null)
-  }
+  }, [selection, shown, headState, pins, setSelection])
 
   // ── columns, sort, views ─────────────────────────────────────────────────
   const columns = useMemo(() => streamColumns(obs, technical), [obs, technical])
@@ -347,15 +357,23 @@ export function ObservationsPage() {
     void setSort(nextSort === DEFAULT_STREAM_SORT ? null : nextSort)
     persist({ sort: nextSort })
   }
-  // The box column reads the selection, so it is rebuilt as that moves.
-  const boxes = selectColumn({
-    state: headState,
-    selected,
-    onAll: pickAll,
-    onPick: pick,
-  })
+  // The box column reads the selection, so it is rebuilt when that or the
+  // rows shown change, and only then: a render that moves neither (a column
+  // being resized) keeps the table's column model.
+  const gridColumns = useMemo(
+    () => [
+      selectColumn({
+        state: headState,
+        selected,
+        onAll: pickAll,
+        onPick: pick,
+      }),
+      ...columns,
+    ],
+    [headState, selected, pickAll, pick, columns]
+  )
   const table = useDataTable({
-    columns: [boxes, ...columns],
+    columns: gridColumns,
     data: shown,
     sorting,
     onSortingChange,
