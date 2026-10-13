@@ -309,6 +309,28 @@ describe("one metric's plot", () => {
     expect(hour.local).toBeUndefined()
   })
 
+  it("puts a night on the day it ends, in days, weeks and months", () => {
+    const night = (size: "day" | "week" | "hour") =>
+      planPlot(source(), SLEEP_STAGE, {
+        ...SCOPE,
+        size,
+        timezone: "Europe/Athens",
+        recordedLocal: true,
+      }).read?.aggregate.bucket
+    expect(night("day")).toEqual({
+      calendar: "day",
+      fallbackTimezone: "Europe/Athens",
+      place: "end",
+    })
+    expect(night("week")?.place).toBe("end")
+    expect(night("hour")?.place).toBeUndefined()
+    // Heart rate is no night, and its points are instants.
+    expect(
+      planPlot(source(), HEART, { ...SCOPE, size: "day" }).read?.aggregate
+        .bucket?.place
+    ).toBeUndefined()
+  })
+
   it("moves its axis with the reducer and the unit picked", () => {
     expect(planPlot(source(), HEART, { ...SCOPE, reducer: "count" }).unit).toBe(
       COUNT_UNIT

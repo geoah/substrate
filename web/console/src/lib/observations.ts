@@ -185,6 +185,8 @@ export interface MetricInfo {
   codeSet?: string[]
   /** The decimal places a reader is shown. */
   displayPrecision?: number
+  /** Where a reader lists it (`heart`, `sleep`, `body`). */
+  category?: string
 }
 
 /** A metric record read as `MetricInfo`. A `codeSet` entry may be a bare
@@ -211,6 +213,9 @@ export function metricInfoOf(record: SubstrateRecord): MetricInfo {
     measures:
       typeof p.measures === "string" && p.measures ? p.measures : undefined,
     codeSet: codeSet?.length ? codeSet : undefined,
+    ...(typeof p.category === "string" && p.category
+      ? { category: p.category }
+      : {}),
     ...(typeof p.displayPrecision === "number" &&
     Number.isInteger(p.displayPrecision)
       ? { displayPrecision: p.displayPrecision }

@@ -790,7 +790,9 @@ tooltip and the table give each row's UTC offsets (`+03:00 to +01:00` on a
 flight day) and how many points were written without one. Clicking a day
 zooms into the hours it was lived. Picking your zone (`?days=zone`) cuts
 the buckets at your midnights instead; an hour or finer is always an
-instant.
+instant. A sleep metric (its record's `category` is `sleep`) in days, weeks
+or months is placed by its end (`bucket.place: "end"`), so a night lands on
+the day you woke and a week is the sum of its days.
 
 **The pattern.** The chart follows Grafana's time series panel: the series
 of one unit share a y axis, a second unit gets an axis on the right, one

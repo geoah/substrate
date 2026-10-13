@@ -387,6 +387,14 @@ export function planPlot(
     (new Set(selected.map(partOf)).size || 1)
   const local = Boolean(scope.recordedLocal) && dayBucket(scope.size)
   const range = readRange(scope.range, scope.size, local)
+  // A night lands on the day it ends, so each day holds one night and a
+  // week or a month is the sum of its days. The server places only spans
+  // so: a gauge's or a counter's points are instants, and it refuses them.
+  const wake =
+    info?.category === "sleep" &&
+    dayBucket(scope.size) &&
+    selected.length > 0 &&
+    selected.every((s) => s.form === "amount" || s.form === "summary")
   const estimate = bucketEstimate(range, scope.size, groups)
   const metricPath = obs.metricPath(metric)
   const sourceOrder = chosenSources.length
@@ -415,7 +423,10 @@ export function planPlot(
         ...(asked ? { unit: asked } : {}),
         from,
         range,
-        bucket: bucketOf(scope.size, scope.timezone, local),
+        bucket: {
+          ...bucketOf(scope.size, scope.timezone, local),
+          ...(wake ? { place: "end" } : {}),
+        },
         group: scope.group,
         sources: chosenSources.map((s) => refPathOf(s, obs.pins.source) ?? s),
         sourceOrder,
