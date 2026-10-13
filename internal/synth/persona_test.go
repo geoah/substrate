@@ -1,6 +1,7 @@
 package synth
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -247,5 +248,41 @@ func TestPersonaWeighsInAndReadsPressureAwake(t *testing.T) {
 	}
 	if weighIns < 40 || readings < 10 {
 		t.Fatalf("%d weigh-ins and %d readings; the check read too few", weighIns, readings)
+	}
+}
+
+// A session warms up from below its average and settles below it at the
+// end, whatever the sport: a yoga class neither starts at a runner's warm-up
+// rate nor climbs to its cap in the closing rest.
+func TestWorkoutHeartRateWarmsUpAndSettles(t *testing.T) {
+	p, err := NewPersona(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mean := func(s []Sample) float64 {
+		sum := 0.0
+		for _, x := range s {
+			sum += x.Value
+		}
+		return sum / float64(len(s))
+	}
+	yoga := 0
+	for _, d := range p.Days() {
+		for _, w := range p.Day(d).Workouts {
+			s := w.HRSeries(30 * time.Second)
+			first, last, avg := mean(s[:4]), mean(s[len(s)-4:]), float64(w.AvgHR)
+			if first >= avg || last >= avg {
+				t.Errorf("%s %s (average %d): the first two minutes read %.0f, the last two %.0f", d, w.Name, w.AvgHR, first, last)
+			}
+			if w.Sport == Yoga {
+				yoga++
+				if body := mean(s); math.Abs(body-avg) > 5 {
+					t.Errorf("%s yoga averages %.0f, its declared average %d", d, body, w.AvgHR)
+				}
+			}
+		}
+	}
+	if yoga == 0 {
+		t.Fatal("no yoga in the default life; the yoga check read nothing")
 	}
 }

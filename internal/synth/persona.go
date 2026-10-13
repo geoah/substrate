@@ -328,20 +328,29 @@ type Workout struct {
 // Duration is the session length.
 func (w *Workout) Duration() time.Duration { return w.End.Sub(w.Start) }
 
-// HR is the heart rate during the workout at t: a warm-up ramp, a body at
-// the average, intervals on interval days, a cool-down at the end.
+// HR is the heart rate during the workout at t: a warm-up ramp from below
+// the average, a body at the average, intervals on interval days, a
+// cool-down to below the average at the end. Yoga is its own shape: a short
+// warm-up, the flow's slow waves, and a final rest well under the average.
 func (w *Workout) HR(t time.Time) int {
 	dur := math.Max(1, w.Duration().Seconds())
 	el := t.Sub(w.Start).Seconds()
 	f := el / dur
 	r := w.persona.rng("wohr", w.Date, string(w.Sport), int(el/30))
 	avg, mx := float64(w.AvgHR), float64(w.MaxHR)
+	from, to := math.Min(95, avg-10), math.Min(110, avg-5)
 	var v float64
 	switch {
+	case w.Sport == Yoga && f < 0.1:
+		v = avg - 8 + 8*(f/0.1)
+	case w.Sport == Yoga && f > 0.88:
+		v = avg - 16*((f-0.88)/0.12)
+	case w.Sport == Yoga:
+		v = avg + 5*math.Sin(f*14)
 	case f < 0.08:
-		v = 95 + (avg-95)*(f/0.08)
+		v = from + (avg-from)*(f/0.08)
 	case f > 0.93:
-		v = avg - (avg-110)*((f-0.93)/0.07)
+		v = avg - (avg-to)*((f-0.93)/0.07)
 	case w.Name == "intervals":
 		if int(el/180)%2 == 0 {
 			v = mx - 6
