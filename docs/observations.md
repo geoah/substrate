@@ -406,12 +406,36 @@ health](bundles-catalog.md#apple-health-to-health-sample) (`healthapple`),
 [Garmin to health](bundles-catalog.md#garmin-to-health-sample)
 (`healthgarmin`) and [Google Fit to
 health](bundles-catalog.md#google-fit-to-health-sample) (`healthgooglefit`).
-The Apple Health adapter's trace ids carry the source,
-`applehealth/<account>/<source>/<metric>/<UTC hour>`, because one phone
+Every adapter that writes traces names the source in their ids,
+`<provider>/<account>/<source>/<metric>/<UTC hour>`, because one account
 delivers several devices' data.
 
+The four hold to one set of rules:
+
+- **One reconcile.** Each hands what a mirror row implies to
+  `host.observed.reconcile`, which writes each output in one put, leaves one
+  that already holds it unwritten, never lowers a stored `revision`, and
+  deletes what the row no longer implies.
+- **The catalogue's codes and holds.** Every gauge carries its metric's
+  `hold` from the catalogue, a workout's `sport` is one value of the
+  workout code set (`other` where the provider's word has none, the word in
+  `sportSource`), a workout's energy is `activeEnergy` or `totalEnergy` as
+  the provider measures it, a day total is a `sum` summary, and sleep the
+  device did not stage is the `asleep` code. A night's whole time in bed is
+  its `timeInBed`, never an `in_bed` amount.
+- **A night's own figures.** A sleep carries `efficiency` (time asleep over
+  time in bed) and `latency` where the provider sends what they are
+  computed from, and `isNap`: WHOOP and Garmin send the flag, and the
+  Apple Health and Google Fit adapters call a sleep shorter than three
+  hours that begins between 09:00 and 21:00 local time a nap.
+- **What the provider cannot tell them.** Garmin and Apple Health push no
+  deletion, so a record built from a summary deleted upstream stays until
+  its mirror row is deleted by hand; the adapter's delete trigger then
+  removes it. Google Fit sends no offset, so its adapter takes the
+  account's current zone and writes none where the account names no zone.
+
 Every output also names the code that wrote it, in `adapter`:
-`<package>@<version>` (`healthwhoop@1`), a constant at the top of the
+`<package>@<version>` (`healthwhoop@3`), a constant at the top of the
 adapter's function. The base kinds and `health/sleep` and `health/workout`
 declare it as their own property, apart from `revision`, which is the
 upstream's
@@ -671,9 +695,10 @@ recorded, in minutes. `durationIn` reads raw points, so the request raises
 ```
 
 Daily steps for a year on each sample's own local day, the step chunks where
-they cover 90 percent of a day and the source's daily total otherwise; each
-row's `from` says which. A total adds only where its `statistic` is `sum`, so
-a day served by a total labelled `vendor` answers `null`:
+they cover 90 percent of a day and the source's daily total otherwise (a
+summary with statistic `sum`, as the Apple Health and Garmin adapters write
+it); each row's `from` says which. A total adds only where its `statistic` is
+`sum`, so a day served by a total labelled `vendor` answers `null`:
 
 ```json
 {"aggregate": {

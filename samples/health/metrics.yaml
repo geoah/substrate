@@ -33,8 +33,8 @@ data:
   properties:
     name: Heart rate
     description: >-
-      Beats per minute, measured continuously or on demand. Write /min: bpm
-      reads as the annotated {beats}/min, which never converts to /min.
+      Beats per minute, measured continuously or on demand, in /min: bpm and
+      count/min are read as /min.
     codes:
       - system: "http://loinc.org"
         code: "8867-4"
