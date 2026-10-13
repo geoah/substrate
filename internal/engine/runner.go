@@ -343,9 +343,37 @@ func (ds *dataset) readList(ctx context.Context, q substrate.Query) (*substrate.
 	return window.Read(ctx, ds, q, from, to)
 }
 
-// Aggregate is a function body's aggregate read, the records route's.
+// Aggregate is a function body's aggregate read, the records route's. The
+// runner held the kinds and the records the request names to the reads
+// allowlist; a read that ranks its sources by their records' priorities
+// reads those records too, so their kind is held here, where the
+// declarations are, and a kind outside the allowlist trips.
 func (b *callBackend) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
+	for _, pin := range b.inv.ds.rankingSourceKinds(q) {
+		if pin == "" {
+			return nil, fmt.Errorf("%w: aggregate ranks its sources by their records' priorities, and the selected kinds' source reference pins no kind; name aggregate.sources.order",
+				runner.ErrReadForbidden)
+		}
+		if !b.grants(pin) {
+			return nil, fmt.Errorf("%w: aggregate ranks its sources by the priorities of %s records; name aggregate.sources.order, or grant %s",
+				runner.ErrReadForbidden, pin, pin)
+		}
+	}
 	return b.inv.ds.Aggregate(ctx, q)
+}
+
+// grants reports whether the function's reads allowlist covers a kind.
+func (b *callBackend) grants(kind string) bool {
+	if b.fn.Caps.Reads == nil {
+		return false
+	}
+	ident := b.ResolveKind(kind)
+	for _, g := range b.fn.Caps.Reads.Kinds {
+		if vocabulary.GrantMatches(g, ident) {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {

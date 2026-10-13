@@ -570,6 +570,37 @@ func (ds *dataset) rankByPriorities(ctx context.Context, tx *sql.Tx, metric stri
 	return nil
 }
 
+// rankingSourceKinds are the kinds whose records' priorities a read ranks its
+// sources by (rankByPriorities): where a priority or summaries policy names
+// no order on a metric read, the kind each selected observed kind's source
+// reference pins, "" where one pins none and a record of any kind may rank.
+// A caller holding a reads allowlist holds each to it, since the ranking
+// reveals what those records hold.
+func (ds *dataset) rankingSourceKinds(q substrate.AggregateQuery) []string {
+	a := q.Aggregate
+	if a == nil || a.Sources == nil || len(a.Sources.Order) > 0 || (a.Metric == nil && len(a.Metrics) == 0) ||
+		(a.Sources.Policy != substrate.SourcesPriority && a.Sources.Policy != substrate.SourcesSummaries) {
+		return nil
+	}
+	var selected []string
+	for _, k := range q.Filter.Kinds {
+		if ty, err := ds.resolveType(k); err == nil {
+			selected = append(selected, ty.Identity)
+		}
+	}
+	var pins []string
+	for _, t := range ds.registry().Kinds() {
+		if !bindsObserved(t) || (len(q.Filter.Kinds) > 0 && !slices.Contains(selected, t.Identity)) {
+			continue
+		}
+		if prop, ok := t.Prop("source"); ok && !slices.Contains(pins, prop.To) {
+			pins = append(pins, prop.To)
+		}
+	}
+	slices.Sort(pins)
+	return pins
+}
+
 // streamRef is the record path a filter value or an order entry names for a
 // stream's reference property (metric, source, about): a full path as
 // written, as a string or {ref}, or a bare id completed with the kind the

@@ -719,7 +719,11 @@ page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"
 `{"filter": ..., "aggregate": ..., "downsample": ...}`. `filter.kinds` names
 the observed kinds it reads (and `aggregate.bucket.records.filter.kinds` the
 records mode's), each held to the reads allowlist; a body that names none
-trips the allowlist. It answers the result dict, and pays one call and its
+trips the allowlist. So are the kind of every metric `metric` and `metrics`
+name, whose record the read looks up, the targets of either filter's
+`referencing` (as a list's are), and, where a `priority` or `summaries`
+policy names no `order`, the kind of the source records whose priorities
+rank the sources. It answers the result dict, and pays one call and its
 rows against the read budget. Before the read runs, its `budget.maxBuckets`
 (and on the latest read `budget.maxGroups`) is lowered to the rows left. The
 read checks its series times the buckets it answers, the rows it could
@@ -732,6 +736,7 @@ trip like any other. A larger `budget.maxBuckets` does not help, because it
 is lowered again; a larger `permissions.reads.budgets.rows` does.
 
 ```python
+# permissions.reads.kinds grants observations/trace and observations/metric
 res = host.records.aggregate({
     "filter": {"kinds": ["ada.example.com/observations/trace"]},
     "aggregate": {
@@ -748,6 +753,8 @@ res = host.records.aggregate({
 delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
 empty, so every `list` and `search` is refused and every `get` answers absent.
+A `list` whose `filter.referencing` names a record of a kind outside the
+allowlist trips as one naming that kind in `filter.kinds` does.
 A forbidden kind answers exactly like an absent id, same nil shape and same
 budget charge, so a disallowed `get` is never an existence or kind oracle.
 Calls are charged before they run, `first` and `k` clamp to the remaining row

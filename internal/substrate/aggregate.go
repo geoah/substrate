@@ -301,6 +301,43 @@ const (
 	AggregateMaxGroupsPath  = "aggregate.budget.maxGroups"
 )
 
+// NamedRecord is a record path a request names beyond its filters' kinds,
+// and where it names it.
+type NamedRecord struct {
+	Path string
+	At   string
+}
+
+// RecordsNamed are the record paths an aggregate read names beyond its
+// filters' kinds: the targets of either filter's referencing, and every
+// metric it names, whose record the read looks up for its measure and
+// unit. A caller holding a reads allowlist holds each path's kind to it, as
+// it holds the kinds; a referencing that names no target is an error.
+func (q AggregateQuery) RecordsNamed() ([]NamedRecord, error) {
+	out, err := q.Filter.Referencing.Named("filter.referencing")
+	if err != nil {
+		return nil, err
+	}
+	a := q.Aggregate
+	if a == nil {
+		return out, nil
+	}
+	if b := a.Bucket; b != nil && b.Records != nil {
+		more, err := b.Records.Filter.Referencing.Named("aggregate.bucket.records.filter.referencing")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, more...)
+	}
+	if a.Metric != nil {
+		out = append(out, NamedRecord{Path: a.Metric.Ref, At: "aggregate.metric.ref"})
+	}
+	for i, m := range a.Metrics {
+		out = append(out, NamedRecord{Path: m.Ref, At: fmt.Sprintf("aggregate.metrics[%d].ref", i)})
+	}
+	return out, nil
+}
+
 // LimitRows lowers the read's own budget so it answers at most rows rows,
 // for a caller holding a row budget of its own (a function's, an agent's).
 // budget.maxBuckets bounds a bucketed read's series times the buckets it

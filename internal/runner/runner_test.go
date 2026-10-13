@@ -1192,7 +1192,7 @@ def main(input, host):
     return {"output": {"rows": len(rows), "first": rows[0]["values"][0]["value"], "unit": rows[0]["values"][0]["unit"]}}
 `,
 		TimeoutMs: 5000,
-		ReadTypes: []string{"g.test/widgets/widget"},
+		ReadTypes: []string{"g.test/widgets/widget", "g.test/observations/metric"},
 		ReadRows:  10,
 	}
 	backend := widgetBackend()
@@ -1214,12 +1214,22 @@ def main(input, host):
 		t.Fatalf("the backend saw %+v", q)
 	}
 
-	// A read naming no kinds, or a records bucket over a kind outside the
-	// allowlist, trips before the backend is asked.
+	// A read naming no kinds, a records bucket over a kind outside the
+	// allowlist, a metric of such a kind, or a reverse read of a record of
+	// one trips before the backend is asked, as the agent query tool refuses
+	// them.
 	for name, body := range map[string]string{
 		"no kinds": `{"aggregate": {"metric": {"ref": "g.test/observations/metric/heart_rate"}}}`,
 		"records bucket": `{"filter": {"kinds": ["widget"]}, "aggregate": {"bucket": {"records": ` +
 			`{"filter": {"kinds": ["secret.g.test"]}}}}}`,
+		"a metric outside": `{"filter": {"kinds": ["widget"]}, "aggregate": {"metric": {"ref": "g.test/secret/metric/x"}}}`,
+		"one of several metrics outside": `{"filter": {"kinds": ["widget"]}, "aggregate": {"metrics": [` +
+			`{"ref": "g.test/observations/metric/heart_rate"}, {"ref": "g.test/secret/metric/x"}]}}`,
+		"a reverse read outside": `{"filter": {"kinds": ["widget"], "referencing": {"ref": "g.test/secret/thing/x"}}, ` +
+			`"aggregate": {"metric": {"ref": "g.test/observations/metric/heart_rate"}}}`,
+		"a records bucket's reverse read outside": `{"filter": {"kinds": ["widget"]}, "aggregate": {"metric": ` +
+			`{"ref": "g.test/observations/metric/heart_rate"}, "bucket": {"records": {"filter": {"kinds": ["widget"], ` +
+			`"referencing": {"refs": ["g.test/widgets/widget/w1", "g.test/secret/thing/x"]}}}}}}`,
 	} {
 		bad := spec
 		bad.Function = "peek.g.test"
@@ -1284,5 +1294,32 @@ def main(input, host):
 	if out, _ := res.Output.(map[string]any); !strings.Contains(fmt.Sprint(out["refused"]), "maxBuckets") ||
 		backend.aggregates[0].Aggregate.Budget.MaxBuckets != 2 {
 		t.Fatalf("a refusal of the request's own budget: output %v, sent %+v", res.Output, backend.aggregates[0].Aggregate.Budget)
+	}
+}
+
+// A list's reverse read is held like its kinds: the targets of
+// filter.referencing name records of a kind the allowlist must cover, since
+// the page says which records point at them. A target the allowlist covers
+// reads; one it does not trips before the backend is asked.
+func TestListReferencingIsHeldToTheAllowlist(t *testing.T) {
+	r := New()
+	spec := Spec{
+		Repository: "t1", Function: "reverse.g.test", Runtime: "python", TimeoutMs: 5000,
+		ReadTypes: []string{"g.test/widgets/widget"}, ReadRows: 10,
+	}
+	for _, x := range []struct {
+		target string
+		trips  bool
+	}{{"g.test/widgets/widget/w1", false}, {"g.test/secret/thing/x", true}} {
+		spec.Source = "def main(input, host):\n    host.records._host.list(filter={\"kinds\": [\"widget\"], \"referencing\": {\"ref\": \"" +
+			x.target + "\"}})\n    return {\"effects\": []}\n"
+		backend := widgetBackend()
+		_, err := r.Invoke(context.Background(), spec, testInput(), backend)
+		if x.trips && (!errors.Is(err, ErrReadForbidden) || len(backend.orderBys) != 0) {
+			t.Errorf("referencing %s: err = %v, lists served %d; want a read trip before the backend", x.target, err, len(backend.orderBys))
+		}
+		if !x.trips && (err != nil || len(backend.orderBys) != 1) {
+			t.Errorf("referencing %s: err = %v, lists served %d; want the one list", x.target, err, len(backend.orderBys))
+		}
 	}
 }

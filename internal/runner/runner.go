@@ -1090,6 +1090,13 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		if err := s.requireTypes(q.Filter.Kinds, "list"); err != nil {
 			return nil, err
 		}
+		named, err := q.Filter.Referencing.Named("filter.referencing")
+		if err != nil {
+			return nil, fmt.Errorf("list: %w", err)
+		}
+		if err := s.requireNamed(named, "list"); err != nil {
+			return nil, err
+		}
 		if err := s.chargeCall(); err != nil {
 			return nil, s.trip(err)
 		}
@@ -1140,10 +1147,13 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 	case "aggregate":
 		// The aggregate read pays like a list: one call, and its rows against
 		// the row budget. Every kind it reads is named and held to the
-		// allowlist: the streams' kinds in filter.kinds, and in the records
-		// time mode the kinds whose records are the buckets. Its own budget
-		// is lowered to the rows left before it runs, so a read past the row
-		// budget is refused before it takes a point, and that refusal trips.
+		// allowlist: the streams' kinds in filter.kinds, in the records time
+		// mode the kinds whose records are the buckets, the targets of either
+		// filter's referencing, and the kind of every metric it names, whose
+		// record it looks up; the backend holds the kind whose records'
+		// priorities rank the sources. Its own budget is lowered to the rows
+		// left before it runs, so a read past the row budget is refused before
+		// it takes a point, and that refusal trips.
 		var q substrate.AggregateQuery
 		if err := strictjson.DecodeBytes(call.Params, &q, false); err != nil {
 			return nil, fmt.Errorf("aggregate: %w", err)
@@ -1156,6 +1166,13 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 				return nil, err
 			}
 		}
+		named, err := q.RecordsNamed()
+		if err != nil {
+			return nil, fmt.Errorf("aggregate: %w", err)
+		}
+		if err := s.requireNamed(named, "aggregate"); err != nil {
+			return nil, err
+		}
 		if err := s.chargeCall(); err != nil {
 			return nil, s.trip(err)
 		}
@@ -1165,6 +1182,9 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		}
 		lowered := q.LimitRows(rem)
 		res, err := s.backend.Aggregate(ctx, q)
+		if errors.Is(err, ErrReadForbidden) {
+			return nil, s.trip(err)
+		}
 		if substrate.AggregateRowsRefused(err, lowered) {
 			// The read's refusal is left out: it is a ValidationError, which in
 			// the trip's chain would answer the caller 422 on a field the caller
@@ -1302,6 +1322,21 @@ func (s *readState) requireTypes(types []string, what string) error {
 	for _, t := range types {
 		if !s.allowed(s.resolved(t)) {
 			return s.trip(fmt.Errorf("%w: %s reads %s", ErrReadForbidden, what, t))
+		}
+	}
+	return nil
+}
+
+// requireNamed holds the kind of each record a read names beyond its kinds
+// (a referencing target, a metric) to the allowlist: a reverse read reveals
+// which records point at the target, and a metric read takes the metric
+// record's measure and unit. A path that is not a record path is the
+// backend's to refuse by name.
+func (s *readState) requireNamed(named []substrate.NamedRecord, what string) error {
+	for _, n := range named {
+		kind, _, ok := vocabulary.SplitRecordPath(n.Path)
+		if ok && !s.allowed(s.resolved(kind)) {
+			return s.trip(fmt.Errorf("%w: %s reads %s through %s", ErrReadForbidden, what, kind, n.At))
 		}
 	}
 	return nil

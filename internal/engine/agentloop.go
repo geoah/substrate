@@ -1719,9 +1719,6 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 	if q.Filter.Kinds, msg = check(q.Filter.Kinds); msg != "" {
 		return toolError(msg), false, 0
 	}
-	if msg := ds.allowReferencing(scope, "filter.referencing", q.Filter.Referencing); msg != "" {
-		return toolError(msg), false, 0
-	}
 	if b := q.Aggregate.Bucket; b != nil && b.Records != nil {
 		if len(b.Records.Filter.Kinds) == 0 && scope.kinds != nil {
 			return toolError("aggregate.bucket.records.filter: name the kinds whose records are the buckets"), false, 0
@@ -1729,16 +1726,31 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 		if b.Records.Filter.Kinds, msg = check(b.Records.Filter.Kinds); msg != "" {
 			return toolError(msg), false, 0
 		}
-		if msg := ds.allowReferencing(scope, "aggregate.bucket.records.filter.referencing", b.Records.Filter.Referencing); msg != "" {
-			return toolError(msg), false, 0
+	}
+	named, err := q.RecordsNamed()
+	if err != nil {
+		return toolError(err.Error()), false, 0
+	}
+	for _, n := range named {
+		kind, _, ok := vocabulary.SplitRecordPath(n.Path)
+		switch {
+		case !ok && n.At != "aggregate.metric.ref" && !strings.HasPrefix(n.At, "aggregate.metrics["):
+			return toolError(n.At + ": " + strconv.Quote(n.Path) + " is not a record path \"<kind>/<id>\""), false, 0
+		case !ok || scope.kinds == nil:
+			// A malformed metric ref is the read's to refuse by name.
+		default:
+			if msg := ds.allowKind(scope, kind); msg != "" {
+				return toolError(msg), false, 0
+			}
 		}
 	}
 	if scope.kinds != nil {
-		for _, ref := range aggregateMetricRefs(q.Aggregate) {
-			if kind, _, ok := vocabulary.SplitRecordPath(ref); ok {
-				if msg := ds.allowKind(scope, kind); msg != "" {
-					return toolError(msg), false, 0
-				}
+		for _, pin := range ds.rankingSourceKinds(q) {
+			if pin == "" {
+				return toolError("aggregate.sources: with no order, the read ranks the sources by their records' priorities, and the selected kinds' source reference pins no kind; name aggregate.sources.order"), false, 0
+			}
+			if msg := ds.allowKind(scope, pin); msg != "" {
+				return toolError(msg + ": with no aggregate.sources.order the read ranks the sources by their records' priorities; name the order, or read with that kind granted"), false, 0
 			}
 		}
 	}
@@ -1759,19 +1771,6 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 			len(res.Rows), scope.rows)), false, 0
 	}
 	return toolJSON(res), true, len(res.Rows)
-}
-
-// aggregateMetricRefs are the metric record paths a read names; a malformed
-// one is the read's to refuse by name.
-func aggregateMetricRefs(a *substrate.Aggregate) []string {
-	var refs []string
-	if a.Metric != nil {
-		refs = append(refs, a.Metric.Ref)
-	}
-	for _, m := range a.Metrics {
-		refs = append(refs, m.Ref)
-	}
-	return refs
 }
 
 // rankedFilterArm names the first filter arm set beside `kinds` and

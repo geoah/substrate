@@ -3,14 +3,17 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/samples"
 )
 
@@ -261,5 +264,78 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 	// budget lowers it again, so a model that followed it would spend a call.
 	if strings.Contains(out, "raise maxBuckets") || !strings.Contains(out, "does not help") {
 		t.Fatalf("over the row budget: %s; want the read budget's remedy, not the read's", out)
+	}
+}
+
+// A priority or summaries read that names no order ranks the sources by
+// their records' priorities, so it reads those records: the agent query
+// tool and a function's host call hold their kind to the reads allowlist as
+// they hold the read's other kinds. A scale ranked first and a watch ranked
+// second weigh at one instant; a scope of observations and metrics alone is
+// refused naming the source kind, the same read naming its order answers,
+// and a scope granting the sources answers the scale's weight.
+func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, home := aggregateToolFixture(t)
+	observation := home + "/observations/observation"
+	source := home + "/observations/source"
+	for id, rank := range map[string]int{"scale": 1, "watch": 2} {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: source, ID: id, Properties: map[string]any{
+			"name": id, "priorities": map[string]any{"health/body_mass": rank},
+		}}); err != nil {
+			t.Fatalf("put the %s: %v", id, err)
+		}
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: "w/watch", Properties: map[string]any{
+		"metric": map[string]any{"ref": home + "/observations/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
+		"source": map[string]any{"ref": source + "/watch"},
+		"value":  map[string]any{"value": "80.5", "unit": "kg"}, "at": "2026-09-01T07:00:00Z",
+	}}); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	read := func(order []any) map[string]any {
+		sources := map[string]any{"policy": "priority"}
+		if order != nil {
+			sources["order"] = order
+		}
+		return map[string]any{
+			"metric":   map[string]any{"ref": home + "/observations/metric/health/body_mass"},
+			"range":    map[string]any{"gte": "2026-09-01T00:00:00Z", "lt": "2026-09-02T00:00:00Z"},
+			"reducers": []any{"max"}, "sources": sources,
+		}
+	}
+	narrow := queryScope{kinds: []string{observation, home + "/observations/metric"}, rows: 50}
+	out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read(nil)})
+	if ok || !strings.Contains(out, "observations/source is not in the reads allowlist") || !strings.Contains(out, "order") {
+		t.Errorf("a priority read with no order, sources not granted: ok %v, %s; want a refusal naming the source kind and the order", ok, out)
+	}
+	if out, ok, _ := ds.runQueryTool(ctx, narrow, map[string]any{"aggregate": read([]any{"watch", "scale"})}); !ok || !strings.Contains(out, `"80.5"`) {
+		t.Errorf("a priority read naming its order: ok %v, %s; want the watch's 80.5", ok, out)
+	}
+	wide := queryScope{kinds: []string{home + "/observations/*"}, rows: 50}
+	if out, ok, _ := ds.runQueryTool(ctx, wide, map[string]any{"aggregate": read(nil)}); !ok || !strings.Contains(out, `"70.5"`) {
+		t.Errorf("a priority read with the sources granted: ok %v, %s; want the scale's 70.5, ranked first", ok, out)
+	}
+
+	q := func(order []any) substrate.AggregateQuery {
+		buf, _ := json.Marshal(read(order))
+		var a substrate.Aggregate
+		if err := json.Unmarshal(buf, &a); err != nil {
+			t.Fatal(err)
+		}
+		return substrate.AggregateQuery{Filter: substrate.Filter{Kinds: []string{observation}}, Aggregate: &a}
+	}
+	backend := func(kinds ...string) *callBackend {
+		return &callBackend{inv: &invocation{ds: ds}, fn: &vocabulary.Function{Caps: vocabulary.FunctionCaps{Reads: &vocabulary.FunctionReads{Kinds: kinds}}}}
+	}
+	if _, err := backend(observation, home+"/observations/metric").Aggregate(ctx, q(nil)); !errors.Is(err, runner.ErrReadForbidden) || !strings.Contains(err.Error(), source) {
+		t.Errorf("a function's priority read with no order, sources not granted: %v, want a read trip naming %s", err, source)
+	}
+	if _, err := backend(observation, home+"/observations/metric").Aggregate(ctx, q([]any{"scale"})); err != nil {
+		t.Errorf("a function's priority read naming its order: %v", err)
+	}
+	if _, err := backend(home+"/observations/*").Aggregate(ctx, q(nil)); err != nil {
+		t.Errorf("a function's priority read with the sources granted: %v", err)
 	}
 }

@@ -227,9 +227,10 @@ entry could name only a function.
   instead of a list, with `filter`, `kind` and `downsample` beside it; `id`,
   `q`, `mode`, `first`, `after`, `orderBy` and `expand` beside it are refused
   by name. Every kind it reads is held to the allowlist: `filter.kinds`, a
-  records bucket's kinds, the targets of either filter's `referencing`, and
-  the kind of each metric `metric` and `metrics` name, whose record the read
-  looks up. A metric read naming no kinds reads the allowlist's observed
+  records bucket's kinds, the targets of either filter's `referencing`, the
+  kind of each metric `metric` and `metrics` name, whose record the read
+  looks up, and, where a `priority` or `summaries` policy names no `order`,
+  the kind of the source records whose priorities rank the sources. A metric read naming no kinds reads the allowlist's observed
   kinds; a property read names its own. Before it runs, its
   `budget.maxBuckets` (and on the latest read `budget.maxGroups`) is lowered
   to the rows left, so a read whose series times the buckets it answers
