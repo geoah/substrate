@@ -409,9 +409,10 @@ result:
 
 The stored unit is always the code. A write may send an alias instead: `°C`,
 `°F`, `degC`, `degF`, `µg` and `μg` (the two micro signs are two characters),
-`mcg`, `mmHg`, `bpm` (stored as `{beats}/min`), `rpm` (`{rev}/min`), `kWh`,
-`Wh`, `Cal`, `ppm`, `m³` and `count/min`; [the alias table](units.md#aliases)
-lists them all.
+`mcg`, `mmHg`, `bpm`, `rpm` and `count/min` (each stored as `/min`), `kWh`,
+`Wh`, `Cal`, `ppm` and `m³`; [the alias table](units.md#aliases) lists them
+all. An alias adds no annotation to a count or a rate, and a bare `count` is
+refused, because it names nothing counted: write `{steps}`.
 
 Every unit belongs to a **measure**: the named kind of quantity it measures,
 such as `mass`, `temperature` or `rate`. A value converts and compares only
