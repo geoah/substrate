@@ -95,7 +95,22 @@ describe("ticks", () => {
     }
     const labels = tickLabels(ticks)
     expect(new Set(labels).size).toBe(labels.length)
-    expect(labels[0]).toMatch(/e-10[01]$/)
+    // 1e-101 lands on a tick, so the axis reaches one step below it.
+    expect(labels[0]).toMatch(/e-10[012]$/)
+  })
+
+  it("reaches a step past an extreme that lands on a tick", () => {
+    // 159.97 to 160 lb: the top is no longer the frame the point sits on.
+    expect(niceDomain([158.4, 160]).domain[1]).toBeGreaterThan(160)
+    // LDL 2.8 to 3.1 mmol/L: neither end sits on the frame.
+    const ldl = niceDomain([2.8, 3.1]).domain
+    expect(ldl[0]).toBeLessThan(2.8)
+    expect(ldl[1]).toBeGreaterThan(3.1)
+    expect(niceDomain([2.8, 3.1]).ticks).not.toContain(3.1000000000000005)
+    // A bar's zero baseline stays the bottom.
+    expect(niceDomain([0, 7000, 12450], { zero: true }).domain[0]).toBe(0)
+    // An extreme between ticks needs no further step.
+    expect(niceDomain([72.1, 73.3]).domain).toEqual([72, 73.4])
   })
 
   it("keeps a tick at zero clean of float noise", () => {

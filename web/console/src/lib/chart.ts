@@ -88,8 +88,11 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
   return out
 }
 
-/** A value domain widened to round ticks. `zero` anchors it at zero, as a
- * bar's baseline must be. The domain is always two finite numbers. */
+/** A value domain widened to round ticks, and one step further where an
+ * extreme lands on the outer tick, so no point sits on the frame (160 lb
+ * on a 160 top). `zero` anchors it at zero, as a bar's baseline must be,
+ * and a zero baseline is never padded. The domain is always two finite
+ * numbers. */
 export function niceDomain(
   values: readonly number[],
   { zero = false, count = 4 }: { zero?: boolean; count?: number } = {}
@@ -102,10 +105,31 @@ export function niceDomain(
     max = Math.max(0, max)
     if (min === 0 && max === 0) max = 1
   }
-  const ticks = niceTicks(min, max, count)
+  let ticks = niceTicks(min, max, count)
   if (ticks.length < 2) {
     // Padding a single value overflowed: the value itself is the axis.
     return { domain: [min, max], ticks: [min] }
+  }
+  const step = ticks[1] - ticks[0]
+  const on = (value: number, tick: number) =>
+    Math.abs(value - tick) <= Math.abs(step) * 1e-9
+  // A tick beyond, cut to the digits a step carries so no float noise
+  // shows in its label.
+  const beyond = (tick: number, by: number) =>
+    Number((tick + by).toPrecision(12))
+  if (
+    finite.length &&
+    on(max, ticks[ticks.length - 1]) &&
+    !(zero && max === 0)
+  ) {
+    const next = beyond(ticks[ticks.length - 1], step)
+    if (Number.isFinite(next) && next > ticks[ticks.length - 1]) {
+      ticks = [...ticks, next]
+    }
+  }
+  if (finite.length && on(min, ticks[0]) && !(zero && min === 0)) {
+    const next = beyond(ticks[0], -step)
+    if (Number.isFinite(next) && next < ticks[0]) ticks = [next, ...ticks]
   }
   return { domain: [ticks[0], ticks[ticks.length - 1]], ticks }
 }
