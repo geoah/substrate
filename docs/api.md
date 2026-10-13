@@ -1232,7 +1232,7 @@ filter matches, so a night three devices recorded is three windows.
 `bucket.records.sources` chooses among them:
 
 ```json
-{"policy": "priority", "order": ["whoop/e2e", "garmin/ada/account"], "property": "source", "match": ["sport"]}
+{"policy": "priority", "order": ["whoop/e2e", "garmin/ada/forerunner265"], "property": "source", "match": ["sport"]}
 ```
 
 `property` names the records' declared property that holds their source (a
