@@ -469,6 +469,9 @@ func TestCanonicalUnitAppliesAliases(t *testing.T) {
 		"mmHg": "mm[Hg]", "bpm": "/min", "rpm": "/min", "kWh": "kW.h", "Wh": "W.h",
 		"Cal": "[Cal]", "ppm": "[ppm]", "m³": "m3", "kg/m²": "kg/m2", "count/min": "/min",
 		"kg": "kg", " kg ": "kg", "Cel": "Cel", "kW.h/(100.km)": "kW.h/(100.km)",
+		// A superscript after a bare 10 is its power, never a digit of it:
+		// 10³/μL is a thousand per microliter, not 103.
+		"10³/μL": "10*3/uL", "10³{copies}/mL": "10*3{copies}/mL", "/(10².m)": "/(10*2.m)", "m.10²": "m.10*2",
 	} {
 		got, err := vocabulary.CanonicalUnit(in)
 		if err != nil || got != want {

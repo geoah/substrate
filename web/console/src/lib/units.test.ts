@@ -137,6 +137,13 @@ describe("canonicalUnit", () => {
     expect(canonicalUnit("  kg ")).toBe("kg")
   })
 
+  it("reads a superscript after a bare 10 as its power", () => {
+    expect(canonicalUnit("10³/mL")).toBe("10*3/mL")
+    expect(canonicalUnit("10³{copies}/mL")).toBe("10*3{copies}/mL")
+    expect(canonicalUnit("/(10².m)")).toBe("/(10*2.m)")
+    expect(canonicalUnit("m10²")).toBe("m102")
+  })
+
   it("reads a listed unit's print symbol as its code", () => {
     expect(canonicalUnit("lb")).toBe("[lb_av]")
     expect(canonicalUnit("mph")).toBe("[mi_i]/h")

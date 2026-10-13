@@ -318,12 +318,14 @@ const SUPERSCRIPT_DIGITS: Record<string, string> = { "²": "2", "³": "3" }
 
 /** An input spelling as the engine stores it (`CanonicalUnit`): an alias
  * (`°C`, `bpm`, `mmHg`) to its code, both micro signs to `u` and the
- * superscript digits to ASCII (`μg/m³` is `ug/m3`). */
+ * superscript digits to ASCII (`μg/m³` is `ug/m3`), a superscript after a
+ * bare 10 as its power (`10³/μL` is `10*3/uL`). */
 function engineUnit(input: string): string {
   const s = input.trim()
   if (Object.hasOwn(ALIASES, s)) return ALIASES[s]
   const normalized = s
     .replace(MICRO, "u")
+    .replace(/(^|[./(])10(?=[²³])/g, (_, before: string) => `${before}10*`)
     .replace(/[²³]/g, (c) => SUPERSCRIPT_DIGITS[c])
   return Object.hasOwn(ALIASES, normalized) ? ALIASES[normalized] : normalized
 }

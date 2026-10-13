@@ -694,7 +694,8 @@ The reciprocal of a fuel economy, never converted into one.
 
 A writer may send these spellings; the stored value always holds the code. Both
 micro signs (U+00B5 and U+03BC) read as `u` and the superscript digits ² and ³
-as `2` and `3` anywhere in a code, so `μg/m³` is stored as `ug/m3`.
+as `2` and `3` anywhere in a code, so `μg/m³` is stored as `ug/m3`. After a bare
+`10` a superscript is its power: `10³/μL` is stored as `10*3/uL`, never `103/uL`.
 
 An alias adds no annotation to a count or a rate. `bpm`, `rpm` and `count/min`
 are `/min`, the bare rate a heart rate, a cadence or a breathing rate is stored

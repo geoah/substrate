@@ -302,16 +302,38 @@ func CanonicalUnit(input string) (string, error) {
 	return s, nil
 }
 
+// normalizeUnitCharacters rewrites unitCharacters. A superscript run right
+// after a component that is the bare number 10 is that number's power, so it
+// takes UCUM's `10*`: 10³/μL is 10*3/uL, where the plain digits would read
+// as 103/uL.
 func normalizeUnitCharacters(s string) string {
 	var b strings.Builder
-	for _, r := range s {
-		if to, ok := unitCharacters[r]; ok {
-			b.WriteString(to)
-		} else {
+	runes := []rune(s)
+	for i, r := range runes {
+		to, ok := unitCharacters[r]
+		if !ok {
 			b.WriteRune(r)
+			continue
 		}
+		if superscriptDigit(r) && tenEnds(runes[:i]) {
+			b.WriteString("*")
+		}
+		b.WriteString(to)
 	}
 	return b.String()
+}
+
+func superscriptDigit(r rune) bool { return r == '²' || r == '³' }
+
+// tenEnds reports whether the text before a superscript run ends in a
+// component that is the bare number 10: the start of the code, or an
+// operator or an opening parenthesis, then 10.
+func tenEnds(before []rune) bool {
+	n := len(before)
+	if n < 2 || before[n-2] != '1' || before[n-1] != '0' {
+		return false
+	}
+	return n == 2 || strings.ContainsRune("./(", before[n-3])
 }
 
 // RefusedUnitSpellings lists the spellings CanonicalUnit refuses by name, each
