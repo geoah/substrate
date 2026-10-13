@@ -58,6 +58,12 @@ grype = "0.120.1"
 # the tree and never opens a socket, so a moved doc fails the lint job instead
 # of a reader's click. An external URL is nobody's build failure.
 lychee = "0.24.2"
+# The workflow linters behind `lint:ci`. actionlint checks each workflow's
+# syntax, expressions and `needs:`; zizmor checks its trust boundary: a
+# persisted checkout token, an untrusted expression pasted into a `run:`
+# line, an unpinned action. zizmor runs --offline, so neither opens a socket.
+actionlint = "1.7.12"
+zizmor = "1.30.1"
 #
 # python is deliberately NOT pinned here. The function runner shells out to
 # whatever `python3` is on PATH, and every runner and dev box has one — while
@@ -319,7 +325,7 @@ run = [
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate and the CI scripts"
+description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins, the sandbox gate and the CI workflows and scripts"
 depends = [
   "lint:go",
   "lint:yaml",
@@ -423,7 +429,12 @@ description = "The CI tasks still set SUBSTRATE_TEST_REQUIRE_SANDBOX, and still 
 run = ".mise/sandboxgatecheck.sh"
 
 [tasks."lint:ci"]
-description = "The CI scripts' own tests: the path gate's verdicts, the shard partition, the commit check, the decision number check and the llm live tracking issue"
+description = "actionlint and zizmor over the workflows, then the CI scripts' own tests: the path gate's verdicts, the shard partition, the commit check, the decision number check and the llm live tracking issue"
+# actionlint reads every workflow's syntax, expressions and `needs:`, and
+# zizmor its trust boundary; .github/zizmor.yml names each finding it
+# accepts and why. --offline: no audit that asks GitHub's API runs, so the
+# answer is the tree's alone, as `lint` promises.
+#
 # .mise/changescheck.sh decides whether the database suite runs at all and
 # .mise/shardselect.sh decides which tests each engine shard runs, so a wrong
 # answer from either is a green build that tested nothing, and nothing else
@@ -431,7 +442,15 @@ description = "The CI scripts' own tests: the path gate's verdicts, the shard pa
 # verdict it must give (an unresolvable base must FAIL, never answer false);
 # the partition runs over a fixed list that the shards together must
 # reproduce exactly once. No Go is compiled, so it is cheap enough for `lint`.
-run = ".mise/cicheck.sh"
+#
+# All three run even when one fails, as in `lint:docs`.
+run = """
+status=0
+actionlint || status=1
+zizmor --offline --config .github/zizmor.yml .github || status=1
+.mise/cicheck.sh || status=1
+exit $status
+"""
 
 [tasks."lint:toolchain"]
 description = "The version pins written more than once: .mise.toml against the Dockerfile and go.mod, and every pgvector image and mise version against one source"
@@ -854,11 +873,18 @@ description = "Apply .github/rulesets/main.json and the merge buttons to the Git
 run = ".mise/reposettings.sh"
 
 [tasks.release]
-description = "Build and attach the release for the current tag (CI runs this)"
+description = "Build and attach the release for the current tag, after console:build (CI runs this)"
 # The GitHub release and its notes exist before this runs (release-please
 # wrote them), so goreleaser attaches the artifacts and keeps the body
 # (.goreleaser.yaml's `release.mode: keep-existing`).
-run = "goreleaser release --clean"
+#
+# --skip=before: release.yml builds the console in a job of its own and hands
+# this one web/console/dist, so pnpm's install scripts and vite's plugins
+# never run on the runner that holds the GITHUB_TOKEN this command needs.
+# NOT `depends = ["console:build"]`: a dependency runs in this task's step,
+# with that token in reach. `release:snapshot` keeps the hook, so a laptop's
+# dry run still builds everything.
+run = "goreleaser release --clean --skip=before"
 
 # =============================================================================
 # The pipeline

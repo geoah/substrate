@@ -1,25 +1,39 @@
 # Cuts a release: the CLI for every platform and the multi-arch image, all
 # tagged from the git tag, attached to the GitHub release release-please made,
-# and `v0` (and `0`) moved to that image when it is the newest v0.x release.
+# the published image booted, and `v0` (and `0`) moved to that image when it
+# is the newest v0.x release, with build provenance for the archives and the
+# image.
 #
-# This file holds NO build definition — it runs `mise run release`, which runs
-# goreleaser against .goreleaser.yaml. A person can run the same thing on a
-# laptop with `mise run release:snapshot` (which builds everything and
-# publishes nothing).
+# This file holds NO build definition. It runs `mise run console:build`, then
+# `mise run release`, which runs goreleaser against .goreleaser.yaml. A person
+# can run the same thing on a laptop with `mise run release:snapshot` (which
+# builds everything and publishes nothing).
+#
+# Five jobs, so that no code from a package registry runs on a runner that
+# holds a write credential. Steps of one job share the disk and the process
+# table, so a step that runs pnpm or vite can rewrite what a later step runs
+# with the token. `console` and `smoke` run pnpm, vite and headless Chrome
+# with a read-only token; `release` and `major` hold the write token and run
+# goreleaser, docker and the scripts in this tree, installing only the tools
+# they name (mise-action hands its token to the installs it starts); `attest`
+# alone may sign. No job restores a tool from the Actions cache (`cache:
+# false`, `cache-image: false`): any job on main, pnpm's install scripts
+# included, can write a cache entry under a key a release would read.
 #
 # release-please.yml CALLS this workflow after it tags a merged release pull
 # request, and that call is the ONLY door: there is no dispatch and no
 # `on: push: tags`, because either one publishes whatever commit a tag names
-# without asking whether ci ever passed for it. The first step below asks:
-# it looks the tagged commit's own green ci run up and refuses without one.
+# without asking whether ci ever passed for it. The first step of `release`
+# asks: it looks the tagged commit's own green ci run up and refuses without
+# one.
 #
 # Recovering a release that died halfway (the ghcr push, a flaky upload) is
 # "Re-run failed jobs" on the release-please.yml run that called this: the
-# release-please job keeps its outputs and this job runs again with the same
-# tag and commit. NOT "Re-run all jobs": release-please would run again, find
-# its pull request already labeled `autorelease: tagged`, report no new
-# release, and skip this call. Nothing has to be tagged, deleted or released
-# by hand.
+# release-please job keeps its outputs and the failed jobs here run again
+# with the same tag and commit. NOT "Re-run all jobs": release-please would
+# run again, find its pull request already labeled `autorelease: tagged`,
+# report no new release, and skip this call. Nothing has to be tagged,
+# deleted or released by hand.
 name: release
 
 on:
@@ -44,8 +58,44 @@ permissions:
   contents: read
 
 jobs:
+  # web/console/dist, built on a runner whose token reads and nothing more:
+  # pnpm's install scripts and vite's plugins run here. `release` downloads
+  # the files and runs none of this code.
+  console:
+    name: build the console
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The commit `release` verifies against the tag before it builds.
+          ref: ${{ inputs.sha }}
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          experimental: true
+          version: 2026.9.2
+          install_args: node pnpm
+          cache: false
+      - run: mise run console:build
+      # The repository's default retention, not a day: "Re-run failed jobs"
+      # on a release that died in `release` reruns that job alone, and it
+      # downloads this artifact from the first attempt.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: console
+          path: web/console/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+
   release:
     name: goreleaser
+    needs: console
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -55,6 +105,10 @@ jobs:
       packages: write
       # To read ci's runs, which is what the gate below asks for.
       actions: read
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
     steps:
       # release-please runs after SOME green ci run on main, which may be a
       # later commit's. The release is this commit, so this commit's own run
@@ -77,6 +131,7 @@ jobs:
           echo "$green successful ci run(s) for $SHA" >&2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # goreleaser needs the full history to resolve the previous tag, and
           # every tag, which fetch-depth 0 brings whatever the ref is.
           fetch-depth: 0
@@ -103,23 +158,193 @@ jobs:
             exit 1
           fi
           echo "$TAG is $SHA, which is HEAD" >&2
+      # goreleaser and the Go it builds with, nothing else: no Python tool
+      # resolved from PyPI, and no pnpm. The image build runs in BuildKit's
+      # containers, which see neither the token nor the login.
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          experimental: true
+          version: 2026.9.2
+          install_args: go goreleaser
+          cache: false
+      # The console `console` built. `mise run release` copies it into the
+      # image and skips goreleaser's `before` hook, which would build it here.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: console
+          path: web/console/dist
+      # The emulator for the arm64 half of the image and the builder, each
+      # pinned by digest: binfmt registers a privileged handler on the runner
+      # and BuildKit builds what ships. Dependabot does not read these
+      # inputs, so a bump is by hand: the tag and digest
+      # `docker buildx imagetools inspect <image>:<tag>` prints.
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+          cache-image: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+      # --skip=before again, though the task says it: the task is read from
+      # the release commit's .mise.toml, and a commit older than this
+      # workflow would run goreleaser's hook, pnpm and vite, beside the token.
+      - run: mise run release -- --skip=before
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The index goreleaser just pushed, read back by its tag, for the
+      # `attest` job. Validated, because an empty or malformed digest would
+      # attest nothing.
+      - id: image
+        name: read the pushed image's digest
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          digest="$(docker buildx imagetools inspect "ghcr.io/geoah/substrate:$TAG" --format '{{json .Manifest}}' | jq -r .digest)"
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "ghcr.io/geoah/substrate:$TAG has no index digest (read '$digest')" >&2
+            exit 1
+          fi
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "ghcr.io/geoah/substrate:$TAG is $digest" >&2
+
+  # The image this release published, pulled anonymously as a user pulls it
+  # and booted: ci only ever boots the source build, and the release image is
+  # the Dockerfile's prebuilt stage. Its own job because it runs pnpm and
+  # headless Chrome; `major` waits for it, so an image that fails to boot
+  # leaves `v0` and `0` on the previous release.
+  smoke:
+    name: boot the release image
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+    steps:
+      # The release's own compose.yaml and smoke script.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.sha }}
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           experimental: true
           version: 2026.9.2
-      - run: mise run release
+          install_args: node pnpm
+          cache: false
+      - run: mise run image:smoke "ghcr.io/geoah/substrate:$TAG"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+
+  # `v0` and `0` moved to the release's image. After `smoke`, and a job of
+  # its own, so the registry login shares a runner with no code but
+  # .mise/imagemajor.sh, git and docker. "Re-run failed jobs" after a failed
+  # smoke repeats the smoke and this, never the build.
+  major:
+    name: point v0 at the release
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # imagetools writes `v0` and `0` over the pushed manifests.
+      packages: write
+    env:
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+    steps:
+      # The script, and `origin` for the tags it reads.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.sha }}
+      # mise alone, for the task: the script needs no tool it installs.
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          experimental: true
+          version: 2026.9.2
+          install: false
+          cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       # After goreleaser, so the release's own tags are pushed before `v0`
       # names them. The script leaves `v0` alone unless this tag is the
-      # newest v0.x release, which keeps the re-run above from moving it back.
+      # newest v0.x release, which keeps a re-run from moving it back.
       - run: mise run image:major "$TAG"
         env:
           TAG: ${{ inputs.tag }}
+
+  # Build provenance for the archives and the image, stored by GitHub and
+  # checked with `gh attestation verify` (docs/releasing.md). A job of its
+  # own because `id-token: write` lets any step of its job sign as this
+  # workflow, and this one runs GitHub's action and gh, nothing else. The
+  # image is attested in GitHub's store rather than pushed beside it, so the
+  # index keeps one manifest per platform.
+  #
+  # The commit the provenance names is the one this workflow ran from, the
+  # caller's: `main` when the release-please run started, and no input
+  # changes it. The artifacts are built from the tag's commit. When a pull
+  # request merged in between, the two differ, and a statement naming a
+  # commit the artifacts were not built from is worse than none: the job
+  # attests nothing and says so in the run summary (docs/releasing.md).
+  #
+  # Beside `smoke`, not after it: the version tags and the archives are
+  # public once `release` is green, and an attestation says where an
+  # artifact was built, not that it boots.
+  attest:
+    name: attest
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The release's checksums.txt.
+      contents: read
+      # The signing certificate, and the write to the attestation store.
+      id-token: write
+      attestations: write
+    steps:
+      - id: commit
+        name: compare the run's commit with the tag's
+        env:
+          RUN_SHA: ${{ github.sha }}
+          TAG_SHA: ${{ inputs.sha }}
+        run: |
+          if [ "$RUN_SHA" = "$TAG_SHA" ]; then
+            echo "same=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "same=false" >>"$GITHUB_OUTPUT"
+          printf '### No build provenance\n\nThis run started from %s and the release was built from %s, so an attestation would name the wrong commit. None was made.\n' \
+            "$RUN_SHA" "$TAG_SHA" >>"$GITHUB_STEP_SUMMARY"
+          echo "::warning::no build provenance: the run's commit $RUN_SHA is not the tag's $TAG_SHA"
+      # The file every archive is listed in, as the release serves it.
+      - name: download checksums.txt
+        if: steps.commit.outputs.same == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern
+          checksums.txt --dir "$RUNNER_TEMP"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: steps.commit.outputs.same == 'true'
+        with:
+          subject-checksums: ${{ runner.temp }}/checksums.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: steps.commit.outputs.same == 'true'
+        with:
+          subject-name: ghcr.io/geoah/substrate
+          subject-digest: ${{ needs.release.outputs.digest }}
+          push-to-registry: false

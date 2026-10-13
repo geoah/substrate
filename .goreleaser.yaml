@@ -17,6 +17,9 @@ before:
   hooks:
     # The image serves the console from WEB_DIR, so dist/ must exist before the
     # image build copies it. Vite output is arch-independent: build it once.
+    # `mise run release` skips this hook (--skip=before): release.yml builds
+    # the console in a job of its own, on a runner that holds no write token.
+    # `release:snapshot` still runs it.
     - mise run console:build
 
 builds:
@@ -98,7 +101,9 @@ dockers_v2:
     # pre-existing ghcr package linked to no repository, so the workflow token
     # could not see it. If a push is ever denied with `read_package` while the
     # job log shows `Packages: write`, look at the package's Actions access,
-    # not at permissions and not here.)
+    # not at permissions and not here.) release.yml's `attest` job records the
+    # image's provenance in GitHub's attestation store instead, which leaves
+    # the index as it is.
     sbom: false
     flags:
       - --provenance=false
