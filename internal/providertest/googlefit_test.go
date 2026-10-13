@@ -759,7 +759,7 @@ func TestGoogleFitRereadRewritesAChangedDayAndDeletesAnEmptiedOne(t *testing.T) 
 	if got := mustGet(t, ds, googlefitDatasetType, steady).Version; got != steadyVersion {
 		t.Fatalf("an unchanged day moved from version %d to %d", steadyVersion, got)
 	}
-	if fitLive(t, ds, googlefitDatasetType, emptied) {
+	if live(t, ds, googlefitDatasetType, emptied) {
 		t.Fatalf("%s survived a re-read that found no points", emptied)
 	}
 }
@@ -790,7 +790,7 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 	if n := countLive(t, ds, googlefitSessionType); n != 59 {
 		t.Fatalf("%d sessions, want 59", n)
 	}
-	if fitLive(t, ds, googlefitSessionType, walk) {
+	if live(t, ds, googlefitSessionType, walk) {
 		t.Fatal("the walk the feed reports deleted is still here")
 	}
 	shift := today.Sub(fitCutOn)
@@ -1030,14 +1030,6 @@ func TestGoogleFitRevokedGrantStampsErroring(t *testing.T) {
 	if n := countLive(t, ds, googlefitSourceType) + countLive(t, ds, googlefitDatasetType); n != 0 {
 		t.Fatalf("a revoked grant wrote %d mirror rows", n)
 	}
-}
-
-// fitLive reports whether a record exists and is not a tombstone: a read by id
-// answers a deleted record too.
-func fitLive(t *testing.T, ds substrate.Dataset, kind, id string) bool {
-	t.Helper()
-	row, err := ds.Get(t.Context(), kind, id)
-	return err == nil && row.DeletedAt == nil
 }
 
 // fitSameInstant compares a stored datetime with an instant, whatever spelling

@@ -337,17 +337,11 @@ func whoopSameRow(t *testing.T, a, b []engine.StepEffect, kind, id string) {
 	}
 }
 
-// whoopLive reports whether one row exists and is not deleted.
+// whoopLive is live under the name healthwhoop_test.go and
+// synth_whoop_test.go call it by.
 func whoopLive(t *testing.T, ds substrate.Dataset, kind, id string) bool {
 	t.Helper()
-	row, err := ds.Get(context.Background(), kind, id)
-	if errors.Is(err, substrate.ErrNotFound) {
-		return false
-	}
-	if err != nil {
-		t.Fatalf("get %s %s: %v", kind, id, err)
-	}
-	return row.DeletedAt == nil
+	return live(t, ds, kind, id)
 }
 
 // whoopDeletes is the ids a run's effects deleted, by kind.
@@ -535,7 +529,7 @@ func TestWhoopWebhookLeavesTheSignatureToTheDoor(t *testing.T) {
 	stripped := whoopDelivery(t, "01_sleep.updated.json")
 	stripped["headers"] = map[string]any{"content-type": "application/json; charset=utf-8"}
 	out, _ := mustHook(t, ds, cfg, whoopArrived(stripped, whoopSigned(t, whoopDelivery(t, "01_sleep.updated.json")).Add(time.Hour)))
-	if !whoopLive(t, ds, whoopSleepType, whoopRow("sleep", whoopLastSleep)) {
+	if !live(t, ds, whoopSleepType, whoopRow("sleep", whoopLastSleep)) {
 		t.Fatalf("sleep.updated without its signature headers wrote no sleep row (output %v)", out)
 	}
 	if got := fake.readBacks(); !slices.Equal(got, []string{"/v2/activity/sleep/" + whoopLastSleep}) {
@@ -670,11 +664,11 @@ func TestWhoopWebhookRewritesAndDeletesMirrorRows(t *testing.T) {
 		{whoopSleepType, whoopRow("sleep", whoopDeletedNap)},
 		{whoopRecoveryType, whoopRow("recovery", whoopCurrentCycle)},
 	} {
-		if whoopLive(t, ds, row[0], row[1]) {
+		if live(t, ds, row[0], row[1]) {
 			t.Errorf("%s/%s survived its delete event", row[0], row[1])
 		}
 	}
-	if !whoopLive(t, ds, whoopSleepType, whoopRow("sleep", whoopLastSleep)) {
+	if !live(t, ds, whoopSleepType, whoopRow("sleep", whoopLastSleep)) {
 		t.Fatal("recovery.deleted took the sleep row with it; only sleep.deleted deletes a sleep")
 	}
 
@@ -792,8 +786,8 @@ func TestWhoopSyncRewritesARescoredCycleAndKeepsTheNewerRevision(t *testing.T) {
 func TestWhoopSyncDeletesWhatWhoopNoLongerHas(t *testing.T) {
 	_, ds, fake := newWhoop(t)
 	whoopSync(t, ds, fake, whoopProps(nil))
-	if !whoopLive(t, ds, whoopWorkoutType, whoopRow("workout", whoopDeletedWorkout)) ||
-		!whoopLive(t, ds, whoopSleepType, whoopRow("sleep", whoopDeletedNap)) {
+	if !live(t, ds, whoopWorkoutType, whoopRow("workout", whoopDeletedWorkout)) ||
+		!live(t, ds, whoopSleepType, whoopRow("sleep", whoopDeletedNap)) {
 		t.Fatal("the first sync did not mirror the workout and the nap the second one loses")
 	}
 
@@ -813,13 +807,13 @@ func TestWhoopSyncDeletesWhatWhoopNoLongerHas(t *testing.T) {
 		!slices.Equal(dels[whoopSleepType], []string{whoopRow("sleep", whoopDeletedNap)}) || len(dels) != 2 {
 		t.Fatalf("the second sync deleted %v", dels)
 	}
-	if whoopLive(t, ds, whoopWorkoutType, whoopRow("workout", whoopDeletedWorkout)) {
+	if live(t, ds, whoopWorkoutType, whoopRow("workout", whoopDeletedWorkout)) {
 		t.Fatal("the deleted workout's row survived")
 	}
-	if whoopLive(t, ds, whoopSleepType, whoopRow("sleep", whoopDeletedNap)) {
+	if live(t, ds, whoopSleepType, whoopRow("sleep", whoopDeletedNap)) {
 		t.Fatal("the deleted nap's row survived")
 	}
-	if !whoopLive(t, ds, whoopWorkoutType, whoopRow("workout", whoopLateWorkout)) {
+	if !live(t, ds, whoopWorkoutType, whoopRow("workout", whoopLateWorkout)) {
 		t.Fatal("the hand-logged workout did not land")
 	}
 	if n := countLive(t, ds, whoopWorkoutType); n != 29 {
@@ -871,7 +865,7 @@ func TestWhoopSyncDeletesARecoveryWithCyclesOff(t *testing.T) {
 		t.Fatalf("%d cycle rows with the cycles toggle off", n)
 	}
 	gone := whoopRow("recovery", whoopRescoredCycle)
-	if !whoopLive(t, ds, whoopRecoveryType, gone) {
+	if !live(t, ds, whoopRecoveryType, gone) {
 		t.Fatal("the first sync did not mirror the recovery WHOOP then deletes")
 	}
 
@@ -881,7 +875,7 @@ func TestWhoopSyncDeletesARecoveryWithCyclesOff(t *testing.T) {
 	if got := whoopDeletes(effects)[whoopRecoveryType]; !slices.Equal(got, []string{gone}) {
 		t.Fatalf("the steady sync deleted recoveries %v, want the one WHOOP lost; read back %v", got, fake.readBacks())
 	}
-	if whoopLive(t, ds, whoopRecoveryType, gone) {
+	if live(t, ds, whoopRecoveryType, gone) {
 		t.Fatal("the recovery WHOOP deleted is still mirrored")
 	}
 }
@@ -947,7 +941,7 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	installTriggers(t, ds, whoopDir, "whoop-webhook")
 	whoopSync(t, ds, fake, whoopProps(nil))
 	deleted := whoopRow("workout", whoopDeletedWorkout)
-	if !whoopLive(t, ds, whoopWorkoutType, deleted) {
+	if !live(t, ds, whoopWorkoutType, deleted) {
 		t.Fatal("the first sync did not mirror the workout the delivery deletes")
 	}
 
@@ -999,7 +993,7 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 		if failures, err := ds.TriggerFailures(ctx, "whoop-webhook"); err != nil || len(failures) != 0 {
 			t.Fatalf("%s: the ledger holds %+v (%v)", name, failures, err)
 		}
-		if !whoopLive(t, ds, whoopWorkoutType, deleted) {
+		if !live(t, ds, whoopWorkoutType, deleted) {
 			t.Fatalf("%s: the refused request deleted the workout", name)
 		}
 	}
@@ -1022,7 +1016,7 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 		t.Fatalf("the door refused a signed request: %v", err)
 	}
 	deadline := time.Now().Add(30 * time.Second)
-	for whoopLive(t, ds, whoopWorkoutType, deleted) {
+	for live(t, ds, whoopWorkoutType, deleted) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the signed workout.deleted never deleted its row (trigger status %+v)", status())
 		}

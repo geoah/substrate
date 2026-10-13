@@ -367,7 +367,7 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 		t.Fatalf("the re-read weigh-in = %v at revision %v (was %v)", value, now.Properties["revision"], old.Properties["revision"])
 	}
 	for _, id := range gone {
-		if fitLive(t, ds, obsObservation, id) {
+		if live(t, ds, obsObservation, id) {
 			t.Fatalf("%s survived its day coming back empty", id)
 		}
 	}
@@ -689,7 +689,7 @@ func TestHealthGoogleFitKeepsTwoSourcesReadingsApart(t *testing.T) {
 		t.Fatalf("scale B's weigh-in moved from %s to %s", first[key(b, 0)].ID, left[key(b, 0)].ID)
 	}
 	for _, k := range []string{key(a, 0), key(a, soon)} {
-		if fitLive(t, ds, obsObservation, first[k].ID) {
+		if live(t, ds, obsObservation, first[k].ID) {
 			t.Fatalf("%s outlived scale A's readings", first[k].ID)
 		}
 	}
@@ -855,7 +855,7 @@ func TestHealthGoogleFitKeepsSameModelDevicesApart(t *testing.T) {
 			t.Fatalf("source %s is named %v, want %s", c.slug, src["name"], c.name)
 		}
 	}
-	if fitLive(t, ds, obsSource, "googlefit/"+googlefitAccount+"/withings-body") {
+	if live(t, ds, obsSource, "googlefit/"+googlefitAccount+"/withings-body") {
 		t.Fatalf("a source keyed by the model alone was written")
 	}
 
@@ -898,7 +898,7 @@ func TestHealthGoogleFitKeepsSameModelDevicesApart(t *testing.T) {
 		if got[key(c.b)].ID != c.was[key(c.b)].ID {
 			t.Fatalf("%s's %s reading moved from %s to %s", c.b, c.metric, c.was[key(c.b)].ID, got[key(c.b)].ID)
 		}
-		if fitLive(t, ds, obsObservation, c.was[key(c.a)].ID) {
+		if live(t, ds, obsObservation, c.was[key(c.a)].ID) {
 			t.Fatalf("%s outlived %s's reading", c.was[key(c.a)].ID, c.a)
 		}
 	}

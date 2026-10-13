@@ -435,8 +435,7 @@ func deleteMirror(t *testing.T, ds substrate.Dataset, kind string) {
 
 func workoutGone(t *testing.T, ds substrate.Dataset, wid string) bool {
 	t.Helper()
-	w, err := ds.Get(t.Context(), healthWorkout, wid)
-	return err != nil || w.DeletedAt != nil
+	return !live(t, ds, healthWorkout, wid)
 }
 
 // TestHealthGarminReadsADeletedActivityAsAbsent: a deleted mirror row is

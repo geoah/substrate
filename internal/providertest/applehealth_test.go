@@ -589,10 +589,10 @@ func TestAppleHealthRedeliveryEmptiesBatchesInsideItsSpan(t *testing.T) {
 	again := ahMetricRequest(t, "minutes", "heart_rate", "count/min", heartRows(
 		"2026-10-01 10:05:00 +0000", "2026-10-01 12:05:00 +0000"))
 	out, _ := deliverAH(t, ds, again, "hook-again")
-	if whoopLive(t, ds, ahBatch, hour("11")) {
+	if live(t, ds, ahBatch, hour("11")) {
 		t.Fatalf("the 11:00 batch survived a redelivery whose span covers it and carries none of its rows (output %v)", out)
 	}
-	if !whoopLive(t, ds, ahBatch, hour("09")) {
+	if !live(t, ds, ahBatch, hour("09")) {
 		t.Fatal("the 09:00 batch, outside the redelivery's span, was removed")
 	}
 	if got := countLive(t, ds, ahBatch); got != 3 {
@@ -665,10 +665,10 @@ func TestAppleHealthSkipsARecordTooBigForAFrame(t *testing.T) {
 		"query":   map[string]any{}, "body": map[string]any{"text": string(body)},
 	}
 	out, _ := deliverAH(t, ds, req, "hook-long-ride")
-	if !whoopLive(t, ds, ahWorkout, "iphone/W-SHORT") {
+	if !live(t, ds, ahWorkout, "iphone/W-SHORT") {
 		t.Fatalf("the short workout beside the oversized one was not written (output %v)", out)
 	}
-	if whoopLive(t, ds, ahWorkout, "iphone/W-LONG") {
+	if live(t, ds, ahWorkout, "iphone/W-LONG") {
 		t.Fatal("the oversized workout was written")
 	}
 	ex := mustGet(t, ds, ahExport, "hook-long-ride")
@@ -709,7 +709,7 @@ func TestAppleHealthDeletedRecordsAreAbsent(t *testing.T) {
 		t.Fatalf("delete the workout: %v", err)
 	}
 	out, _ := deliverAH(t, ds, req, "hook-4")
-	if !whoopLive(t, ds, ahWorkout, gone) {
+	if !live(t, ds, ahWorkout, gone) {
 		t.Fatalf("the deleted workout, re-sent as it was, stayed deleted (output %v)", out)
 	}
 }
