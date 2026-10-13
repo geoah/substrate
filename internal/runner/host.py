@@ -9,8 +9,8 @@
 #                    {"op": "invoke", "reqId": N, "id": <key>, "input": {...}}
 #   host -> parent   {"kind": "response", "reqId": N, "ok": true, ...}
 #                    {"kind": "response", "reqId": N, "ok": false, "error": "..."}
-#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call"|"units.convert"|
-#                     "units.canonical"|"units.measure", "params": {...}}
+#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate"|"call"|
+#                     "units.convert"|"units.canonical"|"units.measure", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
 #   host -> parent   {"kind": "log", "reqId": N, "line": "..."}   (no answer)

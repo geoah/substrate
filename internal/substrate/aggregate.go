@@ -97,8 +97,8 @@ const (
 
 // AggregateQuery is one aggregate read: the records filter, the aggregate
 // body, and the downsample beside it when a chart asks for columns. It is
-// also the body of a function's host.records.aggregate and of the agent
-// query tool's aggregate argument.
+// also the body of a function's host.records.aggregate; the agent query tool
+// takes its three parts as its filter, aggregate and downsample arguments.
 type AggregateQuery struct {
 	Filter     Filter      `json:"filter"`
 	Aggregate  *Aggregate  `json:"aggregate,omitempty"`

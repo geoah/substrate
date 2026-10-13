@@ -848,9 +848,10 @@ beside a metric and a range:
  "aggregate": {"groupBy": ["metric", "source", "about"], "reducers": ["last"]}}
 ```
 
-A function sends the same body to `host.records.aggregate`, an agent to the
-`query` tool's `aggregate` argument, and `substratectl aggregate` builds it
-from flags. Where the build differs from the proposal's contract is listed in
+A function sends the same body to `host.records.aggregate`. An agent sends
+its three parts as the `query` tool's arguments of the same names, `filter`,
+`aggregate` and `downsample`, and `substratectl aggregate` builds it from
+flags. Where the build differs from the proposal's contract is listed in
 [the API reference](api.md#where-this-differs-from-the-plan).
 
 ## Where this differs from the plan
