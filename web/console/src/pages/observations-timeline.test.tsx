@@ -247,6 +247,34 @@ describe("the timeline's requests", () => {
     )
   })
 
+  it("holds the chart while a changed reducer is read, and says it is updating", async () => {
+    mount(`?metric=health/body_mass&${WINDOW}`)
+    const weight = await lane("Weight")
+    await waitFor(() =>
+      expect(weight.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
+        null
+      )
+    )
+    // Every read of the metric from here on never answers.
+    const served = globalThis.fetch
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://test")
+        const aggregate = url.searchParams.get("aggregate")
+        return aggregate && JSON.parse(aggregate).metric
+          ? new Promise<Response>(() => {})
+          : served(input)
+      })
+    )
+    fireEvent.click(within(weight).getByRole("button", { name: /^Show:/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Highest/ }))
+    await waitFor(() => expect(within(weight).getByText("Updating…")))
+    expect(weight.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
+      null
+    )
+  })
+
   it("reads a category metric grouped by code", async () => {
     const server = mount(`?metric=health/sleep_stage&${WINDOW}`)
     await waitFor(() =>

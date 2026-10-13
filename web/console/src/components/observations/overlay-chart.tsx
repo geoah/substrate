@@ -13,7 +13,7 @@
  * itself. */
 
 import { useState, type ReactNode } from "react"
-import { useQueries } from "@tanstack/react-query"
+import { useQueries, useQueryClient } from "@tanstack/react-query"
 
 import { CodeBlock } from "@/components/code-block"
 import { CopyButton } from "@/components/identity/copy-button"
@@ -34,8 +34,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import type { Observations } from "@/hooks/use-observations"
-import { aggregateCurl, aggregateQueryOptions } from "@/lib/api/observations"
-import { ApiError, type AggregateRow } from "@/lib/api/types"
+import {
+  aggregateCurl,
+  aggregateQueryOptions,
+  heldAnswer,
+} from "@/lib/api/observations"
+import {
+  ApiError,
+  type AggregateResult,
+  type AggregateRow,
+} from "@/lib/api/types"
 import {
   answerReducers,
   bucketsOf,
@@ -120,11 +128,18 @@ export function OverlayChart({
   const twoAxes = plan.axes.length > 1
   const refusal = leftOutWords(plan)
 
+  const client = useQueryClient()
   const queries = useQueries({
-    queries: drawn.map((plot) => ({
-      ...aggregateQueryOptions(plot.read ?? latestRead(), obs.observedIds),
-      enabled: obs.ready && Boolean(plot.read),
-    })),
+    queries: drawn.map((plot) => {
+      const read = plot.read ?? latestRead()
+      return {
+        ...aggregateQueryOptions(read, obs.observedIds),
+        // A changed reducer, unit or bucket holds the frame while it loads.
+        placeholderData: (prev?: AggregateResult) =>
+          prev ?? heldAnswer(client, read, obs.observedIds),
+        enabled: obs.ready && Boolean(plot.read),
+      }
+    }),
   })
   const states = drawn.map((plot, i) => {
     const query = queries[i]

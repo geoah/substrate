@@ -8,7 +8,7 @@
  * `orderBy`, `first`, `after`, `offset` and `expand`, so none of them is
  * ever sent here. */
 
-import { queryOptions } from "@tanstack/react-query"
+import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import type { AggregateRead } from "@/lib/observations"
 
@@ -50,8 +50,9 @@ export function fetchAggregate(
 /** One aggregate read as a query. The key names the observed kinds, so a
  * write to a record of one of them refreshes it (records.ts
  * recordWriteReaches), and the read itself, so two charts asking the same
- * share an answer. The previous answer stays on screen while the next loads:
- * a chart holds its frame rather than flashing empty. */
+ * share an answer. Under `useQuery` the previous answer stays on screen
+ * while the next loads; `useQueries` starts each new read with none, so a
+ * chart of several reads passes `heldAnswer` itself. */
 export function aggregateQueryOptions(
   read: AggregateRead,
   kinds: readonly string[] = []
@@ -61,6 +62,41 @@ export function aggregateQueryOptions(
     queryFn: ({ signal }) => fetchAggregate(read, signal),
     placeholderData: (prev) => prev,
   })
+}
+
+/** The newest answer the cache holds for a read of the same metric over
+ * the same range, whatever its reducer, unit, bucket or filter: the frame a
+ * chart holds while that read's successor loads. A new range is a new
+ * chart, so nothing holds across one. */
+export function heldAnswer(
+  client: QueryClient,
+  read: AggregateRead,
+  kinds: readonly string[] = []
+): AggregateResult | undefined {
+  const { metric, range } = read.aggregate
+  if (!metric || !range) return undefined
+  let newest: { at: number; data: AggregateResult } | undefined
+  // A key's kinds match as a prefix; the held answer must name them all.
+  const named = JSON.stringify(kinds)
+  for (const query of client
+    .getQueryCache()
+    .findAll({ queryKey: ["records", [...kinds], "aggregate"] })) {
+    if (JSON.stringify(query.queryKey[1]) !== named) continue
+    const held = query.queryKey[3] as AggregateRead | undefined
+    const data = query.state.data as AggregateResult | undefined
+    if (
+      !data ||
+      held?.aggregate.metric?.ref !== metric.ref ||
+      held.aggregate.range?.gte !== range.gte ||
+      held.aggregate.range?.lt !== range.lt
+    ) {
+      continue
+    }
+    if (!newest || query.state.dataUpdatedAt > newest.at) {
+      newest = { at: query.state.dataUpdatedAt, data }
+    }
+  }
+  return newest?.data
 }
 
 /** The request as a person would type it at a shell, against the server

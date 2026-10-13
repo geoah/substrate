@@ -12,6 +12,7 @@ import {
   aggregateCurl,
   aggregatePath,
   aggregateQueryOptions,
+  heldAnswer,
 } from "./observations"
 import { recordWriteReaches } from "./records"
 
@@ -106,6 +107,50 @@ describe("aggregateQueryOptions", () => {
     expect(
       recordWriteReaches(options.queryKey, "ada.example.com/tasks/task", "x")
     ).toBe(false)
+  })
+})
+
+describe("heldAnswer", () => {
+  it("is the newest answer for the metric over the same range", () => {
+    const client = new QueryClient()
+    const kinds = [OBSERVATION, TRACE]
+    const read = (reducer: string, gte = sleepRead.aggregate.range!.gte) => ({
+      ...sleepRead,
+      aggregate: {
+        ...sleepRead.aggregate,
+        reducers: [reducer],
+        range: { ...sleepRead.aggregate.range!, gte },
+      },
+    })
+    const answer = (n: number) => ({ ...LATEST, rows: LATEST.rows.slice(n) })
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(1000)
+      client.setQueryData(
+        aggregateQueryOptions(read("sum"), kinds).queryKey,
+        answer(1)
+      )
+      vi.setSystemTime(2000)
+      client.setQueryData(
+        aggregateQueryOptions(read("count"), kinds).queryKey,
+        answer(2)
+      )
+      vi.setSystemTime(3000)
+      // Another range is another chart.
+      client.setQueryData(
+        aggregateQueryOptions(read("max", "2026-08-01T00:00:00+03:00"), kinds)
+          .queryKey,
+        answer(3)
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(heldAnswer(client, read("min"), kinds)).toEqual(answer(2))
+    expect(heldAnswer(client, read("min"), [OBSERVATION])).toBeUndefined()
+    expect(
+      heldAnswer(client, read("min", "2026-07-01T00:00:00+03:00"), kinds)
+    ).toBeUndefined()
+    expect(heldAnswer(client, latestRead(), kinds)).toBeUndefined()
   })
 })
 
