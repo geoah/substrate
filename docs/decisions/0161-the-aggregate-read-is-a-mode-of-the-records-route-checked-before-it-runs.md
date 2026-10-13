@@ -67,7 +67,8 @@ Chosen: a mode of the records route.
   `bucket.records.sources` and `property.sources` (`separate` by default, or
   `priority`) drop a record whose own `[at, endsAt)` overlaps a kept record
   of a higher-ranked source, the amounts' rule, optionally only where named
-  `match` properties are equal. The request names the property holding a
+  `match` properties are equal; a record with no `endsAt` drops no record
+  with a span. The request names the property holding a
   record's source, because core contracts no source on a record that does
   not bind `observed`, and the policy takes its own `order`, apart from the
   points' policy, so a read may take one source's nights and another's

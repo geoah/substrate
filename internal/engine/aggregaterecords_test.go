@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -13,12 +14,20 @@ import (
 // The records' priority policy drops a record overlapping a kept record of a
 // higher rank with the same match values, and nothing else: a dropped
 // record drops nothing, two records of one rank never drop each other, a
-// record of another match is kept, and a record with no `at` overlaps
-// nothing.
+// record of another match is kept, a record with no `at` overlaps nothing,
+// and an instant (no `endsAt`) is dropped by a span holding it or an instant
+// at its `at`, and drops no span.
 func TestKeepBySourceDropsOnlyUnderAKeptHigherRank(t *testing.T) {
 	t0 := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	span := func(from, to, rank int, match string) policyRecord {
 		return policyRecord{start: t0.Add(time.Duration(from) * time.Minute), end: t0.Add(time.Duration(to) * time.Minute), placed: true, rank: rank, match: match}
+	}
+	instant := func(at, rank int) policyRecord {
+		r := newPolicyRecord(&recordPolicy{last: rank}, sql.NullTime{Time: t0.Add(time.Duration(at) * time.Minute), Valid: true}, sql.NullTime{}, "", "")
+		if !r.instant {
+			t.Fatalf("a record with no endsAt is %+v, want an instant", r)
+		}
+		return r
 	}
 	recs := []policyRecord{
 		span(0, 10, 0, ""),  // a: kept
@@ -27,11 +36,17 @@ func TestKeepBySourceDropsOnlyUnderAKeptHigherRank(t *testing.T) {
 		span(30, 40, 1, ""), // d: same rank as e, kept
 		span(35, 45, 1, ""), // e: kept
 		span(50, 60, 0, "x"),
-		span(55, 65, 1, "y"), // another match: kept
-		span(56, 58, 1, "x"), // the same match: dropped
-		{rank: 1, match: ""}, // no at: kept
-		span(9, 10, 3, ""),   // under a: dropped
-		span(10, 11, 1, ""),  // starts where a ends, inside c's rank-2 span: kept
+		span(55, 65, 1, "y"),  // another match: kept
+		span(56, 58, 1, "x"),  // the same match: dropped
+		{rank: 1, match: ""},  // no at: kept
+		span(9, 10, 3, ""),    // under a: dropped
+		span(10, 11, 1, ""),   // starts where a ends: abutting spans do not overlap, kept
+		span(100, 160, 1, ""), // f: holds g, which drops no span: kept
+		instant(105, 0),       // g: kept
+		instant(110, 2),       // inside f: dropped
+		instant(200, 0),       // kept
+		instant(200, 1),       // at a kept higher instant's at: dropped
+		instant(201, 1),       // at another instant: kept
 	}
 	keep, err := keepBySource(context.Background(), recs)
 	if err != nil {
@@ -41,7 +56,7 @@ func TestKeepBySourceDropsOnlyUnderAKeptHigherRank(t *testing.T) {
 	for i, k := range keep {
 		got = append(got, fmt.Sprintf("%d:%v", i, k))
 	}
-	want := "0:true 1:false 2:true 3:true 4:true 5:true 6:true 7:false 8:true 9:false 10:true"
+	want := "0:true 1:false 2:true 3:true 4:true 5:true 6:true 7:false 8:true 9:false 10:true 11:true 12:true 13:false 14:true 15:false 16:true"
 	if strings.Join(got, " ") != want {
 		t.Errorf("kept %s, want %s", strings.Join(got, " "), want)
 	}

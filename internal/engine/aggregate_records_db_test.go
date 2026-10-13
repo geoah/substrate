@@ -232,6 +232,34 @@ func TestAggregateRecordSourcesWeighAChainAcrossTheRangeEdge(t *testing.T) {
 	}
 }
 
+// A record with no endsAt is an instant, which drops no record with a span:
+// a band that wrote a night while it was still going on, before it had an
+// end, ranks above the watch, yet the watch's whole night keeps its window.
+// The unfinished night makes no window of its own.
+func TestAggregateRecordSourcesKeepANightUnderAnUnfinishedOne(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	night := time.Date(2026, 9, 12, 23, 0, 0, 0, plus3)
+	f.sleepNight("garmin", 0, night, 8*time.Hour, night, []stage{{"light", 60}, {"deep", 45}})
+	f.mustPut(t, f.sleepKind(), "whoop/0", map[string]any{
+		"source": f.sourceRef("whoop"), "at": night.Add(time.Hour).Format(time.RFC3339),
+	})
+	res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+		Range:  rng(night.Add(-time.Hour), night.AddDate(0, 0, 1)),
+		Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+			Filter:  substrate.Filter{Kinds: []string{f.sleepKind()}},
+			Sources: &substrate.AggregateRecordSources{Policy: "priority", Order: []string{"whoop", "garmin"}, Property: "source"},
+		}},
+		Reducers: reducers("sum"), Unit: "min",
+	})
+	if len(res.Rows) != 1 || res.Rows[0].Record == nil || res.Rows[0].Record.Ref != f.sleepKind()+"/garmin/0" {
+		t.Fatalf("rows %+v, want the garmin night's one row", res.Rows)
+	}
+	wantNum(t, "garmin/0", res.Rows[0], "sum", 105, true)
+}
+
 // workout writes one source's workout of a sport over [at, at+span) with a
 // distance in km.
 func (f aggFix) workout(id, source, sport string, at time.Time, span time.Duration, km string) {

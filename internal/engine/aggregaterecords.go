@@ -171,25 +171,29 @@ func propertyText(types []*vocabulary.Kind, path, name string) (string, *vocabul
 
 // policyRecord is one record a priority policy weighs: its own span, its
 // source's rank and its match values. A record with no `at` has no span
-// (placed false): it overlaps nothing, so it drops nothing and is kept.
+// (placed false): it overlaps nothing, so it drops nothing and is kept. A
+// record with no `endsAt` after its `at` is an instant: a span holding its
+// `at`, or an instant at the same `at`, drops it, and it drops only an
+// instant, since it has no span to hold another record's. A night a device
+// wrote while it was still going on, before it had an end, therefore never
+// drops another source's whole night.
 type policyRecord struct {
-	start, end time.Time
-	placed     bool
-	rank       int
-	match      string
+	start, end      time.Time
+	placed, instant bool
+	rank            int
+	match           string
 }
 
 // newPolicyRecord is a record's place in the policy: [at, endsAt), an
-// instant's [at, at+1ns), so a record at one instant inside another's span
-// overlaps it.
+// instant's [at, at+1ns), so a span holding the instant overlaps it.
 func newPolicyRecord(pol *recordPolicy, at, endsAt sql.NullTime, source, match string) policyRecord {
 	r := policyRecord{rank: pol.rankOf(source), match: match}
 	if !at.Valid {
 		return r
 	}
-	r.start, r.end, r.placed = at.Time, at.Time.Add(time.Nanosecond), true
+	r.start, r.end, r.placed, r.instant = at.Time, at.Time.Add(time.Nanosecond), true, true
 	if endsAt.Valid && endsAt.Time.After(at.Time) {
-		r.end = endsAt.Time
+		r.end, r.instant = endsAt.Time, false
 	}
 	return r
 }
@@ -210,7 +214,8 @@ func (r policyRecord) widen(lo, hi *time.Time) {
 // keepBySource answers which records the priority policy keeps: by rank,
 // first highest, a record overlapping a kept record of a higher rank with the
 // same match values is dropped, so a record dropped drops nothing. Records of
-// one rank never drop each other. Each record compared is a step (check).
+// one rank never drop each other, and an instant drops only an instant at its
+// own `at` (policyRecord). Each record compared is a step (check).
 func keepBySource(ctx context.Context, recs []policyRecord) ([]bool, error) {
 	keep := make([]bool, len(recs))
 	order := make([]int, len(recs))
@@ -222,6 +227,7 @@ func keepBySource(ctx context.Context, recs []policyRecord) ([]bool, error) {
 	check := func() error { return steps.check(ctx) }
 	higher := map[string][][2]time.Time{}
 	covers := map[string]cover{}
+	instants := map[string]map[int64]bool{}
 	for lo := 0; lo < len(order); {
 		hi := lo
 		for hi < len(order) && recs[order[hi]].rank == recs[order[lo]].rank {
@@ -232,11 +238,18 @@ func keepBySource(ctx context.Context, recs []policyRecord) ([]bool, error) {
 				return nil, err
 			}
 			r := recs[i]
-			keep[i] = !r.placed || !covers[r.match].overlaps(r.start, r.end)
+			keep[i] = !r.placed || !covers[r.match].overlaps(r.start, r.end) && !(r.instant && instants[r.match][r.start.UnixNano()])
 		}
 		changed := map[string]bool{}
 		for _, i := range order[lo:hi] {
-			if r := recs[i]; keep[i] && r.placed {
+			switch r := recs[i]; {
+			case !keep[i] || !r.placed:
+			case r.instant:
+				if instants[r.match] == nil {
+					instants[r.match] = map[int64]bool{}
+				}
+				instants[r.match][r.start.UnixNano()] = true
+			default:
 				higher[r.match] = append(higher[r.match], [2]time.Time{r.start, r.end})
 				changed[r.match] = true
 			}

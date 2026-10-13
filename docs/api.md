@@ -1222,10 +1222,14 @@ filter matches, so a night three devices recorded is three windows.
 `property` names the records' declared property that holds their source (a
 reference, a string or an enum, declared by every kind the filter selects),
 and `order` ranks up to 100 of its values, first highest; a reference's
-bare id is completed as the filter completes it. A record whose own `[at, endsAt)` (an
-instant's `at`) overlaps a kept record of a higher-ranked source is dropped
-and makes no window. A source the order does not name ranks last, and two
-records of one rank never drop each other. `match` (optional) names
+bare id is completed as the filter completes it. A record whose own
+`[at, endsAt)` overlaps a kept record of a higher-ranked source is dropped
+and makes no window. A record with no `endsAt` is an instant: a kept
+higher-ranked record whose span holds its `at`, or an instant at the same
+`at`, drops it, and it drops no record with a span, so a night a band
+wrote before it had an end does not drop the watch's whole night. A source
+the order does not name ranks last, and two records of one rank never drop
+each other. `match` (optional) names
 declared string, enum or reference properties that must also be equal: with
 `["sport"]` a band's three-hour activity drops neither the run nor the walk
 a watch recorded inside it unless they name its sport. A record outside the
