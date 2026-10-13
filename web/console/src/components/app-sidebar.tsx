@@ -94,7 +94,8 @@ import {
 } from "@/lib/collections"
 import { kindByIdentity, kindPurpose } from "@/lib/definition"
 import { displayPlural } from "@/lib/kind-names"
-import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
+import { OBSERVED_TRAIT_IDENTITY } from "@/lib/observations"
+import { kindHasTrait } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 
 const ROW =

@@ -21,10 +21,15 @@ import { declaredProperties } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { daysEnding, type TimeRange } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
-import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
+import { kindHasTrait } from "@/lib/sync"
 import { formatQuantity } from "@/lib/units"
 
 // ── discovery ──────────────────────────────────────────────────────────────
+
+/** Core's `observed` trait: a kind whose records hold measured values the
+ * engine indexes (decision 0154). Its two variants describe layout only, and
+ * the console tells them apart by whether the kind declares `values`. */
+export const OBSERVED_TRAIT_IDENTITY = "substrate.reamde.dev/core/observed"
 
 /** `single` holds one value per record (an observation), `packed` many over
  * a fixed period (a trace). */

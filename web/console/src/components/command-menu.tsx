@@ -48,7 +48,8 @@ import { kindPurpose } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { displayPlural } from "@/lib/kind-names"
 import { INCLUDE_SYSTEM_LABEL, searchPurposes } from "@/lib/search"
-import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
+import { OBSERVED_TRAIT_IDENTITY } from "@/lib/observations"
+import { kindHasTrait } from "@/lib/sync"
 
 const pages = [
   { title: "Home", to: "/", icon: HomeIcon },

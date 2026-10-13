@@ -301,11 +301,6 @@ export function accountViewOf(
  * layer's constants. Must equal `lib/api/sync.ts` `SYNC_TRAIT`. */
 export const SYNC_TRAIT_IDENTITY = "substrate.reamde.dev/core/sync"
 
-/** Core's `observed` trait: a kind whose records hold measured values the
- * engine indexes (decision 0154). Its two variants describe layout only, and
- * the console tells them apart by whether the kind declares `values`. */
-export const OBSERVED_TRAIT_IDENTITY = "substrate.reamde.dev/core/observed"
-
 /** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and
  * `syncPaused` is Pause, and the sync panel's buttons are their controls. An
  * account form on a kind binding the trait leaves them out for that reason.

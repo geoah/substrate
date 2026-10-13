@@ -45,11 +45,8 @@ import {
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
-import {
-  OBSERVED_TRAIT_IDENTITY,
-  SYNC_TRAIT_IDENTITY,
-  kindHasTrait,
-} from "@/lib/sync"
+import { OBSERVED_TRAIT_IDENTITY } from "@/lib/observations"
+import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { recordRoute } from "@/router"
 
 const NO_KINDS: KindInfo[] = []

@@ -14,9 +14,8 @@ import {
   type AggregateReducer,
   type RecordFilter,
 } from "@/lib/api/types"
-import type { ReadingShape } from "@/lib/observations"
+import { OBSERVED_TRAIT_IDENTITY, type ReadingShape } from "@/lib/observations"
 import { isoWithOffset, type TimeRange } from "@/lib/observations-time"
-import { OBSERVED_TRAIT_IDENTITY } from "@/lib/sync"
 
 // ── the timeline's requests ────────────────────────────────────────────────
 
