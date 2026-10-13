@@ -543,6 +543,42 @@ describe("the timeline's requests", () => {
     expect(screen.queryByRole("region", { name: "Weight" })).toBe(null)
   })
 
+  it("opens on the newest stream under the chosen source once the metrics are cleared", async () => {
+    const server = mount(`?${WINDOW}`)
+    await drawn(await lane("Heart rate"))
+    const metricsMenu = async (name: RegExp) => {
+      fireEvent.click(screen.getByRole("button", { name: /^Metrics?:/ }))
+      fireEvent.click(await screen.findByRole("option", { name }))
+      fireEvent.keyDown(document.activeElement ?? document.body, {
+        key: "Escape",
+      })
+      await waitFor(() =>
+        expect(screen.queryByRole("option", { name })).toBe(null)
+      )
+    }
+    // Weight alone, from Withings alone.
+    await metricsMenu(/Weight/)
+    await metricsMenu(/Heart rate/)
+    await lane("Weight")
+    await addFilter("Source", /Withings Body\+/)
+    // No metric: the page opens on the newest stream from Withings, never
+    // on the newest of every source, which the page read before.
+    await metricsMenu(/Weight/)
+    await waitFor(() =>
+      expect(
+        server.seen.some(
+          (r) =>
+            !r.aggregate.metric &&
+            r.aggregate.groupBy?.length === 4 &&
+            r.filter.properties?.source
+        )
+      ).toBe(true)
+    )
+    await drawn(await lane("Weight"))
+    expect(screen.queryByRole("region", { name: "Heart rate" })).toBe(null)
+    expect(screen.queryByText(/None of the chosen sources/)).toBe(null)
+  })
+
   it("says the kinds did not load, never that nothing records measurements", async () => {
     mount(`?${WINDOW}`, false, answer, true)
     expect(await screen.findByText("The kinds didn’t load")).toBeTruthy()

@@ -96,10 +96,13 @@ export function ObservationsTimelinePage() {
   }, [obs])
   // With none in the address, the newest stream's metric, written there once
   // it is known: a later read whose newest point is another metric's never
-  // swaps the chart under the reader.
-  const fallback = obs.streams[0]
-    ? shortRef(obs.streams[0].metric, obs.pins.metric)
-    : undefined
+  // swaps the chart under the reader. Never from streams held from other
+  // sources and things: once written, the read of the chosen ones could not
+  // correct it.
+  const fallback =
+    obs.streams[0] && !obs.discovery.isHeld
+      ? shortRef(obs.streams[0].metric, obs.pins.metric)
+      : undefined
   const metrics = metricParam.length
     ? distinct(metricParam.map((m) => shortRef(m, pins.metric)))
     : fallback
@@ -272,7 +275,7 @@ export function ObservationsTimelinePage() {
       </div>
       {obs.discovery.isError ? (
         <DiscoveryError discovery={obs.discovery} />
-      ) : metrics.length === 0 && !obs.ready ? (
+      ) : metrics.length === 0 && (!obs.ready || obs.discovery.isHeld) ? (
         <Skeleton className="mt-8 h-[236px] w-full" />
       ) : metrics.length === 0 ? (
         sources.length || abouts.length ? (
