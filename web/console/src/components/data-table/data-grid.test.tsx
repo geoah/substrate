@@ -52,6 +52,44 @@ describe("the pinned header", () => {
   })
 })
 
+describe("the pinned columns", () => {
+  it("pins a leading control column and the title column after it, and resizes neither control", () => {
+    const withBox: DataTableColumn<Row>[] = [
+      {
+        id: "select",
+        header: "Select",
+        cell: () => null,
+        meta: { label: "Select", width: 36, fixed: true },
+      },
+      { id: "name", accessorFn: (r) => r.name, header: "Name" },
+      { id: "other", accessorFn: (r) => r.id, header: "Other" },
+    ]
+    const { result } = renderHook(() =>
+      useDataTable({
+        columns: withBox,
+        data: [{ id: "a", name: "A" }],
+        getRowId: (r) => r.id,
+      })
+    )
+    const { container } = render(
+      <DataGrid table={result.current} label="Streams" />
+    )
+    const [box, name, other] = container.querySelectorAll("tbody td")
+    for (const cell of [box, name]) {
+      expect((cell as HTMLElement).className).toMatch(/\bsticky\b/)
+    }
+    expect((box as HTMLElement).style.left).toBe("0px")
+    expect((name as HTMLElement).style.left).toBe("36px")
+    expect((other as HTMLElement).className).not.toMatch(/\bsticky\b/)
+    const heads = container.querySelectorAll("thead th")
+    expect(heads[0].querySelector("[role=presentation]")).toBe(null)
+    expect(heads[1].querySelector("[role=presentation]")).not.toBe(null)
+    // A focused cell scrolls clear of both pinned columns.
+    const region = screen.getByRole("region", { name: "Streams" })
+    expect(parseFloat(region.style.scrollPaddingLeft)).toBe(36 + 160)
+  })
+})
+
 describe("the sheet from the keyboard", () => {
   it("is a named, focusable region that scrolls a focused cell clear of the pinned column", () => {
     const { result } = renderHook(() =>
