@@ -18,16 +18,9 @@ import type {
   AggregateReducer,
   AggregateRow,
 } from "@/lib/api/types"
-import {
-  coverageWords,
-  namedSources,
-  reducerKey,
-  reducerLabel,
-  reducerName,
-  rollupText,
-  rowValue,
-  windowWords,
-} from "@/lib/observations"
+import { reducerKey, reducerLabel, reducerName } from "@/lib/observations"
+import { coverageWords, windowWords } from "@/lib/observations-time"
+import { namedSources, rollupText, rowValue } from "@/lib/observations-answer"
 import { unitSymbol } from "@/lib/units"
 import { cn } from "@/lib/utils"
 

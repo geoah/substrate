@@ -24,11 +24,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { AggregateResult } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
-import {
-  isoWithOffset,
-  recordTimelineSearch,
-  windowWords,
-} from "@/lib/observations"
+import { recordTimelineSearch } from "@/lib/observations"
+import { isoWithOffset, windowWords } from "@/lib/observations-time"
 import {
   GARMIN,
   LATEST,

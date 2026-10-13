@@ -309,7 +309,7 @@ Vitest with jsdom, beside the code it covers: every module in
 Every run is in Europe/Athens (`TZ` in `vite.config.ts`), a zone whose clocks
 change, so a local-time test means the same on every machine and can cross an
 offset change; a suite that needs another zone sets it for its own file with
-`vi.stubEnv("TZ", …)` (`src/lib/observations.santiago.test.ts`).
+`vi.stubEnv("TZ", …)` (`src/lib/observations-time.santiago.test.ts`).
 
 **The render check** (`web/console/scripts/render-smoke.mjs`) opens the
 console a running substrate serves in headless Chrome. jsdom cannot stand in

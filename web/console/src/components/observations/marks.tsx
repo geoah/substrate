@@ -9,11 +9,11 @@ import { QuantityValue } from "@/components/identity/quantity-value"
 import { RecordRef } from "@/components/identity/record-ref"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import {
-  SHAPE_WORDS,
   codeWords,
   readingText,
   refPathOf,
   roundDigits,
+  SHAPE_WORDS,
   type ReadingShape,
 } from "@/lib/observations"
 import { splitRecordPath } from "@/lib/record-path"

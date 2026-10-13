@@ -37,11 +37,10 @@ import {
 import {
   axisTicks,
   bucketWords,
-  type Bucket,
   type BucketSize,
-  type SeriesPoint,
   type TimeRange,
-} from "@/lib/observations"
+} from "@/lib/observations-time"
+import type { Bucket, SeriesPoint } from "@/lib/observations-answer"
 import type { AxisSide, ChartMark } from "@/lib/overlay"
 
 export type { ChartMark }

@@ -42,23 +42,24 @@ import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useFacetValues, useObservations } from "@/hooks/use-observations"
 import type { AggregateFrom } from "@/lib/api/types"
+import { sameRef } from "@/lib/observations"
 import {
   BUCKET_CHOICES,
   BUCKET_SIZE_WORDS,
-  FROM_CHOICES,
-  GROUP_CHOICES,
-  RANGE_PRESETS,
   bucketSizeOf,
   presetRange,
-  readChoices,
+  RANGE_PRESETS,
   readerTimezone,
-  sameRef,
-  writeChoice,
   type BucketChoice,
-  type GroupChoice,
   type RangePreset,
   type TimeRange,
-} from "@/lib/observations"
+} from "@/lib/observations-time"
+import {
+  FROM_CHOICES,
+  GROUP_CHOICES,
+  type GroupChoice,
+} from "@/lib/observations-reads"
+import { readChoices, writeChoice } from "@/lib/timeline-address"
 import { planPlot, splitCharts } from "@/lib/overlay"
 
 const ARRAY = parseAsArrayOf(parseAsString).withDefault([])

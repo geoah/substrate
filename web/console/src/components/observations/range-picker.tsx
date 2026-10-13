@@ -15,15 +15,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
-  RANGE_PRESETS,
   dayKeyOf,
   dayRange,
   dayWords,
   isRangePreset,
+  RANGE_PRESETS,
   rangeWords,
   type RangePreset,
   type TimeRange,
-} from "@/lib/observations"
+} from "@/lib/observations-time"
 
 export function RangePicker({
   preset,

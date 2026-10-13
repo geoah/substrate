@@ -16,32 +16,36 @@ import type {
   AggregateRow,
 } from "@/lib/api/types"
 import {
-  DEFAULT_PRECISION,
   channelKey,
-  MAX_BUCKETS,
-  SUMMARY_REDUCERS,
-  bucketEstimate,
-  bucketOf,
+  DEFAULT_PRECISION,
   distinct,
   formOf,
-  laneGroupKey,
-  laneRead,
-  laneReducers,
   reducerKey,
   reducerOptions,
   refPathOf,
   sameRef,
   shapeOf,
-  type BucketSize,
+  SUMMARY_REDUCERS,
   type Form,
-  type GroupChoice,
-  type LaneSpec,
   type MetricInfo,
   type ObservedPins,
   type ReadingShape,
   type Stream,
-  type TimeRange,
 } from "@/lib/observations"
+import {
+  bucketEstimate,
+  bucketOf,
+  MAX_BUCKETS,
+  type BucketSize,
+  type TimeRange,
+} from "@/lib/observations-time"
+import {
+  laneGroupKey,
+  laneRead,
+  laneReducers,
+  type GroupChoice,
+  type LaneSpec,
+} from "@/lib/observations-reads"
 import { listWords } from "@/lib/tools"
 import { unitChoices } from "@/lib/unit-choices"
 import { unitSymbol } from "@/lib/units"

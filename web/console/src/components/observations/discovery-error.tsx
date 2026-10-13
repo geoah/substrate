@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/empty"
 import type { Discovery, FacetValues } from "@/hooks/use-observations"
 import { ApiError } from "@/lib/api/types"
-import { MAX_GROUPS_CAP, type StreamFacet } from "@/lib/observations"
+import { MAX_GROUPS_CAP, type StreamFacet } from "@/lib/observations-reads"
 import { cn } from "@/lib/utils"
 
 /** A failed read's reason in words: a refusal's message, else the error's. */

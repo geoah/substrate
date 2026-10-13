@@ -22,12 +22,8 @@ import { aggregateQueryOptions } from "@/lib/api/observations"
 import { recordsQueryOptions } from "@/lib/api/records"
 import type { AggregateRow, KindInfo } from "@/lib/api/types"
 import {
-  discoveryChunks,
-  facetRead,
-  latestRead,
   metricInfoOf,
   metricWords,
-  metricsRead,
   observedKinds,
   observedPins,
   refIdOf,
@@ -37,9 +33,15 @@ import {
   type MetricInfo,
   type ObservedPins,
   type Stream,
+} from "@/lib/observations"
+import {
+  discoveryChunks,
+  facetRead,
+  latestRead,
+  metricsRead,
   type StreamFacet,
   type StreamNarrowing,
-} from "@/lib/observations"
+} from "@/lib/observations-reads"
 import { splitRecordPath } from "@/lib/record-path"
 
 const NO_KINDS: KindInfo[] = []

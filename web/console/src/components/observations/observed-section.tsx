@@ -25,23 +25,23 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { barPath, linePath, linearScale, niceDomain } from "@/lib/chart"
 import { tableDateTime } from "@/lib/format"
 import {
-  breakAtGaps,
-  coverageWords,
-  durationMs,
   isForm,
-  numberOf,
-  secondWords,
   observedVariant,
-  plainNumber,
   readingText,
   recordTimelineSearch,
+  type ReadingShape,
+} from "@/lib/observations"
+import { coverageWords, durationMs, secondWords } from "@/lib/observations-time"
+import { numberOf } from "@/lib/observations-answer"
+import {
+  breakAtGaps,
+  plainNumber,
   stddevOf,
   tracePoints,
   traceStats,
-  type ReadingShape,
   type TracePoint,
   type TraceStats,
-} from "@/lib/observations"
+} from "@/lib/observations-trace"
 
 const PAGE = 50
 

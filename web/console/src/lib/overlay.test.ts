@@ -11,11 +11,11 @@ import catalogue from "../../../../samples/health/metrics.yaml?raw"
 import {
   channelKey,
   metricInfoOf,
-  presetRange,
   streamsOf,
   type MetricInfo,
   type Stream,
 } from "@/lib/observations"
+import { presetRange } from "@/lib/observations-time"
 import {
   APPLE,
   BODY_MASS,

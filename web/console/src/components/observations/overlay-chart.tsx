@@ -46,23 +46,27 @@ import {
   type AggregateRow,
 } from "@/lib/api/types"
 import {
-  answerReducers,
-  bucketsOf,
   codeWords,
-  coverageWords,
-  latestRead,
-  namedSources,
   readingText,
   reducerKey,
   reducerLabel,
   reducerName,
-  rowValue,
-  seriesOn,
+} from "@/lib/observations"
+import {
+  coverageWords,
   windowWords,
   type BucketSize,
-  type Series,
   type TimeRange,
-} from "@/lib/observations"
+} from "@/lib/observations-time"
+import { latestRead } from "@/lib/observations-reads"
+import {
+  answerReducers,
+  bucketsOf,
+  namedSources,
+  rowValue,
+  seriesOn,
+  type Series,
+} from "@/lib/observations-answer"
 import {
   assignAxes,
   leftOutWords,

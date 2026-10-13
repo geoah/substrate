@@ -8,15 +8,15 @@
 import type { DeclaredProperty } from "@/lib/definition"
 import { decodeFilters, type ActiveFilter } from "@/lib/filters"
 import {
-  SHAPE_WORDS,
   distinct,
-  durationMs,
-  numberOf,
   refIdOf,
   sameRef,
+  SHAPE_WORDS,
   type ReadingShape,
   type Stream,
 } from "@/lib/observations"
+import { durationMs } from "@/lib/observations-time"
+import { numberOf } from "@/lib/observations-answer"
 import { splitRecordPath } from "@/lib/record-path"
 import type { ViewState } from "@/lib/saved-views"
 

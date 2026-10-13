@@ -5,7 +5,7 @@
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { latestRead } from "@/lib/observations"
+import { latestRead } from "@/lib/observations-reads"
 import { LATEST, OBSERVATION, TRACE } from "@/lib/observations.test-fixtures"
 
 import {

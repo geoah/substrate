@@ -20,7 +20,7 @@ import {
   seriesOn,
   type Bucket,
   type Series,
-} from "@/lib/observations"
+} from "@/lib/observations-answer"
 
 export const AUTHORITY = "ada.example.com"
 export const OBSERVATION = `${AUTHORITY}/observations/observation`

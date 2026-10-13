@@ -77,28 +77,28 @@ import {
 } from "@/hooks/use-observations"
 import { encodeFilter, loadBrowsePrefs, saveBrowsePrefs } from "@/lib/filters"
 import {
-  BUCKET_CHOICES,
-  BUCKET_SIZE_WORDS,
   DEFAULT_PRECISION,
-  GROUP_CHOICES,
-  RANGE_PRESETS,
-  SHAPE_WORDS,
-  bucketSizeOf,
-  coverageWords,
   distinct,
-  presetRange,
-  readChoices,
-  readerTimezone,
   refPathOf,
+  SHAPE_WORDS,
   shapeOf,
   streamSearch,
-  writeChoice,
-  type BucketChoice,
-  type GroupChoice,
-  type RangePreset,
   type ReadingShape,
-  type TimeRange,
 } from "@/lib/observations"
+import {
+  BUCKET_CHOICES,
+  BUCKET_SIZE_WORDS,
+  bucketSizeOf,
+  coverageWords,
+  presetRange,
+  RANGE_PRESETS,
+  readerTimezone,
+  type BucketChoice,
+  type RangePreset,
+  type TimeRange,
+} from "@/lib/observations-time"
+import { GROUP_CHOICES, type GroupChoice } from "@/lib/observations-reads"
+import { readChoices, writeChoice } from "@/lib/timeline-address"
 import { planPlot } from "@/lib/overlay"
 import {
   isAllView,

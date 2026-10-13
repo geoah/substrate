@@ -6,7 +6,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 
-import { axisTicks, isoWithOffset } from "@/lib/observations"
+import { axisTicks, isoWithOffset } from "@/lib/observations-time"
 
 beforeAll(() => {
   vi.stubEnv("TZ", "America/Santiago")
