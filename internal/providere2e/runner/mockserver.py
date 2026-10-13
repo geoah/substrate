@@ -171,7 +171,6 @@ import datetime
 import fnmatch
 import hashlib
 import json
-import os
 import pathlib
 import re
 import sys
