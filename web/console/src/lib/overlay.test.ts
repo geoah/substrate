@@ -384,6 +384,38 @@ describe("one metric's plot", () => {
     expect(planned.blocked).toMatch(/more than the 1,440 one read may hold/)
   })
 
+  it("counts each source's channels against the budget, as the read groups", () => {
+    const [garmin] = streamsOf(LATEST)
+    const heart = (src: string, channel?: string): Stream => ({
+      ...garmin,
+      key: `${src}-${channel ?? ""}`,
+      source: `${SOURCE}/${src}`,
+      ...(channel ? { channel } : {}),
+    })
+    // Six sources, seven series: WHOOP's cycle beside its workouts.
+    const streams = [
+      heart("a"),
+      heart("b"),
+      heart("c"),
+      heart("d"),
+      heart("e"),
+      heart("whoop", "cycle"),
+      heart("whoop", "workout"),
+    ]
+    const nine = {
+      start: Date.parse("2026-10-03T00:00:00+03:00"),
+      end: Date.parse("2026-10-12T00:00:00+03:00"),
+    }
+    const scope = { ...SCOPE, range: nine, group: "source" as const }
+    const planned = planPlot(source(streams), HEART, scope)
+    expect(planned.read).toBeUndefined()
+    expect(planned.blocked).toMatch(/about 1,512 buckets/)
+    // Without the second channel it fits: 6 times 216 hours.
+    expect(
+      planPlot(source(streams.slice(0, 6)), HEART, scope).read
+    ).toBeDefined()
+  })
+
   it("keeps a series' colour whichever series a filter or a toggle hides", () => {
     const bySource = planPlot(source(), HEART, { ...SCOPE, group: "source" })
     expect(bySource.groupKey).toBe("source")

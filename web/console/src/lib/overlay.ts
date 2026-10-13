@@ -329,13 +329,16 @@ export function planPlot(
   const unit = picked !== stored ? picked : undefined
   const asked = picked ?? (info?.unit ? undefined : stored)
   const codes = info?.codeSet
+  // The groups the read makes, as it groups: grouped by source, each
+  // source's channels apart; by about, the owner's streams among them.
   const groups =
     shape === "coded"
       ? codes?.length || 4
       : scope.group === "source"
-        ? chosenSources.length || sources.length || 1
+        ? new Set(selected.map((s) => channelKey(s.source ?? "", s.channel)))
+            .size || 1
         : scope.group === "about"
-          ? (chosenAbouts.length || abouts.length) + 1
+          ? new Set(selected.map((s) => s.about ?? "")).size || 1
           : 1
   const estimate = bucketEstimate(scope.range, scope.size, groups)
   const metricPath = obs.metricPath(metric)
