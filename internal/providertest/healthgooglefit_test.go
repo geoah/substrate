@@ -174,9 +174,28 @@ func fitReadingID(dayRow, slug, metric string, start time.Time) string {
 func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
-	ds, _, today := newFitHealth(t, fitCutOn, "enabledActivity", "enabledBody", "enabledHeartRate", "enabledSleep")
+	ds, fake, today := newFitHealth(t, fitCutOn, "enabledActivity", "enabledBody", "enabledHeartRate", "enabledSleep")
 	observeAll(t, ds)
 	day := func(recorded time.Time) time.Time { return today.Add(recorded.Sub(fitCutOn)) }
+	// What the recordings hold, for exact counts: the points one data source
+	// has in one recorded hour, and the recorded sleep sessions.
+	recordedPoints := func(sid string, hour time.Time) int {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		n := 0
+		for _, p := range fake.points[sid] {
+			if p.start >= hour.UnixNano() && p.start < hour.Add(time.Hour).UnixNano() {
+				n++
+			}
+		}
+		return n
+	}
+	recordedNights := 0
+	for _, s := range fake.window["session"].([]any) {
+		if fitNumber(s.(map[string]any)["activityType"]) == 72 {
+			recordedNights++
+		}
+	}
 
 	// Heart rate: one gauge trace per UTC hour, offsets in milliseconds from
 	// the hour, the engine's stats beside the points.
@@ -186,9 +205,10 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	tr := mustGet(t, ds, obsTrace, id).Properties
 	values, _ := tr["values"].([]any)
 	offsets, _ := tr["offsets"].([]any)
-	if tr["form"] != "gauge" || tr["unit"] != "/min" || tr["hold"] != "PT4M" || len(values) < 50 || len(offsets) != len(values) {
-		t.Fatalf("the 06:00 heart rate trace = form %v unit %v hold %v, %d values, %d offsets",
-			tr["form"], tr["unit"], tr["hold"], len(values), len(offsets))
+	want := recordedPoints(fitHeartRate, time.Date(2026, 10, 7, 6, 0, 0, 0, time.UTC))
+	if tr["form"] != "gauge" || tr["unit"] != "/min" || tr["hold"] != "PT4M" || want == 0 || len(values) != want || len(offsets) != len(values) {
+		t.Fatalf("the 06:00 heart rate trace = form %v unit %v hold %v, %d values, %d offsets; the recording holds %d points",
+			tr["form"], tr["unit"], tr["hold"], len(values), len(offsets), want)
 	}
 	for i := 1; i < len(offsets); i++ {
 		gap := fitNumber(offsets[i]) - fitNumber(offsets[i-1])
@@ -268,8 +288,8 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	// Sleep: one record per night, and the stage amounts beside it add up to
 	// the record's stage totals.
 	sleeps := listLive(t, ds, healthSleep)
-	if len(sleeps) < 28 {
-		t.Fatalf("%d sleep records, want one per recorded night", len(sleeps))
+	if len(sleeps) != recordedNights || recordedNights == 0 {
+		t.Fatalf("%d sleep records, want one per recorded night (%d)", len(sleeps), recordedNights)
 	}
 	stages := map[string][]*substrate.Record{}
 	for _, row := range withMetric(t, ds, obsObservation, "sleep_stage") {
@@ -303,8 +323,8 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 		}
 		checked++
 	}
-	if checked < 25 {
-		t.Fatalf("only %d nights had stage amounts to check", checked)
+	if checked != len(sleeps) {
+		t.Fatalf("%d of %d nights had stage amounts to check", checked, len(sleeps))
 	}
 	// Fit's code 2 is sleep it did not stage, the catalogue's `asleep`; no
 	// stage is `in_bed`. A stage's id names its session and its start, so a

@@ -111,10 +111,10 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	out := adapterOutputs(t, ds)
 	acct := "garmin/" + garminAccountID
 
-	// Heart rate: the 2026-09-11 daily starts 21:00Z; its 19:00 local hour has
-	// gaps in Garmin's map, so it is written with offsets, and the engine
+	// Heart rate: the 2026-09-12 daily starts 2026-09-11T21:00Z and holds a
+	// sample every 15 minutes, but only two in its 20:00 local hour
+	// (2026-09-12T17Z), so that hour is written with offsets, and the engine
 	// computes the stats.
-	var irregular *substrate.Record
 	for key, row := range out {
 		if !strings.HasPrefix(key, obsTrace+"/"+acct+"/account/heart_rate/") {
 			continue
@@ -123,17 +123,16 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 			row.Properties["unit"] != "/min" || row.Properties["hold"] != "PT4M" {
 			t.Fatalf("%s: %v", key, row.Properties)
 		}
-		if _, ok := row.Properties["offsets"]; ok && irregular == nil {
-			irregular = row
-		}
 	}
+	irregular := out[obsTrace+"/"+acct+"/account/heart_rate/2026-09-12T17"]
 	if irregular == nil {
-		t.Fatal("no heart rate trace carries offsets")
+		t.Fatal("no heart rate trace for the 2026-09-12T17Z hour")
 	}
 	stats, _ := irregular.Properties["stats"].(map[string]any)
 	values, _ := irregular.Properties["values"].([]any)
-	if stats == nil || garminAsInt(t, stats["count"]) != int64(len(values)) {
-		t.Errorf("trace %s: stats %v for %d values", irregular.ID, stats, len(values))
+	offsets, _ := irregular.Properties["offsets"].([]any)
+	if len(values) != 2 || len(offsets) != 2 || stats == nil || garminAsInt(t, stats["count"]) != 2 {
+		t.Errorf("trace %s: %d values at %d offsets, stats %v; want the hour's two samples", irregular.ID, len(values), len(offsets), stats)
 	}
 	if refs := refIDs(irregular, "origins"); len(refs) != 1 || !strings.HasPrefix(refs[0], garminAccountID+"/") {
 		t.Errorf("trace %s origins %v, want its daily", irregular.ID, refs)
