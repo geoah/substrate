@@ -488,7 +488,9 @@ export interface AggregateRow {
   sources?: string[]
   /** An ISO 8601 duration. */
   coverage?: string
-  values: AggregateValue[]
+  /** Null where the row holds no value: the server writes an empty list as
+   * null (a coded state that held no time). */
+  values: AggregateValue[] | null
   count: number
   bounded: number
   synthetic: boolean

@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import type { KindInfo } from "@/lib/api/types"
+import type { AggregateRow, KindInfo } from "@/lib/api/types"
 import {
   answerReducers,
   autoBucket,
@@ -455,7 +455,7 @@ describe("one chart's request", () => {
       ...WEIGHT.rows[0],
       values: [
         { reducer: "avg", value: "72.9", unit: "kg", rolling: 4, of: "avg" },
-        ...WEIGHT.rows[0].values,
+        ...(WEIGHT.rows[0].values ?? []),
       ],
     }
     expect(rowValue(rolled, "avg")?.value).toBe("72.6")
@@ -624,6 +624,50 @@ describe("an answer as buckets and series", () => {
       seriesOf([{ ...rows[0], group: { code: "deep" } }], "timeInState", "code")
         .series[0].points[0].value
     ).toBe(null)
+  })
+
+  it("reads a row answered with no values as one with none", () => {
+    // A coded gauge's state that held no time: the engine writes the row's
+    // empty list of values as null.
+    const window = {
+      start: "2026-10-01T00:00:00+03:00",
+      end: "2026-10-02T00:00:00+03:00",
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    }
+    const rows: AggregateRow[] = [
+      { ...window, group: { code: "open" }, values: null },
+      {
+        ...window,
+        group: { code: "closed" },
+        values: [
+          {
+            reducer: { timeInState: ["closed"] },
+            value: "86400",
+            unit: "s",
+            code: "closed",
+          },
+        ],
+      },
+    ]
+    const buckets = bucketsOf([rows])
+    expect(
+      seriesOn(buckets, rows, "timeInState", "code").map((s) => [
+        s.value,
+        s.points[0].value,
+      ])
+    ).toEqual([
+      ["open", null],
+      ["closed", 86400],
+    ])
+    expect(answerReducers(rows).map(reducerKey)).toEqual(["timeInState:closed"])
+    expect(rollupText(rows, ["timeInState"], "code")).toContain("\topen\t\t1\t")
+    const [stream] = streamsOf({
+      rows: [{ ...rows[0], group: { metric: HEART, source: GARMIN } }],
+    })
+    expect(stream).toMatchObject({ metric: HEART, value: null })
   })
 
   it("keeps each row's from, so prefer-raw is auditable", () => {

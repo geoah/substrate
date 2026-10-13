@@ -445,9 +445,8 @@ export function streamSearch(stream: {
 
 /** The `last` value of a row, or its first value where none says `last`. */
 function lastValue(row: AggregateRow): AggregateValue | undefined {
-  return (
-    row.values.find((v) => reducerName(v.reducer) === "last") ?? row.values[0]
-  )
+  const values = row.values ?? []
+  return values.find((v) => reducerName(v.reducer) === "last") ?? values[0]
 }
 
 /** The latest read's rows as streams, newest first. A row with no metric in
@@ -1034,7 +1033,7 @@ export function rowValue(
   row: AggregateRow | undefined,
   key: string
 ): AggregateValue | undefined {
-  const own = row?.values.filter((v) => v.rolling === undefined) ?? []
+  const own = (row?.values ?? []).filter((v) => v.rolling === undefined)
   const exact = own.find((v) => reducerKey(v.reducer) === key)
   if (exact || key !== "timeInState") return exact
   const code = row?.group?.code
@@ -1183,7 +1182,7 @@ export function answerReducers(
 ): AggregateReducer[] {
   const seen = new Map<string, AggregateReducer>()
   for (const row of rows) {
-    for (const v of row.values) {
+    for (const v of row.values ?? []) {
       if (v.rolling !== undefined) continue
       const key = reducerKey(v.reducer)
       if (!seen.has(key)) seen.set(key, v.reducer)

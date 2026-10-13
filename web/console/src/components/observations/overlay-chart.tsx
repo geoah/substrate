@@ -587,7 +587,7 @@ function SeriesDetail({
   return (
     <div className="mt-2 border-t border-border pt-2">
       <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
-        {row.values.map((v, i) => (
+        {(row.values ?? []).map((v, i) => (
           <TipLine
             key={`${reducerKey(v.reducer)}-${v.code ?? ""}-${i}`}
             label={

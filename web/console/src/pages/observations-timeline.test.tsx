@@ -671,7 +671,7 @@ describe("the charts", () => {
       values: [
         {
           reducer: { timeInState: [r.group!.code!] },
-          value: String(Number(r.values[0].value) * 60),
+          value: String(Number(r.values![0].value) * 60),
           unit: "s",
           code: r.group!.code!,
         },
@@ -773,7 +773,7 @@ describe("the charts", () => {
                 ...WEIGHT.rows[0],
                 values: [
                   { reducer: "avg", value: "72.6333333333", unit: "kg" },
-                  ...WEIGHT.rows[0].values.slice(1),
+                  ...WEIGHT.rows[0].values!.slice(1),
                 ],
               },
             ],
