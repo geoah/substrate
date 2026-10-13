@@ -104,6 +104,21 @@ type aggGroup struct {
 	// one each, which the priority and summaries policies admit
 	// (checkStatistics) and each row holds to one (rowStatistic).
 	mixedStatistics bool
+	// context are the streams of the group's key and form that hold points
+	// only outside the read's windows, which the priority policy weighs and
+	// never places (priorityContext).
+	context []*aggStream
+}
+
+// contextOf is the group's context streams of a form.
+func (g *aggGroup) contextOf(form string) []*aggStream {
+	var out []*aggStream
+	for _, s := range g.context {
+		if s.form == form {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // sourceOf is the source of the stream-th raw stream of the group, or of its
@@ -291,6 +306,12 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 	if err != nil {
 		return nil, err
 	}
+	var contextWindows [][2]time.Time
+	if p.policy == substrate.SourcesPriority {
+		if contextWindows, samples, err = ds.priorityContext(ctx, tx, p, selected, streams, groups, windows, reach, samples); err != nil {
+			return nil, err
+		}
+	}
 	if n := answered(buckets) * max(series, 1); n > p.maxBuckets {
 		return nil, p.refuse("aggregate.budget.maxBuckets", "%d series (groups, and codes where grouped by code) times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
 			series, answered(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
@@ -301,6 +322,7 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 	r := &aggRun{
 		ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, windows: windows,
 		meta: aggMeta{sources: map[string]bool{}}, nSeries: series, samples: samples, spanReach: reach,
+		contextWindows: contextWindows,
 	}
 	return &metricRun{r: r, groups: groups}, nil
 }
@@ -785,15 +807,15 @@ func placedPoints(placeEnd bool, where, a, b string) string {
 // read does not take (a summary on a read from raw) is not looked for. The
 // points it reads are counted first and refused past maxSamples; samples is
 // that count, the start of the read's (aggRun.charge).
-func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time, reach map[obsStream]time.Duration, spent int64) (out []*aggStream, samples int64, err error) {
+func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time, reach map[obsStream]time.Duration, spent int64, forms ...string) (out []*aggStream, samples int64, err error) {
 	if len(streams) == 0 || len(windows) == 0 {
 		return nil, spent, nil
 	}
-	var forms []string
-	switch p.source {
-	case substrate.AggregateFromRaw:
+	switch {
+	case len(forms) > 0:
+	case p.source == substrate.AggregateFromRaw:
 		forms = []string{vocabulary.FormGauge, vocabulary.FormAmount, vocabulary.FormCounter}
-	case substrate.AggregateFromSummaries:
+	case p.source == substrate.AggregateFromSummaries:
 		forms = []string{vocabulary.FormSummary}
 	default:
 		forms = []string{vocabulary.FormGauge, vocabulary.FormAmount, vocabulary.FormCounter, vocabulary.FormSummary}
@@ -864,6 +886,83 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 		return nil, 0, err
 	}
 	return out, samples, nil
+}
+
+// priorityContext finds what a priority read of amounts or summaries weighs
+// beside the points it takes. The policy drops a lower source's point where
+// it overlaps a higher source's kept point, and that point may lie outside
+// the read's windows: an amount from 23:30 to 00:30 drops a lower source's
+// amount at 00:00 whether or not the range starts the day before. So the
+// read takes the group's points in the windows widened by the chain's reach,
+// each window by the longest span the selected streams' newest values hold
+// times the ranks they hold (a point outside may itself be dropped by one
+// further out), and finds the streams of the group's key and form whose only
+// points lie there: those it weighs and never places. The widened windows
+// are answered for plan to read every priority group's points over, and the
+// discovery's points are counted against maxSamples beside spent.
+func (ds *dataset) priorityContext(ctx context.Context, tx *sql.Tx, p *aggPlan, selected, streams []*aggStream, groups []*aggGroup, windows [][2]time.Time, reach map[obsStream]time.Duration, spent int64) ([][2]time.Time, int64, error) {
+	var forms []string
+	for _, g := range groups {
+		if len(g.sums) > 0 && p.source != substrate.AggregateFromRaw && !slices.Contains(forms, vocabulary.FormSummary) {
+			forms = append(forms, vocabulary.FormSummary)
+		}
+		if g.form == vocabulary.FormAmount && p.source != substrate.AggregateFromSummaries && !slices.Contains(forms, vocabulary.FormAmount) {
+			forms = append(forms, vocabulary.FormAmount)
+		}
+	}
+	var span time.Duration
+	ranks := map[int]bool{}
+	for _, s := range selected {
+		if !slices.Contains(forms, s.form) {
+			continue
+		}
+		if s.tsEnd.After(s.ts) {
+			span = max(span, s.tsEnd.Sub(s.ts))
+		}
+		ranks[s.rank] = true
+	}
+	if len(forms) == 0 || len(windows) == 0 || span == 0 || len(ranks) < 2 {
+		return nil, spent, nil
+	}
+	ext := span * time.Duration(len(ranks))
+	wide := make([][2]time.Time, len(windows))
+	for i, w := range windows {
+		wide[i] = [2]time.Time{w[0].Add(-ext), w[1].Add(ext)}
+	}
+	var steps everyThousand
+	contextWindows, err := joinSpans(ctx, wide, func() error { return steps.check(ctx) })
+	if err != nil {
+		return nil, 0, err
+	}
+	found, samples, err := ds.discoverForms(ctx, tx, p, selected, contextWindows, reach, spent, forms...)
+	if err != nil {
+		return nil, 0, err
+	}
+	type streamID struct {
+		obsStream
+		stat, form string
+	}
+	have := map[streamID]bool{}
+	for _, s := range streams {
+		have[streamID{s.obsStream, s.stat, s.form}] = true
+	}
+	byKey := map[string]*aggGroup{}
+	for _, g := range groups {
+		byKey[g.sortKey] = g
+	}
+	for _, s := range found {
+		if have[streamID{s.obsStream, s.stat, s.form}] {
+			continue
+		}
+		_, k := p.groupKey(s, false)
+		g := byKey[k]
+		switch {
+		case g == nil:
+		case s.form == vocabulary.FormSummary && len(g.sums) > 0, s.form != vocabulary.FormSummary && len(g.raw) > 0 && g.form == s.form:
+			g.context = append(g.context, s)
+		}
+	}
+	return contextWindows, samples, nil
 }
 
 // aggregateKinds resolves filter.kinds and filter.implements to the observed

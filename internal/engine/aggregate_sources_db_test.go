@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -304,5 +305,77 @@ func TestAggregatePriorityDropsALowerReadingAtTheSameInstant(t *testing.T) {
 		if count != x.count || lo != x.lo || hi != x.hi || !slices.Contains(row.Sources, f.sourcePath(x.from)) || len(row.Sources) != 2 {
 			t.Errorf("priority %v: count %s, min %s, max %s, sources %v; want %s, %s, %s from %s", x.order, count, lo, hi, row.Sources, x.count, x.lo, x.hi, x.from)
 		}
+	}
+}
+
+// Under priority a lower source's amount is dropped where it overlaps a
+// higher source's, and the higher one may lie outside the read's windows:
+// A's 100 steps from 23:30 to 00:30 drop B's 40 from 00:00 to 00:15 whatever
+// day the range starts on. So one day read alone, read after an earlier
+// range start, and read with a rolling window answer the same row, B's 10
+// from 10:00 alone. In the records mode a window that A's amount does not
+// meet answers the same with or without the window that takes A's amount.
+func TestAggregatePriorityWeighsAHigherPointOutsideTheWindows(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	steps := func(id, source, value string, at time.Time, span time.Duration) {
+		f.mustPut(t, f.observation, id, map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef(source), "form": "amount",
+			"value": quantity(value, "{steps}"), "at": at.Format(time.RFC3339), "endsAt": at.Add(span).Format(time.RFC3339), "utcOffset": 0,
+		})
+	}
+	day := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	steps("a/night", "a", "100", day.Add(-30*time.Minute), time.Hour)
+	steps("b/midnight", "b", "40", day, 15*time.Minute)
+	steps("b/morning", "b", "10", day.Add(10*time.Hour), 15*time.Minute)
+	priority := &substrate.AggregateSources{Policy: "priority", Order: []string{"a", "b"}}
+	read := func(from time.Time, rolling *substrate.AggregateRolling) map[string]string {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:  rng(from, day.AddDate(0, 0, 1)), Bucket: &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC"},
+			Reducers: reducers("sum"), Sources: priority, Rolling: rolling,
+		})
+		out := map[string]string{}
+		for _, row := range res.Rows {
+			v, _ := val(row, "sum")
+			out[row.Start.Format("01-02")] = v
+		}
+		return out
+	}
+	for _, x := range []struct {
+		label   string
+		from    time.Time
+		rolling *substrate.AggregateRolling
+	}{
+		{"the day alone", day, nil},
+		{"from the day before", day.AddDate(0, 0, -1), nil},
+		{"with a rolling window", day, &substrate.AggregateRolling{Buckets: 2, Reducers: reducers("sum")}},
+	} {
+		if got := read(x.from, x.rolling)["10-06"]; got != "10" {
+			t.Errorf("%s: 10-06 sums %s, want B's 10 from 10:00 alone", x.label, got)
+		}
+	}
+
+	sleep := f.sleepKind()
+	f.mustPut(t, sleep, "v", map[string]any{"at": at(day.Add(-20 * time.Minute)), "endsAt": at(day.Add(-10 * time.Minute))})
+	f.mustPut(t, sleep, "w", map[string]any{"at": at(day.Add(31 * time.Minute)), "endsAt": at(day.Add(40 * time.Minute))})
+	steps("b/late", "b", "30", day.Add(25*time.Minute), 15*time.Minute)
+	windows := func(ids ...string) map[string]string {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			Range:    rng(day.Add(-time.Hour), day.Add(time.Hour)),
+			Bucket:   &substrate.AggregateBucket{Records: &substrate.AggregateRecords{Filter: substrate.Filter{Kinds: []string{sleep}, IDs: ids}}},
+			Reducers: reducers("sum"), Sources: priority,
+		})
+		out := map[string]string{}
+		for _, row := range res.Rows {
+			v, _ := val(row, "sum")
+			out[strings.TrimPrefix(row.Record.Ref, sleep+"/")] = v
+		}
+		return out
+	}
+	alone, beside := windows("w"), windows("v", "w")
+	if alone["w"] != beside["w"] || alone["w"] != "" {
+		t.Errorf("window w alone answers %q, beside v %q; want no row either way: A's amount drops B's", alone["w"], beside["w"])
 	}
 }

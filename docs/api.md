@@ -1502,7 +1502,11 @@ reads that take it.
   of a higher source's point (a `PT0S` reading, such as a blood pressure two
   apps deliver), is dropped. An amount
   or a summary of a lower source is dropped whole where it overlaps a higher
-  source's. A total therefore does not depend on the bucket width. Two
+  source's, wherever the higher one lies: the read also weighs the
+  higher-ranked amounts and summaries around its windows (as far as the
+  longest span the selected streams' newest values hold, times the ranks),
+  which drop and are never placed. A total therefore depends neither on the
+  bucket width nor on where the range or a records-mode window starts. Two
   counters are refused under `priority`.
 - `summaries` reads summary points alone, from the first source in `order`
   that has one in the bucket.

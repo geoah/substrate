@@ -6,7 +6,9 @@ package engine
 // buckets it lies in.
 
 import (
+	"cmp"
 	"math/big"
+	"slices"
 	"sort"
 	"time"
 
@@ -37,9 +39,33 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 	if err != nil {
 		return nil, err
 	}
-	if r.p.policy == substrate.SourcesPriority && len(list) > 1 {
-		if err := r.resolvePriority(list, form); err != nil {
-			return nil, err
+	if r.p.policy == substrate.SourcesPriority {
+		// The context streams are weighed beside the group's, by rank, and
+		// never placed: placeRaw reads list alone.
+		weighed := list
+		if more := g.contextOf(form); len(more) > 0 {
+			extra, err := r.rawStreams(more, form)
+			if err != nil {
+				return nil, err
+			}
+			weighed = append(slices.Clone(list), extra...)
+			slices.SortStableFunc(weighed, func(a, b *rawStream) int {
+				if c := cmp.Compare(a.s.rank, b.s.rank); c != 0 {
+					return c
+				}
+				switch {
+				case aggStreamLess(a.s, b.s):
+					return -1
+				case aggStreamLess(b.s, a.s):
+					return 1
+				}
+				return 0
+			})
+		}
+		if len(weighed) > 1 {
+			if err := r.resolvePriority(weighed, form); err != nil {
+				return nil, err
+			}
 		}
 	}
 	out, err := r.placeRaw(list, form)

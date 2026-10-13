@@ -76,6 +76,12 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 	}
 	want := map[*aggStream][][2]time.Time{}
 	for _, g := range groups {
+		// A priority group of amounts or summaries reads its points, and
+		// its context streams', over the windows priorityContext widened.
+		wide := r.windows
+		if r.contextWindows != nil && g.form != vocabulary.FormGauge && g.form != vocabulary.FormCounter {
+			wide = r.contextWindows
+		}
 		for _, s := range g.raw {
 			if g.rollups {
 				if g.form != vocabulary.FormGauge {
@@ -83,12 +89,15 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 				}
 				continue
 			}
-			want[s] = r.windows
+			want[s] = wide
 		}
 		if r.p.source != substrate.AggregateFromRaw {
 			for _, s := range g.sums {
-				want[s] = r.windows
+				want[s] = r.contextWindowsOr()
 			}
+		}
+		for _, s := range g.context {
+			want[s] = r.contextWindows
 		}
 	}
 	var total int64
@@ -122,6 +131,15 @@ func (r *aggRun) plan(groups []*aggGroup) error {
 		}
 	}
 	return nil
+}
+
+// contextWindows is the windows a priority read's summaries are read over:
+// the widened ones where priorityContext found any, else the read's own.
+func (r *aggRun) contextWindowsOr() [][2]time.Time {
+	if r.contextWindows != nil {
+		return r.contextWindows
+	}
+	return r.windows
 }
 
 // planCarries reads the value current at each window's start for a gauge
@@ -217,7 +235,7 @@ func (r *aggRun) rollupable(g *aggGroup) bool {
 	if p.forceRaw || len(g.raw) == 0 {
 		return false
 	}
-	if p.policy == substrate.SourcesPriority && len(g.raw) > 1 {
+	if p.policy == substrate.SourcesPriority && len(g.raw)+len(g.contextOf(g.form)) > 1 {
 		return false
 	}
 	// A row holds the points that start in its quarter hour, and place end

@@ -49,6 +49,11 @@ type aggRun struct {
 	// spanReach is, in the records mode, how far before a window each
 	// stream's amounts may start and reach into it (amountReach).
 	spanReach map[obsStream]time.Duration
+	// contextWindows are the windows widened by the reach of a priority
+	// chain (priorityContext): a priority group of amounts or summaries
+	// reads its streams' points there, so a higher source's point outside
+	// the windows drops the lower point it overlaps inside them.
+	contextWindows [][2]time.Time
 	// nSeries is the series the read was budgeted for (seriesOf).
 	nSeries int
 	// samples is the raw points and rollup rows the read's statements have
