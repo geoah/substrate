@@ -158,6 +158,11 @@ func (ds *dataset) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*
 	if err := tx.QueryRowContext(ctx, `SELECT max(seq) FROM changelog`).Scan(&head); err != nil {
 		return nil, err
 	}
+	if p.metric != "" {
+		if err := ds.checkMetric(ctx, tx, p.metric); err != nil {
+			return nil, err
+		}
+	}
 	var res *substrate.AggregateResult
 	switch p.kind {
 	case aggLatest:

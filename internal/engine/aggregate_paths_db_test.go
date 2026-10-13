@@ -1468,3 +1468,42 @@ func TestAggregateRefusesOnlyTheValuesItTakesInAnotherMeasure(t *testing.T) {
 		}
 	}
 }
+
+// A metric reference that names no metric is a 422 naming it, on the
+// bucketed read, the downsample and the latest read alike: a misspelled
+// metric id, and a record that is not a metric. A metric with no value
+// anywhere still answers, with no rows.
+func TestAggregateRefusesAMetricReferenceThatNamesNone(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	f.heartRate("strap", day, time.Hour, 0, time.Time{}, time.Time{})
+	f.mustPut(t, f.metric, "quiet", map[string]any{"name": "Quiet"})
+	bucketed := func(ref string) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: ref}, Range: rng(day, day.AddDate(0, 0, 1)), Reducers: reducers("avg"),
+		}}
+	}
+	latest := func(ref string) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{Metric: &substrate.AggregateMetric{Ref: ref}, Reducers: reducers("last")}}
+	}
+	downsample := func(ref string) substrate.AggregateQuery {
+		return substrate.AggregateQuery{
+			Aggregate:  &substrate.Aggregate{Metric: &substrate.AggregateMetric{Ref: ref}, Range: rng(day, day.AddDate(0, 0, 1))},
+			Downsample: &substrate.Downsample{Points: 10},
+		}
+	}
+	typo, trace := f.metricPath("health/heart_rat"), f.trace+"/hr/strap/2026-09-01T00"
+	for _, q := range []substrate.AggregateQuery{bucketed(typo), latest(typo), downsample(typo)} {
+		f.refusedAgg(q, typo+" names no metric")
+	}
+	for _, q := range []substrate.AggregateQuery{bucketed(trace), latest(trace)} {
+		f.refusedAgg(q, "not a metric")
+	}
+	for _, q := range []substrate.AggregateQuery{bucketed(f.metricPath("quiet")), latest(f.metricPath("quiet"))} {
+		res, err := f.ds.Aggregate(context.Background(), q)
+		if err != nil || len(res.Rows) != 0 {
+			t.Errorf("a metric with no value: %v, %+v; want no rows", err, res)
+		}
+	}
+}

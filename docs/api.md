@@ -1127,7 +1127,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 
 | Key | Means | Default |
 | --- | --- | --- |
-| `metric` | `{"ref": "<metric record path>"}`: read the observed index for this metric | |
+| `metric` | `{"ref": "<metric record path>"}`: read the observed index for this metric; a path that is not a metric's, or that no metric record has and no observed value names, is a `422` | |
 | `property` | `{"name", "anchor"?}`: reduce a declared number of the filtered kinds instead, placed in time by the datetime property `anchor` | `anchor` is `at` |
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
@@ -1405,13 +1405,14 @@ merged as one row.
   another mode; `downsample` without `aggregate`; a filter arm a metric read
   cannot test.
 - `404`: a kind in `filter.kinds` the repository never declared.
-- `422`: two selectors, or a bucketed metric read with neither; no range or
-  no reducers; an unknown reducer or a bad argument; a reducer the form does
-  not take (naming the form); `circularMean` off an angle; a `unit` outside
-  the measure (naming the measure); a value the read takes whose unit does
-  not convert; a group of two forms; `priority` over two counters; a budget
-  over its cap or a read over a budget (naming the limit); `downsample`
-  beside `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
+- `422`: two selectors, or a bucketed metric read with neither; a
+  `metric.ref` that names no metric; no range or no reducers; an unknown
+  reducer or a bad argument; a reducer the form does not take (naming the
+  form); `circularMean` off an angle; a `unit` outside the measure (naming
+  the measure); a value the read takes whose unit does not convert; a group
+  of two forms; `priority` over two counters; a budget below zero or over its
+  cap, or a read over a budget (naming the limit); `downsample` beside
+  `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
   `prefer-raw`; a `fill`, `rolling` or `maxGap` on the latest read.
 
 ### Where this differs from the plan

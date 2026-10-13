@@ -185,6 +185,47 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 
 // --- stream selection ---
 
+// checkMetric refuses a metric reference that names no metric, before
+// anything is selected: a record of a kind no observed kind's `metric`
+// pins, or a path no metric record has and no observed value names (a
+// metric record deleted after its values were written still reads them). An
+// unknown metric would otherwise answer no rows, as a metric with no values
+// in the range does.
+func (ds *dataset) checkMetric(ctx context.Context, tx *sql.Tx, ref string) error {
+	kind, id, _ := vocabulary.SplitRecordPath(ref)
+	if pins := ds.metricKinds(); pins != nil && !slices.Contains(pins, kind) {
+		return refuse("aggregate.metric.ref", "%s is a record of %s, not a metric; a metric is a record of %s", ref, kind, strings.Join(pins, " or "))
+	}
+	var known bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL)
+		OR EXISTS (SELECT 1 FROM observed_latest WHERE metric = $3)`, kind, id, ref).Scan(&known); err != nil {
+		return fmt.Errorf("substrate/engine: aggregate metric: %w", err)
+	}
+	if !known {
+		return refuse("aggregate.metric.ref", "%s names no metric: no record has that path and no observed value names it", ref)
+	}
+	return nil
+}
+
+// metricKinds are the kinds the `metric` reference of every kind binding
+// `observed` pins, sorted; nil where one pins none, so any kind may be a
+// metric.
+func (ds *dataset) metricKinds() []string {
+	var out []string
+	for _, t := range ds.registry().Kinds() {
+		if !bindsObserved(t) {
+			continue
+		}
+		prop, ok := t.Prop("metric")
+		if !ok || prop.To == "" {
+			return nil
+		}
+		out = append(out, prop.To)
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
 // selectStreams reads the streams the metric and the filter select from
 // observed_latest, and ranks them for the priority policies.
 func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggStream, error) {
