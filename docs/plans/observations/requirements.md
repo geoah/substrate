@@ -260,7 +260,9 @@ Done: Garmin's account source is "Garmin Connect", class `service`, and a
 device-less activity names `unknown-device`. Open: a Withings scale reaches
 the repository through Apple Health, Google Fit and Garmin as three sources,
 so a weigh-in counts once per path under `separate`, and under `priority`
-twice where the paths' timestamps differ by seconds. Proposal: a link between
+once per path whose timestamp falls seconds before a higher-ranked path's
+(up to three times; 10 values for 4 weigh-ins in one demo week). A blood
+pressure at the identical instant is kept once. Proposal: a link between
 sources that are one device (a `device` reference or `sameAs` on `source`)
 that `priority` treats as one rank, with a tolerance for the seconds between
 the paths' timestamps. Decision 0162 rules out near-equal deduplication, so
