@@ -303,10 +303,11 @@ const (
 
 // LimitRows lowers the read's own budget so it answers at most rows rows,
 // for a caller holding a row budget of its own (a function's, an agent's).
-// budget.maxBuckets bounds a bucketed read's series times buckets and
-// budget.maxGroups the latest read's groups, and the read checks each before
-// it takes a point, so a read past the caller's budget is refused before it
-// runs. A budget the request names outside 0 to its cap is left for the read
+// budget.maxBuckets bounds a bucketed read's series times the buckets it
+// answers (a rolling window's lookback and the records a records-mode source
+// policy drops are not counted) and budget.maxGroups the latest read's
+// groups, and the read checks each before it takes a point, so a read past
+// the caller's budget is refused before it runs. A budget the request names outside 0 to its cap is left for the read
 // to refuse. It answers the budget paths it lowered, which
 // AggregateRowsRefused matches a refusal against; q's aggregate is copied,
 // never written through.

@@ -809,3 +809,45 @@ func TestAggregateRecordWindowTakesItsRecoveryWhenWidened(t *testing.T) {
 		t.Errorf("the night's recovery = %s, want 78", v)
 	}
 }
+
+// maxBuckets counts the windows the records mode answers, after its source
+// policy drops the nights a higher-ranked source wrote too: six sleep
+// records of three nights are three windows under priority, read under
+// maxBuckets 3 and refused under 2. maxRecords still bounds every record
+// the read weighs.
+func TestAggregateRecordWindowsCountTheWindowsKeptAgainstMaxBuckets(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	stages := []stage{{"light", 60}, {"deep", 45}}
+	plus3 := time.FixedZone("", 3*3600)
+	night := time.Date(2026, 9, 1, 23, 0, 0, 0, plus3)
+	for n := range 3 {
+		for i, source := range []string{"whoop", "garmin"} {
+			at := night.AddDate(0, 0, n).Add(time.Duration(i) * time.Minute)
+			f.sleepNight(source, n, at, 2*time.Hour, at, stages)
+		}
+	}
+	read := func(maxBuckets, maxRecords int) (*substrate.AggregateResult, error) {
+		return f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+			Range:  rng(night.Add(-time.Hour), night.AddDate(0, 0, 3)),
+			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+				Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}, MaxRecords: maxRecords,
+				Sources: &substrate.AggregateRecordSources{Policy: "priority", Order: []string{"whoop", "garmin"}, Property: "source"},
+			}},
+			Reducers: reducers("sum"), Unit: "min",
+			Sources: &substrate.AggregateSources{Policy: "priority", Order: []string{"whoop", "garmin"}},
+			Budget:  &substrate.AggregateBudget{MaxBuckets: maxBuckets},
+		}})
+	}
+	res, err := read(3, 0)
+	if err != nil || len(res.Rows) != 3 {
+		t.Fatalf("priority under maxBuckets 3: %v, %v; want the three whoop nights", rowsOf(res), err)
+	}
+	if _, err := read(2, 0); err == nil || !strings.Contains(err.Error(), "aggregate.budget.maxBuckets") {
+		t.Errorf("priority under maxBuckets 2: %v, want a refusal of three windows", err)
+	}
+	if _, err := read(3, 5); err == nil || !strings.Contains(err.Error(), "aggregate.bucket.records.maxRecords") {
+		t.Errorf("six records under maxRecords 5: %v, want a refusal naming maxRecords", err)
+	}
+}

@@ -16,9 +16,10 @@ import (
 
 // fillAndRoll applies fill and rolling per series (a group and a code) and
 // orders the rows by bucket, then group, then code. A fill makes every series
-// dense, so the series times the buckets are checked against maxBuckets
-// before a row is made, and the rows made never exceed it, the lookback
-// buckets' included. The lookback's rows feed the rolling windows and are
+// dense, so the series times the buckets answered are checked against
+// maxBuckets before a row is made, and the rows answered never exceed it; the
+// lookback buckets' rows are held to the cap (checkLookback). The lookback's
+// rows feed the rolling windows and are
 // dropped after them; a series is filled from its rows in the range, and a
 // lookback row carries nothing into the range, so the rows answered are the
 // ones the read answers without rolling. Both loops check ctx as they go.
@@ -42,9 +43,14 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 		s.rows[o.bucket] = o
 	}
 	sort.Strings(keys)
-	if n := len(keys) * len(buckets); p.fill != "" && n > p.maxBuckets {
+	if n := len(keys) * answered(buckets); p.fill != "" && n > p.maxBuckets {
 		return nil, refuse("aggregate.budget.maxBuckets", "fill makes %d series times %d buckets, %d rows, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
-			len(keys), len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+			len(keys), answered(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
+	if p.fill != "" {
+		if err := p.checkLookback(len(keys), buckets); err != nil {
+			return nil, err
+		}
 	}
 	var out []aggOut
 	for _, k := range keys {
@@ -80,9 +86,15 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 			prev = &out[len(out)-1]
 		}
 	}
-	if len(out) > p.maxBuckets {
+	made := 0
+	for _, o := range out {
+		if !buckets[o.bucket].lookback {
+			made++
+		}
+	}
+	if made > p.maxBuckets {
 		return nil, refuse("aggregate.budget.maxBuckets", "the read makes %d rows, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
-			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
+			made, p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	if p.rolling != nil {
 		if err := p.roll(ctx, out, buckets, meta); err != nil {

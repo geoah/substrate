@@ -220,9 +220,12 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	if err != nil {
 		return nil, err
 	}
-	if cells := nGroups * int64(len(buckets)); cells > int64(p.maxBuckets) {
+	if cells := nGroups * int64(answered(buckets)); cells > int64(p.maxBuckets) {
 		return nil, refuse("aggregate.budget.maxBuckets", "%d groups times %d buckets is %d, over %d; raise maxBuckets or widen the bucket (the cap is %d)",
-			nGroups, len(buckets), cells, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+			nGroups, answered(buckets), cells, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
+	if err := p.checkLookback(int(nGroups), buckets); err != nil {
+		return nil, err
 	}
 	source, match := `''`, `'[]'`
 	if pol != nil {
@@ -425,9 +428,12 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		}
 	}
 	buckets = lr.buckets
-	if cells := nGroups * int64(len(buckets)); local && cells > int64(p.maxBuckets) {
+	if cells := nGroups * int64(answered(buckets)); local && cells > int64(p.maxBuckets) {
 		return nil, refuse("aggregate.budget.maxBuckets", "the records fall in %d recorded-local buckets, times %d groups is %d, over %d; narrow the range or raise maxBuckets",
-			len(buckets), nGroups, cells, p.maxBuckets)
+			answered(buckets), nGroups, cells, p.maxBuckets)
+	}
+	if err := p.checkLookback(int(nGroups), buckets); local && err != nil {
+		return nil, err
 	}
 	index := make(map[*aggBucket]int, len(buckets))
 	for i, bk := range buckets {

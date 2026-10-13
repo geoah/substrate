@@ -416,8 +416,37 @@ var weekdays = map[string]time.Weekday{
 	"thursday": time.Thursday, "friday": time.Friday, "saturday": time.Saturday,
 }
 
+// answered is the buckets a read answers: all but a rolling window's
+// lookback, which feeds the windows and answers no row. maxBuckets, the
+// caller's bound on the rows, counts these alone.
+func answered(buckets []*aggBucket) int {
+	n := 0
+	for _, b := range buckets {
+		if !b.lookback {
+			n++
+		}
+	}
+	return n
+}
+
+// checkLookback holds a rolling read's series times every bucket it reduces,
+// the lookback's included, to the maxBuckets cap: maxBuckets leaves the
+// lookback out, and the cap bounds the work it adds (its points count
+// against maxSamples as any point does).
+func (p *aggPlan) checkLookback(series int, buckets []*aggBucket) error {
+	if p.lookback == 0 {
+		return nil
+	}
+	if n := len(buckets) * max(series, 1); n > substrate.AggregateMaxBucketsCap {
+		return refuse("aggregate.rolling.buckets", "the window reads %d buckets before the range, so %d series times %d buckets is %d, over the cap of %d; roll over fewer buckets, widen the bucket or narrow the filter",
+			p.lookback, max(series, 1), len(buckets), n, substrate.AggregateMaxBucketsCap)
+	}
+	return nil
+}
+
 // buckets enumerates the output buckets, refusing past maxBuckets before it
-// builds them. The records mode reads its records here.
+// builds them; a rolling window's lookback buckets are not counted. The
+// records mode reads its records here.
 func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggBucket, error) {
 	s := p.bucket
 	limit := p.maxBuckets
@@ -431,7 +460,7 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 	case bucketEvery:
 		first := everyStart(p.from, s.origin, s.every)
 		// The span saturates past 292 years, which is past every budget.
-		if n := int64((p.to.Sub(first)-1)/s.every) + 1 + int64(p.lookback); n > int64(limit) {
+		if n := int64((p.to.Sub(first)-1)/s.every) + 1; n > int64(limit) {
 			return nil, tooMany(int(min(n, 1<<30)))
 		}
 		var out []*aggBucket
@@ -448,9 +477,10 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 		for start := p.readFrom; start.Before(first); start = calNext(start, s) {
 			out = append(out, &aggBucket{start: start.UTC(), end: calNext(start, s).UTC(), zone: s.loc, lookback: true})
 		}
+		looked := len(out)
 		for start := first; start.Before(p.to); start = calNext(start, s) {
-			if len(out) >= limit {
-				return nil, tooMany(len(out) + 1)
+			if len(out)-looked >= limit {
+				return nil, tooMany(len(out) - looked + 1)
 			}
 			out = append(out, clipBucket(start, calNext(start, s), p, s.loc))
 		}
@@ -464,9 +494,10 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 		for start := calStart(wallOf(p.readFrom, offsetMinutes(p.from)), s); start.Before(first); start = calNext(start, s) {
 			out = append(out, &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, lookback: true})
 		}
+		looked := len(out)
 		for start := first; start.Before(to); start = calNext(start, s) {
-			if len(out) >= limit {
-				return nil, tooMany(len(out) + 1)
+			if len(out)-looked >= limit {
+				return nil, tooMany(len(out) - looked + 1)
 			}
 			out = append(out, &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC})
 		}
@@ -648,7 +679,7 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	base := b.clone()
 	inRange := func(b *builder) string { return `at >= ` + b.arg(p.from) + ` AND at < ` + b.arg(p.to) }
 	b.add(inRange(b))
-	limit := min(s.maxRecords, p.maxBuckets)
+	limit := s.maxRecords
 	rows, err := tx.QueryContext(ctx, `SELECT `+cols+` FROM records WHERE `+strings.Join(b.where, " AND ")+
 		` ORDER BY at, kind, id LIMIT `+b.arg(limit+1), b.args...)
 	if err != nil {
@@ -657,10 +688,11 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	defer func() { _ = rows.Close() }()
 	var out []*aggBucket
 	var weighed []policyRecord
-	// The limit counts the records the filter matches, the ones whose window
+	// maxRecords counts the records the filter matches, the ones whose window
 	// is empty (no endsAt, no widening) included: the LIMIT reads that many
 	// rows, so counting only the windows kept would end the read short
-	// without a word.
+	// without a word. maxBuckets counts the windows the read answers, once
+	// the source policy has dropped what it drops.
 	matched := 0
 	for rows.Next() {
 		var kind, id, source, match string
@@ -672,11 +704,8 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 			return nil, err
 		}
 		if matched++; matched > limit {
-			if limit == s.maxRecords {
-				return nil, refuse("aggregate.bucket.records.maxRecords", "the filter matches more than %d records in the range; narrow it or raise maxRecords (the cap is %d)",
-					limit, substrate.AggregateMaxRecordsCap)
-			}
-			return nil, refuse("aggregate.budget.maxBuckets", "the filter matches more than %d records in the range, one bucket each; narrow it or raise maxBuckets", limit)
+			return nil, refuse("aggregate.bucket.records.maxRecords", "the filter matches more than %d records in the range; narrow it or raise maxRecords (the cap is %d)",
+				limit, substrate.AggregateMaxRecordsCap)
 		}
 		end := at
 		if endsAt.Valid {
@@ -724,7 +753,12 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 			}
 		}
 	}
-	return slices.DeleteFunc(out, func(w *aggBucket) bool { return w == nil }), nil
+	out = slices.DeleteFunc(out, func(w *aggBucket) bool { return w == nil })
+	if len(out) > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "the read answers %d records' windows in the range, one bucket each, over %d; narrow the filter or raise maxBuckets (the cap is %d)",
+			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
+	return out, nil
 }
 
 // prefixValidation names where a validation refusal from a nested filter came

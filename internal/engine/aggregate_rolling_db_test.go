@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,4 +195,72 @@ func TestAggregateRollingTakesASplitLocalDayOnce(t *testing.T) {
 	if v, n := rolled(t, previous.Rows[1], "avg", "avg"); v != "77.5" || n != 2 {
 		t.Errorf("the 6th's mean of the 2 days before = %s over %d places, want 77.5 (73 and 82) over 2", v, n)
 	}
+}
+
+// maxBuckets bounds the rows a read answers, so a rolling window's buckets
+// before the range, which answer none, are not counted against it: a
+// function or an agent whose rows left lower maxBuckets to five still reads
+// five days with a 3-day window, by every mode and with fill, and with two
+// sources ten rows under maxBuckets 10. The work the lookback adds is held
+// to the maxBuckets cap instead, a 422 at aggregate.rolling.buckets.
+func TestAggregateRollingLookbackIsNotCountedAgainstMaxBuckets(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	first := time.Date(2026, 9, 1, 0, 0, 0, 0, plus3)
+	for d := range 10 {
+		for _, source := range []string{"scale", "phone"} {
+			f.mustPut(t, f.observation, fmt.Sprintf("w/%s/%d", source, d), map[string]any{
+				"metric": f.metricRef("health/body_mass"), "source": f.sourceRef(source), "form": "gauge",
+				"value": quantity(fmt.Sprint(70+d), "kg"), "at": first.AddDate(0, 0, d).Add(7 * time.Hour).Format(time.RFC3339),
+				"hold": "PT0S", "utcOffset": 180,
+			})
+		}
+	}
+	read := func(bucket substrate.AggregateBucket, filter substrate.Filter, maxBuckets int, fill string) (*substrate.AggregateResult, error) {
+		return f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Filter: filter, Aggregate: &substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(first.AddDate(0, 0, 5), first.AddDate(0, 0, 10)),
+			Bucket:   &bucket,
+			Reducers: reducers("avg"),
+			Rolling:  &substrate.AggregateRolling{Buckets: 3},
+			Fill:     fill,
+			Budget:   &substrate.AggregateBudget{MaxBuckets: maxBuckets},
+		}})
+	}
+	scale := substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: "scale"}}}
+	for _, bucket := range []substrate.AggregateBucket{
+		{Calendar: "day", Timezone: "Europe/Athens"}, {Calendar: "day"}, {Every: "P1D", Origin: "2026-09-01T00:00:00+03:00"},
+	} {
+		label := bucket.Timezone + bucket.Every
+		for _, fill := range []string{"", "null"} {
+			res, err := read(bucket, scale, 5, fill)
+			if err != nil || len(res.Rows) != 5 {
+				t.Errorf("%s fill %q, one source, maxBuckets 5: %v, %v; want five rows", label, fill, rowsOf(res), err)
+			}
+		}
+		res, err := read(bucket, substrate.Filter{}, 10, "")
+		if err != nil || len(res.Rows) != 10 {
+			t.Errorf("%s, two sources, maxBuckets 10: %v, %v; want ten rows", label, rowsOf(res), err)
+		}
+		if _, err := read(bucket, substrate.Filter{}, 9, ""); err == nil || !strings.Contains(err.Error(), "aggregate.budget.maxBuckets") {
+			t.Errorf("%s, two sources, maxBuckets 9: %v, want a refusal of ten rows", label, err)
+		}
+	}
+	_, err := f.ds.Aggregate(context.Background(), substrate.AggregateQuery{Filter: scale, Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+		Range:  rng(first, first.Add(9500*time.Minute)), Bucket: &substrate.AggregateBucket{Every: "PT1M"},
+		Reducers: reducers("avg"), Rolling: &substrate.AggregateRolling{Buckets: 1000},
+		Budget: &substrate.AggregateBudget{MaxBuckets: substrate.AggregateMaxBucketsCap},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "aggregate.rolling.buckets") {
+		t.Errorf("9,500 minutes with a 1,000-minute window: %v, want a refusal at the cap naming the rolling window", err)
+	}
+}
+
+func rowsOf(res *substrate.AggregateResult) int {
+	if res == nil {
+		return -1
+	}
+	return len(res.Rows)
 }

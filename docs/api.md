@@ -1623,10 +1623,12 @@ it, so a baseline leaves the day itself out. Filled rows are in the window,
 and a bucket with no row or a `null` value is skipped. Each rolling value
 carries `n`, the buckets in its window that held a value, so a window over a
 gap says so. A window reaches before the range: the read reduces the buckets
-it needs there (counted in `maxBuckets`, with `fill` applied) and answers
-none of them, so a bucket's rolling value does not depend on where the range
-starts, and the rows a rolling read answers are the rows the same read
-answers without it. In the recorded-local calendar a value before the range
+it needs there (with `fill` applied) and answers none of them; `maxBuckets`
+leaves those buckets out, and the series times every bucket the read
+reduces, the lookback's included, is held to the 10,000 cap (a `422` at
+`aggregate.rolling.buckets`). A bucket's rolling value does not depend on
+where the range starts, and the rows a rolling read answers are the rows the
+same read answers without it. In the recorded-local calendar a value before the range
 counts only in the days before the range's first. A day before the range's
 first that the range also reaches (a value at an offset west of the range's)
 answers its values in the range alone, and is one place in every window,
@@ -1750,7 +1752,7 @@ rows are assembled, before it answers.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
-| `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode), over every metric of a several-metric read; a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
+| `maxBuckets` | series times the buckets the read answers, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, the records' windows the source policy keeps in the records mode), over every metric of a several-metric read; a rolling window's buckets before the range are not counted; a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
 | `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up, and in the records mode the values with a span it visits to find how far amounts reach; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
 | `maxGroups` | the groups a `groupBy` or the `separate` policy makes, every metric's together on a several-metric read; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds, currencies and `property.groupBy` values before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row; with a source policy, also the records outside the range it weighs | 1,000 | 10,000 |

@@ -722,8 +722,10 @@ records mode's), each held to the reads allowlist; a body that names none
 trips the allowlist. It answers the result dict, and pays one call and its
 rows against the read budget. Before the read runs, its `budget.maxBuckets`
 (and on the latest read `budget.maxGroups`) is lowered to the rows left. The
-read checks its series times buckets, the rows it could answer, against that
-before it takes a point, so a read that could pass the row budget is refused
+read checks its series times the buckets it answers, the rows it could
+answer, against that before it takes a point (a rolling window's buckets
+before the range, and the records a records-mode source policy drops, are
+not counted), so a read that could pass the row budget is refused
 before it runs, however few points it holds: a read by day over 2025 and
 2026 makes 730 buckets, over the default 500 rows. That refusal is a budget
 trip like any other. A larger `budget.maxBuckets` does not help, because it

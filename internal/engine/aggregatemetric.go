@@ -177,7 +177,10 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		runs[i], samples = m, m.r.samples
 		groups, series = groups+len(m.groups), series+m.r.nSeries
 	}
-	if err := p.checkMetrics(len(plans), groups, series, len(buckets)); err != nil {
+	if err := p.checkMetrics(len(plans), groups, series, answered(buckets)); err != nil {
+		return nil, err
+	}
+	if err := p.checkLookback(series, buckets); err != nil {
 		return nil, err
 	}
 	for _, m := range runs {
@@ -200,9 +203,12 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		}
 		buckets, samples = m.r.buckets, m.r.samples
 	}
-	if n := len(buckets) * max(series, 1); n > p.maxBuckets {
+	if n := answered(buckets) * max(series, 1); n > p.maxBuckets {
 		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d series is %d, over %d; narrow the range or raise maxBuckets",
-			len(buckets), series, n, p.maxBuckets)
+			answered(buckets), series, n, p.maxBuckets)
+	}
+	if err := p.checkLookback(series, buckets); err != nil {
+		return nil, err
 	}
 	for _, m := range runs {
 		m.r.buckets = buckets
@@ -281,9 +287,12 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 	if err != nil {
 		return nil, err
 	}
-	if n := len(buckets) * max(series, 1); n > p.maxBuckets {
+	if n := answered(buckets) * max(series, 1); n > p.maxBuckets {
 		return nil, p.refuse("aggregate.budget.maxBuckets", "%d series (groups, and codes where grouped by code) times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
-			series, len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+			series, answered(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
+	}
+	if err := p.checkLookback(series, buckets); err != nil {
+		return nil, err
 	}
 	r := &aggRun{
 		ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, windows: windows,

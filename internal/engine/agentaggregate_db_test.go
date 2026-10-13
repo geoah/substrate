@@ -239,6 +239,17 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 		}
 	}
 
+	// A rolling window's buckets before the range answer no row, so three
+	// rows left read three days with a two-day window.
+	rolling := map[string]any{"rolling": map[string]any{"buckets": 2}}
+	for k, v := range daily {
+		rolling[k] = v
+	}
+	out, ok, rows = ds.runQueryTool(ctx, queryScope{kinds: wide.kinds, rows: 3}, map[string]any{"aggregate": rolling})
+	if !ok || rows != 3 {
+		t.Fatalf("three days rolled over two with three rows left: ok %v rows %d: %s", ok, rows, out)
+	}
+
 	// A read answering more rows than the budget holds is refused before it
 	// takes a point.
 	traced := context.WithValue(ctx, aggregateTraceKey{}, &aggTrace{})
