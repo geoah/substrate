@@ -64,14 +64,18 @@ met its deadline, and a scheduled sync parked. So the process hashes at most
 has open, 8 MiB by default, which on that box is under half a core and makes
 the 27 GB about an hour, and every digest pauses, within one megabyte read,
 while any function body or agent loop runs in the process, going on when the
-last of them returns. The bound the
+last of them returns. The pause is bounded: a digest that has waited 30
+seconds reads one megabyte and pauses again, so a server whose bodies and
+agent loops run back to back still finishes its digest and finds a damaged
+segment ([#872](https://github.com/geoah/substrate/issues/872)). The bound the
 engine's tests hold: while a digest is in progress, the median latency of a
 function invocation stays within twice its median with no digest running
-plus 250 ms, and the digest reads no more than two megabytes during an
-invocation. A cap alone would not do: a Pi's one core of hashing beside a
-one-core Python body is the contention that doubled the function's time,
-and the pause is what removes it; the cap is what keeps the digest from
-taking the box while nothing else runs.
+plus 250 ms, the digest reads no more than two megabytes during an
+invocation shorter than the 30 seconds, and beside a body that never returns
+the digest still finishes. A cap alone would not do: a Pi's one core of
+hashing beside a one-core Python body is the contention that doubled the
+function's time, and the pause is what removes it; the cap is what keeps the
+digest from taking the box while nothing else runs.
 
 It beat the filesystem because it works on any POSIX filesystem with hard
 links, and it beat the running-server pre-stage because a base is a finished
@@ -105,7 +109,8 @@ segment.
   digest behind the open reaches it. Before, the boot refused it. The pace
   lengthens that while: about an hour for 27 GB at the default cap, and
   longer on a server that runs functions or agents most of the time, since
-  an agent loop holds every digest paused for its whole run. The digest
+  an agent loop holds every digest to one megabyte per 30 seconds for its
+  whole run. The digest
   keeps no record of the segments it has read, so a stop before it
   finishes starts it from the first segment at the next open; a server
   restarted more often than its history takes to hash never finishes it,
@@ -120,8 +125,9 @@ segment.
 `TestADamagedSegmentFoundAfterTheOpenRefusesWrites`,
 `TestExportRefusesAFinishedSegmentThatDoesNotMatchItsSidecar` and
 `TestTheServerDigestsEachSegmentOnceAfterTheOpen`,
-`TestTheDigestPausesWhileAnInvocationRuns` and
-`TestAnInvocationIsNotSlowedByTheDigest` in `internal/engine`, and
+`TestTheDigestPausesWhileAnInvocationRuns`,
+`TestAnInvocationIsNotSlowedByTheDigest` and
+`TestTheDigestFinishesBesideABodyThatNeverReturns` in `internal/engine`, and
 the `TrustSidecars`, `Known`, `SharedFinished` and `CopyChangelogFrom` tests
 in `internal/changelogfile`.
 

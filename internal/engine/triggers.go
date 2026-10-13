@@ -229,7 +229,9 @@ type scheduleSource struct {
 }
 
 // rule compiles the recurrence against the anchor. createdAt is the trigger
-// row's creation time, the anchor of last resort.
+// row's creation time, the anchor of last resort. The due occurrences are
+// read through the trigger's cursor (schedulecursor.go dueFires), which
+// walks the rule from here once and resumes after.
 func (s *scheduleSource) rule(createdAt time.Time) (*rrule.RRule, error) {
 	loc := time.UTC
 	if s.Timezone != "" {
@@ -249,32 +251,6 @@ func (s *scheduleSource) rule(createdAt time.Time) (*rrule.RRule, error) {
 	}
 	opt.Dtstart = anchor.In(loc)
 	return rrule.NewRRule(*opt)
-}
-
-// dueFires lists the occurrences in (after, now], oldest first, at most limit
-// of them. Nothing is coalesced: a trigger that missed occurrences (the
-// server down, the trigger disabled, a repository restored to an older fire
-// state) fires each one, and the bound is what keeps a pass from turning a
-// long gap into one burst. The rule is walked once, from its anchor, so a
-// rule with many occurrences behind `after` costs one pass over them.
-func (s *scheduleSource) dueFires(createdAt, after, now time.Time, limit int) ([]time.Time, error) {
-	r, err := s.rule(createdAt)
-	if err != nil {
-		return nil, err
-	}
-	next := r.Iterator()
-	var out []time.Time
-	for len(out) < limit {
-		at, ok := next()
-		if !ok || at.After(now) {
-			break
-		}
-		if !at.After(after) {
-			continue
-		}
-		out = append(out, at.UTC())
-	}
-	return out, nil
 }
 
 // fireID is the stable identity of one schedule occurrence.

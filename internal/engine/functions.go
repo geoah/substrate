@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/geoah/substrate/internal/metrics"
@@ -241,6 +242,10 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	}
 	ds.pruneActivity(triggers)
 	schedules, records := ds.dispatchable(triggers, true)
+	pass, err := ds.readPassStart(ctx)
+	if err != nil {
+		return 0, err
+	}
 
 	recordsDone := make(chan struct{})
 	type laneResult struct {
@@ -260,7 +265,7 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 			}
 			scheduled <- res
 		}()
-		res.ran, res.errs = ds.scheduleLane(ctx, schedules, recordLaneIDs(records), recordsDone)
+		res.ran, res.errs = ds.scheduleLane(ctx, pass, schedules, recordLaneIDs(records), recordsDone)
 	}()
 	// The pass ends only once the lane has stopped and its fire in hand has
 	// settled, a panic in the record lane included: the dispatcher starts
@@ -286,7 +291,7 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 		// dispatcher's, and the process goes on with the slots it has.
 		n, perr := func() (int, error) {
 			defer release()
-			return ds.passRecordTrigger(ctx, lt.trigger)
+			return ds.passRecordTrigger(ctx, lt.trigger, pass)
 		}()
 		total += n
 		if n > 0 {
@@ -324,7 +329,7 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 // retry or forget, as after a restart. The pass reports the panic as the
 // trigger's error, on every pass it recurs. The deliveries the turn applied
 // before the panic are not counted in the pass's total.
-func (ds *dataset) passRecordTrigger(ctx context.Context, tr *trigger) (ran int, err error) {
+func (ds *dataset) passRecordTrigger(ctx context.Context, tr *trigger, pass *passStart) (ran int, err error) {
 	ds.markPassed(tr.ID)
 	defer func() {
 		if r := recover(); r != nil {
@@ -333,7 +338,83 @@ func (ds *dataset) passRecordTrigger(ctx context.Context, tr *trigger) (ran int,
 			ran, err = 0, fmt.Errorf("delivery panicked: %v", r)
 		}
 	}()
-	return ds.processRecordTrigger(ctx, tr, newPassDeadline())
+	return ds.processRecordTrigger(ctx, tr, newPassDeadline(), pass)
+}
+
+// passStart is what a dispatcher pass reads once, before either lane runs:
+// the changelog head, every record trigger's cursor and every schedule
+// trigger's fire state, three statements however many triggers the
+// repository has. They answer one question, whether a trigger has anything
+// to do, so an idle pass sends no statement per trigger. A trigger with
+// work, or with no row in them, runs its turn as it would without them,
+// from its own row and a fresh head, so a wake or a replay that moved the
+// row since the pass began is never delivered over. A nil passStart is a
+// caller outside the pass (a wake), which skips nothing.
+type passStart struct {
+	head    int64
+	cursors map[string]int64
+	fired   map[string]time.Time
+	// delivering is set once a delivery of the pass starts: what it writes
+	// lands past head, so from then on no record trigger is read as idle,
+	// and a trigger fed by another trigger's writes still receives them in
+	// the same pass.
+	delivering atomic.Bool
+}
+
+// readPassStart reads the pass's start: the head and the cursors through
+// cursorSnapshot, and the fire states.
+func (ds *dataset) readPassStart(ctx context.Context) (*passStart, error) {
+	cursors, head, err := ds.cursorSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := ds.db.QueryContext(ctx, `SELECT trigger_id, fired_at FROM trigger_schedule`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	fired := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var at time.Time
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		fired[id] = at.UTC()
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return &passStart{head: head, cursors: cursors, fired: fired}, nil
+}
+
+// idleRecord reports whether the record trigger had nothing past its cursor
+// when the pass began and no delivery of the pass has started since. A
+// cursor only moves forward but for a replay, whose rewound rows the next
+// pass delivers.
+func (p *passStart) idleRecord(id string) bool {
+	if p == nil || p.delivering.Load() {
+		return false
+	}
+	seq, known := p.cursors[id]
+	return known && seq >= p.head
+}
+
+// firedAt is the schedule trigger's fire state as the pass read it; false
+// when the pass read none.
+func (p *passStart) firedAt(id string) (time.Time, bool) {
+	if p == nil {
+		return time.Time{}, false
+	}
+	at, ok := p.fired[id]
+	return at, ok
+}
+
+// startDelivery records that a delivery of the pass is starting.
+func (p *passStart) startDelivery() {
+	if p != nil {
+		p.delivering.Store(true)
+	}
 }
 
 // recordLaneIDs is the set of the record lane's triggers.
@@ -403,7 +484,7 @@ var errLaneStopped = errors.New("schedule lane stopped")
 // mid-pass never runs in both lanes. A trigger whose delivery fails on
 // every look reports its latest error once. The lane returns only after
 // every worker it started has ended.
-func (ds *dataset) scheduleLane(ctx context.Context, first []loadedTrigger, records map[string]bool, recordsDone <-chan struct{}) (int, []error) {
+func (ds *dataset) scheduleLane(ctx context.Context, pass *passStart, first []loadedTrigger, records map[string]bool, recordsDone <-chan struct{}) (int, []error) {
 	var (
 		wg sync.WaitGroup
 		// mu guards everything below it: the workers write it as they end,
@@ -483,7 +564,7 @@ func (ds *dataset) scheduleLane(ctx context.Context, first []loadedTrigger, reco
 					<-workers
 				}()
 				ds.markPassed(lt.ID)
-				n, f, err := ds.processScheduleTrigger(ctx, lt, newPassDeadline(), left)
+				n, f, err := ds.processScheduleTrigger(ctx, lt, newPassDeadline(), left, pass)
 				if n > 0 {
 					metrics.TriggerDeliveries.WithLabelValues(lt.ID).Add(float64(n))
 				}
@@ -592,7 +673,15 @@ func (ds *dataset) dispatchable(triggers []loadedTrigger, warn bool) (schedules,
 // deadline stops the drain between deliveries, never inside one, and before
 // the scan position moves past a matched row still owed, so the cursor only
 // ever stands past rows that were delivered or matched nothing.
-func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadline passDeadline) (int, error) {
+//
+// pass is the pass's start, nil outside a pass. A trigger it reads as idle
+// ends the turn with no statement: a row another writer commits after the
+// pass began and before this turn is read by the next pass, as one committed
+// after this turn is.
+func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadline passDeadline, pass *passStart) (int, error) {
+	if pass.idleRecord(tr.ID) {
+		return 0, nil
+	}
 	cursor, err := ds.ensureCursor(ctx, tr.ID)
 	if err != nil {
 		return 0, err
@@ -621,6 +710,7 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 			if held {
 				return ran, nil
 			}
+			pass.startDelivery()
 			n, next, err := ds.deliverWithRetry(dctx, tr, ch, cursor)
 			ran += n
 			if errors.Is(err, errCursorMoved) {
@@ -1539,12 +1629,24 @@ func (ds *dataset) skipClaimed(ctx context.Context, s *settlement, run runRecord
 // swap, the budget) leaves the rest due for the next. Parked fires of the
 // trigger do not hold a due one back: every occurrence is dispatched, and
 // one that settles retires the parks at or before it (retireSupersededFires).
-func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline, limit int) (ran, fired int, err error) {
+//
+// pass is the pass's start, nil outside a pass. Nothing due after the fire
+// state it read is nothing due after the row, which only moves forward while
+// a server runs, so that answer ends the turn with no statement; anything
+// due is fired from the row as it stands, so an occurrence a wake fired since
+// the pass began is not fired again.
+func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline, limit int, pass *passStart) (ran, fired int, err error) {
+	if at, known := pass.firedAt(lt.ID); known {
+		owes, err := ds.owesAfter(lt.ID, lt.Schedule, lt.CreatedAt, at, nowUTC())
+		if err != nil || !owes {
+			return 0, 0, err
+		}
+	}
 	lastFire, err := ds.ensureScheduleState(ctx, lt.ID)
 	if err != nil {
 		return 0, 0, err
 	}
-	due, err := lt.Schedule.dueFires(lt.CreatedAt, lastFire, nowUTC(), limit)
+	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1569,6 +1671,7 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 			ds.svc.log.Info("substrate: schedule fire dispatched late",
 				"trigger", lt.ID, "fire", fireID(at), "late", late.Round(time.Second))
 		}
+		pass.startDelivery()
 		// done runs on a panic too: the lane contains a fire's panic, and a
 		// count left raised would show the occurrence in flight until the
 		// process restarts.
@@ -1741,9 +1844,11 @@ func (ds *dataset) activityOf(triggerID string) (lastPass, lastDelivered time.Ti
 }
 
 // pruneActivity drops the entries of triggers the pass no longer loads and
-// nothing delivers, so a repository whose triggers come and go does not
-// grow the map.
+// nothing delivers, and the schedule cursors of triggers that no longer
+// carry a schedule, so a repository whose triggers come and go grows
+// neither map.
 func (ds *dataset) pruneActivity(triggers []loadedTrigger) {
+	ds.pruneScheduleCursors(triggers)
 	live := make(map[string]bool, len(triggers))
 	for _, lt := range triggers {
 		live[lt.ID] = true
@@ -1779,7 +1884,7 @@ func (ds *dataset) logFireYield(triggerID, swap, fid string) {
 // and the rest (pending), which wait for a dispatcher pass to reach them.
 // At most scheduleOwedCap are counted.
 func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inFlight int64, err error) {
-	due, err := lt.Schedule.dueFires(lt.CreatedAt, lastFire, nowUTC(), scheduleOwedCap)
+	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), scheduleOwedCap)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2258,23 +2363,29 @@ func (t *txn) putSystemRun(r runRecord, prune bool) error {
 // per trigger stay, older ones tombstone. Parked runs are exempt — failures
 // are kept — and so is the trigger's newest ok run, however old: it is where
 // the trigger's health counts its failures from (health.go, decision 0152),
-// and twenty skips must not erase it.
+// and twenty skips must not erase it. It runs in every settling
+// transaction, under the changelog lock, so it finds the trigger's runs
+// through refs (triggerRunsSQL).
 func (t *txn) pruneRuns(triggerID string) error {
-	trigger := referencePathSQL("props", "trigger")
+	viaRefs, err := runsViaRefs(t.ctx, t.tx)
+	if err != nil {
+		return err
+	}
+	args := []any{typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention, runStatusOK}
+	if viaRefs {
+		args[1] = triggerID
+		args = append(args, typeTrigger)
+	}
+	runs := triggerRunsSQL(viaRefs, "$1", "$6", "$2", "$2")
 	rows, err := t.query(`
 		SELECT id FROM (
-			SELECT id FROM records
-			WHERE kind = $1 AND deleted_at IS NULL
-			  AND `+trigger+` = $2 AND props->>'status' <> $3
-			ORDER BY created_at DESC, id DESC OFFSET $4
+			SELECT run.id `+runs+` AND run.props->>'status' <> $3
+			ORDER BY run.created_at DESC, run.id DESC OFFSET $4
 		) old
 		WHERE id IS DISTINCT FROM (
-			SELECT id FROM records
-			WHERE kind = $1 AND deleted_at IS NULL
-			  AND `+trigger+` = $2 AND props->>'status' = $5
-			ORDER BY created_at DESC, id DESC LIMIT 1
-		)`,
-		typeTriggerRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention, runStatusOK)
+			SELECT run.id `+runs+` AND run.props->>'status' = $5
+			ORDER BY run.created_at DESC, run.id DESC LIMIT 1
+		)`, args...)
 	if err != nil {
 		return err
 	}
@@ -2298,6 +2409,35 @@ func (t *txn) pruneRuns(triggerID string) error {
 		}
 	}
 	return nil
+}
+
+// triggerRunsSQL is the FROM and WHERE of a read of one trigger's live runs,
+// the run row as `run`; each argument is a SQL expression. Through refs it is
+// the site a run's `trigger` reference derives (refs.go deriveRefs: the
+// property, path ”, ord 0) at triggerKind/triggerID, joined to its run by
+// primary key. Equality on the refs columns is leakproof, so under row level
+// security the read seeks refs_dst_idx; the reference expression is not, so
+// the app role cannot use the run kind's [trigger, status] index and filters
+// every run of the kind. Off refs it compares that expression with
+// triggerPath, and triggerKind and triggerID are not read, so the caller
+// binds no argument that only they name.
+func triggerRunsSQL(viaRefs bool, runKind, triggerKind, triggerID, triggerPath string) string {
+	if viaRefs {
+		return `FROM refs site JOIN records run ON run.kind = site.src_kind AND run.id = site.src
+			WHERE site.src_kind = ` + runKind + ` AND site.property = 'trigger' AND site.path = '' AND site.ord = 0
+			  AND site.dst_kind = ` + triggerKind + ` AND site.dst = ` + triggerID + ` AND run.deleted_at IS NULL`
+	}
+	return `FROM records run WHERE run.kind = ` + runKind + ` AND run.deleted_at IS NULL AND ` +
+		referencePathSQL("run.props", "trigger") + ` = ` + triggerPath
+}
+
+// runsViaRefs reports whether a read of a trigger's runs may go through
+// refs: not while the background re-derivation owes the run kind's
+// `trigger` refs rows (refsPending), when only the rows' own properties say
+// which trigger they belong to.
+func runsViaRefs(ctx context.Context, x dbx) (bool, error) {
+	pending, err := refsPending(ctx, x, []string{typeTriggerRun}, "trigger")
+	return !pending, err
 }
 
 // effectsSummary counts applied effects by action, and the ones the policy
@@ -3238,9 +3378,9 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 		ran, _, err := ds.deliverFire(ctx, tr, runner.ModeWebhook, "wake-"+wid, nowUTC(), nil, nil, nil)
 		return ran, err
 	case tr.Record != nil:
-		return ds.processRecordTrigger(ctx, tr, passDeadline{})
+		return ds.processRecordTrigger(ctx, tr, passDeadline{}, nil)
 	case tr.Schedule != nil:
-		ran, _, err := ds.processScheduleTrigger(ctx, loadedTrigger{trigger: tr, CreatedAt: createdAt}, passDeadline{}, scheduleDrainPerPass)
+		ran, _, err := ds.processScheduleTrigger(ctx, loadedTrigger{trigger: tr, CreatedAt: createdAt}, passDeadline{}, scheduleDrainPerPass, nil)
 		return ran, err
 	}
 	return 0, nil

@@ -39,13 +39,6 @@ func failingAlertKey(triggerID string) string { return alertKeyTriggerFailing + 
 // so an alert opens within a tenth of the window, or a minute, of its end.
 const healthReadMax = time.Minute
 
-// rowsQuerier is the read readFailing makes, which a pool and a transaction
-// both answer: the pass reads outside any transaction, so a healthy
-// repository takes no changelog lock, and again inside the one that writes.
-type rowsQuerier interface {
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-}
-
 // failingRead is one trigger's failing alert as it stands, and its parked
 // runs of the current episode: after its newest ok run, and from the open
 // alert's firstSeenAt (the episode's oldest park) or after the closed
@@ -140,11 +133,18 @@ func (ds *dataset) raiseFailingAlerts(ctx context.Context, triggers []loadedTrig
 }
 
 // readFailing reads each trigger's failing alert and parked-run streak in
-// one statement. Each trigger's runs are read through the run kind's
-// [trigger, status] index: the newest ok run, then the parked runs after it.
-func readFailing(ctx context.Context, q rowsQuerier, triggerIDs []string) ([]failingRead, error) {
+// one statement. Each trigger's runs are read through refs where they can be
+// (triggerRunsSQL): the newest ok run, then the parked runs after it. q is
+// the pool or a transaction: the pass reads outside any transaction, so a
+// healthy repository takes no changelog lock, and again inside the one that
+// writes.
+func readFailing(ctx context.Context, q dbx, triggerIDs []string) ([]failingRead, error) {
 	if len(triggerIDs) == 0 {
 		return nil, nil
+	}
+	viaRefs, err := runsViaRefs(ctx, q)
+	if err != nil {
+		return nil, err
 	}
 	type target struct {
 		ID    string `json:"id"`
@@ -159,21 +159,24 @@ func readFailing(ctx context.Context, q rowsQuerier, triggerIDs []string) ([]fai
 	if err != nil {
 		return nil, err
 	}
-	ref := referencePathSQL("props", "trigger")
+	args := []any{string(arg), kindAlert, typeTriggerRun, runStatusOK, runStatusParked, alertStateOpen}
+	if viaRefs {
+		args = append(args, typeTrigger)
+	}
+	runs := triggerRunsSQL(viaRefs, "$3", "$7", "t.id", "t.path")
 	rows, err := q.QueryContext(ctx, `
 		SELECT t.id, a.props->>'state', a.updated_at, a.deleted_at, p.n, p.oldest, p.newest, p.reason
 		FROM jsonb_to_recordset($1::jsonb) AS t(id text, alert text, path text)
 		LEFT JOIN records a ON a.kind = $2 AND a.id = t.alert
 		LEFT JOIN LATERAL (
-			SELECT max((props->>'finishedAt')::timestamptz) AS at FROM records
-			WHERE kind = $3 AND deleted_at IS NULL AND `+ref+` = t.path AND props->>'status' = $4
+			SELECT max((run.props->>'finishedAt')::timestamptz) AS at `+runs+` AND run.props->>'status' = $4
 		) ok ON true
 		LEFT JOIN LATERAL (
 			SELECT count(*) AS n, min(runs.at) AS oldest, max(runs.at) AS newest,
 			       (array_agg(runs.reason ORDER BY runs.at DESC))[1] AS reason
 			FROM (
-				SELECT (props->>'finishedAt')::timestamptz AS at, props->>'reason' AS reason FROM records
-				WHERE kind = $3 AND deleted_at IS NULL AND `+ref+` = t.path AND props->>'status' = $5
+				SELECT (run.props->>'finishedAt')::timestamptz AS at, run.props->>'reason' AS reason
+				`+runs+` AND run.props->>'status' = $5
 			) runs
 			WHERE runs.at > COALESCE(ok.at, '-infinity'::timestamptz)
 			  AND CASE
@@ -183,7 +186,7 @@ func readFailing(ctx context.Context, q rowsQuerier, triggerIDs []string) ([]fai
 				ELSE runs.at > COALESCE(a.deleted_at, a.updated_at)
 			  END
 		) p ON true`,
-		string(arg), kindAlert, typeTriggerRun, runStatusOK, runStatusParked, alertStateOpen)
+		args...)
 	if err != nil {
 		return nil, err
 	}

@@ -23,7 +23,10 @@ package engine
 // body or agent loop runs in this process, and goes on when the last of
 // them returns. The pause is what keeps a runner deadline from firing that
 // would not have fired without the digest: the hashing stops before an
-// invocation has run for a tenth of a second.
+// invocation has run for a tenth of a second. It is bounded: after
+// digestYieldMax of waiting the digest reads one megabyte and pauses again,
+// so a server whose bodies and agent loops run back to back still finishes
+// the digest and finds a damaged segment (#872).
 
 import (
 	"context"
@@ -55,6 +58,13 @@ const DefaultDigestBytesPerSecond int64 = 8 << 20
 // digestYieldPoll is how often a paused digest asks whether every invocation
 // has returned.
 const digestYieldPoll = 50 * time.Millisecond
+
+// digestYieldMax is the longest the digest waits for invocations to return
+// before one read. An invocation shorter than it meets no more of the digest
+// than before the bound, and a longer one meets a megabyte of hashing per
+// bound, a few milliseconds of one core even on a box without SHA-256
+// instructions.
+const digestYieldMax = 30 * time.Second
 
 // digestProgressFactor is how much rarer the digest's progress lines are
 // than the open's: the digest runs for an hour behind a large repository,
@@ -141,7 +151,7 @@ func (ds *dataset) latchDamaged(cause error) {
 	if ds.fileErr != nil {
 		return
 	}
-	ds.fileErr = fmt.Errorf("%w: repository %s: %w", ErrChangelogDamaged, ds.info.ID, cause)
+	ds.setFileErr(fmt.Errorf("%w: repository %s: %w", ErrChangelogDamaged, ds.info.ID, cause))
 	ds.svc.log.Error("substrate: a finished changelog segment does not match its sidecar; refusing writes",
 		"repository", ds.info.ID, "error", cause)
 }
@@ -235,7 +245,7 @@ func (p *digestPacer) pace(ctx context.Context, n int) error {
 const digestBurstBytes = 1 << 20
 
 // yield waits while any function body or agent loop runs in this process,
-// and counts the wait.
+// for at most the service's digestYieldMax, and counts the wait.
 func (p *digestPacer) yield(ctx context.Context) error {
 	if p.svc.invocations.Load() == 0 {
 		return nil
@@ -244,10 +254,14 @@ func (p *digestPacer) yield(ctx context.Context) error {
 	defer func() { p.paused += time.Since(began) }()
 	ticker := time.NewTicker(digestYieldPoll)
 	defer ticker.Stop()
+	bound := time.NewTimer(p.svc.digestYieldMax)
+	defer bound.Stop()
 	for p.svc.invocations.Load() > 0 {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-bound.C:
+			return nil
 		case <-ticker.C:
 		}
 	}
