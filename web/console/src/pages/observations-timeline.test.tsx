@@ -1507,6 +1507,33 @@ describe("the charts", () => {
     )
   })
 
+  it("says plainly where a bucket holds no reading of its own", async () => {
+    // The middle week: the hold covered it, with no weigh-in in it.
+    const held = {
+      ...WEIGHT,
+      rows: WEIGHT.rows.map((r, i) =>
+        i === 1 ? { ...r, synthetic: false, count: 0, coverage: "PT9H" } : r
+      ),
+    }
+    mount(`?metric=health/body_mass&${WINDOW}&bucket=week`, false, (read) =>
+      read.aggregate.metric ? held : answer(read)
+    )
+    const weight = await lane("Weight")
+    const chart = await within(weight).findByRole("group", {
+      name: "Weight, Average",
+    })
+    act(() => chart.focus())
+    fireEvent.keyDown(chart, { key: "ArrowRight" })
+    fireEvent.keyDown(chart, { key: "ArrowRight" })
+    const tip = within(weight).getByRole("status")
+    expect(tip.textContent).toContain("Sep 28 to Oct 4, 2026")
+    expect(tip.textContent).toContain(
+      "No reading in this bucket; the one before it still holds."
+    )
+    expect(tip.textContent).not.toContain("Average")
+    expect(tip.textContent).not.toContain("no answer")
+  })
+
   it("reads a bucket out from the keyboard and zooms into it", async () => {
     // The fixture answers weeks.
     const server = mount(`?metric=health/body_mass&${WINDOW}&bucket=week`)

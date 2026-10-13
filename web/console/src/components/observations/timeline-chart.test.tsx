@@ -132,6 +132,32 @@ describe("TimelineChart", () => {
     }
   })
 
+  it("joins a level across a bucket its hold covered with no reading", () => {
+    // Weigh-ins two days apart: the day between is a row with no reading,
+    // which the hold covered.
+    const between = {
+      ...WEIGHT.rows[1],
+      synthetic: false,
+      count: 0,
+      coverage: "PT7H10M",
+    }
+    const joined = render(chart([WEIGHT.rows[0], between, WEIGHT.rows[2]]))
+    const d =
+      joined.container
+        .querySelector("path[stroke-width='2']")
+        ?.getAttribute("d") ?? ""
+    expect(d.match(/M/g)).toHaveLength(1)
+    expect(d.match(/L/g)).toHaveLength(1)
+    cleanup()
+    // A gap the read filled is no reading held, and still breaks the line.
+    const filled = render(chart(WEIGHT.rows))
+    const gap =
+      filled.container
+        .querySelector("path[stroke-width='2']")
+        ?.getAttribute("d") ?? ""
+    expect(gap.match(/M/g)).toHaveLength(2)
+  })
+
   it("breaks the line where the answer skipped a week", () => {
     // The middle week is not in the answer at all: no row, filled or not.
     const view = render(chart([WEIGHT.rows[0], WEIGHT.rows[2]]))

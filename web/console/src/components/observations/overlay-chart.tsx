@@ -956,21 +956,26 @@ function SeriesDetail({
   valueText: (plot: Plot, row: AggregateRow, key: string) => string
   sourceText: (id: string) => string
 }) {
+  // A bucket the answer covered with no reading of its own lists no value
+  // lines, each of which would say there is none.
+  const quiet = row.count === 0
   return (
     <div className="mt-2 border-t border-border pt-2">
       <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
-        {(row.values ?? []).map((v, i) => (
-          <TipLine
-            key={`${reducerKey(v.reducer)}-${v.code ?? ""}-${i}`}
-            label={
-              v.rolling !== undefined
-                ? `${reducerLabel(v.reducer)} of ${v.rolling}`
-                : reducerLabel(v.reducer)
-            }
-            value={valueText(plot, row, reducerKey(v.reducer))}
-            strong
-          />
-        ))}
+        {(row.values ?? [])
+          .filter((v) => !quiet || v.value !== null)
+          .map((v, i) => (
+            <TipLine
+              key={`${reducerKey(v.reducer)}-${v.code ?? ""}-${i}`}
+              label={
+                v.rolling !== undefined
+                  ? `${reducerLabel(v.reducer)} of ${v.rolling}`
+                  : reducerLabel(v.reducer)
+              }
+              value={valueText(plot, row, reducerKey(v.reducer))}
+              strong
+            />
+          ))}
         <TipLine label="Points" value={row.count.toLocaleString("en")} />
         {plot.local && (
           <TipLine
@@ -1000,9 +1005,11 @@ function SeriesDetail({
           />
         )}
       </dl>
-      {row.count === 0 && (
+      {quiet && (
         <p className="mt-1 text-muted-foreground">
-          No reading here; an earlier one still holds.
+          {row.synthetic
+            ? "Nothing measured in this bucket."
+            : "No reading in this bucket; the one before it still holds."}
         </p>
       )}
     </div>

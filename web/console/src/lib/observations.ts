@@ -258,13 +258,14 @@ export function codeWords(code: string): string {
 }
 
 /** A reading as text, for a tooltip line or a copied table: the digits and
- * the unit's print symbol, the digits alone where no unit came. */
+ * the unit's print symbol, the digits alone where no unit came, and "no
+ * reading" where there is none. */
 export function readingText(
   value: string | null | undefined,
   unit?: string,
   precision?: number
 ): string {
-  if (value === null || value === undefined) return "no answer"
+  if (value === null || value === undefined) return "no reading"
   const shown = precision === undefined ? value : roundDigits(value, precision)
   return (unit && formatQuantity({ value: shown, unit })) || shown
 }

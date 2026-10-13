@@ -660,7 +660,13 @@ function LineSeries({
   mids: number[]
   y: (v: number) => number
 }) {
-  const points = series.points
+  // A bucket the answer covered with no reading of its own (a weigh-in's
+  // level holding between weigh-ins: a row, its count 0, no value) joins
+  // the line across it; a bucket with no row, or a gap the read filled,
+  // still breaks it.
+  const points = series.points.filter(
+    (p) => !(p.value === null && p.row && p.row.count === 0 && !p.row.synthetic)
+  )
   const line = points.map((p) =>
     p.value === null ? null : { x: mids[p.bucket], y: y(p.value) }
   )

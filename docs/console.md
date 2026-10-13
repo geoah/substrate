@@ -794,7 +794,9 @@ summary takes come first and the rest read raw points alone: picking one
 (the time-weighted average, a percentile, a zone) reads the metric from raw
 points and the chart says whose summaries it leaves out, and where you
 picked where to read from yourself it is listed disabled, with the reason.
-A level is a line, with its lowest-to-highest band where its metric shows
+A level is a line, joined across a bucket its hold covered with no reading
+of its own (a day between two weigh-ins) and broken where the answer has
+no row or filled a gap, with its lowest-to-highest band where its metric shows
 one line and the reducer answers in the metric's own unit (not a count, a
 standard deviation, a time in a zone or a circular mean). An amount, a
 count, a counter's increase and a time in a zone are bars, and a category
