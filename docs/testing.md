@@ -636,7 +636,10 @@ same reason: an advisory published today turns a commit red that was green
 yesterday. It is not part of `ci`, because `latest.yml`, `release-please.yml`
 and `release.yml` wait for a successful `ci` run on `main`, and an advisory
 with no patched version yet would hold back the `latest` image and every
-release.
+release. `audit image` (`ci:audit:image`) is the second job there: it builds
+the image and runs grype over it, failing on a high or critical advisory
+that has a fixed version. It runs on a push to `main` and weekly, never on a
+pull request, because it builds the whole image.
 
 The `llm live` workflow runs `ci:llm`, the live suite against the real
 providers, weekly on `main` and on dispatch, never on a pull request, and
@@ -725,9 +728,14 @@ run inside one of its tasks; every `.mise.toml` task that runs a database
 package's `go test` without `-short` must run it through `.mise/dblock.sh`;
 every `pg_isready` must probe TCP;
 `.mise/cipostgres.sh` must start the image, port and tmpfs the jobs' DSN
-expects, probe over TCP and fail at its timeout with the server's log; and
+expects, probe over TCP and fail at its timeout with the server's log;
 `.mise/gocache.sh` must remove exactly the cache entries a run did not
-touch.
+touch; and every rule of `.mise/toolchaincheck.sh` (`lint:toolchain`) must
+fail on a scratch copy of the tree with one copy of one pin moved (a base
+image tag or digest, `go.mod`'s `go` or `toolchain` line, the console's pnpm
+`packageManager`, the Dockerfile's `UV_VERSION`, one `pgvector/pgvector`
+image, one workflow's mise version or `min_version`) or with `uv` added to
+an `apk add`.
 
 `mise run test` and `test:db` are untouched by the cut: each is still the
 whole suite, sequential, on one machine. `test:coverage` is the same without
