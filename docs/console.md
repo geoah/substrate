@@ -768,7 +768,9 @@ row of controls scopes every chart: the metrics, the range (today, the last
 7 or 30 days, 6 months, a year, or a custom range of days on the calendar),
 the bucket (automatic from the range, 1, 5 or 15 minutes, an hour, a day, a
 week, a month; automatic reads a window of two hours or less, such as a
-workout's trace, by the minute), where a day, week or month starts (where
+workout's trace, by the minute, and reads in days where it would read in
+hours and a sleep metric is drawn, since a source may write a night's
+time in each stage as one span over the whole night), where a day, week or month starts (where
 you were, or your time zone), what to group by (metric,
 source or about; a category metric is always grouped by code), where to read from (automatic, raw points,
 vendor summaries, or raw where a bucket is covered), and the sources,
@@ -830,7 +832,9 @@ zooms into the hours it was lived. Picking your zone (`?days=zone`) cuts
 the buckets at your midnights instead; an hour or finer is always an
 instant. A sleep metric (its record's `category` is `sleep`) in days, weeks
 or months is placed by its end (`bucket.place: "end"`), so a night lands on
-the day you woke and a week is the sum of its days.
+the day you woke and a week is the sum of its days. Where a category's
+bucket holds more time than it lasts (a night's spans counted whole in the
+hour they start in), the chart says so and suggests a day bucket.
 
 Each metric plans its own read, and the reads that match in filter, range,
 bucket, grouping and sources are one request, across the timeline's charts,

@@ -810,6 +810,56 @@ describe("the timeline's requests", () => {
     expect(read.reducers).toEqual(["sum"])
   })
 
+  it("reads a week of sleep stages in days, each night on the day it ends", async () => {
+    // A week would read in hours, and a night's stage totals, one span over
+    // the whole night, would fill one hour.
+    const week =
+      "range=custom&start=2026-10-04T21:00:00.000Z&end=2026-10-11T21:00:00.000Z"
+    const server = mount(`?metric=health/sleep_stage&${week}`)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/sleep_stage")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/sleep_stage")[0].aggregate.bucket
+    ).toMatchObject({ calendar: "day", place: "end" })
+    expect(
+      screen
+        .getByRole("radio", { name: "Automatic: day" })
+        .getAttribute("aria-checked")
+    ).toBe("true")
+    // Heart rate alone reads the same week in hours.
+    cleanup()
+    const heart = mount(`?metric=health/heart_rate&${week}`)
+    await waitFor(() =>
+      expect(charts(heart.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    expect(
+      charts(heart.seen, "health/heart_rate")[0].aggregate.bucket
+    ).toMatchObject({ calendar: "hour" })
+  })
+
+  it("says where a picked bucket is shorter than the nights it holds", async () => {
+    const hour = (code: string, value: string) => ({
+      ...SLEEP.rows[0],
+      start: "2026-10-07T23:00:00+03:00",
+      end: "2026-10-08T00:00:00+03:00",
+      group: { code },
+      values: [{ reducer: "sum", value, unit: "min" }],
+    })
+    mount(`?metric=health/sleep_stage&${WINDOW}&bucket=hour`, false, (read) =>
+      read.aggregate.metric
+        ? {
+            ...SLEEP,
+            rows: [hour("light", "282.6"), hour("deep", "79.8")],
+          }
+        : answer(read)
+    )
+    const chart = await lane("Sleep stage")
+    expect(
+      await within(chart).findByText(/count whole in the bucket they start in/)
+    ).toBeTruthy()
+  })
+
   it("keeps a record's subsecond window from its link to the request", async () => {
     const search = recordTimelineSearch({
       metric: { ref: `${METRIC}/health/heart_rate` },

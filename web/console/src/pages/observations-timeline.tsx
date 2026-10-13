@@ -50,6 +50,7 @@ import { useTimelineControls } from "@/hooks/use-timeline-controls"
 import type { AggregateFrom } from "@/lib/api/types"
 import { distinct, sameRef } from "@/lib/observations"
 import { FROM_CHOICES } from "@/lib/observations-reads"
+import { nightBucket } from "@/lib/observations-time"
 import { planPlot, splitCharts } from "@/lib/overlay"
 import { shortRef } from "@/lib/stream-table"
 import { ARRAY, FROM_VALUES, GROUP_VALUES } from "@/lib/timeline-address"
@@ -79,7 +80,7 @@ export function ObservationsTimelinePage() {
   const sources = distinct(sourceParam.map((v) => shortRef(v, pins.source)))
   const abouts = distinct(aboutParam.map((v) => shortRef(v, pins.about)))
   const controls = useTimelineControls("7d")
-  const { range, size } = controls
+  const { range } = controls
   const [group, setGroup] = useQueryState(
     "group",
     parseAsStringLiteral(GROUP_VALUES).withDefault("metric")
@@ -158,6 +159,11 @@ export function ObservationsTimelinePage() {
       ].map((value) => ({ value, label: value })),
     },
   ]
+  // A sleep metric reads a week in days, never in hours a night overfills.
+  const size = metrics.some((m) => obs.metricOf(m)?.category === "sleep")
+    ? nightBucket(controls.bucket, controls.size)
+    : controls.size
+  const sized = { ...controls, size }
   // A metric is planned once its streams are read, so one being added waits
   // while the others stay drawn; one whose read failed is said apart.
   const known = metrics.filter((m) => obs.knows(m) && !obs.failed(m))
@@ -253,8 +259,8 @@ export function ObservationsTimelinePage() {
           />
         )}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <BucketControl controls={controls} />
-          <DayControl controls={controls} />
+          <BucketControl controls={sized} />
+          <DayControl controls={sized} />
           <GroupControl
             value={group}
             onChange={(next) => void setGroup(next === "metric" ? null : next)}

@@ -81,6 +81,7 @@ import {
 import {
   assignAxes,
   leftOutWords,
+  overfull,
   plotRows,
   seriesColors,
   seriesKey,
@@ -843,7 +844,7 @@ function chartNotes(
   }
 ): string[] {
   const notes: string[] = []
-  for (const { plot, exact, held } of states) {
+  for (const { plot, exact, held, rows } of states) {
     const own: string[] = []
     // A ranked read uses the reader's order. Otherwise the server decides
     // it, so the sources are listed by name, implying no order.
@@ -881,6 +882,11 @@ function chartNotes(
       )
     }
     if (plot.shape === "coded") own.push("Stacked by category.")
+    if (!held && overfull(plot, rows)) {
+      own.push(
+        "Some spans are longer than one bucket and count whole in the bucket they start in, so a bucket can hold more time than it lasts. Pick Day to see each night whole."
+      )
+    }
     if (plot.fromReason === "summaries-only") {
       own.push("Read from the vendor's summaries, the only values it has.")
     }

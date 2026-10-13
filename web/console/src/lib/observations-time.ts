@@ -355,6 +355,19 @@ export function bucketSizeOf(
   return choice === "auto" ? autoBucket(range) : choice
 }
 
+/** The size a chart drawing a sleep metric reads at when nobody picked
+ * one: a day where the range's own size would be an hour. A source may
+ * write a night's time in each stage as one span over the whole night
+ * (Apple Health's totals), and an amount counts whole in one bucket, so an
+ * hour would hold the whole night; a day, placed by its end, holds one
+ * night. */
+export function nightBucket(
+  choice: BucketChoice,
+  size: BucketSize
+): BucketSize {
+  return choice === "auto" && size === "hour" ? "day" : size
+}
+
 /** About how many buckets a read makes: the range's buckets times its
  * groups, which is what the request's budget counts (`maxBuckets`). */
 export function bucketEstimate(

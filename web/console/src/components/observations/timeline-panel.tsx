@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
-import type { RangePreset } from "@/lib/observations-time"
+import { nightBucket, type RangePreset } from "@/lib/observations-time"
 import { planPlot } from "@/lib/overlay"
 import {
   selectedStreams,
@@ -47,7 +47,7 @@ export function TimelinePanel({
   className?: string
 }) {
   const controls = useTimelineControls(PANEL_RANGE)
-  const { range, size } = controls
+  const { range } = controls
   // `?group=` is the grid's grouping on this page; the chart's is `?by=`.
   const [by, setBy] = useQueryState(
     "by",
@@ -70,6 +70,11 @@ export function TimelinePanel({
   const picked = selectedStreams(selection, own.streams).filter(
     (s) => !own.failed(s.metric)
   )
+  // A sleep metric reads a week in days, never in hours a night overfills.
+  const size = metrics.some((m) => own.metricOf(m)?.category === "sleep")
+    ? nightBucket(controls.bucket, controls.size)
+    : controls.size
+  const sized = { ...controls, size }
   const plots = selectionByMetric(picked).map((entry) =>
     // By id where the pin allows, so a metric's reducer and unit read
     // short in the address.
@@ -122,8 +127,8 @@ export function TimelinePanel({
           onPreset={controls.onPreset}
           onCustom={controls.onCustom}
         />
-        <BucketControl controls={controls} />
-        <DayControl controls={controls} />
+        <BucketControl controls={sized} />
+        <DayControl controls={sized} />
         <GroupControl
           value={by}
           onChange={(next) => void setBy(next === "metric" ? null : next)}

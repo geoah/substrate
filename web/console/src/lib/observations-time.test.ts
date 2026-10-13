@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   autoBucket,
+  nightBucket,
   axisTicks,
   bucketEstimate,
   bucketOf,
@@ -64,6 +65,10 @@ describe("ranges and buckets", () => {
     expect(autoBucket(presetRange("6m", now))).toBe("week")
     expect(autoBucket(presetRange("1y", now))).toBe("week")
     expect(autoBucket({ start: 0, end: 3 * 365 * DAY })).toBe("month")
+    // A sleep metric reads a week in days, and a picked size as picked.
+    expect(nightBucket("auto", autoBucket(presetRange("7d", now)))).toBe("day")
+    expect(nightBucket("auto", "15m")).toBe("15m")
+    expect(nightBucket("hour", "hour")).toBe("hour")
     for (const p of ["today", "7d", "30d", "6m", "1y"] as const) {
       const r = presetRange(p, now)
       expect(bucketEstimate(r, autoBucket(r))).toBeLessThan(200)

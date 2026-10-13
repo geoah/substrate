@@ -39,6 +39,7 @@ import {
   fromOf,
   leftOutWords,
   markOf,
+  overfull,
   planPlot,
   plotRows,
   seriesColors,
@@ -458,6 +459,45 @@ describe("one metric's plot", () => {
       timezone: "Europe/Athens",
     })
     expect(hour.local).toBeUndefined()
+  })
+
+  it("says where a category's buckets hold more time than they last", () => {
+    const stage = { shape: "coded" as const, unit: "min", pickedKey: "sum" }
+    const row = (start: string, end: string, code: string, min: string) => ({
+      start,
+      end,
+      group: { code },
+      values: [{ reducer: "sum", value: min, unit: "min" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    // Apple Health's night: each stage one span over the whole night, so
+    // the hour it starts in holds 461 minutes.
+    const hour = ["2026-10-07T23:00:00+03:00", "2026-10-08T00:00:00+03:00"]
+    expect(
+      overfull(stage, [
+        row(hour[0], hour[1], "light", "282.6"),
+        row(hour[0], hour[1], "deep", "79.8"),
+        row(hour[0], hour[1], "rem", "98.8"),
+      ])
+    ).toBe(true)
+    // The same night in a day fits.
+    const day = ["2026-10-08T00:00:00+03:00", "2026-10-09T00:00:00+03:00"]
+    expect(
+      overfull(stage, [
+        row(day[0], day[1], "light", "282.6"),
+        row(day[0], day[1], "deep", "79.8"),
+      ])
+    ).toBe(false)
+    // An hour of Garmin's segments holds at most the hour.
+    expect(
+      overfull(stage, [
+        row(hour[0], hour[1], "light", "45"),
+        row(hour[0], hour[1], "deep", "15"),
+      ])
+    ).toBe(false)
   })
 
   it("puts a night on the day it ends, in days, weeks and months", () => {

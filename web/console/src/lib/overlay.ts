@@ -47,7 +47,7 @@ import {
   type BucketSize,
   type TimeRange,
 } from "@/lib/observations-time"
-import { rowsInRange } from "@/lib/observations-answer"
+import { rowValue, rowsInRange } from "@/lib/observations-answer"
 import {
   laneGroupKey,
   laneRead,
@@ -677,6 +677,39 @@ export function plotRows(
       plot.byChannel ? channelKey(base, r.group?.channel) : base
     )
   })
+}
+
+/** Each duration unit's length, for `overfull`. */
+const DURATION_MS: Record<string, number> = {
+  ms: 1,
+  s: 1000,
+  min: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+}
+
+/** Whether a category's time adds up to more than a bucket lasts in some
+ * bucket of `rows`: its spans are longer than a bucket (a night's stage
+ * totals written over the whole night), and each counts whole in the one
+ * bucket it is placed in. */
+export function overfull(
+  plot: Pick<Plot, "shape" | "unit" | "pickedKey">,
+  rows: readonly AggregateRow[]
+): boolean {
+  const per = DURATION_MS[plot.unit]
+  if (plot.shape !== "coded" || !per) return false
+  const held = new Map<string, { time: number; length: number }>()
+  for (const row of rows) {
+    const v = rowValue(row, plot.pickedKey)
+    const time = Number(v?.value ?? 0) * per
+    const length = Date.parse(row.end) - Date.parse(row.start)
+    if (!Number.isFinite(time) || !(length > 0)) continue
+    const at = held.get(row.start) ?? { time: 0, length }
+    at.time += time
+    held.set(row.start, at)
+  }
+  // A minute's slack for rounding at the bucket's edges.
+  return [...held.values()].some((b) => b.time > b.length + 60_000)
 }
 
 /** Every value one plot's series could take, in a stable order: its
