@@ -12,6 +12,7 @@ import (
 // posts every delivery it finds, so a file the second run did not write
 // would load a second life beside the first.
 func TestWriteOutputReplacesAnEarlierRun(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	write := func(o Options) []string {
 		t.Helper()

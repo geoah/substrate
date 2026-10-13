@@ -143,6 +143,7 @@ func fitValue(t *testing.T, p map[string]any, i int, field string) float64 {
 }
 
 func TestGoogleFitEmitsTheDefaultLife(t *testing.T) {
+	t.Parallel()
 	p, files := fitEmit(t, Options{})
 	days := p.Days()
 	var nights, naps, workouts, weighIns, pressures, glucose int
@@ -383,6 +384,7 @@ func TestGoogleFitEmitsTheDefaultLife(t *testing.T) {
 }
 
 func TestGoogleFitIsDeterministic(t *testing.T) {
+	t.Parallel()
 	_, a := fitEmit(t, Options{})
 	_, b := fitEmit(t, Options{})
 	if len(a) != len(b) {
@@ -401,6 +403,7 @@ func TestGoogleFitIsDeterministic(t *testing.T) {
 }
 
 func TestGoogleFitThreeDaysIsSmall(t *testing.T) {
+	t.Parallel()
 	p, files := fitEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	var size int
 	var exact []string
@@ -432,6 +435,7 @@ func TestGoogleFitThreeDaysIsSmall(t *testing.T) {
 // and midnight its points are the sleeping persona's, not the waking curve
 // of the day that is ending.
 func TestGoogleFitHeartRateFollowsTheNextNight(t *testing.T) {
+	t.Parallel()
 	p, files := fitEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	sid := fitDerivedID("com.google.heart_rate.bpm", "merge_heart_rate_bpm")
 	var nights []*Sleep

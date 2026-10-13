@@ -75,6 +75,7 @@ func manualDocs(t *testing.T, o Options) []map[string]any {
 // quantity, a US panel in mg/dL on the mass twins for convertlab to bridge,
 // and the hotel weigh-in held for the day like the catalogue's body gauges.
 func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
+	t.Parallel()
 	codes := catalogueCodes(t)
 	var results, mass, weighIns int
 	for _, doc := range manualDocs(t, Options{}) {
@@ -121,6 +122,7 @@ func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 // The hotel weigh-in is on the trip's third day, and only a range holding
 // that day writes it, though a range holding any trip day keeps the trip.
 func TestManualWeighsInAtTheHotelInsideTheRange(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		start Date
 		want  int

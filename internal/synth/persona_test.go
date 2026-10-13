@@ -8,6 +8,7 @@ import (
 )
 
 func TestPersonaIsDeterministic(t *testing.T) {
+	t.Parallel()
 	a, err := NewPersona(Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +44,7 @@ func TestPersonaIsDeterministic(t *testing.T) {
 }
 
 func TestPersonaDefaultLife(t *testing.T) {
+	t.Parallel()
 	p, err := NewPersona(Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -147,6 +149,7 @@ func TestPersonaDefaultLife(t *testing.T) {
 }
 
 func TestPersonaOptions(t *testing.T) {
+	t.Parallel()
 	p, err := NewPersona(Options{Start: NewDate(2026, time.March, 1), End: NewDate(2026, time.March, 3), HomeZone: "America/New_York"})
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +187,7 @@ func TestPersonaOptions(t *testing.T) {
 }
 
 func TestDate(t *testing.T) {
+	t.Parallel()
 	d := NewDate(2026, time.December, 31)
 	if d.Add(1) != NewDate(2027, time.January, 1) || d.Add(-31) != NewDate(2026, time.November, 30) {
 		t.Fatalf("Add: %s %s", d.Add(1), d.Add(-31))
@@ -204,6 +208,7 @@ func TestDate(t *testing.T) {
 // starts, the days the zone changes included, so no instant belongs to two
 // days and none to no day, whichever emitter samples them.
 func TestPersonaDaysTileTime(t *testing.T) {
+	t.Parallel()
 	p, err := NewPersona(Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -231,6 +236,7 @@ func TestPersonaDaysTileTime(t *testing.T) {
 // One body cannot sleep and train at once: no night or nap overlaps a
 // workout, so every emitter reads the same instant as asleep or awake.
 func TestPersonaNeverSleepsThroughAWorkout(t *testing.T) {
+	t.Parallel()
 	p, err := NewPersona(Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -256,6 +262,7 @@ func TestPersonaNeverSleepsThroughAWorkout(t *testing.T) {
 // A weigh-in and a blood pressure reading happen awake and at rest: after
 // the night, outside every workout.
 func TestPersonaWeighsInAndReadsPressureAwake(t *testing.T) {
+	t.Parallel()
 	p, err := NewPersona(Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -296,6 +303,7 @@ func TestPersonaWeighsInAndReadsPressureAwake(t *testing.T) {
 // end, whatever the sport: a yoga class neither starts at a runner's warm-up
 // rate nor climbs to its cap in the closing rest.
 func TestWorkoutHeartRateWarmsUpAndSettles(t *testing.T) {
+	t.Parallel()
 	p, err := NewPersona(Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -331,6 +339,7 @@ func TestWorkoutHeartRateWarmsUpAndSettles(t *testing.T) {
 // The trip's run and the hotel weigh-in fall on the trip's third day,
 // whichever trip the options name.
 func TestPersonaTripRunFollowsTheTrip(t *testing.T) {
+	t.Parallel()
 	trip := &Span{NewDate(2026, time.August, 3), NewDate(2026, time.August, 7), "Europe/London"}
 	p, err := NewPersona(Options{Trip: trip})
 	if err != nil {

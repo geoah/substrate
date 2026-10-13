@@ -134,6 +134,7 @@ func localDay(t *testing.T, at time.Time, tzd any) Date {
 }
 
 func TestWhoopEmitsTheDefaultLife(t *testing.T) {
+	t.Parallel()
 	p, files := whoopEmit(t, Options{})
 	days := p.Days()
 	var naps, workouts int
@@ -408,6 +409,7 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 // The spellings whoopsync and the recorded fixtures share: floats keep their
 // decimal point, instants are UTC milliseconds.
 func TestWhoopNumbersAreSpelledAsWhoopSendsThem(t *testing.T) {
+	t.Parallel()
 	for v, want := range map[float64]string{55: "55.0", 96.4375: "96.4375", 17.04960001: "17.0496", 100: "100.0", 0.5: "0.5"} {
 		if got := whoopDec(v, 4); string(got) != want {
 			t.Errorf("whoopDec(%v) = %s, want %s", v, got, want)
@@ -421,6 +423,7 @@ func TestWhoopNumbersAreSpelledAsWhoopSendsThem(t *testing.T) {
 }
 
 func TestWhoopIsDeterministic(t *testing.T) {
+	t.Parallel()
 	_, a := whoopEmit(t, Options{})
 	_, b := whoopEmit(t, Options{})
 	if len(a) != len(b) {
@@ -438,6 +441,7 @@ func TestWhoopIsDeterministic(t *testing.T) {
 }
 
 func TestWhoopThreeDaysIsSmall(t *testing.T) {
+	t.Parallel()
 	_, files := whoopEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	var size int
 	for _, b := range files {
@@ -464,6 +468,7 @@ func TestWhoopThreeDaysIsSmall(t *testing.T) {
 // A new strap calibrates over its first three days, whatever day the range
 // starts on.
 func TestWhoopCalibratesTheRangesFirstThreeRecoveries(t *testing.T) {
+	t.Parallel()
 	p, files := whoopEmit(t, Options{Start: NewDate(2026, time.July, 1), End: NewDate(2026, time.July, 31)})
 	recoveries, _ := whoopWalk(t, files, whoopRecoveryPath)
 	if len(recoveries) != len(p.Days()) {

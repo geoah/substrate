@@ -14,6 +14,7 @@ import (
 // (internal/providere2e/runner/mockserver.py, recording_name) on 2026-10-12,
 // so a drift on either side fails here.
 func TestRecordingNameMatchesTheMockServer(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		method, path string
 		pairs        []Pair
@@ -76,6 +77,7 @@ func mockServerSet(t *testing.T, name string) map[string]bool {
 }
 
 func TestParamSetsMatchTheMockServer(t *testing.T) {
+	t.Parallel()
 	for name, goSet := range map[string]map[string]bool{"PAGINATION_PARAMS": PaginationParams, "SECRET_PARAMS": SecretParams} {
 		if py := mockServerSet(t, name); !maps.Equal(py, goSet) {
 			t.Errorf("%s differs from the mock server's:\n go %v\n py %v", name, slices.Sorted(maps.Keys(goSet)), slices.Sorted(maps.Keys(py)))

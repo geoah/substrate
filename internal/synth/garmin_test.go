@@ -122,6 +122,7 @@ func garminWeekChunks(p *Persona) [][]Date {
 }
 
 func TestGarminEmitsTheDefaultLife(t *testing.T) {
+	t.Parallel()
 	p, files, deliveries, bodies := garminEmit(t, Options{})
 	days := p.Days()
 	inRange := func(d Date) bool { return !d.Before(p.Options.Start) && !d.After(p.Options.End) }
@@ -443,6 +444,7 @@ func TestGarminEmitsTheDefaultLife(t *testing.T) {
 }
 
 func TestGarminIsDeterministic(t *testing.T) {
+	t.Parallel()
 	_, a, da, _ := garminEmit(t, Options{})
 	_, b, db, _ := garminEmit(t, Options{})
 	for name, body := range a {
@@ -465,6 +467,7 @@ func TestGarminIsDeterministic(t *testing.T) {
 }
 
 func TestGarminThreeDaysIsSmall(t *testing.T) {
+	t.Parallel()
 	p, files, deliveries, _ := garminEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	size := 0
 	for _, d := range deliveries {
@@ -489,6 +492,7 @@ func TestGarminThreeDaysIsSmall(t *testing.T) {
 // The watch walks the persona's stride: a quarter hour with steps and no
 // workout covers the steps times StrideM, as every other emitter's does.
 func TestGarminWalksThePersonasStride(t *testing.T) {
+	t.Parallel()
 	_, _, deliveries, bodies := garminEmit(t, Options{Start: NewDate(2026, time.September, 15), End: NewDate(2026, time.September, 15)})
 	checked := 0
 	for i := range deliveries {
@@ -514,6 +518,7 @@ func TestGarminWalksThePersonasStride(t *testing.T) {
 // the heart rate alone. The altitude climbs what the summary says it
 // climbed.
 func TestGarminActivityDetailsCarryTheRoute(t *testing.T) {
+	t.Parallel()
 	_, _, deliveries, bodies := garminEmit(t, Options{})
 	fields := map[string][]string{
 		"RUNNING":           {"speedMetersPerSecond", "stepsPerMinute", "powerInWatts", "elevationInMeters"},
@@ -572,6 +577,7 @@ func TestGarminActivityDetailsCarryTheRoute(t *testing.T) {
 // An activity starts on the ground of the zone it is in: 95 m in Athens, 20
 // in London, and 50 anywhere the persona has no altitude for.
 func TestGarminStartsAnActivityOnItsZonesGround(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		o    Options
 		want map[string]float64
@@ -615,6 +621,7 @@ func TestGarminStartsAnActivityOnItsZonesGround(t *testing.T) {
 // A Saturday evening at home the watch takes a two-minute health snapshot:
 // heart rate, breathing, stress, SpO2 and HRV every five seconds.
 func TestGarminTakesAWeeklyHealthSnapshot(t *testing.T) {
+	t.Parallel()
 	p, _, deliveries, bodies := garminEmit(t, Options{})
 	want := 0
 	for _, d := range p.Days() {

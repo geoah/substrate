@@ -85,6 +85,7 @@ func ahNum(t *testing.T, row map[string]any, key string) float64 {
 }
 
 func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
+	t.Parallel()
 	p, out := ahEmit(t, Options{})
 	days := p.Days()
 	if len(out.Deliveries) != len(days) {
@@ -290,6 +291,7 @@ func obj(m map[string]any, path ...string) any {
 // The device's readings follow the persona: the day's steps within the
 // phone's and the watch's few percent, the evening after bedtime asleep.
 func TestAppleHealthFollowsThePersona(t *testing.T) {
+	t.Parallel()
 	p, out := ahEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	asleep := 0
 	for i, d := range out.Deliveries {
@@ -339,6 +341,7 @@ func TestAppleHealthFollowsThePersona(t *testing.T) {
 }
 
 func TestAppleHealthIsDeterministic(t *testing.T) {
+	t.Parallel()
 	_, a := ahEmit(t, Options{})
 	_, b := ahEmit(t, Options{})
 	if len(a.Deliveries) != len(b.Deliveries) {
@@ -358,6 +361,7 @@ func TestAppleHealthIsDeterministic(t *testing.T) {
 }
 
 func TestAppleHealthThreeDaysIsSmall(t *testing.T) {
+	t.Parallel()
 	_, out := ahEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	size := 0
 	for _, d := range out.Deliveries {
@@ -373,6 +377,7 @@ func TestAppleHealthThreeDaysIsSmall(t *testing.T) {
 // two sources over the same five minutes, which a reader has to choose
 // between. Every other bucket comes from one device.
 func TestAppleHealthSendsBothDevicesStepsOnSomeDays(t *testing.T) {
+	t.Parallel()
 	_, out := ahEmit(t, Options{})
 	days := 0
 	for _, d := range out.Deliveries {

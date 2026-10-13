@@ -17,6 +17,7 @@ type span struct{ start, end time.Time }
 // minute of the persona's own bounds, so no source says asleep where
 // another says awake.
 func TestEmittersAgreeOnTheNightsAndWorkouts(t *testing.T) {
+	t.Parallel()
 	p, err := NewPersona(Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	if err != nil {
 		t.Fatal(err)
