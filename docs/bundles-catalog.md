@@ -995,6 +995,9 @@ outage continues on the next hourly run, and a deeper `backfillDepth` extends
 the walk. A `429` holds the account until Garmin's `Retry-After` and reads
 `throttled`; a `4xx` on one type (a `403` for a permission the user did not
 grant) stops that type and names it in `syncMessage` while the others go on.
+The refusal stays in `backfillRefused`, and the type is not asked for again
+until Garmin pushes a permission change dated after it or the owner asks for a
+sync now, so a refused type does not keep the account due every hour.
 Garmin is reported to backfill 30 or 90 days per request and only within about
 a month of the first connection, by sources that disagree.
 

@@ -455,6 +455,13 @@ data:
         per summary type, the start of the oldest backfill window Garmin accepted;
         the walk for a type is done when its cursor reaches `backfillUntil`
         less `backfillDepth`
+    backfillRefused:
+      type: json
+      writer: connector
+      displayName: Refused backfills
+      description: >-
+        per summary type Garmin refused to backfill, `{at, reason}`; asked
+        again after a later permission change or a sync now
     retryNotBefore:
       type: datetime
       writer: connector
@@ -3150,6 +3157,11 @@ data:
     outage resumes where it stopped, and a deeper `backfillDepth` extends the
     walk instead of starting it again.
 
+    A type Garmin refuses with a 4xx is kept in `backfillRefused` and left
+    out of the walk and of what makes the account due, until Garmin pushes a
+    permission change dated after the refusal or the owner asks for a sync
+    now: the same window asked again gets the same answer.
+
     The user id and permissions are one invocation of their own: its effects
     commit before the next invocation asks for a backfill window, so the
     summaries Garmin pushes in answer find the account.
@@ -3359,6 +3371,23 @@ data:
         return bool(want) and str(want) != str(props.get("syncRequestedAck") or "")
 
 
+    def _refusals(props):
+        """The refused types that stay refused, {key: [reason, at]}: Garmin
+        answers the same window the same way until the user's permissions
+        change, so only a permission change pushed after the refusal, or a
+        "sync now", asks again."""
+        if _requested(props):
+            return {}
+        changed = _parse(props.get("permissionsChangedAt"))
+        out = {}
+        for key, v in (props.get("backfillRefused") or {}).items():
+            at = _parse((v or {}).get("at")) if isinstance(v, dict) else None
+            if at is None or (changed is not None and changed >= at):
+                continue
+            out[key] = [str(v.get("reason") or "refused"), v["at"]]
+        return out
+
+
     def _held(props):
         hold = _parse(props.get("retryNotBefore"))
         return hold is not None and _now_dt() < hold
@@ -3375,7 +3404,8 @@ data:
             return False
         if not props.get("lastSyncedAt") or not props.get("userId"):
             return True
-        return bool(_left(props, _cursors(props), _secs(props.get("backfillUntil"))))
+        return bool(_left(props, _cursors(props), _secs(props.get("backfillUntil")),
+                          _refusals(props)))
 
 
     # ------------------------------------------------------------- the stamp
@@ -3412,6 +3442,10 @@ data:
         if cur.get("requested"):
             patch["syncRequestedAck"] = cur["requested"]
         failed = cur.get("failed") or []
+        if "failed" in cur:
+            since = cur.get("refusedAt") or {}
+            patch["backfillRefused"] = {k: {"at": since.get(k) or now, "reason": why}
+                                        for k, why in failed} or None
         left = _left(props, cur.get("cursors") or {}, cur.get("anchor"),
                      [k for k, _ in failed])
         windows = int(cur.get("windows") or 0)
@@ -3470,7 +3504,11 @@ data:
             return time.time() - float(cur.get("runStarted") or time.time()) >= RUN_BUDGET_SECONDS
 
         if cur.get("phase") is None:
-            cur.update({"phase": "user", "cursors": _cursors(props), "failed": [],
+            enabled = _enabled(props)
+            held = {k: v for k, v in _refusals(props).items() if k in enabled}
+            cur.update({"phase": "user", "cursors": _cursors(props),
+                        "failed": [[k, v[0]] for k, v in sorted(held.items())],
+                        "refusedAt": {k: v[1] for k, v in held.items()},
                         "windows": 0, "anchor": _secs(props.get("backfillUntil")),
                         "requested": str(props.get("syncRequestedAt") or "")})
 

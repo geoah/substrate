@@ -773,6 +773,29 @@ func TestGarminSyncHoldsOnRefusalAndRateLimit(t *testing.T) {
 		t.Errorf("dailies asked %d windows beside the refused type, want 7", got)
 	}
 
+	// The refusal stays on the account, so the schedule does not ask again:
+	// a sweep right after, with every other type walked, calls nothing.
+	if refused, _ := acct.Properties["backfillRefused"].(map[string]any); refused["activityDetails"] == nil {
+		t.Fatalf("backfillRefused = %v, want the refused activityDetails", acct.Properties["backfillRefused"])
+	}
+	sweep := func() {
+		t.Helper()
+		newStepper(t, ds, garminSyncFn, garminConfig(t, ds, base, nil)).drainApplying(nil)
+	}
+	calls := len(fake.seenPaths())
+	sweep()
+	if got := fake.seenPaths()[calls:]; len(got) != 0 {
+		t.Fatalf("a sweep over an account whose only type left was refused called %v", got)
+	}
+	// A permission change Garmin pushes after the refusal asks again.
+	perm := loadGarminFixture(t, "push_userPermissionsChange.json")
+	perm.body["userPermissionsChange"][0]["changeTimeInSeconds"] = time.Now().Unix() + 1
+	pushGarmin(t, ds, garminConfig(t, ds, "", nil), "webhook-perm", perm.withBody(t, perm.body))
+	sweep()
+	if got := len(fake.windows(t)["activityDetails"]); got != 2 {
+		t.Fatalf("activityDetails was asked %d times after the permission change, want twice", got)
+	}
+
 	// A deeper reach on a fresh account, cut off by a 429 part way.
 	ds2 := newGarminDataset(t, map[string]any{"backfillDepth": "last30d"})
 	fake2 := newFakeGarmin(t)
