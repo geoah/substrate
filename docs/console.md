@@ -738,10 +738,11 @@ it, and a filter that hides a selected row leaves it selected and drawn.
 **Timeline** (`?timeline=true`) opens a panel above the grid that draws the
 selected streams in one chart over a range (the last 30 days until you pick
 another), with the bucket, where its days start, and what to group the
-series by: metric, source or about (`?by=`). Each metric is one aggregate read narrowed to
+series by: metric, source or about (`?by=`). Each metric's read is narrowed to
 its selected sources, and to its things and channels where every selected
 stream names one; each keeps its own reducer and unit (`?reducer=`,
-`?unit=`). A stream the read takes that the selection leaves out (WHOOP's
+`?unit=`), and metrics whose reads match in everything else share one
+request, as on the timeline. A stream the read takes that the selection leaves out (WHOOP's
 heart rate on no channel, beside its selected workouts) is left out of the
 chart where it would draw a line of its own (grouped by source or about, or
 on another channel), and named under the chart where it joins a selected
@@ -836,15 +837,26 @@ case they all draw together. Two scales on one plot line up arbitrarily, so
 each axis carries its unit, each metric's row names its side, and its
 numbers are one click below.
 
-Each metric is one aggregate read naming it, and a chart composes its
-metrics' reads on one bucket axis, each read loading, refreshing or failing
-on its own row. A metric is planned once its streams are read: a metric
+Each metric plans its own read, and a chart sends the reads that match in
+filter, range, bucket, grouping and sources as one request, which names each
+metric in `aggregate.metrics` with its own unit, reducers, `from` and
+statistic ([several metrics in one read](api.md#several-metrics-in-one-read)).
+A request names at most 16 metrics, whose expected buckets add up to at
+most the server's cap of 10,000; past either, the chart sends another. Its budget is its metrics' budgets
+added up, so each metric may spend what its own read could. Each metric's
+row draws the answer's rows naming it in `group.metric`, and says on its own
+whether it is loading, refreshing or failed. Where the server refuses a
+request of several metrics, the chart reads each of them apart, so a
+refusal sits on the one metric it concerns and the others draw. Reads that
+differ in anything else go apart: a sleep metric placed by its end beside
+heart rate, or a metric from one source beside one resolved across several.
+A metric is planned once its streams are read: a metric
 being added waits under the charts already drawn, and choosing a source, a
-thing or a channel re-reads the charts, never the streams. While a changed read loads, the chart keeps drawing the
-earlier answer and the row says Updating…, where that answer has the same
-unit and grouping and carries the new reducer; after a change of unit or
-grouping, or to a reducer the earlier answer lacks, the row says Reading…
-over an empty chart. A metric that declares no unit is read in the unit of its
+thing or a channel re-reads the charts, never the streams. While a changed read loads, the chart keeps drawing each
+metric's earlier answer, alone or from a shared request, and the row says
+Updating…, where that answer has the same unit and grouping and carries the
+new reducer; after a change of unit or grouping, or to a reducer the earlier
+answer lacks, the row says Reading… and draws nothing of that metric. A metric that declares no unit is read in the unit of its
 newest selected stream, named in the request, so the axis and the answer
 agree. Grouped by anything but source, two or more sources (a stream that
 names no source counting as one) are resolved by
@@ -869,7 +881,8 @@ both: Garmin's HRV keeps each night's average and highest beside its
 five-minute trace, and reads `prefer-raw`. A row reads one statistic of the
 summaries, so where a metric's summaries keep several (WHOOP's average and
 highest heart rate per cycle, Garmin's nightly HRV) the read names one in
-`filter.properties.statistic`: the average where they keep it, else the one
+`filter.properties.statistic`, or in a shared request in the metric's
+`statistic`: the average where they keep it, else the one
 kept, else the vendor's own, and **Statistic** picks another
 (`?statistic=`). A source whose summaries keep none of it is left out, and
 the chart says so; a summary's record opens the timeline on its own
@@ -878,7 +891,8 @@ says why and what helps. A category metric is always grouped by code: a
 coded gauge asks for the time in each category (the bare `timeInState`), a
 coded amount for its total. A read the console expects to make more than
 1,440 buckets (the server's default), counting every group, raises its
-budget to the server's cap (`budget.maxBuckets: 10000`); one past the cap
+budget to the server's cap (`budget.maxBuckets: 10000`), and a shared
+request adds up its metrics' budgets to at most the cap; one past the cap
 is not asked for, and its row says to pick a larger bucket; a refusal the
 server makes anyway is shown with its reason. The read itself is [the aggregate read](api.md#the-aggregate-read).
 

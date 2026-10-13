@@ -6,16 +6,29 @@ import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { latestRead } from "@/lib/observations-reads"
-import { LATEST, OBSERVATION, TRACE } from "@/lib/observations.test-fixtures"
+import {
+  BODY_MASS,
+  GARMIN,
+  HEART,
+  LATEST,
+  OBSERVATION,
+  STEPS,
+  STEPS_METRIC,
+  TRACE,
+  WEIGHT,
+} from "@/lib/observations.test-fixtures"
 
 import {
   aggregateCurl,
   aggregatePath,
   aggregateQueryOptions,
   heldAnswer,
+  metricAnswer,
+  metricReads,
   type AggregateRead,
 } from "./observations"
 import { recordWriteReaches } from "./records"
+import type { AggregateResult } from "./types"
 
 const sleepRead: AggregateRead = {
   filter: { kinds: [OBSERVATION] },
@@ -190,6 +203,162 @@ describe("heldAnswer", () => {
     expect(
       heldAnswer(client, read(["sum"], { groupBy: ["about"] }), kinds)
     ).toBeUndefined()
+  })
+})
+
+/** Weight and steps over September in days, read together. */
+const together: AggregateRead = {
+  filter: { implements: "substrate.reamde.dev/core/observed" },
+  aggregate: {
+    metrics: [
+      { ref: BODY_MASS, unit: "[lb_av]", reducers: ["avg", "min", "max"] },
+      { ref: STEPS_METRIC, from: "prefer-raw", statistic: "sum" },
+      { ref: HEART, reducers: ["max"] },
+    ],
+    from: "raw",
+    range: sleepRead.aggregate.range,
+    bucket: { calendar: "day", fallbackTimezone: "Europe/Athens" },
+    reducers: ["sum"],
+    sources: { policy: "priority" },
+    budget: { maxBuckets: 4320, maxSamples: 3000000, maxGroups: 600 },
+  },
+}
+
+/** Weight's and steps' answers as one several-metric answer. */
+const togetherAnswer: AggregateResult = {
+  units: { [BODY_MASS]: "[lb_av]", [STEPS_METRIC]: "{steps}", [HEART]: "/min" },
+  exact: false,
+  head: WEIGHT.head,
+  sources: [GARMIN],
+  rows: [
+    ...WEIGHT.rows.map((r) => ({ ...r, group: { metric: BODY_MASS } })),
+    ...STEPS.rows.map((r) => ({
+      ...r,
+      group: { metric: STEPS_METRIC, source: GARMIN },
+    })),
+  ],
+}
+
+describe("metricReads", () => {
+  it("is each metric's own read of a several-metric read", () => {
+    const [weight, steps, heart] = metricReads(together)
+    const shared = {
+      range: together.aggregate.range,
+      bucket: together.aggregate.bucket,
+      sources: together.aggregate.sources,
+    }
+    expect(weight).toEqual({
+      filter: together.filter,
+      aggregate: {
+        ...shared,
+        metric: { ref: BODY_MASS },
+        unit: "[lb_av]",
+        reducers: ["avg", "min", "max"],
+        from: "raw",
+      },
+    })
+    // The read's reducers where the entry names none, the entry's from and
+    // statistic, which narrows the summaries as the filter's would.
+    expect(steps).toEqual({
+      filter: { ...together.filter, properties: { statistic: { eq: "sum" } } },
+      aggregate: {
+        ...shared,
+        metric: { ref: STEPS_METRIC },
+        reducers: ["sum"],
+        from: "prefer-raw",
+      },
+    })
+    expect(heart.aggregate.reducers).toEqual(["max"])
+    expect(heart.aggregate.unit).toBeUndefined()
+    // A read of one metric is its own.
+    expect(metricReads(sleepRead)).toEqual([sleepRead])
+  })
+})
+
+describe("metricAnswer", () => {
+  it("is one metric's rows of a several-metric answer, as its own read answers", () => {
+    const weight = metricAnswer(togetherAnswer, together, BODY_MASS)!
+    expect(weight.metric).toBe(BODY_MASS)
+    expect(weight.unit).toBe("[lb_av]")
+    expect(weight.units).toBeUndefined()
+    // Not grouped by metric: no row names it, and a row with no other group
+    // has none.
+    expect(weight.rows).toEqual(WEIGHT.rows)
+    const steps = metricAnswer(togetherAnswer, together, STEPS_METRIC)!
+    expect(steps.rows.map((r) => r.group)).toEqual(
+      STEPS.rows.map(() => ({ source: GARMIN }))
+    )
+    // A metric the answer names with no row answers none.
+    expect(metricAnswer(togetherAnswer, together, HEART)!.rows).toEqual([])
+    // Grouped by metric, the rows keep it.
+    const byMetric = {
+      ...together,
+      aggregate: { ...together.aggregate, groupBy: ["metric" as const] },
+    }
+    expect(
+      metricAnswer(togetherAnswer, byMetric, BODY_MASS)!.rows[0].group
+    ).toEqual({ metric: BODY_MASS })
+    // An answer that does not name the metric holds none of it.
+    expect(metricAnswer(togetherAnswer, together, `${HEART}x`)).toBeUndefined()
+    // A read of one metric answers it whole.
+    expect(metricAnswer(WEIGHT, sleepRead, BODY_MASS)).toBe(WEIGHT)
+  })
+})
+
+describe("heldAnswer across several metrics", () => {
+  const kinds = [OBSERVATION, TRACE]
+  const [weightAlone, stepsAlone] = metricReads(together)
+
+  it("holds a metric's rows of a several-metric answer for its own read", () => {
+    const client = new QueryClient()
+    client.setQueryData(
+      aggregateQueryOptions(together, kinds).queryKey,
+      togetherAnswer
+    )
+    const held = heldAnswer(
+      client,
+      {
+        ...weightAlone,
+        aggregate: { ...weightAlone.aggregate, reducers: ["avg"] },
+      },
+      kinds
+    )
+    expect(held?.rows).toEqual(WEIGHT.rows)
+    // Kilograms are not pounds.
+    expect(
+      heldAnswer(
+        client,
+        {
+          ...weightAlone,
+          aggregate: { ...weightAlone.aggregate, unit: "kg" },
+        },
+        kinds
+      )
+    ).toBeUndefined()
+  })
+
+  it("holds a several-metric read's metrics from their own answers", () => {
+    const client = new QueryClient()
+    client.setQueryData(aggregateQueryOptions(weightAlone, kinds).queryKey, {
+      ...WEIGHT,
+      unit: "[lb_av]",
+    })
+    // Steps read for a count alone: nothing held for its sum.
+    client.setQueryData(
+      aggregateQueryOptions(
+        {
+          ...stepsAlone,
+          aggregate: { ...stepsAlone.aggregate, reducers: ["count"] },
+        },
+        kinds
+      ).queryKey,
+      STEPS
+    )
+    const held = heldAnswer(client, together, kinds)!
+    expect(held.units).toEqual({ [BODY_MASS]: "[lb_av]" })
+    expect(metricAnswer(held, together, BODY_MASS)?.rows).toEqual(WEIGHT.rows)
+    expect(metricAnswer(held, together, STEPS_METRIC)).toBeUndefined()
+    expect(heldAnswer(new QueryClient(), together, kinds)).toBeUndefined()
   })
 })
 

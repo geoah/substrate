@@ -5,8 +5,9 @@
  * this way; the streams page's panel draws one chart and names what it
  * leaves out.
  *
- * Each metric is still one aggregate read (`laneRead`): a chart composes
- * its metrics' reads. Everything here is a pure function of the registry's
+ * Each metric plans its own read (`laneRead`), and a chart sends the reads
+ * that differ only in their metric's own choices as one several-metric read
+ * (`sharedReads`). Everything here is a pure function of the registry's
  * metric records, the streams, the reader's choices and the answers. */
 
 import type { AggregateRead } from "@/lib/api/observations"
@@ -264,6 +265,10 @@ export interface Plot {
   band: boolean
   spec?: LaneSpec
   read?: AggregateRead
+  /** The buckets its read is expected to make, counting every group
+   * (`bucketEstimate`): a read several metrics share adds theirs up
+   * (`sharedReads`). */
+  estimate: number
   groupKey?: AggregateGroupKey
   /** The read groups by channel too, so each channel is a series. */
   byChannel: boolean
@@ -561,6 +566,7 @@ export function planPlot(
     band: mark === "line" && shape === "gauge" && bandedReducer(reducer),
     spec,
     read: spec && !blocked ? laneRead(spec) : undefined,
+    estimate,
     groupKey: spec ? laneGroupKey(spec) : undefined,
     byChannel,
     pickedKey: spec ? reducerKey(laneReducers(spec)[0]) : reducer,

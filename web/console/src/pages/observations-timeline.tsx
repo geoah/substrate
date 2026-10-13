@@ -7,10 +7,10 @@
  *
  * The metrics overlay in one chart while they fit two units (the first on
  * the left axis, the second on the right) and otherwise split into as few
- * charts as hold them two units each (`lib/overlay.ts` splitCharts). Each
- * metric is still one aggregate read; a chart composes its metrics' reads
- * and carries each one's numbers under it, with the request itself in
- * technical mode. */
+ * charts as hold them two units each (`lib/overlay.ts` splitCharts). A
+ * chart reads its metrics in one request where their reads share
+ * everything but each metric's own choices, and carries each metric's
+ * numbers under it, with the requests themselves in technical mode. */
 
 import { useEffect, useMemo } from "react"
 import { Link } from "@tanstack/react-router"

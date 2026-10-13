@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-/** The timeline: one aggregate read per chosen metric, shaped by the
- * controls (bucket, grouping, reducer, unit, sources), the metrics overlaid
- * in charts of at most two units (the second on the right axis), each
- * metric in the mark its form earns, a legend that toggles series, one
- * tooltip and a zoom from the keyboard, the numbers under each chart, and
- * the request in technical mode. Served by a stand-in records route
- * answering the proposal's worked examples. */
+/** The timeline: each chosen metric's read shaped by the controls (bucket,
+ * grouping, reducer, unit, sources), a chart's metrics read in one request
+ * where they can be, the metrics overlaid in charts of at most two units
+ * (the second on the right axis), each metric in the mark its form earns,
+ * a legend that toggles series, one tooltip and a zoom from the keyboard,
+ * the numbers under each chart, and the request in technical mode. Served
+ * by a stand-in records route answering the proposal's worked examples. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -129,7 +129,8 @@ function mount(
   return Object.assign(server, { client })
 }
 
-/** The reads that named a metric, latest last. */
+/** The metric's own reads, latest last: a read of several metrics counts
+ * once for each (`perMetric`). */
 function charts(seen: SeenRead[], metric: string): SeenRead[] {
   return seen.filter((r) => r.aggregate.metric?.ref === `${METRIC}/${metric}`)
 }
@@ -151,7 +152,7 @@ async function addFilter(facet: string, value: RegExp) {
 }
 
 describe("the timeline's requests", () => {
-  it("issues one read per chosen metric, each shaped by its form", async () => {
+  it("reads each chosen metric, each shaped by its form", async () => {
     const server = mount(`?metric=health/body_mass,health/steps&${WINDOW}`)
     await lane("Weight and Steps")
     await waitFor(() =>
@@ -178,6 +179,95 @@ describe("the timeline's requests", () => {
     expect(charts(server.seen, "health/steps")[0].aggregate.reducers).toEqual([
       "sum",
     ])
+  })
+
+  it("reads a chart's metrics in one request, each drawn from its own rows", async () => {
+    const server = mount(
+      `?metric=health/body_mass,health/steps&${WINDOW}`,
+      true
+    )
+    const chart = await lane("Weight and Steps")
+    await waitFor(() =>
+      expect(server.sent.filter((r) => r.aggregate.metrics)).toHaveLength(1)
+    )
+    // Neither metric is read on its own.
+    expect(server.sent.filter((r) => r.aggregate.metric)).toEqual([])
+    const [read] = server.sent.filter((r) => r.aggregate.metrics)
+    expect(read.filter).toEqual({
+      implements: "substrate.reamde.dev/core/observed",
+    })
+    // Each metric's reducers and from in its entry, the range, the bucket
+    // and the budget the read's.
+    expect(read.aggregate.metrics).toEqual([
+      { ref: BODY_MASS, reducers: ["avg", "min", "max"], from: "raw" },
+      { ref: `${METRIC}/health/steps`, reducers: ["sum"], from: "raw" },
+    ])
+    expect(read.aggregate).toMatchObject({
+      bucket: { calendar: "day", fallbackTimezone: "Europe/Athens" },
+      budget: { maxBuckets: 2880, maxSamples: 2000000, maxGroups: 400 },
+    })
+    for (const own of ["metric", "unit", "reducers", "from"] as const) {
+      expect(read.aggregate[own]).toBeUndefined()
+    }
+    // Each metric's numbers are its own rows of the one answer.
+    for (const show of await within(chart).findAllByRole("button", {
+      name: "Show the numbers",
+    })) {
+      fireEvent.click(show)
+    }
+    const weight = within(chart).getByRole("table", {
+      name: "Weight in numbers",
+    })
+    const steps = within(chart).getByRole("table", { name: "Steps in numbers" })
+    expect(within(weight).getAllByRole("row")).toHaveLength(4)
+    expect(within(weight).getByText("72.6 kg")).toBeTruthy()
+    expect(within(steps).getAllByRole("row")).toHaveLength(4)
+    expect(within(steps).getByText("9812 steps")).toBeTruthy()
+    // With Technical details on, the one request, named for both.
+    const requests = chart.querySelectorAll("[data-slot=lane-request]")
+    expect(requests).toHaveLength(1)
+    expect(requests[0].textContent).toContain("Request for Weight and Steps")
+    expect(requests[0].textContent).toContain('"metrics"')
+  })
+
+  it("reads each metric apart where the server refuses them together", async () => {
+    const problem =
+      "aggregate.reducers[0]: sum does not apply to a gauge: a gauge is a level"
+    const server = mount(
+      `?metric=health/body_mass,health/steps&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric?.ref === `${METRIC}/health/steps`
+          ? new Response(
+              JSON.stringify({
+                error: {
+                  code: "validation",
+                  message: "the aggregate read was refused",
+                  problems: [problem],
+                },
+              }),
+              { status: 422, headers: { "Content-Type": "application/json" } }
+            )
+          : answer(read)
+    )
+    const chart = await lane("Weight and Steps")
+    // The refusal stays on its own metric's row, and the other draws.
+    const steps = within(chart).getByRole("group", { name: "Steps" })
+    await within(steps).findByText(problem)
+    const weight = within(chart).getByRole("group", { name: "Weight" })
+    expect(within(weight).queryByText(problem)).toBe(null)
+    await waitFor(() =>
+      expect(chart.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
+        null
+      )
+    )
+    // Asked once together, then once each.
+    expect(server.sent.filter((r) => r.aggregate.metrics)).toHaveLength(1)
+    expect(
+      server.sent.flatMap((r) =>
+        r.aggregate.metric ? [r.aggregate.metric.ref] : []
+      )
+    ).toEqual([BODY_MASS, `${METRIC}/health/steps`])
   })
 
   it("resolves overlapping sources by priority unless grouped by source", async () => {
@@ -483,7 +573,8 @@ describe("the timeline's requests", () => {
       vi.fn((input: RequestInfo | URL) => {
         const url = new URL(String(input), "http://test")
         const aggregate = url.searchParams.get("aggregate")
-        return aggregate && JSON.parse(aggregate).metric
+        const read = aggregate ? JSON.parse(aggregate) : undefined
+        return read?.metric || read?.metrics
           ? new Promise<Response>(() => {})
           : served(input)
       })
@@ -509,6 +600,22 @@ describe("the timeline's requests", () => {
     expect(weight.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
       null
     )
+  })
+
+  it("holds each metric of a shared read while a changed one is read", async () => {
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}`)
+    const chart = await lane("Weight and Steps")
+    await drawn(chart)
+    hangMetricReads()
+    const steps = within(chart).getByRole("group", { name: "Steps" })
+    fireEvent.click(within(steps).getByRole("button", { name: /^Show:/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /^Average/ }))
+    // Weight's held rows draw while steps, whose held answer lacks the
+    // average, is read.
+    const weight = within(chart).getByRole("group", { name: "Weight" })
+    await waitFor(() => expect(within(steps).getByText("Reading…")))
+    expect(within(weight).getByText("Updating…")).toBeTruthy()
+    expect(chart.querySelector("[data-slot=timeline-chart] svg")).not.toBe(null)
   })
 
   /** Leaves every read from here on unanswered. */

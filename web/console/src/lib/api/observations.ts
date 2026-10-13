@@ -12,7 +12,13 @@ import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { request } from "./http"
 import { RECORDS_PATH } from "./records"
-import type { Aggregate, AggregateResult, RecordFilter } from "./types"
+import type {
+  Aggregate,
+  AggregateMetricRead,
+  AggregateResult,
+  AggregateRow,
+  RecordFilter,
+} from "./types"
 
 /** One aggregate read: the records filter and the `aggregate` parameter,
  * which this module encodes onto the records route. */
@@ -62,17 +68,88 @@ export function aggregateQueryOptions(
   })
 }
 
+/** Each metric's own read within `read`: `read` itself where it names one
+ * metric (or none), and where it names several (`aggregate.metrics`), per
+ * entry the read that metric alone makes. That read takes the entry's
+ * unit, its reducers and `from` (else the read's), its statistic as
+ * `filter.properties.statistic`, and the read's filter, range, bucket,
+ * grouping and sources. It carries no budget, since a several-metric
+ * read's budget counts every metric. */
+export function metricReads(read: AggregateRead): AggregateRead[] {
+  const { metrics } = read.aggregate
+  if (!metrics) return [read]
+  const shared: Aggregate = { ...read.aggregate }
+  delete shared.metrics
+  delete shared.budget
+  return metrics.map((entry) => ({
+    filter: entry.statistic
+      ? {
+          ...read.filter,
+          properties: {
+            ...read.filter?.properties,
+            statistic: { eq: entry.statistic },
+          },
+        }
+      : read.filter,
+    aggregate: entryAggregate(shared, entry),
+  }))
+}
+
+function entryAggregate(shared: Aggregate, entry: AggregateMetricRead) {
+  const out: Aggregate = { ...shared, metric: { ref: entry.ref } }
+  if (entry.unit) out.unit = entry.unit
+  if (entry.reducers) out.reducers = entry.reducers
+  if (entry.from) out.from = entry.from
+  return out
+}
+
+/** The part of `result`, the answer to `read`, that one metric's own read
+ * answers: `result` itself where it answers one metric, and where it
+ * answers several (`units`), the rows naming `ref` in `group.metric` under
+ * its unit. Those rows leave `group.metric` out unless `read` groups by
+ * metric, as the metric's own read would answer them. Undefined where
+ * `units` does not name `ref`: an answer held for other metrics. */
+export function metricAnswer(
+  result: AggregateResult,
+  read: AggregateRead,
+  ref: string
+): AggregateResult | undefined {
+  if (!result.units) return result
+  if (!(ref in result.units)) return undefined
+  const keep = read.aggregate.groupBy?.includes("metric") ?? false
+  const out: AggregateResult = {
+    ...result,
+    metric: ref,
+    unit: result.units[ref] || undefined,
+    rows: result.rows.flatMap((row) => {
+      if (row.group?.metric !== ref) return []
+      if (keep) return [row]
+      const group = { ...row.group }
+      delete group.metric
+      const copy: AggregateRow = { ...row, group }
+      if (!Object.keys(group).length) delete copy.group
+      return [copy]
+    }),
+  }
+  delete out.units
+  if (!out.unit) delete out.unit
+  return out
+}
+
 /** The newest answer the cache holds that a chart can draw while `read`
  * loads: a read of the same metric over the same range, in the same unit
  * and grouping, that asked for every reducer `read` asks for, whatever its
- * bucket, filter or source. Any other answer would draw under the new
- * read's axis caption, series and column what it does not hold. A new
- * range is a new chart, so nothing holds across one. */
+ * bucket, filter or source, alone or as one metric of a several-metric
+ * read. Any other answer would draw under the new read's axis caption,
+ * series and column what it does not hold. A new range is a new chart, so
+ * nothing holds across one. For a several-metric read, each metric's held
+ * rows together, under `units` naming the metrics they hold. */
 export function heldAnswer(
   client: QueryClient,
   read: AggregateRead,
   kinds: readonly string[] = []
 ): AggregateResult | undefined {
+  if (read.aggregate.metrics) return heldTogether(client, read, kinds)
   const { metric, range } = read.aggregate
   if (!metric || !range) return undefined
   let newest: { at: number; data: AggregateResult } | undefined
@@ -84,20 +161,49 @@ export function heldAnswer(
     if (JSON.stringify(query.queryKey[1]) !== named) continue
     const held = query.queryKey[3] as AggregateRead | undefined
     const data = query.state.data as AggregateResult | undefined
+    if (!held || !data) continue
+    const own = metricReads(held).find(
+      (r) => r.aggregate.metric?.ref === metric.ref
+    )?.aggregate
     if (
-      !data ||
-      held?.aggregate.metric?.ref !== metric.ref ||
-      held.aggregate.range?.gte !== range.gte ||
-      held.aggregate.range?.lt !== range.lt ||
-      !drawsAs(held.aggregate, read.aggregate)
+      !own ||
+      own.range?.gte !== range.gte ||
+      own.range?.lt !== range.lt ||
+      !drawsAs(own, read.aggregate)
     ) {
       continue
     }
+    const part = metricAnswer(data, held, metric.ref)
+    if (!part) continue
     if (!newest || query.state.dataUpdatedAt > newest.at) {
-      newest = { at: query.state.dataUpdatedAt, data }
+      newest = { at: query.state.dataUpdatedAt, data: part }
     }
   }
   return newest?.data
+}
+
+/** A several-metric read's held answer: each metric's own (`heldAnswer`),
+ * its rows naming it in `group.metric`, `units` naming the metrics held.
+ * Undefined where none is held. */
+function heldTogether(
+  client: QueryClient,
+  read: AggregateRead,
+  kinds: readonly string[]
+): AggregateResult | undefined {
+  const parts = metricReads(read).flatMap((one) => {
+    const ref = one.aggregate.metric?.ref
+    const held = ref ? heldAnswer(client, one, kinds) : undefined
+    return ref && held ? [{ ref, held }] : []
+  })
+  if (!parts.length) return undefined
+  return {
+    units: Object.fromEntries(parts.map((p) => [p.ref, p.held.unit ?? ""])),
+    exact: parts.every((p) => p.held.exact),
+    rows: parts.flatMap(({ ref, held }) =>
+      held.rows.map((row) => ({ ...row, group: { ...row.group, metric: ref } }))
+    ),
+    head: parts[0].held.head,
+  }
 }
 
 /** Whether an answer to `held` carries what a chart of `next` draws: the

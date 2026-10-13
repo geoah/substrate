@@ -611,18 +611,87 @@ export function latestAnswer(
   return { ...latest, rows: [...newest.values()] }
 }
 
+/** Each metric's own read in a read the server saw: the read itself, or
+ * for a several-metric read (`aggregate.metrics`) per entry the read that
+ * metric alone makes, as docs/api.md defines an entry: its unit, its
+ * reducers and `from` (else the read's), its statistic as
+ * `filter.properties.statistic`, and the read's every other option but its
+ * budget. Written apart from the console's own `metricReads`. */
+export function perMetric(read: SeenRead): SeenRead[] {
+  const { metrics, ...rest } = read.aggregate
+  if (!metrics) return [read]
+  return metrics.map((m) => {
+    const aggregate: Aggregate = { ...rest, metric: { ref: m.ref } }
+    delete aggregate.budget
+    if (m.unit) aggregate.unit = m.unit
+    if (m.reducers) aggregate.reducers = m.reducers
+    if (m.from) aggregate.from = m.from
+    const properties = { ...read.filter.properties }
+    if (m.statistic) properties.statistic = { eq: m.statistic }
+    return {
+      filter: Object.keys(properties).length
+        ? { ...read.filter, properties }
+        : read.filter,
+      aggregate,
+    }
+  })
+}
+
+/** A several-metric read's answer as the server writes it, from each
+ * metric's own answer: their rows, each naming its metric in
+ * `group.metric`, ordered by bucket and then metric, `units` naming each
+ * metric's unit, and no `metric` or `unit`. The first refusal of any
+ * metric refuses the read. */
+function together(
+  read: SeenRead,
+  answer: (read: SeenRead) => AggregateResult | Response
+): AggregateResult | Response {
+  const parts = perMetric(read).map((one) => ({
+    ref: one.aggregate.metric!.ref,
+    out: answer(one),
+  }))
+  const refused = parts.find((p) => p.out instanceof Response)
+  if (refused) return refused.out
+  const answers = parts as { ref: string; out: AggregateResult }[]
+  const [first] = answers
+  const result: AggregateResult = {
+    ...first.out,
+    units: Object.fromEntries(answers.map((p) => [p.ref, p.out.unit ?? ""])),
+    exact: answers.every((p) => p.out.exact),
+    rows: answers
+      .flatMap(({ ref, out }) =>
+        out.rows.map((row) => ({
+          ...row,
+          group: { ...row.group, metric: ref },
+        }))
+      )
+      .sort(
+        (a, b) =>
+          Date.parse(a.start) - Date.parse(b.start) ||
+          (a.group.metric < b.group.metric ? -1 : 1)
+      ),
+  }
+  delete result.metric
+  delete result.unit
+  return result
+}
+
 /** A stand-in for the substrate's records route: the registry (`kinds`),
  * the metric and source records (with `filter.ids` honoured, as the batched
- * title read asks), and every aggregate read answered by `answer` and kept
- * in `seen`, in order. */
+ * title read asks), and every aggregate read answered by `answer`. A
+ * several-metric read is answered from each metric's own read
+ * (`perMetric`). `sent` keeps every aggregate read as it was sent, and
+ * `seen` each metric's own read of them, in order. */
 export function observationsServer(
   answer: (read: SeenRead) => AggregateResult | Response,
   kinds: KindInfo[] = KINDS
 ): {
   fetch: (input: RequestInfo | URL) => Promise<Response>
   seen: SeenRead[]
+  sent: SeenRead[]
 } {
   const seen: SeenRead[] = []
+  const sent: SeenRead[] = []
   const fetch = async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://test")
     const filter = JSON.parse(
@@ -631,8 +700,9 @@ export function observationsServer(
     const aggregate = url.searchParams.get("aggregate")
     if (aggregate) {
       const read = { filter, aggregate: JSON.parse(aggregate) as Aggregate }
-      seen.push(read)
-      const out = answer(read)
+      sent.push(read)
+      seen.push(...perMetric(read))
+      const out = read.aggregate.metrics ? together(read, answer) : answer(read)
       return out instanceof Response ? out : json(out)
     }
     if (filter.kinds?.includes("substrate.reamde.dev/core/kind")) {
@@ -645,7 +715,7 @@ export function observationsServer(
     )
     return json({ records, head: 0, generation: "g" })
   }
-  return { fetch, seen }
+  return { fetch, seen, sent }
 }
 
 /** One answer alone as buckets and series, the way a chart of one read

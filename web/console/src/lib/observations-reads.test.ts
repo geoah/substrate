@@ -9,15 +9,22 @@ import {
   facetRead,
   laneRead,
   latestRead,
+  MAX_GROUPS,
   MAX_GROUPS_CAP,
+  MAX_METRICS,
+  MAX_SAMPLES,
+  MAX_SAMPLES_CAP,
+  sharedReads,
   type LaneSpec,
 } from "@/lib/observations-reads"
 import {
+  BODY_MASS,
   GARMIN,
   HEART,
   MIA,
   METRIC,
   SOURCE,
+  STEPS_METRIC,
 } from "@/lib/observations.test-fixtures"
 
 const serverBudgets = import.meta.glob<string>(
@@ -164,10 +171,129 @@ describe("one chart's request", () => {
     expect(MAX_BUCKETS).toBe(constant("AggregateMaxBuckets"))
     expect(MAX_BUCKETS_CAP).toBe(constant("AggregateMaxBucketsCap"))
     expect(MAX_GROUPS_CAP).toBe(constant("AggregateMaxGroupsCap"))
+    expect(MAX_GROUPS).toBe(constant("AggregateMaxGroups"))
+    expect(MAX_SAMPLES).toBe(constant("AggregateMaxSamples"))
+    expect(MAX_SAMPLES_CAP).toBe(constant("AggregateMaxSamplesCap"))
+    expect(MAX_METRICS).toBe(constant("AggregateMaxMetrics"))
   })
 
   it("sends the output unit only where one was picked", () => {
     expect(laneRead(spec()).aggregate.unit).toBeUndefined()
     expect(laneRead(spec({ unit: "/s" })).aggregate.unit).toBe("/s")
+  })
+})
+
+describe("a chart's requests", () => {
+  const RANGE = laneRead(spec()).aggregate.range
+  const lane = (over: Partial<LaneSpec> = {}, buckets = 30) => ({
+    read: laneRead(spec(over)),
+    buckets,
+  })
+  const heart = (over: Partial<LaneSpec> = {}) =>
+    lane({
+      sourceOrder: ["garmin-forerunner-265", "apple-watch-s10"],
+      ...over,
+    })
+  const weight = (over: Partial<LaneSpec> = {}) =>
+    lane({ metricPath: BODY_MASS, sourceOrder: ["withings"], ...over })
+
+  it("reads metrics alike but for their own choices as one read", () => {
+    const lanes = [
+      heart({ from: "prefer-raw", statistic: "avg" }),
+      lane({
+        metricPath: STEPS_METRIC,
+        shape: "amount",
+        reducer: "sum",
+        unit: "k{steps}",
+        sourceOrder: ["garmin-forerunner-265", "apple-watch-s10"],
+      }),
+    ]
+    const [only, ...rest] = sharedReads(lanes)
+    expect(rest).toEqual([])
+    expect(only.lanes).toEqual([0, 1])
+    // Each metric's unit, reducers, from and statistic in its entry; the
+    // statistic leaves the filter, which every metric shares.
+    expect(only.read).toEqual({
+      filter: { implements: OBSERVED },
+      aggregate: {
+        metrics: [
+          {
+            ref: HEART,
+            reducers: ["avg", "min", "max"],
+            from: "prefer-raw",
+            statistic: "avg",
+          },
+          {
+            ref: STEPS_METRIC,
+            unit: "k{steps}",
+            reducers: ["sum"],
+            from: "raw",
+          },
+        ],
+        range: RANGE,
+        bucket: { calendar: "day", timezone: "Europe/Athens" },
+        sources: { policy: "priority" },
+        // Each metric keeps what its own read may spend: the server holds
+        // the metrics to the budgets together.
+        budget: {
+          maxBuckets: 2 * MAX_BUCKETS,
+          maxSamples: 2 * MAX_SAMPLES,
+          maxGroups: 2 * MAX_GROUPS,
+        },
+      },
+    })
+  })
+
+  it("reads apart what the metrics cannot share", () => {
+    const base = heart()
+    const lanes = [
+      base,
+      // One source: no priority policy.
+      weight(),
+      // A night lands on the day it ends.
+      heart({
+        metricPath: `${METRIC}/health/sleep_stage`,
+        bucket: { calendar: "day", timezone: "Europe/Athens", place: "end" },
+      }),
+      // Grouped by source.
+      heart({ metricPath: `${METRIC}/health/hrv`, group: "source" }),
+      // Narrowed to another source.
+      heart({ metricPath: `${METRIC}/health/spo2`, sources: [GARMIN] }),
+      // In the reader's order.
+      heart({ metricPath: `${METRIC}/health/vo2`, ranked: true }),
+    ]
+    const reads = sharedReads(lanes)
+    expect(reads.map((r) => r.lanes)).toEqual([[0], [1], [2], [3], [4], [5]])
+    // A metric alone keeps its own read.
+    reads.forEach((r, i) => expect(r.read).toBe(lanes[i].read))
+  })
+
+  it("names at most 16 metrics and the buckets one read may make", () => {
+    const many = Array.from({ length: MAX_METRICS + 4 }, (_, i) =>
+      heart({ metricPath: `${METRIC}/health/m${i}` })
+    )
+    const reads = sharedReads(many)
+    expect(reads.map((r) => r.lanes.length)).toEqual([MAX_METRICS, 4])
+    expect(reads[0].read.aggregate.metrics).toHaveLength(MAX_METRICS)
+    // The samples' and groups' budgets stop at the server's caps.
+    expect(reads[0].read.aggregate.budget).toEqual({
+      maxBuckets: MAX_BUCKETS_CAP,
+      maxSamples: 16 * MAX_SAMPLES,
+      maxGroups: MAX_GROUPS_CAP,
+    })
+    // Two reads past the default fit the cap together; a third does not,
+    // and joins the next read with room.
+    const big = (m: string, buckets: number) => ({
+      ...heart({ metricPath: `${METRIC}/health/${m}`, maxBuckets: 10000 }),
+      buckets,
+    })
+    const wide = sharedReads([
+      big("a", 4000),
+      big("b", 5000),
+      big("c", 2000),
+      big("d", 900),
+    ])
+    expect(wide.map((r) => r.lanes)).toEqual([[0, 1, 3], [2]])
+    expect(wide[0].read.aggregate.budget?.maxBuckets).toBe(MAX_BUCKETS_CAP)
   })
 })

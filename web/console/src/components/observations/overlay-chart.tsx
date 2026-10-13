@@ -1,17 +1,18 @@
-/** One chart of several metrics, each one aggregate read (`lib/overlay.ts`
- * plans them): the series of one unit share the left axis, a second unit
- * reads on the right, and a metric of a third unit is left out with a
- * sentence saying which and what to deselect. A level is a line, with its
- * band beside a reducer in its own unit (`bandedReducer`); an amount, a
- * count, an increase and a time in a zone are bars (`markOf`); a category
- * is bars stacked per code. One crosshair and one tooltip list every
- * series at the hovered bucket with its unit.
+/** One chart of several metrics, each planned by `lib/overlay.ts`, read in
+ * one request where their reads differ only in each metric's own choices
+ * (`sharedReads`) and apart otherwise: the series of one unit share the
+ * left axis, a second unit reads on the right, and a metric of a third
+ * unit is left out with a sentence saying which and what to deselect. A
+ * level is a line, with its band beside a reducer in its own unit
+ * (`bandedReducer`); an amount, a count, an increase and a time in a zone
+ * are bars (`markOf`); a category is bars stacked per code. One crosshair
+ * and one tooltip list every series at the hovered bucket with its unit.
  *
  * Above the chart, one row per metric: its name and axis, its reducer and
  * unit, where its read stands (reading, refreshing, refused), and its
  * legend, each entry a toggle that hides or shows that series. Under the
- * chart, each metric's numbers, and with Technical details on, each read
- * itself. */
+ * chart, each metric's numbers, and with Technical details on, each
+ * request itself. */
 
 import { useState, type ReactNode } from "react"
 import {
@@ -43,6 +44,7 @@ import {
   aggregateCurl,
   aggregateQueryOptions,
   heldAnswer,
+  metricAnswer,
   type AggregateRead,
 } from "@/lib/api/observations"
 import {
@@ -66,7 +68,7 @@ import {
   type BucketSize,
   type TimeRange,
 } from "@/lib/observations-time"
-import { latestRead } from "@/lib/observations-reads"
+import { sharedReads } from "@/lib/observations-reads"
 import {
   answerReducers,
   bucketsOf,
@@ -108,15 +110,32 @@ const NO_ROWS: readonly AggregateRow[] = []
 /** Where one metric's read stands, and the rows the chart draws of it. */
 interface PlotState {
   plot: Plot
-  query: UseQueryResult<AggregateResult>
   rows: readonly AggregateRow[]
   pending: boolean
   failed: boolean
+  /** Why the read failed. */
+  error?: Error | null
+  /** Whether the answer is exact; a read several metrics share says it once
+   * for all of them. */
+  exact?: boolean
   /** A newer answer is on its way while this one is drawn. */
   stale: boolean
   /** An earlier read's answer drawn while this one loads: what it lacks or
    * drops says nothing of this read. */
   held: boolean
+}
+
+/** One request a chart makes, and the metrics it is drawn for. */
+interface ChartRequest {
+  read: AggregateRead
+  plots: Plot[]
+}
+
+/** A read of several metrics the server refused: each of its metrics is
+ * read on its own instead, so a refusal of one stays on that metric's row
+ * and a budget the metrics pass only apart is never in the way. */
+function refusedTogether(error: Error | null | undefined): boolean {
+  return error instanceof ApiError && error.status === 422
 }
 
 function lowerFirst(text: string): string {
@@ -173,30 +192,86 @@ export function OverlayChart({
   const refusal = leftOutWords(plan)
 
   const client = useQueryClient()
-  const queries = useQueries({
-    queries: drawn.map((plot) => {
-      const read = plot.read ?? latestRead()
-      return {
-        ...aggregateQueryOptions(read, obs.observedIds),
-        // A changed bucket, filter or reducer the cached answer carries
-        // holds the frame while it loads (`heldAnswer`).
-        placeholderData: (prev?: AggregateResult) =>
-          prev ?? heldAnswer(client, read, obs.observedIds),
-        enabled: obs.knows(plot.metric) && Boolean(plot.read),
-      }
-    }),
+  // The metrics that read, once their streams are known, as few requests as
+  // hold them. A changed bucket, filter or reducer the cached answers carry
+  // holds the frame while a request loads (`heldAnswer`), per metric.
+  const reading = drawn.filter((p) => p.read && obs.knows(p.metric))
+  const shared = sharedReads(
+    reading.map((p) => ({ read: p.read!, buckets: p.estimate }))
+  )
+  const together = useQueries({
+    queries: shared.map(({ read, lanes }) => ({
+      ...aggregateQueryOptions(read, obs.observedIds),
+      placeholderData: (prev?: AggregateResult) =>
+        prev ?? heldAnswer(client, read, obs.observedIds),
+      // A refused read of several metrics is not asked again under the same
+      // choices: a refetch would clear the refusal its metrics read apart
+      // on.
+      enabled: (query: { state: { error: Error | null } }) =>
+        lanes.length === 1 || !refusedTogether(query.state.error),
+    })),
   })
-  const states = drawn.map((plot, i): PlotState => {
-    const query = queries[i]
-    const reads = Boolean(plot.read)
+  const apart = shared.flatMap(({ lanes }, i) =>
+    lanes.length > 1 && refusedTogether(together[i].error)
+      ? lanes.map((at) => reading[at])
+      : []
+  )
+  const alone = useQueries({
+    queries: apart.map((plot) => ({
+      ...aggregateQueryOptions(plot.read!, obs.observedIds),
+      placeholderData: (prev?: AggregateResult) =>
+        prev ?? heldAnswer(client, plot.read!, obs.observedIds),
+    })),
+  })
+  const requests: ChartRequest[] = [
+    ...shared.flatMap(({ read, lanes }) =>
+      lanes.length > 1 && apart.includes(reading[lanes[0]])
+        ? []
+        : [{ read, plots: lanes.map((at) => reading[at]) }]
+    ),
+    ...apart.map((plot) => ({ read: plot.read!, plots: [plot] })),
+  ].sort((a, b) => drawn.indexOf(a.plots[0]) - drawn.indexOf(b.plots[0]))
+
+  /** The request a plot's rows come from, and where it stands. */
+  function sourceOf(
+    plot: Plot
+  ):
+    | { read: AggregateRead; query: UseQueryResult<AggregateResult> }
+    | undefined {
+    const own = apart.indexOf(plot)
+    if (own >= 0) return { read: plot.read!, query: alone[own] }
+    const at = reading.indexOf(plot)
+    const i = shared.findIndex((s) => s.lanes.includes(at))
+    return i >= 0 ? { read: shared[i].read, query: together[i] } : undefined
+  }
+
+  const states = drawn.map((plot): PlotState => {
+    const blank = {
+      plot,
+      rows: NO_ROWS,
+      failed: false,
+      stale: false,
+      held: false,
+    }
+    if (!plot.read) return { ...blank, pending: false }
+    const source = sourceOf(plot)
+    // A metric whose streams are still being read waits for them.
+    if (!source) return { ...blank, pending: true }
+    const { read, query } = source
+    const answer = query.data
+      ? metricAnswer(query.data, read, plot.read.aggregate.metric?.ref ?? "")
+      : undefined
+    // An answer held for the request's other metrics holds none of this.
+    const pending = query.isPending || (query.isPlaceholderData && !answer)
     return {
       plot,
-      query,
-      rows: reads ? plotRows(plot, query.data?.rows ?? []) : NO_ROWS,
-      pending: reads && query.isPending,
-      failed: reads && query.isError,
-      stale: reads && query.isFetching && !query.isPending,
-      held: reads && query.isPlaceholderData,
+      rows: plotRows(plot, answer?.rows ?? []),
+      pending,
+      failed: query.isError,
+      error: query.error,
+      exact: answer?.exact,
+      stale: query.isFetching && !pending,
+      held: query.isPlaceholderData && Boolean(answer),
     }
   })
 
@@ -458,15 +533,15 @@ export function OverlayChart({
         ) : null
       )}
       {technical &&
-        states.map(({ plot }) =>
-          plot.read ? (
-            <RequestDetails
-              key={plot.metric}
-              read={plot.read}
-              caption={drawn.length > 1 ? plot.name : undefined}
-            />
-          ) : null
-        )}
+        requests.map(({ read, plots: asked }) => (
+          <RequestDetails
+            key={asked.map((p) => p.metric).join("\n")}
+            read={read}
+            caption={
+              drawn.length > 1 ? listWords(asked.map((p) => p.name)) : undefined
+            }
+          />
+        ))}
     </section>
   )
 }
@@ -554,7 +629,7 @@ function PlotHead({
   onUnit: (metric: string, value: string) => void
   onStatistic: (metric: string, value: string) => void
 }) {
-  const { plot, query, rows, pending, failed, stale, held } = state
+  const { plot, rows, pending, failed, error, stale, held } = state
   return (
     <div
       key={plot.metric}
@@ -668,18 +743,16 @@ function PlotHead({
               : ""}
           </p>
         )}
-      {failed && query.error && (
+      {failed && error && (
         <div className="text-[12.5px] text-destructive">
           <p>
-            {query.error instanceof ApiError && query.error.status === 422
+            {error instanceof ApiError && error.status === 422
               ? "The server refused this read: "
               : "This read failed: "}
-            {query.error.message}
+            {error.message}
           </p>
-          {query.error instanceof ApiError &&
-            query.error.problems.map((problem) => (
-              <p key={problem}>{problem}</p>
-            ))}
+          {error instanceof ApiError &&
+            error.problems.map((problem) => <p key={problem}>{problem}</p>)}
         </div>
       )}
     </div>
@@ -701,7 +774,7 @@ function chartNotes(
   }
 ): string[] {
   const notes: string[] = []
-  for (const { plot, query, held } of states) {
+  for (const { plot, exact, held } of states) {
     const own: string[] = []
     // A ranked read uses the reader's order. Otherwise the server decides
     // it, so the sources are listed by name, implying no order.
@@ -759,7 +832,7 @@ function chartNotes(
     }
     // `exact` is false whenever a float reduction was involved, so an
     // average is never exact: a developer's fact, not an everyday warning.
-    if (words.technical && !held && query.data?.exact === false) {
+    if (words.technical && !held && exact === false) {
       own.push("Not exact: a float reduction or a rounded conversion.")
     }
     for (const note of own) {
@@ -872,8 +945,9 @@ function TipLine({
   )
 }
 
-/** The request behind one metric of a chart, to run again with `curl`: the
- * `filter` and `aggregate` parameters as JSON, and the whole call. */
+/** One request of a chart, for one metric or several, to run again with
+ * `curl`: the `filter` and `aggregate` parameters as JSON, and the whole
+ * call. */
 function RequestDetails({
   read,
   caption,

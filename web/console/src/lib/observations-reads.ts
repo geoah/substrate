@@ -1,5 +1,6 @@
 /** The aggregate reads the observations pages issue, without React: one
- * chart's read (`laneRead`), discovery's (the latest read, the list of
+ * metric's read in a chart (`laneRead`), a chart's metrics as few requests
+ * as hold them (`sharedReads`), discovery's (the latest read, the list of
  * metrics, the facet menus) and how discovery batches its metrics. The
  * read is docs/api.md's ("The aggregate read"); `lib/api/observations.ts`
  * sends it. */
@@ -20,7 +21,12 @@ import {
   reducerOf,
   type ReadingShape,
 } from "@/lib/observations"
-import { isoWithOffset, type TimeRange } from "@/lib/observations-time"
+import {
+  isoWithOffset,
+  MAX_BUCKETS,
+  MAX_BUCKETS_CAP,
+  type TimeRange,
+} from "@/lib/observations-time"
 
 // ── the timeline's requests ────────────────────────────────────────────────
 
@@ -192,6 +198,146 @@ export function laneRead(spec: LaneSpec): AggregateRead {
 
 /** The most groups one read may ask for (`budget.maxGroups`'s cap). */
 export const MAX_GROUPS_CAP = 2000
+
+/** The server's other budgets (`substrate.AggregateMaxGroups`,
+ * `AggregateMaxSamples` and its cap) and the most metrics one read names
+ * (`AggregateMaxMetrics`). */
+export const MAX_GROUPS = 200
+export const MAX_SAMPLES = 1_000_000
+export const MAX_SAMPLES_CAP = 20_000_000
+export const MAX_METRICS = 16
+
+// ── several metrics in one read ────────────────────────────────────────────
+
+/** One lane's read, and the buckets it is expected to make counting every
+ * group (`bucketEstimate`). */
+export interface LaneReadPlan {
+  read: AggregateRead
+  buckets: number
+}
+
+/** One request of a chart, and the lanes it answers, by their place in the
+ * list `sharedReads` was given. */
+export interface SharedRead {
+  read: AggregateRead
+  lanes: number[]
+}
+
+/** The lanes' reads as few requests as hold them: lanes whose reads differ
+ * only in their metric, unit, reducers, `from` and summary statistic share
+ * one several-metric read (`aggregate.metrics`), in their order, up to
+ * `MAX_METRICS` and while their buckets add up to at most the cap; a lane
+ * alone keeps its own read. The read's filter, range, bucket, grouping and
+ * sources are every lane's. Its budget is the lanes' added up (to each
+ * cap), because the server holds the metrics to it together and each lane
+ * keeps what its own read could spend. */
+export function sharedReads(lanes: readonly LaneReadPlan[]): SharedRead[] {
+  const open: { key: string; lanes: number[]; buckets: number }[] = []
+  lanes.forEach((lane, at) => {
+    const key = sharedKey(lane.read)
+    const into =
+      key === undefined
+        ? undefined
+        : open.find(
+            (b) =>
+              b.key === key &&
+              b.lanes.length < MAX_METRICS &&
+              b.buckets + lane.buckets <= MAX_BUCKETS_CAP
+          )
+    if (into) {
+      into.lanes.push(at)
+      into.buckets += lane.buckets
+    } else {
+      open.push({ key: key ?? "", lanes: [at], buckets: lane.buckets })
+    }
+  })
+  return open.map((b) => ({
+    read:
+      b.lanes.length === 1
+        ? lanes[b.lanes[0]].read
+        : together(b.lanes.map((at) => lanes[at].read)),
+    lanes: b.lanes,
+  }))
+}
+
+/** The one statistic a lane's filter names (`{eq}`), which a several-metric
+ * read names in the metric's entry instead. */
+function statisticOf(filter: RecordFilter | undefined): string | undefined {
+  const cond = filter?.properties?.statistic
+  if (!cond || Object.keys(cond).length !== 1) return undefined
+  return typeof cond.eq === "string" ? cond.eq : undefined
+}
+
+/** The filter without the statistic a metric's entry names instead. */
+function sharedFilter(filter: RecordFilter | undefined): RecordFilter {
+  const out: RecordFilter = { ...filter }
+  if (statisticOf(filter) === undefined || !out.properties) return out
+  const properties = { ...out.properties }
+  delete properties.statistic
+  if (Object.keys(properties).length) out.properties = properties
+  else delete out.properties
+  return out
+}
+
+/** What a lane's read shares with another's in one several-metric read:
+ * all of it but its metric's own choices and its budget, as JSON with the
+ * keys sorted. Undefined for a read that names no one metric. */
+function sharedKey(read: AggregateRead): string | undefined {
+  if (!read.aggregate.metric) return undefined
+  const aggregate: Aggregate = { ...read.aggregate }
+  for (const own of ["metric", "unit", "reducers", "from", "budget"] as const) {
+    delete aggregate[own]
+  }
+  return sortedJSON({ filter: sharedFilter(read.filter), aggregate })
+}
+
+function sortedJSON(value: unknown): string {
+  return JSON.stringify(value, (_, v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0
+          )
+        )
+      : v
+  )
+}
+
+/** Two or more lanes' reads, which `sharedKey` found alike, as one read. */
+function together(reads: readonly AggregateRead[]): AggregateRead {
+  const [first] = reads
+  const aggregate: Aggregate = {
+    metrics: reads.map(({ filter, aggregate: a }) => {
+      const statistic = statisticOf(filter)
+      return {
+        ref: a.metric!.ref,
+        ...(a.unit ? { unit: a.unit } : {}),
+        ...(a.reducers ? { reducers: a.reducers } : {}),
+        ...(a.from ? { from: a.from } : {}),
+        ...(statistic ? { statistic } : {}),
+      }
+    }),
+    ...first.aggregate,
+  }
+  for (const own of ["metric", "unit", "reducers", "from"] as const) {
+    delete aggregate[own]
+  }
+  const total = (
+    key: "maxBuckets" | "maxSamples" | "maxGroups",
+    otherwise: number,
+    cap: number
+  ) =>
+    Math.min(
+      cap,
+      reads.reduce((n, r) => n + (r.aggregate.budget?.[key] ?? otherwise), 0)
+    )
+  aggregate.budget = {
+    maxBuckets: total("maxBuckets", MAX_BUCKETS, MAX_BUCKETS_CAP),
+    maxSamples: total("maxSamples", MAX_SAMPLES, MAX_SAMPLES_CAP),
+    maxGroups: total("maxGroups", MAX_GROUPS, MAX_GROUPS_CAP),
+  }
+  return { filter: sharedFilter(first.filter), aggregate }
+}
 
 /** Whether a read was refused for making more groups than one read may. */
 export function overGroupCap(error: Error | null | undefined): boolean {
