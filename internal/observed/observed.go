@@ -102,6 +102,22 @@ func Before(a, b Point) bool {
 	return a.Ord < b.Ord
 }
 
+// GaugeHold is how long a gauge's value written at `at` holds by itself: its
+// own hold, cut at end where the point names an end after its instant (a
+// single record's endsAt), or the span to end alone where it has no hold.
+// Nil means until the next point. The index stores this as the point's hold,
+// so every reader that honors a hold honors an endsAt.
+func GaugeHold(at, end time.Time, hold *time.Duration) *time.Duration {
+	if !end.After(at) {
+		return hold
+	}
+	span := end.Sub(at)
+	if hold != nil && *hold < span {
+		return hold
+	}
+	return &span
+}
+
 // Interval is the span during which one point's value holds.
 type Interval struct {
 	// Point is the index of the point in the slice Held read.

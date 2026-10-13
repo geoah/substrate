@@ -21,7 +21,8 @@
 -- `delta`), null where the unit has no base (arbitrary units, levels, rad).
 -- The hold, the counter contract and the circular flag ride on every point,
 -- because a stream spans records and the rollups are computed from the
--- points alone.
+-- points alone. A single gauge's `hold_ms` is cut at its endsAt
+-- (internal/observed.GaugeHold).
 --
 -- Every record id column sorts COLLATE "C", byte order: points at one
 -- instant are ordered by record id, and the database's own collation (en_US

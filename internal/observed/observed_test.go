@@ -85,6 +85,30 @@ func TestTimeInStateBuildsIntervalsBeforeFiltering(t *testing.T) {
 
 // Decision 0158: a null ends the hold of the point before it and counts in
 // nothing.
+// A gauge written with an end after its instant holds no longer than that
+// span; its own hold cuts it shorter, and without an end the hold is as
+// written.
+func TestGaugeHoldEndsAtTheEnd(t *testing.T) {
+	five, two, hour := dur(5), dur(2), dur(60)
+	for _, c := range []struct {
+		name string
+		end  time.Time
+		hold *time.Duration
+		want *time.Duration
+	}{
+		{"an end and no hold", at(5), nil, &five},
+		{"a hold shorter than the span", at(5), &two, &two},
+		{"a hold longer than the span", at(5), &hour, &five},
+		{"no end and no hold", at(0), nil, nil},
+		{"no end and a hold", at(0), &two, &two},
+	} {
+		got := GaugeHold(at(0), c.end, c.hold)
+		if (got == nil) != (c.want == nil) || (got != nil && *got != *c.want) {
+			t.Errorf("%s: GaugeHold = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func TestANullInATraceEndsTheHold(t *testing.T) {
 	points := []Point{gauge(0, 20), null(10), gauge(30, 22)}
 	w := window(0, 60)

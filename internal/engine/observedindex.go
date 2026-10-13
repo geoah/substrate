@@ -192,6 +192,9 @@ func deriveObserved(ty *vocabulary.Kind, row *erow) *observedRows {
 			p.base = baseValue(measureFor(unit, declaredMeasure(ty), r.delta), unit, *p.exact)
 			r.points[0] = p
 		}
+		if form == vocabulary.FormGauge {
+			r.holdMs = gaugeHoldMs(p, r.holdMs)
+		}
 	case vocabulary.ObservedPacked:
 		r.unit = stringProp(props, "unit")
 		r.points = tracePoints(row, r)
@@ -205,7 +208,8 @@ func deriveObserved(ty *vocabulary.Kind, row *erow) *observedRows {
 }
 
 // singlePoint is a single record's one point: its value or its code, at
-// `at`, spanning to `endsAt` where it has one.
+// `at`, spanning to `endsAt` where it has one. A gauge's value holds no
+// longer than that span (gaugeHoldMs).
 func singlePoint(row *erow) (obsPoint, string, bool) {
 	props := row.Props
 	p := obsPoint{ts: *row.At, tsEnd: *row.At, code: stringProp(props, "code")}
@@ -229,6 +233,22 @@ func singlePoint(row *erow) (obsPoint, string, bool) {
 		unit = ""
 	}
 	return p, unit, p.value != nil || p.code != ""
+}
+
+// gaugeHoldMs is a single gauge's hold in milliseconds, its endsAt included
+// (observed.GaugeHold).
+func gaugeHoldMs(p obsPoint, holdMs *int64) *int64 {
+	var hold *time.Duration
+	if holdMs != nil {
+		d := time.Duration(*holdMs) * time.Millisecond
+		hold = &d
+	}
+	h := observed.GaugeHold(p.ts, p.tsEnd, hold)
+	if h == nil {
+		return nil
+	}
+	ms := h.Milliseconds()
+	return &ms
 }
 
 // tracePoints expands a packed record into its points. A point takes the

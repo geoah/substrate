@@ -81,7 +81,7 @@ relabel a stored value.
 
 | Form | Means | Example |
 | --- | --- | --- |
-| `gauge` | a level at an instant, held until its `hold` ends or the next point | 62 /min, 72.4 kg, a door `open` |
+| `gauge` | a level at an instant, held until its `hold` ends, its `endsAt`, or the next point | 62 /min, 72.4 kg, a door `open` |
 | `amount` | a quantity accrued over `[at, endsAt)` | 412 steps in a quarter hour, 94 minutes of `rem` |
 | `counter` | a running total under one of three contracts ([decision 0157](decisions/0157-a-counter-is-stored-as-sent-and-differenced-at-read-under-one-of-three-contracts.md)) | a meter at 18342.655 kW.h |
 | `summary` | a statistic over a stated period, computed by the source | WHOOP's recovery of 67 % for one cycle |
@@ -450,7 +450,10 @@ A trace's point is at `at` plus its offset (or its index times `every`). A
 gauge's and a counter's point is an instant, `ts_end` equal to `ts`; an
 amount's spans to the next point of the trace, to `ts` plus `every` with
 regular spacing, and to `endsAt` for the last. A single record's point spans
-`[at, endsAt)` where it has an `endsAt`.
+`[at, endsAt)` where it has an `endsAt`, and a single gauge's value holds no
+longer than that: its `hold_ms` is the shorter of its `hold` and `endsAt`
+minus `at`, so a door `open` at 10:00 with `endsAt` 10:05 and no `hold` is
+open for five minutes, not until the next point.
 
 A `null` in `values` or `codes` is a point with `value` null, `code` empty
 and `quality` `unavailable`. It ends the hold of the point before it and

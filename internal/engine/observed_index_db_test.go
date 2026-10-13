@@ -872,6 +872,71 @@ func TestObservedTiesAtOneInstantFollowByteOrder(t *testing.T) {
 	checkRollupsMatchSpec(t, r.db)
 }
 
+// A single gauge's endsAt ends its hold: a door `open` at 10:00 with endsAt
+// 10:05 and no hold holds five minutes, not until the next point however
+// late; a hold shorter than the span ends it first, and a longer one is cut
+// at endsAt. The point's hold_ms is that hold, so the rollup rows and every
+// read that honors a hold honor endsAt.
+func TestObservedSingleGaugeHoldsUntilItsEnd(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	gauge := func(id, source string, props map[string]any) {
+		p := map[string]any{"metric": r.metricRef("air_temperature"), "source": r.sourceRef(source), "form": "gauge"}
+		for k, v := range props {
+			p[k] = v
+		}
+		r.mustPut(t, r.observation, id, p)
+	}
+	gauge("door/open", "door", map[string]any{"code": "open", "at": "2026-10-07T10:00:00Z", "endsAt": "2026-10-07T10:05:00Z"})
+	gauge("probe/1", "probe", map[string]any{
+		"value": quantity("21", "Cel"), "hold": "PT2M", "at": "2026-10-07T10:00:00Z", "endsAt": "2026-10-07T10:05:00Z",
+	})
+	gauge("probe/2", "probe", map[string]any{
+		"value": quantity("22", "Cel"), "hold": "PT1H", "at": "2026-10-07T10:30:00Z", "endsAt": "2026-10-07T10:40:00Z",
+	})
+	gauge("probe/3", "probe", map[string]any{"value": quantity("23", "Cel"), "at": "2026-10-07T11:30:00Z"})
+	for id, want := range map[string]int64{"door/open": 300_000, "probe/1": 120_000, "probe/2": 600_000} {
+		got := r.points(t, r.observation, id)
+		if len(got) != 1 || !got[0].hold.Valid || got[0].hold.Int64 != want {
+			t.Errorf("%s holds %+v ms, want %d", id, got, want)
+		}
+	}
+	if got := r.points(t, r.observation, "probe/3"); len(got) != 1 || got[0].hold.Valid {
+		t.Errorf("a gauge with neither hold nor endsAt holds %+v, want until the next point", got)
+	}
+	var held int64
+	if err := r.db.QueryRow(`SELECT held_ms FROM observed_rollups WHERE source = $1 AND bucket15 = '2026-10-07T10:00:00Z'`,
+		r.source+"/door").Scan(&held); err != nil {
+		t.Fatal(err)
+	}
+	if held != 300_000 {
+		t.Errorf("the door's row holds %d ms, want 300000", held)
+	}
+	checkRollupsMatchSpec(t, r.db)
+	from := mustTime(t, "2026-10-07T10:00:00Z")
+	for _, maxGap := range []string{"", "PT1M"} {
+		res, err := r.ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Filter: substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: r.source + "/door"}}},
+			Aggregate: &substrate.Aggregate{
+				Metric:   &substrate.AggregateMetric{Ref: r.metric + "/air_temperature"},
+				Range:    &substrate.AggregateRange{Gte: from.Format(time.RFC3339), Lt: from.Add(time.Hour).Format(time.RFC3339)},
+				Reducers: []substrate.AggregateReducer{{Name: "timeInState", States: []string{"open"}}},
+				Unit:     "min", MaxGap: maxGap,
+			},
+		})
+		if err != nil {
+			t.Fatalf("aggregate (maxGap %q): %v", maxGap, err)
+		}
+		want := "5"
+		if maxGap != "" {
+			want = "1"
+		}
+		if len(res.Rows) != 1 || res.Rows[0].Values[0].Value == nil || *res.Rows[0].Values[0].Value != want {
+			t.Errorf("timeInState open over 10:00 to 11:00 (maxGap %q) = %+v, want %s min", maxGap, res.Rows, want)
+		}
+	}
+}
+
 // A kind that starts binding `observed` derives its existing rows' points
 // behind the apply that bound it, and one that stops drops them.
 func TestObservedIndexFollowsTheBinding(t *testing.T) {
