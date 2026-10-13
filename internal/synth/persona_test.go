@@ -91,8 +91,8 @@ func TestPersonaDefaultLife(t *testing.T) {
 			if s.Value < 40 || s.Value > float64(p.Person.MaxHR) {
 				t.Fatalf("%s heart rate %v at %s", d, s.Value, s.At)
 			}
-			if day.AsleepAt(s.At) != nil && s.Value > 90 {
-				t.Fatalf("%s asleep at %s with heart rate %v", d, s.At, s.Value)
+			if sl := day.AsleepAt(s.At); sl != nil && s.Value != float64(sl.HR(s.At)) {
+				t.Fatalf("%s asleep at %s reads %v, the night's own rate %d", d, s.At, s.Value, sl.HR(s.At))
 			}
 		}
 		if day.Trip && day.Zone.String() != "Europe/London" {

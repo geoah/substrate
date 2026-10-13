@@ -1,6 +1,11 @@
 package synth
 
 import (
+	"maps"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -51,13 +56,34 @@ func TestRecordingNameMatchesTheMockServer(t *testing.T) {
 	}
 }
 
-func TestPaginationParamsLeaveWhoopsNextTokenAlone(t *testing.T) {
-	// The mock's second try drops every PaginationParams pair, so WHOOP's
-	// page-two recording is found only because nextToken is not one.
+// mockServerSet reads one set literal (`NAME = {"a", "b", ...}`) from
+// mockserver.py, so the Go copies are held to the file the server runs.
+func mockServerSet(t *testing.T, name string) map[string]bool {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "providere2e", "runner", "mockserver.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?ms)^` + name + ` = \{(.*?)\}`).FindSubmatch(raw)
+	if m == nil {
+		t.Fatalf("mockserver.py declares no %s set", name)
+	}
+	out := map[string]bool{}
+	for _, q := range regexp.MustCompile(`"([^"]+)"`).FindAllSubmatch(m[1], -1) {
+		out[string(q[1])] = true
+	}
+	return out
+}
+
+func TestParamSetsMatchTheMockServer(t *testing.T) {
+	for name, goSet := range map[string]map[string]bool{"PAGINATION_PARAMS": PaginationParams, "SECRET_PARAMS": SecretParams} {
+		if py := mockServerSet(t, name); !maps.Equal(py, goSet) {
+			t.Errorf("%s differs from the mock server's:\n go %v\n py %v", name, slices.Sorted(maps.Keys(goSet)), slices.Sorted(maps.Keys(py)))
+		}
+	}
+	// The mock's second try drops every pagination pair, so WHOOP's page-two
+	// recording is found only because nextToken is not one.
 	if PaginationParams["nextToken"] {
 		t.Fatal("nextToken is a pagination parameter: the WHOOP pages would collapse onto page one")
-	}
-	if !PaginationParams["pageToken"] || !PaginationParams["limit"] {
-		t.Fatal("pageToken and limit are pagination parameters: the Google Fit pages must be named exactly")
 	}
 }
