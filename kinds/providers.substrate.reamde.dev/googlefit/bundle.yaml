@@ -343,12 +343,6 @@ data:
       displayName: Last completed
       description: when a walk last reached the present with nothing skipped,
         failed or left over
-    syncStatus:
-      type: string
-      writer: connector
-      displayName: Sync status
-      description: "the last outcome as one line: ok, ok (N pending), ok (N
-        skipped; failed: ...) or erroring: <reason>"
     syncState:
       type: string
       writer: connector
@@ -842,7 +836,6 @@ data:
     # last 30 days. A deeper backfill reads its window first.
     SESSION_FEED_DAYS = 30
     MAX_SESSION_PAGES = 40
-    REASON_MAX = 200
     MAX_ID = 128
 
     # (data type, toggle, cursor key), in walk order.
@@ -1451,9 +1444,8 @@ data:
         props = acct.get("properties") or {}
         patch = {"lastSyncedAt": _now()}
         left = _pending(cur)
-        if error is not None:
-            patch["syncStatus"] = ("erroring: " + str(error))[:REASON_MAX + 20]
-        else:
+        summary = None
+        if error is None:
             notes = []
             if left:
                 notes.append("%d pending" % len(left))
@@ -1462,8 +1454,7 @@ data:
             if cur.get("failed"):
                 notes.append("failed: " + ", ".join(
                     "%s (%s)" % (k, why) for k, why in cur["failed"][:3]))
-            patch["syncStatus"] = ("ok" if not notes
-                                   else "ok (" + "; ".join(notes) + ")")[:400]
+            summary = "ok" if not notes else "ok (" + "; ".join(notes) + ")"
             if completed and not left and not cur.get("failed") \
                     and not cur.get("skipped"):
                 patch["lastCompletedAt"] = patch["lastSyncedAt"]
@@ -1504,7 +1495,7 @@ data:
         elif error is not None:
             state, message = "erroring", str(error)
         else:
-            state, message = "ok", patch["syncStatus"]
+            state, message = "ok", summary
         patch.update({"syncState": state, "syncMessage": message[:400],
                       "syncProgress": _progress(cur)})
         if state == "erroring":
@@ -1743,13 +1734,13 @@ data:
             if terr or not acct.get("token"):
                 if terr:
                     host.log("googlefit: skip %s: %s" % (queue[0], terr))
-                    want = ("erroring: " + str(terr))[:REASON_MAX]
-                    if (props.get("syncStatus") or "") != want:
+                    want = str(terr)[:400]
+                    if props.get("syncState") != "erroring" or \
+                            (props.get("syncMessage") or "") != want:
                         host.effects.patch(
                             acct.get("kind") or ACCOUNT_KIND, queue[0],
-                            properties={"syncStatus": want,
-                                        "syncState": "erroring",
-                                        "syncMessage": str(terr)[:400],
+                            properties={"syncState": "erroring",
+                                        "syncMessage": want,
                                         "syncError": str(terr)[:400],
                                         "syncErrorAt": _now()})
                 queue = queue[1:]

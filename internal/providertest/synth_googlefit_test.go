@@ -211,7 +211,7 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	if len(fake.misses) != 0 {
 		t.Fatalf("the generated recordings did not answer %v", fake.misses)
 	}
-	if len(stamps) == 0 || stamps[len(stamps)-1]["syncStatus"] != "ok" {
+	if len(stamps) == 0 || stamps[len(stamps)-1]["syncMessage"] != "ok" {
 		t.Fatalf("the sync stamped %v", stamps)
 	}
 	if fake.relaxed == 0 {

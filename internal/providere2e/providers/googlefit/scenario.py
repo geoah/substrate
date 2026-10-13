@@ -207,7 +207,7 @@ def main():
     ok((acct.get("syncTokens") or {}).get("sessions") == LAST_TOKEN,
        "the account keeps the feed's last token")
     ok(acct.get("syncState") == "ok" and acct.get("lastCompletedAt"),
-       "the account reads ok and completed (%s)" % acct.get("syncStatus"))
+       "the account reads ok and completed (%s)" % acct.get("syncMessage"))
     ok(len(acct.get("syncCursors") or {}) == 14, "one cursor per data type")
     ok(acct.get("email") == "ada@ada.example.com", "the address came from the userinfo call")
 

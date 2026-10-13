@@ -566,9 +566,14 @@ func TestGoogleFitFirstSyncMirrorsSourcesDaysAndSessions(t *testing.T) {
 	if tokens["sessions"] != fitLastSessionToken {
 		t.Fatalf("syncTokens = %v, want the feed's last token", tokens)
 	}
-	if acct["syncState"] != "ok" || acct["syncStatus"] != "ok" || acct["lastCompletedAt"] == nil {
-		t.Fatalf("the account after a clean first sync: state %v, status %v, completed %v",
-			acct["syncState"], acct["syncStatus"], acct["lastCompletedAt"])
+	if acct["syncState"] != "ok" || acct["syncMessage"] != "ok" || acct["lastCompletedAt"] == nil {
+		t.Fatalf("the account after a clean first sync: state %v, message %v, completed %v",
+			acct["syncState"], acct["syncMessage"], acct["lastCompletedAt"])
+	}
+	// The sync trait's syncMessage is the one status line; the pre-trait
+	// syncStatus that repeated it is not declared or written.
+	if v, ok := acct["syncStatus"]; ok {
+		t.Fatalf("the account carries syncStatus %v beside syncMessage", v)
 	}
 	if acct["syncFloors"] != nil {
 		t.Fatalf("syncFloors = %v after every walk finished", acct["syncFloors"])
@@ -780,8 +785,8 @@ func TestGoogleFitStopsOnTheDrainBudgetAndResumes(t *testing.T) {
 	if len(floors) != 3 || floors["weight"] != wantFloor {
 		t.Fatalf("syncFloors = %v, want the three body types at %s", floors, wantFloor)
 	}
-	if !strings.Contains(fmt.Sprint(stamp["syncStatus"]), "pending") || stamp["lastCompletedAt"] != nil {
-		t.Fatalf("the stop stamped status %v, completed %v", stamp["syncStatus"], stamp["lastCompletedAt"])
+	if !strings.Contains(fmt.Sprint(stamp["syncMessage"]), "pending") || stamp["lastCompletedAt"] != nil {
+		t.Fatalf("the stop stamped message %v, completed %v", stamp["syncMessage"], stamp["lastCompletedAt"])
 	}
 
 	// The scheduled sweep: no envelope, and lastSyncedAt is a moment old.
@@ -794,9 +799,9 @@ func TestGoogleFitStopsOnTheDrainBudgetAndResumes(t *testing.T) {
 		t.Fatalf("%d weight rows after the resumed walk, want 16", n)
 	}
 	acct := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties
-	if acct["syncFloors"] != nil || acct["lastCompletedAt"] == nil || acct["syncStatus"] != "ok" {
-		t.Fatalf("after the resumed walk: floors %v, completed %v, status %v",
-			acct["syncFloors"], acct["lastCompletedAt"], acct["syncStatus"])
+	if acct["syncFloors"] != nil || acct["lastCompletedAt"] == nil || acct["syncMessage"] != "ok" {
+		t.Fatalf("after the resumed walk: floors %v, completed %v, message %v",
+			acct["syncFloors"], acct["lastCompletedAt"], acct["syncMessage"])
 	}
 }
 
@@ -897,7 +902,7 @@ func TestGoogleFitWalkCheckpointsBetweenInvocations(t *testing.T) {
 		}
 	}
 	if acct := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties; acct["lastCompletedAt"] == nil {
-		t.Fatalf("the chain finished without completing: %v", acct["syncStatus"])
+		t.Fatalf("the chain finished without completing: %v", acct["syncMessage"])
 	}
 }
 
@@ -918,9 +923,9 @@ func TestGoogleFitRevokedGrantStampsErroring(t *testing.T) {
 	}
 	acct := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties
 	if acct["syncState"] != "erroring" || !strings.Contains(fmt.Sprint(acct["syncError"]), "unauthorized") ||
-		!strings.HasPrefix(fmt.Sprint(acct["syncStatus"]), "erroring: ") {
-		t.Fatalf("after a 401 the account reads state %v, error %v, status %v",
-			acct["syncState"], acct["syncError"], acct["syncStatus"])
+		!strings.Contains(fmt.Sprint(acct["syncMessage"]), "unauthorized") {
+		t.Fatalf("after a 401 the account reads state %v, error %v, message %v",
+			acct["syncState"], acct["syncError"], acct["syncMessage"])
 	}
 	if acct["lastSyncedAt"] == nil || acct["lastCompletedAt"] != nil {
 		t.Fatalf("lastSyncedAt %v, lastCompletedAt %v: a failed attempt is an attempt and not a completion",
