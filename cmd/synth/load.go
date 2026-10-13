@@ -218,12 +218,6 @@ func load(args []string, stdout, stderr io.Writer) error {
 			}
 			return fmt.Errorf("%s: nothing generated under %s", e.Name(), base)
 		}
-		if e.Name() == "manual" {
-			if err := applyYAML(ctx, c, filepath.Join(base, "labs.yaml"), stdout); err != nil {
-				return err
-			}
-			continue
-		}
 		setup, err := readSetup(base)
 		if err != nil {
 			return fmt.Errorf("%s: %w", e.Name(), err)
@@ -234,6 +228,8 @@ func load(args []string, stdout, stderr io.Writer) error {
 		// catalog. The samples come after the provider they require, and
 		// the records (the account) before the first delivery. A sample
 		// imported after the runner landed rows is replayed from the start.
+		// The documents generate wrote (`labs.yaml`) need the samples too,
+		// so they are applied after the import.
 		_, hasRecordings := statOK(filepath.Join(base, "recordings"))
 		_, hasDeliveries := statOK(filepath.Join(base, "deliveries"))
 		if hasRecordings {
@@ -257,6 +253,15 @@ func load(args []string, stdout, stderr io.Writer) error {
 		}
 		if hasRecordings && len(imported) > 0 {
 			if err := c.replaySamples(ctx, imported, stdout); err != nil {
+				return fmt.Errorf("%s: %w", e.Name(), err)
+			}
+		}
+		docs, err := filepath.Glob(filepath.Join(base, "*.yaml"))
+		if err != nil {
+			return err
+		}
+		for _, path := range docs {
+			if err := applyYAML(ctx, c, path, stdout); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
 		}
@@ -505,7 +510,7 @@ func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) er
 		}
 		n++
 	}
-	fmt.Fprintf(stdout, "manual: %d records written from %s\n", n, path)
+	fmt.Fprintf(stdout, "%d records written from %s\n", n, path)
 	return nil
 }
 
