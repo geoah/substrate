@@ -263,15 +263,24 @@ func (ds *dataset) referenceSites(ctx context.Context, x dbx, ref *substrate.Ref
 	if err != nil {
 		return nil, err
 	}
-	paths := make([]string, 0, len(records))
+	// The page's records, grouped by kind, so each arm names the source's
+	// kind and its ids as plain columns: refs_dst_idx carries (src_kind, src)
+	// right after the target, so the arms seek the page's rows. A spelled
+	// path (`src_kind || '/' || src`) is an expression no index holds, and
+	// `||` is not leakproof, so it filtered every pointer at the target.
+	byKind := map[string][]string{}
 	for _, e := range records {
-		paths = append(paths, vocabulary.RecordPath(e.Kind, e.ID))
+		byKind[e.Kind] = append(byKind[e.Kind], e.ID)
 	}
 	b := &builder{}
+	where := referencingWhere(b, targets, ref.Property)
+	arms := make([]string, 0, len(byKind))
+	for _, kind := range sortedKeys(byKind) {
+		arms = append(arms, `(r.src_kind = `+b.arg(kind)+` AND r.src = ANY(`+b.textArray(byKind[kind])+`))`)
+	}
 	rows, err := x.QueryContext(ctx,
-		`SELECT r.src_kind, r.src, r.property, r.path FROM refs r WHERE `+
-			referencingWhere(b, targets, ref.Property)+
-			` AND (r.src_kind || '/' || r.src) = ANY(`+b.textArray(paths)+`)`+
+		`SELECT r.src_kind, r.src, r.property, r.path FROM refs r WHERE `+where+
+			` AND (`+strings.Join(arms, ` OR `)+`)`+
 			` ORDER BY r.src_kind, r.src, r.property, r.path, r.ord`, b.args...)
 	if err != nil {
 		return nil, err
@@ -381,41 +390,30 @@ func (ds *dataset) loadReferents(ctx context.Context, x dbx, paths []string) (ma
 		return nil, fmt.Errorf("%w: expanding would load %d referents, more than %d; read fewer records or expand fewer properties",
 			substrate.ErrValidation, len(order), maxExpanded)
 	}
-	included := make(map[string]*substrate.Record, len(order))
+	// Every row is read before any is hydrated, and hydrated in one pass:
+	// hydrate reads on the same connection, and a page's facts beside its
+	// rows are one statement each (hydrateRows). keys[i] is the path
+	// rows[i] answers.
+	var rows []*erow
+	var keys []string
+	answered := map[string]bool{}
 	for _, kind := range sortedKeys(byKind) {
 		b := &builder{}
-		rows, err := x.QueryContext(ctx,
+		got, err := ds.scanRows(ctx, x,
 			`SELECT `+recordCols+` FROM records WHERE kind = `+b.arg(kind)+` AND id = ANY(`+b.textArray(byKind[kind])+`)`+
 				` AND deleted_at IS NULL`,
-			b.args...)
+			b.args)
 		if err != nil {
 			return nil, err
 		}
-		// Drained before hydration: hydrate reads on the same connection.
-		var got []*erow
-		for rows.Next() {
-			row, err := scanRecord(rows)
-			if err != nil {
-				_ = rows.Close()
-				return nil, err
-			}
-			got = append(got, row)
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		_ = rows.Close()
 		for _, row := range got {
-			e, err := ds.hydrate(ctx, x, row, false)
-			if err != nil {
-				return nil, err
-			}
-			included[vocabulary.RecordPath(e.Kind, e.ID)] = e
+			key := vocabulary.RecordPath(row.Kind, row.ID)
+			answered[key] = true
+			rows, keys = append(rows, row), append(keys, key)
 		}
 	}
 	for _, path := range order {
-		if _, ok := included[path]; ok {
+		if answered[path] {
 			continue
 		}
 		// A path the batch did not answer is a former id or a dangling
@@ -439,11 +437,15 @@ func (ds *dataset) loadReferents(ctx context.Context, x dbx, paths []string) (ma
 		if err != nil {
 			return nil, err
 		}
-		e, err := ds.hydrate(ctx, x, row, false)
-		if err != nil {
-			return nil, err
-		}
-		included[path] = e
+		rows, keys = append(rows, row), append(keys, path)
+	}
+	hydrated, err := ds.hydrateRows(ctx, x, rows, false)
+	if err != nil {
+		return nil, err
+	}
+	included := make(map[string]*substrate.Record, len(order))
+	for i, e := range hydrated {
+		included[keys[i]] = e
 	}
 	return included, nil
 }

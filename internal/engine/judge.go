@@ -446,19 +446,19 @@ func (ds *dataset) threadAgent(ctx context.Context, threadID string) (string, er
 // recentProseTurns reads a thread's last prose turns (user and assistant
 // content, never tool payloads) as data for the judge's envelope.
 func (ds *dataset) recentProseTurns(ctx context.Context, threadID string, limit int) ([]map[string]any, error) {
-	probe, err := json.Marshal(map[string]any{
-		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, threadID)),
-	})
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(ctx, ds.db, b, "e", threadID)
 	if err != nil {
 		return nil, err
 	}
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT props->>'role', props->>'content' FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props @> $2::jsonb
-		  AND props->>'role' IN ('user', 'assistant')
-		  AND coalesce(props->>'content', '') <> ''
-		ORDER BY created_at DESC, id DESC LIMIT $3`,
-		typeMessage, string(probe), limit)
+		SELECT e.props->>'role', e.props->>'content' FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		  AND e.props->>'role' IN ('user', 'assistant')
+		  AND coalesce(e.props->>'content', '') <> ''
+		ORDER BY e.created_at DESC, e.id DESC LIMIT `+b.arg(limit),
+		b.args...)
 	if err != nil {
 		return nil, err
 	}

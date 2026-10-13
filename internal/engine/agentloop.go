@@ -958,19 +958,18 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 // the same admission every resume does (budget, opt-out), so a settled
 // thread with nothing new stays settled.
 func (l *agentLoop) recheckResolutions(ctx context.Context) {
-	probe, err := json.Marshal(map[string]any{
-		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, l.threadID)),
-		"role":       msgRoleSystem,
-	})
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(ctx, l.ds.db, b, "e", l.threadID)
 	if err != nil {
 		return
 	}
 	var n int
 	if err := l.ds.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props @> $2::jsonb
-		  AND created_at > $3`,
-		typeMessage, string(probe), l.openedAt).Scan(&n); err != nil || n == 0 {
+		SELECT count(*) FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		  AND e.props->>'role' = `+b.arg(msgRoleSystem)+` AND e.created_at > `+b.arg(l.openedAt),
+		b.args...).Scan(&n); err != nil || n == 0 {
 		return
 	}
 	l.ds.resumeNotifiedThread(l.threadID, "")
@@ -1040,19 +1039,17 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 // from them. Tool exchanges are per-run artifacts, audit and not context, so
 // replay drops them and stays robust against tool renames.
 func (l *agentLoop) loadThreadRows(ctx context.Context) ([]threadRow, error) {
-	probe, err := json.Marshal(map[string]any{
-		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, l.threadID)),
-	})
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(ctx, l.ds.db, b, "e", l.threadID)
 	if err != nil {
 		return nil, err
 	}
-	// `thread` is a reference, so the transcript read is a containment probe
-	// — which rides the repository-wide GIN index on props.
 	rows, err := l.ds.db.QueryContext(ctx, `
 		SELECT e.id, e.props FROM records e
-		WHERE e.kind = $1 AND e.deleted_at IS NULL AND e.props @> $2::jsonb
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
 		ORDER BY e.created_at, e.id`,
-		typeMessage, string(probe))
+		b.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1071,6 +1068,31 @@ func (l *agentLoop) loadThreadRows(ctx context.Context) ([]threadRow, error) {
 		out = append(out, threadRow{id: id, props: props})
 	}
 	return out, rows.Err()
+}
+
+// threadMessagesWhere renders, into b, the predicate selecting one thread's
+// message rows from the records table aliased `alias`. It reads the thread
+// through refs (refsAtSiteSQL): under row level security a containment probe
+// of `props` reads every message the repository keeps, once per read, and
+// nextThreadTurn runs it inside a write, under the changelog lock. While a
+// re-derivation still owes the message kind's `thread` refs rows, the row's
+// own properties decide, as condReference falls back.
+func threadMessagesWhere(ctx context.Context, x dbx, b *builder, alias, threadID string) (string, error) {
+	pending, err := refsPending(ctx, x, []string{typeMessage}, msgRelThread)
+	if err != nil {
+		return "", err
+	}
+	if pending {
+		probe, err := json.Marshal(map[string]any{
+			msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, threadID)),
+		})
+		if err != nil {
+			return "", err
+		}
+		return alias + `.props @> ` + b.arg(string(probe)) + `::jsonb`, nil
+	}
+	return refsAtSiteSQL(b, alias, nil, msgRelThread, true,
+		[]refTarget{{kind: typeThread, ids: []string{threadID}}}), nil
 }
 
 func (l *agentLoop) putMessage(ctx context.Context, actor substrate.Actor, props map[string]any) error {

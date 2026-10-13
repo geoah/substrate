@@ -327,56 +327,106 @@ func (t *txn) record(row *erow, ty *vocabulary.Kind) (*substrate.Record, error) 
 }
 
 func (ds *dataset) hydrate(ctx context.Context, x dbx, row *erow, withAnnotations bool) (*substrate.Record, error) {
-	ty, _ := ds.registry().ByIdentity(row.Kind)
-	return ds.hydrateWithType(ctx, x, row, ty, withAnnotations)
-}
-
-func (ds *dataset) hydrateWithType(ctx context.Context, x dbx, row *erow, ty *vocabulary.Kind, withAnnotations bool) (*substrate.Record, error) {
-	e := recordOf(ty, row)
-	// Former ids are the record's own discarded names, server-set.
-	former, err := loadFormerIDs(ctx, x, row.ref())
+	out, err := ds.hydrateRows(ctx, x, []*erow{row}, withAnnotations)
 	if err != nil {
 		return nil, err
 	}
-	e.FormerIDs = former
+	return out[0], nil
+}
+
+func (ds *dataset) hydrateWithType(ctx context.Context, x dbx, row *erow, ty *vocabulary.Kind, withAnnotations bool) (*substrate.Record, error) {
+	out, err := ds.hydrateTyped(ctx, x, []*erow{row}, []*vocabulary.Kind{ty}, withAnnotations)
+	if err != nil {
+		return nil, err
+	}
+	return out[0], nil
+}
+
+// hydrateRows projects a page of rows as the wire records, in order, each
+// read against the live registry. A page reads what rides beside its rows
+// (former ids, annotations when asked, blob manifests) in one statement per
+// fact for the whole page, so a page of 500 costs the round trips a page of
+// 5 does.
+func (ds *dataset) hydrateRows(ctx context.Context, x dbx, rows []*erow, withAnnotations bool) ([]*substrate.Record, error) {
+	reg := ds.registry()
+	types := make([]*vocabulary.Kind, len(rows))
+	for i, row := range rows {
+		types[i], _ = reg.ByIdentity(row.Kind)
+	}
+	return ds.hydrateTyped(ctx, x, rows, types, withAnnotations)
+}
+
+// hydrateTyped is hydrateRows with each row's kind already resolved: types[i]
+// is rows[i]'s, nil for a kind nothing declares.
+func (ds *dataset) hydrateTyped(ctx context.Context, x dbx, rows []*erow, types []*vocabulary.Kind, withAnnotations bool) ([]*substrate.Record, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	refs := make([]eref, len(rows))
+	for i, row := range rows {
+		refs[i] = row.ref()
+	}
+	// Former ids are the record's own discarded names, server-set.
+	former, err := loadFormerIDs(ctx, x, refs)
+	if err != nil {
+		return nil, err
+	}
+	var ann map[eref]map[string]any
 	if withAnnotations {
-		ann, err := loadAnnotations(ctx, x, row.ref())
-		if err != nil {
+		if ann, err = loadAnnotations(ctx, x, refs); err != nil {
 			return nil, err
 		}
-		if len(ann) > 0 {
-			e.Annotations = ann
+	}
+	out := make([]*substrate.Record, len(rows))
+	for i, row := range rows {
+		e := recordOf(types[i], row)
+		e.FormerIDs = former[refs[i]]
+		if a := ann[refs[i]]; len(a) > 0 {
+			e.Annotations = a
 		}
+		out[i] = e
 	}
 	// A blob-ref reads back as the blob's manifest, never the bytes inline:
 	// the stored digest resolves to {digest, mediaType, size, status} through
 	// the blob record.
-	if err := ds.resolveBlobRefs(ctx, x, ty, e); err != nil {
+	if err := ds.resolveBlobRefs(ctx, x, types, out); err != nil {
 		return nil, err
 	}
-	return e, nil
+	return out, nil
 }
 
-func loadAnnotations(ctx context.Context, x dbx, ref eref) (map[string]any, error) {
+// recordsIn is the predicate "(record_kind, record_id) is one of refs" over a
+// table keyed by a record, as two bound text arrays unnested in step, which
+// the (repository, record_kind, record_id) prefix serves.
+const recordsIn = `(record_kind, record_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))`
+
+// loadAnnotations reads every annotation of the records, keyed by record.
+func loadAnnotations(ctx context.Context, x dbx, refs []eref) (map[eref]map[string]any, error) {
+	kinds, ids := trailArgs(refs)
 	rows, err := x.QueryContext(ctx,
-		`SELECT key, value FROM annotations WHERE record_kind = $1 AND record_id = $2 ORDER BY key`,
-		ref.Kind, ref.ID)
+		`SELECT record_kind, record_id, key, value FROM annotations WHERE `+recordsIn+
+			` ORDER BY record_kind, record_id, key`,
+		kinds, ids)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := map[string]any{}
+	out := map[eref]map[string]any{}
 	for rows.Next() {
+		var ref eref
 		var k string
 		var raw []byte
-		if err := rows.Scan(&k, &raw); err != nil {
+		if err := rows.Scan(&ref.Kind, &ref.ID, &k, &raw); err != nil {
 			return nil, err
 		}
 		var v any
 		if err := json.Unmarshal(raw, &v); err != nil {
 			return nil, err
 		}
-		out[k] = v
+		if out[ref] == nil {
+			out[ref] = map[string]any{}
+		}
+		out[ref][k] = v
 	}
 	return out, rows.Err()
 }
@@ -621,13 +671,15 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	if hasMore && len(got) > 0 {
 		page.Cursor = encodeKeyset(signature, got[len(got)-1].keys, page.Head, page.Generation)
 	}
-	for _, s := range got {
-		e, err := ds.hydrate(ctx, tx, s.row, q.WithAnnotations)
-		if err != nil {
-			return nil, err
-		}
-		page.Records = append(page.Records, e)
+	pageRows := make([]*erow, len(got))
+	for i, s := range got {
+		pageRows[i] = s.row
 	}
+	hydrated, err := ds.hydrateRows(ctx, tx, pageRows, q.WithAnnotations)
+	if err != nil {
+		return nil, err
+	}
+	page.Records = append(page.Records, hydrated...)
 	if q.Filter.Referencing != nil {
 		if page.Matches, err = ds.referenceSites(ctx, tx, q.Filter.Referencing, page.Records); err != nil {
 			return nil, err
@@ -1053,16 +1105,16 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 	return out
 }
 
-// scalarReferenceKinds is the identities of the candidate kinds (every
-// loaded kind when the filter names none) that declare `name` a single
-// top-level reference, sorted.
-func (ds *dataset) scalarReferenceKinds(types []*vocabulary.Kind, name string) []string {
+// referenceKinds is the identities of the candidate kinds (every loaded kind
+// when the filter names none) whose declaration of `name` has the shape
+// asked about (scalarReference, listReference, notReference), sorted.
+func (ds *dataset) referenceKinds(types []*vocabulary.Kind, name string, shape func(*vocabulary.Property) bool) []string {
 	if len(types) == 0 {
 		types = ds.registry().Kinds()
 	}
 	var out []string
 	for _, t := range types {
-		if p, ok := t.Prop(name); ok && scalarReference(p) {
+		if p, ok := t.Prop(name); ok && shape(p) {
 			out = append(out, t.Identity)
 		}
 	}
@@ -1108,6 +1160,21 @@ func refTargetsOf(paths []string) ([]refTarget, bool) {
 // and the index) ask this one question.
 func scalarReference(p *vocabulary.Property) bool {
 	return p != nil && p.Datatype == vocabulary.DatatypeReference && !p.Repeated && !p.Keyed
+}
+
+// listReference reports whether a reference declaration holds a LIST of
+// paths at its property, not keyed: deriveRefs gives each item its own refs
+// row at (name, "", i), so the filter answers it from refs as it answers a
+// scalar one. A keyed map addresses its values by key, in the path.
+func listReference(p *vocabulary.Property) bool {
+	return p != nil && p.Datatype == vocabulary.DatatypeReference && p.Repeated && !p.Keyed
+}
+
+// notReference reports whether a declaration of the name is anything but a
+// reference: a list of strings may hold a path's text, and no refs row
+// records it.
+func notReference(p *vocabulary.Property) bool {
+	return p != nil && p.Datatype != vocabulary.DatatypeReference
 }
 
 // referenceFilterIDs expands one filter path into every path the same record is
@@ -1166,7 +1233,8 @@ func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, er
 }
 
 // referenceValue renders one path as the containment probes for a REPEATED
-// reference property: `{"seen": ["substrate.reamde.dev/core/agent/x"]}` and
+// or keyed reference property, where condReference does not answer it from
+// refs: `{"seen": ["substrate.reamde.dev/core/agent/x"]}` and
 // `{"seen": [{"ref": "substrate.reamde.dev/core/agent/x"}]}` (containment
 // reaches inside an array, so one shape answers "holds this reference" for
 // both). jsonb containment is recursive over objects, so a probe names the
@@ -1223,28 +1291,35 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 	// The trail is read once per distinct PATH: several shapes completing one
 	// bare id the same way share the read.
 	trail := map[string][]string{}
-	// A SCALAR reference is answered from the refs index where it can be.
-	// Row level security holds every records read to its repository, and a
-	// clause it cannot prove leakproof runs only on the rows that policy
-	// admits: `->` and `->>` on jsonb are not leakproof, so the path
-	// expression below never reaches its own index (indices.go) and the
-	// filter reads, and detoasts, every row of the kind. On a mailbox mirror
-	// that is every stored message, payloads included, once per filter: a
-	// Gmail history page's per-thread reads took a fire past its minute. The
-	// refs columns are plain text, equality on them is leakproof, and
-	// refs_dst_idx serves the target.
-	viaRefs, scalarKinds := false, ds.scalarReferenceKinds(types, name)
-	if b.overRecords && len(scalarKinds) > 0 {
-		pending, err := refsPending(ctx, x, scalarKinds, name)
+	// A SCALAR or LIST reference is answered from the refs index where it
+	// can be. Row level security holds every records read to its repository,
+	// and a clause it cannot prove leakproof runs only on the rows that policy
+	// admits: `->`, `->>` and `@>` on jsonb are not leakproof, so the path
+	// expression and the containment probes below never reach an index
+	// (indices.go, records_props_idx) and the filter reads, and detoasts,
+	// every row of the kind. On a mailbox mirror that is every stored message,
+	// payloads included, once per filter: a Gmail history page's per-thread
+	// reads took a fire past its minute. The refs columns are plain text,
+	// equality on them is leakproof, and refs_dst_idx serves the target
+	// (refsAtSiteSQL).
+	scalarKinds := ds.referenceKinds(types, name, scalarReference)
+	listKinds := ds.referenceKinds(types, name, listReference)
+	plainKinds := ds.referenceKinds(types, name, notReference)
+	viaRefs := false
+	if b.overRecords && len(scalarKinds)+len(listKinds) > 0 {
+		pending, err := refsPending(ctx, x, slices.Concat(scalarKinds, listKinds), name)
 		if err != nil {
 			return err
 		}
 		viaRefs = !pending
 	}
 	probeAll := func(values []any) (string, error) {
-		var scalar []string
-		seen := map[string]bool{}
-		var repeated []string
+		var scalar, list []string
+		seenScalar, seenList := map[string]bool{}, map[string]bool{}
+		var keyed []string
+		// The probes a list's paths take off refs depend on the shape being
+		// repeated alone, so any list shape renders them.
+		var listShape *vocabulary.Property
 		for _, v := range values {
 			for _, p := range shapes {
 				path, err := referenceFilterPath(name, p, v)
@@ -1259,19 +1334,26 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 					trail[path] = paths
 				}
 				for _, one := range paths {
-					if scalarReference(p) {
-						if !seen[one] {
-							seen[one] = true
+					switch {
+					case scalarReference(p):
+						if !seenScalar[one] {
+							seenScalar[one] = true
 							scalar = append(scalar, one)
 						}
-						continue
-					}
-					probes, err := referenceValue(name, p, one)
-					if err != nil {
-						return "", err
-					}
-					for _, probe := range probes {
-						repeated = append(repeated, `props @> `+b.arg(probe)+`::jsonb`)
+					case listReference(p):
+						listShape = p
+						if !seenList[one] {
+							seenList[one] = true
+							list = append(list, one)
+						}
+					default:
+						probes, err := referenceValue(name, p, one)
+						if err != nil {
+							return "", err
+						}
+						for _, probe := range probes {
+							keyed = append(keyed, `props @> `+b.arg(probe)+`::jsonb`)
+						}
 					}
 				}
 			}
@@ -1290,24 +1372,56 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 		// `props` on a 100k-row table once per probe, tens of seconds for a
 		// handful of rows.
 		//
-		// A REPEATED (or keyed) reference keeps the containment probes: the
-		// value is an array, and `records_props_idx` (jsonb_path_ops) is what
-		// reaches inside one.
-		clauses := repeated
+		// Off refs, a LIST reference keeps the containment probes, which reach
+		// inside the stored array; a KEYED one keeps them always, because its
+		// refs rows sit at the key's path, not at the property.
+		var clauses []string
 		if len(scalar) > 0 {
-			var clause string
 			if targets, ok := refTargetsOf(scalar); viaRefs && ok {
-				// The site a single top-level reference derives (refs.go
-				// deriveRefs): (name, "", 0), from a kind declaring it so.
 				b.viaRefs = true
-				clause = `EXISTS (SELECT 1 FROM refs r WHERE r.src_kind = records.kind AND r.src = records.id` +
-					` AND r.src_kind = ANY(` + b.textArray(scalarKinds) + `) AND r.path = '' AND r.ord = 0 AND ` +
-					referencingWhere(b, targets, name) + `)`
+				clauses = append(clauses, refsAtSiteSQL(b, "records", scalarKinds, name, true, targets))
 			} else {
-				clause = referencePathSQL("props", name) + ` = ANY(` + b.textArray(scalar) + `)`
+				clauses = append(clauses, referencePathSQL("props", name)+` = ANY(`+b.textArray(scalar)+`)`)
 			}
-			clauses = append([]string{clause}, clauses...)
 		}
+		if len(list) > 0 {
+			listProbes := func() ([]string, error) {
+				var out []string
+				for _, one := range list {
+					probes, err := referenceValue(name, listShape, one)
+					if err != nil {
+						return nil, err
+					}
+					for _, probe := range probes {
+						out = append(out, `props @> `+b.arg(probe)+`::jsonb`)
+					}
+				}
+				return out, nil
+			}
+			if targets, ok := refTargetsOf(list); viaRefs && ok {
+				b.viaRefs = true
+				clauses = append(clauses, refsAtSiteSQL(b, "records", listKinds, name, false, targets))
+				// A candidate kind declaring `name` as something other than a
+				// reference derives no refs rows for it, and the containment
+				// probes matched its rows holding the path's text: they keep
+				// that answer, over those kinds alone, so it does not turn
+				// on whether a re-derivation is owed.
+				if len(plainKinds) > 0 {
+					probes, err := listProbes()
+					if err != nil {
+						return "", err
+					}
+					clauses = append(clauses, `(kind = ANY(`+b.textArray(plainKinds)+`) AND (`+strings.Join(probes, " OR ")+`))`)
+				}
+			} else {
+				probes, err := listProbes()
+				if err != nil {
+					return "", err
+				}
+				clauses = append(clauses, probes...)
+			}
+		}
+		clauses = append(clauses, keyed...)
 		return `(` + strings.Join(clauses, " OR ") + `)`, nil
 	}
 	// `contains` on a reference is `eq` wearing another word: a pointer holds

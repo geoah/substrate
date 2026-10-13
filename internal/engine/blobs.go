@@ -489,40 +489,66 @@ func (t *txn) blobExists(digest string) (bool, error) {
 // stored digest string into the blob's manifest ({digest, name, mediaType,
 // size, status}) — the resolved reference reads never carry the bytes inline (ticket
 // 004). A digest whose manifest has vanished renders as the bare {digest}.
-func (ds *dataset) resolveBlobRefs(ctx context.Context, x dbx, ty *vocabulary.Kind, e *substrate.Record) error {
-	if ty == nil {
-		return nil
+// It resolves a page at once: types[i] is records[i]'s kind, and every
+// manifest the page names is read in one statement.
+func (ds *dataset) resolveBlobRefs(ctx context.Context, x dbx, types []*vocabulary.Kind, records []*substrate.Record) error {
+	// One blob-ref property of one record: the digests it stores, and
+	// whether it stores them as a list.
+	type site struct {
+		e        *substrate.Record
+		name     string
+		digests  []string
+		repeated bool
 	}
-	for _, name := range ty.PropOrder {
-		p := ty.Props[name]
-		if p.Datatype != vocabulary.DatatypeBlobRef {
+	var sites []site
+	var digests []string
+	for i, e := range records {
+		ty := types[i]
+		if ty == nil {
 			continue
 		}
-		v, ok := e.Properties[name]
-		if !ok || v == nil {
-			continue
-		}
-		if p.Repeated {
-			items, ok := v.([]any)
-			if !ok {
+		for _, name := range ty.PropOrder {
+			p := ty.Props[name]
+			if p.Datatype != vocabulary.DatatypeBlobRef {
 				continue
 			}
-			out := make([]any, 0, len(items))
-			for _, item := range items {
-				m, err := ds.blobManifest(ctx, x, fmt.Sprint(item))
-				if err != nil {
-					return err
-				}
-				out = append(out, m)
+			v, ok := e.Properties[name]
+			if !ok || v == nil {
+				continue
 			}
-			e.Properties[name] = out
-			continue
+			one := site{e: e, name: name, repeated: p.Repeated}
+			if p.Repeated {
+				items, ok := v.([]any)
+				if !ok {
+					continue
+				}
+				for _, item := range items {
+					one.digests = append(one.digests, fmt.Sprint(item))
+				}
+			} else {
+				one.digests = []string{fmt.Sprint(v)}
+			}
+			sites = append(sites, one)
+			digests = append(digests, one.digests...)
 		}
-		m, err := ds.blobManifest(ctx, x, fmt.Sprint(v))
-		if err != nil {
+	}
+	var found map[string]map[string]any
+	if len(digests) > 0 {
+		var err error
+		if found, err = ds.blobManifests(ctx, x, digests); err != nil {
 			return err
 		}
-		e.Properties[name] = m
+	}
+	for _, s := range sites {
+		if !s.repeated {
+			s.e.Properties[s.name] = blobManifestOf(s.digests[0], found)
+			continue
+		}
+		out := make([]any, 0, len(s.digests))
+		for _, d := range s.digests {
+			out = append(out, blobManifestOf(d, found))
+		}
+		s.e.Properties[s.name] = out
 	}
 	return nil
 }
@@ -854,38 +880,55 @@ func (ds *dataset) referencedDigests(ctx context.Context) (map[string]bool, erro
 	return out, nil
 }
 
-// blobManifest reads one blob's manifest for the read-time resolution of a
-// blob-ref. The digest is the manifest's id; status lives in the manifest's
-// state, size and mediaType in its properties.
-func (ds *dataset) blobManifest(ctx context.Context, x dbx, digest string) (map[string]any, error) {
-	m := map[string]any{blobPropDigest: digest}
-	var (
-		name      sql.NullString
-		mediaType sql.NullString
-		size      sql.NullInt64
-		status    sql.NullString
-	)
-	err := x.QueryRowContext(ctx, `
-		SELECT props->>'`+blobPropName+`', props->>'`+blobPropMediaType+`', (props->>'`+blobPropSize+`')::bigint, states->>'`+blobStateStatus+`'
-		FROM records WHERE id = $1 AND kind = $2 AND deleted_at IS NULL`, digest, kindBlob).
-		Scan(&name, &mediaType, &size, &status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return m, nil
-	}
+// blobManifests reads the live manifests of the digests for the read-time
+// resolution of a blob-ref, keyed by digest: each holds the manifest's
+// fields, without the digest itself. The digest is the manifest's id; status
+// lives in the manifest's state, size and mediaType in its properties.
+func (ds *dataset) blobManifests(ctx context.Context, x dbx, digests []string) (map[string]map[string]any, error) {
+	rows, err := x.QueryContext(ctx, `
+		SELECT id, props->>'`+blobPropName+`', props->>'`+blobPropMediaType+`', (props->>'`+blobPropSize+`')::bigint, states->>'`+blobStateStatus+`'
+		FROM records WHERE kind = $1 AND id = ANY($2::text[]) AND deleted_at IS NULL`, kindBlob, digests)
 	if err != nil {
 		return nil, err
 	}
-	if name.Valid && name.String != "" {
-		m[blobPropName] = name.String
+	defer func() { _ = rows.Close() }()
+	out := map[string]map[string]any{}
+	for rows.Next() {
+		var (
+			digest    string
+			name      sql.NullString
+			mediaType sql.NullString
+			size      sql.NullInt64
+			status    sql.NullString
+		)
+		if err := rows.Scan(&digest, &name, &mediaType, &size, &status); err != nil {
+			return nil, err
+		}
+		m := map[string]any{}
+		if name.Valid && name.String != "" {
+			m[blobPropName] = name.String
+		}
+		if mediaType.Valid && mediaType.String != "" {
+			m[blobPropMediaType] = mediaType.String
+		}
+		if size.Valid {
+			m[blobPropSize] = size.Int64
+		}
+		if status.Valid {
+			m[blobStateStatus] = status.String
+		}
+		out[digest] = m
 	}
-	if mediaType.Valid && mediaType.String != "" {
-		m[blobPropMediaType] = mediaType.String
+	return out, rows.Err()
+}
+
+// blobManifestOf renders one blob-ref value's manifest from what
+// blobManifests found: a map of its own for every value, so two values
+// naming one blob share nothing a caller could mutate.
+func blobManifestOf(digest string, found map[string]map[string]any) map[string]any {
+	m := map[string]any{blobPropDigest: digest}
+	for k, v := range found[digest] {
+		m[k] = v
 	}
-	if size.Valid {
-		m[blobPropSize] = size.Int64
-	}
-	if status.Valid {
-		m[blobStateStatus] = status.String
-	}
-	return m, nil
+	return m
 }

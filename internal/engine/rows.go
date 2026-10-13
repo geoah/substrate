@@ -453,22 +453,26 @@ func (t *txn) moveFormerIDs(typ, loserID, winnerID string) ([]string, error) {
 	return moved, err
 }
 
-// loadFormerIDs reads the ids merges fused into this record.
-func loadFormerIDs(ctx context.Context, x dbx, ref eref) ([]string, error) {
+// loadFormerIDs reads the ids merges fused into each record, keyed by
+// record, each record's in id order.
+func loadFormerIDs(ctx context.Context, x dbx, refs []eref) (map[eref][]string, error) {
+	kinds, ids := trailArgs(refs)
 	rows, err := x.QueryContext(ctx,
-		`SELECT former_id FROM former_ids WHERE record_kind = $1 AND record_id = $2 ORDER BY former_id`,
-		ref.Kind, ref.ID)
+		`SELECT record_kind, record_id, former_id FROM former_ids WHERE `+recordsIn+
+			` ORDER BY record_kind, record_id, former_id`,
+		kinds, ids)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []string
+	out := map[eref][]string{}
 	for rows.Next() {
+		var ref eref
 		var former string
-		if err := rows.Scan(&former); err != nil {
+		if err := rows.Scan(&ref.Kind, &ref.ID, &former); err != nil {
 			return nil, err
 		}
-		out = append(out, former)
+		out[ref] = append(out[ref], former)
 	}
 	return out, rows.Err()
 }

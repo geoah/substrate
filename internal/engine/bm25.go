@@ -84,8 +84,11 @@ type searchStats struct {
 
 // searchStatsCache holds one repository's statistics between searches.
 type searchStatsCache struct {
+	// mu guards s alone and is never held across a read.
 	mu sync.Mutex
 	s  searchStats
+	// refresh is held by the one caller reading fresh statistics.
+	refresh sync.Mutex
 }
 
 // searchStats returns the repository's collection statistics, reading them
@@ -98,42 +101,129 @@ type searchStatsCache struct {
 // and read every record with a description as thirty times longer than
 // usual, which crushed any match in it.
 func (ds *dataset) searchStats(ctx context.Context) (searchStats, error) {
-	c := &ds.statsCache
+	return ds.statsCache.get(ctx, ds.readSearchStats)
+}
+
+// get answers the held statistics while they stand, and read's otherwise.
+// The read runs outside mu: it samples the repository, and every lexical
+// search would wait on it. One caller reads at a time; while it does, a
+// caller holding stale statistics answers those, and a caller with none
+// waits for the read and answers what it found.
+func (c *searchStatsCache) get(ctx context.Context, read func(context.Context) (searchStats, error)) (searchStats, error) {
+	held := c.held()
+	if statsFresh(held) {
+		return held, nil
+	}
+	if held.at.IsZero() {
+		c.refresh.Lock()
+	} else if !c.refresh.TryLock() {
+		return held, nil
+	}
+	defer c.refresh.Unlock()
+	// The caller that held refresh before this one may have read already.
+	if held = c.held(); statsFresh(held) {
+		return held, nil
+	}
+	s, err := read(ctx)
+	if err != nil {
+		return searchStats{}, err
+	}
+	c.mu.Lock()
+	c.s = s
+	c.mu.Unlock()
+	return s, nil
+}
+
+func (c *searchStatsCache) held() searchStats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.s.at.IsZero() && time.Since(c.s.at) < statsTTL {
-		return c.s, nil
-	}
+	return c.s
+}
+
+// statsFresh reports whether held statistics still stand.
+func statsFresh(s searchStats) bool { return !s.at.IsZero() && time.Since(s.at) < statsTTL }
+
+// readSearchStats reads the repository's live row count and its band
+// averages.
+func (ds *dataset) readSearchStats(ctx context.Context) (searchStats, error) {
 	var n int64
 	if err := ds.db.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE deleted_at IS NULL`).Scan(&n); err != nil {
 		return searchStats{}, fmt.Errorf("substrate/engine: search statistics: %w", err)
 	}
 	s := searchStats{n: float64(n), at: time.Now()}
 	if n > 0 {
-		pct := math.Min(100, 100*float64(statsSample)/float64(n))
-		var a, b, cc, d *float64
-		// The sample is taken before any vector is read, and each sampled row
-		// is counted on its own: grouping the unnested rows of every row cost
-		// a second per 100 000 rows, this a tenth of that.
-		if err := ds.db.QueryRowContext(ctx, `
-			SELECT avg(nullif(l.a, 0)), avg(nullif(l.b, 0)), avg(nullif(l.c, 0)), avg(nullif(l.d, 0))
-			FROM records r TABLESAMPLE BERNOULLI ($1)
-			CROSS JOIN LATERAL (
-				SELECT count(*) FILTER (WHERE w = 'A') AS a, count(*) FILTER (WHERE w = 'B') AS b,
-				       count(*) FILTER (WHERE w = 'C') AS c, count(*) FILTER (WHERE w = 'D') AS d
-				FROM unnest(r.fts) u CROSS JOIN LATERAL unnest(u.weights) w
-			) l
-			WHERE r.deleted_at IS NULL`, pct).Scan(&a, &b, &cc, &d); err != nil {
+		avg, err := bandAverages(n, func(method string, pct float64) (int64, [4]float64, error) {
+			return ds.sampleBandLengths(ctx, method, pct)
+		})
+		if err != nil {
 			return searchStats{}, fmt.Errorf("substrate/engine: search statistics: %w", err)
 		}
-		for i, v := range []*float64{a, b, cc, d} {
-			if v != nil {
-				s.avg[i] = *v
-			}
+		s.avg = avg
+	}
+	return s, nil
+}
+
+// The ways sampleBandLengths reads the records table.
+const (
+	sampleEvery     = ""          // no TABLESAMPLE: every live row of the repository
+	sampleSystem    = "SYSTEM"    // a share of the table's pages
+	sampleBernoulli = "BERNOULLI" // a share of the rows of every page
+)
+
+// bandAverages reads the average band lengths of a repository of n live rows
+// from a sample of about statsSample of them. The records table holds every
+// repository, and the policy filters rows only after their page is read, so
+// BERNOULLI reads every page of the table whatever the percentage; SYSTEM
+// reads that percentage of the pages. A repository's rows can sit on few
+// pages that a SYSTEM sample misses, so a sample of fewer than statsSample/4
+// rows is read again with BERNOULLI. A repository of statsSample rows or
+// fewer is read whole, without TABLESAMPLE, so its index finds the rows.
+func bandAverages(n int64, sample func(method string, pct float64) (int64, [4]float64, error)) ([4]float64, error) {
+	pct := 100 * float64(statsSample) / float64(n)
+	if pct >= 100 {
+		_, avg, err := sample(sampleEvery, 100)
+		return avg, err
+	}
+	rows, avg, err := sample(sampleSystem, pct)
+	if err != nil || rows >= statsSample/4 {
+		return avg, err
+	}
+	_, avg, err = sample(sampleBernoulli, pct)
+	return avg, err
+}
+
+// sampleBandLengths reads, over the live rows a sample keeps, how many there
+// are and each band's average length among the rows holding the band.
+// method is one of the sample constants, never caller input.
+func (ds *dataset) sampleBandLengths(ctx context.Context, method string, pct float64) (int64, [4]float64, error) {
+	from, args := `records r`, []any{}
+	if method != sampleEvery {
+		from += ` TABLESAMPLE ` + method + ` ($1)`
+		args = append(args, pct)
+	}
+	var rows int64
+	var a, b, c, d *float64
+	// The sample is taken before any vector is read, and each sampled row
+	// is counted on its own: grouping the unnested rows of every row cost
+	// a second per 100 000 rows, this a tenth of that.
+	if err := ds.db.QueryRowContext(ctx, `
+		SELECT count(*), avg(nullif(l.a, 0)), avg(nullif(l.b, 0)), avg(nullif(l.c, 0)), avg(nullif(l.d, 0))
+		FROM `+from+`
+		CROSS JOIN LATERAL (
+			SELECT count(*) FILTER (WHERE w = 'A') AS a, count(*) FILTER (WHERE w = 'B') AS b,
+			       count(*) FILTER (WHERE w = 'C') AS c, count(*) FILTER (WHERE w = 'D') AS d
+			FROM unnest(r.fts) u CROSS JOIN LATERAL unnest(u.weights) w
+		) l
+		WHERE r.deleted_at IS NULL`, args...).Scan(&rows, &a, &b, &c, &d); err != nil {
+		return 0, [4]float64{}, err
+	}
+	var avg [4]float64
+	for i, v := range []*float64{a, b, c, d} {
+		if v != nil {
+			avg[i] = *v
 		}
 	}
-	c.s = s
-	return s, nil
+	return rows, avg, nil
 }
 
 // bm25Doc is one candidate as the statement reads it: its band lengths and,

@@ -529,8 +529,8 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   and is filtered by the PATH string it points at (not by the object the read
   serves) — a single reference as one indexed equality on that path, an index
   the engine builds for every kind's single references without a declaration,
-  a `repeated` one by containment — and every other declared property takes
-  the full grammar (`eq`, `gt`,
+  a `repeated` one through the index the reverse read walks — and every
+  other declared property takes the full grammar (`eq`, `gt`,
   `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
   declared [property type](data-model.md#property-types). State properties
   filter here like any other. A `money` property takes `eq`, `in`, the four
