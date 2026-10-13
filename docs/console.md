@@ -853,9 +853,10 @@ A metric is planned once its streams are read: a metric
 being added waits under the charts already drawn, and choosing a source, a
 thing or a channel re-reads the charts, never the streams. While a changed read loads, the chart keeps drawing each
 metric's earlier answer, alone or from a shared request, and the row says
-Updating…, where that answer has the same unit and grouping and carries the
-new reducer; after a change of unit or grouping, or to a reducer the earlier
-answer lacks, the row says Reading… and draws nothing of that metric. A
+Updating…, where that answer has the same unit, grouping and summary
+statistic and carries the new reducer; after a change of unit, grouping or
+statistic, or to a reducer the earlier answer lacks, the row says Reading…
+and draws nothing of that metric. A
 change to one metric of a shared request (its reducer, unit or statistic),
 or a metric added to the request or removed from it, makes a new request:
 every metric in it is read again, across the timeline's charts, and each of

@@ -204,6 +204,19 @@ describe("heldAnswer", () => {
       heldAnswer(client, read(["sum"], { groupBy: ["about"] }), kinds)
     ).toBeUndefined()
   })
+
+  it("holds nothing read in another summary statistic", () => {
+    const statistic = (eq: string): AggregateRead => ({
+      ...read(["avg"]),
+      filter: { ...sleepRead.filter, properties: { statistic: { eq } } },
+    })
+    const client = cached([statistic("avg"), 1], [read(["avg"]), 2])
+    // A cycle's average is no stand-in for its highest.
+    expect(heldAnswer(client, statistic("max"), kinds)).toBeUndefined()
+    expect(heldAnswer(client, statistic("avg"), kinds)).toEqual(answer(1))
+    // A read naming no statistic holds only another that names none.
+    expect(heldAnswer(client, read(["avg"]), kinds)).toEqual(answer(2))
+  })
 })
 
 /** Weight and steps over September in days, read together. */

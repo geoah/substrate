@@ -137,13 +137,15 @@ export function metricAnswer(
 }
 
 /** The newest answer the cache holds that a chart can draw while `read`
- * loads: a read of the same metric over the same range, in the same unit
- * and grouping, that asked for every reducer `read` asks for, whatever its
- * bucket, filter or source, alone or as one metric of a several-metric
- * read. Any other answer would draw under the new read's axis caption,
- * series and column what it does not hold. A new range is a new chart, so
- * nothing holds across one. For a several-metric read, each metric's held
- * rows together, under `units` naming the metrics they hold. */
+ * loads: a read of the same metric over the same range, in the same unit,
+ * grouping and summary statistic, that asked for every reducer `read` asks
+ * for, whatever its bucket, other filters or source, alone or as one
+ * metric of a several-metric read. Any other answer would draw under the
+ * new read's axis caption, series and column what it does not hold: a
+ * cycle's average is no stand-in for its highest. A new range is a new
+ * chart, so nothing holds across one. For a several-metric read, each
+ * metric's held rows together, under `units` naming the metrics they
+ * hold. */
 export function heldAnswer(
   client: QueryClient,
   read: AggregateRead,
@@ -162,14 +164,16 @@ export function heldAnswer(
     const held = query.queryKey[3] as AggregateRead | undefined
     const data = query.state.data as AggregateResult | undefined
     if (!held || !data) continue
-    const own = metricReads(held).find(
+    const ownRead = metricReads(held).find(
       (r) => r.aggregate.metric?.ref === metric.ref
-    )?.aggregate
+    )
+    const own = ownRead?.aggregate
     if (
       !own ||
       own.range?.gte !== range.gte ||
       own.range?.lt !== range.lt ||
-      !drawsAs(own, read.aggregate)
+      !drawsAs(own, read.aggregate) ||
+      statisticOf(ownRead.filter) !== statisticOf(read.filter)
     ) {
       continue
     }
@@ -204,6 +208,11 @@ function heldTogether(
     ),
     head: parts[0].held.head,
   }
+}
+
+/** The summary statistic a read's filter narrows to, as one string. */
+function statisticOf(filter: RecordFilter | undefined): string {
+  return JSON.stringify(filter?.properties?.statistic ?? null)
 }
 
 /** Whether an answer to `held` carries what a chart of `next` draws: the
