@@ -503,6 +503,28 @@ func (c *obsCheck) offset(name string) {
 	}
 }
 
+// RevisionProblems holds a rewrite of a live record whose kind binds
+// `observed` or `revised` to its stored revision (decision 0162): the written
+// revision is at least the stored one, and a stored one is never removed. An
+// equal one is admitted, which is how an adapter fix rewrites output its
+// upstream did not change.
+func RevisionProblems(stored, written map[string]any) []string {
+	was, had := ObservedRevisionOf(stored)
+	if !had {
+		return nil
+	}
+	now, has := ObservedRevisionOf(written)
+	switch {
+	case !has:
+		return []string{fmt.Sprintf(
+			"props.revision: the stored revision %d is never removed; a rewrite carries one at least as high", was)}
+	case now < was:
+		return []string{fmt.Sprintf(
+			"props.revision: %d is below the stored revision %d; a rewrite never lowers it, so this is a stale delivery", now, was)}
+	}
+	return nil
+}
+
 // ObservedRevisionOf reads a stored revision, false when there is none.
 func ObservedRevisionOf(props map[string]any) (int64, bool) {
 	raw, held := props[ObservedRevision]

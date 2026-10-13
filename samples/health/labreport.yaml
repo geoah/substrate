@@ -16,6 +16,7 @@ data:
     singular: labreport
   traits:
     - substrate.reamde.dev/core/temporal(point)
+    - substrate.reamde.dev/core/revised
   displayTemplate: "{lab} {accession}"
   properties:
     lab:
@@ -52,7 +53,8 @@ data:
     revision:
       type: int
       min: 0
-      description: rises with each rewrite from the upstream
+      description: rises with each rewrite from the upstream; a lower one
+        is refused
     review:
       type: enum
       description: whether the owner has checked a report read from a document

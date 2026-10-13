@@ -45,41 +45,36 @@ func prepareObserved(sp *applySpec) {
 }
 
 // checkObserved holds the merged row of an observed kind to the trait's
-// rules, refuses a revision below the stored one, and stamps a packed
-// record's stats. A write that leaves a tombstone (a finalizer release) is
-// not held: it changes no observed value.
+// rules, refuses a revision below the stored one on a kind that binds
+// `observed` or `revised`, and stamps a packed record's stats. A write that
+// leaves a tombstone (a finalizer release) is not held: it changes no
+// observed value.
 func (t *txn) checkObserved(sp *applySpec, before, row *erow, accepted *[]string) error {
-	b, ok := observedBinding(sp.ty)
-	if !ok || (row.DeletedAt != nil && !sp.resurrect) {
+	b, observed := observedBinding(sp.ty)
+	_, revised := sp.ty.Binding(vocabulary.TraitRevisedCore)
+	if (!observed && !revised) || (row.DeletedAt != nil && !sp.resurrect) {
 		return nil
 	}
-	problems := vocabulary.CheckObserved(vocabulary.ObservedRecord{
-		Variant: b.Variant, At: row.At, EndsAt: row.EndsAt, Props: row.Props,
-		Declares: func(name string) bool {
-			_, declared := sp.ty.Prop(name)
-			return declared
-		},
-	})
+	var problems []string
+	if observed {
+		problems = vocabulary.CheckObserved(vocabulary.ObservedRecord{
+			Variant: b.Variant, At: row.At, EndsAt: row.EndsAt, Props: row.Props,
+			Declares: func(name string) bool {
+				_, declared := sp.ty.Prop(name)
+				return declared
+			},
+		})
+	}
 	// A revision is compared with the live row it rewrites. A create and a
 	// put onto a tombstone start a record afresh, so neither has one to fall
 	// below.
 	if before != nil && before.DeletedAt == nil && !sp.resurrect {
-		if stored, had := vocabulary.ObservedRevisionOf(before.Props); had {
-			written, has := vocabulary.ObservedRevisionOf(row.Props)
-			switch {
-			case !has:
-				problems = append(problems, fmt.Sprintf(
-					"props.revision: the stored revision %d is never removed; a rewrite carries one at least as high", stored))
-			case written < stored:
-				problems = append(problems, fmt.Sprintf(
-					"props.revision: %d is below the stored revision %d; a rewrite never lowers it, so this is a stale delivery", written, stored))
-			}
-		}
+		problems = append(problems, vocabulary.RevisionProblems(before.Props, row.Props)...)
 	}
 	if len(problems) > 0 {
 		return &substrate.ValidationError{Problems: problems}
 	}
-	if b.Variant != vocabulary.ObservedPacked || row.At == nil {
+	if !observed || b.Variant != vocabulary.ObservedPacked || row.At == nil {
 		return nil
 	}
 	stats, err := vocabulary.TraceStats(*row.At, row.Props)

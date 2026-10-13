@@ -18,6 +18,7 @@ data:
     singular: sleep
   traits:
     - substrate.reamde.dev/core/temporal(range)
+    - substrate.reamde.dev/core/revised
   displayTemplate: "{source} {at}"
   properties:
     source:
@@ -35,7 +36,8 @@ data:
     revision:
       type: int
       min: 0
-      description: rises with each rewrite from the upstream
+      description: rises with each rewrite from the upstream; a lower one
+        is refused
     adapter:
       type: string
       description: the function and version that wrote this row from its origin,

@@ -234,6 +234,12 @@ opt into twice:
   ([decision 0154](decisions/0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md)).
   [Observations](observations.md) has every rule and the sample kinds that
   bind it.
+- **`revised`** marks a kind an adapter rewrites from an upstream that
+  numbers its versions, such as the health sample's `sleep`, `workout` and
+  `labreport`. A write of an implementor whose `revision` is below the stored
+  one, or that removes it, is refused, the rule `observed` holds for observed
+  values, so a stale delivery never reverts a newer result
+  ([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
 - **`accountconfig`** and **`oauth2`** are how the substrate's OAuth
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to

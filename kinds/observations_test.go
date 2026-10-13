@@ -359,3 +359,48 @@ func article(form string) string {
 	}
 	return "a"
 }
+
+// A KIND AN ADAPTER REWRITES HOLDS ITS REVISION. Every observations and health
+// kind that declares `revision` binds `observed` or `revised`, so the write
+// path refuses a stale delivery of it (decision 0162) rather than reverting a
+// night, a workout or a report to an older upstream version.
+func TestRevisionKindsBindTheRuleThatHoldsIt(t *testing.T) {
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	cat, err := catalog.Load(catalog.ProviderRoot(kinds.Bundles()), catalog.SampleRoot(samples.Samples()))
+	if err != nil {
+		t.Fatalf("load the shipped catalog: %v", err)
+	}
+	health := shippedSample(t, "health")
+	byPackage := map[string]*catalog.Bundle{}
+	for _, b := range cat.Bundles() {
+		byPackage[b.ID] = b
+	}
+	if err := installClosure(reg, byPackage, health, map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, pkg := range []string{"observations", "health"} {
+		for _, id := range shippedSample(t, pkg).Closure.Kinds {
+			k, ok := reg.ByIdentity(id)
+			if !ok {
+				t.Fatalf("%s did not install", id)
+			}
+			if _, declares := k.Prop(vocabulary.ObservedRevision); !declares {
+				continue
+			}
+			checked++
+			_, observed := k.Binding(vocabulary.TraitObservedCore)
+			_, revised := k.Binding(vocabulary.TraitRevisedCore)
+			if !observed && !revised {
+				t.Errorf("%s declares revision and binds neither %s nor %s: a stale delivery would revert it",
+					id, vocabulary.TraitObservedCore, vocabulary.TraitRevisedCore)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no kind declares revision; the test reads the wrong place")
+	}
+}

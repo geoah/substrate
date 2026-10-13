@@ -54,7 +54,11 @@ Chosen: the first.
   rewrite with a lower revision than the stored one is refused, so a stale
   page cannot overwrite a newer result. An upstream change raises it. The
   adapter's own version is stamped apart from `revision`, so an adapter fix
-  can rewrite output the upstream did not change.
+  can rewrite output the upstream did not change. A kind an adapter writes
+  that does not bind `observed` (a night's sleep, a workout, a lab report)
+  binds core's `revised` trait, which holds the same rule, because the
+  `observed` property list never grows
+  ([0154](0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md)).
 - A delivery writes the complete set its mirror row implies and deletes the
   earlier outputs of that origin it no longer implies, found by
   `referencing` the origin.

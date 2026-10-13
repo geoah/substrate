@@ -260,7 +260,8 @@ whose problems name the property and the rule, such as
   either way.
 - `revision` never falls: a rewrite with a lower one than the stored one is
   refused as a stale delivery, an equal one is admitted, and a stored one is
-  never removed. A create, and a put onto a deleted record, start afresh.
+  never removed. A create, and a put onto a deleted record, start afresh. A
+  kind that binds core's `revised` trait instead is held to this rule alone.
 - A `comparator` on `value` (`<0.01`) is admitted only where the kind
   declares `comparator: true` on it, as for any quantity.
 
@@ -323,8 +324,11 @@ a rewrite that changes no point writes nothing.
 
 `samples.substrate.reamde.dev/health` requires `observations` with a
 `requiresAtLeast` floor (`TestHealthRequiresObservations`) and adds five
-kinds and a catalogue. `sleep` and `workout` carry `origin`, `revision` and
-`adapter` as the base kinds do, because an adapter writes them too.
+kinds and a catalogue. `sleep`, `workout` and `labreport` carry `origin` and
+`revision` as the base kinds do, and `sleep` and `workout` carry `adapter`,
+because an adapter writes them too. The three bind core's `revised` trait, so
+a rewrite with a lower `revision` is refused on them as it is on an
+observation.
 
 | Kind | One record is |
 | --- | --- |

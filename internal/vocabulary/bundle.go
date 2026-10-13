@@ -78,6 +78,16 @@ const (
 	ObservedPacked = "packed"
 )
 
+// The revised trait (decision 0162): a kind rewritten from an upstream that
+// numbers its versions, such as a night's sleep or a workout, whose
+// `revision` the write path never lets fall. `observed` holds the same rule
+// for observed values, and its property list cannot grow, so the session
+// kinds beside them bind this one.
+const (
+	TraitRevised     = "revised"
+	TraitRevisedCore = PackageCore + "/" + TraitRevised
+)
+
 // ComputedSlotLen is the width of the slot a computed occurrence's id carries
 // after its series' id and a `_`: `YYYYMMDDTHHMMSSZ`. MaxSeriesIDLen keeps the
 // whole `<seriesId>_<slot>` inside MaxIDLen, and the write path holds a kind
