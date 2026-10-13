@@ -49,6 +49,7 @@ import {
   type PlotScope,
   type PlotSource,
 } from "./overlay"
+import { selectionByMetric } from "./stream-table"
 
 /** The shipped health catalogue's metric records, read as the console reads
  * a repository's, under the fixtures' metric kind. */
@@ -696,6 +697,53 @@ describe("one metric's plot", () => {
     expect(merged.only).toBeUndefined()
     expect(merged.mixedIn).toEqual([cycle])
     expect(plotRows(merged, answer)).toBe(answer)
+  })
+
+  it("draws a selected stream naming no source beside a sourced one", () => {
+    const streams = streamsOf(LATEST)
+    const scale = streams.find((s) => s.metric === BODY_MASS)!
+    const typed: Stream = {
+      ...scale,
+      key: "typed-weight",
+      source: undefined,
+      at: "2026-10-06T07:00:00Z",
+    }
+    const other: Stream = { ...scale, key: "garmin-weight", source: GARMIN }
+    const obs = source([typed, other, ...streams])
+    // No `in` names a stream with no source, so the read takes every source
+    // rather than leave the typed weigh-in out.
+    const [entry] = selectionByMetric([scale, typed])
+    expect(entry.sources).toEqual([])
+    const scope: PlotScope = {
+      ...SCOPE,
+      size: "day",
+      group: "source",
+      sources: entry.sources,
+      abouts: entry.abouts,
+      channels: entry.channels,
+      streams: entry.streams,
+    }
+    const bySource = planPlot(obs, BODY_MASS, scope)
+    expect(bySource.sourceless).toBe(true)
+    expect(bySource.read?.filter?.properties?.source).toBeUndefined()
+    const row = (src?: string) => ({
+      start: "2026-10-06T00:00:00+03:00",
+      end: "2026-10-07T00:00:00+03:00",
+      group: src ? { source: src } : {},
+      values: [{ reducer: "avg", value: "72", unit: "kg" }],
+      count: 1,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const answer = [row(WITHINGS), row(), row(GARMIN)]
+    // Grouped by source, both selected series draw and the other is dropped.
+    expect(plotRows(bySource, answer)).toEqual([answer[0], answer[1]])
+    // Resolved into one line, the other source joins it, and the plot says
+    // which.
+    const merged = planPlot(obs, BODY_MASS, { ...scope, group: "metric" })
+    expect(merged.sourceless).toBe(true)
+    expect(merged.mixedIn).toEqual([other])
   })
 
   it("draws only the selected things where the read, grouped by about, takes others too", () => {

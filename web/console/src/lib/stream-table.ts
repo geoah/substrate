@@ -436,11 +436,12 @@ export function selectionState(
 }
 
 /** The selected streams of each metric, in the order the metrics were
- * first selected: one read per metric, narrowed to its selected sources,
- * and to its things and channels where every selected stream names one (a
- * stream about the owner, or on no channel, cannot be asked for by `in`).
- * The read may therefore take streams the selection leaves out, which the
- * plot drops or names (`lib/overlay.ts` planPlot). */
+ * first selected: one read per metric, narrowed to its sources, things and
+ * channels where every selected stream names one (a stream naming no
+ * source, about the owner, or on no channel cannot be asked for by `in`,
+ * and the filter has no "or"). The read may therefore take streams the
+ * selection leaves out, which the plot drops or names (`lib/overlay.ts`
+ * planPlot). */
 export interface MetricSelection {
   metric: string
   streams: Stream[]
@@ -468,7 +469,9 @@ export function selectionByMetric(
     entry.streams.push(stream)
   }
   for (const entry of out) {
-    entry.sources = distinct(entry.streams.map((s) => s.source))
+    entry.sources = entry.streams.every((s) => s.source)
+      ? distinct(entry.streams.map((s) => s.source))
+      : []
     entry.abouts = entry.streams.every((s) => s.about)
       ? distinct(entry.streams.map((s) => s.about))
       : []
