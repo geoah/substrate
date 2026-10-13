@@ -43,6 +43,13 @@ its wire shape, `{"ref": "<path>"}`, with the path cut to
 
 ## Sending a request
 
+`$SUBSTRATE_SERVER` is the substrate's URL and `$SUBSTRATE_TOKEN` a token
+for the repository: `substratectl login` mints one, `substratectl token
+create` mints one for an app ([substratectl](substratectl.md#registering)),
+and `POST /login` is the same over HTTP ([logging in](auth.md#logging-in)).
+A token has full access to its repository: it reads and writes every record
+in it ([tokens](auth.md#tokens)).
+
 Each recipe shows one JSON document whose top-level keys (`filter`,
 `aggregate`, `downsample`) are query parameters of `GET /api/v1/records`.
 The same document is the body `substratectl aggregate --body` takes:
