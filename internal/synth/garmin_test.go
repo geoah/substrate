@@ -222,8 +222,8 @@ func TestGarminEmitsTheDefaultLife(t *testing.T) {
 	if perType["moveIQActivities"] == 0 || entries["moveIQActivities"] > 12 {
 		t.Errorf("%d Move IQ events over %d deliveries; want a few", entries["moveIQActivities"], perType["moveIQActivities"])
 	}
-	if len(perType) != 14 {
-		t.Errorf("%d summary types, want 14: %v", len(perType), perType)
+	if len(perType) != 15 {
+		t.Errorf("%d summary types, want 15: %v", len(perType), perType)
 	}
 
 	// Every summary: Garmin's user, a summaryId unique within its type.
@@ -566,5 +566,42 @@ func TestGarminActivityDetailsCarryTheRoute(t *testing.T) {
 		if seen[typ] == 0 {
 			t.Errorf("the default life has no %s activity", typ)
 		}
+	}
+}
+
+// A Saturday evening at home the watch takes a two-minute health snapshot:
+// heart rate, breathing, stress, SpO2 and HRV every five seconds.
+func TestGarminTakesAWeeklyHealthSnapshot(t *testing.T) {
+	p, _, deliveries, bodies := garminEmit(t, Options{})
+	want := 0
+	for _, d := range p.Days() {
+		if x := p.Day(d); d.Weekday() == time.Saturday && !x.Trip && !x.Ill {
+			want++
+		}
+	}
+	got := 0
+	for i := range deliveries {
+		for _, e := range bodies[i]["healthSnapshot"] {
+			got++
+			if gInt(t, e, "durationInSeconds") != 120 {
+				t.Errorf("snapshot %v lasts %v s", e["summaryId"], e["durationInSeconds"])
+			}
+			types := map[string]bool{}
+			for _, s := range e["summaries"].([]any) {
+				m := s.(map[string]any)
+				types[m["summaryType"].(string)] = true
+				vals := m["epochSummaries"].(map[string]any)
+				gKeys(t, vals, 5, 120, "snapshot")
+				if len(vals) != 24 || gFloat(t, m["minValue"]) > gFloat(t, m["avgValue"]) || gFloat(t, m["avgValue"]) > gFloat(t, m["maxValue"]) {
+					t.Errorf("snapshot %v %v: %d values, min %v avg %v max %v", e["summaryId"], m["summaryType"], len(vals), m["minValue"], m["avgValue"], m["maxValue"])
+				}
+			}
+			if len(types) != 5 {
+				t.Errorf("snapshot %v holds %v", e["summaryId"], types)
+			}
+		}
+	}
+	if got != want || want == 0 {
+		t.Errorf("%d health snapshots, want %d, one each Saturday at home", got, want)
 	}
 }

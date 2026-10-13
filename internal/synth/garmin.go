@@ -20,7 +20,8 @@ import (
 // One watch, a forerunner265, records the day: heart rate every 5 minutes
 // in the daily, 15-minute epochs split by activity type, stress every 3
 // minutes and Body Battery every 15 in the stress details, and the night's
-// stages, SpO2 every 10 minutes, breathing every 15 and HRV every 5. Each
+// stages, SpO2 every 10 minutes, breathing every 15 and HRV every 5, and on
+// a Saturday evening at home a two-minute health snapshot. Each
 // workout is an activity and its details, a sample every 30 seconds with
 // laps per kilometer on a run. A daily spans the persona's local day, which
 // ends where the next one starts, so the dailies tile time across the trip.
@@ -944,11 +945,53 @@ func (e *garminEmitter) moveIQ(d Date, strolls *int) map[string]any {
 	}
 }
 
+// snapshot is the two-minute health snapshot the watch takes on a Saturday
+// evening at home: heart rate, breathing, stress, SpO2 and HRV every five
+// seconds; nil on other days.
+func (e *garminEmitter) snapshot(d Date) map[string]any {
+	x := e.p.Day(d)
+	if d.Weekday() != time.Saturday || x.Trip || x.Ill {
+		return nil
+	}
+	start := d.At(x.Zone, 21, 30)
+	a := start.Unix()
+	truth := map[string]func(t time.Time) float64{
+		"heart_rate":  func(t time.Time) float64 { return float64(x.HR(t)) },
+		"respiration": func(time.Time) float64 { return x.Sleep.RespRate + 1.5 },
+		"stress":      func(t time.Time) float64 { return float64(max(5, x.Stress(t))) },
+		"spo2":        func(time.Time) float64 { return x.Sleep.SpO2Avg + 0.5 },
+		"rmssd_hrv":   func(time.Time) float64 { return x.HRVRMSSDMs * 0.8 },
+	}
+	var summaries []any
+	for _, typ := range []string{"heart_rate", "respiration", "stress", "spo2", "rmssd_hrv"} {
+		vals := map[string]float64{}
+		lo, hi, sum := math.Inf(1), math.Inf(-1), 0.0
+		for k := int64(0); k < 120; k += 5 {
+			v := e.noisy("snapshot-"+typ, a+k, truth[typ](time.Unix(a+k, 0)), 1)
+			if typ == "spo2" {
+				v = math.Min(100, v)
+			}
+			v = round(v, 1)
+			vals[fmt.Sprint(k)] = v
+			lo, hi, sum = math.Min(lo, v), math.Max(hi, v), sum+v
+		}
+		summaries = append(summaries, map[string]any{
+			"summaryType": typ, "minValue": lo, "maxValue": hi, "avgValue": round(sum/24, 1), "epochSummaries": vals,
+		})
+	}
+	return map[string]any{
+		"userId": garminUserID, "summaryId": garminSID(a), "calendarDate": d.String(),
+		"startTimeInSeconds": a, "durationInSeconds": 120, "startTimeOffsetInSeconds": garminOffset(start),
+		"summaries": summaries,
+	}
+}
+
 // --- the deliveries ----------------------------------------------------------
 
 // deliveries is every push in posting order: for each day the daily, the
-// epochs, the stress details, the night and its breathing slices and each
-// activity's details, one delivery each; on Sundays and on the last day,
+// epochs, the stress details, the night and its breathing slices, each
+// activity's details and a Saturday's health snapshot, one delivery each;
+// on Sundays and on the last day,
 // the week's HRV, Pulse Ox, skin temperature, weigh-ins, blood pressure,
 // user metrics, activities and Move IQ events, one delivery per type.
 func (e *garminEmitter) deliveries() ([]Delivery, error) {
@@ -1006,6 +1049,9 @@ func (e *garminEmitter) deliveries() ([]Delivery, error) {
 		emit("allDayRespiration", d, night.resp)
 		for _, a := range acts {
 			emit("activityDetails", d, []map[string]any{a.detail})
+		}
+		if snap := e.snapshot(d); snap != nil {
+			emit("healthSnapshot", d, []map[string]any{snap})
 		}
 		week["hrv"] = append(week["hrv"], item{d, night.hrv})
 		week["pulseox"] = append(week["pulseox"], item{d, night.pulseox})

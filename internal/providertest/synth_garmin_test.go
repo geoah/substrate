@@ -309,6 +309,19 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 		samples["account/hrv_rmssd"] += len(e["hrvValues"].(map[string]any))
 	}
 	samples["account/respiratory_rate"] = len(want["respiration"])
+	snapshotMetrics := map[string]string{
+		"heart_rate": "heart_rate", "respiration": "respiratory_rate", "stress": "garmin_stress",
+		"spo2": "spo2", "rmssd_hrv": "hrv_rmssd",
+	}
+	for _, e := range want["healthsnapshot"] {
+		for _, s := range e["summaries"].([]any) {
+			m := s.(map[string]any)
+			samples["account/"+snapshotMetrics[m["summaryType"].(string)]] += len(m["epochSummaries"].(map[string]any))
+		}
+	}
+	if len(want["healthsnapshot"]) == 0 {
+		t.Error("the Saturday sends no health snapshot")
+	}
 	for _, e := range want["activitydetail"] {
 		for _, s := range e["samples"].([]any) {
 			for field, metric := range map[string]string{
