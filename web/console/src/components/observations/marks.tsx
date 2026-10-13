@@ -121,7 +121,13 @@ export function Reading({
     )
   }
   if (unit && formatQuantity({ value, unit })) {
-    return <QuantityValue value={{ value, unit }} className={className} />
+    return (
+      <QuantityValue
+        value={{ value, unit }}
+        places={precision}
+        className={className}
+      />
+    )
   }
   return <span className={cn("tabular-nums", className)}>{value}</span>
 }

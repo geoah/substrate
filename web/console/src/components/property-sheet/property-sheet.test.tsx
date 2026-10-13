@@ -316,6 +316,23 @@ describe("PropertySheet on a kind binding observed", () => {
     expect(hold.querySelector("[title='PT1H51M31S']")).not.toBeNull()
   })
 
+  it("reads a quantity to two places, the stored digits on hover", () => {
+    renderSheet(
+      {
+        ...reading,
+        properties: {
+          ...reading.properties,
+          value: { value: "97.1836248", unit: "%" },
+        },
+      },
+      observation
+    )
+    const value = row("value")
+    expect(value.textContent).toContain("97.18 %")
+    expect(value.textContent).not.toContain("97.1836248")
+    expect(value.querySelector("[title='97.1836248 %']")).not.toBeNull()
+  })
+
   it("names a form in the words the observations pages use", () => {
     renderSheet(reading, observation)
     expect(row("form").textContent).toContain("Level")

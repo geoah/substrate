@@ -343,7 +343,9 @@ here throughout, and says to change it at the provider.
 **The properties** are a sheet: one row per property, its label (and
 its key, with Technical details on) on the left and its value on the right,
 with empty properties folded into one line that expands. A duration reads in
-words (`1h 51m 31s`), the stored text on hover. Clicking a value
+words (`1h 51m 31s`), the stored text on hover. A quantity reads to two
+decimal places (`97.18 %`, a kind's property declaring none of its own),
+the stored digits on hover; with Technical details on, as stored. Clicking a value
 edits it in place, with the control its datatype earns: a text box, a number,
 a date and time, a textarea for prose, a list to pick from for an enum, the
 moves a state may make, a record picker for a reference, and, for the shapes
@@ -796,8 +798,8 @@ unit by its symbol (`lb`, not `[lb_av]`) and offers the units a stored unit is
 read in day to day where there is such a list (kilograms, pounds and stones
 for a weight in kilograms); with Technical details on it offers every unit
 the server converts to, each with its code. A quantity's hover gives its
-symbol (`19 score`), and the text a write takes (`19 {score}`) only with
-Technical details on. **Show** offers
+symbol and stored digits (`19 score`), and the text a write takes
+(`19 {score}`) only with Technical details on. **Show** offers
 every reducer the metric's form takes ([the table](api.md#reducers-by-form)),
 with the median and the 90th percentile for a level or an amount, the
 circular mean for an angle, and for a heart rate the time in each of five

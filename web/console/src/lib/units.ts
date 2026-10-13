@@ -499,6 +499,45 @@ export function formatQuantity(value: unknown): string {
   return `${head} ${symbol}`
 }
 
+/** Decimal digits cut to `precision` places for display, rounded half
+ * away from zero on the digits themselves (a binary float turns `1.005`
+ * into `1.00`); digits with no more places than that come back as they
+ * are, so a stored `72.40` keeps its zero, and a value rounded to zero has
+ * no sign. The exact digits stay on the wire, in the copied table and on
+ * hover. */
+export function roundDigits(value: string, precision: number): string {
+  const m = /^(-?)(\d+)\.(\d+)$/.exec(value)
+  if (!m || m[3].length <= precision) return value
+  const [, sign, whole, places] = m
+  const digits = (whole + places.slice(0, precision)).split("").map(Number)
+  if (Number(places[precision]) >= 5) {
+    let i = digits.length - 1
+    while (i >= 0 && digits[i] === 9) digits[i--] = 0
+    if (i < 0) digits.unshift(1)
+    else digits[i] += 1
+  }
+  const text = digits.join("")
+  const cut = text.length - precision
+  const out = precision ? `${text.slice(0, cut)}.${text.slice(cut)}` : text
+  return sign && /[1-9]/.test(out) ? `-${out}` : out
+}
+
+/** The places a quantity is shown to outside Technical details where
+ * nothing declares its own (a kind's quantity property declares none; a
+ * metric's `displayPrecision` does). */
+export const DISPLAY_PLACES = 2
+
+/** A stored value as a reader sees it outside Technical details: the
+ * digits to `places` (`DISPLAY_PLACES` by default) with the unit's print
+ * symbol, `97.18 %`; the stored digits stay on hover. Not a quantity: "". */
+export function displayQuantity(
+  value: unknown,
+  places: number = DISPLAY_PLACES
+): string {
+  if (!isQuantity(value)) return ""
+  return formatQuantity({ ...value, value: roundDigits(value.value, places) })
+}
+
 /** A stored value as the exact text an editor holds, the unit as its code so
  * it reads back to the same value: `72.5 kg`, `<0.5 ng/mL`, `37 Cel`. Not a
  * quantity: "". */
