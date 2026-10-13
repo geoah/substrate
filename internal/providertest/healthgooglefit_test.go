@@ -404,6 +404,11 @@ func TestHealthGoogleFitRereadsConverge(t *testing.T) {
 	if fmt.Sprint(value["value"]) != "71.76" || fitNumber(now.Properties["revision"]) <= fitNumber(old.Properties["revision"]) {
 		t.Fatalf("the re-read weigh-in = %v at revision %v (was %v)", value, now.Properties["revision"], old.Properties["revision"])
 	}
+	// The evening weigh-in was entered by hand in the Fit app, which Fit
+	// says by naming user_input as its origin.
+	if now.Properties["recordingMethod"] != "manual" {
+		t.Fatalf("the hand-entered weigh-in is recorded %v, want manual", now.Properties["recordingMethod"])
+	}
 	for _, id := range gone {
 		if live(t, ds, obsObservation, id) {
 			t.Fatalf("%s survived its day coming back empty", id)

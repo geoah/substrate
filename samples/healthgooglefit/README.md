@@ -83,8 +83,9 @@ counted; out-of-bed time is left out of `timeInBed`.
   uid's SHA-256, else, for a device listed with no uid, of the full
   `originDataSourceId`'s. Two devices of one model are therefore two sources,
   and their readings at one instant two observations, `withings-body.4a91be20`
-  beside `withings-body.4a91be21`. A hand entry is the `manual` source; a
-  session's source is its app (`com-strava`). A source is minted
+  beside `withings-body.4a91be21`. A hand entry is the `manual` source, and
+  its readings carry `recordingMethod: manual`; a session's source is its
+  app (`com-strava`). A source is minted
   `ifAbsent`, so an owner's rename or `priorities` stands.
 - Fit stores no UTC offset. Each value's offset comes from the account's
   `timezone`, read at write time, and an observation records it in a

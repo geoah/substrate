@@ -2106,7 +2106,8 @@ delivery rewrites that row's whole output set, deleting what the row no
 longer implies, so a re-read day, an emptied day and a deleted session
 converge. `revision` is the newest `modifiedTimeMillis`, in seconds, of the
 points an output was built from, and a stored higher one is kept. Sources are
-minted `ifAbsent`, so an owner's edit to one stands.
+minted `ifAbsent`, so an owner's edit to one stands. A reading entered by
+hand in the Fit app carries `recordingMethod: manual`.
 
 **Offsets come from the account's current zone.** Fit stores no UTC offset,
 so each offset comes from the account's `timezone` as it is when the value

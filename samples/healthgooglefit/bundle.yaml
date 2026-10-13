@@ -228,7 +228,7 @@ data:
     KEYS = {
         OBSERVATION: ("metric", "source", "form", "value", "code", "hold", "at",
                       "endsAt", "utcOffset", "origin", "derivedFrom", "revision", "adapter",
-                      "qualifiers", "components"),
+                      "qualifiers", "components", "recordingMethod"),
         TRACE: ("metric", "source", "form", "unit", "hold", "at", "endsAt",
                 "utcOffsetStart", "utcOffsetEnd", "every", "offsets", "values",
                 "codes", "origins", "revision", "adapter"),
@@ -479,10 +479,13 @@ data:
             start = _int(p["startTimeNanos"])
             at = _ns_time(start)
             slug, source = ctx.source_for(p.get("originDataSourceId"))
+            # Fit names a reading entered by hand in the Fit app (user_input);
+            # any other is a device's or an app's, which Fit does not tell apart.
             base = {"source": source, "form": m["form"], "hold": m.get("hold"),
                     "at": _iso(at), "utcOffset": ctx.clock.offset(at),
                     "origin": _ref(DATASET, rid), "revision": _revision([p]),
-                    "qualifiers": ctx.clock.qualifiers()}
+                    "qualifiers": ctx.clock.qualifiers(),
+                    "recordingMethod": "manual" if slug == "manual" else None}
             if m["shape"] == "pressure":
                 nums = [ctx.number(_value(p, i)) for i in (0, 1)]
                 if None in nums:
