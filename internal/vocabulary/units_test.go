@@ -104,7 +104,8 @@ func TestMeasureOf(t *testing.T) {
 func TestEquivalentSpellingsShareAMeasure(t *testing.T) {
 	for _, group := range [][]string{
 		{"m2", "m+2", "m02", "cm+2"},
-		{"/s", "s-1", "/min", "min-1", "h-1"},
+		{"/s", "s-1", "/min", "min-1", "h-1", "1/s", "1/min", "1/h", "1/d"},
+		{"mmol/mol", "mmol/mol{creat}", "mol/mol{x}", "umol/(mol{creat})"},
 		{"10*3{copies}", "(10*3{copies})", "{copies}"},
 		{"kW.h", "h.kW"},
 		{"mL/(kg.min)", "mL/(min.kg)", "mL/kg/min"},
@@ -460,6 +461,22 @@ func TestConvertIsExact(t *testing.T) {
 	}
 	refusesConvert(t, "", "N.m", "J", "torque is not energy")
 	refusesConvert(t, "", "V.A", "W", "apparent power is not power")
+	// An annotation says what was measured, never which quantity: an
+	// albumin-to-creatinine ratio in mmol/mol{creat} is an amount fraction,
+	// and never converts to the mass ratio mg/g{creat}.
+	refusesConvert(t, "", "mg/g{creat}", "mmol/mol{creat}", "a mass ratio is not an amount fraction under one annotation")
+	refusesConvert(t, "", "mmol/mol{creat}", "mg/g{creat}", "the same, the other way")
+	refusesConvert(t, "fraction", "mg/g{creat}", "mmol/mol{creat}", "a fraction refuses an annotated mol/mol")
+	refusesConvert(t, "", "mmol/mol{creat}", "mmol/mol", "the annotation still decides")
+	if got := convertTo(t, "amount-fraction", "3", "mmol/mol{creat}", "umol/mol{creat}"); got.Cmp(rat(t, "3000")) != 0 {
+		t.Errorf("3 mmol/mol{creat} = %s umol/mol{creat}, want 3000", got.RatString())
+	}
+	// 1/min is /min: a heart rate in the UCUM spelling is a rate, and a rate
+	// never converts to a frequency.
+	if got := convertTo(t, "", "60", "1/min", "/s"); got.Cmp(rat(t, "1")) != 0 {
+		t.Errorf("60 1/min = %s /s, want 1", got.RatString())
+	}
+	refusesConvert(t, "", "1/min", "Hz", "a rate is not a frequency")
 }
 
 func TestCanonicalUnitAppliesAliases(t *testing.T) {

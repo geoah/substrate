@@ -421,8 +421,11 @@ person needs apart: energy and torque, a fraction and a count, real and
 apparent power. [Units](units.md) lists every measure and its codes, each
 with its exact factor. A code the table does not list is still admitted
 when the grammar reads it (`GJ`, `fL`, `kg/h`): one that differs from a listed
-code only by its prefixes belongs to that code's measure, and any other to the
-one measure of its dimension. Where two measures share the dimension (`J/s` is
+code only by its prefixes or a factor of 1 (`1/min` beside `/min`) belongs to
+that code's measure, and any other to the one measure of its dimension. An
+annotation says what was measured, never which quantity, so `mmol/mol{creat}`
+is an `amount-fraction` as `mmol/mol` is, and converts only to a code with the
+same annotation. Where two measures share the dimension (`J/s` is
 a power or an apparent power, `kg.m2/s2` an energy or a torque) the write is
 refused unless the property names its measure.
 

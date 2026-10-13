@@ -20,7 +20,10 @@ package vocabulary
 //  3. A term of annotations and numbers alone ({steps}, 10*3{copies}) is a
 //     `count`; an annotated count over a time ({beats}/min) is a `rate`.
 //  4. A code that differs from a table code only by its metric prefixes (GJ
-//     beside J, kV.A beside V.A) belongs to that code's measure.
+//     beside J, kV.A beside V.A) or a factor of 1 (1/min beside /min) belongs
+//     to that code's measure. Failing that, an annotated code whose key
+//     without its annotations is a code of a listed measure (mmol/mol{creat}
+//     beside mmol/mol) belongs to that measure.
 //  5. Anything else belongs to the measure whose dimension and distinct atoms
 //     (Gy, Sv, Bq, which never stand for the units they equal) it has, when
 //     exactly one has them. Two (J/m is a force or an energy per distance; J/s is a
@@ -176,23 +179,35 @@ func countKey(m map[string]int) string {
 // plain is the code's prefix-free key: `GJ` and `kJ` share the key of `J`. It
 // lists every atom, number and annotation the term holds with the signed
 // exponent it carries, in a fixed order, so two spellings of one term share it
-// (`m2`, `m+2` and `m02`; `/s` and `s-1`; `kW.h` and `h.kW`). Nothing cancels:
+// (`m2`, `m+2` and `m02`; `/s`, `s-1` and `1/s`; `kW.h` and `h.kW`). A factor
+// of exactly 1 multiplies nothing and is left out. Nothing else cancels:
 // `mol/mol` and `g/kg` keep their atoms, and two keys never meet by arithmetic.
-func (u Unit) plain() string {
+func (u Unit) plain() string { return u.plainKey(true) }
+
+// bare is the prefix-free key without the annotations: `mmol/mol{creat}`
+// shares the bare key of `mol/mol`.
+func (u Unit) bare() string { return u.plainKey(false) }
+
+func (u Unit) plainKey(notes bool) string {
 	if u.tree == nil {
 		return u.code
 	}
 	var parts []string
-	plainTerm(u.tree, 1, &parts)
+	plainTerm(u.tree, 1, notes, &parts)
 	sort.Strings(parts)
 	return strings.Join(parts, " ")
 }
 
 // plainTerm appends a term's occurrences to parts, each under the sign the
-// term's position gives it.
-func plainTerm(t *termNode, sign int, parts *[]string) {
+// term's position gives it, and its annotations where notes says.
+func plainTerm(t *termNode, sign int, notes bool, parts *[]string) {
 	if t.reciprocal {
 		sign = -sign
+	}
+	note := func(text *string, s int) {
+		if notes && text != nil {
+			*parts = append(*parts, fmt.Sprintf("{%s}^%d", *text, s))
+		}
 	}
 	for i, part := range t.parts {
 		s := sign
@@ -202,18 +217,16 @@ func plainTerm(t *termNode, sign int, parts *[]string) {
 		switch x := part.(type) {
 		case unitNode:
 			*parts = append(*parts, fmt.Sprintf("%s^%d", x.atom.def.code, x.exp*s))
-			if x.note != nil {
-				*parts = append(*parts, fmt.Sprintf("{%s}^%d", *x.note, s))
-			}
+			note(x.note, s)
 		case numberNode:
-			*parts = append(*parts, fmt.Sprintf("%s^%d", x.digits, s))
-			if x.note != nil {
-				*parts = append(*parts, fmt.Sprintf("{%s}^%d", *x.note, s))
+			if x.digits != "1" {
+				*parts = append(*parts, fmt.Sprintf("%s^%d", x.digits, s))
 			}
+			note(x.note, s)
 		case noteNode:
-			*parts = append(*parts, fmt.Sprintf("{%s}^%d", x.text, s))
+			note(&x.text, s)
 		case groupNode:
-			plainTerm(x.inner, s, parts)
+			plainTerm(x.inner, s, notes, parts)
 		}
 	}
 }
@@ -367,6 +380,9 @@ type unitTable struct {
 	byName   map[string]*Measure
 	rows     map[string][]unitRow // code -> its rows, in table order
 	plain    map[string][]string  // prefix-free key (Unit.plain) -> measures listing a code of it
+	// bare is the measures listing an unannotated code, by its prefix-free
+	// key, among the measures that admit listed codes alone (Measure.listed).
+	bare map[string][]string
 	// primary is primaryMeasure by prefix-free key, so `mK` reads as `K` does.
 	primary map[string]string
 	// prints are the unitPrints codes whose first atom has no prefix, by
@@ -394,7 +410,7 @@ func buildTable() (*unitTable, error) {
 	t := &unitTable{
 		measures: make([]Measure, 0, len(measureDefs)),
 		byName:   map[string]*Measure{}, rows: map[string][]unitRow{},
-		plain: map[string][]string{}, bases: map[string]Unit{}, primary: map[string]string{},
+		plain: map[string][]string{}, bare: map[string][]string{}, bases: map[string]Unit{}, primary: map[string]string{},
 		prints: map[string][]string{},
 	}
 	parse := parseUnit
@@ -447,6 +463,9 @@ func buildTable() (*unitTable, error) {
 				key := u.plain()
 				if !slices.Contains(t.plain[key], d.name) {
 					t.plain[key] = append(t.plain[key], d.name)
+				}
+				if d.listed && len(nonZero(u.val.notes)) == 0 && !slices.Contains(t.bare[key], d.name) {
+					t.bare[key] = append(t.bare[key], d.name)
 				}
 			}
 		}
@@ -580,11 +599,11 @@ func (t *unitTable) resolve(u Unit, declared string) (*Measure, error) {
 	if m := t.counted(u); m != nil {
 		return m, nil
 	}
-	if names := t.plain[u.plain()]; len(names) > 0 {
+	if names, key := t.plainNames(u); len(names) > 0 {
 		if len(names) == 1 {
 			return t.byName[names[0]], nil
 		}
-		if p, ok := t.primary[u.plain()]; ok {
+		if p, ok := t.primary[key]; ok {
 			return t.byName[p], nil
 		}
 		return nil, fmt.Errorf("%s is ambiguous: it could be %s; declare `measures:` on the property", u.code, orList(names))
@@ -610,6 +629,21 @@ func (t *unitTable) resolve(u Unit, declared string) (*Measure, error) {
 		return t.byName[candidates[0]], nil
 	}
 	return nil, fmt.Errorf("%s is ambiguous: it could be %s; declare `measures:` on the property", u.code, orList(candidates))
+}
+
+// plainNames are the measures listing a code of the unit's prefix-free key,
+// and that key. Where none does, an annotated code takes the listed-codes-only
+// measure (Measure.listed) of its bare key, which the dimension rule never
+// reaches: an annotation says what was measured, never which quantity, so
+// `mmol/mol{creat}` is an amount-fraction as `mmol/mol` is, and converts
+// only to the same annotation.
+func (t *unitTable) plainNames(u Unit) ([]string, string) {
+	key := u.plain()
+	if names := t.plain[key]; len(names) > 0 || len(nonZero(u.val.notes)) == 0 {
+		return names, key
+	}
+	key = u.bare()
+	return t.bare[key], key
 }
 
 // admits says whether a declared measure takes a code.
@@ -648,7 +682,7 @@ func (t *unitTable) admits(m *Measure, u Unit) error {
 	if m.Scale == ScaleCount {
 		return fmt.Errorf("%s is not a count: a count is an annotation such as {steps}", u.code)
 	}
-	names := t.plain[u.plain()]
+	names, _ := t.plainNames(u)
 	if len(names) > 0 && !slices.Contains(names, m.Name) {
 		return fmt.Errorf("%s measures %s, not %s", u.code, orList(names), m.Name)
 	}
