@@ -51,7 +51,26 @@ func TestPersonaDefaultLife(t *testing.T) {
 	if len(days) != 90 {
 		t.Fatalf("default range has %d days, want 90", len(days))
 	}
-	workouts := 0
+	// Every night and nap, found by its interval rather than by
+	// Day.AsleepAt, which Day.HR consults: the evening of the last day is
+	// the night after the range.
+	var sleeps []*Sleep
+	for _, d := range append(days, days[len(days)-1].Add(1)) {
+		day := p.Day(d)
+		sleeps = append(sleeps, day.Naps...)
+		if day.Sleep != nil {
+			sleeps = append(sleeps, day.Sleep)
+		}
+	}
+	covering := func(t time.Time) *Sleep {
+		for _, s := range sleeps {
+			if !t.Before(s.Start) && t.Before(s.End) {
+				return s
+			}
+		}
+		return nil
+	}
+	workouts, asleep := 0, 0
 	for _, d := range days {
 		day := p.Day(d)
 		if day.Sleep == nil {
@@ -91,8 +110,11 @@ func TestPersonaDefaultLife(t *testing.T) {
 			if s.Value < 40 || s.Value > float64(p.Person.MaxHR) {
 				t.Fatalf("%s heart rate %v at %s", d, s.Value, s.At)
 			}
-			if sl := day.AsleepAt(s.At); sl != nil && s.Value != float64(sl.HR(s.At)) {
-				t.Fatalf("%s asleep at %s reads %v, the night's own rate %d", d, s.At, s.Value, sl.HR(s.At))
+			if sl := covering(s.At); sl != nil {
+				asleep++
+				if s.Value != float64(sl.HR(s.At)) {
+					t.Fatalf("%s asleep at %s reads %v, the night's own rate %d", d, s.At, s.Value, sl.HR(s.At))
+				}
 			}
 		}
 		if day.Trip && day.Zone.String() != "Europe/London" {
@@ -110,6 +132,9 @@ func TestPersonaDefaultLife(t *testing.T) {
 	}
 	if workouts < 50 || workouts > 70 {
 		t.Fatalf("%d workouts over the block, want about 60", workouts)
+	}
+	if asleep < 90*12*6 {
+		t.Fatalf("%d five-minute heart rates asleep over 90 days", asleep)
 	}
 	ill := p.Day(NewDate(2026, time.August, 27))
 	well := p.Day(NewDate(2026, time.August, 20))
