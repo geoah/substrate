@@ -531,6 +531,9 @@ export interface AggregateRow {
   /** In the recorded-local calendar, the points among `count` written
    * without a UTC offset and placed by `bucket.fallbackTimezone`. */
   offsetless?: number
+  /** In the records mode, the amounts among `count` the window cut, each
+   * counted by the part of its span inside it. */
+  prorated?: number
   bounded: number
   synthetic: boolean
   unavailable: boolean

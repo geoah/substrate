@@ -46,6 +46,9 @@ type aggRun struct {
 	// reach is a tree over the records-mode windows in start order, each
 	// node the latest end of the windows below it (windowsMeeting).
 	reach []time.Time
+	// spanReach is, in the records mode, how far before a window each
+	// stream's amounts may start and reach into it (amountReach).
+	spanReach map[obsStream]time.Duration
 	// nSeries is the series the read was budgeted for (seriesOf).
 	nSeries int
 	// samples is the raw points and rollup rows the read's statements have
@@ -92,6 +95,9 @@ type aggEvidence struct {
 	bounded                 int64
 	// offsetless is the members placed by the fallback zone.
 	offsetless int64
+	// prorated is the members a records-mode window cut, each counted by
+	// its part inside the window.
+	prorated int64
 	// ends are a recorded-local row's own first and last points and held
 	// time, which its start and end are written at.
 	ends rowEnds

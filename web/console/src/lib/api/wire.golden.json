@@ -139,6 +139,7 @@
     "group": false,
     "nonAdditive": false,
     "offsetless": false,
+    "prorated": false,
     "record": false,
     "sources": false,
     "start": true,

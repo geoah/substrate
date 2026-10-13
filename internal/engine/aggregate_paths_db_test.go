@@ -1145,7 +1145,8 @@ func TestAggregateMaxRecordsCountsEveryMatch(t *testing.T) {
 // A records-mode window is not clipped to the range, on either path: a sleep
 // record over [00:00, 02:00) read with a range of [00:00, 01:00) takes an
 // amount at 01:30 and a gauge's value held after 01:00, and an `around`
-// widening reaches past the range at both ends.
+// widening reaches past the range at both ends. The gauge's whole rows are
+// rollup rows; an amount is read from raw points, by its part inside.
 func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -1181,8 +1182,8 @@ func TestAggregateRecordWindowsReachPastTheRange(t *testing.T) {
 			}},
 			Reducers: reducers(reds...),
 		})
-		if rollupRows == 0 {
-			t.Errorf("%s over %s read no rollup row; the windows are whole rows", metric, id)
+		if amount := metric == "health/steps"; amount != (rollupRows == 0) {
+			t.Errorf("%s over %s read %d rollup rows; a gauge's windows are whole rows, and an amount is read raw", metric, id, rollupRows)
 		}
 		if len(res.Rows) != 1 {
 			t.Fatalf("%s over %s: %d rows, want one", metric, id, len(res.Rows))

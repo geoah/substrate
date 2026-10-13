@@ -37,7 +37,9 @@ Chosen: a mode of the records route.
   zone, 23 or 25 hours across a clock change. `{"calendar"}` with no zone is
   the recorded-local day, where each reading's own offset decides its date.
   `{"records": {"filter", "around"}}` uses each matched record's
-  `[at, endsAt)` as a bucket. A reading with no offset is bucketed by a named
+  `[at, endsAt)` as a bucket, where an amount counts by the part of its span
+  inside, its number prorated linearly and the row counting the amounts it
+  cut in `prorated`; in the other modes a point lands whole by its start. A reading with no offset is bucketed by a named
   zone or refused, never by UTC or the server's clock: a calendar with a
   `timezone` places it by that zone, and the recorded-local calendar refuses
   a stream holding one (a `422` naming the stream and

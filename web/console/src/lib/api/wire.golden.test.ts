@@ -484,6 +484,7 @@ const aggregateRow: Shape<AggregateRow> = {
   values: true,
   count: true,
   offsetless: false,
+  prorated: false,
   bounded: true,
   synthetic: true,
   unavailable: true,

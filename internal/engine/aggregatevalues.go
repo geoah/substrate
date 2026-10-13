@@ -22,7 +22,8 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 	start, end := b.shown(&ev.ends, rangeFrom, rangeTo)
 	row := substrate.AggregateRow{
 		Start: start, End: end, Form: ev.form, Record: b.record, From: from,
-		Count: ev.count, Bounded: ev.bounded, Offsetless: ev.offsetless, Coverage: vocabulary.FormatISODuration(time.Duration(ev.coverage) * time.Millisecond),
+		Count: ev.count, Bounded: ev.bounded, Offsetless: ev.offsetless, Prorated: ev.prorated,
+		Coverage:    vocabulary.FormatISODuration(time.Duration(ev.coverage) * time.Millisecond),
 		NonAdditive: r.p.bucket.mode == bucketRecords,
 	}
 	if len(r.p.groupBy) > 0 {

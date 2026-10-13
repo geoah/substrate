@@ -6,6 +6,7 @@ package engine
 // buckets it lies in.
 
 import (
+	"math/big"
 	"sort"
 	"time"
 
@@ -61,8 +62,14 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 // gauge, the intervals they hold, the value carried into each window first.
 func (r *aggRun) rawStreams(streams []*aggStream, form string) ([]*rawStream, error) {
 	var list []*rawStream
+	overlap := r.overlaps(form)
+	type pointKey struct {
+		rid string
+		ord int64
+	}
 	for si, s := range streams {
 		st := &rawStream{s: s, prevOf: map[int]*aggPoint{}}
+		seen := map[pointKey]bool{}
 		for _, seg := range r.series[s].segs {
 			if form == vocabulary.FormGauge {
 				obs := make([]observed.Point, 0, len(seg.points)+1)
@@ -92,6 +99,15 @@ func (r *aggRun) rawStreams(streams []*aggStream, form string) ([]*rawStream, er
 			for _, ap := range seg.points {
 				if err := r.canceled(); err != nil {
 					return nil, err
+				}
+				// An amount that meets two windows apart is read with each,
+				// and placed once, in every window it meets (placeRaw).
+				if overlap {
+					k := pointKey{ap.RecordID, ap.Ord}
+					if seen[k] {
+						continue
+					}
+					seen[k] = true
 				}
 				ap.stream = si
 				idx := len(st.points)
@@ -197,13 +213,27 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 			if ap.Unavailable || !r.admits(ap.Code) {
 				continue
 			}
-			buckets, err := r.bucketsOf(r.placed(ap.Point), ap.off)
-			if err != nil {
-				return nil, err
+			var parts []aggPoint
+			if r.overlaps(form) {
+				var err error
+				if parts, err = r.windowParts(ap); err != nil {
+					return nil, err
+				}
+			} else {
+				buckets, err := r.bucketsOf(r.placed(ap.Point), ap.off)
+				if err != nil {
+					return nil, err
+				}
+				for _, b := range buckets {
+					part := ap
+					part.bucket = b
+					parts = append(parts, part)
+				}
 			}
-			for _, b := range buckets {
+			for _, part := range parts {
+				b := part.bucket
 				ev := cell(out, b, r.codeKey(ap.Code), form, true)
-				ev.members = append(ev.members, ap)
+				ev.members = append(ev.members, part)
 				ev.sources[st.s.source] = true
 				if prev := st.prevOf[i]; prev != nil {
 					d, reset := observed.Step(prev.Point, ap.Point)
@@ -283,6 +313,10 @@ func (r *aggRun) settleRaw(out aggCells, list []*rawStream, form string) error {
 				m := &ev.members[i]
 				if err := r.convertPoint(&m.Point, m.delta, list[m.stream].s); err != nil {
 					return err
+				}
+				if m.frac != nil {
+					r.prorate(&m.Point, m.frac)
+					ev.prorated++
 				}
 				if b.local {
 					b.ends.mark(m.Point, m.stream, m.off)
@@ -366,6 +400,61 @@ func (r *aggRun) memberCoverage(ev *aggEvidence) (int64, error) {
 		ms += s[1].Sub(s[0]).Milliseconds()
 	}
 	return ms, nil
+}
+
+// windowParts are the parts of an amount the records-mode windows its span
+// meets hold: the amount whole where a window holds its span, else clipped
+// to the window and marked with the fraction of its span inside (frac),
+// which settleRaw takes its number by. An amount at one instant is whole in
+// the windows holding the instant.
+func (r *aggRun) windowParts(ap aggPoint) ([]aggPoint, error) {
+	end := pointEnd(ap)
+	windows, err := r.windowsMeeting(ap.At, end)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]aggPoint, 0, len(windows))
+	for _, w := range windows {
+		part := ap
+		part.bucket = w
+		if span := ap.End.Sub(ap.At); span > 0 && (ap.At.Before(w.start) || ap.End.After(w.end)) {
+			part.At, part.End = later(ap.At, w.start), earlier(ap.End, w.end)
+			part.frac = big.NewRat(int64(part.End.Sub(part.At)), int64(span))
+		}
+		out = append(out, part)
+	}
+	return out, nil
+}
+
+// prorate takes the part frac of a point's number, exactly where its digits
+// allow.
+func (r *aggRun) prorate(p *observed.Point, frac *big.Rat) {
+	if !p.HasValue {
+		return
+	}
+	f, _ := frac.Float64()
+	p.Value *= f
+	if v, ok := new(big.Rat).SetString(p.Exact); ok {
+		digits, exact := vocabulary.RatDecimal(v.Mul(v, frac), vocabulary.ConvertedDigits)
+		if !exact {
+			r.meta.inexact = true
+		}
+		p.Exact = digits
+	}
+}
+
+func later(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+func earlier(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 func pointEnd(ap aggPoint) time.Time {

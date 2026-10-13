@@ -6,6 +6,7 @@ package engine
 // read takes into the read's unit.
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math/big"
@@ -25,22 +26,112 @@ func spanArrays(spans [][2]time.Time) (from, to []time.Time) {
 }
 
 // countPointsSQL counts one stream's points (aggStreamSQL, $1 to $7) placed
-// in each span, the spans' starts and ends at $8 and $9.
-func countPointsSQL(placeEnd bool) string {
+// in each span, the spans' starts and ends at $8 and $9, or where overlap,
+// meeting it (overlapPoints, the reach at $10).
+func countPointsSQL(placeEnd, overlap bool) string {
 	return `
 		SELECT coalesce(sum(x.c), 0)::bigint FROM unnest($8::timestamptz[], $9::timestamptz[]) AS s(a, b)
 		CROSS JOIN LATERAL (
-			SELECT count(*) AS c FROM ` + placedPoints(placeEnd, aggStreamSQL, "s.a", "s.b") + `) x`
+			SELECT count(*) AS c FROM ` + pointsIn(placeEnd, overlap, aggStreamSQL, "s.a", "s.b") + `) x`
+}
+
+// pointsIn is placedPoints, or where overlap, overlapPoints with the reach
+// bound at $10 in microseconds.
+func pointsIn(placeEnd, overlap bool, where, a, b string) string {
+	if overlap {
+		return overlapPoints(where, a, b, `$10::bigint * interval '1 microsecond'`)
+	}
+	return placedPoints(placeEnd, where, a, b)
+}
+
+// overlapPoints is the points of observed_points that match where and meet
+// [a, b), as a FROM item named p: those starting in it, and those starting
+// up to reach before a whose span passes a. reach is the stream's longest
+// span (aggRun.amountReach), so the read never scans a stream's history
+// before the window for a span that might reach into it.
+func overlapPoints(where, a, b, reach string) string {
+	return `(SELECT * FROM observed_points p WHERE ` + where + ` AND p.ts >= ` + a + ` - ` + reach + ` AND p.ts < ` + b + `
+			  AND (p.ts >= ` + a + ` OR p.ts_end > ` + a + `)) p`
+}
+
+// pointArgs are a stream's arguments to countPointsSQL and readSeriesSQL.
+func (r *aggRun) pointArgs(s *aggStream, spans [][2]time.Time) []any {
+	from, to := spanArrays(spans)
+	args := append(s.args(), from, to)
+	if r.overlaps(s.form) {
+		args = append(args, r.spanReach[s.obsStream].Microseconds())
+	}
+	return args
+}
+
+// overlaps reports whether the read places a point of the form in every
+// window its span meets, by the part inside each (placeRaw): an amount in
+// the records mode.
+func (r *aggRun) overlaps(form string) bool {
+	return r.p.bucket.mode == bucketRecords && form == vocabulary.FormAmount
 }
 
 func (r *aggRun) countPoints(s *aggStream, spans [][2]time.Time) (int64, error) {
-	from, to := spanArrays(spans)
 	var n int64
-	err := r.tx.QueryRowContext(r.ctx, countPointsSQL(r.p.bucket.placeEnd), append(s.args(), from, to)...).Scan(&n)
+	err := r.tx.QueryRowContext(r.ctx, countPointsSQL(r.p.bucket.placeEnd, r.overlaps(s.form)), r.pointArgs(s, spans)...).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("substrate/engine: aggregate count: %w", err)
 	}
 	return n, nil
+}
+
+// amountReachSQL is, for each stream ($1 to $5, numbered n), the longest
+// span of its amounts that meet [$6, $7), in whole microseconds, on the
+// span index.
+const amountReachSQL = `
+	SELECT s.n, ceil(extract(epoch FROM max(p.ts_end - p.ts)) * 1000000)::bigint
+	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS s(metric, kind, source, about, channel, n)
+	CROSS JOIN LATERAL (
+		SELECT p.ts, p.ts_end FROM observed_points p
+		WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+		  AND p.form = 'amount' AND p.ts_end > p.ts AND p.ts_end > $6 AND p.ts < $7) p
+	GROUP BY s.n`
+
+// amountReach is how far before a records-mode window each stream's amounts
+// may start and still reach into it: its longest span among those meeting
+// the windows' extent. A stream it does not name has no span there.
+func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, streams []*aggStream, windows [][2]time.Time) (map[obsStream]time.Duration, error) {
+	out := map[obsStream]time.Duration{}
+	if len(windows) == 0 {
+		return out, nil
+	}
+	var keys []*aggStream
+	seen := map[obsStream]bool{}
+	for _, s := range streams {
+		if !seen[s.obsStream] {
+			seen[s.obsStream] = true
+			keys = append(keys, s)
+		}
+	}
+	if len(keys) == 0 {
+		return out, nil
+	}
+	lo, hi := windows[0][0], windows[0][1]
+	for _, w := range windows {
+		if w[1].After(hi) {
+			hi = w[1]
+		}
+	}
+	ids := streamKeys(keys, false)
+	rows, err := tx.QueryContext(ctx, amountReachSQL, ids[0], ids[1], ids[2], ids[3], ids[4], lo, hi)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: aggregate amount reach: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var n int
+		var us int64
+		if err := rows.Scan(&n, &us); err != nil {
+			return nil, err
+		}
+		out[keys[n-1].obsStream] = time.Duration(us) * time.Microsecond
+	}
+	return out, rows.Err()
 }
 
 // aggPointLead are the columns read before pointColumns.
@@ -124,27 +215,28 @@ func (r *aggRun) conversion(unit string, delta bool, source string) (*convFactor
 }
 
 // readSeriesSQL reads one stream's points (aggStreamSQL, $1 to $7) placed in
-// each span, the spans' starts and ends at $8 and $9, by span and in the
-// order every reader takes points in.
-func readSeriesSQL(placeEnd bool) string {
+// each span, the spans' starts and ends at $8 and $9, or where overlap,
+// meeting it (the reach at $10), by span and in the order every reader takes
+// points in.
+func readSeriesSQL(placeEnd, overlap bool) string {
 	return `
 		SELECT s.i, ` + aggPointLead + pointColumns + `
 		FROM unnest($8::timestamptz[], $9::timestamptz[]) WITH ORDINALITY AS s(a, b, i)
 		CROSS JOIN LATERAL (
-			SELECT * FROM ` + placedPoints(placeEnd, aggStreamSQL, "s.a", "s.b") + ` OFFSET 0) p
+			SELECT * FROM ` + pointsIn(placeEnd, overlap, aggStreamSQL, "s.a", "s.b") + ` OFFSET 0) p
 		ORDER BY s.i, p.ts, p.record_id, p.ord`
 }
 
 // readSeries reads one stream's points over the spans, with the point current
 // at each span's start and the last available point before it.
 func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, error) {
-	from, to := spanArrays(spans)
-	args := append(s.args(), from, to)
+	from, _ := spanArrays(spans)
+	args := r.pointArgs(s, spans)
 	ser := &aggSeries{segs: make([]aggSegment, len(spans))}
 	for i, sp := range spans {
 		ser.segs[i].from, ser.segs[i].to = sp[0], sp[1]
 	}
-	rows, err := r.tx.QueryContext(r.ctx, readSeriesSQL(r.p.bucket.placeEnd), args...)
+	rows, err := r.tx.QueryContext(r.ctx, readSeriesSQL(r.p.bucket.placeEnd, r.overlaps(s.form)), args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate points: %w", err)
 	}

@@ -221,8 +221,9 @@ func (r *aggRun) rollupable(g *aggGroup) bool {
 		return false
 	}
 	// A row holds the points that start in its quarter hour, and place end
-	// places them by their end.
-	if p.bucket.placeEnd {
+	// places them by their end; a records-mode window takes an amount by
+	// the part of its span inside, which may start in a row before it.
+	if p.bucket.placeEnd || r.overlaps(g.form) {
 		return false
 	}
 	for _, red := range p.reducers {

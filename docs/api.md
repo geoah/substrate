@@ -1191,6 +1191,24 @@ reads amounts from raw points, and is a `422` where it would take a gauge's or
 a counter's points, which are instants; the records mode and the property read
 refuse it.
 
+**Where a value lands.** In the `every` and `calendar` modes a point lands
+whole in the bucket its start lies in (its end under `place` `end`), so an
+amount that runs past the bucket's end counts whole there, and a gauge's
+held time is cut at each bucket's start and end. In the records mode a
+gauge's held time is cut at each window's start and end, and an amount
+counts in every window its span meets by the part inside: a sleep stage from
+23:59:59.5 to 00:30 counts 29 minutes 59.5 seconds in a window opening at
+midnight, and one running ten minutes past the window's end counts up to
+it. The part is clipped to the window, so the row's `coverage` is the time
+inside, and its number is taken in proportion to the time inside, linearly:
+exact for a stage whose value is its duration, an approximation for an
+amount spread unevenly over its span. Each row counts such amounts in
+`count` and says how many it cut in `prorated`. A summary, a gauge's point
+and a counter's reading land in a window by their instant, so a night's
+recovery stamped at the instant the night ends falls outside it (the window
+is `[at, endsAt)`): widen the window by `around` to take it. The records
+mode reads amounts from raw points.
+
 **The records' source policy.** Several sources write one night or one run
 as a record each, and the records mode makes a window of every record the
 filter matches, so a night three devices recorded is three windows.
@@ -1372,6 +1390,7 @@ where summaries did.
 | `count` | the points that fed the row; on the latest read the group's point count |
 | `bounded` | the values written with a comparator (a lab's `<0.01`) |
 | `offsetless` | in the recorded-local calendar, the points among `count` written without a UTC offset, placed by `bucket.fallbackTimezone`; absent when none |
+| `prorated` | in the records mode, the amounts among `count` the window cut, each counted by the part of its span inside; absent when none |
 | `synthetic` | a row `fill` made |
 | `unavailable` | a row whose range has expired index points a reducer needs; nothing expires yet, so it is always `false` |
 | `nonAdditive` | the records mode: windows may overlap |
@@ -1395,20 +1414,23 @@ window's, which may reach past the range. A gauge's held time is walked
 across the rows, the value current at each window's start read with one
 lookup per stream. An amount's or a counter's bucket boundary that cuts a row
 (a range starting at 10:07, a records window) is read from raw points and
-merged in. An amount's coverage is the union of its spans on both paths: the
+merged in, and in the records mode an amount is read from raw points alone,
+because a window takes the part of an amount that started in a row before
+it. The read finds those amounts by the stream's longest span among its
+amounts that meet the windows, one statement before the forms are found. An amount's coverage is the union of its spans on both paths: the
 rows' covered times add where their spans cannot overlap, and where they may
 (two overlapping traces, two offsets in one quarter hour) the union is taken
 from the raw spans in one statement per group.
 
-Everything else reads raw points: `percentile` and `durationIn`, a `maxGap`
-tighter than a row's gaps, `priority` over two or more streams, a gauge's
-bucket boundary that cuts a row, a recorded-local `minute` bucket or an `offset`
-that is not whole quarter hours, a recorded-local read of a stream with a
-point in the range, or a gauge value held into it, whose UTC offset is not
-whole quarter hours (a row at `+00:01` holds points on both sides of local
-midnight) or was never written (placed by `fallbackTimezone`), and every
-summary. Raw points and rollups
-answer the same, to float rounding: `internal/observed` holds both.
+Everything else reads raw points: `percentile` and `durationIn`, an amount in
+the records mode, a `maxGap` tighter than a row's gaps, `priority` over two
+or more streams, a gauge's bucket boundary that cuts a row, a recorded-local
+`minute` bucket or an `offset` that is not whole quarter hours, a
+recorded-local read of a stream with a point in the range, or a gauge value
+held into it, whose UTC offset is not whole quarter hours (a row at `+00:01`
+holds points on both sides of local midnight) or was never written (placed
+by `fallbackTimezone`), and every summary. Raw points and rollups answer the
+same, to float rounding: `internal/observed` holds both.
 
 ### `fill`, `rolling` and `downsample`
 

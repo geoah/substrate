@@ -125,6 +125,12 @@ type aggPoint struct {
 	fallback bool
 	delta    bool
 	stream   int
+	// frac is the part of an amount's span a records-mode window holds,
+	// which At and End are clipped to and its number is taken by; nil is
+	// the whole.
+	frac *big.Rat
+	// bucket is the bucket placeRaw puts the point in.
+	bucket *aggBucket
 }
 
 // aggMeta is what a read learns beside its rows.
@@ -152,7 +158,13 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err != nil {
 		return nil, err
 	}
-	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows)
+	var reach map[obsStream]time.Duration
+	if p.bucket.mode == bucketRecords && p.source != substrate.AggregateFromSummaries {
+		if reach, err = ds.amountReach(ctx, tx, selected, windows); err != nil {
+			return nil, err
+		}
+	}
+	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows, reach)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +197,7 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	}
 	r := &aggRun{
 		ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, windows: windows,
-		meta: aggMeta{sources: map[string]bool{}}, nSeries: series, samples: samples,
+		meta: aggMeta{sources: map[string]bool{}}, nSeries: series, samples: samples, spanReach: reach,
 	}
 	if err := r.plan(groups); err != nil {
 		return nil, err
@@ -498,6 +510,8 @@ func discoverFormsSQL(placeEnd bool) string {
 		UNION
 		SELECT p.code, p.offset_known FROM ` + placedPoints(placeEnd, discoverSummary+` AND `+availablePoint, "w.a", "w.b") + `
 		UNION
+		SELECT p.code, p.offset_known FROM ` + discoverStraddle("$13", availablePoint) + `
+		UNION
 		SELECT c.code, c.offset_known FROM (
 			SELECT p.code, p.value, p.ts, p.hold_ms, p.offset_known FROM (
 				SELECT DISTINCT r.bucket15 FROM observed_rollups r
@@ -551,7 +565,19 @@ func discoverCountSQL(placeEnd bool) string {
 		SELECT count(*) FROM ` + placedPoints(placeEnd, discoverCutEnd, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + `
 		UNION ALL
 		SELECT count(*) FROM ` + placedPoints(placeEnd, discoverSummary, "w.a", "w.b") + `
+		UNION ALL
+		SELECT count(*) FROM ` + discoverStraddle("$12", "TRUE") + `
 	) x`
+}
+
+// discoverStraddle is the amounts of stream s that start before window w and
+// reach into it (the records mode places them by the part inside), at most
+// reach microseconds before it (a statement parameter, 0 outside the records
+// mode), that filter admits.
+func discoverStraddle(reach, filter string) string {
+	return `(SELECT * FROM observed_points p WHERE ` + discoverCutEnd + ` AND ` + filter + `
+			  AND f.form = 'amount' AND ` + reach + `::bigint > 0
+			  AND p.ts >= w.a - ` + reach + `::bigint * interval '1 microsecond' AND p.ts < w.a AND p.ts_end > w.a) p`
 }
 
 // placedPoints is the points of observed_points that match where and are
@@ -580,7 +606,7 @@ func placedPoints(placeEnd bool, where, a, b string) string {
 // read does not take (a summary on a read from raw) is not looked for. The
 // points it reads are counted first and refused past maxSamples; samples is
 // that count, the start of the read's (aggRun.charge).
-func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time) (out []*aggStream, samples int64, err error) {
+func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time, reach map[obsStream]time.Duration) (out []*aggStream, samples int64, err error) {
 	if len(streams) == 0 || len(windows) == 0 {
 		return nil, 0, nil
 	}
@@ -607,14 +633,20 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 		}
 		wa, wb = append(wa, ceil15(w[0])), append(wb, floor15(w[1]))
 	}
-	if err := tx.QueryRowContext(ctx, discoverCountSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms).Scan(&samples); err != nil {
+	var longest time.Duration
+	for _, d := range reach {
+		longest = max(longest, d)
+	}
+	if err := tx.QueryRowContext(ctx, discoverCountSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms,
+		longest.Microseconds()).Scan(&samples); err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms count: %w", err)
 	}
 	if samples > p.maxSamples {
 		return nil, 0, refuse("aggregate.budget.maxSamples", "finding the forms the range holds reads %d raw points at its cut ends and in its summaries, over %d; align the range to quarter hours, narrow it, or raise maxSamples (the cap is %d)",
 			samples, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
-	rows, err := tx.QueryContext(ctx, discoverFormsSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms, p.maxGap.Milliseconds())
+	rows, err := tx.QueryContext(ctx, discoverFormsSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms, p.maxGap.Milliseconds(),
+		longest.Microseconds())
 	if err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms: %w", err)
 	}

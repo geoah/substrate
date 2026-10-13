@@ -390,6 +390,10 @@ type AggregateRow struct {
 	// Offsetless counts the points among Count written without a UTC offset,
 	// which the recorded-local calendar placed by bucket.fallbackTimezone.
 	Offsetless int64 `json:"offsetless,omitempty"`
+	// Prorated counts the amounts among Count a records-mode window cut:
+	// each counts by the part of its span inside the window, its number
+	// taken in proportion.
+	Prorated int64 `json:"prorated,omitempty"`
 	// Bounded counts the values written with a comparator (a lab's `<0.01`).
 	// They are counted, and for now also in every average and sum as the
 	// bound's number: a rollup row keeps their count and not their sum, so

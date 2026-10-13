@@ -241,3 +241,109 @@ func TestAggregatePropertyKeepsTheHighestRankedSource(t *testing.T) {
 		},
 	}, "aggregate.property.sources.match[0]")
 }
+
+// stageAt writes one coded stage amount of a source over [at, at+span).
+func (f aggFix) stageAt(id, source, code string, at time.Time, span time.Duration) {
+	f.t.Helper()
+	f.mustPut(f.t, f.observation, id, map[string]any{
+		"metric": f.metricRef("health/sleep_stage"), "source": f.sourceRef(source), "form": "amount",
+		"value": quantity(strconv.FormatFloat(span.Minutes(), 'f', -1, 64), "min"), "code": code,
+		"at": at.Format(time.RFC3339Nano), "endsAt": at.Add(span).Format(time.RFC3339Nano), "utcOffset": 180,
+	})
+}
+
+// A records-mode window takes an amount by the part of its span inside it:
+// a stage that starts half a second before the night (another device's
+// clock) counts all but that half second, not nothing, and a stage that runs
+// past the night's end counts up to it, not whole. A five-hour amount that
+// starts an hour before the window is found and cut too. Each row says how
+// many of its amounts were cut in prorated, and its coverage is the time
+// inside the window. Rollups serve no records-mode amount, so both paths
+// answer the same.
+func TestAggregateRecordWindowsTakeAnAmountByItsOverlap(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	start := time.Date(2026, 10, 4, 23, 0, 0, 500000000, plus3)
+	end := time.Date(2026, 10, 5, 3, 0, 0, 0, plus3)
+	f.mustPut(t, f.sleepKind(), "whoop/0", map[string]any{
+		"source": f.sourceRef("whoop"), "at": start.Format(time.RFC3339Nano), "endsAt": end.Format(time.RFC3339Nano),
+	})
+	clock := func(h, m int) time.Time {
+		d := 4
+		if h < 12 {
+			d = 5
+		}
+		return time.Date(2026, 10, d, h, m, 0, 0, plus3)
+	}
+	f.stageAt("garmin/awake", "garmin", "awake", clock(23, 0), 30*time.Minute)
+	f.stageAt("garmin/light", "garmin", "light", clock(23, 30), 90*time.Minute)
+	f.stageAt("garmin/deep", "garmin", "deep", clock(1, 0), time.Hour)
+	f.stageAt("garmin/rem", "garmin", "rem", clock(2, 0), 90*time.Minute)
+	f.stageAt("apple/asleep", "apple", "asleep", clock(22, 0), 5*time.Hour)
+	res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+		Range:    rng(clock(20, 0), clock(6, 0)),
+		Bucket:   &substrate.AggregateBucket{Records: &substrate.AggregateRecords{Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}}},
+		GroupBy:  []string{"source", "code"},
+		Reducers: reducers("sum", "count"),
+		Unit:     "min",
+	})
+	type want struct {
+		sum      float64
+		count    string
+		prorated int64
+		coverage string
+	}
+	wants := map[string]want{
+		"apple asleep": {300 * (4*3600 - 0.5) / (5 * 3600), "1", 1, "PT3H59M59.5S"},
+		"garmin awake": {30 * (1800 - 0.5) / 1800, "1", 1, "PT29M59.5S"},
+		"garmin light": {90, "1", 0, "PT1H30M"},
+		"garmin deep":  {60, "1", 0, "PT1H"},
+		"garmin rem":   {60, "1", 1, "PT1H"},
+	}
+	seen := map[string]bool{}
+	for _, row := range res.Rows {
+		key := strings.TrimPrefix(row.Group.Source, f.source+"/") + " " + row.Group.Code
+		w, ok := wants[key]
+		if !ok {
+			t.Errorf("unexpected row %s", key)
+			continue
+		}
+		seen[key] = true
+		wantNum(t, key, row, "sum", w.sum, true)
+		if c, _ := val(row, "count"); c != w.count || row.Prorated != w.prorated || row.Coverage != w.coverage {
+			t.Errorf("%s: count %s, prorated %d, coverage %s; want %s, %d, %s", key, c, row.Prorated, row.Coverage, w.count, w.prorated, w.coverage)
+		}
+	}
+	for key := range wants {
+		if !seen[key] {
+			t.Errorf("no row for %s", key)
+		}
+	}
+
+	// One amount across two windows apart counts its part in each, once.
+	noon := time.Date(2026, 10, 6, 10, 0, 0, 0, plus3)
+	for i, w := range [][2]time.Time{{noon, noon.Add(time.Hour)}, {noon.Add(90 * time.Minute), noon.Add(150 * time.Minute)}} {
+		f.mustPut(t, f.sleepKind(), fmt.Sprintf("nap/%d", i), map[string]any{
+			"source": f.sourceRef("whoop"), "at": w[0].Format(time.RFC3339), "endsAt": w[1].Format(time.RFC3339),
+		})
+	}
+	f.stageAt("garmin/nap", "garmin", "light", noon.Add(30*time.Minute), 90*time.Minute)
+	naps, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+		Range:    rng(noon, noon.Add(3*time.Hour)),
+		Bucket:   &substrate.AggregateBucket{Records: &substrate.AggregateRecords{Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}}},
+		Reducers: reducers("sum", "count"),
+		Unit:     "min",
+	})
+	if len(naps.Rows) != 2 {
+		t.Fatalf("%d nap rows, want two", len(naps.Rows))
+	}
+	for _, row := range naps.Rows {
+		wantNum(t, row.Record.Ref, row, "sum", 30, true)
+		if c, _ := val(row, "count"); c != "1" || row.Prorated != 1 {
+			t.Errorf("%s: count %s, prorated %d; want 1, 1", row.Record.Ref, c, row.Prorated)
+		}
+	}
+}
