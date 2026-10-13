@@ -1160,11 +1160,11 @@ match, whose timestamp is missing or outside `maxSkew`, whose body is
 multipart (the door keeps no raw bytes of one), or whose secret does not
 resolve: a missing or empty `secret` record, or a bundle whose `config` holds
 no client secret yet. A secret that does not resolve is also logged for the
-operator, at most once a minute per trigger, the line counting the refusals
-since the last one: anyone who posts reaches that check. The key is checked first and a wrong one answers `404`, so a
-trigger may carry both. A store that fails while the door reads the secret
-refuses nothing: the door answers `500` and stores nothing, and the sender's
-retry is checked afresh.
+operator, at most once a minute per trigger, each line counting the refusals
+since the last one, because anyone who posts reaches that check. The key is
+checked first and a wrong one answers `404`, so a trigger may carry both. A
+store that fails while the door reads the secret refuses nothing: the door
+answers `500`, stores nothing, and checks the sender's retry afresh.
 `oauthClientSecret` on a callable whose bundle declares no `oauth2` block is
 refused when the trigger is written. A `secret` record whose id sits under a
 bundle's prefix is also injected into that bundle's functions
@@ -1176,7 +1176,9 @@ The door remembers the signatures it admitted under a declaration that signs
 a timestamp. A request that repeats one while its timestamp is still inside
 `maxSkew` is the same delivery: the door answers `202` with the first
 request's fire id and stores nothing, so a captured request posted again, or
-a provider's resend of a request whose answer it lost, runs once. The record
+a provider's resend of a request whose answer it lost, runs once. While the
+first is still being stored, a repeat is answered `503` with `Retry-After`.
+The record
 lives in the server's memory, so a restart forgets it, and it holds 4096
 signatures per repository, forgetting first the one whose window closes
 soonest. A declaration with no `timestampHeader` has no window, and the door
@@ -1200,7 +1202,10 @@ without one treats the receipt as the start of that second. A request that
 verifies runs. One that does not, because
 it is unsigned, its signature header is not among the headers the trigger
 kept, or its signature does not match, is parked with an error starting
-`webhook signature refused at delivery`, and the callable never runs it.
+`webhook signature refused at delivery`, and the callable never runs it. A
+declaration that signs no timestamp checks the body alone and never reads
+the receipt. A store that fails during the check refuses nothing: the
+delivery is retried like any other transient failure.
 
 ## What makes this safe to run unattended
 

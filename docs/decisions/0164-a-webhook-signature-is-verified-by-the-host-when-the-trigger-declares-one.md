@@ -64,7 +64,41 @@ trigger, where the request has already matched the key, it is `401` with the
 body `webhook signature refused`, which tells the owner's sender that the
 signature is what failed. An unresolvable secret is logged for the operator,
 at most once a minute per trigger because any sender reaches that check; the
-other reasons are not logged.
+other reasons are not logged. A store that fails while the door reads the
+secret refuses nothing: the door answers `500`, stores nothing, and checks
+the sender's retry afresh.
+
+The MAC covers the declared message alone: its literals, the timestamp
+header's value as sent, and the body. A header the trigger keeps through
+`headers` reaches the callable outside it.
+
+The door remembers each signature it admitted under a declaration that signs
+a timestamp, per trigger, until that timestamp leaves `maxSkew`, after which
+the door would refuse the request as stale anyway. A repeat inside the window
+is the same delivery: the door answers `202` with the first request's fire id
+and stores nothing, or `503` with `Retry-After` while the first one is still
+being stored. The record is the server process's memory, at most 4096
+signatures per repository, the one closest to leaving its window forgotten
+first; a restart forgets all of them. A declaration with no
+`timestampHeader` has no window, so the door admits every repeat of a
+correctly signed body as a new delivery.
+
+A stored request is held to the signature its trigger declares when it runs,
+not only when it arrived. The door writes `request.signatureVerified: true`
+on a request it verified before it stores it, and only the door writes that
+key: a sender's request becomes `method`, `contentType`, `headers`, `query`
+and `body` or `parts`, never a key of the request map. The callable reads
+the mark, which vouches for the body and the timestamp alone. The
+dispatcher's resume of a pending delivery, a retry by hand and the rerun of
+an interrupted agent delivery each check the stored request first. A marked
+request runs, however long after `maxSkew`. An unmarked one, stored while the
+trigger declared no signature, is checked from its kept body and headers,
+its timestamp measured against when the door received it (`fire.at`, or for
+an envelope whose `fire.at` names only the whole second, the receipt its
+admission entry recorded), never against the clock of the run. One that does
+not verify parks at once with an error starting `webhook signature refused
+at delivery`, and the callable never runs it. A store fault during that
+check is an ordinary transient failure and is retried.
 
 A callable verifies only what the host cannot: a scheme outside the block,
 such as a prefixed header (`sha256=…`) or a signature list (`t=…,v1=…`).
@@ -83,6 +117,12 @@ rest of 0045 stands.
   server log, or the provider's signature setup, to tell a wrong URL from a
   wrong secret. A keyed trigger answers `401` instead, which says no more
   than the key already proved.
+- Bad, because the timestamp bounds admission only. A marked request parked
+  for a month runs when a hand retries it, and a repeat inside the window
+  after a restart, or after the record forgot it under load, is admitted as
+  a new delivery. A callable that must run once per event deduplicates by
+  the provider's event id, and one behind a body-only declaration always
+  does.
 - Bad, because GitHub's `sha256=` prefix and Stripe's `t=,v1=` header do not
   fit the block yet; each is a later additive field.
 - Bad, because a `secret` record under a bundle's id prefix is still injected
@@ -91,11 +131,25 @@ rest of 0045 stands.
 
 ### Confirmation
 
-`TestWebhookSignatureIsCheckedBeforeAnythingIsStored`,
-`TestWebhookSignatureIsRefusedAtWriteTime` and
-`TestWebhookSignatureUnderTheOAuthClientSecret` in `internal/engine`;
-`TestWebhookSignatureDeclarationIsAdmittedAtParse` for the parse;
-`TestWebhookSignatureRefusalIsATerse401` in `internal/api`; and
+In `internal/engine`: `TestWebhookSignatureIsCheckedBeforeAnythingIsStored`
+for the refusals and their two answers,
+`TestWebhookSignatureIsRefusedAtWriteTime`,
+`TestWebhookSignatureUnderTheOAuthClientSecret` and
+`TestAnAgentWebhookChecksItsBundlesClientSecret` for the secret's two
+sources and both callable kinds,
+`TestWebhookSigningSecretStoreFaultIsNotARefusal`,
+`TestWebhookUnresolvableSecretIsLoggedOncePerMinute`,
+`TestWebhookSignatureRepeatIsOneDelivery` and
+`TestWebhookReplaysHoldASignatureForItsWindow` for the replay record,
+`TestWebhookSignatureDeclaredLaterRefusesAStoredUnsignedRequest`,
+`TestWebhookSignatureStoredRequestRunsPastItsSkew`,
+`TestWebhookSignatureStoredRequestSkewIsMeasuredToTheMillisecond`,
+`TestWebhookSignatureMarkSurvivesAParkAndARetry` and
+`TestStoredBodyOnlySignatureNeedsNoReceipt` for stored requests, and
+`TestWebhookSignatureDeclarationIsAdmittedAtParse`,
+`TestWebhookSignatureMatchesKnownVectors` (RFC 4231) and
+`TestWebhookSignaturePresentedAtItsEdges` for the parse and the MAC.
+`TestWebhookSignatureRefusalIsATerse401` in `internal/api`, and
 `TestWhoopWebhookThroughTheDoor` in `internal/providertest`.
 
 ## More Information
