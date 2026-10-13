@@ -480,7 +480,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	// The cursor is stamped with the order AND the filter it was minted under:
 	// a token replayed against another filter would seek past rows the new
 	// predicate admits and answer a short page that looked complete.
-	signature := order + "|" + filterDigest(q.Filter)
+	signature := orderSignature(order, q.Filter)
 	// A quantity order gains an arm per stored unit its declaration does not
 	// name, after the signature: each arm keys a row the same whichever arms
 	// stand beside it, so a unit first written mid-walk moves no cursor.

@@ -445,6 +445,51 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 	}
 }
 
+// A cursor carries a digest of the order it was minted under, not the order's
+// text: a quantity order is a CASE over every unit of its measure, which a
+// cursor in a URL would otherwise repeat for every page. The walk still
+// visits every row once, and a cursor from another filter is still refused.
+func TestOrderByQuantityMintsAShortCursor(t *testing.T) {
+	t.Parallel()
+	ds := installReadings(t, map[string]map[string]any{
+		"a": {"weight": qv("70", "kg")}, "b": {"weight": qv("150", "[lb_av]")},
+		"c": {"weight": qv("65000", "g")}, "d": {"weight": qv("11", "[stone_av]")},
+	})
+	ctx := context.Background()
+	q := substrate.Query{Filter: substrate.Filter{Kinds: []string{readingKind}}, OrderBy: []substrate.Order{{Property: "weight"}}, First: 1}
+	var names []string
+	for range 5 {
+		page, err := ds.List(ctx, q)
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		for _, r := range page.Records {
+			names = append(names, r.Properties["name"].(string))
+		}
+		if page.Cursor == "" {
+			break
+		}
+		if len(page.Cursor) > 300 {
+			t.Fatalf("the cursor is %d characters, want a digest of the order, not its text", len(page.Cursor))
+		}
+		q.After = page.Cursor
+	}
+	if got := strings.Join(names, ","); got != "c,b,d,a" {
+		t.Errorf("the walk by weight visited %s, want c,b,d,a", got)
+	}
+	first, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{readingKind}}, OrderBy: []substrate.Order{{Property: "weight"}}, First: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := substrate.Query{
+		Filter:  substrate.Filter{Kinds: []string{readingKind}, Properties: map[string]substrate.Cond{"name": {Eq: "a"}}},
+		OrderBy: []substrate.Order{{Property: "weight"}}, After: first.Cursor,
+	}
+	if _, err := ds.List(ctx, other); !errors.Is(err, substrate.ErrValidation) {
+		t.Errorf("a cursor replayed under another filter: %v, want a validation refusal", err)
+	}
+}
+
 // An order key keeps the base value to forty decimal places, so two rates
 // that differ at the twenty-second significant digit sort apart rather than
 // tie and fall to the id.
