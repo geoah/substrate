@@ -111,13 +111,18 @@ which it requires.
 | ----------- | ----------------------------------------------------------------------------------------------------- |
 | `analyte`   | The lab facts about one blood test metric: LOINC parts, molar mass, conversions, a fallback range.   |
 | `sleep`     | One night or nap: its span, time in each stage, efficiency and the device's scores.                   |
-| `workout`   | One session: sport, span, distance, energy, heart rate and time in each zone.                         |
+| `workout`   | One session: sport, span, distance, active and total energy, heart rate and time in each zone.        |
 | `labreport` | One report from a lab, with its status and the original document.                                     |
 | `labresult` | One analyte's result, binding `observed(single)`, with the lab's range, flag, specimen and status.     |
 
-It ships a catalogue of 60 metric records with ids `health/<name>`, from
-`health/heart_rate` to `health/ldl_cholesterol`, each with its LOINC,
-HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes.
+It ships a catalogue of 61 metric records with ids `health/<name>`, such as
+`health/heart_rate` and `health/ldl_cholesterol`, each with its LOINC,
+HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes. It
+ships 18 `analyte` records, one for each metric of the nine lab pairs (one
+analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol).
+Its function `convertlab`, fired by its trigger `health-on-labresult` on every
+write of a `labresult`, writes the result again in the other metric of its
+pair ([lab results in both unit systems](observations.md#lab-results-in-both-unit-systems)).
 
 ## substrate.reamde.dev/core
 
