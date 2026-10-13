@@ -161,8 +161,8 @@ data:
               type: object
               description: the provider's signature over each request, which
                 the door checks before it stores anything; a request that
-                fails it is answered 404 on a trigger with no key, and 401
-                on a trigger whose key the request carried
+                fails it is answered 404, or 401 if it carried the trigger's
+                key
               fields:
                 # A string and not an enum: an enum value is one lowercase
                 # word, and the algorithm's name carries a hyphen.
