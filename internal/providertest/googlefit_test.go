@@ -86,6 +86,8 @@ type fakeFit struct {
 	ranges map[string][]string
 	// tokens is every session feed read's pageToken, "" for none.
 	tokens []string
+	// windows is every windowed session read, "<startTime> <endTime>".
+	windows []string
 	// pageTokens counts dataset reads that carried a pageToken.
 	pageTokens int
 }
@@ -299,10 +301,24 @@ func (f *fakeFit) start(t *testing.T) {
 		}
 		q := r.URL.Query()
 		if q.Has("startTime") || q.Has("endTime") {
-			writeJSON(w, map[string]any{
-				"session":        f.shiftedSessions(f.window["session"]),
-				"deletedSession": []any{},
-			})
+			// The Fit reference: only sessions ending between the two times.
+			lo, errLo := time.Parse(time.RFC3339, q.Get("startTime"))
+			hi, errHi := time.Parse(time.RFC3339, q.Get("endTime"))
+			if errLo != nil || errHi != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			f.mu.Lock()
+			f.windows = append(f.windows, q.Get("startTime")+" "+q.Get("endTime"))
+			f.mu.Unlock()
+			inside := []any{}
+			for _, s := range f.shiftedSessions(f.window["session"]) {
+				end := time.UnixMilli(fitInt(s.(map[string]any)["endTimeMillis"]))
+				if !end.Before(lo) && !end.After(hi) {
+					inside = append(inside, s)
+				}
+			}
+			writeJSON(w, map[string]any{"session": inside, "deletedSession": []any{}})
 			return
 		}
 		tok := q.Get("pageToken")
@@ -338,6 +354,13 @@ func (f *fakeFit) sessionTokens() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.tokens)
+}
+
+// sessionWindows is every windowed session read, "<startTime> <endTime>".
+func (f *fakeFit) sessionWindows() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.windows)
 }
 
 // pageTokenReads is how many dataset reads carried a pageToken.
@@ -789,6 +812,40 @@ func TestGoogleFitSessionFeedPagesToItsEndAndDeletes(t *testing.T) {
 	tokens, _ := mustGet(t, ds, googlefitAccountType, googlefitAccount).Properties["syncTokens"].(map[string]any)
 	if tokens["sessions"] != fitLastSessionToken {
 		t.Fatalf("syncTokens = %v", tokens)
+	}
+}
+
+// TestGoogleFitDeepBackfillReadsTheSessionWindow: the session feed answers
+// only the last 30 days, so a first sync whose backfillDepth reaches further
+// reads the session list over its own window first, from the backfill floor
+// to the run's start, then walks the feed. The recorded month sits 60 to 90
+// days back from the run, inside last90d and outside the feed's reach.
+func TestGoogleFitDeepBackfillReadsTheSessionWindow(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	today := fitCutOn.AddDate(0, 0, 60)
+	installFit(t, ds, today)
+	fake := newFakeFit(t, fitCutOn, fitCutOn)
+	mustPut(t, ds, substrate.PutInput{
+		Kind: googlefitAccountType, ID: googlefitAccount,
+		Properties: syncProps(map[string]any{"timezone": "Europe/Athens", "backfillDepth": "last90d"}, "enabledSleep"),
+	})
+
+	googlefitSync(t, ds, fake)
+	floor := today.AddDate(0, 0, -90).Format(time.RFC3339)
+	runStart := today.Add(12 * time.Hour).Format(time.RFC3339)
+	if got := fake.sessionWindows(); !slices.Equal(got, []string{floor + " " + runStart}) {
+		t.Fatalf("the session window reads were %q, want one from the floor %s to the run's start %s", got, floor, runStart)
+	}
+	if got := fake.sessionTokens(); len(got) == 0 || got[0] != "" {
+		t.Fatalf("the feed was read with tokens %q after the window, want a walk from no token", got)
+	}
+	if n := countLive(t, ds, googlefitSessionType); n != 59 {
+		t.Fatalf("%d sessions, want the 59 the window answers", n)
+	}
+	if n := len(fitDatasets(t, ds, fitSleep)); n != 30 {
+		t.Fatalf("%d sleep rows, want the 30 recorded nights 60 to 90 days back", n)
 	}
 }
 
