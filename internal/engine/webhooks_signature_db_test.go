@@ -670,6 +670,41 @@ func TestWebhookSignatureStoredRequestRunsPastItsSkew(t *testing.T) {
 	}
 }
 
+// The door's mark is the only proof a stored request carries when its
+// trigger keeps no signature headers, the shape WHOOP ships: the recheck
+// has no signature to read. A verified request whose fire fails and parks
+// keeps the mark through the park, and a retry by hand long after maxSkew
+// runs it.
+func TestWebhookSignatureMarkSurvivesAParkAndARetry(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newHookDataset(t, nil, pyFn("hookgated", map[string]any{
+		"permissions": map[string]any{"reads": map[string]any{"kinds": []any{widgetType}}},
+	}, []any{widgetType}, hookGatedSource))
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
+	source := signedSource("", vocabulary.RecordPath("substrate.reamde.dev/core/secret", hookSecretID))
+	source["webhook"].(map[string]any)["signature"].(map[string]any)["maxSkew"] = "PT2S"
+	putHookTrigger(t, ds, "hook-unkept", "hookgated", source)
+	authority := testdb.Repository(t)
+
+	fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-unkept", "", signedHook(`{"n":"marked"}`, hookSigningSecret, time.Now()))
+	if err != nil {
+		t.Fatalf("receive: %v", err)
+	}
+	row, ok := failuresByFire(t, ds, "hook-unkept")[fid]
+	if !ok || !strings.Contains(row.LastError, "gate closed") {
+		t.Fatalf("the first fire left %+v (present %v), want parked on the closed gate", row, ok)
+	}
+	time.Sleep(3 * time.Second)
+	mustPut(t, ds, owner, substrate.PutInput{Kind: widgetType, ID: "gate", Properties: map[string]any{"name": "open"}})
+	if _, err := ds.RetryTriggerFailure(ctx, "hook-unkept", row.ID); err != nil {
+		t.Fatalf("a verified request with no kept signature, retried past maxSkew: %v", err)
+	}
+	if got := hookEcho(t, ds, "gated-echo"); got["record"] != fid {
+		t.Fatalf("the retry echoed %v", got)
+	}
+}
+
 // signedHookMillis is signedHook with the timestamp in milliseconds.
 func signedHookMillis(body, secret string, at time.Time) substrate.WebhookRequest {
 	stamp := strconv.FormatInt(at.UnixMilli(), 10)
