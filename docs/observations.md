@@ -349,6 +349,15 @@ read of one in the other's unit is refused. The codes were written from
 the vendors' published documentation without a check against a live account;
 a metric's description marks the least certain ones.
 
+Every gauge metric but `height` and `vo2_max` carries a `hold`, which a
+writer copies onto each value: about twice the time between a source's
+readings for a sampled stream (`PT20M` for SpO2, `PT10S` for a workout's
+speed), a day for a weighing or a nightly reading, and `PT0S` for a lab
+value and a blood pressure, which are points. A gauge value written without
+a hold stands until the next value of its stream, often a day later, and the
+coverage, the time-weighted mean and the priority policy all read it as
+still standing ([decision 0158](decisions/0158-a-gauge-carries-a-hold-a-null-ends-it-and-its-mean-is-time-weighted.md)).
+
 ## The adapters
 
 An adapter is a sample whose function turns one provider's mirror rows into

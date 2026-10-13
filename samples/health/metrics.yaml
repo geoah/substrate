@@ -103,9 +103,12 @@ data:
     description: >-
       The root mean square of successive differences between heartbeats, in
       milliseconds. A different statistic from SDNN, which Apple reports;
-      the two never pool. No LOINC code is listed: none was verified for RMSSD.
-      The Garmin field name follows the Health API's documentation and is
-      unverified against a live account.
+      the two never pool. Garmin writes a reading about every five minutes
+      overnight as gauge traces, and WHOOP and Garmin write a nightly value
+      as a summary. A writer copies the hold, PT10M, onto each gauge value.
+      No LOINC code is listed: none was verified for RMSSD. The Garmin field
+      names follow the Health API's documentation and are unverified against
+      a live account.
     codes:
       - system: healthconnect
         code: HeartRateVariabilityRmssdRecord
@@ -115,9 +118,13 @@ data:
       - system: garmin
         code: lastNightAvg
         display: HRV summary last night average
+      - system: garmin
+        code: hrvValues
+        display: HRV summary values
     measures: duration
     unit: ms
-    form: summary
+    form: gauge
+    hold: PT10M
     reducers:
       - last
       - avg
@@ -135,7 +142,9 @@ data:
     description: >-
       The standard deviation of the intervals between heartbeats, in milliseconds,
       as Apple Watch reports it. A different statistic from RMSSD; the two
-      never pool.
+      never pool. Apple Watch takes a reading every few hours, and a writer
+      copies the hold, PT6H, onto each value, so a reading never stands through
+      the next day.
     codes:
       - system: "http://loinc.org"
         code: "80404-7"
@@ -145,6 +154,7 @@ data:
     measures: duration
     unit: ms
     form: gauge
+    hold: PT6H
     reducers:
       - avg
       - min
@@ -161,8 +171,11 @@ data:
     name: Blood oxygen saturation
     description: >-
       The share of haemoglobin carrying oxygen, measured by pulse oximetry.
-      Garmin calls it Pulse Ox. The Garmin field name follows the Health API's
-      documentation and is unverified against a live account.
+      Garmin calls it Pulse Ox. A writer copies the hold, PT20M, onto each
+      value: an overnight series of readings about ten minutes apart is covered,
+      and the daytime after the last reading is not. The Garmin field name
+      follows the Health API's documentation and is unverified against a live
+      account.
     codes:
       - system: "http://loinc.org"
         code: "59408-5"
@@ -182,6 +195,7 @@ data:
     measures: fraction
     unit: "%"
     form: gauge
+    hold: PT20M
     reducers:
       - avg
       - min
@@ -198,7 +212,9 @@ data:
     name: Skin temperature
     description: >-
       The temperature of the skin where the device sits, an absolute temperature.
-      A deviation from a baseline is skin_temperature_deviation.
+      A deviation from a baseline is skin_temperature_deviation. A device
+      takes one reading a night, and a writer copies the hold, P1D, onto each
+      value, so a night's reading never stands for the next.
     codes:
       - system: "http://loinc.org"
         code: "39106-0"
@@ -211,6 +227,7 @@ data:
     measures: temperature
     unit: Cel
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -228,7 +245,7 @@ data:
     description: >-
       How far the skin temperature sits from the person's own baseline, a
       temperature difference written with delta true. Never pooled with an
-      absolute temperature.
+      absolute temperature. A writer copies the hold, P1D, onto each value.
     codes:
       - system: healthconnect
         code: SkinTemperatureRecord
@@ -236,6 +253,7 @@ data:
     measures: temperature-difference
     unit: K
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -251,9 +269,11 @@ data:
   properties:
     name: Respiratory rate
     description: >-
-      Breaths per minute, most often measured during sleep. The Garmin field
-      name follows the Health API's documentation and is unverified against
-      a live account.
+      Breaths per minute, most often measured during sleep. A writer copies
+      the hold, PT30M, onto each value: an overnight series of readings about
+      fifteen minutes apart is covered, and the daytime after the last reading
+      is not. The Garmin field name follows the Health API's documentation
+      and is unverified against a live account.
     codes:
       - system: "http://loinc.org"
         code: "9279-1"
@@ -271,6 +291,7 @@ data:
     measures: rate
     unit: "/min"
     form: gauge
+    hold: PT30M
     reducers:
       - avg
       - min
@@ -476,6 +497,7 @@ data:
     measures: rate
     unit: "/min"
     form: gauge
+    hold: PT10S
     reducers:
       - avg
       - max
@@ -490,7 +512,8 @@ data:
   properties:
     name: Running power
     description: >-
-      The power a runner produces, in watts. No Garmin code is listed: the
+      The power a runner produces, in watts. A writer copies the hold, PT10S,
+      onto each value of a workout's stream. No Garmin code is listed: the
       activity sample field was not verified.
     codes:
       - system: healthkit
@@ -502,6 +525,7 @@ data:
     measures: power
     unit: W
     form: gauge
+    hold: PT10S
     reducers:
       - avg
       - max
@@ -517,8 +541,9 @@ data:
   properties:
     name: Speed
     description: >-
-      How fast, during a workout. No Garmin code is listed: the activity sample
-      field was not verified.
+      How fast, during a workout. A writer copies the hold, PT10S, onto each
+      value of a workout's stream. No Garmin code is listed: the activity
+      sample field was not verified.
     codes:
       - system: healthkit
         code: HKQuantityTypeIdentifierRunningSpeed
@@ -529,6 +554,7 @@ data:
     measures: speed
     unit: m/s
     form: gauge
+    hold: PT10S
     reducers:
       - avg
       - max
@@ -544,10 +570,12 @@ data:
     name: Pace
     description: >-
       Time per distance, the reciprocal of a speed. A mean pace is total time
-      over total distance, never a mean of paces.
+      over total distance, never a mean of paces. A writer copies the hold,
+      PT10S, onto each value of a workout's stream.
     measures: pace
     unit: min/km
     form: gauge
+    hold: PT10S
     reducers:
       - min
       - max
@@ -587,7 +615,10 @@ metadata:
 data:
   properties:
     name: Body weight
-    description: The weight of the body, from a scale or entered by hand.
+    description: >-
+      The weight of the body, from a scale or entered by hand. A writer copies
+      the hold, P1D, onto each value, so one weighing stands for a day and
+      never outranks a newer weighing from another source.
     codes:
       - system: "http://loinc.org"
         code: "29463-7"
@@ -607,6 +638,7 @@ data:
     measures: mass
     unit: kg
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -622,7 +654,10 @@ metadata:
 data:
   properties:
     name: Body fat
-    description: "The share of the body's weight that is fat."
+    description: >-
+      The share of the body's weight that is fat. A writer copies the hold,
+      P1D, onto each value, so one weighing stands for a day and never outranks
+      a newer weighing from another source.
     codes:
       - system: "http://loinc.org"
         code: "41982-0"
@@ -639,6 +674,7 @@ data:
     measures: fraction
     unit: "%"
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -653,7 +689,10 @@ metadata:
 data:
   properties:
     name: Fat mass
-    description: "The weight of the body's fat, as a scale estimates it."
+    description: >-
+      The weight of the body's fat, as a scale estimates it. A writer copies
+      the hold, P1D, onto each value, so one weighing stands for a day and
+      never outranks a newer weighing from another source.
     codes:
       - system: withings
         code: "8"
@@ -661,6 +700,7 @@ data:
     measures: mass
     unit: kg
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -675,7 +715,10 @@ metadata:
 data:
   properties:
     name: Muscle mass
-    description: "The weight of the body's muscle, as a scale estimates it."
+    description: >-
+      The weight of the body's muscle, as a scale estimates it. A writer copies
+      the hold, P1D, onto each value, so one weighing stands for a day and
+      never outranks a newer weighing from another source.
     codes:
       - system: withings
         code: "76"
@@ -686,6 +729,7 @@ data:
     measures: mass
     unit: kg
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -702,6 +746,8 @@ data:
     name: Body water
     description: >-
       The share of the body's weight that is water, as a scale estimates it.
+      A writer copies the hold, P1D, onto each value, so one weighing stands
+      for a day and never outranks a newer weighing from another source.
     codes:
       - system: garmin
         code: bodyWaterInPercent
@@ -709,6 +755,7 @@ data:
     measures: fraction
     unit: "%"
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -724,7 +771,9 @@ data:
   properties:
     name: Bone mass
     description: >-
-      The weight of the body's bone mineral, as a scale estimates it.
+      The weight of the body's bone mineral, as a scale estimates it. A writer
+      copies the hold, P1D, onto each value, so one weighing stands for a
+      day and never outranks a newer weighing from another source.
     codes:
       - system: withings
         code: "88"
@@ -737,6 +786,7 @@ data:
     measures: mass
     unit: kg
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -779,7 +829,10 @@ metadata:
 data:
   properties:
     name: Body mass index
-    description: Weight over height squared.
+    description: >-
+      Weight over height squared. A writer copies the hold, P1D, onto each
+      value, so one weighing stands for a day and never outranks a newer weighing
+      from another source.
     codes:
       - system: "http://loinc.org"
         code: "39156-5"
@@ -792,6 +845,7 @@ data:
     measures: body-mass-index
     unit: kg/m2
     form: gauge
+    hold: P1D
     reducers:
       - avg
       - min
@@ -877,7 +931,8 @@ data:
     description: >-
       Glucose in the blood as an amount concentration, from a meter or a continuous
       monitor. A reading in mg/dL is blood_glucose_mass; the two pool only
-      through a derived observation.
+      through a derived observation. A writer copies the hold, PT15M, onto
+      each value: a continuous monitor reads every 5 to 15 minutes.
     codes:
       - system: "http://loinc.org"
         code: "15074-8"
@@ -889,6 +944,7 @@ data:
     measures: amount-concentration
     unit: mmol/L
     form: gauge
+    hold: PT15M
     reducers:
       - avg
       - twa
@@ -908,7 +964,9 @@ data:
     name: Blood glucose (mass)
     description: >-
       Glucose in the blood as a mass concentration, as US meters and Apple
-      Health report it. A reading in mmol/L is blood_glucose.
+      Health report it. A reading in mmol/L is blood_glucose. A writer copies
+      the hold, PT15M, onto each value: a continuous monitor reads every 5
+      to 15 minutes.
     codes:
       - system: "http://loinc.org"
         code: "2339-0"
@@ -918,6 +976,7 @@ data:
     measures: mass-concentration
     unit: mg/dL
     form: gauge
+    hold: PT15M
     reducers:
       - avg
       - twa

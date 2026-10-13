@@ -286,3 +286,33 @@ func TestHealthLabMetricCodesMatchTheirMeasure(t *testing.T) {
 		t.Fatal("no amount and mass concentration twins found; the test reads the wrong place")
 	}
 }
+
+// A GAUGE METRIC CARRIES A HOLD. A writer copies a metric's `hold` onto each
+// value, and a gauge value written without one stands until the next value of
+// its stream, often a day later: the coverage, the time-weighted mean and the
+// priority policy then read a night's last SpO2 reading as the whole next day
+// (decision 0158). Only a level that stands until it is replaced goes
+// without, and it is named here.
+func TestHealthGaugesCarryAHold(t *testing.T) {
+	standUntilReplaced := map[string]bool{
+		"health/height":  true, // measured rarely, and true until the next
+		"health/vo2_max": true, // an estimate, current until the next
+	}
+	gauges := 0
+	for id, props := range healthRecords(t, "observations/metric") {
+		if props["form"] != vocabulary.FormGauge {
+			continue
+		}
+		gauges++
+		hold, _ := props["hold"].(string)
+		switch {
+		case hold == "" && !standUntilReplaced[id]:
+			t.Errorf("%s is a gauge with no hold: each value would stand until the next one", id)
+		case hold != "" && standUntilReplaced[id]:
+			t.Errorf("%s now carries a hold %s: drop it from the list of levels that stand until replaced", id, hold)
+		}
+	}
+	if gauges == 0 {
+		t.Fatal("no gauge metrics found")
+	}
+}
