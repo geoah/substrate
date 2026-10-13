@@ -221,7 +221,7 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 	}
 	// The start offset holds before the midpoint and the end offset from it.
 	for i, want := range []int{180, 180, 180, 120, 120} {
-		if hr[i].offset != want || hr[i].unit != "{beats}/min" || hr[i].hold.Int64 != 240000 {
+		if hr[i].offset != want || hr[i].unit != "/min" || hr[i].hold.Int64 != 240000 {
 			t.Errorf("point %d: offset %d unit %s hold %v", i, hr[i].offset, hr[i].unit, hr[i].hold)
 		}
 	}
