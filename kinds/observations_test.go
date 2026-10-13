@@ -1,8 +1,15 @@
 package kinds_test
 
 import (
+	"bytes"
+	"errors"
+	"io"
+	"io/fs"
+	"path"
 	"slices"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -147,5 +154,135 @@ func TestHealthGarminRequiresHealthAndTheProvider(t *testing.T) {
 	}
 	if _, err := reg.ResolveFunction(samples.Authority + "/healthgarmin/adaptgarmin"); err != nil {
 		t.Errorf("the adapter function did not install: %v", err)
+	}
+}
+
+// healthRecords reads the health sample's data records of one kind (a kind
+// reference under the samples authority, such as observations/metric), by id.
+func healthRecords(t *testing.T, kind string) map[string]map[string]any {
+	t.Helper()
+	entries, err := fs.ReadDir(samples.Samples(), "health")
+	if err != nil {
+		t.Fatalf("read the health sample: %v", err)
+	}
+	out := map[string]map[string]any{}
+	for _, e := range entries {
+		if e.IsDir() || path.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		raw, err := fs.ReadFile(samples.Samples(), "health/"+e.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		dec := yaml.NewDecoder(bytes.NewReader(raw))
+		for {
+			var doc struct {
+				Kind     string `yaml:"kind"`
+				Metadata struct {
+					ID string `yaml:"id"`
+				} `yaml:"metadata"`
+				Data struct {
+					Properties map[string]any `yaml:"properties"`
+				} `yaml:"data"`
+			}
+			if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				t.Fatalf("%s: %v", e.Name(), err)
+			}
+			if doc.Kind == samples.Authority+"/"+kind {
+				out[doc.Metadata.ID] = doc.Data.Properties
+			}
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("the health sample ships no %s records", kind)
+	}
+	return out
+}
+
+// loincAxes are the LOINC parts of the lab codes the health catalogue lists,
+// as the LOINC terminology publishes them (a FHIR CodeSystem $lookup against
+// http://loinc.org, 2026-10-13): what is measured, the kind of quantity, and
+// the specimen.
+var loincAxes = map[string]struct{ component, property, system string }{
+	"22748-8": {"Cholesterol.in LDL", "SCnc", "Ser/Plas"},
+	"2089-1":  {"Cholesterol.in LDL", "MCnc", "Ser/Plas"},
+	"13457-7": {"Cholesterol.in LDL", "MCnc", "Ser/Plas"},
+	"14646-4": {"Cholesterol.in HDL", "SCnc", "Ser/Plas"},
+	"2085-9":  {"Cholesterol.in HDL", "MCnc", "Ser/Plas"},
+	"14647-2": {"Cholesterol", "SCnc", "Ser/Plas"},
+	"2093-3":  {"Cholesterol", "MCnc", "Ser/Plas"},
+	"14927-8": {"Triglyceride", "SCnc", "Ser/Plas"},
+	"2571-8":  {"Triglyceride", "MCnc", "Ser/Plas"},
+	"14771-0": {"Glucose^post CFst", "SCnc", "Ser/Plas"},
+	"1558-6":  {"Glucose^post CFst", "MCnc", "Ser/Plas"},
+	"15074-8": {"Glucose", "SCnc", "Bld"},
+	"2339-0":  {"Glucose", "MCnc", "Bld"},
+	"68438-1": {"Calcidiol+ercalcidiol", "SCnc", "Ser/Plas"},
+	"62292-8": {"Calcidiol+ercalcidiol", "MCnc", "Ser/Plas"},
+	"1989-3":  {"Calcidiol", "MCnc", "Ser/Plas"},
+	"14635-7": {"Calcidiol", "SCnc", "Ser/Plas"},
+	"14682-9": {"Creatinine", "SCnc", "Ser/Plas"},
+	"2160-0":  {"Creatinine", "MCnc", "Ser/Plas"},
+	"2276-4":  {"Ferritin", "MCnc", "Ser/Plas"},
+	"718-7":   {"Hemoglobin", "MCnc", "Bld"},
+	"1988-5":  {"C reactive protein", "MCnc", "Ser/Plas"},
+}
+
+// loincConcentration is the measure a concentration's LOINC property names.
+var loincConcentration = map[string]string{"SCnc": "amount-concentration", "MCnc": "mass-concentration"}
+
+// A LAB METRIC'S LOINC CODES MEASURE WHAT THE METRIC DOES. A writer maps a
+// result by its LOINC code, so a mass concentration code on an amount
+// concentration metric files mg/dL results under a mmol/L stream, and a code
+// for one analyte on its twin's metric pools two analytes. Every LOINC code on
+// a concentration metric is held to the axes LOINC publishes: its property to
+// the metric's measure, and the unsuffixed and `_mass` twins of one analyte to
+// one component and one specimen.
+func TestHealthLabMetricCodesMatchTheirMeasure(t *testing.T) {
+	metrics := healthRecords(t, "observations/metric")
+	type axes struct{ component, system string }
+	byMetric := map[string]axes{}
+	for id, props := range metrics {
+		measure, _ := props["measures"].(string)
+		if measure != "amount-concentration" && measure != "mass-concentration" {
+			continue
+		}
+		codes, _ := props["codes"].([]any)
+		for _, raw := range codes {
+			c, _ := raw.(map[string]any)
+			if c["system"] != "http://loinc.org" {
+				continue
+			}
+			code, _ := c["code"].(string)
+			ax, known := loincAxes[code]
+			switch {
+			case !known:
+				t.Errorf("%s lists LOINC %s, which this test has no axes for: add them from LOINC", id, code)
+				continue
+			case loincConcentration[ax.property] != measure:
+				t.Errorf("%s measures %s and lists LOINC %s, a %s (%s) code", id, measure, code, ax.property, ax.component)
+			}
+			got := axes{ax.component, ax.system}
+			if prev, seen := byMetric[id]; seen && prev != got {
+				t.Errorf("%s lists LOINC codes for %v and %v", id, prev, got)
+			}
+			byMetric[id] = got
+		}
+	}
+	pairs := 0
+	for id, ax := range byMetric {
+		twin, ok := byMetric[id+"_mass"]
+		if !ok {
+			continue
+		}
+		pairs++
+		if twin != ax {
+			t.Errorf("%s is %v and %s_mass is %v: the twins of one analyte share a component and a specimen", id, ax, id, twin)
+		}
+	}
+	if pairs == 0 {
+		t.Fatal("no amount and mass concentration twins found; the test reads the wrong place")
 	}
 }
