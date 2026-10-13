@@ -716,7 +716,9 @@ chart where it would draw a line of its own, grouped by source or about, and
 named under the chart where it joins a selected line.
 
 **The timeline** (`/observations/timeline`) draws the chosen metrics over one
-range on one time axis. They overlay in one chart while they fit two units
+range on one time axis. Opened with no metric, it draws the newest stream's
+metric and writes it into the address (`?metric=`), so a later read never
+swaps the chart. They overlay in one chart while they fit two units
 and otherwise split into as few charts as hold them two units each: heart
 rate, HRV and steps are two charts, heart rate with HRV and then steps. One
 row of controls scopes every chart: the metrics, the range (today, the last

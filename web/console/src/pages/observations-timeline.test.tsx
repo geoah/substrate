@@ -27,6 +27,7 @@ import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { recordTimelineSearch } from "@/lib/observations"
 import { isoWithOffset, windowWords } from "@/lib/observations-time"
 import {
+  BODY_MASS,
   GARMIN,
   LATEST,
   LATEST_PEOPLE,
@@ -105,7 +106,7 @@ function mount(
       </QueryClientProvider>
     </ConsolePreferencesContext.Provider>
   )
-  return server
+  return Object.assign(server, { client })
 }
 
 /** The reads that named a metric, latest last. */
@@ -436,6 +437,34 @@ describe("the timeline's requests", () => {
       .range!
     expect(Date.parse(gte!)).toBe(Date.parse("2026-09-01T00:00:00.123Z"))
     expect(Date.parse(lt!)).toBe(Date.parse("2026-09-01T00:00:00.456Z"))
+  })
+
+  it("keeps the metric it opened on when a newer point of another lands", async () => {
+    let latest: AggregateResult = LATEST
+    const server = mount(`?${WINDOW}`, false, (read) =>
+      read.aggregate.metric ? answer(read) : latestAnswer(read, latest)
+    )
+    // No metric in the address: the newest stream's, Heart rate.
+    await drawn(await lane("Heart rate"))
+    // A sync lands a newer weight, and the page reads again.
+    latest = {
+      ...LATEST,
+      rows: LATEST.rows.map((r) =>
+        r.group?.metric === BODY_MASS
+          ? { ...r, start: "2026-10-08T07:00:00Z", end: "2026-10-08T07:00:00Z" }
+          : r
+      ),
+    }
+    await act(async () => {
+      await server.client.invalidateQueries()
+    })
+    await waitFor(() =>
+      expect(
+        server.seen.filter((r) => r.aggregate.metric).length
+      ).toBeGreaterThan(1)
+    )
+    expect(screen.getByRole("region", { name: "Heart rate" })).toBeTruthy()
+    expect(screen.queryByRole("region", { name: "Weight" })).toBe(null)
   })
 
   it("says discovery was refused, naming its problems, never that nothing was measured", async () => {

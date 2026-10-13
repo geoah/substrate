@@ -12,7 +12,7 @@
  * and carries each one's numbers under it, with the request itself in
  * technical mode. */
 
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { ListIcon } from "lucide-react"
 import { parseAsStringLiteral, useQueryState } from "nuqs"
@@ -50,6 +50,7 @@ import {
   type BucketChoice,
 } from "@/lib/observations-time"
 import { planPlot, splitCharts } from "@/lib/overlay"
+import { shortRef } from "@/lib/stream-table"
 import { ARRAY, FROM_VALUES, GROUP_VALUES } from "@/lib/timeline-address"
 
 /** Where to read from, Automatic first: each metric reads what its streams
@@ -83,11 +84,17 @@ export function ObservationsTimelinePage() {
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label))
   }, [obs])
-  const metrics = metricParam.length
-    ? metricParam
-    : obs.streams[0]
-      ? [obs.streams[0].metric]
-      : []
+  // With none in the address, the newest stream's metric, written there once
+  // it is known: a later read whose newest point is another metric's never
+  // swaps the chart under the reader.
+  const fallback = obs.streams[0]
+    ? shortRef(obs.streams[0].metric, obs.pins.metric)
+    : undefined
+  const metrics = metricParam.length ? metricParam : fallback ? [fallback] : []
+  useEffect(() => {
+    if (metricParam.length || !fallback) return
+    void setMetricParam([fallback], { history: "replace" })
+  }, [metricParam.length, fallback, setMetricParam])
   // The shown metrics' sources and things, each facet's under the other's
   // choice only, so a chosen source's menu still offers the ones to add.
   const values = useFacetValues(obs, { metrics, sources, abouts })
