@@ -1336,8 +1336,13 @@ a row of its own.
   all read from the same points, and absent otherwise.
 - Each metric's reducers, unit, forms and statistics are checked on their
   own before any rollup row or point is read for a reduction, and a refusal
-  names the entry: `aggregate.metrics[1].reducers[0]: twa does not apply to
-  an amount`. A metric named twice is a `422`.
+  names the entry. Where the option is the entry's, the path names it
+  (`aggregate.metrics[1].reducers[0]: twa does not apply to an amount`).
+  Where the option or budget is the read's, the message opens with the
+  entry and its metric (`aggregate.reducers[0]: in aggregate.metrics[1]
+  (<metric path>), sum does not apply to a gauge`). Summaries holding two
+  statistics are refused at the entry, which names one in its `statistic`.
+  A metric named twice is a `422`.
 - The budgets hold the metrics together: `maxGroups` counts every metric's
   groups, `maxBuckets` every metric's series times the buckets, and
   `maxSamples` adds up every metric's statements.

@@ -135,9 +135,10 @@ func TestAggregateSeveralMetricsShareOneRead(t *testing.T) {
 
 // A several-metric read is checked whole before it runs: each metric's
 // reducers, unit and statistics on their own, named by the metric's place in
-// metrics, and the metrics' series times the buckets against maxBuckets
-// together (four metrics of one group each over three days are twelve, so
-// eleven is refused before any rollup row or point is read).
+// metrics (a refusal at a read-wide option or budget opens with the entry
+// and its reference), and the metrics' series times the buckets against
+// maxBuckets together (four metrics of one group each over three days are
+// twelve, so eleven is refused before any rollup row or point is read).
 func TestAggregateSeveralMetricsAreCheckedBeforeTheyRun(t *testing.T) {
 	t.Parallel()
 	f := todayFix(t)
@@ -164,16 +165,35 @@ func TestAggregateSeveralMetricsAreCheckedBeforeTheyRun(t *testing.T) {
 		}, Reducers: reducers("avg")}), "aggregate.metrics[1].reducers[0]: twa does not apply to an amount"},
 		{"the read's reducer one metric's form refuses", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: steps}, {Ref: hr},
-		}, Reducers: reducers("sum")}), "aggregate.reducers[0]: sum does not apply to a gauge"},
+		}, Reducers: reducers("sum")}), "aggregate.reducers[0]: in aggregate.metrics[1] (" + hr + "), sum does not apply to a gauge"},
 		{"a unit outside the metric's measure", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: mass}, {Ref: hr, Unit: "kg"},
 		}, Reducers: reducers("last")}), "aggregate.metrics[1].unit: kg is not a rate unit"},
 		{"summaries holding two statistics", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: hr}, {Ref: rhr, From: substrate.AggregateFromSummaries},
-		}, Reducers: reducers("last")}), "hold the statistics avg and max"},
+		}, Reducers: reducers("last")}), "aggregate.metrics[1]: the summaries from " + f.sourcePath("watch") +
+			" hold the statistics avg and max, and a row reads one; name it with aggregate.metrics[1].statistic"},
 		{"a statistic on a metric read raw", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: hr}, {Ref: rhr, Statistic: "avg"},
 		}, Reducers: reducers("last")}), "aggregate.metrics[1].statistic: a statistic narrows the metric's summaries, and from raw reads none"},
+		{
+			"groupBy statistic beside a metric read raw", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
+				{Ref: rhr, From: substrate.AggregateFromSummaries}, {Ref: hr},
+			}, GroupBy: []string{"statistic"}, Reducers: reducers("last")}),
+			"aggregate.groupBy: in aggregate.metrics[1] (" + hr + "), groupBy statistic splits summaries, and the metric is from raw; read it from summaries with aggregate.metrics[1].from",
+		},
+		{
+			"one metric over maxBuckets", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
+				{Ref: rhr, From: substrate.AggregateFromSummaries},
+			}, GroupBy: []string{"statistic"}, Reducers: reducers("last"), Budget: &substrate.AggregateBudget{MaxBuckets: 3}}),
+			"aggregate.budget.maxBuckets: in aggregate.metrics[0] (" + rhr + "), 2 series (groups, and codes where grouped by code) times 3 buckets is 6, over 3",
+		},
+		{
+			"one metric over maxGroups", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
+				{Ref: rhr, From: substrate.AggregateFromSummaries},
+			}, GroupBy: []string{"statistic"}, Reducers: reducers("last"), Budget: &substrate.AggregateBudget{MaxGroups: 1}}),
+			"aggregate.budget.maxGroups: in aggregate.metrics[0] (" + rhr + "), the metric makes 2 groups, over 1",
+		},
 		{"a metric named twice", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: hr}, {Ref: hr, Unit: "/s"},
 		}, Reducers: reducers("last")}), "aggregate.metrics[1].ref"},

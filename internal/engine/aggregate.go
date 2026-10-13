@@ -112,6 +112,31 @@ type aggPlan struct {
 // path names one of the plan's metric options in a refusal.
 func (p *aggPlan) path(option string) string { return p.at + "." + option }
 
+// isEntry reports whether the plan is one metric's of a several-metric read
+// (forMetric).
+func (p *aggPlan) isEntry() bool { return p.at != "aggregate" }
+
+// refuse refuses what the plan's metric does not admit. On a several-metric
+// read a refusal whose path is a read-wide option or budget opens with the
+// metric's entry and reference, since the path alone does not say which
+// metric fails it.
+func (p *aggPlan) refuse(path, format string, args ...any) error {
+	if p.isEntry() && path != p.at && !strings.HasPrefix(path, p.at+".") {
+		format, args = "in %s (%s), "+format, append([]any{p.at, p.metric}, args...)
+	}
+	return refuse(path, format, args...)
+}
+
+// statisticPath is where a read names the one summary statistic a metric's
+// summaries are read at: the entry's statistic, or the filter on a read of
+// one metric.
+func (p *aggPlan) statisticPath() string {
+	if p.isEntry() {
+		return p.path("statistic")
+	}
+	return "filter.properties.statistic"
+}
+
 // reducerPath names the plan's i-th reducer in a refusal.
 func (p *aggPlan) reducerPath(i int) string { return fmt.Sprintf("%s[%d]", p.reducersAt, i) }
 
@@ -819,11 +844,11 @@ func (p *aggPlan) parseMetricOptions() error {
 		return refuse("aggregate.rolling", "the records time mode's windows are not a sequence of buckets; a rolling window has nothing to roll over")
 	}
 	if p.grouped[substrate.GroupStatistic] && p.source != substrate.AggregateFromSummaries {
-		what := "this read"
-		if p.sharedEnds {
-			what = p.metric
+		if p.isEntry() {
+			return p.refuse("aggregate.groupBy", "groupBy statistic splits summaries, and the metric is from %s; read it from summaries with %s, or leave groupBy statistic out and name each metric's one statistic in its entry's statistic",
+				p.source, p.path("from"))
 		}
-		return refuse("aggregate.groupBy", "groupBy statistic splits summaries, and %s is from %s; read from summaries, or name one statistic with filter.properties.statistic", what, p.source)
+		return refuse("aggregate.groupBy", "groupBy statistic splits summaries, and this read is from %s; read from summaries, or name one statistic with filter.properties.statistic", p.source)
 	}
 	return nil
 }

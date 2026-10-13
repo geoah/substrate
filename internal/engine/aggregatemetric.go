@@ -277,7 +277,7 @@ func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buc
 		return nil, err
 	}
 	if n := len(buckets) * max(series, 1); n > p.maxBuckets {
-		return nil, refuse("aggregate.budget.maxBuckets", "%d series (groups, and codes where grouped by code) times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+		return nil, p.refuse("aggregate.budget.maxBuckets", "%d series (groups, and codes where grouped by code) times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
 			series, len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	r := &aggRun{
@@ -892,8 +892,12 @@ func (p *aggPlan) groupStreams(streams []*aggStream) ([]*aggGroup, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].sortKey < out[j].sortKey })
 	if len(out) > p.maxGroups {
-		return nil, refuse("aggregate.budget.maxGroups", "the read makes %d groups, over %d; narrow the filter or group by fewer keys (the cap is %d)",
-			len(out), p.maxGroups, substrate.AggregateMaxGroupsCap)
+		who := "the read"
+		if p.isEntry() {
+			who = "the metric"
+		}
+		return nil, p.refuse("aggregate.budget.maxGroups", "%s makes %d groups, over %d; narrow the filter or group by fewer keys (the cap is %d)",
+			who, len(out), p.maxGroups, substrate.AggregateMaxGroupsCap)
 	}
 	for _, g := range out {
 		order := func(list []*aggStream) {
@@ -910,7 +914,7 @@ func (p *aggPlan) groupStreams(streams []*aggStream) ([]*aggGroup, error) {
 			if g.form == "" {
 				g.form = s.form
 			} else if s.form != g.form {
-				return nil, refuse("aggregate", "the selected streams hold %s and %s values, and a row never mixes forms; group them apart (groupBy kind or source) or narrow the filter",
+				return nil, refuse(p.at, "the selected streams hold %s and %s values, and a row never mixes forms; group them apart (groupBy kind or source) or narrow the filter",
 					g.form, s.form)
 			}
 			g.coded = g.coded || s.coded()
@@ -989,7 +993,7 @@ func (p *aggPlan) seriesOf(groups []*aggGroup) (int, error) {
 		n += len(codes)
 	}
 	if n > p.maxGroups {
-		return 0, refuse("aggregate.budget.maxGroups", "grouping by code makes %d groups, over %d; filter the codes or raise maxGroups (the cap is %d)",
+		return 0, p.refuse("aggregate.budget.maxGroups", "grouping by code makes %d groups, over %d; filter the codes or raise maxGroups (the cap is %d)",
 			n, p.maxGroups, substrate.AggregateMaxGroupsCap)
 	}
 	return n, nil
@@ -1231,15 +1235,15 @@ func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 		slices.Sort(stats)
 		slices.Sort(sources)
 		if len(stats) > 1 {
-			return refuse("aggregate", "the summaries from %s hold the statistics %s, and a row reads one; name it with filter.properties.statistic%s",
-				strings.Join(sources, ", "), andList(stats), split)
+			return refuse(p.at, "the summaries from %s hold the statistics %s, and a row reads one; name it with %s%s",
+				strings.Join(sources, ", "), andList(stats), p.statisticPath(), split)
 		}
 		if p.source != substrate.AggregateFromSummaries || g.additive() {
 			continue
 		}
 		for i, r := range p.reducers {
 			if r.Name == substrate.ReducerSum {
-				return refuse(p.reducerPath(i), "sum adds summaries whose statistic is sum or count; the summaries from %s are %s, so read them with count, first, last, avg, min or max",
+				return p.refuse(p.reducerPath(i), "sum adds summaries whose statistic is sum or count; the summaries from %s are %s, so read them with count, first, last, avg, min or max",
 					strings.Join(sources, ", "), orNoStatistic(stats[0]))
 			}
 		}
@@ -1284,13 +1288,13 @@ func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
 			forms = append(forms, vocabulary.FormSummary)
 		}
 		if p.policy == substrate.SourcesPriority && g.form == vocabulary.FormCounter && len(g.raw) > 1 {
-			return refuse("aggregate.sources.policy", "priority does not resolve two counters' totals per interval; read them separate (stream from %s and %s)",
+			return p.refuse("aggregate.sources.policy", "priority does not resolve two counters' totals per interval; read them separate (stream from %s and %s)",
 				orOwner(g.raw[0].source), orOwner(g.raw[1].source))
 		}
 		for _, form := range forms {
 			for i, r := range p.reducers {
 				if !slices.Contains(formReducers[form], r.Name) {
-					return refuse(p.reducerPath(i), "%s does not apply to %s %s: %s; %s %s takes %s",
+					return p.refuse(p.reducerPath(i), "%s does not apply to %s %s: %s; %s %s takes %s",
 						r.String(), article(form), form, formWhy[form], article(form), form, strings.Join(formReducers[form], ", "))
 				}
 				if r.Name == substrate.ReducerCircularMean && u.measure != "angle" {
