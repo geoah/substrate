@@ -52,10 +52,16 @@ function Problems({ error }: { error: Error | null }) {
   )
 }
 
-export function DiscoveryError({ discovery }: { discovery: Discovery }) {
+export function DiscoveryError({
+  discovery,
+  className,
+}: {
+  discovery: Discovery
+  className?: string
+}) {
   const error = discovery.error
   return (
-    <Empty className="mt-6">
+    <Empty className={cn("mt-6", className)}>
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <SearchXIcon />

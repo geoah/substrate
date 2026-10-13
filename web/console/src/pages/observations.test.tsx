@@ -682,6 +682,58 @@ describe("selecting streams", () => {
     ).toBe(false)
   })
 
+  it("says why the panel's own read failed, never that a stream has no points", async () => {
+    const heart = token("health/heart_rate", "garmin-forerunner-265")
+    mount(`?timeline=true&${WINDOW}&select=${heart}`, KINDS, (read) =>
+      // The panel reads the one selected metric's streams on its own.
+      !read.aggregate.metric && read.filter.properties?.metric
+        ? unavailable()
+        : answer(read)
+    )
+    const panel = await screen.findByRole("region", {
+      name: "Timeline of the selected streams",
+    })
+    expect(
+      await within(panel).findByText(/the database is restarting/)
+    ).toBeTruthy()
+    expect(
+      within(panel).getByRole("button", { name: "Try again" })
+    ).toBeTruthy()
+    expect(panel.textContent).not.toContain("no points any more")
+    expect(panel.textContent).not.toContain("Select streams in the table")
+    // The table's own read answered.
+    await rows()
+  })
+
+  it("reads nothing for an empty selection, and no list of metrics for one", async () => {
+    const server = mount(
+      `?timeline=true&${WINDOW}&filter=${filter("source", GARMIN)}`,
+      KINDS,
+      answer
+    )
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0))
+    await screen.findByText(/Select streams in the table/)
+    // Every stream read is the table's, narrowed to the Garmin.
+    const streamReads = () =>
+      server.seen.filter(
+        (r) => !r.aggregate.metric && r.aggregate.groupBy?.length === 4
+      )
+    expect(streamReads().length).toBeGreaterThan(0)
+    expect(
+      streamReads().every((r) => r.filter.properties?.source?.in?.length)
+    ).toBe(true)
+    // A selection reads its metric's streams, and no list of metrics.
+    fireEvent.click(
+      within(bodyRows()[0]).getByRole("checkbox", { name: /^Select / })
+    )
+    await waitFor(() =>
+      expect(server.seen.some((r) => r.aggregate.metric)).toBe(true)
+    )
+    expect(
+      server.seen.filter((r) => r.aggregate.groupBy?.join() === "metric")
+    ).toEqual([])
+  })
+
   it("keeps a selected stream in the chart while a filter hides its row", async () => {
     const server = mount(
       `?timeline=true&${WINDOW}&filter=${filter("metric", BODY_MASS)}&select=${token("health/heart_rate", "garmin-forerunner-265")}`,

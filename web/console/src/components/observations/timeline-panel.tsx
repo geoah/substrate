@@ -7,6 +7,7 @@ import { useMemo } from "react"
 import { XIcon } from "lucide-react"
 import { parseAsStringLiteral, useQueryState } from "nuqs"
 
+import { DiscoveryError } from "@/components/observations/discovery-error"
 import { OverlayChart } from "@/components/observations/overlay-chart"
 import { Labelled } from "@/components/observations/picker"
 import { RangePicker } from "@/components/observations/range-picker"
@@ -59,7 +60,12 @@ export function TimelinePanel({
     () => [...new Set(selection.map(tokenMetric).filter(Boolean))],
     [selection]
   )
-  const own = useObservations({ metrics })
+  // Nothing selected reads nothing, and a selection never needs the list
+  // of every metric: the panel has no metric picker.
+  const own = useObservations(
+    { metrics },
+    { enabled: metrics.length > 0, catalogue: false }
+  )
   const picked = selectedStreams(selection, own.streams)
   const plots = selectionByMetric(picked).map((entry) =>
     // By id where the pin allows, so a metric's reducer and unit read
@@ -77,11 +83,16 @@ export function TimelinePanel({
       unit: controls.units.get(shortRef(entry.metric, own.pins.metric)),
     })
   )
-  // A token whose metric's streams are read and name no stream of it.
-  const missing = selection.filter(
-    (t) =>
-      own.knows(tokenMetric(t)) && !own.streams.some((s) => tokenNames(t, s))
-  ).length
+  // A token whose metric's streams were read and name no stream of it; a
+  // read that failed says nothing of its streams.
+  const failed = own.discovery.isError
+  const missing = failed
+    ? 0
+    : selection.filter(
+        (t) =>
+          own.knows(tokenMetric(t)) &&
+          !own.streams.some((s) => tokenNames(t, s))
+      ).length
   // A metric just selected waits for its streams; the others stay drawn.
   const waiting = metrics.some((m) => !own.knows(m))
 
@@ -149,7 +160,9 @@ export function TimelinePanel({
             : `${missing} selected streams have no points any more, so the chart leaves them out.`}
         </p>
       )}
-      {picked.length === 0 && waiting ? (
+      {failed ? (
+        <DiscoveryError className="mt-3" discovery={own.discovery} />
+      ) : picked.length === 0 && waiting ? (
         <Skeleton className="mt-3 h-[250px] w-full" />
       ) : picked.length === 0 ? (
         <p className="mt-3 text-muted-foreground">

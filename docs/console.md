@@ -713,7 +713,9 @@ stream names one; each keeps its own reducer and unit (`?reducer=`,
 `?unit=`). A stream the read takes that the selection leaves out (WHOOP's
 heart rate on no channel, beside its selected workouts) is left out of the
 chart where it would draw a line of its own, grouped by source or about, and
-named under the chart where it joins a selected line.
+named under the chart where it joins a selected line. The panel reads the
+selected metrics' streams on its own and nothing while no stream is
+selected; where that read fails, it says why and offers to try again.
 
 **The timeline** (`/observations/timeline`) draws the chosen metrics over one
 range on one time axis. Opened with no metric, it draws the newest stream's
