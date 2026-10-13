@@ -17,6 +17,7 @@ import {
   presetRange,
   rangeWords,
   readerTimezone,
+  spanWords,
 } from "@/lib/observations-time"
 
 const DAY = 86_400_000
@@ -62,6 +63,19 @@ describe("ranges and buckets", () => {
       expect(bucketEstimate(r, autoBucket(r))).toBeLessThan(200)
     }
     expect(bucketEstimate(presetRange("1y", now), "15m")).toBeGreaterThan(1440)
+  })
+
+  it("says a point's window short: its days, its clocks, or both ends", () => {
+    const t = (iso: string) => Date.parse(iso)
+    expect(
+      spanWords(t("2026-10-11T00:00:00+03:00"), t("2026-10-12T00:00:00+03:00"))
+    ).toBe("Oct 11")
+    expect(
+      spanWords(t("2026-10-07T09:45:00+03:00"), t("2026-10-07T10:00:00+03:00"))
+    ).toBe("Oct 7, 09:45 to 10:00")
+    expect(
+      spanWords(t("2026-10-06T22:41:00+03:00"), t("2026-10-07T22:38:00+03:00"))
+    ).toBe("Oct 6, 22:41 to Oct 7, 22:38")
   })
 
   it("reads a few hours in minutes, as a trace's window opens", () => {

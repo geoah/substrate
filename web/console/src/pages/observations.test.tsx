@@ -465,6 +465,22 @@ describe("the streams table", () => {
     expect(bodyRows()).toHaveLength(2)
   })
 
+  it("says the window an amount's newest point covers, and opens today's totals", async () => {
+    mount()
+    const body = await rows()
+    const steps = body.find((r) => r.textContent?.includes("Steps"))!
+    // 06:45 to 07:00 UTC is 09:45 to 10:00 in Athens: a quarter hour's
+    // steps, not a day's.
+    expect(steps.textContent).toContain("Oct 7, 09:45 to 10:00")
+    const link = within(steps).getByRole("link", { name: "Steps" })
+    expect(JSON.parse(link.getAttribute("data-search")!)).toEqual({
+      metric: STEPS_METRIC,
+      source: GARMIN,
+      range: "today",
+      bucket: "day",
+    })
+  })
+
   it("opens the timeline narrowed to a row's stream from its metric", async () => {
     mount()
     const body = await rows()

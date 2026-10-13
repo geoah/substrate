@@ -234,6 +234,24 @@ export function windowWords(start: number, end: number): string {
   return rangeWords({ start, end })
 }
 
+/** A point's window, short, for a table cell: whole days as their days
+ * (`Oct 11`, `Oct 6 to Oct 7`), a window inside one day as its clocks
+ * (`Oct 7, 09:45 to 10:00`), anything else as its two instants. The year is
+ * left to the cell's hover. */
+export function spanWords(start: number, end: number): string {
+  if (isMidnight(start) && isMidnight(end)) {
+    const last = new Date(end)
+    last.setDate(last.getDate() - 1)
+    return dayKeyOf(start) === dayKeyOf(last.getTime())
+      ? dayWords(start)
+      : `${dayWords(start)} to ${dayWords(last.getTime())}`
+  }
+  const from = `${dayWords(start)}, ${clockWords(start)}`
+  return dayKeyOf(start) === dayKeyOf(end - 1)
+    ? `${from} to ${clockWords(end)}`
+    : `${from} to ${dayWords(end)}, ${clockWords(end)}`
+}
+
 /** An instant to the second, for a value inside a trace: `Oct 7, 06:30:01`. */
 export function secondWords(t: number): string {
   const d = new Date(t)

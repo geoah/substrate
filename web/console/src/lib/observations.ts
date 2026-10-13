@@ -401,6 +401,9 @@ export interface Stream extends StreamForm {
   unit?: string
   /** The newest point's time, the row's `start`. */
   at: string
+  /** Where the newest point covers a window (an amount, a summary), its
+   * end, the row's `end`. */
+  end?: string
   /** Every point the stream holds. */
   count?: number
   coverage?: string
@@ -469,6 +472,27 @@ export function streamSearch(stream: {
   return out
 }
 
+/** Whether a stream's newest point is one window of an amount or a
+ * summary, which a reader may take for a day's total. */
+export function windowed(stream: Pick<Stream, "form" | "end">): boolean {
+  return (
+    Boolean(stream.end) &&
+    (stream.form === "amount" || stream.form === "summary")
+  )
+}
+
+/** The timeline's address for a stream's row in the streams table: an
+ * amount opens on today's total, a day bucket over today, since its newest
+ * point is one window of it. */
+export function rowSearch(
+  stream: Pick<Stream, "metric" | "source" | "about" | "channel" | "form">
+): Record<string, string> {
+  const out = streamSearch(stream)
+  return stream.form === "amount"
+    ? { ...out, range: "today", bucket: "day" }
+    : out
+}
+
 /** The `last` value of a row, or its first value where none says `last`. */
 function lastValue(row: AggregateRow): AggregateValue | undefined {
   const values = row.values ?? []
@@ -502,6 +526,7 @@ export function streamsOf(
       ...(value?.code ? { code: value.code } : {}),
       ...(row.form ? { form: row.form } : {}),
       at: row.start,
+      ...(row.end && row.end !== row.start ? { end: row.end } : {}),
       count: row.count,
       coverage: row.coverage,
     })

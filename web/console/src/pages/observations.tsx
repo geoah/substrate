@@ -83,12 +83,13 @@ import {
   DEFAULT_PRECISION,
   distinct,
   refPathOf,
+  rowSearch,
   SHAPE_WORDS,
   shapeOf,
-  streamSearch,
+  windowed,
   type ReadingShape,
 } from "@/lib/observations"
-import { coverageWords } from "@/lib/observations-time"
+import { coverageWords, spanWords } from "@/lib/observations-time"
 import {
   isAllView,
   matchingView,
@@ -811,7 +812,7 @@ function streamColumns(
       cell: ({ row }) => (
         <Link
           to="/observations/timeline"
-          search={streamSearch(row.original) as never}
+          search={rowSearch(row.original) as never}
           className="block truncate font-medium underline-offset-[3px] hover:underline hover:decoration-border-strong"
           title={technical ? row.original.metric : undefined}
         >
@@ -900,16 +901,28 @@ function streamColumns(
       id: "when",
       header: ({ column }) => <GridColumnHeader column={column} label="When" />,
       accessorFn: (r) => r.at,
-      cell: ({ row }) => (
-        // The wire's instant on hover, as every time cell has it.
-        <span
-          className="block truncate data text-muted-foreground"
-          title={row.original.at}
-        >
-          {timeText(row.original.at, "datetime")}
-        </span>
-      ),
-      meta: { label: "When", width: 136 },
+      cell: ({ row }) => {
+        const { at, end } = row.original
+        // The wire's instants on hover, as every time cell has them. An
+        // amount's or a summary's newest point is a window, which says so
+        // rather than read as the day's.
+        return windowed(row.original) && end ? (
+          <span
+            className="block truncate data text-muted-foreground"
+            title={`${at} to ${end}`}
+          >
+            {spanWords(Date.parse(at), Date.parse(end))}
+          </span>
+        ) : (
+          <span
+            className="block truncate data text-muted-foreground"
+            title={at}
+          >
+            {timeText(at, "datetime")}
+          </span>
+        )
+      },
+      meta: { label: "When", width: 160 },
     },
     {
       id: "count",

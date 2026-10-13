@@ -685,7 +685,9 @@ nothing, which means the owner), its channel, how its newest value reads
 **Vendor summary**, or **Category** for a coded stream), that value in its unit to the metric's places (the stored
 digits on hover, and as stored with Technical details on; a category is
 the one a coded `last` answers in `code`), when, and how many points the
-stream holds.
+stream holds. An amount's or a vendor summary's newest point covers a
+window, and **When** says which (`Oct 7, 09:45 to 10:00`), so a quarter
+hour's steps never reads as the day's.
 
 The rows sit in the grid a collection's records do
 ([A collection](#a-collection)), with the same controls, applied in the page
@@ -703,7 +705,8 @@ the console preference record under the collection key
 `observations/streams`; a view is lit while the address matches it and never
 holds the search or the selection. A bare address restores the filters, sort
 and grouping last used in this browser. A row's metric opens the timeline
-narrowed to its stream.
+narrowed to its stream; an amount's opens on today, bucketed by day, so it
+reads the day's total.
 
 A box on each row selects its stream: shift-click selects the run from the
 row clicked before, and the header box selects or clears every row shown.
