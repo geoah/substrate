@@ -182,7 +182,9 @@ export function ObservationsPage() {
   }
 
   const choices = useMemo(() => streamChoices(filterTokens), [filterTokens])
-  // The chosen metrics, sources and things narrow the reads on the server.
+  // Chosen metrics narrow the reads on the server by metric alone, and the
+  // table's filter narrows their streams by source and thing. With no metric
+  // chosen, the chosen sources and things narrow the one read on the server.
   // "You" names no record, so a filter holding it narrows things here only.
   const narrow = useMemo(
     () => ({

@@ -63,7 +63,9 @@ export function ObservationsTimelinePage() {
   const [aboutParam, setAbouts] = useQueryState("about", ARRAY)
   // A stream's channel, where a row of the streams table named one.
   const [channels, setChannels] = useQueryState("channel", ARRAY)
-  // The chosen metrics, sources and things narrow discovery on the server.
+  // Chosen metrics narrow discovery on the server by metric alone; the
+  // chosen sources and things narrow it only while no metric is chosen, and
+  // otherwise narrow each chart's read.
   const obs = useObservations({
     metrics: metricParam,
     sources: sourceParam,
