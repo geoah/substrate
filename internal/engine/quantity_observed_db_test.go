@@ -76,7 +76,9 @@ func TestQuantityFilterAndOrderReadADeltaAsADifference(t *testing.T) {
 
 // HbA1c's NGSP % never reads in IFCC mmol/mol, and a vendor score never reads
 // as a percent: the aggregate read refuses either unit, where it once
-// answered 52 mmol/mol for 5.2 % and 1700 % for a strain of 17.
+// answered 52 mmol/mol for 5.2 % and 1700 % for a strain of 17. A lab that
+// writes its IFCC result under the NGSP metric makes the read refuse, where
+// it once pooled 48 mmol/mol as 4.8 %.
 func TestAggregateRefusesAUnitOutsideTheMetricsMeasure(t *testing.T) {
 	t.Parallel()
 	r := openObserved(t)
@@ -114,6 +116,15 @@ func TestAggregateRefusesAUnitOutsideTheMetricsMeasure(t *testing.T) {
 		{"health/whoop_strain", "%", "summaries"},
 	} {
 		refused(t, c.metric+" in "+c.unit, read(c.metric, c.unit, c.from), c.unit)
+	}
+	if _, err := r.put(t, r.observation, "lab/hba1c-ifcc", map[string]any{
+		"metric": r.metricRef("health/hba1c"), "form": "gauge", "value": quantity("48", "mmol/mol"),
+		"at": "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
+	}); err != nil {
+		t.Fatalf("put an IFCC result under the NGSP metric: %v", err)
+	}
+	for _, unit := range []string{"%", ""} {
+		refused(t, "hba1c over a mmol/mol stream, unit "+unit, read("health/hba1c", unit, ""), "mmol/mol")
 	}
 }
 
