@@ -564,9 +564,11 @@ func digitsOf(p *observed.Point) *string {
 const latestColumns = `p.ts, p.ts_end, p.value_exact::text, p.code, p.unit, p.delta, p.form, p.statistic,
 	p.bounded, p.hold_ms, p.utc_offset_min, p.record_id, p.revision`
 
-// latestOrder picks a stream's newest point: the latest instant, then the
-// higher revision, then the greater record id, then the later point.
-const latestOrder = `p.ts DESC, p.revision DESC NULLS LAST, p.record_id DESC, p.ord DESC`
+// latestOrder picks a stream's newest point: pointOrder's last, the latest
+// instant, then the greater record id, then the later point. It is the order
+// the `last` reducer reads, so the latest row and a bucketed `last` agree.
+// A revision counts one record's rewrites and orders nothing across records.
+const latestOrder = `p.ts DESC, p.record_id DESC, p.ord DESC`
 
 // recomputeLatest rewrites the latest row of every touched stream from its
 // newest available point, and its point count by the transaction's change in

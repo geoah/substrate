@@ -782,9 +782,10 @@ func TestObservedTombstoneRestoreAndPurge(t *testing.T) {
 	}
 }
 
-// observed_latest breaks a tie at one instant by revision, then record id;
-// and a correction that moves the newest point to another stream recomputes
-// both streams.
+// observed_latest breaks a tie at one instant as `last` does, by record id
+// and never by revision, a counter of one record's rewrites; and a
+// correction that moves the newest point to another stream recomputes both
+// streams.
 func TestObservedLatestTieBreakAndAMovedPoint(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
@@ -794,16 +795,28 @@ func TestObservedLatestTieBreakAndAMovedPoint(t *testing.T) {
 			"value": quantity(value, "kg"), "at": at, "revision": rev,
 		})
 	}
+	lastOfRow := func() string {
+		t.Helper()
+		var id string
+		if err := r.db.QueryRow(`SELECT last_record_id FROM observed_rollups WHERE metric = $1 AND source = $2`,
+			r.metric+"/health/body_mass", r.source+"/scale").Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
 	const at = "2026-10-07T06:00:00Z"
 	weigh("a", "scale", at, "72.0", 2)
 	weigh("b", "scale", at, "72.5", 1)
 	l, _ := r.latest(t, "health/body_mass", r.source+"/scale")
-	if l.recordID != "a" || l.points != 2 {
-		t.Errorf("the higher revision lost the tie: %+v", l)
+	if l.recordID != "b" || l.points != 2 {
+		t.Errorf("the latest row went to %q, want b, the greater record id, whatever the revisions: %+v", l.recordID, l)
+	}
+	if last := lastOfRow(); last != l.recordID {
+		t.Errorf("the rollup row's last point is %q and the latest row's %q", last, l.recordID)
 	}
 	weigh("c", "scale", at, "73.0", 2)
 	if l, _ = r.latest(t, "health/body_mass", r.source+"/scale"); l.recordID != "c" || l.points != 3 {
-		t.Errorf("an equal revision went to %q, want the greater record id c", l.recordID)
+		t.Errorf("the tie went to %q, want the greater record id c", l.recordID)
 	}
 
 	weigh("x", "scale", "2026-10-08T06:00:00Z", "71.0", 1)

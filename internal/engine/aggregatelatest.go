@@ -20,8 +20,8 @@ import (
 )
 
 // aggregateLatest answers one row per group of the groupBy stream keys: the
-// newest point of the group's streams (the latest instant, then the higher
-// revision, then the greater record id), with the streams' point count.
+// newest point of the group's streams (the latest instant, then the greater
+// record id), with the streams' point count.
 func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) (*substrate.AggregateResult, error) {
 	streams, err := ds.selectStreams(ctx, tx, p)
 	if err != nil {
@@ -126,13 +126,12 @@ func (ds *dataset) aggregateLatest(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	return res, nil
 }
 
-// newer orders two streams' newest points as observed_latest orders points.
+// newer orders two streams' newest points as observed_latest orders points
+// (observedsettle.go latestOrder): a record is in one stream, so the record
+// id decides a tie.
 func newer(a, b *aggStream) bool {
 	if !a.ts.Equal(b.ts) {
 		return a.ts.After(b.ts)
-	}
-	if a.revision.Int64 != b.revision.Int64 || a.revision.Valid != b.revision.Valid {
-		return a.revision.Valid && (!b.revision.Valid || a.revision.Int64 > b.revision.Int64)
 	}
 	return a.recordID > b.recordID
 }

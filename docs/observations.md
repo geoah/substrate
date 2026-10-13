@@ -541,8 +541,9 @@ row whose readings have no reading before them holds no step, and its
 ### The latest row
 
 `observed_latest` holds each stream's newest available point. Two points at
-one instant go to the higher `revision`, then the greater record id, then the
-later point of one trace. A write that moves a stream's newest point to
+one instant go to the greater record id in byte order, then the later point
+of one trace: the point the `last` reducer answers. A `revision` counts one
+record's rewrites, so it breaks no tie between two records. A write that moves a stream's newest point to
 another stream (a corrected `source`) recomputes both streams' rows, and a
 stream left with no available point loses its row. A null after the newest
 value does not replace it: the row keeps the last value, and a reader that

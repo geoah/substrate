@@ -148,8 +148,8 @@ CREATE TABLE IF NOT EXISTS observed_rollups (
 
 -- observed_latest: one row per stream, its newest available point, so the
 -- stream list and the current value of each read one row. Ties at one
--- instant go to the higher revision, then the greater record id, then the
--- later point. `points` counts the stream's available points.
+-- instant go to the greater record id, then the later point: the order the
+-- `last` reducer reads. `points` counts the stream's available points.
 CREATE TABLE IF NOT EXISTS observed_latest (
     repository     text        NOT NULL DEFAULT current_setting('substrate.repository'),
     metric         text        NOT NULL,
