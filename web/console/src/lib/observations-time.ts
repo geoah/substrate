@@ -526,6 +526,19 @@ export function offsetOf(iso: string): string | undefined {
   return m[1] === "Z" || m[1] === "-00:00" ? "+00:00" : m[1]
 }
 
+/** Whether every row was lived at the reader's own UTC offsets, at its
+ * start and at its end, so the recorded-local calendar and the reader's
+ * zone put it on one date. */
+export function atReaderOffsets(
+  rows: readonly { start: string; end: string }[]
+): boolean {
+  return rows.every((r) =>
+    [r.start, r.end].every(
+      (t) => offsetOf(t) === offsetOf(isoWithOffset(Date.parse(t)))
+    )
+  )
+}
+
 /** A row's UTC offsets in words: `+01:00`, or `+03:00 to +01:00` across a
  * change (a flight on the day). */
 export function offsetWords(start: string, end: string): string {

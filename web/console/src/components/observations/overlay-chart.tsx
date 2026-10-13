@@ -63,6 +63,7 @@ import {
   statisticWords,
 } from "@/lib/observations"
 import {
+  atReaderOffsets,
   coveredWords,
   offsetWords,
   windowWords,
@@ -879,7 +880,7 @@ function chartNotes(
   }
 ): string[] {
   const notes: string[] = []
-  for (const { plot, exact, held, rows } of states) {
+  for (const { plot, exact, held, rows, together } of states) {
     const own: string[] = []
     // The reader's order where they set one, else the one the server takes
     // from the source records, and a value naming no source after them all.
@@ -947,7 +948,10 @@ function chartNotes(
       )
     }
     // Every bucket one vendor summary of one source: the vendor cut it, so
-    // neither the bucket nor where days start re-cuts it.
+    // neither the bucket nor where days start re-cuts it. A summary lands
+    // on the date its start names, which Days moves where the vendor's day
+    // starts at another offset than the reader's; only recorded-local rows
+    // of this metric alone carry the summaries' own offsets to tell.
     const summarized = rows.filter((r) => r.count > 0)
     const vendors = distinct(summarized.flatMap(namedSources))
     if (
@@ -957,10 +961,16 @@ function chartNotes(
       summarized.every((r) => r.from === "summaries" && r.count === 1)
     ) {
       const vendor = words.sourceText(vendors[0])
+      const unmoved =
+        Boolean(plot.local) &&
+        together.length === 0 &&
+        atReaderOffsets(summarized)
       own.push(
-        plot.read?.aggregate.bucket?.calendar === "day"
-          ? `Each day is ${vendor}’s own daily summary, cut where the vendor starts its days, so Days does not change it.`
-          : `Each bucket is one of ${vendor}’s own summaries.`
+        plot.read?.aggregate.bucket?.calendar !== "day"
+          ? `Each bucket is one of ${vendor}’s own summaries.`
+          : unmoved
+            ? `Each day is ${vendor}’s own daily summary, cut where the vendor starts its days, so Days does not change it.`
+            : `Each day is ${vendor}’s own daily summary, cut where the vendor starts its days: Days can move one to another date, but never re-cuts it.`
       )
     }
     if (!held && mixedFrom(rows)) {

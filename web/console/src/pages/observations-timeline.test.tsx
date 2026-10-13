@@ -1508,6 +1508,39 @@ describe("the charts", () => {
     ).toBeTruthy()
   })
 
+  it("says Days can move a vendor's daily summary where its days start at another offset", async () => {
+    const summaries = STEPS.rows.map((r) => ({
+      ...r,
+      form: "summary",
+      from: "summaries" as const,
+      sources: [GARMIN],
+      count: 1,
+    }))
+    // Garmin's days began in Tokyo: 00:00+09:00 is 18:00 the day before in
+    // Athens, so the reader's zone puts each summary on the date before.
+    const tokyo = (t: string) => t.replace("T00:00:00+03:00", "T00:00:00+09:00")
+    const fromTokyo = {
+      ...STEPS,
+      rows: summaries.map((r) => ({
+        ...r,
+        start: tokyo(r.start),
+        end: tokyo(r.end),
+      })),
+    }
+    const moved =
+      "Each day is Garmin Forerunner 265’s own daily summary, cut where the vendor starts its days: Days can move one to another date, but never re-cuts it."
+    mount(`?metric=health/steps&${WINDOW}`, false, (read) =>
+      read.aggregate.metric ? fromTokyo : answer(read)
+    )
+    expect(await within(await lane("Steps")).findByText(moved)).toBeTruthy()
+    cleanup()
+    // Cut in the reader's zone, the rows carry no summary's own offset.
+    mount(`?metric=health/steps&days=zone&${WINDOW}`, false, (read) =>
+      read.aggregate.metric ? { ...STEPS, rows: summaries } : answer(read)
+    )
+    expect(await within(await lane("Steps")).findByText(moved)).toBeTruthy()
+  })
+
   it("reads a metric with a summary stream raw where covered, and says so in technical mode", async () => {
     const whoopHeart = {
       ...LATEST.rows[0],
