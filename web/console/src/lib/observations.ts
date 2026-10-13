@@ -21,15 +21,13 @@ import { declaredProperties } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { daysEnding, type TimeRange } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
-import { kindHasTrait } from "@/lib/sync"
+import { FORM_WORDS, OBSERVED_TRAIT_IDENTITY } from "@/lib/observed-form"
+import { kindHasTrait } from "@/lib/traits"
 import { formatQuantity } from "@/lib/units"
 
 // ── discovery ──────────────────────────────────────────────────────────────
 
-/** Core's `observed` trait: a kind whose records hold measured values the
- * engine indexes (decision 0154). Its two variants describe layout only, and
- * the console tells them apart by whether the kind declares `values`. */
-export const OBSERVED_TRAIT_IDENTITY = "substrate.reamde.dev/core/observed"
+export { OBSERVED_TRAIT_IDENTITY }
 
 /** `single` holds one value per record (an observation), `packed` many over
  * a fixed period (a trace). */
@@ -52,6 +50,47 @@ export function observedVariant(
   return declaredProperties(kind).some((p) => p.name === "values")
     ? "packed"
     : "single"
+}
+
+/** The properties each layout's section on a record page shows
+ * (`components/observations/observed-section.tsx`), by the heading it shows
+ * them under: the page folds them away from its property sheet. */
+export const OBSERVED_SHOWN: Record<
+  ObservedVariant,
+  { names: readonly string[]; where: string }
+> = {
+  single: {
+    where: "Measurement",
+    names: [
+      "value",
+      "code",
+      "metric",
+      "source",
+      "about",
+      "form",
+      "statistic",
+      "period",
+      "at",
+      "endsAt",
+      "revision",
+      "origin",
+    ],
+  },
+  packed: {
+    where: "Readings",
+    names: [
+      "values",
+      "offsets",
+      "codes",
+      "stats",
+      "unit",
+      "every",
+      "at",
+      "endsAt",
+      "utcOffsetStart",
+      "utcOffsetEnd",
+    ],
+  },
 }
 
 /** The kinds the trait's references are pinned to, read off the observed
@@ -124,13 +163,10 @@ export function isForm(value: unknown): value is Form {
   return FORMS.includes(value as Form)
 }
 
-/** Everyday words for each shape; the stored word sits beside them in
- * technical mode. */
+/** Everyday words for each shape, the forms' as every surface reads them
+ * (`FORM_WORDS`); the stored word sits beside them in technical mode. */
 export const SHAPE_WORDS: Record<ReadingShape, string> = {
-  gauge: "Level",
-  amount: "Amount",
-  counter: "Running total",
-  summary: "Vendor summary",
+  ...FORM_WORDS,
   coded: "Category",
 }
 

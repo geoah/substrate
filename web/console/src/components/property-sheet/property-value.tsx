@@ -16,6 +16,7 @@ import { QuantityValue } from "@/components/identity/quantity-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
+import { coverageWords } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
 import { REDACTED, elementSpec, type PropSpec } from "@/lib/record-schema"
 
@@ -124,6 +125,9 @@ function ScalarValue({
   }
   if (spec.kind === "datetime" && typeof value === "string") {
     return <span title={value}>{friendlyDateTime(value)}</span>
+  }
+  if (spec.kind === "duration" && typeof value === "string") {
+    return <span title={value}>{coverageWords(value)}</span>
   }
   if (spec.kind === "url" && typeof value === "string") {
     return (

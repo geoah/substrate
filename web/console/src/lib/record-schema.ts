@@ -33,6 +33,7 @@ import {
   parseMoneyText,
   splitMoneyText,
 } from "@/lib/money"
+import { withFormWords } from "@/lib/observed-form"
 import { coerceReferencePath, recordPath } from "@/lib/record-path"
 import {
   checkQuantity,
@@ -334,6 +335,18 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
   }
 }
 
+/** A kind's own property, its values in the words the console reads them
+ * in (`withFormWords`). */
+function kindSpecOf(
+  kind: KindInfo,
+  name: string,
+  def: Record<string, unknown>
+): PropSpec {
+  const spec = specOf(name, def)
+  const values = withFormWords(kind, name, spec.values)
+  return values === spec.values ? spec : { ...spec, values }
+}
+
 function rawProps(kind: KindInfo): Record<string, Record<string, unknown>> {
   const def = (kind.definition ?? {}) as Record<string, unknown>
   return (def.properties ?? {}) as Record<string, Record<string, unknown>>
@@ -344,7 +357,7 @@ function rawProps(kind: KindInfo): Record<string, Record<string, unknown>> {
  * and required-first is what an editor should ask for first). */
 export function propSpecs(kind: KindInfo): PropSpec[] {
   return Object.entries(rawProps(kind))
-    .map(([name, def]) => specOf(name, def ?? {}))
+    .map(([name, def]) => kindSpecOf(kind, name, def ?? {}))
     .sort(
       (a, b) =>
         Number(b.required) - Number(a.required) || a.name.localeCompare(b.name)
@@ -380,7 +393,7 @@ export function systemSpecs(kind: KindInfo): PropSpec[] {
 /** The declared properties in name order, as the read surfaces list them. */
 export function propSpecsByName(kind: KindInfo): PropSpec[] {
   return Object.entries(rawProps(kind))
-    .map(([name, def]) => specOf(name, def ?? {}))
+    .map(([name, def]) => kindSpecOf(kind, name, def ?? {}))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 

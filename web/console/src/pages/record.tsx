@@ -45,7 +45,7 @@ import {
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
-import { OBSERVED_TRAIT_IDENTITY } from "@/lib/observations"
+import { OBSERVED_SHOWN, observedVariant } from "@/lib/observations"
 import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { recordRoute } from "@/router"
 
@@ -128,7 +128,9 @@ export function RecordDocument({
     [record, kind, readOnly]
   )
   const syncable = kindHasTrait(kind, SYNC_TRAIT_IDENTITY)
-  const observed = kindHasTrait(kind, OBSERVED_TRAIT_IDENTITY)
+  // A kind binding observed opens on its measurement, and its sheet folds
+  // away what that section already shows.
+  const variant = observedVariant(kind)
   const noun = lowerFirst(displayName(kind ?? record.kind))
 
   return (
@@ -146,6 +148,7 @@ export function RecordDocument({
         <SourceView record={record} kind={kind} kinds={kinds} />
       ) : (
         <>
+          {variant && <ObservedSection record={record} kind={kind} />}
           <PropertySheet
             record={record}
             kind={kind}
@@ -153,6 +156,7 @@ export function RecordDocument({
             readOnly={readOnly}
             holders={holders}
             mappings={mappings.data?.records}
+            elsewhere={variant && OBSERVED_SHOWN[variant]}
             moved={moved}
           />
           {body && (
@@ -169,7 +173,6 @@ export function RecordDocument({
               <SyncRail record={record} />
             </>
           )}
-          {observed && <ObservedSection record={record} kind={kind} />}
           <SectionHead
             title="Connected to"
             hint="what points here, and what this points to"

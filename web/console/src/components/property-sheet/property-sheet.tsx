@@ -164,6 +164,10 @@ export interface PropertySheetProps {
   /** The recordmapping declarations the record's links name, so a synced
    * value says which mapping brought it. */
   mappings?: SubstrateRecord[]
+  /** Properties another section of the page already shows (an observed
+   * kind's measurement), folded under one line naming it, and opened on
+   * asking so they stay editable here. */
+  elsewhere?: { names: readonly string[]; where: string }
   /** Properties that just changed under the reader: marked briefly. */
   moved?: ReadonlySet<string>
 }
@@ -175,6 +179,7 @@ export function PropertySheet({
   readOnly = false,
   holders = false,
   mappings = NO_MAPPINGS,
+  elsewhere,
   moved = NONE_MOVED,
 }: PropertySheetProps) {
   const draft = useSheetDraft()
@@ -187,6 +192,11 @@ export function PropertySheet({
     return { all: [...shown, ...folded], filled: shown, empty: folded }
   }, [record, kind, readOnly, draft])
   const [showEmpty, setShowEmpty] = useState(false)
+  const [showElsewhere, setShowElsewhere] = useState(false)
+  const away = useMemo(
+    () => filled.filter((r) => elsewhere?.names.includes(r.name)).map((r) => r),
+    [filled, elsewhere]
+  )
   const [editing, setEditing] = useState<string | null>(null)
   const [open, setOpen] = useState<string[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -208,7 +218,9 @@ export function PropertySheet({
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
     )
 
-  const rows = showEmpty ? all : filled
+  const rows = (showEmpty ? all : filled).filter(
+    (r) => showElsewhere || !away.includes(r)
+  )
   const rowErrors = draft ? { ...draft.errors, ...errors } : errors
 
   function setError(name: string, message: string | undefined) {
@@ -430,6 +442,26 @@ export function PropertySheet({
           </div>
         )
       })}
+      {away.length > 0 && elsewhere && (
+        <button
+          type="button"
+          onClick={() => setShowElsewhere((v) => !v)}
+          aria-expanded={showElsewhere}
+          className="col-span-full flex items-center gap-1.5 px-0.5 py-1.5 text-left text-[13px] text-faint hover:text-muted-foreground"
+        >
+          {showElsewhere ? (
+            <ChevronRightIcon aria-hidden className="size-3.5" />
+          ) : (
+            <ChevronDownIcon aria-hidden className="size-3.5" />
+          )}
+          <span className="truncate">
+            {away.length} shown under {elsewhere.where}
+            <span className="hidden min-[480px]:inline">
+              : {away.map((r) => r.spec.label).join(", ")}
+            </span>
+          </span>
+        </button>
+      )}
       {empty.length > 0 && (
         <button
           type="button"

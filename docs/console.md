@@ -341,7 +341,8 @@ here throughout, and says to change it at the provider.
 
 **The properties** are a sheet: one row per property, its label (and
 its key, with Technical details on) on the left and its value on the right,
-with empty properties folded into one line that expands. Clicking a value
+with empty properties folded into one line that expands. A duration reads in
+words (`1h 51m 31s`), the stored text on hover. Clicking a value
 edits it in place, with the control its datatype earns: a text box, a number,
 a date and time, a textarea for prose, a list to pick from for an enum, the
 moves a state may make, a record picker for a reference, and, for the shapes
@@ -378,15 +379,20 @@ Under the properties, in order:
   provider's account): the trait rendered whole, with **Sync now** and
   **Pause**, and a link to the account on its provider's page.
 - **Measurement** or **Readings**, on a record of any kind binding the core
-  `observed` trait. A single value (the trait's `single` variant) reads its
-  value with its unit, the metric, source and thing it is about as record
-  mentions, the form, the statistic and period of a vendor summary, when,
-  the revision and the record that delivered it. A trace (the `packed`
-  variant, told apart by declaring `values`) draws its values over
-  `[at, endsAt)` as a line broken wherever two values sit further apart than
-  its `hold`, its managed `stats` as labelled values, and every value with
-  its time in a table fifty to a page. Both open the timeline on the
-  record's stream.
+  `observed` trait, sits above the properties instead. A single value (the
+  trait's `single` variant) reads its value with its unit, the metric,
+  source and thing it is about as record mentions, the form, the statistic
+  and period of a vendor summary, when, the revision and the record that
+  delivered it. A trace (the `packed` variant, told apart by declaring
+  `values`) draws its values over `[at, endsAt)` as a line broken wherever
+  two values sit further apart than its `hold`, its managed `stats` as
+  labelled values, and every value with its time in a table fifty to a
+  page. Both open the timeline on the record's stream. The property sheet
+  under it folds the properties the section shows into one line ("12 shown
+  under Measurement"), which opens them for editing, and keeps the rest (a
+  lab result's coding, specimen and report). A `form` reads in the same
+  words everywhere the console shows it: **Level**, **Amount**, **Running
+  total** or **Vendor summary**.
 - **Connected to**: the records that point here, read through the
   [`referencing`](api.md#who-points-at-a-record-referencing) filter arm and
   grouped by the kind they are and the property they point through ("Tasks
