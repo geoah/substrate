@@ -94,8 +94,10 @@ func aggregateToolFixture(t *testing.T) (*dataset, string) {
 		}
 	}
 	home := testdb.Repository(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: home + "/observations/source", ID: "scale",
-		Properties: map[string]any{"name": "Scale"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: home + "/observations/source", ID: "scale",
+		Properties: map[string]any{"name": "Scale"},
+	}); err != nil {
 		t.Fatalf("put the source: %v", err)
 	}
 	day := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
@@ -182,10 +184,10 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 		args  map[string]any
 		want  string
 	}{
-		"a filter neither an object nor a string": {wide, map[string]any{"aggregate": daily, "filter": 5.0}, "filter is JSON"},
+		"a filter neither an object nor a string":      {wide, map[string]any{"aggregate": daily, "filter": 5.0}, "filter is JSON"},
 		"a list filter neither an object nor a string": {wide, map[string]any{"filter": true}, "filter is JSON"},
 		"a reverse read of a kind outside the allowlist": {narrow, map[string]any{
-			"filter": map[string]any{"kinds": []any{observation}, "referencing": map[string]any{"ref": scale}},
+			"filter":    map[string]any{"kinds": []any{observation}, "referencing": map[string]any{"ref": scale}},
 			"aggregate": map[string]any{"property": map[string]any{"name": "value"}, "range": days, "reducers": []any{"count"}},
 		}, "observations/source is not in the reads allowlist"},
 		"a records bucket's reverse read outside the allowlist": {narrow, map[string]any{"aggregate": map[string]any{
@@ -195,22 +197,25 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 			}}},
 		}}, "observations/source is not in the reads allowlist"},
 		"a metric outside the allowlist": {
-			queryScope{kinds: []string{observation}, rows: 50}, map[string]any{"aggregate": daily},
+			queryScope{kinds: []string{observation}, rows: 50},
+			map[string]any{"aggregate": daily},
 			"observations/metric is not in the reads allowlist",
 		},
 		"one of several metrics outside the allowlist": {
-			queryScope{kinds: []string{observation}, rows: 50}, map[string]any{"aggregate": metrics},
+			queryScope{kinds: []string{observation}, rows: 50},
+			map[string]any{"aggregate": metrics},
 			"observations/metric is not in the reads allowlist",
 		},
-		"q beside aggregate": {wide, map[string]any{"q": "weight", "first": 1.0, "aggregate": daily}, "q is refused beside aggregate"},
-		"a get beside aggregate": {wide, map[string]any{"id": "w/0", "kind": observation, "aggregate": daily}, "id is refused beside aggregate"},
+		"q beside aggregate":       {wide, map[string]any{"q": "weight", "first": 1.0, "aggregate": daily}, "q is refused beside aggregate"},
+		"a get beside aggregate":   {wide, map[string]any{"id": "w/0", "kind": observation, "aggregate": daily}, "id is refused beside aggregate"},
 		"orderBy beside aggregate": {wide, map[string]any{"orderBy": []any{map[string]any{"property": "at"}}, "aggregate": daily}, "orderBy is refused beside aggregate"},
-		"downsample alone": {wide, map[string]any{"downsample": map[string]any{"points": 3}}, "downsample cuts an aggregate read"},
+		"downsample alone":         {wide, map[string]any{"downsample": map[string]any{"points": 3}}, "downsample cuts an aggregate read"},
 		"a property read naming no kinds": {wide, map[string]any{"aggregate": map[string]any{
 			"property": map[string]any{"name": "value"}, "range": days, "reducers": []any{"count"},
 		}}, "a property read names the kinds whose property it reduces"},
 		"no observed kind granted": {
-			queryScope{kinds: []string{home + "/health/sleep"}, rows: 50}, map[string]any{"aggregate": daily},
+			queryScope{kinds: []string{home + "/health/sleep"}, rows: 50},
+			map[string]any{"aggregate": daily},
 			"no kind in the reads allowlist binds",
 		},
 	} {
