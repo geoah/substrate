@@ -87,6 +87,51 @@ describe("TimelineChart", () => {
     expect(xs[1]).toBeGreaterThan(xs[0])
   })
 
+  it("puts each day's label under its own bars, the first one too", () => {
+    const day = (i: number) => new Date(2026, 8, 18 + i).toISOString()
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      ...WEIGHT.rows[0],
+      start: day(i),
+      end: day(i + 1),
+      values: [{ reducer: "sum", value: String(8000 + i), unit: "{steps}" }],
+    }))
+    const { buckets, series } = seriesOf(rows, "sum")
+    const view = render(
+      <TimelineChart
+        buckets={buckets}
+        series={series.map((s) => ({
+          key: s.key,
+          color: "var(--series-1)",
+          points: s.points,
+          mark: "bars",
+        }))}
+        domain={{ start: Date.parse(day(0)), end: Date.parse(day(10)) }}
+        size="day"
+        label="Steps, Total"
+        tooltip={() => null}
+        onZoom={() => {}}
+      />
+    )
+    const labels = [
+      ...view.container.querySelectorAll("text[text-anchor=middle]"),
+    ]
+    expect(labels[0].textContent).toBe("Sep 18")
+    expect(
+      view.container.querySelectorAll("path[fill='var(--series-1)']")
+    ).toHaveLength(10)
+    // The plot runs from x 52 to 706 at the fallback width of 720: ten days
+    // of 65.4px, each label at its day's middle.
+    const xs = labels.map((l) => Number(l.getAttribute("x")))
+    const slot = (706 - 52) / 10
+    expect(xs[0]).toBeCloseTo(52 + slot / 2, 0)
+    for (let i = 1; i < xs.length; i++) {
+      expect((xs[i] - 52) / slot - 0.5).toBeCloseTo(
+        Math.round((xs[i] - 52) / slot - 0.5),
+        5
+      )
+    }
+  })
+
   it("breaks the line where the answer skipped a week", () => {
     // The middle week is not in the answer at all: no row, filled or not.
     const view = render(chart([WEIGHT.rows[0], WEIGHT.rows[2]]))

@@ -39,6 +39,7 @@ import {
 import {
   axisTicks,
   bucketWords,
+  dayBucket,
   labelledTicks,
   type BucketSize,
   type TimeRange,
@@ -433,10 +434,18 @@ function layoutOf(
   const spacing = marks.length > 1 ? x(marks[1]) - x(marks[0]) : right - LEFT
   const every = spacing > 0 ? Math.max(1, Math.ceil(84 / spacing)) : 1
   const labelled = labelledTicks(marks, size, every)
+  // A day, week or month names a slot, not an instant: its label sits under
+  // the middle of the slot, where its bars and points are drawn.
+  const slotted = dayBucket(size)
   const xLabels = labelled.map((i, n) => {
     const t = marks[i]
     const previous = n > 0 ? marks[labelled[n - 1]] : undefined
-    const at = Math.min(Math.max(x(t), LEFT + 28), right - 28)
+    const mid = slotted
+      ? (x(Math.max(t, domain.start)) +
+          x(Math.min(marks[i + 1] ?? domain.end, domain.end))) /
+        2
+      : x(t)
+    const at = Math.min(Math.max(mid, LEFT + 28), right - 28)
     return { i, at, text: bucketWords(t, size, previous) }
   })
 
