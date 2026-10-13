@@ -18,8 +18,14 @@ data:
   traits:
     - substrate.reamde.dev/core/temporal(range)
     - substrate.reamde.dev/core/revised
-  displayTemplate: "{sport} {at}"
+  displayTemplate: "{name|sport}"
   properties:
+    # written by the adapter: a template renders an instant in UTC and an
+    # enum as its code, so it cannot spell a local start or a sport's label
+    name:
+      type: string
+      description: the workout's heading, the sport and when it began on the
+        clock it was recorded on, such as Running, Sat 11 Oct 08:43
     # one code set for every source, so a reader counts a WHOOP
     # weightlifting session and a Garmin strength session as one sport. An
     # adapter maps the provider's word onto it, writes other for a word it

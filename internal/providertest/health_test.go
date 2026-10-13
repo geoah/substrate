@@ -37,10 +37,10 @@ const (
 // The adapter stamp each shipped adapter writes on its outputs, its
 // function's ADAPTER constant.
 const (
-	healthAppleAdapter     = "healthapple@2"
-	healthWhoopAdapter     = "healthwhoop@4"
-	healthGarminAdapter    = "healthgarmin@3"
-	healthGoogleFitAdapter = "healthgooglefit@4"
+	healthAppleAdapter     = "healthapple@3"
+	healthWhoopAdapter     = "healthwhoop@5"
+	healthGarminAdapter    = "healthgarmin@4"
+	healthGoogleFitAdapter = "healthgooglefit@5"
 )
 
 // asFloat reads a number however it reached the test: a float64 from

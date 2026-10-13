@@ -233,6 +233,24 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 		t.Errorf("heart rate summaries by channel and statistic %v, want %v", channels, want)
 	}
 
+	// Each sleep and workout is titled on the clock it was recorded on: a
+	// night by the evening before the morning it ended, a nap (London, at
+	// +01:00) and a run by their local starts.
+	for kind, names := range map[string]map[string]string{
+		healthSleep: {
+			hw(whoopExampleSleep, "sleep"):                      "Night of Tue 6 Oct",
+			hw("a5eff5d0-2516-4920-b893-0baf8c01dd1c", "sleep"): "Nap, Sun 27 Sep 14:20",
+		},
+		healthWorkout: {hw(whoopExampleWorkout, "workout"): "Running, Sat 10 Oct 07:08"},
+	} {
+		for id, want := range names {
+			row := mustGet(t, ds, kind, id)
+			if row.Properties["name"] != want || row.Title != want {
+				t.Errorf("%s is named %v and titled %q, want %q", id, row.Properties["name"], row.Title, want)
+			}
+		}
+	}
+
 	// The sleep: the typed record, its four stage totals and two scores.
 	night := healthProps(t, ds, healthSleep, hw(whoopExampleSleep, "sleep"))
 	for name, want := range map[string]string{

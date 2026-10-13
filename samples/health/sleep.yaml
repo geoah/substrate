@@ -20,8 +20,15 @@ data:
   traits:
     - substrate.reamde.dev/core/temporal(range)
     - substrate.reamde.dev/core/revised
-  displayTemplate: "{source} {at}"
+  displayTemplate: "{name|source}"
   properties:
+    # written by the adapter: a template renders an instant in UTC, so it
+    # cannot spell the local night
+    name:
+      type: string
+      description: the sleep's heading, the night by the evening it began,
+        such as Night of Fri 10 Oct, or a nap and its local start, such as
+        Nap, Sun 12 Oct 14:30
     source:
       type: reference
       kind: samples.substrate.reamde.dev/observations/source

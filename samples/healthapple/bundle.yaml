@@ -15,7 +15,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthapple
-  version: 2
+  version: 3
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -122,7 +122,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthapple-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthapple@2"
+    ADAPTER = "healthapple@3"
 
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"
     BATCH = PROVIDER + "metricbatch"
@@ -146,10 +146,10 @@ data:
         OBSERVATION: ("metric", "source", "form", "value", "code", "statistic", "period", "periodId",
                       "hold", "at", "endsAt", "utcOffset", "components", "qualifiers", "origin",
                       "revision"),
-        SLEEP: ("source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "isNap", "timeInBed",
+        SLEEP: ("name", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "isNap", "timeInBed",
                 "timeAsleep", "awake", "light", "deep", "rem", "latency", "efficiency", "origin",
                 "revision"),
-        WORKOUT: ("sport", "sportSource", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
+        WORKOUT: ("name", "sport", "sportSource", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
                   "duration", "distance", "activeEnergy", "averageHeartRate", "maxHeartRate", "elevationGain",
                   "origin", "revision"),
     }
@@ -239,6 +239,48 @@ data:
     NOT_ID = re.compile(r"[^A-Za-z0-9._~:@-]+")
     UTC = datetime.timezone.utc
     INF = float("inf")
+
+
+    # ---- headings ---------------------------------------------------------------
+    # A sleep's and a workout's `name`, the heading a list shows: what it was
+    # and when, on the clock it was recorded on.
+    WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+              "Nov", "Dec")
+
+
+    def _on_clock(t, offset):
+        """t on the clock `offset` minutes east of UTC, with ` UTC` to follow
+        its time where there is no offset to read it on."""
+        if offset is None:
+            return t.astimezone(datetime.timezone.utc), " UTC"
+        return t.astimezone(datetime.timezone(datetime.timedelta(minutes=offset))), ""
+
+
+    def _day_words(t):
+        return "%s %d %s" % (WEEKDAYS[t.weekday()], t.day, MONTHS[t.month - 1])
+
+
+    def workout_name(sport, start, offset):
+        """`Running, Sat 11 Oct 08:43`: the sport and its local start."""
+        if start is None:
+            return None
+        t, zone = _on_clock(start, offset)
+        label = {"hiit": "HIIT", "other": "Workout"}.get(sport) or (sport or "workout").capitalize()
+        return "%s, %s %02d:%02d%s" % (label, _day_words(t), t.hour, t.minute, zone)
+
+
+    def sleep_name(nap, start, end, start_offset, end_offset):
+        """`Night of Fri 10 Oct`, the evening before the morning a night
+        ended, or `Nap, Sun 12 Oct 14:30`, a nap and its local start."""
+        if nap or end is None:
+            if start is None:
+                return None
+            t, zone = _on_clock(start, start_offset)
+            return "%s, %s %02d:%02d%s" % ("Nap" if nap else "Sleep", _day_words(t),
+                                           t.hour, t.minute, zone)
+        t, _ = _on_clock(end, end_offset)
+        return "Night of %s" % _day_words(t - datetime.timedelta(days=1))
 
 
     # ---- values -----------------------------------------------------------------
@@ -604,8 +646,10 @@ data:
         ibs, ibe = parse_date(row.get("inBedStart")), parse_date(row.get("inBedEnd"))
         at = min(t for t in (ss, ibs) if t is not None)
         ends = max(t for t in (se, ibe) if t is not None)
+        nap = is_nap(at, ends)
         night = {"at": w.host.observed.instant(at), "endsAt": w.host.observed.instant(ends),
-                 "utcOffsetStart": offset_of(at), "utcOffsetEnd": offset_of(ends), "isNap": is_nap(at, ends)}
+                 "utcOffsetStart": offset_of(at), "utcOffsetEnd": offset_of(ends), "isNap": nap,
+                 "name": sleep_name(nap, at, ends, offset_of(at), offset_of(ends))}
         if ibs is not None and ss > ibs:
             night["latency"] = w.duration((ss - ibs).total_seconds())
         in_bed = hours_seconds(w.host, row.get("inBed"))
@@ -725,6 +769,7 @@ data:
         name = props.get("name") if isinstance(props.get("name"), str) else ""
         out = {"source": src, "at": host.observed.instant(s), "utcOffsetStart": offset_of(s),
                "sport": SPORTS.get(name.strip().lower(), "other")}
+        out["name"] = workout_name(out["sport"], s, offset_of(s))
         if name:
             out["sportSource"] = name
         if e is not None and e > s:

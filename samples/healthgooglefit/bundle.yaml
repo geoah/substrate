@@ -21,7 +21,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthgooglefit
-  version: 4
+  version: 5
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -135,7 +135,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthgooglefit-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthgooglefit@4"
+    ADAPTER = "healthgooglefit@5"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -237,10 +237,10 @@ data:
         TRACE: ("metric", "source", "form", "unit", "hold", "at", "endsAt",
                 "utcOffsetStart", "utcOffsetEnd", "every", "offsets", "values",
                 "codes", "origins", "revision", "adapter"),
-        SLEEP: ("source", "origin", "revision", "adapter", "at", "endsAt", "utcOffsetStart",
+        SLEEP: ("name", "source", "origin", "revision", "adapter", "at", "endsAt", "utcOffsetStart",
                 "utcOffsetEnd", "isNap", "timeInBed", "timeAsleep", "awake", "light", "deep",
                 "rem", "efficiency"),
-        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "adapter", "at",
+        WORKOUT: ("name", "sport", "sportSource", "source", "origin", "revision", "adapter", "at",
                   "endsAt", "utcOffsetStart", "utcOffsetEnd", "duration"),
     }
 
@@ -309,6 +309,48 @@ data:
             after = page.get("cursor") or ""
             if not after:
                 return out
+
+
+    # ---- headings ---------------------------------------------------------------
+    # A sleep's and a workout's `name`, the heading a list shows: what it was
+    # and when, on the clock it was recorded on.
+    WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+              "Nov", "Dec")
+
+
+    def _on_clock(t, offset):
+        """t on the clock `offset` minutes east of UTC, with ` UTC` to follow
+        its time where there is no offset to read it on."""
+        if offset is None:
+            return t.astimezone(_dt.timezone.utc), " UTC"
+        return t.astimezone(_dt.timezone(_dt.timedelta(minutes=offset))), ""
+
+
+    def _day_words(t):
+        return "%s %d %s" % (WEEKDAYS[t.weekday()], t.day, MONTHS[t.month - 1])
+
+
+    def workout_name(sport, start, offset):
+        """`Running, Sat 11 Oct 08:43`: the sport and its local start."""
+        if start is None:
+            return None
+        t, zone = _on_clock(start, offset)
+        label = {"hiit": "HIIT", "other": "Workout"}.get(sport) or (sport or "workout").capitalize()
+        return "%s, %s %02d:%02d%s" % (label, _day_words(t), t.hour, t.minute, zone)
+
+
+    def sleep_name(nap, start, end, start_offset, end_offset):
+        """`Night of Fri 10 Oct`, the evening before the morning a night
+        ended, or `Nap, Sun 12 Oct 14:30`, a nap and its local start."""
+        if nap or end is None:
+            if start is None:
+                return None
+            t, zone = _on_clock(start, start_offset)
+            return "%s, %s %02d:%02d%s" % ("Nap" if nap else "Sleep", _day_words(t),
+                                           t.hour, t.minute, zone)
+        t, _ = _on_clock(end, end_offset)
+        return "Night of %s" % _day_words(t - _dt.timedelta(days=1))
 
 
     class _Clock:
@@ -707,8 +749,9 @@ data:
                 activity = _int(props.get("activityType"))
                 active = _int(props.get("activeTimeMillis"))
                 _, source = ctx.app_source(app)
+                sport = SPORTS.get(activity, "other") if activity is not None else None
                 desired[(WORKOUT, host.observed.record_id("googlefit", aid, rid))] = dict(
-                    base, sport=SPORTS.get(activity, "other") if activity is not None else None,
+                    base, sport=sport, name=workout_name(sport, at, ctx.clock.offset(at)),
                     sportSource=str(activity) if activity is not None else None,
                     source=source, revision=revision,
                     duration=ctx.duration(active * 10**6) if active is not None else None)
@@ -753,10 +796,11 @@ data:
         span = _ns(end) - _ns(at)
         in_bed = span - totals[OUT_OF_BED]
         start_hour = ctx.clock.local(at).hour
+        nap = span < NAP_LONGEST and NAP_HOURS[0] <= start_hour < NAP_HOURS[1]
         sleep = dict(base, source=source,
                      revision=max([revision] + [s["modified"] // 1000 for s in segs]),
-                     timeInBed=ctx.duration(in_bed),
-                     isNap=span < NAP_LONGEST and NAP_HOURS[0] <= start_hour < NAP_HOURS[1])
+                     timeInBed=ctx.duration(in_bed), isNap=nap,
+                     name=sleep_name(nap, at, end, ctx.clock.offset(at), ctx.clock.offset(end)))
         if segs:
             asleep = sum(totals[c] for c in ASLEEP)
             sleep.update({

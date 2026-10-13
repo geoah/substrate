@@ -29,7 +29,9 @@ data:
   # through host.observed.reconcile; ADAPTER is healthwhoop@3.
   # 4: a recovery's five readings span the sleep it scores, not its cycle;
   # ADAPTER is healthwhoop@4.
-  version: 4
+  # 5: a sleep and a workout carry a `name` heading; ADAPTER is
+  # healthwhoop@5.
+  version: 5
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # One function and its record trigger (triggers.yaml). No inputs and no
@@ -152,7 +154,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthwhoop-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthwhoop@4"
+    ADAPTER = "healthwhoop@5"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -174,11 +176,11 @@ data:
     OBSERVATION_PROPS = ("metric", "source", "channel", "form", "value", "code",
                          "statistic", "period", "periodId", "at", "endsAt",
                          "utcOffset", "origin", "revision", "adapter", "quality")
-    SLEEP_PROPS = ("source", "origin", "revision", "adapter", "isNap", "utcOffsetStart",
+    SLEEP_PROPS = ("name", "source", "origin", "revision", "adapter", "isNap", "utcOffsetStart",
                    "utcOffsetEnd", "at", "endsAt", "timeInBed", "timeAsleep",
                    "awake", "light", "deep", "rem", "efficiency",
                    "respiratoryRate", "disturbances", "scores")
-    WORKOUT_PROPS = ("sport", "sportSource", "source", "origin", "revision", "adapter",
+    WORKOUT_PROPS = ("name", "sport", "sportSource", "source", "origin", "revision", "adapter",
                      "utcOffsetStart", "utcOffsetEnd", "at", "endsAt", "duration",
                      "distance", "totalEnergy", "averageHeartRate", "maxHeartRate",
                      "elevationGain", "strain", "zoneDurations")
@@ -291,6 +293,48 @@ data:
         except ValueError:
             return None
         return -minutes if tzd[0] == "-" else minutes
+
+
+    # ---- headings ---------------------------------------------------------------
+    # A sleep's and a workout's `name`, the heading a list shows: what it was
+    # and when, on the clock it was recorded on.
+    WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+              "Nov", "Dec")
+
+
+    def _on_clock(t, offset):
+        """t on the clock `offset` minutes east of UTC, with ` UTC` to follow
+        its time where there is no offset to read it on."""
+        if offset is None:
+            return t.astimezone(_dt.timezone.utc), " UTC"
+        return t.astimezone(_dt.timezone(_dt.timedelta(minutes=offset))), ""
+
+
+    def _day_words(t):
+        return "%s %d %s" % (WEEKDAYS[t.weekday()], t.day, MONTHS[t.month - 1])
+
+
+    def workout_name(sport, start, offset):
+        """`Running, Sat 11 Oct 08:43`: the sport and its local start."""
+        if start is None:
+            return None
+        t, zone = _on_clock(start, offset)
+        label = {"hiit": "HIIT", "other": "Workout"}.get(sport) or (sport or "workout").capitalize()
+        return "%s, %s %02d:%02d%s" % (label, _day_words(t), t.hour, t.minute, zone)
+
+
+    def sleep_name(nap, start, end, start_offset, end_offset):
+        """`Night of Fri 10 Oct`, the evening before the morning a night
+        ended, or `Nap, Sun 12 Oct 14:30`, a nap and its local start."""
+        if nap or end is None:
+            if start is None:
+                return None
+            t, zone = _on_clock(start, start_offset)
+            return "%s, %s %02d:%02d%s" % ("Nap" if nap else "Sleep", _day_words(t),
+                                           t.hour, t.minute, zone)
+        t, _ = _on_clock(end, end_offset)
+        return "Night of %s" % _day_words(t - _dt.timedelta(days=1))
 
 
     # ---------------------------------------------------------------- the run
@@ -502,7 +546,9 @@ data:
                 typed = {"source": source, "origin": origin, "revision": revision,
                          "isNap": p.get("nap"), "utcOffsetStart": offset,
                          "utcOffsetEnd": offset, "at": p.get("at"),
-                         "endsAt": p.get("endsAt")}
+                         "endsAt": p.get("endsAt"),
+                         "name": sleep_name(bool(p.get("nap")), _parse(p.get("at")),
+                                            _parse(p.get("endsAt")), offset, offset)}
                 if scored:
                     asleep = 0
                     for field, code in STAGES:
@@ -587,6 +633,7 @@ data:
                          "elevationGain": self.quantity(score.get("altitudeGainMeter"), "m"),
                          "strain": self.decimal(score.get("strain"))}
                 a, b = _parse(p.get("at")), _parse(p.get("endsAt"))
+                typed["name"] = workout_name(typed["sport"], a, offset)
                 if a is not None and b is not None and b > a:
                     typed["duration"] = self.host.observed.duration(b - a)
                 zones = {key: self.duration(score["zoneDurations"][field])

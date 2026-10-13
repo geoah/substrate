@@ -1060,6 +1060,10 @@ func TestHealthGoogleFitWritesNoOffsetWithoutAZone(t *testing.T) {
 	if sl["isNap"] != true || sl["utcOffsetStart"] != nil || sl["timeInBed"] != "PT40M" {
 		t.Fatalf("the afternoon session = %v, want a nap of 40 minutes with no offset", sl)
 	}
+	// With no zone to read it on, its heading says the time is UTC.
+	if want := "Nap, " + nap.UTC().Format("Mon 2 Jan 15:04") + " UTC"; sl["name"] != want {
+		t.Errorf("the nap is named %v, want %q", sl["name"], want)
+	}
 }
 
 // TestHealthGoogleFitMapsDownhillSkiingToSkiing: Fit's activity 68 is
@@ -1080,6 +1084,14 @@ func TestHealthGoogleFitMapsDownhillSkiingToSkiing(t *testing.T) {
 	w := mustGet(t, ds, healthWorkout, "googlefit/"+googlefitAccount+"/ski").Properties
 	if w["sport"] != "skiing" || w["sportSource"] != "68" {
 		t.Fatalf("the downhill ski session landed as sport %v from %v, want skiing from 68", w["sport"], w["sportSource"])
+	}
+	// Its heading is the sport and the start on the account's clock.
+	athens, err := time.LoadLocation("Europe/Athens")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Skiing, " + at.In(athens).Format("Mon 2 Jan 15:04"); w["name"] != want {
+		t.Errorf("the ski session is named %v, want %q", w["name"], want)
 	}
 }
 

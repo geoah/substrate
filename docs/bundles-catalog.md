@@ -1796,7 +1796,9 @@ A workout is a `health/workout` with its sport, span, duration, distance,
 `activeEnergy`, heart rate and climb, attributed to the device its heart rate
 rows name. The sport is HealthKit's workout name mapped onto the workout code
 set (`Traditional Strength Training` is `strength`), `other` where the name
-has no value of its own, and the name itself is `sportSource`.
+has no value of its own, and the name itself is `sportSource`. A sleep's and
+a workout's `name` is its heading on the clock the app wrote it in: `Night
+of Tue 6 Oct`, `Nap, Wed 7 Oct 14:05`, `Running, Wed 7 Oct 08:05`.
 
 **Ids, sources and reconciliation.** Ids are composed: a trace is
 `applehealth/<account>/<source>/<metric>/<UTC hour>`, a single value
@@ -2002,8 +2004,8 @@ that deletes a mirror row WHOOP deleted.
 | sleep stage totals (awake, light, slow wave, REM) | `health/sleep_stage`, `code` `awake`, `light`, `deep`, `rem` | amount over the sleep's span | `min` |
 | sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `%` |
 | sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `/min` |
-| sleep | `health/sleep`: span, `isNap` (WHOOP's `nap`), `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency` (WHOOP's own), `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency`; WHOOP sends no latency | | |
-| workout | `health/workout`: span, `sport` (WHOOP's `sportName` mapped onto the workout code set, `other` where it has no value, so `weightlifting` is `strength` and `padel` is `other`) and `sportSource` (the `sportName` itself), `duration`, `distance`, `totalEnergy` (kJ, resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
+| sleep | `health/sleep`: `name` (`Night of Tue 6 Oct` by the evening before the morning it ended, `Nap, Sun 27 Sep 14:20` by its local start), span, `isNap` (WHOOP's `nap`), `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency` (WHOOP's own), `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency`; WHOOP sends no latency | | |
+| workout | `health/workout`: `name` (`Running, Sat 10 Oct 07:08`, the sport and the local start, `Workout` for `other`), span, `sport` (WHOOP's `sportName` mapped onto the workout code set, `other` where it has no value, so `weightlifting` is `strength` and `padel` is `other`) and `sportSource` (the `sportName` itself), `duration`, `distance`, `totalEnergy` (kJ, resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
 
 **Ids and spans.** Every id is composed from WHOOP's own identifiers, read off
 the mirror row: `whoop/<account record id>/<cycle id>/recovery` (and `hrv`,
@@ -2095,8 +2097,9 @@ flag, so a session shorter than three hours that begins between 09:00 and
 `health/workout` whose `sport` is Fit's activity code mapped onto the
 workout code set (100 is `yoga`, 80 `strength`, 65 to 68 `skiing`, 108 and
 any code without a value of its own `other`) and whose `sportSource` is the
-code. Fit's sleep
-codes map as 1 `awake`, 2 `asleep` (sleep with no stage), 4 `light`, 5
+code. Each one's `name` is its heading on the account's clock (such as
+`Running, Sat 11 Oct 08:43`), in UTC and saying so where the account names no zone. Fit's
+sleep codes map as 1 `awake`, 2 `asleep` (sleep with no stage), 4 `light`, 5
 `deep` and 6 `rem`; 3 (out of bed) and 0 are skipped and counted. A stage's
 id is its session and its start, so a corrected earlier segment renames no
 later one. Each data type is read from one derived stream, so a quantity Google
@@ -2152,7 +2155,7 @@ so import it after installing the provider and importing `health`.
 | `daily.restingHeartRateInBeatsPerMinute` | `resting_heart_rate` | summary, `vendor`, day | `/min` |
 | `daily.averageStressLevel` | `garmin_stress` | summary, `avg`, day | `{score}` |
 | `epoch.steps`, `distanceInMeters`, `activeKilocalories`, summed per slice | `steps`, `distance`, `active_energy` | amount trace | `{steps}`, `m`, `kcal` |
-| `sleep` | a `health/sleep` (and one per nap, `isNap` true), with `efficiency` the time asleep over the span | | |
+| `sleep` | a `health/sleep` (and one per nap, `isNap` true), with `efficiency` the time asleep over the span and `name` its heading on Garmin's offset (`Night of Tue 6 Oct`, `Nap, Sun 12 Oct 14:30`) | | |
 | `sleep.sleepLevelsMap` segments | `sleep_stage`, coded `awake`, `light`, `deep`, `rem` | amount; `quality: estimated` while `validation` is tentative; `recordingMethod` `manual` for a `MANUAL` night, else `automatic` | `min` |
 | `bodycomp` weight, muscle, bone; fat, water; BMI | `body_mass`, `muscle_mass`, `bone_mass`; `body_fat_fraction`, `body_water_fraction`; `bmi` | gauge, hold P1D | `kg` (from grams); `%`; `kg/m2` |
 | `bloodpressure.systolic`, `diastolic`, `pulse` | `systolic_blood_pressure`, `diastolic_blood_pressure`, `heart_rate` | gauge, the two pressures each with both as `components`, `recordingMethod` from `sourceType` | `mm[Hg]`, `/min` |
@@ -2163,7 +2166,7 @@ so import it after installing the provider and importing `health`.
 | `healthsnapshot` heart rate, respiration, stress, SpO2, RMSSD | `heart_rate`, `respiratory_rate`, `garmin_stress`, `spo2`, `hrv_rmssd` | gauge trace on channel `snapshot`, each metric's hold | as above, `ms` |
 | `hrv.lastNightAvg`, `lastNight5MinHigh`; `hrvValues` | `hrv_rmssd` | summary `avg` and `max`, period `sleep`; gauge trace, hold PT10M | `ms` |
 | `skintemp.avgDeviationCelsius` | `skin_temperature_deviation` | summary, `avg`, period `sleep`, `delta` | `K` |
-| `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout`: `sport` (the `activityType` mapped onto the workout code set, `other` where it has no value, so `PADDELBALL` is `other`), `sportSource` (the `activityType`), `activeEnergy` from `activeKilocalories` | | |
+| `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout`: `name` (`Workout, Fri 11 Sep 19:05` for the padel session, the sport and the local start), `sport` (the `activityType` mapped onto the workout code set, `other` where it has no value, so `PADDELBALL` is `other`), `sportSource` (the `activityType`), `activeEnergy` from `activeKilocalories` | | |
 | `activitydetail.samples` heart rate, speed, step cadence, power | `heart_rate`, `speed`, `cadence`, `running_power` | gauge trace, each metric's hold | `/min`, `m/s`, `/min`, `W` |
 | `activitydetail.samples` pedal cadence (a ride) | `cycling_cadence` | gauge trace, hold PT10S | `/min` |
 | `activitydetail.samples.totalDistanceInMeters` | `distance` | amount trace, each sample's step from the one before, summing to the activity's distance | `m` |

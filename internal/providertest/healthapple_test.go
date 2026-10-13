@@ -434,6 +434,15 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 	if lift["sport"] != "strength" || storedRefPath(lift["source"]) != obsSource+"/applehealth/iphone/apple-watch" {
 		t.Fatalf("the strength workout = %v", lift)
 	}
+	// Each is titled on the clock the app wrote it in, +03:00.
+	for name, want := range map[string][2]any{
+		"night": {night["name"], "Night of Tue 6 Oct"}, "run": {run["name"], "Running, Wed 7 Oct 08:05"},
+		"lift": {lift["name"], "Strength, Wed 7 Oct 18:32"},
+	} {
+		if want[0] != want[1] {
+			t.Errorf("the %s is named %v, want %q", name, want[0], want[1])
+		}
+	}
 }
 
 // Every output names the adapter version that wrote it, and an upgrade of the
@@ -561,7 +570,7 @@ func TestHealthAppleMapsUnstagedSleepAndNaps(t *testing.T) {
 		t.Errorf("%d asleep amounts, want one per unstaged segment", n)
 	}
 	nap := mustGet(t, ds, healthSleep, "applehealth/iphone/apple-watch/sleep/2026-10-07T11:10:00Z").Properties
-	if nap["isNap"] != true || nap["latency"] != "PT5M" || nap["timeInBed"] != "PT50M" {
+	if nap["isNap"] != true || nap["latency"] != "PT5M" || nap["timeInBed"] != "PT50M" || nap["name"] != "Nap, Wed 7 Oct 14:05" {
 		t.Errorf("the afternoon sleep = %v, want a nap of 50 minutes in bed, 5 to fall asleep", nap)
 	}
 	assertCatalogueHolds(t, ds)

@@ -247,6 +247,16 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	if w.Properties["sportSource"] != act["activityType"] || storedRefPath(w.Properties["source"]) != obsSource+"/"+acct+"/forerunner265" {
 		t.Errorf("workout %v", w.Properties)
 	}
+	// The night and the padel session are titled on their own clock: padel
+	// has no sport of its own, so it is a workout.
+	for row, want := range map[*substrate.Record]string{
+		out[healthSleep+"/"+acct+"/"+sid+"/sleep"]: "Night of Tue 6 Oct",
+		w: "Workout, Fri 11 Sep 19:05",
+	} {
+		if row.Properties["name"] != want {
+			t.Errorf("%s is named %v, want %q", row.ID, row.Properties["name"], want)
+		}
+	}
 	// The source is named for the product, not Garmin's deviceName token.
 	if src := mustGet(t, ds, obsSource, acct+"/forerunner265"); src.Properties["class"] != "watch" ||
 		src.Properties["name"] != "Garmin Forerunner 265" || src.Properties["hardwareModel"] != "forerunner265" ||

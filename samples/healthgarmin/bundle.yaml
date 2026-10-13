@@ -15,7 +15,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthgarmin
-  version: 3
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # The provider is a requirement like the samples: the function reads its
@@ -145,7 +145,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthgarmin-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthgarmin@3"
+    ADAPTER = "healthgarmin@4"
 
     SAMPLE = "samples.substrate.reamde.dev"
     OBSERVATION = SAMPLE + "/observations/observation"
@@ -271,10 +271,10 @@ data:
         TRACE: ("metric", "form", "source", "about", "channel", "unit", "hold", "resetRule",
                 "wrapAt", "delta", "circular", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
                 "every", "offsets", "values", "codes", "origins", "revision"),
-        SLEEP: ("source", "origin", "revision", "isNap", "utcOffsetStart", "utcOffsetEnd", "at",
+        SLEEP: ("name", "source", "origin", "revision", "isNap", "utcOffsetStart", "utcOffsetEnd", "at",
                 "endsAt", "timeInBed", "timeAsleep", "awake", "light", "deep", "rem", "efficiency",
                 "scores"),
-        WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "utcOffsetStart",
+        WORKOUT: ("name", "sport", "sportSource", "source", "origin", "revision", "utcOffsetStart",
                   "utcOffsetEnd", "at", "endsAt", "duration", "distance", "activeEnergy",
                   "averageHeartRate", "maxHeartRate", "elevationGain", "notes"),
     }
@@ -319,6 +319,48 @@ data:
         return s or "device"
 
 
+    # ---- headings ---------------------------------------------------------------
+    # A sleep's and a workout's `name`, the heading a list shows: what it was
+    # and when, on the clock it was recorded on.
+    WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+              "Nov", "Dec")
+
+
+    def _on_clock(t, offset):
+        """t on the clock `offset` minutes east of UTC, with ` UTC` to follow
+        its time where there is no offset to read it on."""
+        if offset is None:
+            return t.astimezone(_dt.timezone.utc), " UTC"
+        return t.astimezone(_dt.timezone(_dt.timedelta(minutes=offset))), ""
+
+
+    def _day_words(t):
+        return "%s %d %s" % (WEEKDAYS[t.weekday()], t.day, MONTHS[t.month - 1])
+
+
+    def workout_name(sport, start, offset):
+        """`Running, Sat 11 Oct 08:43`: the sport and its local start."""
+        if start is None:
+            return None
+        t, zone = _on_clock(start, offset)
+        label = {"hiit": "HIIT", "other": "Workout"}.get(sport) or (sport or "workout").capitalize()
+        return "%s, %s %02d:%02d%s" % (label, _day_words(t), t.hour, t.minute, zone)
+
+
+    def sleep_name(nap, start, end, start_offset, end_offset):
+        """`Night of Fri 10 Oct`, the evening before the morning a night
+        ended, or `Nap, Sun 12 Oct 14:30`, a nap and its local start."""
+        if nap or end is None:
+            if start is None:
+                return None
+            t, zone = _on_clock(start, start_offset)
+            return "%s, %s %02d:%02d%s" % ("Nap" if nap else "Sleep", _day_words(t),
+                                           t.hour, t.minute, zone)
+        t, _ = _on_clock(end, end_offset)
+        return "Night of %s" % _day_words(t - _dt.timedelta(days=1))
+
+
     # Garmin's device families by the word deviceName starts with, as Garmin
     # spells them on the box. A word not here is capitalized.
     FAMILIES = {"forerunner": "Forerunner", "fenix": "fēnix", "epix": "epix",
@@ -336,6 +378,11 @@ data:
             return str(name or "")
         family, number, suffix = m.groups()
         return "%s %s%s" % (FAMILIES.get(family, family.capitalize()), number, suffix.upper())
+
+
+    def _utc(secs):
+        """Seconds since the epoch as an aware UTC datetime."""
+        return _dt.datetime.fromtimestamp(secs, _dt.timezone.utc)
 
 
     def _seconds_map(m):
@@ -519,6 +566,7 @@ data:
         props = {
             "source": _ref(src), "origin": _ref(plan.origin), "revision": plan.revision,
             "isNap": False, "utcOffsetStart": c.offset, "utcOffsetEnd": c.offset,
+            "name": sleep_name(False, _utc(c.start), _utc(end), c.offset, c.offset),
             "at": plan.instant(c.start), "endsAt": plan.instant(end),
             "timeInBed": plan.duration(end - c.start) if end > c.start else None,
             "timeAsleep": plan.duration(p.get("durationInSeconds")),
@@ -558,6 +606,7 @@ data:
             plan.rows[(SLEEP, plan.rid(c.sid, "nap", a))] = {
                 "source": _ref(src), "origin": _ref(plan.origin), "revision": plan.revision,
                 "isNap": True, "utcOffsetStart": off, "utcOffsetEnd": off,
+                "name": sleep_name(True, _utc(a), _utc(a + d), off, off),
                 "at": plan.instant(a), "endsAt": plan.instant(a + d), "timeInBed": plan.duration(d),
                 "timeAsleep": plan.duration(d), "awake": None, "light": None, "deep": None, "rem": None,
                 "scores": None,
@@ -716,6 +765,7 @@ data:
         kind = str(props.get("activityType") or "")
         w = {
             "sport": SPORTS.get(kind, "other" if kind else None),
+            "name": workout_name(SPORTS.get(kind, "other" if kind else None), _utc(c.start), c.offset),
             "sportSource": kind or None, "source": _ref(src), "origin": _ref(plan.origin),
             "revision": plan.revision, "utcOffsetStart": c.offset, "utcOffsetEnd": c.offset,
             "at": plan.instant(c.start), "endsAt": plan.instant(end),
