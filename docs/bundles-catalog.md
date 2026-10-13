@@ -1732,34 +1732,33 @@ floor of 1.
 or is skipped and named in the function's `skipped` result, never guessed.
 Values are converted into the metric's unit through the engine's unit table
 (`host.units`), which reads HealthKit's spellings (`lb`, `mi`, `hr`,
-`mmol<180.1558800000541>/L` and the rest) as [aliases](units.md#aliases).
-The adapter maps four spellings itself. `count/min` and `bpm` become `/min`,
-which is also how the table reads them. `ft` is a foot, which the table reads
-as the femtotonne, and `st` a stone, which UCUM spells as the stere. The
-app's `count` is the metric's own counted unit, which the table refuses as a
-bare spelling.
+`count/min`, `bpm`, `mmol<180.1558800000541>/L` and the rest) as
+[aliases](units.md#aliases). The adapter maps two spellings itself: `ft` is
+a foot, which the table reads as the femtotonne, and `st` a stone, which UCUM
+spells as the stere. The app's `count` is the metric's own counted unit,
+which the table refuses as a bare spelling.
 
 | App metric | Metric | Written as | Unit |
 | --- | --- | --- | --- |
 | `heart_rate` | `heart_rate` | gauge trace of `Avg`, hold `PT4M` | `/min` |
-| `respiratory_rate` | `respiratory_rate` | gauge trace | `/min` |
-| `blood_oxygen_saturation` | `spo2` | gauge trace | `%` |
+| `respiratory_rate` | `respiratory_rate` | gauge trace, hold `PT30M` | `/min` |
+| `blood_oxygen_saturation` | `spo2` | gauge trace, hold `PT20M` | `%` |
 | `step_count` | `steps` | amount trace | `{steps}` |
 | `walking_running_distance` | `distance` | amount trace | `m` |
 | `flights_climbed` | `floors` | amount trace | `{floors}` |
 | `active_energy` | `active_energy` | amount trace | `kcal` |
 | `basal_energy_burned` | `basal_energy` | amount trace | `kcal` |
-| `heart_rate_variability` | `hrv_sdnn` | gauge observation | `ms` |
-| `apple_sleeping_wrist_temperature` | `skin_temperature` | gauge observation | `Cel` |
+| `heart_rate_variability` | `hrv_sdnn` | gauge observation, hold `PT6H` | `ms` |
+| `apple_sleeping_wrist_temperature` | `skin_temperature` | gauge observation, hold `P1D` | `Cel` |
 | `vo2_max` | `vo2_max` | gauge observation | `mL/(kg.min)` |
-| `weight_body_mass` | `body_mass` | gauge observation | `kg` |
-| `body_fat_percentage` | `body_fat_fraction` | gauge observation | `%` |
-| `body_mass_index` | `bmi` | gauge observation | `kg/m2` |
+| `weight_body_mass` | `body_mass` | gauge observation, hold `P1D` | `kg` |
+| `body_fat_percentage` | `body_fat_fraction` | gauge observation, hold `P1D` | `%` |
+| `body_mass_index` | `bmi` | gauge observation, hold `P1D` | `kg/m2` |
 | `height` | `height` | gauge observation | `m` |
 | `blood_pressure` | `systolic_blood_pressure`, `diastolic_blood_pressure` | two gauge observations, each with both as `components`, hold `PT0S` | `mm[Hg]` |
-| `blood_glucose` | `blood_glucose_mass` or `blood_glucose`, by the app's unit | gauge observation, `mealTime` as a qualifier | `mg/dL`, `mmol/L` |
+| `blood_glucose` | `blood_glucose_mass` or `blood_glucose`, by the app's unit | gauge observation, hold `PT15M`, `mealTime` as a qualifier | `mg/dL`, `mmol/L` |
 | `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `/min` |
-| `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value` | `min` |
+| `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value`; see Sleep below | `min` |
 
 Everything else the app sends (`apple_exercise_time`, `physical_effort`,
 `walking_asymmetry_percentage`, `lean_body_mass` and the rest) is skipped.
@@ -1770,13 +1769,30 @@ becomes `summary` observations (`sum` for an amount, `avg` for a gauge, and
 `avg`, `min` and `max` for heart rate) with the bucket as `period`, which a
 raw read never adds to the minutes. A dense metric is one trace per source and
 UTC hour, split where the UTC offset changes; an amount's minute ends in a
-`null` where the next minute has no row. A sleep segment is one `amount`
-observation per segment (`awake`, `light` for the app's Core, `deep`, `rem`,
-`in_bed`; Asleep and Unspecified map to no stage and are skipped), and the
-night is one `health/sleep` from the night fields every segment repeats,
-written by the batch the night's start falls in; an aggregated night row is a
-`health/sleep` with its stage durations plus one stage amount per stage. A
-workout is a `health/workout` with its sport, span, duration, distance,
+`null` where the next minute has no row. Every gauge carries its metric's
+hold from the health catalogue, so a night's last SpO2 reading stops
+standing at the hold.
+
+**Sleep.** A sleep segment is one `amount` observation per segment
+(`awake`, `light` for the app's Core, `deep`, `rem`, and `asleep` for Asleep
+and Unspecified, sleep the device did not stage). The iPhone's In Bed
+segment spans the night under the watches' stages, so it is the night's
+`timeInBed` and no stage: summed by code, the night would count twice; the
+function's `skipped` result counts it. A night is one `health/sleep`
+spanning the time in bed (`inBedStart` to `inBedEnd` where the app names
+them), with `timeInBed`, `latency` (from getting into bed to falling
+asleep) and `isNap`. A night told by segments is written by the batch its
+`sleepStart` falls in, from the night fields every segment repeats, under
+the source most of that batch's stages of the night come from (the first
+by name on a tie); its stage totals are the stage amounts, which the hours'
+batches hold between them. An aggregated night row adds its stage
+durations, `timeAsleep`, `efficiency` (time asleep over time in bed) and
+one stage amount per stage over the sleep, `asleep` included; its `inBed`
+total is `timeInBed`, never an `in_bed` amount. The app sends no nap flag,
+so a sleep shorter than three hours that begins between 09:00 and 21:00 on
+its own clock is a nap.
+
+A workout is a `health/workout` with its sport, span, duration, distance,
 `activeEnergy`, heart rate and climb, attributed to the device its heart rate
 rows name. The sport is HealthKit's workout name mapped onto the workout code
 set (`Traditional Strength Training` is `strength`), `other` where the name
@@ -1784,8 +1800,11 @@ has no value of its own, and the name itself is `sportSource`.
 
 **Ids, sources and reconciliation.** Ids are composed: a trace is
 `applehealth/<account>/<source>/<metric>/<UTC hour>`, a single value
-`applehealth/<account>/<source>/<metric>/<instant>` (a summary adds its
-statistic), a workout `applehealth/<account>/<HealthKit id>`. The source is
+`applehealth/<account>/<source>/<metric>/<instant>`, a summary
+`.../<metric>/<period>/<instant>/<statistic>` (the period keeps an hours and
+a days automation's buckets at one instant apart), a workout
+`applehealth/<account>/<HealthKit id>`; an id past 128 bytes is hashed
+through `host.ids.external`. The source is
 the row's `source` label with the owner's name taken off (`Ada's Apple Watch`
 is `apple-watch`, `Garmin Connect` is `garmin-connect`), and a label that is
 empty, absent or joins several devices with `|` is `health`, the phone's
@@ -1793,8 +1812,9 @@ merged series; each is an `observations/source` record at
 `applehealth/<account>/<source>`, minted `ifAbsent` so an owner's edit
 stands. Every output names its mirror row in `origin` (`origins` on a trace)
 and carries `revision`, the row's `receivedAt` in Unix seconds. Each delivery
-writes the whole set the row implies, leaves an output that already holds it
-unwritten, and deletes the outputs that point at the row and are no longer
+hands the whole set the row implies to `host.observed.reconcile`, which
+leaves an output that already holds it unwritten, never lowers a stored
+revision, and deletes the outputs that point at the row and are no longer
 implied, so a corrected redelivery rewrites the same ids at a higher revision
 and a deleted row (an account deleted, say) takes its outputs with it.
 

@@ -154,9 +154,11 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 				hrv += len(m.Data)
 			case "sleep_analysis":
 				nights += len(m.Data)
+				// One amount per staged total and per unstaged (asleep) total;
+				// the in-bed total is the night's timeInBed, no stage.
 				for _, row := range m.Data {
-					for _, k := range []string{"core", "deep", "rem", "awake", "inBed"} {
-						if num(t, row[k]) > 0 {
+					for _, k := range []string{"core", "deep", "rem", "awake", "asleep"} {
+						if v, ok := row[k].(float64); ok && v > 0 {
 							stages++
 						}
 					}

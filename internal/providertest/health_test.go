@@ -27,7 +27,7 @@ const (
 // The adapter stamp each shipped adapter writes on its outputs, its
 // function's ADAPTER constant.
 const (
-	healthAppleAdapter     = "healthapple@1"
+	healthAppleAdapter     = "healthapple@2"
 	healthGarminAdapter    = "healthgarmin@2"
 	healthGoogleFitAdapter = "healthgooglefit@1"
 )

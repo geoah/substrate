@@ -21,6 +21,14 @@ mirror row is delivered again, and each output is rewritten under the new
 version at the revision it already holds. Rows the app never resends are not
 reprocessed any other way.
 
+Two limits come from the app. It sends no nap flag, so the adapter calls a
+sleep shorter than three hours that begins between 09:00 and 21:00 on its
+own clock a nap. And it sends no deletion: a sample or workout deleted on
+the phone keeps its mirror row, and the records built from it, unless a
+later export re-sends the samples around it. Delete the mirror row to remove
+them (`bin/substratectl delete <kind> <id>`, the kind in full, such as
+`providers.substrate.reamde.dev/applehealth/workout`).
+
 The metric mapping, what is skipped, how outputs are keyed and reconciled, and
 the one rule an automation setup must follow:
 [docs/bundles-catalog.md#apple-health-to-health-sample](../../docs/bundles-catalog.md#apple-health-to-health-sample).

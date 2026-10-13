@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -365,6 +366,7 @@ func TestHealthAppleBodyObservations(t *testing.T) {
 	if !strings.Contains(fmt.Sprint(out["skipped"]), "lean_body_mass: no health metric maps it") {
 		t.Fatalf("lean body mass output = %v", out)
 	}
+	assertCatalogueHolds(t, ds)
 }
 
 // HealthKit's own unit spellings reach the engine's table as the app sends
@@ -429,16 +431,29 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 			stages[fmt.Sprint(row.Properties["code"])]++
 		}
 	}
-	if stages["light"] == 0 || stages["deep"] == 0 || stages["rem"] == 0 || stages["awake"] == 0 || stages["in_bed"] == 0 {
-		t.Fatalf("stage amounts by code = %v", stages)
+	// The iPhone's In Bed segment spans the whole night under the watches'
+	// stages: written as a stage it would count the night twice, so it is
+	// the night's timeInBed and no stage.
+	if stages["light"] == 0 || stages["deep"] == 0 || stages["rem"] == 0 || stages["awake"] == 0 || stages["in_bed"] != 0 {
+		t.Fatalf("stage amounts by code = %v, want no in_bed", stages)
+	}
+	if out := adapt(t, ds, ahBatch, "iphone/sleep_analysis/seconds/2026-10-06T19"); !strings.Contains(fmt.Sprint(out["skipped"]), "In Bed") {
+		t.Fatalf("the sleep batch's output %v does not count the In Bed segment", out)
 	}
 	nights := listLive(t, ds, haSleep)
 	if len(nights) != 2 {
 		t.Fatalf("%d sleep records, want one per night", len(nights))
 	}
-	night := mustGet(t, ds, haSleep, "applehealth/iphone/health/sleep/2026-10-06T19:51:00Z").Properties
-	if night["endsAt"] != "2026-10-07T03:55:49Z" || night["timeInBed"] == nil {
-		t.Fatalf("the night = %v", night)
+	// A night told by segments is the source most of its first hour's stages
+	// come from (the watch and Garmin Connect tie; the first by name wins),
+	// spans the time in bed, and carries what the night fields every segment
+	// repeats say: the time in bed and how long it took to fall asleep. Its
+	// stage totals are the stage amounts, which several batches hold.
+	night := mustGet(t, ds, haSleep, "applehealth/iphone/apple-watch/sleep/2026-10-06T19:51:00Z").Properties
+	if storedRefPath(night["source"]) != haSource+"/applehealth/iphone/apple-watch" || night["at"] != "2026-10-06T19:29:00Z" ||
+		night["endsAt"] != "2026-10-07T03:56:49Z" || night["isNap"] != false ||
+		night["timeInBed"] != "PT8H27M49S" || night["latency"] != "PT22M" {
+		t.Errorf("the night = %v, want the watch's, over the time in bed, 22 minutes to fall asleep, no nap", night)
 	}
 
 	run := mustGet(t, ds, haWorkout, "applehealth/iphone/EB0B1D81-50F6-4AB6-8841-28B68D3DE5C6").Properties
@@ -481,29 +496,147 @@ func TestHealthAppleDailySummaries(t *testing.T) {
 	if n := countLive(t, ds, haTrace); n != 0 {
 		t.Fatalf("a daily delivery wrote %d traces", n)
 	}
-	steps := mustGet(t, ds, haObservation, "applehealth/iphone/health/steps/2026-09-10T21:00:00Z/sum").Properties
+	steps := mustGet(t, ds, haObservation, "applehealth/iphone/health/steps/day/2026-09-10T21:00:00Z/sum").Properties
 	if steps["form"] != "summary" || steps["statistic"] != "sum" || steps["period"] != "day" ||
 		steps["periodId"] != "2026-09-11" || obj(t, steps["value"], "value") != "11187" ||
 		steps["endsAt"] != "2026-09-11T21:00:00Z" {
 		t.Fatalf("daily steps = %v", steps)
 	}
 	for _, stat := range []string{"avg", "min", "max"} {
-		mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/heart_rate/2026-09-10T21:00:00Z/"+stat)
+		mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/heart_rate/day/2026-09-10T21:00:00Z/"+stat)
 	}
-	rest := mustGet(t, ds, haObservation, "applehealth/iphone/health/resting_heart_rate/2026-09-10T21:00:00Z/vendor").Properties
+	rest := mustGet(t, ds, haObservation, "applehealth/iphone/health/resting_heart_rate/day/2026-09-10T21:00:00Z/vendor").Properties
 	if rest["statistic"] != "vendor" || obj(t, rest["value"], "value") != "49" || obj(t, rest["value"], "unit") != "/min" {
 		t.Fatalf("resting heart rate = %v", rest)
 	}
+	// An aggregated night spans the time in bed (22:47:41 to 06:50:03), and
+	// its inBed total is timeInBed, never an in_bed stage beside the four.
 	night := mustGet(t, ds, haSleep, "applehealth/iphone/apple-watch/sleep/2026-09-10T20:04:41Z").Properties
-	if night["light"] == nil || night["deep"] == nil || night["rem"] == nil || night["timeAsleep"] == nil {
+	if night["light"] == nil || night["deep"] == nil || night["rem"] == nil || night["timeAsleep"] == nil ||
+		night["at"] != "2026-09-10T19:47:41Z" || night["endsAt"] != "2026-09-11T03:50:03Z" ||
+		night["latency"] != "PT17M" || night["isNap"] != false {
 		t.Fatalf("an aggregated night = %v", night)
+	}
+	// totalSleep 7.6477... h over inBed 8.0327... h.
+	if obj(t, night["efficiency"], "value") != "95.21" {
+		t.Errorf("the aggregated night's efficiency = %v, want 95.21 %%", night["efficiency"])
 	}
 	deep := mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/sleep_stage/2026-09-10T20:04:41Z/deep").Properties
 	if deep["code"] != "deep" || obj(t, deep["value"], "value") != "91" {
 		t.Fatalf("the night's deep total = %v", deep)
 	}
+	for _, row := range listLive(t, ds, haObservation) {
+		if row.Properties["code"] == "in_bed" {
+			t.Fatalf("%s is an in_bed amount", row.ID)
+		}
+	}
 	out := adapt(t, ds, ahBatch, "iphone/walking_asymmetry_percentage/days/2026-09")
 	if !strings.Contains(fmt.Sprint(out["skipped"]), "walking_asymmetry_percentage: no health metric maps it") {
 		t.Fatalf("walking asymmetry output = %v", out)
+	}
+}
+
+// haDelivery is a fixture's request carrying the given metrics at one
+// grouping, as the app's automation sends them.
+func haDelivery(t *testing.T, grouping string, metrics ...map[string]any) map[string]any {
+	t.Helper()
+	req := ahRequest(t, "delivery_1_heart_rate_steps_minutes.json")
+	body, err := json.Marshal(map[string]any{"data": map[string]any{"metrics": metrics}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req["body"] = map[string]any{"text": string(body)}
+	req["headers"].(map[string]any)["automation-aggregation"] = grouping
+	return req
+}
+
+// TestHealthAppleMapsUnstagedSleepAndNaps: sleep a device did not stage
+// (Asleep, Unspecified) is the `asleep` code, counted in the night's time
+// asleep; a short daytime sleep is a nap and a long one a night; and a dense
+// gauge from the minutes grouping carries its metric's hold.
+func TestHealthAppleMapsUnstagedSleepAndNaps(t *testing.T) {
+	ds := newHealthApple(t)
+	segment := func(from, to, value string) map[string]any {
+		return map[string]any{
+			"startDate": from, "endDate": to, "value": value, "source": adaWatch,
+			"sleepStart": "2026-10-07 14:10:00 +0300", "sleepEnd": "2026-10-07 14:50:00 +0300",
+			"inBedStart": "2026-10-07 14:05:00 +0300", "inBedEnd": "2026-10-07 14:55:00 +0300", "inBed": 0.833333333,
+		}
+	}
+	deliverAt(t, ds, haDelivery(t, "seconds", map[string]any{"name": "sleep_analysis", "units": "hr", "data": []any{
+		segment("2026-10-07 14:10:00 +0300", "2026-10-07 14:30:00 +0300", "Asleep"),
+		segment("2026-10-07 14:30:00 +0300", "2026-10-07 14:50:00 +0300", "Unspecified"),
+	}}), "hook-nap", "2026-10-07T12:00:00Z")
+	deliverAt(t, ds, haDelivery(t, "minutes",
+		map[string]any{"name": "respiratory_rate", "units": "count/min", "data": []any{
+			map[string]any{"qty": 14.2, "date": "2026-10-07 03:00:00 +0300", "source": adaWatch},
+			map[string]any{"qty": 14.6, "date": "2026-10-07 03:01:00 +0300", "source": adaWatch},
+		}},
+		map[string]any{"name": "blood_oxygen_saturation", "units": "%", "data": []any{
+			map[string]any{"qty": 96, "date": "2026-10-07 03:00:00 +0300", "source": adaWatch},
+		}},
+	), "hook-minutes", "2026-10-07T12:00:01Z")
+
+	stages := map[string]string{}
+	for _, row := range listLive(t, ds, haObservation) {
+		if storedRefPath(row.Properties["metric"]) == haMetric+"sleep_stage" {
+			stages[fmt.Sprint(row.Properties["code"])] = fmt.Sprint(obj(t, row.Properties["value"], "value"))
+		}
+	}
+	if want := map[string]string{"asleep": "20"}; !maps.Equal(stages, want) {
+		t.Errorf("stage amounts %v, want the two unstaged segments as asleep", stages)
+	}
+	n := 0
+	for _, row := range listLive(t, ds, haObservation) {
+		if row.Properties["code"] == "asleep" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d asleep amounts, want one per unstaged segment", n)
+	}
+	nap := mustGet(t, ds, haSleep, "applehealth/iphone/apple-watch/sleep/2026-10-07T11:10:00Z").Properties
+	if nap["isNap"] != true || nap["latency"] != "PT5M" || nap["timeInBed"] != "PT50M" {
+		t.Errorf("the afternoon sleep = %v, want a nap of 50 minutes in bed, 5 to fall asleep", nap)
+	}
+	assertCatalogueHolds(t, ds)
+}
+
+// TestHealthAppleKeepsIdsApart: an id composed from a long device name is
+// hashed under the record id limit rather than refused, and an hours and a
+// days automation that both send a heart rate bucket starting at local
+// midnight write two summaries, one per period.
+func TestHealthAppleKeepsIdsApart(t *testing.T) {
+	ds := newHealthApple(t)
+	long := "Ada’s Withings Body Plus Bluetooth Wireless Blood Pressure Cuff Model X Pro"
+	deliverAt(t, ds, haDelivery(t, "seconds", map[string]any{"name": "blood_pressure", "units": "mmHg", "data": []any{
+		map[string]any{"date": "2026-10-07 08:05:37 +0300", "systolic": 121, "diastolic": 79, "source": long},
+	}}), "hook-cuff", "2026-10-07T06:00:00Z")
+	var pressures []*substrate.Record
+	for _, row := range listLive(t, ds, haObservation) {
+		if strings.HasSuffix(storedRefPath(row.Properties["metric"]), "_blood_pressure") {
+			pressures = append(pressures, row)
+		}
+	}
+	if len(pressures) != 2 {
+		t.Fatalf("%d blood pressure observations, want systolic and diastolic", len(pressures))
+	}
+	for _, row := range pressures {
+		if len(row.ID) > 128 || strings.HasPrefix(row.ID, "applehealth/") {
+			t.Errorf("%s is %d bytes, want the hashed id", row.ID, len(row.ID))
+		}
+	}
+	row := func(grouping string) map[string]any {
+		return map[string]any{"name": "heart_rate", "units": "count/min", "data": []any{
+			map[string]any{"date": "2026-10-07 00:00:00 +0300", "Min": 50, "Avg": 60, "Max": 70, "source": adaWatch},
+		}}
+	}
+	deliverAt(t, ds, haDelivery(t, "hours", row("hours")), "hook-hours", "2026-10-07T06:00:01Z")
+	deliverAt(t, ds, haDelivery(t, "days", row("days")), "hook-days", "2026-10-07T06:00:02Z")
+	for _, period := range []string{"hour", "day"} {
+		p := mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/heart_rate/"+period+"/2026-10-06T21:00:00Z/avg").Properties
+		if p["period"] != period {
+			t.Errorf("the %s summary covers period %v", period, p["period"])
+		}
 	}
 }

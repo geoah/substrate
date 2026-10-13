@@ -121,7 +121,7 @@ data:
     # `revision` (decision record 0162). Raise it with any change to what a
     # mirror row becomes, then replay `healthapple-on-mirror` from 0: every
     # output is rewritten at the revision it already holds.
-    ADAPTER = "healthapple@1"
+    ADAPTER = "healthapple@2"
 
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"
     BATCH = PROVIDER + "metricbatch"
@@ -146,8 +146,9 @@ data:
         OBSERVATION: ("metric", "source", "form", "value", "code", "statistic", "period", "periodId",
                       "hold", "at", "endsAt", "utcOffset", "components", "qualifiers", "origin",
                       "revision"),
-        SLEEP: ("source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "timeInBed", "timeAsleep",
-                "awake", "light", "deep", "rem", "origin", "revision"),
+        SLEEP: ("source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "isNap", "timeInBed",
+                "timeAsleep", "awake", "light", "deep", "rem", "latency", "efficiency", "origin",
+                "revision"),
         WORKOUT: ("sport", "sportSource", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
                   "duration", "distance", "activeEnergy", "averageHeartRate", "maxHeartRate", "elevationGain",
                   "origin", "revision"),
@@ -156,22 +157,24 @@ data:
     # Health Auto Export's metric name -> (metric id under health/, shape, form,
     # the metric's unit, the metric's hold). `dense` is packed into hourly traces;
     # `sparse` is one observation per reading; `daily` is a value Apple computes
-    # once a day.
+    # once a day. The units and holds are the health catalogue's
+    # (samples/health/metrics.yaml): a gauge with no hold stands until its
+    # stream's next point, so a night's last SpO2 reading would cover the day.
     METRICS = {
         "heart_rate": ("heart_rate", "dense", "gauge", "/min", "PT4M"),
-        "respiratory_rate": ("respiratory_rate", "dense", "gauge", "/min", None),
-        "blood_oxygen_saturation": ("spo2", "dense", "gauge", "%", None),
+        "respiratory_rate": ("respiratory_rate", "dense", "gauge", "/min", "PT30M"),
+        "blood_oxygen_saturation": ("spo2", "dense", "gauge", "%", "PT20M"),
         "step_count": ("steps", "dense", "amount", "{steps}", None),
         "walking_running_distance": ("distance", "dense", "amount", "m", None),
         "flights_climbed": ("floors", "dense", "amount", "{floors}", None),
         "active_energy": ("active_energy", "dense", "amount", "kcal", None),
         "basal_energy_burned": ("basal_energy", "dense", "amount", "kcal", None),
-        "heart_rate_variability": ("hrv_sdnn", "sparse", "gauge", "ms", None),
-        "apple_sleeping_wrist_temperature": ("skin_temperature", "sparse", "gauge", "Cel", None),
+        "heart_rate_variability": ("hrv_sdnn", "sparse", "gauge", "ms", "PT6H"),
+        "apple_sleeping_wrist_temperature": ("skin_temperature", "sparse", "gauge", "Cel", "P1D"),
         "vo2_max": ("vo2_max", "sparse", "gauge", "mL/(kg.min)", None),
-        "weight_body_mass": ("body_mass", "sparse", "gauge", "kg", None),
-        "body_fat_percentage": ("body_fat_fraction", "sparse", "gauge", "%", None),
-        "body_mass_index": ("bmi", "sparse", "gauge", "kg/m2", None),
+        "weight_body_mass": ("body_mass", "sparse", "gauge", "kg", "P1D"),
+        "body_fat_percentage": ("body_fat_fraction", "sparse", "gauge", "%", "P1D"),
+        "body_mass_index": ("bmi", "sparse", "gauge", "kg/m2", "P1D"),
         "height": ("height", "sparse", "gauge", "m", None),
         "resting_heart_rate": ("resting_heart_rate", "daily", "summary", "/min", None),
     }
@@ -181,23 +184,36 @@ data:
     PRESSURE = ("systolic_blood_pressure", "diastolic_blood_pressure", "mm[Hg]", "PT0S")
     GLUCOSE = {"mass-concentration": ("blood_glucose_mass", "mg/dL"),
                "amount-concentration": ("blood_glucose", "mmol/L")}
+    GLUCOSE_HOLD = "PT15M"
 
     # The app's unit spellings this adapter reads differently from the engine's
-    # table; every other spelling goes to host.units.canonical. The table keeps
-    # `count/min` and `bpm` apart from `/min` (an annotated count never
-    # converts), but here they are the heart and breathing rates the metrics
-    # hold in `/min`. `ft` is the femtotonne in UCUM and `st` the stere, so the
-    # foot and the stone are mapped here. Apple's dimensionless `count` is the
-    # metric's own counted unit (steps, floors, a BMI), handled in Units.
-    APP_UNITS = {"count/min": "/min", "bpm": "/min", "ft": "[ft_i]", "st": "[stone_av]"}
+    # table; every other spelling, `count/min` and `bpm` (both `/min`)
+    # included, goes to host.units.canonical. `ft` is the femtotonne in UCUM
+    # and `st` the stere, so the foot and the stone are mapped here. Apple's
+    # dimensionless `count` is the metric's own counted unit (steps, floors, a
+    # BMI), handled in Units.
+    APP_UNITS = {"ft": "[ft_i]", "st": "[stone_av]"}
     COUNTED = ("{steps}", "{floors}", "kg/m2")
 
     FINE = ("seconds", "minutes")
     STEP = {"seconds": 1, "minutes": 60}
     COARSE = {"hours": "hour", "days": "day", "weeks": "week", "months": "month", "years": "year"}
 
-    STAGES = {"awake": "awake", "core": "light", "deep": "deep", "rem": "rem", "in bed": "in_bed"}
-    NIGHT = (("core", "light"), ("deep", "deep"), ("rem", "rem"), ("awake", "awake"), ("inBed", "in_bed"))
+    # A segment's value onto health/sleep_stage's code set. Sleep the device
+    # did not stage is `asleep`. The In Bed segment spans the whole night under
+    # the stages, so it is the night's timeInBed and no stage: summed by code,
+    # the night would count twice.
+    STAGES = {"awake": "awake", "core": "light", "deep": "deep", "rem": "rem", "asleep": "asleep",
+              "unspecified": "asleep", "asleep unspecified": "asleep", "asleepunspecified": "asleep"}
+    IN_BED = "in bed"
+    # An aggregated night's stage fields: (field, code, the sleep record's
+    # property). `asleep` is unstaged sleep, which only timeAsleep holds.
+    NIGHT = (("core", "light", "light"), ("deep", "deep", "deep"), ("rem", "rem", "rem"),
+             ("awake", "awake", "awake"), ("asleep", "asleep", None))
+    # The app sends no nap flag: a sleep shorter than this that begins
+    # between NAP_HOURS (local time) is a nap.
+    NAP_LONGEST = 3 * 3600
+    NAP_HOURS = (9, 21)
 
     # HealthKit's workout names onto the workout kind's code set. A name not
     # here is `other`; the name itself stays in `sportSource`.
@@ -222,7 +238,6 @@ data:
     POSSESSIVE = re.compile(r"^.{1,40}?['’]s\s+")
     NOT_ID = re.compile(r"[^A-Za-z0-9._~:@-]+")
     UTC = datetime.timezone.utc
-    MAX_ID = 128
 
 
     # ---- values -----------------------------------------------------------------
@@ -302,10 +317,6 @@ data:
         return NOT_ID.sub("-", str(s)).strip("-._~:@") or "x"
 
 
-    def compose(*parts):
-        return "/".join(segment(p) for p in parts)
-
-
     def ref(kind, rid):
         return {"ref": kind + "/" + rid}
 
@@ -341,17 +352,23 @@ data:
         """The outputs one origin implies, keyed by (kind, id), and the sources
         they name."""
 
-        def __init__(self, aid, origin, revision):
-            self.aid, self.origin, self.revision = aid, origin, revision
+        def __init__(self, host, aid, origin, revision):
+            self.host, self.aid, self.origin, self.revision = host, aid, origin, revision
             self.outputs = {}
             self.sources = {}
             self.skipped = []
+
+        def compose(self, *parts):
+            """An output id, `applehealth/<account>/<parts>`, each part held
+            to the id alphabet, hashed where it passes 128 bytes."""
+            return self.host.observed.record_id("applehealth", self.aid,
+                                                *[segment(p) for p in (self.aid,) + parts])
 
         def source(self, label):
             slug = source_slug(label)
             if slug not in self.sources:
                 self.sources[slug] = label if slug != "health" else None
-            return slug, ref(SOURCE, compose("applehealth", self.aid, slug))
+            return slug, ref(SOURCE, self.compose(slug))
 
         def add(self, kind, rid, props):
             n, base = 1, rid
@@ -430,9 +447,13 @@ data:
 
 
     def summary(w, metric, slug, src, dt, end, grouping, statistic, value, unit, period=None):
-        w.add(OBSERVATION, compose("applehealth", w.aid, slug, metric, instant_id(dt), statistic), {
+        """A bucket of the app's own aggregate. Its id names the period, so an
+        hours and a days automation that start a bucket at one instant write
+        two summaries."""
+        period = period or COARSE[grouping]
+        w.add(OBSERVATION, w.compose(slug, metric, period, instant_id(dt), statistic), {
             "metric": metric_ref(metric), "source": src, "form": "summary", "statistic": statistic,
-            "period": period or COARSE[grouping], "periodId": period_label(dt, grouping),
+            "period": period, "periodId": period_label(dt, grouping),
             "value": {"value": value, "unit": unit}, "at": utc_text(dt), "endsAt": utc_text(end),
             "utcOffset": offset_of(dt)})
 
@@ -444,7 +465,7 @@ data:
             props["hold"] = hold
         if extra:
             props.update(extra)
-        w.add(OBSERVATION, compose("applehealth", w.aid, slug, metric, instant_id(dt)), props)
+        w.add(OBSERVATION, w.compose(slug, metric, instant_id(dt)), props)
 
 
     def traces(host, w, metric, form, unit, hold, grouping, by_source):
@@ -467,7 +488,7 @@ data:
             for doc in host.observed.trace(points, metric=metric_ref(metric), source=src, unit=unit,
                                            form=form, period="PT1H", hold=hold):
                 at = parse_date(doc["at"])
-                doc_id = compose("applehealth", w.aid, slug, metric, host.observed.period_id(at, "PT1H"))
+                doc_id = w.compose(slug, metric, host.observed.period_id(at, "PT1H"))
                 w.add(TRACE, doc_id, doc)
 
 
@@ -579,7 +600,7 @@ data:
             if isinstance(row.get("mealTime"), str) and row["mealTime"]:
                 code = re.sub(r"[^a-z0-9]+", "-", row["mealTime"].lower()).strip("-")
                 extra = {"qualifiers": [{"system": "applehealth/mealTime", "code": code}]}
-            gauge(w, metric, slug, src, dt, value, unit, None, extra)
+            gauge(w, metric, slug, src, dt, value, unit, GLUCOSE_HOLD, extra)
 
 
     def hours_seconds(v):
@@ -587,66 +608,106 @@ data:
         return None if text is None else float(decimal.Decimal(text) * 3600)
 
 
+    def percent(part, whole):
+        """part over whole as a percentage to two places, the unit `efficiency`
+        is written in."""
+        ratio = decimal.Decimal(repr(part)) * 100 / decimal.Decimal(repr(whole))
+        return {"value": format(ratio.quantize(decimal.Decimal("0.01"), rounding=decimal.ROUND_HALF_UP), "f"),
+                "unit": "%"}
+
+
+    def is_nap(at, ends):
+        """The app sends no nap flag: a sleep shorter than NAP_LONGEST that
+        begins between NAP_HOURS on its own clock is a nap."""
+        return (ends - at).total_seconds() < NAP_LONGEST and NAP_HOURS[0] <= at.hour < NAP_HOURS[1]
+
+
+    def night_span(row, ss, se):
+        """A night spans the time in bed where the app names it, the time
+        asleep inside it, and how long it took to fall asleep."""
+        ibs, ibe = parse_date(row.get("inBedStart")), parse_date(row.get("inBedEnd"))
+        at = min(t for t in (ss, ibs) if t is not None)
+        ends = max(t for t in (se, ibe) if t is not None)
+        night = {"at": utc_text(at), "endsAt": utc_text(ends), "utcOffsetStart": offset_of(at),
+                 "utcOffsetEnd": offset_of(ends), "isNap": is_nap(at, ends)}
+        if ibs is not None and ss > ibs:
+            night["latency"] = duration_text((ss - ibs).total_seconds())
+        in_bed = hours_seconds(row.get("inBed"))
+        if in_bed:
+            night["timeInBed"] = duration_text(in_bed)
+        return night, in_bed
+
+
     def sleep_outputs(w, props, rows):
         """A segment row is one coded stage amount. A row of the aggregated
         shape is one night: a sleep record and its stage totals. A night told
-        only by segments is written once, by the batch its `sleepStart` falls in,
-        from the night fields every segment repeats."""
+        only by segments is written once, by the batch its `sleepStart` falls
+        in, from the night fields every segment repeats, under the source most
+        of that batch's stages of the night come from (the first by name on a
+        tie); its stage totals are the stage amounts, which other batches hold
+        too."""
         start, end = parse_date(props.get("at")), parse_date(props.get("endsAt"))
-        nights = set()
-        unstaged = 0
+        nights = {}
+        in_bed = unknown = 0
         for row in rows:
             slug, src = w.source(row.get("source"))
             if row.get("startDate") is not None:
                 s, e = parse_date(row.get("startDate")), parse_date(row.get("endDate"))
-                stage = STAGES.get(str(row.get("value") or "").strip().lower())
+                value = str(row.get("value") or "").strip().lower()
+                stage = STAGES.get(value)
                 if s is None or e is None or e <= s:
                     continue
-                if stage is None:
-                    unstaged += 1
+                if value == IN_BED:
+                    in_bed += 1
+                elif stage is None:
+                    unknown += 1
                 else:
-                    w.add(OBSERVATION, compose("applehealth", w.aid, slug, "sleep_stage", instant_id(s)), {
+                    w.add(OBSERVATION, w.compose(slug, "sleep_stage", instant_id(s)), {
                         "metric": metric_ref("sleep_stage"), "source": src, "form": "amount",
                         "code": stage, "value": {"value": minutes_text((e - s).total_seconds()), "unit": "min"},
                         "at": utc_text(s), "endsAt": utc_text(e), "utcOffset": offset_of(s)})
                 ss, se = parse_date(row.get("sleepStart")), parse_date(row.get("sleepEnd"))
-                if ss is None or se is None or se <= ss or ss in nights:
+                if ss is None or se is None or se <= ss:
                     continue
                 if start is not None and end is not None and not (start <= ss < end):
                     continue
-                nights.add(ss)
-                hslug, hsrc = w.source(None)
-                night = {"source": hsrc, "at": utc_text(ss), "endsAt": utc_text(se),
-                         "utcOffsetStart": offset_of(ss), "utcOffsetEnd": offset_of(se)}
-                in_bed = hours_seconds(row.get("inBed"))
-                if in_bed:
-                    night["timeInBed"] = duration_text(in_bed)
-                w.add(SLEEP, compose("applehealth", w.aid, hslug, "sleep", instant_id(ss)), night)
+                n = nights.setdefault(ss, {"row": row, "se": se, "stages": {}, "sources": {}})
+                n["sources"][slug] = src
+                if stage is not None:
+                    n["stages"][slug] = n["stages"].get(slug, 0) + 1
                 continue
             ss = parse_date(row.get("sleepStart")) or parse_date(row.get("inBedStart"))
             se = parse_date(row.get("sleepEnd")) or parse_date(row.get("inBedEnd"))
             if ss is None or se is None or se <= ss:
                 continue
-            night = {"source": src, "at": utc_text(ss), "endsAt": utc_text(se),
-                     "utcOffsetStart": offset_of(ss), "utcOffsetEnd": offset_of(se)}
+            night, bed = night_span(row, ss, se)
+            night["source"] = src
             total = hours_seconds(row.get("totalSleep"))
             if total:
                 night["timeAsleep"] = duration_text(total)
-            for field, stage in NIGHT:
+                if bed:
+                    night["efficiency"] = percent(total, bed)
+            for field, stage, prop in NIGHT:
                 secs = hours_seconds(row.get(field))
                 if not secs:
                     continue
-                night["timeInBed" if stage == "in_bed" else stage] = duration_text(secs)
-                a = parse_date(row.get("inBedStart")) if stage == "in_bed" else None
-                b = parse_date(row.get("inBedEnd")) if stage == "in_bed" else None
-                a, b = (a, b) if a and b and b > a else (ss, se)
-                w.add(OBSERVATION, compose("applehealth", w.aid, slug, "sleep_stage", instant_id(ss), stage), {
+                if prop:
+                    night[prop] = duration_text(secs)
+                w.add(OBSERVATION, w.compose(slug, "sleep_stage", instant_id(ss), stage), {
                     "metric": metric_ref("sleep_stage"), "source": src, "form": "amount", "code": stage,
                     "value": {"value": minutes_text(secs), "unit": "min"},
-                    "at": utc_text(a), "endsAt": utc_text(b), "utcOffset": offset_of(a)})
-            w.add(SLEEP, compose("applehealth", w.aid, slug, "sleep", instant_id(ss)), night)
-        if unstaged:
-            w.skip("sleep_analysis: %d unstaged segments (Asleep, Unspecified) map to no stage" % unstaged)
+                    "at": utc_text(ss), "endsAt": utc_text(se), "utcOffset": offset_of(ss)})
+            w.add(SLEEP, w.compose(slug, "sleep", instant_id(ss)), night)
+        for ss, n in sorted(nights.items()):
+            counts = n["stages"] or {k: 0 for k in n["sources"]}
+            slug = min(counts, key=lambda k: (-counts[k], k))
+            night, _ = night_span(n["row"], ss, n["se"])
+            night["source"] = n["sources"][slug]
+            w.add(SLEEP, w.compose(slug, "sleep", instant_id(ss)), night)
+        if in_bed:
+            w.skip("sleep_analysis: %d In Bed segments are the night's timeInBed, no stage" % in_bed)
+        if unknown:
+            w.skip("sleep_analysis: %d segments of a value no stage maps" % unknown)
 
 
     # ---- workouts ---------------------------------------------------------------
@@ -703,7 +764,7 @@ data:
             got = quantity(host, q, target)
             if got:
                 out[prop] = got
-        w.add(WORKOUT, compose("applehealth", w.aid, upstream), out)
+        w.add(WORKOUT, w.compose(upstream), out)
 
 
     # ---- the run ----------------------------------------------------------------
@@ -722,7 +783,7 @@ data:
         aid = account[len(ACCOUNT) + 1:] if account.startswith(ACCOUNT + "/") else rid.split("/")[0]
         received = parse_date(props.get("receivedAt"))
         revision = int(received.timestamp()) if received else 0
-        w = Writer(aid, (kind, rid), revision)
+        w = Writer(host, aid, (kind, rid), revision)
         if record is not None:
             if kind == BATCH:
                 batch_outputs(host, w, props)
@@ -741,7 +802,7 @@ data:
                 cls = source_class(slug)
                 if cls:
                     src["class"] = cls
-                host.effects.put(SOURCE, compose("applehealth", aid, slug), properties=src, if_absent=True)
+                host.effects.put(SOURCE, w.compose(slug), properties=src, if_absent=True)
         out = {"origin": origin_path}
         out.update(counts)
         if w.skipped:
