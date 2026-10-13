@@ -31,33 +31,45 @@ that expiring the index and deleting raw data are different operations
 
 Chosen: three derived tables and the eligibility rule.
 
-A **stream** is the index key of one run of readings: `kind`, `metric`,
-`source`, `about`, `channel`, `form`, `code` and `utc_offset_min`.
+A **stream** is one run of readings: `kind`, `metric`, `source`, `about` and
+`channel`. A stream's points of one `form` are what a gauge's hold and a
+counter's steps run across. Within a 15-minute bucket those points split
+into **groups** by `code`, `unit`, `delta`, `utc_offset_min` and
+`offset_known`.
 
 - `observed_points` has one row per value (one per observation, one per
-  point of a trace): the stream key, the time span, the unit,
-  `value float8`, `value_exact numeric` for counters, `value_base`, `code`,
-  `statistic`, `bounded` and `quality`.
-- `observed_rollups` has one row per stream and 15-minute bucket, for
-  gauges, amounts and counters and never for summaries: `n`, `sum`, `min`,
-  `max`, `mean`, `m2`, the first and last points, `covered_ms`, `held_ms`,
-  `twa_sum`, `last_hold_ms`, `max_gap_ms`, `increase numeric`, `resets`,
-  `sin_sum` and `cos_sum`. Fifteen minutes divides every UTC offset in use,
-  so a civil day at a reading's own offset is a sum of whole rows. `about`,
-  `code` and `channel` are in the key because a rollup can serve a request
-  only when every predicate is constant over its keys.
-- `observed_latest` has one row per stream: the newest point with its value,
-  code, unit, form, hold, offset, record id and revision. It is the stream
-  list; there is no stream record.
+  point of a trace): the stream, the form, the time span, the UTC offset and
+  whether it was recorded (`offset_known`), the unit, `value float8`,
+  `value_exact numeric`, `value_base`, `code`, `statistic`, `bounded`,
+  `quality`, and the hold and counter parameters.
+- `observed_rollups` has one row per stream, form, 15-minute bucket and
+  group, for gauges, amounts and counters and never for summaries: `n`,
+  `sum`, `min`, `max`, `mean`, `m2`, the first and last points, `covered_ms`,
+  `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `increase numeric`,
+  `resets`, `sin_sum` and `cos_sum`. Fifteen minutes divides every UTC offset
+  in use, so a civil day at a reading's own offset is a sum of whole rows.
+  `about`, `code` and `channel` are in the key because a rollup can serve a
+  request only when every predicate is constant over its keys.
+- `observed_latest` has one row per stream and summary `statistic` (the
+  empty string for the other forms): the newest point with its value, code,
+  unit, form, hold, offset, record id and revision. Two statistics of one
+  span (a night's average and maximum) are two rows, so neither stands for
+  the other. It is the stream list; there is no stream record.
+
+A fourth table, `observed_index`, records the version of the derivation
+rules the three were derived by. An open whose binary carries newer rules
+re-derives every row of every observed kind behind it.
 
 All three carry `repository` under the same row-level security and grants as
 `records` and `refs`. The fold writes them in the write's transaction, in
 `foldRecordOp` and in the tombstone, purge, restore, merge and
 declaration-removal paths. Every bucket the old and the new rows touch is
 recomputed once per transaction. `observed_latest` is recomputed for the old
-and the new stream when a correction re-keys or moves the newest point, ties
-broken by revision, then record id. A rebuild clears and replays all three;
-`repository verify` and the export never read them.
+and the new stream when a correction re-keys or moves the newest point. Every
+reader orders points at one instant by record id compared byte by byte, then
+by index in the record, so the latest row, a rollup row's first and last and
+a raw read pick the same point of a tie. A rebuild clears and replays all
+three; `repository verify` and the export never read them.
 
 A rollup serves a reducer only when its stored statistics answer it exactly:
 `count`, `sum`, `min`, `max`, `first`, `last`, `avg`, `stddev`, `increase`,
@@ -93,14 +105,17 @@ stay an open question.
 
 ### Confirmation
 
-Tests the work package 3 implementers will write:
-`TestObservedRollupEqualsTheRawAggregate` (a bounded raw aggregate equals its
-rollup across a partial boundary, a correction, a deletion and a rebuild, the
-check the plan's section 11 sets for phase 2),
-`TestRebuildReproducesTheObservedTables`,
+In `internal/engine/observed_index_db_test.go`:
+`TestObservedRollupEqualsTheRawAggregate` (the rows equal the specification
+in `internal/observed` across bucket boundaries, a correction, a deletion and
+a rebuild), `TestRebuildReproducesTheObservedTables`,
 `TestVerifyAndExportReadNoObservedTable`,
-`TestRollupServesTwaOnlyWithinMaxGap` and
-`TestAnExpiredRangeAnswersUnavailable`.
+`TestObservedTiesAtOneInstantFollowByteOrder`,
+`TestObservedLatestKeepsOneRowPerStatistic`,
+`TestObservedMarksAValueWrittenWithoutAnOffset` and
+`TestObservedIndexRederivesWhenItsRulesChange`. In `internal/observed`:
+`TestRollupServesTwaOnlyWithinMaxGap`. Nothing expires points yet, so no
+test holds the `unavailable` answer for an expired range.
 
 ## More information
 
