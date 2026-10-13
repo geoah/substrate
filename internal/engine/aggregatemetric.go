@@ -1393,27 +1393,7 @@ func orOwner(source string) string {
 // --- what each form takes ---
 
 // formReducers is what each form admits, by name.
-var formReducers = map[string][]string{
-	"gauge": {
-		substrate.ReducerCount, substrate.ReducerAvg, substrate.ReducerTWA, substrate.ReducerMin, substrate.ReducerMax,
-		substrate.ReducerFirst, substrate.ReducerLast, substrate.ReducerStdDev, substrate.ReducerPercentile, substrate.ReducerDurationIn,
-		substrate.ReducerCircularMean,
-	},
-	"coded gauge": {substrate.ReducerCount, substrate.ReducerFirst, substrate.ReducerLast, substrate.ReducerTimeInState},
-	"amount": {
-		substrate.ReducerCount, substrate.ReducerSum, substrate.ReducerAvg, substrate.ReducerMin, substrate.ReducerMax,
-		substrate.ReducerFirst, substrate.ReducerLast, substrate.ReducerStdDev, substrate.ReducerPercentile,
-	},
-	"coded amount": {substrate.ReducerCount, substrate.ReducerSum, substrate.ReducerMin, substrate.ReducerMax},
-	"counter": {
-		substrate.ReducerCount, substrate.ReducerFirst, substrate.ReducerLast, substrate.ReducerMin, substrate.ReducerMax,
-		substrate.ReducerIncrease, substrate.ReducerRate,
-	},
-	"summary": {
-		substrate.ReducerCount, substrate.ReducerFirst, substrate.ReducerLast, substrate.ReducerSum, substrate.ReducerMin,
-		substrate.ReducerMax, substrate.ReducerAvg,
-	},
-}
+var formReducers = substrate.FormReducers
 
 // formWhy says why a reducer a form refuses does not apply.
 var formWhy = map[string]string{

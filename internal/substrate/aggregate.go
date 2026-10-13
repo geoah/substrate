@@ -47,6 +47,32 @@ var AggregateReducers = []string{
 	ReducerCircularMean,
 }
 
+// FormReducers is the reducers each form admits, by form: `gauge`, `amount`,
+// `counter` and `summary`, and `coded gauge` and `coded amount` for a metric
+// with a code set. The aggregate read refuses any other for the form, and
+// the metric catalogue's `reducers` are held to this table.
+var FormReducers = map[string][]string{
+	"gauge": {
+		ReducerCount, ReducerAvg, ReducerTWA, ReducerMin, ReducerMax,
+		ReducerFirst, ReducerLast, ReducerStdDev, ReducerPercentile, ReducerDurationIn,
+		ReducerCircularMean,
+	},
+	"coded gauge": {ReducerCount, ReducerFirst, ReducerLast, ReducerTimeInState},
+	"amount": {
+		ReducerCount, ReducerSum, ReducerAvg, ReducerMin, ReducerMax,
+		ReducerFirst, ReducerLast, ReducerStdDev, ReducerPercentile,
+	},
+	"coded amount": {ReducerCount, ReducerSum, ReducerMin, ReducerMax},
+	"counter": {
+		ReducerCount, ReducerFirst, ReducerLast, ReducerMin, ReducerMax,
+		ReducerIncrease, ReducerRate,
+	},
+	"summary": {
+		ReducerCount, ReducerFirst, ReducerLast, ReducerSum, ReducerMin,
+		ReducerMax, ReducerAvg,
+	},
+}
+
 // The `from` values: which points a read takes.
 const (
 	AggregateFromRaw       = "raw"
