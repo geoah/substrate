@@ -345,6 +345,64 @@ describe("where a metric reads from", () => {
     expect(one.read?.filter?.properties).toBeUndefined()
   })
 
+  it("reads one statistic of a stream that keeps raw points and summaries", () => {
+    // Garmin's HRV keeps each night's average and maximum beside its
+    // five-minute trace, all on one stream, and the trace's newest point is
+    // newer than the night's summaries.
+    const HRV = `${METRIC}/health/hrv_rmssd`
+    const point = (
+      start: string,
+      value: string,
+      form: string,
+      statistic?: string
+    ) => ({
+      ...LATEST.rows[0],
+      start,
+      end: start,
+      form,
+      group: {
+        metric: HRV,
+        source: GARMIN,
+        ...(statistic ? { statistic } : {}),
+      },
+      values: [{ reducer: "last", value, unit: "ms" }],
+    })
+    const [hrv, ...rest] = streamsOf({
+      rows: [
+        point("2026-10-06T22:00:00Z", "48", "summary", "avg"),
+        point("2026-10-06T22:00:00Z", "71", "summary", "max"),
+        point("2026-10-07T05:55:00Z", "52", "gauge"),
+      ],
+    })
+    expect(rest).toEqual([])
+    expect(hrv).toMatchObject({ form: "gauge", statistics: ["avg", "max"] })
+    const obs = source([hrv])
+    // Left automatic, it reads raw points where they cover a bucket and the
+    // night's average otherwise, and offers the maximum.
+    const auto = planPlot(obs, HRV, SCOPE)
+    expect(auto).toMatchObject({
+      shape: "gauge",
+      from: "prefer-raw",
+      fromReason: "some-summaries",
+      summarySources: [GARMIN],
+      statistics: ["avg", "max"],
+      statistic: "avg",
+    })
+    expect(auto.read?.filter?.properties?.statistic).toEqual({ eq: "avg" })
+    expect(auto.reducerMenu.find((o) => o.value === "twa")).toMatchObject({
+      raw: true,
+    })
+    // The reader's pick of where to read from names the statistic too.
+    for (const from of ["summaries", "prefer-raw"] as const) {
+      const read = planPlot(obs, HRV, { ...SCOPE, from, statistic: "max" }).read
+      expect(read?.aggregate.from).toBe(from)
+      expect(read?.filter?.properties?.statistic).toEqual({ eq: "max" })
+    }
+    const raw = planPlot(obs, HRV, { ...SCOPE, from: "raw" })
+    expect(raw.statistic).toBeUndefined()
+    expect(raw.read?.filter?.properties).toBeUndefined()
+  })
+
   it("lets the reader's pick win", () => {
     const planned = planPlot(source(), RECOVERY, { ...SCOPE, from: "raw" })
     expect(planned.from).toBe("raw")

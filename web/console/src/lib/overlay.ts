@@ -315,18 +315,29 @@ export interface Plot {
   local?: { size: BucketSize; range: TimeRange }
 }
 
+/** Whether a stream keeps vendor summaries: its newest point is one, or
+ * the latest read answered a statistic for it. A stream whose newest point
+ * is raw may keep summaries too (Garmin's nightly HRV average and maximum
+ * beside its five-minute trace), and a read taking them must name one. */
+export function keepsSummaries(
+  stream: Pick<Stream, "form" | "statistics">
+): boolean {
+  return stream.form === "summary" || Boolean(stream.statistics?.length)
+}
+
 /** Where a metric reads from when the reader picked nothing, from the
  * forms of the streams it draws: summaries where every one keeps vendor
- * summaries, raw where a bucket is covered and the summary otherwise
- * (`prefer-raw`) where some do, raw points where none does. A raw read
- * takes no summary, so a summary-only stream would draw nothing. */
-export function fromOf(streams: readonly Pick<Stream, "form">[]): {
+ * summaries alone, raw where a bucket is covered and the summary otherwise
+ * (`prefer-raw`) where some keep summaries, raw points where none does. A
+ * raw read takes no summary, so a summary-only stream would draw nothing. */
+export function fromOf(
+  streams: readonly Pick<Stream, "form" | "statistics">[]
+): {
   from: AggregateFrom
   reason?: "summaries-only" | "some-summaries"
 } {
-  const summaries = streams.filter((s) => s.form === "summary").length
-  if (!summaries) return { from: "raw" }
-  if (summaries === streams.length) {
+  if (!streams.some(keepsSummaries)) return { from: "raw" }
+  if (streams.every((s) => s.form === "summary")) {
     return { from: "summaries", reason: "summaries-only" }
   }
   return { from: "prefer-raw", reason: "some-summaries" }
@@ -378,7 +389,7 @@ export function planPlot(
   // A row reads one statistic of the summaries (the server refuses two), so
   // where they keep several the read names one: the reader's, else the
   // average, the one kept, or the vendor's own.
-  const summaryStreams = selected.filter((s) => s.form === "summary")
+  const summaryStreams = selected.filter(keepsSummaries)
   const statistics = statisticChoices(
     summaryStreams.flatMap((s) => s.statistics ?? [])
   )

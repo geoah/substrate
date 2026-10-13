@@ -856,11 +856,13 @@ sources by each source record's `priorities` for the metric
 each keeps its own rows, and a source's channels stay apart
 (`groupBy: ["source", "channel"]`). Until you pick where to read from, a
 metric reads raw points, summaries where every one of its streams keeps
-vendor summaries, and `prefer-raw` where some do, since a raw read takes no
-summary and WHOOP's summary-only heart rate would draw nothing; with
-Technical details on, the chart says so. A row reads one statistic of the
+vendor summaries alone, and `prefer-raw` where some keep summaries, since a
+raw read takes no summary and WHOOP's summary-only heart rate would draw
+nothing; with Technical details on, the chart says so. A stream may keep
+both: Garmin's HRV keeps each night's average and highest beside its
+five-minute trace, and reads `prefer-raw`. A row reads one statistic of the
 summaries, so where a metric's summaries keep several (WHOOP's average and
-highest heart rate per cycle) the read names one in
+highest heart rate per cycle, Garmin's nightly HRV) the read names one in
 `filter.properties.statistic`: the average where they keep it, else the one
 kept, else the vendor's own, and **Statistic** picks another
 (`?statistic=`). A source whose summaries keep none of it is left out, and
