@@ -1241,8 +1241,15 @@ def main(input, host):
 	over.ReadRows = 2
 	backend = widgetBackend()
 	backend.aggregateRows = 3
-	if _, err := r.Invoke(context.Background(), over, testInput(), backend); !errors.Is(err, ErrReadBudget) {
+	_, err = r.Invoke(context.Background(), over, testInput(), backend)
+	if !errors.Is(err, ErrReadBudget) {
 		t.Fatalf("over the row budget: err = %v, want a budget trip", err)
+	}
+	// The trip is the function's fault, never the caller's input: a
+	// ValidationError in its chain would answer the caller 422 on a field
+	// it never sent.
+	if ve := (*substrate.ValidationError)(nil); errors.As(err, &ve) {
+		t.Fatalf("over the row budget: the trip carries the read's ValidationError %v", ve)
 	}
 	if backend.aggregatesRefused != 1 || len(backend.aggregates) != 1 || backend.aggregates[0].Aggregate.Budget.MaxBuckets != 2 {
 		t.Fatalf("over the row budget: %d reads, %d refused before any work, want the one read refused at maxBuckets 2",
