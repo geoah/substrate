@@ -106,10 +106,15 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	if len(files) != len(days) {
 		t.Fatalf("%d delivery files, want one per day: %v", len(files), files)
 	}
-	var workouts, weighIns, pressures, glucose int
+	var workouts, runs, weighIns, pressures, glucose int
 	for _, d := range days {
 		day := p.Day(d)
 		workouts += len(day.Workouts)
+		for _, w := range day.Workouts {
+			if w.Sport == synth.Running {
+				runs++
+			}
+		}
 		if day.WeightKg != 0 {
 			weighIns++
 		}
@@ -235,6 +240,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 		"health/body_mass": weighIns, "health/body_fat_fraction": weighIns,
 		"health/systolic_blood_pressure": pressures, "health/diastolic_blood_pressure": pressures,
 		"health/sleep_stage": stages, "health/blood_glucose_mass": glucose,
+		"health/vo2_max": runs, "health/skin_temperature": len(days), "health/bmi": weighIns,
 	}
 	for metric, want := range wantMetric {
 		if byMetric[metric] != want {

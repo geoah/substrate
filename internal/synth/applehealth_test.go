@@ -30,6 +30,7 @@ var ahUnits = map[string]string{
 	"resting_heart_rate": "count/min", "heart_rate_variability": "ms", "respiratory_rate": "count/min",
 	"blood_oxygen_saturation": "%", "weight_body_mass": "kg", "body_fat_percentage": "%",
 	"blood_pressure": "mmHg", "sleep_analysis": "hr", "blood_glucose": "mg/dL",
+	"vo2_max": "ml/(kg·min)", "apple_sleeping_wrist_temperature": "degC", "body_mass_index": "count",
 }
 
 func ahEmit(t *testing.T, o Options) (*Persona, *Output) {
@@ -159,7 +160,7 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 		if n, hours := len(byName["basal_energy_burned"]), int(day.EndTime().Sub(day.Start())/time.Hour); n != hours {
 			t.Errorf("%s: %d basal energy rows over %d hours", d.Name, n, hours)
 		}
-		for _, name := range []string{"resting_heart_rate", "heart_rate_variability", "respiratory_rate", "blood_oxygen_saturation"} {
+		for _, name := range []string{"resting_heart_rate", "heart_rate_variability", "respiratory_rate", "blood_oxygen_saturation", "apple_sleeping_wrist_temperature"} {
 			for _, row := range byName[name] {
 				if _, ok := row["source"]; ok {
 					t.Fatalf("%s %s row carries a source; the app sends none: %v", d.Name, name, row)
@@ -168,6 +169,21 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 		}
 		if len(byName["resting_heart_rate"]) != 1 || len(byName["heart_rate_variability"]) != 3 {
 			t.Errorf("%s: resting %v, hrv %v", d.Name, byName["resting_heart_rate"], byName["heart_rate_variability"])
+		}
+		if w := byName["apple_sleeping_wrist_temperature"]; len(w) != 1 || ahNum(t, w[0], "qty") < 34 || ahNum(t, w[0], "qty") > 37.5 {
+			t.Errorf("%s: wrist temperature %v", d.Name, w)
+		}
+		runs := 0
+		for _, w := range day.Workouts {
+			if w.Sport == Running {
+				runs++
+			}
+		}
+		if v := byName["vo2_max"]; len(v) != runs {
+			t.Errorf("%s: %d VO2 max estimates after %d runs", d.Name, len(v), runs)
+		}
+		if b := byName["body_mass_index"]; len(b) != len(byName["weight_body_mass"]) {
+			t.Errorf("%s: BMI %v beside weight %v", d.Name, b, byName["weight_body_mass"])
 		}
 		if (day.WeightKg != 0) != (len(byName["weight_body_mass"]) == 1) || len(byName["weight_body_mass"]) != len(byName["body_fat_percentage"]) {
 			t.Errorf("%s: weigh-in %v, weight %v, fat %v", d.Name, day.WeightKg, byName["weight_body_mass"], byName["body_fat_percentage"])

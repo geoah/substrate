@@ -32,11 +32,13 @@ import (
 //     (the recorded user's unit preference) and distance in km.
 //   - resting_heart_rate (one row at local midnight), heart_rate_variability
 //     (SDNN, three readings in the night), respiratory_rate (every 15
-//     minutes of the night) and blood_oxygen_saturation (every 10): no
-//     `source` key, as the app sends these metrics.
-//   - weight_body_mass and body_fat_percentage on weigh-in mornings and
-//     blood_pressure on Sundays, source "Withings"; blood_glucose in mg/dL
-//     on meter mornings, source "Contour".
+//     minutes of the night), blood_oxygen_saturation (every 10) and
+//     apple_sleeping_wrist_temperature (one at the night's end): no `source`
+//     key, as the app sends these metrics.
+//   - vo2_max after each run, from the watch.
+//   - weight_body_mass, body_fat_percentage and body_mass_index on weigh-in
+//     mornings and blood_pressure on Sundays, source "Withings";
+//     blood_glucose in mg/dL on meter mornings, source "Contour".
 //   - sleep_analysis: the night that ended that morning as one aggregated
 //     row (inBed, asleep, core, deep, rem, awake and their bounds).
 //   - workouts: every persona workout under the app's activity name, with
@@ -217,7 +219,7 @@ func overlap(a, b, c, d time.Time) float64 {
 
 func (e *ahDay) metrics() []any {
 	buckets := e.buckets()
-	weight, fat := e.body()
+	weight, fat, bmi := e.body()
 	all := []map[string]any{
 		ahMetric("heart_rate", "count/min", e.heartRate()),
 		ahMetric("step_count", "count", e.steps(buckets)),
@@ -233,6 +235,9 @@ func (e *ahDay) metrics() []any {
 		ahMetric("body_fat_percentage", "%", fat),
 		ahMetric("blood_pressure", "mmHg", e.pressure()),
 		ahMetric("blood_glucose", "mg/dL", e.glucose()),
+		ahMetric("vo2_max", "ml/(kg·min)", e.vo2Max()),
+		ahMetric("apple_sleeping_wrist_temperature", "degC", e.wristTemperature()),
+		ahMetric("body_mass_index", "count", bmi),
 		ahMetric("sleep_analysis", "hr", e.sleep()),
 	}
 	out := []any{}
@@ -458,14 +463,41 @@ func (e *ahDay) spo2() []map[string]any {
 	return rows
 }
 
-// body is the weigh-in, weight and body fat at one instant.
-func (e *ahDay) body() (weight, fat []map[string]any) {
+// body is the weigh-in: weight, body fat and the scale's BMI at one instant.
+func (e *ahDay) body() (weight, fat, bmi []map[string]any) {
 	if e.day.WeightKg == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	at := e.date(e.day.WeighInAt.Add(time.Duration(e.rng("weighsec").IntN(60)) * time.Second))
-	return []map[string]any{{"qty": round(e.noisy("weight", 0, e.day.WeightKg, 0.2), 2), "date": at, "source": ahWithings}},
-		[]map[string]any{{"qty": round(e.noisy("fat", 0, e.day.BodyFatPct, 0.4), 1), "date": at, "source": ahWithings}}
+	kg := round(e.noisy("weight", 0, e.day.WeightKg, 0.2), 2)
+	h := e.p.Person.HeightM
+	return []map[string]any{{"qty": kg, "date": at, "source": ahWithings}},
+		[]map[string]any{{"qty": round(e.noisy("fat", 0, e.day.BodyFatPct, 0.4), 1), "date": at, "source": ahWithings}},
+		[]map[string]any{{"qty": round(kg/(h*h), 1), "date": at, "source": ahWithings}}
+}
+
+// vo2Max is the watch's estimate after each outdoor run, a little under the
+// persona's own figure, as a wrist estimate runs.
+func (e *ahDay) vo2Max() []map[string]any {
+	var rows []map[string]any
+	for n, w := range e.day.Workouts {
+		if w.Sport != Running {
+			continue
+		}
+		v := round(e.noisy("vo2", n, e.day.VO2Max-1.2, 0.4), 2)
+		rows = append(rows, map[string]any{"qty": v, "date": e.date(w.End.Add(2 * time.Minute)), "source": ahWatch})
+	}
+	return rows
+}
+
+// wristTemperature is the night's sleeping wrist temperature, absolute, at
+// the night's end, without a source key as the app sends it.
+func (e *ahDay) wristTemperature() []map[string]any {
+	s := e.day.Sleep
+	if s == nil {
+		return nil
+	}
+	return []map[string]any{{"qty": round(e.noisy("wrist", 0, 35.6+s.SkinTempDevC, 0.08), 6), "date": e.date(s.End)}}
 }
 
 func (e *ahDay) pressure() []map[string]any {
