@@ -427,6 +427,63 @@ describe("during a sleep", () => {
     ])
   })
 
+  it("keeps the stages on the heart rate's time axis through a zoom", async () => {
+    // The night's heart rate by the hour, from 21:00.
+    const hourly = answer(
+      ["58", "54", "52"].map((avg, i) =>
+        row({
+          start: new Date(Date.parse("2026-10-06T21:00:00Z") + i * 3_600_000)
+            .toISOString()
+            .replace(".000", ""),
+          end: new Date(Date.parse("2026-10-06T22:00:00Z") + i * 3_600_000)
+            .toISOString()
+            .replace(".000", ""),
+          form: "gauge",
+          values: [{ reducer: "avg", value: avg, unit: "/min" }],
+        })
+      )
+    )
+    mount(NIGHT, SLEEP, SEGMENTS, hourly)
+    const heart = await screen.findByRole("group", {
+      name: "Heart rate during this sleep",
+    })
+    const stages = await screen.findByRole("group", { name: "Sleep stages" })
+    await within(stages).findByRole("img", { name: /^Sleep stages from/ })
+    // Zoom into 21:00 to 22:00.
+    act(() => heart.focus())
+    fireEvent.keyDown(heart, { key: "ArrowRight" })
+    fireEvent.keyDown(heart, { key: "Enter" })
+    await screen.findByRole("button", { name: "Show the whole sleep" })
+    const zoomed = await screen.findByRole("group", {
+      name: "Heart rate during this sleep",
+    })
+    const night = within(stages).getByRole("img", {
+      name: /^Sleep stages from/,
+    })
+    const labels = (root: Element) =>
+      [...root.querySelectorAll("text[text-anchor=middle]")].map((t) => [
+        t.textContent,
+        t.getAttribute("x"),
+      ])
+    expect(labels(night).length).toBeGreaterThan(2)
+    expect(labels(night)).toEqual(labels(zoomed.querySelector("svg")!))
+    // The hour holds the end of the first light stage and the deep one.
+    expect(
+      [...night.querySelectorAll("rect[data-stage]")].map((r) =>
+        r.getAttribute("data-stage")
+      )
+    ).toEqual(["light", "deep"])
+    expect(night.getAttribute("aria-label")).toContain(
+      "2 segments of Light, Deep"
+    )
+    // Its rows stay the night's, so a stage keeps its row.
+    expect(
+      [...night.querySelectorAll("text[text-anchor=end]")].map(
+        (t) => t.textContent
+      )
+    ).toEqual(["Awake", "Rem", "Light", "Deep"])
+  })
+
   it("names the sources the heart rate line is drawn from", async () => {
     const APPLE_WATCH = `${AUTHORITY}/observations/source/apple-watch`
     const fromWatches = answer(

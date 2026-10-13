@@ -421,10 +421,11 @@ Under the properties, in order:
   (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute),
   one `durationIn` read over the span. A sleep adds its stages: a
   hypnogram on the heart rate chart's time axis (the same width, margins
-  and labelled times), a row per stage and a block per segment, where its source
+  and labelled times, through a zoom too, which cuts the segments to the
+  zoomed window), a row per stage and a block per segment, where its source
   recorded the stages one after another (Garmin, Google Fit), and its time
-  in each stage, summed by code, which is all a source writing one span per
-  stage over the night (WHOOP, Apple Health) gives. Each stage wears one
+  in each stage over the whole night, summed by code, which is all a source
+  writing one span per stage over the night (WHOOP, Apple Health) gives. Each stage wears one
   colour on the hypnogram, its time bar and the timeline: its place in the
   stage metric's `codeSet`. **Open in the
   timeline** opens the same window, heart rate and a sleep's stages

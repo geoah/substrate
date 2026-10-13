@@ -120,7 +120,8 @@ function DuringParts({
   kinds: readonly KindInfo[]
 }) {
   const timezone = useMemo(() => readerTimezone(), [])
-  // A zoom reads part of the span; the zones and the stages stay whole.
+  // A zoom reads part of the span, and the hypnogram follows it on the
+  // heart rate's axis; the zones and the stage totals stay whole.
   const [view, setView] = useState<TimeRange>()
   const window = view ?? during.window
   const curve = useQuery(
@@ -223,7 +224,7 @@ function DuringParts({
             <>
               {stages.data && (
                 <Hypnogram
-                  window={during.window}
+                  window={window}
                   segments={stageSegments(stages.data.records)}
                   codes={codes}
                 />
@@ -504,12 +505,20 @@ function Hypnogram({
   codes: readonly string[]
 }) {
   const { ref, width } = useWidth(720)
-  const night = hypnogramOf(segments)
-  if (!night) return null
-  const rows = stageRows(night)
+  const whole = hypnogramOf(segments)
+  if (!whole) return null
+  // The rows are the night's, so a zoom keeps each stage on its row; the
+  // segments are those the window holds, cut to it.
+  const rows = stageRows(whole)
+  const night = whole.filter(
+    (s) => s.end > window.start && s.start < window.end
+  )
   const { x, labels } = timeAxis(window, autoBucket(window), width)
   const height = rows.length * HYPNO_ROW + HYPNO_AXIS
-  const words = rows.map(codeWords).join(", ")
+  const words = rows
+    .filter((code) => night.some((s) => s.code === code))
+    .map(codeWords)
+    .join(", ")
   return (
     <div ref={ref} className="w-full">
       <svg
