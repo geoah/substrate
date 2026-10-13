@@ -566,8 +566,9 @@ several devices recorded it, and `property.groupBy` makes a row per sport:
 Four devices recorded each run; each counts once. Each sport's row of a
 week carries the offsets of its own first and last workout, so the London
 week's run starts at `+01:00` while the same week's strength session row
-starts at `+03:00`: an app joins the sports of a week by bucket order, not
-by `start`.
+starts at `+03:00`. Rows carry no bucket index, so an app joins the sports
+of a week by the local date in `start` (`2026-09-20` in both), not by the
+instant.
 
 The load: training minutes per day, rest days filled with zero, and the
 7-day mean beside the 28-day mean, one read per window length:
@@ -797,27 +798,29 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/health/labresult"],
 
 ```text
 {"records": [
-   {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass",
-    "properties": {"metric": "health/ldl_cholesterol_mass", "value": {"value": "112", "unit": "mg/dL"},
-                   "coding": {"system": "http://loinc.org", "code": "13457-7"},
-                   "referenceRanges": [{"high": {"value": "100", "unit": "mg/dL"}}],
-                   "interpretation": [{"code": "H", "display": "High"}], "status": "final", ...}},
+   ...,
+   {"id": "harborpoint/2026-08-31/hba1c/as/health/hba1c_ifcc",
+    "properties": {"value": {"value": "34.4", "unit": "mmol/mol"},
+                   "conversion": {"formula": "ngsp-to-ifcc", "parameters": {"slope": "10.929", "intercept": "2.15"}, ...}, ...}},
+   ...,
    {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass/as/health/ldl_cholesterol",
     "properties": {"metric": "health/ldl_cholesterol", "value": {"value": "2.897", "unit": "mmol/L"},
                    "referenceRanges": [{"high": {"value": "2.586", "unit": "mmol/L"}}],
                    "interpretation": [{"code": "H", "display": "High"}],
                    "derivedFrom": [{"ref": "ada.example.com/health/labresult/harborpoint/2026-08-31/ldl_cholesterol_mass"}],
                    "conversion": {"formula": "molar-mass", "parameters": {"molarMass": "386.65"}, "version": "1"}, ...}},
-   {"id": "harborpoint/2026-08-31/hba1c/as/health/hba1c_ifcc",
-    "properties": {"value": {"value": "34.4", "unit": "mmol/mol"},
-                   "conversion": {"formula": "ngsp-to-ifcc", "parameters": {"slope": "10.929", "intercept": "2.15"}, ...}, ...}},
+   {"id": "harborpoint/2026-08-31/ldl_cholesterol_mass",
+    "properties": {"metric": "health/ldl_cholesterol_mass", "value": {"value": "112", "unit": "mg/dL"},
+                   "coding": {"system": "http://loinc.org", "code": "13457-7"},
+                   "referenceRanges": [{"high": {"value": "100", "unit": "mg/dL"}}],
+                   "interpretation": [{"code": "H", "display": "High"}], "status": "final", ...}},
    ...],
  "matches": {...}, "head": ..., "generation": ...}
 ```
 
 The report holds 16 results: the lab's eight in mg/dL, ng/mL and %, and the
-eight `convertlab` derived. A derived result converts the reference range
-with the value and keeps the lab's flag.
+eight `convertlab` derived, in the order of their metric paths. A derived
+result converts the reference range with the value and keeps the lab's flag.
 
 The US lab reported in mg/dL, and the health sample's `convertlab` function
 wrote each result again in the paired SI metric, naming its input and the
