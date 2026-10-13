@@ -238,7 +238,8 @@ func TestGarminEmitsTheDefaultLife(t *testing.T) {
 	}
 
 	// The dailies: what garminpush mirrors and the adapter traces. Days tile
-	// the range without overlapping; heart rate every 5 minutes.
+	// the range, the two the zone changes on 22 and 26 hours long; heart rate
+	// every 5 minutes.
 	var prevEnd int64
 	london := 0
 	spans := map[string][2]int64{}
@@ -251,7 +252,7 @@ func TestGarminEmitsTheDefaultLife(t *testing.T) {
 		if off == 3600 {
 			london++
 		}
-		if dur < 22*3600 || dur > 24*3600 || (i > 0 && start < prevEnd) {
+		if dur < 22*3600 || dur > 26*3600 || (i > 0 && start != prevEnd) {
 			t.Errorf("daily %s spans %d s from %d, the day before ending %d", date, dur, start, prevEnd)
 		}
 		prevEnd = start + dur

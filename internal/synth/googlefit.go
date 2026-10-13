@@ -429,7 +429,7 @@ func (e *fitEmitter) energy() {
 		}
 		lo, hi := fitMs(day.Start()), fitMs(day.EndTime())
 		bmr.add(lo, hi, "derived:com.google.calories.bmr:com.google.android.gms:from_height&weight",
-			[]any{fitFp(float64(day.BMRKcal()))}, lo+6*3600_000)
+			[]any{fitFp(fitRound(float64(day.BMRKcal())*float64(hi-lo)/86_400_000, 3))}, lo+6*3600_000)
 	}
 }
 

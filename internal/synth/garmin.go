@@ -21,12 +21,8 @@ import (
 // minutes and Body Battery every 15 in the stress details, and the night's
 // stages, SpO2 every 10 minutes, breathing every 15 and HRV every 5. Each
 // workout is an activity and its details, a sample every 30 seconds with
-// laps per kilometer on a run. One watch cannot record a night and a run at
-// once, so a night the persona ends after the Sunday long run has started
-// ends here 10 minutes before it. The local days of the trip neither overlap
-// nor leave a gap the watch could not have: the last London day ends where
-// the first Athens day after it starts, and the night of the flight out is
-// two hours no daily claims.
+// laps per kilometer on a run. A daily spans the persona's local day, which
+// ends where the next one starts, so the dailies tile time across the trip.
 type Garmin struct{}
 
 func init() { register(Garmin{}) }
@@ -238,15 +234,10 @@ func iround(v float64) int { return int(math.Round(v)) }
 // next is the day after d as the watch recorded it, nil past the range.
 func (e *garminEmitter) next(d Date) *Day { return e.day[d.Add(1)] }
 
-// span is the day's [start, end) in seconds: local midnight to local
-// midnight, ended early where the next day starts sooner (the flight home).
+// span is the day's [start, end) in seconds.
 func (e *garminEmitter) span(d Date) (int64, int64) {
 	x := e.day[d]
-	a, b := x.Start().Unix(), x.EndTime().Unix()
-	if n := e.next(d); n != nil {
-		b = min(b, n.Start().Unix())
-	}
-	return a, b
+	return x.Start().Unix(), x.EndTime().Unix()
 }
 
 // hrAt is the watch's heart rate at t on day d: the next night's when that

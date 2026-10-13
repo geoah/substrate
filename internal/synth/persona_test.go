@@ -157,3 +157,31 @@ func TestDate(t *testing.T) {
 		t.Fatalf("negative minutes: %s", at)
 	}
 }
+
+// Consecutive local days tile time: each day ends where the next one
+// starts, the days the zone changes included, so no instant belongs to two
+// days and none to no day, whichever emitter samples them.
+func TestPersonaDaysTileTime(t *testing.T) {
+	p, err := NewPersona(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	days := p.Days()
+	for i := 0; i+1 < len(days); i++ {
+		day, next := p.Day(days[i]), p.Day(days[i+1])
+		if !day.EndTime().Equal(next.Start()) {
+			t.Errorf("%s ends %s, %s starts %s", days[i], day.EndTime().UTC(), days[i+1], next.Start().UTC())
+		}
+		if !day.EndTime().After(day.Start()) {
+			t.Errorf("%s spans %s to %s", days[i], day.Start(), day.EndTime())
+		}
+	}
+	// The flight out and the flight home are the two days the zone changes.
+	out, home := p.Day(NewDate(2026, time.September, 19)), p.Day(NewDate(2026, time.September, 24))
+	if got := out.EndTime().Sub(out.Start()); got != 26*time.Hour {
+		t.Errorf("the day of the flight out lasts %s, want 26h", got)
+	}
+	if got := home.EndTime().Sub(home.Start()); got != 22*time.Hour {
+		t.Errorf("the last day in London lasts %s, want 22h", got)
+	}
+}

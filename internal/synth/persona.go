@@ -398,8 +398,13 @@ type Day struct {
 // Start is local midnight.
 func (d *Day) Start() time.Time { return d.Date.Midnight(d.Zone) }
 
-// EndTime is the next local midnight.
-func (d *Day) EndTime() time.Time { return d.Date.Add(1).Midnight(d.Zone) }
+// EndTime is where the next day starts: its local midnight, in its own zone.
+// A day the zone changes is longer or shorter than 24 hours, so the days
+// tile time and every emitter samples each instant once.
+func (d *Day) EndTime() time.Time {
+	next := d.Date.Add(1)
+	return next.Midnight(d.persona.Zone(next))
+}
 
 // AsleepAt is the sleep covering t, if any.
 func (d *Day) AsleepAt(t time.Time) *Sleep {

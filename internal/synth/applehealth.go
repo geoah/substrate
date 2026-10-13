@@ -405,7 +405,8 @@ func (e *ahDay) activeEnergy(buckets []ahBucket) []map[string]any {
 }
 
 // basalEnergy is the day's basal energy hour by hour, a little lower in the
-// small hours.
+// small hours. BMRKcal is a 24-hour rate, so a day the zone changes on burns
+// it over its own length.
 func (e *ahDay) basalEnergy() []map[string]any {
 	hours := e.hours()
 	weights := make([]float64, len(hours))
@@ -417,7 +418,7 @@ func (e *ahDay) basalEnergy() []map[string]any {
 		}
 		sum += weights[i]
 	}
-	scale := float64(e.day.BMRKcal()) / sum
+	scale := float64(e.day.BMRKcal()) * float64(len(hours)) / 24 / sum
 	rows := make([]map[string]any, 0, len(hours))
 	for k, a := range hours {
 		kcal := e.noisy("basal", k, weights[k]*scale, 0.6)

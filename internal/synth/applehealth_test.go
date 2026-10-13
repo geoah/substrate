@@ -141,8 +141,9 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 
 		// What the ingest keys and the adapter reads, metric by metric.
 		hr := byName["heart_rate"]
-		if len(hr) < 250 || len(hr) > 288 {
-			t.Errorf("%s: %d heart rate rows, want about one per 5 minutes", d.Name, len(hr))
+		slots := int(day.EndTime().Sub(day.Start()) / (5 * time.Minute))
+		if len(hr) < slots*87/100 || len(hr) > slots {
+			t.Errorf("%s: %d heart rate rows over %d slots, want about one per 5 minutes", d.Name, len(hr), slots)
 		}
 		for _, row := range hr {
 			mn, avg, mx := ahNum(t, row, "Min"), ahNum(t, row, "Avg"), ahNum(t, row, "Max")
@@ -155,8 +156,8 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 				t.Fatalf("%s step row %v", d.Name, row)
 			}
 		}
-		if n := len(byName["basal_energy_burned"]); n != 24 {
-			t.Errorf("%s: %d basal energy hours", d.Name, n)
+		if n, hours := len(byName["basal_energy_burned"]), int(day.EndTime().Sub(day.Start())/time.Hour); n != hours {
+			t.Errorf("%s: %d basal energy rows over %d hours", d.Name, n, hours)
 		}
 		for _, name := range []string{"resting_heart_rate", "heart_rate_variability", "respiratory_rate", "blood_oxygen_saturation"} {
 			for _, row := range byName[name] {
