@@ -356,7 +356,6 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	// policy has weighed them all.
 	var held []propRecord
 	var weighed []policyRecord
-	var lo, hi time.Time
 	for rows.Next() {
 		var r propRecord
 		var at, endsAt sql.NullTime
@@ -370,20 +369,16 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			}
 			continue
 		}
-		w := newPolicyRecord(pol, at, endsAt, source, match)
-		w.widen(&lo, &hi)
-		held, weighed = append(held, r), append(weighed, w)
+		held, weighed = append(held, r), append(weighed, newPolicyRecord(pol, at, endsAt, source, match))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	if pol != nil && len(held) > 0 {
-		var around []policyRecord
-		if !lo.IsZero() {
-			outside := func(b *builder) string { return `NOT coalesce(` + inRange(b) + `, false)` }
-			if around, err = policyContext(ctx, tx, base, pol, outside, lo, hi, int(p.maxSamples-n), "aggregate.budget.maxSamples"); err != nil {
-				return nil, err
-			}
+		outside := func(b *builder) string { return `NOT coalesce(` + inRange(b) + `, false)` }
+		around, err := policyContext(ctx, tx, base, pol, outside, weighed, int(p.maxSamples-n), "aggregate.budget.maxSamples")
+		if err != nil {
+			return nil, err
 		}
 		keep, err := keepBySource(ctx, append(weighed, around...))
 		if err != nil {

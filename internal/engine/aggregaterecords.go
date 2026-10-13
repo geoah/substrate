@@ -116,6 +116,18 @@ func (pol *recordPolicy) rankOf(source string) int {
 	return pol.last
 }
 
+// above is the order's values ranked higher than rank, sorted.
+func (pol *recordPolicy) above(rank int) []string {
+	var out []string
+	for v, r := range pol.rank {
+		if r < rank {
+			out = append(out, v)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // propertyText is the SQL text of a declared scalar string, enum or
 // reference property every kind of types declares (empty where a record
 // holds none), with the declaration a reference's bare ids complete
@@ -242,33 +254,71 @@ func keepBySource(ctx context.Context, recs []policyRecord) ([]bool, error) {
 	return keep, ctx.Err()
 }
 
-// policyContext reads the records a priority policy weighs beside the
-// records a read matches: those of the filter (base, without the range)
-// outside the range (the clause outside adds) whose span overlaps the
-// matched records' [lo, hi], so a night whose higher-ranked copy starts
-// before the range is still the higher copy's. They drop records and are
-// never counted themselves; past limit the read is refused naming path.
-func policyContext(ctx context.Context, tx *sql.Tx, base *builder, pol *recordPolicy, outside func(b *builder) string, lo, hi time.Time, limit int, path string) ([]policyRecord, error) {
-	b := base.clone()
-	b.add(outside(b))
-	b.add(`at <= ` + b.arg(hi) + ` AND coalesce(ends_at, at) >= ` + b.arg(lo))
-	rows, err := tx.QueryContext(ctx, `SELECT at, ends_at, `+pol.source+`, `+pol.match+` FROM records WHERE `+strings.Join(b.where, " AND ")+
-		` ORDER BY at, kind, id LIMIT `+b.arg(limit+1), b.args...)
+// policyContext reads the records a priority policy weighs beside the ones
+// a read matches (matched): those of the filter (base, without the range)
+// outside it (the clause outside adds) that may drop a matched record. Only
+// a kept record of a higher rank drops one, and whether it is kept turns on
+// the records of a higher rank still that meet it, so the read takes every
+// record ranked above the matched ones that meets their [lo, hi], then
+// every record ranked above those that meets theirs, until a round finds
+// none. Each round's ranks are above the last's, so the rounds are at most
+// the order's length, and each record weighed has beside it every record
+// that may drop it: a record is kept or dropped as a range holding them all
+// would keep or drop it. The records it reads drop records and are never
+// counted themselves; past limit the read is refused naming path.
+func policyContext(ctx context.Context, tx *sql.Tx, base *builder, pol *recordPolicy, outside func(b *builder) string, matched []policyRecord, limit int, path string) ([]policyRecord, error) {
+	var out []policyRecord
+	seen := map[string]bool{}
+	for round := matched; ; {
+		var lo, hi time.Time
+		lowest := 0
+		for _, r := range round {
+			if r.placed {
+				r.widen(&lo, &hi)
+				lowest = max(lowest, r.rank)
+			}
+		}
+		above := pol.above(lowest)
+		if lo.IsZero() || len(above) == 0 {
+			return out, nil
+		}
+		b := base.clone()
+		b.add(outside(b))
+		b.add(`at <= ` + b.arg(hi) + ` AND coalesce(ends_at, at) >= ` + b.arg(lo))
+		b.add(pol.source + ` = ANY(` + b.textArray(above) + `)`)
+		next, err := readPolicyRound(ctx, tx, pol, `SELECT kind, id, at, ends_at, `+pol.source+`, `+pol.match+` FROM records WHERE `+strings.Join(b.where, " AND ")+
+			` ORDER BY at, kind, id LIMIT `+b.arg(limit+1), b.args, seen)
+		if err != nil {
+			return nil, err
+		}
+		if len(out)+len(next) > limit {
+			return nil, refuse(path, "the policy weighs more than %d records around the range beside the ones it matches; narrow the filter", limit)
+		}
+		out, round = append(out, next...), next
+	}
+}
+
+// readPolicyRound reads one round of policyContext: the records query
+// answers that seen does not hold yet, which it adds. A round may meet a
+// record an earlier round read, so its LIMIT is the whole limit and one
+// more, enough to find more new records than the limit leaves.
+func readPolicyRound(ctx context.Context, tx *sql.Tx, pol *recordPolicy, query string, args []any, seen map[string]bool) ([]policyRecord, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate source policy: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var out []policyRecord
 	for rows.Next() {
+		var kind, id, source, match string
 		var at, endsAt sql.NullTime
-		var source, match string
-		if err := rows.Scan(&at, &endsAt, &source, &match); err != nil {
+		if err := rows.Scan(&kind, &id, &at, &endsAt, &source, &match); err != nil {
 			return nil, err
 		}
-		if len(out) == limit {
-			return nil, refuse(path, "the policy weighs more than %d records around the range beside the ones it matches; narrow the filter", limit)
+		if ref := kind + "/" + id; !seen[ref] {
+			seen[ref] = true
+			out = append(out, newPolicyRecord(pol, at, endsAt, source, match))
 		}
-		out = append(out, newPolicyRecord(pol, at, endsAt, source, match))
 	}
 	return out, rows.Err()
 }

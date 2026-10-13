@@ -634,7 +634,6 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	defer func() { _ = rows.Close() }()
 	var out []*aggBucket
 	var weighed []policyRecord
-	var lo, hi time.Time
 	// The limit counts the records the filter matches, the ones whose window
 	// is empty (no endsAt, no widening) included: the LIMIT reads that many
 	// rows, so counting only the windows kept would end the read short
@@ -675,16 +674,14 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		}
 		out = append(out, w)
 		if pol != nil {
-			r := newPolicyRecord(pol, sql.NullTime{Time: at, Valid: true}, endsAt, source, match)
-			r.widen(&lo, &hi)
-			weighed = append(weighed, r)
+			weighed = append(weighed, newPolicyRecord(pol, sql.NullTime{Time: at, Valid: true}, endsAt, source, match))
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if pol != nil && !lo.IsZero() {
-		around, err := policyContext(ctx, tx, base, pol, func(b *builder) string { return `NOT (` + inRange(b) + `)` }, lo, hi, limit, path)
+	if pol != nil && len(weighed) > 0 {
+		around, err := policyContext(ctx, tx, base, pol, func(b *builder) string { return `NOT (` + inRange(b) + `)` }, weighed, limit, path)
 		if err != nil {
 			return nil, err
 		}

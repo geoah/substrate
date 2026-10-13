@@ -151,6 +151,87 @@ func TestAggregateRecordWindowsKeepTheHighestRankedSource(t *testing.T) {
 	}
 }
 
+// A record outside the range drops one inside it only where it is itself
+// kept, and that turns on the records ranked above it, outside the range
+// too. A whoop night Z, a garmin night Y overlapping it and an apple night X
+// overlapping Y alone: Z drops Y, so X is kept, and a range holding X alone
+// answers so, as a range holding all three does; without Z beside it, Y
+// would drop X there, and the day before drops Y, so X would be counted on
+// neither day. The records mode and the property read weigh alike.
+func TestAggregateRecordSourcesWeighAChainAcrossTheRangeEdge(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	d := time.Date(2026, 9, 10, 0, 0, 0, 0, plus3)
+	chain := []struct {
+		id, source string
+		at         time.Time
+		span       time.Duration
+	}{
+		{"whoop/z", "whoop", d.Add(-3 * time.Hour), 2 * time.Hour},
+		{"garmin/y", "garmin", d.Add(-2 * time.Hour), 150 * time.Minute},
+		{"apple/x", "apple", d.Add(15 * time.Minute), 105 * time.Minute},
+	}
+	for _, r := range chain {
+		f.mustPut(t, f.sleepKind(), r.id, map[string]any{
+			"source": f.sourceRef(r.source), "at": r.at.Format(time.RFC3339), "endsAt": r.at.Add(r.span).Format(time.RFC3339),
+		})
+		f.workout(r.id, r.source, "running", r.at, r.span, "5")
+	}
+	// One stage in each night that no other night holds.
+	f.stageAt("whoop/z/stage", "whoop", "light", d.Add(-3*time.Hour), 10*time.Minute)
+	f.stageAt("garmin/y/stage", "garmin", "light", d, 10*time.Minute)
+	f.stageAt("apple/x/stage", "apple", "light", d.Add(time.Hour), 10*time.Minute)
+	whoopFirst := &substrate.AggregateRecordSources{Policy: "priority", Order: []string{"whoop", "garmin"}, Property: "source"}
+	windows := func(gte, lt time.Time) string {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+			Range:  rng(gte, lt),
+			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+				Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}, Sources: whoopFirst,
+			}},
+			Reducers: reducers("count"),
+		})
+		seen := map[string]bool{}
+		var out []string
+		for _, row := range res.Rows {
+			if ref := strings.TrimPrefix(row.Record.Ref, f.sleepKind()+"/"); !seen[ref] {
+				seen[ref] = true
+				out = append(out, ref)
+			}
+		}
+		sort.Strings(out)
+		return strings.Join(out, " ")
+	}
+	distance := func(gte, lt time.Time) string {
+		res := f.agg(context.Background(), substrate.Filter{Kinds: []string{f.workoutKind()}}, substrate.Aggregate{
+			Property: &substrate.AggregateProperty{Name: "distance", Sources: whoopFirst},
+			Range:    rng(gte, lt), Reducers: reducers("count"),
+		})
+		if len(res.Rows) == 0 {
+			return "0"
+		}
+		n, _ := val(res.Rows[0], "count")
+		return n
+	}
+	for _, x := range []struct {
+		name            string
+		from, to        time.Time
+		windows, counts string
+	}{
+		{"the whole chain", d.AddDate(0, 0, -1), d.AddDate(0, 0, 1), "apple/x whoop/z", "2"},
+		{"the day X starts", d, d.AddDate(0, 0, 1), "apple/x", "1"},
+		{"the day before", d.AddDate(0, 0, -1), d, "whoop/z", "1"},
+	} {
+		if got := windows(x.from, x.to); got != x.windows {
+			t.Errorf("%s: windows %q, want %q", x.name, got, x.windows)
+		}
+		if got := distance(x.from, x.to); got != x.counts {
+			t.Errorf("%s: workouts counted %s, want %s", x.name, got, x.counts)
+		}
+	}
+}
+
 // workout writes one source's workout of a sport over [at, at+span) with a
 // distance in km.
 func (f aggFix) workout(id, source, sport string, at time.Time, span time.Duration, km string) {

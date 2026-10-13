@@ -1229,8 +1229,11 @@ records of one rank never drop each other. `match` (optional) names
 declared string, enum or reference properties that must also be equal: with
 `["sport"]` a band's three-hour activity drops neither the run nor the walk
 a watch recorded inside it unless they name its sport. A record outside the
-range that overlaps one inside still drops it, so two adjacent ranges never
-count one night twice. `separate`, the default, keeps every record. This
+range that overlaps one inside still drops it where the policy keeps it,
+which the read decides from the records ranked above it, beyond the range
+too. A record is kept or dropped as a range holding them all would decide,
+so two adjacent ranges never count one night twice and never drop one from
+both. `separate`, the default, keeps every record. This
 policy chooses the windows, the request's `sources` chooses among the points
 inside each window, and each takes its own `order`.
 
