@@ -72,7 +72,7 @@ func TestAnAgentWebhookIsHeldToOneMiB(t *testing.T) {
 		return len(rows)
 	}
 	for name, req := range map[string]substrate.WebhookRequest{
-		"a body one byte past 1 MiB": body(1<<20 + 1),
+		"a body one byte past 1 MiB":  body(1<<20 + 1),
 		"two inline parts of 600 KiB": form,
 	} {
 		_, err := ds.svc.receiveWebhook(ctx, authority, agent, "", req, webhookFireHeld)
