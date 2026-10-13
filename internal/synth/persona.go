@@ -404,6 +404,12 @@ type BloodPressure struct {
 	At                         time.Time
 }
 
+// Glucose is one fasting finger-prick reading on the home meter, in mmol/L.
+type Glucose struct {
+	MmolL float64
+	At    time.Time
+}
+
 // Day is the ground truth for one local day.
 type Day struct {
 	Date          Date
@@ -417,6 +423,7 @@ type Day struct {
 	WeighInAt     time.Time
 	BodyFatPct    float64
 	BloodPressure *BloodPressure
+	Glucose       *Glucose // nil on a day without a meter reading
 	VO2Max        float64
 	FitnessAge    int
 	Recovery      int // WHOOP-style 0..100
@@ -941,6 +948,16 @@ func (p *Persona) Day(d Date) *Day {
 			at := day.atRest(d.At(loc, 8, int(r.NormFloat64()*10)), 12*time.Minute)
 			day.BloodPressure = &BloodPressure{int(118 + r.NormFloat64()*4), int(76 + r.NormFloat64()*3), sleep.RestingHR + 6 + int(r.NormFloat64()*3), at}
 		}
+	}
+	// The meter stays at home: a fasting reading on Wednesday and Saturday
+	// mornings, a little higher while ill.
+	if wd := d.Weekday(); (wd == time.Wednesday || wd == time.Saturday) && !trip {
+		g := p.rng("glucose", d)
+		v := 5.2 + g.NormFloat64()*0.25
+		if ill {
+			v += 0.4
+		}
+		day.Glucose = &Glucose{math.Round(v*10) / 10, day.atRest(d.At(loc, 7, 20+g.IntN(6)), 6*time.Minute)}
 	}
 	day.VO2Max = math.Round((47.0+1.6*i/span)*10) / 10
 	day.FitnessAge = 29

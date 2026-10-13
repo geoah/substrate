@@ -145,7 +145,7 @@ func fitValue(t *testing.T, p map[string]any, i int, field string) float64 {
 func TestGoogleFitEmitsTheDefaultLife(t *testing.T) {
 	p, files := fitEmit(t, Options{})
 	days := p.Days()
-	var nights, naps, workouts, weighIns, pressures int
+	var nights, naps, workouts, weighIns, pressures, glucose int
 	for _, d := range days {
 		day := p.Day(d)
 		nights++
@@ -156,6 +156,9 @@ func TestGoogleFitEmitsTheDefaultLife(t *testing.T) {
 		}
 		if day.BloodPressure != nil {
 			pressures++
+		}
+		if day.Glucose != nil {
+			glucose++
 		}
 	}
 
@@ -193,8 +196,8 @@ func TestGoogleFitEmitsTheDefaultLife(t *testing.T) {
 	for _, ds := range listing.DataSource {
 		listed[ds["dataStreamId"].(string)] = ds
 	}
-	if len(listed) != len(fitDerived)+15 {
-		t.Fatalf("%d data sources listed, want %d derived and 15 raw", len(listed), len(fitDerived))
+	if len(listed) != len(fitDerived)+16 {
+		t.Fatalf("%d data sources listed, want %d derived and 16 raw", len(listed), len(fitDerived))
 	}
 	watch := listed[fitRawHR]
 	if dev, _ := watch["device"].(map[string]any); watch["type"] != "raw" || dev["model"] != "Pixel Watch 2" || dev["type"] != "watch" || dev["uid"] != "8d1f3c7a" {
@@ -226,7 +229,7 @@ func TestGoogleFitEmitsTheDefaultLife(t *testing.T) {
 	}
 	for key, want := range map[string]int{
 		"hr": len(days) + 1, "sleep": len(days) + 1, "kcal": len(days) + 1, "spo2": len(days),
-		"weight": weighIns, "fat": weighIns, "bp": pressures, "height": 1, "glucose": 0,
+		"weight": weighIns, "fat": weighIns, "bp": pressures, "height": 1, "glucose": glucose,
 	} {
 		if exactDays[key] != want {
 			t.Errorf("%s has %d exact days, want %d", key, exactDays[key], want)
@@ -276,13 +279,22 @@ func TestGoogleFitEmitsTheDefaultLife(t *testing.T) {
 			t.Fatalf("oxygen point %v", pt)
 		}
 	}
+	for _, pt := range kept["glucose"] {
+		if vals := pt["value"].([]any); len(vals) != 5 || pt["originDataSourceId"] != fitRawGlucose ||
+			fitValue(t, pt, 0, "fpVal") < 3.5 || fitValue(t, pt, 0, "fpVal") > 8 || fitValue(t, pt, 1, "intVal") != 2 {
+			t.Fatalf("glucose point %v", pt)
+		}
+	}
+	if len(kept["glucose"]) != glucose || glucose == 0 {
+		t.Errorf("%d glucose points, the persona's meter read %d", len(kept["glucose"]), glucose)
+	}
 	for _, pt := range kept["weight"] {
 		if pt["originDataSourceId"] != fitRawWeight || fitValue(t, pt, 0, "fpVal") < 65 || fitValue(t, pt, 0, "fpVal") > 80 {
 			t.Fatalf("weight point %v", pt)
 		}
 	}
 	// Every point the adapter resolves to a device names a listed raw source.
-	for _, key := range []string{"hr", "steps", "kcal", "weight", "fat", "height", "sleep", "spo2", "bp"} {
+	for _, key := range []string{"hr", "steps", "kcal", "weight", "fat", "height", "sleep", "spo2", "bp", "glucose"} {
 		for _, pt := range kept[key] {
 			if src := listed[pt["originDataSourceId"].(string)]; src == nil || src["type"] != "raw" {
 				t.Fatalf("%s point names %v, which the listing does not hold as raw", key, pt["originDataSourceId"])

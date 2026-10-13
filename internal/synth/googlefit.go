@@ -17,7 +17,8 @@ import (
 // reads; the devices are the fixtures' too: a Pixel Watch 2 writing heart
 // rate, steps, energy, sleep and oxygen through the Fit app, a Pixel 8, a
 // Withings Body+ scale and a Withings BPM Connect cuff writing through the
-// Withings app, and Strava writing the runs.
+// Withings app, an Ascensia Contour Next One glucose meter writing through
+// its app, and Strava writing the runs.
 //
 // The sync asks for each day as `.../datasets/<startNs>-<endNs>?limit=1000`,
 // so every day with points has its own EXACT recording, holding every point
@@ -58,8 +59,12 @@ var (
 	fitWatch = fitDevice{"8d1f3c7a", "watch", "Pixel Watch 2", "Google"}
 	fitPhone = fitDevice{"b52e90c4", "phone", "Pixel 8", "Google"}
 	fitScale = fitDevice{"4a91be20", "scale", "Body+", "Withings"}
-	// Fit has no type for a blood pressure cuff; `unknown` is what one reports.
-	fitCuff = fitDevice{"7c03d5e1", "unknown", "BPM Connect", "Withings"}
+	// Fit has no type for a blood pressure cuff or a glucose meter; `unknown`
+	// is what one reports.
+	fitCuff  = fitDevice{"7c03d5e1", "unknown", "BPM Connect", "Withings"}
+	fitMeter = fitDevice{"5e2a91c7", "unknown", "Contour Next One", "Ascensia"}
+
+	fitAppContour = map[string]any{"packageName": "com.ascensia.contour"}
 )
 
 type fitDevice struct{ uid, kind, model, manufacturer string }
@@ -159,6 +164,7 @@ var (
 	fitRawStravaSeg  = fitRawID("com.google.activity.segment", fitAppStrava, nil, "")
 	fitRawSpO2       = fitRawID("com.google.oxygen_saturation", fitAppFit, &fitWatch, "")
 	fitRawBP         = fitRawID("com.google.blood_pressure", fitAppWithings, &fitCuff, "")
+	fitRawGlucose    = fitRawID("com.google.blood_glucose", fitAppContour, &fitMeter, "")
 )
 
 // Google's activity codes.
@@ -462,10 +468,11 @@ func (e *fitEmitter) body() {
 	height.add(at, at, fitRawHeight, []any{fitFp(e.p.Person.HeightM)}, at+60_000)
 }
 
-// oxygenAndPressure is the watch's nightly saturation average at wake, and
-// the cuff's Sunday reading, sitting (2), left upper arm (3).
+// oxygenAndPressure is the watch's nightly saturation average at wake, the
+// cuff's Sunday reading, sitting (2), left upper arm (3), and the glucose
+// meter's reading in mmol/L, fasting (2), from capillary blood (2).
 func (e *fitEmitter) oxygenAndPressure() {
-	spo2, bp := e.streams["spo2"], e.streams["bp"]
+	spo2, bp, glucose := e.streams["spo2"], e.streams["bp"], e.streams["glucose"]
 	for _, d := range e.days {
 		day := e.p.Day(d)
 		if day.Sleep != nil {
@@ -480,6 +487,10 @@ func (e *fitEmitter) oxygenAndPressure() {
 				fitFp(math.Round(e.noisy("dia", d.String(), float64(r.Diastolic), 1))),
 				fitIv(2), fitIv(3),
 			}, at+95_000)
+		}
+		if g := day.Glucose; g != nil {
+			at := fitMs(g.At)
+			glucose.add(at, at, fitRawGlucose, []any{fitFp(g.MmolL), fitIv(2), fitUnset(), fitUnset(), fitIv(2)}, at+2*60_000)
 		}
 	}
 }
@@ -722,6 +733,7 @@ func fitDataSources() map[string]any {
 		{fitRawStravaSeg, nil, fitAppStrava, ""},
 		{fitRawSpO2, &fitWatch, fitAppFit, ""},
 		{fitRawBP, &fitCuff, fitAppWithings, ""},
+		{fitRawGlucose, &fitMeter, fitAppContour, ""},
 	} {
 		docs = append(docs, fitSourceDoc(r.sid, r.dev, r.app, r.stream))
 	}

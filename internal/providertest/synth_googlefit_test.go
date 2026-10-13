@@ -170,7 +170,7 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	if _, err := synth.WriteOutput(dir, synth.GoogleFit{}, out); err != nil {
 		t.Fatal(err)
 	}
-	var nights, naps, workouts, weighIns, pressures, stages int
+	var nights, naps, workouts, weighIns, pressures, glucose, stages int
 	sports := map[string]int{}
 	for _, d := range p.Days() {
 		day := p.Day(d)
@@ -192,6 +192,9 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 		}
 		if day.BloodPressure != nil {
 			pressures++
+		}
+		if day.Glucose != nil {
+			glucose++
 		}
 	}
 	if workouts == 0 || weighIns == 0 {
@@ -317,6 +320,9 @@ func TestSynthGoogleFitSyncsAndAdapts(t *testing.T) {
 	if pressures > 0 {
 		wantObs["health/systolic_blood_pressure"] = pressures
 		wantObs["health/diastolic_blood_pressure"] = pressures
+	}
+	if glucose > 0 {
+		wantObs["health/blood_glucose"] = glucose
 	}
 	for metric, want := range wantObs {
 		if byMetric[metric] != want {

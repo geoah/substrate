@@ -29,7 +29,7 @@ var ahUnits = map[string]string{
 	"flights_climbed": "count", "active_energy": "kJ", "basal_energy_burned": "kJ",
 	"resting_heart_rate": "count/min", "heart_rate_variability": "ms", "respiratory_rate": "count/min",
 	"blood_oxygen_saturation": "%", "weight_body_mass": "kg", "body_fat_percentage": "%",
-	"blood_pressure": "mmHg", "sleep_analysis": "hr",
+	"blood_pressure": "mmHg", "sleep_analysis": "hr", "blood_glucose": "mg/dL",
 }
 
 func ahEmit(t *testing.T, o Options) (*Persona, *Output) {
@@ -182,6 +182,13 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 		} else if len(bp) == 1 {
 			if sy, di := ahNum(t, bp[0], "systolic"), ahNum(t, bp[0], "diastolic"); sy <= di || di < 60 || sy > 140 || bp[0]["source"] != ahWithings {
 				t.Errorf("%s blood pressure %v", d.Name, bp[0])
+			}
+		}
+		if g := byName["blood_glucose"]; (day.Glucose != nil) != (len(g) == 1) {
+			t.Errorf("%s: meter reading %v, glucose rows %v", d.Name, day.Glucose, g)
+		} else if len(g) == 1 {
+			if q := ahNum(t, g[0], "qty"); q < 65 || q > 140 || g[0]["mealTime"] != "Before Meal" || g[0]["source"] != ahMeter {
+				t.Errorf("%s glucose %v", d.Name, g[0])
 			}
 		}
 		night := byName["sleep_analysis"]

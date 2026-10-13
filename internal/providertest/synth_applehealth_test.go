@@ -106,7 +106,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	if len(files) != len(days) {
 		t.Fatalf("%d delivery files, want one per day: %v", len(files), files)
 	}
-	var workouts, weighIns, pressures int
+	var workouts, weighIns, pressures, glucose int
 	for _, d := range days {
 		day := p.Day(d)
 		workouts += len(day.Workouts)
@@ -116,9 +116,12 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 		if day.BloodPressure != nil {
 			pressures++
 		}
+		if day.Glucose != nil {
+			glucose++
+		}
 	}
-	if workouts == 0 || weighIns == 0 || pressures == 0 {
-		t.Fatalf("%d workouts, %d weigh-ins, %d blood pressures: pick days that hold each", workouts, weighIns, pressures)
+	if workouts == 0 || weighIns == 0 || pressures == 0 || glucose == 0 {
+		t.Fatalf("%d workouts, %d weigh-ins, %d blood pressures, %d glucose readings: pick days that hold each", workouts, weighIns, pressures, glucose)
 	}
 
 	// What the bodies imply, counted the way the ingest keys batches and the
@@ -227,18 +230,19 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	for _, row := range listLive(t, ds, obsObservation) {
 		byMetric[metricOf(row.Properties)]++
 	}
-	for metric, want := range map[string]int{
+	wantMetric := map[string]int{
 		"health/hrv_sdnn": hrv, "health/resting_heart_rate": len(days),
 		"health/body_mass": weighIns, "health/body_fat_fraction": weighIns,
 		"health/systolic_blood_pressure": pressures, "health/diastolic_blood_pressure": pressures,
-		"health/sleep_stage": stages,
-	} {
+		"health/sleep_stage": stages, "health/blood_glucose_mass": glucose,
+	}
+	for metric, want := range wantMetric {
 		if byMetric[metric] != want {
 			t.Errorf("%d observations of %s, want %d", byMetric[metric], metric, want)
 		}
 	}
-	if len(byMetric) != 7 {
-		t.Errorf("observations of %d metrics, want 7: %v", len(byMetric), byMetric)
+	if len(byMetric) != len(wantMetric) {
+		t.Errorf("observations of %d metrics, want %d: %v", len(byMetric), len(wantMetric), byMetric)
 	}
 	for kind, want := range map[string]int{healthSleep: nights, healthWorkout: workouts} {
 		if n := countLive(t, ds, kind); n != want {
@@ -250,7 +254,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 		sources = append(sources, row.ID)
 	}
 	sort.Strings(sources)
-	if want := "applehealth/iphone/apple-watch applehealth/iphone/health applehealth/iphone/iphone applehealth/iphone/withings"; strings.Join(sources, " ") != want {
+	if want := "applehealth/iphone/apple-watch applehealth/iphone/contour applehealth/iphone/health applehealth/iphone/iphone applehealth/iphone/withings"; strings.Join(sources, " ") != want {
 		t.Errorf("sources %v, want %s", sources, want)
 	}
 	for _, row := range listLive(t, ds, healthWorkout) {

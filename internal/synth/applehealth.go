@@ -35,7 +35,8 @@ import (
 //     minutes of the night) and blood_oxygen_saturation (every 10): no
 //     `source` key, as the app sends these metrics.
 //   - weight_body_mass and body_fat_percentage on weigh-in mornings and
-//     blood_pressure on Sundays, source "Withings".
+//     blood_pressure on Sundays, source "Withings"; blood_glucose in mg/dL
+//     on meter mornings, source "Contour".
 //   - sleep_analysis: the night that ended that morning as one aggregated
 //     row (inBed, asleep, core, deep, rem, awake and their bounds).
 //   - workouts: every persona workout under the app's activity name, with
@@ -72,7 +73,12 @@ const (
 	ahIPhone   = "Ada’s iPhone"
 	ahMerged   = ahWatch + "|" + ahIPhone
 	ahWithings = "Withings"
+	// ahMeter is the glucose meter's app, which writes in mg/dL.
+	ahMeter = "Contour"
 )
+
+// mgdlPerMmolL is glucose's mass concentration for one mmol/L.
+const mgdlPerMmolL = 18.0156
 
 // The cadences: what the app sends at Time Grouping Minutes for a watch
 // that samples heart rate about every 5 minutes at rest.
@@ -226,6 +232,7 @@ func (e *ahDay) metrics() []any {
 		ahMetric("weight_body_mass", "kg", weight),
 		ahMetric("body_fat_percentage", "%", fat),
 		ahMetric("blood_pressure", "mmHg", e.pressure()),
+		ahMetric("blood_glucose", "mg/dL", e.glucose()),
 		ahMetric("sleep_analysis", "hr", e.sleep()),
 	}
 	out := []any{}
@@ -471,6 +478,18 @@ func (e *ahDay) pressure() []map[string]any {
 		"systolic":  math.Round(e.noisy("sys", 0, float64(bp.Systolic), 1.5)),
 		"diastolic": math.Round(e.noisy("dia", 0, float64(bp.Diastolic), 1.2)),
 		"source":    ahWithings,
+	}}
+}
+
+// glucose is the meter's fasting reading, in whole mg/dL as the meter
+// shows it.
+func (e *ahDay) glucose() []map[string]any {
+	g := e.day.Glucose
+	if g == nil {
+		return nil
+	}
+	return []map[string]any{{
+		"qty": math.Round(g.MmolL * mgdlPerMmolL), "date": e.date(g.At), "mealTime": "Before Meal", "source": ahMeter,
 	}}
 }
 
