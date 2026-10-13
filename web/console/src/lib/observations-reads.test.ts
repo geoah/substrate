@@ -118,8 +118,13 @@ describe("one chart's request", () => {
     // A source's channels stay apart: a WHOOP cycle beside its workouts.
     expect(bySource.groupBy).toEqual(["source", "channel"])
     expect(bySource.sources).toBeUndefined()
+    // Unranked by the reader, the server's own priorities order them.
     const merged = laneRead(spec({ sourceOrder: ["a", "b"] })).aggregate
-    expect(merged.sources).toEqual({ policy: "priority", order: ["a", "b"] })
+    expect(merged.sources).toEqual({ policy: "priority" })
+    const ranked = laneRead(
+      spec({ sourceOrder: ["a", "b"], ranked: true })
+    ).aggregate
+    expect(ranked.sources).toEqual({ policy: "priority", order: ["a", "b"] })
   })
 
   it("narrows to the chosen channels", () => {

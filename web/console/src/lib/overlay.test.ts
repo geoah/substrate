@@ -437,17 +437,30 @@ describe("one metric's plot", () => {
     const planned = planPlot(source(), HEART, {
       ...SCOPE,
       sources: ["apple-watch-s10", GARMIN],
+      sourcesRanked: true,
     })
     expect(planned.sourceOrder).toEqual([APPLE, GARMIN])
+    expect(planned.ranked).toBe(true)
     expect(planned.read?.aggregate.sources).toEqual({
       policy: "priority",
       order: [APPLE, GARMIN],
     })
-    // With none chosen, the newest source leads.
-    expect(planPlot(source(), HEART, SCOPE).sourceOrder).toEqual([
-      GARMIN,
-      APPLE,
-    ])
+  })
+
+  it("leaves the order to the sources' own priorities unless the reader ranked them", () => {
+    // None chosen: no order, so the server ranks by each source record's
+    // priorities for the metric.
+    const none = planPlot(source(), HEART, SCOPE)
+    expect(none.ranked).toBe(false)
+    expect(none.sourceOrder).toEqual([GARMIN, APPLE])
+    expect(none.read?.aggregate.sources).toEqual({ policy: "priority" })
+    // A selection's sources narrow the read and rank nothing.
+    const selection = planPlot(source(), HEART, {
+      ...SCOPE,
+      sources: [APPLE, GARMIN],
+    })
+    expect(selection.ranked).toBe(false)
+    expect(selection.read?.aggregate.sources).toEqual({ policy: "priority" })
   })
 
   it("resolves a stream naming no source with the named ones, after them", () => {
@@ -463,10 +476,8 @@ describe("one metric's plot", () => {
     expect(planned.sourceless).toBe(true)
     // One line: the scale first, then what names no source.
     expect(planned.read?.aggregate.groupBy).toBeUndefined()
-    expect(planned.read?.aggregate.sources).toEqual({
-      policy: "priority",
-      order: [WITHINGS],
-    })
+    expect(planned.read?.aggregate.sources).toEqual({ policy: "priority" })
+    expect(planned.sourceOrder).toEqual([WITHINGS])
     // A chosen source leaves the unnamed stream out of the read.
     const narrowed = planPlot(source([typed, ...streams]), BODY_MASS, {
       ...SCOPE,

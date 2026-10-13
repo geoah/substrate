@@ -169,6 +169,8 @@ export function ObservationsTimelinePage() {
       group,
       from: fromParam ?? undefined,
       sources,
+      // The Source filter's order is the priority the reader set.
+      sourcesRanked: true,
       abouts,
       channels,
       reducer: controls.reducerOf(metric),

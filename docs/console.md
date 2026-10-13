@@ -827,11 +827,14 @@ over an empty chart. A metric that declares no unit is read in the unit of its
 newest selected stream, named in the request, so the axis and the answer
 agree. Grouped by anything but source, two or more sources are
 resolved by `sources.policy: priority` in the order you picked them in the
-Source filter, each new pick last (or the newest first); the Source filter
+Source filter, each new pick last; the Source filter
 lists the chosen sources in that order, each with a move up and a move
 down, a stream that names
 no source counting as one ranked after them, and the chart says which source
-wins; grouped by source,
+wins. With no source picked (and always in the streams page's panel, whose
+selection is no order), the read sends no `order`, so the server ranks the
+sources by each source record's `priorities` for the metric
+([the read](api.md#sources-and-from)); grouped by source,
 each keeps its own rows, and a source's channels stay apart
 (`groupBy: ["source", "channel"]`). Until you pick where to read from, a
 metric reads raw points, summaries where every one of its streams keeps

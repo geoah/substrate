@@ -86,9 +86,14 @@ export interface LaneSpec {
   group: GroupChoice
   /** Source record paths the read is narrowed to; empty for every source. */
   sources: string[]
-  /** Sources in the reader's order, for the priority policy: record paths
-   * or ids, which `sources.order` takes alike. */
+  /** The sources the read takes, in the reader's order where `ranked`:
+   * record paths or ids, which `sources.order` takes alike. */
   sourceOrder: string[]
+  /** The reader ranked the sources (the timeline's Source filter), so the
+   * read sends them as `sources.order`. Otherwise it sends none, and the
+   * server ranks them by each source record's `priorities` for the
+   * metric. */
+  ranked?: boolean
   /** The read selects a stream naming no source too. `sources.order` cannot
    * name it, so the priority policy ranks it after every named source. */
   sourceless?: boolean
@@ -141,9 +146,10 @@ export function laneGroupBy(spec: LaneSpec): AggregateGroupKey[] {
 
 /** The aggregate read one lane issues. Grouped by anything but source, two
  * or more sources (a stream naming none counts as one) are resolved by
- * priority in the reader's order, so one line is one thing: the default
- * policy answers a row per source, and a series draws one row per bucket.
- * Grouped by source, each keeps its own rows. */
+ * priority, in the reader's order where the reader ranked them and in the
+ * server's default otherwise, so one line is one thing: the default policy
+ * answers a row per source, and a series draws one row per bucket. Grouped
+ * by source, each keeps its own rows. */
 export function laneRead(spec: LaneSpec): AggregateRead {
   const groupKey = laneGroupKey(spec)
   const groupBy = laneGroupBy(spec)
@@ -159,7 +165,12 @@ export function laneRead(spec: LaneSpec): AggregateRead {
     ...(groupBy.length ? { groupBy } : {}),
     reducers: laneReducers(spec),
     ...(groupKey !== "source" && ranked > 1
-      ? { sources: { policy: "priority", order: spec.sourceOrder } }
+      ? {
+          sources: {
+            policy: "priority",
+            ...(spec.ranked ? { order: spec.sourceOrder } : {}),
+          },
+        }
       : {}),
     ...(spec.unit ? { unit: spec.unit } : {}),
     ...(spec.maxBuckets ? { budget: { maxBuckets: spec.maxBuckets } } : {}),

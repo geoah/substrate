@@ -207,6 +207,10 @@ export interface PlotScope {
   from?: AggregateFrom
   /** The sources and things chosen, by id or path; empty for every one. */
   sources: readonly string[]
+  /** The chosen sources are an order the reader set (the timeline's Source
+   * filter), which a priority read prefers them in. A selection's sources
+   * are no order: the server ranks them by their records' `priorities`. */
+  sourcesRanked?: boolean
   abouts: readonly string[]
   /** The channels chosen; absent or empty for every one. */
   channels?: readonly string[]
@@ -267,8 +271,12 @@ export interface Plot {
   pickedKey: string
   /** Why the plot asks nothing, in words; absent where it reads. */
   blocked?: string
-  /** The sources in the order a priority read prefers them. */
+  /** The sources the read takes: in the order a priority read prefers
+   * them where `ranked`, else in the streams' order. */
   sourceOrder: string[]
+  /** The reader set the order (`sources.order`); otherwise the server ranks
+   * the sources by their records' `priorities` for the metric. */
+  ranked: boolean
   /** The read takes a stream naming no source too, after every named one. */
   sourceless: boolean
   /** The series a selection names, where the read, grouped by source,
@@ -468,6 +476,7 @@ export function planPlot(
   const sourceOrder = chosenSources.length
     ? chosenSources
     : distinct(selected.map((s) => s.source))
+  const ranked = Boolean(scope.sourcesRanked) && chosenSources.length > 0
 
   // Where the read groups by what a stream decides (its source, its thing
   // or its channel), a stream the selection leaves out answers a series of
@@ -498,6 +507,7 @@ export function planPlot(
         group: scope.group,
         sources: chosenSources.map((s) => refPathOf(s, obs.pins.source) ?? s),
         sourceOrder,
+        ...(ranked ? { ranked } : {}),
         ...(sourceless ? { sourceless } : {}),
         about: chosenAbouts.map((a) => refPathOf(a, obs.pins.about) ?? a),
         ...(channels.length ? { channels: [...channels] } : {}),
@@ -544,6 +554,7 @@ export function planPlot(
     pickedKey: spec ? reducerKey(laneReducers(spec)[0]) : reducer,
     blocked,
     sourceOrder,
+    ranked,
     sourceless,
     ...(only ? { only } : {}),
     mixedIn,

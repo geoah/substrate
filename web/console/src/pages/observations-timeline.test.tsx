@@ -185,13 +185,18 @@ describe("the timeline's requests", () => {
     await waitFor(() =>
       expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
     )
+    // No source chosen: no order, so the server ranks the sources by their
+    // records' priorities for the metric, and the chart says so.
     expect(
       charts(server.seen, "health/heart_rate")[0].aggregate.sources
-    ).toEqual({
-      policy: "priority",
-      // The streams' own spelling, record paths, newest stream first.
-      order: [`${SOURCE}/garmin-forerunner-265`, `${SOURCE}/apple-watch-s10`],
-    })
+    ).toEqual({ policy: "priority" })
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Heart rate" }).textContent
+      ).toContain(
+        "Where sources overlap, Garmin Forerunner 265 and Apple Watch S10 are used in the order each source’s priorities rank them for this metric."
+      )
+    )
     const group = screen.getByRole("radiogroup", { name: "Group by" })
     fireEvent.click(within(group).getByRole("radio", { name: "Source" }))
     await waitFor(() =>

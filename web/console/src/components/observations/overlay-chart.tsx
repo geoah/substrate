@@ -709,7 +709,9 @@ function chartNotes(
     if (plot.groupKey !== "source" && plot.spec && ranked.length > 1) {
       const [first, ...rest] = ranked
       own.push(
-        `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
+        plot.ranked
+          ? `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
+          : `Where sources overlap, ${listWords(ranked)} are used in the order each source’s priorities rank them for this metric.`
       )
     }
     const dropped = all
