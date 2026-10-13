@@ -7,8 +7,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -662,4 +664,58 @@ func (a AggregateTrace) Rows() int64 { return a.t.rows }
 func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
 	t := &aggTrace{}
 	return context.WithValue(ctx, aggregateTraceKey{}, t), AggregateTrace{t: t}
+}
+
+// ExplainPlacedReads answers, by name, the plan of each statement a metric
+// read finds and reads one stream's points placed in [from, to) with, as
+// the read binds them, under EXPLAIN ANALYZE on db with sequential scans
+// priced out, so a small table shows the rows each index range reads.
+func ExplainPlacedReads(ctx context.Context, db *sql.DB, placeEnd bool, metric, kind, source, form string, from, to time.Time) (map[string]string, error) {
+	s := &aggStream{obsStream: obsStream{metric: metric, kind: kind, source: source}, form: form}
+	ids := streamKeys([]*aggStream{s}, false)
+	stats, forms := []string{s.stat}, []string{form}
+	a, b := []time.Time{from}, []time.Time{to}
+	wa, wb := []time.Time{ceil15(from)}, []time.Time{floor15(to)}
+	if placeEnd {
+		wa, wb = b, b
+	}
+	discover := []any{ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms}
+	statements := []struct {
+		name, query string
+		args        []any
+	}{
+		{"discover count", discoverCountSQL(placeEnd), discover},
+		{"discover forms", discoverFormsSQL(placeEnd), append(slices.Clone(discover), int64(0))},
+		{"count", countPointsSQL(placeEnd), append(s.args(), a, b)},
+		{"read", readSeriesSQL(placeEnd), append(s.args(), a, b)},
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, st := range statements {
+		rows, err := tx.QueryContext(ctx, `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) `+st.query, st.args...)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", st.name, err)
+		}
+		var plan []string
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			plan = append(plan, line)
+		}
+		if err := finishRows(rows); err != nil {
+			return nil, fmt.Errorf("%s: %w", st.name, err)
+		}
+		out[st.name] = strings.Join(plan, "\n")
+	}
+	return out, nil
 }

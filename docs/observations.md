@@ -466,6 +466,10 @@ each. A reference column holds the target's record path
 | `observed_rollups` | stream, form, 15-minute bucket and group (`code`, `unit`, `delta`, `utc_offset_min`, `offset_known`) | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord`, `min_value`, `max_value` |
 | `observed_latest` | stream and `statistic` | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `offset_known`, `record_id`, `revision`, and `points`, the row's count of available points |
 
+`observed_points` is indexed by stream and `ts`, and its points with a span
+by stream and `ts_end` too, so a read that places a value by its end
+(`bucket.place`) reads the points that end in its range and none before.
+
 The rules every column follows are written once, as Go, in
 `internal/observed`: the engine computes each rollup row with it, and the
 aggregate read will be held to it.

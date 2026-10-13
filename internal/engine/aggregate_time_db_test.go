@@ -6,10 +6,15 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 )
 
 // A recorded-local day places each value by its own UTC offset, so a value
@@ -137,4 +142,68 @@ func TestAggregatePlacesANightByItsEnd(t *testing.T) {
 		Records: &substrate.AggregateRecords{Filter: substrate.Filter{Kinds: []string{f.observation}}}, Place: "end",
 	}, "count")
 	f.refusedAgg(substrate.AggregateQuery{Aggregate: &records}, "place")
+}
+
+// A read that places a value by its end takes the values whose end lies in
+// its window, wherever they start, and must not read a stream's whole
+// history before the window to find them: a span is found by its end and an
+// instant by its start, each one index range. Five days of hourly step
+// chunks and of heart rate every ten minutes before 2 September, and a day of
+// each on it: each statement a one-day read by end runs (the discovery's
+// count and forms, the count and the read) sets aside no more than the
+// day's own rows, where a scan of every point before the window's end would
+// set aside the five days.
+func TestAggregatePlaceEndReadsOnlyTheWindowsPoints(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	day := time.Date(2026, 9, 2, 0, 0, 0, 0, plus3)
+	first := day.AddDate(0, 0, -5)
+	for at := first; at.Before(day.AddDate(0, 0, 1)); at = at.Add(time.Hour) {
+		f.mustPut(t, f.observation, "steps/"+at.UTC().Format("2006-01-02T15"), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("garmin"), "form": "amount",
+			"value": quantity("100", "{steps}"), "utcOffset": 180,
+			"at": at.Format(time.RFC3339), "endsAt": at.Add(time.Hour).Format(time.RFC3339),
+		})
+	}
+	for _, span := range [][2]time.Time{{first, day}, {day, day.AddDate(0, 0, 1)}} {
+		var offsets []int64
+		var vals []any
+		for at := span[0]; at.Before(span[1]); at = at.Add(10 * time.Minute) {
+			offsets = append(offsets, at.Sub(span[0]).Milliseconds())
+			vals = append(vals, "60")
+		}
+		f.series("hr/"+span[0].Format("01-02"), map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("garmin"),
+			"form": "gauge", "unit": "/min", "hold": "PT4M", "utcOffsetStart": 180, "utcOffsetEnd": 180,
+		}, span[0], span[1], offsets, vals)
+	}
+	if _, err := f.db.ExecContext(context.Background(), `ANALYZE observed_points`); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	db, err := engine.SharedScopedDB(f.svc, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed := regexp.MustCompile(`Rows Removed by (?:Filter|Index Recheck): (\d+)`)
+	for _, s := range []struct{ metric, kind, form string }{
+		{"health/steps", f.observation, "amount"},
+		{"health/heart_rate", f.trace, "gauge"},
+	} {
+		plans, err := engine.ExplainPlacedReads(context.Background(), db, true, f.metricPath(s.metric), s.kind, f.sourcePath("garmin"), s.form,
+			day, day.AddDate(0, 0, 1))
+		if err != nil {
+			t.Fatalf("%s: %v", s.metric, err)
+		}
+		for name, plan := range plans {
+			n := 0
+			for _, m := range removed.FindAllStringSubmatch(plan, -1) {
+				k, _ := strconv.Atoi(m[1])
+				n += k
+			}
+			if n > 48 || strings.Contains(plan, "Seq Scan on observed_points") {
+				t.Errorf("%s by end, %s: the plan sets aside %d rows, want at most the day's own:\n%s", s.metric, name, n, plan)
+			}
+		}
+	}
 }

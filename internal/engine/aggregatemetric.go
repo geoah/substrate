@@ -481,7 +481,7 @@ func (p *aggPlan) windows(ctx context.Context, buckets []*aggBucket) ([][2]time.
 // the window's. A summary stream is one statistic's, and a stream of another
 // form has the statistic "". Each code comes with whether the points holding
 // it recorded their UTC offset, which the recorded-local calendar needs.
-// Under place end a point is found by where it is placed (placedIn), and the
+// Under place end a point is found by where it is placed (placedPoints), and the
 // read passes the window's end as its whole rows' ends, so no row answers.
 func discoverFormsSQL(placeEnd bool) string {
 	return `
@@ -492,14 +492,11 @@ func discoverFormsSQL(placeEnd bool) string {
 		WHERE s.statistic = '' AND r.metric = s.metric AND r.kind = s.kind AND r.source = s.source AND r.about = s.about AND r.channel = s.channel
 		  AND r.form = f.form AND r.bucket15 >= w.wa AND r.bucket15 < w.wb AND r.n > 0
 		UNION
-		SELECT p.code, p.offset_known FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "w.a", "LEAST(w.wa, w.b)") + ` AND ` + availablePoint + `
+		SELECT p.code, p.offset_known FROM ` + placedPoints(placeEnd, discoverCutEnd+` AND `+availablePoint, "w.a", "LEAST(w.wa, w.b)") + `
 		UNION
-		SELECT p.code, p.offset_known FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + ` AND ` + availablePoint + `
+		SELECT p.code, p.offset_known FROM ` + placedPoints(placeEnd, discoverCutEnd+` AND `+availablePoint, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + `
 		UNION
-		SELECT p.code, p.offset_known FROM observed_points p
-		WHERE ` + discoverSummary + ` AND ` + placedIn(placeEnd, "w.a", "w.b") + ` AND ` + availablePoint + `
+		SELECT p.code, p.offset_known FROM ` + placedPoints(placeEnd, discoverSummary+` AND `+availablePoint, "w.a", "w.b") + `
 		UNION
 		SELECT c.code, c.offset_known FROM (
 			SELECT p.code, p.value, p.ts, p.hold_ms, p.offset_known FROM (
@@ -549,26 +546,30 @@ func discoverCountSQL(placeEnd bool) string {
 	SELECT coalesce(sum(x.c), 0)::bigint
 	FROM ` + discoverStreams + `
 	CROSS JOIN LATERAL (
-		SELECT count(*) AS c FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "w.a", "LEAST(w.wa, w.b)") + `
+		SELECT count(*) AS c FROM ` + placedPoints(placeEnd, discoverCutEnd, "w.a", "LEAST(w.wa, w.b)") + `
 		UNION ALL
-		SELECT count(*) FROM observed_points p
-		WHERE ` + discoverCutEnd + ` AND ` + placedIn(placeEnd, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + `
+		SELECT count(*) FROM ` + placedPoints(placeEnd, discoverCutEnd, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + `
 		UNION ALL
-		SELECT count(*) FROM observed_points p
-		WHERE ` + discoverSummary + ` AND ` + placedIn(placeEnd, "w.a", "w.b") + `
+		SELECT count(*) FROM ` + placedPoints(placeEnd, discoverSummary, "w.a", "w.b") + `
 	) x`
 }
 
-// placedIn matches a point p placed in [a, b), two SQL instants: by its
-// start, or under place end by its last instant, which is before ts_end
-// where the point has a span. A point placed by its end may start before a,
-// so the index range it reads is the stream's points before b.
-func placedIn(placeEnd bool, a, b string) string {
+// placedPoints is the points of observed_points that match where and are
+// placed in [a, b), two SQL instants, as a FROM item named p: by their
+// start, or under place end by their last instant, which is before ts_end
+// where the point has a span. A span placed by its end may start anywhere
+// before a, so its start bounds nothing below: it is found by its end on
+// observed_points_span_end_idx, and an instant by its start on the stream
+// index, each one index range of the window's points.
+func placedPoints(placeEnd bool, where, a, b string) string {
 	if !placeEnd {
-		return `p.ts >= ` + a + ` AND p.ts < ` + b
+		return `(SELECT * FROM observed_points p WHERE ` + where + ` AND p.ts >= ` + a + ` AND p.ts < ` + b + `) p`
 	}
-	return `p.ts < ` + b + ` AND CASE WHEN p.ts_end > p.ts THEN p.ts_end > ` + a + ` AND p.ts_end <= ` + b + ` ELSE p.ts >= ` + a + ` END`
+	return `(SELECT * FROM observed_points p WHERE ` + where + `
+			  AND p.ts_end > p.ts AND p.ts_end > ` + a + ` AND p.ts_end <= ` + b + `
+			UNION ALL
+			SELECT * FROM observed_points p WHERE ` + where + `
+			  AND p.ts_end <= p.ts AND p.ts >= ` + a + ` AND p.ts < ` + b + `) p`
 }
 
 // discoverForms turns each selected stream into one stream per form its

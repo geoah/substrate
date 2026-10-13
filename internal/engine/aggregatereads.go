@@ -24,15 +24,19 @@ func spanArrays(spans [][2]time.Time) (from, to []time.Time) {
 	return from, to
 }
 
+// countPointsSQL counts one stream's points (aggStreamSQL, $1 to $7) placed
+// in each span, the spans' starts and ends at $8 and $9.
+func countPointsSQL(placeEnd bool) string {
+	return `
+		SELECT coalesce(sum(x.c), 0)::bigint FROM unnest($8::timestamptz[], $9::timestamptz[]) AS s(a, b)
+		CROSS JOIN LATERAL (
+			SELECT count(*) AS c FROM ` + placedPoints(placeEnd, aggStreamSQL, "s.a", "s.b") + `) x`
+}
+
 func (r *aggRun) countPoints(s *aggStream, spans [][2]time.Time) (int64, error) {
 	from, to := spanArrays(spans)
 	var n int64
-	err := r.tx.QueryRowContext(r.ctx, `
-		SELECT coalesce(sum(x.c), 0)::bigint FROM unnest($8::timestamptz[], $9::timestamptz[]) AS s(a, b)
-		CROSS JOIN LATERAL (
-			SELECT count(*) AS c FROM observed_points p
-			WHERE `+aggStreamSQL+` AND `+placedIn(r.p.bucket.placeEnd, "s.a", "s.b")+`) x`,
-		append(s.args(), from, to)...).Scan(&n)
+	err := r.tx.QueryRowContext(r.ctx, countPointsSQL(r.p.bucket.placeEnd), append(s.args(), from, to)...).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("substrate/engine: aggregate count: %w", err)
 	}
@@ -119,6 +123,18 @@ func (r *aggRun) conversion(unit string, delta bool, source string) (*convFactor
 	return c, nil
 }
 
+// readSeriesSQL reads one stream's points (aggStreamSQL, $1 to $7) placed in
+// each span, the spans' starts and ends at $8 and $9, by span and in the
+// order every reader takes points in.
+func readSeriesSQL(placeEnd bool) string {
+	return `
+		SELECT s.i, ` + aggPointLead + pointColumns + `
+		FROM unnest($8::timestamptz[], $9::timestamptz[]) WITH ORDINALITY AS s(a, b, i)
+		CROSS JOIN LATERAL (
+			SELECT * FROM ` + placedPoints(placeEnd, aggStreamSQL, "s.a", "s.b") + ` OFFSET 0) p
+		ORDER BY s.i, p.ts, p.record_id, p.ord`
+}
+
 // readSeries reads one stream's points over the spans, with the point current
 // at each span's start and the last available point before it.
 func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, error) {
@@ -128,13 +144,7 @@ func (r *aggRun) readSeries(s *aggStream, spans [][2]time.Time) (*aggSeries, err
 	for i, sp := range spans {
 		ser.segs[i].from, ser.segs[i].to = sp[0], sp[1]
 	}
-	rows, err := r.tx.QueryContext(r.ctx, `
-		SELECT s.i, `+aggPointLead+pointColumns+`
-		FROM unnest($8::timestamptz[], $9::timestamptz[]) WITH ORDINALITY AS s(a, b, i)
-		CROSS JOIN LATERAL (
-			SELECT * FROM observed_points p
-			WHERE `+aggStreamSQL+` AND `+placedIn(r.p.bucket.placeEnd, "s.a", "s.b")+` OFFSET 0) p
-		ORDER BY s.i, p.ts, p.record_id, p.ord`, args...)
+	rows, err := r.tx.QueryContext(r.ctx, readSeriesSQL(r.p.bucket.placeEnd), args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate points: %w", err)
 	}

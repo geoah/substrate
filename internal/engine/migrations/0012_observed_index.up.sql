@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS observed_points (
 -- one index range.
 CREATE INDEX IF NOT EXISTS observed_points_stream_idx
     ON observed_points (repository, metric, kind, source, about, channel, ts);
+-- A stream's spans by their end, for a read that places a value by its end
+-- (`bucket.place` `end`): such a value may start any time before the read's
+-- range, so its end, not its start, bounds the points the read takes. An
+-- instant ends where it starts, and the stream index serves it, so only the
+-- points with a span are in this one.
+CREATE INDEX IF NOT EXISTS observed_points_span_end_idx
+    ON observed_points (repository, metric, kind, source, about, channel, ts_end)
+    WHERE ts_end > ts;
 
 -- observed_rollups: one row per stream, group and 15-minute bucket (UTC
 -- aligned, which every offset in use divides), for gauges, amounts and
