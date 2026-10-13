@@ -91,8 +91,10 @@ function rangeOf(window: TimeRange) {
   return { gte: isoWithOffset(window.start), lt: isoWithOffset(window.end) }
 }
 
-/** Where sources overlap, the record's own device first, then the rest as
- * their records' priorities rank them. */
+/** Where sources overlap, the record's own device first. An order skips
+ * the sources' priorities, so the rest follow by kind and then source
+ * path; a record naming no source sends no order, and the priorities
+ * rank them all. */
 function bySource(d: Pick<During, "source">) {
   return {
     policy: "priority",
