@@ -405,7 +405,7 @@ data:
         never claims time outside it, so the hour two origins share holds two
         traces side by side rather than one overwriting the other."""
         at, end = _us(doc["at"]), _us(doc["endsAt"])
-        key = "codes" if "codes" in doc else "values"
+        key = "codes" if doc.get("codes") is not None else "values"
         n = len(doc[key])
         if doc.get("every"):
             step = _duration_us(doc["every"])
