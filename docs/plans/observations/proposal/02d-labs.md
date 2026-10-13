@@ -34,7 +34,7 @@ data:
     at: 2026-09-14T08:05:00+01:00       # specimen collection, not the report date
     utcOffset: 60
     specimen: {type: serum, fasting: true}
-    referenceRanges: [{low: "0", high: "3.0", unit: mmol/L, text: "optimal"}]
+    referenceRanges: [{low: {value: "0", unit: mmol/L}, high: {value: "3.0", unit: mmol/L}, text: "optimal"}]
     interpretation: [{system: http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation, code: H}]
     status: final
     revision: 1
