@@ -117,19 +117,15 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # keys, but a dev box has keys in its environment — so the default suite
 # excludes it by name and `test:llm` selects it by the same name.
 #
-# ./cmd/substratectl/...: the operator hat's `*_db_test.go` opens a real
-# database; the rest of that package runs again here, cheaply.
-#
 # ./internal/providere2e/...: the provider suites. That one starts a real
 # substrated and replays recorded upstream traffic through seven provider
 # bundles side by side, three to five minutes of wall time (the slowest
 # case), and it wants `uv` and `python3` as well as a database (it skips
 # itself without them).
 #
-# -timeout 45m: the engine suite alone runs 4 to 10 minutes depending on the
-# machine, and Go's default of 10m has killed it on a slow CI runner with no
-# test failing. It was 30m before internal/providere2e joined.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+# -timeout 45m: Go's default of 10m has killed the engine suite on a slow CI
+# runner with no test failing. It was 30m before internal/providere2e joined.
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/..."
 
 # `test:db` cut in two for the runner. The engine package is most of the
 # suite's time, so CI runs it as parallel shards and every other database
@@ -150,10 +146,10 @@ description = "The engine suite alone, or one shard of it: SHARD and SHARDS from
 run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."test:db:rest"]
-description = "Every database package but the engine and the provider suite: catalog, providertest, testenv, substratectl"
+description = "Every database package but the engine and the provider suite: catalog, providertest, testenv"
 # -p 1 for the same reason `test:db` has it: one binary at a time against one
 # server, so no two race on CREATE EXTENSION.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/..."
 
 [tasks."test:db:providers"]
 description = "The provider suite: seven closures synced end to end against a substrated the test starts, over recorded upstreams"
@@ -186,26 +182,31 @@ description = "The whole suite with a coverage profile -> coverage.out"
 # The two halves run sequentially for the same reason `test` does, and their
 # profiles are concatenated: a profile is a `mode:` line then one line per
 # block, so keeping the first line and dropping the other's is the whole merge.
-# The third run is the provider suites, and it is separate for one reason:
-# -coverprofile instruments only the package under test, and that package
-# holds no production code — it drives the ENGINE from outside. Without
-# -coverpkg the engine paths those 46 cases exercise would count for nothing,
-# which is what moving them out of internal/engine would otherwise have cost.
+# `go tool cover` adds up a block that more than one test binary reports.
+#
+# -coverpkg=github.com/geoah/substrate/...: a statement counts when any
+# package's tests run it, not only its own package's. Without it
+# internal/window read 0% while internal/api's tests drive 84% of it, and
+# the engine paths internal/providertest drives from outside counted for
+# nothing. The set of packages is the same either way (`./...` already puts a
+# package with no tests in the profile at 0%), so the total reads the same or
+# higher.
+#
+# The database half takes the machine-wide slot, as `test:db` does.
 run = [
-  "go test -count=1 -short -covermode=atomic -coverprofile=coverage.short.out ./...",
-  "go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/testenv/... ./cmd/substratectl/...",
-  "go test -count=1 -p 1 -timeout 30m -covermode=atomic -coverpkg=./internal/engine/... -coverprofile=coverage.provider.out ./internal/providertest/...",
+  "go test -count=1 -short -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.short.out ./...",
+  ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/...",
   """
-    { cat coverage.short.out; tail -n +2 coverage.db.out; tail -n +2 coverage.provider.out; } >coverage.out
-    rm -f coverage.short.out coverage.db.out coverage.provider.out
+    { cat coverage.short.out; tail -n +2 coverage.db.out; } >coverage.out
+    rm -f coverage.short.out coverage.db.out
     go tool cover -func=coverage.out | tail -1
     """,
 ]
 
 [tasks."test:timing"]
 description = "Where a `go test -json` run spent its time: per-package wall and the 30 slowest tests"
-# The engine suite is 800 tests on one Postgres, so one slow fixture is 800
-# slow tests and no single case looks guilty. Capture a run once, then read it:
+# The engine suite runs every test on one Postgres, so one slow fixture is a
+# slow suite and no single case looks guilty. Capture a run once, then read it:
 #   go test -count=1 -p 1 -skip '^TestLive' -json ./internal/engine/... > timing.json
 #   mise run test:timing -- timing.json
 # -skip '^TestLive' because a dev box has provider keys in its environment,
@@ -224,7 +225,7 @@ description = "The LIVE suite: real completions from real providers, when the ke
 # It SPENDS MONEY. Cheap models and tiny prompts keep a pass well under a cent,
 # but do not loop it. Each test binary holds its live cases to a request and a
 # token ceiling (internal/llm/livespend). CI runs it weekly through `ci:llm`.
-run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine/..."
+run = ".mise/dblock.sh go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine/..."
 
 [tasks."test:e2e"]
 description = "The live end-to-end suite: a fresh user on the dev substrate, left in place for review"
@@ -857,8 +858,8 @@ run = ".mise/changescheck.sh"
 
 [tasks."ci:go"]
 description = "CI job `go test`: the short suite, no database"
-# The database packages are the `engine` shards and the two `db` jobs, so this
-# job needs no service container and starts testing as soon as Go is there.
+# The database packages are the `engine` shards and the `db` jobs, so this
+# job needs no database and starts testing as soon as Go is there.
 #
 # SUBSTRATE_TEST_REQUIRE_SANDBOX: internal/sandbox and internal/runner skip
 # their confinement cases where the kernel offers no Landlock or no seccomp, so
@@ -879,19 +880,19 @@ env = { PKG = "internal/catalog" }
 run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."ci:db:rest"]
-description = "CI job `db rest`: providertest, testenv and substratectl against the database, without the acceptance drill"
+description = "CI job `db rest`: providertest and testenv against the database, without the acceptance drill"
 # internal/providertest warms each provider closure's PEP 723 body through uv,
 # so the job caches ~/.cache/uv beside the Go caches. The acceptance drill is
 # one serial scenario longer than this job's budget, so it is `ci:drill`.
-run = "go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ./internal/providertest/... ./internal/testenv/..."
 
 [tasks."ci:drill"]
 description = "CI job `acceptance drill`: internal/testenv's release acceptance drill, alone"
 # Seven stages that read each other's outputs (build, stop, restore under
 # another key, compare, interrupted import, second restore, replaced cursor),
 # so it cannot be cut. It runs on every PR and on main and is not required:
-# the required checks each finish inside a minute and this does not.
-run = "go test -count=1 -timeout 12m -run '^TestReleaseAcceptanceDrill$' ./internal/testenv/"
+# it is past the required checks' one-minute budget on its own.
+run = ".mise/dblock.sh go test -count=1 -timeout 12m -run '^TestReleaseAcceptanceDrill$' ./internal/testenv/"
 
 [tasks."ci:providers"]
 description = "CI job `providers e2e`: the provider suite, alone on its runner"
@@ -967,17 +968,36 @@ run = ".mise/llmlive.sh"
 [tasks.ci]
 description = "Every CI job, locally. This is the whole pipeline."
 # `ci:coverage` and not `ci:go` plus the shards: it is the same tests as
-# `ci:go` and every `ci:engine` shard together, run once, with the profile.
+# `ci:go`, every `ci:engine` shard, the `db` jobs and the drill together, run
+# once, with the profile. `ci:providers` runs beside it, and the two database
+# runs take the machine-wide slot (.mise/dblock.sh) one after the other.
 # `ci:llm` is absent on purpose: it is not a pull request job, and it buys
-# real completions, so `mise run ci` on a laptop spends nothing.
+# real completions, so `mise run ci` on a laptop spends nothing. `lint:ci`
+# holds this list to the workflows: every `ci:*` task they run is here or
+# named there as run inside one of these.
 depends = [
   "ci:lint",
   "ci:lint:go",
   "ci:cross",
   "ci:coverage",
+  "ci:providers",
   "ci:race",
   "ci:audit",
   "ci:console",
   "ci:console:test",
   "ci:image",
+]
+
+[tasks."ci:quick"]
+description = "The required checks that need no database or Docker: lint, lint go, console, console test, go test"
+# The fast answer before a push: the jobs a pull request's verdict waits on,
+# less the database half of `go gate` (the engine shards and the `db` jobs),
+# which `mise run test:db` runs under the machine-wide slot. No workflow runs
+# it; each of its parts is a job of its own there.
+depends = [
+  "ci:lint",
+  "ci:lint:go",
+  "ci:console",
+  "ci:console:test",
+  "ci:go",
 ]

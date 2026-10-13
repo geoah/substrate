@@ -12,8 +12,12 @@ services:
     volumes:
       - substrate-db:/var/lib/postgresql/data
     # The substrate waits for this, so `up` never races the first migration.
+    # Over TCP: on a fresh volume the image first runs a temporary server for
+    # its init scripts that listens on the unix socket only, and a socket
+    # probe that reads it as healthy starts the substrate against a server
+    # about to stop (#869).
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-substrate}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d ${POSTGRES_DB:-substrate}"]
       interval: 2s
       timeout: 3s
       retries: 30

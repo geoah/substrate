@@ -1,117 +1,36 @@
 // @vitest-environment jsdom
 /** The new-record sheet, held to every kind this repository ships: each one
  * opens, every row it folds away opens too, and every row's editor opens,
- * without a throw. A new record asks first for what it must have, then for
- * the records it points at and the times it is about, and folds the rest. */
+ * without a throw (the sweep, in create-sheet.kinds-1.test.tsx to
+ * create-sheet.kinds-4.test.tsx). A new record asks first for what it must
+ * have, then for the records it points at and the times it is about, and
+ * folds the rest. */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { parseAllDocuments } from "yaml"
+import { cleanup, fireEvent, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-
-import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
-import type { KindInfo } from "@/lib/api/types"
-import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
-import { templateYAML } from "@/lib/record-yaml"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
   useNavigate: () => vi.fn(),
 }))
 
-import { CreateSheet } from "./create-sheet"
+import {
+  KINDS,
+  SWEEP_FILES,
+  kindOf,
+  openFold,
+  renderSheet,
+  shownRows,
+} from "./create-sheet.kinds"
 
-const files = import.meta.glob<string>(
-  ["../../../../../kinds/**/*.yaml", "../../../../../samples/**/*.yaml"],
-  { query: "?raw", import: "default", eager: true }
-)
-
-/** Every shipped kind as the registry lists it: the declaration's `data` is
- * the definition. */
-function shipped(): KindInfo[] {
-  const out: KindInfo[] = []
-  for (const source of Object.values(files)) {
-    for (const doc of parseAllDocuments(source)) {
-      const d = doc.toJS() as {
-        kind?: string
-        metadata?: { id?: string }
-        data?: Record<string, unknown>
-      } | null
-      if (d?.kind !== "substrate.reamde.dev/core/kind" || !d.data) continue
-      const identity = d.metadata?.id ?? ""
-      const [authority = "", pkg = "", name = ""] = identity.split("/")
-      out.push({
-        identity,
-        name,
-        authority,
-        package: pkg,
-        version: 1,
-        source: "installed",
-        description: String(d.data.description ?? ""),
-        definition: d.data,
-      })
-    }
-  }
-  return out.sort((a, b) => a.identity.localeCompare(b.identity))
-}
-
-const KINDS = shipped()
 const TASK = "samples.substrate.reamde.dev/tasks/task"
 const PERSON = "samples.substrate.reamde.dev/people/person"
 
-function kindOf(identity: string): KindInfo {
-  const kind = KINDS.find((k) => k.identity === identity)
-  if (!kind) throw new Error(`no shipped kind ${identity}`)
-  return kind
-}
-
-/** The properties the sheet shows, in order. */
-function shownRows(): string[] {
-  return [
-    ...document.querySelectorAll("[data-slot=property-sheet] [data-property]"),
-  ].map((el) => el.getAttribute("data-property") ?? "")
-}
-
-function renderSheet(
-  kind: KindInfo,
-  kinds: KindInfo[] = KINDS,
-  technical = true
-) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, enabled: false } },
-  })
-  return render(
-    <ConsolePreferencesContext.Provider
-      value={{
-        preferences: {
-          collapsed: [],
-          favorites: [],
-          sidebarOpen: true,
-          ...DEFAULT_SETTINGS,
-          technicalDetails: technical,
-        },
-        busy: false,
-        change: () => {},
-        set: () => {},
-      }}
-    >
-      <QueryClientProvider client={client}>
-        <CreateSheet
-          text={templateYAML(kind)}
-          kind={kind}
-          kinds={kinds}
-          onChange={() => {}}
-        />
-      </QueryClientProvider>
-    </ConsolePreferencesContext.Provider>
-  )
-}
-
-/** Opens the fold, where there is one. */
-function openFold() {
-  const more = screen.queryByRole("button", { name: /\d+ more:/ })
-  if (more) fireEvent.click(more)
-}
+// A sweep file gone missing is a quarter of the kinds never drawn, which no
+// failing test would say.
+const sweepFiles = Object.keys(
+  import.meta.glob("./create-sheet.kinds-*.test.tsx")
+)
 
 afterEach(cleanup)
 
@@ -119,31 +38,13 @@ describe("the create sheet", () => {
   it("reads every shipped kind", () => {
     expect(KINDS.length).toBeGreaterThan(100)
     expect(KINDS.map((k) => k.identity)).toContain(TASK)
-  })
-
-  // Every shipped kind, every editor opened: the widest provider kinds (Slack
-  // file, Linear issue) take 6 to 12 s on a CI runner, past vitest's 5 s
-  // default, and the time grows with the kind. The sweep gets its own budget.
-  it.each(KINDS.map((k) => [k.identity, k] as const))(
-    "%s draws every row, the folded ones too, and opens every editor",
-    (_, kind) => {
-      renderSheet(kind)
-      openFold()
-      expect(screen.queryByRole("button", { name: /\d+ more:/ })).toBeNull()
-      // Untouched, nothing is wrong yet.
-      expect(screen.queryAllByRole("alert")).toEqual([])
-      const rows = [...document.querySelectorAll("[data-property]")].map(
-        (el) => el.getAttribute("data-property") ?? ""
+    expect(sweepFiles.sort()).toEqual(
+      Array.from(
+        { length: SWEEP_FILES },
+        (_, i) => `./create-sheet.kinds-${i + 1}.test.tsx`
       )
-      for (const name of rows) {
-        const edit = document.querySelector(
-          `[data-property="${name}"] [role=button]`
-        )
-        if (edit) fireEvent.click(edit)
-      }
-    },
-    30_000
-  )
+    )
+  })
 
   it("asks a task for its Assignee, Project and Due at, and folds the rest", () => {
     renderSheet(kindOf(TASK), KINDS, false)
