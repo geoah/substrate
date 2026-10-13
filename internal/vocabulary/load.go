@@ -1633,7 +1633,7 @@ func bindCapability(typeIdent, capName, variant, cols string, c *Trait) (*TraitB
 		}
 		// Non-hot trait properties are a type contract on the type's
 		// own declarations.
-		contracts = append(contracts, pendingCapProp{typeIdent, capName, pname, props[pname]})
+		contracts = append(contracts, pendingCapProp{typeIdent, capName, c.Identity(), pname, props[pname]})
 	}
 	return b, contracts, problems
 }
@@ -1650,6 +1650,7 @@ func sortedNames(props map[string]Datatype) []string {
 type pendingCapProp struct {
 	Kind     string // type identity
 	Cap      string
+	Trait    string // the trait's identity
 	Prop     string
 	Datatype Datatype
 }
@@ -2901,6 +2902,9 @@ func (r *Registry) resolvePackage(g *Package) []string {
 		if prop.Datatype != p.Datatype {
 			problems = append(problems, fmt.Sprintf("%s: data.properties.%s: trait %s requires type %s, got %s",
 				where, p.Prop, p.Cap, p.Datatype, prop.Datatype))
+		}
+		if p.Trait == TraitObservedCore {
+			problems = append(problems, observedShapeProblems(where, p.Prop, p.Cap, prop)...)
 		}
 	}
 	// The timeline traits EXPECT `temporal` on the same kind (a rule with no

@@ -1,11 +1,18 @@
 package vocabulary_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -311,5 +318,115 @@ func TestTracePointsReadAReplayedTrace(t *testing.T) {
 		"offsets": []any{json.Number("1.5E0")}, "values": []any{"1"},
 	}); err == nil {
 		t.Error("a fractional offset was read as a point")
+	}
+}
+
+// observationsDeclarations reads the shipped observations sample's
+// declarations, the kinds that bind `observed` among them, as maps a case may
+// edit before it builds them.
+func observationsDeclarations(t *testing.T) []map[string]any {
+	t.Helper()
+	entries, err := os.ReadDir("../../samples/observations")
+	if err != nil {
+		t.Fatalf("read the observations sample: %v", err)
+	}
+	var out []map[string]any
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join("../../samples/observations", e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := yaml.NewDecoder(bytes.NewReader(body))
+		for {
+			var m map[string]any
+			if err := dec.Decode(&m); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				t.Fatalf("%s: %v", e.Name(), err)
+			}
+			kind, _ := m["kind"].(string)
+			if len(m) > 0 && vocabulary.KindPackage(kind) == vocabulary.PackageCore &&
+				vocabulary.VocabularyDocumentKind(vocabulary.KindName(kind)) {
+				out = append(out, m)
+			}
+		}
+	}
+	return out
+}
+
+// installObservations builds the documents and installs them on the seed.
+func installObservations(t *testing.T, raw []map[string]any) error {
+	t.Helper()
+	reg, err := vocabulary.LoadFS(os.DirFS("../../kinds/substrate.reamde.dev"))
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	var docs []vocabulary.Document
+	for _, m := range raw {
+		d, err := vocabulary.DocumentFromMap(m)
+		if err != nil {
+			t.Fatalf("read a document: %v", err)
+		}
+		docs = append(docs, d)
+	}
+	packages, err := vocabulary.BuildPackages(docs, vocabulary.SourceInstalled)
+	if err != nil {
+		return err
+	}
+	return reg.InstallAll(packages)
+}
+
+// THE OBSERVED CONTRACT HOLDS EACH PROPERTY'S SHAPE, not its datatype alone.
+// A trace's `offsets`, `values` and `codes` are lists and everything else is
+// one value: a kind that declares a list `metric` has every write admitted and
+// indexed as nothing, because the index reads one reference path, and a kind
+// that declares one `values` refuses every write.
+func TestObservedBindingHoldsListAndSingleShapes(t *testing.T) {
+	if err := installObservations(t, observationsDeclarations(t)); err != nil {
+		t.Fatalf("the shipped observations sample is refused: %v", err)
+	}
+	for _, c := range []struct {
+		kind, prop string
+		set        map[string]any
+		want       string
+	}{
+		{"trace", "values", map[string]any{"repeated": false}, "trait substrate.reamde.dev/core/observed requires values to be a list"},
+		{"trace", "offsets", map[string]any{"repeated": nil}, "requires offsets to be a list"},
+		{"trace", "metric", map[string]any{"repeated": true}, "requires metric to hold one value, not a list"},
+		{"observation", "metric", map[string]any{"repeated": true}, "requires metric to hold one value, not a list"},
+		{"observation", "code", map[string]any{"repeated": true}, "requires code to hold one value"},
+		{"observation", "channel", map[string]any{"keyed": true}, "requires channel unkeyed, not a keyed map"},
+	} {
+		docs := observationsDeclarations(t)
+		found := false
+		for _, d := range docs {
+			meta, _ := d["metadata"].(map[string]any)
+			if meta["id"] != "samples.substrate.reamde.dev/observations/"+c.kind {
+				continue
+			}
+			props := d["data"].(map[string]any)["properties"].(map[string]any)
+			p, _ := props[c.prop].(map[string]any)
+			if p == nil {
+				t.Fatalf("observations/%s declares no %s", c.kind, c.prop)
+			}
+			for k, v := range c.set {
+				if v == nil {
+					delete(p, k)
+				} else {
+					p[k] = v
+				}
+			}
+			found = true
+		}
+		if !found {
+			t.Fatalf("no observations/%s declaration", c.kind)
+		}
+		err := installObservations(t, docs)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s.%s with %v: %v, want a refusal saying %q", c.kind, c.prop, c.set, err, c.want)
+		}
 	}
 }

@@ -105,6 +105,35 @@ func ObservedNullable(t *Kind, name string) bool {
 	return ok && b.Variant == ObservedPacked
 }
 
+// ObservedListed reports whether an `observed` contract property is a list:
+// `offsets`, `values` and `codes`, a trace's points. Every other one holds a
+// single value.
+func ObservedListed(name string) bool {
+	return name == obsOffsets || name == obsValues || name == obsCodes
+}
+
+// observedShapeProblems holds a binding kind's declaration of one `observed`
+// contract property to the shape the rules and the index read: a trace's
+// three point lists repeated, everything else a single value. The trait's
+// property list carries datatypes alone, so the loader holds the shape here.
+// A list where one value is read would be admitted on every write and index
+// nothing (a reference path is read from one value), and a single value where
+// a list is read refuses every write.
+func observedShapeProblems(where, name, trait string, p *Property) []string {
+	switch {
+	case p.Keyed:
+		return []string{fmt.Sprintf("%s: data.properties.%s: trait %s requires %s unkeyed, not a keyed map",
+			where, name, trait, name)}
+	case ObservedListed(name) && !p.Repeated:
+		return []string{fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to be a list: declare repeated: true",
+			where, name, trait, name)}
+	case !ObservedListed(name) && p.Repeated:
+		return []string{fmt.Sprintf("%s: data.properties.%s: trait %s requires %s to hold one value, not a list: drop repeated",
+			where, name, trait, name)}
+	}
+	return nil
+}
+
 // ObservedRecord is one record of a kind that binds `observed`, as the write
 // path holds it after the merge: the variant its kind binds, the two time
 // columns, and the stored property values.

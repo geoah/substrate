@@ -70,7 +70,10 @@ Properties of both variants:
 
 A kind binding the trait declares every one of these properties itself, with
 its own descriptions, `repeated: true` on the three lists and its own pins on
-the references; the trait holds their names and datatypes.
+the references. The trait holds their names and datatypes, and the loader
+holds their shapes: a binding kind whose `offsets`, `values` or `codes` is
+not a list, or whose other properties are lists or keyed maps, is refused,
+because the rules and the index read one value from each of those.
 
 ## Forms
 
