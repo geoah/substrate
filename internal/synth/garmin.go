@@ -155,60 +155,18 @@ func garminE2E(p *Persona) map[string]any {
 type garminEmitter struct {
 	p    *Persona
 	days []Date
-	// day is each persona day as the watch recorded it (garminWatchDay).
-	day map[Date]*Day
 
 	hrBias, stepScale, kcalScale, scaleBias, vo2Bias float64
 }
 
 func newGarminEmitter(p *Persona) *garminEmitter {
-	e := &garminEmitter{p: p, days: p.Days(), day: map[Date]*Day{}}
-	for _, d := range e.days {
-		e.day[d] = garminWatchDay(p.Day(d))
-	}
+	e := &garminEmitter{p: p, days: p.Days()}
 	e.hrBias = p.Noisy("garmin|hr-bias", 1.0, 0.4)
 	e.stepScale = p.Noisy("garmin|steps-scale", 1.05, 0.01)
 	e.kcalScale = p.Noisy("garmin|kcal-scale", 0.96, 0.01)
 	e.scaleBias = p.Noisy("garmin|scale-bias", 0.2, 0.03)
 	e.vo2Bias = p.Noisy("garmin|vo2-bias", 0.8, 0.1)
 	return e
-}
-
-// garminWatchDay is a copy of the persona's day whose night ends 10 minutes
-// before a workout that started before it ended, its stages cut there. The
-// persona's own day is shared with the other emitters and is not touched.
-func garminWatchDay(src *Day) *Day {
-	cp := *src
-	if src.Sleep == nil {
-		return &cp
-	}
-	s := *src.Sleep
-	for _, w := range src.Workouts {
-		if !w.Start.Before(s.End) || !s.Start.Before(w.End) {
-			continue
-		}
-		end := w.Start.Add(-10 * time.Minute)
-		var stages []StageSpan
-		for _, sp := range s.Stages {
-			if !sp.Start.Before(end) {
-				continue
-			}
-			if sp.End.After(end) {
-				sp.End = end
-			}
-			stages = append(stages, sp)
-		}
-		s.End, s.Stages = end, stages
-		asleep := 0.0
-		for _, sp := range stages {
-			if sp.Stage != Awake {
-				asleep += sp.End.Sub(sp.Start).Seconds()
-			}
-		}
-		s.Efficiency = math.Round(asleep/math.Max(1, end.Sub(s.Start).Seconds())*1000) / 1000
-	}
-	cp.Sleep = &s
-	return &cp
 }
 
 // --- the helpers -------------------------------------------------------------
@@ -233,18 +191,18 @@ func iround(v float64) int { return int(math.Round(v)) }
 
 // span is the day's [start, end) in seconds.
 func (e *garminEmitter) span(d Date) (int64, int64) {
-	x := e.day[d]
+	x := e.p.Day(d)
 	return x.Start().Unix(), x.EndTime().Unix()
 }
 
 // hrAt is the watch's heart rate at t on day d.
 func (e *garminEmitter) hrAt(d Date, t time.Time) int {
-	return iround(e.noisy("hr", t.Unix(), float64(e.day[d].HR(t))+e.hrBias, 1.4))
+	return iround(e.noisy("hr", t.Unix(), float64(e.p.Day(d).HR(t))+e.hrBias, 1.4))
 }
 
 // stressAt is the watch's stress level at t, -1 where it measured none.
 func (e *garminEmitter) stressAt(d Date, t time.Time) int {
-	v := e.day[d].Stress(t)
+	v := e.p.Day(d).Stress(t)
 	if v < 0 {
 		return -1
 	}
@@ -252,7 +210,7 @@ func (e *garminEmitter) stressAt(d Date, t time.Time) int {
 }
 
 func (e *garminEmitter) stepsMinute(d Date, t time.Time) int {
-	return e.day[d].StepsIn(t, t.Add(time.Minute))
+	return e.p.Day(d).StepsIn(t, t.Add(time.Minute))
 }
 
 // --- the day -----------------------------------------------------------------
@@ -267,7 +225,7 @@ type garminEpochGroup struct {
 // epochs is the day's 15-minute epochs: one per activity type inside each
 // slice, numbered within the slice.
 func (e *garminEmitter) epochs(d Date, a, b int64, off int) []map[string]any {
-	x := e.day[d]
+	x := e.p.Day(d)
 	var out []map[string]any
 	for t := a; t < b; t += 900 {
 		var groups []*garminEpochGroup
@@ -359,7 +317,7 @@ func garminStressQualifier(avg int) string {
 
 // dayOf is the daily summary, its epochs and its stress details.
 func (e *garminEmitter) dayOf(d Date, acts []garminActivity) (daily map[string]any, epochs []map[string]any, stress map[string]any) {
-	x := e.day[d]
+	x := e.p.Day(d)
 	a, b := e.span(d)
 	off := garminOffset(x.Start())
 	at := func(s int64) time.Time { return time.Unix(s, 0).In(x.Zone) }
@@ -550,7 +508,7 @@ func clamp01(v float64) float64 { return math.Max(0, math.Min(1, v)) }
 // night is the sleep summary of the night ending on d, with its HRV, Pulse Ox,
 // skin temperature and breathing slices.
 func (e *garminEmitter) night(d Date) garminNight {
-	x := e.day[d]
+	x := e.p.Day(d)
 	s := x.Sleep
 	a, end := s.Start.Unix(), s.End.Unix()
 	off := garminOffset(s.Start)
@@ -722,7 +680,7 @@ type garminActivity struct {
 
 // activities is each workout of d as an activity summary and its details.
 func (e *garminEmitter) activities(d Date) []garminActivity {
-	x := e.day[d]
+	x := e.p.Day(d)
 	city, ok := garminCity[x.Zone.String()]
 	if !ok {
 		parts := strings.Split(x.Zone.String(), "/")
@@ -855,7 +813,7 @@ func (e *garminEmitter) activities(d Date) []garminActivity {
 
 // morning is the day's weigh-in and blood pressure reading, by envelope key.
 func (e *garminEmitter) morning(d Date) map[string]map[string]any {
-	x := e.day[d]
+	x := e.p.Day(d)
 	out := map[string]map[string]any{}
 	if x.WeightKg != 0 {
 		t := x.WeighInAt.Unix()
@@ -893,7 +851,7 @@ func (e *garminEmitter) morning(d Date) map[string]map[string]any {
 // userMetric is VO2 max and fitness age on d, when either changed since the
 // last one written, and every Sunday; nil otherwise.
 func (e *garminEmitter) userMetric(d Date, last *[2]float64) map[string]any {
-	x := e.day[d]
+	x := e.p.Day(d)
 	vo2 := roundTo(x.VO2Max+e.vo2Bias, 1)
 	now := [2]float64{vo2, float64(x.FitnessAge)}
 	if *last == now && d.Weekday() != time.Sunday {
@@ -910,7 +868,7 @@ func (e *garminEmitter) userMetric(d Date, last *[2]float64) map[string]any {
 // moveIQ is an evening stroll the watch detected on its own, every sixth
 // day the persona strolls at home and well.
 func (e *garminEmitter) moveIQ(d Date, strolls *int) map[string]any {
-	x := e.day[d]
+	x := e.p.Day(d)
 	if x.Trip || x.Ill || e.p.rng("stroll", d).Float64() >= 0.55 {
 		return nil
 	}

@@ -821,15 +821,22 @@ func (p *Persona) sleepFor(d Date, ill, trip, longRunYesterday bool) *Sleep {
 	}
 }
 
-func (p *Persona) workoutsFor(d Date, ill, trip bool) []*Workout {
+// workoutsFor is the day's training. A session never starts sooner than 15
+// to 35 minutes after the night ends at wake, so a late weekend morning
+// pushes the long run back instead of overlapping the night.
+func (p *Persona) workoutsFor(d Date, ill, trip bool, wake time.Time) []*Workout {
 	if ill {
 		return nil
 	}
 	r := p.rng("workouts", d)
 	loc := p.Zone(d)
 	week := p.Index(d) / 7
+	earliest := wake.Add(time.Duration(15+p.rng("afterwake", d).IntN(21)) * time.Minute)
 	mk := func(hh, mm, minutes int, sport Sport, dist float64, avg, mx, kcal int, strain float64, name string) *Workout {
 		s := d.At(loc, hh, mm+int(r.NormFloat64()*6))
+		if s.Before(earliest) {
+			s = earliest
+		}
 		e := s.Add(time.Duration(minutes+int(r.NormFloat64()*3)) * time.Minute)
 		return &Workout{
 			Date: d, Start: s, End: e, Sport: sport, Name: name, DistanceM: math.Round(dist), AvgHR: avg,
@@ -889,7 +896,7 @@ func (p *Persona) Day(d Date) *Day {
 	i := float64(p.Index(d))
 	span := float64(p.span())
 	day := &Day{
-		Date: d, Zone: loc, Sleep: sleep, Naps: naps, Workouts: p.workoutsFor(d, ill, trip),
+		Date: d, Zone: loc, Sleep: sleep, Naps: naps, Workouts: p.workoutsFor(d, ill, trip, sleep.End),
 		RestingHR: sleep.RestingHR, HRVRMSSDMs: sleep.HRVRMSSDMs, Ill: ill, Trip: trip, persona: p,
 	}
 	switch d.Weekday() {

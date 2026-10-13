@@ -114,8 +114,7 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	// Saturday to Monday: a weigh-in either side, the Sunday's blood pressure,
-	// a strength session, the long run that starts before the night ends, and
-	// maybe yoga.
+	// a strength session, the long run and maybe yoga.
 	p, err := synth.NewPersona(synth.Options{
 		Start: synth.NewDate(2026, time.September, 12), End: synth.NewDate(2026, time.September, 14),
 	})

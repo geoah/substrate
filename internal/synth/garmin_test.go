@@ -463,35 +463,6 @@ func TestGarminIsDeterministic(t *testing.T) {
 	}
 }
 
-// Ada's Sunday long runs start before some of the persona's nights end, and
-// the watch ends those nights 10 minutes before the run; the persona's own
-// days are left as they were for the other emitters.
-func TestGarminEndsANightBeforeTheRun(t *testing.T) {
-	p, err := NewPersona(Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := newGarminEmitter(p)
-	clipped := 0
-	for _, d := range p.Days() {
-		orig, watch := p.Day(d), e.day[d]
-		for _, w := range orig.Workouts {
-			if w.Start.Before(orig.Sleep.End) {
-				clipped++
-				if !watch.Sleep.End.Equal(w.Start.Add(-10*time.Minute)) || !watch.Sleep.Stages[len(watch.Sleep.Stages)-1].End.Equal(watch.Sleep.End) {
-					t.Errorf("%s: the watch's night ends %s, the run starts %s", d, watch.Sleep.End, w.Start)
-				}
-			}
-		}
-		if orig.Sleep == watch.Sleep {
-			t.Fatalf("%s: the watch's day shares the persona's night", d)
-		}
-	}
-	if clipped == 0 {
-		t.Fatal("no night of the default life runs into a workout, so nothing here was proved")
-	}
-}
-
 func TestGarminThreeDaysIsSmall(t *testing.T) {
 	p, files, deliveries, _ := garminEmit(t, Options{Start: NewDate(2026, time.September, 12), End: NewDate(2026, time.September, 14)})
 	size := 0

@@ -185,3 +185,28 @@ func TestPersonaDaysTileTime(t *testing.T) {
 		t.Errorf("the last day in London lasts %s, want 22h", got)
 	}
 }
+
+// One body cannot sleep and train at once: no night or nap overlaps a
+// workout, so every emitter reads the same instant as asleep or awake.
+func TestPersonaNeverSleepsThroughAWorkout(t *testing.T) {
+	p, err := NewPersona(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range p.Days() {
+		day := p.Day(d)
+		sleeps := append([]*Sleep{day.Sleep, p.Day(d.Add(1)).Sleep}, day.Naps...)
+		for _, w := range day.Workouts {
+			for _, s := range sleeps {
+				if w.Start.Before(s.End) && s.Start.Before(w.End) {
+					t.Errorf("%s: the %s from %s overlaps the sleep %s to %s", d, w.Name,
+						w.Start.Format("15:04"), s.Start.Format("15:04"), s.End.Format("15:04"))
+				}
+			}
+			if w.Start.Before(day.Sleep.End.Add(15 * time.Minute)) {
+				t.Errorf("%s: the %s starts %s, within 15 minutes of waking at %s", d, w.Name,
+					w.Start.Format("15:04"), day.Sleep.End.Format("15:04"))
+			}
+		}
+	}
+}
