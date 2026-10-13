@@ -738,8 +738,9 @@ the WHOOP v2 API at `https://api.prod.whoop.com/developer`. Read only: nothing
 in this closure writes back to WHOOP. The bundle's `oauth2` block carries the
 endpoints and the toggle-to-scope map, so each consent requests the union the
 account's enabled toggles derive: `read:cycles` for `enabledCycles`,
-`read:recovery` and `read:cycles` for `enabledRecovery`, `read:sleep`,
-`read:workout`, `read:profile` with `read:body_measurement` for
+`read:recovery`, `read:cycles` and `read:sleep` for `enabledRecovery` (a
+recovery webhook names a sleep, which `whoopwebhook` reads for its cycle),
+`read:sleep`, `read:workout`, `read:profile` with `read:body_measurement` for
 `enabledProfile`, and `read:profile` with `offline` on every toggle.
 
 - **Kinds (7)**: `config` (the WHOOP OAuth app), `account` (the connection,
@@ -876,9 +877,12 @@ its `cycle_id` and then `GET /v2/cycle/{cycle_id}/recovery`. A `404` on any
 of those reads deletes the row. `sleep.deleted` and `workout.deleted` delete
 the row the id names, and `recovery.deleted` deletes the recovery whose
 `sleep` reference is the named sleep. A paused account drops every event. A
-toggle that is off, a missing token, a `retryNotBefore` still in the future or
-a `429` drops an update and leaves it to the next sync's window; a deletion
-needs no read and is applied whatever the toggles say.
+toggle that is off, a missing token, a `retryNotBefore` still in the future,
+a `429`, or a `401` or `403` on a read back drops an update and leaves it to
+the next sync's window; the output's `skipped` names the reason. An account
+connected with recoveries on before `enabledRecovery` requested `read:sleep`
+has its `recovery.updated` events dropped this way until it reconnects. A
+deletion needs no read and is applied whatever the toggles say.
 
 **What it does not do.** No writeback, and no mirror carries a `json` blob, a
 sync cursor or a page token. There is no `sport` kind: `workout.sportName` is

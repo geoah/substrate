@@ -85,6 +85,35 @@ type fakeWhoop struct {
 	fakeAPI
 	phase  int
 	misses []string
+	// granted, when set, is the scope set the token carries: a read needing a
+	// scope outside it answers 403, as WHOOP refuses a grant without it.
+	granted []string
+}
+
+// whoopScopeOf is the scope one read needs, from WHOOP's published
+// description (testdata/whoop/NOTES.md, "Endpoints").
+func whoopScopeOf(path string) string {
+	switch {
+	case strings.HasSuffix(path, "/recovery") || path == "/v2/recovery":
+		return "read:recovery"
+	case strings.HasSuffix(path, "/sleep") || strings.HasPrefix(path, "/v2/activity/sleep"):
+		return "read:sleep"
+	case strings.HasPrefix(path, "/v2/activity/workout"):
+		return "read:workout"
+	case strings.HasPrefix(path, "/v2/cycle"):
+		return "read:cycles"
+	case path == "/v2/user/measurement/body":
+		return "read:body_measurement"
+	default:
+		return "read:profile"
+	}
+}
+
+// grant makes the fake refuse every read the scopes do not cover.
+func (f *fakeWhoop) grant(scopes []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.granted = slices.Clone(scopes)
 }
 
 func newFakeWhoop(t *testing.T) *fakeWhoop {
@@ -109,6 +138,13 @@ func (f *fakeWhoop) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !bearer(w, r) {
+		return
+	}
+	f.mu.Lock()
+	refused := f.granted != nil && !slices.Contains(f.granted, whoopScopeOf(r.URL.Path))
+	f.mu.Unlock()
+	if refused {
+		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 	name := "GET" + strings.ReplaceAll(r.URL.Path, "/", "_")
@@ -468,6 +504,61 @@ func TestWhoopWebhookLeavesTheSignatureToTheDoor(t *testing.T) {
 	}
 	if got := fake.readBacks(); !slices.Equal(got, []string{"/v2/activity/sleep/" + whoopLastSleep}) {
 		t.Fatalf("the delivery read %v, want the one sleep", got)
+	}
+}
+
+// whoopGrantFor is the scope set the OAuth facility requests for an account
+// whose named toggles are on: the union of their shipped featureScopes.
+func whoopGrantFor(t *testing.T, toggles ...string) []string {
+	t.Helper()
+	b, ok := bundleRegistry(t, whoopDir).BundleOf(whoopPackage)
+	if !ok || b.OAuth2 == nil {
+		t.Fatal("the WHOOP bundle declares no oauth2 block")
+	}
+	var out []string
+	for _, toggle := range toggles {
+		for _, s := range b.OAuth2.FeatureScopes[toggle] {
+			if !slices.Contains(out, s) {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// TestWhoopRecoveryEventUnderTheRecoveryGrantAlone: `recovery.updated` names
+// a sleep, so the body reads that sleep to find the recovery's cycle. An
+// account with recoveries on and sleeps off is granted only what its toggles
+// request, and that grant must cover the sleep read, or every recovery event
+// fails at WHOOP and parks. An account connected under a grant that lacks the
+// scope (before its toggle asked for it) has the event dropped with WHOOP's
+// refusal as the reason, because a retry with the same token is refused the
+// same way.
+func TestWhoopRecoveryEventUnderTheRecoveryGrantAlone(t *testing.T) {
+	_, ds, fake := newWhoop(t)
+	props := whoopProps(map[string]any{
+		"user":         map[string]any{"ref": whoopUserType + "/" + whoopRow("user", whoopMember)},
+		"enabledSleep": false, "enabledCycles": false, "enabledWorkouts": false, "enabledProfile": false,
+	})
+	cfg := whoopConfig(fake, props)
+	recoveryRow := whoopRecoveryType + "/" + whoopRow("recovery", whoopCurrentCycle)
+
+	fake.grant(whoopGrantFor(t, "enabledRecovery"))
+	out, _, err := whoopHook(t, ds, cfg, whoopOnTime(t, "02_recovery.updated.json"))
+	if err != nil {
+		t.Fatalf("recovery.updated under the recovery toggle's own grant failed: %v", err)
+	}
+	if fmt.Sprint(out["wrote"]) != fmt.Sprint([]any{recoveryRow}) {
+		t.Fatalf("recovery.updated wrote %v, want only %s (sleeps are off)", out["wrote"], recoveryRow)
+	}
+
+	fake.grant([]string{"read:recovery", "read:cycles", "read:profile", "offline"})
+	out, effects, err := whoopHook(t, ds, cfg, whoopOnTime(t, "02_recovery.updated.json"))
+	if err != nil {
+		t.Fatalf("a grant without read:sleep failed the delivery, which parks it: %v", err)
+	}
+	if len(effects) != 0 || !strings.Contains(fmt.Sprint(out["skipped"]), "403") {
+		t.Fatalf("a grant without read:sleep: output %v, %d effects; want the event dropped naming the 403", out, len(effects))
 	}
 }
 

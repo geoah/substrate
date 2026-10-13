@@ -130,7 +130,12 @@ data:
   # 0164). `whoopwebhook` no longer checks it, and the `webhooksecret`
   # setting, a second copy of the client secret every function was handed,
   # is gone.
-  version: 20
+  #
+  # 21: `enabledRecovery` requests `read:sleep`, because `whoopwebhook`
+  # reads the sleep a `recovery.updated` event names to find its cycle.
+  # `whoopwebhook` drops an event WHOOP answers 401 or 403 for instead of
+  # failing the delivery.
+  version: 21
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -194,10 +199,14 @@ data:
           - read:cycles
           - read:profile
           - offline
+      # read:sleep because a `recovery.updated` webhook names the SLEEP,
+      # and `whoopwebhook` reads it to find the cycle the recovery is keyed
+      # on.
       enabledRecovery:
         scopes:
           - read:recovery
           - read:cycles
+          - read:sleep
           - read:profile
           - offline
       enabledSleep:
@@ -2724,9 +2733,10 @@ data:
     the same object written twice is a write the engine drops.
 
     REVISIONS. `updated_at` is the object's revision: an answer older than the
-    stored row's `updatedAt` is not written over it. A 429, a missing token or a
-    retry hold drops an update rather than parking it; the sync's next window
-    re-reads the object.
+    stored row's `updatedAt` is not written over it. A 429, a 401 or 403, a
+    missing token or a retry hold drops an update rather than parking it,
+    because a retry meets the same answer; the sync's next window re-reads the
+    object.
     """
     import base64
     import datetime as _dt
@@ -2799,6 +2809,12 @@ data:
         """WHOOP asked us to stop."""
 
 
+    class _Refused(Exception):
+        """WHOOP refused the token: a revoked grant, or one connected before
+        a toggle asked for the scope this read needs. A retry with the same
+        token is refused the same way."""
+
+
     def _get(base, token, path):
         url = base + path
         _check_origin(url)
@@ -2811,11 +2827,11 @@ data:
         if resp.status_code == 429:
             raise _RateLimited("rate limited by WHOOP")
         if resp.status_code == 401:
-            raise RuntimeError("whoop webhook: unauthorized (was the grant "
-                               "revoked at WHOOP?)")
+            raise _Refused("WHOOP answered 401 for %s (was the grant revoked "
+                           "at WHOOP?)" % path)
         if resp.status_code == 403:
-            raise RuntimeError("whoop webhook: forbidden (a scope this grant "
-                               "does not carry)")
+            raise _Refused("WHOOP answered 403 for %s (a scope this grant "
+                           "does not carry; reconnect the account)" % path)
         if resp.status_code >= 400:
             raise RuntimeError("whoop webhook: whoop returned HTTP %d"
                                % resp.status_code)
@@ -3154,7 +3170,7 @@ data:
             _check_origin(base)
             try:
                 _updated(host, base, acct["token"], rows, obj, oid, props)
-            except _RateLimited as e:
+            except (_RateLimited, _Refused) as e:
                 out["skipped"] = str(e)
         out.update({"wrote": rows.wrote, "kept": rows.kept,
                     "deleted": rows.deleted})
