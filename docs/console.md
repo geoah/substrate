@@ -837,12 +837,13 @@ case they all draw together. Two scales on one plot line up arbitrarily, so
 each axis carries its unit, each metric's row names its side, and its
 numbers are one click below.
 
-Each metric plans its own read, and a chart sends the reads that match in
-filter, range, bucket, grouping and sources as one request, which names each
-metric in `aggregate.metrics` with its own unit, reducers, `from` and
-statistic ([several metrics in one read](api.md#several-metrics-in-one-read)).
-A request names at most 16 metrics, whose expected buckets add up to at
-most the server's cap of 10,000; past either, the chart sends another. Its budget is its metrics' budgets
+Each metric plans its own read, and the reads that match in filter, range,
+bucket, grouping and sources are one request, across the timeline's charts,
+which names each metric in `aggregate.metrics` with its own unit, reducers,
+`from` and statistic
+([several metrics in one read](api.md#several-metrics-in-one-read)). A
+request names at most 16 metrics, whose expected buckets add up to at most
+the server's cap of 10,000; past either, the metrics take another request. Its budget is its metrics' budgets
 added up, so each metric may spend what its own read could. Each metric's
 row draws the answer's rows naming it in `group.metric`, and says on its own
 whether it is loading, refreshing or failed. Where the server refuses a

@@ -230,6 +230,34 @@ describe("the timeline's requests", () => {
     expect(requests[0].textContent).toContain('"metrics"')
   })
 
+  it("reads the metrics of two charts in one request", async () => {
+    const server = mount(
+      `?metric=health/body_mass,health/steps,health/whoop_recovery&${WINDOW}`,
+      true
+    )
+    // A third unit is a second chart.
+    const first = await lane("Weight and Steps")
+    const second = await lane("Recovery")
+    await waitFor(() =>
+      expect(server.sent.filter((r) => r.aggregate.metrics)).toHaveLength(1)
+    )
+    const [read] = server.sent.filter((r) => r.aggregate.metrics)
+    expect(read.aggregate.metrics?.map((m) => [m.ref, m.from])).toEqual([
+      [BODY_MASS, "raw"],
+      [`${METRIC}/health/steps`, "raw"],
+      [`${METRIC}/health/whoop_recovery`, "summaries"],
+    ])
+    expect(server.sent.filter((r) => r.aggregate.metric)).toEqual([])
+    await drawn(first)
+    // Each chart shows the one request, named for every metric in it.
+    for (const chart of [first, second]) {
+      const [request] = chart.querySelectorAll("[data-slot=lane-request]")
+      expect(request.textContent).toContain(
+        "Request for Weight, Steps and Recovery"
+      )
+    }
+  })
+
   it("reads each metric apart where the server refuses them together", async () => {
     const problem =
       "aggregate.reducers[0]: sum does not apply to a gauge: a gauge is a level"

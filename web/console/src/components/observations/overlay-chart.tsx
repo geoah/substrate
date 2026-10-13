@@ -153,6 +153,7 @@ function choiceWords(plot: Plot): string {
 export function OverlayChart({
   obs,
   plots,
+  peers,
   range,
   size,
   title = false,
@@ -165,6 +166,11 @@ export function OverlayChart({
   obs: Observations
   /** The metrics, in the order they take the axes. */
   plots: Plot[]
+  /** Every metric read under the same choices beside this chart's, in the
+   * page's order, this chart's among them: a request may hold the metrics
+   * of several charts, and each chart asks for it under one query key.
+   * This chart's metrics where absent. */
+  peers?: Plot[]
   range: TimeRange
   size: BucketSize
   /** Head the chart with its metrics' names (the timeline page); a panel
@@ -192,13 +198,14 @@ export function OverlayChart({
   const refusal = leftOutWords(plan)
 
   const client = useQueryClient()
-  // The metrics that read, once their streams are known, as few requests as
-  // hold them. A changed bucket, filter or reducer the cached answers carry
-  // holds the frame while a request loads (`heldAnswer`), per metric.
-  const reading = drawn.filter((p) => p.read && obs.knows(p.metric))
+  // The metrics that read, this chart's and its peers', once their streams
+  // are known, as few requests as hold them; the chart asks for those
+  // holding its own. A changed bucket, filter or reducer the cached answers
+  // carry holds the frame while a request loads (`heldAnswer`), per metric.
+  const reading = (peers ?? drawn).filter((p) => p.read && obs.knows(p.metric))
   const shared = sharedReads(
     reading.map((p) => ({ read: p.read!, buckets: p.estimate }))
-  )
+  ).filter(({ lanes }) => lanes.some((at) => drawn.includes(reading[at])))
   const together = useQueries({
     queries: shared.map(({ read, lanes }) => ({
       ...aggregateQueryOptions(read, obs.observedIds),
@@ -211,9 +218,12 @@ export function OverlayChart({
         lanes.length === 1 || !refusedTogether(query.state.error),
     })),
   })
+  const refused = shared.map(
+    ({ lanes }, i) => lanes.length > 1 && refusedTogether(together[i].error)
+  )
   const apart = shared.flatMap(({ lanes }, i) =>
-    lanes.length > 1 && refusedTogether(together[i].error)
-      ? lanes.map((at) => reading[at])
+    refused[i]
+      ? lanes.map((at) => reading[at]).filter((p) => drawn.includes(p))
       : []
   )
   const alone = useQueries({
@@ -223,14 +233,14 @@ export function OverlayChart({
         prev ?? heldAnswer(client, plot.read!, obs.observedIds),
     })),
   })
+  const firstDrawn = (r: ChartRequest) =>
+    Math.min(...r.plots.map((p) => drawn.indexOf(p)).filter((i) => i >= 0))
   const requests: ChartRequest[] = [
-    ...shared.flatMap(({ read, lanes }) =>
-      lanes.length > 1 && apart.includes(reading[lanes[0]])
-        ? []
-        : [{ read, plots: lanes.map((at) => reading[at]) }]
+    ...shared.flatMap(({ read, lanes }, i) =>
+      refused[i] ? [] : [{ read, plots: lanes.map((at) => reading[at]) }]
     ),
     ...apart.map((plot) => ({ read: plot.read!, plots: [plot] })),
-  ].sort((a, b) => drawn.indexOf(a.plots[0]) - drawn.indexOf(b.plots[0]))
+  ].sort((a, b) => firstDrawn(a) - firstDrawn(b))
 
   /** The request a plot's rows come from, and where it stands. */
   function sourceOf(
@@ -538,7 +548,9 @@ export function OverlayChart({
             key={asked.map((p) => p.metric).join("\n")}
             read={read}
             caption={
-              drawn.length > 1 ? listWords(asked.map((p) => p.name)) : undefined
+              drawn.length > 1 || asked.length > 1
+                ? listWords(asked.map((p) => p.name))
+                : undefined
             }
           />
         ))}

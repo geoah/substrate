@@ -7,10 +7,10 @@
  *
  * The metrics overlay in one chart while they fit two units (the first on
  * the left axis, the second on the right) and otherwise split into as few
- * charts as hold them two units each (`lib/overlay.ts` splitCharts). A
- * chart reads its metrics in one request where their reads share
- * everything but each metric's own choices, and carries each metric's
- * numbers under it, with the requests themselves in technical mode. */
+ * charts as hold them two units each (`lib/overlay.ts` splitCharts). The
+ * metrics whose reads share everything but each metric's own choices are
+ * one request, across charts, and each chart carries its metrics' numbers
+ * under it, with the requests themselves in technical mode. */
 
 import { useEffect, useMemo } from "react"
 import { Link } from "@tanstack/react-router"
@@ -307,6 +307,7 @@ export function ObservationsTimelinePage() {
               key={chart.map((p) => p.metric).join("\n")}
               obs={obs}
               plots={chart}
+              peers={plots}
               range={range}
               size={size}
               title
