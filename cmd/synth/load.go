@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -102,13 +103,20 @@ func (c *client) trigger(ctx context.Context, id string) (map[string]any, error)
 	return rec, nil
 }
 
-// arm enables the trigger with the key, keeping its other properties.
-func (c *client) arm(ctx context.Context, id, key string, headers []string) error {
+// webhookKeyPattern is the trigger kind's pattern for source.webhook.key.
+var webhookKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
+
+// arm enables the trigger to take the loader's posts with the key, keeping
+// its other properties, and answers whether it was enabled before. A key
+// the trigger already has is the owner's: arm refuses another one unless
+// replace says to replace it.
+func (c *client) arm(ctx context.Context, id, key string, replace bool, headers []string) (bool, error) {
 	rec, err := c.trigger(ctx, id)
 	if err != nil {
-		return err
+		return false, err
 	}
 	props, _ := rec["properties"].(map[string]any)
+	enabled, _ := props["enabled"].(bool)
 	source, _ := props["source"].(map[string]any)
 	if source == nil {
 		source = map[string]any{}
@@ -117,12 +125,22 @@ func (c *client) arm(ctx context.Context, id, key string, headers []string) erro
 	if webhook == nil {
 		webhook = map[string]any{}
 	}
+	if had, _ := webhook["key"].(string); had != "" && had != key && !replace {
+		return false, fmt.Errorf("%s already has a webhook key: pass that key with -key, or -replace-key to replace it", id)
+	}
 	webhook["key"] = key
 	if len(headers) > 0 {
 		webhook["headers"] = headers
 	}
 	source["webhook"] = webhook
-	body, err := json.Marshal(map[string]any{"properties": map[string]any{"enabled": true, "source": source}})
+	if err := c.patchTrigger(ctx, id, map[string]any{"enabled": true, "source": source}); err != nil {
+		return false, fmt.Errorf("arming %s: %w", id, err)
+	}
+	return enabled, nil
+}
+
+func (c *client) patchTrigger(ctx context.Context, id string, props map[string]any) error {
+	body, err := json.Marshal(map[string]any{"properties": props})
 	if err != nil {
 		return err
 	}
@@ -131,7 +149,7 @@ func (c *client) arm(ctx context.Context, id, key string, headers []string) erro
 		return err
 	}
 	if st >= 300 {
-		return fmt.Errorf("arming %s: %d %s", id, st, truncate(out))
+		return fmt.Errorf("%d %s", st, truncate(out))
 	}
 	return nil
 }
@@ -189,7 +207,8 @@ func load(args []string, stdout, stderr io.Writer) error {
 	server := fs.String("server", "http://127.0.0.1:8080", "the substrate's base URL")
 	authority := fs.String("authority", "", "the repository (its authority)")
 	providers := fs.String("providers", "", "comma-separated providers; empty is every one with output in -dir")
-	key := fs.String("key", "synth-webhook-key-0123456789abcdef", "the webhook key to arm the push triggers with")
+	key := fs.String("key", "", "the webhook key to arm the push triggers with (default $SYNTH_WEBHOOK_KEY)")
+	replaceKey := fs.Bool("replace-key", false, "replace a webhook key a push trigger already has")
 	settle := fs.Duration("settle", 5*time.Minute, "how long to wait for each delivery's run")
 	repo := fs.String("repo", ".", "the substrate checkout the e2e runner and the bundles are read from (any directory inside it)")
 	ctl := fs.String("ctl", "", "the substratectl binary the runner applies bundles with (default <repo>/bin/substratectl)")
@@ -204,12 +223,16 @@ func load(args []string, stdout, stderr io.Writer) error {
 	if *authority == "" {
 		return errors.New("-authority is required")
 	}
+	if *key == "" {
+		*key = os.Getenv("SYNTH_WEBHOOK_KEY")
+	}
 	c := &client{server: strings.TrimRight(*server, "/"), token: token, authority: *authority, hc: &http.Client{Timeout: 2 * time.Minute}}
 	ctx := context.Background()
 	ems, err := emitters(*providers, *authority)
 	if err != nil {
 		return err
 	}
+	var loading []synth.Emitter
 	for _, e := range ems {
 		base := filepath.Join(*dir, e.Name())
 		if _, err := os.Stat(base); err != nil {
@@ -218,6 +241,13 @@ func load(args []string, stdout, stderr io.Writer) error {
 			}
 			return fmt.Errorf("%s: nothing generated under %s", e.Name(), base)
 		}
+		loading = append(loading, e)
+		if _, posts := statOK(filepath.Join(base, "deliveries")); posts && !webhookKeyPattern.MatchString(*key) {
+			return fmt.Errorf("%s posts to a webhook door: name its key with -key or SYNTH_WEBHOOK_KEY, 16 to 128 of A-Z, a-z, 0-9, _ and -", e.Name())
+		}
+	}
+	for _, e := range loading {
+		base := filepath.Join(*dir, e.Name())
 		setup, err := readSetup(base)
 		if err != nil {
 			return fmt.Errorf("%s: %w", e.Name(), err)
@@ -266,7 +296,7 @@ func load(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 		if hasDeliveries {
-			if err := postDeliveries(ctx, c, base, *key, *settle, stdout); err != nil {
+			if err := postDeliveries(ctx, c, base, *key, *replaceKey, *settle, stdout); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
 		}
@@ -575,7 +605,10 @@ type envelope struct {
 	Trigger string `json:"trigger"`
 }
 
-func postDeliveries(ctx context.Context, c *client, base, key string, settle time.Duration, stdout io.Writer) error {
+// postDeliveries posts every delivery under base in order, arming each
+// trigger first. A trigger the loader found disabled is disabled again when
+// it returns, so the door it opened with the key closes with it.
+func postDeliveries(ctx context.Context, c *client, base, key string, replaceKey bool, settle time.Duration, stdout io.Writer) (err error) {
 	files, err := filepath.Glob(filepath.Join(base, "deliveries", "*.json"))
 	if err != nil {
 		return err
@@ -585,6 +618,16 @@ func postDeliveries(ctx context.Context, c *client, base, key string, settle tim
 	}
 	sort.Strings(files)
 	armed := map[string]bool{}
+	defer func() {
+		for id, wasEnabled := range armed {
+			if wasEnabled {
+				continue
+			}
+			if derr := c.patchTrigger(context.WithoutCancel(ctx), id, map[string]any{"enabled": false}); derr != nil && err == nil {
+				err = fmt.Errorf("disabling %s again: %w", id, derr)
+			}
+		}
+	}()
 	started := time.Now()
 	for i, f := range files {
 		raw, err := os.ReadFile(f) //nolint:gosec // the path generate wrote
@@ -598,17 +641,18 @@ func postDeliveries(ctx context.Context, c *client, base, key string, settle tim
 		if env.Trigger == "" {
 			return fmt.Errorf("%s names no trigger", f)
 		}
-		if !armed[env.Trigger] {
+		if _, ok := armed[env.Trigger]; !ok {
 			var headers []string
 			for h := range env.Request.Headers {
 				if h == "garmin-client-id" {
 					headers = append(headers, h)
 				}
 			}
-			if err := c.arm(ctx, env.Trigger, key, headers); err != nil {
+			wasEnabled, err := c.arm(ctx, env.Trigger, key, replaceKey, headers)
+			if err != nil {
 				return err
 			}
-			armed[env.Trigger] = true
+			armed[env.Trigger] = wasEnabled
 		}
 		path := "/webhooks/" + c.authority + "/" + env.Trigger
 		headers := map[string]string{}

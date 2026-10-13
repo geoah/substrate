@@ -259,3 +259,63 @@ func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
 		t.Errorf("a fresh repository imported %v", imported)
 	}
 }
+
+// The webhook key is the owner's: it comes from -key or SYNTH_WEBHOOK_KEY,
+// never from the source, so a load with neither posts nothing.
+func TestLoadTakesTheWebhookKeyFromTheOwner(t *testing.T) {
+	f := newFakeSubstrate(t)
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", "")
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err == nil ||
+		!strings.Contains(err.Error(), "-key") || !strings.Contains(err.Error(), "SYNTH_WEBHOOK_KEY") {
+		t.Fatalf("a load with no key = %v, want a refusal naming -key and SYNTH_WEBHOOK_KEY\n%s", err, out)
+	}
+	if log := f.log(); len(log) != 0 {
+		t.Fatalf("a load with no key made %d requests: %v", len(log), log)
+	}
+
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
+	}
+	webhook := f.triggers["applehealth-webhook"]["source"].(map[string]any)["webhook"].(map[string]any)
+	if webhook["key"] != testKey {
+		t.Errorf("the trigger was armed with %v, want the environment's key", webhook["key"])
+	}
+	if len(f.webhooks) != 2 {
+		t.Errorf("%d deliveries posted, want 2", len(f.webhooks))
+	}
+}
+
+// A key the trigger already has is the owner's: the loader posts with it
+// when -key names it, refuses another unless -replace-key says so, and
+// leaves a trigger it found disabled disabled.
+func TestLoadKeepsAKeyTheTriggerHas(t *testing.T) {
+	const owners = "the-owners-own-key-0123456789"
+	f := newFakeSubstrate(t)
+	f.triggers["applehealth-webhook"]["source"] = map[string]any{"webhook": map[string]any{"key": owners}}
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", "")
+
+	out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", testKey)
+	if err == nil || !strings.Contains(err.Error(), "-replace-key") {
+		t.Fatalf("a load with another key = %v, want a refusal naming -replace-key\n%s", err, out)
+	}
+	if key := f.triggers["applehealth-webhook"]["source"].(map[string]any)["webhook"].(map[string]any)["key"]; key != owners || len(f.webhooks) != 0 {
+		t.Fatalf("the refused load left key %v and posted %d deliveries", key, len(f.webhooks))
+	}
+
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", owners); err != nil {
+		t.Fatalf("a load with the trigger's own key: %v\n%s", err, out)
+	}
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth", "-key", testKey, "-replace-key"); err != nil {
+		t.Fatalf("a load asked to replace the key: %v\n%s", err, out)
+	}
+	trig := f.triggers["applehealth-webhook"]
+	if key := trig["source"].(map[string]any)["webhook"].(map[string]any)["key"]; key != testKey {
+		t.Errorf("-replace-key left key %v", key)
+	}
+	if trig["enabled"] != false {
+		t.Errorf("the trigger was found disabled and left enabled %v", trig["enabled"])
+	}
+}
