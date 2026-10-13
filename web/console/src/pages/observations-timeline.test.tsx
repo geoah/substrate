@@ -52,6 +52,7 @@ import {
   latestAnswer,
   observationsServer,
   pageFetch,
+  unavailable,
   type SeenRead,
 } from "@/lib/observations.test-fixtures"
 
@@ -1115,15 +1116,7 @@ describe("the timeline's requests", () => {
         failures > 0
       ) {
         failures--
-        return new Response(
-          JSON.stringify({
-            error: {
-              code: "unavailable",
-              message: "the database is restarting",
-            },
-          }),
-          { status: 503, headers: { "Content-Type": "application/json" } }
-        )
+        return unavailable()
       }
       return answer(read)
     })
@@ -1257,15 +1250,7 @@ describe("the timeline's requests", () => {
         if (read.aggregate.metric) return answer(read)
         if (read.aggregate.groupBy?.join() === "about" && failures > 0) {
           failures--
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: "unavailable",
-                message: "the database is restarting",
-              },
-            }),
-            { status: 503, headers: { "Content-Type": "application/json" } }
-          )
+          return unavailable()
         }
         return latestAnswer(read, LATEST_PEOPLE)
       }
