@@ -208,7 +208,10 @@ export function DeclaredValue({
         <ol className="flex w-full flex-col gap-2">
           {value.map((one, i) => (
             <li key={i} className="flex min-w-0 items-baseline gap-2">
-              <span className="text-xs text-faint tabular-nums">{i + 1}</span>
+              {/* A lone object needs no number to tell it apart. */}
+              {value.length > 1 && (
+                <span className="text-xs text-faint tabular-nums">{i + 1}</span>
+              )}
               <div className="min-w-0 flex-1">
                 <ScalarValue spec={item} value={one} dense />
               </div>

@@ -12,6 +12,7 @@ import {
   observedKinds,
   observedPins,
   observedVariant,
+  judgementWords,
   readingText,
   recordTimelineSearch,
   reducerKey,
@@ -354,5 +355,24 @@ describe("the latest read's streams", () => {
     expect(
       Date.parse(weighing.end) - Date.parse(weighing.start)
     ).toBeGreaterThan(29 * DAY)
+  })
+})
+
+describe("a lab result's flag and range in words", () => {
+  const mg = (value: string) => ({ value, unit: "mg/dL" })
+  it("says the lab's flag and its range's bounds", () => {
+    const normal = [{ code: "N", display: "Normal" }]
+    expect(judgementWords(normal, [{ high: mg("120") }])).toBe(
+      "normal (under 120 mg/dL)"
+    )
+    expect(
+      judgementWords([{ code: "H" }], [{ low: mg("60"), high: mg("120") }])
+    ).toBe("h (60 to 120 mg/dL)")
+    expect(judgementWords([], [{ low: mg("40") }])).toBe("range over 40 mg/dL")
+    expect(judgementWords(normal, undefined)).toBe("normal")
+    expect(judgementWords(undefined, [{ text: "optimal" }])).toBe(
+      "range optimal"
+    )
+    expect(judgementWords(undefined, undefined)).toBeUndefined()
   })
 })

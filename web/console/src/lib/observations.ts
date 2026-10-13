@@ -25,8 +25,10 @@ import { splitRecordPath } from "@/lib/record-path"
 import { FORM_WORDS, OBSERVED_TRAIT_IDENTITY } from "@/lib/observed-form"
 import { kindHasTrait } from "@/lib/traits"
 import {
+  displayQuantity,
   formatQuantity,
   groupDigits,
+  isQuantity,
   roundDigits,
   timeWords,
   withSymbol,
@@ -81,6 +83,8 @@ export const OBSERVED_SHOWN: Record<
       "endsAt",
       "revision",
       "origin",
+      "interpretation",
+      "referenceRanges",
     ],
   },
   packed: {
@@ -261,6 +265,50 @@ export function readingText(
   return unit && formatQuantity({ value: shown, unit })
     ? withSymbol(digits, unit)
     : digits
+}
+
+/** A result's flag and reference range as a reader says them beside its
+ * value: `normal (under 120 mg/dL)`, `high (60 to 120 mg/dL)`, `range over
+ * 40 mg/dL`. The lab's own words for the flag (its `display`, else its
+ * code) and the first range's bounds; undefined where the record has
+ * neither. */
+export function judgementWords(
+  interpretation: unknown,
+  referenceRanges: unknown
+): string | undefined {
+  const flags = (Array.isArray(interpretation) ? interpretation : []).flatMap(
+    (f) => {
+      const word = isBag(f) ? (text(f.display) ?? text(f.code)) : undefined
+      return word ? [word.charAt(0).toLowerCase() + word.slice(1)] : []
+    }
+  )
+  const [range] = Array.isArray(referenceRanges) ? referenceRanges : []
+  const bounds = isBag(range) ? rangeWords(range) : undefined
+  const flag = flags.join(", ")
+  if (flag && bounds) return `${flag} (${bounds})`
+  if (flag) return flag
+  return bounds ? `range ${bounds}` : undefined
+}
+
+function rangeWords(range: Record<string, unknown>): string | undefined {
+  const low = isQuantity(range.low) ? range.low : undefined
+  const high = isQuantity(range.high) ? range.high : undefined
+  if (low && high) {
+    return low.unit === high.unit
+      ? `${groupDigits(low.value)} to ${displayQuantity(high)}`
+      : `${displayQuantity(low)} to ${displayQuantity(high)}`
+  }
+  if (high) return `under ${displayQuantity(high)}`
+  if (low) return `over ${displayQuantity(low)}`
+  return text(range.text)
+}
+
+function isBag(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined
 }
 
 /** A metric id read as words when no record names it, its last segment

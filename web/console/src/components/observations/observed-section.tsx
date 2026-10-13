@@ -21,6 +21,7 @@ import { barPath, linePath, linearScale, niceDomain } from "@/lib/chart"
 import { tableDateTime } from "@/lib/format"
 import {
   isForm,
+  judgementWords,
   observedVariant,
   readingText,
   recordTimelineSearch,
@@ -111,7 +112,12 @@ function ValueSection({
   const value = p.value as { value?: unknown; unit?: unknown } | undefined
   const shape = shapeOfRecord(p)
   const at = str(p.at)
-  const endsAt = str(p.endsAt)
+  // A window that ends where it starts is one instant, said once.
+  const endsAt =
+    str(p.endsAt) && at && Date.parse(str(p.endsAt)!) === Date.parse(at)
+      ? undefined
+      : str(p.endsAt)
+  const judged = judgementWords(p.interpretation, p.referenceRanges)
   return (
     <>
       <SectionHead
@@ -134,6 +140,14 @@ function ValueSection({
             />
           ) : (
             <EmptyValue />
+          )}
+          {judged && (
+            <span
+              data-slot="observed-judgement"
+              className="ml-1.5 text-[13px] text-muted-foreground"
+            >
+              {judged}
+            </span>
           )}
         </Fact>
         <Fact label="Metric">

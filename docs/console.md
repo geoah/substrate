@@ -383,17 +383,20 @@ Under the properties, in order:
   **Pause**, and a link to the account on its provider's page.
 - **Measurement** or **Readings**, on a record of any kind binding the core
   `observed` trait, sits above the properties instead. A single value (the
-  trait's `single` variant) reads its value with its unit, the metric,
+  trait's `single` variant) reads its value with its unit, beside a lab
+  result's flag and first reference range in words (`108 mg/dL` beside
+  "normal (under 120 mg/dL)"), the metric,
   source and thing it is about as record mentions, the form, the statistic
-  and period of a vendor summary, when, the revision and the record that
-  delivered it. A trace (the `packed` variant, told apart by declaring
+  and period of a vendor summary, when (one time where `endsAt` equals
+  `at`), the revision and the record that delivered it. A trace (the `packed` variant, told apart by declaring
   `values`) draws its values over `[at, endsAt)` as a line broken wherever
   two values sit further apart than its `hold`, its managed `stats` as
   labelled values, and every value with its time in a table fifty to a
   page. Both open the timeline on the record's stream. The property sheet
   under it folds the properties the section shows into one line ("12 shown
   under Measurement"), which opens them for editing, and keeps the rest (a
-  lab result's coding, specimen and report). A summary opens the timeline
+  lab result's coding, specimen and report). A list of objects numbers its
+  items only where it holds more than one. A summary opens the timeline
   on its own statistic. A `form` reads in the same words everywhere the
   console shows it: **Level**, **Amount**, **Running total** or **Vendor
   summary**.

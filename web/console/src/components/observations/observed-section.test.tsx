@@ -205,6 +205,37 @@ describe("a single value", () => {
     )
   })
 
+  it("reads a lab result against its range, and an instant once", () => {
+    const ldl: SubstrateRecord = {
+      ...WEIGHING,
+      properties: {
+        ...WEIGHING.properties,
+        value: { value: "108", unit: "mg/dL" },
+        at: "2026-10-05T05:10:00Z",
+        endsAt: "2026-10-05T05:10:00Z",
+        interpretation: [
+          {
+            system:
+              "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+            code: "N",
+            display: "Normal",
+          },
+        ],
+        referenceRanges: [{ high: { value: "120", unit: "mg/dL" } }],
+      },
+    }
+    const view = mount(ldl, observationKind)
+    const facts = view.container.querySelector(
+      "[data-slot=observed-value]"
+    ) as HTMLElement
+    const fact = (label: string) =>
+      within(facts).queryByText(label)?.nextElementSibling?.textContent
+    expect(fact("Value")).toBe("108 mg/dLnormal (under 120 mg/dL)")
+    expect(fact("When")).toContain("Oct 5")
+    expect(within(facts).queryByText("From")).toBe(null)
+    expect(within(facts).queryByText("Until")).toBe(null)
+  })
+
   it("shows nothing for a kind that does not bind the trait", () => {
     const view = mount(WEIGHING, metricKind)
     expect(view.container.textContent).toBe("")

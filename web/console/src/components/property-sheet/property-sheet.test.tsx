@@ -333,6 +333,32 @@ describe("PropertySheet on a kind binding observed", () => {
     expect(value.querySelector("[title='97.1836248 %']")).not.toBeNull()
   })
 
+  it("numbers a list of objects only where it holds more than one", () => {
+    const ranged = kind(SLEEP, {
+      properties: {
+        ranges: {
+          type: "object",
+          repeated: true,
+          fields: { text: { type: "string" } },
+        },
+      },
+    })
+    renderSheet(
+      record({ kind: SLEEP, properties: { ranges: [{ text: "optimal" }] } }),
+      ranged
+    )
+    expect(row("ranges").textContent).not.toMatch(/1/)
+    cleanup()
+    renderSheet(
+      record({
+        kind: SLEEP,
+        properties: { ranges: [{ text: "female" }, { text: "male" }] },
+      }),
+      ranged
+    )
+    expect(row("ranges").textContent).toMatch(/1.*female.*2.*male/)
+  })
+
   it("names a form in the words the observations pages use", () => {
     renderSheet(reading, observation)
     expect(row("form").textContent).toContain("Level")
