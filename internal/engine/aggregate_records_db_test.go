@@ -347,3 +347,155 @@ func TestAggregateRecordWindowsTakeAnAmountByItsOverlap(t *testing.T) {
 		}
 	}
 }
+
+// A property read reduces a duration in a duration unit, exactly, and gives
+// its population standard deviation; property.groupBy splits it by the
+// records' own properties, an enum (sport) and a reference (source), each
+// row naming its values in group.properties. Weekly training time per sport
+// is one read.
+func TestAggregatePropertyReducesDurationsBySport(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	day := func(d, h int) time.Time { return time.Date(2026, 9, d, h, 0, 0, 0, plus3) }
+	f.workout("garmin/1", "garmin", "running", day(7, 7), 30*time.Minute, "5")
+	f.workout("garmin/2", "garmin", "running", day(8, 7), 90*time.Minute, "15")
+	f.workout("garmin/3", "garmin", "cycling", day(9, 7), 2*time.Hour, "40")
+	f.workout("apple/4", "apple", "running", day(10, 7), 45*time.Minute, "8")
+	read := func(groupBy []string, unit string, reds ...string) *substrate.AggregateResult {
+		return f.agg(context.Background(), substrate.Filter{Kinds: []string{f.workoutKind()}}, substrate.Aggregate{
+			Property: &substrate.AggregateProperty{Name: "duration", GroupBy: groupBy},
+			Range:    rng(day(7, 0), day(14, 0)),
+			Bucket:   &substrate.AggregateBucket{Calendar: "week", Timezone: "Europe/Athens"},
+			Reducers: reducers(reds...), Unit: unit,
+		})
+	}
+	bySport := read([]string{"sport"}, "min", "sum", "count", "stddev")
+	got := map[string]string{}
+	for _, row := range bySport.Rows {
+		sum, _ := val(row, "sum")
+		cnt, _ := val(row, "count")
+		sd, _ := val(row, "stddev")
+		if row.Group == nil {
+			t.Fatalf("row %+v has no group", row)
+		}
+		got[row.Group.Properties["sport"]] = sum + "/" + cnt + "/" + sd + " " + row.Values[0].Unit
+	}
+	// Running is 30, 90 and 45 minutes: a mean of 55 and a variance of 650.
+	for sport, want := range map[string]string{"running": "165/3/25.49509756796392415 min", "cycling": "120/1/0 min"} {
+		if got[sport] != want {
+			t.Errorf("%s = %q, want %q", sport, got[sport], want)
+		}
+	}
+	if len(got) != 2 || bySport.Unit != "min" || bySport.Exact {
+		t.Errorf("rows %v, unit %q, exact %v; want two sports in min, inexact (a square root)", got, bySport.Unit, bySport.Exact)
+	}
+	total := read(nil, "", "sum")
+	if v, _ := val(total.Rows[0], "sum"); len(total.Rows) != 1 || v != "17100" || total.Unit != "s" || !total.Exact {
+		t.Errorf("total = %+v, want 17100 s, exact", total.Rows)
+	}
+	bySource := read([]string{"source", "sport"}, "h", "sum")
+	gotSources := map[string]string{}
+	for _, row := range bySource.Rows {
+		v, _ := val(row, "sum")
+		gotSources[strings.TrimPrefix(row.Group.Properties["source"], f.source+"/")+" "+row.Group.Properties["sport"]] = v
+	}
+	for k, want := range map[string]string{"garmin running": "2", "garmin cycling": "2", "apple running": "0.75"} {
+		if gotSources[k] != want {
+			t.Errorf("%s = %q, want %q (all %v)", k, gotSources[k], want, gotSources)
+		}
+	}
+	for _, x := range []struct {
+		name string
+		a    substrate.Aggregate
+		want string
+	}{
+		{"a unit that is no duration", substrate.Aggregate{
+			Property: &substrate.AggregateProperty{Name: "duration"}, Range: rng(day(7, 0), day(14, 0)), Reducers: reducers("sum"), Unit: "km",
+		}, "not a duration unit"},
+		{"a group of numbers", substrate.Aggregate{
+			Property: &substrate.AggregateProperty{Name: "duration", GroupBy: []string{"strain"}}, Range: rng(day(7, 0), day(14, 0)), Reducers: reducers("sum"),
+		}, "aggregate.property.groupBy[0]"},
+		{"a stream key in groupBy", substrate.Aggregate{
+			Property: &substrate.AggregateProperty{Name: "duration"}, GroupBy: []string{"source"}, Range: rng(day(7, 0), day(14, 0)), Reducers: reducers("sum"),
+		}, "property.groupBy"},
+	} {
+		t.Run(x.name, func(t *testing.T) {
+			f.refusedAgg(substrate.AggregateQuery{Filter: substrate.Filter{Kinds: []string{f.workoutKind()}}, Aggregate: &x.a}, x.want)
+		})
+	}
+}
+
+// The recorded-local calendar places each record by its own UTC offset,
+// read from the property the request names: a night that ends at 01:30Z in
+// Los Angeles (-07:00) is on its wake day there, the 21st, not the 22nd
+// Athens would put it on, and each row is written at its records' offsets.
+// A record without the offset is refused, naming it, unless
+// bucket.fallbackTimezone places it, which the row counts in offsetless.
+func TestAggregatePropertyPlacesARecordByItsOwnOffset(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	night := func(id string, end time.Time, offset any, asleep string) {
+		props := map[string]any{
+			"source": f.sourceRef("whoop"), "at": end.Add(-8 * time.Hour).Format(time.RFC3339), "endsAt": end.Format(time.RFC3339),
+			"timeAsleep": asleep,
+		}
+		if offset != nil {
+			props["utcOffsetEnd"] = offset
+		}
+		f.mustPut(t, f.sleepKind(), id, props)
+	}
+	night("athens", time.Date(2026, 9, 21, 4, 0, 0, 0, time.UTC), 180, "PT7H")
+	night("la", time.Date(2026, 9, 22, 1, 30, 0, 0, time.UTC), -420, "PT1H")
+	night("london", time.Date(2026, 9, 22, 6, 30, 0, 0, time.UTC), 60, "PT8H")
+	plus3 := time.FixedZone("", 3*3600)
+	read := func(bucket substrate.AggregateBucket) (*substrate.AggregateResult, error) {
+		return f.ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Filter: substrate.Filter{Kinds: []string{f.sleepKind()}},
+			Aggregate: &substrate.Aggregate{
+				Property: &substrate.AggregateProperty{Name: "timeAsleep", Anchor: "endsAt", UTCOffset: "utcOffsetEnd"},
+				Range:    rng(time.Date(2026, 9, 21, 0, 0, 0, 0, plus3), time.Date(2026, 9, 23, 0, 0, 0, 0, plus3)),
+				Bucket:   &bucket, Reducers: reducers("sum", "count"), Unit: "h",
+			},
+		})
+	}
+	rows := func(res *substrate.AggregateResult) string {
+		var out []string
+		for _, row := range res.Rows {
+			sum, _ := val(row, "sum")
+			cnt, _ := val(row, "count")
+			out = append(out, fmt.Sprintf("%s..%s=%s/%s/%d", row.Start.Format(time.RFC3339), row.End.Format(time.RFC3339), sum, cnt, row.Offsetless))
+		}
+		return strings.Join(out, " ")
+	}
+	res, err := read(substrate.AggregateBucket{Calendar: "day"})
+	if err != nil {
+		t.Fatalf("recorded-local: %v", err)
+	}
+	if got, want := rows(res), "2026-09-21T00:00:00+03:00..2026-09-22T00:00:00-07:00=8/2/0 2026-09-22T00:00:00+01:00..2026-09-22T22:00:00+01:00=8/1/0"; got != want {
+		t.Errorf("recorded-local days:\n got %s\nwant %s", got, want)
+	}
+	athens, err := read(substrate.AggregateBucket{Calendar: "day", Timezone: "Europe/Athens"})
+	if err == nil || !strings.Contains(err.Error(), "aggregate.property.utcOffset") {
+		t.Errorf("an offset beside a timezone: %v, %+v; want a refusal naming property.utcOffset", err, athens)
+	}
+
+	night("unknown", time.Date(2026, 9, 22, 5, 0, 0, 0, time.UTC), nil, "PT6H")
+	f.refusedAgg(substrate.AggregateQuery{
+		Filter: substrate.Filter{Kinds: []string{f.sleepKind()}},
+		Aggregate: &substrate.Aggregate{
+			Property: &substrate.AggregateProperty{Name: "timeAsleep", Anchor: "endsAt", UTCOffset: "utcOffsetEnd"},
+			Range:    rng(time.Date(2026, 9, 21, 0, 0, 0, 0, plus3), time.Date(2026, 9, 23, 0, 0, 0, 0, plus3)),
+			Bucket:   &substrate.AggregateBucket{Calendar: "day"}, Reducers: reducers("sum"),
+		},
+	}, f.sleepKind()+"/unknown holds no utcOffsetEnd")
+	res, err = read(substrate.AggregateBucket{Calendar: "day", FallbackTimezone: "Europe/Athens"})
+	if err != nil {
+		t.Fatalf("with a fallback zone: %v", err)
+	}
+	// The night without an offset ends at 08:00 in Athens on the 22nd, the
+	// day's first record, so the day starts at Athens's midnight.
+	if got, want := rows(res), "2026-09-21T00:00:00+03:00..2026-09-22T00:00:00-07:00=8/2/0 2026-09-22T00:00:00+03:00..2026-09-22T22:00:00+01:00=14/2/1"; got != want {
+		t.Errorf("with a fallback zone:\n got %s\nwant %s", got, want)
+	}
+}

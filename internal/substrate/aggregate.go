@@ -132,12 +132,19 @@ type AggregateMetric struct {
 	Ref string `json:"ref"`
 }
 
-// AggregateProperty names a declared numeric, quantity or money property of
-// the filtered kinds, and the datetime property that places a record in time
-// (`at` by default).
+// AggregateProperty names a declared numeric, quantity, money or duration
+// property of the filtered kinds, and the datetime property that places a
+// record in time (`at` by default).
 type AggregateProperty struct {
 	Name   string `json:"name"`
 	Anchor string `json:"anchor,omitempty"`
+	// UTCOffset names the declared int property holding each record's UTC
+	// offset in minutes at its anchor (utcOffsetEnd beside endsAt), which
+	// the recorded-local calendar places the record by.
+	UTCOffset string `json:"utcOffset,omitempty"`
+	// GroupBy names declared string, enum or reference properties of the
+	// records (sport, source), one group per combination of their values.
+	GroupBy []string `json:"groupBy,omitempty"`
 	// Sources chooses among records of several sources before any is
 	// reduced, as the records mode's sources choose among its windows.
 	Sources *AggregateRecordSources `json:"sources,omitempty"`
@@ -412,16 +419,18 @@ type AggregateRow struct {
 // AggregateGroup is a row's group: one key per groupBy word, a record path
 // for source, about and metric, the kind reference for kind, the code for
 // code, a summary's statistic for statistic; the currency of a money
-// property.
+// property; on a property read, each property.groupBy property's value (a
+// reference's record path), absent where the records hold none.
 type AggregateGroup struct {
-	Source    string `json:"source,omitempty"`
-	About     string `json:"about,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Metric    string `json:"metric,omitempty"`
-	Kind      string `json:"kind,omitempty"`
-	Channel   string `json:"channel,omitempty"`
-	Statistic string `json:"statistic,omitempty"`
-	Currency  string `json:"currency,omitempty"`
+	Source     string            `json:"source,omitempty"`
+	About      string            `json:"about,omitempty"`
+	Code       string            `json:"code,omitempty"`
+	Metric     string            `json:"metric,omitempty"`
+	Kind       string            `json:"kind,omitempty"`
+	Channel    string            `json:"channel,omitempty"`
+	Statistic  string            `json:"statistic,omitempty"`
+	Currency   string            `json:"currency,omitempty"`
+	Properties map[string]string `json:"properties,omitempty"`
 }
 
 // AggregateRecord is the record a records-mode row's window came from, at the

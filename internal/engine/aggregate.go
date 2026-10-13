@@ -622,14 +622,19 @@ func (p *aggPlan) parseProperty() error {
 	}
 	for _, g := range p.groupBy {
 		if g != substrate.GroupKind {
-			return refuse("aggregate.groupBy", "a property read groups by kind alone (money groups by currency itself), not %s", g)
+			return refuse("aggregate.groupBy", "a property read groups by kind here, and by the records' own properties in property.groupBy (money groups by currency itself), not %s", g)
+		}
+	}
+	for i, g := range a.Property.GroupBy {
+		if g == "" || slices.Contains(a.Property.GroupBy[:i], g) {
+			return refuse(fmt.Sprintf("aggregate.property.groupBy[%d]", i), "names a declared property once, not %q", g)
 		}
 	}
 	for i, r := range p.reducers {
 		switch r.Name {
-		case substrate.ReducerCount, substrate.ReducerSum, substrate.ReducerAvg, substrate.ReducerMin, substrate.ReducerMax:
+		case substrate.ReducerCount, substrate.ReducerSum, substrate.ReducerAvg, substrate.ReducerMin, substrate.ReducerMax, substrate.ReducerStdDev:
 		default:
-			return refuse(fmt.Sprintf("aggregate.reducers[%d]", i), "a property read takes count, sum, avg, min and max, not %s", r.String())
+			return refuse(fmt.Sprintf("aggregate.reducers[%d]", i), "a property read takes count, sum, avg, min, max and stddev, not %s", r.String())
 		}
 	}
 	return nil

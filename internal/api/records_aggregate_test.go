@@ -185,7 +185,8 @@ func TestRecordsAggregateCarriesTheTimeOptions(t *testing.T) {
 }
 
 // The options that read records decode strictly and reach the dataset as
-// written: the records mode's and the property read's source policies.
+// written: the records mode's and the property read's source policies, and
+// the property read's offset and groups.
 func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
@@ -206,11 +207,12 @@ func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 		t.Fatalf("bucket = %+v", b)
 	}
 
-	body = `{"property":{"name":"distance","sources":` + sources + `},` +
-		`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},"reducers":["sum"]}`
+	body = `{"property":{"name":"timeAsleep","anchor":"endsAt","utcOffset":"utcOffsetEnd","groupBy":["sport","source"],"sources":` + sources + `},` +
+		`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},"bucket":{"calendar":"week"},"reducers":["sum","stddev"]}`
 	rec = env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if p := ds.lastAggregate.Aggregate.Property; p == nil || !sameSources(p.Sources) {
+	if p := ds.lastAggregate.Aggregate.Property; p == nil || !sameSources(p.Sources) || p.UTCOffset != "utcOffsetEnd" ||
+		strings.Join(p.GroupBy, ",") != "sport,source" {
 		t.Fatalf("property = %+v", p)
 	}
 }

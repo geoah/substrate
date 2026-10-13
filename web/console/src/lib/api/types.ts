@@ -404,6 +404,12 @@ export interface AggregateProperty {
   name: string
   /** The datetime property placing a record in time; `at` by default. */
   anchor?: string
+  /** The declared int property holding each record's UTC offset in minutes
+   * at its anchor, which the recorded-local calendar places it by. */
+  utcOffset?: string
+  /** Declared string, enum or reference properties to group the records
+   * by, each row naming its values in `group.properties`. */
+  groupBy?: string[]
   /** Chooses among records several sources wrote of one thing. */
   sources?: AggregateRecordSources
 }
@@ -543,7 +549,8 @@ export interface AggregateRow {
 
 /** A row's group: a record path for `source`, `about` and `metric`, the kind
  * reference for `kind`, the code for `code`, the summaries' statistic for
- * `statistic`, a money property's currency. */
+ * `statistic`, a money property's currency, and on a property read each
+ * `property.groupBy` property's value (absent where the records hold none). */
 export interface AggregateGroup {
   source?: string
   about?: string
@@ -553,6 +560,7 @@ export interface AggregateGroup {
   channel?: string
   statistic?: string
   currency?: string
+  properties?: Record<string, string>
 }
 
 export interface AggregateRecord {

@@ -1128,7 +1128,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | Key | Means | Default |
 | --- | --- | --- |
 | `metric` | `{"ref": "<metric record path>"}`: read the observed index for this metric; a path that is not a metric's, or that no metric record has and no observed value names, is a `422` | |
-| `property` | `{"name", "anchor"?, "sources"?}`: reduce a declared number of the filtered kinds instead, placed in time by `anchor` ([the property read](#the-property-read)) | `anchor` is `at` |
+| `property` | `{"name", "anchor"?, "utcOffset"?, "groupBy"?, "sources"?}`: reduce a declared number or duration of the filtered kinds instead, placed in time by `anchor` ([the property read](#the-property-read)) | `anchor` is `at` |
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
 | `reducers` | the reducers, each a name or a one-key object with its argument | required |
@@ -1478,23 +1478,18 @@ width. It is refused beside `reducers`, `rolling`, `fill` and `bucket`.
 ### The property read
 
 `{"property": {"name": "price", "anchor": "paidAt"}}` reduces a declared
-`int`, `float`, `decimal`, `quantity` or `money` property of the filtered
-kinds with `count`, `sum`, `avg`, `min` and `max`, in exact arithmetic: money
-grouped by currency (each row's `group.currency`, the values' `unit` the
-currency), a quantity converted into `unit` or the first value's unit. The
-anchor is `at`, `endsAt`, `dueAt`, `createdAt`, `updatedAt`, a declared
-`datetime`, or a declared `date`, which places its record at the start of
-its day in the calendar's `timezone` (UTC in the `every` mode and with no
-bucket); any other column or property is a `422` naming it. A record
-carries no offset of its own, so the recorded-local calendar is refused
-(name a `timezone`), and so is the records mode.
-
-`property.sources` is the [records' source policy](#the-four-time-modes),
-applied to the records the read reduces before any value is: a weekly
-running distance over workouts four devices each recorded counts each run
-once. It weighs the records that hold the property, so a higher-ranked
-source's workout without a `distance` drops no other source's. The request's
-`sources` is the points' policy and is refused on a property read.
+`int`, `float`, `decimal`, `quantity`, `money` or `duration` property of the
+filtered kinds with `count`, `sum`, `avg`, `min`, `max` and `stddev`, in
+exact arithmetic: money grouped by currency (each row's `group.currency`,
+the values' `unit` the currency), a quantity converted into `unit` or the
+first value's unit, a duration into `unit`, a duration unit, or `s`.
+`stddev` is the population deviation: the variance is exact and its square
+root has 20 significant digits, so the read is `exact` only where the root
+is. The anchor is `at`, `endsAt`, `dueAt`, `createdAt`, `updatedAt`, a
+declared `datetime`, or a declared `date`, which places its record at the
+start of its day in the calendar's `timezone` (UTC in the `every` mode and
+with no bucket); any other column or property is a `422` naming it. The
+records mode is refused.
 
 ```json
 {"filter": {"kinds": ["ada.example.com/finance/expense"]},
@@ -1502,6 +1497,49 @@ source's workout without a `distance` drops no other source's. The request's
                "range": {"gte": "2026-01-01T00:00:00Z", "lt": "2027-01-01T00:00:00Z"},
                "bucket": {"calendar": "month", "timezone": "Europe/Athens"},
                "reducers": ["sum", "count"]}}
+```
+
+**The recorded-local calendar.** A record's UTC offset is a property its
+kind declares (`health/sleep` and `health/workout` declare `utcOffsetStart`
+and `utcOffsetEnd`, minutes east of UTC), so `property.utcOffset` names the
+declared `int` property that holds the anchor's offset, and each record
+lands on the date its own offset names, as a metric read's point does: a
+night that ends at 01:30Z in Los Angeles is on its wake day there. A record
+that holds no offset is a `422` naming it, decided before any value is read,
+unless `bucket.fallbackTimezone` places it by that zone's clock at its
+anchor and the row counts it in `offsetless`. A row's `start` and `end` are
+written at the offsets of its first and last records and clipped to the
+range. `utcOffset` is refused outside the recorded-local calendar, and a
+`date` anchor, which names its day already, inside it.
+
+**Groups.** `groupBy` takes `kind`. `property.groupBy` names the records'
+own declared string, enum or reference properties (`sport`, `source`), and
+the read makes a row per bucket and combination of their values, each row
+naming them in `group.properties`, a reference as its record path. A record
+without one of them is grouped with the others that lack it, and that key
+is absent from its row's `properties`. `maxGroups` counts the combinations,
+with the kinds and currencies, before a value is read.
+
+**Sources.** `property.sources` is the [records' source
+policy](#the-four-time-modes), applied to the records the read reduces
+before any value is: a weekly running distance over workouts four devices
+each recorded counts each run once. It weighs the records that hold the
+property, so a higher-ranked source's workout without a `distance` drops no
+other source's. The request's `sources` is the points' policy and is refused
+on a property read.
+
+Average sleep per wake day, by week, each night on the local day it ended
+and one device's night where several recorded it:
+
+```json
+{"filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+ "aggregate": {"property": {"name": "timeAsleep", "anchor": "endsAt", "utcOffset": "utcOffsetEnd",
+                            "sources": {"policy": "priority", "property": "source",
+                                        "order": ["whoop-4-0", "garmin-forerunner-265"]}},
+               "range": {"gte": "2026-09-06T00:00:00+03:00", "lt": "2026-10-04T00:00:00+03:00"},
+               "bucket": {"calendar": "week", "weekStart": "sunday"},
+               "reducers": ["avg", "stddev", "count"],
+               "unit": "h"}}
 ```
 
 ### Budgets
@@ -1528,7 +1566,7 @@ after the points are evaluated, before a row is made.
 | --- | --- | --- | --- |
 | `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
 | `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
-| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
+| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds, currencies and `property.groupBy` values before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row; with a source policy, also the records outside the range it weighs | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
@@ -1569,7 +1607,11 @@ merged as one row.
   latest read; a records source policy that is not `separate` or
   `priority`, a `priority` without `property` or `order`, or a `property`
   or `match` entry the selected kinds do not all declare as a single
-  string, enum or reference; `sources` on a property read.
+  string, enum or reference; `sources` on a property read; on a property
+  read, a `utcOffset` outside the recorded-local calendar, the
+  recorded-local calendar without one, a record holding no offset there
+  without `bucket.fallbackTimezone`, or a `property.groupBy` property that is
+  not a declared single string, enum or reference.
 
 ### Where this differs from the plan
 

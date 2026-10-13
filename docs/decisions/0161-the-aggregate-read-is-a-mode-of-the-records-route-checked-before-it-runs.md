@@ -30,8 +30,14 @@ their shape is hard to change once clients exist
 Chosen: a mode of the records route.
 
 - **Selector.** Exactly one of `metric` (a full reference; the index is
-  read) and `property` (a declared numeric or quantity property on the
-  filtered kinds, read from `records` in `numeric`), never a bare word.
+  read) and `property` (a declared number, quantity, money or duration
+  property on the filtered kinds, read from `records` in exact arithmetic,
+  grouped by the records' own string, enum or reference properties where
+  `property.groupBy` names them), never a bare word. A record's UTC offset
+  is a property of its kind, so the recorded-local calendar places a
+  property read's record by the declared offset property `property.utcOffset`
+  names, and refuses a record holding none as it refuses an offsetless
+  reading.
 - **Four named time modes.** `{"every", "origin"}` is a physical window on
   UTC instants. `{"calendar", "timezone"}` is a calendar window in a named
   zone, 23 or 25 hours across a clock change. `{"calendar"}` with no zone is

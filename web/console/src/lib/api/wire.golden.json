@@ -78,6 +78,7 @@
     "currency": false,
     "kind": false,
     "metric": false,
+    "properties": false,
     "source": false,
     "statistic": false
   },
@@ -90,8 +91,10 @@
   },
   "AggregateProperty": {
     "anchor": false,
+    "groupBy": false,
     "name": true,
-    "sources": false
+    "sources": false,
+    "utcOffset": false
   },
   "AggregateRange": {
     "gte": true,

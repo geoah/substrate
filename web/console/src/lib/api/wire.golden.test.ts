@@ -400,6 +400,8 @@ const aggregateMetric: Shape<AggregateMetric> = { ref: true }
 const aggregateProperty: Shape<AggregateProperty> = {
   name: true,
   anchor: false,
+  utcOffset: false,
+  groupBy: false,
   sources: false,
 }
 
@@ -500,6 +502,7 @@ const aggregateGroup: Shape<AggregateGroup> = {
   channel: false,
   statistic: false,
   currency: false,
+  properties: false,
 }
 
 const aggregateRecord: Shape<AggregateRecord> = { ref: true, version: true }

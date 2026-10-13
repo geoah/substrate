@@ -769,6 +769,27 @@ stages inside it:
    "unit": "min"}}
 ```
 
+Training time and distance per sport per week, from the workout records
+themselves (a property read): each run once where several devices recorded
+it, the Garmin's first, and each week on the local days the runs began:
+
+```json
+{"filter": {"kinds": ["ada.example.com/health/workout"]},
+ "aggregate": {
+   "property": {"name": "duration", "utcOffset": "utcOffsetStart", "groupBy": ["sport"],
+                "sources": {"policy": "priority", "property": "source", "match": ["sport"],
+                            "order": ["garmin-forerunner-265", "whoop-4-0"]}},
+   "range": {"gte": "2026-09-07T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+   "bucket": {"calendar": "week"},
+   "reducers": ["sum", "count"],
+   "unit": "h"}}
+```
+
+The same read with `"name": "distance"` and `"unit": "km"` is the weekly
+distance. The policy weighs only the records that hold the property read,
+so a higher-ranked device's workout without a distance leaves the next
+device's distance in.
+
 Hours a door was open per week (`closed` ends each `open`, and a door shut
 over a weekend is not open until Monday), and kWh per day from a meter that
 resets, reset-proof:
