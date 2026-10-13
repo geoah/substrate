@@ -11,19 +11,28 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// webhookSvc wraps the fake service with the substrate.WebhookReceiver half
-// the door asserts at runtime, recording what it was handed and answering a
-// canned outcome.
+// webhookSvc wraps the fake service with a webhook door that admits every
+// trigger but the ones in refused, recording what it was handed and
+// answering a canned outcome.
 type webhookSvc struct {
 	*fakeService
-	mu    sync.Mutex
-	calls []webhookCall
-	fid   string
-	err   error
+	mu      sync.Mutex
+	calls   []webhookCall
+	fid     string
+	err     error
+	refused map[string]bool
+}
+
+func (s *webhookSvc) CheckWebhook(_ context.Context, _, trigger, _ string) error {
+	if s.refused[trigger] {
+		return substrate.ErrNotFound
+	}
+	return nil
 }
 
 type webhookCall struct {
@@ -213,5 +222,120 @@ func TestWebhookMultipartParts(t *testing.T) {
 	}
 	if c.req.Headers["x-pebble-mode"] != "note" || c.req.Headers["x-index-trigger"] != "single-click-hold" {
 		t.Fatalf("headers = %v", c.req.Headers)
+	}
+}
+
+// A request for no such webhook is refused before the door takes a delivery
+// slot or reads a byte of its body: eight of them whose bodies never finish
+// leave every slot free, and a real delivery behind them is accepted.
+func TestWebhookUnknownTriggersHoldNoSlot(t *testing.T) {
+	svc, h := webhookHandler("hook-real", nil)
+	svc.refused = map[string]bool{"nothing": true}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	statuses := make(chan int, maxConcurrentWebhooks)
+	for range maxConcurrentWebhooks {
+		go func() {
+			statuses <- stallBody(t, srv, http.MethodPost, "/webhooks/nobody.example.com/nothing", nil, 3*time.Second)
+		}()
+	}
+	// Wait until the eight are answered or, without the check up front, until
+	// they hold every slot.
+	answered := 0
+	for deadline := time.Now().Add(3 * time.Second); answered < maxConcurrentWebhooks && time.Now().Before(deadline); {
+		select {
+		case got := <-statuses:
+			if got != http.StatusNotFound {
+				t.Fatalf("a request for no such webhook got %d, want 404 before its body", got)
+			}
+			answered++
+		case <-time.After(10 * time.Millisecond):
+			if len(webhookSem) == maxConcurrentWebhooks {
+				t.Fatalf("requests for no such webhook hold all %d delivery slots", maxConcurrentWebhooks)
+			}
+		}
+	}
+	if answered != maxConcurrentWebhooks {
+		t.Fatalf("%d of %d requests for no such webhook were answered", answered, maxConcurrentWebhooks)
+	}
+	if rec := postHook(h, "/webhooks/geoah.example.com/t", []byte("{}"), nil); rec.Code != http.StatusAccepted {
+		t.Fatalf("a real delivery behind them: status = %d: %s", rec.Code, rec.Body.String())
+	}
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	for _, c := range svc.calls {
+		if c.trigger == "nothing" {
+			t.Fatal("a request the check refused reached ReceiveWebhook")
+		}
+	}
+}
+
+// A delivery whose sender stalls mid-body is answered at the deadline and
+// gives its slot back: inline, multipart, and a multipart body whose closing
+// boundary arrived but whose Content-Length promised more.
+func TestWebhookStalledBodyGivesItsSlotBack(t *testing.T) {
+	shortBodyDeadlines(t)
+	svc, h := webhookHandler("f", nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	for name, c := range map[string]struct{ contentType, sent string }{
+		"inline":           {"application/json", "{"},
+		"multipart":        {"multipart/form-data; boundary=xyz", "-"},
+		"closed multipart": {"multipart/form-data; boundary=xyz", "--xyz--\r\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := stallAfter(t, srv, http.MethodPost, "/webhooks/geoah.example.com/t", map[string]string{"Content-Type": c.contentType}, c.sent, 3*time.Second)
+			if got != http.StatusBadRequest {
+				t.Fatalf("a stalled body got status %d within 3s, want 400 (0 is no answer)", got)
+			}
+			if n := len(webhookSem); n != 0 {
+				t.Fatalf("%d delivery slots still held after the answer", n)
+			}
+		})
+	}
+	if len(svc.calls) != 0 {
+		t.Fatalf("a stalled delivery reached the service: %d calls", len(svc.calls))
+	}
+}
+
+// slowHookSvc holds each delivery past the body deadline, reporting whether
+// the request's context ended under it.
+type slowHookSvc struct {
+	*webhookSvc
+	hold     time.Duration
+	canceled chan bool
+}
+
+func (s *slowHookSvc) ReceiveWebhook(ctx context.Context, _, _, _ string, _ substrate.WebhookRequest) (string, error) {
+	select {
+	case <-ctx.Done():
+		s.canceled <- true
+		return "", ctx.Err()
+	case <-time.After(s.hold):
+		s.canceled <- false
+	}
+	return "hook-slow", nil
+}
+
+// An empty delivery (a ping, a bare POST) reaches the service with the body
+// deadline cleared: net/http reads a bodiless connection in the background
+// from the start, and a deadline left on that read would end the request's
+// context while the service records the delivery.
+func TestWebhookEmptyDeliveryOutlivesTheBodyDeadline(t *testing.T) {
+	d := shortBodyDeadlines(t)
+	svc := &slowHookSvc{webhookSvc: &webhookSvc{fakeService: newFakeService()}, hold: 4 * d, canceled: make(chan bool, 1)}
+	srv := httptest.NewServer(New(Config{Service: svc}))
+	defer srv.Close()
+	resp, err := srv.Client().Post(srv.URL+"/webhooks/geoah.example.com/t", "application/json", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if <-svc.canceled {
+		t.Fatalf("the delivery's context ended within %s of an empty body", 4*d)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", resp.StatusCode)
 	}
 }

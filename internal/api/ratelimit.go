@@ -42,8 +42,15 @@ const (
 // two honest users logging in within 5s collided, and a poller could sit on
 // the sole slot. So the global bucket's ceiling and refill are scaled up
 // (globalAllowance) while a single request still costs `costRequest`: the
-// spray is capped at globalBurst attempts per interval substrate-wide, an
-// honest login is not throttled by someone else's.
+// spray is capped at globalBurst attempts per interval substrate-wide, and
+// ordinary concurrent logins fit under it.
+//
+// It is still one bucket for everybody. One client naming a different
+// repository on each attempt is held back by this bucket alone, so a
+// sustained flood from anywhere drains it, and every login, registration and
+// credential change on the substrate answers 429 until the flood stops. That is the trade for
+// having no lockout. No per-address key fixes it behind the supported reverse
+// proxy, where every caller's transport peer is the proxy.
 const (
 	globalKey       = "global"
 	globalBurst     = 32

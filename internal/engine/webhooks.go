@@ -76,27 +76,23 @@ func (s *service) ReceiveWebhook(ctx context.Context, authority, triggerID, key 
 	return s.receiveWebhook(ctx, authority, triggerID, key, req, webhookFireDetached)
 }
 
+// CheckWebhook is the door's checks without the request
+// (substrate.Service): the HTTP layer asks it before it takes a delivery slot
+// or reads a body, so a request for no such webhook costs neither.
+// ReceiveWebhook runs the same checks again, so a key rotated between the two
+// calls still refuses.
+func (s *service) CheckWebhook(ctx context.Context, authority, triggerID, key string) error {
+	_, _, err := s.webhookTarget(ctx, authority, triggerID, key)
+	return err
+}
+
 // receiveWebhook is ReceiveWebhook with the fire detached, inline or held.
 func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key string, req substrate.WebhookRequest, fire webhookFire) (string, error) {
-	repo, err := s.repositoryByAuthority(ctx, authority)
+	ds, tr, err := s.webhookTarget(ctx, authority, triggerID, key)
 	if err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
-			return "", errWebhookRefused
-		}
 		return "", err
 	}
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		// The authority resolved but the repository will not open (a failed
-		// upgrade, a quarantined vocabulary, a storage fault). The caller is
-		// unauthenticated, so the answer stays the door's one refusal: a 500
-		// here would tell a prober that this authority exists. The operator
-		// gets the reason instead.
-		s.log.Error("substrate: webhook door could not open the repository",
-			"authority", logSafeID(authority), "error", err)
-		return "", errWebhookRefused
-	}
-	tr, row, err := ds.admitWebhook(ctx, triggerID, key, req)
+	row, err := ds.admitWebhook(ctx, tr, req)
 	if err != nil {
 		return "", err
 	}
@@ -116,38 +112,63 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 	return row.FireID, nil
 }
 
-// admitWebhook is the synchronous half of a delivery: the checks, the blob
-// spool and the pending entry. Every check that fails answers
-// errWebhookRefused. Past the checks the request is written into the ledger
-// as a parked failure carrying pendingWebhookError, in its parked form
-// (parkedEnvelope: the body spooled by digest, the headers narrowed to the
-// body's and the ones the trigger declares, the query dropped), with the fire
-// id and the receipt time, on a delivery entry of its own whose seq is the
-// row's id. The door answers once that
-// transaction has committed, which the write path makes durable (decision
-// 0062), so a 202 names a request the substrate holds. The row returned is
-// what the fire runs and what a restart resumes.
-func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req substrate.WebhookRequest) (*trigger, foldFailure, error) {
+// webhookTarget resolves the repository by its authority and the trigger by
+// id, and checks that the trigger takes webhooks, is enabled and runnable, and
+// that the key matches when it declares one. Every check that fails answers
+// errWebhookRefused.
+func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key string) (*dataset, *trigger, error) {
+	repo, err := s.repositoryByAuthority(ctx, authority)
+	if err != nil {
+		if errors.Is(err, substrate.ErrNotFound) {
+			return nil, nil, errWebhookRefused
+		}
+		return nil, nil, err
+	}
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		// The authority resolved but the repository will not open (a failed
+		// upgrade, a quarantined vocabulary, a storage fault). The caller is
+		// unauthenticated, so the answer stays the door's one refusal: a 500
+		// here would tell a prober that this authority exists. The operator
+		// gets the reason instead.
+		s.log.Error("substrate: webhook door could not open the repository",
+			"authority", logSafeID(authority), "error", err)
+		return nil, nil, errWebhookRefused
+	}
 	tr, _, err := ds.triggerByID(ctx, triggerID)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) || errors.Is(err, substrate.ErrValidation) {
-			return nil, foldFailure{}, errWebhookRefused
+			return nil, nil, errWebhookRefused
 		}
-		return nil, foldFailure{}, err
+		return nil, nil, err
 	}
 	if !tr.Webhook || !tr.Enabled || !tr.runnable() {
-		return nil, foldFailure{}, errWebhookRefused
+		return nil, nil, errWebhookRefused
 	}
 	if tr.WebhookKey != "" && subtle.ConstantTimeCompare([]byte(tr.WebhookKey), []byte(key)) != 1 {
-		return nil, foldFailure{}, errWebhookRefused
+		return nil, nil, errWebhookRefused
 	}
+	return ds, tr, nil
+}
+
+// admitWebhook is the synchronous half of a delivery past webhookTarget's
+// checks: the blob spool and the pending entry. The request is written into
+// the ledger as a parked failure carrying pendingWebhookError, in its parked
+// form (parkedEnvelope: the body spooled by digest, the headers narrowed to
+// the body's and the ones the trigger declares, the query dropped), with the
+// fire id and the receipt time, on a delivery entry of its own whose seq is
+// the row's id. The door answers once that transaction has committed, which
+// the write path makes durable (decision 0062), so a 202 names a request the
+// substrate holds. The row returned is what the fire runs and what a restart
+// resumes.
+func (ds *dataset) admitWebhook(ctx context.Context, tr *trigger, req substrate.WebhookRequest) (foldFailure, error) {
 	parts, err := ds.spoolWebhookParts(ctx, req.Parts)
 	if err != nil {
-		return nil, foldFailure{}, err
+		return foldFailure{}, err
 	}
 	wid, err := newID()
 	if err != nil {
-		return nil, foldFailure{}, err
+		return foldFailure{}, err
 	}
 	fid := webhookFirePrefix + wid
 	at := nowUTC()
@@ -155,7 +176,7 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	envelope["request"] = webhookRequestEnvelope(req, parts)
 	payload, err := ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders)
 	if err != nil {
-		return nil, foldFailure{}, err
+		return foldFailure{}, err
 	}
 	row := foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
@@ -170,9 +191,9 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 		return t.appendDeliveryAt(tr.ID, id)
 	})
 	if err != nil {
-		return nil, foldFailure{}, fmt.Errorf("substrate: webhook %s: record the request: %w", tr.ID, err)
+		return foldFailure{}, fmt.Errorf("substrate: webhook %s: record the request: %w", tr.ID, err)
 	}
-	return tr, row, nil
+	return row, nil
 }
 
 // fireWebhook is the detached half: the pending entry's fire, one

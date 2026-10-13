@@ -137,6 +137,49 @@ func hookEcho(t *testing.T, ds substrate.Dataset, id string) map[string]any {
 	return rec.Properties
 }
 
+// CheckWebhook is the door's checks without a request: it admits what
+// ReceiveWebhook would admit, refuses everything else with the one
+// ErrNotFound, and records and fires nothing.
+func TestCheckWebhookAnswersWhatTheDoorWould(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newHookDataset(t,
+		[]enginetest.Trigger{
+			hookTrigger("hook-open", webhookSource(""), "hookecho", true),
+			hookTrigger("hook-keyed", webhookSource(hookKey), "hookecho", true),
+			hookTrigger("hook-off", webhookSource(""), "hookecho", false),
+			hookTrigger("hook-record", map[string]any{"record": map[string]any{"kinds": []any{gadgetType}}}, "hooknoop", true),
+		},
+		pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource),
+		pyFn("hooknoop", map[string]any{}, []any{}, "def main(input, host):\n    return {}\n"),
+	)
+	authority := testdb.Repository(t)
+	for name, c := range map[string][3]string{
+		"an open endpoint": {authority, "hook-open", ""},
+		"the right key":    {authority, "hook-keyed", hookKey},
+	} {
+		if err := svc.CheckWebhook(ctx, c[0], c[1], c[2]); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for name, c := range map[string][3]string{
+		"unknown authority": {"nobody.example.com", "hook-open", ""},
+		"a bare label":      {testdb.RepositoryLabel(t), "hook-open", ""},
+		"unknown trigger":   {authority, "hook-missing", ""},
+		"disabled trigger":  {authority, "hook-off", ""},
+		"a record trigger":  {authority, "hook-record", ""},
+		"no key":            {authority, "hook-keyed", ""},
+		"a wrong key":       {authority, "hook-keyed", hookKey + "x"},
+	} {
+		if err := svc.CheckWebhook(ctx, c[0], c[1], c[2]); !errors.Is(err, substrate.ErrNotFound) {
+			t.Errorf("%s: err = %v, want ErrNotFound", name, err)
+		}
+	}
+	if _, err := ds.Get(ctx, widgetType, "hook-echo"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("a check fired the callable: %v", err)
+	}
+}
+
 // One dataset, the whole door: an open endpoint delivers the request, a keyed
 // one checks its key, every refusal is the same ErrNotFound, a multipart
 // request spools its file part to the blob store, and the status row carries

@@ -58,8 +58,7 @@ type replayRequest struct {
 func (h *handler) postTriggerReplay(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	var req replayRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	if err := ds.ReplayTrigger(r.Context(), pathParam(r, "id"), req.From); err != nil {
@@ -80,8 +79,7 @@ type runRequest struct {
 func (h *handler) postTriggerRun(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	var req runRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	if req.Kind == "" || req.ID == "" {
@@ -166,8 +164,7 @@ type callRequest struct {
 func (h *handler) postFunctionCall(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	var req callRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	output, effects, err := ds.CallFunction(idempotentContext(r), ActorFrom(r.Context()), pathParam(r, "name"), req.Input)

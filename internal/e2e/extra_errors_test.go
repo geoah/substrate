@@ -62,8 +62,8 @@ func init() {
 		xeCaseWrongShape)
 	registerCase(710, "ERR-03", "An unknown kind is a 404 naming it, and the body caps refuse",
 		"A read, a write and a list of a kind nobody declared answer 404 `not_found` naming the kind; a "+
-			"record body past 1 MiB is refused 400 `bad_request` and writes nothing, and the webhook door past "+
-			"1 MiB and the blob door past 64 MiB answer 413.",
+			"record body past 1 MiB is refused 413 `bad_request` and writes nothing, a webhook for no such "+
+			"trigger answers 404 before its body is read, and the blob door past 64 MiB answers 413.",
 		xeCaseUnknownKindAndCaps)
 	registerCase(720, "ERR-04", "Every published error code is reachable over the live door",
 		"Each code internal/api declares is produced by one live request and answered with its status and "+
@@ -231,26 +231,23 @@ func xeCaseUnknownKindAndCaps(c *C) {
 	}
 	c.stepf("a GET, PUT and PATCH of a `%s` record, a list narrowed to it and a POST creating one each answered 404 `not_found` %q", ghost, want)
 
-	// The JSON body cap. The refusal is `bad_request` with a 400: the cap
-	// reaches the handler as a read error, and every JSON door maps a read
-	// error to 400. The blob and webhook doors below say 413.
+	// The JSON body cap: 413 with code `bad_request`, like the blob door below.
 	oversized := tasksCollection + "/xe-oversized"
 	name := strings.Repeat("x", maxJSONBody)
 	status, raw := c.do(http.MethodPut, oversized, map[string]any{"properties": map[string]any{"name": name}}, nil)
-	e := xeRequireError(c, "a record body past 1 MiB", status, raw, http.StatusBadRequest, "bad_request")
+	e := xeRequireError(c, "a record body past 1 MiB", status, raw, http.StatusRequestEntityTooLarge, "bad_request")
 	c.requiref(strings.Contains(e.Error.Message, "request body too large"), "the refusal says %q, want it to name the size", e.Error.Message)
 	status, raw = c.do(http.MethodGet, oversized, nil, nil)
 	xeRequireError(c, "GET after the refused oversized PUT", status, raw, http.StatusNotFound, "not_found")
-	c.stepf("a PUT whose body is past the 1 MiB JSON cap answered 400 `bad_request` %q and wrote nothing", e.Error.Message)
+	c.stepf("a PUT whose body is past the 1 MiB JSON cap answered 413 `bad_request` %q and wrote nothing", e.Error.Message)
 
-	// The webhook door reads the body before it looks the trigger up, so the
-	// cap answers whether or not the trigger exists.
+	// The webhook door checks the trigger before it reads a byte, so a
+	// delivery for no such trigger is the door's 404 whatever its size.
 	hook := "/webhooks/" + url.PathEscape(c.r.authority) + "/xe-no-such-trigger"
 	body := strings.NewReader(`{"pad":"` + strings.Repeat("x", maxWebhookInline) + `"}`)
 	status, _, raw = xeRaw(c, c.r.hc, "", http.MethodPost, hook, body, -1, map[string]string{"Content-Type": "application/json"})
-	e = xeRequireError(c, "a webhook body past 1 MiB", status, raw, http.StatusRequestEntityTooLarge, "bad_request")
-	c.requiref(strings.Contains(e.Error.Message, "exceeds 1 MiB"), "the 413 says %q, want it to name the cap", e.Error.Message)
-	c.stepf("a webhook delivery past 1 MiB answered 413 `bad_request` %q", e.Error.Message)
+	xeRequireError(c, "a webhook past 1 MiB for no such trigger", status, raw, http.StatusNotFound, "not_found")
+	c.stepf("a webhook delivery past 1 MiB for no such trigger answered 404 `not_found` before its body was read")
 
 	// The blob door streams to disk under its own cap, one byte past it.
 	blob := io.LimitReader(xeZeros{}, maxBlobBody+1)

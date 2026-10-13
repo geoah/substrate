@@ -218,14 +218,27 @@ Registration, login and the credential endpoints are the substrate's
 unauthenticated write paths beside the [webhook door](api.md#webhooks), so they
 share one posture. Attempts are paced to
 one per five seconds, keyed by (client IP, repository) and by repository alone,
-under one global bucket 32 attempts wide, so a flood is bounded without an
-honest login waiting out somebody else's. There is no failure lockout: a
-lockout keyed off the caller is a denial-of-service lever rather than a
-defense, so pacing is all there is. One user action counts as one attempt
+under one global bucket of 32 attempts per five seconds for the whole
+substrate. One user action counts as one attempt
 even when it takes two requests: `/register/enroll` and `/register` share an
 attempt, so the pair goes through back to back while the next registration
 still waits out the interval. The peer address is the transport's,
 never a header's. A refusal is `429 rate_limited` with a `Retry-After`.
+
+There is no failure lockout: a
+lockout keyed off the caller is a denial-of-service lever rather than a
+defense, so pacing is all there is. The global bucket is the cost of that
+choice. A client that names a different repository on each attempt is held
+back by the global bucket alone, so a sustained flood from anywhere drains it,
+and every login, registration and credential change answers `429` until the
+flood stops. Behind the reverse proxy every caller has the proxy's address
+([TLS and the reverse proxy](operations.md#tls-and-the-reverse-proxy)), so
+no per-address limit could tell the flood from an honest login.
+
+Each attempt runs argon2id at 64 MiB, an attempt naming a repository that
+does not exist included. The server runs at most one per two CPUs at once
+(between one and four) and queues the rest, so a burst of attempts costs
+latency, not memory.
 
 Everything authenticated is unmetered.
 

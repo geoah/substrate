@@ -67,6 +67,11 @@ type Service interface {
 	// distinguish "no such trigger" from "wrong key" or "disabled" is
 	// ErrNotFound.
 	ReceiveWebhook(ctx context.Context, authority, trigger, key string, req WebhookRequest) (string, error)
+	// CheckWebhook runs ReceiveWebhook's checks without a request and
+	// answers the same ErrNotFound for every refusal. The door asks it before
+	// it holds a delivery slot or reads a body, so a request for no such
+	// webhook costs neither; ReceiveWebhook checks again.
+	CheckWebhook(ctx context.Context, authority, trigger, key string) error
 
 	Close() error
 }

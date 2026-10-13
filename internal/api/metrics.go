@@ -40,7 +40,21 @@ func httpMetrics(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 		metrics.HTTPRequestDuration.
-			WithLabelValues(route, r.Method, strconv.Itoa(status/100)+"xx").
+			WithLabelValues(route, metricMethod(r.Method), strconv.Itoa(status/100)+"xx").
 			Observe(time.Since(start).Seconds())
 	})
+}
+
+// metricMethod is the method label: a method some route here answers, or
+// `other`. net/http admits any token as a method and the router's 405 is
+// recorded like any answer, so the raw method would let an unauthenticated
+// client add one series per invented method, each held for the life of the
+// process.
+func metricMethod(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return method
+	}
+	return "other"
 }

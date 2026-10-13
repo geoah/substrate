@@ -368,19 +368,11 @@ func (t *txn) blobBytesExist(digest string) (bool, error) {
 // absent here whichever backend holds the bytes — a cross-repository read is a
 // not-found, never a leak. Returns the manifest alongside the bytes.
 func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobInfo, []byte, error) {
-	if !validBlobDigest(digest) {
-		return nil, nil, fmt.Errorf("%w: %q is not a blob digest", substrate.ErrValidation, digest)
-	}
-	notFound := fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
-	m, ok, err := scanBlobRecord(ds.db.QueryRowContext(ctx, blobRecordQuery, digest, kindBlob))
+	m, err := ds.storedBlobRecord(ctx, digest)
 	if err != nil {
 		return nil, nil, err
 	}
-	// A manifest that is not `stored` names bytes nobody has uploaded yet, so
-	// the read is a not-found rather than an empty body.
-	if !ok || m.status != string(substrate.BlobStored) {
-		return nil, nil, notFound
-	}
+	notFound := fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
 	store, err := ds.blobBytes()
 	if err != nil {
 		return nil, nil, err
@@ -406,6 +398,37 @@ func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobI
 		Digest: digest, Size: int64(len(data)), Name: m.name,
 		MediaType: m.mediaType, Status: substrate.BlobStored,
 	}, data, nil
+}
+
+// StatBlob is GetBlob's manifest without the bytes, under the same scoping:
+// the read a conditional GET answers from. The size is the manifest's, 0 when
+// it declares none.
+func (ds *dataset) StatBlob(ctx context.Context, digest string) (*substrate.BlobInfo, error) {
+	m, err := ds.storedBlobRecord(ctx, digest)
+	if err != nil {
+		return nil, err
+	}
+	return &substrate.BlobInfo{
+		Digest: digest, Size: m.size, Name: m.name,
+		MediaType: m.mediaType, Status: substrate.BlobStored,
+	}, nil
+}
+
+// storedBlobRecord reads the live manifest of a blob whose bytes are stored.
+// A manifest that is not `stored` names bytes nobody has uploaded yet, so it
+// is a not-found rather than an empty body.
+func (ds *dataset) storedBlobRecord(ctx context.Context, digest string) (blobRecordMeta, error) {
+	if !validBlobDigest(digest) {
+		return blobRecordMeta{}, fmt.Errorf("%w: %q is not a blob digest", substrate.ErrValidation, digest)
+	}
+	m, ok, err := scanBlobRecord(ds.db.QueryRowContext(ctx, blobRecordQuery, digest, kindBlob))
+	if err != nil {
+		return blobRecordMeta{}, err
+	}
+	if !ok || m.status != string(substrate.BlobStored) {
+		return blobRecordMeta{}, fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
+	}
+	return m, nil
 }
 
 // validateBlobRefs checks that every blob-ref value in a coerced property map

@@ -216,6 +216,9 @@ type Dataset interface {
 	// digest.
 	PutBlob(ctx context.Context, actor Actor, up BlobUpload, data []byte, wantDigest string) (*BlobInfo, error)
 	GetBlob(ctx context.Context, digest string) (*BlobInfo, []byte, error)
+	// StatBlob is GetBlob's manifest without the bytes: a not-found unless
+	// the bytes are stored, read without touching them.
+	StatBlob(ctx context.Context, digest string) (*BlobInfo, error)
 
 	// --- the owner's recovery export ---
 	// Export is the repository's directory as of one committed point, streamed

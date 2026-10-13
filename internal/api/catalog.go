@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -199,9 +198,8 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	var req catalogTakeRequest
-	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxRequestBody))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	raw, ok := readBody(w, r, jsonBody)
+	if !ok {
 		return
 	}
 	if len(bytes.TrimSpace(raw)) > 0 {

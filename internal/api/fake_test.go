@@ -1337,6 +1337,13 @@ func (d *fakeDataset) GetBlob(_ context.Context, digest string) (*substrate.Blob
 	return nil, nil, noSuch("blob", digest)
 }
 
+func (d *fakeDataset) StatBlob(_ context.Context, digest string) (*substrate.BlobInfo, error) {
+	if err := d.fail("StatBlob"); err != nil {
+		return nil, err
+	}
+	return nil, noSuch("blob", digest)
+}
+
 func (d *fakeDataset) Export(context.Context) (substrate.Export, error) {
 	return nil, errFakeUnmodeled
 }
@@ -1351,6 +1358,10 @@ func (s *fakeService) CompleteOAuth(_ context.Context, state, _ string) (string,
 
 func (s *fakeService) ReceiveWebhook(_ context.Context, _, trigger, _ string, _ substrate.WebhookRequest) (string, error) {
 	return "", noSuch("trigger", trigger)
+}
+
+func (s *fakeService) CheckWebhook(_ context.Context, _, trigger, _ string) error {
+	return noSuch("trigger", trigger)
 }
 
 func containsString(hay []string, needle string) bool {

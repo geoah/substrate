@@ -18,8 +18,7 @@ import (
 func (h *handler) postAgentCall(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	var req callRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	res, err := ds.CallAgent(idempotentContext(r), pathParam(r, "name"), req.Input)
@@ -45,8 +44,7 @@ type chatRequest struct {
 func (h *handler) postAgentChat(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(r.Context())
 	var req chatRequest
-	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
 	flusher, ok := w.(http.Flusher)
