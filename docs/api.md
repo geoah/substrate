@@ -1329,10 +1329,20 @@ answer the same, to float rounding: `internal/observed` holds both.
 `null`, `zero` rows of `"0"`, `locf` rows carrying the previous row's values
 whole, each with its own `code` (a coded `last` carries the previous code,
 a `timeInState` the previous row's states); a coded `first` or `last` that
-`null` or `zero` makes answers nothing. Each made row is `synthetic`. `rolling` then adds, to every row, each rolling
-reducer over each of its values across that bucket and the `buckets - 1`
-before it, filled rows included and missing ones counted; `rolling` is refused
-in the records mode.
+`null` or `zero` makes answers nothing. Each made row is `synthetic`.
+
+`fill` makes rows only where a series has none. A gauge's bucket holding a
+value carried in from before but no point of its own is a real row with
+`count` 0: `twa`, `durationIn` and `timeInState` answer the held value
+there, the reducers over points (`first`, `last`, `min`, `max`, `avg`,
+`stddev`, `percentile`) answer `null`, and `locf` leaves the row as it is.
+A series with no row in the range has no shape to fill from and gets none:
+a range where a source has no point and holds no value answers no row for
+it under any `fill`.
+
+`rolling` then adds, to every row, each rolling reducer over each of its
+values across that bucket and the `buckets - 1` before it, filled rows
+included and missing ones counted; `rolling` is refused in the records mode.
 
 `downsample={"points": 800, "method": "m4"}` beside an `aggregate` naming a
 `metric` and a `range` cuts the range into at most `points` columns, each
