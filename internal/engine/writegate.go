@@ -45,6 +45,9 @@ type writeGate struct {
 	// maxPasses and maxWait replace the package bounds when set (tests).
 	maxPasses int
 	maxWait   time.Duration
+	// overdue, when set (tests), is a queued waiter's maxWait signal in place
+	// of its timer, so a test fires it where its race needs it.
+	overdue func() <-chan time.Time
 
 	mu sync.Mutex
 	// admitted is set while one background writer is between its admission
@@ -108,13 +111,13 @@ func (g *writeGate) enter(ctx context.Context, owner bool) (func(), error) {
 	g.queue = append(g.queue, w)
 	g.mu.Unlock()
 
-	overdue := time.NewTimer(g.wait())
-	defer overdue.Stop()
+	overdue, stop := g.overdueSignal()
+	defer stop()
 	for {
 		select {
 		case <-w.ready:
 			return passOnce(g.backgroundLeft), nil
-		case <-overdue.C:
+		case <-overdue:
 			g.mu.Lock()
 			w.overdue = true
 			g.admitNext()
@@ -176,6 +179,16 @@ func (g *writeGate) wait() time.Duration {
 		return g.maxWait
 	}
 	return backgroundMaxWait
+}
+
+// overdueSignal is a queued waiter's maxWait: a timer, or the test's own
+// signal, and what stops it.
+func (g *writeGate) overdueSignal() (<-chan time.Time, func() bool) {
+	if g.overdue != nil {
+		return g.overdue(), func() bool { return true }
+	}
+	t := time.NewTimer(g.wait())
+	return t.C, t.Stop
 }
 
 func passOnce(leave func()) func() {
