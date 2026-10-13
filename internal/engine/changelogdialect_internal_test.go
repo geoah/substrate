@@ -28,7 +28,7 @@ var (
 		"put", "patch", "delete", "merge", "split", "gc", "delivery",
 	}
 	dialectOneEffects = []string{
-		"record", "tombstone", "purge", "bump",
+		"record", "tombstone", "purge",
 		"annotation", "manager", "former", "resync",
 		"cursor", "schedule", "park", "unpark", "page", "unpage", "forget",
 	}

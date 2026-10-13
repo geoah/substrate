@@ -208,8 +208,8 @@ func collectChangeEffects(rows *sql.Rows, keep bool) ([]substrate.Change, [][]fo
 // record tombstoned and then purged in one entry reads once, deleted. A purge
 // leaves no row, so its element omits the version. Annotation, manager,
 // former-id and resync effects move no record of their own: the record they
-// hang off is bumped or rewritten by an effect beside them, or is the entry's
-// addressed record.
+// hang off is rewritten or tombstoned by an effect beside them, or is the
+// entry's addressed record.
 //
 // Only a patch that wrote nothing but an annotation carries no record-moving
 // effect: a judge's policy verdict (judge.go) or an accept's conflict note
@@ -233,7 +233,7 @@ func projectAffected(c *substrate.Change) {
 		}
 		kind, _ := op["kind"].(string)
 		switch foldKind(kind) {
-		case foldRecord, foldTombstone, foldPurge, foldBump:
+		case foldRecord, foldTombstone, foldPurge:
 		default:
 			continue
 		}
@@ -254,11 +254,6 @@ func projectAffected(c *substrate.Change) {
 			out[i].Version, out[i].Deleted = versionOf(op["version"]), true
 		case foldPurge:
 			out[i].Version, out[i].Deleted = 0, true
-		case foldBump:
-			// No live write emits a bump today; the fold keeps the effect
-			// replayable (fold.go), and a history that holds one moved the
-			// record's version, so the event names it.
-			out[i].Version = versionOf(op["version"])
 		}
 	}
 	if len(out) == 0 {

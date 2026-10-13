@@ -168,7 +168,7 @@ func TestACanceledWriterLeavesTheWriteGateClean(t *testing.T) {
 		_, err := backgroundEffect(ctx, ds, 1, "first")
 		first <- err
 	}()
-	waitParked(t, ds, changelogLockKey, 1)
+	waitParked(t, ds, 1, changelogLockKey)
 
 	// The next waits at the gate, holding no connection, and returns as soon
 	// as its context ends, with the lock still held.

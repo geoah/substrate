@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -20,6 +21,10 @@ import (
 // pass while the test watches; the new one must still be dispatched, more
 // than once, within a few dispatcher intervals.
 func TestANewRepositoryDispatchesWhileAnotherRepositoryIsBusy(t *testing.T) {
+	synctest.Test(t, testANewRepositoryDispatchesWhileAnotherIsBusy)
+}
+
+func testANewRepositoryDispatchesWhileAnotherIsBusy(t *testing.T) {
 	const interval = 10 * time.Millisecond
 	release := make(chan struct{})
 	busyStarted := make(chan struct{})
@@ -77,6 +82,10 @@ func TestANewRepositoryDispatchesWhileAnotherRepositoryIsBusy(t *testing.T) {
 // its pass for a few intervals; the high-water mark of passes in flight stays
 // at the cap, and every repository still gets its turn.
 func TestTheDispatcherRunsAtMostTheCapOfRepositoryPasses(t *testing.T) {
+	synctest.Test(t, testTheDispatcherRunsAtMostTheCap)
+}
+
+func testTheDispatcherRunsAtMostTheCap(t *testing.T) {
 	const interval = 5 * time.Millisecond
 	var mu sync.Mutex
 	inFlight, highWater := 0, 0
@@ -136,6 +145,10 @@ func TestTheDispatcherRunsAtMostTheCapOfRepositoryPasses(t *testing.T) {
 // reach the newest; the dispatcher starts the repository that has waited
 // longest instead, so the new one gets a pass within a few ticks.
 func TestANewRepositoryGetsAPassWhileTheCapIsBusy(t *testing.T) {
+	synctest.Test(t, testANewRepositoryGetsAPassWhileTheCapIsBusy)
+}
+
+func testANewRepositoryGetsAPassWhileTheCapIsBusy(t *testing.T) {
 	const interval = 5 * time.Millisecond
 	fresh := make(chan struct{}, 64)
 	svc := &dispatchService{}
@@ -174,6 +187,10 @@ func TestANewRepositoryGetsAPassWhileTheCapIsBusy(t *testing.T) {
 // that only filled its slots on the tick would give each of the 80 here one
 // pass every ten ticks.
 func TestEveryIdleRepositoryGetsAPassPerTick(t *testing.T) {
+	synctest.Test(t, testEveryIdleRepositoryGetsAPassPerTick)
+}
+
+func testEveryIdleRepositoryGetsAPassPerTick(t *testing.T) {
 	const (
 		interval     = 20 * time.Millisecond
 		repositories = 80
@@ -200,13 +217,15 @@ func TestEveryIdleRepositoryGetsAPassPerTick(t *testing.T) {
 	cancel()
 	wg.Wait()
 
+	// The last tick lands at the instant the sleep ends, so it may see the
+	// context canceled and start nothing.
 	n := int(ticks.Load())
-	if n < 10 {
-		t.Fatalf("only %d ticks in %s: the box is too loaded to measure", n, 50*interval)
+	if n < 49 || n > 50 {
+		t.Fatalf("%d ticks in %s on the fake clock, want 50", n, 50*interval)
 	}
 	for _, ds := range svc.datasets {
-		if got := ds.calls(); got < n/2 {
-			t.Fatalf("repository %s got %d passes over %d ticks, want one on most ticks", ds.id, got, n)
+		if got := ds.calls(); got < n-1 {
+			t.Fatalf("repository %s got %d passes over %d ticks, want one on every tick", ds.id, got, n)
 		}
 	}
 }
@@ -243,6 +262,10 @@ func TestTheDispatcherKeepsItsOrderOnAFailedListingAndStartsNothingOnShutdown(t 
 // queued passes for one repository would run side by side under the cap and
 // race its cursors.
 func TestARepositoryListedTwiceGetsOnePass(t *testing.T) {
+	synctest.Test(t, testARepositoryListedTwiceGetsOnePass)
+}
+
+func testARepositoryListedTwiceGetsOnePass(t *testing.T) {
 	release := make(chan struct{})
 	var mu sync.Mutex
 	inFlight, highWater := 0, 0
@@ -263,7 +286,7 @@ func TestARepositoryListedTwiceGetsOnePass(t *testing.T) {
 	var wg sync.WaitGroup
 	d := newTriggerDispatcher(svc, &wg)
 	d.dispatch(context.Background())
-	time.Sleep(50 * time.Millisecond)
+	synctest.Wait()
 	close(release)
 	wg.Wait()
 	if n := twice.calls(); n != 1 {

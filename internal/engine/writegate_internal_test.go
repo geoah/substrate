@@ -274,12 +274,24 @@ func TestWriteGateHandsOnAnAdmissionItsWaiterGaveUp(t *testing.T) {
 // branch, running after the cancel, admits it as overdue. Either way the
 // waiter then meets a closed admission and an ended context together, and
 // its select picks one at random.
+//
+// An odd iteration whose poll misses the waiter's whole wait bound finds it
+// already admitted as overdue, with nothing left to race: it is settled and
+// run again rather than counted. The loop runs until each branch has raced
+// perBranch waiters, and fails once more than perBranch odd iterations came
+// too late, so the release branch alone can never pass it.
 func TestWriteGateSettlesAWaiterOverdueAdmittedAndCanceledAtOnce(t *testing.T) {
 	t.Parallel()
-	const wait = 10 * time.Millisecond
+	const (
+		wait      = 10 * time.Millisecond
+		perBranch = 30
+	)
 	g := &writeGate{maxPasses: 1000, maxWait: wait}
-	var went, gaveUp int
-	for i := range 60 {
+	var went, gaveUp, early int
+	// raced counts the races run by the holder's release (0) and by the
+	// overdue timer past an owner write (1).
+	var raced [2]int
+	for i := 0; raced[0] < perBranch || raced[1] < perBranch; i++ {
 		byRelease := i%2 == 0
 		var owner func()
 		if byRelease {
@@ -290,7 +302,17 @@ func TestWriteGateSettlesAWaiterOverdueAdmittedAndCanceledAtOnce(t *testing.T) {
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		waiter := enterAsync(ctx, g, false)
-		waitGate(t, g, "the waiter queues", func(_ bool, q, _ int) bool { return q == 1 })
+		if !waiterQueued(t, g, byRelease) {
+			cancel()
+			e := <-waiter
+			owner()
+			settleAtCancel(t, g, e)
+			early++
+			if early > perBranch {
+				t.Fatalf("%d waiters held back by an owner write were admitted as overdue before the race was set up, against %d that raced: the overdue branch cannot be exercised", early, raced[1])
+			}
+			continue
+		}
 		g.mu.Lock()
 		time.Sleep(3 * wait)
 		if byRelease {
@@ -302,14 +324,35 @@ func TestWriteGateSettlesAWaiterOverdueAdmittedAndCanceledAtOnce(t *testing.T) {
 		if owner != nil {
 			owner()
 		}
+		raced[i%2]++
 		if settleAtCancel(t, g, e) {
 			went++
 		} else {
 			gaveUp++
 		}
 	}
-	t.Logf("overdue, admitted and canceled at once: %d went on, %d handed the admission on", went, gaveUp)
+	t.Logf("overdue, admitted and canceled at once: %d raced by release and %d past an owner write; %d went on, %d handed the admission on; %d admitted before the race and run again", raced[0], raced[1], went, gaveUp, early)
 	if went == 0 || gaveUp == 0 {
-		t.Fatalf("of 60 waiters overdue, admitted and canceled at once, %d went on and %d handed the admission on: one branch never ran", went, gaveUp)
+		t.Fatalf("of %d waiters overdue, admitted and canceled at once, %d went on and %d handed the admission on: one branch never ran", raced[0]+raced[1], went, gaveUp)
+	}
+}
+
+// waiterQueued waits for the waiter to queue and reports true, or reports
+// false once it finds the waiter already admitted as overdue past an owner
+// write (never past an admitted holder, which keeps it queued).
+func waiterQueued(t *testing.T, g *writeGate, byRelease bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		a, q, o := gateState(g)
+		switch {
+		case q == 1:
+			return true
+		case !byRelease && a && q == 0:
+			return false
+		case time.Now().After(deadline):
+			t.Fatalf("the waiter queues: the gate stayed admitted=%v queued=%d owners=%d", a, q, o)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

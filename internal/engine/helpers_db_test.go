@@ -22,11 +22,12 @@ import (
 // the suite finish in a third of the time it used to: the work is mostly spent
 // waiting on Postgres, so running one test at a time left the machine idle.
 // What makes it SAFE is that a test shares nothing it can observe — its own
-// schema (testdb.NewSchema), and its own repository id (testdb.Repository, a
-// name derived from the test's own). The runner (runner.Shared, one per
-// process) keys function processes on the repository id, and the id is the
-// authority, so two tests registering one name would share function
-// processes and either one's Close would retire the other's mid-delivery.
+// database (engine.MigratedDSN, a copy of the migrated template), and its own
+// repository id (testdb.Repository, a name derived from the test's own). The
+// runner (runner.Shared, one per process) keys function processes on the
+// repository id, and the id is the authority, so two tests registering one
+// name would share function processes and either one's Close would retire
+// the other's mid-delivery.
 // A test that runs function bodies must not register a fixed name.
 //
 // The exceptions are the tests that write a PACKAGE-LEVEL var: BlobUploadGrace

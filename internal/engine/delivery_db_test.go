@@ -640,7 +640,7 @@ func TestALedgerMotionTakesTheChangelogFirst(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- ds.ReplayTrigger(ctx, triggerID, 0) }()
-	waitParked(t, ds, changelogLockKey, 1)
+	waitParked(t, ds, 1, changelogLockKey)
 
 	probe, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {

@@ -132,9 +132,9 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 			})
 			putDone <- err
 		}()
-		// Long enough for the write to reach the lock and park behind this
-		// transaction's exclusive side.
-		time.Sleep(400 * time.Millisecond)
+		// This transaction holds the changelog lock inTx takes first, so the
+		// write parks there, or at the registry-dependency lock behind it.
+		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
 		select {
 		case err := <-putDone:
 			return fmt.Errorf("the write did not park at the registry-dependency lock: %w", err)
@@ -286,9 +286,7 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 	}
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() { bound <- ds.BindBundleInput(ctx, pkg, "client", "c1") }()
-		if err := waitParkedOn(t, ds, registryDepKey(ds), changelogLockKey); err != nil {
-			return err
-		}
+		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
 		select {
 		case err := <-bound:
 			return fmt.Errorf("the bind did not park behind the apply: %w", err)
@@ -384,39 +382,10 @@ func TestAChangedIndexDefinitionRebuildsTheStaleOrdinalIndex(t *testing.T) {
 // against a vocabulary apply holding the exclusive side while waiting on that
 // row. Both verbs park behind an in-flight apply either way (the changelog
 // ordering lock sees to that), so what these tests pin is WHAT THEY HOLD
-// while parked: nothing.
-
-// waitParkedOn blocks until some session waits, ungranted, on one of the
-// repository's advisory locks named here, or fails after a bound. The verbs
-// under test park either at the registry-dependency lock (the order the fix
-// establishes) or at the changelog ordering lock (with a row already in hand),
-// so waiting for either is what makes the probe that follows meaningful on a
-// slow runner: a probe that ran before the verb reached its first lock would
-// find every lock free against the unfixed code too. A 64-bit advisory key
-// shows in pg_locks as classid (high word) and objid (low word), objsubid 1.
-func waitParkedOn(t *testing.T, ds *dataset, names ...string) error {
-	t.Helper()
-	ctx := context.Background()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		for _, name := range names {
-			var waiting int
-			if err := ds.db.QueryRowContext(ctx, `
-				SELECT count(*) FROM pg_locks
-				WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
-				  AND classid::bigint = ((hashtext(current_schema() || '|' || $1)::bigint >> 32) & 4294967295)
-				  AND objid::bigint = (hashtext(current_schema() || '|' || $1)::bigint & 4294967295)`,
-				ds.scope.lockKey(name)).Scan(&waiting); err != nil {
-				t.Fatal(err)
-			}
-			if waiting > 0 {
-				return nil
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	return errors.New("no session parked on the registry-dependency or changelog lock within the bound")
-}
+// while parked: nothing. Each waits for the verb to park at the
+// registry-dependency lock (the order the fix establishes) or at the
+// changelog lock (with a row already in hand) before it probes
+// (lockorder_db_test.go waitParked).
 
 // rowLockFree reports whether a record's row is free of a FOR UPDATE lock,
 // probing with NOWAIT from a transaction of its own.
@@ -483,9 +452,7 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 			_, err := ds.Delete(ctx, substrate.ActorAPI, kind, "doomed", substrate.DeleteInput{})
 			deleted <- err
 		}()
-		if err := waitParkedOn(t, ds, registryDepKey(ds), changelogLockKey); err != nil {
-			return err
-		}
+		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
 		select {
 		case err := <-deleted:
 			return fmt.Errorf("the delete did not park behind the apply: %w", err)
@@ -560,9 +527,7 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 			_, err := ds.Split(ctx, substrate.ActorAPI, substrate.SplitInput{Merge: merged.ID})
 			split <- err
 		}()
-		if err := waitParkedOn(t, ds, registryDepKey(ds), changelogLockKey); err != nil {
-			return err
-		}
+		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
 		select {
 		case err := <-split:
 			return fmt.Errorf("the split did not park behind the apply: %w", err)
@@ -674,7 +639,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 		done <- err
 	}()
 
-	time.Sleep(400 * time.Millisecond)
+	waitParked(t, ds, 1, registryDepKey(ds))
 	select {
 	case err := <-done:
 		t.Fatalf("the data write committed across the apply's exclusive lock: %v", err)
@@ -751,7 +716,7 @@ func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 		done <- err
 	}()
 
-	time.Sleep(400 * time.Millisecond)
+	waitParked(t, ds, 1, registryDepKey(ds))
 	select {
 	case err := <-done:
 		t.Fatalf("the patch committed across the apply's exclusive lock: %v", err)

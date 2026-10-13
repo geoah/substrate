@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -30,6 +29,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/geoah/substrate/internal/tmpfstest"
 )
 
 var (
@@ -139,7 +140,7 @@ func tmpfsSize() string {
 //
 // The cluster lives on tmpfs because fsync=off only stops Postgres waiting
 // for the disk: every page still reaches it once the kernel writes back, and
-// the engine suite copies a template database eight hundred times. On a host
+// the engine suite copies a template database over a thousand times. On a host
 // whose root disk is itself network storage, that writeback stalled every
 // process on the machine (2026-09-26).
 //
@@ -275,12 +276,12 @@ func NewSchema(t testing.TB) string {
 }
 
 // Main runs a test binary that uses this package: the data roots on tmpfs
-// where there is one (TempDirOnTmpfs), m.Run, then every database the run
+// where there is one (tmpfstest.Use), m.Run, then every database the run
 // made dropped, the shared container stopped, and the tmpfs directory
 // removed. A TestMain is
 // `os.Exit(testdb.Main(m))`, so a package cannot adopt half of it.
 func Main(m *testing.M) int {
-	cleanup := TempDirOnTmpfs()
+	cleanup := tmpfstest.Use()
 	code := m.Run()
 	DropAll()
 	if shared != nil {
@@ -291,46 +292,6 @@ func Main(m *testing.M) int {
 	cleanup()
 	return code
 }
-
-// TempDirOnTmpfs points TMPDIR, and with it every t.TempDir() of the binary,
-// at a directory of its own under /dev/shm when that is a tmpfs with at
-// least 512 MB free, and leaves it alone otherwise (macOS, a container whose
-// /dev/shm is Docker's 64 MB default, TMPDIR already set). A suite calls it
-// from TestMain before m.Run and runs the returned cleanup after. The engine
-// fsyncs every changelog and sealed write, and sixteen parallel tests
-// fsyncing one ext4 journal serialize on it; a tmpfs fsync is free, and the
-// tests assert what the files hold, never that a power cut would keep them.
-// `TMPDIR=/tmp` is the opt-out.
-func TempDirOnTmpfs() (cleanup func()) {
-	none := func() {}
-	if os.Getenv("TMPDIR") != "" {
-		return none
-	}
-	const shm = "/dev/shm"
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(shm, &st); err != nil || st.Type != tmpfsMagic {
-		return none
-	}
-	// Bavail and Bsize are the types the platform declares, and they differ
-	// across them, so the product is taken in uint64.
-	if free := uint64(st.Bavail) * uint64(st.Bsize); free < 512<<20 { //nolint:unconvert // the field types are per platform
-		return none
-	}
-	dir, err := os.MkdirTemp(shm, "substrate-test-")
-	if err != nil {
-		return none
-	}
-	if err := os.Setenv("TMPDIR", dir); err != nil {
-		_ = os.RemoveAll(dir)
-		return none
-	}
-	fmt.Fprintf(os.Stderr, "testdb: TMPDIR=%s (tmpfs; set TMPDIR=/tmp to opt out)\n", dir)
-	return func() { _ = os.RemoveAll(dir) }
-}
-
-// tmpfsMagic is TMPFS_MAGIC from linux/magic.h, what Statfs reports as the
-// type of a tmpfs mount.
-const tmpfsMagic = 0x01021994
 
 // WithSearchPath bakes a search_path into a DSN — never SET on a pooled
 // connection.
@@ -352,7 +313,7 @@ func WithSearchPath(dsn, schema string) string {
 // (migrates, seeds, whatever its suite needs) and Clone copies per test with
 // CREATE DATABASE ... TEMPLATE. Copying a prepared database is one catalog
 // operation where migrating a fresh schema is every DDL statement again, and
-// the engine suite runs its fixture eight hundred times on one Postgres.
+// the engine suite runs its fixture over a thousand times on one Postgres.
 //
 // The copy carries everything the template's catalog holds: tables, indexes,
 // policies, the grants to the cluster roles, the recorded migrations, the

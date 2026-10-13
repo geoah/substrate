@@ -290,9 +290,13 @@ func TestWriterRefusesADamagedDirectory(t *testing.T) {
 	}
 }
 
+// It allocates a 64 MiB payload and still runs under -short: no task runs
+// this package without -short, so a skip there is a test that never runs.
+// The race detector multiplies that to about 1.8 GB and 14 s, for a test
+// with one goroutine, so the race job skips it.
 func TestWriterRefusesALineOverTheCap(t *testing.T) {
-	if testing.Short() {
-		t.Skip("allocates a 64 MiB payload")
+	if raceEnabled {
+		t.Skip("about 1.8 GB under the race detector; the short suite runs it")
 	}
 	dir := t.TempDir()
 	w, err := OpenWriter(dir, WriterOptions{})
