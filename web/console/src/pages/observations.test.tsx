@@ -40,6 +40,7 @@ import {
   RECOVERY,
   SLEEP_STAGE,
   STEPS_METRIC,
+  WHOOP,
   WITHINGS,
   latestAnswer,
   metricKind,
@@ -804,6 +805,57 @@ describe("selecting streams", () => {
         )
       ).toHaveLength(2)
     )
+  })
+
+  it("reads the selection's days where they were lived, one statistic, in no order", async () => {
+    // WHOOP keeps each cycle's average and maximum heart rate beside the
+    // watches' raw points; a row reads one statistic.
+    const summary = (statistic: string) => ({
+      ...LATEST.rows[0],
+      form: "summary",
+      group: { metric: HEART, source: WHOOP, statistic },
+    })
+    const latest = {
+      ...LATEST,
+      rows: [...LATEST.rows, summary("avg"), summary("max")],
+    }
+    const server = mount(
+      `?timeline=true&${WINDOW}&select=${token("health/heart_rate", "garmin-forerunner-265")},${token("health/heart_rate", "apple-watch-s10")},${token("health/heart_rate", "whoop-4-0")}`,
+      KINDS,
+      (read) =>
+        read.aggregate.metric ? answer(read) : latestAnswer(read, latest)
+    )
+    const panel = await screen.findByRole("region", {
+      name: "Timeline of the selected streams",
+    })
+    const heart = () =>
+      server.seen.filter((r) => r.aggregate.metric?.ref === HEART)
+    await waitFor(() => expect(heart()).toHaveLength(1))
+    const first = heart()[0]
+    // Day buckets are cut where each value was recorded, the reader's zone
+    // placing a value written with no offset.
+    expect(first.aggregate.bucket).toEqual({
+      calendar: "day",
+      fallbackTimezone: "Europe/Athens",
+    })
+    expect(first.aggregate.from).toBe("prefer-raw")
+    expect(first.filter.properties?.statistic).toEqual({ eq: "avg" })
+    // A selection is no order: the server ranks the sources by their
+    // records' priorities.
+    expect(first.aggregate.sources).toEqual({ policy: "priority" })
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Statistic: Average" })
+    )
+    fireEvent.click(await screen.findByRole("option", { name: /Highest/ }))
+    await waitFor(() => expect(heart()).toHaveLength(2))
+    expect(heart()[1].filter.properties?.statistic).toEqual({ eq: "max" })
+    const days = within(within(panel).getByRole("radiogroup", { name: "Days" }))
+    fireEvent.click(days.getByRole("radio", { name: "Europe/Athens" }))
+    await waitFor(() => expect(heart()).toHaveLength(3))
+    expect(heart()[2].aggregate.bucket).toEqual({
+      calendar: "day",
+      timezone: "Europe/Athens",
+    })
   })
 
   it("says plainly which streams a third unit leaves out", async () => {
