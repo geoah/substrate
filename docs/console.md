@@ -250,7 +250,8 @@ pinned title column. The columns come from the declaration: the title first,
 then the states, the time stamps the kind's temporal trait binds, the
 references (each read as the referent's title, fetched beside the page with
 `expand`), the enums and the other short values; paragraphs and blobs never
-earn a column, and the last change closes the row. A column that holds nothing
+earn a column, and the last change closes the row. A duration reads in
+words (`8m 12s`), as on the record page, the stored text on hover. A column that holds nothing
 on the rows loaded opens hidden, and the **Columns** button says how many
 are. So does a property the kind marks `deprecated`, and on a provider's
 collection every property a writer role other than the owner keeps (sync

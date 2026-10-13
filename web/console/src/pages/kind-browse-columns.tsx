@@ -52,6 +52,7 @@ import {
   titleProperties,
 } from "@/lib/grid-values"
 import { untitled } from "@/lib/kind-names"
+import { coverageWords } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
 import type { ReferenceTitles } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
@@ -324,6 +325,16 @@ function propertyCell(
   }
   if (NUMERIC.has(prop.kind)) {
     return <span className="tabular-nums">{cellValue(value)}</span>
+  }
+  // As the record page reads it (`property-value.tsx`), never the ISO text.
+  if (prop.kind === "duration" && typeof first === "string") {
+    return (
+      <FirstOf count={values.length}>
+        <span className="truncate tabular-nums" title={first}>
+          {coverageWords(first)}
+        </span>
+      </FirstOf>
+    )
   }
   if (prop.kind === "money" && !prop.keyed) {
     return (
