@@ -3,6 +3,7 @@ package substrate
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -292,6 +293,72 @@ type AggregateBudget struct {
 	MaxBuckets int   `json:"maxBuckets,omitempty"`
 	MaxSamples int64 `json:"maxSamples,omitempty"`
 	MaxGroups  int   `json:"maxGroups,omitempty"`
+}
+
+// The budget paths a read's refusal names.
+const (
+	AggregateMaxBucketsPath = "aggregate.budget.maxBuckets"
+	AggregateMaxGroupsPath  = "aggregate.budget.maxGroups"
+)
+
+// LimitRows lowers the read's own budget so it answers at most rows rows,
+// for a caller holding a row budget of its own (a function's, an agent's).
+// budget.maxBuckets bounds a bucketed read's series times buckets and
+// budget.maxGroups the latest read's groups, and the read checks each before
+// it takes a point, so a read past the caller's budget is refused before it
+// runs. A budget the request names outside 0 to its cap is left for the read
+// to refuse. It answers the budget paths it lowered, which
+// AggregateRowsRefused matches a refusal against; q's aggregate is copied,
+// never written through.
+func (q *AggregateQuery) LimitRows(rows int) []string {
+	if q.Aggregate == nil || rows <= 0 {
+		return nil
+	}
+	agg := *q.Aggregate
+	budget := AggregateBudget{}
+	if agg.Budget != nil {
+		budget = *agg.Budget
+	}
+	var lowered []string
+	lower := func(n *int, def, limit int, path string) {
+		cur := *n
+		if cur < 0 || cur > limit {
+			return
+		}
+		if cur == 0 {
+			cur = def
+		}
+		if cur > rows {
+			*n = rows
+			lowered = append(lowered, path)
+		}
+	}
+	lower(&budget.MaxBuckets, AggregateMaxBuckets, AggregateMaxBucketsCap, AggregateMaxBucketsPath)
+	if agg.Range == nil {
+		// Only the latest read takes no range, and its rows are its groups.
+		lower(&budget.MaxGroups, AggregateMaxGroups, AggregateMaxGroupsCap, AggregateMaxGroupsPath)
+	}
+	if lowered != nil {
+		agg.Budget = &budget
+		q.Aggregate = &agg
+	}
+	return lowered
+}
+
+// AggregateRowsRefused reports whether err is a read's refusal on one of the
+// budget paths LimitRows lowered: the caller's row budget refused it, not
+// the request's own.
+func AggregateRowsRefused(err error, lowered []string) bool {
+	var ve *ValidationError
+	if len(lowered) == 0 || !errors.As(err, &ve) {
+		return false
+	}
+	for _, d := range ve.Details() {
+		if slices.Contains(lowered, d.Path) {
+			return true
+		}
+	}
+	return false
 }
 
 // Downsample is the `downsample` parameter: Points columns over the range,

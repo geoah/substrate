@@ -41,6 +41,9 @@ type fakeBackend struct {
 	// is how many rows each answers.
 	aggregates    []substrate.AggregateQuery
 	aggregateRows int
+	// aggregatesRefused counts the reads refused on their budget before any
+	// work.
+	aggregatesRefused int
 	// logs is every line Log received, in order, and logged the instant of
 	// each, so a test can tell a line that arrived while the body ran from
 	// one that came with its end.
@@ -82,6 +85,14 @@ func (f *fakeBackend) List(_ context.Context, q substrate.Query) (*substrate.Pag
 
 func (f *fakeBackend) Aggregate(_ context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
 	f.aggregates = append(f.aggregates, q)
+	// The engine refuses a read whose rows pass budget.maxBuckets before it
+	// takes a point; the fake answers that refusal and does no work.
+	if q.Aggregate != nil && q.Aggregate.Budget != nil && q.Aggregate.Budget.MaxBuckets > 0 && f.aggregateRows > q.Aggregate.Budget.MaxBuckets {
+		b := q.Aggregate.Budget
+		f.aggregatesRefused++
+		return nil, &substrate.ValidationError{Problems: []string{fmt.Sprintf(
+			"aggregate.budget.maxBuckets: 1 series times %d buckets is %d, over %d", f.aggregateRows, f.aggregateRows, b.MaxBuckets)}}
+	}
 	res := &substrate.AggregateResult{Exact: true, Rows: []substrate.AggregateRow{}}
 	for i := range f.aggregateRows {
 		v := fmt.Sprint(60 + i)
@@ -1219,7 +1230,12 @@ def main(input, host):
 		}
 	}
 
-	// More rows than the budget holds is a budget trip.
+	// The read is sent with its maxBuckets lowered to the rows left, so a
+	// read past the row budget is refused before it runs, and that refusal
+	// is a budget trip.
+	if b := q.Aggregate.Budget; b == nil || b.MaxBuckets != 10 || b.MaxGroups != 0 {
+		t.Fatalf("the backend saw budget %+v, want maxBuckets lowered to the 10 rows left", b)
+	}
 	over := spec
 	over.Function = "greedy.g.test"
 	over.ReadRows = 2
@@ -1227,5 +1243,33 @@ def main(input, host):
 	backend.aggregateRows = 3
 	if _, err := r.Invoke(context.Background(), over, testInput(), backend); !errors.Is(err, ErrReadBudget) {
 		t.Fatalf("over the row budget: err = %v, want a budget trip", err)
+	}
+	if backend.aggregatesRefused != 1 || len(backend.aggregates) != 1 || backend.aggregates[0].Aggregate.Budget.MaxBuckets != 2 {
+		t.Fatalf("over the row budget: %d reads, %d refused before any work, want the one read refused at maxBuckets 2",
+			len(backend.aggregates), backend.aggregatesRefused)
+	}
+
+	// The request's own budget, under the rows left, is sent as written, and
+	// its refusal is the read's error, not a trip.
+	own := spec
+	own.Function = "tight.g.test"
+	own.Source = `
+def main(input, host):
+    try:
+        host.records.aggregate({"filter": {"kinds": ["widget"]},
+            "aggregate": {"metric": {"ref": "m"}, "budget": {"maxBuckets": 2}}})
+    except Exception as e:
+        return {"output": {"refused": str(e)}}
+    return {"output": {}}
+`
+	backend = widgetBackend()
+	backend.aggregateRows = 3
+	res, err = r.Invoke(context.Background(), own, testInput(), backend)
+	if err != nil {
+		t.Fatalf("a refusal of the request's own budget: %v", err)
+	}
+	if out, _ := res.Output.(map[string]any); !strings.Contains(fmt.Sprint(out["refused"]), "maxBuckets") ||
+		backend.aggregates[0].Aggregate.Budget.MaxBuckets != 2 {
+		t.Fatalf("a refusal of the request's own budget: output %v, sent %+v", res.Output, backend.aggregates[0].Aggregate.Budget)
 	}
 }

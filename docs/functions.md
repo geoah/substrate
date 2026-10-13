@@ -720,7 +720,10 @@ page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"
 the observed kinds it reads (and `aggregate.bucket.records.filter.kinds` the
 records mode's), each held to the reads allowlist; a body that names none
 trips the allowlist. It answers the result dict, and pays one call and its
-rows against the read budget.
+rows against the read budget. Before the read runs, its `budget.maxBuckets`
+(and on the latest read `budget.maxGroups`) is lowered to the rows left, so a
+read that would answer more rows than the budget holds is refused before it
+takes a point, and that refusal is a budget trip like any other.
 
 ```python
 res = host.records.aggregate({

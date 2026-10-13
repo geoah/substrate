@@ -998,9 +998,9 @@ func (p *proc) exchange(ctx context.Context, timeout time.Duration, f frame, sta
 
 // readState meters one invocation's host calls and remembers the first trip:
 // the trip decides the delivery whatever the body does with the error. Calls
-// are charged BEFORE they execute — a failed call is never free — and list
-// and search are clamped to the remaining row budget before they run, so an
-// over-budget request never performs the work first.
+// are charged BEFORE they execute — a failed call is never free — and list,
+// search and aggregate are clamped to the remaining row budget before they
+// run, so an over-budget request never performs the work first.
 type readState struct {
 	spec    Spec
 	backend Backend
@@ -1141,7 +1141,9 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		// The aggregate read pays like a list: one call, and its rows against
 		// the row budget. Every kind it reads is named and held to the
 		// allowlist: the streams' kinds in filter.kinds, and in the records
-		// time mode the kinds whose records are the buckets.
+		// time mode the kinds whose records are the buckets. Its own budget
+		// is lowered to the rows left before it runs, so a read past the row
+		// budget is refused before it takes a point, and that refusal trips.
 		var q substrate.AggregateQuery
 		if err := strictjson.DecodeBytes(call.Params, &q, false); err != nil {
 			return nil, fmt.Errorf("aggregate: %w", err)
@@ -1157,10 +1159,15 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		if err := s.chargeCall(); err != nil {
 			return nil, s.trip(err)
 		}
-		if _, err := s.remainingRows(); err != nil {
+		rem, err := s.remainingRows()
+		if err != nil {
 			return nil, s.trip(err)
 		}
+		lowered := q.LimitRows(rem)
 		res, err := s.backend.Aggregate(ctx, q)
+		if substrate.AggregateRowsRefused(err, lowered) {
+			return nil, s.trip(fmt.Errorf("%w: aggregate answers more rows than the %d left: %w", ErrReadBudget, rem, err))
+		}
 		if err != nil {
 			return nil, err
 		}
