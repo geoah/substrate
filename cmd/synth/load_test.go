@@ -227,3 +227,35 @@ func TestLoadRefusesRecordsGeneratedForAnotherAuthority(t *testing.T) {
 		}
 	}
 }
+
+// A re-import answers 200 like a first one, so the loader reads whether the
+// repository holds a sample before it imports, and answers only the samples
+// it imported: those are the ones replayed over rows that landed first.
+func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
+	f := newFakeSubstrate(t)
+	const adapter = "samples.substrate.reamde.dev/healthwhoop"
+	for _, s := range []string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health", adapter} {
+		f.installed[s] = true
+	}
+	imported, err := f.client().importSamples(t.Context(), []string{adapter}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(imported) != 0 {
+		t.Errorf("a repository holding every sample imported %v", imported)
+	}
+	for _, r := range f.log() {
+		if strings.HasSuffix(r, "/import") {
+			t.Errorf("a held sample was imported again: %s", r)
+		}
+	}
+
+	f = newFakeSubstrate(t)
+	imported, err = f.client().importSamples(t.Context(), []string{adapter}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(imported, " ") != "samples.substrate.reamde.dev/observations samples.substrate.reamde.dev/health "+adapter {
+		t.Errorf("a fresh repository imported %v", imported)
+	}
+}

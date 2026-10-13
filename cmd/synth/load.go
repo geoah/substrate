@@ -295,37 +295,78 @@ func readSetup(base string) (synth.Setup, error) {
 	return s, nil
 }
 
-// install installs a provider from the catalog; one already held is fine.
+// catalogItem reads whether the repository holds a catalog package, and
+// whether the server ships a version that would upgrade it.
+func (c *client) catalogItem(ctx context.Context, pkg string) (held, upgrade bool, err error) {
+	st, out, err := c.do(ctx, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(pkg), nil, nil)
+	if err != nil {
+		return false, false, err
+	}
+	if st != http.StatusOK {
+		return false, false, fmt.Errorf("reading %s from the catalog: %d %s", pkg, st, truncate(out))
+	}
+	var item struct {
+		Installed bool            `json:"installed"`
+		Upgrade   json.RawMessage `json:"upgrade"`
+	}
+	if err := json.Unmarshal(out, &item); err != nil {
+		return false, false, fmt.Errorf("reading %s from the catalog: %w", pkg, err)
+	}
+	return item.Installed, len(item.Upgrade) > 0 && string(item.Upgrade) != "null", nil
+}
+
+// install installs a provider from the catalog, unless the repository holds
+// it at the version this server ships.
 func (c *client) install(ctx context.Context, pkg string) error {
+	held, upgrade, err := c.catalogItem(ctx, pkg)
+	if err != nil || (held && !upgrade) {
+		return err
+	}
 	st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(pkg)+"/install", []byte("{}"), nil)
 	if err != nil {
 		return err
 	}
-	if st >= 300 && st != http.StatusConflict {
+	if st >= 300 {
 		return fmt.Errorf("installing %s: %d %s", pkg, st, truncate(out))
 	}
 	return nil
 }
 
 // importSamples imports the observations and health samples, then the
-// listed ones in order, each skipped when the repository already holds it
-// at the version this server ships. It answers the samples it imported.
+// listed ones in order. A sample the repository holds at the version this
+// server ships is skipped and one it holds at an older version is upgraded;
+// a re-import answers 200 like a first one, so the catalog says which is
+// which. It answers the samples it imported or upgraded: a new record
+// trigger starts at the changelog's head and an upgraded adapter rewrites
+// only what it is handed, so those are the ones a replay must reach.
 func (c *client) importSamples(ctx context.Context, samples []string, stdout io.Writer) ([]string, error) {
 	var imported []string
+	seen := map[string]bool{}
 	for _, s := range append([]string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health"}, samples...) {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		held, upgrade, err := c.catalogItem(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+		if held && !upgrade {
+			continue
+		}
 		st, out, err := c.do(ctx, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(s)+"/import", []byte("{}"), nil)
 		if err != nil {
 			return nil, err
 		}
-		switch {
-		case st < 300:
-			fmt.Fprintf(stdout, "imported %s\n", s)
-			imported = append(imported, s)
-		case st == http.StatusConflict:
-			// Held already at this version: nothing to do.
-		default:
+		if st >= 300 {
 			return nil, fmt.Errorf("importing %s: %d %s", s, st, truncate(out))
 		}
+		verb := "imported"
+		if held {
+			verb = "upgraded"
+		}
+		fmt.Fprintf(stdout, "%s %s\n", verb, s)
+		imported = append(imported, s)
 	}
 	return imported, nil
 }
