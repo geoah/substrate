@@ -113,10 +113,12 @@ rest of 0045 stands.
 - Good, because the OAuth client secret signs WHOOP's webhooks without a copy
   reaching any function.
 - Bad, because a keyless trigger's signature refusal is the same `404` as a
-  missing trigger, so an owner whose provider reports `404` has to read the
-  server log, or the provider's signature setup, to tell a wrong URL from a
-  wrong secret. A keyed trigger answers `401` instead, which says no more
-  than the key already proved.
+  missing trigger. The server logs a secret that does not resolve and no
+  other refusal, so a configured but wrong secret, a missing signature or a
+  stale timestamp looks exactly like a wrong URL, in the answer and in the
+  log. An owner whose provider reports `404` checks the URL and the
+  provider's signature setup by hand. A keyed trigger answers `401`
+  instead, which says no more than the key already proved.
 - Bad, because the timestamp bounds admission only. A marked request parked
   for a month runs when a hand retries it, and a repeat inside the window
   after a restart, or after the record forgot it under load, is admitted as
@@ -131,26 +133,33 @@ rest of 0045 stands.
 
 ### Confirmation
 
-In `internal/engine`: `TestWebhookSignatureIsCheckedBeforeAnythingIsStored`
-for the refusals and their two answers,
-`TestWebhookSignatureIsRefusedAtWriteTime`,
-`TestWebhookSignatureUnderTheOAuthClientSecret` and
-`TestAnAgentWebhookChecksItsBundlesClientSecret` for the secret's two
-sources and both callable kinds,
-`TestWebhookSigningSecretStoreFaultIsNotARefusal`,
-`TestWebhookUnresolvableSecretIsLoggedOncePerMinute`,
-`TestWebhookSignatureRepeatIsOneDelivery` and
-`TestWebhookReplaysHoldASignatureForItsWindow` for the replay record,
-`TestWebhookSignatureDeclaredLaterRefusesAStoredUnsignedRequest`,
-`TestWebhookSignatureStoredRequestRunsPastItsSkew`,
-`TestWebhookSignatureStoredRequestSkewIsMeasuredToTheMillisecond`,
-`TestWebhookSignatureMarkSurvivesAParkAndARetry` and
-`TestStoredBodyOnlySignatureNeedsNoReceipt` for stored requests, and
-`TestWebhookSignatureDeclarationIsAdmittedAtParse`,
-`TestWebhookSignatureMatchesKnownVectors` (RFC 4231) and
-`TestWebhookSignaturePresentedAtItsEdges` for the parse and the MAC.
-`TestWebhookSignatureRefusalIsATerse401` in `internal/api`, and
-`TestWhoopWebhookThroughTheDoor` in `internal/providertest`.
+In `internal/engine`:
+
+- the refusals and their two answers:
+  `TestWebhookSignatureIsCheckedBeforeAnythingIsStored`;
+- the secret's two sources and both callable kinds:
+  `TestWebhookSignatureIsRefusedAtWriteTime`,
+  `TestWebhookSignatureUnderTheOAuthClientSecret` and
+  `TestAnAgentWebhookChecksItsBundlesClientSecret`;
+- the store fault that refuses nothing:
+  `TestWebhookSigningSecretStoreFaultIsNotARefusal`;
+- the paced log of an unresolvable secret:
+  `TestWebhookUnresolvableSecretIsLoggedOncePerMinute`;
+- the replay record: `TestWebhookSignatureRepeatIsOneDelivery` and
+  `TestWebhookReplaysHoldASignatureForItsWindow`;
+- stored requests:
+  `TestWebhookSignatureDeclaredLaterRefusesAStoredUnsignedRequest`,
+  `TestWebhookSignatureStoredRequestRunsPastItsSkew`,
+  `TestWebhookSignatureStoredRequestSkewIsMeasuredToTheMillisecond`,
+  `TestWebhookSignatureMarkSurvivesAParkAndARetry` and
+  `TestStoredBodyOnlySignatureNeedsNoReceipt`;
+- the parse and the MAC: `TestWebhookSignatureDeclarationIsAdmittedAtParse`,
+  `TestWebhookSignatureMatchesKnownVectors` (RFC 4231) and
+  `TestWebhookSignaturePresentedAtItsEdges`.
+
+In `internal/api`, `TestWebhookSignatureRefusalIsATerse401` holds the `401`
+body. In `internal/providertest`, `TestWhoopWebhookThroughTheDoor` runs
+WHOOP's shipped declaration through the door.
 
 ## More Information
 
