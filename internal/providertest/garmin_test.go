@@ -37,6 +37,9 @@ const (
 	garminUser     = "7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a"
 	garminClient   = "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d"
 	garminTestdata = "testdata/garmin"
+	// garminRecordings is the provider e2e suite's mock Garmin: its answer to
+	// a ping's callback is the one both suites serve.
+	garminRecordings = "../providere2e/fixtures/garmin"
 )
 
 // garminKinds maps each push envelope key to the kind it lands as.
@@ -603,7 +606,7 @@ func TestGarminPushFollowsAPing(t *testing.T) {
 		t.Fatalf("the ping's callback was fetched %d times, want once", fake.count("pull dailies"))
 	}
 	var answer []map[string]any
-	raw, err := os.ReadFile(filepath.Join(garminTestdata, "GET_wellness-api_rest_dailies.json"))
+	raw, err := os.ReadFile(filepath.Join(garminRecordings, "GET_wellness-api_rest_dailies.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -646,7 +649,7 @@ type fakeGarmin struct {
 func newFakeGarmin(t *testing.T) *fakeGarmin {
 	t.Helper()
 	f := &fakeGarmin{seen: map[string]bool{}, refuse: map[string]int{}}
-	pull, err := os.ReadFile(filepath.Join(garminTestdata, "GET_wellness-api_rest_dailies.json"))
+	pull, err := os.ReadFile(filepath.Join(garminRecordings, "GET_wellness-api_rest_dailies.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
