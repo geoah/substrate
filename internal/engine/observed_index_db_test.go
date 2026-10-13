@@ -1868,3 +1868,64 @@ func TestObservedRebuildAnswersAFailedRollupInsert(t *testing.T) {
 		t.Fatalf("rebuild = %v, want the refused insert", err)
 	}
 }
+
+// A counter's row holds the step in from the stream's previous reading,
+// wherever that is, so a write before a reading, a correction of one and a
+// deletion of one each recompute the bucket of the next reading, though no
+// point of that bucket moved.
+func TestObservedCounterRecomputesTheNextReadingsBucket(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	ctx := context.Background()
+	reading := func(id, at, value string) {
+		t.Helper()
+		r.mustPut(t, r.observation, id, map[string]any{
+			"metric": r.metricRef("energy"), "source": r.sourceRef("meter"), "form": "counter", "resetRule": "monotonic",
+			"value": quantity(value, "kW.h"), "at": "2026-10-07T" + at + ":00Z",
+		})
+	}
+	increases := func() string {
+		t.Helper()
+		rows, err := r.db.Query(`SELECT to_char(bucket15 AT TIME ZONE 'UTC', 'HH24:MI'), coalesce(increase::text, '-')
+			FROM observed_rollups WHERE source = $1 ORDER BY bucket15`, r.source+"/meter")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		var out []string
+		for rows.Next() {
+			var bucket, inc string
+			if err := rows.Scan(&bucket, &inc); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, bucket+"="+trimDecimal(inc))
+		}
+		return strings.Join(out, " ")
+	}
+	step := func(what, want string) {
+		t.Helper()
+		if got := increases(); got != want {
+			t.Errorf("%s: the rows' increases are %q, want %q", what, got, want)
+		}
+		checkRollupsMatchSpec(t, r.db)
+	}
+	reading("m/01", "01:00", "10")
+	reading("m/02", "02:00", "15")
+	step("two readings in order", "01:00=- 02:00=5")
+	reading("m/00", "00:00", "4")
+	step("a reading before them", "00:00=- 01:00=6 02:00=5")
+	reading("m/00", "00:00", "7")
+	step("a correction of it", "00:00=- 01:00=3 02:00=5")
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "m/01", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	step("a deletion of the middle reading", "00:00=- 02:00=8")
+}
+
+// trimDecimal drops a decimal's trailing zeros, so 6.000 reads 6.
+func trimDecimal(s string) string {
+	if !strings.Contains(s, ".") {
+		return s
+	}
+	return strings.TrimSuffix(strings.TrimRight(s, "0"), ".")
+}
