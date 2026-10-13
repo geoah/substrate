@@ -268,8 +268,7 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 				ev := cell(out, part.bucket, r.codeKey(sp.Point.Code), form, true)
 				ev.spans = append(ev.spans, part.span)
 				ev.sources[st.s.source] = true
-				if b := part.bucket; b.local {
-					b.ends.hold(part.span.Start, part.span.End, si, off)
+				if part.bucket.local {
 					ev.ends.hold(part.span.Start, part.span.End, si, off)
 				}
 			}
@@ -319,7 +318,6 @@ func (r *aggRun) settleRaw(out aggCells, list []*rawStream, form string) error {
 					ev.prorated++
 				}
 				if b.local {
-					b.ends.mark(m.Point, m.stream, m.off)
 					ev.ends.mark(m.Point, m.stream, m.off)
 				}
 				if m.Bounded {

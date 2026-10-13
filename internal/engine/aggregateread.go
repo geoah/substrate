@@ -180,14 +180,7 @@ func (r *aggRun) assemble(groups []*aggGroup, raws, sums []aggCells) (out []aggO
 			if err := r.canceled(); err != nil {
 				return nil, 0, err
 			}
-			codes := map[string]bool{}
-			for c := range raws[gi][b] {
-				codes[c] = true
-			}
-			for c := range sums[gi][b] {
-				codes[c] = true
-			}
-			for _, code := range sortedKeys(codes) {
+			for _, code := range cellCodes(raws[gi], sums[gi], b) {
 				ev, from := r.choose(b, raws[gi][b][code], sums[gi][b][code])
 				if ev == nil {
 					continue
@@ -205,6 +198,43 @@ func (r *aggRun) assemble(groups []*aggGroup, raws, sums []aggCells) (out []aggO
 		}
 	}
 	return out, series, nil
+}
+
+// markEnds takes into each recorded-local bucket's ends the ends of the
+// evidence every row of it is written from (choose), so raw points that
+// prefer-raw passes over write no row's start or end. It runs for every
+// metric of a read before any row is written, since a several-metric read
+// writes each row at its bucket's ends (sharedEnds).
+func (r *aggRun) markEnds(groups []*aggGroup, raws, sums []aggCells) error {
+	for gi := range groups {
+		for _, b := range r.buckets {
+			if !b.local {
+				continue
+			}
+			if err := r.canceled(); err != nil {
+				return err
+			}
+			for _, code := range cellCodes(raws[gi], sums[gi], b) {
+				if ev, _ := r.choose(b, raws[gi][b][code], sums[gi][b][code]); ev != nil {
+					b.ends.merge(&ev.ends)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// cellCodes are the codes a bucket holds raw or summary evidence of, in
+// order.
+func cellCodes(raws, sums aggCells, b *aggBucket) []string {
+	codes := map[string]bool{}
+	for c := range raws[b] {
+		codes[c] = true
+	}
+	for c := range sums[b] {
+		codes[c] = true
+	}
+	return sortedKeys(codes)
 }
 
 // choose picks a bucket's evidence: raw points or summaries, never both;

@@ -204,11 +204,16 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d series is %d, over %d; narrow the range or raise maxBuckets",
 			len(buckets), series, n, p.maxBuckets)
 	}
+	for _, m := range runs {
+		m.r.buckets = buckets
+		if err := m.r.markEnds(m.groups, m.raws, m.sums); err != nil {
+			return nil, err
+		}
+	}
 	meta := aggMeta{sources: map[string]bool{}}
 	var rows []aggOut
 	held := 0
 	for _, m := range runs {
-		m.r.buckets = buckets
 		out, n, err := m.r.assemble(m.groups, m.raws, m.sums)
 		if err != nil {
 			return nil, err

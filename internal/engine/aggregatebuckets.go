@@ -82,7 +82,9 @@ type aggBucket struct {
 	// record is the records mode's matched record.
 	record *substrate.AggregateRecord
 	// ends are a recorded-local bucket's first and last points and held time
-	// over every row in it: what a row fill makes there is written in.
+	// over every row in it, from the evidence each row is written from
+	// (markEnds): what a row fill makes there is written in, and on a
+	// several-metric read every row of it.
 	ends rowEnds
 }
 
@@ -140,6 +142,27 @@ func (e *rowEnds) hold(from, to time.Time, stream int, off int64) {
 	}
 	if e.heldLast == nil || to.After(e.heldLast.to) || (to.Equal(e.heldLast.to) && stream > e.heldLast.stream) {
 		e.heldLast = h
+	}
+}
+
+// merge takes another row's ends into these, by the order mark and hold
+// keep.
+func (e *rowEnds) merge(o *rowEnds) {
+	if o.first != nil {
+		if e.first == nil || pointBefore(o.first.point(), o.first.stream, e.first.point(), e.first.stream) {
+			e.first = o.first
+		}
+		if e.last == nil || pointBefore(e.last.point(), e.last.stream, o.last.point(), o.last.stream) {
+			e.last = o.last
+		}
+	}
+	if o.heldFirst != nil {
+		if e.heldFirst == nil || o.heldFirst.from.Before(e.heldFirst.from) || (o.heldFirst.from.Equal(e.heldFirst.from) && o.heldFirst.stream < e.heldFirst.stream) {
+			e.heldFirst = o.heldFirst
+		}
+		if e.heldLast == nil || o.heldLast.to.After(e.heldLast.to) || (o.heldLast.to.Equal(e.heldLast.to) && o.heldLast.stream > e.heldLast.stream) {
+			e.heldLast = o.heldLast
+		}
 	}
 }
 

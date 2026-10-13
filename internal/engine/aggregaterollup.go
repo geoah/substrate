@@ -71,7 +71,6 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 				ev := cell(out, b, r.codeKey(og.code), g.form, false)
 				if local && row.First != nil {
 					for _, pt := range []*observed.Point{row.First, row.Last} {
-						b.ends.mark(*pt, si, og.offset)
 						ev.ends.mark(*pt, si, og.offset)
 					}
 				}
@@ -460,7 +459,6 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, si int, rows 
 			for _, b := range buckets {
 				ev := cell(out, b, r.codeKey(og.code), g.form, false)
 				if b.local {
-					b.ends.hold(slot, end, si, og.offset)
 					ev.ends.hold(slot, end, si, og.offset)
 				}
 				hs := ev.held[og.code]

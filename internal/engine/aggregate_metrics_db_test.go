@@ -234,3 +234,50 @@ func TestAggregateSeveralMetricsAreCheckedBeforeTheyRun(t *testing.T) {
 	groups := read(substrate.Aggregate{Metrics: four, Reducers: reducers("last"), Budget: &substrate.AggregateBudget{MaxGroups: 3}})
 	f.refusedAgg(groups, "aggregate.budget.maxGroups: the 4 metrics make 4 groups")
 }
+
+// A recorded-local day is written at the offsets of the values the read
+// takes, on a several-metric read as on a metric's own: heart rate read in
+// London (+01:00) covers two minutes of 2026-09-24, so prefer-raw takes the
+// night's summary, kept at +03:00, and the day's row starts and ends at
+// +03:00, whether the metric is read alone or as the one entry of metrics.
+// The two minutes prefer-raw passes over write neither bound.
+func TestAggregateSeveralMetricsWriteADayAtTheValuesTaken(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	london := time.FixedZone("", 3600)
+	for i, x := range []struct {
+		at    time.Time
+		value string
+	}{{time.Date(2026, 9, 24, 7, 0, 0, 0, london), "60"}, {time.Date(2026, 9, 24, 20, 0, 0, 0, london), "70"}} {
+		f.mustPut(t, f.observation, fmt.Sprintf("hr/%d", i), map[string]any{
+			"metric": f.metricRef("health/heart_rate"), "source": f.sourceRef("watch"), "form": "gauge",
+			"value": quantity(x.value, "/min"), "at": at(x.at), "hold": "PT1M", "utcOffset": 60,
+		})
+	}
+	night := time.Date(2026, 9, 24, 1, 0, 0, 0, time.FixedZone("", 3*3600))
+	f.summary("hr/night", "health/heart_rate", "watch", "avg", "52", "/min", night, 6*time.Hour)
+	hr := f.metricPath("health/heart_rate")
+	bucket := &substrate.AggregateBucket{Calendar: "day"}
+
+	alone := f.agg(context.Background(), substrate.Filter{Properties: map[string]substrate.Cond{"statistic": {Eq: "avg"}}}, substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: hr}, From: substrate.AggregateFromPreferRaw, Range: todayRange(), Bucket: bucket, Reducers: reducers("avg"),
+	})
+	shared := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+		Metrics: []substrate.AggregateMetricRead{{Ref: hr, From: substrate.AggregateFromPreferRaw, Statistic: "avg"}},
+		Range:   todayRange(), Bucket: bucket, Reducers: reducers("avg"),
+	})
+	want := "2026-09-24T00:00:00+03:00 2026-09-25T00:00:00+03:00 summaries [avg=52/min]"
+	for label, res := range map[string]*substrate.AggregateResult{"alone": alone, "in metrics": shared} {
+		if len(res.Rows) != 1 {
+			t.Fatalf("%s: %d rows, want 2026-09-24's: %+v", label, len(res.Rows), res.Rows)
+		}
+		row := res.Rows[0]
+		var vals []string
+		for _, v := range row.Values {
+			vals = append(vals, v.Reducer.String()+"="+*v.Value+v.Unit)
+		}
+		if got := fmt.Sprint(row.Start.Format(time.RFC3339), " ", row.End.Format(time.RFC3339), " ", row.From, " ", vals); got != want {
+			t.Errorf("%s: %s, want %s", label, got, want)
+		}
+	}
+}

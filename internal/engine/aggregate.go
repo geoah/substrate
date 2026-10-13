@@ -104,8 +104,9 @@ type aggPlan struct {
 	// reads its summaries at; "" reads every statistic the filter admits.
 	statistic string
 	// sharedEnds writes a recorded-local row at its bucket's bounds, which
-	// every metric of a several-metric read marks, so the metrics' rows of
-	// one day carry one start and one end.
+	// every metric of a several-metric read marks with the values it takes
+	// (markEnds), so the metrics' rows of one day carry one start and one
+	// end.
 	sharedEnds bool
 }
 
