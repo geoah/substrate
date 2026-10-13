@@ -68,15 +68,23 @@ type aggBucket struct {
 	zone *time.Location
 	// record is the records mode's matched record.
 	record *substrate.AggregateRecord
-	// first and last are a recorded-local bucket's first and last points,
-	// whose offsets its start and end are written in (mark).
-	first, last *edge
+	// ends are a recorded-local bucket's first and last points and held time
+	// over every row in it: what a row fill makes there is written in.
+	ends rowEnds
 }
 
-// edge is one end of a recorded-local bucket: the place of the point that
-// opens or closes it, in the order every reader takes points in, and the
-// point's offset in minutes.
-type edge struct {
+// rowEnds are what a recorded-local row's start and end are written at: the
+// offsets of its first and last points, or where it holds no point of its
+// own, of the first and last value held in it. A row keeps its own, so one
+// group's answer never depends on the other groups the read selects.
+type rowEnds struct {
+	first, last         *rowPoint
+	heldFirst, heldLast *rowHeld
+}
+
+// rowPoint is a point that opens or closes a recorded-local row, placed in
+// the order every reader takes points in, with its offset in minutes.
+type rowPoint struct {
 	at     time.Time
 	rid    string
 	ord    int64
@@ -84,20 +92,57 @@ type edge struct {
 	off    int64
 }
 
-func (e *edge) point() observed.Point { return observed.Point{At: e.at, RecordID: e.rid, Ord: e.ord} }
+func (e *rowPoint) point() observed.Point {
+	return observed.Point{At: e.at, RecordID: e.rid, Ord: e.ord}
+}
 
-// mark takes one point of a recorded-local bucket, a raw point or a rollup
-// row's first or last, and keeps the bucket's first and last by pointBefore,
-// so neither the order points and rows arrive in nor the quarter hour a row
-// starts decides which offset the bucket's start and end are written in.
-func (b *aggBucket) mark(p observed.Point, stream int, off int64) {
-	e := &edge{at: p.At, rid: p.RecordID, ord: p.Ord, stream: stream, off: off}
-	if b.first == nil || pointBefore(p, stream, b.first.point(), b.first.stream) {
-		b.first = e
+// rowHeld is a piece of time a value holds in a recorded-local row, with the
+// value's offset in minutes.
+type rowHeld struct {
+	from, to time.Time
+	stream   int
+	off      int64
+}
+
+// mark takes one point of a recorded-local row, a raw point or a rollup row's
+// first or last, and keeps the first and last by pointBefore, so neither the
+// order points and rows arrive in nor the quarter hour a row starts decides
+// which offset the row's start and end are written in.
+func (e *rowEnds) mark(p observed.Point, stream int, off int64) {
+	pt := &rowPoint{at: p.At, rid: p.RecordID, ord: p.Ord, stream: stream, off: off}
+	if e.first == nil || pointBefore(p, stream, e.first.point(), e.first.stream) {
+		e.first = pt
 	}
-	if b.last == nil || pointBefore(b.last.point(), b.last.stream, p, stream) {
-		b.last = e
+	if e.last == nil || pointBefore(e.last.point(), e.last.stream, p, stream) {
+		e.last = pt
 	}
+}
+
+// hold takes one piece [from, to) of the time a value at the offset holds in
+// a recorded-local row, and keeps the earliest and the latest.
+func (e *rowEnds) hold(from, to time.Time, stream int, off int64) {
+	h := &rowHeld{from: from, to: to, stream: stream, off: off}
+	if e.heldFirst == nil || from.Before(e.heldFirst.from) || (from.Equal(e.heldFirst.from) && stream < e.heldFirst.stream) {
+		e.heldFirst = h
+	}
+	if e.heldLast == nil || to.After(e.heldLast.to) || (to.Equal(e.heldLast.to) && stream > e.heldLast.stream) {
+		e.heldLast = h
+	}
+}
+
+// offsets are the offsets a row's start and end are written at: its first
+// and last points', else its first and last held time's; ok is false where
+// it has neither.
+func (e *rowEnds) offsets() (start, end int64, ok bool) {
+	switch {
+	case e == nil:
+		return 0, 0, false
+	case e.first != nil:
+		return e.first.off, e.last.off, true
+	case e.heldFirst != nil:
+		return e.heldFirst.off, e.heldLast.off, true
+	}
+	return 0, 0, false
 }
 
 // pointBefore is observed.Before with the stream last: two streams of one
@@ -112,11 +157,12 @@ func pointBefore(a observed.Point, sa int, b observed.Point, sb int) bool {
 	return sa < sb
 }
 
-// length is the time the row reports, the denominator of a coverage
-// fraction: on a recorded-local bucket from its first point's offset to its
-// last's, which is 31 hours on a day flown west, not 24.
-func (b *aggBucket) length(rangeFrom, rangeTo time.Time) time.Duration {
-	start, end := b.shown(rangeFrom, rangeTo)
+// length is the time a row reports, the denominator of its coverage
+// fraction: on a recorded-local row from its first point's offset to its
+// last's, which is 31 hours on a day flown west, not 24, and no more of it
+// than the range holds.
+func (b *aggBucket) length(ends *rowEnds, rangeFrom, rangeTo time.Time) time.Duration {
+	start, end := b.shown(ends, rangeFrom, rangeTo)
 	return end.Sub(start)
 }
 
@@ -128,19 +174,27 @@ func (b *aggBucket) aligned() bool {
 	return b.start.Truncate(bucketWidth).Equal(b.start) && b.end.Truncate(bucketWidth).Equal(b.end)
 }
 
-// shown is the row's start and end as the response writes them.
-func (b *aggBucket) shown(rangeFrom, rangeTo time.Time) (time.Time, time.Time) {
+// shown is a row's start and end as the response writes them. A
+// recorded-local row is written at its ends' offsets, or the range's where it
+// has none, and clipped to the range as a calendar bucket is: the range cuts
+// a day by instant, so a day at another offset than the range's is partial
+// at the range's edges, and its start or end says so.
+func (b *aggBucket) shown(ends *rowEnds, rangeFrom, rangeTo time.Time) (time.Time, time.Time) {
 	if !b.local {
 		return b.start.In(b.zone), b.end.In(b.zone)
 	}
-	startOff, endOff := offsetMinutes(rangeFrom), offsetMinutes(rangeTo)
-	if b.first != nil {
-		startOff = b.first.off
+	startOff, endOff, ok := ends.offsets()
+	if !ok {
+		startOff, endOff = offsetMinutes(rangeFrom), offsetMinutes(rangeTo)
 	}
-	if b.last != nil {
-		endOff = b.last.off
+	start, end := wallAt(b.start, startOff), wallAt(b.end, endOff)
+	if start.Before(rangeFrom) {
+		start = rangeFrom.In(start.Location())
 	}
-	return wallAt(b.start, startOff), wallAt(b.end, endOff)
+	if end.After(rangeTo) {
+		end = rangeTo.In(end.Location())
+	}
+	return start, end
 }
 
 // wallAt writes a wall-clock time (encoded as UTC) at an offset.

@@ -57,7 +57,7 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 			}
 			o := s.rows[bi]
 			if o == nil && p.fill != "" && template != nil {
-				start, end := b.shown(p.from, p.to)
+				start, end := b.shown(&b.ends, p.from, p.to)
 				made := aggOut{bucket: bi, group: template.group, code: template.code, row: substrate.AggregateRow{
 					Start: start, End: end, Form: template.row.Form, Group: template.row.Group, Record: b.record,
 					Synthetic: true, NonAdditive: template.row.NonAdditive,

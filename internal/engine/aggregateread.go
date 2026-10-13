@@ -84,6 +84,9 @@ type aggEvidence struct {
 	firstStream, lastStream int
 	count                   int64
 	bounded                 int64
+	// ends are a recorded-local row's own first and last points and held
+	// time, which its start and end are written at.
+	ends rowEnds
 }
 
 type aggSteps struct {
@@ -702,7 +705,7 @@ func (r *aggRun) choose(b *aggBucket, raw, sums *aggEvidence) (*aggEvidence, str
 	case raw == nil:
 		return sums, substrate.AggregateFromSummaries
 	}
-	if length := b.length(r.p.from, r.p.to).Milliseconds(); length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
+	if length := b.length(&raw.ends, r.p.from, r.p.to).Milliseconds(); length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
 		return raw, substrate.AggregateFromRaw
 	}
 	return sums, substrate.AggregateFromSummaries
@@ -928,10 +931,11 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				continue
 			}
 			for _, b := range r.bucketsOf(ap.At, ap.off) {
-				if b.local {
-					b.mark(ap.Point, ap.stream, ap.off)
-				}
 				ev := cell(out, b, r.codeKey(ap.Code), form, true)
+				if b.local {
+					b.ends.mark(ap.Point, ap.stream, ap.off)
+					ev.ends.mark(ap.Point, ap.stream, ap.off)
+				}
 				ev.members = append(ev.members, ap)
 				ev.sources[st.s.source] = true
 				if prev := st.prevOf[i]; prev != nil {
@@ -958,6 +962,10 @@ func (r *aggRun) evalRaw(g *aggGroup, streams []*aggStream, form string) (aggCel
 				ev := cell(out, part.bucket, r.codeKey(sp.Point.Code), form, true)
 				ev.spans = append(ev.spans, part.span)
 				ev.sources[st.s.source] = true
+				if b := part.bucket; b.local {
+					b.ends.hold(part.span.Start, part.span.End, sp.stream, sp.off)
+					ev.ends.hold(part.span.Start, part.span.End, sp.stream, sp.off)
+				}
 			}
 		}
 	}
@@ -1237,12 +1245,6 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 				// The row lands in the day its quarter hour names at its
 				// offset; the day's first and last points are the rows' own.
 				targets = r.bucketsOf(row.Start, og.offset)
-				for _, b := range targets {
-					if row.First != nil {
-						b.mark(*row.First, si, og.offset)
-						b.mark(*row.Last, si, og.offset)
-					}
-				}
 			} else {
 				for _, b := range r.bucketsMeeting(row.Start, row.Start.Add(bucketWidth)) {
 					whole, _ := split(b)
@@ -1260,6 +1262,12 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 			}
 			for _, b := range targets {
 				ev := cell(out, b, r.codeKey(og.code), g.form, false)
+				if local && row.First != nil {
+					for _, pt := range []*observed.Point{row.First, row.Last} {
+						b.ends.mark(*pt, si, og.offset)
+						ev.ends.mark(*pt, si, og.offset)
+					}
+				}
 				r.mergeStats(ev, st, g.form, si)
 				if row.N > 0 {
 					ev.sources[s.source] = true
@@ -1283,7 +1291,7 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 		}
 		if g.form == vocabulary.FormGauge {
 			for i, w := range r.segments() {
-				if err := r.walkHeld(out, g, s, rows, w, r.carries[s][i]); err != nil {
+				if err := r.walkHeld(out, g, s, si, rows, w, r.carries[s][i]); err != nil {
 					return nil, err
 				}
 			}
@@ -1587,7 +1595,7 @@ func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int
 // from the point current at the window's start, and adds each slot's held
 // time to the buckets it lies in: a recorded-local bucket by the offset of the
 // point that held.
-func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observed.Row, w [2]time.Time, carry *observed.Point) error {
+func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, si int, rows []observed.Row, w [2]time.Time, carry *observed.Point) error {
 	from, to := floor15(w[0]), w[1]
 	i := sort.Search(len(rows), func(i int) bool { return !rows[i].Start.Before(from) })
 	for slot := from; slot.Before(to); {
@@ -1639,6 +1647,10 @@ func (r *aggRun) walkHeld(out aggCells, g *aggGroup, s *aggStream, rows []observ
 			}
 			for _, b := range r.bucketsOf(slot, og.offset) {
 				ev := cell(out, b, r.codeKey(og.code), g.form, false)
+				if b.local {
+					b.ends.hold(slot, end, si, og.offset)
+					ev.ends.hold(slot, end, si, og.offset)
+				}
 				hs := ev.held[og.code]
 				hs.Ms += ms
 				hs.ValueMs += valueMs
@@ -1705,7 +1717,7 @@ func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) time.Time
 
 // row assembles one output row from its evidence.
 func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, from string) (substrate.AggregateRow, error) {
-	start, end := b.shown(r.p.from, r.p.to)
+	start, end := b.shown(&ev.ends, r.p.from, r.p.to)
 	row := substrate.AggregateRow{
 		Start: start, End: end, Form: ev.form, Record: b.record, From: from,
 		Count: ev.count, Bounded: ev.bounded, Coverage: vocabulary.FormatISODuration(time.Duration(ev.coverage) * time.Millisecond),

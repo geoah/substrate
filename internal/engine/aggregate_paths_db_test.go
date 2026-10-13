@@ -1238,3 +1238,111 @@ func TestAggregateRecordedLocalCarryFromTheWestKeepsEveryDay(t *testing.T) {
 		t.Errorf("the range's last day's first = %q, want 77", v)
 	}
 }
+
+// A recorded-local row's start, end and prefer-raw choice are its own group's,
+// whatever other groups the read selects: London steps (+01:00) cover 22
+// hours of 2026-09-24 beside the day's summary, and one Athens amount
+// (+03:00) at 00:30 local is the day's earliest point. Read together or
+// filtered to one source, each source's row runs midnight to midnight at its
+// own offset, and London's 22 hours of 24 clear the 0.9 floor and answer from
+// raw points. A shared day once ran from +03:00 to +01:00, 26 hours, and sent
+// London to its summary.
+func TestAggregateRecordedLocalRowsKeepTheirOwnEnds(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	london := time.FixedZone("", 3600)
+	day := time.Date(2026, 9, 24, 0, 0, 0, 0, london)
+	for h := range 22 {
+		f.mustPut(t, f.observation, "london/"+strconv.Itoa(h), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("london"), "form": "amount",
+			"value": quantity("500", "{steps}"), "at": at(day.Add(time.Duration(h) * time.Hour)),
+			"endsAt": at(day.Add(time.Duration(h+1) * time.Hour)), "utcOffset": 60,
+		})
+	}
+	f.mustPut(t, f.observation, "london/day", map[string]any{
+		"metric": f.metricRef("health/steps"), "source": f.sourceRef("london"), "form": "summary",
+		"statistic": "sum", "period": "day", "value": quantity("12000", "{steps}"),
+		"at": at(day), "endsAt": at(day.AddDate(0, 0, 1)), "utcOffset": 60,
+	})
+	athensAt := time.Date(2026, 9, 24, 0, 30, 0, 0, time.FixedZone("", 3*3600))
+	f.mustPut(t, f.observation, "athens/1", map[string]any{
+		"metric": f.metricRef("health/steps"), "source": f.sourceRef("athens"), "form": "amount",
+		"value": quantity("40", "{steps}"), "at": at(athensAt), "endsAt": at(athensAt.Add(10 * time.Minute)), "utcOffset": 180,
+	})
+	plus3 := time.FixedZone("", 3*3600)
+	a := substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+		From:     "prefer-raw",
+		Range:    rng(time.Date(2026, 9, 23, 0, 0, 0, 0, plus3), time.Date(2026, 9, 26, 0, 0, 0, 0, plus3)),
+		Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+		Reducers: reducers("sum"),
+	}
+	type shown struct{ start, end, from, sum string }
+	rowOf := func(res *substrate.AggregateResult, source string) shown {
+		t.Helper()
+		for _, row := range res.Rows {
+			if len(row.Sources) == 1 && row.Sources[0] == f.sourcePath(source) {
+				v, _ := val(row, "sum")
+				return shown{row.Start.Format(time.RFC3339), row.End.Format(time.RFC3339), row.From, v}
+			}
+		}
+		t.Fatalf("no row from %s: %+v", source, res.Rows)
+		return shown{}
+	}
+	together, _, _ := f.bothPaths(substrate.Filter{}, a)
+	for _, x := range []struct {
+		source string
+		want   shown
+	}{
+		{"london", shown{"2026-09-24T00:00:00+01:00", "2026-09-25T00:00:00+01:00", "raw", "11000"}},
+		{"athens", shown{"2026-09-24T00:00:00+03:00", "2026-09-25T00:00:00+03:00", "raw", "40"}},
+	} {
+		alone, _, _ := f.bothPaths(substrate.Filter{Properties: map[string]substrate.Cond{"source": {Eq: f.sourcePath(x.source)}}}, a)
+		if got := rowOf(alone, x.source); got != x.want {
+			t.Errorf("%s alone: %+v, want %+v", x.source, got, x.want)
+		}
+		if got := rowOf(together, x.source); got != x.want {
+			t.Errorf("%s beside the other source: %+v, want %+v", x.source, got, x.want)
+		}
+	}
+}
+
+// A recorded-local row the range cuts says so: London steps (+01:00) every
+// hour of 2026-09-20 to 09-22, read for the day 2026-09-21 at +03:00, fall on
+// the evening of 09-20 from 22:00 and on 09-21 until 22:00, local time. Each
+// row's start or end is the range's own instant, at the row's offset, and
+// not the whole local day.
+func TestAggregateRecordedLocalRowsTheRangeCutsSaySo(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	london := time.FixedZone("", 3600)
+	start := time.Date(2026, 9, 20, 0, 0, 0, 0, london)
+	for h := range 72 {
+		f.mustPut(t, f.observation, "london/"+strconv.Itoa(h), map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef("london"), "form": "amount",
+			"value": quantity("10", "{steps}"), "at": at(start.Add(time.Duration(h) * time.Hour)),
+			"endsAt": at(start.Add(time.Duration(h)*time.Hour + 30*time.Minute)), "utcOffset": 60,
+		})
+	}
+	plus3 := time.FixedZone("", 3*3600)
+	from := time.Date(2026, 9, 21, 0, 0, 0, 0, plus3)
+	res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+		Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+		Range:    rng(from, from.AddDate(0, 0, 1)),
+		Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+		Reducers: reducers("count", "sum"),
+	})
+	want := [][3]string{
+		{"2026-09-20T22:00:00+01:00", "2026-09-21T00:00:00+01:00", "2"},
+		{"2026-09-21T00:00:00+01:00", "2026-09-21T22:00:00+01:00", "22"},
+	}
+	if len(res.Rows) != len(want) {
+		t.Fatalf("%d rows, want %d: %+v", len(res.Rows), len(want), res.Rows)
+	}
+	for i, row := range res.Rows {
+		c, _ := val(row, "count")
+		if got := [3]string{row.Start.Format(time.RFC3339), row.End.Format(time.RFC3339), c}; got != want[i] {
+			t.Errorf("row %d: %v, want %v", i, got, want[i])
+		}
+	}
+}

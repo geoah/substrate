@@ -358,7 +358,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	var out []aggOut
 	for _, c := range cells {
 		bk := buckets[c.bucket]
-		start, end := bk.shown(p.from, p.to)
+		start, end := bk.shown(nil, p.from, p.to)
 		row := substrate.AggregateRow{Start: start, End: end, Count: c.n}
 		if p.grouped[substrate.GroupKind] || family == propMoney {
 			key := c.group.key

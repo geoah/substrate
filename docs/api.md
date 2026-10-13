@@ -1158,14 +1158,20 @@ read takes the whole [filter grammar](#the-filter-grammar).
 | --- | --- | --- |
 | `{"every": "PT5M", "origin"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
 | `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
-| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the bucket's first point, `end` at its last point's (points at one instant ordered by record id, then index) |
+| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows' |
 | `{"records": {"filter", "around"?, "maxRecords"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations) | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
 week's, month's or year's start by less than a day (`PT4H` for a vendor day
 from 04:00). A bucket that the range cuts is clipped to the range, and its
-`start` or `end` says so. A point without an offset was written at offset 0
-and falls on its UTC date in the recorded-local calendar.
+`start` or `end` says so. In the recorded-local calendar the range selects
+points by instant, so a day at another offset than the range's is cut at the
+range's edges: a range of 2026-09-21 at `+03:00` over points at `+01:00`
+answers 2026-09-20 from `22:00+01:00` to midnight and 2026-09-21 from
+midnight to `22:00+01:00`. A row's `start` and `end` are its own group's
+and code's, whatever else the read selects. A point without an offset was
+written at offset 0 and falls on its UTC date in the recorded-local
+calendar.
 
 **The latest read.** No `bucket`, no `range` and the one reducer `last` is the
 newest point of each group, straight from the index's latest table: the
@@ -1245,8 +1251,8 @@ things) is a `422` naming its source and unit.
   that has one in the bucket.
 
 `from: "prefer-raw"` reads raw points where they cover at least `minCoverage`
-of a bucket (held time for a gauge, the union of spans for an amount) and the
-summaries otherwise. A bucket never mixes the two, and each row's `from` says
+of a row (held time for a gauge, the union of spans for an amount, over the
+row's own `start` to `end`) and the summaries otherwise. A bucket never mixes the two, and each row's `from` says
 which served it; the row's `form` is `summary` where summaries did.
 
 ### The response
