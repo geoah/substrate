@@ -893,13 +893,12 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 // it overlaps a higher source's kept point, and that point may lie outside
 // the read's windows: an amount from 23:30 to 00:30 drops a lower source's
 // amount at 00:00 whether or not the range starts the day before. So the
-// read takes the group's points in the windows widened by the chain's reach,
-// each window by the longest span the selected streams' newest values hold
-// times the ranks they hold (a point outside may itself be dropped by one
-// further out), and finds the streams of the group's key and form whose only
-// points lie there: those it weighs and never places. The widened windows
-// are answered for plan to read every priority group's points over, and the
-// discovery's points are counted against maxSamples beside spent.
+// read takes the group's points in the windows widened by the chain's reach
+// (priorityReach), and finds the streams of the group's key and form whose
+// only points lie there: those it weighs and never places. The widened
+// windows are answered for plan to read every priority group's points over,
+// and the points the reach and the discovery visit are counted against
+// maxSamples beside spent.
 func (ds *dataset) priorityContext(ctx context.Context, tx *sql.Tx, p *aggPlan, selected, streams []*aggStream, groups []*aggGroup, windows [][2]time.Time, reach map[obsStream]time.Duration, spent int64) ([][2]time.Time, int64, error) {
 	var forms []string
 	for _, g := range groups {
@@ -910,21 +909,23 @@ func (ds *dataset) priorityContext(ctx context.Context, tx *sql.Tx, p *aggPlan, 
 			forms = append(forms, vocabulary.FormAmount)
 		}
 	}
-	var span time.Duration
 	ranks := map[int]bool{}
 	for _, s := range selected {
-		if !slices.Contains(forms, s.form) {
-			continue
+		if slices.Contains(forms, s.form) {
+			ranks[s.rank] = true
 		}
-		if s.tsEnd.After(s.ts) {
-			span = max(span, s.tsEnd.Sub(s.ts))
-		}
-		ranks[s.rank] = true
 	}
-	if len(forms) == 0 || len(windows) == 0 || span == 0 || len(ranks) < 2 {
+	if len(forms) == 0 || len(windows) == 0 || len(ranks) < 2 {
 		return nil, spent, nil
 	}
-	ext := span * time.Duration(len(ranks))
+	ext, read, err := ds.priorityReach(ctx, tx, p, selected, forms, windows, len(ranks), spent)
+	if err != nil {
+		return nil, 0, err
+	}
+	if ext == 0 {
+		return nil, spent, nil
+	}
+	spent += read
 	wide := make([][2]time.Time, len(windows))
 	for i, w := range windows {
 		wide[i] = [2]time.Time{w[0].Add(-ext), w[1].Add(ext)}
@@ -963,6 +964,83 @@ func (ds *dataset) priorityContext(ctx context.Context, tx *sql.Tx, p *aggPlan, 
 		}
 	}
 	return contextWindows, samples, nil
+}
+
+// priorityReachSQL is, over the streams ($1 to $5), the spanned points the
+// span index holds ending after $7, and where bounded at or before $9: how
+// many it visits and the longest span among those of the forms $6, in whole
+// microseconds. The LIMIT ($8) stops it one past maxSamples, and the count
+// is of every point it visits, so the budget bounds the scan itself.
+func priorityReachSQL(bounded bool) string {
+	upper := ""
+	if bounded {
+		upper = ` AND p.ts_end <= $9`
+	}
+	return `
+	SELECT count(*), coalesce(ceil(extract(epoch FROM max(x.span) FILTER (WHERE x.meets)) * 1000000), 0)::bigint
+	FROM (
+		SELECT p.ts_end - p.ts AS span, p.form = ANY($6::text[]) AS meets
+		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS s(metric, kind, source, about, channel)
+		CROSS JOIN LATERAL (
+			SELECT p.ts, p.ts_end, p.form FROM observed_points p
+			WHERE p.metric = s.metric AND p.kind = s.kind AND p.source = s.source AND p.about = s.about AND p.channel = s.channel
+			  AND p.ts_end > p.ts AND p.ts_end > $7` + upper + `) p
+		LIMIT $8) x`
+}
+
+// priorityReach is how far beyond its windows a priority read weighs the
+// amounts or summaries of forms: the farthest a chain of overlapping values,
+// each of a higher rank than the one it drops, can reach from a value the
+// windows place. A value that meets a window ends after the first window's
+// start, so the longest span among the values ending there bounds the first
+// link; the next link ends after where the first can start, and so on, one
+// link per rank. Each step reads only the values ending in the stretch the
+// step before added. The values it visits count against maxSamples (read is
+// how many) beside spent, and past it the read is refused.
+func (ds *dataset) priorityReach(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, forms []string, windows [][2]time.Time, links int, spent int64) (ext time.Duration, read int64, err error) {
+	var keys []*aggStream
+	seen := map[obsStream]bool{}
+	for _, s := range streams {
+		if !seen[s.obsStream] {
+			seen[s.obsStream] = true
+			keys = append(keys, s)
+		}
+	}
+	lo := windows[0][0]
+	for _, w := range windows {
+		if w[0].Before(lo) {
+			lo = w[0]
+		}
+	}
+	ids := streamKeys(keys, false)
+	var longest time.Duration
+	after, upto := lo, lo
+	for i := range links {
+		args := []any{ids[0], ids[1], ids[2], ids[3], ids[4], forms, after, max(p.maxSamples-spent-read, 0) + 1}
+		if i > 0 {
+			args = append(args, upto)
+		}
+		var c, us int64
+		if err := tx.QueryRowContext(ctx, priorityReachSQL(i > 0), args...).Scan(&c, &us); err != nil {
+			return 0, 0, fmt.Errorf("substrate/engine: aggregate priority reach: %w", err)
+		}
+		read += c
+		if read+spent > p.maxSamples {
+			beside := ""
+			if spent > 0 {
+				beside = fmt.Sprintf(" beside the %d raw points the read counted before it", spent)
+			}
+			return 0, 0, refuse("aggregate.budget.maxSamples", "finding how far a higher source's amounts and summaries reach into the windows reads every value with a span from before the first window's start to each stream's newest%s, more than %d; read windows nearer the newest values, narrow the filter, or raise maxSamples (the cap is %d)",
+				beside, p.maxSamples, substrate.AggregateMaxSamplesCap)
+		}
+		longest = max(longest, time.Duration(us)*time.Microsecond)
+		if longest == 0 {
+			return 0, read, nil
+		}
+		ext += longest
+		after, upto = lo.Add(-ext), after
+	}
+	return ext, read, nil
 }
 
 // aggregateKinds resolves filter.kinds and filter.implements to the observed

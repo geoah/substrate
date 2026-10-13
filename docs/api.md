@@ -1503,11 +1503,15 @@ reads that take it.
   apps deliver), is dropped. An amount
   or a summary of a lower source is dropped whole where it overlaps a higher
   source's, wherever the higher one lies: the read also weighs the
-  higher-ranked amounts and summaries around its windows (as far as the
-  longest span the selected streams' newest values hold, times the ranks),
-  which drop and are never placed. A total therefore depends neither on the
-  bucket width nor on where the range or a records-mode window starts. Two
-  counters are refused under `priority`.
+  higher-ranked amounts and summaries around its windows, which drop and are
+  never placed. It reaches as far as a chain of overlapping values can, one
+  link per rank, each link as long as the longest span among the values
+  that end after where the link before it can start. A total therefore
+  depends neither on the bucket width nor on where the range or a
+  records-mode window starts. Finding that reach visits every value with a
+  span the selected streams hold from before the first window's start to
+  their newest, and counts each against `maxSamples`. Two counters are
+  refused under `priority`.
 - `summaries` reads summary points alone, from the first source in `order`
   that has one in the bucket.
 
@@ -1749,8 +1753,9 @@ statement that finds the range's forms and codes, before any point is read
 for a reduction. Each statement that reads raw points or rollup rows counts
 them first and adds them to the read's `maxSamples` total: in the records
 mode, the values with a span visited to find how far amounts reach into the
-windows (counted as they are read, and the statement stops one past the
-budget); finding the forms
+windows, and under `priority`, those visited to find how far a higher
+source's amounts and summaries reach (each counted as it is read, and the
+statement stops one past the budget); finding the forms
 (the points at the range's cut ends, and its summaries), the rollup rows (one
 statement for every group they serve; a group sent to raw points after all
 gives its rows back), the reduction's raw points, and the raw spans an
@@ -1767,7 +1772,7 @@ rows are assembled, before it answers.
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
 | `maxBuckets` | series times the buckets the read answers, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, the records' windows the source policy keeps in the records mode), over every metric of a several-metric read; a rolling window's buckets before the range are not counted; a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
-| `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up, and in the records mode the values with a span it visits to find how far amounts reach; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
+| `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up, and the values with a span it visits to find how far amounts reach in the records mode, or how far a higher source's amounts and summaries reach under `priority`; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
 | `maxGroups` | the groups a `groupBy` or the `separate` policy makes, every metric's together on a several-metric read; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds, currencies and `property.groupBy` values before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row; with a source policy, also the records outside the range it weighs | 1,000 | 10,000 |
 

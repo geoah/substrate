@@ -379,3 +379,75 @@ func TestAggregatePriorityWeighsAHigherPointOutsideTheWindows(t *testing.T) {
 		t.Errorf("window w alone answers %q, beside v %q; want no row either way: A's amount drops B's", alone["w"], beside["w"])
 	}
 }
+
+// A higher source's older value can be longer than any stream's newest, and
+// a chain of them can reach further than one span times the ranks: each
+// link is bounded by the values ending where the link before it can start.
+// Under [a, b], A's twelve-hour amount ending at 02:00 drops B's 01:00 one,
+// read from the day or from the day before. Under [a, b, c], B's six-hour
+// amount over midnight would drop C's, but A's 33-hour one, starting before
+// six hours times three ranks reach, drops B's first, so C's stands.
+func TestAggregatePriorityReachesAnOlderLongerSpan(t *testing.T) {
+	t.Parallel()
+	day := time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct {
+		label  string
+		order  []string
+		points map[string][3]any // id: source, value, [start, span]
+		want   string            // 10-06's sum, "" for no row
+	}{
+		{"two ranks", []string{"a", "b"}, map[string][3]any{
+			"a/long": {"a", "100", [2]time.Duration{-10 * time.Hour, 12 * time.Hour}},
+			"b/one":  {"b", "40", [2]time.Duration{time.Hour, 15 * time.Minute}},
+		}, ""},
+		{"three ranks", []string{"a", "b", "c"}, map[string][3]any{
+			"a/longest": {"a", "100", [2]time.Duration{-36 * time.Hour, 33 * time.Hour}},
+			"b/long":    {"b", "70", [2]time.Duration{-4 * time.Hour, 6 * time.Hour}},
+			"c/one":     {"c", "40", [2]time.Duration{time.Hour, 15 * time.Minute}},
+		}, "40"},
+	} {
+		t.Run(x.label, func(t *testing.T) {
+			t.Parallel()
+			f := openAgg(t)
+			steps := func(id, source, value string, at time.Time, span time.Duration) {
+				f.mustPut(t, f.observation, id, map[string]any{
+					"metric": f.metricRef("health/steps"), "source": f.sourceRef(source), "form": "amount",
+					"value": quantity(value, "{steps}"), "at": at.Format(time.RFC3339), "endsAt": at.Add(span).Format(time.RFC3339), "utcOffset": 0,
+				})
+			}
+			for id, pt := range x.points {
+				when := pt[2].([2]time.Duration)
+				steps(id, pt[0].(string), pt[1].(string), day.Add(when[0]), when[1])
+			}
+			// Each stream's newest value is a quarter hour long.
+			for i, src := range x.order {
+				steps(src+"/new", src, "5", day.AddDate(0, 0, 4).Add(time.Duration(i)*time.Hour), 15*time.Minute)
+			}
+			for _, read := range []struct {
+				from    time.Time
+				rolling *substrate.AggregateRolling
+			}{
+				{day, nil},
+				{day.AddDate(0, 0, -1), nil},
+				{day.AddDate(0, 0, -3), nil},
+				{day, &substrate.AggregateRolling{Buckets: 2, Reducers: reducers("sum")}},
+			} {
+				res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+					Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+					Range:  rng(read.from, day.AddDate(0, 0, 1)), Bucket: &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC"},
+					Reducers: reducers("sum"), Sources: &substrate.AggregateSources{Policy: "priority", Order: x.order},
+					Rolling: read.rolling,
+				})
+				got := ""
+				for _, row := range res.Rows {
+					if row.Start.Format("01-02") == "10-06" {
+						got, _ = val(row, "sum")
+					}
+				}
+				if got != x.want {
+					t.Errorf("from %s (rolling %v): 10-06 sums %q, want %q", read.from.Format("01-02"), read.rolling != nil, got, x.want)
+				}
+			}
+		})
+	}
+}
