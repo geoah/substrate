@@ -223,6 +223,9 @@ data:
                      "maxPaceInMinutesPerKilometer", "maxRunCadenceInStepsPerMinute",
                      "startingLatitudeInDegree", "startingLongitudeInDegree", "steps"),
     }
+    # elevationInMeters is an altitude, which no catalogue metric holds. Its
+    # rise from sample to sample is not written as elevation_gain: summed raw,
+    # the altimeter's noise makes it several times Garmin's own figure.
     DETAIL_SKIPPED = ("latitudeInDegree", "longitudeInDegree", "elevationInMeters",
                       "airTemperatureCelcius", "swimCadenceInStrokesPerMinute",
                       "wheelChairCadenceInPushesPerMinute")

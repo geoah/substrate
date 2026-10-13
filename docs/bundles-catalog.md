@@ -2217,9 +2217,11 @@ left unwritten: those with no catalogue metric (minimum, maximum and average
 daily heart rate, intensity and stress durations, Body Battery charge and
 drain, goals, fitness age, cycling VO2 max, MET and motion intensity, Body
 Battery events, a snapshot's SDRR), positions and elevation samples (no
-`geopoint` and no altitude metric yet), a ride's power (the catalogue has
-only running power), air temperature, Garmin's `unmeasurable` sleep level,
-and a sleep's own SpO2 and respiration maps, which the Pulse Ox and
+`geopoint` and no altitude metric yet; the rise between samples is not
+written as `elevation_gain`, because summed raw it overstates the climb:
+84.9 m against Garmin's own 21 m on the recorded run), a ride's power (the
+catalogue has only running power), air temperature, Garmin's `unmeasurable`
+sleep level, and a sleep's own SpO2 and respiration maps, which the Pulse Ox and
 respiration summaries already carry. Move IQ events and lifecycle notices
 imply no observation. Garmin sends no sleep latency, so none is written.
 
