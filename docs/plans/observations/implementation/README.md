@@ -127,22 +127,9 @@ added, *review* for one the 2026-10-13 review added.
 
 Request: the `aggregate` query parameter on `GET /api/v1/records`, strict
 JSON, refused beside `q`, `watch`, `count`, `orderBy`, `first`, `after`,
-`offset`, `expand` and `withAnnotations`. A metric read of heart rate zones:
-
-```json
-{
-  "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
-  "from": "raw",
-  "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
-  "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
-  "groupBy": ["source"],
-  "reducers": ["avg", {"durationIn": [95, 114]}, {"durationIn": [114, 133]}],
-  "sources": {"policy": "priority", "order": ["garmin/ada/forerunner265"]},
-  "unit": "min",
-  "maxGap": "PT5M",
-  "budget": {"maxBuckets": 1440, "maxSamples": 5000000}
-}
-```
+`offset`, `expand` and `withAnnotations`.
+[The API reference's first example](../../../api.md#the-aggregate-read) is
+a request and its answer.
 
 | Key | Fields | Arrived |
 | --- | --- | --- |
@@ -167,29 +154,6 @@ JSON, refused beside `q`, `watch`, `count`, `orderBy`, `first`, `after`,
 - `downsample` is refused beside `reducers`, `rolling`, `fill` and `bucket`.
 
 Response:
-
-```json
-{
-  "metric": "ada.example.com/observations/metric/health/heart_rate",
-  "unit": "/min",
-  "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
-  "from": "raw",
-  "exact": false,
-  "rows": [
-    {"start": "2026-09-07T00:00:00+03:00", "end": "2026-09-14T00:00:00+03:00",
-     "form": "gauge",
-     "group": {"source": "ada.example.com/observations/source/garmin/ada/forerunner265"},
-     "from": "raw", "sources": ["ada.example.com/observations/source/garmin/ada/forerunner265"],
-     "coverage": "P6DT22H10M",
-     "values": [{"reducer": "avg", "value": "71.2", "unit": "/min"},
-                {"reducer": {"durationIn": [95, 114]}, "value": "212.5", "unit": "min"},
-                {"reducer": {"durationIn": [114, 133]}, "value": "41", "unit": "min"}],
-     "count": 24810, "bounded": 0, "synthetic": false, "unavailable": false}
-  ],
-  "sources": ["ada.example.com/observations/source/garmin/ada/forerunner265"],
-  "head": {"changelog": 2171234, "generation": "7f3a0c2e9b1d4e6f"}
-}
-```
 
 | Key | Fields | Arrived |
 | --- | --- | --- |

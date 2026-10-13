@@ -1095,28 +1095,37 @@ rows' keys and the points at the range's cut ends.
 ```http
 GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
   &aggregate={"metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
-              "range": {"gte": "2026-04-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
+              "range": {"gte": "2026-07-20T00:00:00+03:00", "lt": "2026-07-27T00:00:00+03:00"},
               "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
               "reducers": [{"durationIn": [95, 114]}, {"durationIn": [114, 133]}, "avg"],
               "maxGap": "PT5M",
-              "sources": {"policy": "priority", "order": ["garmin-forerunner-265", "apple-watch-s10"]},
+              "sources": {"policy": "priority", "order": ["garmin/ada/forerunner265", "applehealth/iphone/apple-watch"]},
               "unit": "min"}
 
 → {"metric": "ada.example.com/observations/metric/health/heart_rate",
    "unit": "/min",
    "bucket": {"calendar": "week", "timezone": "Europe/Athens", "weekStart": "monday"},
    "from": "raw", "exact": false,
-   "rows": [{"start": "2026-04-06T00:00:00+03:00", "end": "2026-04-13T00:00:00+03:00",
+   "rows": [{"start": "2026-07-20T00:00:00+03:00", "end": "2026-07-27T00:00:00+03:00",
              "form": "gauge", "from": "raw",
-             "sources": ["ada.example.com/observations/source/garmin-forerunner-265"],
-             "coverage": "P6DT22H10M",
-             "values": [{"reducer": {"durationIn": [95, 114]}, "value": "612.4", "unit": "min"},
-                        {"reducer": {"durationIn": [114, 133]}, "value": "171", "unit": "min"},
-                        {"reducer": "avg", "value": "131.6", "unit": "/min"}],
-             "count": 24810, "bounded": 0, "synthetic": false, "unavailable": false}],
-   "sources": ["ada.example.com/observations/source/garmin-forerunner-265"],
-   "head": {"changelog": 2171234, "generation": "7f3a0c2e9b1d4e6f"}}
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
+                         "ada.example.com/observations/source/garmin/ada/account",
+                         "ada.example.com/observations/source/garmin/ada/forerunner265",
+                         "ada.example.com/observations/source/googlefit/e2e/google-pixel-watch-2.8d1f3c7a"],
+             "coverage": "P6DT14H47M48S",
+             "values": [{"reducer": {"durationIn": [95, 114]}, "value": "40.733333333333333333", "unit": "min"},
+                        {"reducer": {"durationIn": [114, 133]}, "value": "52.5", "unit": "min"},
+                        {"reducer": "avg", "value": "73.3868677905943", "unit": "/min"}],
+             "count": 3381, "bounded": 0, "synthetic": false, "unavailable": false}],
+   "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
+               "ada.example.com/observations/source/garmin/ada/account",
+               "ada.example.com/observations/source/garmin/ada/forerunner265",
+               "ada.example.com/observations/source/googlefit/e2e/google-pixel-watch-2.8d1f3c7a"],
+   "head": {"changelog": 103320, "generation": "d6tchnk5ub2w"}}
 ```
+
+The `order` ranks the two watches first; the other sources follow by path,
+and each fills what the ones above it do not cover.
 
 A function reads the same body with
 [`host.records.aggregate`](functions.md#the-sdk), an agent with the `query`
@@ -1220,7 +1229,7 @@ filter matches, so a night three devices recorded is three windows.
 `bucket.records.sources` chooses among them:
 
 ```json
-{"policy": "priority", "order": ["whoop-4-0", "garmin-forerunner-265"], "property": "source", "match": ["sport"]}
+{"policy": "priority", "order": ["whoop/e2e", "garmin/ada/account"], "property": "source", "match": ["sport"]}
 ```
 
 `property` names the records' declared property that holds their source (a
@@ -1283,7 +1292,7 @@ each a `422`.
 `metrics` names up to 16 metrics read over one `range`, `bucket`,
 `groupBy`, `sources` policy, `fill`, `rolling` and `budget`, so a day's
 screen is one request. Sleep, resting heart rate, HRV and steps for
-2026-09-24 in Athens, each night on the day it ended:
+2026-08-12 in Athens, each night on the day it ended:
 
 ```http
 GET /api/v1/records?aggregate=
@@ -1291,7 +1300,7 @@ GET /api/v1/records?aggregate=
                {"ref": "ada.example.com/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
                {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "avg"},
                {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"]}],
-   "range": {"gte": "2026-09-24T00:00:00+03:00", "lt": "2026-09-25T00:00:00+03:00"},
+   "range": {"gte": "2026-08-12T00:00:00+03:00", "lt": "2026-08-13T00:00:00+03:00"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
    "groupBy": ["code"],
    "sources": {"policy": "priority"},
@@ -1303,24 +1312,35 @@ GET /api/v1/records?aggregate=
              "ada.example.com/observations/metric/health/steps": "{steps}"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
    "exact": false,
-   "rows": [{"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "summary",
+   "rows": [{"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
              "group": {"metric": "ada.example.com/observations/metric/health/hrv_rmssd"}, "from": "summaries",
-             "values": [{"reducer": "last", "value": "61", "unit": "ms"}], "count": 1, "bounded": 0, "synthetic": false, "unavailable": false},
-            {"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "summary",
+             "sources": ["ada.example.com/observations/source/garmin/ada/account"], "coverage": "PT7H52M",
+             "values": [{"reducer": "last", "value": "62", "unit": "ms"}], "count": 1, "bounded": 0, "synthetic": false, "unavailable": false},
+            {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "summary",
              "group": {"metric": "ada.example.com/observations/metric/health/resting_heart_rate"}, "from": "summaries",
-             "values": [{"reducer": "last", "value": "52", "unit": "/min"}], "count": 1, "bounded": 0, "synthetic": false, "unavailable": false},
-            {"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "amount",
-             "group": {"metric": "ada.example.com/observations/metric/health/sleep_stage", "code": "deep"}, "from": "raw",
-             "values": [{"reducer": "sum", "value": "1.25", "unit": "h"}], "count": 3, "bounded": 0, "synthetic": false, "unavailable": false},
-            {"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "amount",
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/health"], "coverage": "P1D",
+             "values": [{"reducer": "last", "value": "54", "unit": "/min"}], "count": 1, "bounded": 0, "synthetic": false, "unavailable": false},
+            {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "amount",
+             "group": {"code": "deep", "metric": "ada.example.com/observations/metric/health/sleep_stage"}, "from": "raw",
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch"], "coverage": "PT7H45M",
+             "values": [{"reducer": "sum", "value": "1.73916666666667", "unit": "h"}], "count": 1, "bounded": 0, "synthetic": false, "unavailable": false},
+            {"start": "2026-08-12T00:00:00+03:00", "end": "2026-08-13T00:00:00+03:00", "form": "amount",
              "group": {"metric": "ada.example.com/observations/metric/health/steps"}, "from": "raw",
-             "values": [{"reducer": "sum", "value": "8412", "unit": "{steps}"}], "count": 96, "bounded": 0, "synthetic": false, "unavailable": false}],
-   "sources": ["ada.example.com/observations/source/garmin-forerunner-265", "ada.example.com/observations/source/whoop-4-0"],
-   "head": {"changelog": 2171240, "generation": "7f3a0c2e9b1d4e6f"}}
+             "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
+                         "ada.example.com/observations/source/applehealth/iphone/iphone",
+                         "ada.example.com/observations/source/garmin/ada/account"], "coverage": "PT10H56M",
+             "values": [{"reducer": "sum", "value": "7465.4839260528", "unit": "{steps}"}], "count": 208, "bounded": 0, "synthetic": false, "unavailable": false}],
+   "sources": ["ada.example.com/observations/source/applehealth/iphone/apple-watch",
+               "ada.example.com/observations/source/applehealth/iphone/health",
+               "ada.example.com/observations/source/applehealth/iphone/iphone",
+               "ada.example.com/observations/source/garmin/ada/account"],
+   "head": {"changelog": 106076, "generation": "d6tchnk5ub2w"}}
 ```
 
 The answer above leaves out the sleep stages other than `deep`; each code is
-a row of its own.
+a row of its own. With no `order` and no source record ranking these
+metrics, `priority` ranks the sources by path, so the Apple Watch's and the
+phone's step amounts win over Garmin's where they overlap.
 
 - An entry names the metric by its record path in `ref`, the unit its values
   answer in (the metric record's `unit` by default), its `reducers` and
@@ -1664,7 +1684,7 @@ and one device's night where several recorded it:
 {"filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
  "aggregate": {"property": {"name": "timeAsleep", "anchor": "endsAt", "utcOffset": "utcOffsetEnd",
                             "sources": {"policy": "priority", "property": "source",
-                                        "order": ["whoop-4-0", "garmin-forerunner-265"]}},
+                                        "order": ["whoop/e2e", "garmin/ada/account"]}},
                "range": {"gte": "2026-09-06T00:00:00+03:00", "lt": "2026-10-04T00:00:00+03:00"},
                "bucket": {"calendar": "week", "weekStart": "sunday"},
                "reducers": ["avg", "stddev", "count"],

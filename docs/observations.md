@@ -677,40 +677,37 @@ in `observed_points`.
 ## Reading
 
 One record is a list read, as for any kind: today's WHOOP recovery is
-`filter.properties.periodId` equal to the cycle id, every body weight under
-155 lb is `metric` equal to the `health/body_mass` metric and `value` less
-than `{"value": "155", "unit": "[lb_av]"}` (without the metric, muscle and
-bone mass rows match too). Everything
-bucketed is the records route's [aggregate read](api.md#the-aggregate-read):
-a metric, a range, a time mode, reducers checked against the form, and a
-source policy, answered from the rollup rows where they answer exactly and
-from the points otherwise. The requests below are the proposal's screens
+`filter.properties.periodId` equal to the cycle id beside `metric` equal to
+the `health/whoop_recovery` metric, and every body weight under 155 lb is
+`metric` equal to the `health/body_mass` metric and `value` less than
+`{"value": "155", "unit": "[lb_av]"}` (without the metric, muscle and bone
+mass rows match too). Everything bucketed is the records route's
+[aggregate read](api.md#the-aggregate-read): a metric, a range, a time mode,
+reducers checked against the form, and a source policy, answered from the
+rollup rows where they answer exactly and from the points otherwise. The
+requests below are the proposal's screens
 ([reading the data](plans/observations/proposal/03-reading-the-data.md)),
-each one request.
+each one request. They name the source ids the four adapters write for the
+repository [synthetic data](synthetic-data.md) loads (`garmin/ada/forerunner265`,
+`whoop/e2e`).
 
-Heart rate zones per week for six months, the chest strap preferred where it
-recorded, in minutes. `durationIn` reads raw points, so the request raises
-`maxSamples`:
+Heart rate zones per week for six months is
+[the aggregate read's first example](api.md#the-aggregate-read) with one
+`durationIn` reducer per zone (95 to 114, 114 to 133, 133 to 152, 152 to 171
+and 171 to 220 a minute). `durationIn` reads raw points: six months of the synthetic data's
+heart rate is about 100,000 of them, inside the default `maxSamples` of
+1,000,000, while six months of a one-second stream is 15.5 million, which
+needs `budget.maxSamples` raised toward its cap of 20,000,000.
 
-```json
-{"filter": {"kinds": ["ada.example.com/observations/trace"]},
- "aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
-   "range": {"gte": "2026-04-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
-   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
-   "reducers": [{"durationIn": [95, 114]}, {"durationIn": [114, 133]}, {"durationIn": [133, 152]},
-                {"durationIn": [152, 171]}, {"durationIn": [171, 220]}],
-   "maxGap": "PT5M",
-   "sources": {"policy": "priority", "order": ["chest-strap-h10", "garmin-forerunner-265"]},
-   "unit": "min",
-   "budget": {"maxSamples": 5000000}}}
-```
-
-Daily steps for a year on each sample's own local day, the step chunks where
-they cover 90 percent of a day and the source's daily total otherwise (a
-summary with statistic `sum`, as the Apple Health and Garmin adapters write
-it); each row's `from` says which. A total adds only where its `statistic` is
-`sum`, so a day served by a total labelled `vendor` answers `null`:
+Daily steps for a year on each sample's own local day. Under the default
+`separate` policy each source is a row of its own, and `prefer-raw` serves
+each source's day from its step amounts where they cover 90 percent of it
+and from its daily total (a `sum` summary) otherwise; each row's `from` says
+which. Garmin writes both under one source, so its days can swap. Apple
+Health writes its daily totals under the Health app's own source
+(`applehealth/<account>/health`), a row beside the watch's and the phone's
+amounts, and Google Fit writes no daily total; a day of a source with no
+total is served from its amounts whatever they cover:
 
 ```json
 {"aggregate": {
@@ -722,7 +719,8 @@ it); each row's `from` says which. A total adds only where its `statistic` is
    "unit": "{steps}"}}
 ```
 
-Weight weekly with a four-week rolling mean, from rollup rows alone:
+Weight weekly with a four-week rolling mean, one row per scale, from rollup
+rows alone:
 
 ```json
 {"aggregate": {
@@ -734,34 +732,38 @@ Weight weekly with a four-week rolling mean, from rollup rows alone:
    "unit": "kg"}}
 ```
 
-Nightly heart rate variability per wake day, each source's nightly value
-with the 30-night baseline before it: `place` `end` puts a night on the day
-it ends, however late it starts; the statistic filter keeps Garmin's
-average and WHOOP's `vendor` value and leaves out Garmin's maximum, so each
-source's row reads one statistic; and the rolling window ending at the
-previous day leaves the night out of its own baseline (its `n` says how many
-nights the window held):
+Garmin's nightly heart rate variability per wake day, with the 30-night
+baseline before it: `place` `end` puts a night on the day it ends, however
+late it starts; the statistic filter keeps Garmin's nightly average and
+leaves out its maximum; and the rolling window ending at the previous day
+leaves the night out of its own baseline (its `n` says how many nights the
+window held):
 
 ```json
-{"filter": {"properties": {"statistic": {"in": ["avg", "vendor"]}}},
+{"filter": {"properties": {"source": {"eq": "garmin/ada/account"}, "statistic": {"eq": "avg"}}},
  "aggregate": {
    "metric": {"ref": "ada.example.com/observations/metric/health/hrv_rmssd"},
    "from": "summaries",
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
-   "groupBy": ["source"],
    "reducers": ["last"],
    "rolling": {"buckets": 30, "reducers": ["avg"], "through": "previous"},
    "unit": "ms"}}
 ```
 
+WHOOP writes a night's heart rate variability (its `vendor` value) as a
+summary of the cycle that begins when the night ends, so `place` `end` puts
+it on the next day. The same read of `whoop/e2e` with `statistic` `vendor`
+leaves `place` at its default, `start`, to land each night on its wake day.
+
 Sleep stages per night: the coded stage amounts summed by code inside each
-`health/sleep` record, one row per night and code, each carrying the night's
-`record`. Every device writes the night as a sleep record of its own, so
-`bucket.records.sources` keeps one per night, the WHOOP's where it has one
-and the Garmin's otherwise, and the request's `sources` keeps one device's
-stages inside it. `utcOffsets` writes each row's start and end at the
-night's own offsets, so a night slept abroad reads in the time it happened:
+`health/sleep` record that is not a nap, one row per night and code, each
+carrying the night's `record`. Every device writes the night as a sleep
+record of its own, so `bucket.records.sources` keeps one per night, the
+WHOOP's where it has one and the Garmin's otherwise, and the request's
+`sources` keeps one device's stages inside it. `utcOffsets` writes each
+row's start and end at the night's own offsets, so a night slept abroad
+reads in the time it happened:
 
 ```json
 {"filter": {"kinds": ["ada.example.com/observations/observation"]},
@@ -769,12 +771,12 @@ night's own offsets, so a night slept abroad reads in the time it happened:
    "metric": {"ref": "ada.example.com/observations/metric/health/sleep_stage"},
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"records": {
-     "filter": {"kinds": ["ada.example.com/health/sleep"]},
-     "sources": {"policy": "priority", "order": ["whoop-4-0", "garmin-forerunner-265"], "property": "source"},
+     "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"isNap": {"eq": false}}},
+     "sources": {"policy": "priority", "order": ["whoop/e2e", "garmin/ada/account"], "property": "source"},
      "utcOffsets": {"start": "utcOffsetStart", "end": "utcOffsetEnd"}}},
    "groupBy": ["code"],
    "reducers": ["sum"],
-   "sources": {"policy": "priority", "order": ["whoop-4-0", "garmin-forerunner-265"]},
+   "sources": {"policy": "priority", "order": ["whoop/e2e", "garmin/ada/account"]},
    "unit": "min"}}
 ```
 
@@ -792,7 +794,8 @@ carries the night's `record` beside its recovery:
    "from": "summaries",
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
    "bucket": {"records": {
-     "filter": {"kinds": ["ada.example.com/health/sleep"], "properties": {"source": {"eq": "whoop-4-0"}}},
+     "filter": {"kinds": ["ada.example.com/health/sleep"],
+                "properties": {"source": {"eq": "whoop/e2e"}, "isNap": {"eq": false}}},
      "around": {"after": "PT1M"}}},
    "reducers": ["last"],
    "unit": "%"}}
@@ -803,15 +806,16 @@ a value stamped in the minute after the night counts in it, and an amount
 running past the night's end counts at most one minute more of its span.
 
 Training time and distance per sport per week, from the workout records
-themselves (a property read): each run once where several devices recorded
-it, the Garmin's first, and each week on the local days the runs began:
+themselves (a property read): each session once where several devices
+recorded it, the Garmin's first, and each week on the local days the
+sessions began:
 
 ```json
 {"filter": {"kinds": ["ada.example.com/health/workout"]},
  "aggregate": {
    "property": {"name": "duration", "utcOffset": "utcOffsetStart", "groupBy": ["sport"],
                 "sources": {"policy": "priority", "property": "source", "match": ["sport"],
-                            "order": ["garmin-forerunner-265", "whoop-4-0"]}},
+                            "order": ["garmin/ada/forerunner265", "whoop/e2e"]}},
    "range": {"gte": "2026-09-07T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "week"},
    "reducers": ["sum", "count"],
@@ -823,19 +827,9 @@ distance. The policy weighs only the records that hold the property read,
 so a higher-ranked device's workout without a distance leaves the next
 device's distance in.
 
-Hours a door was open per week (`closed` ends each `open`, and a door shut
-over a weekend is not open until Monday), and kWh per day from a meter that
-resets, reset-proof:
-
-```json
-{"aggregate": {
-   "metric": {"ref": "ada.example.com/observations/metric/home/contact_state"},
-   "range": {"gte": "2026-07-06T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
-   "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
-   "reducers": [{"timeInState": ["open"]}],
-   "maxGap": "P1D",
-   "unit": "h"}}
-```
+kWh per day from a meter that resets, reset-proof, for a meter a function
+writes as a counter under the `observations` sample's `energy` metric (no
+shipped adapter writes one):
 
 ```json
 {"aggregate": {
@@ -846,14 +840,11 @@ resets, reset-proof:
    "unit": "kW.h"}}
 ```
 
-The current value of every stream, the dashboard, needs no range and no
-bucket; an 800-pixel chart of any range is `downsample={"points": 800}`
-beside a metric and a range:
-
-```json
-{"filter": {"implements": "substrate.reamde.dev/core/observed"},
- "aggregate": {"groupBy": ["metric", "source", "about"], "reducers": ["last"]}}
-```
+The current value of every stream, the dashboard, is
+[the latest read](api.md#the-four-time-modes): no range, no bucket and the
+one reducer `last`. An 800-pixel chart of any range is
+`downsample={"points": 800}` beside a metric and a range
+([downsample](api.md#fill-rolling-and-downsample)).
 
 A function sends the same body to `host.records.aggregate`. An agent sends
 its three parts as the `query` tool's arguments of the same names, `filter`,

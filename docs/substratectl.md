@@ -157,13 +157,14 @@ substratectl aggregate ada.example.com/observations/metric/health/heart_rate \
   --gte 2026-04-06T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
   --calendar week --week-start monday --timezone Europe/Athens \
   --reducer durationIn:95,114 --reducer durationIn:114,133 --reducer durationIn:133,152 \
-  --policy priority --order garmin-forerunner-265,apple-watch-s10 \
+  --policy priority --order garmin/ada/forerunner265,applehealth/iphone/apple-watch \
   --unit min --max-gap PT5M
 ```
 
-Daily steps for a year, from raw points where they cover a day and from the
-vendor's daily total where they do not. A `--calendar` with no `--timezone`
-is the recorded-local day:
+Daily steps for a year, one row per source, from a source's step amounts
+where they cover 90 percent of a day and from its daily total where they do
+not ([which sources write a total](observations.md#reading)). A `--calendar`
+with no `--timezone` is the recorded-local day:
 
 ```
 substratectl aggregate ada.example.com/observations/metric/health/steps \
@@ -178,15 +179,17 @@ substratectl aggregate --group-by metric,source --reducer last \
   --filter '{"properties":{"metric":{"in":["ada.example.com/observations/metric/health/body_mass","ada.example.com/observations/metric/health/body_fat_fraction"]}}}'
 ```
 
-Time spent asleep per stage in each night, the nights the records of
-`health/sleep` are, WHOOP's night kept where two sources recorded one:
+Time spent asleep per stage in each night, the nights being the
+`health/sleep` records that are not naps, WHOOP's night kept where two sources
+recorded one and WHOOP's stages kept inside it:
 
 ```
 substratectl aggregate ada.example.com/observations/metric/health/sleep_stage \
   --gte 2026-09-01T00:00:00+03:00 --lt 2026-10-01T00:00:00+03:00 \
-  --records ada.example.com/health/sleep \
+  --records ada.example.com/health/sleep --records-filter '{"properties":{"isNap":{"eq":false}}}' \
   --records-utc-offsets utcOffsetStart,utcOffsetEnd \
-  --record-policy priority --record-order whoop-4-0 --record-source source \
+  --record-policy priority --record-order whoop/e2e --record-source source \
+  --policy priority --order whoop/e2e \
   --group-by code --reducer sum --unit min
 ```
 
