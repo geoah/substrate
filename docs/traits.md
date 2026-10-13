@@ -225,7 +225,8 @@ opt into twice:
   an hour of heart rate). Every write of an implementor, a patch included, is
   held to the rules the trait's property list cannot state: `form` is
   `gauge`, `amount`, `counter` or `summary`; a single record holds `value` or
-  `code` and never both; a packed record's `offsets` line up with its
+  `code`, never both, except an amount, which may carry its category in
+  `code`; a packed record's `offsets` line up with its
   `values` or `codes` inside `[at, endsAt)`; `hold` goes only on a gauge and
   `resetRule` only on a counter; a `revision` never falls. The substrate
   computes a packed record's `stats` from its values and drops any a writer
