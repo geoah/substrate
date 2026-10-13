@@ -144,6 +144,54 @@ func TestAggregatePlacesANightByItsEnd(t *testing.T) {
 	f.refusedAgg(substrate.AggregateQuery{Aggregate: &records}, "place")
 }
 
+// Under place end a value written without an offset is placed by the
+// fallback zone's offset at its end, not at its start: Athens' day of
+// 25 October 2026 runs from 21:00Z to 22:00Z the next evening, across the
+// clock change, and its summary lands on the 25th, as it does read in the
+// named zone. A recorded offset is the start's, so a span that ends after
+// the change is dated at the start's offset (docs/api.md says so).
+func TestAggregatePlaceEndTakesTheFallbackZonesOffsetAtTheEnd(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	for _, d := range []struct {
+		id, value  string
+		start, end time.Time
+	}{
+		{"day/25", "500", time.Date(2026, 10, 24, 21, 0, 0, 0, time.UTC), time.Date(2026, 10, 25, 22, 0, 0, 0, time.UTC)},
+		{"day/26", "600", time.Date(2026, 10, 25, 22, 0, 0, 0, time.UTC), time.Date(2026, 10, 26, 22, 0, 0, 0, time.UTC)},
+	} {
+		f.mustPut(t, f.observation, d.id, map[string]any{
+			"metric": f.metricRef("health/active_energy"), "source": f.sourceRef("watch"), "form": "summary",
+			"statistic": "sum", "period": "day", "value": quantity(d.value, "kcal"),
+			"at": d.start.Format(time.RFC3339), "endsAt": d.end.Format(time.RFC3339),
+		})
+	}
+	read := func(bucket substrate.AggregateBucket) string {
+		res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/active_energy")}, From: "summaries",
+			Range:  rng(time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC)),
+			Bucket: &bucket, Reducers: reducers("sum"),
+		})
+		var out []string
+		for _, row := range res.Rows {
+			v, _ := val(row, "sum")
+			out = append(out, row.Start.Format("01-02")+"="+v)
+		}
+		return strings.Join(out, " ")
+	}
+	for _, x := range []struct {
+		label  string
+		bucket substrate.AggregateBucket
+	}{
+		{"fallback zone", substrate.AggregateBucket{Calendar: "day", Place: "end", FallbackTimezone: "Europe/Athens"}},
+		{"named zone", substrate.AggregateBucket{Calendar: "day", Place: "end", Timezone: "Europe/Athens"}},
+	} {
+		if got, want := read(x.bucket), "10-25=500 10-26=600"; got != want {
+			t.Errorf("%s by end: %s, want %s", x.label, got, want)
+		}
+	}
+}
+
 // A read that places a value by its end takes the values whose end lies in
 // its window, wherever they start, and must not read a stream's whole
 // history before the window to find them: a span is found by its end and an

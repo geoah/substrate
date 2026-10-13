@@ -1205,7 +1205,12 @@ before. Under `end` the read takes the values whose end lies in the range,
 wherever they start (a night started the evening before the range counts),
 reads amounts from raw points, and is a `422` where it would take a gauge's or
 a counter's points, which are instants; the records mode and the property read
-refuse it.
+refuse it. In the recorded-local calendar a value carries one UTC offset, its
+start's, so `end` dates its last instant at that offset: a day summary whose
+offset changes before it ends (the autumn clock change, a westward travel
+day) lands on the next date. A value with no offset under
+`fallbackTimezone` takes the zone's offset at its last instant and lands on
+its own day, as a calendar in a named zone places it.
 
 **Where a value lands.** In the `every` and `calendar` modes a point lands
 whole in the bucket its start lies in (its end under `place` `end`), so an

@@ -174,16 +174,19 @@ func (r *aggRun) scanAggPoint(rows *sql.Rows, lead ...any) (aggPoint, error) {
 		return ap, err
 	}
 	ap.Point, ap.delta = sp.point, sp.group.delta
-	ap.off, ap.fallback = r.offsetAt(sp.group, ap.At)
+	ap.off, ap.fallback = r.offsetAt(sp.group, r.placed(ap.Point))
 	ap.RecordID, ap.Ord = recordID, ord
 	r.rowGroups[ap.Group] = sp.group
 	return ap, nil
 }
 
-// offsetAt is the UTC offset in minutes a value of the group at t is placed
-// by: its own, or where it recorded none and the bucket names a fallback
-// zone, that zone's at t (fallback true). Only the recorded-local calendar
-// reads it, and only that calendar takes a fallback zone.
+// offsetAt is the UTC offset in minutes a value of the group placed at t is
+// placed by: its own, or where it recorded none and the bucket names a
+// fallback zone, that zone's at t (fallback true), so under place end a span
+// that ends after a clock change takes the zone's offset at its end. A
+// recorded offset is the value's start's, and a span ends at it. Only the
+// recorded-local calendar reads it, and only that calendar takes a fallback
+// zone.
 func (r *aggRun) offsetAt(g obsGroup, t time.Time) (offset int64, fallback bool) {
 	if !g.offsetUnknown || r.p.bucket.fallback == nil {
 		return g.offset, false
