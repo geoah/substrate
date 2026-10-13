@@ -312,131 +312,128 @@ func garminStressQualifier(avg int) string {
 	return "very_stressful"
 }
 
-// dayOf is the daily summary, its epochs and its stress details.
-func (e *garminEmitter) dayOf(d Date, acts []garminActivity) (daily map[string]any, epochs []map[string]any, stress map[string]any) {
-	x := e.p.Day(d)
-	a, b := e.span(d)
-	off := garminOffset(x.Start())
-	at := func(s int64) time.Time { return time.Unix(s, 0).In(x.Zone) }
+// garminHeart is the day's heart rate every 5 minutes by offset, its
+// average, and its range with the activities' samples in it.
+type garminHeart struct {
+	samples       map[string]int
+	min, max, avg int
+}
 
-	hr := map[string]int{}
-	var hrs []int
-	hrSum := 0
+func (e *garminEmitter) heart(d Date, a, b int64, acts []garminActivity) garminHeart {
+	h := garminHeart{samples: map[string]int{}}
+	sum, n := 0, 0
 	for k := int64(0); k < b-a; k += 300 {
-		v := e.hrAt(d, at(a+k))
-		hr[fmt.Sprint(k)] = v
-		hrs = append(hrs, v)
-		hrSum += v
+		v := e.hrAt(d, time.Unix(a+k, 0))
+		h.samples[fmt.Sprint(k)] = v
+		sum, n = sum+v, n+1
+		if n == 1 {
+			h.min, h.max = v, v
+		}
+		h.min, h.max = min(h.min, v), max(h.max, v)
 	}
 	for _, act := range acts {
 		for _, s := range act.samples {
-			hrs = append(hrs, s["heartRate"].(int))
+			v := s["heartRate"].(int)
+			h.min, h.max = min(h.min, v), max(h.max, v)
 		}
 	}
-	epochs = e.epochs(d, a, b, off)
-	levels := map[string]int{}
-	var measured []int
-	bands := map[string]int{}
+	h.avg = iround(float64(sum) / float64(n))
+	return h
+}
+
+// garminStress is the day's stress level every 3 minutes by offset, -1
+// where the watch measured none, the seconds in each of Garmin's bands, and
+// the measured levels' average and maximum, -1 with none.
+type garminStress struct {
+	levels   map[string]int
+	bands    map[string]int
+	avg, max int
+}
+
+func (e *garminEmitter) stress(d Date, a, b int64) garminStress {
+	st := garminStress{levels: map[string]int{}, bands: map[string]int{}, avg: -1, max: -1}
+	sum, n := 0, 0
 	for k := int64(0); k < b-a; k += 180 {
-		v := e.stressAt(d, at(a+k))
-		levels[fmt.Sprint(k)] = v
+		v := e.stressAt(d, time.Unix(a+k, 0))
+		st.levels[fmt.Sprint(k)] = v
 		switch {
 		case v < 0:
-			bands["activity"] += 180
+			st.bands["activity"] += 180
 		case v <= 25:
-			bands["rest"] += 180
+			st.bands["rest"] += 180
 		case v <= 50:
-			bands["low"] += 180
+			st.bands["low"] += 180
 		case v <= 75:
-			bands["medium"] += 180
+			st.bands["medium"] += 180
 		default:
-			bands["high"] += 180
+			st.bands["high"] += 180
 		}
 		if v >= 0 {
-			measured = append(measured, v)
+			sum, n = sum+v, n+1
+			st.max = max(st.max, v)
 		}
 	}
-	battery := map[string]int{}
-	var bb []int
+	if n > 0 {
+		st.avg = iround(float64(sum) / float64(n))
+	}
+	return st
+}
+
+// garminBattery is Body Battery every 15 minutes by offset, what it gained
+// and lost over the day, and its top.
+type garminBattery struct {
+	values                map[string]int
+	charged, drained, top int
+}
+
+func (e *garminEmitter) battery(d Date, a, b int64) garminBattery {
+	x := e.p.Day(d)
+	bt := garminBattery{values: map[string]int{}}
+	prev := -1
 	for k := int64(0); k < b-a; k += 900 {
-		v := max(5, min(100, iround(e.noisy("bb", a+k, float64(x.BodyBattery(at(a+k))), 1))))
-		battery[fmt.Sprint(k)] = v
-		bb = append(bb, v)
-	}
-	charged, drained, top := 0, 0, 0
-	for i, v := range bb {
-		top = max(top, v)
-		if i > 0 {
-			charged += max(0, v-bb[i-1])
-			drained += max(0, bb[i-1]-v)
+		v := max(5, min(100, iround(e.noisy("bb", a+k, float64(x.BodyBattery(time.Unix(a+k, 0))), 1))))
+		bt.values[fmt.Sprint(k)] = v
+		bt.top = max(bt.top, v)
+		if prev >= 0 {
+			bt.charged += max(0, v-prev)
+			bt.drained += max(0, prev-v)
 		}
+		prev = v
 	}
-	avgStress, maxStress := -1, -1
-	if len(measured) > 0 {
-		sum := 0
-		for _, v := range measured {
-			sum += v
-			maxStress = max(maxStress, v)
-		}
-		avgStress = iround(float64(sum) / float64(len(measured)))
-	}
-	var steps, akcal, active, moderate, vigorous int
-	var dist float64
+	return bt
+}
+
+// garminTotals is what the daily sums from the epochs.
+type garminTotals struct {
+	steps, akcal, active, moderate, vigorous int
+	dist                                     float64
+}
+
+func epochTotals(epochs []map[string]any) garminTotals {
+	var t garminTotals
 	for _, ep := range epochs {
-		steps += ep["steps"].(int)
-		akcal += ep["activeKilocalories"].(int)
-		dist += ep["distanceInMeters"].(float64)
+		secs := ep["activeTimeInSeconds"].(int)
+		t.steps += ep["steps"].(int)
+		t.akcal += ep["activeKilocalories"].(int)
+		t.dist += ep["distanceInMeters"].(float64)
 		switch ep["intensity"] {
 		case "HIGHLY_ACTIVE":
-			vigorous += ep["activeTimeInSeconds"].(int)
-			active += ep["activeTimeInSeconds"].(int)
+			t.vigorous += secs
+			t.active += secs
 		case "ACTIVE":
-			active += ep["activeTimeInSeconds"].(int)
+			t.active += secs
 			if ep["activityType"] != "WALKING" || ep["steps"].(int) >= 900 {
-				moderate += ep["activeTimeInSeconds"].(int)
+				t.moderate += secs
 			}
 		}
 	}
-	minHR, maxHR := hrs[0], hrs[0]
-	for _, v := range hrs {
-		minHR, maxHR = min(minHR, v), max(maxHR, v)
-	}
-	daily = map[string]any{
-		"userId":                             garminUserID,
-		"summaryId":                          garminSID(a),
-		"calendarDate":                       d.String(),
-		"activityType":                       "GENERIC",
-		"activeKilocalories":                 akcal,
-		"bmrKilocalories":                    iround(e.noisy("bmr", d, float64(x.BMRKcal())*float64(b-a)/86400, 4)),
-		"steps":                              steps,
-		"distanceInMeters":                   round(dist, 1),
-		"durationInSeconds":                  b - a,
-		"activeTimeInSeconds":                active,
-		"startTimeInSeconds":                 a,
-		"startTimeOffsetInSeconds":           off,
-		"moderateIntensityDurationInSeconds": moderate,
-		"vigorousIntensityDurationInSeconds": vigorous,
-		"floorsClimbed":                      max(0, x.Floors()+iround(e.noisy("floors", d, 0, 0.8))),
-		"minHeartRateInBeatsPerMinute":       minHR,
-		"maxHeartRateInBeatsPerMinute":       maxHR,
-		"averageHeartRateInBeatsPerMinute":   iround(float64(hrSum) / float64(len(hr))),
-		"restingHeartRateInBeatsPerMinute":   iround(e.noisy("rhr", d, float64(x.RestingHR), 1)),
-		"timeOffsetHeartRateSamples":         hr,
-		"averageStressLevel":                 avgStress,
-		"maxStressLevel":                     maxStress,
-		"stressDurationInSeconds":            bands["low"] + bands["medium"] + bands["high"],
-		"restStressDurationInSeconds":        bands["rest"],
-		"activityStressDurationInSeconds":    bands["activity"],
-		"lowStressDurationInSeconds":         bands["low"],
-		"mediumStressDurationInSeconds":      bands["medium"],
-		"highStressDurationInSeconds":        bands["high"],
-		"stressQualifier":                    garminStressQualifier(avgStress),
-		"bodyBatteryChargedValue":            charged,
-		"bodyBatteryDrainedValue":            drained,
-		"stepsGoal":                          8000,
-		"floorsClimbedGoal":                  10,
-		"intensityDurationGoalInSeconds":     9000,
-	}
+	return t
+}
+
+// batteryEvents is what charged and drained Body Battery: the night and
+// each activity.
+func (e *garminEmitter) batteryEvents(d Date, acts []garminActivity) []any {
+	x := e.p.Day(d)
 	var events []any
 	if s := x.Sleep; s != nil {
 		events = append(events, map[string]any{
@@ -455,11 +452,59 @@ func (e *garminEmitter) dayOf(d Date, acts []garminActivity) (daily map[string]a
 			"activityId": act.activity["activityId"],
 		})
 	}
+	return events
+}
+
+// dayOf is the daily summary, its epochs and its stress details, assembled
+// from the day's heart rate, stress, Body Battery and epochs.
+func (e *garminEmitter) dayOf(d Date, acts []garminActivity) (daily map[string]any, epochs []map[string]any, stress map[string]any) {
+	x := e.p.Day(d)
+	a, b := e.span(d)
+	off := garminOffset(x.Start())
+	hr, st, bt := e.heart(d, a, b, acts), e.stress(d, a, b), e.battery(d, a, b)
+	epochs = e.epochs(d, a, b, off)
+	tot := epochTotals(epochs)
+	daily = map[string]any{
+		"userId":                             garminUserID,
+		"summaryId":                          garminSID(a),
+		"calendarDate":                       d.String(),
+		"activityType":                       "GENERIC",
+		"activeKilocalories":                 tot.akcal,
+		"bmrKilocalories":                    iround(e.noisy("bmr", d, float64(x.BMRKcal())*float64(b-a)/86400, 4)),
+		"steps":                              tot.steps,
+		"distanceInMeters":                   round(tot.dist, 1),
+		"durationInSeconds":                  b - a,
+		"activeTimeInSeconds":                tot.active,
+		"startTimeInSeconds":                 a,
+		"startTimeOffsetInSeconds":           off,
+		"moderateIntensityDurationInSeconds": tot.moderate,
+		"vigorousIntensityDurationInSeconds": tot.vigorous,
+		"floorsClimbed":                      max(0, x.Floors()+iround(e.noisy("floors", d, 0, 0.8))),
+		"minHeartRateInBeatsPerMinute":       hr.min,
+		"maxHeartRateInBeatsPerMinute":       hr.max,
+		"averageHeartRateInBeatsPerMinute":   hr.avg,
+		"restingHeartRateInBeatsPerMinute":   iround(e.noisy("rhr", d, float64(x.RestingHR), 1)),
+		"timeOffsetHeartRateSamples":         hr.samples,
+		"averageStressLevel":                 st.avg,
+		"maxStressLevel":                     st.max,
+		"stressDurationInSeconds":            st.bands["low"] + st.bands["medium"] + st.bands["high"],
+		"restStressDurationInSeconds":        st.bands["rest"],
+		"activityStressDurationInSeconds":    st.bands["activity"],
+		"lowStressDurationInSeconds":         st.bands["low"],
+		"mediumStressDurationInSeconds":      st.bands["medium"],
+		"highStressDurationInSeconds":        st.bands["high"],
+		"stressQualifier":                    garminStressQualifier(st.avg),
+		"bodyBatteryChargedValue":            bt.charged,
+		"bodyBatteryDrainedValue":            bt.drained,
+		"stepsGoal":                          8000,
+		"floorsClimbedGoal":                  10,
+		"intensityDurationGoalInSeconds":     9000,
+	}
 	level := "LOW"
 	switch {
-	case top >= 75:
+	case bt.top >= 75:
 		level = "HIGH"
-	case top >= 50:
+	case bt.top >= 50:
 		level = "MODERATE"
 	}
 	stress = map[string]any{
@@ -469,14 +514,14 @@ func (e *garminEmitter) dayOf(d Date, acts []garminActivity) (daily map[string]a
 		"startTimeOffsetInSeconds":    off,
 		"durationInSeconds":           b - a,
 		"calendarDate":                d.String(),
-		"maxStressLevel":              maxStress,
-		"averageStressLevel":          avgStress,
-		"timeOffsetStressLevelValues": levels,
-		"timeOffsetBodyBatteryValues": battery,
+		"maxStressLevel":              st.max,
+		"averageStressLevel":          st.avg,
+		"timeOffsetStressLevelValues": st.levels,
+		"timeOffsetBodyBatteryValues": bt.values,
 		"bodyBatteryDynamicFeedbackEvent": map[string]any{
 			"eventStartTimeInSeconds": d.At(x.Zone, 10, 0).Unix(), "bodyBatteryLevel": level,
 		},
-		"bodyBatteryActivityEvents": events,
+		"bodyBatteryActivityEvents": e.batteryEvents(d, acts),
 	}
 	return daily, epochs, stress
 }
