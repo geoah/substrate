@@ -134,7 +134,6 @@ data:
     HEALTH = "samples.substrate.reamde.dev/health/"
     SLEEP = HEALTH + "sleep"
     WORKOUT = HEALTH + "workout"
-    OUTPUT_KINDS = [TRACE, OBSERVATION, SLEEP, WORKOUT]
 
     # The properties this function owns on each output kind: a rewrite clears
     # the ones a new shape no longer carries (a trace moving from `every` to
@@ -237,6 +236,7 @@ data:
     POSSESSIVE = re.compile(r"^.{1,40}?['’]s\s+")
     NOT_ID = re.compile(r"[^A-Za-z0-9._~:@-]+")
     UTC = datetime.timezone.utc
+    INF = float("inf")
 
 
     # ---- values -----------------------------------------------------------------
@@ -267,14 +267,6 @@ data:
             return None
 
 
-    def utc_text(dt):
-        dt = dt.astimezone(UTC)
-        out = dt.strftime("%Y-%m-%dT%H:%M:%S")
-        if dt.microsecond:
-            out += "." + ("%06d" % dt.microsecond).rstrip("0")
-        return out + "Z"
-
-
     def instant_id(dt):
         return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -283,29 +275,13 @@ data:
         return int(dt.utcoffset().total_seconds() // 60)
 
 
-    def digits(v):
-        """A JSON number as the exact digits it carried."""
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
+    def digits(host, v):
+        """A JSON number as the digits the engine stores, a whole float
+        written whole (72.0 is 72); None for anything that is not a finite
+        number."""
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (INF, -INF):
             return None
-        if isinstance(v, int):
-            return str(v)
-        if v != v or v in (float("inf"), float("-inf")):
-            return None
-        return format(decimal.Decimal(repr(v)).normalize(), "f")
-
-
-    def duration_text(seconds):
-        """Whole seconds as the engine's one spelling of a duration."""
-        seconds = max(0, int(round(seconds)))
-        days, rest = divmod(seconds, 86400)
-        h, rest = divmod(rest, 3600)
-        m, s = divmod(rest, 60)
-        out = "P" + ("%dD" % days if days else "")
-        if h or m or s or not days:
-            out += "T" + ("%dH" % h if h else "") + ("%dM" % m if m else "")
-            if s or not (h or m or days):
-                out += "%dS" % s
-        return out
+        return host.observed.decimal(int(v) if isinstance(v, float) and v.is_integer() else v)
 
 
     def minutes_text(seconds):
@@ -385,6 +361,11 @@ data:
             if reason not in self.skipped:
                 self.skipped.append(reason)
 
+        def duration(self, seconds):
+            """A length of time to the whole second: the app sends hours as
+            floats, so what is left below a second is the float's error."""
+            return self.host.observed.duration(max(0, int(round(seconds))))
+
 
     # ---- units ------------------------------------------------------------------
 
@@ -413,7 +394,7 @@ data:
             self.code = code
 
         def value(self, v):
-            text = digits(v)
+            text = digits(self.host, v)
             if text is None or self.code == self.target:
                 return text
             if text not in self.memo:
@@ -453,13 +434,15 @@ data:
         w.add(OBSERVATION, w.compose(slug, metric, period, instant_id(dt), statistic), {
             "metric": metric_ref(metric), "source": src, "form": "summary", "statistic": statistic,
             "period": period, "periodId": period_label(dt, grouping),
-            "value": {"value": value, "unit": unit}, "at": utc_text(dt), "endsAt": utc_text(end),
+            "value": {"value": value, "unit": unit}, "at": w.host.observed.instant(dt),
+            "endsAt": w.host.observed.instant(end),
             "utcOffset": offset_of(dt)})
 
 
     def gauge(w, metric, slug, src, dt, value, unit, hold=None, extra=None):
         props = {"metric": metric_ref(metric), "source": src, "form": "gauge",
-                 "value": {"value": value, "unit": unit}, "at": utc_text(dt), "utcOffset": offset_of(dt)}
+                 "value": {"value": value, "unit": unit}, "at": w.host.observed.instant(dt),
+                 "utcOffset": offset_of(dt)}
         if hold:
             props["hold"] = hold
         if extra:
@@ -602,17 +585,9 @@ data:
             gauge(w, metric, slug, src, dt, value, unit, GLUCOSE_HOLD, extra)
 
 
-    def hours_seconds(v):
-        text = digits(v)
+    def hours_seconds(host, v):
+        text = digits(host, v)
         return None if text is None else float(decimal.Decimal(text) * 3600)
-
-
-    def percent(part, whole):
-        """part over whole as a percentage to two places, the unit `efficiency`
-        is written in."""
-        ratio = decimal.Decimal(repr(part)) * 100 / decimal.Decimal(repr(whole))
-        return {"value": format(ratio.quantize(decimal.Decimal("0.01"), rounding=decimal.ROUND_HALF_UP), "f"),
-                "unit": "%"}
 
 
     def is_nap(at, ends):
@@ -621,19 +596,19 @@ data:
         return (ends - at).total_seconds() < NAP_LONGEST and NAP_HOURS[0] <= at.hour < NAP_HOURS[1]
 
 
-    def night_span(row, ss, se):
+    def night_span(w, row, ss, se):
         """A night spans the time in bed where the app names it, the time
         asleep inside it, and how long it took to fall asleep."""
         ibs, ibe = parse_date(row.get("inBedStart")), parse_date(row.get("inBedEnd"))
         at = min(t for t in (ss, ibs) if t is not None)
         ends = max(t for t in (se, ibe) if t is not None)
-        night = {"at": utc_text(at), "endsAt": utc_text(ends), "utcOffsetStart": offset_of(at),
-                 "utcOffsetEnd": offset_of(ends), "isNap": is_nap(at, ends)}
+        night = {"at": w.host.observed.instant(at), "endsAt": w.host.observed.instant(ends),
+                 "utcOffsetStart": offset_of(at), "utcOffsetEnd": offset_of(ends), "isNap": is_nap(at, ends)}
         if ibs is not None and ss > ibs:
-            night["latency"] = duration_text((ss - ibs).total_seconds())
-        in_bed = hours_seconds(row.get("inBed"))
+            night["latency"] = w.duration((ss - ibs).total_seconds())
+        in_bed = hours_seconds(w.host, row.get("inBed"))
         if in_bed:
-            night["timeInBed"] = duration_text(in_bed)
+            night["timeInBed"] = w.duration(in_bed)
         return night, in_bed
 
 
@@ -664,7 +639,8 @@ data:
                     w.add(OBSERVATION, w.compose(slug, "sleep_stage", instant_id(s)), {
                         "metric": metric_ref("sleep_stage"), "source": src, "form": "amount",
                         "code": stage, "value": {"value": minutes_text((e - s).total_seconds()), "unit": "min"},
-                        "at": utc_text(s), "endsAt": utc_text(e), "utcOffset": offset_of(s)})
+                        "at": w.host.observed.instant(s), "endsAt": w.host.observed.instant(e),
+                        "utcOffset": offset_of(s)})
                 ss, se = parse_date(row.get("sleepStart")), parse_date(row.get("sleepEnd"))
                 if ss is None or se is None or se <= ss:
                     continue
@@ -679,28 +655,28 @@ data:
             se = parse_date(row.get("sleepEnd")) or parse_date(row.get("inBedEnd"))
             if ss is None or se is None or se <= ss:
                 continue
-            night, bed = night_span(row, ss, se)
+            night, bed = night_span(w, row, ss, se)
             night["source"] = src
-            total = hours_seconds(row.get("totalSleep"))
+            total = hours_seconds(w.host, row.get("totalSleep"))
             if total:
-                night["timeAsleep"] = duration_text(total)
-                if bed:
-                    night["efficiency"] = percent(total, bed)
+                night["timeAsleep"] = w.duration(total)
+                night["efficiency"] = w.host.observed.percent(total, bed)
             for field, stage, prop in NIGHT:
-                secs = hours_seconds(row.get(field))
+                secs = hours_seconds(w.host, row.get(field))
                 if not secs:
                     continue
                 if prop:
-                    night[prop] = duration_text(secs)
+                    night[prop] = w.duration(secs)
                 w.add(OBSERVATION, w.compose(slug, "sleep_stage", instant_id(ss), stage), {
                     "metric": metric_ref("sleep_stage"), "source": src, "form": "amount", "code": stage,
                     "value": {"value": minutes_text(secs), "unit": "min"},
-                    "at": utc_text(ss), "endsAt": utc_text(se), "utcOffset": offset_of(ss)})
+                    "at": w.host.observed.instant(ss), "endsAt": w.host.observed.instant(se),
+                    "utcOffset": offset_of(ss)})
             w.add(SLEEP, w.compose(slug, "sleep", instant_id(ss)), night)
         for ss, n in sorted(nights.items()):
             counts = n["stages"] or {k: 0 for k in n["sources"]}
             slug = min(counts, key=lambda k: (-counts[k], k))
-            night, _ = night_span(n["row"], ss, n["se"])
+            night, _ = night_span(w, n["row"], ss, n["se"])
             night["source"] = n["sources"][slug]
             w.add(SLEEP, w.compose(slug, "sleep", instant_id(ss)), night)
         if in_bed:
@@ -714,7 +690,7 @@ data:
     def quantity(host, q, target=None):
         if not isinstance(q, dict):
             return None
-        value, app_unit = digits(q.get("qty")), q.get("units")
+        value, app_unit = digits(host, q.get("qty")), q.get("units")
         if value is None or not isinstance(app_unit, str):
             return None
         code = APP_UNITS.get(app_unit)
@@ -745,15 +721,15 @@ data:
         label = max(sorted(labels), key=lambda k: labels[k]) if labels else None
         slug, src = w.source(label)
         name = props.get("name") if isinstance(props.get("name"), str) else ""
-        out = {"source": src, "at": utc_text(s), "utcOffsetStart": offset_of(s),
+        out = {"source": src, "at": host.observed.instant(s), "utcOffsetStart": offset_of(s),
                "sport": SPORTS.get(name.strip().lower(), "other")}
         if name:
             out["sportSource"] = name
         if e is not None and e > s:
-            out["endsAt"] = utc_text(e)
+            out["endsAt"] = host.observed.instant(e)
             out["utcOffsetEnd"] = offset_of(e)
-        if digits(props.get("duration")) is not None:
-            out["duration"] = duration_text(float(props["duration"]))
+        if digits(host, props.get("duration")) is not None:
+            out["duration"] = w.duration(float(props["duration"]))
         hr = props.get("heartRate") if isinstance(props.get("heartRate"), dict) else {}
         for prop, q, target in (("distance", props.get("distance"), None),
                                 ("activeEnergy", props.get("activeEnergyBurned"), None),

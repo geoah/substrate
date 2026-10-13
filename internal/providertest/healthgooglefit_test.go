@@ -145,11 +145,11 @@ func parseInstant(t *testing.T, v any) time.Time {
 	return at
 }
 
-// fitIDAlphabet is the record-id alphabet the adapter's `_rid` keeps a
+// fitIDAlphabet is the record-id alphabet host.observed.record_id keeps a
 // composed id readable in.
 var fitIDAlphabet = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
 
-// fitReadingIDOf is a composed id as the adapter's `_rid` keeps it: as
+// fitReadingIDOf is a composed id as host.observed.record_id keeps it: as
 // written, or hashed past 128 bytes or outside the id alphabet.
 func fitReadingIDOf(readable string) string {
 	if len(readable) <= 128 && fitIDAlphabet.MatchString(readable) {
@@ -160,7 +160,7 @@ func fitReadingIDOf(readable string) string {
 
 // fitReadingID is the id the adapter gives one reading: the dataset row, the
 // source's slug, the metric and the start in nanoseconds, hashed the way
-// `_rid` hashes an id past 128 bytes or outside the alphabet.
+// host.observed.record_id hashes an id past 128 bytes or outside the alphabet.
 func fitReadingID(dayRow, slug, metric string, start time.Time) string {
 	return fitReadingIDOf(fmt.Sprintf("googlefit/%s/%s/%s/%d", dayRow, slug, metric, start.UnixNano()))
 }

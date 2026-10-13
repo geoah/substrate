@@ -123,7 +123,7 @@ data:
     import re as _re
     import zoneinfo
     from collections import Counter
-    from decimal import ROUND_HALF_UP, Decimal
+    from decimal import Decimal
 
     # The zone database is the tzdata package's: the sandbox does not promise
     # the host's own files are readable.
@@ -150,7 +150,6 @@ data:
     SESSION = FIT + "/session"
 
     UTC = _dt.timezone.utc
-    MAX_ID = 128
     PERIOD = "PT1H"
     NS = 10**9
     HOUR_NS = 3600 * NS
@@ -220,7 +219,6 @@ data:
     # and the rest have no class there.
     CLASSES = {"watch": "watch", "scale": "scale"}
 
-    _ID = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
     # A device uid a source slug keeps as written. Any other uid is digested,
     # so two uids that differ only in case or punctuation stay two devices.
     _UID = _re.compile(r"[a-z0-9]{1,32}")
@@ -278,13 +276,6 @@ data:
         return t if t.tzinfo else t.replace(tzinfo=UTC)
 
 
-    def _iso(t):
-        t = t.astimezone(UTC)
-        if t.microsecond:
-            return t.strftime("%Y-%m-%dT%H:%M:%S.") + ("%06d" % t.microsecond).rstrip("0") + "Z"
-        return t.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
     def _slug(text):
         return _re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-") or "unknown"
 
@@ -298,14 +289,6 @@ data:
         if _UID.fullmatch(uid):
             return uid
         return hashlib.sha256((uid or origin).encode("utf-8")).hexdigest()[:16]
-
-
-    def _rid(host, aid, readable):
-        """A composed id as written, or its hash where it leaves the record-id
-        alphabet or passes 128 bytes."""
-        if len(readable) <= MAX_ID and _ID.match(readable):
-            return readable
-        return host.ids.external("googlefit", aid, readable)
 
 
     def _list(host, flt):
@@ -403,7 +386,7 @@ data:
             return self._source(_slug(package), {"name": package, "class": "app"})
 
         def _source(self, slug, props):
-            sid = _rid(self.host, self.aid, "googlefit/%s/%s" % (self.aid, slug))
+            sid = self.host.observed.record_id("googlefit", self.aid, self.aid, slug)
             if sid not in self.sources:
                 props = {k: v for k, v in props.items() if v}
                 props["account"] = _ref(ACCOUNT, self.aid)
@@ -472,7 +455,7 @@ data:
         two sources reading one instant, or one source reading twice inside a
         millisecond, stay two observations, and a correction or a removal
         from one source never reaches the other's."""
-        return _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%s/%d" % (rid, slug, metric, start))
+        return ctx.host.observed.record_id("googlefit", ctx.aid, rid, slug, metric, start)
 
 
     def _single(ctx, m, rid, points, desired):
@@ -485,7 +468,7 @@ data:
             # Fit names a reading entered by hand in the Fit app (user_input);
             # any other is a device's or an app's, which Fit does not tell apart.
             base = {"source": source, "form": m["form"], "hold": m.get("hold"),
-                    "at": _iso(at), "utcOffset": ctx.clock.offset(at),
+                    "at": ctx.host.observed.instant(at), "utcOffset": ctx.clock.offset(at),
                     "origin": _ref(DATASET, rid), "revision": _revision([p]),
                     "qualifiers": ctx.clock.qualifiers(),
                     "recordingMethod": "manual" if slug == "manual" else None}
@@ -522,7 +505,8 @@ data:
         desired[(OBSERVATION, oid)] = {
             "metric": _ref(METRIC, "health/" + m["metric"]), "source": source,
             "form": m["form"], "value": {"value": value, "unit": unit},
-            "at": _iso(at), "endsAt": _iso(_ns_time(end)), "utcOffset": ctx.clock.offset(at),
+            "at": ctx.host.observed.instant(at), "endsAt": ctx.host.observed.instant(_ns_time(end)),
+            "utcOffset": ctx.clock.offset(at),
             "origin": _ref(DATASET, rid), "revision": mod // 1000,
             "qualifiers": ctx.clock.qualifiers()}
 
@@ -575,7 +559,7 @@ data:
                 lo, hi = _parse(doc["at"]), _parse(doc["endsAt"])
                 mods = [mod for at, _, mod in pts if lo <= at < hi]
                 pid = ctx.host.observed.period_id(lo, PERIOD)
-                tid = _rid(ctx.host, ctx.aid, "googlefit/%s/%s/%s/%s" % (ctx.aid, slug, m["metric"], pid))
+                tid = ctx.host.observed.record_id("googlefit", ctx.aid, ctx.aid, slug, m["metric"], pid)
                 doc["origins"] = [_ref(DATASET, rid)]
                 doc["revision"] = (max(mods) // 1000) if mods else 0
                 desired[(TRACE, tid)] = doc
@@ -605,8 +589,9 @@ data:
                 for s in _list(host, {"kinds": [SESSION],
                                       "referencing": {"ref": ACCOUNT + "/" + aid,
                                                       "property": "account"},
-                                      "properties": {"at": {"gte": _iso(at - _dt.timedelta(days=1)),
-                                                            "lt": _iso(end)}}}):
+                                      "properties": {"at": {
+                                          "gte": host.observed.instant(at - _dt.timedelta(days=1)),
+                                          "lt": host.observed.instant(end)}}}):
                     sp2 = s.get("properties") or {}
                     if _int(sp2.get("activityType")) == SLEEP_ACTIVITY and \
                             (_parse(sp2.get("endsAt")) or at) > at:
@@ -659,7 +644,8 @@ data:
             for d in _list(ctx.host, {"kinds": [DATASET],
                                       "referencing": {"ref": DATASOURCE + "/" + row["id"],
                                                       "property": "dataSource"},
-                                      "properties": {"at": {"gte": _iso(day), "lt": _iso(end)}}}):
+                                      "properties": {"at": {"gte": ctx.host.observed.instant(day),
+                                                            "lt": ctx.host.observed.instant(end)}}}):
                 for pt in _points(d):
                     s, e = _int(pt["startTimeNanos"]), _int(pt.get("endTimeNanos"))
                     lo, hi = max(s, _ns(at)), min(e or s, _ns(end))
@@ -691,17 +677,17 @@ data:
                 ctx = _Ctx(host, aid)
             revision = (_int(props.get("modifiedTimeMillis")) or 0) // 1000
             app = str((props.get("application") or {}).get("packageName") or "")
-            base = {"origin": _ref(SESSION, rid), "at": _iso(at), "endsAt": _iso(end) if end else None,
+            base = {"origin": _ref(SESSION, rid), "at": host.observed.instant(at),
+                    "endsAt": host.observed.instant(end) if end else None,
                     "utcOffsetStart": ctx.clock.offset(at),
                     "utcOffsetEnd": ctx.clock.offset(end) if end else None}
-            key = "googlefit/" + rid
             if _int(props.get("activityType")) == SLEEP_ACTIVITY and end is not None:
                 out["skipped"] = _sleep(ctx, rid, at, end, revision, app, base, desired)
             else:
                 activity = _int(props.get("activityType"))
                 active = _int(props.get("activeTimeMillis"))
                 _, source = ctx.app_source(app)
-                desired[(WORKOUT, _rid(host, aid, key))] = dict(
+                desired[(WORKOUT, host.observed.record_id("googlefit", aid, rid))] = dict(
                     base, sport=SPORTS.get(activity, "other") if activity is not None else None,
                     sportSource=str(activity) if activity is not None else None,
                     source=source, revision=revision,
@@ -728,12 +714,13 @@ data:
             start = _ns_time(seg["start"])
             slug, source = ctx.source_for(seg["origin"])
             origins[slug, source["ref"]] += 1
-            seconds = str(Decimal(seg["end"] - seg["start"]) / Decimal(NS))
-            oid = _rid(ctx.host, ctx.aid, "googlefit/%s/stage/%d" % (rid, seg["start"]))
+            seconds = Decimal(seg["end"] - seg["start"]) / NS
+            oid = ctx.host.observed.record_id("googlefit", ctx.aid, rid, "stage", seg["start"])
             desired[(OBSERVATION, oid)] = {
                 "metric": stage_metric, "source": source, "form": "amount", "code": code,
                 "value": {"value": ctx.host.units.convert(seconds, "s", "min"), "unit": "min"},
-                "at": _iso(start), "endsAt": _iso(_ns_time(seg["end"])),
+                "at": ctx.host.observed.instant(start),
+                "endsAt": ctx.host.observed.instant(_ns_time(seg["end"])),
                 "utcOffset": ctx.clock.offset(start), "origin": _ref(SESSION, rid),
                 "derivedFrom": [{"ref": seg["day"]}],
                 "revision": max(revision, seg["modified"] // 1000),
@@ -755,11 +742,9 @@ data:
             sleep.update({
                 "timeAsleep": ctx.duration(asleep),
                 "awake": ctx.duration(totals[1]), "light": ctx.duration(totals[4]),
-                "deep": ctx.duration(totals[5]), "rem": ctx.duration(totals[6])})
-            if in_bed > 0:
-                ratio = (Decimal(asleep) * 100 / Decimal(in_bed)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-                sleep["efficiency"] = {"value": format(ratio, "f"), "unit": "%"}
-        desired[(SLEEP, _rid(ctx.host, ctx.aid, "googlefit/" + rid))] = sleep
+                "deep": ctx.duration(totals[5]), "rem": ctx.duration(totals[6]),
+                "efficiency": ctx.host.observed.percent(asleep, in_bed)})
+        desired[(SLEEP, ctx.host.observed.record_id("googlefit", ctx.aid, rid))] = sleep
         return skipped
 
 

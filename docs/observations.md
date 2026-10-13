@@ -416,6 +416,10 @@ The four hold to one set of rules:
   `host.observed.reconcile`, which writes each output in one put, leaves one
   that already holds it unwritten, never lowers a stored `revision`, and
   deletes what the row no longer implies.
+- **One spelling.** Each writes its numbers, lengths of time, instants,
+  composed ids and a night's `efficiency` through `host.observed`
+  (`decimal`, `duration`, `instant`, `record_id` and `percent`), so a
+  value has the same text whichever adapter wrote it.
 - **The catalogue's codes and holds.** Every gauge carries its metric's
   `hold` from the catalogue, a workout's `sport` is one value of the
   workout code set (`other` where the provider's word has none, the word in

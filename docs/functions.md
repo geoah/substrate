@@ -841,9 +841,9 @@ instant in the one spelling the engine stores: digits without an exponent
 canonical ISO 8601 duration to the microsecond, and RFC 3339 UTC.
 `percent(part, whole)` is part over whole as a `%` quantity rounded half up
 to two places, the shape of a night's `efficiency`, and None where the whole
-is not above zero. `record_id(provider, account, *parts)` joins `<provider>/<part>/...` into
-an id and hashes it through `host.ids.external` only where it would leave
-the id alphabet or pass 128 bytes.
+is not above zero. `record_id(provider, account, *parts)` joins
+`<provider>/<part>/...` into an id and hashes it through `host.ids.external`
+only where it would leave the id alphabet or pass 128 bytes.
 
 `reconcile(origins, outputs, *, owned, adapter=None)` is the per-origin
 loop every health adapter runs, and the one call here that reads and
