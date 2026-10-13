@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -44,10 +45,10 @@ func catalogueCodes(t *testing.T) map[string]map[string]bool {
 	}
 }
 
-// manualDocs decodes the manual emitter's labs.yaml.
-func manualDocs(t *testing.T) []map[string]any {
+// manualDocs decodes the manual emitter's labs.yaml for the range o names.
+func manualDocs(t *testing.T, o Options) []map[string]any {
 	t.Helper()
-	p, err := NewPersona(Options{})
+	p, err := NewPersona(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func manualDocs(t *testing.T) []map[string]any {
 func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 	codes := catalogueCodes(t)
 	var results, mass, weighIns int
-	for _, doc := range manualDocs(t) {
+	for _, doc := range manualDocs(t, Options{}) {
 		kind, _ := doc["kind"].(string)
 		props := doc["data"].(map[string]any)["properties"].(map[string]any)
 		id := doc["metadata"].(map[string]any)["id"]
@@ -114,5 +115,27 @@ func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 	}
 	if results < 30 || mass < 5 || weighIns != 1 {
 		t.Errorf("%d lab results (%d in mg/dL on a mass twin) and %d weigh-ins", results, mass, weighIns)
+	}
+}
+
+// The hotel weigh-in is on the trip's third day, and only a range holding
+// that day writes it, though a range holding any trip day keeps the trip.
+func TestManualWeighsInAtTheHotelInsideTheRange(t *testing.T) {
+	for _, c := range []struct {
+		start Date
+		want  int
+	}{
+		{NewDate(2026, time.September, 22), 1},
+		{NewDate(2026, time.September, 23), 0},
+	} {
+		weighIns := 0
+		for _, doc := range manualDocs(t, Options{Start: c.start, End: NewDate(2026, time.September, 30)}) {
+			if id := doc["metadata"].(map[string]any)["id"]; id == "manual/2026-09-22-weight" {
+				weighIns++
+			}
+		}
+		if weighIns != c.want {
+			t.Errorf("a range from %s writes %d hotel weigh-ins, want %d", c.start, weighIns, c.want)
+		}
 	}
 }

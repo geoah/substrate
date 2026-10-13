@@ -11,7 +11,8 @@ import (
 
 // Manual is the hand-entered data: three lab panels (a `labreport` and one
 // `labresult` per analyte, from the health sample) and one weigh-in typed in
-// on a hotel scale, as envelope documents for `substratectl apply`. It needs
+// on a hotel scale on the trip's third day when the range holds it, as
+// envelope documents for `substratectl apply`. It needs
 // the `observations` and `health` samples imported; the authority is the
 // repository's own.
 type Manual struct {
@@ -117,8 +118,9 @@ func (m Manual) Emit(p *Persona) (*Output, error) {
 		}
 	}
 	// A hotel scale on the trip, typed in by hand, held for the day like the
-	// catalogue's body gauges.
-	if d, ok := p.TripRunDay(); ok {
+	// catalogue's body gauges. A range keeps a trip it holds any day of, so
+	// the day is checked against the range too.
+	if d, ok := p.TripRunDay(); ok && !d.Before(p.Options.Start) && !d.After(p.Options.End) {
 		t := p.Day(d).atRest(d.At(p.Zone(d), 7, 25), 5*time.Minute)
 		_, off := t.Zone()
 		docs = append(docs, doc("observations/observation", "manual/"+d.String()+"-weight", map[string]any{
