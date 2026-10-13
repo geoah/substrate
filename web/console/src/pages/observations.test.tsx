@@ -370,6 +370,46 @@ describe("the streams table", () => {
     expect(sleep.textContent).not.toContain("You")
   })
 
+  it("names a summary's statistic beside its value, and the statistics it keeps", async () => {
+    const summary = (statistic: string, value: string): AggregateRow => ({
+      start: "2026-10-07T05:28:00Z",
+      end: "2026-10-07T19:47:00Z",
+      form: "summary",
+      group: { metric: HEART, source: WHOOP, statistic },
+      values: [{ reducer: "last", value, unit: "/min" }],
+      count: 90,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    })
+    const withSummaries: AggregateResult = {
+      ...LATEST,
+      rows: [...LATEST.rows, summary("avg", "74"), summary("max", "158")],
+    }
+    mount("", KINDS, (read) => latestAnswer(read, withSummaries))
+    const body = await rows()
+    await waitFor(() =>
+      expect(body.some((r) => r.textContent?.includes("WHOOP"))).toBe(true)
+    )
+    const whoop = body.find(
+      (r) =>
+        r.textContent?.includes("Heart rate") && r.textContent.includes("WHOOP")
+    )!
+    const cells = within(whoop)
+      .getAllByRole("cell")
+      .map((c) => c.textContent)
+    expect(cells).toContain("Average74 /min")
+    expect(cells).toContain("Vendor summarySummaries: average, highest")
+    // A raw stream's value is no statistic.
+    const garmin = body.find(
+      (r) =>
+        r.textContent?.includes("Heart rate") &&
+        r.textContent.includes("Garmin")
+    )!
+    expect(garmin.textContent).not.toContain("Average")
+    expect(garmin.textContent).not.toContain("Summaries")
+  })
+
   it("shows a newest value to the metric's places, the stored digits on hover and in technical mode", async () => {
     const precise: AggregateResult = {
       ...LATEST,

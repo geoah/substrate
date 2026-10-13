@@ -22,7 +22,13 @@ import {
   ShapeWord,
 } from "@/components/observations/marks"
 import type { Observations } from "@/hooks/use-observations"
-import { DEFAULT_PRECISION, rowSearch, windowed } from "@/lib/observations"
+import {
+  DEFAULT_PRECISION,
+  keptStatisticsWords,
+  rowSearch,
+  statisticLabel,
+  windowed,
+} from "@/lib/observations"
 import { coverageWords, spanWords } from "@/lib/observations-time"
 import type { StreamRow } from "@/lib/stream-table"
 
@@ -165,8 +171,26 @@ export function streamColumns(
         <GridColumnHeader column={column} label="Reading" />
       ),
       accessorFn: (r) => r.shape,
-      cell: ({ row }) => <ShapeWord shape={row.original.shape} />,
-      meta: { label: "Reading", width: 124 },
+      cell: ({ row }) => {
+        // A stream whose vendor summaries keep several statistics (WHOOP's
+        // average and highest heart rate per cycle) names them under its
+        // form, which is all one value cannot say.
+        const kept = keptStatisticsWords(row.original.statistics)
+        return kept ? (
+          <span className="flex flex-col leading-tight">
+            <ShapeWord shape={row.original.shape} />
+            <span
+              className="truncate text-[12px] text-faint"
+              title={`Its vendor summaries keep: ${kept}`}
+            >
+              Summaries: {kept}
+            </span>
+          </span>
+        ) : (
+          <ShapeWord shape={row.original.shape} />
+        )
+      },
+      meta: { label: "Reading", width: 140 },
     },
     {
       id: "latest",
@@ -174,10 +198,9 @@ export function streamColumns(
         <GridColumnHeader column={column} label="Latest" />
       ),
       accessorFn: (r) => r.value,
-      cell: ({ row }) =>
-        row.original.code ? (
-          <CodeMark code={row.original.code} />
-        ) : (
+      cell: ({ row }) => {
+        if (row.original.code) return <CodeMark code={row.original.code} />
+        const reading = (
           <Reading
             value={row.original.value}
             unit={row.original.unit}
@@ -190,7 +213,18 @@ export function streamColumns(
                   DEFAULT_PRECISION)
             }
           />
-        ),
+        )
+        // A summary's value is one statistic of a period, and says which.
+        const label = statisticLabel(row.original.statistic)
+        return label ? (
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className="text-faint">{label}</span>
+            {reading}
+          </span>
+        ) : (
+          reading
+        )
+      },
       meta: { label: "Latest", width: 124 },
     },
     {

@@ -471,6 +471,32 @@ export function statisticWords(statistic: string): string {
   return REDUCER_WORDS[statistic] ?? codeWords(statistic)
 }
 
+/** The statistics a stream's vendor summaries keep, in words for its
+ * Reading cell ("average, highest"), the default first; undefined where it
+ * keeps none or only the vendor's own value, which needs no name. */
+export function keptStatisticsWords(
+  statistics: readonly string[] | undefined
+): string | undefined {
+  const kept = statisticChoices(statistics ?? [])
+  if (!kept.length || (kept.length === 1 && kept[0] === "vendor")) {
+    return undefined
+  }
+  return kept.map((s) => lowerFirstWord(statisticWords(s))).join(", ")
+}
+
+/** A value's statistic as a label before it ("Average 74 /min"); none for
+ * the vendor's own value, which is the value itself. */
+export function statisticLabel(
+  statistic: string | undefined
+): string | undefined {
+  if (!statistic || statistic === "vendor") return undefined
+  return statisticWords(statistic)
+}
+
+function lowerFirstWord(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1)
+}
+
 /** A reducer's name: the word, or the key of a structured one. */
 export function reducerName(reducer: AggregateReducer): string {
   if (typeof reducer === "string") return reducer
@@ -528,6 +554,8 @@ export interface Stream extends StreamForm {
   /** The statistics its vendor summaries keep (`avg`, `max`, `vendor`),
    * where it keeps any. */
   statistics?: string[]
+  /** The statistic the newest value is, where it is a vendor summary's. */
+  statistic?: string
 }
 
 /** The key one stream is told apart by, in the URL and the table. */
@@ -683,7 +711,7 @@ export function streamsOf(
       ...(row.end && row.end !== row.start ? { end: row.end } : {}),
       count: row.count,
       coverage: row.coverage,
-      ...(statistic ? { statistics: [statistic] } : {}),
+      ...(statistic ? { statistics: [statistic], statistic } : {}),
     }
     const held = byKey.get(key)
     if (!held) {

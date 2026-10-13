@@ -704,10 +704,13 @@ again under the same filters. Each row shows the metric by its record's name, th
 source as a record mention, what it is about (**You** where it names
 nothing, which means the owner), its channel, how its newest value reads
 (**Reading**: its form in words, **Level**, **Amount**, **Running total** or
-**Vendor summary**, or **Category** for a coded stream), that value in its unit to the metric's places (the stored
+**Vendor summary**, or **Category** for a coded stream, and under it the
+statistics its vendor summaries keep, such as "Summaries: average,
+highest"), that value in its unit to the metric's places (the stored
 digits on hover, and as stored with Technical details on; a category is
 the one a coded `last` answers in `code`), when, and how many points the
-stream holds. An amount's or a vendor summary's newest point covers a
+stream holds. A summary's value follows the statistic it is: "Average 74
+/min". An amount's or a vendor summary's newest point covers a
 window, and **When** says which (`Oct 7, 09:45 to 10:00`), so a quarter
 hour's steps never reads as the day's.
 

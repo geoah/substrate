@@ -306,6 +306,7 @@ describe("the latest read's streams", () => {
     expect(streams.find((s) => s.source === WHOOP)).toMatchObject({
       statistics: ["avg", "max"],
       // One instant: the default statistic's value.
+      statistic: "avg",
       value: "64",
       count: 60,
     })
