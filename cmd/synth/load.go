@@ -550,6 +550,22 @@ func repoRoot(dir string) (string, error) {
 	}
 }
 
+// ctlPath is the substratectl binary the runner runs. It is absolute because
+// the runner starts it from its own working directory.
+func ctlPath(root, ctl string) (string, error) {
+	if ctl == "" {
+		ctl = filepath.Join(root, "bin", "substratectl")
+	}
+	abs, err := filepath.Abs(ctl)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return "", fmt.Errorf("no substratectl at %s (mise run build:cli, or -ctl)", abs)
+	}
+	return abs, nil
+}
+
 // runSync drives the provider's real sync over the generated recordings
 // with the provider e2e runner (internal/providere2e/runner/e2e.py): it
 // installs the bundle rewired at a mock serving `recordings/`, connects the
@@ -564,11 +580,9 @@ func runSync(ctx context.Context, c *client, provider, base, repo, ctl, python s
 	if err != nil {
 		return err
 	}
-	if ctl == "" {
-		ctl = filepath.Join(root, "bin", "substratectl")
-	}
-	if _, err := os.Stat(ctl); err != nil {
-		return fmt.Errorf("no substratectl at %s (mise run build:cli, or -ctl)", ctl)
+	ctl, err = ctlPath(root, ctl)
+	if err != nil {
+		return err
 	}
 	suite := filepath.Join(root, "internal", "providere2e")
 	tmp, err := os.MkdirTemp("", "synth-"+provider+"-")

@@ -554,3 +554,26 @@ func TestRunnerServesFitRecordingsAsGenerated(t *testing.T) {
 		}
 	}
 }
+
+func TestCtlPathIsAbsolute(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "substratectl"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	for _, ctl := range []string{"", "bin/substratectl", "./bin/substratectl"} {
+		got, err := ctlPath(".", ctl)
+		if err != nil {
+			t.Fatalf("ctlPath(%q): %v", ctl, err)
+		}
+		if !filepath.IsAbs(got) {
+			t.Errorf("ctlPath(%q) = %q, want an absolute path", ctl, got)
+		}
+	}
+	if _, err := ctlPath(".", "bin/missing"); err == nil {
+		t.Error("ctlPath accepted a path with no binary")
+	}
+}
