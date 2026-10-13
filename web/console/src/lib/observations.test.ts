@@ -49,7 +49,6 @@ import {
   streamsOf,
   tracePoints,
   traceStats,
-  unitChoices,
   writeChoice,
   type LaneSpec,
 } from "@/lib/observations"
@@ -180,19 +179,6 @@ describe("forms and reducers", () => {
     )
     expect(reducerLabel({ percentile: 0.05 })).toBe("Percentile 5")
     expect(reducerLabel("twa")).toBe("Time-weighted average")
-  })
-
-  it("narrows the output unit to the stored unit's measure", () => {
-    expect(unitChoices("kg")).toContain("[lb_av]")
-    expect(unitChoices("kg")).not.toContain("J")
-    expect(unitChoices("/min")).toEqual(
-      expect.arrayContaining(["/min", "/s", "/h"])
-    )
-    // An annotation the table does not list converts to nothing.
-    expect(unitChoices("{steps}")).toEqual(["{steps}"])
-    expect(unitChoices(undefined)).toEqual([])
-    // A declared measure decides where the unit alone is ambiguous.
-    expect(unitChoices("Cel", "temperature")).toContain("[degF]")
   })
 })
 

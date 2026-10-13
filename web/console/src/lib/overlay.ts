@@ -25,7 +25,6 @@ import {
   refPathOf,
   sameRef,
   shapeOf,
-  unitChoices,
   type AggregateFrom,
   type AggregateGroupKey,
   type AggregateRead,
@@ -40,6 +39,7 @@ import {
   type TimeRange,
 } from "@/lib/observations"
 import { listWords } from "@/lib/tools"
+import { unitChoices } from "@/lib/unit-choices"
 import { unitSymbol } from "@/lib/units"
 
 /** How a series is drawn: a line, bars, or bars stacked per category. */

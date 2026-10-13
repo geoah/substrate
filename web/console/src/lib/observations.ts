@@ -24,7 +24,7 @@ import { declaredProperties } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
 import { OBSERVED_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
-import { formatQuantity, lookupMeasure, measureOf } from "@/lib/units"
+import { formatQuantity } from "@/lib/units"
 
 /** Where an aggregate reads from: raw points, vendor `summary` points, or
  * raw where a bucket is covered and the summary otherwise. */
@@ -334,20 +334,6 @@ export function reducerLabel(reducer: AggregateReducer): string {
     return `${word} ${Math.round(arg * 100)}`
   }
   return word
-}
-
-/** The units a reading may be shown in: every unit of the metric's measure
- * (the declared `measures`, else the stored unit's), or the stored unit alone
- * where the table does not place it (`{steps}`). Empty where nothing is
- * stored. */
-export function unitChoices(
-  stored: string | undefined,
-  measures?: string
-): string[] {
-  if (!stored) return []
-  const measure = lookupMeasure(measures) ?? lookupMeasure(measureOf(stored))
-  if (!measure || !measure.units.includes(stored)) return [stored]
-  return [...measure.units]
 }
 
 // ── the latest read: streams ───────────────────────────────────────────────
