@@ -6,22 +6,31 @@
  * narrowed to the record's stream. */
 
 import { useMemo, useState, type KeyboardEvent } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { ChartLineIcon } from "lucide-react"
 
 import { DataTablePagination } from "@/components/data-table/data-table-pagination"
 import { EmptyValue } from "@/components/identity/empty-value"
+import { QuantityValue } from "@/components/identity/quantity-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { SectionHead } from "@/components/identity/section-head"
 import { CodeMark, Reading, ShapeWord } from "@/components/observations/marks"
 import { Button } from "@/components/ui/button"
+import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useWidth } from "@/hooks/use-width"
-import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { referenceTitlesQueryOptions } from "@/lib/api/records"
+import {
+  readReference,
+  type KindInfo,
+  type SubstrateRecord,
+} from "@/lib/api/types"
 import { barPath, linePath, linearScale, niceDomain } from "@/lib/chart"
 import { tableDateTime } from "@/lib/format"
 import {
   isForm,
   judgementWords,
+  metricInfoOf,
   observedVariant,
   readingText,
   recordTimelineSearch,
@@ -30,6 +39,7 @@ import {
 } from "@/lib/observations"
 import { coverageWords, durationMs, secondWords } from "@/lib/observations-time"
 import { numberOf } from "@/lib/observations-answer"
+import { splitRecordPath } from "@/lib/record-path"
 import {
   breakAtGaps,
   plainNumber,
@@ -55,6 +65,31 @@ function shapeOfRecord(p: Record<string, unknown>): ReadingShape | undefined {
 
 function stamp(t: number): string {
   return tableDateTime(new Date(t).toISOString())
+}
+
+/** The places the record's metric declares (`displayPrecision`), so a value
+ * here reads as it does in the streams table; undefined with Technical
+ * details on, where the digits read as stored, and until the metric's
+ * record answers or where it declares none. */
+function useMetricPlaces(
+  properties: Record<string, unknown>
+): number | undefined {
+  const [technical] = useTechnicalDetails()
+  const path = readReference(properties.metric)?.path
+  const target = path ? splitRecordPath(path) : undefined
+  const read = useQuery(
+    referenceTitlesQueryOptions(
+      target
+        ? { kinds: [target.kind], ids: [target.id] }
+        : { kinds: [], ids: [] }
+    )
+  )
+  const metric = read.data?.records.find(
+    (r) => r.kind === target?.kind && r.id === target?.id
+  )
+  return technical || !metric
+    ? undefined
+    : metricInfoOf(metric).displayPrecision
 }
 
 export function ObservedSection({
@@ -109,7 +144,8 @@ function ValueSection({
   open: React.ReactNode
 }) {
   const p = record.properties ?? {}
-  const value = p.value as { value?: unknown; unit?: unknown } | undefined
+  const value = p.value as
+    { value?: unknown; unit?: unknown; comparator?: unknown } | undefined
   const shape = shapeOfRecord(p)
   const at = str(p.at)
   // A window that ends where it starts is one instant, said once.
@@ -118,6 +154,7 @@ function ValueSection({
       ? undefined
       : str(p.endsAt)
   const judged = judgementWords(p.interpretation, p.referenceRanges)
+  const places = useMetricPlaces(p)
   return (
     <>
       <SectionHead
@@ -133,11 +170,20 @@ function ValueSection({
           {str(p.code) ? (
             <CodeMark code={str(p.code)} />
           ) : value && typeof value.value === "string" ? (
-            <Reading
-              value={value.value}
-              unit={str(value.unit)}
-              className="text-[15px] font-medium"
-            />
+            value.comparator ? (
+              // A bound (`<0.005 ng/mL`) keeps its comparator and every digit.
+              <QuantityValue
+                value={value}
+                className="text-[15px] font-medium"
+              />
+            ) : (
+              <Reading
+                value={value.value}
+                unit={str(value.unit)}
+                precision={places}
+                className="text-[15px] font-medium"
+              />
+            )
           ) : (
             <EmptyValue />
           )}
@@ -217,6 +263,7 @@ function TraceSection({
   )
   const stats = traceStats(p.stats)
   const unit = str(p.unit)
+  const places = useMetricPlaces(p)
   const shape = shapeOfRecord(p)
   const coded = shape === "coded"
   const [page, setPage] = useState(1)
@@ -247,7 +294,7 @@ function TraceSection({
           bars={shape === "amount"}
         />
       )}
-      {stats && <StatsFacts stats={stats} unit={unit} />}
+      {stats && <StatsFacts stats={stats} unit={unit} places={places} />}
       {points.length > 0 ? (
         <div className="mt-4">
           <table
@@ -278,7 +325,11 @@ function TraceSection({
                     {coded ? (
                       <CodeMark code={pt.code ?? undefined} />
                     ) : (
-                      <Reading value={pt.value} unit={unit} />
+                      <Reading
+                        value={pt.value}
+                        unit={unit}
+                        precision={places}
+                      />
                     )}
                   </td>
                 </tr>
@@ -306,7 +357,15 @@ function TraceSection({
   )
 }
 
-function StatsFacts({ stats, unit }: { stats: TraceStats; unit?: string }) {
+function StatsFacts({
+  stats,
+  unit,
+  places,
+}: {
+  stats: TraceStats
+  unit?: string
+  places?: number
+}) {
   const spread = stddevOf(stats)
   return (
     <dl
@@ -322,27 +381,31 @@ function StatsFacts({ stats, unit }: { stats: TraceStats; unit?: string }) {
       )}
       {stats.min !== undefined && (
         <Fact label="Lowest">
-          <Reading value={stats.min} unit={unit} />
+          <Reading value={stats.min} unit={unit} precision={places} />
         </Fact>
       )}
       {stats.max !== undefined && (
         <Fact label="Highest">
-          <Reading value={stats.max} unit={unit} />
+          <Reading value={stats.max} unit={unit} precision={places} />
         </Fact>
       )}
       {stats.mean !== undefined && (
         <Fact label="Average">
-          <Reading value={plainNumber(stats.mean)} unit={unit} />
+          <Reading
+            value={plainNumber(stats.mean)}
+            unit={unit}
+            precision={places}
+          />
         </Fact>
       )}
       {spread !== undefined && (
         <Fact label="Standard deviation">
-          <Reading value={plainNumber(spread)} unit={unit} />
+          <Reading value={plainNumber(spread)} unit={unit} precision={places} />
         </Fact>
       )}
       {stats.first && (
         <Fact label="First">
-          <Reading value={stats.first.value} unit={unit} />
+          <Reading value={stats.first.value} unit={unit} precision={places} />
           <span
             className="block text-[12.5px] text-faint"
             title={stats.first.at}
@@ -353,7 +416,7 @@ function StatsFacts({ stats, unit }: { stats: TraceStats; unit?: string }) {
       )}
       {stats.last && (
         <Fact label="Last">
-          <Reading value={stats.last.value} unit={unit} />
+          <Reading value={stats.last.value} unit={unit} precision={places} />
           <span
             className="block text-[12.5px] text-faint"
             title={stats.last.at}

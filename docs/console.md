@@ -348,7 +348,10 @@ table, chart and record section says one, month first: Today, Tomorrow,
 a weekday within the coming week, else `Oct 5` (`Oct 5, 2025` outside
 this year), with its clock where it has one. A quantity reads to two
 decimal places (`97.18 %`, a kind's property declaring none of its own),
-the stored digits on hover; with Technical details on, as stored. Clicking a value
+or to its first two significant digits where it is under one (`0.004
+mIU/L`), the stored digits on hover; with Technical details on, as stored.
+A value with a comparator is a bound and reads every digit (`<0.005
+ng/mL`). Clicking a value
 edits it in place, with the control its datatype earns: a text box, a number,
 a date and time, a textarea for prose, a list to pick from for an enum, the
 moves a state may make, a record picker for a reference, and, for the shapes
@@ -386,16 +389,17 @@ Under the properties, in order:
   **Pause**, and a link to the account on its provider's page.
 - **Measurement** or **Readings**, on a record of any kind binding the core
   `observed` trait, sits above the properties instead. A single value (the
-  trait's `single` variant) reads its value with its unit, beside a lab
-  result's flag and first reference range in words (`108 mg/dL` beside
-  "normal (under 120 mg/dL)"), the metric,
+  trait's `single` variant) reads its value with its unit, to the places
+  its metric declares (`displayPrecision`) as the streams table does,
+  beside a lab result's flag and first reference range in words (`108
+  mg/dL` beside "normal (under 120 mg/dL)"), the metric,
   source and thing it is about as record mentions, the form, the statistic
   and period of a vendor summary, when (one time where `endsAt` equals
   `at`), the revision and the record that delivered it. A trace (the `packed` variant, told apart by declaring
   `values`) draws its values over `[at, endsAt)` as a line broken wherever
   two values sit further apart than its `hold`, its managed `stats` as
   labelled values, and every value with its time in a table fifty to a
-  page. Both open the timeline on the record's stream. The property sheet
+  page, each to its metric's places. Both open the timeline on the record's stream. The property sheet
   under it folds the properties the section shows into one line ("12 shown
   under Measurement"), which opens them for editing, and keeps the rest (a
   lab result's coding, specimen and report). A list of objects numbers its

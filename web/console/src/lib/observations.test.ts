@@ -375,4 +375,15 @@ describe("a lab result's flag and range in words", () => {
     )
     expect(judgementWords(undefined, undefined)).toBeUndefined()
   })
+
+  it("reads a range's small bounds to their significant digits", () => {
+    const ng = (value: string) => ({ value, unit: "ng/mL" })
+    expect(judgementWords(undefined, [{ high: ng("0.014") }])).toBe(
+      "range under 0.014 ng/mL"
+    )
+    // Both bounds are cut the same way.
+    expect(
+      judgementWords(undefined, [{ low: mg("3.14159"), high: mg("5.6789") }])
+    ).toBe("range 3.14 to 5.68 mg/dL")
+  })
 })

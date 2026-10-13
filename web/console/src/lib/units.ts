@@ -570,21 +570,39 @@ export function roundDigits(value: string, precision: number): string {
  * metric's `displayPrecision` does). */
 export const DISPLAY_PLACES = 2
 
+/** Decimal digits as a reader sees them outside Technical details: cut to
+ * `places`, grouped in threes. A value under one keeps its first two
+ * significant digits however many places that takes, so `0.004` and
+ * `0.014` never read as `0.00` and `0.01`. */
+export function displayDigits(
+  digits: string,
+  places: number = DISPLAY_PLACES
+): string {
+  const lead = /^-?0\.(0*)[1-9]/.exec(digits)
+  const shown = lead ? Math.max(places, lead[1].length + 2) : places
+  return groupDigits(roundDigits(digits, shown))
+}
+
 /** A stored value as a reader sees it outside Technical details: the
- * digits to `places` (`DISPLAY_PLACES` by default), grouped in threes,
- * with the unit's print symbol, `97.18 %`, `18,194.61 m`, and a time of a
- * minute or more in words (`timeWords`); the stored digits stay on hover.
- * Not a quantity: "". */
+ * digits as `displayDigits` gives them, with the unit's print symbol,
+ * `97.18 %`, `18,194.61 m`, and a time of a minute or more in words
+ * (`timeWords`); the stored digits stay on hover. A value with a
+ * comparator is a bound, `<0.005 ng/mL`, and keeps its every digit. Not a
+ * quantity: "". */
 export function displayQuantity(
   value: unknown,
   places: number = DISPLAY_PLACES
 ): string {
   if (!isQuantity(value)) return ""
-  const comparator = value.comparator ?? ""
+  if (value.comparator) {
+    return withSymbol(
+      `${value.comparator}${groupDigits(value.value)}`,
+      value.unit
+    )
+  }
   const time = timeWords(value.value, value.unit)
-  if (time) return `${comparator}${time}`
-  const digits = groupDigits(roundDigits(value.value, places))
-  return withSymbol(`${comparator}${digits}`, value.unit)
+  if (time) return time
+  return withSymbol(displayDigits(value.value, places), value.unit)
 }
 
 /** A stored value as the exact text an editor holds, the unit as its code so

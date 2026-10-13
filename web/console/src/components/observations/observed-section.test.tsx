@@ -28,6 +28,7 @@ import {
   observationsServer,
   traceKind,
   LATEST,
+  METRIC,
 } from "@/lib/observations.test-fixtures"
 
 vi.mock("@tanstack/react-router", () => ({
@@ -47,9 +48,30 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function mount(record: SubstrateRecord, kind: KindInfo) {
+/** Mounts the section; `metrics` answers a read of those records by id
+ * before the stand-in server's own. */
+function mount(
+  record: SubstrateRecord,
+  kind: KindInfo,
+  metrics: SubstrateRecord[] = []
+) {
   const server = observationsServer(() => LATEST)
-  vi.stubGlobal("fetch", vi.fn(server.fetch))
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const filter = JSON.parse(
+        new URL(String(input), "http://test").searchParams.get("filter") ?? "{}"
+      ) as { kinds?: string[]; ids?: string[] }
+      const own = metrics.filter(
+        (m) => filter.kinds?.includes(m.kind) && filter.ids?.includes(m.id)
+      )
+      return own.length
+        ? new Response(
+            JSON.stringify({ records: own, head: 0, generation: "g" })
+          )
+        : server.fetch(input)
+    })
+  )
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -234,6 +256,50 @@ describe("a single value", () => {
     expect(fact("When")).toContain("Oct 5")
     expect(within(facts).queryByText("From")).toBe(null)
     expect(within(facts).queryByText("Until")).toBe(null)
+  })
+
+  it("reads a value to its metric's declared places, and a bound whole", async () => {
+    const hrv: SubstrateRecord = {
+      ...WEIGHING,
+      kind: METRIC,
+      id: "health/hrv_rmssd",
+      properties: {
+        name: "Heart rate variability",
+        form: "gauge",
+        unit: "ms",
+        displayPrecision: 0,
+      },
+    }
+    const reading = (value: Record<string, string>): SubstrateRecord => ({
+      ...WEIGHING,
+      properties: {
+        ...WEIGHING.properties,
+        metric: { ref: `${METRIC}/health/hrv_rmssd` },
+        value,
+      },
+    })
+    const valueOf = (view: ReturnType<typeof mount>) =>
+      within(
+        view.container.querySelector(
+          "[data-slot=observed-value]"
+        ) as HTMLElement
+      ).getByText("Value").nextElementSibling as HTMLElement
+    // As the streams table reads it: 58 ms, the stored digits on hover.
+    let view = mount(reading({ value: "58.42", unit: "ms" }), observationKind, [
+      hrv,
+    ])
+    await waitFor(() => expect(valueOf(view).textContent).toBe("58 ms"))
+    expect(valueOf(view).querySelector("[title]")?.getAttribute("title")).toBe(
+      "58.42"
+    )
+    cleanup()
+    // A lab's bound keeps its comparator and every digit.
+    view = mount(
+      reading({ value: "0.005", unit: "ng/mL", comparator: "<" }),
+      observationKind,
+      [hrv]
+    )
+    expect(valueOf(view).textContent).toBe("<0.005 ng/mL")
   })
 
   it("shows nothing for a kind that does not bind the trait", () => {

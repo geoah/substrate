@@ -104,6 +104,26 @@ describe("the unit table", () => {
     expect(displayQuantity({ value: "12008", unit: "kJ" }, 0)).toBe("12,008 kJ")
   })
 
+  it("keeps a small value's significant digits, and a bound's every digit", () => {
+    // Under one, the first two significant digits survive the cut.
+    expect(displayQuantity({ value: "0.004", unit: "m[IU]/L" })).toBe(
+      "0.004 mIU/L"
+    )
+    expect(displayQuantity({ value: "0.01449", unit: "ng/mL" })).toBe(
+      "0.014 ng/mL"
+    )
+    expect(displayQuantity({ value: "0.4567", unit: "1" })).toBe("0.46")
+    expect(displayQuantity({ value: "-0.0042", unit: "Cel" })).toBe(
+      "-0.0042 °C"
+    )
+    // A comparator makes the value a bound: rounding would move it.
+    expect(displayQuantity(q("0.005", "ng/mL", "<"))).toBe("<0.005 ng/mL")
+    expect(displayQuantity(q("1234.5678", "mg/dL", ">="))).toBe(
+      ">=1,234.5678 mg/dL"
+    )
+    expect(displayQuantity(q("90", "s", "<"))).toBe("<90 s")
+  })
+
   it("says a time of a minute or more in hours and minutes", () => {
     expect(displayQuantity({ value: "282.6", unit: "min" })).toBe("4h 42m 36s")
     expect(displayQuantity({ value: "21.08", unit: "min" })).toBe("21m 5s")

@@ -25,6 +25,7 @@ import { splitRecordPath } from "@/lib/record-path"
 import { FORM_WORDS, OBSERVED_TRAIT_IDENTITY } from "@/lib/observed-form"
 import { kindHasTrait } from "@/lib/traits"
 import {
+  displayDigits,
   displayQuantity,
   formatQuantity,
   groupDigits,
@@ -294,8 +295,8 @@ function rangeWords(range: Record<string, unknown>): string | undefined {
   const low = isQuantity(range.low) ? range.low : undefined
   const high = isQuantity(range.high) ? range.high : undefined
   if (low && high) {
-    return low.unit === high.unit
-      ? `${groupDigits(low.value)} to ${displayQuantity(high)}`
+    return low.unit === high.unit && !low.comparator
+      ? `${displayDigits(low.value)} to ${displayQuantity(high)}`
       : `${displayQuantity(low)} to ${displayQuantity(high)}`
   }
   if (high) return `under ${displayQuantity(high)}`
