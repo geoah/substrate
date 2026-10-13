@@ -681,7 +681,13 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		return nil, err
 	}
 	if pol != nil && len(weighed) > 0 {
-		around, err := policyContext(ctx, tx, base, pol, func(b *builder) string { return `NOT (` + inRange(b) + `)` }, weighed, limit, path)
+		// maxRecords bounds every record the read weighs, the ones around
+		// the range the policy reads beside those it matches included.
+		over := func() error {
+			return refuse("aggregate.bucket.records.maxRecords", "the filter matches %d records in the range, and the source policy weighs more around it than the %d left of maxRecords; narrow the filter or raise maxRecords (the cap is %d)",
+				matched, s.maxRecords-matched, substrate.AggregateMaxRecordsCap)
+		}
+		around, err := policyContext(ctx, tx, base, pol, func(b *builder) string { return `NOT (` + inRange(b) + `)` }, weighed, s.maxRecords-matched, over)
 		if err != nil {
 			return nil, err
 		}

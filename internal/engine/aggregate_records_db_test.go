@@ -230,6 +230,23 @@ func TestAggregateRecordSourcesWeighAChainAcrossTheRangeEdge(t *testing.T) {
 			t.Errorf("%s: workouts counted %s, want %s", x.name, got, x.counts)
 		}
 	}
+
+	// maxRecords bounds the records the policy weighs around the range as
+	// well as the ones the range matches: X and the two it reads beside it.
+	bounded := func(maxRecords int) substrate.AggregateQuery {
+		return substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/sleep_stage")},
+			Range:  rng(d, d.AddDate(0, 0, 1)),
+			Bucket: &substrate.AggregateBucket{Records: &substrate.AggregateRecords{
+				Filter: substrate.Filter{Kinds: []string{f.sleepKind()}}, Sources: whoopFirst, MaxRecords: maxRecords,
+			}},
+			Reducers: reducers("count"),
+		}}
+	}
+	f.refusedAgg(bounded(2), "aggregate.bucket.records.maxRecords")
+	if _, err := f.ds.Aggregate(context.Background(), bounded(3)); err != nil {
+		t.Errorf("maxRecords 3: %v", err)
+	}
 }
 
 // A record with no endsAt is an instant, which drops no record with a span:

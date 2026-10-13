@@ -278,8 +278,9 @@ func keepBySource(ctx context.Context, recs []policyRecord) ([]bool, error) {
 // the order's length, and each record weighed has beside it every record
 // that may drop it: a record is kept or dropped as a range holding them all
 // would keep or drop it. The records it reads drop records and are never
-// counted themselves; past limit the read is refused naming path.
-func policyContext(ctx context.Context, tx *sql.Tx, base *builder, pol *recordPolicy, outside func(b *builder) string, matched []policyRecord, limit int, path string) ([]policyRecord, error) {
+// counted themselves; past limit, over is the read's refusal, naming the
+// budget the limit is left of.
+func policyContext(ctx context.Context, tx *sql.Tx, base *builder, pol *recordPolicy, outside func(b *builder) string, matched []policyRecord, limit int, over func() error) ([]policyRecord, error) {
 	var out []policyRecord
 	seen := map[string]bool{}
 	for round := matched; ; {
@@ -305,7 +306,7 @@ func policyContext(ctx context.Context, tx *sql.Tx, base *builder, pol *recordPo
 			return nil, err
 		}
 		if len(out)+len(next) > limit {
-			return nil, refuse(path, "the policy weighs more than %d records around the range beside the ones it matches; narrow the filter", limit)
+			return nil, over()
 		}
 		out, round = append(out, next...), next
 	}

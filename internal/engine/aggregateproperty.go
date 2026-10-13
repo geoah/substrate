@@ -376,7 +376,11 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	}
 	if pol != nil && len(held) > 0 {
 		outside := func(b *builder) string { return `NOT coalesce(` + inRange(b) + `, false)` }
-		around, err := policyContext(ctx, tx, base, pol, outside, weighed, int(p.maxSamples-n), "aggregate.budget.maxSamples")
+		over := func() error {
+			return refuse("aggregate.budget.maxSamples", "the read takes %d records, and the source policy weighs more around the range than the %d left of maxSamples; narrow the filter or the range, or raise maxSamples (the cap is %d)",
+				n, p.maxSamples-n, substrate.AggregateMaxSamplesCap)
+		}
+		around, err := policyContext(ctx, tx, base, pol, outside, weighed, int(p.maxSamples-n), over)
 		if err != nil {
 			return nil, err
 		}
