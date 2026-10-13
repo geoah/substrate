@@ -145,6 +145,64 @@ data:
     - providers.substrate.reamde.dev/garmin/notice
     - providers.substrate.reamde.dev/garmin/garminpush
     - providers.substrate.reamde.dev/garmin/garminsync
+  # The functions' shared library: one module on the import path of every
+  # function the bundle installs. A body cannot import another body.
+  modules:
+    garmin_common.py: |
+      """The Garmin closure's shared plumbing, imported by `garminpush` and
+      `garminsync`: the origin the token may reach and the readers both apply to
+      what Garmin sends. A function body cannot import another body, so this lives
+      in the bundle's `modules:`.
+      """
+      import datetime as _dt
+      from urllib.parse import urlsplit as _urlsplit
+
+      PKG = "providers.substrate.reamde.dev/garmin"
+      ACCOUNT_KIND = PKG + "/account"
+
+      DEFAULT_API_BASE = "https://apis.garmin.com/wellness-api"
+      API_HOST = "apis.garmin.com"
+      LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+      def parse(value):
+          """An RFC 3339 instant, or None."""
+          if not value:
+              return None
+          try:
+              return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+          except ValueError:
+              return None
+
+
+      def check_origin(url):
+          """The token reaches only Garmin's API host over HTTPS, or loopback (the
+          test seam). `apiBase` is owner-editable, so it is checked, never trusted."""
+          u = _urlsplit(url)
+          host = (u.hostname or "").lower()
+          if host in LOOPBACK_HOSTS:
+              return
+          if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+              return
+          raise RuntimeError("garmin: refusing to send credentials to %s://%s; only "
+                             "https://%s or loopback" % (u.scheme, host or "?", API_HOST))
+
+
+      def api_base(cfg):
+          """The wellness API's base: the client input's `apiBase`, else Garmin's."""
+          client = ((cfg.get("inputs") or {}).get("client") or {})
+          base = ((client.get("properties") or {}).get("apiBase") or "").strip()
+          return (base or DEFAULT_API_BASE).rstrip("/")
+
+
+      def permissions(value):
+          """A list of permission names, or [some deliveries] a map of name to
+          bool; either way the granted names, sorted."""
+          if isinstance(value, dict):
+              return sorted(str(k) for k, v in value.items() if v is True)
+          if isinstance(value, list):
+              return sorted({str(v) for v in value if isinstance(v, str) and v})
+          return []
 ---
 # ---- the config kind: the `client` input's kind -------------------------------
 kind: substrate.reamde.dev/core/kind
@@ -2568,13 +2626,15 @@ data:
 
     import requests
 
-    PKG = "providers.substrate.reamde.dev/garmin"
-    ACCOUNT_TYPE = PKG + "/account"
-    NOTICE_TYPE = PKG + "/notice"
+    # The bundle's shared module (`modules:` on the bundle document): the origin
+    # pin and the readers `garminsync` applies too.
+    from garmin_common import ACCOUNT_KIND, PKG
+    from garmin_common import api_base as _api_base
+    from garmin_common import check_origin as _check_origin
+    from garmin_common import parse as _parse
+    from garmin_common import permissions as _permissions
 
-    DEFAULT_API_BASE = "https://apis.garmin.com/wellness-api"
-    API_HOST = "apis.garmin.com"
-    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    NOTICE_KIND = PKG + "/notice"
 
     # One invocation's wall clock, under the function's PT60S deadline.
     BUDGET_SECONDS = 40.0
@@ -2627,15 +2687,6 @@ data:
 
     def _now():
         return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-    def _parse(value):
-        if not value:
-            return None
-        try:
-            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
 
 
     def _instant(secs):
@@ -2810,23 +2861,6 @@ data:
         return name, props
 
 
-    def _api_base(cfg):
-        client = ((cfg.get("inputs") or {}).get("client") or {})
-        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
-        return (base or DEFAULT_API_BASE).rstrip("/")
-
-
-    def _check_origin(url):
-        u = urlsplit(url)
-        host = (u.hostname or "").lower()
-        if host in LOOPBACK_HOSTS:
-            return
-        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
-            return
-        raise RuntimeError("garmin: refusing to send credentials to %s://%s; only "
-                           "https://%s or loopback" % (u.scheme, host or "?", API_HOST))
-
-
     def _check_callback(base, url):
         """A ping's callbackURL arrives in an unsigned body, so the bearer goes
         only where the API base already points: same scheme, host and port, and
@@ -2911,16 +2945,6 @@ data:
         return str(entry.get("userId") or "(no userId)")
 
 
-    def _permissions(value):
-        """A list of permission names, or [some deliveries] a map of name to
-        bool; either way the granted names, sorted."""
-        if isinstance(value, dict):
-            return sorted(str(k) for k, v in value.items() if v is True)
-        if isinstance(value, list):
-            return sorted({str(v) for v in value if isinstance(v, str) and v})
-        return []
-
-
     def _bump(cur, aid, key):
         counts = cur.setdefault("written", {}).setdefault(aid, {})
         counts[key] = int(counts.get(key) or 0) + 1
@@ -2949,7 +2973,7 @@ data:
         ident = props["summaryId"] or fire.get("id") or hashlib.sha256(
             json.dumps(entry, sort_keys=True).encode("utf-8")).hexdigest()[:24]
         kind = "deregistration" if key == "deregistrations" else "permissions"
-        host.effects.put(NOTICE_TYPE, _rid(host, aid, "%s-%s" % (kind, ident)),
+        host.effects.put(NOTICE_KIND, _rid(host, aid, "%s-%s" % (kind, ident)),
                          properties=props)
         _bump(cur, aid, key)
 
@@ -3028,7 +3052,7 @@ data:
             msg = "Garmin reports the user disconnected this app in Garmin Connect"
             patch.update({"deregisteredAt": gone, "syncState": "erroring",
                           "syncMessage": msg, "syncError": msg, "syncErrorAt": now})
-        host.effects.patch(acct.get("kind") or acct.get("type") or ACCOUNT_TYPE, aid,
+        host.effects.patch(acct.get("kind") or acct.get("type") or ACCOUNT_KIND, aid,
                            properties=patch)
 
 
@@ -3173,16 +3197,16 @@ data:
     """
     import datetime as _dt
     import time
-    from urllib.parse import urlsplit as _urlsplit
 
     import requests
 
-    PKG = "providers.substrate.reamde.dev/garmin"
-    ACCOUNT_TYPE = PKG + "/account"
-
-    DEFAULT_API_BASE = "https://apis.garmin.com/wellness-api"
-    API_HOST = "apis.garmin.com"
-    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    # The bundle's shared module: the origin pin and the readers `garminpush`
+    # applies too.
+    from garmin_common import ACCOUNT_KIND
+    from garmin_common import api_base as _api_base
+    from garmin_common import check_origin as _check_origin
+    from garmin_common import parse as _parse
+    from garmin_common import permissions as _permissions
 
     # One invocation's wall clock, under the function's PT60S deadline.
     BUDGET_SECONDS = 40.0
@@ -3231,29 +3255,9 @@ data:
             "%Y-%m-%dT%H:%M:%SZ")
 
 
-    def _parse(value):
-        if not value:
-            return None
-        try:
-            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-
-
     def _secs(value):
         ts = _parse(value)
         return int(ts.timestamp()) if ts is not None else None
-
-
-    def _check_origin(url):
-        u = _urlsplit(url)
-        host = (u.hostname or "").lower()
-        if host in LOOPBACK_HOSTS:
-            return
-        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
-            return
-        raise RuntimeError("garmin: refusing to send credentials to %s://%s; only "
-                           "https://%s or loopback" % (u.scheme, host or "?", API_HOST))
 
 
     class _Permanent(Exception):
@@ -3320,20 +3324,6 @@ data:
         if isinstance(e, requests.HTTPError) and e.response is not None:
             return "garmin returned HTTP %d" % e.response.status_code
         return str(e) or type(e).__name__
-
-
-    def _api_base(cfg):
-        client = ((cfg.get("inputs") or {}).get("client") or {})
-        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
-        return (base or DEFAULT_API_BASE).rstrip("/")
-
-
-    def _permissions(value):
-        if isinstance(value, dict):
-            return sorted(str(k) for k, v in value.items() if v is True)
-        if isinstance(value, list):
-            return sorted({str(v) for v in value if isinstance(v, str) and v})
-        return []
 
 
     # ------------------------------------------------------------- what is due
@@ -3429,7 +3419,7 @@ data:
                  or None}
         if cur.get("anchor") is not None:
             patch["backfillUntil"] = _iso_secs(cur["anchor"])
-        host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, aid, properties=patch)
+        host.effects.patch(acct.get("kind") or ACCOUNT_KIND, aid, properties=patch)
 
 
     def _stamp(host, acct, aid, props, cur, error=None):
@@ -3477,7 +3467,7 @@ data:
             patch["lastSyncStartedAt"] = cur["startedAt"]
             if a is not None and b is not None:
                 patch["lastSyncDurationMs"] = max(int((b - a).total_seconds() * 1000), 0)
-        host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, aid, properties=patch)
+        host.effects.patch(acct.get("kind") or ACCOUNT_KIND, aid, properties=patch)
 
 
     # ------------------------------------------------------------- the walk
@@ -3524,7 +3514,7 @@ data:
                 patch["deregisteredAt"] = None
             if props.get("userId") and str(props["userId"]) != uid:
                 host.log("garmin: %s now authenticates as a different Garmin user" % aid)
-            host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, aid, properties=patch)
+            host.effects.patch(acct.get("kind") or ACCOUNT_KIND, aid, properties=patch)
             cur["phase"] = "backfill"
             if cur.get("anchor") is None:
                 cur["anchor"] = int(time.time())
@@ -3590,7 +3580,7 @@ data:
         if cur is None:
             record = (input.get("envelope") or {}).get("record") or {}
             named = args.get("accounts") or ([args["account"]] if args.get("account") else [])
-            if (record.get("kind") or "") == ACCOUNT_TYPE:
+            if (record.get("kind") or "") == ACCOUNT_KIND:
                 queue = [record.get("id")]
             elif named:
                 queue = [str(a) for a in named]
@@ -3611,7 +3601,7 @@ data:
             if terr or not acct.get("token"):
                 if terr:
                     host.log("garmin: skip %s: %s" % (queue[0], terr))
-                    host.effects.patch(acct.get("kind") or ACCOUNT_TYPE, queue[0], properties={
+                    host.effects.patch(acct.get("kind") or ACCOUNT_KIND, queue[0], properties={
                         "syncState": "erroring", "syncMessage": str(terr)[:REASON_MAX],
                         "syncError": str(terr)[:REASON_MAX], "syncErrorAt": _now()})
                 queue = queue[1:]
