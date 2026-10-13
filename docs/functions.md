@@ -1160,6 +1160,20 @@ bundle's prefix is also injected into that bundle's functions
 so a secret meant for the door alone takes an id outside every bundle's
 (`webhooks/github`).
 
+The door remembers the signatures it admitted under a declaration that signs
+a timestamp. A request that repeats one while its timestamp is still inside
+`maxSkew` is the same delivery: the door answers `202` with the first
+request's fire id and stores nothing, so a captured request posted again, or
+a provider's resend of a request whose answer it lost, runs once. The record
+lives in the server's memory, so a restart forgets it, and it holds 4096
+signatures per repository, forgetting first the one whose window closes
+soonest. A declaration with no `timestampHeader` has no window, and the door
+admits every repeat of a correctly signed body as a new delivery: its
+callable deduplicates by the provider's event id. The signature covers the
+signed timestamp and the body alone. A header the trigger keeps through
+`headers` reaches the callable unsigned, and `signatureVerified` says nothing
+about it.
+
 A request the door verified is stored with `request.signatureVerified: true`,
 and a resumed pending delivery or a retry by hand runs it without checking
 its timestamp again, however long after `maxSkew` it runs. A request stored

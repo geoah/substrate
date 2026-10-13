@@ -155,3 +155,53 @@ func TestStoredWebhookReceiptKeepsMilliseconds(t *testing.T) {
 		t.Error("an empty stamp read as a receipt")
 	}
 }
+
+// The door's replay record holds an admitted signature until its window
+// closes: a repeat reads the first admission's fire, or nothing while that
+// one is in flight; a released claim is forgotten; a closed window admits
+// again; and at the bound the entry closest to closing goes first.
+func TestWebhookReplaysHoldASignatureForItsWindow(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	var r webhookReplays
+	key := webhookReplayKey("hook", []byte("mac-one"))
+
+	c, _ := r.claim(key, now.Add(time.Minute), now)
+	if c == nil {
+		t.Fatal("the first claim was refused")
+	}
+	if again, fire := r.claim(key, now.Add(time.Minute), now); again != nil || fire != "" {
+		t.Fatalf("a repeat in flight = %v, %q, want held with no fire yet", again, fire)
+	}
+	r.admitted(c, "hook-first")
+	if again, fire := r.claim(key, now.Add(time.Minute), now.Add(time.Minute)); again != nil || fire != "hook-first" {
+		t.Fatalf("a repeat at the window's last instant = %v, %q, want the first fire", again, fire)
+	}
+	if again, _ := r.claim(webhookReplayKey("other-hook", []byte("mac-one")), now.Add(time.Minute), now); again == nil {
+		t.Fatal("the same MAC under another trigger was held")
+	}
+	if again, _ := r.claim(key, now.Add(3*time.Minute), now.Add(2*time.Minute)); again == nil {
+		t.Fatal("a repeat after the window closed was held")
+	}
+
+	released := webhookReplayKey("hook", []byte("mac-two"))
+	c, _ = r.claim(released, now.Add(time.Minute), now)
+	r.release(released, c)
+	if again, _ := r.claim(released, now.Add(time.Minute), now); again == nil {
+		t.Fatal("a released claim was still held")
+	}
+
+	var bounded webhookReplays
+	soonest := webhookReplayKey("hook", []byte("closes-first"))
+	bounded.claim(soonest, now.Add(time.Second), now)
+	for i := range maxWebhookReplays - 1 {
+		bounded.claim(webhookReplayKey("hook", []byte{byte(i), byte(i >> 8), 'x'}), now.Add(time.Hour), now)
+	}
+	bounded.claim(webhookReplayKey("hook", []byte("one-past")), now.Add(time.Hour), now)
+	if len(bounded.seen) != maxWebhookReplays {
+		t.Fatalf("the record holds %d, want the bound %d", len(bounded.seen), maxWebhookReplays)
+	}
+	if _, held := bounded.seen[soonest]; held {
+		t.Fatal("the entry closest to closing survived the bound")
+	}
+}

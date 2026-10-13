@@ -188,6 +188,59 @@ func TestWebhookSignatureIsCheckedBeforeAnythingIsStored(t *testing.T) {
 	}
 }
 
+// A signed request posted again inside its timestamp's window is the same
+// delivery: the door answers the first one's fire id and stores nothing, so
+// a captured request replayed, or a provider's resend of one whose answer it
+// lost, runs once. A request with another body is another signature and
+// another delivery.
+func TestWebhookSignatureRepeatIsOneDelivery(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var invoked atomic.Int32
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestInvokeHook(func(function string) {
+		if strings.HasSuffix(function, "/hookecho") {
+			invoked.Add(1)
+		}
+	}))
+	secretRef := vocabulary.RecordPath("substrate.reamde.dev/core/secret", hookSecretID)
+	connector := fnConnector(
+		[]enginetest.Trigger{hookTrigger("hook-once", signedSource("", secretRef), "hookecho", true)},
+		pyFn("hookecho", map[string]any{}, []any{widgetType}, hookEchoSource),
+	)
+	if err := enginetest.Install(ctx, ds, owner, connector); err != nil {
+		t.Fatalf("register connector: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
+	authority := testdb.Repository(t)
+	now := time.Now()
+
+	captured := signedHook(`{"n":"once"}`, hookSigningSecret, now)
+	first, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-once", "", captured)
+	if err != nil {
+		t.Fatalf("the first delivery: %v", err)
+	}
+	before := traceOf(t, dsn)
+	for i := range 3 {
+		again, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-once", "", signedHook(`{"n":"once"}`, hookSigningSecret, now))
+		if err != nil || again != first {
+			t.Fatalf("repeat %d: fire %q (%v), want the first delivery's %q", i, again, err, first)
+		}
+	}
+	if after := traceOf(t, dsn); after != before {
+		t.Fatalf("a repeat stored something: before %+v, after %+v", before, after)
+	}
+	if n := invoked.Load(); n != 1 {
+		t.Fatalf("the callable ran %d times, want once", n)
+	}
+	other, err := engine.ReceiveWebhookSync(ctx, svc, authority, "hook-once", "", signedHook(`{"n":"other"}`, hookSigningSecret, now))
+	if err != nil || other == first {
+		t.Fatalf("another body under the same timestamp: fire %q (%v), want a delivery of its own", other, err)
+	}
+	if n := invoked.Load(); n != 2 {
+		t.Fatalf("the callable ran %d times, want twice", n)
+	}
+}
+
 // A signature declaration is held at write time: a field the door cannot act
 // on, or `oauthClientSecret` on a callable whose bundle declares no oauth2
 // block, never lands.

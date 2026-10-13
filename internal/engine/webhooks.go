@@ -97,6 +97,10 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 		return "", errWebhookRefused
 	}
 	tr, row, err := ds.admitWebhook(ctx, triggerID, key, req)
+	var repeat webhookRepeat
+	if errors.As(err, &repeat) {
+		return repeat.fire, nil
+	}
 	if err != nil {
 		return "", err
 	}
@@ -120,15 +124,17 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 // spool and the pending entry. Every check that fails answers
 // errWebhookRefused, except the declared signature's, which answers
 // errWebhookSignature: by then the request has named a live trigger and
-// carried its key. Past the checks the request is written into the ledger
-// as a parked failure carrying pendingWebhookError, in its parked form
-// (parkedEnvelope: the body spooled by digest, the headers narrowed to the
-// body's and the ones the trigger declares, the query dropped), with the fire
-// id and the receipt time, on a delivery entry of its own whose seq is the
-// row's id. The door answers once that
-// transaction has committed, which the write path makes durable (decision
-// 0062), so a 202 names a request the substrate holds. The row returned is
-// what the fire runs and what a restart resumes.
+// carried its key. A repeat of a signature the door admitted inside its
+// window answers webhookRepeat, naming the first admission's fire, and
+// stores nothing (webhookReplays). Past the checks the request is written
+// into the ledger as a parked failure carrying pendingWebhookError, in its
+// parked form (parkedEnvelope: the body spooled by digest, the headers
+// narrowed to the body's and the ones the trigger declares, the query
+// dropped), with the fire id and the receipt time, on a delivery entry of
+// its own whose seq is the row's id. The door answers once that transaction
+// has committed, which the write path makes durable (decision 0062), so a
+// 202 names a request the substrate holds. The row returned is what the fire
+// runs and what a restart resumes.
 func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req substrate.WebhookRequest) (*trigger, foldFailure, error) {
 	tr, _, err := ds.triggerByID(ctx, triggerID)
 	if err != nil {
@@ -147,8 +153,25 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	// provider did not sign spools no blob and appends no entry (decision
 	// 0164). The receipt time it is measured against is the entry's too.
 	at := ds.svc.webhookNow().UTC().Truncate(time.Microsecond)
-	if _, err := ds.checkWebhookSignature(ctx, tr, req, at); err != nil {
+	presented, err := ds.checkWebhookSignature(ctx, tr, req, at)
+	if err != nil {
 		return nil, foldFailure{}, err
+	}
+	var replay *webhookReplay
+	if !presented.signedAt.IsZero() {
+		replayKey := webhookReplayKey(tr.ID, presented.mac)
+		var fire string
+		if replay, fire = ds.webhookReplays.claim(replayKey, presented.signedAt.Add(tr.WebhookSignature.MaxSkew), at); replay == nil {
+			if fire == "" {
+				return nil, foldFailure{}, errWebhookReplayInFlight
+			}
+			return nil, foldFailure{}, webhookRepeat{fire: fire}
+		}
+		defer func() {
+			if replay != nil {
+				ds.webhookReplays.release(replayKey, replay)
+			}
+		}()
 	}
 	parts, err := ds.spoolWebhookParts(ctx, req.Parts)
 	if err != nil {
@@ -186,6 +209,10 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	})
 	if err != nil {
 		return nil, foldFailure{}, fmt.Errorf("substrate: webhook %s: record the request: %w", tr.ID, err)
+	}
+	if replay != nil {
+		ds.webhookReplays.admitted(replay, fid)
+		replay = nil
 	}
 	return tr, row, nil
 }

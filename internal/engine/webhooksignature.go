@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -39,6 +40,10 @@ const (
 	// milliseconds: 10^11 seconds is the year 5138 and 10^11 milliseconds is
 	// 1973, so the two units cannot be confused for a real request.
 	webhookTimestampMillisFloor = 100_000_000_000
+	// maxWebhookReplays bounds the signatures one repository's door
+	// remembers. Past it the one closest to leaving its window is forgotten
+	// early, which reopens that one request to a replay.
+	maxWebhookReplays = 4096
 )
 
 // webhookSignatureKeys is the signature block's closed key set.
@@ -403,6 +408,98 @@ func (sig *webhookSignature) expected(key, stamp string, body []byte) []byte {
 	}
 	return mac.Sum(nil)
 }
+
+// webhookReplays is the door's memory of the signatures it admitted under a
+// declaration that signs a timestamp, each kept until that timestamp leaves
+// maxSkew, after which the door refuses the request as stale anyway. A
+// repeat inside the window is the same delivery: a captured request posted
+// again, or a provider resending one whose answer it lost. Memory only, so a
+// restart forgets it; a body-only declaration has no window to bound it by
+// and is never recorded.
+type webhookReplays struct {
+	mu   sync.Mutex
+	seen map[string]*webhookReplay
+}
+
+// webhookReplay is one admitted signature: the fire it became, empty while
+// the admission that claimed it is still storing the request, and the
+// instant its timestamp leaves maxSkew.
+type webhookReplay struct {
+	fire  string
+	until time.Time
+}
+
+// webhookReplayKey names one signature under one trigger.
+func webhookReplayKey(triggerID string, mac []byte) string {
+	return triggerID + "\x00" + string(mac)
+}
+
+// claim records key as admitted until until, received at now, and returns
+// the claim; or, when an admission inside its window already holds key,
+// returns nil with that admission's fire id, empty while it is in flight.
+func (r *webhookReplays) claim(key string, until, now time.Time) (*webhookReplay, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if held, ok := r.seen[key]; ok && !now.After(held.until) {
+		return nil, held.fire
+	}
+	if r.seen == nil {
+		r.seen = map[string]*webhookReplay{}
+	}
+	if len(r.seen) >= maxWebhookReplays {
+		r.evictLocked(now)
+	}
+	c := &webhookReplay{until: until}
+	r.seen[key] = c
+	return c, ""
+}
+
+// evictLocked drops every entry whose window has closed and, when none has,
+// the one closest to closing.
+func (r *webhookReplays) evictLocked(now time.Time) {
+	soonest := ""
+	for k, e := range r.seen {
+		if now.After(e.until) {
+			delete(r.seen, k)
+			continue
+		}
+		if soonest == "" || e.until.Before(r.seen[soonest].until) {
+			soonest = k
+		}
+	}
+	if len(r.seen) >= maxWebhookReplays {
+		delete(r.seen, soonest)
+	}
+}
+
+// admitted names the fire a claim became, once its request is stored.
+func (r *webhookReplays) admitted(c *webhookReplay, fire string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c.fire = fire
+}
+
+// release forgets a claim whose request was not stored, so the sender's
+// next try is admitted.
+func (r *webhookReplays) release(key string, c *webhookReplay) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.seen[key] == c {
+		delete(r.seen, key)
+	}
+}
+
+// errWebhookReplayInFlight answers a repeat of a signature whose first
+// admission is still storing the request: 503, so the sender retries and
+// then reads the first one's fire id.
+var errWebhookReplayInFlight = fmt.Errorf("%w: the same signed webhook request is being recorded, retry", substrate.ErrUnavailable)
+
+// webhookRepeat is admitWebhook's answer to a repeat of an admitted
+// signature: the fire the first admission became, which the door answers
+// again with nothing stored.
+type webhookRepeat struct{ fire string }
+
+func (r webhookRepeat) Error() string { return "webhook repeats the admitted request " + r.fire }
 
 // requestSignatureVerified is the stored request's key saying the door
 // verified the trigger's declared signature before it stored the request.
