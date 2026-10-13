@@ -23,6 +23,8 @@ func TestGuard(t *testing.T) {
 		{"cgnat refused", "100.64.0.1:443", nil, true},
 		{"ipv6 loopback refused", "[::1]:443", nil, true},
 		{"ipv4-mapped loopback refused", "[::ffff:127.0.0.1]:443", nil, true},
+		{"nat64 metadata refused", "[64:ff9b::a9fe:a9fe]:80", nil, true},
+		{"zoned nat64 metadata refused", "[64:ff9b::a9fe:a9fe%eth0]:80", nil, true},
 		{"public allowed", "1.1.1.1:443", nil, false},
 		{"public ipv6 allowed", "[2606:4700:4700::1111]:443", nil, false},
 		{"unparseable refused", "not-an-address", nil, true},
@@ -67,22 +69,27 @@ func TestGuardNamesTheGateAndItsVariable(t *testing.T) {
 }
 
 func TestParseAllow(t *testing.T) {
-	got := parseAllow(" 127.0.0.0/8 , 10.0.0.5 , , garbage , ::1 ")
+	got, dropped := ParseAllow(" 127.0.0.0/8 , 10.0.0.5 , , garbage , ::1 , 10.0.0.300 ")
 	want := map[string]bool{
 		"127.0.0.0/8": true,
 		"10.0.0.5/32": true,
 		"::1/128":     true,
 	}
 	if len(got) != len(want) {
-		t.Fatalf("parseAllow returned %d prefixes (%v), want %d", len(got), got, len(want))
+		t.Fatalf("ParseAllow returned %d prefixes (%v), want %d", len(got), got, len(want))
 	}
 	for _, p := range got {
 		if !want[p.String()] {
-			t.Fatalf("parseAllow returned unexpected prefix %s", p)
+			t.Fatalf("ParseAllow returned unexpected prefix %s", p)
 		}
 	}
-	if parseAllow("") != nil {
-		t.Fatal("parseAllow(\"\") must be nil: no allowlist means block every private range")
+	// What it drops is named, trimmed, in order, and an empty token between
+	// two commas is not a typo.
+	if strings.Join(dropped, "|") != "garbage|10.0.0.300" {
+		t.Fatalf("ParseAllow dropped %q, want [garbage 10.0.0.300]", dropped)
+	}
+	if prefixes, dropped := ParseAllow(""); prefixes != nil || dropped != nil {
+		t.Fatal("ParseAllow(\"\") must be nil: no allowlist means block every private range")
 	}
 }
 

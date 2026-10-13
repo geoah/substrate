@@ -5,6 +5,7 @@ package sandbox
 import (
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"unsafe"
 
@@ -44,10 +45,12 @@ const (
 	seccompRetAllow = 0x7fff0000
 	seccompRetErrno = 0x00050000
 
-	// Offsets into struct seccomp_data.
+	// Offsets into struct seccomp_data. An argument's low half, on the
+	// little-endian targets this filter is written for.
 	sdNR   = 0
 	sdArch = 4
 	sdArg0 = 16
+	sdArg1 = 24
 
 	// The x32 ABI shares AUDIT_ARCH_X86_64 but sets this bit in the syscall
 	// number, so its numbering is a different table entirely. Refusing it
@@ -132,8 +135,9 @@ func seccompUnavailable(errno unix.Errno) string {
 // applySeccomp installs the filter for one policy. TSYNC is requested so every
 // thread of this process carries it; the stub is single-threaded by the time it
 // gets here, but a kernel that cannot honor TSYNC tells us so rather than
-// leaving a thread uncovered.
-func applySeccomp(p Policy) error {
+// leaving a thread uncovered. parent is the substrate, which the filter
+// refuses to signal.
+func applySeccomp(p Policy, parent substrateProc) error {
 	if auditArch == 0 {
 		// No syscall table for this architecture. Reported as a degradation at
 		// boot (seccompAvailable says so), so carrying on here is the
@@ -144,7 +148,7 @@ func applySeccomp(p Policy) error {
 		}
 		return nil
 	}
-	prog, err := buildFilter(p)
+	prog, err := buildFilter(p, parent)
 	if err != nil {
 		return err
 	}
@@ -196,18 +200,22 @@ func installFilter(fprog *sockFprog, flags uintptr) error {
 // errno returns the SECCOMP_RET_ERRNO action carrying one errno.
 func retErrno(e unix.Errno) uint32 { return seccompRetErrno | (uint32(e) & 0x0000ffff) }
 
-// buildFilter assembles the program.
+// buildFilter assembles the program. parent is the substrate, read by the
+// stub before the filter installs: every body process descends from the stub,
+// so the values are right for a body's own children too.
 //
 // Layout, so the relative jumps below are readable: a prologue that pins the
-// architecture, one compare per denied syscall, an optional socket-domain
-// block, then the four terminal returns. Every compare jumps FORWARD to a
-// terminal, so no offset ever exceeds the number of remaining instructions,
-// which stays far below BPF's 255-offset and 4096-instruction ceilings.
-func buildFilter(p Policy) ([]sockFilter, error) {
+// architecture, one compare per denied syscall, one compare per syscall with
+// an argument rule, the socket-domain block, one argument block per rule,
+// then the three terminal returns. Every compare jumps FORWARD, so no offset
+// ever exceeds the number of remaining instructions, which stays far below
+// BPF's 255-offset and 4096-instruction ceilings.
+func buildFilter(p Policy, parent substrateProc) ([]sockFilter, error) {
 	if auditArch == 0 {
 		return nil, fmt.Errorf("seccomp: no audit arch for this platform")
 	}
 	deny := deniedSyscalls()
+	signals := signalRules(parent)
 
 	// The socket domains a body may open AT ALL. An allowlist, not a deny-list:
 	// refusing AF_INET and AF_INET6 while letting everything else through would
@@ -223,9 +231,17 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 	}
 	// jeq socket, ld arg0, one compare per allowed domain, then the refusal.
 	socketBlock := 3 + len(allowedDomains)
-	// Absolute indices of the terminals.
+	// Per rule: load the argument, one compare per refused value, then allow.
+	signalBlocks := 0
+	for _, s := range signals {
+		signalBlocks += 2 + len(s.targets)
+	}
+	// Absolute indices of the blocks and the terminals.
 	const prologue = 5
-	allowAt := prologue + len(deny) + socketBlock
+	dispatchAt := prologue + len(deny)
+	socketAt := dispatchAt + len(signals)
+	blocksAt := socketAt + socketBlock
+	allowAt := blocksAt + signalBlocks
 	epermAt := allowAt + 1
 	enosysAt := allowAt + 2
 	lastAt := enosysAt
@@ -273,7 +289,18 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 	}
 
 	// A still holds the syscall number: none of the compares above touch it.
-	base := prologue + len(deny)
+	// A syscall with an argument rule jumps to its own block, past the socket
+	// block; the block's first instruction reloads A.
+	block := blocksAt
+	for i, s := range signals {
+		if jt, err = jumpTo(dispatchAt+i, block); err != nil {
+			return nil, err
+		}
+		prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: uint32(s.nr)})
+		block += 2 + len(s.targets)
+	}
+
+	base := socketAt
 	jf, err := jumpTo(base, allowAt)
 	if err != nil {
 		return nil, err
@@ -295,6 +322,20 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 	// Every other domain lands here, AF_PACKET among them.
 	prog = append(prog, sockFilter{Code: bpfRetK, K: retErrno(unix.EAFNOSUPPORT)})
 
+	// Every argument compared here is a pid, a process group or a thread id,
+	// an integer the kernel truncates to a pid_t, so the low half is the whole
+	// value, and a body cannot dodge a compare by setting the high half.
+	for _, s := range signals {
+		prog = append(prog, sockFilter{Code: bpfLdAbsW, K: s.arg})
+		for _, target := range s.targets {
+			if jt, err = jumpTo(len(prog), epermAt); err != nil {
+				return nil, err
+			}
+			prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: target})
+		}
+		prog = append(prog, sockFilter{Code: bpfRetK, K: seccompRetAllow})
+	}
+
 	prog = append(prog,
 		sockFilter{Code: bpfRetK, K: seccompRetAllow},
 		sockFilter{Code: bpfRetK, K: retErrno(unix.EPERM)},
@@ -304,6 +345,96 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 		return nil, fmt.Errorf("seccomp: assembled %d instructions, expected %d", len(prog), lastAt+1)
 	}
 	return prog, nil
+}
+
+// substrateProc is what the stub learns about the substrate before the filter
+// installs, and what the filter then refuses a body to signal.
+type substrateProc struct {
+	// pid is the substrate's pid, 0 when the stub could not tell.
+	pid int
+	// pgid is the substrate's process group, which need not be its pid: a
+	// substrate started from a shell is in the shell's job, 0 when unknown.
+	pgid int
+	// shared is whether the body starts in that group. The runner gives a
+	// body a group of its own, and a provision step it runs to completion
+	// (`uv sync`, whose build backends are third-party code) starts in the
+	// substrate's.
+	shared bool
+}
+
+// readSubstrate reads the stub's parent, the substrate that started it.
+func readSubstrate() substrateProc {
+	s := substrateProc{pid: os.Getppid()}
+	// getpgid(0) is the caller's own group, so a parent outside this pid
+	// namespace (reported as 0) must not be asked about.
+	if s.pid <= 0 {
+		return substrateProc{}
+	}
+	if pgid, err := unix.Getpgid(s.pid); err == nil {
+		s.pgid = pgid
+		s.shared = unix.Getpgrp() == pgid
+	}
+	return s
+}
+
+// argRule is one syscall, the argument it reads, and the values of that
+// argument the filter refuses.
+type argRule struct {
+	nr      int
+	arg     uint32
+	targets []uint32
+}
+
+// signalRules are what a body may not signal, given the substrate. A body
+// shares a uid and a pid namespace with the substrate, so without these it can
+// stop it: SIGTERM is its graceful shutdown and an unhandled SIGHUP ends it.
+//
+// Refused: the substrate itself, its process group, pid 1 (the substrate in
+// its image, or the init that forwards signals to it), -1, which is every
+// process this uid may signal, every body included, and moving into the
+// substrate's group with setpgid(2), from where kill(0) would reach it. 0, the
+// caller's own group, is refused only when that group is the substrate's.
+// fcntl(F_SETSIG) is refused on every file: a body can still make the
+// substrate a file's owner, and the kernel then signals it on I/O without a
+// signal syscall, but only with SIGIO and SIGURG, which the Go runtime
+// ignores, rather than a signal of the body's choosing.
+// Allowed: the body's own group, the body itself and its threads (musl's
+// raise(3) is tkill on its own tid, so tkill is refused by target, never
+// outright), and its children. That is also the limit of the layer: another
+// body's pid, or one of the substrate's thread ids, is a value no constant
+// here can tell from a child's. The thread ids are the substrate's pid plus a
+// small offset, and kill(2) on any of them signals the whole substrate, so
+// below SignalScopeABI a body can still stop it. Landlock's signal scope
+// closes both where the kernel has it.
+//
+// tgkill and rt_tgsigqueueinfo take the thread group first, and refuse any
+// value below 1 themselves; tkill takes a thread id, which is never negative.
+func signalRules(s substrateProc) []argRule {
+	const everyone = ^uint32(0) // -1
+	process := []uint32{everyone, 1}
+	thread := []uint32{1}
+	if s.pid > 0 {
+		process = append(process, uint32(int32(s.pid)), uint32(-int32(s.pid)))
+		thread = append(thread, uint32(int32(s.pid)))
+	}
+	rules := []argRule{
+		{nr: unix.SYS_KILL, arg: sdArg0, targets: process},
+		{nr: unix.SYS_RT_SIGQUEUEINFO, arg: sdArg0, targets: process},
+		{nr: unix.SYS_TGKILL, arg: sdArg0, targets: thread},
+		{nr: unix.SYS_RT_TGSIGQUEUEINFO, arg: sdArg0, targets: thread},
+		{nr: unix.SYS_TKILL, arg: sdArg0, targets: thread},
+		{nr: unix.SYS_FCNTL, arg: sdArg1, targets: []uint32{unix.F_SETSIG}},
+	}
+	if s.pgid <= 0 {
+		return rules
+	}
+	group := uint32(-int32(s.pgid))
+	rules[0].targets = append(rules[0].targets, group)
+	rules[1].targets = append(rules[1].targets, group)
+	if s.shared {
+		rules[0].targets = append(rules[0].targets, 0)
+	}
+	return append(rules, argRule{nr: unix.SYS_SETPGID, arg: sdArg1, targets: []uint32{uint32(int32(s.pgid))}})
 }
 
 // denial is one refused syscall and the errno it answers with.
@@ -330,6 +461,13 @@ func deniedSyscalls() []denial {
 		{nr: unix.SYS_PIDFD_OPEN},
 		{nr: unix.SYS_PIDFD_GETFD},
 		{nr: unix.SYS_PROCESS_MADVISE},
+		// A pidfd names its process by descriptor, so no argument rule can
+		// tell the substrate's from a child's. Refused outright, because a
+		// body without Landlock's filesystem layer opens /proc/<ppid> and
+		// signals the substrate through it. The cost is a body's own
+		// children: one started with pidfd_spawn(3) or clone(CLONE_PIDFD) is
+		// signaled by its pid instead.
+		{nr: unix.SYS_PIDFD_SEND_SIGNAL},
 		// Rearrange the filesystem out from under Landlock. The classic mount
 		// syscalls and the new mount API both, because the new one is a
 		// complete alternative path to the same thing.

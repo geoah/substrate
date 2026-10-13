@@ -46,6 +46,10 @@ func init() {
 // policy is what the real program starts with.
 func stubMain(encoded string, argv []string) {
 	runtime.LockOSThread()
+	// The substrate, which the syscall filter refuses to signal. It started
+	// this stub, so it is the parent unless it has already exited, and then
+	// there is nothing left to protect.
+	parent := readSubstrate()
 
 	var p Policy
 	raw, err := base64.RawURLEncoding.DecodeString(encoded)
@@ -80,7 +84,7 @@ func stubMain(encoded string, argv []string) {
 	if err := applyLandlock(p); err != nil {
 		dief("landlock: %v", err)
 	}
-	if err := applySeccomp(p); err != nil {
+	if err := applySeccomp(p, parent); err != nil {
 		dief("seccomp: %v", err)
 	}
 	// The connect gate is installed AFTER the main filter: it is a second,

@@ -413,8 +413,15 @@ unprivileged, none requiring a container runtime:
   installation cannot plant an artifact another will run.
 - **seccomp** removes the syscall classes a body has no use for: `ptrace` and
   the other reach-into-another-process calls, the mount APIs, `io_uring`,
-  `bpf`, the kernel keyring, module loading, and enforces
-  the network permission in two layers. The coarse one: **a function that
+  `bpf`, the kernel keyring, module loading. It refuses a signal addressed to
+  the substrate's pid, its process group, pid 1 or every process (`kill(-1)`),
+  a signal sent through a pidfd (`pidfd_send_signal`, a body's own children's
+  included: signal those by pid), a body's move into the substrate's process
+  group, and `fcntl(F_SETSIG)`, so a file whose owner a body sets to the
+  substrate can raise only `SIGIO` or `SIGURG`, which the server ignores. It
+  does not cover the substrate's thread ids (see below).
+  And it enforces the network permission
+  in two layers. The coarse one: **a function that
   declares no `permissions.network` is denied `AF_INET` and `AF_INET6` sockets
   outright.** The fine one: a body that *does* declare network reaches the public
   internet but not the deployment's own network. A second seccomp filter routes
@@ -474,9 +481,22 @@ refused under `best-effort` too, because running it would mean handing it the
 deployment's own network rather than a weaker version of the internet.
 
 **What it does not do.** It is not a container. A body still shares a uid and a
-pid namespace with the substrate, so it can signal it. There is no memory or
-process-count ceiling, because that needs a cgroup and `/sys/fs/cgroup` is
-read-only in a stock container. A body that *is* granted network has its
+pid namespace with the substrate. On Landlock ABI 6 (Linux 6.12) and newer,
+Landlock scopes a body's signals and abstract unix socket connects to the
+body's own processes. Below ABI 6 only the seccomp refusal above applies, and
+a body can still stop the server: `os.kill(os.getppid() + 1, signal.SIGTERM)`
+signals one of the substrate's threads, `kill(2)` on any thread signals the
+whole process, and the substrate's thread ids are usually its pid plus a small
+offset. A body can also signal another body by its pid. A syscall filter
+cannot tell either id from one of the body's own children, so only ABI 6
+closes this. The boot line's `kernel` attribute says which applies
+(`signals:`). There is no memory or process-count ceiling, because
+that needs a cgroup and `/sys/fs/cgroup` is read-only in a stock container.
+The container's own limits (`pids_limit` in `compose.yaml`, `resources.limits`
+in Kubernetes) bound the substrate and its bodies together: they keep a
+runaway body from exhausting the host and the database beside it, and a body
+that reaches one takes the substrate down with it
+([running a substrate](operations.md#the-published-image)). A body that *is* granted network has its
 `connect` destinations filtered: the runner connects to the address it verified
 and installs that socket into the body, so a multi-threaded body cannot race the
 destination past the check. One residual remains: a UDP body reaching a private

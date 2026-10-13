@@ -6,7 +6,7 @@
 //
 // It exists because the runner's env allowlist is NOT a boundary on its own.
 // Every body runs as the substrate's own uid in the substrate's own container.
-// The image declares `USER substrate` (uid 65532), so that uid is not root —
+// The image declares `USER 65532:65532`, so that uid is not root —
 // and it does not matter, because it is pid 1's uid either way, which is what
 // makes `open("/proc/1/environ")` read the substrate's environment (the
 // credential key that unseals every repository's OAuth, the database URL)
@@ -41,13 +41,21 @@
 //
 // WHAT IT DOES NOT DO. It is not a container, and the comments here say so
 // rather than implying otherwise. A confined body still shares a pid namespace
-// and a uid with the substrate, so it can signal it (Landlock scopes signals
-// only at ABI 6, which the current deployment kernels do not all reach); it has
-// no memory or pid ceiling beyond rlimits, because cgroups are unavailable; and
-// a body GRANTED network has its connect destinations filtered
-// (connectgate_linux.go): the runner connects to the address it verified and
-// injects the socket, so a multi-threaded body cannot race the destination past
-// the check. That filter is not optional — where the deployment denies the two
+// and a uid with the substrate. The syscall filter refuses a signal addressed
+// to the substrate's pid, its process group, pid 1 or every process, a signal
+// sent through a pidfd, a move into the substrate's group, and the choice of
+// signal a file's owner gets. Landlock scopes the rest only at ABI 6 (Linux
+// 6.12), which the current deployment kernels do not all reach. Below it a
+// body can still stop the substrate by signaling one of its thread ids:
+// kill(2) on any thread signals the whole process, and the ids are the
+// substrate's pid plus a small offset. It can signal another body by its pid,
+// too. No compare in a syscall filter tells those ids from a body's own
+// children's, so only ABI 6 closes them. It has no memory or pid ceiling
+// beyond rlimits, because cgroups are unavailable. And a body GRANTED network
+// has its connect destinations filtered (connectgate_linux.go): the runner
+// connects to the address it verified and injects the socket, so a
+// multi-threaded body cannot race the destination past the check. That filter
+// is not optional — where the deployment denies the two
 // syscalls the supervisor answers notifications with, a body that declares
 // network is REFUSED rather than run unfiltered, in every mode but off. One
 // residual remains: a UDP body reaching a private service through
@@ -223,6 +231,20 @@ const MinLandlockABI = 3
 // none), but it does not satisfy enforce and the boot line calls it degraded.
 func (r Report) FS() bool { return r.LandlockABI >= MinLandlockABI }
 
+// SignalScopeABI is the Landlock ABI (Linux 6.12) whose ruleset can scope a
+// domain's signals and abstract unix sockets to the domain itself.
+const SignalScopeABI = 6
+
+// SignalScope reports whether Landlock confines a body's signals to its own
+// domain: its own processes, never the substrate or another body. Below
+// SignalScopeABI only the syscall filter's half applies, which refuses a
+// signal addressed to the substrate's pid, its process group, pid 1 or every
+// process, and cannot tell another body's pid, or one of the substrate's
+// thread ids, from the body's own child's. A signal to any of the substrate's
+// threads reaches the whole substrate, so below SignalScopeABI a body can
+// still stop it.
+func (r Report) SignalScope() bool { return r.LandlockABI >= SignalScopeABI }
+
 // Supported reports whether this package can confine anything at all here.
 // Landlock and seccomp are Linux facilities; macOS's Seatbelt is a different
 // design with its own policy language, and nothing stands in for them.
@@ -333,7 +355,18 @@ func (r Report) String() string {
 			gate += " (not probed: " + r.Err.Error() + ")"
 		}
 	}
-	return fmt.Sprintf("filesystem: %s, syscall filter: %s, connect gate: %s", fs, sec, gate)
+	// Signal scope is not a layer Degraded counts: below SignalScopeABI the
+	// syscall filter still keeps a body off the substrate's pid, and enforce
+	// refusing every body on a kernel older than 6.12 would be the larger
+	// outage. The line says which half applies instead.
+	signals := "unscoped"
+	switch {
+	case r.SignalScope():
+		signals = "scoped to the body"
+	case r.Seccomp:
+		signals = fmt.Sprintf("the substrate's pid and group only (landlock ABI v%d scopes the rest)", SignalScopeABI)
+	}
+	return fmt.Sprintf("filesystem: %s, syscall filter: %s, connect gate: %s, signals: %s", fs, sec, gate, signals)
 }
 
 // Confiner applies a policy to children. Build it once with New.
@@ -379,11 +412,11 @@ type Refusal struct {
 // The server's own dials obey SUBSTRATE_EGRESS_ALLOW instead, and an operator
 // who sets the wrong one restarts the server for nothing (issue #886).
 func (r Refusal) String() string {
-	return fmt.Sprintf("the sandbox's connect gate refused %s; allow it with %s=%s", r.Addr, egressAllowVar, r.Addr.Addr())
+	return fmt.Sprintf("the sandbox's connect gate refused %s; allow it with %s=%s", r.Addr, EgressAllowVar, r.Addr.Addr())
 }
 
-// egressAllowVar is the operator's allowlist for a network body's connects.
-const egressAllowVar = "SUBSTRATE_SANDBOX_EGRESS_ALLOW"
+// EgressAllowVar is the operator's allowlist for a network body's connects.
+const EgressAllowVar = "SUBSTRATE_SANDBOX_EGRESS_ALLOW"
 
 // noopGate is what Serve returns when a command has no connect gate.
 type noopGate struct{}

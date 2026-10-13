@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"log/slog"
+	"os"
 	"strings"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/sandbox"
 )
@@ -18,6 +20,29 @@ func reportSandbox() {
 	slog.Log(context.Background(), level, msg, attrs...)
 }
 
+// reportEgressAllow names, once at boot, every entry of the two egress
+// allowlists that is neither a CIDR nor an address. Both gates drop such an
+// entry rather than fail, which tightens the gate, so a typo otherwise shows
+// up only as a refusal of the destination the operator meant to allow.
+func reportEgressAllow() {
+	for _, name := range []string{egress.AllowVar, sandbox.EgressAllowVar} {
+		if msg, attrs, ok := egressAllowReport(name, os.Getenv(name)); ok {
+			slog.Warn(msg, attrs...)
+		}
+	}
+}
+
+// egressAllowReport builds that line for one variable, and reports false when
+// every entry parsed.
+func egressAllowReport(name, raw string) (string, []any, bool) {
+	_, dropped := egress.ParseAllow(raw)
+	if len(dropped) == 0 {
+		return "", nil, false
+	}
+	return name + " has entries that are neither a CIDR nor an address, and its gate ignores them",
+		[]any{"variable", name, "ignored", strings.Join(dropped, ", ")}, true
+}
+
 // reportTrust says what a function body verifies a TLS peer against, beside
 // the sandbox line and for the same reason: it is a per-host property that
 // fails silently and late. An interpreter whose compiled-in certificate store
@@ -25,7 +50,7 @@ func reportSandbox() {
 // function that declares `network:` fail CERTIFICATE_VERIFY_FAILED, and until
 // this line existed nothing at boot said so.
 func reportTrust() {
-	level, msg, attrs := trustReport(runner.Shared.Trust())
+	level, msg, attrs := trustReport(runner.Shared.Trust(context.Background()))
 	slog.Log(context.Background(), level, msg, attrs...)
 }
 

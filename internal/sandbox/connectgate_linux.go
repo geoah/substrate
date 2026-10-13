@@ -855,27 +855,11 @@ func (g *connectGate) allowDest(addr netip.Addr, port uint16) bool {
 // fall in a private range. It is how a deployment permits a local provider (a
 // loopback Ollama, issue #241's documented escape) without opening the whole
 // private range. Parsed once, at first use, so a process that sets the variable
-// before it starts a body (every real one) is read correctly.
+// before it starts a body (every real one) is read correctly. The boot names
+// the tokens the parser drops (cmd/substrated, reportEgressAllow).
 var egressAllow = sync.OnceValue(func() []netip.Prefix {
-	raw := strings.TrimSpace(os.Getenv(egressAllowVar))
-	if raw == "" {
-		return nil
-	}
-	var out []netip.Prefix
-	for _, tok := range strings.Split(raw, ",") {
-		tok = strings.TrimSpace(tok)
-		if tok == "" {
-			continue
-		}
-		if p, err := netip.ParsePrefix(tok); err == nil {
-			out = append(out, p.Masked())
-			continue
-		}
-		if a, err := netip.ParseAddr(tok); err == nil {
-			out = append(out, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
-		}
-	}
-	return out
+	prefixes, _ := egress.ParseAllow(os.Getenv(EgressAllowVar))
+	return prefixes
 })
 
 // refuse records one policy refusal and queues a warning for the operator,
@@ -926,7 +910,7 @@ func warnRefusal(w refusalWarning) {
 			for line := range refusalWarnings {
 				slog.Warn("egress blocked by the sandbox's connect gate",
 					"destination", line.dest.String(),
-					"allow", egressAllowVar+"="+line.dest.Addr().String(),
+					"allow", EgressAllowVar+"="+line.dest.Addr().String(),
 					"pid", line.pid)
 			}
 		}()

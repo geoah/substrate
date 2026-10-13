@@ -12,6 +12,27 @@ the per-chat state kind, the sync function and `sendmessage`) and `triggers.yaml
 delivery wiring: on connect, every 15 minutes, and "sync now". They are the
 contract; this file is not.
 
+## Operator setup
+
+Beeper Desktop serves its API on a private address, and the sandbox's connect
+gate refuses a function body's connect to a private address unless the server
+lists it in `SUBSTRATE_SANDBOX_EGRESS_ALLOW`
+([configuration](../../../docs/operations.md#configuration)). Without the
+entry every sync fails with
+`the sandbox's connect gate refused 127.0.0.1:23373; allow it with SUBSTRATE_SANDBOX_EGRESS_ALLOW=127.0.0.1`.
+
+- Beeper Desktop on the machine the server runs on, the server not in a
+  container: set `SUBSTRATE_SANDBOX_EGRESS_ALLOW=127.0.0.1,::1` and leave the
+  config's `apiBase` at its default.
+- The server in a container, or Beeper Desktop on another machine: set the
+  config's `apiBase` to an address the server reaches Desktop at, a LAN or
+  tailnet address such as `http://100.101.102.103:23373`, and list that
+  address.
+
+The server reads the variable once, so restart it after setting it.
+`SUBSTRATE_EGRESS_ALLOW` is the gate for the server's own dials and does not
+admit a body's connect.
+
 ## Kinds
 
 | Kind | What it is |
