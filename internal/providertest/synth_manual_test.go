@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -106,8 +107,67 @@ func TestSynthManualRecordsLandAndConvert(t *testing.T) {
 			t.Errorf("%s is %s %s, want %s %s", id, v, u, wantValue[0], wantValue[1])
 		}
 	}
+	// A converted reference bound is rounded to the converted value's places,
+	// so the two compare digit for digit and a result keeps its side of the
+	// range: 3 mmol/L of LDL is 116 mg/dL, not 120 beside a value of 120.
+	ranged := 0
+	for _, row := range listLive(t, ds, healthLabResult) {
+		if _, ok := inputs[row.ID]; ok {
+			continue
+		}
+		v, _ := quantityOf(t, row.Properties, "value")
+		places := decimalPlaces(v)
+		src := mustGet(t, ds, healthLabResult, refIDs(row, "derivedFrom")[0]).Properties
+		sv, _ := quantityOf(t, src, "value")
+		srcRanges, _ := src["referenceRanges"].([]any)
+		ranges, _ := row.Properties["referenceRanges"].([]any)
+		for i, r := range ranges {
+			for _, bound := range []string{"low", "high"} {
+				b, ok := r.(map[string]any)[bound].(map[string]any)
+				if !ok {
+					continue
+				}
+				ranged++
+				bv, _ := b["value"].(string)
+				if decimalPlaces(bv) != places {
+					t.Errorf("%s: %s %s has %d places, the value %s has %d", row.ID, bound, bv, decimalPlaces(bv), v, places)
+				}
+				sb, _ := srcRanges[i].(map[string]any)[bound].(map[string]any)["value"].(string)
+				if cmpDecimal(t, sv, sb) != cmpDecimal(t, v, bv) {
+					t.Errorf("%s: the source %s sits %+d against its %s %s, the converted %s %+d against %s",
+						row.ID, sv, cmpDecimal(t, sv, sb), bound, sb, v, cmpDecimal(t, v, bv), bv)
+				}
+			}
+		}
+	}
+	if ranged == 0 {
+		t.Error("no derived result carries a converted reference bound")
+	}
+	ldl := mustGet(t, ds, healthLabResult, "bioiatriki/2026-10-05/ldl_cholesterol/as/health/ldl_cholesterol_mass").Properties
+	if high := ldl["referenceRanges"].([]any)[0].(map[string]any)["high"].(map[string]any); high["value"] != "116" || high["unit"] != "mg/dL" {
+		t.Errorf("3 mmol/L of LDL converted to %v %v, want 116 mg/dL", high["value"], high["unit"])
+	}
 	weight := mustGet(t, ds, obsObservation, "manual/2026-09-22-weight").Properties
 	if v, u := quantityOf(t, weight, "value"); v != "72.0" || u != "kg" || weight["hold"] != "P1D" {
 		t.Errorf("the hotel weigh-in is %v", weight)
 	}
+}
+
+// decimalPlaces is how many digits a decimal's text holds after its point.
+func decimalPlaces(s string) int {
+	if _, frac, ok := strings.Cut(s, "."); ok {
+		return len(frac)
+	}
+	return 0
+}
+
+// cmpDecimal compares two decimals' texts by value.
+func cmpDecimal(t *testing.T, a, b string) int {
+	t.Helper()
+	x, ok1 := new(big.Rat).SetString(a)
+	y, ok2 := new(big.Rat).SetString(b)
+	if !ok1 || !ok2 {
+		t.Fatalf("%q or %q is not a decimal", a, b)
+	}
+	return x.Cmp(y)
 }

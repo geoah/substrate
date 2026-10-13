@@ -171,6 +171,15 @@ data:
         return _text(Context(prec=places, rounding=ROUND_HALF_EVEN).plus(value))
 
 
+    def _at_places_of(value, converted):
+        """value at the decimal places of the converted result's text, so a
+        reference bound compares with the result digit for digit: a bound
+        rounded to its own significant digits moves 3 mmol/L of LDL to 120
+        mg/dL beside a result of 120, where 116 keeps the result above it."""
+        exponent = min(0, Decimal(converted).as_tuple().exponent)
+        return _text(value.quantize(Decimal(1).scaleb(exponent), rounding=ROUND_HALF_EVEN))
+
+
     class _Run:
         def __init__(self, host):
             self.host = host
@@ -239,7 +248,9 @@ data:
                 return out * self.factor(writes, unit), {"slope": _text(slope), "intercept": _text(intercept)}
             return None
 
-        def ranges(self, formula, analyte, conversion, ranges, unit):
+        def ranges(self, formula, analyte, conversion, ranges, unit, converted):
+            """The reference ranges in `unit`, each bound at the places of
+            `converted`, the result's converted digits."""
             out = []
             for rng in ranges or []:
                 if not isinstance(rng, dict):
@@ -251,7 +262,7 @@ data:
                         continue
                     got = self.apply(formula, analyte, conversion, q, unit)
                     if got is not None:
-                        moved[bound] = {"value": _rounded(got[0], q["value"]), "unit": unit}
+                        moved[bound] = {"value": _at_places_of(got[0], converted), "unit": unit}
                 out.append(moved)
             return out or None
 
@@ -294,7 +305,8 @@ data:
                         "metric": {"ref": target},
                         "value": quantity,
                         "referenceRanges": self.ranges(formula, analyte, conversion,
-                                                       p.get("referenceRanges"), unit),
+                                                       p.get("referenceRanges"), unit,
+                                                       quantity["value"]),
                         "derivedFrom": [{"ref": LABRESULT + "/" + rid}],
                         "conversion": {"formula": formula, "parameters": params,
                                        "version": FORMULA_VERSION},

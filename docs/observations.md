@@ -388,7 +388,10 @@ id>`. The derived result repeats the input's report, source, time, specimen,
 status, flags and `revision`, converts its reference ranges with it, and
 names the input in `derivedFrom` and the formula in `conversion` (`{formula,
 parameters, version}`). Its value keeps one significant digit more than the
-input's: 130 mg/dL of LDL is 3.362 mmol/L. A derived result is never
+input's: 130 mg/dL of LDL is 3.362 mmol/L. Each converted reference bound
+takes the value's decimal places, so the two compare digit for digit: a
+high of 3 mmol/L beside a result of 3.1 converts to 116 mg/dL beside 120. A
+derived result is never
 converted again, a corrected input rewrites its derivations, and a deleted
 input takes them with it. A read of one metric counts each reading once, the
 lab's own or the derived one; a read that names both metrics, or groups the

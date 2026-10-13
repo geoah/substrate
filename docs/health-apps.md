@@ -820,7 +820,8 @@ GET /api/v1/records?filter={"kinds": ["ada.example.com/health/labresult"],
 
 The report holds 16 results: the lab's eight in mg/dL, ng/mL and %, and the
 eight `convertlab` derived, in the order of their metric paths. A derived
-result converts the reference range with the value and keeps the lab's flag.
+result converts the reference range with the value, each bound at the
+value's decimal places, and keeps the lab's flag.
 
 The US lab reported in mg/dL, and the health sample's `convertlab` function
 wrote each result again in the paired SI metric, naming its input and the
