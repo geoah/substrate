@@ -759,7 +759,9 @@ numbers are one click below.
 
 Each metric is one aggregate read naming it, and a chart composes its
 metrics' reads on one bucket axis, each read loading, refreshing or failing
-on its own row. Grouped by anything but source, two or more sources are
+on its own row. A metric that declares no unit is read in the unit of its
+newest selected stream, named in the request, so the axis and the answer
+agree. Grouped by anything but source, two or more sources are
 resolved by `sources.policy: priority` in the order you chose them (or the
 newest first), a stream that names no source counting as one ranked after
 them, and the chart says which source wins; grouped by source,

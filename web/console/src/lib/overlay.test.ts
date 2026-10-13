@@ -327,6 +327,43 @@ describe("one metric's plot", () => {
     expect(narrowed.read?.aggregate.sources).toBeUndefined()
   })
 
+  it("asks for the unit its axis reads in where the metric names none", () => {
+    // Sleep stage declares no unit; the server would answer in its first
+    // stream's, which need not be the newest.
+    const stage = (src: string, unit: string, at: string): Stream => ({
+      key: `${src}-stage`,
+      metric: SLEEP_STAGE,
+      source: src,
+      value: "30",
+      unit,
+      code: "deep",
+      form: "amount",
+      at,
+    })
+    const garmin = stage(GARMIN, "s", "2026-10-07T06:00:00Z")
+    const apple = stage(APPLE, "min", "2026-10-06T06:00:00Z")
+    const obs = source([garmin, apple])
+    const panel = { ...SCOPE, streams: [garmin, apple] }
+    const planned = planPlot(obs, SLEEP_STAGE, panel)
+    expect(planned).toMatchObject({ stored: "s", unit: "s" })
+    expect(planned.read?.aggregate.unit).toBe("s")
+    // Picking the unit it reads in still names it; another moves the axis.
+    expect(
+      planPlot(obs, SLEEP_STAGE, { ...panel, unit: "s" }).read?.aggregate.unit
+    ).toBe("s")
+    expect(planPlot(obs, SLEEP_STAGE, { ...panel, unit: "min" })).toMatchObject(
+      { unit: "min", read: { aggregate: { unit: "min" } } }
+    )
+    // Narrowed to one source, its stream's unit.
+    expect(
+      planPlot(obs, SLEEP_STAGE, { ...SCOPE, sources: [APPLE] })
+    ).toMatchObject({ unit: "min", read: { aggregate: { unit: "min" } } })
+    // A metric naming its unit is answered in it unasked.
+    expect(planPlot(source(), HEART, SCOPE).read?.aggregate.unit).toBe(
+      undefined
+    )
+  })
+
   it("narrows to the chosen channels", () => {
     const planned = planPlot(source(), HEART, {
       ...SCOPE,

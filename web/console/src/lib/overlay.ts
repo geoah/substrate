@@ -314,12 +314,20 @@ export function planPlot(
     scope.reducer && reducers.includes(scope.reducer)
       ? scope.reducer
       : reducers[0]
-  const stored = info?.unit ?? own.find((s) => s.unit)?.unit
+  // The server answers in the picked unit, else the metric's, else its
+  // first stream's, which need not be the newest: where the metric names
+  // no unit, the read names the one the axis is captioned with.
+  const stored =
+    info?.unit ??
+    (
+      selected.find((s) => s.unit && s.form !== "summary") ??
+      selected.find((s) => s.unit)
+    )?.unit
   const units = unitChoices(stored, info?.measures)
-  const unit =
-    scope.unit && scope.unit !== stored && units.includes(scope.unit)
-      ? scope.unit
-      : undefined
+  const picked =
+    scope.unit && units.includes(scope.unit) ? scope.unit : undefined
+  const unit = picked !== stored ? picked : undefined
+  const asked = picked ?? (info?.unit ? undefined : stored)
   const codes = info?.codeSet
   const groups =
     shape === "coded"
@@ -340,7 +348,7 @@ export function planPlot(
         metricPath,
         shape,
         reducer,
-        unit,
+        ...(asked ? { unit: asked } : {}),
         from,
         range: scope.range,
         bucket: bucketOf(scope.size, scope.timezone),
