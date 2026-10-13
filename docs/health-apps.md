@@ -168,6 +168,52 @@ every point the group holds, so a tile reads "71.79 kg, 10 October 08:25,
 Withings". The latest read takes no `sources` policy: the newest value wins
 whichever path delivered it.
 
+## Calories burned across providers
+
+A day's total energy is one metric for some providers and two for others.
+WHOOP and Google Fit write the total as `health/energy_expended`. Apple
+Health and Garmin write `health/active_energy` and `health/basal_energy`,
+and no total. One read of the three metrics, grouped by source, answers
+every source's numbers:
+
+```json
+{"aggregate": {
+   "metrics": [
+     {"ref": "ada.example.com/observations/metric/health/energy_expended", "from": "prefer-raw"},
+     {"ref": "ada.example.com/observations/metric/health/active_energy", "from": "prefer-raw"},
+     {"ref": "ada.example.com/observations/metric/health/basal_energy", "from": "prefer-raw"}],
+   "range": {"gte": "2026-10-10T00:00:00+03:00", "lt": "2026-10-11T00:00:00+03:00"},
+   "bucket": {"calendar": "day"},
+   "groupBy": ["source"],
+   "reducers": ["sum"]}}
+```
+
+```text
+{"units": {"health/active_energy": "kcal", "health/basal_energy": "kcal", "health/energy_expended": "kcal"},
+ "rows": [{..., "group": {"metric": "health/active_energy", "source": "applehealth/iphone/apple-watch"},
+           "values": [{"reducer": "sum", "value": "597.972379825741", "unit": "kcal"}], ...},
+          {..., "group": {"metric": "health/active_energy", "source": "garmin/ada/account"},
+           "values": [{"reducer": "sum", "value": "552", "unit": "kcal"}], ...},
+          {..., "group": {"metric": "health/basal_energy", "source": "applehealth/iphone/apple-watch"},
+           "values": [{"reducer": "sum", "value": "1420.20805254708", "unit": "kcal"}], ...},
+          {..., "group": {"metric": "health/basal_energy", "source": "garmin/ada/account"}, "from": "summaries",
+           "values": [{"reducer": "sum", "value": "1421", "unit": "kcal"}], ...},
+          {..., "group": {"metric": "health/energy_expended", "source": "googlefit/e2e/google-pixel-watch-2.8d1f3c7a"},
+           "values": [{"reducer": "sum", "value": "2025.386", "unit": "kcal"}], ...}], ...}
+```
+
+The app takes a source's `energy_expended` where it has one and adds its
+`active_energy` and `basal_energy` otherwise: 2,018.2 kcal from the Apple
+Watch, 1,973 from Garmin and 2,025.4 from the Pixel Watch. No read adds two
+metrics.
+
+WHOOP answers no row that day. Its total covers a cycle, from one sleep
+onset to the next, and the read counts it whole on the date the cycle
+starts. Ada fell asleep at 23:38 on 9 October and at 00:13 on 11 October,
+so no cycle started on the 10th, and the cycle that holds most of it counts
+on the 9th. A cycle has no date of its own to bucket on
+([R-TIME-4](plans/observations/requirements.md#apps-time-and-calendars)).
+
 ## Trends with a baseline
 
 A trend screen draws a nightly value against the person's own normal: a
