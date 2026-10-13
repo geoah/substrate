@@ -84,9 +84,10 @@ func synthWhoopRecords(t *testing.T, out *synth.Output, prefix string) []map[str
 }
 
 func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
-	// Saturday to Monday: a strength session, the Sunday long run, maybe yoga.
+	// Friday to Monday across the end of the cold: a sick day's nap WHOOP
+	// cannot score, a scored Sunday nap, the long run and maybe yoga.
 	p, err := synth.NewPersona(synth.Options{
-		Start: synth.NewDate(2026, time.September, 12), End: synth.NewDate(2026, time.September, 14),
+		Start: synth.NewDate(2026, time.August, 28), End: synth.NewDate(2026, time.August, 31),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -100,13 +101,16 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 		t.Fatal(err)
 	}
 	days := p.Days()
-	var naps, workouts int
+	var naps, unscorable, workouts int
 	for _, d := range days {
 		naps += len(p.Day(d).Naps)
+		if p.Day(d).Ill {
+			unscorable += len(p.Day(d).Naps)
+		}
 		workouts += len(p.Day(d).Workouts)
 	}
-	if workouts == 0 {
-		t.Fatal("the three days hold no workout; pick days that do")
+	if workouts == 0 || unscorable == 0 || naps == unscorable {
+		t.Fatalf("the days hold %d workouts and %d naps, %d of them unscorable; pick days that hold each", workouts, naps, unscorable)
 	}
 
 	ds, _ := newHealthWhoop(t)
@@ -178,10 +182,11 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	}
 
 	// The adapter: four observations per cycle (strain, energy, an average
-	// and a maximum heart rate), five per recovery, six per sleep, two heart
-	// rates per workout, a typed sleep and workout each, one source, and no
-	// trace, because WHOOP sends summaries and never samples.
+	// and a maximum heart rate), five per recovery, six per scored sleep, two
+	// heart rates per workout, a typed sleep and workout each, one source,
+	// and no trace, because WHOOP sends summaries and never samples.
 	sleeps := len(days) + naps
+	scored := sleeps - unscorable
 	byMetric := map[string]int{}
 	for _, row := range listLive(t, ds, obsObservation) {
 		byMetric[metricOf(row.Properties)]++
@@ -190,7 +195,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 		"health/whoop_strain": len(days), "health/energy_expended": len(days),
 		"health/whoop_recovery": len(days), "health/hrv_rmssd": len(days), "health/resting_heart_rate": len(days),
 		"health/spo2": len(days), "health/skin_temperature": len(days),
-		"health/sleep_stage": 4 * sleeps, "health/whoop_sleep_performance": sleeps, "health/respiratory_rate": sleeps,
+		"health/sleep_stage": 4 * scored, "health/whoop_sleep_performance": scored, "health/respiratory_rate": scored,
 		"health/heart_rate": 2*len(days) + 2*workouts,
 	} {
 		if byMetric[metric] != want {

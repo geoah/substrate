@@ -26,7 +26,9 @@ import (
 // the last day's cycle is the current one, with no `end`. Each cycle's
 // recovery scores the night that ended at the cycle's start, and that night
 // names the cycle in `cycle_id`; a nap belongs to its day's cycle. WHOOP
-// sends scored summaries only, so nothing here is a sample series.
+// sends summaries only, so nothing here is a sample series. A sick day's nap
+// is UNSCORABLE and carries no score, and the default life's first three
+// recoveries are calibrating.
 type Whoop struct{}
 
 func init() { register(Whoop{}) }
@@ -44,6 +46,11 @@ const (
 	// function body names it, so it must not move between runs.
 	whoopMockPort = 48116
 )
+
+// whoopCalibratedFrom is the first day WHOOP scores a recovery against the
+// member's own baseline: a new strap calibrates over its first three days,
+// the default life's first three.
+var whoopCalibratedFrom = NewDate(2026, time.July, 17)
 
 // The four collections, in the order the sync walks them.
 const (
@@ -274,7 +281,7 @@ func (e *whoopEmitter) recoveries(nights map[Date]string) []whoopRecord {
 			"updated_at":  whoopStamp(updated),
 			"score_state": "SCORED",
 			"score": map[string]any{
-				"user_calibrating":   false,
+				"user_calibrating":   d.Before(whoopCalibratedFrom),
 				"recovery_score":     whoopDec(float64(day.Recovery), 0),
 				"resting_heart_rate": whoopDec(math.Round(e.noisy("rhr", d, float64(s.RestingHR), 1)), 0),
 				"hrv_rmssd_milli":    whoopDec(math.Max(12, e.noisy("hrv", d, s.HRVRMSSDMs, 2.5)), 6),
@@ -390,34 +397,42 @@ func (e *whoopEmitter) sleeps() ([]whoopRecord, map[Date]string) {
 		}})
 		for k, nap := range day.Naps {
 			ns, ne := e.jit(nap.Start, "napstart", d, k), e.jit(nap.End, "napend", d, k)
-			bed := whoopMs(ne.Sub(ns))
-			napAwake := 240000 + int64(e.noisy("napawake", fmt.Sprint(d, k), 0, 40)*1000)
-			napLight := bed - napAwake
 			nc := ne.Add(11*time.Second + time.Duration(e.intn(0, 999, "napcre", d, k))*time.Millisecond)
 			nu := nc.Add(time.Duration(e.intn(20, 60, "napupd", d, k)) * time.Minute)
-			out = append(out, whoopRecord{ns, map[string]any{
+			rec := map[string]any{
 				"id": whoopUUID(e.p, "sleep", d, "nap", k), "cycle_id": e.cycleID(d), "user_id": whoopUserID,
 				"created_at": whoopStamp(nc), "updated_at": whoopStamp(nu),
 				"start": whoopStamp(ns), "end": whoopStamp(ne),
 				"timezone_offset": whoopTZD(ns), "nap": true, "score_state": "SCORED",
-				"score": map[string]any{
-					"stage_summary": map[string]any{
-						"total_in_bed_time_milli":          bed,
-						"total_awake_time_milli":           napAwake,
-						"total_no_data_time_milli":         0,
-						"total_light_sleep_time_milli":     napLight,
-						"total_slow_wave_sleep_time_milli": 0,
-						"total_rem_sleep_time_milli":       0,
-						"sleep_cycle_count":                0,
-						"disturbance_count":                e.intn(0, 2, "napdist", d, k),
-					},
-					"sleep_needed":                 need,
-					"respiratory_rate":             whoopDec(math.Round(e.noisy("napresp", fmt.Sprint(d, k), nap.RespRate, 0.25)*1024)/1024, 7),
-					"sleep_performance_percentage": whoopDec(math.Round(float64(napLight)/float64(whoopNeedTotal(need))*100), 0),
-					"sleep_consistency_percentage": whoopDec(float64(e.intn(55, 80, "napcons", d, k)), 0),
-					"sleep_efficiency_percentage":  whoopDec(float64(napLight)/float64(bed)*100, 7),
+			}
+			// A sick day's nap is restless enough that WHOOP cannot score it:
+			// the record carries no score.
+			if day.Ill {
+				rec["score_state"] = "UNSCORABLE"
+				out = append(out, whoopRecord{ns, rec})
+				continue
+			}
+			bed := whoopMs(ne.Sub(ns))
+			napAwake := 240000 + int64(e.noisy("napawake", fmt.Sprint(d, k), 0, 40)*1000)
+			napLight := bed - napAwake
+			rec["score"] = map[string]any{
+				"stage_summary": map[string]any{
+					"total_in_bed_time_milli":          bed,
+					"total_awake_time_milli":           napAwake,
+					"total_no_data_time_milli":         0,
+					"total_light_sleep_time_milli":     napLight,
+					"total_slow_wave_sleep_time_milli": 0,
+					"total_rem_sleep_time_milli":       0,
+					"sleep_cycle_count":                0,
+					"disturbance_count":                e.intn(0, 2, "napdist", d, k),
 				},
-			}})
+				"sleep_needed":                 need,
+				"respiratory_rate":             whoopDec(math.Round(e.noisy("napresp", fmt.Sprint(d, k), nap.RespRate, 0.25)*1024)/1024, 7),
+				"sleep_performance_percentage": whoopDec(math.Round(float64(napLight)/float64(whoopNeedTotal(need))*100), 0),
+				"sleep_consistency_percentage": whoopDec(float64(e.intn(55, 80, "napcons", d, k)), 0),
+				"sleep_efficiency_percentage":  whoopDec(float64(napLight)/float64(bed)*100, 7),
+			}
+			out = append(out, whoopRecord{ns, rec})
 		}
 	}
 	return out, nights

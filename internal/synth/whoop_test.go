@@ -244,6 +244,7 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 	}
 
 	sleepByID := map[string]map[string]any{}
+	unscorable := 0
 	for _, s := range sleeps {
 		id, _ := s["id"].(string)
 		if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(id) {
@@ -263,6 +264,16 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 		}
 		if h := end.Sub(start).Hours(); nap && h > 2 || !nap && (h < 4 || h > 12) {
 			t.Errorf("sleep %s (nap %v) lasts %.1f h", id, nap, h)
+		}
+		// A nap on a sick day is one WHOOP cannot score: no score at all.
+		if ill := p.Ill(localDay(t, end, s["timezone_offset"])); nap && ill {
+			unscorable++
+			if s["score_state"] != "UNSCORABLE" || s["score"] != nil {
+				t.Errorf("sick-day nap %s is %v with score %v", id, s["score_state"], s["score"])
+			}
+			continue
+		} else if s["score_state"] != "SCORED" {
+			t.Errorf("sleep %s is %v", id, s["score_state"])
 		}
 		score, _ := s["score"].(map[string]any)
 		st, _ := score["stage_summary"].(map[string]any)
@@ -304,8 +315,9 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 		if !inRange(d) || whoopNum(t, score, "recovery_score") != float64(p.Day(d).Recovery) {
 			t.Errorf("recovery on %s scores %v, persona says %d", d, score["recovery_score"], p.Day(d).Recovery)
 		}
-		if score["user_calibrating"] != false {
-			t.Errorf("recovery on %s user_calibrating %v", d, score["user_calibrating"])
+		// WHOOP calibrates a new strap over its first days.
+		if want := !d.After(NewDate(2026, time.July, 16)); score["user_calibrating"] != want {
+			t.Errorf("recovery on %s user_calibrating %v, want %v", d, score["user_calibrating"], want)
 		}
 		for k, lim := range map[string][2]float64{
 			"resting_heart_rate": {38, 75}, "hrv_rmssd_milli": {12, 120}, "spo2_percentage": {90, 100}, "skin_temp_celsius": {32, 36},
@@ -314,6 +326,10 @@ func TestWhoopEmitsTheDefaultLife(t *testing.T) {
 				t.Errorf("recovery on %s %s = %v", d, k, v)
 			}
 		}
+	}
+
+	if unscorable == 0 {
+		t.Error("no sick-day nap in the default life; the unscorable check read nothing")
 	}
 
 	sports := map[string]bool{"running": true, "cycling": true, "weightlifting": true, "yoga": true}
