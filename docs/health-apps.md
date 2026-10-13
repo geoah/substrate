@@ -42,8 +42,7 @@ screen does not use; `...` marks a cut.
 
 Each recipe shows one JSON document whose top-level keys (`filter`,
 `aggregate`, `downsample`) are query parameters of `GET /api/v1/records`.
-The same document is the body `substratectl aggregate --body` and a
-function's `host.records.aggregate` take:
+The same document is the body `substratectl aggregate --body` takes:
 
 ```bash
 curl -sG "$SUBSTRATE_SERVER/api/v1/records" \
@@ -52,6 +51,14 @@ curl -sG "$SUBSTRATE_SERVER/api/v1/records" \
 
 substratectl aggregate --body today.json -o json
 ```
+
+A function's `host.records.aggregate` takes the document with one addition,
+`filter.kinds`, because the function's reads allowlist refuses a body that
+names no kind ([the SDK](functions.md#the-sdk)). A metric read without it
+reads every kind that binds `observed`, here
+`ada.example.com/observations/observation`,
+`ada.example.com/observations/trace` and `ada.example.com/health/labresult`,
+so a function names the ones its metric is written in.
 
 A list read is shown as the request line itself, its `filter`, `orderBy`
 and `first` query parameters unencoded.
