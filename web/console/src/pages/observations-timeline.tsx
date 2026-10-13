@@ -29,7 +29,10 @@ import {
   FacetFilters,
   type Facet,
 } from "@/components/observations/facet-filters"
-import { NoObservations } from "@/components/observations/no-observations"
+import {
+  MeasurementSources,
+  NoObservations,
+} from "@/components/observations/no-observations"
 import { OverlayChart } from "@/components/observations/overlay-chart"
 import { Labelled, Picker } from "@/components/observations/picker"
 import { RangePicker } from "@/components/observations/range-picker"
@@ -296,11 +299,20 @@ export function ObservationsTimelinePage() {
       ) : metrics.length === 0 && !obs.ready ? (
         <Skeleton className="mt-8 h-[236px] w-full" />
       ) : metrics.length === 0 ? (
-        <p className="mt-6 text-muted-foreground">
-          {sources.length || abouts.length
-            ? "No stream matches the chosen sources and things. Remove a filter to see the others."
-            : "Nothing has been measured yet. A metric shows up here once a provider or a sample writes its first value."}
-        </p>
+        sources.length || abouts.length ? (
+          <p className="mt-6 text-muted-foreground">
+            No stream matches the chosen sources and things. Remove a filter to
+            see the others.
+          </p>
+        ) : (
+          <div className="mt-6">
+            <p className="text-muted-foreground">
+              Nothing has been measured yet. A metric shows up here once a
+              provider or a sample writes its first value.
+            </p>
+            <MeasurementSources className="mt-3" />
+          </div>
+        )
       ) : (
         <>
           {charts.map((chart) => (

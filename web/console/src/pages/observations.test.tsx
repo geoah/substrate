@@ -49,8 +49,16 @@ import {
 
 vi.mock("@tanstack/react-router", () => ({
   // The link carries where it goes, as the address the timeline reads.
-  Link: ({ children, search }: { children: ReactNode; search?: unknown }) => (
-    <a href="#" data-search={JSON.stringify(search ?? null)}>
+  Link: ({
+    children,
+    to,
+    search,
+  }: {
+    children: ReactNode
+    to?: string
+    search?: unknown
+  }) => (
+    <a href="#" data-to={to} data-search={JSON.stringify(search ?? null)}>
       {children}
     </a>
   ),
@@ -506,6 +514,25 @@ describe("the streams table", () => {
       await screen.findByText("Nothing here records measurements yet")
     ).toBeTruthy()
     expect(server.seen).toEqual([])
+    // Both ways it names are offered: a sample, and a provider.
+    const sample = screen.getByRole("link", { name: /Add a sample/ })
+    expect(sample.dataset.to).toBe("/data")
+    expect(JSON.parse(sample.dataset.search!)).toEqual({ add: "sample" })
+    expect(screen.getByRole("link", { name: /Providers/ }).dataset.to).toBe(
+      "/providers"
+    )
+  })
+
+  it("offers where measurements come from where nothing has been measured", async () => {
+    mount("", KINDS, () => ({ ...LATEST, rows: [] }))
+    const table = await screen.findByRole("table")
+    await waitFor(() =>
+      expect(table.textContent).toContain("Nothing has been measured yet")
+    )
+    expect(
+      within(table).getByRole("link", { name: /Add a sample/ }).dataset.search
+    ).toBe(JSON.stringify({ add: "sample" }))
+    expect(within(table).getByRole("link", { name: /Providers/ })).toBeTruthy()
   })
 })
 

@@ -672,7 +672,10 @@ twice (a WHOOP cycle's heart rate beside a workout's). It is a place in the
 sidebar and ⌘K only where some kind binds core's
 `observed` trait, which the console finds in the registry by the trait and
 never by a fixed authority, so an imported `observations` or `health` sample
-under your own authority is found the same way. The rows come from one
+under your own authority is found the same way. Where nothing records
+measurements yet, or nothing has been measured, the page says so and offers
+**Add a sample** (All data's **Add a collection**, on its samples) and
+**Providers**. The rows come from one
 aggregate latest read: `GET /api/v1/records` with
 `filter={"implements":"substrate.reamde.dev/core/observed"}` and
 `aggregate={"groupBy":["metric","source","about","channel"],"reducers":["last"],"budget":{"maxGroups":2000}}`,

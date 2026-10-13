@@ -62,7 +62,10 @@ import {
   Reading,
   ShapeWord,
 } from "@/components/observations/marks"
-import { NoObservations } from "@/components/observations/no-observations"
+import {
+  MeasurementSources,
+  NoObservations,
+} from "@/components/observations/no-observations"
 import { TimelinePanel } from "@/components/observations/timeline-panel"
 import { SearchBox } from "@/components/search-box"
 import { Button } from "@/components/ui/button"
@@ -670,11 +673,19 @@ export function ObservationsPage() {
           groups={gridGroups}
           label="Streams"
           empty={
-            <p className="px-2.5 py-8 text-muted-foreground">
-              {filtered
-                ? "No stream matches these filters."
-                : "Nothing has been measured yet. Streams show up here once a provider or a sample writes its first value."}
-            </p>
+            filtered ? (
+              <p className="px-2.5 py-8 text-muted-foreground">
+                No stream matches these filters.
+              </p>
+            ) : (
+              <div className="px-2.5 py-8">
+                <p className="text-muted-foreground">
+                  Nothing has been measured yet. Streams show up here once a
+                  provider or a sample writes its first value.
+                </p>
+                <MeasurementSources className="mt-3" />
+              </div>
+            )
           }
           className={cn(
             "border-b border-border",
