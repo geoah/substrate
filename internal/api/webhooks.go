@@ -6,6 +6,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -30,6 +31,13 @@ const (
 )
 
 var webhookSem = make(chan struct{}, maxConcurrentWebhooks)
+
+// webhookReadTimeout bounds how long a delivery holding a slot may take to
+// send its body. The server sets no whole-request read deadline, so without
+// this a sender trickling bytes holds its slot for as long as it likes, and
+// eight of them close the door to every repository. Two minutes carries the
+// 8 MiB inline cap at about 600 kbit/s.
+var webhookReadTimeout = 2 * time.Minute
 
 // The headers a delivery never carries into a callable: whatever credential
 // the sender used to reach this door is the door's business. `set-cookie` is
@@ -56,6 +64,12 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		writeUnavailable(w, time.Second, "webhook door is busy, retry")
 		return
 	}
+	// The deadline covers the body alone: the server clears it when the body
+	// reaches EOF, so it never cancels the service's work below. A refused
+	// body keeps it, which bounds the server's read of what is left. A
+	// writer that cannot take a deadline (a test's recorder) has no
+	// connection to hold.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(webhookReadTimeout))
 	req, status, err := readWebhookRequest(w, r)
 	if err != nil {
 		writeError(w, status, codeBadRequest, err.Error())
@@ -80,6 +94,10 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, substrate.WebhookAccepted{Fire: fid})
 }
 
+// errWebhookReadTimeout is the 408 a delivery gets when its body does not
+// arrive inside webhookReadTimeout.
+var errWebhookReadTimeout = errors.New("webhook body not received in time")
+
 // webhookKey reads the credential from wherever the sender could put it: the
 // trailing path segment, the `key` query parameter, or a bearer header. A
 // sender that cannot set headers (a provider's webhook form) uses the URL;
@@ -99,7 +117,8 @@ func webhookKey(r *http.Request) string {
 
 // readWebhookRequest turns the HTTP request into the seam's transport facts,
 // or names the HTTP status that refuses it: 431 for headers past the cap, 413
-// for a body past its bound, 400 for multipart the reader cannot parse.
+// for a body past its bound, 408 for a body not received inside
+// webhookReadTimeout, 400 for multipart the reader cannot parse.
 func readWebhookRequest(w http.ResponseWriter, r *http.Request) (substrate.WebhookRequest, int, error) {
 	req := substrate.WebhookRequest{Method: r.Method, Headers: map[string]string{}, Query: map[string][]string{}}
 	size := 0
@@ -137,6 +156,9 @@ func readWebhookRequest(w http.ResponseWriter, r *http.Request) (substrate.Webho
 		if errors.As(err, &tooBig) {
 			return req, http.StatusRequestEntityTooLarge, errors.New("webhook body exceeds 8 MiB; a larger payload must arrive as multipart/form-data file parts")
 		}
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return req, http.StatusRequestTimeout, errWebhookReadTimeout
+		}
 		return req, http.StatusBadRequest, errors.New("webhook body unreadable")
 	}
 	if len(body) > 0 {
@@ -167,6 +189,9 @@ func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string) (
 			if errors.As(err, &tooBig) {
 				return nil, http.StatusRequestEntityTooLarge, errors.New("webhook multipart body exceeds 32 MiB")
 			}
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				return nil, http.StatusRequestTimeout, errWebhookReadTimeout
+			}
 			return nil, http.StatusBadRequest, errors.New("webhook multipart body unreadable")
 		}
 		partType, _, _ := mime.ParseMediaType(p.Header.Get("Content-Type"))
@@ -176,6 +201,9 @@ func readWebhookParts(w http.ResponseWriter, r *http.Request, boundary string) (
 			var tooBig *http.MaxBytesError
 			if errors.As(err, &tooBig) {
 				return nil, http.StatusRequestEntityTooLarge, errors.New("webhook multipart body exceeds 32 MiB")
+			}
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				return nil, http.StatusRequestTimeout, errWebhookReadTimeout
 			}
 			return nil, http.StatusBadRequest, errors.New("webhook multipart body unreadable")
 		}

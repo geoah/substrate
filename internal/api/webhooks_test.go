@@ -1,17 +1,20 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -202,6 +205,60 @@ func TestWebhookInlineCapIsEightMiB(t *testing.T) {
 	}
 	if len(svc.calls) != 1 {
 		t.Fatalf("the refused body reached the service: %d calls", len(svc.calls))
+	}
+}
+
+// A sender that trickles its body holds its slot for webhookReadTimeout at
+// most. Eight such connections take every slot and turn the next delivery
+// away with 503; once the deadline passes each is answered 408 and the door
+// admits again, although the eight are still open.
+func TestWebhookTrickledBodyGivesUpItsSlot(t *testing.T) {
+	defer func(d time.Duration) { webhookReadTimeout = d }(webhookReadTimeout)
+	webhookReadTimeout = 3 * time.Second
+	_, h := webhookHandler("f", nil)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	post := func() int {
+		t.Helper()
+		resp, err := srv.Client().Post(srv.URL+"/webhooks/geoah.example.com/t", "application/json", strings.NewReader("{}"))
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	trickles := make([]net.Conn, maxConcurrentWebhooks)
+	for i := range trickles {
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = c.Close() }()
+		if _, err := fmt.Fprint(c, "POST /webhooks/geoah.example.com/t HTTP/1.1\r\nHost: example.com\r\n"+
+			"Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"); err != nil {
+			t.Fatal(err)
+		}
+		trickles[i] = c
+	}
+	for deadline := time.Now().Add(webhookReadTimeout / 2); post() != http.StatusServiceUnavailable; {
+		if time.Now().After(deadline) {
+			t.Fatal("the trickling connections never held every slot")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for deadline := time.Now().Add(4 * webhookReadTimeout); ; time.Sleep(50 * time.Millisecond) {
+		if code := post(); code == http.StatusAccepted {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("the door still answers %d while the trickles stay open", code)
+		}
+	}
+	for i, c := range trickles {
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		line, err := bufio.NewReader(c).ReadString('\n')
+		if err != nil || !strings.HasPrefix(line, "HTTP/1.1 408") {
+			t.Fatalf("trickle %d was answered %q (%v), want 408", i, line, err)
+		}
 	}
 }
 

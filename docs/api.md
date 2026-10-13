@@ -1571,6 +1571,7 @@ server verifies the provider's signature before it stores anything
 | `202 {"fire": "hook-…"}` | the request is recorded in the repository's changelog and the fire is on its way; a restart resumes it under the same id, which names its `triggerrun` row |
 | `401 auth` | the trigger declares a signature and the request's is missing or wrong, its timestamp is missing or stale, its body is multipart, or the signing secret does not resolve; the body says `webhook signature refused` and nothing is stored |
 | `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them |
+| `408` | the body did not arrive within two minutes of the headers |
 | `413` | a non-multipart body over 8 MiB, or a multipart request over 32 MiB |
 | `431` | headers over 16 KiB |
 | `503` + `Retry-After` | more than eight deliveries in flight |
@@ -1609,8 +1610,8 @@ The code set is closed. The client-error codes:
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
 
 `bad_request` is also the code on a `405` (a wrong method at an `/api` path)
-and on the `413` and `431` a webhook request past its body or header cap
-receives ([webhooks](#webhooks)).
+and on the `408`, `413` and `431` a webhook request receives when its body
+is too slow, or past its body or header cap ([webhooks](#webhooks)).
 
 The server-error family is split so a client can tell "try again" from "never
 going to work": `internal` (500, an unexpected fault), `function_failed` (500, a
