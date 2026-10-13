@@ -65,14 +65,15 @@ export interface FieldChoice {
   label: string
 }
 
-/** A value as the filter bar carries it: the bar joins several with a
- * comma, so a comma inside one (a channel may hold any text) is escaped. */
-function escapeChoice(value: string): string {
-  return value.replace(/%/g, "%25").replace(/,/g, "%2C")
+/** A value with the separators of the filter bar (a comma between values)
+ * and of a selection token (`|` between parts) escaped, since a channel may
+ * hold any text. */
+function escapePart(part: string): string {
+  return part.replace(/%/g, "%25").replace(/\|/g, "%7C").replace(/,/g, "%2C")
 }
 
-function unescapeChoice(value: string): string {
-  return value.replace(/%2C/g, ",").replace(/%25/g, "%")
+function unescapePart(part: string): string {
+  return part.replace(/%2C/g, ",").replace(/%7C/g, "|").replace(/%25/g, "%")
 }
 
 /** The filter bar's fields: each one a set of values to pick from, several
@@ -90,7 +91,7 @@ export function streamFields(
         kind: "enum",
         repeated: false,
         values: values.map((c) => ({
-          value: escapeChoice(c.value),
+          value: escapePart(c.value),
           label: c.label,
         })),
       },
@@ -113,7 +114,7 @@ export function streamChoices(tokens: readonly string[] | null): StreamChoices {
     if (!(STREAM_FIELDS as readonly string[]).includes(f.field)) continue
     const values = f.value
       .split(",")
-      .map((v) => unescapeChoice(v.trim()))
+      .map((v) => unescapePart(v.trim()))
       .filter(Boolean)
     out[f.field as StreamField].push(...values)
   }
@@ -125,7 +126,7 @@ export function choiceFilter(
   field: StreamField,
   values: readonly string[]
 ): ActiveFilter {
-  return { field, op: "eq", value: values.map(escapeChoice).join(",") }
+  return { field, op: "eq", value: values.map(escapePart).join(",") }
 }
 
 /** Whether a row holds every chosen field's value (one of them, where
@@ -330,15 +331,6 @@ export function groupStreams(
 }
 
 // ── selection ──────────────────────────────────────────────────────────────
-
-/** A part of a selection token with the token's own separators escaped. */
-function escapePart(part: string): string {
-  return part.replace(/%/g, "%25").replace(/\|/g, "%7C").replace(/,/g, "%2C")
-}
-
-function unescapePart(part: string): string {
-  return part.replace(/%2C/g, ",").replace(/%7C/g, "|").replace(/%25/g, "%")
-}
 
 /** A record path as its id where the pin says its kind and the id cannot
  * be mistaken for a path, so an address stays short. */

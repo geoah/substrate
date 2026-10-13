@@ -106,14 +106,14 @@ describe("the filter bar's fields", () => {
     })
   })
 
-  it("keeps a channel holding a comma as one value", () => {
+  it("keeps a channel holding a comma or a bar as one value", () => {
     const fields = streamFields({
       channel: [
         { value: "run,easy", label: "run,easy" },
-        { value: "ride", label: "ride" },
+        { value: "ride|hill", label: "ride|hill" },
       ],
     })
-    const filter = choiceFilter("channel", ["run,easy", "ride"])
+    const filter = choiceFilter("channel", ["run,easy", "ride|hill"])
     // The bar picks by the values it splits the filter's into.
     const offered = fields[0].values!.map((v) => v.value)
     for (const part of filter.value.split(",")) {
@@ -121,7 +121,7 @@ describe("the filter bar's fields", () => {
     }
     expect(streamChoices([encodeFilter(filter)]).channel).toEqual([
       "run,easy",
-      "ride",
+      "ride|hill",
     ])
   })
 })
