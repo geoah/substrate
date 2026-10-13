@@ -1312,6 +1312,53 @@ func TestAggregateRecordedLocalRowsKeepTheirOwnEnds(t *testing.T) {
 	}
 }
 
+// Under the summaries policy a recorded-local row's start and end are those
+// of the source it holds: day summaries of 2026-09-24 from London (+01:00,
+// 12000 steps) and Athens (+03:00, 9000) fall in one local day. Ranked first,
+// each source's summary is the row, midnight to midnight at its own offset,
+// and the other source's summary decides neither end.
+func TestAggregateSummariesPolicyRowTakesItsSourcesEnds(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	for _, x := range []struct {
+		source, steps string
+		offset        int
+	}{{"london", "12000", 60}, {"athens", "9000", 180}} {
+		day := time.Date(2026, 9, 24, 0, 0, 0, 0, time.FixedZone("", x.offset*60))
+		f.mustPut(t, f.observation, x.source+"/day", map[string]any{
+			"metric": f.metricRef("health/steps"), "source": f.sourceRef(x.source), "form": "summary",
+			"statistic": "sum", "period": "day", "value": quantity(x.steps, "{steps}"),
+			"at": at(day), "endsAt": at(day.AddDate(0, 0, 1)), "utcOffset": x.offset,
+		})
+	}
+	plus3 := time.FixedZone("", 3*3600)
+	for _, x := range []struct {
+		order                   []string
+		start, end, source, sum string
+	}{
+		{[]string{"london", "athens"}, "2026-09-24T00:00:00+01:00", "2026-09-25T00:00:00+01:00", "london", "12000"},
+		{[]string{"athens", "london"}, "2026-09-24T00:00:00+03:00", "2026-09-25T00:00:00+03:00", "athens", "9000"},
+	} {
+		res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/steps")},
+			From:     "summaries",
+			Sources:  &substrate.AggregateSources{Policy: "summaries", Order: x.order},
+			Range:    rng(time.Date(2026, 9, 23, 0, 0, 0, 0, plus3), time.Date(2026, 9, 26, 0, 0, 0, 0, plus3)),
+			Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+			Reducers: reducers("sum"),
+		})
+		if len(res.Rows) != 1 {
+			t.Fatalf("order %v: %d rows, want the one day: %+v", x.order, len(res.Rows), res.Rows)
+		}
+		row := res.Rows[0]
+		sum, _ := val(row, "sum")
+		got := [4]string{row.Start.Format(time.RFC3339), row.End.Format(time.RFC3339), strings.Join(row.Sources, ","), sum}
+		if want := [4]string{x.start, x.end, f.sourcePath(x.source), x.sum}; got != want {
+			t.Errorf("order %v: start, end, sources and sum %v, want %v", x.order, got, want)
+		}
+	}
+}
+
 // A recorded-local row the range cuts says so: London steps (+01:00) every
 // hour of 2026-09-20 to 09-22, read for the day 2026-09-21 at +03:00, fall on
 // the evening of 09-20 from 22:00 and on 09-21 until 22:00, local time. Each

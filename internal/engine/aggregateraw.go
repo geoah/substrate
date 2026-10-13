@@ -199,10 +199,6 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 			}
 			for _, b := range r.bucketsOf(ap.At, ap.off) {
 				ev := cell(out, b, r.codeKey(ap.Code), form, true)
-				if b.local {
-					b.ends.mark(ap.Point, ap.stream, ap.off)
-					ev.ends.mark(ap.Point, ap.stream, ap.off)
-				}
 				ev.members = append(ev.members, ap)
 				ev.sources[st.s.source] = true
 				if prev := st.prevOf[i]; prev != nil {
@@ -244,10 +240,13 @@ func (r *aggRun) placeRaw(list []*rawStream, form string) (aggCells, error) {
 	return out, nil
 }
 
-// settleRaw converts each cell's members into the read's unit, orders them
-// as every reader takes points and its spans by start, and counts the cell's
-// points and coverage. It walks the cells in bucket and code order, so the
-// value a refusal names does not follow a map's order.
+// settleRaw converts each cell's members into the read's unit, marks a
+// recorded-local row's first and last point with them, orders them as every
+// reader takes points and its spans by start, and counts the cell's points
+// and coverage. It runs after the summaries policy, so a summary the policy
+// sets aside decides no row's start or end, and walks the cells in bucket
+// and code order, so the value a refusal names does not follow a map's
+// order.
 func (r *aggRun) settleRaw(out aggCells, list []*rawStream, form string) error {
 	for _, b := range r.buckets {
 		for _, code := range sortedKeys(out[b]) {
@@ -276,6 +275,10 @@ func (r *aggRun) settleRaw(out aggCells, list []*rawStream, form string) error {
 				m := &ev.members[i]
 				if err := r.convertPoint(&m.Point, m.delta, list[m.stream].s); err != nil {
 					return err
+				}
+				if b.local {
+					b.ends.mark(m.Point, m.stream, m.off)
+					ev.ends.mark(m.Point, m.stream, m.off)
 				}
 				if m.Bounded {
 					ev.bounded++
