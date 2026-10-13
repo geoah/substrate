@@ -580,13 +580,19 @@ func (ds *dataset) checkStoredWebhookSignature(ctx context.Context, tr *trigger,
 		return fmt.Errorf("%w: the request was stored before its trigger declared source.webhook.signature, and its kept body and headers do not verify (%s)",
 			errWebhookUnverified, reason)
 	}
-	fire, _ := envelope["fire"].(map[string]any)
-	at, ok, err := ds.webhookReceivedAt(ctx, tr.ID, failure, fire)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return refuse("no receipt time")
+	// A declaration that signs no timestamp measures nothing against the
+	// receipt, so it is not read.
+	var at time.Time
+	if tr.WebhookSignature.TimestampHeader != "" {
+		fire, _ := envelope["fire"].(map[string]any)
+		var ok bool
+		var err error
+		if at, ok, err = ds.webhookReceivedAt(ctx, tr.ID, failure, fire); err != nil {
+			return err
+		}
+		if !ok {
+			return refuse("no receipt time")
+		}
 	}
 	stored, err := ds.storedWebhookRequest(ctx, req)
 	if err != nil {
