@@ -436,3 +436,22 @@ func TestWhoopThreeDaysIsSmall(t *testing.T) {
 		t.Fatal("a collection with no records still answers an empty page")
 	}
 }
+
+// A new strap calibrates over its first three days, whatever day the range
+// starts on.
+func TestWhoopCalibratesTheRangesFirstThreeRecoveries(t *testing.T) {
+	p, files := whoopEmit(t, Options{Start: NewDate(2026, time.July, 1), End: NewDate(2026, time.July, 31)})
+	recoveries, _ := whoopWalk(t, files, whoopRecoveryPath)
+	if len(recoveries) != len(p.Days()) {
+		t.Fatalf("%d recoveries over %d days", len(recoveries), len(p.Days()))
+	}
+	sort.Slice(recoveries, func(i, j int) bool {
+		return whoopInstant(t, recoveries[i]["created_at"]).Before(whoopInstant(t, recoveries[j]["created_at"]))
+	})
+	for i, r := range recoveries {
+		score, _ := r["score"].(map[string]any)
+		if want := i < 3; score["user_calibrating"] != want {
+			t.Errorf("recovery %d, created %v: user_calibrating %v, want %v", i+1, r["created_at"], score["user_calibrating"], want)
+		}
+	}
+}

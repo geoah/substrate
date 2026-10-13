@@ -27,7 +27,7 @@ import (
 // recovery scores the night that ended at the cycle's start, and that night
 // names the cycle in `cycle_id`; a nap belongs to its day's cycle. WHOOP
 // sends summaries only, so nothing here is a sample series. A sick day's nap
-// is UNSCORABLE and carries no score, and the default life's first three
+// is UNSCORABLE and carries no score, and the range's first three
 // recoveries are calibrating.
 type Whoop struct{}
 
@@ -47,10 +47,10 @@ const (
 	whoopMockPort = 48116
 )
 
-// whoopCalibratedFrom is the first day WHOOP scores a recovery against the
-// member's own baseline: a new strap calibrates over its first three days,
-// the default life's first three.
-var whoopCalibratedFrom = NewDate(2026, time.July, 17)
+// whoopCalibrationDays is how many days a new strap calibrates over before
+// WHOOP scores a recovery against the member's own baseline; the strap is
+// new on the range's first day.
+const whoopCalibrationDays = 3
 
 // The four collections, in the order the sync walks them.
 const (
@@ -281,7 +281,7 @@ func (e *whoopEmitter) recoveries(nights map[Date]string) []whoopRecord {
 			"updated_at":  whoopStamp(updated),
 			"score_state": "SCORED",
 			"score": map[string]any{
-				"user_calibrating":   d.Before(whoopCalibratedFrom),
+				"user_calibrating":   d.Before(e.p.Options.Start.Add(whoopCalibrationDays)),
 				"recovery_score":     whoopDec(float64(day.Recovery), 0),
 				"resting_heart_rate": whoopDec(math.Round(e.noisy("rhr", d, float64(s.RestingHR), 1)), 0),
 				"hrv_rmssd_milli":    whoopDec(math.Max(12, e.noisy("hrv", d, s.HRVRMSSDMs, 2.5)), 6),

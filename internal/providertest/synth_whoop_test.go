@@ -73,7 +73,8 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	// parallel before any data is generated.
 	ds, _ := newHealthWhoop(t)
 	// Friday to Monday across the end of the cold: a sick day's nap WHOOP
-	// cannot score, a scored Sunday nap, the long run and maybe yoga.
+	// cannot score, a scored Sunday nap, the long run and maybe yoga, and a
+	// strap new on Friday that calibrates until Monday.
 	p, err := synth.NewPersona(synth.Options{
 		Start: synth.NewDate(2026, time.August, 28), End: synth.NewDate(2026, time.August, 31),
 	})
@@ -191,6 +192,17 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	}
 	if len(byMetric) != 11 {
 		t.Errorf("observations of %d metrics, want 11: %v", len(byMetric), byMetric)
+	}
+	// The strap is new on the window's first day, so WHOOP calibrates the
+	// first three recoveries and the adapter marks those scores estimated.
+	var estimated []string
+	for _, row := range listLive(t, ds, obsObservation) {
+		if metricOf(row.Properties) == "health/whoop_recovery" && row.Properties["quality"] == "estimated" {
+			estimated = append(estimated, row.ID)
+		}
+	}
+	if len(estimated) != 3 {
+		t.Errorf("%d estimated recovery scores, want the first three: %v", len(estimated), estimated)
 	}
 	for kind, want := range map[string]int{healthSleep: sleeps, healthWorkout: workouts, obsSource: 1, obsTrace: 0} {
 		if n := countLive(t, ds, kind); n != want {
