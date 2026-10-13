@@ -65,6 +65,7 @@ import {
 import {
   atReaderOffsets,
   coveredWords,
+  offsetHead,
   offsetWords,
   windowWords,
   type BucketSize,
@@ -421,7 +422,7 @@ export function OverlayChart({
           {row ? (
             <SeriesDetail
               plot={only.plot}
-              dayOffsets={Boolean(stateOf(only.plot)?.together.length)}
+              across={Boolean(stateOf(only.plot)?.together.length)}
               row={row}
               valueText={valueText}
               sourceText={sourceText}
@@ -454,9 +455,10 @@ export function OverlayChart({
         {head}
         {offsets.length > 0 && (
           <p className="text-faint">
-            {byPlot.some(({ plot }) => stateOf(plot)?.together.length)
-              ? "Day’s UTC offset"
-              : "UTC offset"}{" "}
+            {offsetHead(
+              local?.size,
+              byPlot.some(({ plot }) => stateOf(plot)?.together.length)
+            )}{" "}
             {offsets.join("; ")}
           </p>
         )}
@@ -595,7 +597,7 @@ export function OverlayChart({
             label={`${plot.name} in numbers`}
             caption={drawn.length > 1 ? plot.name : undefined}
             precision={plot.precision}
-            local={Boolean(plot.local)}
+            local={plot.local?.size}
             offsetsAcross={
               together.length ? listWords([plot.name, ...together]) : undefined
             }
@@ -1048,15 +1050,15 @@ function Swatch({ mark, color }: { mark: ChartMark; color: string }) {
  * points, the covered time, the sources and where the row came from. */
 function SeriesDetail({
   plot,
-  dayOffsets,
+  across,
   row,
   valueText,
   sourceText,
 }: {
   plot: Plot
-  /** The row's offsets are the day's across the metrics its request
+  /** The row's offsets are the bucket's across the metrics its request
    * reads, not this metric's own. */
-  dayOffsets: boolean
+  across: boolean
   row: AggregateRow
   valueText: (plot: Plot, row: AggregateRow, key: string) => string
   sourceText: (id: string) => string
@@ -1084,7 +1086,7 @@ function SeriesDetail({
         <TipLine label="Points" value={row.count.toLocaleString("en")} />
         {plot.local && (
           <TipLine
-            label={dayOffsets ? "Day’s UTC offset" : "UTC offset"}
+            label={offsetHead(plot.local.size, across)}
             value={offsetWords(row.start, row.end)}
           />
         )}

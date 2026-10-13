@@ -39,6 +39,45 @@ describe("the rollup table", () => {
     expect(cells).toContain("named withings-body-plus")
   })
 
+  it("captions a shared request's offsets as its bucket's, a week's or a day's", () => {
+    const week: AggregateRow = {
+      start: "2026-09-21T00:00:00+03:00",
+      end: "2026-09-28T00:00:00+01:00",
+      values: [{ reducer: "avg", value: "72.6", unit: "kg" }],
+      count: 6,
+      bounded: 0,
+      synthetic: false,
+      unavailable: false,
+    }
+    const head = (local: "day" | "week" | "month", across?: string) => {
+      cleanup()
+      render(
+        <RollupTable
+          rows={[week]}
+          reducers={["avg"]}
+          groupCell={() => null}
+          sourceText={(s) => s}
+          label="Weight in numbers"
+          local={local}
+          offsetsAcross={across}
+        />
+      )
+      fireEvent.click(screen.getByRole("button", { name: "Show the numbers" }))
+      return screen.getAllByRole("columnheader")[1]
+    }
+    const shared = head("week", "Weight and Steps")
+    expect(shared.textContent).toBe("Week’s UTC offset")
+    expect(shared.getAttribute("title")).toBe(
+      "The UTC offsets of the week’s first and last value across Weight and Steps, read together"
+    )
+    expect(head("month", "Weight and Steps").textContent).toBe(
+      "Month’s UTC offset"
+    )
+    expect(head("day", "Weight and Steps").textContent).toBe("Day’s UTC offset")
+    // A metric read alone: the offsets are its own.
+    expect(head("week").textContent).toBe("UTC offset")
+  })
+
   const day = (i: number, value: string, coverage?: string): AggregateRow => ({
     start: new Date(2026, 8, 18 + i).toISOString(),
     end: new Date(2026, 8, 19 + i).toISOString(),

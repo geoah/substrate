@@ -22,10 +22,13 @@ import type {
 } from "@/lib/api/types"
 import { reducerKey, reducerLabel, reducerName } from "@/lib/observations"
 import {
+  BUCKET_SIZE_WORDS,
   coveredWords,
   localWindowWords,
+  offsetHead,
   offsetWords,
   windowWords,
+  type BucketSize,
 } from "@/lib/observations-time"
 import { namedSources, rollupText, rowValue } from "@/lib/observations-answer"
 import { isTimeUnit, unitSymbol } from "@/lib/units"
@@ -76,7 +79,7 @@ export function RollupTable({
   label,
   caption,
   precision,
-  local = false,
+  local,
   offsetsAcross,
   fallbackZone,
 }: {
@@ -93,11 +96,12 @@ export function RollupTable({
   label: string
   /** The decimal places a value is shown to; the copy keeps every digit. */
   precision?: number
-  /** The rows are recorded-local days, weeks or months. */
-  local?: boolean
+  /** The rows are recorded-local buckets of this size: days, weeks or
+   * months. */
+  local?: BucketSize
   /** The metrics the rows' request reads together, in words: a row's
-   * offsets are then those of the day's first and last value across them,
-   * not this metric's own. */
+   * offsets are then those of the bucket's first and last value across
+   * them, not this metric's own. */
   offsetsAcross?: string
   /** The zone that placed a point written without a UTC offset. */
   fallbackZone?: string
@@ -154,9 +158,9 @@ export function RollupTable({
                   (offsetsAcross ? (
                     <th
                       scope="col"
-                      title={`The UTC offsets of the day’s first and last value across ${offsetsAcross}, read together`}
+                      title={`The UTC offsets of the ${BUCKET_SIZE_WORDS[local]}’s first and last value across ${offsetsAcross}, read together`}
                     >
-                      Day’s UTC offset
+                      {offsetHead(local, true)}
                     </th>
                   ) : (
                     <th scope="col">UTC offset</th>

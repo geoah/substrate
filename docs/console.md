@@ -899,11 +899,12 @@ refuses a request of several metrics, for a budget they pass together or for
 any other reason, the chart reads each of them apart, so a refusal sits on
 the one metric it concerns and the others draw. A server older than
 `aggregate.metrics` refuses the key with a `400`, and the chart reads each
-metric apart there too. In the recorded-local calendar, every row of one day
-in a shared request has the same `start` and `end`, written at the offsets of
-the first and last value any of its metrics takes that day, so the tooltip and
-the table caption them **Day's UTC offset**, the day's across the metrics
-read together rather than the metric's own. A shared request
+metric apart there too. In the recorded-local calendar, every row of one day,
+week or month in a shared request has the same `start` and `end`, written at
+the offsets of the first and last value any of its metrics takes in it, so
+the tooltip and the table caption them by the bucket (**Day's UTC offset**,
+**Week's UTC offset**, **Month's UTC offset**), the bucket's across the
+metrics read together rather than the metric's own. A shared request
 answers `exact` once for all its metrics, so with Technical details on, the
 request's details say when its answer is not exact, and no metric's row does.
 Reads that differ in anything else go apart: a sleep metric placed by its end

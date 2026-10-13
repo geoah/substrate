@@ -216,6 +216,31 @@ describe("the timeline's requests", () => {
     expect(requests[0].textContent).toContain('"metrics"')
   })
 
+  it("captions a shared week's offsets as the week's", async () => {
+    mount(`?metric=health/body_mass,health/steps&${WINDOW}&bucket=week`)
+    const chart = await lane("Weight and Steps")
+    const show = await within(chart).findAllByRole("button", {
+      name: "Show the numbers",
+    })
+    fireEvent.click(show[0])
+    const weight = within(chart).getByRole("table", {
+      name: "Weight in numbers",
+    })
+    expect(
+      within(weight).getByRole("columnheader", { name: "Week’s UTC offset" })
+    ).toBeTruthy()
+    expect(within(weight).queryByText("Day’s UTC offset")).toBe(null)
+    // The tooltip says it the same way.
+    const plot = await within(chart).findByRole("group", {
+      name: "Weight, Average; Steps, Total",
+    })
+    act(() => plot.focus())
+    fireEvent.keyDown(plot, { key: "ArrowRight" })
+    const tip = await within(chart).findByRole("status")
+    expect(tip.textContent).toContain("Week’s UTC offset")
+    expect(tip.textContent).not.toContain("Day’s")
+  })
+
   it("reads the metrics of two charts in one request", async () => {
     const server = mount(
       `?metric=health/body_mass,health/steps,health/whoop_recovery&${WINDOW}`,

@@ -526,6 +526,19 @@ export function offsetOf(iso: string): string | undefined {
   return m[1] === "Z" || m[1] === "-00:00" ? "+00:00" : m[1]
 }
 
+/** The head over a recorded-local row's UTC offsets. Where its request
+ * reads other metrics, they are the offsets of the bucket's first and last
+ * value across them, so the head names the bucket: `Day’s UTC offset`,
+ * `Week’s UTC offset`, `Month’s UTC offset`. */
+export function offsetHead(
+  size: BucketSize | undefined,
+  across: boolean
+): string {
+  if (!across || !size || !dayBucket(size)) return "UTC offset"
+  const word = BUCKET_SIZE_WORDS[size]
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)}’s UTC offset`
+}
+
 /** Whether every row was lived at the reader's own UTC offsets, at its
  * start and at its end, so the recorded-local calendar and the reader's
  * zone put it on one date. */
