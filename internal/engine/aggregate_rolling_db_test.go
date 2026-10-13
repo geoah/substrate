@@ -130,3 +130,68 @@ func TestAggregateRollingReadsTheBucketsBeforeTheRange(t *testing.T) {
 		Reducers: reducers("avg"), Rolling: three,
 	}}, "name a bucket")
 }
+
+// In the recorded-local calendar a value in the range at an offset west of
+// the range's can land on the day before the range's first, which the
+// rolling lookback also reads: that day is one place in a window, taken
+// whole (its values from both sides of the range's start), so it weighs once
+// and n never exceeds the window. One weighing a day at 07:00+03:00, 70 kg on
+// 1 September rising a kilogram a day, and 90 kg at 18:00-04:00 on the 5th,
+// which is 01:00 on the 6th at +03:00 and so inside a range from the 6th.
+func TestAggregateRollingTakesASplitLocalDayOnce(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	plus3 := time.FixedZone("", 3*3600)
+	first := time.Date(2026, 9, 1, 0, 0, 0, 0, plus3)
+	for d := range 9 {
+		f.mustPut(t, f.observation, fmt.Sprintf("w/%d", d), map[string]any{
+			"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
+			"value": quantity(fmt.Sprint(70+d), "kg"), "at": first.AddDate(0, 0, d).Add(7 * time.Hour).Format(time.RFC3339),
+			"hold": "PT0S", "utcOffset": 180,
+		})
+	}
+	f.mustPut(t, f.observation, "w/west", map[string]any{
+		"metric": f.metricRef("health/body_mass"), "source": f.sourceRef("scale"), "form": "gauge",
+		"value": quantity("90", "kg"), "at": time.Date(2026, 9, 5, 18, 0, 0, 0, time.FixedZone("", -4*3600)).Format(time.RFC3339),
+		"hold": "PT0S", "utcOffset": -240,
+	})
+	read := func(rolling *substrate.AggregateRolling) *substrate.AggregateResult {
+		res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(first.AddDate(0, 0, 5), first.AddDate(0, 0, 9)),
+			Bucket:   &substrate.AggregateBucket{Calendar: "day"},
+			Reducers: reducers("avg"),
+			Rolling:  rolling,
+		})
+		return res
+	}
+	plain := read(nil)
+	two := read(&substrate.AggregateRolling{Buckets: 2})
+	if len(plain.Rows) != 5 || len(two.Rows) != 5 {
+		t.Fatalf("%d rows plain, %d rolling; want the 5th's evening at -04:00 and the 6th to the 9th", len(plain.Rows), len(two.Rows))
+	}
+	for i := range plain.Rows {
+		a, _ := val(plain.Rows[i], "avg")
+		b, _ := val(two.Rows[i], "avg")
+		if a != b || !plain.Rows[i].Start.Equal(two.Rows[i].Start) {
+			t.Errorf("row %d: plain %s avg %s, rolling %s avg %s", i, plain.Rows[i].Start, a, two.Rows[i].Start, b)
+		}
+		if _, n := rolled(t, two.Rows[i], "avg", "avg"); n > 2 {
+			t.Errorf("row %s: a 2-day window holds %d values", two.Rows[i].Start.Format(time.RFC3339), n)
+		}
+	}
+	if got := two.Rows[0].Start.Format(time.RFC3339); got != "2026-09-05T17:00:00-04:00" {
+		t.Fatalf("the first row starts %s, want the 5th from the range's start, 17:00-04:00", got)
+	}
+	// The 5th is 74 and 90 whole, a mean of 82; the 6th is 75.
+	if v, n := rolled(t, two.Rows[1], "avg", "avg"); v != "78.5" || n != 2 {
+		t.Errorf("the 6th's 2-day mean = %s over %d places, want 78.5 over 2", v, n)
+	}
+	if v, n := rolled(t, two.Rows[0], "avg", "avg"); v != "82" || n != 1 {
+		t.Errorf("the 5th's 2-day mean = %s over %d places, want its whole day's 82 over 1 (the 4th is not read)", v, n)
+	}
+	previous := read(&substrate.AggregateRolling{Buckets: 2, Through: "previous"})
+	if v, n := rolled(t, previous.Rows[1], "avg", "avg"); v != "77.5" || n != 2 {
+		t.Errorf("the 6th's mean of the 2 days before = %s over %d places, want 77.5 (73 and 82) over 2", v, n)
+	}
+}

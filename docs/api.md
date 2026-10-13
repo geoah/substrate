@@ -1413,11 +1413,13 @@ it needs there (counted in `maxBuckets`, with `fill` applied) and answers
 none of them, so a bucket's rolling value does not depend on where the range
 starts, and the rows a rolling read answers are the rows the same read
 answers without it. In the recorded-local calendar a value before the range
-counts only in the days before the range's first; a day before the range's
+counts only in the days before the range's first. A day before the range's
 first that the range also reaches (a value at an offset west of the range's)
-is one place in the window, holding its values from both sides of the range's
-start. `stddev` is the population deviation of the window's values. `rolling`
-is refused in the records mode and without a `bucket`.
+answers its values in the range alone, and is one place in every window,
+holding the whole day: its values from both sides of the range's start. That
+day's own window reaches back no further than the read's lookback, and its
+`n` says so. `stddev` is the population deviation of the window's values.
+`rolling` is refused in the records mode and without a `bucket`.
 
 `downsample={"points": 800, "method": "m4"}` beside an `aggregate` naming a
 `metric` and a `range` cuts the range into at most `points` columns, each

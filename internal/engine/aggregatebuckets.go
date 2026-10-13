@@ -70,8 +70,9 @@ type aggBucket struct {
 	start, end time.Time
 	local      bool
 	// lookback marks a bucket before the range that a rolling window reads:
-	// reduced, filled and rolled, never answered. A recorded-local day may be
-	// two buckets, the part before the range and the part in it.
+	// reduced, filled and rolled, never answered. A recorded-local day the
+	// range reaches before its first may be two buckets: the lookback one,
+	// holding the whole day the read takes, and the part in the range.
 	lookback bool
 	// zone is where start and end are written.
 	zone *time.Location
@@ -207,10 +208,12 @@ func (b *aggBucket) shown(ends *rowEnds, rangeFrom, rangeTo time.Time) (time.Tim
 }
 
 // rangeOf is the span a bucket's points are taken from: the range, or for a
-// lookback bucket the part of the read before it.
+// lookback bucket the whole read, because a recorded-local lookback bucket
+// also holds the values in the range on its day (localBuckets). A UTC
+// lookback bucket ends before the range, so the range adds nothing to it.
 func (p *aggPlan) rangeOf(b *aggBucket) (from, to time.Time) {
 	if b.lookback {
-		return p.readFrom, p.from
+		return p.readFrom, p.to
 	}
 	return p.from, p.to
 }

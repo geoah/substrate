@@ -420,11 +420,7 @@ func (r *aggRun) bucketsOf(t time.Time, off int64) ([]*aggBucket, error) {
 	}
 	switch mode {
 	case bucketLocal:
-		b := r.localBucket(t, wallOf(t, off))
-		if b == nil {
-			return nil, nil
-		}
-		return []*aggBucket{b}, nil
+		return r.localBuckets(t, wallOf(t, off)), nil
 	case bucketRecords:
 		return r.windowsMeeting(t, t.Add(time.Nanosecond))
 	}
@@ -448,6 +444,26 @@ func (r *aggRun) localBucket(t, wall time.Time) *aggBucket {
 	var b *aggBucket
 	r.buckets, b = localBucketAt(r.buckets, wall, r.p.bucket, lookback)
 	return b
+}
+
+// localBuckets are the recorded-local buckets an instant t at wall-clock
+// time wall lands in: localBucket's, and where a value in the range lands
+// before the range's first bucket (at an offset west of the range's) and a
+// rolling window reads before the range, that bucket's lookback too. The
+// lookback bucket then holds the bucket's values from both sides of the
+// range's start, and a window takes it as the bucket's one place (roll); the
+// row answered keeps the values in the range alone.
+func (r *aggRun) localBuckets(t, wall time.Time) []*aggBucket {
+	b := r.localBucket(t, wall)
+	switch {
+	case b == nil:
+		return nil
+	case b.lookback || r.p.lookback == 0 || !wall.Before(r.firstLocal()):
+		return []*aggBucket{b}
+	}
+	var whole *aggBucket
+	r.buckets, whole = localBucketAt(r.buckets, wall, r.p.bucket, true)
+	return []*aggBucket{b, whole}
 }
 
 // firstLocal is the wall-clock start of the recorded-local bucket the range
@@ -479,7 +495,7 @@ func (r *aggRun) spanParts(sp observed.Span, off int64) ([]spanPart, error) {
 			if end.After(sp.End) {
 				end = sp.End
 			}
-			if b := r.localBucket(start, wall); b != nil {
+			for _, b := range r.localBuckets(start, wall) {
 				part := sp
 				part.Start, part.End = start, end
 				out = append(out, spanPart{bucket: b, span: part})

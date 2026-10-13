@@ -85,7 +85,7 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	if p.rolling != nil {
-		if err := p.roll(ctx, out, positions(buckets), meta); err != nil {
+		if err := p.roll(ctx, out, buckets, meta); err != nil {
 			return nil, err
 		}
 	}
@@ -107,8 +107,8 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 }
 
 // positions are the buckets' places in the sequence a rolling window counts:
-// one per start, so a recorded-local day split by the range's start into a
-// lookback bucket and a bucket of the range is one place.
+// one per start, so a recorded-local bucket the range reaches before its
+// first, a lookback bucket and a bucket of the range, is one place.
 func positions(buckets []*aggBucket) []int {
 	out := make([]int, len(buckets))
 	for i, b := range buckets {
@@ -150,39 +150,60 @@ func (p *aggPlan) filled(template, prev *aggOut) []substrate.AggregateValue {
 	return out
 }
 
-// roll appends, to each row, every rolling reducer over each of its values
-// across a window of buckets of the same series: the row's own and the
-// Buckets-1 before it, or the Buckets before it where the window ends at the
-// previous bucket. A window value is matched by its reducer and code, and a
-// null one is skipped; n says how many the window held. A row's window is up
-// to the cap's buckets long, so the context is checked before each row.
-func (p *aggPlan) roll(ctx context.Context, rows []aggOut, pos []int, meta *aggMeta) error {
+// roll appends, to each row of the range, every rolling reducer over each of
+// its values across a window of places (positions) of the same series: the
+// row's own and the Buckets-1 before it, or the Buckets before it where the
+// window ends at the previous bucket. A place holds one row's values: where
+// a lookback bucket and a bucket of the range share it, the lookback one,
+// which holds the bucket's values from both sides of the range's start
+// (localBuckets), so the bucket weighs once. A window value is matched by
+// its reducer and code, and a null one is skipped; n says how many places
+// held one. A row's window is up to the cap's buckets long, so the context
+// is checked before each row.
+func (p *aggPlan) roll(ctx context.Context, rows []aggOut, buckets []*aggBucket, meta *aggMeta) error {
+	pos := positions(buckets)
 	n := p.rolling.Buckets
 	last := 0
 	if p.rolling.Through == substrate.RollingThroughPrevious {
 		last = 1
 	}
-	bySeries := map[string][]int{}
+	type key struct{ reducer, code string }
+	type series struct {
+		rows []int
+		// at is each place's values, and whole whether a lookback row set
+		// them.
+		at    map[int]map[key]float64
+		whole map[int]bool
+	}
+	bySeries := map[string]*series{}
 	for i, o := range rows {
 		k := o.group.sortKey + "\x1e" + o.code
-		bySeries[k] = append(bySeries[k], i)
-	}
-	type key struct{ reducer, code string }
-	for _, idx := range bySeries {
-		sort.Slice(idx, func(a, b int) bool { return rows[idx[a]].bucket < rows[idx[b]].bucket })
-		values := make([]map[key]float64, len(idx))
-		for j, i := range idx {
-			values[j] = map[key]float64{}
-			for _, v := range rows[i].row.Values {
-				if v.Value == nil {
-					continue
-				}
-				if f, err := strconv.ParseFloat(*v.Value, 64); err == nil {
-					values[j][key{v.Reducer.String(), v.Code}] = f
-				}
+		s := bySeries[k]
+		if s == nil {
+			s = &series{at: map[int]map[key]float64{}, whole: map[int]bool{}}
+			bySeries[k] = s
+		}
+		s.rows = append(s.rows, i)
+		place, lookback := pos[o.bucket], buckets[o.bucket].lookback
+		if s.whole[place] && !lookback {
+			continue
+		}
+		values := map[key]float64{}
+		for _, v := range o.row.Values {
+			if v.Value == nil {
+				continue
+			}
+			if f, err := strconv.ParseFloat(*v.Value, 64); err == nil {
+				values[key{v.Reducer.String(), v.Code}] = f
 			}
 		}
-		for j, i := range idx {
+		s.at[place], s.whole[place] = values, lookback
+	}
+	for _, s := range bySeries {
+		for _, i := range s.rows {
+			if buckets[rows[i].bucket].lookback {
+				continue
+			}
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -193,19 +214,16 @@ func (p *aggPlan) roll(ctx context.Context, rows []aggOut, pos []int, meta *aggM
 				of := v.Reducer
 				for _, rr := range p.rolling.Reducers {
 					var acc []float64
-					for w := j; w >= 0 && pos[rows[idx[w]].bucket] > here-last-n; w-- {
-						if pos[rows[idx[w]].bucket] > here-last {
-							continue
-						}
-						if f, ok := values[w][key{of.String(), v.Code}]; ok {
+					for place := here - last - n + 1; place <= here-last; place++ {
+						if f, ok := s.at[place][key{of.String(), v.Code}]; ok {
 							acc = append(acc, f)
 						}
 					}
 					held := len(acc)
 					rv := substrate.AggregateValue{Reducer: rr, Of: &of, Rolling: n, Unit: v.Unit, Code: v.Code, N: &held}
 					if r, ok := rollOf(rr.Name, acc); ok {
-						s := formatFloat(r)
-						rv.Value = &s
+						str := formatFloat(r)
+						rv.Value = &str
 						meta.inexact = true
 					}
 					if of.Name == substrate.ReducerCount {
