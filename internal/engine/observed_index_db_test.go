@@ -262,19 +262,21 @@ func TestObservedIndexDerivesThePointsOfEveryShape(t *testing.T) {
 
 // specPoint reads one stored point the way the specification takes it.
 type specPoint struct {
-	hold       [6]string // metric, kind, source, about, channel, form
-	group      string
-	point      observed.Point
-	code, unit string
-	delta      bool
-	offset     int
+	hold        [6]string // metric, kind, source, about, channel, form
+	group       string
+	point       observed.Point
+	code, unit  string
+	delta       bool
+	offset      int
+	offsetKnown bool
 }
 
 func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 	t.Helper()
 	rows, err := db.Query(`
 		SELECT metric, kind, source, about, channel, form, ts, ts_end, value, value_exact::text, value_base, code,
-		       unit, delta, utc_offset_min, bounded, hold_ms, reset_rule, reset_at, wrap_at::text, circular, record_id, ord
+		       unit, delta, utc_offset_min, offset_known, bounded, hold_ms, reset_rule, reset_at, wrap_at::text, circular,
+		       record_id, ord
 		FROM observed_points WHERE form <> 'summary'`)
 	if err != nil {
 		t.Fatalf("read the points: %v", err)
@@ -290,7 +292,7 @@ func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 		var circular bool
 		p := &sp.point
 		if err := rows.Scan(&sp.hold[0], &sp.hold[1], &sp.hold[2], &sp.hold[3], &sp.hold[4], &sp.hold[5],
-			&p.At, &p.End, &value, &exact, &base, &sp.code, &sp.unit, &sp.delta, &sp.offset, &p.Bounded,
+			&p.At, &p.End, &value, &exact, &base, &sp.code, &sp.unit, &sp.delta, &sp.offset, &sp.offsetKnown, &p.Bounded,
 			&hold, &resetRule, &resetAt, &wrapAt, &circular, &p.RecordID, &p.Ord); err != nil {
 			t.Fatal(err)
 		}
@@ -312,7 +314,7 @@ func storedPoints(t *testing.T, db *sql.DB) []specPoint {
 				p.Circular, p.Angle = true, base.Float64*math.Pi/180
 			}
 		}
-		sp.group = fmt.Sprintf("%s|%s|%v|%d", sp.code, sp.unit, sp.delta, sp.offset)
+		sp.group = fmt.Sprintf("%s|%s|%v|%d|%v", sp.code, sp.unit, sp.delta, sp.offset, sp.offsetKnown)
 		p.Group = sp.group
 		out = append(out, sp)
 	}
@@ -345,7 +347,7 @@ type storedRollup struct {
 func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 	t.Helper()
 	rows, err := db.Query(`
-		SELECT metric, kind, source, about, channel, form, code, unit, delta, utc_offset_min, bucket15,
+		SELECT metric, kind, source, about, channel, form, code, unit, delta, utc_offset_min, offset_known, bucket15,
 		       n, bounded, sum, min, max, mean, m2, first_ts, first_value::text, last_ts, last_value::text,
 		       covered_ms, held_ms, twa_sum, last_hold_ms, max_gap_ms, start_gap_ms, increase::text, resets,
 		       sin_sum, cos_sum, span_end, first_record_id, first_ord, last_record_id, last_ord,
@@ -361,16 +363,17 @@ func storedRollups(t *testing.T, db *sql.DB) map[string]storedRollup {
 		var code, unit string
 		var delta bool
 		var offset int
+		var known bool
 		var bucket time.Time
 		var s storedRollup
-		if err := rows.Scan(&k[0], &k[1], &k[2], &k[3], &k[4], &k[5], &code, &unit, &delta, &offset, &bucket,
+		if err := rows.Scan(&k[0], &k[1], &k[2], &k[3], &k[4], &k[5], &code, &unit, &delta, &offset, &known, &bucket,
 			&s.n, &s.bounded, &s.sum, &s.min, &s.max, &s.mean, &s.m2, &s.firstTS, &s.firstValue, &s.lastTS, &s.lastValue,
 			&s.covered, &s.held, &s.twa, &s.lastHold, &s.maxGap, &s.startGap, &s.increase, &s.resets,
 			&s.sin, &s.cos, &s.spanEnd, &s.firstRecord, &s.firstOrd, &s.lastRecord, &s.lastOrd,
 			&s.minValue, &s.maxValue); err != nil {
 			t.Fatal(err)
 		}
-		out[rollupKey(k, fmt.Sprintf("%s|%s|%v|%d", code, unit, delta, offset), bucket)] = s
+		out[rollupKey(k, fmt.Sprintf("%s|%s|%v|%d|%v", code, unit, delta, offset, known), bucket)] = s
 	}
 	return out
 }
@@ -636,7 +639,7 @@ func observedTables(t *testing.T, db *sql.DB) string {
 	var b strings.Builder
 	for _, q := range []string{
 		`SELECT coalesce(jsonb_agg(to_jsonb(p) - 'repository' ORDER BY kind, record_id, ord), '[]')::text FROM observed_points p`,
-		`SELECT coalesce(jsonb_agg(to_jsonb(r) - 'repository' ORDER BY metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min), '[]')::text FROM observed_rollups r`,
+		`SELECT coalesce(jsonb_agg(to_jsonb(r) - 'repository' ORDER BY metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min, offset_known), '[]')::text FROM observed_rollups r`,
 		`SELECT coalesce(jsonb_agg(to_jsonb(l) - 'repository' ORDER BY metric, kind, source, about, channel), '[]')::text FROM observed_latest l`,
 	} {
 		var doc string
@@ -937,6 +940,84 @@ func TestObservedSingleGaugeHoldsUntilItsEnd(t *testing.T) {
 	}
 }
 
+// A value written without a UTC offset is stored at offset 0 with
+// offset_known false, so a reader tells it from a value written at offset 0:
+// the points, their rollup rows (a group apart from the recorded offset 0's)
+// and the latest row each say which it is. A trace naming either offset knows
+// both.
+func TestObservedMarksAValueWrittenWithoutAnOffset(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	weigh := func(id string, offset any) {
+		p := map[string]any{
+			"metric": r.metricRef("health/body_mass"), "source": r.sourceRef("scale"), "form": "gauge",
+			"value": quantity("72", "kg"), "at": "2026-10-07T22:30:00Z",
+		}
+		if offset != nil {
+			p["utcOffset"] = offset
+		}
+		r.mustPut(t, r.observation, id, p)
+	}
+	weigh("w/utc", 0)
+	weigh("w/none", nil)
+	weigh("w/athens", 180)
+	trace := func(id string, offsets map[string]any) {
+		p := map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef(id), "form": "gauge", "unit": "Cel",
+			"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "every": "PT30M", "values": []any{"20", "21"},
+		}
+		for k, v := range offsets {
+			p[k] = v
+		}
+		r.mustPut(t, r.trace, id, p)
+	}
+	trace("t/none", nil)
+	trace("t/end", map[string]any{"utcOffsetEnd": 0})
+	known := func(kind, id string) []bool {
+		t.Helper()
+		rows, err := r.db.Query(`SELECT offset_known FROM observed_points WHERE kind = $1 AND record_id = $2 ORDER BY ord`, kind, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		var out []bool
+		for rows.Next() {
+			var k bool
+			if err := rows.Scan(&k); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, k)
+		}
+		return out
+	}
+	for _, c := range []struct {
+		kind, id string
+		want     []bool
+	}{
+		{r.observation, "w/utc", []bool{true}},
+		{r.observation, "w/none", []bool{false}},
+		{r.observation, "w/athens", []bool{true}},
+		{r.trace, "t/none", []bool{false, false}},
+		{r.trace, "t/end", []bool{true, true}},
+	} {
+		if got := known(c.kind, c.id); fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("%s offset_known = %v, want %v", c.id, got, c.want)
+		}
+	}
+	if n := r.count(t, `SELECT count(*) FROM observed_rollups WHERE source = $1 AND utc_offset_min = 0`, r.source+"/scale"); n != 2 {
+		t.Errorf("the recorded and the unrecorded offset 0 share %d rollup row(s), want a row each", n)
+	}
+	var latestKnown bool
+	if err := r.db.QueryRow(`SELECT offset_known FROM observed_latest WHERE source = $1`, r.source+"/t/none").Scan(&latestKnown); err != nil {
+		t.Fatal(err)
+	}
+	if latestKnown {
+		t.Error("the latest row of a trace with no offset says its offset is known")
+	}
+	checkRollupsMatchSpec(t, r.db)
+	r.rebuildMatches(t)
+}
+
 // A kind that starts binding `observed` derives its existing rows' points
 // behind the apply that bound it, and one that stops drops them.
 func TestObservedIndexFollowsTheBinding(t *testing.T) {
@@ -1204,8 +1285,8 @@ func TestObservedRollupRowsAlwaysCarryTheirDetail(t *testing.T) {
 			form = vocabulary.FormAmount
 		}
 		_, err := r.db.Exec(`INSERT INTO observed_rollups (repository, metric, kind, source, about, channel, form, code, unit, delta,
-			utc_offset_min, bucket15, max_gap_ms, start_gap_ms, `+x.columns+`)
-			VALUES ($1, $3, 'k', '', '', '', $2, '', '', false, 0, '2026-01-01T00:00:00Z', 0, 0, `+x.values+`)`, repo, form, x.what)
+			utc_offset_min, offset_known, bucket15, max_gap_ms, start_gap_ms, `+x.columns+`)
+			VALUES ($1, $3, 'k', '', '', '', $2, '', '', false, 0, true, '2026-01-01T00:00:00Z', 0, 0, `+x.values+`)`, repo, form, x.what)
 		if err == nil || !strings.Contains(err.Error(), "23514") {
 			t.Errorf("a row with %s: err = %v, want a check violation (23514)", x.what, err)
 		}

@@ -24,7 +24,8 @@ package engine
 // A stream is (kind, metric, source, about, channel): one row of
 // observed_latest. Its points with one form are what a hold runs across and
 // a counter steps across (obsHold); a rollup row is one bucket of that, for
-// one group: a code, a unit, the delta flag and a UTC offset.
+// one group: a code, a unit, the delta flag, a UTC offset and whether the
+// offset was recorded.
 
 import (
 	"encoding/json"
@@ -123,11 +124,13 @@ type observedRows struct {
 	points    []obsPoint
 }
 
-// obsPoint is one point of a record.
+// obsPoint is one point of a record. offsetKnown is false where the record
+// carried no UTC offset and offset is 0 for want of one.
 type obsPoint struct {
 	ord         int
 	ts, tsEnd   time.Time
 	offset      int64
+	offsetKnown bool
 	value, base *float64
 	exact       *string
 	code        string
@@ -217,7 +220,7 @@ func singlePoint(row *erow) (obsPoint, string, bool) {
 		p.tsEnd = *row.EndsAt
 	}
 	if off, ok := intOf(props["utcOffset"]); ok {
-		p.offset = off
+		p.offset, p.offsetKnown = off, true
 	}
 	var unit string
 	if q, ok := props["value"].(map[string]any); ok {
@@ -275,6 +278,7 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 	if !hasEnd {
 		endOff = startOff
 	}
+	known := hasStart || hasEnd
 	var every time.Duration
 	if s := stringProp(props, "every"); s != "" {
 		every, _ = vocabulary.ParseISODuration(s)
@@ -283,7 +287,7 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 	factor, offset, baseErr := vocabulary.ToBase(measure, r.unit)
 	out := make([]obsPoint, 0, len(pts))
 	for i, tp := range pts {
-		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, offset: startOff}
+		p := obsPoint{ord: i, ts: tp.At, tsEnd: tp.At, code: tp.Code, offset: startOff, offsetKnown: known}
 		if !tp.At.Before(mid) {
 			p.offset = endOff
 		}
@@ -502,6 +506,7 @@ func (t *txn) insertObserved(r *observedRows) error {
 	ts := make([]time.Time, n)
 	tsEnd := make([]time.Time, n)
 	offset := make([]int64, n)
+	known := make([]bool, n)
 	value := make([]*float64, n)
 	exact := make([]*string, n)
 	base := make([]*float64, n)
@@ -511,7 +516,7 @@ func (t *txn) insertObserved(r *observedRows) error {
 	touch := t.observedTouched()
 	unavailable := "unavailable"
 	for i, p := range r.points {
-		ord[i], ts[i], tsEnd[i], offset[i] = int64(p.ord), p.ts, p.tsEnd, p.offset
+		ord[i], ts[i], tsEnd[i], offset[i], known[i] = int64(p.ord), p.ts, p.tsEnd, p.offset, p.offsetKnown
 		value[i], exact[i], base[i], code[i], bounded[i] = p.value, p.exact, p.base, p.code, p.bounded
 		quality[i] = r.quality
 		if !p.available() {
@@ -531,17 +536,17 @@ func (t *txn) insertObserved(r *observedRows) error {
 	}
 	if _, err := t.exec(`
 		INSERT INTO observed_points (kind, record_id, ord, metric, source, about, channel, form, ts, ts_end,
-			utc_offset_min, unit, delta, value, value_exact, value_base, code, statistic, bounded, quality,
+			utc_offset_min, offset_known, unit, delta, value, value_exact, value_base, code, statistic, bounded, quality,
 			hold_ms, reset_rule, reset_at, wrap_at, circular, revision)
 		SELECT $1, $2, u.ord, $3, $4, $5, $6, $7, u.ts, u.ts_end,
-			u.off, $8, $9, u.value, u.exact::numeric, u.base, u.code, $10, u.bounded, u.quality,
+			u.off, u.known, $8, $9, u.value, u.exact::numeric, u.base, u.code, $10, u.bounded, u.quality,
 			$11, $12, $13, $14::numeric, $15, $16
 		FROM unnest($17::int[], $18::timestamptz[], $19::timestamptz[], $20::int[], $21::float8[],
-		            $22::text[], $23::float8[], $24::text[], $25::boolean[], $26::text[])
-		     AS u(ord, ts, ts_end, off, value, exact, base, code, bounded, quality)`,
+		            $22::text[], $23::float8[], $24::text[], $25::boolean[], $26::text[], $27::boolean[])
+		     AS u(ord, ts, ts_end, off, value, exact, base, code, bounded, quality, known)`,
 		r.kind, r.id, r.metric, r.source, r.about, r.channel, r.form,
 		r.unit, r.delta, r.statistic, r.holdMs, r.resetRule, r.resetAt, r.wrapAt, r.circular, r.revision,
-		ord, ts, tsEnd, offset, value, exact, base, code, bounded, quality); err != nil {
+		ord, ts, tsEnd, offset, value, exact, base, code, bounded, quality, known); err != nil {
 		return fmt.Errorf("substrate/engine: observed points of %s %s: %w", r.kind, r.id, err)
 	}
 	return nil

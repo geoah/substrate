@@ -67,15 +67,23 @@ func (t *txn) settleObserved() error {
 	return nil
 }
 
-// obsGroup is one rollup row's group inside a bucket.
+// obsGroup is one rollup row's group inside a bucket. offsetUnknown is
+// observed_points.offset_known false: the points carried no UTC offset and
+// offset is 0 for want of one. Its zero value is a recorded offset, so a
+// reader that scans no offset_known keys a row as before.
 type obsGroup struct {
-	code, unit string
-	delta      bool
-	offset     int64
+	code, unit    string
+	delta         bool
+	offset        int64
+	offsetUnknown bool
 }
 
 func (g obsGroup) key() string {
-	return g.code + "\x1f" + g.unit + "\x1f" + strconv.FormatBool(g.delta) + "\x1f" + strconv.FormatInt(g.offset, 10)
+	k := g.code + "\x1f" + g.unit + "\x1f" + strconv.FormatBool(g.delta) + "\x1f" + strconv.FormatInt(g.offset, 10)
+	if g.offsetUnknown {
+		k += "\x1f?"
+	}
+	return k
 }
 
 // rollupRow is one computed row of observed_rollups.
@@ -88,7 +96,7 @@ type rollupRow struct {
 // pointColumns are the columns a recompute reads a point by, in scanPoint's
 // order.
 const pointColumns = `p.ts, p.ts_end, p.value, p.value_exact::text, p.value_base, p.code, p.unit, p.delta,
-	p.utc_offset_min, p.bounded, p.hold_ms, p.reset_rule, p.reset_at, p.wrap_at::text, p.circular`
+	p.utc_offset_min, p.offset_known, p.bounded, p.hold_ms, p.reset_rule, p.reset_at, p.wrap_at::text, p.circular`
 
 // availablePoint is vocabulary.ObservedPointAvailable in SQL, over a point
 // aliased p: a value, or a code that is not empty. Every statement that
@@ -117,11 +125,11 @@ func scanPoint(rows *sql.Rows, lead ...any) (scannedPoint, error) {
 		circular                 bool
 		ts, tsEnd                time.Time
 		code, unit               string
-		delta, bounded           bool
+		delta, bounded, known    bool
 		offset                   int64
 	)
 	dests := append(lead, &ts, &tsEnd, &value, &exact, &base, &code, &unit, &delta,
-		&offset, &bounded, &hold, &resetRule, &resetAt, &wrapAt, &circular)
+		&offset, &known, &bounded, &hold, &resetRule, &resetAt, &wrapAt, &circular)
 	if err := rows.Scan(dests...); err != nil {
 		return sp, err
 	}
@@ -148,7 +156,7 @@ func scanPoint(rows *sql.Rows, lead ...any) (scannedPoint, error) {
 			p.Circular, p.Angle = true, base.Float64*math.Pi/180
 		}
 	}
-	sp.group = obsGroup{code: code, unit: unit, delta: delta, offset: offset}
+	sp.group = obsGroup{code: code, unit: unit, delta: delta, offset: offset, offsetUnknown: !known}
 	p.Group = sp.group.key()
 	sp.point = p
 	return sp, nil
@@ -476,7 +484,7 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 	n := len(rows)
 	var (
 		code, unit                      = make([]string, n), make([]string, n)
-		delta                           = make([]bool, n)
+		delta, known                    = make([]bool, n), make([]bool, n)
 		offset, count, bounded, covered = make([]int64, n), make([]int64, n), make([]int64, n), make([]int64, n)
 		maxGap, startGap                = make([]int64, n), make([]int64, n)
 		bucket                          = make([]time.Time, n)
@@ -495,7 +503,7 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 		if !s.SpanEnd.IsZero() {
 			spanEnd[i] = ptrTo(s.SpanEnd)
 		}
-		code[i], unit[i], delta[i], offset[i] = r.group.code, r.group.unit, r.group.delta, r.group.offset
+		code[i], unit[i], delta[i], offset[i], known[i] = r.group.code, r.group.unit, r.group.delta, r.group.offset, !r.group.offsetUnknown
 		bucket[i], count[i], bounded[i], covered[i] = r.start, s.N, s.Bounded, s.CoveredMs
 		maxGap[i], startGap[i] = s.MaxGapMs, s.StartGapMs
 		if s.Values > 0 {
@@ -527,27 +535,27 @@ func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
 			code, unit, delta, utc_offset_min, bucket15, n, bounded, sum, min, max, mean, m2,
 			first_ts, first_value, last_ts, last_value, covered_ms, held_ms, twa_sum, last_hold_ms,
 			max_gap_ms, start_gap_ms, increase, resets, sin_sum, cos_sum, span_end,
-			first_record_id, first_ord, last_record_id, last_ord, min_value, max_value)
+			first_record_id, first_ord, last_record_id, last_ord, min_value, max_value, offset_known)
 		SELECT $1, $2, $3, $4, $5, $6,
 			u.code, u.unit, u.delta, u.off, u.bucket, u.n, u.bounded, u.sum, u.min, u.max, u.mean, u.m2,
 			u.first_ts, u.first_value::numeric, u.last_ts, u.last_value::numeric, u.covered, u.held, u.twa, u.last_hold,
 			u.max_gap, u.start_gap, u.increase::numeric, u.resets, u.sin, u.cos, u.span_end,
-			u.first_record, u.first_ord, u.last_record, u.last_ord, u.min_value::numeric, u.max_value::numeric
+			u.first_record, u.first_ord, u.last_record, u.last_ord, u.min_value::numeric, u.max_value::numeric, u.known
 		FROM unnest($7::text[], $8::text[], $9::boolean[], $10::int[], $11::timestamptz[], $12::bigint[], $13::bigint[],
 		            $14::float8[], $15::float8[], $16::float8[], $17::float8[], $18::float8[],
 		            $19::timestamptz[], $20::text[], $21::timestamptz[], $22::text[], $23::bigint[], $24::bigint[],
 		            $25::float8[], $26::bigint[], $27::bigint[], $28::bigint[], $29::text[], $30::int[],
 		            $31::float8[], $32::float8[], $33::timestamptz[],
-		            $34::text[], $35::int[], $36::text[], $37::int[], $38::text[], $39::text[])
+		            $34::text[], $35::int[], $36::text[], $37::int[], $38::text[], $39::text[], $40::boolean[])
 		     AS u(code, unit, delta, off, bucket, n, bounded, sum, min, max, mean, m2,
 		          first_ts, first_value, last_ts, last_value, covered, held, twa, last_hold,
 		          max_gap, start_gap, increase, resets, sin, cos, span_end,
-		          first_record, first_ord, last_record, last_ord, min_value, max_value)`,
+		          first_record, first_ord, last_record, last_ord, min_value, max_value, known)`,
 		h.metric, h.kind, h.source, h.about, h.channel, h.form,
 		code, unit, delta, offset, bucket, count, bounded, sum, minV, maxV, mean, m2,
 		firstTS, firstValue, lastTS, lastValue, covered, held, twa, lastHold,
 		maxGap, startGap, increase, resets, sin, cos, spanEnd,
-		firstRecord, firstOrd, lastRecord, lastOrd, minExact, maxExact)
+		firstRecord, firstOrd, lastRecord, lastOrd, minExact, maxExact, known)
 	return err
 }
 
@@ -562,7 +570,7 @@ func digitsOf(p *observed.Point) *string {
 // latestColumns are the columns observed_latest takes from a point, in
 // insertLatest's order.
 const latestColumns = `p.ts, p.ts_end, p.value_exact::text, p.code, p.unit, p.delta, p.form, p.statistic,
-	p.bounded, p.hold_ms, p.utc_offset_min, p.record_id, p.revision`
+	p.bounded, p.hold_ms, p.utc_offset_min, p.offset_known, p.record_id, p.revision`
 
 // latestOrder picks a stream's newest point: pointOrder's last, the latest
 // instant, then the greater record id, then the later point. It is the order
@@ -600,7 +608,7 @@ func (t *txn) recomputeLatest(touched map[obsStream]int64) error {
 		var i int
 		var l latestRow
 		if err := rows.Scan(&i, &l.ts, &l.tsEnd, &l.value, &l.code, &l.unit, &l.delta, &l.form, &l.statistic,
-			&l.bounded, &l.hold, &l.offset, &l.recordID, &l.revision); err != nil {
+			&l.bounded, &l.hold, &l.offset, &l.offsetKnown, &l.recordID, &l.revision); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -643,6 +651,7 @@ type latestRow struct {
 	delta, bounded   bool
 	hold, revision   sql.NullInt64
 	offset           int64
+	offsetKnown      bool
 	recordID         string
 	points           int64
 }
@@ -664,13 +673,13 @@ func (t *txn) upsertLatest(rows []latestRow) error {
 	ts, tsEnd := make([]time.Time, n), make([]time.Time, n)
 	value, statistic := make([]*string, n), make([]*string, n)
 	code, unit, form, recordID := make([]string, n), make([]string, n), make([]string, n), make([]string, n)
-	delta, bounded := make([]bool, n), make([]bool, n)
+	delta, bounded, known := make([]bool, n), make([]bool, n), make([]bool, n)
 	hold, revision := make([]*int64, n), make([]*int64, n)
 	offset, points := make([]int64, n), make([]int64, n)
 	for i, l := range rows {
 		streams[i] = l.obsStream
 		ts[i], tsEnd[i], code[i], unit[i], form[i], recordID[i] = l.ts, l.tsEnd, l.code, l.unit, l.form, l.recordID
-		delta[i], bounded[i], offset[i], points[i] = l.delta, l.bounded, l.offset, l.points
+		delta[i], bounded[i], offset[i], known[i], points[i] = l.delta, l.bounded, l.offset, l.offsetKnown, l.points
 		if l.value.Valid {
 			value[i] = ptrTo(l.value.String)
 		}
@@ -687,22 +696,22 @@ func (t *txn) upsertLatest(rows []latestRow) error {
 	metric, kind, source, about, channel := streamColumns(streams)
 	_, err := t.exec(`
 		INSERT INTO observed_latest (metric, kind, source, about, channel, ts, ts_end, value, code, unit, delta,
-			form, statistic, bounded, hold_ms, utc_offset_min, record_id, revision, points)
+			form, statistic, bounded, hold_ms, utc_offset_min, offset_known, record_id, revision, points)
 		SELECT u.metric, u.kind, u.source, u.about, u.channel, u.ts, u.ts_end, u.value::numeric, u.code, u.unit, u.delta,
-			u.form, u.statistic, u.bounded, u.hold, u.off, u.record_id, u.revision, u.points
+			u.form, u.statistic, u.bounded, u.hold, u.off, u.known, u.record_id, u.revision, u.points
 		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[], $7::timestamptz[],
 		            $8::text[], $9::text[], $10::text[], $11::boolean[], $12::text[], $13::text[], $14::boolean[],
-		            $15::bigint[], $16::int[], $17::text[], $18::bigint[], $19::bigint[])
+		            $15::bigint[], $16::int[], $17::text[], $18::bigint[], $19::bigint[], $20::boolean[])
 		     AS u(metric, kind, source, about, channel, ts, ts_end, value, code, unit, delta,
-		          form, statistic, bounded, hold, off, record_id, revision, points)
+		          form, statistic, bounded, hold, off, record_id, revision, points, known)
 		ON CONFLICT (repository, metric, kind, source, about, channel) DO UPDATE SET
 			ts = EXCLUDED.ts, ts_end = EXCLUDED.ts_end, value = EXCLUDED.value, code = EXCLUDED.code,
 			unit = EXCLUDED.unit, delta = EXCLUDED.delta, form = EXCLUDED.form, statistic = EXCLUDED.statistic,
 			bounded = EXCLUDED.bounded, hold_ms = EXCLUDED.hold_ms, utc_offset_min = EXCLUDED.utc_offset_min,
-			record_id = EXCLUDED.record_id, revision = EXCLUDED.revision,
+			offset_known = EXCLUDED.offset_known, record_id = EXCLUDED.record_id, revision = EXCLUDED.revision,
 			points = observed_latest.points + EXCLUDED.points`,
 		metric, kind, source, about, channel, ts, tsEnd, value, code, unit, delta,
-		form, statistic, bounded, hold, offset, recordID, revision, points)
+		form, statistic, bounded, hold, offset, recordID, revision, points, known)
 	return err
 }
 
@@ -717,10 +726,10 @@ func (t *txn) rederiveObservedAll() error {
 	}
 	if _, err := t.exec(`
 		INSERT INTO observed_latest (metric, kind, source, about, channel, ts, ts_end, value, code, unit, delta,
-			form, statistic, bounded, hold_ms, utc_offset_min, record_id, revision, points)
+			form, statistic, bounded, hold_ms, utc_offset_min, offset_known, record_id, revision, points)
 		SELECT DISTINCT ON (p.metric, p.kind, p.source, p.about, p.channel)
 			p.metric, p.kind, p.source, p.about, p.channel, p.ts, p.ts_end, p.value_exact, p.code, p.unit, p.delta,
-			p.form, p.statistic, p.bounded, p.hold_ms, p.utc_offset_min, p.record_id, p.revision,
+			p.form, p.statistic, p.bounded, p.hold_ms, p.utc_offset_min, p.offset_known, p.record_id, p.revision,
 			count(*) OVER (PARTITION BY p.metric, p.kind, p.source, p.about, p.channel)
 		FROM observed_points p WHERE ` + availablePoint + `
 		ORDER BY p.metric, p.kind, p.source, p.about, p.channel, ` + latestOrder); err != nil {

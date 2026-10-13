@@ -8,8 +8,10 @@
 --
 -- A reference column (`metric`, `source`, `about`) holds the target's record
 -- path, `<kind>/<id>`. An absent `source`, `about`, `channel`, `code` or
--- `unit` is the empty string and an absent UTC offset is 0, so the stream
--- columns can key a row.
+-- `unit` is the empty string, so the stream columns can key a row. An absent
+-- UTC offset is 0 with `offset_known` false, so a reader tells a value
+-- written without an offset from one written at offset 0, and the pair can
+-- key a row where a null could not.
 --
 -- observed_points: one row per value, one per observation and one per point
 -- of a trace, null points of a trace included (`value` null, `code` empty,
@@ -43,6 +45,7 @@ CREATE TABLE IF NOT EXISTS observed_points (
     ts             timestamptz NOT NULL,
     ts_end         timestamptz NOT NULL,
     utc_offset_min integer     NOT NULL DEFAULT 0,
+    offset_known   boolean     NOT NULL,
     unit           text        NOT NULL DEFAULT '',
     delta          boolean     NOT NULL DEFAULT false,
     value          float8,
@@ -70,9 +73,9 @@ CREATE INDEX IF NOT EXISTS observed_points_stream_idx
 -- observed_rollups: one row per stream, group and 15-minute bucket (UTC
 -- aligned, which every offset in use divides), for gauges, amounts and
 -- counters and never for summaries, computed by internal/observed.Bucket
--- from the bucket's points. A group is a code, a unit, the delta flag and a
--- UTC offset: the statistics are in the row's own `unit`, so two units that
--- share no base never add. Every bucket the old and the new points of a
+-- from the bucket's points. A group is a code, a unit, the delta flag, a UTC
+-- offset and whether the offset was recorded: the statistics are in the
+-- row's own `unit`, so two units that share no base never add. Every bucket the old and the new points of a
 -- transaction touch is recomputed once at its end, and a counter's next
 -- bucket with a point too, because its first step comes from the previous
 -- point. The key puts the bucket before the group, so a recompute deletes
@@ -110,6 +113,7 @@ CREATE TABLE IF NOT EXISTS observed_rollups (
     unit           text        NOT NULL,
     delta          boolean     NOT NULL,
     utc_offset_min integer     NOT NULL,
+    offset_known   boolean     NOT NULL,
     bucket15       timestamptz NOT NULL,
     n              bigint      NOT NULL,
     bounded        bigint      NOT NULL,
@@ -139,7 +143,7 @@ CREATE TABLE IF NOT EXISTS observed_rollups (
     resets         integer,
     sin_sum        float8,
     cos_sum        float8,
-    PRIMARY KEY (repository, metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min),
+    PRIMARY KEY (repository, metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min, offset_known),
     CHECK ((min IS NULL) = (min_value IS NULL) AND (max IS NULL) = (max_value IS NULL)),
     CHECK ((first_ts IS NULL) = (first_record_id IS NULL) AND (first_ts IS NULL) = (first_ord IS NULL)),
     CHECK ((last_ts IS NULL) = (last_record_id IS NULL) AND (last_ts IS NULL) = (last_ord IS NULL)),
@@ -169,6 +173,7 @@ CREATE TABLE IF NOT EXISTS observed_latest (
     bounded        boolean     NOT NULL,
     hold_ms        bigint,
     utc_offset_min integer     NOT NULL,
+    offset_known   boolean     NOT NULL,
     record_id      text        COLLATE "C" NOT NULL,
     revision       bigint,
     points         bigint      NOT NULL,

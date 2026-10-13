@@ -401,9 +401,9 @@ and `channel` of a value. A reference column holds the target's record path
 
 | Table | One row per | Holds |
 | --- | --- | --- |
-| `observed_points` | value: one per observation, one per point of a trace | the stream, `form`, `ts` and `ts_end`, `utc_offset_min`, `unit`, `delta`, `value` (float8), `value_exact` (the stored digits), `value_base` (in the measure's base unit), `code`, `statistic`, `bounded`, `quality`, and the parameters a hold and a counter step read: `hold_ms`, `reset_rule`, `reset_at`, `wrap_at`, `circular`, `revision` |
-| `observed_rollups` | stream, form, 15-minute bucket and group | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord`, `min_value`, `max_value` |
-| `observed_latest` | stream | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `record_id`, `revision`, and `points`, the stream's count of available points |
+| `observed_points` | value: one per observation, one per point of a trace | the stream, `form`, `ts` and `ts_end`, `utc_offset_min`, `offset_known`, `unit`, `delta`, `value` (float8), `value_exact` (the stored digits), `value_base` (in the measure's base unit), `code`, `statistic`, `bounded`, `quality`, and the parameters a hold and a counter step read: `hold_ms`, `reset_rule`, `reset_at`, `wrap_at`, `circular`, `revision` |
+| `observed_rollups` | stream, form, 15-minute bucket and group (`code`, `unit`, `delta`, `utc_offset_min`, `offset_known`) | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord`, `min_value`, `max_value` |
+| `observed_latest` | stream | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `offset_known`, `record_id`, `revision`, and `points`, the stream's count of available points |
 
 The rules every column follows are written once, as Go, in
 `internal/observed`: the engine computes each rollup row with it, and the
@@ -472,7 +472,9 @@ A point's `utc_offset_min` is a single record's `utcOffset`. A trace's point
 takes `utcOffsetStart` when it lies before the midpoint of the period and
 `utcOffsetEnd` from the midpoint on; a trace naming one of the two uses it
 for every point. An absent offset is 0, so a value written without one falls
-on its UTC day.
+on its UTC day, and its `offset_known` is false: the point, its rollup row
+and its stream's latest row say the offset was never recorded, which a
+reader tells apart from a value written at offset 0.
 
 `value_base` is the value in its measure's base unit, in
 `temperature-difference` where `delta` is true (0.3 `Cel` is 0.3 `K`), and
@@ -489,7 +491,8 @@ read and the latest row pick the same point of a tie.
 A rollup row covers one 15-minute bucket aligned on UTC, which every offset
 in use divides, so a civil day at a point's own offset is a run of whole
 rows. Within a bucket a stream's points of one form split into **groups** by
-`code`, `unit`, `delta` and `utc_offset_min`, and each group is one row. The
+`code`, `unit`, `delta`, `utc_offset_min` and `offset_known`, and each group
+is one row. The
 statistics are in the row's own `unit`, so two units with no common base
 never add; a reader converts each row to the unit it asks for.
 
