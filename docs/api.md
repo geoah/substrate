@@ -1146,23 +1146,26 @@ Exactly one of `metric` and `property`; both is a `422`. A metric read's
 `filter` takes `kinds` and `implements` (a kind that does not bind `observed`
 is refused by name) and `eq` or `in` on the stream properties `source`,
 `about`, `metric` and `channel`; `eq` beside `in` on one property admits what
-both admit, as the list's filter does. A `source`, `about` or `metric` value
-is a record path, `{ref}`, or a bare id the read completes with the kind the
-selected kinds' reference pins, as the list's filter does: `manual` is
-`<authority>/observations/source/manual` and never
-`.../source/googlefit/x/manual`. A bare id is a `422` where those kinds pin
-no kind, any kind (`about`) or two. A path no stream holds answers no rows.
-A value may leave out its `source`, `about` or `channel`, and the filter
-selects those streams with `{"exists": false}` (or the others with
-`{"exists": true}`); `null` inside `in` is the absent key, so
+both admit, as the list's filter does. Any other arm is a `400`. A property
+read takes the whole [filter grammar](#the-filter-grammar).
+
+A `source`, `about` or `metric` value is a record path, `{ref}`, or a bare id
+the read completes with the kind the selected kinds' reference pins, as the
+list's filter does: `manual` is `<authority>/observations/source/manual` and
+never `.../source/googlefit/x/manual`. A bare id is a `422` where those kinds
+pin no kind, any kind (`about`) or two. A path no stream holds answers no
+rows.
+
+A value may leave out its `source`, `about` or `channel`. The filter selects
+those streams with `{"exists": false}`, and the others with
+`{"exists": true}`. A `null` inside `in` is the absent key, so
 `{"channel": {"in": [null, "workout"]}}` is "no channel, or workout". `eq`
-`""` is refused.
+on `""` is refused.
+
 `code` filters the intervals by code after they are built from every
 transition, so a door's `closed` still ends the `open` before it.
 `statistic` (`eq` or `in`) narrows the summaries to those statistics; a
-gauge's, an amount's or a counter's values carry none and are kept. Any other
-arm is a `400`. A property
-read takes the whole [filter grammar](#the-filter-grammar).
+gauge's, an amount's or a counter's values carry none and are kept.
 
 ### The four time modes
 
@@ -1175,21 +1178,25 @@ read takes the whole [filter grammar](#the-filter-grammar).
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
 week's, month's or year's start by less than a day (`PT4H` for a vendor day
-from 04:00). `place` says where a value with a span lands: `start` (the
-default) puts it in the bucket its start lies in, `end` in the bucket its
-last instant lies in, so a night from 23:00 to 07:00, or from 00:30 to
-08:00, lands on the day it ends and each day holds one night. A span ending
-at midnight lands on the day before. Under `end` the read takes the values
-whose end lies in the range, wherever they start (a night started the
-evening before the range counts), reads amounts from raw points, and is a
-`422` where it would take a gauge's or a counter's points, which are
-instants; the records mode and the property read refuse it. A bucket that the range cuts is clipped to the range, and its
-`start` or `end` says so. In the recorded-local calendar the range selects
-points by instant, so a day at another offset than the range's is cut where
-the range starts and ends: a range of 2026-09-21 at `+03:00` over points at
-`+01:00` answers 2026-09-20 from `22:00+01:00` to midnight and 2026-09-21 from
-midnight to `22:00+01:00`. A row's `start` and `end` are its own group's and
-code's, whatever else the read selects.
+from 04:00). A bucket that the range cuts is clipped to the range, and its
+`start` or `end` says so.
+
+`place` says where a value with a span lands: `start` (the default) puts it in
+the bucket its start lies in, `end` in the bucket its last instant lies in, so
+a night from 23:00 to 07:00, or from 00:30 to 08:00, lands on the day it ends
+and each day holds one night. A span ending at midnight lands on the day
+before. Under `end` the read takes the values whose end lies in the range,
+wherever they start (a night started the evening before the range counts),
+reads amounts from raw points, and is a `422` where it would take a gauge's or
+a counter's points, which are instants; the records mode and the property read
+refuse it.
+
+In the recorded-local calendar the range selects points by instant, so a day
+at another offset than the range's is cut where the range starts and ends: a
+range of 2026-09-21 at `+03:00` over points at `+01:00` answers 2026-09-20
+from `22:00+01:00` to midnight and 2026-09-21 from midnight to `22:00+01:00`.
+A row's `start` and `end` are its own group's and code's, whatever else the
+read selects.
 
 A value written without a UTC offset has no recorded-local date. A
 recorded-local read of a stream holding one in the range is a `422` naming
@@ -1288,9 +1295,9 @@ reads that take it.
   one, and the filter's `exists` picks one side.
 - `priority` resolves an ordered list (`order` names sources as the filter
   does: a record path, or a bare id completed exactly, so an entry no stream
-  holds ranks nothing) per stored interval before any bucket is cut: the first source
-  holds where it has a value, the next fills what it does not cover, and a
-  lower source's point inside a higher source's hold is dropped. An amount
+  holds ranks nothing) per stored interval before any bucket is cut: the first
+  source holds where it has a value, the next fills what it does not cover,
+  and a lower source's point inside a higher source's hold is dropped. An amount
   or a summary of a lower source is dropped whole where it overlaps a higher
   source's. A total therefore does not depend on the bucket width. Two
   counters are refused under `priority`.
@@ -1404,10 +1411,11 @@ it needs there (counted in `maxBuckets`, with `fill` applied) and answers
 none of them, so a bucket's rolling value does not depend on where the range
 starts, and the rows a rolling read answers are the rows the same read
 answers without it. In the recorded-local calendar a value before the range
-counts only in the days before the range's first, and a day the range's
-start splits is one place in the window. `stddev` is the population
-deviation of the window's values. `rolling` is refused in the records mode
-and without a `bucket`.
+counts only in the days before the range's first; a day before the range's
+first that the range also reaches (a value at an offset west of the range's)
+is one place in the window, holding its values from both sides of the range's
+start. `stddev` is the population deviation of the window's values. `rolling`
+is refused in the records mode and without a `bucket`.
 
 `downsample={"points": 800, "method": "m4"}` beside an `aggregate` naming a
 `metric` and a `range` cuts the range into at most `points` columns, each
@@ -1485,21 +1493,20 @@ merged as one row.
   another mode; `downsample` without `aggregate`; a filter arm a metric read
   cannot test.
 - `404`: a kind in `filter.kinds` the repository never declared.
-- `422`: two selectors, or a bucketed metric read with neither; a
-  `metric.ref` that names no metric; no range or no reducers; an unknown
-  reducer or a bad argument; a reducer the form does not take (naming the
-  form); `circularMean` off an angle; a `unit` outside the measure (naming
-  the measure); a value the read takes whose unit does not convert; a group
-  of two forms; a recorded-local read of a stream holding a value written
-  without a UTC offset and no `bucket.fallbackTimezone`, or a
-  `fallbackTimezone` outside the recorded-local calendar; `place` `end`
-  over a gauge or a counter, in the records mode or on a property read; a
-  group whose
-  summaries hold two statistics, or `sum` over a
-  statistic other than `sum` and `count`; `groupBy` `statistic` on a read
-  that is not from summaries; `priority` over two counters; a budget below zero or over its
-  cap, or a read over a budget (naming the limit); `rolling` without a
-  `bucket`; `downsample` beside `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
+- `422`: two selectors, or a bucketed metric read with neither; a `metric.ref`
+  that names no metric; no range or no reducers; an unknown reducer or a bad
+  argument; a reducer the form does not take (naming the form); `circularMean`
+  off an angle; a `unit` outside the measure (naming the measure); a value the
+  read takes whose unit does not convert; a group of two forms; a
+  recorded-local read of a stream holding a value written without a UTC offset
+  and no `bucket.fallbackTimezone`, or a `fallbackTimezone` outside the
+  recorded-local calendar; `place` `end` over a gauge or a counter, in the
+  records mode or on a property read; a group whose summaries hold two
+  statistics, or `sum` over a statistic other than `sum` and `count`;
+  `groupBy` `statistic` on a read that is not from summaries; `priority` over
+  two counters; a budget below zero or over its cap, or a read over a budget
+  (naming the limit); `rolling` without a `bucket`; `downsample` beside
+  `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
   `prefer-raw`; a `fill`, `rolling` or `maxGap` on the latest read.
 
 ### Where this differs from the plan
