@@ -352,8 +352,8 @@ common labs. A lab analyte reported in both unit systems is two metrics, the
 amount concentration unsuffixed (`ldl_cholesterol`, mmol/L) and the mass
 concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because the
 two are different measures and a read of one in the other's unit is refused.
-HbA1c is `hba1c` (NGSP %, measure `fraction`) and `hba1c_ifcc` (IFCC
-mmol/mol, measure `amount-fraction`), which relate by a formula, not a unit.
+HbA1c is `hba1c` (NGSP %) and `hba1c_ifcc` (IFCC mmol/mol), which relate
+by a formula, not a unit.
 The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
