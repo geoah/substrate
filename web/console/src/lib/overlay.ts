@@ -277,7 +277,8 @@ export interface Plot {
   /** The reader set the order (`sources.order`); otherwise the server ranks
    * the sources by their records' `priorities` for the metric. */
   ranked: boolean
-  /** The read takes a stream naming no source too, after every named one. */
+  /** The read takes a stream naming no source too, which the server ranks
+   * as `LaneSpec.sourceless` says. */
   sourceless: boolean
   /** The series a selection names, where the read, grouped by source,
    * about or channel, answers others too: the chart draws these alone

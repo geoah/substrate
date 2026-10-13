@@ -94,8 +94,12 @@ export interface LaneSpec {
    * server ranks them by each source record's `priorities` for the
    * metric. */
   ranked?: boolean
-  /** The read selects a stream naming no source too. `sources.order` cannot
-   * name it, so the priority policy ranks it after every named source. */
+  /** The read selects a stream naming no source too, which the priority
+   * policy counts as one more source. No record ranks it, so with no
+   * `sources.order` the server places it among the sources no record
+   * ranks, by kind and then source path: before a named source of its
+   * kind. The read never sends an order beside it, because naming a source
+   * narrows the read to the named ones. */
   sourceless?: boolean
   /** `about` values the read is narrowed to; empty for everything. */
   about: string[]

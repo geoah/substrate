@@ -843,16 +843,19 @@ unit and grouping and carries the new reducer; after a change of unit or
 grouping, or to a reducer the earlier answer lacks, the row says Reading…
 over an empty chart. A metric that declares no unit is read in the unit of its
 newest selected stream, named in the request, so the axis and the answer
-agree. Grouped by anything but source, two or more sources are
-resolved by `sources.policy: priority` in the order you picked them in the
-Source filter, each new pick last; the Source filter
-lists the chosen sources in that order, each with a move up and a move
-down, a stream that names
-no source counting as one ranked after them, and the chart says which source
-wins. With no source picked (and always in the streams page's panel, whose
-selection is no order), the read sends no `order`, so the server ranks the
-sources by each source record's `priorities` for the metric
-([the read](api.md#sources-and-from)); grouped by source,
+agree. Grouped by anything but source, two or more sources (a stream that
+names no source counting as one) are resolved by
+`sources.policy: priority`. Where you picked sources in the Source filter,
+the read sends them as `order`, in the order you picked them, each new
+pick last; the Source filter lists the chosen sources in that order, each
+with a move up and a move down, and the chart says which source wins.
+Picking a source leaves out a stream that names none. With no source picked (and always in
+the streams page's panel, whose selection is no order), the read sends no
+`order`, so the server ranks the sources by each source record's
+`priorities` for the metric, then by kind and record path
+([the read](api.md#sources-and-from)). No record ranks a stream that names
+no source, so it comes before a named source of its kind that no record
+ranks either. Grouped by source,
 each keeps its own rows, and a source's channels stay apart
 (`groupBy: ["source", "channel"]`). Until you pick where to read from, a
 metric reads raw points, summaries where every one of its streams keeps

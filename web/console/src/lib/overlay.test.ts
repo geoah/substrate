@@ -521,7 +521,7 @@ describe("one metric's plot", () => {
     expect(selection.read?.aggregate.sources).toEqual({ policy: "priority" })
   })
 
-  it("resolves a stream naming no source with the named ones, after them", () => {
+  it("resolves a stream naming no source with the named ones by priority", () => {
     const streams = streamsOf(LATEST)
     const scale = streams.find((s) => s.metric === BODY_MASS)!
     const typed: Stream = {
@@ -532,7 +532,8 @@ describe("one metric's plot", () => {
     }
     const planned = planPlot(source([typed, ...streams]), BODY_MASS, SCOPE)
     expect(planned.sourceless).toBe(true)
-    // One line: the scale first, then what names no source.
+    // One line, resolved by the server with no order: no record ranks the
+    // typed values, so they fall to the stream order beside the scale.
     expect(planned.read?.aggregate.groupBy).toBeUndefined()
     expect(planned.read?.aggregate.sources).toEqual({ policy: "priority" })
     expect(planned.sourceOrder).toEqual([WITHINGS])
