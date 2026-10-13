@@ -153,10 +153,14 @@ export function useObservations(
   const abouts = paths(narrow.abouts, pins.about)
 
   // No metric chosen: every stream in one read, unless it makes too many
-  // groups, and then the metrics first and their streams in batches.
+  // groups, and then the metrics first and their streams in batches. A
+  // refused read is not asked again under the same choices: a refetch
+  // clears its error while it runs, which would drop the batches and their
+  // rows until the server refused again.
   const whole = useQuery({
     ...aggregateQueryOptions(latestRead({ sources, abouts }), observedIds),
-    enabled: enabled && !chosen.length,
+    enabled: (query) =>
+      enabled && !chosen.length && !overGroupCap(query.state.error),
   })
   const split = !chosen.length && overGroupCap(whole.error)
   const catalogue = useQuery({
@@ -256,7 +260,7 @@ export function useObservations(
       isError: Boolean(error),
       error,
       refetch: () => {
-        if (!chosenKey) void refetchWhole()
+        if (!chosenKey && !split) void refetchWhole()
         void refetchCatalogue()
         reads.refetch()
       },

@@ -9,6 +9,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -132,7 +133,7 @@ function mount(
   )
   /** The address as the page last wrote it. */
   const param = (key: string) => urls.at(-1)?.searchParams.get(key) ?? null
-  return Object.assign(server, { urls, actions, param })
+  return Object.assign(server, { urls, actions, param, client })
 }
 
 /** The problem the server names when a latest read makes too many groups. */
@@ -239,6 +240,55 @@ describe("the streams table", () => {
     expect(
       [...(batches[0].filter.properties?.metric?.in ?? [])].sort()
     ).toEqual([BODY_MASS, HEART, RECOVERY, SLEEP_STAGE, STEPS_METRIC].sort())
+  })
+
+  it("keeps the streams of a read over the group cap while they are read again", async () => {
+    const server = mount("", KINDS, (read) =>
+      read.aggregate.groupBy?.length === 4 && !read.filter.properties?.metric
+        ? refusal(CAP_PROBLEM)
+        : latestAnswer(read)
+    )
+    expect(await rows()).toHaveLength(6)
+    const refused = () =>
+      server.seen.filter(
+        (r) => r.aggregate.groupBy?.length === 4 && !r.filter.properties?.metric
+      ).length
+    const before = refused()
+    // A write to an observed record lands, and every read is asked again;
+    // none answers yet.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        void server.fetch(input)
+        return new Promise<Response>(() => {})
+      })
+    )
+    await act(async () => {
+      void server.client.invalidateQueries()
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    expect(bodyRows()).toHaveLength(6)
+    // The read the server refused is not asked again under the same choices.
+    expect(refused()).toBe(before)
+  })
+
+  it("asks a failed batch again, never the read over the group cap, when told to try again", async () => {
+    let failed = false
+    const server = mount("", KINDS, (read) => {
+      if (read.aggregate.groupBy?.length !== 4) return latestAnswer(read)
+      if (!read.filter.properties?.metric) return refusal(CAP_PROBLEM)
+      if (failed) return latestAnswer(read)
+      failed = true
+      return unavailable()
+    })
+    expect(await screen.findByText("The streams didn’t load")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    expect(await rows()).toHaveLength(6)
+    expect(
+      server.seen.filter(
+        (r) => r.aggregate.groupBy?.length === 4 && !r.filter.properties?.metric
+      )
+    ).toHaveLength(1)
   })
 
   it("narrows the streams read to the chosen metric on the server", async () => {
