@@ -416,3 +416,160 @@ print(json.dumps(out))
 		t.Errorf("no points built %s, want no documents", out["empty"])
 	}
 }
+
+// observedProbe runs a python3 probe over host.py's Observed and decodes the
+// JSON it prints.
+func observedProbe(t *testing.T, probe string, out any) {
+	t.Helper()
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is not on PATH; host.observed cannot be probed here")
+	}
+	raw, err := exec.Command(python, "-c", probe).Output()
+	if err != nil {
+		var stderr string
+		if ee, ok := err.(*exec.ExitError); ok {
+			stderr = string(ee.Stderr)
+		}
+		t.Fatalf("probe: %v\n%s", err, stderr)
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		t.Fatalf("decode the probe: %v\n%s", err, raw)
+	}
+}
+
+// TestObservedSpellsWhatTheEngineStores: host.observed's decimal, duration,
+// instant and record_id write the one spelling the engine stores, so an
+// output a body composes compares equal to the stored row it rewrites.
+func TestObservedSpellsWhatTheEngineStores(t *testing.T) {
+	var out map[string]any
+	observedProbe(t, `
+import json, importlib.util, datetime as dt
+from decimal import Decimal
+spec = importlib.util.spec_from_file_location("host", "host.py")
+host = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(host)
+o = host.Observed()
+def refused(call):
+    try:
+        call()
+        return ""
+    except ValueError as e:
+        return str(e)
+print(json.dumps({
+    "tiny": o.decimal(1e-05), "huge": o.decimal(1e16), "float": o.decimal(72.0),
+    "decimal": o.decimal(Decimal("1.50")), "digits": o.decimal("61.3"), "int": o.decimal(52),
+    "none": o.decimal(None), "bool": refused(lambda: o.decimal(True)),
+    "nan": refused(lambda: o.decimal(float("nan"))),
+    "night": o.duration(28489), "day and a half": o.duration(Decimal("90061.5")),
+    "hours": o.duration(dt.timedelta(hours=36)), "zero": o.duration(0),
+    "nanos": o.duration(Decimal("1.0000004")), "negative": refused(lambda: o.duration(-1)),
+    "instant": o.instant(dt.datetime(2026, 10, 7, 9, 0, 0, 250000, tzinfo=dt.timezone(dt.timedelta(hours=3)))),
+    "short id": o.record_id("garmin", "ada", "ada", "x4b2c9e1-6aa31a50", "steps"),
+    "long id": o.record_id("garmin", "ada", "ada", "x" * 130, "steps"),
+    "odd id": o.record_id("garmin", "ada", "ada", "a b", "steps"),
+}))
+`, &out)
+	for key, want := range map[string]any{
+		"tiny": "0.00001", "huge": "10000000000000000", "float": "72.0", "decimal": "1.50",
+		"digits": "61.3", "int": "52", "none": nil,
+		"night": "PT7H54M49S", "day and a half": "P1DT1H1M1.5S", "hours": "P1DT12H", "zero": "PT0S",
+		"nanos": "PT1S", "instant": "2026-10-07T06:00:00.25Z",
+		"short id": "garmin/ada/x4b2c9e1-6aa31a50/steps",
+		"long id":  ExternalID("garmin", "ada", "garmin/ada/"+strings.Repeat("x", 130)+"/steps"),
+		"odd id":   ExternalID("garmin", "ada", "garmin/ada/a b/steps"),
+	} {
+		if out[key] != want {
+			t.Errorf("%s = %v, want %v", key, out[key], want)
+		}
+	}
+	for _, key := range []string{"tiny", "huge", "float", "decimal", "digits", "int"} {
+		if got, err := vocabulary.CanonicalDecimal(out[key].(string)); err != nil || got != out[key] {
+			t.Errorf("%s: the engine stores %q as %q (%v)", key, out[key], got, err)
+		}
+	}
+	for _, key := range []string{"night", "day and a half", "hours", "zero", "nanos"} {
+		d, err := vocabulary.ParseISODuration(out[key].(string))
+		if err != nil || vocabulary.FormatISODuration(d) != out[key] {
+			t.Errorf("%s: the engine stores %q as %q (%v)", key, out[key], vocabulary.FormatISODuration(d), err)
+		}
+	}
+	for _, key := range []string{"bool", "nan", "negative"} {
+		if out[key] == "" {
+			t.Errorf("%s was not refused", key)
+		}
+	}
+	for _, key := range []string{"short id", "long id", "odd id"} {
+		if !vocabulary.ValidID(out[key].(string)) {
+			t.Errorf("%s %q is not a record id", key, out[key])
+		}
+	}
+}
+
+// TestObservedReconcileWritesWhatAnOriginImplies: one call stands for every
+// adapter's per-origin loop. It reads the origin's stored outputs page by
+// page, leaves an output that already holds its properties unwritten, writes
+// a changed one whole (every owned property named, None where the origin no
+// longer implies it) at the higher of the given and the stored revision,
+// deletes what the origin no longer implies, and leaves a record that only
+// points at the origin some other way, or names another origin, alone.
+func TestObservedReconcileWritesWhatAnOriginImplies(t *testing.T) {
+	var out struct {
+		Counts  map[string]int   `json:"counts"`
+		Effects []map[string]any `json:"effects"`
+		Queries []map[string]any `json:"queries"`
+	}
+	observedProbe(t, `
+import json, importlib.util
+spec = importlib.util.spec_from_file_location("host", "host.py")
+host = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(host)
+OBS = "ada.example.com/observations/observation"
+ORIGIN = "providers.example.com/garmin/daily/ada/d1"
+def rec(rid, **props):
+    return {"kind": OBS, "id": rid, "properties": props}
+pages = [
+    {"records": [
+        rec("same", origin={"ref": ORIGIN}, value="1", note="kept", revision=7, adapter="a@1"),
+        rec("changed", origin=ORIGIN, value="1", note="old", revision=9, adapter="a@1"),
+    ], "cursor": "1"},
+    {"records": [
+        rec("gone", origins=[{"ref": ORIGIN}], value="3", revision=1),
+        rec("derived", origin={"ref": "providers.example.com/garmin/sleep/ada/s1"},
+            derivedFrom=[{"ref": ORIGIN}], value="4"),
+    ]},
+]
+class Fake:
+    def __init__(self):
+        self.effects = host.Effects()
+        self.queries = []
+    def list(self, **query):
+        self.queries.append(query)
+        return pages[int(query.get("after") or 0)]
+fake = Fake()
+counts = host.Observed(fake).reconcile(ORIGIN, {
+    (OBS, "same"): {"origin": {"ref": ORIGIN}, "value": "1", "note": "kept", "revision": 8},
+    (OBS, "changed"): {"origin": {"ref": ORIGIN}, "value": "2", "revision": 8},
+    (OBS, "new"): {"origin": {"ref": ORIGIN}, "value": "5", "revision": 8},
+}, owned={OBS: ("origin", "value", "note", "revision")}, adapter="a@1")
+print(json.dumps({"counts": counts, "effects": [e for e in fake.effects._staged], "queries": fake.queries}))
+`, &out)
+	if want := map[string]int{"written": 2, "unchanged": 1, "deleted": 1}; !equalJSON(out.Counts, want) {
+		t.Errorf("counts %v, want %v", out.Counts, want)
+	}
+	if len(out.Queries) != 2 || out.Queries[1]["after"] != "1" {
+		t.Errorf("queries %v, want two pages", out.Queries)
+	}
+	want := []map[string]any{
+		{"action": "put", "kind": "ada.example.com/observations/observation", "id": "changed", "properties": map[string]any{
+			"origin": map[string]any{"ref": "providers.example.com/garmin/daily/ada/d1"}, "value": "2", "note": nil,
+			"revision": float64(9), "adapter": "a@1"}},
+		{"action": "put", "kind": "ada.example.com/observations/observation", "id": "new", "properties": map[string]any{
+			"origin": map[string]any{"ref": "providers.example.com/garmin/daily/ada/d1"}, "value": "5", "note": nil,
+			"revision": float64(8), "adapter": "a@1"}},
+		{"action": "delete", "kind": "ada.example.com/observations/observation", "id": "gone"},
+	}
+	if !equalJSON(out.Effects, want) {
+		t.Errorf("effects\n%v\nwant\n%v", out.Effects, want)
+	}
+}

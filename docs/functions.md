@@ -660,6 +660,11 @@ host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
                     wrap_at=None, delta=None, circular=None, start=None, end=None)
 host.observed.local_day(at, utc_offset_minutes)   # "2026-10-07"
 host.observed.period_id(at, period)               # "2026-10-07T06"
+host.observed.decimal(value)                      # 1e-05 -> "0.00001"
+host.observed.duration(seconds)                   # 28489 -> "PT7H54M49S"
+host.observed.instant(at)                         # "2026-10-07T06:00:00Z"
+host.observed.record_id(provider, account, *parts)  # composed, hashed past 128 bytes
+host.observed.reconcile(origins, outputs, *, owned, adapter=None, stored=None)
 host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
@@ -828,6 +833,37 @@ differences and `circular=True` angles. Ids are the caller's: compose each from
 resolution (`2026-10-07T06` for `PT1H`) and adds the finer fields a split
 part's later start needs (`2026-10-07T06:40`). `local_day(at, offset)` is the
 civil date at that offset, the day a daily summary belongs to.
+
+`decimal`, `duration` and `instant` write a number, a length of time and an
+instant in the one spelling the engine stores: digits without an exponent
+(a float is its shortest repr written out, so `1e-05` is `0.00001`), the
+canonical ISO 8601 duration to the microsecond, and RFC 3339 UTC.
+`record_id(provider, account, *parts)` joins `<provider>/<part>/...` into
+an id and hashes it through `host.ids.external` only where it would leave
+the id alphabet or pass 128 bytes.
+
+`reconcile(origins, outputs, *, owned, adapter=None)` is the per-origin
+loop every health adapter runs, and the one call here that reads and
+stages. `origins` is the path of the row the outputs come from (a list
+where one delivery answers for several); `outputs` maps `(kind, id)` to the
+properties the row implies now; `owned` maps each output kind to every
+property the body sets on it. It reads the stored records of those kinds
+whose `origin` or `origins` names the path, page by page (another
+reference, such as `derivedFrom`, does not count), and then:
+
+- writes each output in one put naming every owned property, `None` for
+  one the row no longer implies, which the put clears;
+- leaves unwritten an output that already holds those properties,
+  `revision` aside;
+- writes `revision` as the higher of the one given and the one stored,
+  because the write path refuses a falling revision and a delivery that
+  reads its rows as they stand computes a lower one only when a row it was
+  built from went away;
+- deletes every stored output `outputs` does not name.
+
+It answers `{"written": n, "unchanged": n, "deleted": n}`, stamps `adapter`
+on every output where given, and takes `stored=` where the body has
+already read the records.
 
 ```python
 device = "forerunner265"

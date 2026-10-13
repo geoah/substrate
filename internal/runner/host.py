@@ -635,10 +635,12 @@ class Agents:
 #
 # host.units asks the ENGINE's unit table over the host call, so a body and the
 # write path that holds its effects read one table; there is no Python copy of
-# it. host.observed is pure Python: it builds the trace documents core's
-# `observed(packed)` admits from a body's own points, and the labels a trace id
-# and a daily summary are composed from. Its rules mirror the engine's
-# (vocabulary/observed.go); runner's observed tests hold the two together.
+# it. host.observed builds in pure Python the trace documents core's
+# `observed(packed)` admits from a body's own points, the labels a trace id
+# and a daily summary are composed from, and the stored spellings of numbers,
+# durations and instants; its `reconcile` is the one call that reads and
+# stages. Its rules mirror the engine's (vocabulary/observed.go); runner's
+# observed tests hold the two together.
 
 _RE_DECIMAL = re.compile(r"^[+-]?[0-9]+(\.[0-9]+)?$")
 _RE_ISO_DURATION = re.compile(
@@ -787,9 +789,41 @@ class Units:
         return self._host._call("units.measure", {"code": code}).get("measure")
 
 
+def _ref_path(value):
+    """A stored reference's record path, in either spelling ({"ref": path} or
+    the bare path)."""
+    if isinstance(value, dict):
+        value = value.get("ref")
+    return value if isinstance(value, str) else ""
+
+
+def _same_value(a, b):
+    """Whether a stored property value is the one a write would store: a
+    reference in either spelling is its path, and a None member of a map is
+    absent."""
+    if isinstance(a, dict) and set(a) == {"ref"} and isinstance(b, str):
+        return a["ref"] == b
+    if isinstance(b, dict) and set(b) == {"ref"} and isinstance(a, str):
+        return b["ref"] == a
+    if isinstance(a, dict) and isinstance(b, dict):
+        keys = {k for k, v in a.items() if v is not None} | {k for k, v in b.items() if v is not None}
+        return all(_same_value(a.get(k), b.get(k)) for k in keys)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same_value(x, y) for x, y in zip(a, b))
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a is b
+    return a == b
+
+
 class Observed:
-    """Builders for observed values (docs/observations.md). Pure Python: they
-    compute, never write; a body stages what they return with host.effects."""
+    """Builders for observed values (docs/observations.md). `trace`,
+    `local_day`, `period_id`, `decimal`, `duration`, `instant` and
+    `record_id` are pure Python: they compute and never write. `reconcile`
+    reads an origin's stored outputs and stages the writes and deletes that
+    bring them to what the origin implies now."""
+
+    def __init__(self, host=None):
+        self._host = host
 
     def trace(self, points, *, metric, source, unit, form, period="PT1H", hold=None,
               about=None, channel=None, reset_rule=None, wrap_at=None, delta=None,
@@ -976,6 +1010,121 @@ class Observed:
         local = at.astimezone(datetime.timezone.utc) + datetime.timedelta(minutes=utc_offset_minutes)
         return local.date().isoformat()
 
+    def decimal(self, value):
+        """A number as the digits the engine stores, never with an exponent:
+        an int as itself, a float as its shortest repr written out (1e-05 is
+        "0.00001", the digits a JSON payload carried), a Decimal or a digit
+        string as it is. None is None; a bool, NaN, an infinity or any other
+        value raises."""
+        if value is None:
+            return None
+        return _decimal_text("observed.decimal", value)
+
+    def duration(self, seconds):
+        """A length of time, as seconds (an int, a float, a Decimal or digits)
+        or a timedelta, in the one ISO 8601 spelling the engine stores
+        ("PT7H54M49S", "P1DT2H"), rounded to the microsecond. A negative
+        length raises."""
+        fn = "observed.duration"
+        if isinstance(seconds, datetime.timedelta):
+            us = (seconds.days * 86400 + seconds.seconds) * 10**6 + seconds.microseconds
+        else:
+            d = decimal.Decimal(_decimal_text(fn, seconds))
+            us = int((d * 10**6).to_integral_value(rounding=decimal.ROUND_HALF_EVEN))
+        if us < 0:
+            raise ValueError("%s: %r is a negative length of time" % (fn, seconds))
+        return _format_duration(us)
+
+    def instant(self, at):
+        """A timezone-aware datetime as the RFC 3339 UTC text the engine
+        stores ("2026-10-07T06:00:00Z"), to the microsecond."""
+        return _instant(_epoch_us(_aware("observed.instant", "at", at)))
+
+    def record_id(self, provider, account, *parts):
+        """An output's id composed from upstream data: `<provider>/<part>/...`
+        as written where it is a record id (the id alphabet, at most 128
+        bytes), else host.ids.external(provider, account, that text), so an
+        upstream identifier outside the alphabet or past the length never
+        refuses the write."""
+        readable = "/".join([str(provider)] + [str(p) for p in parts])
+        if len(readable.encode("utf-8")) <= _MAX_ID_LEN and _RE_ID.match(readable):
+            return readable
+        return Ids().external(provider, account, readable)
+
+    def reconcile(self, origins, outputs, *, owned, adapter=None, stored=None):
+        """Write what an origin implies now and delete what it no longer
+        implies -> {"written": n, "unchanged": n, "deleted": n}.
+
+        `origins` is the record path of the row the outputs are built from, or
+        a list of paths where one delivery answers for several rows.
+        `outputs` maps (kind, id) to the properties the rows imply. `owned`
+        maps every output kind to each property the body sets on it: a write
+        names them all, None for one the rows no longer imply, and a put's
+        None deletes the key, so one put replaces what an earlier write set.
+        `adapter` is stamped on every output where given.
+
+        The stored side is every record of an owned kind whose `origin`, or
+        an entry of whose `origins`, names one of the paths (another
+        reference to the path, such as `derivedFrom`, does not count), read
+        page by page; `stored` passes records the body already read instead.
+        An output whose stored properties already hold what it would be
+        written with, `revision` aside, is not written. A written output's
+        `revision` is the higher of the one given and the one stored: the
+        write path refuses a falling revision, and a delivery reads its rows
+        as they stand now, so a lower one means a row the output was built
+        from went away, never that the delivery is stale. Every stored output
+        `outputs` does not name is deleted."""
+        fn = "observed.reconcile"
+        if self._host is None:
+            raise ValueError("%s: reads the origin's outputs through the host; call host.observed" % fn)
+        paths = [origins] if isinstance(origins, str) else list(origins)
+        if not paths or not all(isinstance(p, str) and p for p in paths):
+            raise ValueError("%s: origins is a record path or a list of them, got %r" % (fn, origins))
+        if not isinstance(owned, dict) or not owned:
+            raise ValueError("%s: owned maps each output kind to the properties the body sets" % fn)
+        if stored is None:
+            stored = []
+            for path in paths:
+                after = None
+                while True:
+                    query = {"filter": {"kinds": list(owned), "referencing": {"ref": path}}, "first": 500}
+                    if after:
+                        query["after"] = after
+                    page = self._host.list(**query)
+                    stored.extend(page.get("records") or [])
+                    after = page.get("cursor")
+                    if not after:
+                        break
+        held = {}
+        for rec in stored:
+            props = rec.get("properties") or {}
+            named = [_ref_path(props.get("origin"))] + [_ref_path(o) for o in props.get("origins") or []]
+            if rec.get("kind") in owned and any(p in paths for p in named):
+                held[(rec.get("kind"), rec.get("id"))] = rec
+        counts = {"written": 0, "unchanged": 0, "deleted": 0}
+        for kind, rid in sorted(outputs):
+            if kind not in owned:
+                raise ValueError("%s: %s is not a kind owned names" % (fn, kind))
+            full = {name: None for name in owned[kind]}
+            full.update(outputs[(kind, rid)])
+            if adapter is not None:
+                full["adapter"] = adapter
+            old = held.pop((kind, rid), None)
+            have = (old or {}).get("properties") or {}
+            if old is not None and all(_same_value(have.get(k), v) for k, v in full.items() if k != "revision"):
+                counts["unchanged"] += 1
+                continue
+            rev = have.get("revision")
+            if isinstance(rev, (int, float)) and not isinstance(rev, bool) and \
+                    (full.get("revision") is None or rev > full["revision"]):
+                full["revision"] = int(rev)
+            self._host.effects.put(kind, rid, properties=full)
+            counts["written"] += 1
+        for kind, rid in sorted(held):
+            self._host.effects.delete(kind, rid)
+            counts["deleted"] += 1
+        return counts
+
     def period_id(self, at, period):
         """The label a trace id ends with: `at` in UTC at the period's
         resolution, so PT1H gives "2026-10-07T06", PT15M "2026-10-07T06:15"
@@ -1026,7 +1175,7 @@ class Host:
         self.ids = Ids()
         self.page = Page(inp.get("resume"))
         self.units = Units(self)
-        self.observed = Observed()
+        self.observed = Observed(self)
 
     @property
     def logs(self):
