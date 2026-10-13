@@ -567,6 +567,87 @@ func TestHealthWhoopRecoveryWithoutItsSleepSpansTheCycle(t *testing.T) {
 	}
 }
 
+// TestHealthWhoopRecoveryWithoutCycleIDKeepsItsIDs: a recovery row written
+// before the provider stored WHOOP's `cycleId` on it names its cycle only by
+// reference, so the adapter reads the id off the cycle row, and the outputs
+// keep their ids over the night and, the night gone, over the cycle. A
+// recovery whose cycle row is gone too has no id to compose: it writes
+// nothing, never ids under `None`.
+func TestHealthWhoopRecoveryWithoutCycleIDKeepsItsIDs(t *testing.T) {
+	ds, fake := newHealthWhoop(t)
+	whoopSync(t, ds, fake, whoopProps(nil))
+	healthDrain(t, ds)
+	roles := []string{"recovery", "hrv", "resting_heart_rate", "spo2", "skin_temperature"}
+	cycles := []string{whoopExampleCycle, whoopRescoredCycle}
+	before := map[string]int64{}
+	for _, cid := range cycles {
+		for _, role := range roles {
+			before[hw(cid, role)] = mustGet(t, ds, obsObservation, hw(cid, role)).Version
+		}
+	}
+	noNone := func(when string) {
+		t.Helper()
+		for _, row := range listLive(t, ds, obsObservation) {
+			if strings.HasPrefix(row.ID, hw("None")+"/") {
+				t.Errorf("%s: output %s is under no cycle id", when, row.ID)
+			}
+		}
+	}
+
+	for _, cid := range cycles {
+		mustPut(t, ds, substrate.PutInput{
+			Kind: whoopRecoveryKind, ID: whoopRow("recovery", cid),
+			Properties: map[string]any{"cycleId": nil},
+		})
+	}
+	healthDrain(t, ds)
+	noNone("without cycleId")
+	for id, version := range before {
+		if !whoopLive(t, ds, obsObservation, id) {
+			t.Errorf("without cycleId the recovery's %s is gone", id)
+			continue
+		}
+		if got := mustGet(t, ds, obsObservation, id).Version; got != version {
+			t.Errorf("without cycleId the recovery's %s moved to version %d (was %d), want it unwritten", id, got, version)
+		}
+	}
+
+	// The night gone, the recovery spans its cycle, at the same ids.
+	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopSleepKind, whoopRow("sleep", whoopRescoredNight), substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	healthDrain(t, ds)
+	noNone("without its sleep")
+	for _, role := range roles {
+		if !whoopLive(t, ds, obsObservation, hw(whoopRescoredCycle, role)) {
+			t.Errorf("without its sleep the recovery's %s is gone", role)
+			continue
+		}
+		p := healthProps(t, ds, obsObservation, hw(whoopRescoredCycle, role))
+		if p["period"] != "cycle" || p["periodId"] != whoopRescoredCycle {
+			t.Errorf("without its sleep the recovery's %s spans %v %v, want the cycle %s", role, p["period"], p["periodId"], whoopRescoredCycle)
+		}
+	}
+
+	// The cycle row gone as well, the night's next delivery finds no cycle
+	// id: the recovery's outputs go, as a recovery's without a span do.
+	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopCycleKind, whoopRow("cycle", whoopExampleCycle), substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	healthDrain(t, ds)
+	mustPut(t, ds, substrate.PutInput{
+		Kind: whoopSleepKind, ID: whoopRow("sleep", whoopExampleSleep),
+		Properties: map[string]any{"updatedAt": "2026-10-10T16:30:00.000Z"},
+	})
+	healthDrain(t, ds)
+	noNone("without a cycle id")
+	for _, role := range roles {
+		if whoopLive(t, ds, obsObservation, hw(whoopExampleCycle, role)) {
+			t.Errorf("the recovery's %s outlived the last row naming its cycle id", role)
+		}
+	}
+}
+
 // TestHealthWhoopAdapterUpgradeRewritesUnchangedMirrors: every output names
 // the adapter version that wrote it, and an upgrade of the adapter alone,
 // replayed over mirrors WHOOP did not change, rewrites each output at the

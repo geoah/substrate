@@ -472,6 +472,7 @@ data:
             desired = []
             if _live(row):
                 p = _props(row)
+                cp = None
                 if not from_sleep:
                     sid = _ref_id(p.get("sleep"), SLEEP_T)
                     night = self.host.records.get(SLEEP_T, sid) if sid else None
@@ -485,8 +486,8 @@ data:
                     revision = _seconds(p.get("updatedAt"), np.get("updatedAt"))
                 else:
                     if not from_cycle:
-                        cid = _ref_id(p.get("cycle"), CYCLE_T)
-                        cycle = self.host.records.get(CYCLE_T, cid) if cid else None
+                        ref = _ref_id(p.get("cycle"), CYCLE_T)
+                        cycle = self.host.records.get(CYCLE_T, ref) if ref else None
                     cp = _props(cycle) if _live(cycle) else None
                     span = self.cycle_span(cp) if cp is not None else None
                     if span is not None:
@@ -494,11 +495,16 @@ data:
                         common = {"period": "cycle", "periodId": str(cp.get("cycleId")),
                                   "utcOffset": _offset(cp.get("timezoneOffset"))}
                         revision = _seconds(p.get("updatedAt"), cp.get("updatedAt"))
+                scored = span is not None and p.get("scoreState") == "scored"
+                cid = self.cycle_id(p, cp) if scored else None
                 if span is None:
                     self.skip("recovery without a sleep or cycle span")
-                elif p.get("scoreState") == "scored":
+                elif scored and cid is None:
+                    # Every output id holds WHOOP's cycle id.
+                    self.skip("recovery without a cycle id")
+                elif scored:
                     score = p.get("score") or {}
-                    aid, cid = _ref_id(p.get("account"), ACCOUNT_T), str(p.get("cycleId"))
+                    aid = _ref_id(p.get("account"), ACCOUNT_T)
                     common.update({"source": self.source(aid), "statistic": "vendor",
                                    "at": span[0], "endsAt": span[1]})
                     for field, metric, unit, role in RECOVERY_READINGS:
@@ -514,6 +520,20 @@ data:
                             "whoop/%s/%s/%s" % (aid, cid, role), metric, "summary",
                             origin, revision, value=value, **common, **extra))
             self.reconcile(origin, desired)
+
+        def cycle_id(self, p, cp=None):
+            """WHOOP's id of the cycle a recovery scores, as text: the
+            recovery's own `cycleId`, or on a row written before the provider
+            stored it, its cycle row's (`cp`, read here when not given). None
+            when neither row holds it."""
+            cid = p.get("cycleId")
+            if cid in (None, ""):
+                if cp is None:
+                    ref = _ref_id(p.get("cycle"), CYCLE_T)
+                    cycle = self.host.records.get(CYCLE_T, ref) if ref else None
+                    cp = _props(cycle) if _live(cycle) else {}
+                cid = cp.get("cycleId")
+            return None if cid in (None, "") else str(cid)
 
         def sleep_span(self, p):
             """[at, endsAt] of a sleep, or None while it has no length."""
