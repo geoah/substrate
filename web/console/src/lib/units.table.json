@@ -669,6 +669,31 @@
       ]
     },
     {
+      "name": "absorbed-dose",
+      "base": "Gy",
+      "scale": "ratio",
+      "display": "mGy",
+      "dimension": "L2 T-2",
+      "units": [
+        "Gy",
+        "mGy"
+      ],
+      "note": "energy absorbed per mass of tissue: never a dose equivalent and never a specific energy, though all three are J/kg"
+    },
+    {
+      "name": "dose-equivalent",
+      "base": "Sv",
+      "scale": "ratio",
+      "display": "mSv",
+      "dimension": "L2 T-2",
+      "units": [
+        "Sv",
+        "mSv",
+        "uSv"
+      ],
+      "note": "an absorbed dose weighted by its radiation's effect: never converted to a Gy"
+    },
+    {
       "name": "dose-equivalent-rate",
       "base": "Sv/s",
       "scale": "ratio",
@@ -677,6 +702,19 @@
       "units": [
         "uSv/h"
       ]
+    },
+    {
+      "name": "radioactivity",
+      "base": "Bq",
+      "scale": "ratio",
+      "display": "Bq",
+      "dimension": "T-1",
+      "units": [
+        "Bq",
+        "kBq",
+        "MBq"
+      ],
+      "note": "decays per second: never a frequency or a rate of events, though all three are s-1"
     },
     {
       "name": "body-mass-index",
@@ -783,6 +821,7 @@
     "10*9/L": "10⁹/L",
     "A": "A",
     "A.h": "Ah",
+    "Bq": "Bq",
     "Bq/m3": "Bq/m³",
     "By": "B",
     "By/s": "B/s",
@@ -790,6 +829,7 @@
     "Cel": "°C",
     "GBy": "GB",
     "GiBy": "GiB",
+    "Gy": "Gy",
     "Hz": "Hz",
     "J": "J",
     "K": "K",
@@ -798,6 +838,7 @@
     "L/(100.km)": "L/100 km",
     "L/h": "L/h",
     "L/min": "L/min",
+    "MBq": "MBq",
     "MBy": "MB",
     "MJ": "MJ",
     "MW": "MW",
@@ -807,6 +848,7 @@
     "N.m": "N·m",
     "Ohm": "Ω",
     "Pa": "Pa",
+    "Sv": "Sv",
     "U": "U",
     "U/L": "U/L",
     "V": "V",
@@ -891,6 +933,7 @@
     "h": "h",
     "hPa": "hPa",
     "har": "ha",
+    "kBq": "kBq",
     "kBy": "kB",
     "kHz": "kHz",
     "kJ": "kJ",
@@ -921,9 +964,11 @@
     "m3/h": "m³/h",
     "mA": "mA",
     "mA.h": "mAh",
+    "mGy": "mGy",
     "mL": "mL",
     "mL/(kg.min)": "mL/(kg·min)",
     "mL/min": "mL/min",
+    "mSv": "mSv",
     "mV": "mV",
     "mW": "mW",
     "m[IU]/L": "mIU/L",
@@ -961,6 +1006,7 @@
     "s/m": "s/m",
     "t": "t",
     "uS/cm": "μS/cm",
+    "uSv": "μSv",
     "uSv/h": "μSv/h",
     "ug": "μg",
     "ug/L": "μg/L",

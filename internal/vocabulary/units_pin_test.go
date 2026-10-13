@@ -321,8 +321,22 @@ var pinnedUnits = map[string]map[string]string{
 		"Bq/m3": "1",
 		"pCi/L": "37",
 	},
+	"absorbed-dose": {
+		"Gy":  "1",
+		"mGy": "1/1000",
+	},
+	"dose-equivalent": {
+		"Sv":  "1",
+		"mSv": "1/1000",
+		"uSv": "1/1000000",
+	},
 	"dose-equivalent-rate": {
 		"uSv/h": "1/3600000000",
+	},
+	"radioactivity": {
+		"Bq":  "1",
+		"kBq": "1000",
+		"MBq": "1000000",
 	},
 	"body-mass-index": {
 		"kg/m2": "1",

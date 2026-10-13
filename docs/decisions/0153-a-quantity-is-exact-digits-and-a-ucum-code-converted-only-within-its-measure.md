@@ -53,6 +53,10 @@ scale, its codes, and an exact rational factor from each code to the base
   (`kW.h/(100.km)`) takes its measure from its vector, and is refused when
   that vector matches more than one measure, unless the property's
   declaration names the measure.
+- `Gy`, `Sv` and `Bq` are kept apart from the coherent units they equal
+  (`J/kg`, `s-1`) and from one another, in every compound and under every
+  prefix, as an annotation is: an absorbed dose, a dose equivalent and an
+  activity each have a measure, and none converts into another.
 - A dimension cannot tell every pair apart: `mmol/mol` and `g/kg` are both
   dimensionless, and a vendor's score is a bare number. So a measure may
   admit its listed codes and their prefixes alone (`amount-fraction` for
@@ -111,14 +115,15 @@ removed unit would rescale history.
 
 ### Confirmation
 
-Tests the work package 1 implementers will write: `TestUnitTableOnlyGrows`
-(internal/vocabulary) pins every code, its measure and its factor, and fails
-on a removal or a change; `TestQuantityConvertsOnlyWithinAMeasure` refuses
-`N.m` to `J`, `Gy` to `Sv` and `{beats}/min` to `{steps}/min`;
-`TestArbitraryPrefixRescaleStaysOnItsAtom` and
-`TestLogarithmicUnitsConvertToNothing` hold the two special rules;
-`TestUCUMConformance` runs UCUM's 529 validation cases and 30 linear
-conversions; `TestConsoleUnitsMatchTheEngine` holds the console's copy.
+In internal/vocabulary: `TestUnitTableOnlyGrows` pins every code, its
+measure and its factor, and fails on a removal or a change;
+`TestQuantityConvertsOnlyWithinAMeasure` refuses `N.m` to `J`, `Gy` to `Sv`,
+`Hz` to `Bq` and `{beats}/min` to `{steps}/min`;
+`TestArbitraryUnitsConvertOnlyByPrefix` and
+`TestLevelsConvertToNothingButThemselves` hold the two special rules;
+`TestUCUMFunctionalSuite` runs UCUM's functional suite over the atoms the
+table carries, counting the cases it skips; `TestConsoleUnitsMatchTheEngine`
+holds the console's copy.
 
 ## More information
 

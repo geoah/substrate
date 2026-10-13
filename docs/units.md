@@ -6,8 +6,8 @@
 Every unit a `quantity` value may carry, grouped by **measure**: the named kind of
 quantity (mass, temperature, rate) inside which a value converts and compares.
 [The data model](data-model.md#property-types) says what a quantity value is and how a
-property declares one. This page is the table itself: 59 measures and 207 codes
-(211 rows, because a few codes sit in two measures).
+property declares one. This page is the table itself: 62 measures and 215 codes
+(219 rows, because a few codes sit in two measures).
 
 A code is a case-sensitive UCUM code. The codes listed here are the ones the table
 names; the grammar also reads any compound or prefixed code over the same atoms
@@ -82,7 +82,10 @@ dimension (energy and torque); that is why a measure has a name.
 | [force](#force) | ratio | `N` | L M T-2 | `N` | `N`, `[lbf_av]` |
 | [torque](#torque) | ratio | `N.m` | L2 M T-2 | `N.m` | `N.m`, `[lbf_av].[ft_i]` |
 | [activity-concentration](#activity-concentration) | ratio | `Bq/m3` | L-3 T-1 | `Bq/m3` | `Bq/m3`, `pCi/L` |
+| [absorbed-dose](#absorbed-dose) | ratio | `Gy` | L2 T-2 | `mGy` | `Gy`, `mGy` |
+| [dose-equivalent](#dose-equivalent) | ratio | `Sv` | L2 T-2 | `mSv` | `Sv`, `mSv`, `uSv` |
 | [dose-equivalent-rate](#dose-equivalent-rate) | ratio | `Sv/s` | L2 T-3 | `uSv/h` | `uSv/h` |
+| [radioactivity](#radioactivity) | ratio | `Bq` | T-1 | `Bq` | `Bq`, `kBq`, `MBq` |
 | [body-mass-index](#body-mass-index) | ratio | `kg/m2` | L-2 M | `kg/m2` | `kg/m2` |
 | [oxygen-uptake-rate](#oxygen-uptake-rate) | ratio | `m3/(kg.s)` | L3 M-1 T-1 | `mL/(kg.min)` | `mL/(kg.min)`, `[MET]` |
 | [specific-power](#specific-power) | ratio | `W/kg` | L2 T-3 | `W/kg` | `W/kg` |
@@ -589,11 +592,40 @@ The same dimension as energy, and never converted into it.
 | `Bq/m3` | Bq/m³ | 1 |  |
 | `pCi/L` | pCi/L | 37 |  |
 
+### absorbed-dose
+
+Energy absorbed per mass of tissue: never a dose equivalent and never a specific energy, though all three are J/kg.
+
+| Code | Symbol | Factor to `Gy` | Offset |
+| --- | --- | --- | --- |
+| `Gy` | Gy | 1 |  |
+| `mGy` | mGy | 1/1000 |  |
+
+### dose-equivalent
+
+An absorbed dose weighted by its radiation's effect: never converted to a Gy.
+
+| Code | Symbol | Factor to `Sv` | Offset |
+| --- | --- | --- | --- |
+| `Sv` | Sv | 1 |  |
+| `mSv` | mSv | 1/1000 |  |
+| `uSv` | μSv | 1/1000000 |  |
+
 ### dose-equivalent-rate
 
 | Code | Symbol | Factor to `Sv/s` | Offset |
 | --- | --- | --- | --- |
 | `uSv/h` | μSv/h | 1/3600000000 |  |
+
+### radioactivity
+
+Decays per second: never a frequency or a rate of events, though all three are s-1.
+
+| Code | Symbol | Factor to `Bq` | Offset |
+| --- | --- | --- | --- |
+| `Bq` | Bq | 1 |  |
+| `kBq` | kBq | 1000 |  |
+| `MBq` | MBq | 1000000 |  |
 
 ### body-mass-index
 

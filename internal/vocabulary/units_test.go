@@ -107,7 +107,6 @@ func TestAmbiguousDimensionsAreRefusedUndeclared(t *testing.T) {
 		"J/s":      {"power", "apparent-power"},
 		"J/m":      {"force", "energy-per-distance"},
 		"m/min":    {"speed", "precipitation-rate"},
-		"Bq":       {"frequency", "rate"},
 		"L/km":     {"area", "fuel-consumption"},
 	} {
 		_, err := vocabulary.MeasureOf(code)
@@ -122,6 +121,84 @@ func TestAmbiguousDimensionsAreRefusedUndeclared(t *testing.T) {
 			if _, err := vocabulary.ResolveMeasure(code, name); err != nil {
 				t.Errorf("declared %s refuses %s: %v", name, code, err)
 			}
+		}
+	}
+}
+
+// Conversions UCUM makes and a person would call wrong are refused by
+// construction (decision 0153): torque is not energy, an absorbed dose is
+// neither a dose equivalent nor a specific energy, and an activity is not a
+// frequency. Gy, Sv and Bq are kept apart from the coherent units they equal,
+// in every compound and under every prefix.
+func TestQuantityConvertsOnlyWithinAMeasure(t *testing.T) {
+	for _, c := range [][2]string{
+		{"N.m", "J"}, {"kN.m", "kJ"}, {"V.A", "W"},
+		{"Gy", "Sv"}, {"mGy", "mSv"}, {"Gy", "J/kg"}, {"Gy", "kcal/kg"}, {"Sv", "J/kg"},
+		{"Hz", "Bq"}, {"kHz", "kBq"}, {"Bq", "/s"}, {"Bq", "s-1"}, {"Ci", "Hz"},
+		{"{beats}/min", "{steps}/min"},
+	} {
+		refusesConvert(t, "", c[0], c[1], "two measures")
+		refusesConvert(t, "", c[1], c[0], "two measures, the other way")
+	}
+	for _, c := range []struct{ measure, from, to string }{
+		{"dose-equivalent-rate", "uSv/h", "uGy/h"},
+		{"absorbed-dose", "Gy", "J/kg"},
+		{"dose-equivalent", "mSv", "mGy"},
+		{"specific-energy", "J/kg", "Gy"},
+		{"specific-power", "W/kg", "Gy/h"},
+		{"frequency", "Hz", "Bq"},
+		{"radioactivity", "Bq", "s-1"},
+	} {
+		refusesConvert(t, c.measure, c.from, c.to, "the code is kept out of the measure")
+	}
+	for _, c := range []struct{ value, from, to, want string }{
+		{"5", "mGy", "Gy", "0.005"},
+		{"3", "uSv/h", "mSv/h", "0.003"},
+		{"1", "Ci", "Bq", "37000000000"},
+		{"2", "kBq", "Bq", "2000"},
+		{"1", "J/kg", "kcal/kg", "1/4184"},
+	} {
+		if got := convertTo(t, "", c.value, c.from, c.to); got.Cmp(rat(t, c.want)) != 0 {
+			t.Errorf("%s %s to %s = %s, want %s", c.value, c.from, c.to, got.RatString(), c.want)
+		}
+	}
+	for code, want := range map[string]string{
+		"Gy": "absorbed-dose", "mGy": "absorbed-dose", "Sv": "dose-equivalent", "uSv": "dose-equivalent",
+		"Bq": "radioactivity", "MBq": "radioactivity", "Ci": "radioactivity", "J/kg": "specific-energy",
+		"uSv/h": "dose-equivalent-rate", "Hz": "frequency", "kHz": "frequency",
+	} {
+		if m, err := vocabulary.MeasureOf(code); err != nil || m.Name != want {
+			t.Errorf("MeasureOf(%s) = %v, %v; want %s", code, m.Name, err, want)
+		}
+	}
+	// An absorbed dose rate has no measure yet: it is refused undeclared,
+	// never read as a specific power.
+	if m, err := vocabulary.MeasureOf("uGy/h"); err == nil {
+		t.Errorf("MeasureOf(uGy/h) = %s, want a refusal", m.Name)
+	}
+}
+
+// Convert reads the two codes the same way whichever is first: where one code
+// alone is ambiguous, the other code's measure decides, in both directions.
+func TestConvertIsSymmetric(t *testing.T) {
+	for _, c := range []struct{ a, b, want string }{
+		{"W", "J/s", "1"},
+		{"kW", "J/s", "1000"},
+		{"/s", "s-1", "1"},
+		{"m2", "cm.cm", "10000"},
+	} {
+		if got := convertTo(t, "", "1", c.a, c.b); got.Cmp(rat(t, c.want)) != 0 {
+			t.Errorf("1 %s to %s = %s, want %s", c.a, c.b, got.RatString(), c.want)
+		}
+		if back := convertTo(t, "", c.want, c.b, c.a); back.Cmp(rat(t, "1")) != 0 {
+			t.Errorf("%s %s to %s = %s, want 1", c.want, c.b, c.a, back.RatString())
+		}
+	}
+	for _, c := range [][2]string{{"Hz", "Bq"}, {"J/s", "V.A"}, {"kg.m2/s2", "J"}} {
+		_, err1 := vocabulary.Convert(big.NewRat(1, 1), c[0], c[1])
+		_, err2 := vocabulary.Convert(big.NewRat(1, 1), c[1], c[0])
+		if (err1 == nil) != (err2 == nil) {
+			t.Errorf("%s and %s convert one way only: %v, %v", c[0], c[1], err1, err2)
 		}
 	}
 }

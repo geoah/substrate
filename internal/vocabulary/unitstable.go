@@ -50,6 +50,10 @@ type atomDef struct {
 	base   []dimComponent
 	// offset is an affine atom's zero, in kelvin: K = x * factor + offset.
 	offset string
+	// distinct keeps the atom apart from the coherent unit it equals, in every
+	// compound and under every prefix, as an annotation is kept: Gy and Sv
+	// are both J/kg and Bq is s-1, and a person never means one for another.
+	distinct bool
 	// note says where the substrate departs from UCUM.
 	note string
 }
@@ -163,9 +167,18 @@ var atomDefs = []atomDef{
 	{code: "H", print: "H", metric: true, value: "1", unit: "Wb/A"},
 	{code: "lm", print: "lm", metric: true, value: "1", unit: "cd.sr"},
 	{code: "lx", print: "lx", metric: true, value: "1", unit: "lm/m2"},
-	{code: "Bq", print: "Bq", metric: true, value: "1", unit: "s-1"},
-	{code: "Gy", print: "Gy", metric: true, value: "1", unit: "J/kg"},
-	{code: "Sv", print: "Sv", metric: true, value: "1", unit: "J/kg"},
+	{
+		code: "Bq", print: "Bq", metric: true, value: "1", unit: "s-1", distinct: true,
+		note: "UCUM converts Bq to Hz and s-1; the substrate keeps an activity apart from both",
+	},
+	{
+		code: "Gy", print: "Gy", metric: true, value: "1", unit: "J/kg", distinct: true,
+		note: "UCUM converts Gy to Sv and J/kg; the substrate keeps an absorbed dose apart from both",
+	},
+	{
+		code: "Sv", print: "Sv", metric: true, value: "1", unit: "J/kg", distinct: true,
+		note: "UCUM converts Sv to Gy and J/kg; the substrate keeps a dose equivalent apart from both",
+	},
 	{code: "Cel", print: "°C", metric: true, class: atomAffine, value: "1", unit: "K", offset: "273.15"},
 
 	// ISO 1000 units.
@@ -499,7 +512,19 @@ var measureDefs = []measureDef{
 		name: "activity-concentration", base: "Bq/m3", scale: ScaleRatio, display: "Bq/m3",
 		units: []string{"Bq/m3", "pCi/L"},
 	},
+	{
+		name: "absorbed-dose", base: "Gy", scale: ScaleRatio, display: "mGy", units: []string{"Gy", "mGy"},
+		note: "energy absorbed per mass of tissue: never a dose equivalent and never a specific energy, though all three are J/kg",
+	},
+	{
+		name: "dose-equivalent", base: "Sv", scale: ScaleRatio, display: "mSv", units: []string{"Sv", "mSv", "uSv"},
+		note: "an absorbed dose weighted by its radiation's effect: never converted to a Gy",
+	},
 	{name: "dose-equivalent-rate", base: "Sv/s", scale: ScaleRatio, display: "uSv/h", units: []string{"uSv/h"}},
+	{
+		name: "radioactivity", base: "Bq", scale: ScaleRatio, display: "Bq", units: []string{"Bq", "kBq", "MBq"},
+		note: "decays per second: never a frequency or a rate of events, though all three are s-1",
+	},
 	{name: "body-mass-index", base: "kg/m2", scale: ScaleRatio, display: "kg/m2", units: []string{"kg/m2"}},
 	{
 		name: "oxygen-uptake-rate", base: "m3/(kg.s)", scale: ScaleRatio, display: "mL/(kg.min)",

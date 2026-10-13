@@ -21,8 +21,9 @@ package vocabulary
 //     `count`; an annotated count over a time ({beats}/min) is a `rate`.
 //  4. A code that differs from a table code only by its metric prefixes (GJ
 //     beside J, kV.A beside V.A) belongs to that code's measure.
-//  5. Anything else belongs to the measure whose dimension it has, when exactly
-//     one has it. Two (J/m is a force or an energy per distance; J/s is a
+//  5. Anything else belongs to the measure whose dimension and distinct atoms
+//     (Gy, Sv, Bq, which never stand for the units they equal) it has, when
+//     exactly one has them. Two (J/m is a force or an energy per distance; J/s is a
 //     power or an apparent power) is ambiguous, and the property must declare
 //     `measures:`. A measure marked listed (amount-fraction, score) takes no
 //     code by this rule: its codes are the ones rules 1 and 4 give it.
@@ -57,6 +58,9 @@ type Measure struct {
 	dim        dimension
 	annotation string
 	listed     bool
+	// distinct is the base's distinct-atom identity, which every unit of the
+	// measure carries.
+	distinct string
 }
 
 // Dimension renders the measure's dimension over the nine base quantities
@@ -110,6 +114,9 @@ func (u Unit) annotations() string { return countKey(u.val.notes) }
 
 // arbitraries is the unit's arbitrary-atom identity, the same way.
 func (u Unit) arbitraries() string { return countKey(u.val.arbitrary) }
+
+// distincts is the unit's distinct-atom identity (Gy, Sv, Bq), the same way.
+func (u Unit) distincts() string { return countKey(u.val.distinct) }
 
 func countKey(m map[string]int) string {
 	var parts []string
@@ -292,6 +299,7 @@ func buildTable() (*unitTable, error) {
 			}
 			base = b
 			m.dim = b.val.dim
+			m.distinct = b.distincts()
 		}
 		t.bases[d.name] = base
 		if !slices.Contains(d.units, d.display) {
@@ -315,6 +323,9 @@ func buildTable() (*unitTable, error) {
 			}
 			if d.scale != ScaleLogarithmic && d.scale != ScaleArbitrary && d.scale != ScaleCount && u.val.dim != m.dim {
 				return nil, fmt.Errorf("measure %s: %s has dimension %s, the measure %s", d.name, code, u.val.dim, m.dim)
+			}
+			if d.base != "" && u.distincts() != m.distinct {
+				return nil, fmt.Errorf("measure %s: %s carries %q, the measure %q", d.name, code, u.distincts(), m.distinct)
 			}
 			if _, listed := t.rows[code]; !listed {
 				t.codesInOrder = append(t.codesInOrder, code)
@@ -551,6 +562,9 @@ func (t *unitTable) dimensionAdmits(m *Measure, u Unit) error {
 	if m.annotation != "" && u.val.notes[m.annotation] <= 0 {
 		return fmt.Errorf("a %s unit carries {%s}", m.Name, m.annotation)
 	}
+	if u.distincts() != m.distinct {
+		return fmt.Errorf("%s is not %s: Gy, Sv and Bq never stand for the units they equal, nor one for another", u.code, m.Name)
+	}
 	return nil
 }
 
@@ -628,22 +642,29 @@ func orList(names []string) string {
 // measure is the one both codes share, read the way MeasureOf reads them, so
 // Cel to [degF] is an absolute temperature (37 Cel is 98.6 [degF]); ConvertIn
 // names the measure where that is not what is meant. It refuses codes in two
-// measures, two arbitrary atoms, two annotations, a level, and a factor no
-// rational number states (rad to deg).
+// measures, two arbitrary atoms, two annotations, two distinct atoms (Gy and
+// Sv), a level, and a factor no rational number states (rad to deg).
+//
+// The two codes are read the same way whichever comes first: where one alone is
+// ambiguous (J/s is a power or an apparent power), the other's measure decides.
 func Convert(v *big.Rat, from, to string) (*big.Rat, error) {
-	mf, err := MeasureOf(from)
-	if err != nil {
-		return nil, err
+	mf, errFrom := MeasureOf(from)
+	if errFrom == nil {
+		if _, err := ResolveMeasure(to, mf.Name); err == nil {
+			return ConvertIn(mf.Name, v, from, to)
+		}
 	}
-	if _, err := ResolveMeasure(to, mf.Name); err == nil {
-		return ConvertIn(mf.Name, v, from, to)
+	mt, errTo := MeasureOf(to)
+	if errTo == nil {
+		if _, err := ResolveMeasure(from, mt.Name); err == nil {
+			return ConvertIn(mt.Name, v, from, to)
+		}
 	}
-	mt, err := MeasureOf(to)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := ResolveMeasure(from, mt.Name); err == nil {
-		return ConvertIn(mt.Name, v, from, to)
+	switch {
+	case errFrom != nil:
+		return nil, errFrom
+	case errTo != nil:
+		return nil, errTo
 	}
 	return nil, fmt.Errorf("%s is %s and %s is %s: a value converts only inside one measure", from, mf.Name, to, mt.Name)
 }
@@ -697,6 +718,9 @@ func (t *unitTable) linear(m *Measure, from, to Unit) (factor, offset *big.Rat, 
 	}
 	if from.arbitraries() != to.arbitraries() {
 		return nil, nil, fmt.Errorf("%s and %s are different arbitrary units: an assay unit converts only to itself under another metric prefix", from.code, to.code)
+	}
+	if from.distincts() != to.distincts() {
+		return nil, nil, fmt.Errorf("%s and %s are kept apart: Gy, Sv and Bq never convert to the units they equal, nor one to another", from.code, to.code)
 	}
 	if from.val.pi != to.val.pi {
 		return nil, nil, fmt.Errorf("%s and %s differ by a power of pi: no rational number states the conversion", from.code, to.code)

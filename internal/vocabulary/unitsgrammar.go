@@ -61,6 +61,8 @@ type value struct {
 	notes map[string]int
 	// arbitrary counts each arbitrary atom by its exponent.
 	arbitrary map[string]int
+	// distinct counts each distinct atom (Gy, Sv, Bq) by its exponent.
+	distinct map[string]int
 	// specials are the affine and level atoms the term uses.
 	specials []string
 	// counted says an annotation or a factor stands as a component on its own
@@ -73,7 +75,7 @@ type value struct {
 }
 
 func unitValue() value {
-	return value{factor: big.NewRat(1, 1), notes: map[string]int{}, arbitrary: map[string]int{}}
+	return value{factor: big.NewRat(1, 1), notes: map[string]int{}, arbitrary: map[string]int{}, distinct: map[string]int{}}
 }
 
 // MaxUnitDimension bounds each base quantity's exponent in a unit's dimension,
@@ -149,6 +151,9 @@ func (v *value) mul(o value, exp int) error {
 	}
 	for k, n := range o.arbitrary {
 		v.arbitrary[k] += n * exp
+	}
+	for k, n := range o.distinct {
+		v.distinct[k] += n * exp
 	}
 	v.specials = append(v.specials, o.specials...)
 	v.counted = v.counted || o.counted
@@ -251,6 +256,12 @@ func loadAtoms() {
 			for k, x := range v.arbitrary {
 				a.val.arbitrary[k] = x
 			}
+			for k, x := range v.distinct {
+				a.val.distinct[k] = x
+			}
+		}
+		if d.distinct {
+			a.val.distinct[code] = 1
 		}
 		if d.class == atomAffine {
 			off, ok := new(big.Rat).SetString(d.offset)
