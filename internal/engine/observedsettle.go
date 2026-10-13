@@ -104,9 +104,9 @@ const pointColumns = `p.ts, p.ts_end, p.value, p.value_exact::text, p.value_base
 // and a deletion takes back, the rollups and a rebuild cannot disagree.
 const availablePoint = `(p.value IS NOT NULL OR p.code <> '')`
 
-// holdStreamSQL matches one obsHold's points, its six columns bound at
-// $1 to $6.
-const holdStreamSQL = `p.metric = $1 AND p.kind = $2 AND p.source = $3 AND p.about = $4 AND p.channel = $5 AND p.form = $6`
+// streamFormSQL matches one stream form's points (obsStreamForm), its six
+// columns bound at $1 to $6.
+const streamFormSQL = `p.metric = $1 AND p.kind = $2 AND p.source = $3 AND p.about = $4 AND p.channel = $5 AND p.form = $6`
 
 // scannedPoint is one point read back, with the group it rolls up into.
 type scannedPoint struct {
@@ -213,11 +213,11 @@ const (
 	pointAfter = `(p.ts, p.record_id, p.ord) > ($7, $8, $9)`
 )
 
-func (h obsHold) args() []any {
+func (h obsStreamForm) args() []any {
 	return []any{h.metric, h.kind, h.source, h.about, h.channel, h.form}
 }
 
-func holdLess(a, b obsHold) bool {
+func streamFormLess(a, b obsStreamForm) bool {
 	if a.obsStream != b.obsStream {
 		return streamLess(a.obsStream, b.obsStream)
 	}
@@ -244,17 +244,17 @@ func latestKeyLess(a, b obsLatestKey) bool {
 // stream: a counter's next bucket holding an available point joins them,
 // because its first step comes from the touched bucket's last point.
 func (t *txn) recomputeRollups(touched map[obsBucket]bool) error {
-	byHold := map[obsHold][]int64{}
+	byForm := map[obsStreamForm][]int64{}
 	for b := range touched {
-		byHold[b.obsHold] = append(byHold[b.obsHold], b.start)
+		byForm[b.obsStreamForm] = append(byForm[b.obsStreamForm], b.start)
 	}
-	holds := make([]obsHold, 0, len(byHold))
-	for h := range byHold {
-		holds = append(holds, h)
+	forms := make([]obsStreamForm, 0, len(byForm))
+	for h := range byForm {
+		forms = append(forms, h)
 	}
-	sort.Slice(holds, func(i, j int) bool { return holdLess(holds[i], holds[j]) })
-	for _, h := range holds {
-		starts := byHold[h]
+	sort.Slice(forms, func(i, j int) bool { return streamFormLess(forms[i], forms[j]) })
+	for _, h := range forms {
+		starts := byForm[h]
 		if h.form == vocabulary.FormCounter {
 			next, err := t.nextCounterBuckets(h, starts)
 			if err != nil {
@@ -267,7 +267,7 @@ func (t *txn) recomputeRollups(touched map[obsBucket]bool) error {
 		if err != nil {
 			return err
 		}
-		if _, err := t.exec(`DELETE FROM observed_rollups p WHERE `+holdStreamSQL+` AND p.bucket15 = ANY($7::timestamptz[])`,
+		if _, err := t.exec(`DELETE FROM observed_rollups p WHERE `+streamFormSQL+` AND p.bucket15 = ANY($7::timestamptz[])`,
 			append(h.args(), buckets)...); err != nil {
 			return err
 		}
@@ -292,7 +292,7 @@ func uniqueStarts(ms []int64) []time.Time {
 
 // nextCounterBuckets names, for each touched bucket of a counter stream, the
 // bucket of the stream's next available point after it.
-func (t *txn) nextCounterBuckets(h obsHold, starts []int64) ([]int64, error) {
+func (t *txn) nextCounterBuckets(h obsStreamForm, starts []int64) ([]int64, error) {
 	after := make([]time.Time, len(starts))
 	for i, s := range starts {
 		after[i] = time.UnixMilli(s).UTC().Add(observed.BucketWidth)
@@ -301,7 +301,7 @@ func (t *txn) nextCounterBuckets(h obsHold, starts []int64) ([]int64, error) {
 		SELECT DISTINCT n.ts FROM unnest($7::timestamptz[]) AS b(after)
 		CROSS JOIN LATERAL (
 			SELECT p.ts FROM observed_points p
-			WHERE `+holdStreamSQL+` AND p.ts >= b.after AND `+availablePoint+`
+			WHERE `+streamFormSQL+` AND p.ts >= b.after AND `+availablePoint+`
 			ORDER BY p.ts LIMIT 1) n`, append(h.args(), after)...)
 	if err != nil {
 		return nil, err
@@ -324,7 +324,7 @@ func (t *txn) nextCounterBuckets(h obsHold, starts []int64) ([]int64, error) {
 // and each group's state, whatever the bucket's size, and its work is the
 // bucket's points once. The buckets are taken half a page's worth at a time,
 // so each bucket's share of the first page is at least two rows.
-func (t *txn) rollupRowsOf(h obsHold, starts []time.Time) ([]rollupRow, error) {
+func (t *txn) rollupRowsOf(h obsStreamForm, starts []time.Time) ([]rollupRow, error) {
 	page := t.observedPage()
 	var out []rollupRow
 	for len(starts) > 0 {
@@ -346,7 +346,7 @@ func (t *txn) rollupRowsOf(h obsHold, starts []time.Time) ([]rollupRow, error) {
 // that row's arrival is what says the bucket holds more, so a bucket whose
 // points fit its share is never read again, and one that does not reads on
 // alone (readOn) after the last point it took.
-func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]rollupRow, error) {
+func (t *txn) rollupRowsOfChunk(h obsStreamForm, starts []time.Time, page int) ([]rollupRow, error) {
 	prevs, err := t.counterPrevs(h, starts)
 	if err != nil {
 		return nil, err
@@ -362,7 +362,7 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 		FROM unnest($7::timestamptz[]) AS b(start)
 		CROSS JOIN LATERAL (
 			SELECT * FROM observed_points p
-			WHERE `+holdStreamSQL+` AND p.ts >= b.start AND p.ts < b.start + interval '15 minutes'
+			WHERE `+streamFormSQL+` AND p.ts >= b.start AND p.ts < b.start + interval '15 minutes'
 			ORDER BY `+pointOrder+` LIMIT $8) p
 		ORDER BY b.start, `+pointOrder, append(h.args(), starts, limit)...)
 	if err != nil {
@@ -415,7 +415,7 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 // counterPrevs is, for each bucket of a counter stream, the stream's last
 // available point before it: the reading its first step runs from. Other
 // forms read none.
-func (t *txn) counterPrevs(h obsHold, starts []time.Time) (map[int64]*observed.Point, error) {
+func (t *txn) counterPrevs(h obsStreamForm, starts []time.Time) (map[int64]*observed.Point, error) {
 	prevs := map[int64]*observed.Point{}
 	if h.form != vocabulary.FormCounter {
 		return prevs, nil
@@ -425,7 +425,7 @@ func (t *txn) counterPrevs(h obsHold, starts []time.Time) (map[int64]*observed.P
 		FROM unnest($7::timestamptz[]) AS b(start)
 		CROSS JOIN LATERAL (
 			SELECT * FROM observed_points p
-			WHERE `+holdStreamSQL+` AND p.ts < b.start AND `+availablePoint+`
+			WHERE `+streamFormSQL+` AND p.ts < b.start AND `+availablePoint+`
 			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`, append(h.args(), starts)...)
 	if err != nil {
 		return nil, err
@@ -445,7 +445,7 @@ func (t *txn) counterPrevs(h obsHold, starts []time.Time) (map[int64]*observed.P
 
 // readOn reads the rest of one bucket, a page at a time, after the key at
 // after, into its running state.
-func (t *txn) readOn(h obsHold, b *streamedBucket, after pointKey, page int) error {
+func (t *txn) readOn(h obsStreamForm, b *streamedBucket, after pointKey, page int) error {
 	end := b.start.Add(observed.BucketWidth)
 	for {
 		n, err := t.readPointsAfter(h, &after, &end, page, b.add)
@@ -461,10 +461,10 @@ func (t *txn) readOn(h obsHold, b *streamedBucket, after pointKey, page int) err
 // is what starts the stream index's range at the key: the row comparison
 // alone is a filter the index cannot seek by, and each page would read the
 // stream from its start.
-func (t *txn) readPointsAfter(h obsHold, after *pointKey, before *time.Time, page int, add func(scannedPoint)) (int, error) {
+func (t *txn) readPointsAfter(h obsStreamForm, after *pointKey, before *time.Time, page int, add func(scannedPoint)) (int, error) {
 	rows, err := t.query(`
 		SELECT p.record_id, p.ord, `+pointColumns+` FROM observed_points p
-		WHERE `+holdStreamSQL+` AND p.ts >= $7 AND `+pointAfter+`
+		WHERE `+streamFormSQL+` AND p.ts >= $7 AND `+pointAfter+`
 		  AND ($10::timestamptz IS NULL OR p.ts < $10)
 		ORDER BY `+pointOrder+` LIMIT $11`,
 		append(h.args(), after.ts, after.recordID, after.ord, before, page)...)
@@ -501,7 +501,7 @@ func finishRows(rows *sql.Rows) error {
 }
 
 // insertRollups writes one stream's computed rows, in batches.
-func (t *txn) insertRollups(h obsHold, rows []rollupRow) error {
+func (t *txn) insertRollups(h obsStreamForm, rows []rollupRow) error {
 	for len(rows) > 0 {
 		n := min(len(rows), observedInsertBatch)
 		if err := t.insertRollupBatch(h, rows[:n]); err != nil {
@@ -512,7 +512,7 @@ func (t *txn) insertRollups(h obsHold, rows []rollupRow) error {
 	return nil
 }
 
-func (t *txn) insertRollupBatch(h obsHold, rows []rollupRow) error {
+func (t *txn) insertRollupBatch(h obsStreamForm, rows []rollupRow) error {
 	n := len(rows)
 	var (
 		code, unit                      = make([]string, n), make([]string, n)
@@ -774,33 +774,33 @@ func (t *txn) rederiveObservedAll() error {
 	if err != nil {
 		return err
 	}
-	var holds []obsHold
+	var forms []obsStreamForm
 	for rows.Next() {
-		var h obsHold
+		var h obsStreamForm
 		if err := rows.Scan(&h.metric, &h.kind, &h.source, &h.about, &h.channel, &h.form); err != nil {
 			_ = rows.Close()
 			return err
 		}
-		holds = append(holds, h)
+		forms = append(forms, h)
 	}
 	if err := finishRows(rows); err != nil {
 		return err
 	}
-	sort.Slice(holds, func(i, j int) bool { return holdLess(holds[i], holds[j]) })
-	for _, h := range holds {
-		if err := t.rederiveHold(h); err != nil {
+	sort.Slice(forms, func(i, j int) bool { return streamFormLess(forms[i], forms[j]) })
+	for _, h := range forms {
+		if err := t.rederiveStreamForm(h); err != nil {
 			return fmt.Errorf("substrate/engine: rebuild the observed rollups: %w", err)
 		}
 	}
 	return t.markObservedIndexed()
 }
 
-// rederiveHold recomputes every rollup row of one stream from its points,
-// read a page at a time in pointOrder and fed to one bucket's running state
-// after another, so a bucket of any size is read once and never held whole.
-// The last available point of a bucket is the next one's prev, a counter's
-// step in.
-func (t *txn) rederiveHold(h obsHold) error {
+// rederiveStreamForm recomputes every rollup row of one stream form from its
+// points, read a page at a time in pointOrder and fed to one bucket's running
+// state after another, so a bucket of any size is read once and never held
+// whole. The last available point of a bucket is the next one's prev, a
+// counter's step in.
+func (t *txn) rederiveStreamForm(h obsStreamForm) error {
 	page := t.observedPage()
 	var (
 		prev    *observed.Point

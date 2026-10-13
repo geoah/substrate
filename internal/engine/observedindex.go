@@ -24,10 +24,10 @@ package engine
 // A stream is (kind, metric, source, about, channel), and a summary's
 // statistic splits it in observed_latest: one row per stream and statistic
 // (obsLatestKey), so a night's average and its maximum at one instant keep a
-// newest point each. Its points with one form are what a hold runs across and
-// a counter steps across (obsHold); a rollup row is one bucket of that, for
-// one group: a code, a unit, the delta flag, a UTC offset and whether the
-// offset was recorded.
+// newest point each. A stream form is a stream's points of one form
+// (obsStreamForm): what a gauge's hold runs across and a counter steps
+// across. A rollup row is one bucket of a stream form, for one group: a code,
+// a unit, the delta flag, a UTC offset and whether the offset was recorded.
 
 import (
 	"context"
@@ -155,16 +155,22 @@ type obsLatestKey struct {
 	statistic string
 }
 
-// obsHold is one stream's points of one form: what a hold and a counter's
-// steps run across, and what a rollup recompute reads.
-type obsHold struct {
+// obsStreamForm is a stream's points of one form: what a gauge's hold and a
+// counter's steps run across, and what a rollup recompute reads.
+type obsStreamForm struct {
 	obsStream
 	form string
 }
 
-// obsBucket is one bucket of one obsHold, its start in Unix milliseconds.
+// obsHold and holdStreamSQL are the aggregate read's names for obsStreamForm
+// and streamFormSQL, which its files still use.
+type obsHold = obsStreamForm
+
+const holdStreamSQL = streamFormSQL
+
+// obsBucket is one bucket of one obsStreamForm, its start in Unix milliseconds.
 type obsBucket struct {
-	obsHold
+	obsStreamForm
 	start int64
 }
 
@@ -219,7 +225,7 @@ func declaredMeasure(ty *vocabulary.Kind) string {
 // observedRows is what one record derives: the stream's columns, the
 // columns every point of the record shares, and its points.
 type observedRows struct {
-	obsHold
+	obsStreamForm
 	id        string
 	unit      string
 	delta     bool
@@ -269,7 +275,7 @@ func deriveObserved(ty *vocabulary.Kind, row *erow) *observedRows {
 	if !slices.Contains(vocabulary.ObservedForms, form) {
 		return nil
 	}
-	r := &observedRows{id: row.ID, obsHold: obsHold{form: form, obsStream: obsStream{
+	r := &observedRows{id: row.ID, obsStreamForm: obsStreamForm{form: form, obsStream: obsStream{
 		metric:  referencePathOf(props["metric"]),
 		kind:    row.Kind,
 		source:  referencePathOf(props["source"]),
@@ -567,7 +573,7 @@ func (t *txn) dropObserved(ref eref) error {
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var h obsHold
+		var h obsStreamForm
 		var statistic string
 		var bucket, available int64
 		if err := rows.Scan(&h.metric, &h.source, &h.about, &h.channel, &h.form, &statistic, &bucket, &available); err != nil {
@@ -576,7 +582,7 @@ func (t *txn) dropObserved(ref eref) error {
 		h.kind = ref.Kind
 		touch.streams[obsLatestKey{obsStream: h.obsStream, statistic: statistic}] -= available
 		if h.form != vocabulary.FormSummary {
-			touch.buckets[obsBucket{obsHold: h, start: bucket}] = true
+			touch.buckets[obsBucket{obsStreamForm: h, start: bucket}] = true
 		}
 	}
 	return rows.Err()
@@ -622,7 +628,7 @@ func (t *txn) insertObserved(r *observedRows) error {
 			touch.streams[latest] = 0
 		}
 		if r.form != vocabulary.FormSummary {
-			touch.buckets[obsBucket{obsHold: r.obsHold, start: bucketOf(p.ts)}] = true
+			touch.buckets[obsBucket{obsStreamForm: r.obsStreamForm, start: bucketOf(p.ts)}] = true
 		}
 	}
 	if _, err := t.exec(`
