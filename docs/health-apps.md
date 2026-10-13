@@ -663,16 +663,17 @@ account's zone, Athens, even in London
 ## Weight in kg and lb
 
 Weight reads in any mass unit; the read converts each stored value exactly
-where the factor allows and says so in `exact`. Weekly, one scale's
-weigh-ins where several report them:
+where the factor allows and says so in `exact`. Weekly, the Withings
+scale's weigh-ins by one path, and the ones Ada typed in by hand:
 
 ```json
-{"filter": {"properties": {"source": {"eq": "applehealth/iphone/withings"}}},
+{"filter": {"properties": {"source": {"in": ["applehealth/iphone/withings", "manual"]}}},
  "aggregate": {
    "metric": {"ref": "ada.example.com/observations/metric/health/body_mass"},
    "range": {"gte": "2026-09-07T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "week", "weekStart": "monday", "timezone": "Europe/Athens"},
    "reducers": ["avg", "min", "max", "count"],
+   "sources": {"policy": "priority", "order": ["applehealth/iphone/withings", "manual"]},
    "unit": "kg"}}
 ```
 
@@ -682,10 +683,18 @@ weigh-ins where several report them:
            "values": [{"reducer": "avg", "value": "72.44", "unit": "kg"}, {"reducer": "min", "value": "72.14", "unit": "kg"},
                       {"reducer": "max", "value": "72.83", "unit": "kg"}, {"reducer": "count", "value": "4"}], ...},
           ...
-          {"start": "2026-09-28T00:00:00+03:00", "end": "2026-10-05T00:00:00+03:00",
+          {"start": "2026-09-21T00:00:00+03:00", "end": "2026-09-28T00:00:00+03:00", "sources": ["applehealth/iphone/withings", "manual"],
+           "values": [{"reducer": "avg", "value": "71.7966666666667", ...}, {"reducer": "min", "value": "71.64", ...},
+                      {"reducer": "max", "value": "72.0", ...}, {"reducer": "count", "value": "3"}], ...},
+          {"start": "2026-09-28T00:00:00+03:00", "end": "2026-10-05T00:00:00+03:00", "sources": ["applehealth/iphone/withings"],
            "values": [{"reducer": "avg", "value": "71.9525", ...}, {"reducer": "min", "value": "71.82", ...},
                       {"reducer": "max", "value": "72.1", ...}, {"reducer": "count", "value": "4"}], ...}], ...}
 ```
+
+The week of the London trip holds two weigh-ins at home and the 72.0 kg Ada
+typed in from a hotel scale, `manual/2026-09-22-weight`. `priority` answers
+one row per week for the two sources, where `separate` would answer a row
+per source.
 
 The same read with `"unit": "[lb_av]"`:
 
@@ -701,9 +710,9 @@ The same read with `"unit": "[lb_av]"`:
 A value carries up to 20 significant digits; the app rounds it to the
 metric record's `displayPrecision`.
 
-The read names one path because the Withings scale reaches the repository
-through Apple Health, Google Fit and Garmin as three sources with nothing
-linking them
+The read names one of the scale's paths because the Withings scale reaches
+the repository through Apple Health, Google Fit and Garmin as three sources
+with nothing linking them
 ([G-31](plans/observations/requirements.md#g-31-one-device-under-several-sources)).
 `separate` shows each weigh-in three times, and `priority` keeps a weigh-in
 again where a lower-ranked path stamped it a few seconds before the
