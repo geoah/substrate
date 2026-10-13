@@ -781,9 +781,12 @@ keeps a sum or a count. Where a vendor summary may serve a bucket, the reducers 
 summary takes come first and the rest read raw points alone: picking one
 (the time-weighted average, a percentile, a zone) reads the metric from raw
 points and the chart says whose summaries it leaves out, and where you
-picked where to read from yourself it is listed disabled, with the reason. A level is a line with its lowest-to-highest band where its metric
-shows one line, an amount or a count is bars, and a category is bars
-stacked per code that counts as one unit, its time. The series of one unit
+picked where to read from yourself it is listed disabled, with the reason.
+A level is a line, with its lowest-to-highest band where its metric shows
+one line and the reducer answers in the metric's own unit (not a count, a
+standard deviation, a time in a zone or a circular mean). An amount, a
+count, a counter's increase and a time in a zone are bars, and a category
+is bars stacked per code that counts as one unit, its time. The series of one unit
 share the left axis and a second unit reads on the right, each axis
 captioned with its unit; a third unit is not drawn, and the chart names the
 metrics it leaves out and what to deselect to draw them. One crosshair marks

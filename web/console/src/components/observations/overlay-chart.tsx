@@ -1,10 +1,11 @@
 /** One chart of several metrics, each one aggregate read (`lib/overlay.ts`
  * plans them): the series of one unit share the left axis, a second unit
  * reads on the right, and a metric of a third unit is left out with a
- * sentence saying which and what to deselect. A level is a line with its
- * band, an amount or a count is bars, a category is bars stacked per code;
- * one crosshair and one tooltip list every series at the hovered bucket
- * with its unit.
+ * sentence saying which and what to deselect. A level is a line, with its
+ * band beside a reducer in its own unit (`bandedReducer`); an amount, a
+ * count, an increase and a time in a zone are bars (`markOf`); a category
+ * is bars stacked per code. One crosshair and one tooltip list every
+ * series at the hovered bucket with its unit.
  *
  * Above the chart, one row per metric: its name and axis, its reducer and
  * unit, where its read stands (reading, refreshing, refused), and its
