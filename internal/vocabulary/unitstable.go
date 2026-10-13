@@ -359,7 +359,7 @@ var measureDefs = []measureDef{
 	{
 		name: "duration", base: "s", scale: ScaleRatio, display: "min",
 		units: []string{"s", "ms", "us", "min", "h", "d", "wk", "mo", "a"},
-		note:  "mo and a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year",
+		note:  "the month mo and the year a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year",
 	},
 	{
 		name: "temperature", base: "K", scale: ScaleAffine, display: "Cel",
@@ -374,7 +374,7 @@ var measureDefs = []measureDef{
 	{
 		name: "energy", base: "J", scale: ScaleRatio, display: "kJ",
 		units: []string{"J", "kJ", "MJ", "cal", "kcal", "[Cal]", "W.h", "kW.h", "eV", "[Btu_IT]"},
-		note:  "cal is the thermochemical calorie (4.184 J); [Cal] is the nutrition Calorie, a kcal",
+		note:  "the calorie cal is the thermochemical one (4.184 J); [Cal] is the nutrition Calorie, a kcal",
 	},
 	{
 		name: "power", base: "W", scale: ScaleRatio, display: "W",
@@ -388,7 +388,7 @@ var measureDefs = []measureDef{
 	{
 		name: "reactive-power", base: "V.A{reactive}", scale: ScaleRatio, display: "V.A{reactive}",
 		units: []string{"V.A{reactive}"}, annotation: "reactive",
-		note: "var: UCUM has no code, so it is the annotated volt-ampere",
+		note: "UCUM has no code for var, so it is the annotated volt-ampere",
 	},
 	{
 		name: "pressure", base: "Pa", scale: ScaleRatio, display: "hPa",
@@ -484,7 +484,7 @@ var measureDefs = []measureDef{
 	{
 		name: "power-level", base: "dB[W]", scale: ScaleLogarithmic, display: "dBm",
 		units: []string{"dB[W]", "dBm"},
-		note:  "dB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none",
+		note:  "the level dB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none",
 	},
 	{name: "acidity", base: "[pH]", scale: ScaleLogarithmic, display: "[pH]", units: []string{"[pH]"}},
 	{name: "electric-potential", base: "V", scale: ScaleRatio, display: "V", units: []string{"V", "mV"}},
@@ -503,7 +503,7 @@ var measureDefs = []measureDef{
 	{
 		name: "angle", base: "deg", scale: ScaleRatio, display: "deg",
 		units: []string{"deg", "'", "''", "rad"},
-		note:  "rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself",
+		note:  "the radian rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself",
 	},
 	{
 		name: "volume-flow", base: "m3/s", scale: ScaleRatio, display: "L/min",

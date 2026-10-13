@@ -341,9 +341,30 @@ func code(s string) string {
 	return "`" + strings.ReplaceAll(s, "|", `\|`) + "`"
 }
 
+// sentence capitalizes a note for the page, so a note must not open with a
+// code: codes are case-sensitive, and `cal` capitalized is `Cal`, an alias of
+// `[Cal]`, a thousand times larger.
 func sentence(s string) string {
 	if s == "" {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func TestUnitNotesOpenWithAWord(t *testing.T) {
+	known := map[string]bool{}
+	for _, c := range vocabulary.UnitCodes() {
+		known[c] = true
+	}
+	for alias := range vocabulary.UnitAliases() {
+		known[alias] = true
+	}
+	for _, m := range vocabulary.Measures() {
+		word, _, _ := strings.Cut(m.Note, " ")
+		word = strings.TrimRight(word, ":;,")
+		// The article is the one English word that is also a code (the year).
+		if word != "a" && known[word] {
+			t.Errorf("%s: the note opens with the code %q, which the units page would capitalize: %q", m.Name, word, m.Note)
+		}
+	}
 }

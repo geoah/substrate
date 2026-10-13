@@ -174,7 +174,7 @@ print `count/min`, the alias of `/min`.
 
 ### duration
 
-Mo and a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year.
+The month mo and the year a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year.
 
 | Code | Symbol | Factor to `s` | Offset |
 | --- | --- | --- | --- |
@@ -210,7 +210,7 @@ A difference or deviation: the same codes, the offsets suppressed.
 
 ### energy
 
-Cal is the thermochemical calorie (4.184 J); [Cal] is the nutrition Calorie, a kcal.
+The calorie cal is the thermochemical one (4.184 J); [Cal] is the nutrition Calorie, a kcal.
 
 | Code | Symbol | Factor to `J` | Offset |
 | --- | --- | --- | --- |
@@ -248,7 +248,7 @@ Volt-amperes: the same factor as the watt and never converted into it.
 
 ### reactive-power
 
-Var: UCUM has no code, so it is the annotated volt-ampere.
+UCUM has no code for var, so it is the annotated volt-ampere.
 
 | Code | Symbol | Factor to `V.A{reactive}` | Offset |
 | --- | --- | --- | --- |
@@ -479,7 +479,7 @@ A ratio in decibels against no stated reference: never converted, never summed.
 
 ### power-level
 
-DB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none.
+The level dB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none.
 
 | Code | Symbol | Factor to `dB[W]` | Offset |
 | --- | --- | --- | --- |
@@ -551,7 +551,7 @@ DB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM
 
 ### angle
 
-Rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself.
+The radian rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself.
 
 | Code | Symbol | Factor to `deg` | Offset |
 | --- | --- | --- | --- |

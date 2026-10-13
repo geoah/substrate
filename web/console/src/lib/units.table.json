@@ -93,7 +93,7 @@
         "mo",
         "a"
       ],
-      "note": "mo and a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year"
+      "note": "the month mo and the year a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year"
     },
     {
       "name": "temperature",
@@ -139,7 +139,7 @@
         "eV",
         "[Btu_IT]"
       ],
-      "note": "cal is the thermochemical calorie (4.184 J); [Cal] is the nutrition Calorie, a kcal"
+      "note": "the calorie cal is the thermochemical one (4.184 J); [Cal] is the nutrition Calorie, a kcal"
     },
     {
       "name": "power",
@@ -178,7 +178,7 @@
       "units": [
         "V.A{reactive}"
       ],
-      "note": "var: UCUM has no code, so it is the annotated volt-ampere"
+      "note": "UCUM has no code for var, so it is the annotated volt-ampere"
     },
     {
       "name": "pressure",
@@ -498,7 +498,7 @@
         "dB[W]",
         "dBm"
       ],
-      "note": "dB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none"
+      "note": "the level dB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none"
     },
     {
       "name": "acidity",
@@ -607,7 +607,7 @@
         "''",
         "rad"
       ],
-      "note": "rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself"
+      "note": "the radian rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself"
     },
     {
       "name": "volume-flow",
