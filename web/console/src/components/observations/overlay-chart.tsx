@@ -788,7 +788,7 @@ function chartNotes(
       own.push(
         plot.ranked
           ? `Where sources overlap, ${first} is used first, then ${rest.join(", then ")}.`
-          : `Where ${listWords(overlapping)} overlap, the server ranks them by each source record’s priorities for this metric, then by record path.`
+          : `Where ${listWords(overlapping)} overlap, the server ranks ${plot.sourceless ? "the sources" : "them"} by each source record’s priorities for this metric, then by record path${plot.sourceless ? ", and values naming no source last" : ""}.`
       )
     }
     const dropped = all

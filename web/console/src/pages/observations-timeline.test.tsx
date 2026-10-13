@@ -298,6 +298,31 @@ describe("the timeline's requests", () => {
     expect(grouped.sources).toBeUndefined()
   })
 
+  it("says values naming no source rank after every source", async () => {
+    // A weight typed in by hand, beside the scale's.
+    const typed = LATEST.rows.find((r) => r.group?.metric === BODY_MASS)!
+    const latest = {
+      ...LATEST,
+      rows: [...LATEST.rows, { ...typed, group: { metric: BODY_MASS } }],
+    }
+    const server = mount(`?metric=health/body_mass&${WINDOW}`, false, (read) =>
+      read.aggregate.metric ? answer(read) : latestAnswer(read, latest)
+    )
+    await waitFor(() =>
+      expect(charts(server.seen, "health/body_mass")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/body_mass")[0].aggregate.sources
+    ).toEqual({ policy: "priority" })
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Weight" }).textContent
+      ).toContain(
+        "Where Withings Body+ and values naming no source overlap, the server ranks the sources by each source record’s priorities for this metric, then by record path, and values naming no source last."
+      )
+    )
+  })
+
   it("prefers the sources in the order they were picked, not the menu's", async () => {
     const server = mount(`?metric=health/heart_rate&${WINDOW}`)
     await waitFor(() =>
