@@ -630,7 +630,7 @@ func (p *aggPlan) parseLatest() error {
 	a := p.a
 	for _, g := range p.groupBy {
 		if g == substrate.GroupCode {
-			return refuse("aggregate.groupBy", "the latest read groups by the stream keys (metric, source, about, kind, channel); a code is a value, not a stream")
+			return refuse("aggregate.groupBy", "the latest read groups by the stream keys (metric, source, about, kind, channel) and a summary's statistic; a code is a value, not a stream")
 		}
 	}
 	for _, x := range []struct {

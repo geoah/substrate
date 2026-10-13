@@ -109,6 +109,22 @@ func TestAggregateSummariesReadOneStatistic(t *testing.T) {
 	raw := read(substrate.Filter{}, hrv, []string{"statistic"}, "count")
 	raw.Aggregate.From = substrate.AggregateFromRaw
 	f.refusedAgg(raw, "groupBy statistic")
+
+	// The latest read groups by the statistic too: the newest night's
+	// average and its maximum, a row each.
+	latest := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: hrv}, GroupBy: []string{"statistic"}, Reducers: reducers("last"),
+	})
+	var got []string
+	for _, r := range latest.Rows {
+		l, _ := val(r, "last")
+		if r.Group != nil {
+			got = append(got, r.Group.Statistic+"="+l)
+		}
+	}
+	if fmt.Sprint(got) != "[avg=65 max=88]" {
+		t.Errorf("the latest read by statistic answers %v, want [avg=65 max=88]", got)
+	}
 }
 
 // Under prefer-raw a bucket raw points cover reads them, so a sum over steps

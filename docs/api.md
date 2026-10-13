@@ -1132,7 +1132,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
 | `reducers` | the reducers, each a name or a one-key object with its argument | required |
-| `groupBy` | any of `source`, `about`, `code`, `metric`, `kind`, `channel`, and `statistic` on a read from summaries | |
+| `groupBy` | any of `source`, `about`, `code`, `metric`, `kind`, `channel`, and `statistic` on a read from summaries or the latest read | |
 | `from` | `raw` (gauges, amounts, counters), `summaries` (summary points) or `prefer-raw` | `raw` |
 | `minCoverage` | `prefer-raw`'s floor, 0 to 1 | `0.9` |
 | `sources` | `{"policy", "order"?}`: `separate`, `priority` or `summaries` | `separate` |
@@ -1210,9 +1210,10 @@ named `timezone` places every value by that zone and takes no
 **The latest read.** No `bucket`, no `range` and the one reducer `last` is the
 newest point of each group, straight from the index's latest table: the
 dashboard's "current value of everything". `metric` is optional (the filter's
-`properties.metric` may select several), `groupBy` takes the stream keys, and
-each row's `start` and `end` are the newest point's `ts` and `ts_end` at its
-own offset, its `count` the group's point count.
+`properties.metric` may select several), `groupBy` takes the stream keys and
+`statistic` (a night's latest average and maximum, a row each), and each
+row's `start` and `end` are the newest point's `ts` and `ts_end` at its own
+offset, its `count` the group's point count.
 
 ```json
 {"filter": {"implements": "substrate.reamde.dev/core/observed"},
@@ -1255,11 +1256,11 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
 - A row reads the summaries of one `statistic`. A group whose summaries hold
   two (a night's `avg` and `max` from one source) is a `422` naming them:
   pick one with `filter.properties.statistic`, or split them with
-  `groupBy: ["statistic"]`, which only a read from summaries takes. `avg`,
-  `min` and `max` then reduce that statistic's values whatever it is, so the
-  weekly mean of a daily `vendor` resting heart rate is the mean of those
-  values (a summary of summaries), and `first`, `last` and `count` read that
-  statistic alone. `sum` adds only `sum` and `count` summaries. Over any
+  `groupBy: ["statistic"]`, which a bucketed read takes only from summaries.
+  `avg`, `min` and `max` then reduce that statistic's values whatever it is,
+  so the weekly mean of a daily `vendor` resting heart rate is the mean of
+  those values (a summary of summaries), and `first`, `last` and `count` read
+  that statistic alone. `sum` adds only `sum` and `count` summaries. Over any
   other statistic a read from summaries is a `422`, and under `prefer-raw` a
   bucket that falls to such summaries answers `sum` `null`, so a source's
   `vendor` daily total does not refuse the days its raw points cover.
@@ -1507,8 +1508,8 @@ merged as one row.
   recorded-local calendar; `place` `end` over a gauge or a counter, in the
   records mode or on a property read; a group whose summaries hold two
   statistics, or `sum` over a statistic other than `sum` and `count` on a
-  read from summaries; `groupBy` `statistic` on a read that is not from
-  summaries; `priority` over two counters; a budget below zero or over its
+  read from summaries; `groupBy` `statistic` on a bucketed read that is not
+  from summaries; `priority` over two counters; a budget below zero or over its
   cap, or a read over a budget (naming the limit); `rolling` without a
   `bucket`; `downsample` beside `reducers`, `rolling`, `fill` or `bucket`;
   `minCoverage` without `prefer-raw`; a `fill`, `rolling` or `maxGap` on the
