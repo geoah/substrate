@@ -31,9 +31,11 @@ endpoint with no key kept every unsigned POST, up to 8 MiB each, parked.
 
 Chosen: the declaration, because it is the only option that refuses an
 unsigned request before the door writes anything, and it keeps the signing
-secret in the host. A key alone does not do either for a provider such as
-WHOOP, whose URL form takes no secret it did not mint. A host function runs
-after the delivery is stored, which is the cost to remove.
+secret in the host. A key does neither for a trigger that ships in a
+provider bundle: a key written in the bundle's public YAML is no secret, and
+nothing mints one at install, so a keyed shipped trigger would ship
+disabled. A host function runs after the delivery is stored, which is the
+cost to remove.
 
 The block, validated where `key` and `headers` are (`parseTrigger`):
 
@@ -55,9 +57,13 @@ The block, validated where `key` and `headers` are (`parseTrigger`):
 `admitWebhook` checks the key first, as before, then the signature, in
 constant time, then spools and appends. A missing or wrong signature, a
 missing or stale timestamp, a multipart request (the door keeps no raw bytes
-of one) or a secret that does not resolve is answered `401` with the body
-`webhook signature refused`, and nothing is stored. An unresolvable secret is
-logged for the operator; the other reasons are not.
+of one) or a secret that does not resolve is refused, and nothing is stored.
+On a trigger with no key the refusal is the door's one `404`, so a POST
+cannot tell that the repository has the trigger installed. On a keyed
+trigger, where the request has already matched the key, it is `401` with the
+body `webhook signature refused`, which tells the owner's sender that the
+signature is what failed. An unresolvable secret is logged for the operator;
+the other reasons are not.
 
 A callable verifies only what the host cannot: a scheme outside the block,
 such as a prefixed header (`sha256=…`) or a signature list (`t=…,v1=…`).
@@ -71,9 +77,11 @@ rest of 0045 stands.
   ships enabled: it fails closed until its secret resolves.
 - Good, because the OAuth client secret signs WHOOP's webhooks without a copy
   reaching any function.
-- Bad, because a signature refusal is `401` where every other refusal is
-  `404`, which tells a prober that the trigger exists, is enabled and took
-  the key. With no key, an open endpoint already said as much with its `202`.
+- Bad, because a keyless trigger's signature refusal is the same `404` as a
+  missing trigger, so an owner whose provider reports `404` has to read the
+  server log, or the provider's signature setup, to tell a wrong URL from a
+  wrong secret. A keyed trigger answers `401` instead, which says no more
+  than the key already proved.
 - Bad, because GitHub's `sha256=` prefix and Stripe's `t=,v1=` header do not
   fit the block yet; each is a later additive field.
 - Bad, because a `secret` record under a bundle's id prefix is still injected

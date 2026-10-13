@@ -101,8 +101,9 @@ data:
 # `X-WHOOP-Signature-Timestamp` + raw body)), the timestamp in milliseconds.
 # `oauthClientSecret` is the client secret on the bundle's `client` input,
 # which the host resolves and `whoopwebhook` never receives. A request that
-# fails the check is answered 401 and leaves no blob, no ledger entry and no
-# invocation.
+# fails the check is answered 404, the door's answer to every refusal,
+# because the trigger carries no key, and leaves no blob, no ledger entry and
+# no invocation.
 #
 # Enabled as shipped because the check fails closed: until the owner writes
 # the config record with its client secret, every delivery is refused and

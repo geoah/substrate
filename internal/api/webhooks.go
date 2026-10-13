@@ -53,9 +53,10 @@ var webhookHeaderDenylist = map[string]bool{
 // and the trigger's own key, when it declares one, is the credential, read
 // from the trailing path segment, `?key=` or a bearer header. The request is
 // read into transport facts here and handed to the service, which answers
-// 404 for every refusal alike, 401 for a request the trigger's declared
-// signature refuses, and 202 with the fire id once the delivery is on its
-// way; the callable's output is never a response.
+// 404 for every refusal alike, 401 for a request that carried a keyed
+// trigger's key and that the trigger's declared signature refuses, and 202
+// with the fire id once the delivery is on its way; the callable's output is
+// never a response.
 func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	select {
 	case webhookSem <- struct{}{}:

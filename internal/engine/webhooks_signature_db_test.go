@@ -123,6 +123,9 @@ func TestWebhookSignatureIsCheckedBeforeAnythingIsStored(t *testing.T) {
 		Parts:   []substrate.WebhookPart{{Name: "audio", Filename: "a.m4a", MediaType: "audio/mp4", Data: []byte("bytes")}},
 	}
 
+	// A keyless trigger refuses with the door's one 404, so a POST cannot
+	// tell that the repository has the trigger installed; one whose key the
+	// request carried refuses with the signature's 401.
 	for _, tc := range []struct {
 		name, trigger, reason string
 		req                   substrate.WebhookRequest
@@ -138,16 +141,18 @@ func TestWebhookSignatureIsCheckedBeforeAnythingIsStored(t *testing.T) {
 		{"a secret record that does not exist", "hook-nosecret", "signing secret unresolvable", signedHook(`{"n":"x"}`, hookSigningSecret, now)},
 		{"a secret record with no value", "hook-emptysecret", "signing secret unresolvable", signedHook(`{"n":"x"}`, hookSigningSecret, now)},
 		{"the right key and no signature", "hook-both", "no signature", jsonHook(`{"n":"keyonly"}`, "k")},
+		{"the right key and a signature under another secret", "hook-both", "signature does not match", signedHook(`{"n":"keyforged"}`, "another-secret-entirely", now)},
+		{"the right key and a timestamp ten minutes old", "hook-both", "timestamp outside maxSkew", signedHook(`{"n":"keystale"}`, hookSigningSecret, now.Add(-10*time.Minute))},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := traceOf(t, dsn)
-			key := ""
+			key, want := "", substrate.ErrNotFound
 			if tc.trigger == "hook-both" {
-				key = hookKey
+				key, want = hookKey, substrate.ErrAuth
 			}
 			_, err := engine.ReceiveWebhookSync(ctx, svc, authority, tc.trigger, key, tc.req)
-			if !errors.Is(err, substrate.ErrAuth) || !strings.Contains(err.Error(), tc.reason) {
-				t.Fatalf("err = %v, want ErrAuth for %q", err, tc.reason)
+			if !errors.Is(err, want) || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("err = %v, want %v for %q", err, want, tc.reason)
 			}
 			if after := traceOf(t, dsn); after != before {
 				t.Fatalf("a refused request stored something: before %+v, after %+v", before, after)
@@ -325,8 +330,8 @@ func TestWebhookSignatureUnderTheOAuthClientSecret(t *testing.T) {
 		}
 	}
 	authority := ds.Repository().Authority
-	if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "mail-hook", "", sign("not-the-client-secret")); !errors.Is(err, substrate.ErrAuth) {
-		t.Fatalf("a request under another secret: err = %v, want ErrAuth", err)
+	if _, err := engine.ReceiveWebhookSync(ctx, svc, authority, "mail-hook", "", sign("not-the-client-secret")); !errors.Is(err, substrate.ErrNotFound) || !strings.Contains(err.Error(), "signature does not match") {
+		t.Fatalf("a request under another secret: err = %v, want the door's refusal, signature does not match", err)
 	}
 	fid, err := engine.ReceiveWebhookSync(ctx, svc, authority, "mail-hook", "", sign(clientSecret))
 	if err != nil {

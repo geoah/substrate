@@ -279,13 +279,14 @@ func checkWebhookSecretSource(reg *vocabulary.Registry, t *trigger, pkg string) 
 		webhookSecretOAuthClient, pkg)
 }
 
-// errWebhookSignature is the door's answer to a request its trigger's
-// signature check refuses: a missing or wrong signature, a stale or missing
-// timestamp, a multipart body, or a key the trigger's configuration does not
-// supply. One terse answer, because the sender is unauthenticated; the reason
-// is logged for an unresolvable key alone, which is the operator's to fix. A
-// store that fails to answer while the key is read is no refusal: it reaches
-// the caller as itself, a 5xx at the door and a retry on delivery.
+// errWebhookSignature is the door's answer to a request carrying its keyed
+// trigger's key that the trigger's signature check refuses: a missing or
+// wrong signature, a stale or missing timestamp, a multipart body, or a
+// signing key the trigger's configuration does not supply. One terse answer,
+// because the sender is unauthenticated; the reason is logged for an
+// unresolvable signing key alone, which is the operator's to fix. A store
+// that fails to answer while the key is read is no refusal: it reaches the
+// caller as itself, a 5xx at the door and a retry on delivery.
 var errWebhookSignature = fmt.Errorf("%w: webhook signature refused", substrate.ErrAuth)
 
 // The fixed words a refusal's reason is, wrapped into errWebhookSignature
@@ -305,16 +306,23 @@ func refuseSignature(reason string) error {
 
 // checkWebhookSignature verifies the request against the trigger's declared
 // signature, measuring the timestamp against at, the door's receipt time. A
-// trigger declaring none passes with a zero presentedSignature.
+// trigger declaring none passes with a zero presentedSignature. A refusal is
+// errWebhookSignature only when the trigger carries a key, which the request
+// has already matched; on a keyless trigger it is the door's one
+// errWebhookRefused, because a distinct answer would tell anyone who posts
+// that the repository exists and has the trigger installed.
 func (ds *dataset) checkWebhookSignature(ctx context.Context, tr *trigger, req substrate.WebhookRequest, at time.Time) (presentedSignature, error) {
 	p, reason, err := ds.webhookSignatureRefusal(ctx, tr, req, at)
 	if err != nil {
 		return presentedSignature{}, err
 	}
-	if reason != "" {
-		return presentedSignature{}, refuseSignature(reason)
+	if reason == "" {
+		return p, nil
 	}
-	return p, nil
+	if tr.WebhookKey == "" {
+		return presentedSignature{}, fmt.Errorf("%w (signature refused: %s)", errWebhookRefused, reason)
+	}
+	return presentedSignature{}, refuseSignature(reason)
 }
 
 // webhookSignatureRefusal is the reason the trigger's declared signature

@@ -864,9 +864,10 @@ before it stores the request
 ([webhook signatures](functions.md#webhook-signatures)). The secret never
 reaches a function. A delivery whose signature is missing or does not match,
 or whose timestamp is more than five minutes from when the server received
-it, is answered `401` and leaves nothing behind. The trigger ships enabled
-because the check fails closed: until the `config` record holds the client
-secret, every delivery is refused the same way. A verified event is
+it, is answered `404` and leaves nothing behind: the trigger carries no key,
+so a refusal gets the answer a trigger that does not exist gets. The trigger
+ships enabled because the check fails closed: until the `config` record holds
+the client secret, every delivery is refused the same way. A verified event is
 matched to the account whose `account.user` is the member row for its
 `user_id`, which the first sync writes. `sleep.updated` and `workout.updated`
 read the object by id and rewrite its row; a create arrives as `.updated`.

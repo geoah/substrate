@@ -1117,10 +1117,14 @@ is the function body.
 
 A webhook trigger that declares `source.webhook.signature` has the door check
 each request's signature before the body becomes a blob, before a delivery is
-appended and before anything runs. A request that fails is answered `401`
-with the body `webhook signature refused`, and the repository keeps no trace
-of it. The secret stays in the server, so the callable verifies only what the
-door cannot
+appended and before anything runs. The repository keeps no trace of a
+request that fails. On a trigger with no `key` the door answers it `404`, the
+answer it gives every refusal, so a POST cannot tell that the repository has
+the trigger installed. A request that carried the trigger's `key` already
+proved it knows the endpoint, so it is answered `401` with the body `webhook
+signature refused`, which tells the sender the signature is what failed. The
+secret stays in the server, so the callable verifies only what the door
+cannot
 ([decision 0164](decisions/0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md)).
 This is WHOOP's scheme as its provider ships it:
 
@@ -1151,8 +1155,11 @@ The door refuses a request whose signature header is missing or does not
 match, whose timestamp is missing or outside `maxSkew`, whose body is
 multipart (the door keeps no raw bytes of one), or whose secret does not
 resolve: a missing or empty `secret` record, or a bundle whose `config` holds
-no client secret yet. The last one is also logged for the operator. The key
-is checked first and still answers `404`, so a trigger may carry both.
+no client secret yet. A secret that does not resolve is also logged for the
+operator. The key is checked first and a wrong one answers `404`, so a
+trigger may carry both. A store that fails while the door reads the secret
+refuses nothing: the door answers `500` and stores nothing, and the sender's
+retry is checked afresh.
 `oauthClientSecret` on a callable whose bundle declares no `oauth2` block is
 refused when the trigger is written. A `secret` record whose id sits under a
 bundle's prefix is also injected into that bundle's functions

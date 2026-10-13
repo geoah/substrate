@@ -28,8 +28,8 @@ const webhookFirePrefix = "hook-"
 
 // errWebhookRefused is every refusal the door must not explain: no such
 // repository, no such trigger, a trigger of another source, a disabled one, an
-// unresolvable callable, a wrong or missing key. One answer, so the endpoint
-// space cannot be probed.
+// unresolvable callable, a wrong or missing key, and a keyless trigger's
+// signature refusal. One answer, so the endpoint space cannot be probed.
 var errWebhookRefused = fmt.Errorf("%w: no such webhook", substrate.ErrNotFound)
 
 // webhookPath is a webhook trigger's endpoint, relative to the server root.
@@ -122,9 +122,9 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 
 // admitWebhook is the synchronous half of a delivery: the checks, the blob
 // spool and the pending entry. Every check that fails answers
-// errWebhookRefused, except the declared signature's, which answers
-// errWebhookSignature: by then the request has named a live trigger and
-// carried its key. A repeat of a signature the door admitted inside its
+// errWebhookRefused, except the declared signature's on a keyed trigger,
+// which answers errWebhookSignature: by then the request has named a live
+// trigger and carried its key. A repeat of a signature the door admitted inside its
 // window answers webhookRepeat, naming the first admission's fire, and
 // stores nothing (webhookReplays). Past the checks the request is written
 // into the ledger as a parked failure carrying pendingWebhookError, in its

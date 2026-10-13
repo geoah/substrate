@@ -36,10 +36,13 @@ no second copy to paste anywhere. To receive webhooks, register
 app's webhook URL in WHOOP's developer dashboard.
 
 The trigger ships enabled because the check fails closed. Until the `config`
-record holds the client secret, the server answers every delivery `401` and
-stores nothing: no blob, no ledger entry, no invocation. A delivery with a
-missing or wrong signature, or a timestamp more than five minutes from when
-the server received it, gets the same answer.
+record holds the client secret, the server answers every delivery `404`,
+stores nothing (no blob, no ledger entry, no invocation) and logs that the
+secret does not resolve. A delivery with a missing or wrong signature, or a
+timestamp more than five minutes from when the server received it, gets the
+same answer. It is `404`, the answer for a trigger that does not exist,
+because the trigger carries no key: a distinct answer would tell anyone who
+posts that the repository has WHOOP installed.
 
 The scopes to enable on the WHOOP app, what each toggle syncs, the read
 windows, what each webhook event does, how deletions reach the mirror and why

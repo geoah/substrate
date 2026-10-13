@@ -779,8 +779,9 @@ func TestShippedWebhookTriggersAreClosed(t *testing.T) {
 // checks it against the config record's client secret before it stores
 // anything (decision 0164). Before that record exists, a signed delivery is
 // refused; after it, an unsigned, a forged and a stale one are refused, each
-// leaving no blob, no ledger entry and no run, and a signed `workout.deleted`
-// deletes its row.
+// with the door's one 404 because the trigger ships keyless, and each
+// leaving no blob, no ledger entry and no run, and a signed
+// `workout.deleted` deletes its row.
 func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	svc, ds, fake := newWhoop(t)
 	ctx := context.Background()
@@ -828,8 +829,8 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	refused := func(name string, req substrate.WebhookRequest) {
 		t.Helper()
 		blobs, runs := countLive(t, ds, "substrate.reamde.dev/core/blob"), countLive(t, ds, "substrate.reamde.dev/core/triggerrun")
-		if _, err := svc.ReceiveWebhook(ctx, authority, "whoop-webhook", "", req); !errors.Is(err, substrate.ErrAuth) {
-			t.Fatalf("%s: err = %v, want the door's signature refusal", name, err)
+		if _, err := svc.ReceiveWebhook(ctx, authority, "whoop-webhook", "", req); !errors.Is(err, substrate.ErrNotFound) || !strings.Contains(err.Error(), "signature refused") {
+			t.Fatalf("%s: err = %v, want the door's one refusal for a keyless trigger's signature", name, err)
 		}
 		if n := countLive(t, ds, "substrate.reamde.dev/core/blob"); n != blobs {
 			t.Fatalf("%s: the refused request stored %d blobs", name, n-blobs)
