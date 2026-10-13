@@ -68,6 +68,8 @@ export const COMPARATORS: readonly Comparator[] =
 const SYMBOLS: Record<string, string> = table.symbols
 const PRIMARY: Record<string, string> = table.primary
 const ALIASES: Record<string, string> = table.aliases
+/** The spellings the engine refuses by name (`count`). */
+const REFUSED = new Set<string>(table.refused)
 /** The print symbols a person may type for a listed code. None of them is a
  * code or an alias itself, so reading one never turns a stored code into
  * another (`pt` stays the picotonne). */
@@ -264,8 +266,18 @@ function renderPrintTerm(t: PrintTerm): string {
 /** A code's print symbol, as the server's titles print it (`Unit.Print`):
  * `°C` for Cel, `μg` for ug, `kWh` for kW.h, `kvar` for kV.A{reactive},
  * `beats/min` for {beats}/min, `μL` for uL, nothing for `1`. A code naming an
- * atom the table does not carry prints as itself. */
+ * atom the table does not carry prints as itself, and so does one whose
+ * print is an alias of another code or a refused spelling (`{count}/min`,
+ * never `count/min`, which reads as `/min`). */
 export function unitSymbol(code: string): string {
+  const symbol = printSymbol(code)
+  const spellsAnother =
+    (Object.hasOwn(ALIASES, symbol) && ALIASES[symbol] !== code) ||
+    REFUSED.has(symbol)
+  return spellsAnother ? code : symbol
+}
+
+function printSymbol(code: string): string {
   if (Object.hasOwn(PRINTS, code)) return PRINTS[code]
   if (Object.hasOwn(SYMBOLS, code)) return SYMBOLS[code]
   const term = readPrintTerm(code)

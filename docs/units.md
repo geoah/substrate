@@ -6,8 +6,8 @@
 Every unit a `quantity` value may carry, grouped by **measure**: the named kind of
 quantity (mass, temperature, rate) inside which a value converts and compares.
 [The data model](data-model.md#property-types) says what a quantity value is and how a
-property declares one. This page is the table itself: 62 measures and 215 codes
-(219 rows, because a few codes sit in two measures).
+property declares one. This page is the table itself: 62 measures and 214 codes
+(218 rows, because a few codes sit in two measures).
 
 A code is a case-sensitive UCUM code. The codes listed here are the ones the table
 names; the grammar also reads any compound or prefixed code over the same atoms
@@ -51,7 +51,7 @@ dimension (energy and torque); that is why a measure has a name.
 | [pace](#pace) | ratio | `s/m` | L-1 T | `min/km` | `s/m`, `min/km`, `s/km`, `min/[mi_i]`, `s/(100.m)`, `s/(100.[yd_i])`, `s/(500.m)` |
 | [acceleration](#acceleration) | ratio | `m/s2` | L T-2 | `m/s2` | `m/s2`, `[g]` |
 | [frequency](#frequency) | ratio | `Hz` | T-1 | `Hz` | `Hz`, `kHz` |
-| [rate](#rate) | ratio | `/s` | T-1 | `/min` | `/s`, `/min`, `/h`, `/d`, `/wk`, `{count}/min` |
+| [rate](#rate) | ratio | `/s` | T-1 | `/min` | `/s`, `/min`, `/h`, `/d`, `/wk` |
 | [count](#count) | count | `1` | 1 | `{count}` | `{count}`, `1` |
 | [fraction](#fraction) | ratio | `1` | 1 | `%` | `1`, `%`, `[ppth]`, `[ppm]`, `[ppb]` |
 | [amount-fraction](#amount-fraction) | ratio | `mol/mol` | 1 | `mmol/mol` | `mmol/mol` |
@@ -106,6 +106,11 @@ prefix (`m[IU]/L` to `[IU]/L`, a substrate rule UCUM does not have);
 `count` converts only between units counting the same annotation.
 
 ## Codes by measure
+
+The symbol is what a title prints. A code whose symbol would be an alias of
+another code, or a spelling the table refuses, prints as the code itself:
+`{count}` prints `{count}`, because `count` is refused, and `{count}/min` would
+print `count/min`, the alias of `/min`.
 
 ### mass
 
@@ -313,7 +318,6 @@ Events per time; an annotated rate ({beats}/min) converts only to the same annot
 | `/h` | /h | 1/3600 |  |
 | `/d` | /d | 1/86400 |  |
 | `/wk` | /wk | 1/604800 |  |
-| `{count}/min` | count/min | 1/60 |  |
 
 ### count
 
@@ -321,7 +325,7 @@ A count of things, named by an annotation alone ({steps}); two annotations never
 
 | Code | Symbol | Factor to `1` | Offset |
 | --- | --- | --- | --- |
-| `{count}` | count | 1 |  |
+| `{count}` | {count} | 1 |  |
 | `1` |  | 1 |  |
 
 ### fraction

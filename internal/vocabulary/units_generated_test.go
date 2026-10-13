@@ -66,8 +66,11 @@ type consoleTable struct {
 	// Primary is where a code two measures list reads undeclared.
 	Primary map[string]string `json:"primary"`
 	// Aliases are the input spellings and the codes they map to.
-	Aliases     map[string]string `json:"aliases"`
-	Comparators []string          `json:"comparators"`
+	Aliases map[string]string `json:"aliases"`
+	// Refused are the spellings CanonicalUnit refuses by name, which no
+	// print symbol may be.
+	Refused     []string `json:"refused"`
+	Comparators []string `json:"comparators"`
 	// MaxDecimalDigits bounds a quantity value's digits, as CanonicalDecimal
 	// holds them.
 	MaxDecimalDigits int `json:"maxDecimalDigits"`
@@ -91,6 +94,10 @@ func renderConsoleTable(t *testing.T) []byte {
 		}
 	}
 	aliases, refused := vocabulary.UnitAliases(), vocabulary.RefusedUnitSpellings()
+	for spelling := range refused {
+		tbl.Refused = append(tbl.Refused, spelling)
+	}
+	sort.Strings(tbl.Refused)
 	shared := map[string]bool{}
 	for code, symbol := range tbl.Symbols {
 		_, alias := aliases[symbol]
@@ -149,6 +156,7 @@ func TestConsoleUnitsMatchTheEngine(t *testing.T) {
 // with the engine's rules: units.test.ts holds its symbol for each of them,
 // and for every listed code and alias target, to the engine's.
 var printCaseCompounds = []string{
+	"{count}/min", "{bpm}", "{count}/h",
 	"uL", "fL", "dm3", "cm3", "m+2", "m02", "s-1", "/ms", "GJ", "Mg", "mK", "MHz", "TBy", "kN.m", "mrad",
 	"kg/h", "ug/min", "g/(kg)", "umol/mol", "mmol/(kg.h)", "kcal/(kg.h)", "[lb_av]/[ft_i]3", "mSv/h",
 	"u[IU]/mL", "k[IU]", "10*3/mL", "10^3/mL", "10*3{copies}", "10*3{copies}/mL", "kg{body_wt}", "mL{total}",
@@ -258,6 +266,10 @@ func renderUnitsPage(t *testing.T) []byte {
 	w("`count` converts only between units counting the same annotation.\n\n")
 
 	w("## Codes by measure\n\n")
+	w("The symbol is what a title prints. A code whose symbol would be an alias of\n")
+	w("another code, or a spelling the table refuses, prints as the code itself:\n")
+	w("`{count}` prints `{count}`, because `count` is refused, and `{count}/min` would\n")
+	w("print `count/min`, the alias of `/min`.\n\n")
 	for _, m := range ms {
 		w("### %s\n\n", m.Name)
 		if m.Note != "" {

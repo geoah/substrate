@@ -596,6 +596,14 @@ func TestFormatQuantity(t *testing.T) {
 		{map[string]any{"value": "5", "unit": "10*3{copies}"}, "5 10³ copies"},
 		{map[string]any{"value": "5", "unit": "10*3{copies}/mL"}, "5 10³ copies/mL"},
 		{map[string]any{"value": "7", "unit": "kg{body_wt}"}, "7 kg"},
+		// A print that would read back as another unit, or be refused,
+		// prints as the code: count/min is an alias of /min, count is
+		// refused.
+		{map[string]any{"value": "62", "unit": "{count}/min"}, "62 {count}/min"},
+		{map[string]any{"value": "8", "unit": "{count}"}, "8 {count}"},
+		{map[string]any{"value": "62", "unit": "{bpm}"}, "62 {bpm}"},
+		{map[string]any{"value": "8", "unit": "{count}/h"}, "8 count/h"},
+		{map[string]any{"value": "5", "unit": "V.A{reactive}"}, "5 var"},
 		// An exponent prints as the number it is.
 		{map[string]any{"value": "2", "unit": "m+2"}, "2 m²"},
 		{map[string]any{"value": "2", "unit": "m02"}, "2 m²"},

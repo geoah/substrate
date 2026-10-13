@@ -1,6 +1,8 @@
 package vocabulary_test
 
 import (
+	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -97,7 +99,6 @@ data: {authority: g.example.com, package: g, base: quantity, measures: temperatu
 		{"a bound with a comparator", `    w: {type: quantity, measures: mass, max: {value: "1", unit: kg, comparator: "<"}}`, "is neither"},
 		{"max below min", `    w: {type: quantity, measures: mass, min: {value: "1", unit: kg}, max: {value: "999", unit: g}}`, "is below min"},
 		{"a level bound over two units", `    w: {type: quantity, measures: power-level, min: {value: "-90", unit: dBm}}`, "needs `units:`"},
-		{"a rate bound", `    w: {type: quantity, measures: rate, max: {value: "300", unit: /min}}`, "needs `units:`"},
 		{"a count bound", `    w: {type: quantity, measures: count, min: {value: "0", unit: "{count}"}}`, "needs `units:`"},
 		{"an angle bound", `    w: {type: quantity, measures: angle, max: {value: "360", unit: deg}}`, "needs `units:`"},
 		{"a listed unit the bound does not reach", `    w: {type: quantity, measures: rate, units: [/min, "{beats}/min"], max: {value: "300", unit: /min}}`, "{beats}/min"},
@@ -113,16 +114,28 @@ data: {authority: g.example.com, package: g, base: quantity, measures: temperatu
 			loadThingErr(t, "  properties:\n"+c.body+"\n", c.want)
 		})
 	}
-	t.Run("a bound every admitted unit converts into", func(t *testing.T) {
+	t.Run("a bound every listed unit converts into", func(t *testing.T) {
 		ty := loadThing(t, `  properties:
     pulse: {type: quantity, measures: rate, units: [/min, /s], max: {value: "300", unit: /min}}
+    rate: {type: quantity, measures: rate, max: {value: "300", unit: /min}}
     weight: {type: quantity, measures: mass, min: {value: "0", unit: kg}}
     heading: {type: quantity, measures: angle, units: [deg], max: {value: "360", unit: deg}}
     level: {type: quantity, measures: level, max: {value: "140", unit: dB}}
 `)
-		for _, name := range []string{"pulse", "weight", "heading", "level"} {
+		for _, name := range []string{"pulse", "rate", "weight", "heading", "level"} {
 			if q := ty.Props[name].Quantity; q == nil || q.Max == nil && q.Min == nil {
 				t.Fatalf("%s lost its bound: %+v", name, q)
+			}
+		}
+		// A code the measure admits without listing it is held to the bound
+		// at write: an annotated code never converts to the bound's plain one.
+		for name, code := range map[string]string{"weight": "kg{body_wt}", "rate": "{beats}/min"} {
+			q := ty.Props[name].Quantity
+			if _, err := q.CheckUnit(code); err != nil {
+				t.Fatalf("%s admits %s: %v", name, code, err)
+			}
+			if err := q.CheckBounds(big.NewRat(1, 1), code); err == nil || !strings.Contains(err.Error(), "an annotation is part of a unit") {
+				t.Errorf("%s holds 1 %s to its bound: %v, want a refusal naming the annotation", name, code, err)
 			}
 		}
 	})

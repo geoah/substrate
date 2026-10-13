@@ -100,7 +100,22 @@ func (u Unit) Code() string { return u.code }
 //
 // A code that differs from one unitPrints names only by a prefix on its first
 // atom prints that way too: `kV.A{reactive}` is `kvar`, `MW.h` is `MWh`.
+//
+// A print that is an alias of another code, or a spelling CanonicalUnit
+// refuses, prints as the code instead: `{count}/min` would print `count/min`,
+// which a writer typing the title back would store as `/min`.
 func (u Unit) Print() string {
+	p := u.symbol()
+	if alias, ok := unitAliases[p]; ok && alias != u.code {
+		return u.code
+	}
+	if _, refused := refusedSpellings[p]; refused {
+		return u.code
+	}
+	return p
+}
+
+func (u Unit) symbol() string {
 	if p, ok := unitPrints[u.code]; ok {
 		return p
 	}

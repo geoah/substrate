@@ -50,7 +50,14 @@ describe("the unit table", () => {
     expect(unitSymbol("kW.h")).toBe("kWh")
     expect(unitSymbol("[lb_av]")).toBe("lb")
     expect(unitSymbol("1")).toBe("")
-    expect(unitSymbol("{count}")).toBe("count")
+    expect(unitSymbol("{count}")).toBe("{count}")
+  })
+
+  it("prints a code whose symbol spells another unit as the code", () => {
+    expect(unitSymbol("{count}/min")).toBe("{count}/min")
+    expect(unitSymbol("{bpm}")).toBe("{bpm}")
+    expect(unitSymbol("{count}/h")).toBe("count/h")
+    expect(unitSymbol("kW.h")).toBe("kWh")
   })
 
   it("prints a compound the way the engine does", () => {

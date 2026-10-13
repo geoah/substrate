@@ -413,7 +413,7 @@ var measureDefs = []measureDef{
 	},
 	{
 		name: "rate", base: "/s", scale: ScaleRatio, display: "/min",
-		units: []string{"/s", "/min", "/h", "/d", "/wk", "{count}/min"},
+		units: []string{"/s", "/min", "/h", "/d", "/wk"},
 		note:  "events per time; an annotated rate ({beats}/min) converts only to the same annotation",
 	},
 	{

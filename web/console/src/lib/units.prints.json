@@ -253,8 +253,10 @@
   "us": "μs",
   "wk": "wk",
   "{beats}/min": "beats/min",
-  "{count}": "count",
-  "{count}/min": "count/min",
+  "{bpm}": "{bpm}",
+  "{count}": "{count}",
+  "{count}/h": "count/h",
+  "{count}/min": "{count}/min",
   "{score}": "score",
   "{steps}": "steps",
   "{steps}/h": "steps/h"

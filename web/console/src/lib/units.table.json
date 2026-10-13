@@ -263,8 +263,7 @@
         "/min",
         "/h",
         "/d",
-        "/wk",
-        "{count}/min"
+        "/wk"
       ],
       "note": "events per time; an annotated rate ({beats}/min) converts only to the same annotation"
     },
@@ -1016,8 +1015,7 @@
     "umol/L": "μmol/L",
     "us": "μs",
     "wk": "wk",
-    "{count}": "count",
-    "{count}/min": "count/min",
+    "{count}": "{count}",
     "{score}": "score"
   },
   "symbolCodes": {
@@ -1331,6 +1329,9 @@
     "℃": "Cel",
     "℉": "[degF]"
   },
+  "refused": [
+    "count"
+  ],
   "comparators": [
     "<",
     "<=",
