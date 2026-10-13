@@ -96,6 +96,84 @@ function ActiveFacet({
   )
 }
 
+/** "Add filter": the facets with something to offer, then the one picked's
+ * values. Mounted only while a facet is offered, so the menu's state goes
+ * with it: a filter removed later never reopens a menu nobody opened. */
+function AddFilter({
+  facets,
+  offered,
+  selected,
+  onChange,
+}: {
+  /** Every facet, so a picked one's list stays open once it is chosen. */
+  facets: Facet[]
+  /** The facets the menu lists: none chosen yet, each with values. */
+  offered: Facet[]
+  selected: Record<string, string[]>
+  onChange: (name: string, values: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  // By name, so the list reads the facet's current values.
+  const [pendingName, setPending] = useState<string | null>(null)
+  const pending = facets.find((f) => f.name === pendingName) ?? null
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setPending(null)
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-[12.5px] font-normal text-muted-foreground"
+          />
+        }
+      >
+        <ListFilterIcon className="size-3.5" />
+        Add filter
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className={cn(pending ? "w-72 p-0" : "w-56 p-1")}
+      >
+        {pending ? (
+          <ChoiceList
+            multiple
+            ordered={pending.ordered}
+            label={pending.label}
+            options={pending.options}
+            selected={selected[pending.name] ?? []}
+            onChange={(values) => onChange(pending.name, values)}
+          />
+        ) : (
+          <Command>
+            <CommandInput placeholder="Filter by…" />
+            <CommandList>
+              <CommandEmpty>Nothing to filter by.</CommandEmpty>
+              <CommandGroup>
+                {offered.map((facet) => (
+                  <CommandItem
+                    key={facet.name}
+                    value={facet.label}
+                    onSelect={() => setPending(facet.name)}
+                    className="[&>svg:last-child]:hidden"
+                  >
+                    {facet.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function FacetFilters({
   facets,
   selected,
@@ -108,8 +186,6 @@ export function FacetFilters({
   onChange: (name: string, values: string[]) => void
   className?: string
 }) {
-  const [addOpen, setAddOpen] = useState(false)
-  const [pending, setPending] = useState<Facet | null>(null)
   const active = facets.filter((f) => selected[f.name]?.length)
   const offered = facets.filter(
     (f) => !selected[f.name]?.length && f.options.length > 0
@@ -126,60 +202,12 @@ export function FacetFilters({
         />
       ))}
       {offered.length > 0 && (
-        <Popover
-          open={addOpen}
-          onOpenChange={(open) => {
-            setAddOpen(open)
-            if (!open) setPending(null)
-          }}
-        >
-          <PopoverTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-[12.5px] font-normal text-muted-foreground"
-              />
-            }
-          >
-            <ListFilterIcon className="size-3.5" />
-            Add filter
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className={cn(pending ? "w-72 p-0" : "w-56 p-1")}
-          >
-            {pending ? (
-              <ChoiceList
-                multiple
-                ordered={pending.ordered}
-                label={pending.label}
-                options={pending.options}
-                selected={selected[pending.name] ?? []}
-                onChange={(values) => onChange(pending.name, values)}
-              />
-            ) : (
-              <Command>
-                <CommandInput placeholder="Filter by…" />
-                <CommandList>
-                  <CommandEmpty>Nothing to filter by.</CommandEmpty>
-                  <CommandGroup>
-                    {offered.map((facet) => (
-                      <CommandItem
-                        key={facet.name}
-                        value={facet.label}
-                        onSelect={() => setPending(facet)}
-                        className="[&>svg:last-child]:hidden"
-                      >
-                        {facet.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            )}
-          </PopoverContent>
-        </Popover>
+        <AddFilter
+          facets={facets}
+          offered={offered}
+          selected={selected}
+          onChange={onChange}
+        />
       )}
       {active.length > 0 && (
         <Button
