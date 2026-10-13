@@ -319,3 +319,31 @@ func TestLoadKeepsAKeyTheTriggerHas(t *testing.T) {
 		t.Errorf("the trigger was found disabled and left enabled %v", trig["enabled"])
 	}
 }
+
+// The repository token is for the API. A webhook post carries the key the
+// trigger was armed with and nothing else: a Garmin push in its path, an
+// Apple Health delivery as its own bearer.
+func TestWebhookPostsCarryNoRepositoryToken(t *testing.T) {
+	f := newFakeSubstrate(t)
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
+	}
+	if len(f.webhooks) == 0 {
+		t.Fatal("nothing was posted")
+	}
+	for _, r := range f.webhooks {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+testKey {
+			t.Errorf("%s carried Authorization %q, want the webhook key alone", r.URL.Path, got)
+		}
+	}
+	c := f.client()
+	if _, _, err := c.do(t.Context(), http.MethodPost, "/webhooks/"+testAuthority+"/garmin-webhook/"+testKey, []byte("{}"), nil); err != nil {
+		t.Fatal(err)
+	}
+	last := f.webhooks[len(f.webhooks)-1]
+	if got := last.Header.Get("Authorization"); got != "" {
+		t.Errorf("a post with its key in the path carried Authorization %q", got)
+	}
+}

@@ -40,7 +40,11 @@ func (c *client) do(ctx context.Context, method, path string, body []byte, heade
 	if err != nil {
 		return 0, nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	// The token reaches the API alone: a webhook post carries the trigger's
+	// key and the door never needs the repository's credential.
+	if strings.HasPrefix(path, "/api/") {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	if body != nil && headers["content-type"] == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
