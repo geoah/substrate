@@ -381,6 +381,12 @@ data:
       displayName: Unchanged
       description: "records this delivery implied that already held what it
         carried"
+    oversized:
+      type: string
+      repeated: true
+      displayName: Too big to write
+      description: "records too big for one function response, skipped
+        unwritten, as `<kind> <id> (<bytes> bytes)`; at most 20"
 ---
 # Keyed `<account>/<metric>/<grouping>/<period>`: the period is the UTC hour
 # for seconds and minutes, the UTC day for hours, the UTC month for days and
@@ -1734,6 +1740,10 @@ data:
       type: string
       repeated: true
       description: "fields with no declared place, as section.field"
+    - name: oversized
+      type: string
+      repeated: true
+      description: "records too big for one response frame, skipped unwritten"
   permissions:
     reads:
       kinds:
@@ -1810,6 +1820,10 @@ data:
     # at most the 1000 calls its declaration grants, with room for the rest.
     PAGE_BYTES = 4 << 20
     PAGE_UNITS = 900
+    # One record past this cannot ride any frame beside its envelope, so it is
+    # skipped and named rather than staged to fail every attempt the same way.
+    OVERSIZE_BYTES = 6 << 20
+    MAX_OVERSIZED = 20
     MAX_ID = 128
     MAX_DROPPED = 100
     # How many periods inside one metric's span, carrying none of its rows, a
@@ -2457,6 +2471,7 @@ data:
         i = int(cur.get("next") or 0)
         written = int(cur.get("written") or 0)
         unchanged = int(cur.get("unchanged") or 0)
+        oversized = list(cur.get("oversized") or [])
         used_bytes = used_units = 0
         total = len(d.units)
         while i < total:
@@ -2478,15 +2493,22 @@ data:
                 written += 1
             else:
                 size = len(json.dumps(props))
-                if used_units and used_bytes + size > PAGE_BYTES:
-                    break
-                if unit.guarded:
-                    host.effects.put(unit.kind, unit.id, properties=props,
-                                     if_version=host.version(stored))
+                if size > OVERSIZE_BYTES:
+                    if len(oversized) < MAX_OVERSIZED:
+                        oversized.append("%s %s (%d bytes)" % (unit.kind.rsplit("/", 1)[-1],
+                                                               unit.id, size))
+                    host.log("applehealth: %s %s is %d bytes, more than one response "
+                             "holds; skipped" % (unit.kind, unit.id, size))
                 else:
-                    host.effects.put(unit.kind, unit.id, properties=props)
-                written += 1
-                used_bytes += size
+                    if used_units and used_bytes + size > PAGE_BYTES:
+                        break
+                    if unit.guarded:
+                        host.effects.put(unit.kind, unit.id, properties=props,
+                                         if_version=host.version(stored))
+                    else:
+                        host.effects.put(unit.kind, unit.id, properties=props)
+                    written += 1
+                    used_bytes += size
             used_units += 1
             i += 1
 
@@ -2496,7 +2518,8 @@ data:
                 "syncProgress": {"phase": "writing", "done": i, "total": total, "pending": total - i}})
             return {"output": {"export": fire_id, "account": aid, "written": written,
                                "unchanged": unchanged, "remaining": total - i},
-                    "more": host.page.more({"next": i, "written": written, "unchanged": unchanged})}
+                    "more": host.page.more({"next": i, "written": written, "unchanged": unchanged,
+                                            "oversized": oversized})}
 
         dropped = sorted(d.dropped)
         export = {
@@ -2522,6 +2545,8 @@ data:
             export["skippedSections"] = d.skipped
         if dropped:
             export["droppedFields"] = dropped[:MAX_DROPPED]
+        if oversized:
+            export["oversized"] = oversized
         if d.lo is not None:
             export["spanStart"] = rfc3339(d.lo)
             export["spanEnd"] = rfc3339(d.hi)
@@ -2543,4 +2568,6 @@ data:
                "remaining": 0}
         if dropped:
             out["droppedFields"] = dropped[:MAX_DROPPED]
+        if oversized:
+            out["oversized"] = oversized
         return {"output": out}

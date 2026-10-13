@@ -51,6 +51,10 @@ the contract; this file is not.
   not send that part again. A day of per-minute metrics is well under it; a
   day of per-second data, a long GPS workout at second grouping or several
   ECGs can pass it, which is why Time Grouping should be Minutes or coarser.
+- **6 MiB per record.** A function answers in one frame of at most 8 MiB, so
+  one record bigger than 6 MiB as written (a workout route of more than
+  about 30,000 points) is skipped, and the export receipt's `oversized` names
+  it. The rest of the delivery is written.
 - **No full-history export by push.** A first export of years of data is
   hundreds of megabytes. Push only what arrives from now on; importing the
   history from a file is a later piece of work.

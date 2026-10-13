@@ -627,6 +627,57 @@ func TestAppleHealthEpochDatesMergeOnRedelivery(t *testing.T) {
 	}
 }
 
+// A record bigger than one response frame can carry is skipped and named,
+// not staged: a ten-hour ride with 37,000 route points re-encodes past the
+// runner's 8 MiB frame although its body fits the door, and staging it would
+// fail every attempt the same way. The rest of the delivery is written.
+func TestAppleHealthSkipsARecordTooBigForAFrame(t *testing.T) {
+	_, ds := newAppleHealth(t, "iphone")
+	start := time.Date(2026, 10, 7, 6, 0, 0, 0, time.FixedZone("", 3*3600))
+	route := make([]map[string]any, 0, 37000)
+	for i := range 37000 {
+		route = append(route, map[string]any{
+			"latitude": 37.9715 + float64(i)*1e-5, "longitude": 23.7257 + float64(i)*1e-5,
+			"altitude": 112.5, "course": 181.25, "courseAccuracy": 5.5, "speed": 6.75,
+			"speedAccuracy": 0.5, "horizontalAccuracy": 3.25, "verticalAccuracy": 2.5,
+			"timestamp": start.Add(time.Duration(i) * time.Second).Format(appDate),
+		})
+	}
+	workout := func(id string, points []map[string]any) map[string]any {
+		return map[string]any{
+			"id": id, "name": "Outdoor Cycling",
+			"start": start.Format(appDate), "end": start.Add(10 * time.Hour).Format(appDate),
+			"route": points,
+		}
+	}
+	body, err := json.Marshal(map[string]any{"data": map[string]any{"workouts": []any{
+		workout("W-LONG", route), workout("W-SHORT", route[:10]),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) >= 8<<20 {
+		t.Fatalf("built a %d byte body, want one the door admits", len(body))
+	}
+	req := map[string]any{
+		"method": "POST", "contentType": "application/json",
+		"headers": map[string]any{"content-type": "application/json"},
+		"query":   map[string]any{}, "body": map[string]any{"text": string(body)},
+	}
+	out, _ := deliverAH(t, ds, req, "hook-long-ride")
+	if !whoopLive(t, ds, ahWorkout, "iphone/W-SHORT") {
+		t.Fatalf("the short workout beside the oversized one was not written (output %v)", out)
+	}
+	if whoopLive(t, ds, ahWorkout, "iphone/W-LONG") {
+		t.Fatal("the oversized workout was written")
+	}
+	ex := mustGet(t, ds, ahExport, "hook-long-ride")
+	if !strings.Contains(fmt.Sprint(ex.Properties["oversized"]), "iphone/W-LONG") ||
+		!strings.Contains(fmt.Sprint(out["oversized"]), "iphone/W-LONG") {
+		t.Fatalf("the receipt %v and the output %v do not name the skipped workout", ex.Properties["oversized"], out["oversized"])
+	}
+}
+
 // Day buckets are midnights of the phone's zone when it sent. A delivery from
 // London on 2026-09-25, then a 30-day one from Athens on 2026-10-10: the
 // Athens span covers London's two buckets, so the month batch ends holding the

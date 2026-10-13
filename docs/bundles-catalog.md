@@ -1673,7 +1673,10 @@ app 10.0.4 sends merged series with an empty `source`. The app's `Min`,
 
 **Bounds and failures.** A non-multipart webhook body may be 8 MiB
 ([API](api.md#webhooks)); the function writes a large delivery over several
-pages so its own response stays under the 8 MiB frame. A full-history export
+pages so its own response stays under the 8 MiB frame. One record bigger than
+6 MiB as written (a workout route of more than about 30,000 points) fits no
+frame: it is skipped, and the receipt's `oversized` and the function's output
+name it. A full-history export
 is hundreds of megabytes and is not supported by push. The app skips a part
 answered with anything but 2xx, or not answered in 60 seconds, and never sends
 it again in that run. A delivery the function refuses after the door's `202`
