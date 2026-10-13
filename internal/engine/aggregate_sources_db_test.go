@@ -6,6 +6,7 @@ package engine_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -124,4 +125,61 @@ func TestAggregatePriorityTakesTheSourcesOwnRanks(t *testing.T) {
 			t.Errorf("%+v answers %s, want %s", x.sources, got, x.want)
 		}
 	}
+}
+
+// A metric read's filter selects the streams with no about, no channel or
+// no source by `exists: false` (and the ones with one by `exists: true`),
+// and `in` takes null for the absent key, so one read asks for "no channel
+// or workout". exists beside eq or in admits what both admit. A source
+// weighs 60 with no channel, 61 on its workout channel and 62 about a
+// kitchen; a weighing with no source weighs 63.
+func TestAggregateFilterSelectsAbsentStreamKeys(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	at := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	f.weighing("w/plain", "scale", "60", at, nil)
+	f.weighing("w/workout", "scale", "61", at, map[string]any{"channel": "workout"})
+	f.weighing("w/kitchen", "scale", "62", at, map[string]any{"about": map[string]any{"ref": f.sourcePath("kitchen")}})
+	f.mustPut(t, f.observation, "w/nosource", map[string]any{
+		"metric": f.metricRef("health/body_mass"), "form": "gauge", "value": quantity("63", "kg"),
+		"at": at.Format(time.RFC3339), "hold": "PT1M", "utcOffset": 0,
+	})
+	read := func(props map[string]substrate.Cond) []string {
+		res := f.agg(context.Background(), substrate.Filter{Properties: props}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")},
+			Range:    rng(at.Add(-time.Hour), at.Add(time.Hour)),
+			GroupBy:  []string{"source", "about", "channel"},
+			Reducers: reducers("max"),
+		})
+		var out []string
+		for _, row := range res.Rows {
+			v, _ := val(row, "max")
+			out = append(out, v)
+		}
+		return out
+	}
+	yes, no := true, false
+	for _, x := range []struct {
+		label string
+		props map[string]substrate.Cond
+		want  string
+	}{
+		{"no channel", map[string]substrate.Cond{"channel": {Exists: &no}}, "[63 60 62]"},
+		{"a channel", map[string]substrate.Cond{"channel": {Exists: &yes}}, "[61]"},
+		{"no channel or workout", map[string]substrate.Cond{"channel": {In: []any{nil, "workout"}}, "about": {Exists: &no}, "source": {Exists: &yes}}, "[60 61]"},
+		{"about something", map[string]substrate.Cond{"about": {Exists: &yes}}, "[62]"},
+		{"no source", map[string]substrate.Cond{"source": {Exists: &no}}, "[63]"},
+		{"no channel and workout", map[string]substrate.Cond{"channel": {Exists: &no, Eq: "workout"}}, "[]"},
+	} {
+		if got := fmt.Sprint(read(x.props)); got != x.want {
+			t.Errorf("%s: %s, want %s", x.label, got, x.want)
+		}
+	}
+	f.refusedAgg(substrate.AggregateQuery{
+		Filter: substrate.Filter{Properties: map[string]substrate.Cond{"channel": {Eq: ""}}},
+		Aggregate: &substrate.Aggregate{
+			Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/body_mass")}, Range: rng(at.Add(-time.Hour), at.Add(time.Hour)),
+			Reducers: reducers("max"),
+		},
+	}, "exists")
 }

@@ -684,11 +684,17 @@ func condStrings(path string, c substrate.Cond) ([]string, error) {
 // into.
 func condValues(path string, c substrate.Cond, str func(v any) (string, error)) ([]string, error) {
 	if c.Prefix != "" || c.Gt != nil || c.Gte != nil || c.Lt != nil || c.Lte != nil || c.Contains != nil || c.Exists != nil || c.Match != "" {
-		return nil, refuse(path, "an aggregate read narrows a stream key by eq or in alone")
+		return nil, refuse(path, "an aggregate read narrows it by eq or in alone")
 	}
 	if c.Eq == nil && c.In == nil {
 		return nil, refuse(path, "name the value with eq, or several with in")
 	}
+	return condSet(c, str)
+}
+
+// condSet is the strings an eq or in condition admits, both beside each
+// other admitting what both admit.
+func condSet(c substrate.Cond, str func(v any) (string, error)) ([]string, error) {
 	in := []string{}
 	for _, v := range c.In {
 		s, err := str(v)
@@ -708,4 +714,43 @@ func condValues(path string, c substrate.Cond, str func(v any) (string, error)) 
 		return []string{}, nil
 	}
 	return []string{eq}, nil
+}
+
+// streamKeyClause narrows a stream key a value may leave out (source, about,
+// channel), stored as "" where it is absent: eq or in on the values str
+// reads, a null inside in for the absent key, and exists for absent (false)
+// or present (true). Every operator given narrows, as the list's filter's
+// do, so `in: [null, "workout"]` is "no channel or workout" and `exists:
+// false` beside `eq` admits nothing.
+func streamKeyClause(b *builder, col, path string, c substrate.Cond, str func(v any) (string, error)) error {
+	if c.Prefix != "" || c.Gt != nil || c.Gte != nil || c.Lt != nil || c.Lte != nil || c.Contains != nil || c.Match != "" {
+		return refuse(path, "an aggregate read narrows a stream key by eq, in or exists")
+	}
+	if c.Eq == nil && c.In == nil && c.Exists == nil {
+		return refuse(path, "name the value with eq, several with in, or exists: false for none")
+	}
+	absentOr := func(v any) (string, error) {
+		if v == nil {
+			return "", nil
+		}
+		if s, ok := v.(string); ok && s == "" {
+			return "", refuse(path, `"" names no value; select the streams without one by exists: false, or by null inside in`)
+		}
+		return str(v)
+	}
+	if c.Eq != nil || c.In != nil {
+		vals, err := condSet(c, absentOr)
+		if err != nil {
+			return err
+		}
+		b.add(col + ` = ANY(` + b.textArray(vals) + `)`)
+	}
+	if c.Exists != nil {
+		op := `=`
+		if *c.Exists {
+			op = `<>`
+		}
+		b.add(col + ` ` + op + ` ''`)
+	}
+	return nil
 }

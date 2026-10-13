@@ -282,22 +282,33 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	if p.metric != "" {
 		b.add(`metric = ` + b.arg(p.metric))
 	}
-	for _, name := range []string{"metric", "source", "about", "channel"} {
+	if c, ok := p.q.Filter.Properties["metric"]; ok {
+		vals, err := condValues("filter.properties.metric", c, func(v any) (string, error) {
+			return ds.streamRef(kinds, "metric", "filter.properties.metric", v)
+		})
+		if err != nil {
+			return nil, err
+		}
+		b.add(`metric = ANY(` + b.textArray(vals) + `)`)
+	}
+	for _, name := range []string{"source", "about", "channel"} {
 		c, ok := p.q.Filter.Properties[name]
 		if !ok {
 			continue
 		}
 		path := "filter.properties." + name
-		var vals []string
+		str := func(v any) (string, error) { return ds.streamRef(kinds, name, path, v) }
 		if name == "channel" {
-			vals, err = condStrings(path, c)
-		} else {
-			vals, err = condValues(path, c, func(v any) (string, error) { return ds.streamRef(kinds, name, path, v) })
+			str = func(v any) (string, error) {
+				if s, ok := v.(string); ok {
+					return s, nil
+				}
+				return "", refuse(path, "compares against a string, not %v", v)
+			}
 		}
-		if err != nil {
+		if err := streamKeyClause(b, name, path, c, str); err != nil {
 			return nil, err
 		}
-		b.add(name + ` = ANY(` + b.textArray(vals) + `)`)
 	}
 	order := make([]string, len(p.order))
 	for i, o := range p.order {

@@ -1152,6 +1152,11 @@ selected kinds' reference pins, as the list's filter does: `manual` is
 `<authority>/observations/source/manual` and never
 `.../source/googlefit/x/manual`. A bare id is a `422` where those kinds pin
 no kind, any kind (`about`) or two. A path no stream holds answers no rows.
+A value may leave out its `source`, `about` or `channel`, and the filter
+selects those streams with `{"exists": false}` (or the others with
+`{"exists": true}`); `null` inside `in` is the absent key, so
+`{"channel": {"in": [null, "workout"]}}` is "no channel, or workout". `eq`
+`""` is refused.
 `code` filters the intervals by code after they are built from every
 transition, so a door's `closed` still ends the `open` before it.
 `statistic` (`eq` or `in`) narrows the summaries to those statistics; a
@@ -1268,7 +1273,11 @@ reads that take it.
 ### Sources and `from`
 
 - `separate` keeps every source apart: one row per source per bucket, each
-  naming its source in `sources`.
+  naming its source in `sources`. It splits by source alone: one source's
+  channels and `about` values share its row, so WHOOP's day cycle and a
+  workout's heart rate reduce together. `groupBy: ["channel"]` (or
+  `["about"]`) splits them, the group with no key being the streams without
+  one, and the filter's `exists` picks one side.
 - `priority` resolves an ordered list (`order` names sources as the filter
   does: a record path, or a bare id completed exactly, so an entry no stream
   holds ranks nothing) per stored interval before any bucket is cut: the first source
