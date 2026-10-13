@@ -79,6 +79,40 @@ export function DiscoveryError({
   )
 }
 
+/** What a page says where the registry did not load: without the kinds it
+ * cannot tell which of them record measurements, so it never says that
+ * none do. */
+export function RegistryError({
+  error,
+  onRetry,
+  className,
+}: {
+  error: Error
+  onRetry: () => void
+  className?: string
+}) {
+  return (
+    <Empty className={cn("mt-6", className)}>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <SearchXIcon />
+        </EmptyMedia>
+        <EmptyTitle>The kinds didn’t load</EmptyTitle>
+        <EmptyDescription>
+          Without them this page can’t tell which kinds record measurements.{" "}
+          {reasonOf(error)}
+        </EmptyDescription>
+        <Problems error={error} />
+      </EmptyHeader>
+      <EmptyContent>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      </EmptyContent>
+    </Empty>
+  )
+}
+
 /** What a page says beside its metric picker where the list of every metric
  * failed and the chosen metrics' streams did not: the picker offers the
  * chosen metrics alone, the server's reason and each problem it named, and

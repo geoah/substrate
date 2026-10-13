@@ -47,6 +47,7 @@ import {
   DiscoveryError,
   FacetListErrors,
   MetricListError,
+  RegistryError,
 } from "@/components/observations/discovery-error"
 import {
   AboutMark,
@@ -504,7 +505,14 @@ export function ObservationsPage() {
       <TablePage className="px-0 py-0 md:px-0">
         {header}
         <div className={GUTTER}>
-          <NoObservations />
+          {obs.registryError ? (
+            <RegistryError
+              error={obs.registryError}
+              onRetry={obs.retryRegistry}
+            />
+          ) : (
+            <NoObservations />
+          )}
         </div>
       </TablePage>
     )

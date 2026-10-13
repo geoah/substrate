@@ -77,10 +77,28 @@ afterEach(() => {
 function mount(
   searchParams: string,
   technical = false,
-  respond: (read: SeenRead) => AggregateResult | Response = answer
+  respond: (read: SeenRead) => AggregateResult | Response = answer,
+  kindsFail = false
 ) {
   const server = observationsServer(respond)
-  vi.stubGlobal("fetch", vi.fn(server.fetch))
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL) =>
+      kindsFail && String(input).includes("core%2Fkind")
+        ? Promise.resolve(
+            new Response(
+              JSON.stringify({
+                error: {
+                  code: "unavailable",
+                  message: "the database is restarting",
+                },
+              }),
+              { status: 503, headers: { "Content-Type": "application/json" } }
+            )
+          )
+        : server.fetch(input)
+    )
+  )
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -465,6 +483,21 @@ describe("the timeline's requests", () => {
     )
     expect(screen.getByRole("region", { name: "Heart rate" })).toBeTruthy()
     expect(screen.queryByRole("region", { name: "Weight" })).toBe(null)
+  })
+
+  it("says the kinds did not load, never that nothing records measurements", async () => {
+    mount(`?${WINDOW}`, false, answer, true)
+    expect(await screen.findByText("The kinds didn’t load")).toBeTruthy()
+    expect(screen.getByText(/the database is restarting/)).toBeTruthy()
+    expect(screen.queryByText(/Nothing here records measurements/)).toBe(null)
+  })
+
+  it("says no stream matches the chosen source, never that nothing was measured", async () => {
+    mount(`?source=nobody&${WINDOW}`)
+    expect(
+      await screen.findByText(/No stream matches the chosen sources/)
+    ).toBeTruthy()
+    expect(screen.queryByText(/Nothing has been measured/)).toBe(null)
   })
 
   it("says discovery was refused, naming its problems, never that nothing was measured", async () => {

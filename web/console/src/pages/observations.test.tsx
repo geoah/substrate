@@ -77,10 +77,18 @@ function mount(
   respond: (read: SeenRead) => AggregateResult | Response = (read) =>
     latestAnswer(read),
   views: SavedView[] = [],
-  technical = false
+  technical = false,
+  kindsFail = false
 ) {
   const server = observationsServer(respond, kinds)
-  vi.stubGlobal("fetch", vi.fn(server.fetch))
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL) =>
+      kindsFail && String(input).includes("core%2Fkind")
+        ? Promise.resolve(unavailable())
+        : server.fetch(input)
+    )
+  )
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -454,6 +462,14 @@ describe("the streams table", () => {
       metric: BODY_MASS,
       source: WITHINGS,
     })
+  })
+
+  it("says the kinds did not load, never that nothing records measurements", async () => {
+    mount("", KINDS, (read) => latestAnswer(read), [], false, true)
+    expect(await screen.findByText("The kinds didn’t load")).toBeTruthy()
+    expect(screen.getByText(/the database is restarting/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
+    expect(screen.queryByText(/Nothing here records measurements/)).toBe(null)
   })
 
   it("says nothing records measurements where no kind binds the trait", async () => {

@@ -23,6 +23,7 @@ import {
   DiscoveryError,
   FacetListErrors,
   MetricListError,
+  RegistryError,
 } from "@/components/observations/discovery-error"
 import {
   FacetFilters,
@@ -181,7 +182,14 @@ export function ObservationsTimelinePage() {
     return (
       <TablePage>
         {header}
-        <NoObservations />
+        {obs.registryError ? (
+          <RegistryError
+            error={obs.registryError}
+            onRetry={obs.retryRegistry}
+          />
+        ) : (
+          <NoObservations />
+        )}
       </TablePage>
     )
   }
@@ -272,8 +280,9 @@ export function ObservationsTimelinePage() {
         <Skeleton className="mt-8 h-[236px] w-full" />
       ) : metrics.length === 0 ? (
         <p className="mt-6 text-muted-foreground">
-          Nothing has been measured yet. A metric shows up here once a provider
-          or a sample writes its first value.
+          {sources.length || abouts.length
+            ? "No stream matches the chosen sources and things. Remove a filter to see the others."
+            : "Nothing has been measured yet. A metric shows up here once a provider or a sample writes its first value."}
         </p>
       ) : (
         <>
