@@ -270,6 +270,11 @@ whose problems name the property and the rule, such as
   kind that binds core's `revised` trait instead is held to this rule alone.
 - A `comparator` on `value` (`<0.01`) is admitted only where the kind
   declares `comparator: true` on it, as for any quantity.
+- A value's magnitude is at most about 1.8e308, the largest float64, which
+  the observed index reduces in: a larger one is refused (`props.value`, or
+  `props.values[i]` naming the first such point). A trace whose mean or spread
+  passes that bound (values more than about 1e154 apart) is refused at
+  `props.stats`.
 
 A packed record is also held to these:
 
@@ -282,7 +287,9 @@ A packed record is also held to these:
   `[0, endsAt - at)`. With `every`, the count of points times `every` fits
   the period.
 - A trace of values names its `unit`, a code the unit table reads; an alias
-  such as `°C` is stored as its code, `Cel`. A trace of codes has no unit.
+  such as `°C` is stored as its code, `Cel`, and a refused spelling (`count`)
+  is refused with the same guidance a quantity's unit gets. A trace of codes
+  has no unit.
 - A `summary` is refused: it is one value per record.
 - `null` is admitted inside `values` and `codes` and nowhere else.
 - A code is never empty: `""` inside `codes` is refused naming its index

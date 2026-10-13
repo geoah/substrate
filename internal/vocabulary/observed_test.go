@@ -195,6 +195,23 @@ func TestCheckObservedRefusals(t *testing.T) {
 			"props.codes[2]: a code is not empty",
 		},
 		"an empty code": {edit(single(t), map[string]any{"value": nil, "code": ""}), "props.code: a code is not empty"},
+		// The observed index reduces in float64: a value past its range would
+		// derive no point, so it is refused, not stored and left out of every
+		// aggregate.
+		"a value past float64": {
+			edit(single(t), map[string]any{"value": q("1"+strings.Repeat("0", 400), "kg")}),
+			"props.value: the magnitude is past 1.8e308",
+		},
+		"a trace point past float64": {
+			edit(packed(t), map[string]any{"values": []any{"60", "-1" + strings.Repeat("0", 400), "62"}}),
+			"props.values[1]: the magnitude is past 1.8e308",
+		},
+		// A trace's unit is read as a quantity's is, so a refused spelling
+		// gets its own guidance, not the grammar's parse error.
+		"a trace in a bare count": {
+			edit(packed(t), map[string]any{"unit": "count"}),
+			`props.unit: "count": a bare count names nothing counted`,
+		},
 	} {
 		problems := vocabulary.CheckObserved(c.r)
 		found := false
@@ -226,6 +243,23 @@ func TestCheckObservedRefusesAnOversizedTrace(t *testing.T) {
 	problems = strings.Join(vocabulary.CheckObserved(r), "\n")
 	if !strings.Contains(problems, "a trace holds at most 1048576 (1 MiB)") {
 		t.Errorf("problems %q name no byte limit", problems)
+	}
+}
+
+// Each point of a trace may be in range while their spread is not: the stats
+// are refused as a validation problem, never stored as an infinity a JSON
+// encoder cannot write.
+func TestTraceStatsRefuseASpreadPastFloat64(t *testing.T) {
+	r := edit(packed(t), map[string]any{"values": []any{"1" + strings.Repeat("0", 159), nil, "0"}})
+	if problems := vocabulary.CheckObserved(r); len(problems) > 0 {
+		t.Fatalf("each point is in range, yet CheckObserved refuses: %q", problems)
+	}
+	if stats, err := vocabulary.TraceStats(*r.At, r.Props); err == nil || !strings.Contains(err.Error(), "past 1.8e308") {
+		t.Errorf("TraceStats = %v, %v; want a refusal naming the range", stats, err)
+	}
+	r = edit(packed(t), map[string]any{"values": []any{"1" + strings.Repeat("0", 150), nil, "0"}})
+	if _, err := vocabulary.TraceStats(*r.At, r.Props); err != nil {
+		t.Errorf("a spread of 1e150 fits a float64: %v", err)
 	}
 }
 

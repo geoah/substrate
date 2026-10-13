@@ -8,7 +8,9 @@ package vocabulary
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strconv"
@@ -245,6 +247,11 @@ func (c *obsCheck) single(form string) {
 	if hasCode && form == FormCounter {
 		c.addf("props.code: a counter is a running total, a number, never a code")
 	}
+	if q, ok := c.r.Props[obsValue].(map[string]any); ok {
+		if digits, _ := q[QuantityValue].(string); pastFloat(digits) {
+			c.addf("props.value: %s", pastFloatWhy)
+		}
+	}
 	if code, isString := c.r.Props[obsCode].(string); isString && code == "" {
 		c.addf("props.code: a code is not empty: drop code")
 	}
@@ -369,8 +376,20 @@ func (c *obsCheck) packed(form string) {
 		c.addf("props.%s: %d points; a trace holds at most %d", list, n, MaxTracePoints)
 	}
 	if unit := c.str(obsUnit); unit != "" {
-		if _, err := MeasureOf(unit); err != nil {
+		code, err := CanonicalUnit(unit)
+		if err == nil {
+			_, err = MeasureOf(code)
+		}
+		if err != nil {
 			c.addf("props.unit: %v", err)
+		}
+	}
+	if hasValues {
+		for i, v := range listOf(c.r.Props[obsValues]) {
+			if digits, _ := v.(string); pastFloat(digits) {
+				c.addf("props.values[%d]: %s", i, pastFloatWhy)
+				break
+			}
 		}
 	}
 	hasEvery, hasOffsets := c.r.Props[obsEvery] != nil, c.r.Props[obsOffsets] != nil
@@ -398,6 +417,17 @@ func (c *obsCheck) packed(form string) {
 	if raw, err := json.Marshal(c.r.Props); err == nil && len(raw) > MaxTraceBytes {
 		c.addf("props: the trace's properties are %d bytes; a trace holds at most %d (1 MiB): split the period", len(raw), MaxTraceBytes)
 	}
+}
+
+// pastFloatWhy is the refusal of a value pastFloat finds.
+const pastFloatWhy = "the magnitude is past 1.8e308, the largest number the observed index reduces"
+
+// pastFloat reports whether a decimal's magnitude is past the largest float64,
+// which the observed index reduces in: such a value would derive no point,
+// and a trace's stats no mean. A magnitude below the smallest one reads as 0.
+func pastFloat(digits string) bool {
+	_, err := strconv.ParseFloat(digits, 64)
+	return errors.Is(err, strconv.ErrRange)
 }
 
 // offsets holds the irregular placement: integer milliseconds from at, one per
@@ -696,6 +726,9 @@ func TraceStats(at time.Time, props map[string]any) (map[string]any, error) {
 	m2 := new(big.Rat).Sub(sumSq, new(big.Rat).Mul(n, new(big.Rat).Mul(mean, mean)))
 	meanF, _ := mean.Float64()
 	m2F, _ := m2.Float64()
+	if math.IsInf(meanF, 0) || math.IsInf(m2F, 0) {
+		return nil, fmt.Errorf("the values' mean or spread is past 1.8e308, the largest number the observed index reduces; values more than about 1e154 apart do not fit one trace")
+	}
 	out["min"] = minV
 	out["max"] = maxV
 	out["mean"] = meanF
