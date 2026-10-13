@@ -922,3 +922,35 @@ func parseISODuration(s string) (time.Duration, error) {
 	}
 	return time.ParseDuration(strings.ToLower(rest))
 }
+
+// TestHealthGoogleFitWritesASmallReadingWithoutAnExponent: Fit sends a float,
+// and the adapter writes its digits out. Python spells 0.00001 as 1e-05,
+// which the engine refuses as a decimal, so the reading is written through
+// host.observed.decimal, never repr().
+func TestHealthGoogleFitWritesASmallReadingWithoutAnExponent(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	_, ds := newCoreDataset(t)
+	install(t, ds, googlefitDir, nil)
+	importVocabulary(t, ds, "healthgooglefit")
+	today := utcToday()
+	fake := newFakeFit(t, today, fitCutOn)
+	recorded := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+	start := strconv.FormatInt(recorded.UnixNano(), 10)
+	fake.setPoints(fitWeight, []any{map[string]any{
+		"startTimeNanos": start, "endTimeNanos": start, "dataTypeName": "com.google.weight",
+		"originDataSourceId": "raw:com.google.weight:com.example.scalea:",
+		"value":              []any{map[string]any{"fpVal": 0.00001}},
+		"modifiedTimeMillis": strconv.FormatInt(recorded.Add(time.Hour).UnixMilli(), 10),
+	}})
+	googlefitAccountWith(t, ds, "enabledBody")
+	googlefitSync(t, ds, fake)
+	day := recorded.Add(today.Sub(fitCutOn)).Truncate(24 * time.Hour)
+	if out := observe(t, ds, googlefitDatasetType, fitDatasetRow(fitWeight, day)); fitNumber(out["written"]) != 1 {
+		t.Fatalf("the delivery wrote %v, want the one reading", out)
+	}
+	values := fitValues(fitReadings(t, ds, "body_mass"))
+	if len(values) != 1 || slices.Collect(maps.Values(values))[0] != "0.00001" {
+		t.Fatalf("the reading = %v, want 0.00001", values)
+	}
+}
