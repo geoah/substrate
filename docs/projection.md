@@ -618,10 +618,10 @@ changelog, a re-link clears it on the next recompute, and a
 through the list filter, never through a property:
 
 ```http
-GET /api/v1/records?filter={"kinds":["samples.substrate.reamde.dev/tasks/task"],"orphaned":true}
+GET /api/v1/records?filter={"kinds":["<authority>/tasks/task"],"orphaned":true}
 ```
 
-`substratectl get task --orphaned` is the same read. What to do with the list
+`substratectl get <authority>/tasks/task --orphaned` is the same read. What to do with the list
 is yours: delete from it, re-run the sync that should have re-linked them, or
 leave it. A deployment may also ask the GC sweep to collect them, which is off
 by default and windowed when it is on

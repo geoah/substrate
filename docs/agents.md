@@ -812,8 +812,9 @@ secret-typed: every read surface hands back `<redacted>`, there is no way to
 read a stored key back out, and writing the property again replaces what is
 sealed. Because `apply` merges and never prunes, naming `apiKey` alone leaves
 the row's wire, endpoint and pricing exactly as they were, and writing the
-`<redacted>` sentinel back is a round trip, so `substratectl get provider
--o yaml` is both a safe read and directly `apply -f`-able. A here-document
+`<redacted>` sentinel back is a round trip, so `substratectl get
+substrate.reamde.dev/llm/provider -o yaml` is both a safe read and directly
+`apply -f`-able. A here-document
 keeps the key out of your shell history:
 
 ```sh
@@ -873,7 +874,7 @@ The id carries two slashes, so the path segment spells each `%2F`. The answer
 carries `reply` and the `thread` id, and the thread is the durable half:
 
 ```sh
-substratectl get thread <thread> -o yaml
+substratectl get substrate.reamde.dev/llm/thread <thread> -o yaml
 ```
 
 `status: ok` with a `turns`/`promptTokens`/`completionTokens` tally is a

@@ -10,11 +10,11 @@ same repository as the substrate (`cmd/substratectl`) and builds with Go.
 substratectl register --server https://substrate.example --repository ada.example.com
 substratectl login --repository ada.example.com
 substratectl kinds                        # every declared kind
-substratectl get task                    # list a collection
-substratectl get task t9 -o yaml         # one record, apply-able envelope
+substratectl get ada.example.com/tasks/task            # list a collection
+substratectl get ada.example.com/tasks/task t9 -o yaml  # one record, apply-able envelope
 substratectl apply -f task.yaml           # put: merge, never prune
 substratectl validate -f task.yaml        # the server's checks, offline
-substratectl patch task t9 --state status=done
+substratectl patch ada.example.com/tasks/task t9 --state status=done
 substratectl watch                        # resumable change stream
 substratectl export                       # the recovery export, a tar of the repository directory
 ```
@@ -32,7 +32,8 @@ and it can run anywhere.
 at all: `user reset`, `repository list`, `repository inspect`, `repository
 verify`, `repository snapshot`, `repository rebuild`, `repository
 rotate-generation` and `repository reembed`. Every one of them needs `--dsn`
-(or `DATABASE_URL`) and refuses without it before touching anything. The ones
+(or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when that is unset) and
+refuses without it before touching anything. The ones
 that open the repository directory (`verify`, `rebuild`, `reembed`,
 `snapshot`, `rotate-generation` and `user reset`) also need
 `SUBSTRATE_DATA_ROOT`; `repository list` reads the database alone, and
@@ -95,7 +96,8 @@ defaults to `substratectl`.
 ## Reading
 
 `substratectl get <kind> [id]` lists the records of one kind or reads one record. The kind is
-its full reference (`samples.substrate.reamde.dev/tasks/task`). A bare `task`
+its full reference (`ada.example.com/tasks/task` for the tasks sample imported
+into the repository registered above). A bare `task`
 is refused, naming every kind the repository declares under that word
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
 `substratectl kinds` lists them all. Lists take `--filter` (the

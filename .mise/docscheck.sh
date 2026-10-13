@@ -12,9 +12,15 @@
 # Scope is docs/*.md, README.md and each skill under skills/: the pages a
 # reader is handed, and the runbooks their agents follow. AGENTS.md is the
 # working guide and speaks to a different audience, so it is not held to the
-# reader-facing vocabulary. Two rules read wider and say so where they run:
-# the descriptions in the kind documents under kinds/ and samples/, and the
-# URL shapes in the package READMEs.
+# reader-facing vocabulary. Three rules read wider and say so where they run:
+# the descriptions in the kind documents under kinds/ and samples/, the URL
+# shapes in the package READMEs, and the CLI examples naming a kind by a bare
+# word, which AGENTS.md is held to as well because an agent pastes them.
+#
+# Each rule is one `# --- <what it holds> ---` section below, with its reason,
+# so `grep '^# ---' .mise/docscheck.sh` lists them. That listing is the one
+# list: a page describing lint:docs points here rather than repeating it.
+#
 # No `-e`: every rule below runs and reports, so one pass names everything
 # wrong rather than the first thing wrong.
 set -uo pipefail
@@ -501,5 +507,62 @@ fi
 if grep_urls -rnE "bundle[s]?/[A-Za-z0-9{}._%]+/(disable|enable|uninstall|purge)\b"; then
   flag "a documented bundle lifecycle verb is a path; it is a PATCH of the bundle record's state (decision 0033)"
 fi
+
+# --- the kinds the CLI examples name ------------------------------------
+#
+# A kind is named in full on every surface (decision 0101), and the CLI
+# refuses a bare word where a kind goes: the first argument of `get`, `patch`
+# and `delete`, the second of `trigger run` (after the trigger id), and each
+# entry of `--kinds` on `search` and `watch`, quoted or not. An example
+# spelling one that way is a paste that fails. A placeholder
+# (`<authority>/tasks/task`, `$AUTHORITY/tasks/task`) carries its own slash
+# and passes. `search <query>` takes words, not a kind, so its query is left
+# alone.
+#
+# Each line is read joined to the next, because the pages wrap prose and a
+# code span breaks across lines (`substratectl get` at the end of one, the
+# kind at the start of the next), and a shell example continues a command
+# after a trailing `\`. A match is reported at the line it starts on, so one
+# inside a single line is reported once. A flag between the verb and the
+# kind (`get -o yaml task`) is not read: which flags take a value is the
+# CLI's to say, and the pages put the kind first.
+#
+# The scope is the URL files plus AGENTS.md: the agent guide's examples are
+# pasted as they stand. docs/decisions/ and docs/plans/ stay out: accepted
+# records 0047, 0098 and 0101 quote the bare form on purpose and are frozen,
+# and a plan records the design as it was proposed.
+quote="['\"]"
+end_word="([ \t\`,'\"]|\$)"
+bare_kind="${quote}?[a-z][a-z0-9]*${end_word}"
+# A `--kinds` list is comma-separated, with spaces after a comma only inside
+# quotes, so an unquoted list ends at its first space and prose after it is
+# not read as an entry.
+kinds_list="(([^ \t,'\"\`]+,)*|${quote}([^,'\"]+,[ \t]*)*)"
+bare_kind_re="substratectl (get|patch|delete) ${bare_kind}|substratectl trigger run [^ \t\`]+ ${bare_kind}|--kinds[ =]${kinds_list}[a-z][a-z0-9]*${end_word}"
+bare_found=0
+for path in "${url_files[@]}" AGENTS.md; do
+  awk -v re="$bare_kind_re" -v file="$path" '
+    { line[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) {
+        this_line = line[i]
+        sub(/[ \t]*\\$/, "", this_line)
+        next_line = (i < NR) ? line[i + 1] : ""
+        sub(/^[ \t]+/, "", next_line)
+        if (match(this_line " " next_line, re) && RSTART <= length(this_line)) {
+          printf "%s:%d:%s\n", file, i, line[i]
+          found = 1
+        }
+      }
+      exit !found
+    }' "$path"
+  case $? in
+  0) bare_found=1 ;;
+  1) ;;
+  *) flag "awk failed on ${path}: the bare-kind rule checked nothing there" ;;
+  esac
+done
+[ "$bare_found" -eq 0 ] ||
+  flag "a CLI example names a kind by a bare word; it is named in full as <authority>/<package>/<name> (decision 0101)"
 
 exit "$fail"

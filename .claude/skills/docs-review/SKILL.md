@@ -19,9 +19,8 @@ mise run lint:docs
 
 This skill owns no checks of its own. `lint:docs` is the one docs linter, it
 is what CI's lint job runs, and it holds both halves: links and anchors
-(lychee, offline) and the prose rules a grep can decide (`.mise/docscheck.sh`
-— the dead words `docs/terms.md` retired, retired envelope keys, `mise run`
-names that no longer exist, a page the index does not list). A rule worth
+(lychee, offline) and the prose rules a grep can decide (`.mise/docscheck.sh`,
+whose header says which files they read and how to list them). A rule worth
 enforcing every time belongs in that script, not here.
 
 ## 2. The reading pass

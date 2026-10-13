@@ -239,10 +239,10 @@ func (c collection) ref(id string) string {
 	return name + "/" + id
 }
 
-// resolveCollection turns a CLI argument into a collection. The qualified form
-// "<authority>/<package>/<name>" wins outright; a bare name with --package is
-// taken literally; a bare name otherwise resolves against the kind registry,
-// and the reference always uses the resolved kind NAME.
+// resolveCollection turns a CLI argument into a collection. Only the full
+// reference "<authority>/<package>/<name>" names one, and it is taken as
+// written; a bare word is refused, naming the full spellings the registry
+// declares under it (decision record 0101).
 func (a *app) resolveCollection(ctx context.Context, arg string) (collection, error) {
 	// A full reference needs no round trip: the wire takes it as written.
 	if authority, pkgName, name := vocabulary.SplitKindRef(arg); authority != "" {

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // A trigger run delivers ONE RECORD, and a record is addressed by (kind, id):
@@ -123,7 +124,7 @@ func TestTriggerVerbsRideTheCorePath(t *testing.T) {
 	h.writeConfig()
 
 	h.mustRun("trigger", "status")
-	h.mustRun("trigger", "run", "classify-page", "task", "t9")
+	h.mustRun("trigger", "run", "classify-page", taskKind, "t9")
 	h.mustRun("trigger", "wake", "classify-page")
 
 	for _, want := range []string{
@@ -152,9 +153,10 @@ func TestTriggerVerbsRideTheCorePath(t *testing.T) {
 // --- help examples name properties that exist ------------------------------
 
 // The `patch --help` examples are the first thing a person copies, so every
-// property they name MUST be one the shipped vocabulary declares: on a clean
-// install, `--prop detail=…` on a task wrote a property the shipped kind never
-// declared.
+// kind they name MUST be named in full and declared by the shipped
+// vocabulary, and every property they name one that kind declares: on a
+// clean install, `--prop detail=…` on a task wrote a property the shipped kind
+// never declared.
 func TestPatchExamplesNameDeclaredProperties(t *testing.T) {
 	declared := shippedTypes(t)
 	example := (&app{}).patchCommand().Example
@@ -167,9 +169,9 @@ func TestPatchExamplesNameDeclaredProperties(t *testing.T) {
 			continue
 		}
 		kind := fields[2]
-		ty, ok := declared[kind]
+		ty, ok := shippedKind(declared, kind)
 		if !ok {
-			t.Errorf("patch example names collection %q, which the shipped schema does not declare", kind)
+			t.Errorf("patch example names kind %q, which the shipped vocabulary does not declare under that reference or as an imported sample", kind)
 			continue
 		}
 		// The flags that name a PROPERTY. --label is a free key space and -p
@@ -193,8 +195,32 @@ type shippedType struct {
 	properties map[string]bool
 }
 
-// shippedTypes reads the shipped declarations: kind name → what it declares.
-// The schema on disk is the only authority for what exists.
+// shippedKind looks a help example's kind reference up in the shipped
+// declarations. A bare word is never found: the CLI refuses one (decision
+// record 0101). A reference under the publisher's own authorities must be
+// declared as spelled. Under any other authority it is a sample imported into
+// the example's repository, which the import rehomes onto that repository's
+// authority (decision record 0048), so it is looked up by the shipped
+// sample's package and name.
+func shippedKind(declared map[string]shippedType, ref string) (shippedType, bool) {
+	authority, pkg, name := vocabulary.SplitKindRef(ref)
+	switch authority {
+	case "":
+		return shippedType{}, false
+	case publisherAuthority, sampleAuthority:
+		ty, ok := declared[ref]
+		return ty, ok
+	}
+	ty, ok := declared[vocabulary.KindRef(sampleAuthority, pkg, name)]
+	return ty, ok
+}
+
+// sampleAuthority is the placeholder authority the samples ship under, which
+// an import rewrites.
+const sampleAuthority = "samples.substrate.reamde.dev"
+
+// shippedTypes reads the shipped declarations: kind reference → what it
+// declares. The schema on disk is the only authority for what exists.
 func shippedTypes(t *testing.T) map[string]shippedType {
 	t.Helper()
 	// The shipped vocabulary lives in TWO trees since the seed shrank to core:
@@ -222,7 +248,9 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 			}
 			var doc struct {
 				Data struct {
-					Names struct {
+					Authority string `yaml:"authority"`
+					Package   string `yaml:"package"`
+					Names     struct {
 						Singular string `yaml:"singular"`
 					} `yaml:"names"`
 					Properties map[string]any `yaml:"properties"`
@@ -231,10 +259,11 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 			if err := yaml.Unmarshal(raw, &doc); err != nil {
 				continue // not a kind declaration (a package manifest, a trait)
 			}
-			if doc.Data.Names.Singular == "" {
+			if doc.Data.Names.Singular == "" || doc.Data.Authority == "" || doc.Data.Package == "" {
 				continue
 			}
-			ty, ok := out[doc.Data.Names.Singular]
+			ref := vocabulary.KindRef(doc.Data.Authority, doc.Data.Package, doc.Data.Names.Singular)
+			ty, ok := out[ref]
 			if !ok {
 				ty = shippedType{properties: map[string]bool{}}
 				// Every record carries these whatever it declares (FORMAT.md
@@ -242,7 +271,7 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 				for _, name := range []string{"title", "body", "at", "endsAt", "dueAt"} {
 					ty.properties[name] = true
 				}
-				out[doc.Data.Names.Singular] = ty
+				out[ref] = ty
 			}
 			for name := range doc.Data.Properties {
 				ty.properties[name] = true

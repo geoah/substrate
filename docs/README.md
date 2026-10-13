@@ -69,6 +69,13 @@ API call that completes a task.
   live one keys
 - [Built-in kinds](builtin-kinds.md) — reference
 
+## Design history
+
+- [Decision records](decisions/README.md): one dated page per choice that
+  shapes what other code may do, with the options it ruled out
+- [Plans](plans/): design proposals for work that was planned or is in
+  progress; the code that landed is the contract
+
 ---
 
 These pages describe the system as built. Where a page and the code disagree,

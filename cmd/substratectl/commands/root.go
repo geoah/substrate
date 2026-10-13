@@ -190,7 +190,7 @@ to point at.
   substratectl register --server https://substrate.example.com
   substratectl login --repository geoah
   substratectl kinds
-  substratectl get task -l owner/pinned=true
+  substratectl get geoah.substrate.example.com/tasks/task -l owner/pinned=true
   substratectl apply -f task.yaml
   substratectl token create --label laptop
 

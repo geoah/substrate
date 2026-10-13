@@ -105,6 +105,11 @@ type fakeSubstrate struct {
 	// answers the 422 internal/api writes (writeValidation).
 	vocabularyCheck bool
 
+	// bareKinds is every kind the fake refused as a bare name. The watch
+	// stream refuses one in a frame after the opening line, which no status
+	// code carries, so a test reads the refusal here.
+	bareKinds []string
+
 	requests  []string
 	lastBody  map[string]json.RawMessage
 	lastAuth  string
@@ -770,15 +775,100 @@ func (f *fakeSubstrate) handleChanges(w http.ResponseWriter, r *http.Request) {
 		}})
 		return
 	}
+	// The server resolves each `kinds` entry (engine buildChangeFilter) when
+	// it reads the changelog, and refuses a bare word. A read without
+	// `watch=1` reads before it answers, so the refusal is a 422. The watch
+	// stream (internal/api streamChanges) has written 200 and the bookmark
+	// by then, so the refusal is a terminal error frame. `watch --kinds`
+	// sends its entries as typed.
+	var refusal string
+	for _, k := range strings.Split(r.URL.Query().Get("kinds"), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			if refusal = f.bareKindRefusal(k); refusal != "" {
+				break
+			}
+		}
+	}
+	stream := r.URL.Query().Get("watch") == "1"
+	if refusal != "" && !stream {
+		writeError(w, http.StatusUnprocessableEntity, "validation", refusal, nil)
+		return
+	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(map[string]any{"bookmark": fakeHead, "generation": fakeGeneration})
+	if refusal != "" {
+		_ = enc.Encode(substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: "validation", Message: refusal}})
+		return
+	}
 	for _, c := range f.changes {
 		_ = enc.Encode(c)
 	}
 	if fl, ok := w.(http.Flusher); ok {
 		fl.Flush()
+	}
+}
+
+// bareKindRefusal is the message the server's Registry.Resolve refuses a bare
+// kind with (decision record 0101), noting kind in bareKinds, or "" for a
+// kind named in full.
+func (f *fakeSubstrate) bareKindRefusal(kind string) string {
+	if vocabulary.Qualified(kind) {
+		return ""
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.bareKinds = append(f.bareKinds, kind)
+	return fmt.Sprintf("substrate: validation failed: %q is a bare name, and a kind is named in full as <authority>/<package>/<name>", kind)
+}
+
+// refusedBareKinds is bareKinds, read under the lock.
+func (f *fakeSubstrate) refusedBareKinds() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.bareKinds)
+}
+
+// A watch request carrying a bare kind gets what internal/api streamChanges
+// sends: 200, the bookmark, then a terminal validation frame. Only a read
+// without `watch=1` answers 422. A fake that answered the watch with a 422
+// would let a CLI test pass on a response no server sends.
+func TestFakeChangesRefusesABareKindAsTheServerDoes(t *testing.T) {
+	_, srv := newFake(t)
+	type frame struct {
+		Bookmark *int64                  `json:"bookmark"`
+		Error    *substrate.ErrorPayload `json:"error"`
+	}
+	read := func(query string) (int, []frame) {
+		t.Helper()
+		resp, err := http.Get(srv.URL + pathChanges + "?" + query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var frames []frame
+		for dec := json.NewDecoder(resp.Body); dec.More(); {
+			var fr frame
+			if err := dec.Decode(&fr); err != nil {
+				t.Fatalf("%s: decode: %v", query, err)
+			}
+			frames = append(frames, fr)
+		}
+		return resp.StatusCode, frames
+	}
+	bare := func(fr frame) bool {
+		return fr.Error != nil && fr.Error.Code == "validation" && strings.Contains(fr.Error.Message, `"task" is a bare name`)
+	}
+
+	status, frames := read("watch=1&kinds=task")
+	if status != http.StatusOK || len(frames) != 2 ||
+		frames[0].Bookmark == nil || *frames[0].Bookmark != fakeHead || !bare(frames[1]) {
+		t.Errorf("watch with a bare kind: status %d, frames %+v; want 200, the bookmark %d, then a validation frame", status, frames, fakeHead)
+	}
+	status, frames = read("kinds=task")
+	if status != http.StatusUnprocessableEntity || len(frames) != 1 || !bare(frames[0]) {
+		t.Errorf("paged read with a bare kind: status %d, frames %+v; want 422 and a validation error", status, frames)
 	}
 }
 
@@ -1329,6 +1419,13 @@ func (f *fakeSubstrate) handleTriggerRun(w http.ResponseWriter, r *http.Request)
 	if req.Kind == "" || req.ID == "" {
 		writeError(w, http.StatusBadRequest, "bad_request",
 			"a kind and an id are required — records are addressed by (kind, id)", nil)
+		return
+	}
+	// The server resolves the kind before it runs anything, so a bare word
+	// is a 422. The CLI sends the argument as typed, so a bare kind here
+	// meets no refusal but this one.
+	if refusal := f.bareKindRefusal(req.Kind); refusal != "" {
+		writeError(w, http.StatusUnprocessableEntity, "validation", refusal, nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ran": 1})

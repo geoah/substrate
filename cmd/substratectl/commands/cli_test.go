@@ -1637,7 +1637,7 @@ func TestWatchPrintsTheReplacementCursorOnARefusedOne(t *testing.T) {
 func TestWatchSendsFilters(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.mustRun("watch", "--from", "7", "--generation", "gen-test", "--kinds", "a,b", "--ops", "put", "--actors", "api")
+	h.mustRun("watch", "--from", "7", "--generation", "gen-test", "--kinds", taskKind+","+alertKind, "--ops", "put", "--actors", "api")
 	// The fake records only the path; assert the request happened at all and
 	// that the client built the query without error.
 	var saw bool
