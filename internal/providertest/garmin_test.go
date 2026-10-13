@@ -889,21 +889,28 @@ func TestGarminSyncHoldsOnRefusalAndRateLimit(t *testing.T) {
 		t.Fatalf("activityDetails was asked %d times after the permission change, want twice", got)
 	}
 
-	// A deeper reach on a fresh account, cut off by a 429 part way.
-	ds2 := newGarminDataset(t, map[string]any{"backfillDepth": "last30d"})
-	fake2 := newFakeGarmin(t)
-	fake2.limitAfterWindows(20)
-	syncGarmin(t, ds2, garminConfig(t, ds2, fake2.ts.URL+"/wellness-api", nil))
-	acct = mustGet(t, ds2, garminAccountType, garminAccountID)
-	if acct.Properties["syncState"] != "throttled" || acct.Properties["retryNotBefore"] == nil {
-		t.Fatalf("a 429 left %v, retryNotBefore %v", acct.Properties["syncState"], acct.Properties["retryNotBefore"])
-	}
-	cursors, _ := acct.Properties["syncCursors"].(map[string]any)
-	accepted := 0
-	for _, ws := range fake2.windows(t) {
-		accepted += len(ws)
-	}
-	if accepted != 20 || len(cursors) == 0 {
-		t.Errorf("%d windows accepted before the 429 and %d cursors kept", accepted, len(cursors))
-	}
+	// A deeper reach on a fresh account, cut off by a 429 part way. A
+	// subtest of its own, so its repository id (the test's name) is not the
+	// first half's: the runner keys function processes on it.
+	t.Run("rate limited", func(t *testing.T) {
+		ds2 := newGarminDataset(t, map[string]any{"backfillDepth": "last30d"})
+		if ds2.Repository().Authority == ds.Repository().Authority {
+			t.Fatalf("both halves run in repository %s", ds.Repository().Authority)
+		}
+		fake2 := newFakeGarmin(t)
+		fake2.limitAfterWindows(20)
+		syncGarmin(t, ds2, garminConfig(t, ds2, fake2.ts.URL+"/wellness-api", nil))
+		acct := mustGet(t, ds2, garminAccountType, garminAccountID)
+		if acct.Properties["syncState"] != "throttled" || acct.Properties["retryNotBefore"] == nil {
+			t.Fatalf("a 429 left %v, retryNotBefore %v", acct.Properties["syncState"], acct.Properties["retryNotBefore"])
+		}
+		cursors, _ := acct.Properties["syncCursors"].(map[string]any)
+		accepted := 0
+		for _, ws := range fake2.windows(t) {
+			accepted += len(ws)
+		}
+		if accepted != 20 || len(cursors) == 0 {
+			t.Errorf("%d windows accepted before the 429 and %d cursors kept", accepted, len(cursors))
+		}
+	})
 }
