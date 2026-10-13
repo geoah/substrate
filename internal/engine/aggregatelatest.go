@@ -295,14 +295,9 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			}
 			v, unit = cv, target
 		}
-		bi := -1
-		for i, bk := range buckets {
-			if !at.Before(bk.start) && at.Before(bk.end) {
-				bi = i
-				break
-			}
-		}
-		if bi < 0 {
+		// The buckets are disjoint and in order.
+		bi := sort.Search(len(buckets), func(i int) bool { return buckets[i].end.After(at) })
+		if bi == len(buckets) || at.Before(buckets[bi].start) {
 			continue
 		}
 		var key substrate.AggregateGroup

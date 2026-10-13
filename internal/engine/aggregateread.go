@@ -41,6 +41,9 @@ type aggRun struct {
 	// bounds are the records mode's window starts and ends, sorted, where a
 	// carry walked across empty rows is cut (chunkEnd).
 	bounds []time.Time
+	// reach is, for each records-mode window, the latest end of it and every
+	// window before it (windowsMeeting).
+	reach []time.Time
 	// nSeries is the series the read was budgeted for (seriesOf).
 	nSeries int
 	// samples is the raw points the read's statements have counted so far,
@@ -1215,13 +1218,7 @@ func (r *aggRun) bucketsOf(t time.Time, off int64) []*aggBucket {
 		r.buckets, b = localBucketAt(r.buckets, wallOf(t, off), r.p.bucket)
 		return []*aggBucket{b}
 	case bucketRecords:
-		var out []*aggBucket
-		for _, b := range r.buckets {
-			if !t.Before(b.start) && t.Before(b.end) {
-				out = append(out, b)
-			}
-		}
-		return out
+		return r.windowsMeeting(t, t.Add(time.Nanosecond))
 	}
 	i := sort.Search(len(r.buckets), func(i int) bool { return r.buckets[i].end.After(t) })
 	if i < len(r.buckets) && !t.Before(r.buckets[i].start) {
@@ -1270,18 +1267,38 @@ func (r *aggRun) spanParts(sp aggSpan) []spanPart {
 
 // bucketsMeeting lists the UTC buckets [from, to) meets.
 func (r *aggRun) bucketsMeeting(from, to time.Time) []*aggBucket {
-	var out []*aggBucket
 	if r.p.bucket.mode == bucketRecords {
-		for _, b := range r.buckets {
-			if b.start.Before(to) && b.end.After(from) {
-				out = append(out, b)
-			}
-		}
-		return out
+		return r.windowsMeeting(from, to)
 	}
+	var out []*aggBucket
 	i := sort.Search(len(r.buckets), func(i int) bool { return r.buckets[i].end.After(from) })
 	for ; i < len(r.buckets) && r.buckets[i].start.Before(to); i++ {
 		out = append(out, r.buckets[i])
+	}
+	return out
+}
+
+// windowsMeeting lists the records-mode windows [from, to) meets, in order.
+// The windows are sorted by start but overlap and differ in length, so no
+// search on their ends finds them all: the scan starts at the first window
+// whose running latest end (reach) passes from, every window before it having
+// ended, and stops at the first that starts at or after to.
+func (r *aggRun) windowsMeeting(from, to time.Time) []*aggBucket {
+	if r.reach == nil {
+		r.reach = make([]time.Time, len(r.buckets))
+		for i, b := range r.buckets {
+			r.reach[i] = b.end
+			if i > 0 && r.reach[i-1].After(b.end) {
+				r.reach[i] = r.reach[i-1]
+			}
+		}
+	}
+	var out []*aggBucket
+	i := sort.Search(len(r.buckets), func(i int) bool { return r.reach[i].After(from) })
+	for ; i < len(r.buckets) && r.buckets[i].start.Before(to); i++ {
+		if b := r.buckets[i]; b.end.After(from) {
+			out = append(out, b)
+		}
 	}
 	return out
 }

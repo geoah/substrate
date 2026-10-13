@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"math/rand/v2"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +126,43 @@ func TestAggregateEveryFromAFarOrigin(t *testing.T) {
 			if b.start.Hour() != o.Hour() {
 				t.Errorf("origin %s: bucket %d starts at %s, off the origin's whole days", origin, i+1, b.start.Format(time.RFC3339))
 			}
+		}
+	}
+}
+
+// A point or a span is placed in every records-mode window that meets it,
+// however the windows overlap: 400 windows of lengths from a minute to a day,
+// sorted by start as the records are, against every window checked one by
+// one.
+func TestAggregateRecordWindowsMeetingOverlap(t *testing.T) {
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	rnd := rand.New(rand.NewPCG(1, 2))
+	var windows []*aggBucket
+	at := start
+	for range 400 {
+		at = at.Add(time.Duration(rnd.IntN(90)) * time.Minute)
+		length := time.Duration(1+rnd.IntN(24*60)) * time.Minute
+		windows = append(windows, &aggBucket{start: at, end: at.Add(length), zone: time.UTC})
+	}
+	r := &aggRun{p: &aggPlan{bucket: bucketSpec{mode: bucketRecords}}, buckets: windows}
+	want := func(from, to time.Time) []*aggBucket {
+		var out []*aggBucket
+		for _, b := range windows {
+			if b.start.Before(to) && b.end.After(from) {
+				out = append(out, b)
+			}
+		}
+		return out
+	}
+	for range 2000 {
+		from := start.Add(time.Duration(rnd.IntN(700*60)) * time.Minute)
+		to := from.Add(time.Duration(rnd.IntN(120)) * time.Minute)
+		if got, w := r.bucketsMeeting(from, to), want(from, to); !slices.Equal(got, w) {
+			t.Fatalf("[%s, %s): %d windows, want %d", from.Format(time.RFC3339), to.Format(time.RFC3339), len(got), len(w))
+		}
+		r.p.from, r.p.to = start, start
+		if got, w := r.bucketsOf(from, 0), want(from, from.Add(time.Nanosecond)); !slices.Equal(got, w) {
+			t.Fatalf("a point at %s: %d windows, want %d", from.Format(time.RFC3339), len(got), len(w))
 		}
 	}
 }
