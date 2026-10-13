@@ -237,7 +237,7 @@ func (r *aggRun) rollupable(g *aggGroup) bool {
 				return false
 			}
 		}
-		return aligned15(p.from) && aligned15(p.to)
+		return aligned15(p.readFrom) && aligned15(p.from) && aligned15(p.to)
 	}
 	if g.form == vocabulary.FormGauge {
 		for _, b := range r.buckets {

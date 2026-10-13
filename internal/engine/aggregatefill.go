@@ -7,6 +7,7 @@ package engine
 import (
 	"context"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -16,8 +17,11 @@ import (
 // fillAndRoll applies fill and rolling per series (a group and a code) and
 // orders the rows by bucket, then group, then code. A fill makes every series
 // dense, so the series times the buckets are checked against maxBuckets
-// before a row is made, and the rows answered never exceed it. Both loops
-// check ctx as they go.
+// before a row is made, and the rows made never exceed it, the lookback
+// buckets' included. The lookback's rows feed the rolling windows and are
+// dropped after them; a series is filled from its rows in the range, and a
+// lookback row carries nothing into the range, so the rows answered are the
+// ones the read answers without rolling. Both loops check ctx as they go.
 func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) ([]substrate.AggregateRow, error) {
 	var steps everyThousand
 	type series struct {
@@ -46,8 +50,8 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 	for _, k := range keys {
 		s := byKey[k]
 		var template, prev *aggOut
-		for bi := range buckets {
-			if o := s.rows[bi]; o != nil && template == nil {
+		for bi, b := range buckets {
+			if o := s.rows[bi]; o != nil && template == nil && !b.lookback {
 				template = o
 			}
 		}
@@ -55,9 +59,13 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 			if err := steps.check(ctx); err != nil {
 				return nil, err
 			}
+			if bi > 0 && buckets[bi-1].lookback && !b.lookback {
+				prev = nil
+			}
 			o := s.rows[bi]
 			if o == nil && p.fill != "" && template != nil {
-				start, end := b.shown(&b.ends, p.from, p.to)
+				rangeFrom, rangeTo := p.rangeOf(b)
+				start, end := b.shown(&b.ends, rangeFrom, rangeTo)
 				made := aggOut{bucket: bi, group: template.group, code: template.code, row: substrate.AggregateRow{
 					Start: start, End: end, Form: template.row.Form, Group: template.row.Group, Record: b.record,
 					Synthetic: true, NonAdditive: template.row.NonAdditive,
@@ -77,10 +85,11 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 			len(out), p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
 	if p.rolling != nil {
-		if err := p.roll(ctx, out, meta); err != nil {
+		if err := p.roll(ctx, out, positions(buckets), meta); err != nil {
 			return nil, err
 		}
 	}
+	out = slices.DeleteFunc(out, func(o aggOut) bool { return buckets[o.bucket].lookback })
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].bucket != out[j].bucket {
 			return out[i].bucket < out[j].bucket
@@ -95,6 +104,23 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 		res[i] = o.row
 	}
 	return res, nil
+}
+
+// positions are the buckets' places in the sequence a rolling window counts:
+// one per start, so a recorded-local day split by the range's start into a
+// lookback bucket and a bucket of the range is one place.
+func positions(buckets []*aggBucket) []int {
+	out := make([]int, len(buckets))
+	for i, b := range buckets {
+		switch {
+		case i == 0:
+		case b.start.Equal(buckets[i-1].start):
+			out[i] = out[i-1]
+		default:
+			out[i] = out[i-1] + 1
+		}
+	}
+	return out
 }
 
 // filled is a made row's values. locf carries the previous row's values
@@ -125,12 +151,17 @@ func (p *aggPlan) filled(template, prev *aggOut) []substrate.AggregateValue {
 }
 
 // roll appends, to each row, every rolling reducer over each of its values
-// across this bucket and the Buckets-1 before it in the same series. A
-// window value is matched by its reducer and code, and a null one is skipped.
-// A row's window is up to the cap's buckets long, so the context is checked
-// before each row.
-func (p *aggPlan) roll(ctx context.Context, rows []aggOut, meta *aggMeta) error {
+// across a window of buckets of the same series: the row's own and the
+// Buckets-1 before it, or the Buckets before it where the window ends at the
+// previous bucket. A window value is matched by its reducer and code, and a
+// null one is skipped; n says how many the window held. A row's window is up
+// to the cap's buckets long, so the context is checked before each row.
+func (p *aggPlan) roll(ctx context.Context, rows []aggOut, pos []int, meta *aggMeta) error {
 	n := p.rolling.Buckets
+	last := 0
+	if p.rolling.Through == substrate.RollingThroughPrevious {
+		last = 1
+	}
 	bySeries := map[string][]int{}
 	for i, o := range rows {
 		k := o.group.sortKey + "\x1e" + o.code
@@ -155,17 +186,23 @@ func (p *aggPlan) roll(ctx context.Context, rows []aggOut, meta *aggMeta) error 
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+			// The window is the places (here-last-n, here-last].
+			here := pos[rows[i].bucket]
 			base := append([]substrate.AggregateValue(nil), rows[i].row.Values...)
 			for _, v := range base {
 				of := v.Reducer
 				for _, rr := range p.rolling.Reducers {
 					var acc []float64
-					for w := j; w >= 0 && rows[idx[w]].bucket > rows[i].bucket-n; w-- {
+					for w := j; w >= 0 && pos[rows[idx[w]].bucket] > here-last-n; w-- {
+						if pos[rows[idx[w]].bucket] > here-last {
+							continue
+						}
 						if f, ok := values[w][key{of.String(), v.Code}]; ok {
 							acc = append(acc, f)
 						}
 					}
-					rv := substrate.AggregateValue{Reducer: rr, Of: &of, Rolling: n, Unit: v.Unit, Code: v.Code}
+					held := len(acc)
+					rv := substrate.AggregateValue{Reducer: rr, Of: &of, Rolling: n, Unit: v.Unit, Code: v.Code, N: &held}
 					if r, ok := rollOf(rr.Name, acc); ok {
 						s := formatFloat(r)
 						rv.Value = &s
@@ -196,6 +233,18 @@ func rollOf(name string, vs []float64) (float64, bool) {
 			s /= float64(len(vs))
 		}
 		return s, true
+	case substrate.ReducerStdDev:
+		// The population deviation, as the stddev reducer answers it.
+		var mean float64
+		for _, v := range vs {
+			mean += v
+		}
+		mean /= float64(len(vs))
+		var m2 float64
+		for _, v := range vs {
+			m2 += (v - mean) * (v - mean)
+		}
+		return math.Sqrt(m2 / float64(len(vs))), true
 	case substrate.ReducerMin:
 		m := math.Inf(1)
 		for _, v := range vs {

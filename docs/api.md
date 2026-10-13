@@ -1139,7 +1139,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | `unit` | a unit of the metric's measure for the values, or a duration unit for `durationIn` and `timeInState` | the metric record's `unit`, else the first stream's |
 | `maxGap` | an ISO 8601 duration capping how long a gauge's value holds after its point | none |
 | `fill` | `null`, `zero` or `locf` | none |
-| `rolling` | `{"buckets", "reducers"?}`: `avg`, `sum`, `min` or `max` over this bucket and the ones before it | `reducers` is `["avg"]` |
+| `rolling` | `{"buckets", "reducers"?, "through"?}`: `avg`, `sum`, `min`, `max` or `stddev` over a window of buckets ending at this bucket (`through: "current"`) or the one before it (`"previous"`) | `reducers` is `["avg"]`, `through` is `current` |
 | `budget` | `{"maxBuckets"?, "maxSamples"?, "maxGroups"?}` | see [budgets](#budgets) |
 
 Exactly one of `metric` and `property`; both is a `422`. A metric read's
@@ -1313,11 +1313,11 @@ where summaries did.
 | `unavailable` | a row whose range has expired index points a reducer needs; nothing expires yet, so it is always `false` |
 | `nonAdditive` | the records mode: windows may overlap |
 
-A value is `{reducer, value, unit?, code?, rolling?, of?}`. `value` is a
+A value is `{reducer, value, unit?, code?, rolling?, of?, n?}`. `value` is a
 decimal string, or `null` where the reducer has no answer (an average of no
 points). A coded `first` or `last` answers its `code` with `value` `null`. A
-rolling value names the reducer it rolls over in `of` and the window in
-`rolling`.
+rolling value names the reducer it rolls over in `of`, the window in
+`rolling`, and in `n` the buckets of the window that held a value.
 
 ### Where a bucket is served from
 
@@ -1365,8 +1365,20 @@ a range where a source has no point and holds no value answers no row for
 it under any `fill`.
 
 `rolling` then adds, to every row, each rolling reducer over each of its
-values across that bucket and the `buckets - 1` before it, filled rows
-included and missing ones counted; `rolling` is refused in the records mode.
+values across a window of `buckets` buckets: that bucket and the
+`buckets - 1` before it, or with `"through": "previous"` the `buckets` before
+it, so a baseline leaves the day itself out. Filled rows are in the window,
+and a bucket with no row or a `null` value is skipped. Each rolling value
+carries `n`, the buckets in its window that held a value, so a window over a
+gap says so. A window reaches before the range: the read reduces the buckets
+it needs there (counted in `maxBuckets`, with `fill` applied) and answers
+none of them, so a bucket's rolling value does not depend on where the range
+starts, and the rows a rolling read answers are the rows the same read
+answers without it. In the recorded-local calendar a value before the range
+counts only in the days before the range's first, and a day the range's
+start splits is one place in the window. `stddev` is the population
+deviation of the window's values. `rolling` is refused in the records mode
+and without a `bucket`.
 
 `downsample={"points": 800, "method": "m4"}` beside an `aggregate` naming a
 `metric` and a `range` cuts the range into at most `points` columns, each
@@ -1455,8 +1467,8 @@ merged as one row.
   summaries hold two statistics, or `sum` over a
   statistic other than `sum` and `count`; `groupBy` `statistic` on a read
   that is not from summaries; `priority` over two counters; a budget below zero or over its
-  cap, or a read over a budget (naming the limit); `downsample` beside
-  `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
+  cap, or a read over a budget (naming the limit); `rolling` without a
+  `bucket`; `downsample` beside `reducers`, `rolling`, `fill` or `bucket`; `minCoverage` without
   `prefer-raw`; a `fill`, `rolling` or `maxGap` on the latest read.
 
 ### Where this differs from the plan

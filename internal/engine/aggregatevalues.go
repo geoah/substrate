@@ -18,7 +18,8 @@ import (
 
 // row assembles one output row from its evidence.
 func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, from string) (substrate.AggregateRow, error) {
-	start, end := b.shown(&ev.ends, r.p.from, r.p.to)
+	rangeFrom, rangeTo := r.p.rangeOf(b)
+	start, end := b.shown(&ev.ends, rangeFrom, rangeTo)
 	row := substrate.AggregateRow{
 		Start: start, End: end, Form: ev.form, Record: b.record, From: from,
 		Count: ev.count, Bounded: ev.bounded, Offsetless: ev.offsetless, Coverage: vocabulary.FormatISODuration(time.Duration(ev.coverage) * time.Millisecond),
@@ -33,7 +34,9 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 	}
 	for s := range ev.sources {
 		row.Sources = append(row.Sources, s)
-		r.meta.sources[s] = true
+		if !b.lookback {
+			r.meta.sources[s] = true
+		}
 	}
 	sort.Strings(row.Sources)
 	var err error

@@ -405,13 +405,15 @@ func (c cover) overlaps(a, b time.Time) bool {
 // is a step of the read (canceled).
 func (r *aggRun) bucketsOf(t time.Time, off int64) ([]*aggBucket, error) {
 	mode := r.p.bucket.mode
-	if mode != bucketRecords && (t.Before(r.p.from) || !t.Before(r.p.to)) {
+	if mode != bucketRecords && (t.Before(r.p.readFrom) || !t.Before(r.p.to)) {
 		return nil, nil
 	}
 	switch mode {
 	case bucketLocal:
-		var b *aggBucket
-		r.buckets, b = localBucketAt(r.buckets, wallOf(t, off), r.p.bucket)
+		b := r.localBucket(t, wallOf(t, off))
+		if b == nil {
+			return nil, nil
+		}
 		return []*aggBucket{b}, nil
 	case bucketRecords:
 		return r.windowsMeeting(t, t.Add(time.Nanosecond))
@@ -423,13 +425,35 @@ func (r *aggRun) bucketsOf(t time.Time, off int64) ([]*aggBucket, error) {
 	return []*aggBucket{r.buckets[i]}, nil
 }
 
+// localBucket is the recorded-local bucket an instant t at wall-clock time
+// wall lands in: a bucket of the range from the range's start, a lookback
+// bucket before it, made where the enumeration did not reach. A value
+// before the range on a day the range answers lands in none: the rows a
+// rolling read answers are the rows the read answers without it.
+func (r *aggRun) localBucket(t, wall time.Time) *aggBucket {
+	lookback := t.Before(r.p.from)
+	if lookback && !wall.Before(r.firstLocal()) {
+		return nil
+	}
+	var b *aggBucket
+	r.buckets, b = localBucketAt(r.buckets, wall, r.p.bucket, lookback)
+	return b
+}
+
+// firstLocal is the wall-clock start of the recorded-local bucket the range
+// starts in, at the range's own offset.
+func (r *aggRun) firstLocal() time.Time {
+	return calStart(wallOf(r.p.from, offsetMinutes(r.p.from)), r.p.bucket)
+}
+
 type spanPart struct {
 	bucket *aggBucket
 	span   observed.Span
 }
 
 // spanParts cuts a held interval at the buckets' boundaries: a UTC bucket's, or
-// for a recorded-local bucket the boundaries at the holding point's offset.
+// for a recorded-local bucket the boundaries at the holding point's offset
+// and the range's start, where the lookback ends.
 func (r *aggRun) spanParts(sp observed.Span, off int64) ([]spanPart, error) {
 	var out []spanPart
 	switch r.p.bucket.mode {
@@ -438,15 +462,18 @@ func (r *aggRun) spanParts(sp observed.Span, off int64) ([]spanPart, error) {
 		start := sp.Start
 		for start.Before(sp.End) {
 			wall := start.UTC().Add(shift)
-			var b *aggBucket
-			r.buckets, b = localBucketAt(r.buckets, wall, r.p.bucket)
-			end := b.end.Add(-shift)
+			end := calNext(calStart(wall, r.p.bucket), r.p.bucket).Add(-shift)
+			if start.Before(r.p.from) && end.After(r.p.from) {
+				end = r.p.from
+			}
 			if end.After(sp.End) {
 				end = sp.End
 			}
-			part := sp
-			part.Start, part.End = start, end
-			out = append(out, spanPart{bucket: b, span: part})
+			if b := r.localBucket(start, wall); b != nil {
+				part := sp
+				part.Start, part.End = start, end
+				out = append(out, spanPart{bucket: b, span: part})
+			}
 			start = end
 		}
 		return out, nil

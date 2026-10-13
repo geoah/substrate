@@ -338,11 +338,12 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	return out, nil
 }
 
-// windows are the spans a metric read takes points from: the range, or each
-// records-mode window, overlapping ones joined.
+// windows are the spans a metric read takes points from: the range with the
+// buckets a rolling window reads before it, or each records-mode window,
+// overlapping ones joined.
 func (p *aggPlan) windows(ctx context.Context, buckets []*aggBucket) ([][2]time.Time, error) {
 	if p.bucket.mode != bucketRecords {
-		return [][2]time.Time{{p.from, p.to}}, nil
+		return [][2]time.Time{{p.readFrom, p.to}}, nil
 	}
 	spans := make([][2]time.Time, 0, len(buckets))
 	for _, b := range buckets {

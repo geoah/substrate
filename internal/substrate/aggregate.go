@@ -194,11 +194,21 @@ type AggregateSources struct {
 	Order  []string `json:"order,omitempty"`
 }
 
-// AggregateRolling adds, per row, the given reducers over this bucket and the
-// Buckets-1 before it, filled buckets included.
+// The rolling windows' ends.
+const (
+	RollingThroughCurrent  = "current"
+	RollingThroughPrevious = "previous"
+)
+
+// AggregateRolling adds, per row, the given reducers over a window of Buckets
+// buckets, filled buckets included: this bucket and the Buckets-1 before it,
+// or with Through "previous" the Buckets before it, so a baseline leaves the
+// bucket itself out. A window reaches before the range: the read reduces the
+// buckets it needs there and answers none of them.
 type AggregateRolling struct {
 	Buckets  int                `json:"buckets"`
 	Reducers []AggregateReducer `json:"reducers,omitempty"`
+	Through  string             `json:"through,omitempty"`
 }
 
 // AggregateBudget bounds a read before it runs. Zero is the default.
@@ -392,9 +402,11 @@ type AggregateValue struct {
 	// Code is a coded first or last, or the state a timeInState value is for.
 	Code string `json:"code,omitempty"`
 	// Rolling and Of mark a rolling value: Of is the reducer it rolls over
-	// Rolling buckets.
+	// Rolling buckets. N is the buckets in the window with a value of Of,
+	// fewer than Rolling where the window holds a gap.
 	Rolling int               `json:"rolling,omitempty"`
 	Of      *AggregateReducer `json:"of,omitempty"`
+	N       *int              `json:"n,omitempty"`
 }
 
 // The stream keys a groupBy and the latest read name. A summary's statistic

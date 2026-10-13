@@ -451,9 +451,12 @@ export interface AggregateSources {
   order?: string[]
 }
 
+/** A window of `buckets` buckets ending at the row's own (`through`
+ * `current`, the default) or at the one before it (`previous`). */
 export interface AggregateRolling {
   buckets: number
   reducers?: AggregateReducer[]
+  through?: string
 }
 
 export interface AggregateBudget {
@@ -551,9 +554,11 @@ export interface AggregateValue {
   /** The code a coded `first` or `last` answers, or the state a
    * `timeInState` value is the time of. */
   code?: string
-  /** A rolling value: `of` rolled over `rolling` buckets. */
+  /** A rolling value: `of` rolled over `rolling` buckets, `n` of which held
+   * a value. */
   rolling?: number
   of?: AggregateReducer
+  n?: number
 }
 
 /** One row of the cross-collection change feed. The payload's `properties` key

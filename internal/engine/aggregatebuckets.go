@@ -67,6 +67,10 @@ type aggBucket struct {
 	// range; on a recorded-local bucket, the wall-clock bounds written as UTC.
 	start, end time.Time
 	local      bool
+	// lookback marks a bucket before the range that a rolling window reads:
+	// reduced, filled and rolled, never answered. A recorded-local day may be
+	// two buckets, the part before the range and the part in it.
+	lookback bool
 	// zone is where start and end are written.
 	zone *time.Location
 	// record is the records mode's matched record.
@@ -198,6 +202,15 @@ func (b *aggBucket) shown(ends *rowEnds, rangeFrom, rangeTo time.Time) (time.Tim
 		end = rangeTo.In(end.Location())
 	}
 	return start, end
+}
+
+// rangeOf is the span a bucket's points are taken from: the range, or for a
+// lookback bucket the part of the read before it.
+func (p *aggPlan) rangeOf(b *aggBucket) (from, to time.Time) {
+	if b.lookback {
+		return p.readFrom, p.from
+	}
+	return p.from, p.to
 }
 
 // wallAt writes a wall-clock time (encoded as UTC) at an offset.
@@ -366,17 +379,24 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 	case bucketEvery:
 		first := everyStart(p.from, s.origin, s.every)
 		// The span saturates past 292 years, which is past every budget.
-		if n := int64((p.to.Sub(first)-1)/s.every) + 1; n > int64(limit) {
+		if n := int64((p.to.Sub(first)-1)/s.every) + 1 + int64(p.lookback); n > int64(limit) {
 			return nil, tooMany(int(min(n, 1<<30)))
 		}
 		var out []*aggBucket
+		for start := p.readFrom; start.Before(first); start = start.Add(s.every) {
+			out = append(out, &aggBucket{start: start.UTC(), end: start.Add(s.every).UTC(), zone: p.from.Location(), lookback: true})
+		}
 		for start := first; start.Before(p.to); start = start.Add(s.every) {
 			out = append(out, clipBucket(start, start.Add(s.every), p, p.from.Location()))
 		}
 		return out, nil
 	case bucketCalendar:
 		var out []*aggBucket
-		for start := calStart(p.from, s); start.Before(p.to); start = calNext(start, s) {
+		first := calStart(p.from, s)
+		for start := p.readFrom; start.Before(first); start = calNext(start, s) {
+			out = append(out, &aggBucket{start: start.UTC(), end: calNext(start, s).UTC(), zone: s.loc, lookback: true})
+		}
+		for start := first; start.Before(p.to); start = calNext(start, s) {
 			if len(out) >= limit {
 				return nil, tooMany(len(out) + 1)
 			}
@@ -387,8 +407,12 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 		// The wall clock the range's own offsets name: a range written at
 		// +03:00 is the local days it says.
 		from, to := wallOf(p.from, offsetMinutes(p.from)), wallOf(p.to, offsetMinutes(p.to))
+		first := calStart(from, s)
 		var out []*aggBucket
-		for start := calStart(from, s); start.Before(to); start = calNext(start, s) {
+		for start := calStart(wallOf(p.readFrom, offsetMinutes(p.from)), s); start.Before(first); start = calNext(start, s) {
+			out = append(out, &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, lookback: true})
+		}
+		for start := first; start.Before(to); start = calNext(start, s) {
 			if len(out) >= limit {
 				return nil, tooMany(len(out) + 1)
 			}
@@ -445,16 +469,29 @@ func firstEndingAfter(buckets []*aggBucket, t time.Time, check func() error) (in
 	return lo, nil
 }
 
-// localBucketAt is the recorded-local bucket holding a wall-clock time,
-// created where the range's own enumeration did not reach (a point whose
-// offset puts it on a day the range's offsets do not name).
-func localBucketAt(buckets []*aggBucket, wall time.Time, s bucketSpec) ([]*aggBucket, *aggBucket) {
+// localBucketAt is the recorded-local bucket holding a wall-clock time, a
+// lookback one or one of the range, created where the range's own
+// enumeration did not reach (a point whose offset puts it on a day the
+// range's offsets do not name). The buckets are in start order, a day's
+// lookback bucket before its bucket of the range.
+func localBucketAt(buckets []*aggBucket, wall time.Time, s bucketSpec, lookback bool) ([]*aggBucket, *aggBucket) {
 	start := calStart(wall, s)
-	i, found := slices.BinarySearchFunc(buckets, start, func(b *aggBucket, t time.Time) int { return b.start.Compare(t) })
+	i, found := slices.BinarySearchFunc(buckets, start, func(b *aggBucket, t time.Time) int {
+		if c := b.start.Compare(t); c != 0 {
+			return c
+		}
+		switch {
+		case b.lookback == lookback:
+			return 0
+		case b.lookback:
+			return -1
+		}
+		return 1
+	})
 	if found {
 		return buckets, buckets[i]
 	}
-	b := &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC}
+	b := &aggBucket{start: start, end: calNext(start, s), local: true, zone: time.UTC, lookback: lookback}
 	return slices.Insert(buckets, i, b), b
 }
 

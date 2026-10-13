@@ -59,6 +59,11 @@ type aggPlan struct {
 	// selects by filter alone.
 	metric   string
 	from, to time.Time
+	// readFrom is where the read takes points from: from, or the start of
+	// the buckets before the range a rolling window reads (lookback of them),
+	// which the read reduces and does not answer.
+	readFrom time.Time
+	lookback int
 	hasRange bool
 	bucket   bucketSpec
 	reducers []substrate.AggregateReducer
@@ -304,7 +309,47 @@ func planAggregate(q substrate.AggregateQuery) (*aggPlan, error) {
 			return nil, err
 		}
 	}
+	if err := p.planLookback(); err != nil {
+		return nil, err
+	}
 	return p, nil
+}
+
+// planLookback sets where the read takes points from: a rolling window over
+// the range's first buckets reads the buckets before it, buckets-1 of them,
+// or buckets where the window ends at the previous bucket, so a bucket's
+// rolling value does not depend on where the range starts.
+func (p *aggPlan) planLookback() error {
+	p.readFrom = p.from
+	if p.rolling == nil {
+		return nil
+	}
+	switch p.bucket.mode {
+	case bucketRange:
+		return refuse("aggregate.rolling", "a rolling window rolls over a sequence of buckets; name a bucket")
+	case bucketRecords:
+		return nil
+	}
+	p.lookback = p.rolling.Buckets - 1
+	if p.rolling.Through == substrate.RollingThroughPrevious {
+		p.lookback = p.rolling.Buckets
+	}
+	if p.lookback == 0 {
+		return nil
+	}
+	s := p.bucket
+	switch s.mode {
+	case bucketEvery:
+		p.readFrom = everyStart(p.from, s.origin, s.every).Add(-time.Duration(p.lookback) * s.every)
+	case bucketCalendar:
+		p.readFrom = calStep(calStart(p.from, s), s, -p.lookback)
+	case bucketLocal:
+		// The instant the range's own offset reads the lookback's first
+		// wall-clock bucket start at.
+		wall := wallOf(p.from, offsetMinutes(p.from))
+		p.readFrom = p.from.Add(calStep(calStart(wall, s), s, -p.lookback).Sub(wall))
+	}
+	return nil
 }
 
 // parseReducers checks every reducer's name and argument.
@@ -420,10 +465,17 @@ func (p *aggPlan) parseCommon() error {
 		}
 		for i, rr := range rolled.Reducers {
 			switch rr.Name {
-			case substrate.ReducerAvg, substrate.ReducerSum, substrate.ReducerMin, substrate.ReducerMax:
+			case substrate.ReducerAvg, substrate.ReducerSum, substrate.ReducerMin, substrate.ReducerMax, substrate.ReducerStdDev:
 			default:
-				return refuse(fmt.Sprintf("aggregate.rolling.reducers[%d]", i), "a rolling window takes avg, sum, min or max, not %s", rr.String())
+				return refuse(fmt.Sprintf("aggregate.rolling.reducers[%d]", i), "a rolling window takes avg, sum, min, max or stddev, not %s", rr.String())
 			}
+		}
+		switch rolled.Through {
+		case "", substrate.RollingThroughCurrent:
+			rolled.Through = substrate.RollingThroughCurrent
+		case substrate.RollingThroughPrevious:
+		default:
+			return refuse("aggregate.rolling.through", "%q is not a window's end; a window runs through the current bucket or the previous one", rolled.Through)
 		}
 		p.rolling = &rolled
 	}

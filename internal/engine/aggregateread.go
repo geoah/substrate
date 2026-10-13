@@ -208,7 +208,8 @@ func (r *aggRun) choose(b *aggBucket, raw, sums *aggEvidence) (*aggEvidence, str
 	case raw == nil:
 		return sums, substrate.AggregateFromSummaries
 	}
-	if length := b.length(&raw.ends, r.p.from, r.p.to).Milliseconds(); raw.count > 0 && length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
+	from, to := r.p.rangeOf(b)
+	if length := b.length(&raw.ends, from, to).Milliseconds(); raw.count > 0 && length > 0 && float64(raw.coverage)/float64(length) >= r.p.minCoverage {
 		return raw, substrate.AggregateFromRaw
 	}
 	return sums, substrate.AggregateFromSummaries

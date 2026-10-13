@@ -156,18 +156,23 @@ func TestRecordsAggregateTakesTheStatisticFilter(t *testing.T) {
 }
 
 // The time options of a metric read decode strictly and reach the dataset as
-// written: the recorded-local calendar's fallback zone.
+// written: the recorded-local calendar's fallback zone and a rolling window
+// that ends at the previous bucket.
 func TestRecordsAggregateCarriesTheTimeOptions(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token(fakeRepository)
 	ds := env.svc.datasets[fakeRepository]
 	body := `{"metric":{"ref":"ada.example.com/observations/metric/health/body_mass"},` +
 		`"range":{"gte":"2026-10-01T00:00:00+03:00","lt":"2026-10-04T00:00:00+03:00"},` +
-		`"bucket":{"calendar":"day","fallbackTimezone":"Europe/Athens"},"reducers":["count"]}`
+		`"bucket":{"calendar":"day","fallbackTimezone":"Europe/Athens"},"reducers":["count"],` +
+		`"rolling":{"buckets":30,"reducers":["avg","stddev"],"through":"previous"}}`
 	rec := env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	b := ds.lastAggregate.Aggregate.Bucket
-	if b == nil || b.FallbackTimezone != "Europe/Athens" {
+	a := ds.lastAggregate.Aggregate
+	if b := a.Bucket; b == nil || b.FallbackTimezone != "Europe/Athens" {
 		t.Fatalf("bucket = %+v", b)
+	}
+	if r := a.Rolling; r == nil || r.Buckets != 30 || r.Through != "previous" || len(r.Reducers) != 2 {
+		t.Fatalf("rolling = %+v", r)
 	}
 }

@@ -259,7 +259,8 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 			}
 			pending = append(pending, ev)
 			if local {
-				a, b, wa, wb = append(a, r.p.from), append(b, r.p.to), append(wa, bk.start), append(wb, bk.end)
+				from, to := r.p.rangeOf(bk)
+				a, b, wa, wb = append(a, from), append(b, to), append(wa, bk.start), append(wb, bk.end)
 			} else {
 				a, b, wa, wb = append(a, bk.start), append(b, bk.end), append(wa, bk.start), append(wb, bk.end)
 			}
@@ -515,6 +516,11 @@ func (r *aggRun) chunkEnd(slot, next time.Time, carry *observed.Point) (time.Tim
 		if len(bs) > 0 && bs[0].end.Before(end) {
 			end = bs[0].end
 		}
+	}
+	// The range's start ends the lookback: held time on either side of it
+	// lands in a bucket of its own side.
+	if slot.Before(r.p.from) && r.p.from.Before(end) {
+		end = r.p.from
 	}
 	if !end.After(slot) {
 		end = slot.Add(bucketWidth)

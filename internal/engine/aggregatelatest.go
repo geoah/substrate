@@ -190,7 +190,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	if err != nil {
 		return nil, err
 	}
-	b.add(anchorExpr + ` >= ` + b.arg(p.from) + ` AND ` + anchorExpr + ` < ` + b.arg(p.to))
+	b.add(anchorExpr + ` >= ` + b.arg(p.readFrom) + ` AND ` + anchorExpr + ` < ` + b.arg(p.to))
 	b.add(`jsonb_exists(props, ` + b.arg(name) + `)`)
 	where := strings.Join(b.where, " AND ")
 	var n int64

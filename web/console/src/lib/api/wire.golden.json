@@ -117,7 +117,8 @@
   },
   "AggregateRolling": {
     "buckets": true,
-    "reducers": false
+    "reducers": false,
+    "through": false
   },
   "AggregateRow": {
     "bounded": true,
@@ -142,6 +143,7 @@
   },
   "AggregateValue": {
     "code": false,
+    "n": false,
     "of": false,
     "reducer": true,
     "rolling": false,
