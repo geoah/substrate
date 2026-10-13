@@ -463,7 +463,8 @@ export interface AggregateResult {
    * conversion. */
   exact: boolean
   rows: AggregateRow[]
-  /** Every source that fed a row, by record path. */
+  /** Every source that fed a row, by record path; `""` stands for a stream
+   * that names no source. */
   sources?: string[]
   head: AggregateHead
 }
@@ -485,6 +486,8 @@ export interface AggregateRow {
   record?: AggregateRecord
   /** `raw` or `summaries`: which served the row. */
   from?: string
+  /** The sources that fed the row, by record path; `""` stands for a stream
+   * that names no source. */
   sources?: string[]
   /** An ISO 8601 duration. */
   coverage?: string

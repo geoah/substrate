@@ -1219,6 +1219,12 @@ export function answerUnit(
   return result?.unit
 }
 
+/** The sources that fed a row and have a name: the server answers `""`
+ * for a stream that names no source. */
+export function namedSources(row: AggregateRow): string[] {
+  return (row.sources ?? []).filter(Boolean)
+}
+
 /** The reducer columns an answer carries, in first-seen order. */
 export function answerReducers(
   rows: readonly AggregateRow[]

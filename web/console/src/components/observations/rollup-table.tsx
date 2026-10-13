@@ -19,6 +19,7 @@ import type { AggregateReducer, AggregateRow } from "@/lib/api/types"
 import {
   type AggregateGroupKey,
   coverageWords,
+  namedSources,
   reducerKey,
   reducerLabel,
   reducerName,
@@ -176,8 +177,8 @@ export function RollupTable({
                     )}
                   </td>
                   <td>
-                    {row.sources?.length ? (
-                      row.sources.map(sourceText).join(", ")
+                    {namedSources(row).length ? (
+                      namedSources(row).map(sourceText).join(", ")
                     ) : (
                       <EmptyValue />
                     )}

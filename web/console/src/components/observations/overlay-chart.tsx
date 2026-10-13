@@ -42,6 +42,7 @@ import {
   codeWords,
   coverageWords,
   latestRead,
+  namedSources,
   readingText,
   reducerKey,
   reducerLabel,
@@ -626,10 +627,10 @@ function SeriesDetail({
         {row.coverage && (
           <TipLine label="Covered" value={coverageWords(row.coverage)} />
         )}
-        {row.sources?.length ? (
+        {namedSources(row).length ? (
           <TipLine
-            label={row.sources.length === 1 ? "Source" : "Sources"}
-            value={row.sources.map(sourceText).join(", ")}
+            label={namedSources(row).length === 1 ? "Source" : "Sources"}
+            value={namedSources(row).map(sourceText).join(", ")}
           />
         ) : null}
         {row.from && row.from !== "raw" && (
