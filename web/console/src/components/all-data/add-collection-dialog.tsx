@@ -30,6 +30,7 @@ import { collectionMaker } from "@/lib/agent-grants"
 import { agentsQueryOptions, lastChatQueryOptions } from "@/lib/api/agents"
 import type { KindInfo } from "@/lib/api/types"
 import type { BundleRow } from "@/lib/bundles"
+import { KIND_KIND } from "@/lib/core-kinds"
 import { cn } from "@/lib/utils"
 import { displayPlural } from "@/lib/kind-names"
 
@@ -236,7 +237,8 @@ function Samples() {
 
 function WriteIt() {
   const apply = "substratectl apply -f collection.yaml"
-  const example = "substratectl get kind <reference> -o yaml"
+  // The CLI refuses a bare `kind` (record 0101): the kind kind is named in full.
+  const example = `substratectl get ${KIND_KIND} <reference> -o yaml`
   return (
     <div className="flex flex-col gap-3 text-muted-foreground">
       <p>

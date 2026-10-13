@@ -95,7 +95,7 @@ import {
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
-import { AGENT_KIND } from "@/lib/declarations"
+import { AGENT_KIND } from "@/lib/core-kinds"
 import { propertyLabel } from "@/lib/grid-values"
 import { propSpecsByName, type PropSpec } from "@/lib/record-schema"
 import { agoWords, toolName } from "@/lib/tools"
@@ -194,7 +194,7 @@ export function AgentPage() {
               <Button
                 size="sm"
                 render={
-                  <Link to="/agents" search={{ agent: id } as never}>
+                  <Link to="/agents" search={{ agent: id }}>
                     <MessageSquarePlusIcon />
                     Start a chat
                   </Link>
@@ -540,11 +540,7 @@ function RunLink({
 }) {
   if (isConversation(thread)) {
     return (
-      <Link
-        to="/agents"
-        search={{ thread: thread.id } as never}
-        className={className}
-      >
+      <Link to="/agents" search={{ thread: thread.id }} className={className}>
         {children}
       </Link>
     )

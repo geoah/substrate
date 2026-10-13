@@ -13,6 +13,12 @@
  * This is pure: no queries, no components. It is where the transcript's rules
  * are tested. */
 
+import {
+  CORE_PACKAGE,
+  INTERACTION_KIND,
+  INTERACTION_KIND_PRE_MOVE,
+} from "@/lib/core-kinds"
+
 import { readReference, type SubstrateRecord } from "./types"
 
 /** One changelog entry a dispatch wrote, as the engine stamps it onto the
@@ -161,16 +167,12 @@ const PROPOSE_TOOL = "propose"
 const PROPOSE_CALLABLE = "function:substrate.reamde.dev:core:propose"
 
 /** The change-request kind, as a `changes` stamp spells it. */
-const REQUEST_KIND = "substrate.reamde.dev/core/recordpatchrequest"
+const REQUEST_KIND = `${CORE_PACKAGE}/recordpatchrequest`
 
-/** The interaction kind — a batch of questions the `ask` built-in landed. */
-const INTERACTION_KIND = "substrate.reamde.dev/llm/interaction"
-/** Where that kind was before it moved out of core (decision record 0077). A
- * stamp written before the move still spells it, and a transcript read back
- * years later must still find its interaction. */
-const INTERACTION_KIND_PRE_MOVE = "substrate.reamde.dev/core/llminteraction"
-
-/** The interaction a settled ask landed, from the engine-stamped changes. */
+/** The interaction a settled ask landed, from the engine-stamped changes. A
+ * stamp written before record 0077 moved the kind out of core still spells
+ * the old reference, and a transcript read back years later must still find
+ * its interaction. */
 export function interactionIdOf(call: ToolCallView): string | undefined {
   const stamped = (call.changes ?? []).find(
     (c) =>

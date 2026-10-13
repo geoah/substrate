@@ -428,9 +428,7 @@ export function PackagePage() {
               <Button
                 variant="outline"
                 size="sm"
-                render={
-                  <Link to="/agents" search={{ agent: agentId } as never} />
-                }
+                render={<Link to="/agents" search={{ agent: agentId }} />}
               >
                 <MessageSquareIcon />
                 Ask {actorIdentity(agent!).name}

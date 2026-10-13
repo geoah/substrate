@@ -17,25 +17,26 @@
  * problems panel read one answer. */
 
 import { readReference } from "@/lib/api/types"
+import {
+  AUTH_KINDS,
+  CORE_PACKAGE,
+  FUNCTION_KIND,
+  INTERACTION_KIND,
+  INTERACTION_KIND_PRE_MOVE,
+  KIND_KIND,
+} from "@/lib/core-kinds"
 
 /** The gated `runtime: host` function records, by identity. The source of
  * truth is `kinds/substrate.reamde.dev/core/hostfunctions.yaml`; a tool entry
  * names one of them under `function:` exactly as it names any other function. */
-export const HOST_FUNCTION_QUERY = "substrate.reamde.dev/core/query"
-export const HOST_FUNCTION_WRITE = "substrate.reamde.dev/core/write"
-export const HOST_FUNCTION_PROPOSE = "substrate.reamde.dev/core/propose"
-export const HOST_FUNCTION_ASK = "substrate.reamde.dev/core/ask"
+export const HOST_FUNCTION_QUERY = `${CORE_PACKAGE}/query`
+export const HOST_FUNCTION_WRITE = `${CORE_PACKAGE}/write`
+export const HOST_FUNCTION_PROPOSE = `${CORE_PACKAGE}/propose`
+export const HOST_FUNCTION_ASK = `${CORE_PACKAGE}/ask`
 
 /** The request kind `propose` lands, and the one an agent's write permission
  * must name before it may call the tool (`vocabulary.KindRecordPatchRequest`). */
-export const RECORD_PATCH_REQUEST_KIND =
-  "substrate.reamde.dev/core/recordpatchrequest"
-
-/** The question kind `ask` lands (`vocabulary.KindLLMInteraction`), and the
- * spelling before record 0077 moved it, which the loader still accepts on a
- * stored grant the boot upgrade has not rewritten yet. */
-export const LLM_INTERACTION_KIND = "substrate.reamde.dev/llm/interaction"
-const LLM_INTERACTION_KIND_PRE_MOVE = "substrate.reamde.dev/core/llminteraction"
+export const RECORD_PATCH_REQUEST_KIND = `${CORE_PACKAGE}/recordpatchrequest`
 
 /** The kinds a host tool writes on its own account: the write grant must
  * cover one of each tool's, or the loader refuses the agent. These are the
@@ -45,7 +46,7 @@ const TOOL_OWN_KINDS: ReadonlyArray<{ tool: string; kinds: string[] }> = [
   { tool: HOST_FUNCTION_PROPOSE, kinds: [RECORD_PATCH_REQUEST_KIND] },
   {
     tool: HOST_FUNCTION_ASK,
-    kinds: [LLM_INTERACTION_KIND, LLM_INTERACTION_KIND_PRE_MOVE],
+    kinds: [INTERACTION_KIND, INTERACTION_KIND_PRE_MOVE],
   },
 ]
 const TOOL_OWNED = new Set(TOOL_OWN_KINDS.flatMap((t) => t.kinds))
@@ -62,10 +63,6 @@ export const PERMISSIONS_PROPERTY = "permissions"
 export const READS_GRANT = `${PERMISSIONS_PROPERTY}.reads`
 export const WRITES_GRANT = `${PERMISSIONS_PROPERTY}.writes`
 
-/** The kind whose documents these hints are about, named where the rest of the
- * declaration kinds are. */
-export { AGENT_KIND } from "@/lib/declarations"
-
 /** One unmet precondition: which host function asked for it, which grant
  * answers it, and the sentence to render. */
 export interface GrantHint {
@@ -77,10 +74,6 @@ export interface GrantHint {
   property: string
   message: string
 }
-
-/** The kind a grant's entries point at. Both grants name KINDS: which ones may
- * be written, and which ones may be read. */
-const KIND_KIND = "substrate.reamde.dev/core/kind"
 
 /** The record ONE grant entry names, whichever way it is spelled.
  *
@@ -130,7 +123,7 @@ export function hostToolsOf(properties: Record<string, unknown>): string[] {
     // The entry is a POINTER at a function, so it is the flat path
     // `substrate.reamde.dev/core/function/<identity>`; a short form the
     // server has not canonicalized yet names the same function.
-    const prefix = "substrate.reamde.dev/core/function/"
+    const prefix = `${FUNCTION_KIND}/`
     const named = held.startsWith(prefix) ? held.slice(prefix.length) : held
     if (!known.includes(named) || out.includes(named)) continue
     out.push(named)
@@ -192,7 +185,7 @@ export function grantHints(
           hints.push({
             function: named,
             property: WRITES_GRANT,
-            message: `ask writes an interaction, so data.${WRITES_GRANT} must name ${LLM_INTERACTION_KIND}.`,
+            message: `ask writes an interaction, so data.${WRITES_GRANT} must name ${INTERACTION_KIND}.`,
           })
         }
         break
@@ -320,21 +313,12 @@ export function grantEditProblem(
 /** The grant entry that is every kind: "All your data". */
 export const ALL_KINDS = "*"
 
-/** The auth kinds no glob reaches: a grant that means one names it
- * (`vocabulary.AuthKinds`, record 0080). */
-export const AUTH_KINDS: ReadonlySet<string> = new Set([
-  "substrate.reamde.dev/core/token",
-  "substrate.reamde.dev/core/credential",
-  "substrate.reamde.dev/core/secret",
-  "substrate.reamde.dev/core/recoverykey",
-])
-
 /** The auth kinds a write grant may not name even spelled out: the loader
  * refuses the whole agent (`vocabulary.ownerOnlyKinds`). */
 export const OWNER_ONLY_KINDS: ReadonlySet<string> = new Set([
-  "substrate.reamde.dev/core/token",
-  "substrate.reamde.dev/core/credential",
-  "substrate.reamde.dev/core/recoverykey",
+  `${CORE_PACKAGE}/token`,
+  `${CORE_PACKAGE}/credential`,
+  `${CORE_PACKAGE}/recoverykey`,
 ])
 
 /** Whether a grant entry is a glob rather than one kind. */
@@ -345,7 +329,7 @@ export function isGrantGlob(entry: string): boolean {
 /** Whether one grant entry reaches a kind: `patternCovers` less the auth
  * kinds, which no glob reaches (`vocabulary.GrantMatches`). */
 export function grantCovers(pattern: string, kind: string): boolean {
-  if (isGrantGlob(pattern) && AUTH_KINDS.has(kind)) return false
+  if (isGrantGlob(pattern) && AUTH_KINDS.includes(kind)) return false
   return patternCovers(pattern, kind)
 }
 

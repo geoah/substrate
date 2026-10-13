@@ -16,6 +16,7 @@ import type {
   TriggerStatus,
 } from "@/lib/api/types"
 import { CORE_PACKAGE, splitKind } from "@/lib/api/http"
+import { SYNC_TRAIT } from "@/lib/core-kinds"
 import { kindPackage } from "@/lib/definition"
 
 /** The trait's five words, in the order a legend lists them. */
@@ -265,20 +266,16 @@ export function accountViewOf(
     syncFrequency: str(p.syncFrequency),
     backfillDepth: str(p.backfillDepth),
     legacySyncStatus: legacy,
-    syncable: kindHasTrait(kind, SYNC_TRAIT_IDENTITY),
+    syncable: kindHasTrait(kind, SYNC_TRAIT),
     sync,
     health: healthOf(tokenStatus, sync, legacy),
   }
 }
 
-/** The core `sync` trait by its full identity, the spelling every host check
- * compares (a package-local look-alike can never answer for it). */
-export const SYNC_TRAIT_IDENTITY = "substrate.reamde.dev/core/sync"
-
 /** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and
  * `syncPaused` is Pause, and the sync panel's buttons are their controls. An
  * account form on a kind binding the trait leaves them out for that reason.
- * This is the trait's contract spelled beside its identity (the panel patches
+ * This is the contract of the trait `SYNC_TRAIT` names (the panel patches
  * the same two names), not a list of a provider's property names. */
 export const SYNC_OWNER_HANDS: readonly string[] = [
   "syncRequestedAt",

@@ -406,7 +406,7 @@ export function ChangeRequestDetailPage() {
             {threadId && (
               <Link
                 to="/agents"
-                search={{ thread: threadId } as never}
+                search={{ thread: threadId }}
                 className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 Open the chat

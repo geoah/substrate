@@ -23,6 +23,7 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import { triggerStatusesQueryOptions } from "@/lib/api/sync"
 import type { KindInfo, TriggerStatus } from "@/lib/api/types"
+import { TRIGGER_RUN_KIND } from "@/lib/core-kinds"
 import {
   accountKindOf,
   heldVersions,
@@ -216,7 +217,7 @@ export function useProviders() {
   // The kinds the change feed watches: every account kind, and the run
   // ledger, so a settled delivery re-reads the tools and details too.
   const liveKinds = useMemo(() => {
-    const out = new Set<string>(["substrate.reamde.dev/core/triggerrun"])
+    const out = new Set<string>([TRIGGER_RUN_KIND])
     for (const v of views) if (v.accountKind) out.add(v.accountKind.identity)
     return [...out]
   }, [views])

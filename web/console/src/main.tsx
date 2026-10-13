@@ -11,7 +11,12 @@ import {
   setUnauthorizedHandler,
 } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
+import { reloadOnStaleChunk } from "@/lib/stale-chunks"
 import { router } from "@/router"
+
+// A tab left open across a deploy asks for chunks the server no longer has;
+// one reload picks up the new build.
+reloadOnStaleChunk(window)
 
 // A 401 anywhere drops the session (session.ts does that part); this routes
 // what's left of the page to the login door.

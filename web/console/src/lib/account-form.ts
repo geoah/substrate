@@ -11,7 +11,8 @@
 
 import type { KindInfo } from "@/lib/api/types"
 import { buildFormFields, type FormField } from "@/lib/record-form"
-import { kindHasTrait, SYNC_OWNER_HANDS, SYNC_TRAIT_IDENTITY } from "@/lib/sync"
+import { SYNC_TRAIT } from "@/lib/core-kinds"
+import { kindHasTrait, SYNC_OWNER_HANDS } from "@/lib/sync"
 
 export interface AccountFormGroups {
   /** The bool properties: what to sync. */
@@ -23,7 +24,7 @@ export interface AccountFormGroups {
 }
 
 export function accountFormGroups(kind: KindInfo): AccountFormGroups {
-  const syncable = kindHasTrait(kind, SYNC_TRAIT_IDENTITY)
+  const syncable = kindHasTrait(kind, SYNC_TRAIT)
   const all = buildFormFields(kind).filter(
     (f) => !(syncable && SYNC_OWNER_HANDS.includes(f.name))
   )

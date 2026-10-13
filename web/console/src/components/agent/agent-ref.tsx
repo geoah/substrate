@@ -95,7 +95,7 @@ export function AgentRef({
         link ? (
           <Link
             to="/agents"
-            search={{ agent: id } as never}
+            search={{ agent: id }}
             onClick={(e) => e.stopPropagation()}
           />
         ) : (

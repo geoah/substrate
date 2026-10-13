@@ -73,7 +73,8 @@ import { toast } from "@/components/ui/toast"
 import { createRecord, recordQueryOptions, putRecord } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { ApiError, type SubstrateRecord, type KindInfo } from "@/lib/api/types"
-import { AGENT_KIND, grantHints } from "@/lib/agent-grants"
+import { grantHints } from "@/lib/agent-grants"
+import { AGENT_KIND } from "@/lib/core-kinds"
 import {
   applyManifestYAML,
   formatYAML,

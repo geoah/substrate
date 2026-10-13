@@ -13,11 +13,12 @@
 import { lowerFirst, displayPlural } from "@/lib/kind-names"
 import { readReference, type SubstrateRecord } from "@/lib/api/types"
 import type { ChangeOp } from "@/lib/changerequests"
+import { CORE_PACKAGE } from "@/lib/core-kinds"
 
 /** The write verbs a policy selector matches (policy.go's policyOp*). */
 export type PolicyOp = "put" | "patch" | "delete"
 
-const POLICY_PREFIX = "substrate.reamde.dev/core/recordpatchpolicy/"
+const POLICY_PREFIX = `${CORE_PACKAGE}/recordpatchpolicy/`
 
 /** One "always allow" as the person means it: this agent may make these
  * writes to this kind, past the gate that held them. */

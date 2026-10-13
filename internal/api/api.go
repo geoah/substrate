@@ -4,11 +4,19 @@
 package api
 
 import (
+	"bytes"
+	"compress/gzip"
+	"errors"
+	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -406,6 +414,7 @@ func spaHandler(dir string) http.HandlerFunc {
 		root = abs
 	}
 	index := filepath.Join(root, "index.html")
+	gz := newGzipAssets()
 	return func(w http.ResponseWriter, r *http.Request) {
 		// A URL path never legitimately carries a backslash, and path.Clean does
 		// not read one as a separator: left in, it reaches filepath as one on the
@@ -439,6 +448,9 @@ func spaHandler(dir string) http.HandlerFunc {
 		case err == nil && !info.IsDir():
 			if strings.HasPrefix(rel, assetPrefix) {
 				w.Header().Set("Cache-Control", cacheImmutable)
+				if gz.serve(w, r, file, info) {
+					return
+				}
 			} else {
 				w.Header().Set("Cache-Control", cacheNever)
 			}
@@ -452,4 +464,239 @@ func spaHandler(dir string) http.HandlerFunc {
 			http.ServeFile(w, r, index)
 		}
 	}
+}
+
+// gzipExts are the asset types worth compressing: text a browser parses.
+// Fonts and images are compressed formats already. Each has a type in Go's
+// own table, because a gzip body cannot be sniffed for one.
+var gzipExts = map[string]bool{
+	".js": true, ".mjs": true, ".css": true,
+	".svg": true, ".json": true, ".wasm": true,
+}
+
+const (
+	// gzipMaxFile is the largest asset compressed. The console's biggest
+	// chunk is about 2 MB; a file far past that is not a console asset worth
+	// holding in memory twice.
+	gzipMaxFile = 16 << 20
+	// gzipMaxHeld bounds the compressed copies held at once. A rebuild under
+	// a running server mints new chunk names and the old copies are never
+	// asked for again, so past the bound every held copy is dropped and the
+	// live names are compressed afresh.
+	gzipMaxHeld = 64 << 20
+)
+
+// gzipAssets serves a gzip copy of the console's content-hashed assets,
+// compressed once per file and held in memory. It is not middleware: the
+// watch and chat streams flush per event and must reach the client as they
+// are written, and index.html is small and never cached.
+type gzipAssets struct {
+	mu   sync.Mutex
+	held map[string]*gzipAsset
+	// size is the sum of every held asset's counted bytes.
+	size int
+	// compress and maxHeld are gzipFile and gzipMaxHeld; a test swaps them.
+	compress func(file string, info os.FileInfo) ([]byte, error)
+	maxHeld  int
+}
+
+// gzipAsset is one file's compressed copy, keyed by the stat it was read
+// under so a file replaced in place is compressed again. done closes once
+// body and err are set: every request that arrives meanwhile waits on the one
+// compression rather than reading and compressing the file again, so a burst
+// of cold requests costs one copy of the file, not one per request. A nil
+// body is a file gzip did not shrink.
+type gzipAsset struct {
+	modTime time.Time
+	size    int64
+	done    chan struct{}
+	body    []byte
+	err     error
+	// counted is what this asset adds to gzipAssets.size, under its mu. The
+	// compressing request alone writes body, and only before done closes, so
+	// nothing else may read body without waiting on done.
+	counted int
+}
+
+func newGzipAssets() *gzipAssets {
+	return &gzipAssets{held: map[string]*gzipAsset{}, compress: gzipFile, maxHeld: gzipMaxHeld}
+}
+
+// serve answers r with the gzip copy of file when the client accepts gzip
+// and reports whether it did; on false the caller serves the file as it is.
+func (g *gzipAssets) serve(w http.ResponseWriter, r *http.Request, file string, info os.FileInfo) bool {
+	// ServeFile refuses a URL path with a `..` segment; so does this, by
+	// leaving the request to it.
+	if slices.Contains(strings.Split(r.URL.Path, "/"), "..") {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(file))
+	ctype := mime.TypeByExtension(ext)
+	if !gzipExts[ext] || ctype == "" || info.Size() > gzipMaxFile {
+		return false
+	}
+	// Both answers carry Vary, so a shared cache never hands the compressed
+	// body to a client that did not ask for it.
+	w.Header().Add("Vary", "Accept-Encoding")
+	if !acceptsGzip(strings.Join(r.Header.Values("Accept-Encoding"), ",")) {
+		return false
+	}
+	body, err := g.body(file, info)
+	if err != nil || body == nil {
+		return false
+	}
+	// Set before ServeContent, so it never sniffs the type off gzip bytes.
+	w.Header().Set("Content-Type", ctype)
+	// The copy is served whole. A range of it would be a range of gzip bytes,
+	// and several ranges a multipart body under a gzip Content-Encoding no
+	// client can decode; ignoring Range is always a valid answer, and a 200
+	// with the whole body is what a browser asks a script for anyway.
+	if r.Header.Get("Range") != "" {
+		r = r.Clone(r.Context())
+		r.Header.Del("Range")
+		r.Header.Del("If-Range")
+	}
+	http.ServeContent(gzipBody{w}, r, file, info.ModTime(), bytes.NewReader(body))
+	return true
+}
+
+// gzipBody marks ServeContent's 200 as the gzip copy, and only the 200: a
+// 304 or a 412 carries no body, so a Content-Encoding there names bytes that
+// never come. ServeContent sets the 200's Content-Length itself while
+// Content-Encoding is still unset. It drops the Accept-Ranges ServeContent
+// always sets, because the copy is served whole.
+type gzipBody struct{ http.ResponseWriter }
+
+func (w gzipBody) WriteHeader(code int) {
+	w.Header().Del("Accept-Ranges")
+	if code == http.StatusOK {
+		w.Header().Set("Content-Encoding", "gzip")
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// body returns file's compressed copy, compressing it on the first request
+// under this stat.
+func (g *gzipAssets) body(file string, info os.FileInfo) ([]byte, error) {
+	g.mu.Lock()
+	held := g.held[file]
+	if held != nil && held.size == info.Size() && held.modTime.Equal(info.ModTime()) {
+		g.mu.Unlock()
+		<-held.done
+		return held.body, held.err
+	}
+	if held != nil {
+		g.size -= held.counted
+	}
+	asset := &gzipAsset{modTime: info.ModTime(), size: info.Size(), done: make(chan struct{})}
+	g.held[file] = asset
+	g.mu.Unlock()
+
+	func() {
+		// Closed even if compress panics, so no waiter hangs on it.
+		defer close(asset.done)
+		asset.body, asset.err = g.compress(file, info)
+	}()
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.held[file] != asset {
+		return asset.body, asset.err
+	}
+	if asset.err != nil {
+		// A failed read is not remembered: the next request tries again.
+		delete(g.held, file)
+		return nil, asset.err
+	}
+	if g.size+len(asset.body) > g.maxHeld {
+		// Drop every copy held. An asset still compressing counts nothing
+		// yet and stays, so the requests waiting on it, and the next ones,
+		// still share its one compression.
+		for name, other := range g.held {
+			if other.counted > 0 {
+				delete(g.held, name)
+			}
+		}
+		g.size = 0
+	}
+	asset.counted = len(asset.body)
+	g.size += asset.counted
+	return asset.body, nil
+}
+
+// errAssetChanged is a file that no longer matches the stat its request
+// read: the copy would carry the old Last-Modified, so the request serves
+// the file as it is now instead.
+var errAssetChanged = errors.New("asset changed while it was compressed")
+
+// gzipFile compresses one file, or answers nil when gzip does not shrink it.
+// The bytes it reads must be the ones info describes, before and after the
+// read, and no more than gzipMaxFile of them.
+func gzipFile(file string, info os.FileInfo) ([]byte, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	same := func() bool {
+		now, err := f.Stat()
+		return err == nil && now.Size() == info.Size() && now.ModTime().Equal(info.ModTime())
+	}
+	if !same() {
+		return nil, errAssetChanged
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, gzipMaxFile+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) != info.Size() || !same() {
+		return nil, errAssetChanged
+	}
+	var buf bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := zw.Write(raw); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	if buf.Len() >= len(raw) {
+		return nil, nil
+	}
+	return buf.Bytes(), nil
+}
+
+// acceptsGzip reports whether an Accept-Encoding value admits gzip: named
+// (or as x-gzip) with a non-zero weight, or else covered by a `*` with one
+// (RFC 9110, section 12.5.3). A weight that does not parse admits nothing.
+func acceptsGzip(header string) bool {
+	gzipQ, anyQ := -1.0, -1.0
+	for part := range strings.SplitSeq(header, ",") {
+		coding, params, _ := strings.Cut(part, ";")
+		q := 1.0
+		for param := range strings.SplitSeq(params, ";") {
+			key, value, ok := strings.Cut(param, "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(key), "q") {
+				continue
+			}
+			f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+			if err != nil {
+				f = 0
+			}
+			q = f
+		}
+		switch strings.ToLower(strings.TrimSpace(coding)) {
+		case "gzip", "x-gzip":
+			gzipQ = max(gzipQ, q)
+		case "*":
+			anyQ = max(anyQ, q)
+		}
+	}
+	if gzipQ >= 0 {
+		return gzipQ > 0
+	}
+	return anyQ > 0
 }

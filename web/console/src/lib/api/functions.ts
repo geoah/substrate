@@ -5,6 +5,8 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { FUNCTION_KIND, TRIGGER_RUN_KIND } from "@/lib/core-kinds"
+
 import {
   CORE_AUTHORITY,
   CORE_PACKAGE_NAME,
@@ -16,7 +18,6 @@ import {
 import { fetchRecordsPage, patchRecord } from "./records"
 import type { FunctionCalled, Page, SubstrateRecord } from "./types"
 
-const FUNCTION_KIND = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/function`
 const MESSAGE_KIND = `${LLM_PACKAGE}/message`
 
 /** Every function record: a registry-sized read, one page. */
@@ -151,8 +152,6 @@ export function setTriggerEnabled(
     properties: { enabled },
   })
 }
-
-const TRIGGER_RUN_KIND = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/triggerrun`
 
 /** The newest trigger runs across every trigger: the ledger keeps twenty per
  * trigger plus the parked ones, so one page covers every tool's latest. */

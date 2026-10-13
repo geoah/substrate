@@ -13,7 +13,7 @@
  * the record id alphabet. */
 
 import { splitKind } from "@/lib/api/http"
-import { KIND_KIND } from "@/lib/declarations"
+import { AUTH_KINDS, KIND_KIND } from "@/lib/core-kinds"
 import { splitRecordPath } from "@/lib/record-path"
 import { listWords } from "@/lib/tools"
 
@@ -31,15 +31,6 @@ export function isRecordId(id: string): boolean {
 export function isKindGlob(entry: string): boolean {
   return entry === "*" || entry.endsWith("/*")
 }
-
-/** The four core kinds a glob never reaches (`vocabulary.AuthKinds`, record
- * 0080): an entry has to spell one out to grant it. */
-export const AUTH_KINDS = [
-  "substrate.reamde.dev/core/token",
-  "substrate.reamde.dev/core/credential",
-  "substrate.reamde.dev/core/secret",
-  "substrate.reamde.dev/core/recoverykey",
-] as const
 
 /** What one reference at a kind declaration names: one kind, or a pattern over
  * kinds, spelled as the grant entry (the pin stripped). */

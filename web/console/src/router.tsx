@@ -35,6 +35,7 @@ import {
   oauthReturnSearch,
   type OAuthReturnSearch,
 } from "@/lib/oauth-return"
+import { searchText } from "@/lib/search-params"
 import { ProviderPage } from "@/pages/provider"
 import { ConsoleSettingsPage } from "@/pages/console-settings"
 
@@ -123,18 +124,17 @@ export const registryRoute = createRoute({
 
 // The ranked read as a page. The page reads its state through nuqs; the
 // route declares the same three keys so a typed navigation (the ⌘K palette
-// handing over a query) can spell them, and so nothing strips them.
+// handing over a query) can spell them, and so nothing strips them. A search
+// for `2024` arrives parsed as a number, so each key is read as text.
 export const searchRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/search",
   validateSearch: (
     search: Record<string, unknown>
   ): { q?: string; mode?: string; kind?: string } => ({
-    q: typeof search.q === "string" && search.q ? search.q : undefined,
-    mode:
-      typeof search.mode === "string" && search.mode ? search.mode : undefined,
-    kind:
-      typeof search.kind === "string" && search.kind ? search.kind : undefined,
+    q: searchText(search.q),
+    mode: searchText(search.mode),
+    kind: searchText(search.kind),
   }),
   component: SearchPage,
 })
@@ -197,9 +197,21 @@ export const bundleSettingsRoute = createRoute({
   },
 })
 
+// The chat app. The page reads these four keys through nuqs (pages/agents.tsx);
+// the route declares them so a link into a chat is type-checked. Each is read
+// as text: `?send=1` and a digit-only id arrive parsed as numbers, and a
+// strings-only validator would strip them from the address.
 export const agentsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/agents",
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { thread?: string; agent?: string; prompt?: string; send?: string } => ({
+    thread: searchText(search.thread),
+    agent: searchText(search.agent),
+    prompt: searchText(search.prompt),
+    send: searchText(search.send),
+  }),
   component: AgentsPage,
 })
 
@@ -209,13 +221,9 @@ export const agentRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/agents/$id",
   beforeLoad: ({ search }) => {
-    const thread = (search as Record<string, unknown>).thread
-    if (typeof thread === "string" && thread) {
-      throw redirect({
-        to: "/agents",
-        search: { thread } as never,
-        replace: true,
-      })
+    const thread = searchText((search as Record<string, unknown>).thread)
+    if (thread) {
+      throw redirect({ to: "/agents", search: { thread }, replace: true })
     }
   },
   component: AgentPage,
@@ -344,10 +352,7 @@ export const providerRoute = createRoute({
   validateSearch: (
     search: Record<string, unknown>
   ): OAuthReturnSearch & { account?: string } => ({
-    account:
-      typeof search.account === "string" && search.account
-        ? search.account
-        : undefined,
+    account: searchText(search.account),
     ...oauthReturnSearch(search),
   }),
   component: ProviderPage,
