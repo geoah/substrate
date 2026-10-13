@@ -23,8 +23,8 @@ for key in OPENAI_API_KEY ANTHROPIC_API_KEY; do
   fi
 done
 if [ -n "$missing" ]; then
-  printf 'ci:llm: not set:%s. The job reads both keys from the llm-live environment (docs/testing.md).\n' "$missing" >&2
-  printf '### Live LLM suite not run\n\nNot set:%s. The job reads both keys from the llm-live environment.\n' "$missing" >>"$summary"
+  printf 'ci:llm: not set:%s. The llm live job maps the llm-live environment secret OPENROUTER_API_KEY onto both keys (docs/testing.md).\n' "$missing" >&2
+  printf '### Live LLM suite not run\n\nNot set:%s. The job maps the llm-live environment secret OPENROUTER_API_KEY onto both keys.\n' "$missing" >>"$summary"
   exit 1
 fi
 

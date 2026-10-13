@@ -415,8 +415,9 @@ own.
 
 ### What it covers
 
-**The adapters** (`internal/llm/live_test.go`), once per wire — OpenAI's own
-endpoint and Anthropic's:
+**The adapters** (`internal/llm/live_test.go`), once per wire, against
+OpenAI's own endpoint and Anthropic's unless [an override](#the-endpoints)
+points a wire elsewhere:
 
 - a one-shot completion: content back, and a usage tally the loop's cost
   accounting depends on;
@@ -483,6 +484,23 @@ SUBSTRATE_TEST_ANTHROPIC_MODEL=claude-3-5-haiku-latest mise run test:llm
 
 Both halves honor the same two variables.
 
+### The endpoints
+
+Each wire's endpoint can be re-pointed the same way, at a gateway that speaks
+that wire:
+
+| Variable | Default |
+| -------- | ------- |
+| `SUBSTRATE_TEST_OPENAI_BASE_URL` | `https://api.openai.com/v1` |
+| `SUBSTRATE_TEST_ANTHROPIC_BASE_URL` | empty: the Anthropic wire's own endpoint |
+
+Both halves honor these too, and the chain writes them into the `baseURL` of
+the two `llm/provider` records it creates. A gateway names models its own way,
+so its model slugs go in the two model variables above. CI runs through
+OpenRouter ([in CI](#in-ci)); to run a pass the same way, set both keys to one
+OpenRouter key and copy the four variables from the run step in
+`.github/workflows/llm-live.yml`.
+
 ### The spend ceilings
 
 `maxTokens` caps one answer and cannot cap a pass: a case that loops, a retry
@@ -526,13 +544,20 @@ titled ``Weekly `llm live` job fails: `mise run test:llm` is red on main``: the
 first failure opens it, a later one reopens it if it was closed, and the next
 passing run closes it (`.mise/llmliveissue.sh`).
 
-The keys are the Actions secrets `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` in
-the `llm-live` environment, whose deployment branch rule admits `main` alone.
-They are CI-only keys, used for nothing else, and the owner sets a spend cap
-on each at the provider: a project budget at OpenAI, a workspace spend limit
-at Anthropic. That cap still holds if the ceilings above have a bug. The
-environment has no required reviewers, because a reviewer rule would hold
-every scheduled run until somebody approved it.
+The job runs through [OpenRouter](https://openrouter.ai), which speaks both
+wires. Its one key is the Actions secret `OPENROUTER_API_KEY` in the
+`llm-live` environment, whose deployment branch rule admits `main` alone. The
+run step maps that key onto both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`,
+and points the OpenAI wire at `https://openrouter.ai/api/v1` with the model
+`openai/gpt-4.1-mini` and the Anthropic wire at `https://openrouter.ai/api`
+with `anthropic/claude-haiku-4.5`. The weekly job therefore tests the adapters
+against OpenRouter's implementation of each wire, not against OpenAI's or
+Anthropic's own endpoint.
+
+The key is a CI-only key, used for nothing else, and the owner sets a spend
+cap on it at OpenRouter. That cap still holds if the ceilings above have a
+bug. The environment has no required reviewers, because a reviewer rule would
+hold every scheduled run until somebody approved it.
 
 ### Why it stays out of the default suites
 
@@ -642,8 +667,8 @@ the image and runs grype over it, failing on a high or critical advisory
 that has a fixed version. It runs on a push to `main` and weekly, never on a
 pull request, because it builds the whole image.
 
-The `llm live` workflow runs `ci:llm`, the live suite against the real
-providers, weekly on `main` and on dispatch, never on a pull request, and
+The `llm live` workflow runs `ci:llm`, the live suite through OpenRouter,
+weekly on `main` and on dispatch, never on a pull request, and
 `mise run ci` leaves it out; [the live tests](#in-ci) describe it.
 
 ### The database suite, cut for the runner

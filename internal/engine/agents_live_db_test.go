@@ -16,10 +16,15 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/geoah/substrate/internal/llm"
@@ -31,6 +36,8 @@ import (
 const (
 	liveOpenAIModel    = "gpt-4.1-mini"
 	liveAnthropicModel = "claude-haiku-4-5"
+	// The openai wire has no endpoint of its own.
+	liveOpenAIBaseURL = "https://api.openai.com/v1"
 )
 
 // The chain's budgets. A meter on every client the loop builds
@@ -53,13 +60,35 @@ const (
 	liveChainMaxTokens     = 256
 )
 
-// liveAgentModel reads the same override variables internal/llm's live suite
+// liveSetting reads the same override variables internal/llm's live suite
 // honors, so one export re-points both halves.
-func liveAgentModel(env, fallback string) string {
-	if m := os.Getenv(env); m != "" {
-		return m
+func liveSetting(env, fallback string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
 	}
 	return fallback
+}
+
+// liveChainWire is one wire's side of the chain: the key and endpoint its
+// provider row carries, and the model its agent asks.
+type liveChainWire struct {
+	key, baseURL, model string
+}
+
+// liveChainWires is both sides of the chain as the environment names them.
+// An empty anthropic baseURL is that wire's own endpoint.
+func liveChainWires(openaiKey, anthropicKey string) (openai, anthropic liveChainWire) {
+	openai = liveChainWire{
+		key:     openaiKey,
+		baseURL: liveSetting("SUBSTRATE_TEST_OPENAI_BASE_URL", liveOpenAIBaseURL),
+		model:   liveSetting("SUBSTRATE_TEST_OPENAI_MODEL", liveOpenAIModel),
+	}
+	anthropic = liveChainWire{
+		key:     anthropicKey,
+		baseURL: os.Getenv("SUBSTRATE_TEST_ANTHROPIC_BASE_URL"),
+		model:   liveSetting("SUBSTRATE_TEST_ANTHROPIC_MODEL", liveAnthropicModel),
+	}
+	return openai, anthropic
 }
 
 // liveKeys gates the whole test: both wires or nothing. It runs BEFORE any
@@ -150,34 +179,154 @@ func TestAgentChainMeterRefusesTheCompletionPastTheTokenCeiling(t *testing.T) {
 	}
 }
 
-func TestLiveAgentChainAcrossWires(t *testing.T) {
+// The chain's override variables, read without a key or a database: CI points
+// both wires at a gateway through them, and a misspelled one would send that
+// gateway's key to the provider's own endpoint.
+func TestChainWiresReadTheLiveOverrides(t *testing.T) {
+	t.Setenv("SUBSTRATE_TEST_OPENAI_BASE_URL", "https://gateway.example.com/api/v1")
+	t.Setenv("SUBSTRATE_TEST_ANTHROPIC_BASE_URL", "https://gateway.example.com/api")
+	t.Setenv("SUBSTRATE_TEST_OPENAI_MODEL", "openai/gpt-4.1-mini")
+	t.Setenv("SUBSTRATE_TEST_ANTHROPIC_MODEL", "anthropic/claude-haiku-4.5")
+	openai, anthropic := liveChainWires("ko", "ka")
+	if want := (liveChainWire{"ko", "https://gateway.example.com/api/v1", "openai/gpt-4.1-mini"}); openai != want {
+		t.Fatalf("openai side %+v, want %+v", openai, want)
+	}
+	if want := (liveChainWire{"ka", "https://gateway.example.com/api", "anthropic/claude-haiku-4.5"}); anthropic != want {
+		t.Fatalf("anthropic side %+v, want %+v", anthropic, want)
+	}
+
+	for _, env := range []string{"SUBSTRATE_TEST_OPENAI_BASE_URL", "SUBSTRATE_TEST_ANTHROPIC_BASE_URL", "SUBSTRATE_TEST_OPENAI_MODEL", "SUBSTRATE_TEST_ANTHROPIC_MODEL"} {
+		t.Setenv(env, "")
+	}
+	openai, anthropic = liveChainWires("ko", "ka")
+	if want := (liveChainWire{"ko", "https://api.openai.com/v1", "gpt-4.1-mini"}); openai != want {
+		t.Fatalf("openai side unset %+v, want %+v", openai, want)
+	}
+	if want := (liveChainWire{"ka", "", "claude-haiku-4-5"}); anthropic != want {
+		t.Fatalf("anthropic side unset %+v, want %+v", anthropic, want)
+	}
+}
+
+// The live chain's own rows and crew under a gateway's model slugs, which
+// carry a slash: the provider row's pricing table, the agent manifests, the
+// pricing lookup and the thread row all take a slug as written. Each agent
+// runs one turn against a scripted endpoint laid out like OpenRouter: the
+// speller on the OpenAI wire under /api/v1, the conductor on the Anthropic
+// wire under /api.
+func TestAgentChainCrewTakesGatewayModelSlugs(t *testing.T) {
 	t.Parallel()
-	openaiKey, anthropicKey := liveKeys(t)
 	ctx := context.Background()
-
-	openaiModel := liveAgentModel("SUBSTRATE_TEST_OPENAI_MODEL", liveOpenAIModel)
-	anthropicModel := liveAgentModel("SUBSTRATE_TEST_ANTHROPIC_MODEL", liveAnthropicModel)
-
 	ds := openInternalDataset(t)
+	fake := newFakeLLM(t)
+	var (
+		mu       sync.Mutex
+		messages []gatewayMessagesRequest
+	)
+	gateway := http.NewServeMux()
+	gateway.Handle("/api/v1/chat/completions", http.StripPrefix("/api/v1", http.HandlerFunc(fake.handle)))
+	gateway.HandleFunc("/api/v1/messages", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		model, _ := req["model"].(string)
+		mu.Lock()
+		messages = append(messages, gatewayMessagesRequest{model, r.Header.Get("X-Api-Key")})
+		mu.Unlock()
+		// No tool call, so the conductor settles on its first turn.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "msg_1", "type": "message", "role": "assistant", "model": model,
+			"stop_reason": "end_turn",
+			"content":     []any{map[string]any{"type": "text", "text": "DONE five"}},
+			"usage":       map[string]any{"input_tokens": 10, "output_tokens": 5},
+		})
+	})
+	srv := httptest.NewServer(gateway)
+	t.Cleanup(srv.Close)
+
+	openai := liveChainWire{key: "row-key-openai", baseURL: srv.URL + "/api/v1", model: "openai/gpt-4.1-mini"}
+	anthropic := liveChainWire{key: "row-key-anthropic", baseURL: srv.URL + "/api", model: "anthropic/claude-haiku-4.5"}
+	installLiveChain(t, ds, openai, anthropic)
+
+	for id, w := range map[string]liveChainWire{"liveopenai": openai, "liveanthropic": anthropic} {
+		pc, err := ds.resolveProvider(ctx, id)
+		if err != nil {
+			t.Fatalf("resolve %s: %v", id, err)
+		}
+		if pc.cfg.BaseURL != w.baseURL {
+			t.Fatalf("%s base URL %q, want %q", id, pc.cfg.BaseURL, w.baseURL)
+		}
+		if price, ok := pc.pricing[w.model]; !ok || price.inPer1M <= 0 {
+			t.Fatalf("%s pricing %+v has no price for %q", id, pc.pricing, w.model)
+		}
+	}
+
+	fake.script(openai.model, fakeTurn{content: "five"})
+	for _, c := range []struct {
+		agent, input string
+		w            liveChainWire
+	}{
+		{"speller", "5", openai},
+		{"conductor", "Run the procedure.", anthropic},
+	} {
+		res, err := ds.CallAgent(ctx, crewPackage+"/"+c.agent, c.input)
+		if err != nil {
+			t.Fatalf("call the %s: %v", c.agent, err)
+		}
+		if res.Status != threadOK || res.CostUSD <= 0 {
+			t.Fatalf("%s: status %q (%s), cost %v", c.agent, res.Status, res.Reason, res.CostUSD)
+		}
+		threads := agentThreadsOf(t, ds, c.agent)
+		if len(threads) != 1 || threads[0]["model"] != c.w.model {
+			t.Fatalf("%s threads %+v, want one on %q", c.agent, threads, c.w.model)
+		}
+	}
+	if got := len(fake.requestsOf(openai.model)); got != 1 {
+		t.Fatalf("the endpoint saw %d completions for %q, want 1", got, openai.model)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if want := []gatewayMessagesRequest{{anthropic.model, anthropic.key}}; !slices.Equal(messages, want) {
+		t.Fatalf("the Anthropic wire saw %+v, want %+v", messages, want)
+	}
+}
+
+// gatewayMessagesRequest is what the scripted Anthropic wire records of one
+// request: the model it names and the key it pays with.
+type gatewayMessagesRequest struct {
+	model, key string
+}
+
+// installLiveChain puts the chain's two provider rows and installs its crew:
+// the add function, the OpenAI-backed speller and the Anthropic-backed
+// conductor.
+func installLiveChain(t *testing.T, ds *dataset, openai, anthropic liveChainWire) {
+	t.Helper()
+	ctx := context.Background()
 
 	// Two provider rows, put like any other record. Pricing is what turns the
 	// token tally into costUSD, so both rows carry the model under test.
 	for _, p := range []struct {
-		id      string
-		props   map[string]any
-		pricing []any
+		id, wire string
+		w        liveChainWire
+		in, out  string
 	}{
-		{"liveopenai", map[string]any{
-			"wire": "openai", "baseURL": "https://api.openai.com/v1", "apiKey": openaiKey,
-		}, []any{map[string]any{"model": openaiModel, "inputPer1M": "0.4", "outputPer1M": "1.6"}}},
-		{"liveanthropic", map[string]any{
-			// No baseURL: the anthropic wire has its own endpoint.
-			"wire": "anthropic", "apiKey": anthropicKey,
-		}, []any{map[string]any{"model": anthropicModel, "inputPer1M": "1", "outputPer1M": "5"}}},
+		{"liveopenai", "openai", openai, "0.4", "1.6"},
+		{"liveanthropic", "anthropic", anthropic, "1", "5"},
 	} {
-		p.props["pricing"] = p.pricing
+		props := map[string]any{
+			"wire": p.wire, "apiKey": p.w.key,
+			"pricing": []any{map[string]any{"model": p.w.model, "inputPer1M": p.in, "outputPer1M": p.out}},
+		}
+		// A url property refuses the empty string, and an anthropic row
+		// without one buys from the wire's own endpoint.
+		if p.w.baseURL != "" {
+			props["baseURL"] = p.w.baseURL
+		}
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: typeProvider, ID: p.id, Properties: p.props,
+			Kind: typeProvider, ID: p.id, Properties: props,
 		}); err != nil {
 			t.Fatalf("put llm/provider %s: %v", p.id, err)
 		}
@@ -208,7 +357,7 @@ def main(input, host):
 		}),
 		vocabulary.AgentManifest(crewPackage, "speller", map[string]any{
 			"provider":    "liveopenai",
-			"model":       openaiModel,
+			"model":       openai.model,
 			"description": "Spells a number in English words.",
 			"prompt":      "You are given a number. Reply with only that number spelled in English words. Nothing else.",
 			"params":      map[string]any{"maxTokens": liveChainMaxTokens},
@@ -216,7 +365,7 @@ def main(input, host):
 		}),
 		vocabulary.AgentManifest(crewPackage, "conductor", map[string]any{
 			"provider":    "liveanthropic",
-			"model":       anthropicModel,
+			"model":       anthropic.model,
 			"description": "Adds two numbers and has the result spelled out.",
 			"prompt": strings.Join([]string{
 				"Follow these steps exactly, in order, using the tools you are given.",
@@ -237,6 +386,16 @@ def main(input, host):
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install the live crew: %v", err)
 	}
+}
+
+func TestLiveAgentChainAcrossWires(t *testing.T) {
+	t.Parallel()
+	openaiKey, anthropicKey := liveKeys(t)
+	ctx := context.Background()
+
+	ds := openInternalDataset(t)
+	openai, anthropic := liveChainWires(openaiKey, anthropicKey)
+	installLiveChain(t, ds, openai, anthropic)
 
 	ledger := livespend.New("agent chain (internal/engine)", liveChainMaxRequests, liveChainTokenCeiling)
 	meterAgents(ds, ledger)

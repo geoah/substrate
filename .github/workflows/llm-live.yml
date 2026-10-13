@@ -1,16 +1,20 @@
-# The live LLM suite (`mise run test:llm`) against the real OpenAI and
-# Anthropic APIs, weekly on main and on dispatch. Never on a pull request.
+# The live LLM suite (`mise run test:llm`) through OpenRouter, weekly on main
+# and on dispatch. Never on a pull request.
 #
-# It holds provider keys and buys completions, so it is not a check: a pull
-# request, a fork's above all, must not reach the keys, and a provider outage
+# It holds an API key and buys completions, so it is not a check: a pull
+# request, a fork's above all, must not reach the key, and a provider outage
 # must not block a merge its diff did not cause. A failed run comments on ONE
 # tracking issue (.mise/llmliveissue.sh) and the next passing run closes it.
 #
-# The keys are secrets of the `llm-live` environment, whose deployment branch
-# rule admits main alone, and they are CI-only keys with a spend cap set at
-# each provider. The suite adds its own ceilings per test binary: 24 requests
-# and 20,000 tokens for the adapter cases, 14 requests and 20,000 tokens for
-# the agent chain (docs/testing.md).
+# The key is OPENROUTER_API_KEY, a secret of the `llm-live` environment, whose
+# deployment branch rule admits main alone. It is a CI-only OpenRouter key with
+# a spend cap set at OpenRouter. OpenRouter speaks both wires the suite tests,
+# so the run step maps the one key onto both key variables and points each
+# wire's base URL and model at OpenRouter's endpoint and slug for it. The job
+# therefore tests the adapters against OpenRouter's implementation of each
+# wire, not OpenAI's or Anthropic's own endpoint. The suite adds its own
+# ceilings per test binary: 24 requests and 20,000 tokens for the adapter
+# cases, 14 requests and 20,000 tokens for the agent chain (docs/testing.md).
 #
 # Every action is pinned to a commit SHA, for the reasons ci.yml gives.
 name: llm live
@@ -74,7 +78,7 @@ jobs:
         with:
           persist-credentials: false
       # Go installed afresh, never restored from the Actions cache: the
-      # provider keys reach the go this step puts on PATH, and any job on main
+      # provider key reaches the go this step puts on PATH, and any job on main
       # can write the cache entry a restore would read.
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
@@ -82,15 +86,19 @@ jobs:
           version: 2026.9.2
           install_args: go
           cache: false
-      # The keys reach this step alone. go test's default 10 minute timeout
+      # The key reaches this step alone. go test's default 10 minute timeout
       # fails a hung case inside this step's 20, and the job's 30 leave the
       # tracking issue steps their turn: a job that times out is cancelled,
       # and a cancelled job runs no failure() step.
       - timeout-minutes: 20
         run: mise run ci:llm
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          SUBSTRATE_TEST_OPENAI_BASE_URL: https://openrouter.ai/api/v1
+          SUBSTRATE_TEST_ANTHROPIC_BASE_URL: https://openrouter.ai/api
+          SUBSTRATE_TEST_OPENAI_MODEL: openai/gpt-4.1-mini
+          SUBSTRATE_TEST_ANTHROPIC_MODEL: anthropic/claude-haiku-4.5
       - if: failure()
         run: .mise/llmliveissue.sh failure
         env:

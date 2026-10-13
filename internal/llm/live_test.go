@@ -23,14 +23,21 @@ import (
 	"github.com/geoah/substrate/internal/llm/livespend"
 )
 
-// The cheapest model on each wire that still calls tools reliably. Both are
-// overridable, so a key without one of them is one env var away from green.
+// The cheapest model on each wire that still calls tools reliably, and the
+// endpoint each wire buys from. Every one is overridable: a key without one of
+// the models is one env var away from green, and CI runs both wires through a
+// gateway that speaks them (docs/testing.md).
 const (
 	liveOpenAIModel    = "gpt-4.1-mini"
 	liveAnthropicModel = "claude-haiku-4-5"
+	// OpenAI's own endpoint, spelled out: the openai wire has no default of
+	// its own. The anthropic wire's default is empty, the wire's own endpoint.
+	liveOpenAIBaseURL = "https://api.openai.com/v1"
 
-	liveOpenAIModelEnv    = "SUBSTRATE_TEST_OPENAI_MODEL"
-	liveAnthropicModelEnv = "SUBSTRATE_TEST_ANTHROPIC_MODEL"
+	liveOpenAIModelEnv      = "SUBSTRATE_TEST_OPENAI_MODEL"
+	liveAnthropicModelEnv   = "SUBSTRATE_TEST_ANTHROPIC_MODEL"
+	liveOpenAIBaseURLEnv    = "SUBSTRATE_TEST_OPENAI_BASE_URL"
+	liveAnthropicBaseURLEnv = "SUBSTRATE_TEST_ANTHROPIC_BASE_URL"
 )
 
 // liveMaxTokens caps every live request. These tests spend real money; nothing
@@ -87,11 +94,55 @@ func liveKey(t *testing.T, name string) string {
 	return key
 }
 
-func liveModel(env, fallback string) string {
-	if m := os.Getenv(env); m != "" {
-		return m
+func liveSetting(env, fallback string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
 	}
 	return fallback
+}
+
+// liveEndpoint is one wire's live target: the key that pays, and the endpoint
+// and model its override variables name.
+type liveEndpoint struct {
+	wire       Wire
+	keyEnv     string
+	baseURLEnv string
+	baseURL    string
+	modelEnv   string
+	model      string
+}
+
+var (
+	liveOpenAI = liveEndpoint{
+		wire: WireOpenAI, keyEnv: "OPENAI_API_KEY",
+		baseURLEnv: liveOpenAIBaseURLEnv, baseURL: liveOpenAIBaseURL,
+		modelEnv: liveOpenAIModelEnv, model: liveOpenAIModel,
+	}
+	liveAnthropic = liveEndpoint{
+		wire: WireAnthropic, keyEnv: "ANTHROPIC_API_KEY",
+		baseURLEnv: liveAnthropicBaseURLEnv,
+		modelEnv:   liveAnthropicModelEnv, model: liveAnthropicModel,
+	}
+)
+
+func (e liveEndpoint) config(key string) Config {
+	return Config{BaseURL: liveSetting(e.baseURLEnv, e.baseURL), APIKey: key}
+}
+
+func (e liveEndpoint) modelName() string {
+	return liveSetting(e.modelEnv, e.model)
+}
+
+// client gates on the wire's key, then builds its client behind the pass's
+// meter.
+func (e liveEndpoint) client(t *testing.T) (Client, string) {
+	t.Helper()
+	key := liveKey(t, e.keyEnv)
+	c, err := New(e.wire, e.config(key))
+	if err != nil {
+		t.Fatalf("build %s client: %v", e.wire, err)
+	}
+	return liveMeter{string(e.wire), liveLedger, c}, e.modelName()
 }
 
 func liveContext(t *testing.T) context.Context {
@@ -111,27 +162,8 @@ type liveWire struct {
 
 func liveWires() []liveWire {
 	return []liveWire{
-		{"openai", func(t *testing.T) (Client, string) {
-			t.Helper()
-			key := liveKey(t, "OPENAI_API_KEY")
-			// The canonical endpoint, spelled out: this wire is spoken by a
-			// dozen gateways and the test means OpenAI's own.
-			c, err := New(WireOpenAI, Config{BaseURL: "https://api.openai.com/v1", APIKey: key})
-			if err != nil {
-				t.Fatalf("build openai client: %v", err)
-			}
-			return liveMeter{"openai", liveLedger, c}, liveModel(liveOpenAIModelEnv, liveOpenAIModel)
-		}},
-		{"anthropic", func(t *testing.T) (Client, string) {
-			t.Helper()
-			key := liveKey(t, "ANTHROPIC_API_KEY")
-			// No BaseURL: the adapter's default, Anthropic's own endpoint.
-			c, err := New(WireAnthropic, Config{APIKey: key})
-			if err != nil {
-				t.Fatalf("build anthropic client: %v", err)
-			}
-			return liveMeter{"anthropic", liveLedger, c}, liveModel(liveAnthropicModelEnv, liveAnthropicModel)
-		}},
+		{"openai", liveOpenAI.client},
+		{"anthropic", liveAnthropic.client},
 	}
 }
 
@@ -286,14 +318,9 @@ func TestLiveAnthropicConsecutiveUserTurns(t *testing.T) {
 	// history legally holds two user turns in a row, and anthropicMessages
 	// merges them into one. Without the fold this is a 400, forever — which is
 	// why it is worth one live request.
-	key := liveKey(t, "ANTHROPIC_API_KEY")
-	c, err := New(WireAnthropic, Config{APIKey: key})
-	if err != nil {
-		t.Fatalf("build anthropic client: %v", err)
-	}
-	client := liveMeter{"anthropic", liveLedger, c}
+	client, model := liveAnthropic.client(t)
 	res, err := client.Complete(liveContext(t), Request{
-		Model:  liveModel(liveAnthropicModelEnv, liveAnthropicModel),
+		Model:  model,
 		System: "Answer with exactly one word.",
 		Messages: []Message{
 			{Role: RoleUser, Content: "Remember the number 7."},
