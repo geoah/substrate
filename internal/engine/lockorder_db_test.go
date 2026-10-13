@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -106,7 +107,7 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 		})
 	}()
 
-	time.Sleep(400 * time.Millisecond)
+	waitParked(t, ds, 1, "record|"+raceWidget+"|mmm")
 	// zzz must still be free: the transaction parked at the canonical mmm in
 	// the global order, having NOT yet locked the larger id. Pre-fix it would
 	// already hold zzz (raw list) and be waiting on mmm only inside applyEffect.
@@ -253,7 +254,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 		})
 	}()
 
-	time.Sleep(400 * time.Millisecond)
+	waitParked(t, ds, 1, "subject|"+subjPerson)
 	// Neither record may be locked yet: the plan parked at subject|person, its
 	// first lock. Pre-fix it would already hold record|<person> and record|c-s.
 	if !tryLockFree(t, ds, "record|"+subjPerson+"|"+person) {
@@ -337,7 +338,7 @@ func TestEffectSubjectLockCoversAReferencedSource(t *testing.T) {
 		})
 	}()
 
-	time.Sleep(400 * time.Millisecond)
+	waitParked(t, ds, 1, "subject|"+subjPerson)
 	if !tryLockFree(t, ds, "record|"+csrcNote+"|n-1") {
 		t.Fatal("the effect plan locked the note before subject|person: a referenced source's subject key is missing from the plan")
 	}
@@ -464,7 +465,7 @@ func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 		done <- err
 	}()
 
-	time.Sleep(400 * time.Millisecond)
+	waitParked(t, ds, 1, registryDepKey(ds))
 	// The trigger record must still be free: the owner write parked at the
 	// shared dep lock, its FIRST lock. Pre-fix it would already hold the
 	// record lock and be waiting on the dep lock inside apply — the exact
@@ -519,7 +520,9 @@ func TestEffectAddressingSerializesWithMerge(t *testing.T) {
 		_, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: w.Kind, Winner: w.ID, Loser: l.ID})
 		mergeDone <- err
 	}()
-	time.Sleep(300 * time.Millisecond) // the merge now holds the advisory locks
+	// The merge holds the changelog and record advisory locks and waits on
+	// the loser's row.
+	waitRowParked(t, ds, 1)
 
 	effectDone := make(chan error, 1)
 	go func() {
@@ -530,7 +533,9 @@ func TestEffectAddressingSerializesWithMerge(t *testing.T) {
 			})
 		})
 	}()
-	time.Sleep(300 * time.Millisecond) // the effect must queue behind the advisory lock
+	// The effect queues behind the merge's advisory locks: the changelog
+	// lock inTx takes first, or the loser's record lock behind it.
+	waitParked(t, ds, 1, changelogLockKey, "record|"+raceWidget+"|"+l.ID)
 
 	select {
 	case err := <-effectDone:
@@ -632,17 +637,24 @@ func TestEffectListLocksInGlobalOrder(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
-	for _, effects := range [][]effect{calleeFirst, callerFirst} {
+	start := func(effects []effect) {
 		wg.Add(1)
-		go func(effects []effect) {
+		go func() {
 			defer wg.Done()
 			errs <- apply(effects)
-		}(effects)
+		}()
 	}
 	// Both must be parked at the barrier — and neither may hold the LARGER
 	// id yet: the probe's try-lock on z succeeds only if both transactions
-	// queued at a first, in the global order.
-	time.Sleep(400 * time.Millisecond)
+	// queued at a first, in the global order. inTx takes the changelog lock
+	// first, so only one reaches its record locks while the barrier stands:
+	// calleeFirst goes in first and parks at the barrier on a, the list a raw
+	// effect order would have lock z first, and callerFirst parks behind it
+	// at the changelog lock.
+	start(calleeFirst)
+	waitParked(t, ds, 1, "record|"+raceWidget+"|"+a.ID)
+	start(callerFirst)
+	waitParked(t, ds, 1, changelogLockKey)
 	var free bool
 	probe, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -728,7 +740,7 @@ func TestGCSweepSerializesWithPutAtSameID(t *testing.T) {
 // produced. In a parked round a barrier transaction holds the tombstone's row
 // lock until the first racer is parked on it and the second is queued behind
 // the first on the changelog lock. Every wait polls the server's lock tables
-// under a deadline (waitUntil, waitParkedOn), because a sleep cannot show that
+// under a deadline (waitUntil, waitParked), because a sleep cannot show that
 // a racer reached its wait, and the barrier rolls back on every exit so a
 // failed assertion cannot leave a racer blocked behind it.
 func raceSweepAgainstPut(t *testing.T, ds *dataset, id string, shape sweepRound) string {
@@ -793,9 +805,7 @@ func raceSweepAgainstPut(t *testing.T, ds *dataset, id string, shape sweepRound)
 			startSweep()
 		}
 		// The second racer queues on the changelog lock inTx takes first.
-		if err := waitParkedOn(t, ds, changelogLockKey); err != nil {
-			t.Fatalf("%s: the second racer did not queue behind the first: %v", id, err)
-		}
+		waitParked(t, ds, 1, changelogLockKey)
 		_ = barrier.Rollback()
 	}
 	if err := <-gcDone; err != nil {
@@ -903,17 +913,32 @@ func assertSweepOutcome(t *testing.T, ds *dataset, id string) string {
 // cycle with 40P01. With the changelog first, both park there, having locked
 // nothing, and run one after the other.
 
-// waitParked waits until n sessions are parked on one advisory key of this
-// repository, the pg_locks probe registrydelete_db_test.go waitParkedOn makes
-// for one, so a probe that follows runs after the writer reached the lock and
-// not before, whatever the runner's load.
-func waitParked(t *testing.T, ds *dataset, name string, n int) {
+// waitParked waits until n sessions are parked, ungranted, on the advisory
+// locks of this repository named here, counted together, so a probe that
+// follows runs after the racer reached its lock and not before, whatever the
+// runner's load. A probe that ran first would find every lock free against
+// the unfixed lock order too, and pass.
+func waitParked(t *testing.T, ds *dataset, n int, names ...string) {
 	t.Helper()
-	ctx := context.Background()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
+		if parkedOn(t, ds, names...) >= n {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("%d sessions never parked on %s within the bound", n, strings.Join(names, " or "))
+}
+
+// parkedOn counts the sessions waiting, ungranted, on the named advisory
+// locks of this repository. A 64-bit advisory key shows in pg_locks as
+// classid (high word) and objid (low word), objsubid 1.
+func parkedOn(t *testing.T, ds *dataset, names ...string) int {
+	t.Helper()
+	total := 0
+	for _, name := range names {
 		var waiting int
-		if err := ds.db.QueryRowContext(ctx, `
+		if err := ds.db.QueryRowContext(context.Background(), `
 			SELECT count(*) FROM pg_locks
 			WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
 			  AND classid::bigint = ((hashtext(current_schema() || '|' || $1)::bigint >> 32) & 4294967295)
@@ -921,12 +946,34 @@ func waitParked(t *testing.T, ds *dataset, name string, n int) {
 			ds.scope.lockKey(name)).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
+		total += waiting
+	}
+	return total
+}
+
+// waitRowParked waits until n sessions of this test's database wait for
+// another transaction to release a row. A FOR UPDATE behind a held row waits
+// on the holder's transaction id, which pg_locks lists with no database, so
+// the waiter's session names the database. The pool's role sees another
+// session's database but not its wait event, which is why the wait is read
+// from pg_locks.
+func waitRowParked(t *testing.T, ds *dataset, n int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var waiting int
+		if err := ds.db.QueryRowContext(context.Background(), `
+			SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+			WHERE l.locktype = 'transactionid' AND NOT l.granted
+			  AND a.datname = current_database()`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
 		if waiting >= n {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("%d sessions never parked on %s within the bound", n, name)
+	t.Fatalf("%d sessions never parked on a row lock within the bound", n)
 }
 
 func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
@@ -960,7 +1007,7 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 		_, err := ds.RunGC(ctx)
 		gcDone <- err
 	}()
-	waitParked(t, ds, changelogLockKey, 1)
+	waitParked(t, ds, 1, changelogLockKey)
 	if !rowLockFree(t, ds, raceWidget, "v") {
 		t.Fatal("the sweep locked the victim's row before the changelog lock")
 	}
@@ -977,7 +1024,7 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 		})
 		putDone <- err
 	}()
-	waitParked(t, ds, changelogLockKey, 2)
+	waitParked(t, ds, 2, changelogLockKey)
 	if !tryLockFree(t, ds, "record|"+raceWidget+"|v") {
 		t.Fatal("the put locked its record before the changelog lock")
 	}

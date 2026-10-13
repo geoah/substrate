@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ import (
 func TestSettleFoldRefusesAFoldWithoutAnEntry(t *testing.T) {
 	tx := &txn{
 		ds:     &dataset{svc: &service{log: slog.Default()}, scope: Scope{Repository: "repo1"}},
-		folded: []foldOp{{Kind: foldBump, Ref: "task", ID: "t1"}},
+		folded: []foldOp{{Kind: foldTombstone, Ref: "task", ID: "t1"}},
 		maxSeq: 0,
 	}
 	if err := tx.settleFold(); err == nil {
@@ -26,6 +27,16 @@ func TestSettleFoldRefusesAFoldWithoutAnEntry(t *testing.T) {
 	empty := &txn{ds: &dataset{svc: &service{log: slog.Default()}, scope: Scope{Repository: "repo1"}}}
 	if err := empty.settleFold(); err != nil {
 		t.Fatalf("settleFold errored on an empty transaction: %v", err)
+	}
+}
+
+// No write has emitted a bump effect since #320 and no v1 store holds one, so
+// the fold refuses the spelling as an effect it does not know, before it
+// touches a table (#834).
+func TestFoldRefusesTheRetiredBumpEffect(t *testing.T) {
+	_, err := (&txn{}).foldOne(foldOp{Kind: "bump", Ref: "task", ID: "t1"})
+	if err == nil || !strings.Contains(err.Error(), `the fold does not know the effect "bump"`) {
+		t.Fatalf("a bump effect folded: %v", err)
 	}
 }
 

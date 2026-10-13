@@ -22,18 +22,6 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// repositoryScopedTables is the list every repository-scoped table has to stay
-// on: a new one that forgets its `repository` column, its policy or its FORCE
-// flag fails here rather than in production.
-var repositoryScopedTables = []string{
-	"records", "refs", "former_ids", "annotations", "property_managers",
-	"property_offers", "changelog", "embeddings", "embed_queue", "trigger_cursors",
-	"trigger_failures", "trigger_schedule", "sealed", "oauth_flows",
-	"paged_cursors", "vocabulary_dialect",
-	"changelog_dialect", "import_progress", "idempotency_keys", "search_index",
-	"index_reprojections",
-}
-
 // pair is two registered users, each with one task written at the SAME
 // (kind, id): the collision is the point, since one shared table now holds
 // both rows.
@@ -580,7 +568,7 @@ func TestRepositoryIsolation(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = db.Close() })
 
-		for _, table := range repositoryScopedTables {
+		for _, table := range engine.RepositoryScopedTables() {
 			var enabled, forced bool
 			if err := db.QueryRowContext(ctx, `
 				SELECT c.relrowsecurity, c.relforcerowsecurity
@@ -630,6 +618,54 @@ func TestRepositoryIsolation(t *testing.T) {
 			}
 			if bypass != wantBypass {
 				t.Errorf("role %s: bypassrls=%v, want %v", role, bypass, wantBypass)
+			}
+		}
+	})
+
+	// The list the subtest above walks is the one a repository's erase walks
+	// (repositories.go repositoryScopedTables), and it is held to the schema
+	// here: a table that gains a `repository` column and misses the list
+	// escapes the row security assertion, and an erase leaves its rows where
+	// the residue check, reading the same list, cannot see them.
+	t.Run("the scoped table list is every table with a repository column", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		db, err := sql.Open("pgx", repos.dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		rows, err := db.QueryContext(ctx, `
+			SELECT c.table_name FROM information_schema.columns c
+			JOIN information_schema.tables t
+			  ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+			WHERE c.table_schema = current_schema() AND c.column_name = 'repository'
+			  AND t.table_type = 'BASE TABLE'`)
+		if err != nil {
+			t.Fatalf("list the tables with a repository column: %v", err)
+		}
+		inSchema := map[string]bool{}
+		for rows.Next() {
+			var table string
+			if err := rows.Scan(&table); err != nil {
+				t.Fatal(err)
+			}
+			inSchema[table] = true
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		_ = rows.Close()
+		listed := map[string]bool{}
+		for _, table := range engine.RepositoryScopedTables() {
+			listed[table] = true
+			if !inSchema[table] {
+				t.Errorf("repositoryScopedTables (repositories.go) lists %s, which has no repository column", table)
+			}
+		}
+		for table := range inSchema {
+			if !listed[table] {
+				t.Errorf("%s has a repository column and is missing from repositoryScopedTables (repositories.go): an erase would leave its rows", table)
 			}
 		}
 	})

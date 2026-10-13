@@ -7,8 +7,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
+
+// The loops run on a ticker, so their tests run in a synctest bubble: the
+// clock is fake and moves only when every goroutine waits, so a tick count or
+// a heartbeat count is exact however loaded the box is.
 
 // A PANIC IN ONE PASS MUST NOT TAKE THE PROCESS DOWN. A pass reaches the same
 // agent machinery a request does: the resolution sweep continues a thread
@@ -16,6 +21,10 @@ import (
 // Nothing above the loop recovers, so without the recover in pass a panic
 // there ends the process for every request in flight.
 func TestAPassPanicIsContainedAndTheLoopKeepsTicking(t *testing.T) {
+	synctest.Test(t, testAPassPanicIsContained)
+}
+
+func testAPassPanicIsContained(t *testing.T) {
 	var logs syncWriter
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
@@ -80,28 +89,31 @@ func (w *syncWriter) String() string {
 // a first boot that imports a long data root is killed mid-import every time
 // (issue 568). Once the boot is done the heartbeat stops.
 func TestABootLogsAHeartbeatUntilItIsDone(t *testing.T) {
-	var logs syncWriter
-	log := slog.New(slog.NewTextHandler(&logs, nil))
-	done := make(chan struct{})
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		bootHeartbeat(log, done, time.Millisecond)
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for strings.Count(logs.String(), "still booting") < 2 {
-		if time.Now().After(deadline) {
-			t.Fatalf("no heartbeat while booting: %s", logs.String())
+	synctest.Test(t, func(t *testing.T) {
+		var logs syncWriter
+		log := slog.New(slog.NewTextHandler(&logs, nil))
+		done := make(chan struct{})
+		stopped := make(chan struct{})
+		go func() {
+			defer close(stopped)
+			bootHeartbeat(log, done, time.Second)
+		}()
+		time.Sleep(2*time.Second + time.Millisecond)
+		out := logs.String()
+		if n := strings.Count(out, "still booting"); n != 2 {
+			t.Fatalf("%d heartbeats over two intervals of booting, want 2: %s", n, out)
 		}
-		time.Sleep(time.Millisecond)
-	}
-	close(done)
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the heartbeat kept running after the boot finished")
-	}
-	if out := logs.String(); !strings.Contains(out, "elapsed=") {
-		t.Fatalf("the heartbeat does not say how long the boot has run: %s", out)
-	}
+		for _, want := range []string{"elapsed=1s", "elapsed=2s"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("the heartbeat does not say how long the boot has run (%s): %s", want, out)
+			}
+		}
+		close(done)
+		synctest.Wait()
+		select {
+		case <-stopped:
+		default:
+			t.Fatal("the heartbeat kept running after the boot finished")
+		}
+	})
 }

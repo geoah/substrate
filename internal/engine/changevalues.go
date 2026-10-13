@@ -59,7 +59,7 @@ type valueAt struct {
 // entry's effects on it in order.
 type recordChange struct {
 	// touched is an effect that moved the record's version (record,
-	// tombstone, bump, purge); an entry that only names the record touches
+	// tombstone, purge); an entry that only names the record touches
 	// nothing.
 	touched bool
 	created bool
@@ -67,8 +67,8 @@ type recordChange struct {
 	// moved maps each public property name the entry changed to what it left.
 	moved map[string]valueAt
 	// first and last are the versions the record reached at the entry's first
-	// and last version-moving effect on it; 0 where the effect predates the
-	// stamp (decision 0061).
+	// and last version-moving effect on it; 0 where none carries a version (a
+	// purge leaves no row).
 	first, last int64
 }
 
@@ -89,7 +89,7 @@ func composeRecordChange(ty *vocabulary.Kind, ops []foldOp, nulled []string, ref
 			continue
 		}
 		switch op.Kind {
-		case foldRecord, foldTombstone, foldBump, foldPurge:
+		case foldRecord, foldTombstone, foldPurge:
 		default:
 			continue
 		}

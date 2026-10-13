@@ -16,11 +16,11 @@ import (
 // THE FOLD.
 //
 // The changelog is the truth and the records table is a fold of it. This file is
-// that fold, and it is the ONLY way anything in the engine writes the folded
-// tables: `foldOne` applies one effect, `foldEntry` applies a whole changelog
-// entry's worth of them, and every write path reaches the tables through
-// `txn.fold`, which applies the effect AND records it so the entry the write
-// appends carries exactly what it did.
+// that fold, and but for the writes named below it is the ONLY way anything in
+// the engine writes the folded tables: `foldOne` applies one effect,
+// `foldEntry` applies a whole changelog entry's worth of them, and every write
+// path reaches the tables through `txn.fold`, which applies the effect AND
+// records it so the entry the write appends carries exactly what it did.
 //
 // That is what makes the payload replayable. A v0 entry named the properties
 // that moved and nothing else, so a rebuild could learn WHAT changed and never
@@ -35,9 +35,21 @@ import (
 // exactly one thing, the weighted search bands, because `fts` is an INDEX over
 // the folded row rather than part of it (foldFTS).
 //
-// THE ONE COLUMN WRITTEN OUTSIDE THE FOLD PATH IS `fts`. Every other column of
-// `records` is a function of the changelog alone, so a replay reproduces it
-// from the entries. The bands are a function of the folded row AND the kind's
+// THE WRITES OUTSIDE THE FOLD PATH are derived storage, which no entry carries
+// and a rebuild derives again from the rows it replayed: `fts`, the
+// `orphaned_at` and `ambiguous_at` marks on `records` (orphans.go,
+// ambiguous.go; rebuild.go rederiveOffers derives them again beside
+// `property_offers`) and the refs projection (refs.go, derived again by
+// foldRecordOp). Two more carry state of their own: the trigger scan position
+// (functions.go advanceCursor), which acknowledges no delivery, so a restore
+// may lose it, and a merge's former-id flattening (rows.go moveFormerIDs),
+// which a rebuild does not reproduce (#821). foldpath_internal_test.go lists
+// every function that writes a fold table with the reason it may, and fails
+// on one it does not list.
+//
+// `fts` is the subtle one. Every column of `records` but it and the two marks
+// is a function of the changelog alone, so a replay reproduces it from the
+// entries. The bands are a function of the folded row AND the kind's
 // declaration in force, and a replay reads the declarations it ends under, so
 // a kind edit that changes what its records index (a property's `fts` flag,
 // its datatype family, its position, the kind dropped) leaves the live rows
@@ -49,8 +61,7 @@ import (
 // changelog entry, because the record did not change, only the index over it
 // did. The boot upgrade's declaration rows re-derive in its own transaction
 // (reprojectFTS), and the open-time reindex (searchindex.go) writes through
-// the same rederiveFTS when the binary's indexing rules change. Nothing else
-// may write `records` from outside this file.
+// the same rederiveFTS when the binary's indexing rules change.
 
 // foldKind names one kind of effect. The values are wire values: they land in
 // the changelog's payload and a rebuild reads them back.
@@ -63,9 +74,6 @@ const (
 	foldTombstone foldKind = "tombstone"
 	// foldPurge hard-deletes a record and everything hanging off it (gc).
 	foldPurge foldKind = "purge"
-	// foldBump moves a record's version without touching its columns: an
-	// annotation-only write, whose change is beside the row.
-	foldBump foldKind = "bump"
 
 	foldAnnotation foldKind = "annotation"
 	foldManager    foldKind = "manager"
@@ -188,7 +196,7 @@ type foldOp struct {
 	ID   string   `json:"id,omitempty"`
 
 	// Version is the version the record reached when the effect was applied,
-	// on a record, tombstone or bump effect (a purge leaves no row). The live
+	// on a record or tombstone effect (a purge leaves no row). The live
 	// fold stamps it after applying; a replay ignores it, since the fold
 	// produces the same number by construction (version is a count of these
 	// effects). It exists for the public change event (decision 0061), which
@@ -413,9 +421,6 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 			return foldResult{}, err
 		}
 		return foldResult{changed: true}, nil
-	case foldBump:
-		changed, version, err := t.applyBump(op.ref())
-		return foldResult{changed: changed, version: version}, err
 	case foldAnnotation:
 		var value any
 		if op.Value != nil {

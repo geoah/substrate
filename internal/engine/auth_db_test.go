@@ -125,6 +125,10 @@ func TestRegistrationRefusals(t *testing.T) {
 		t.Fatalf("begin registration: %v", err)
 	}
 	u := &authUser{repository: testdb.Repository(t), seed: enrollment.Secret}
+	// The authority cases carry a code the enrollment accepts, so each one is
+	// refused for its authority and never for the code: u.code hands every
+	// call a later step, which the clock may or may not have reached.
+	valid := u.code(t)
 
 	for name, in := range map[string]substrate.RegisterInput{
 		"wrong code": {
@@ -143,30 +147,34 @@ func TestRegistrationRefusals(t *testing.T) {
 		// publisher's namespace (decision record 0046).
 		"no authority": {
 			Password:   testPassword,
-			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
+			TOTPSecret: enrollment.Secret, TOTPCode: valid,
 		},
 		"one-label authority": {
 			Password:   testPassword,
-			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Repository: testdb.Repository(t),
+			TOTPSecret: enrollment.Secret, TOTPCode: valid, Repository: testdb.RepositoryLabel(t),
 		},
 		"uppercase authority": {
 			Password:   testPassword,
-			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Repository: "Geoah.Example.com",
+			TOTPSecret: enrollment.Secret, TOTPCode: valid, Repository: "Geoah.Example.com",
 		},
 		"publisher authority": {
 			Password:   testPassword,
-			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t), Repository: "geoah.substrate.reamde.dev",
+			TOTPSecret: enrollment.Secret, TOTPCode: valid, Repository: "geoah.substrate.reamde.dev",
 		},
 		// DNS admits 253 bytes; a repository id, which the authority now is
 		// (decision record 0052), admits MaxIDLen.
 		"authority longer than a record id": {
 			Password:   testPassword,
-			TOTPSecret: enrollment.Secret, TOTPCode: u.code(t),
+			TOTPSecret: enrollment.Secret, TOTPCode: valid,
 			Repository: strings.Repeat("a", 60) + "." + strings.Repeat("b", 60) + ".example.com",
 		},
 	} {
-		if _, err := svc.Register(ctx, in); err == nil {
+		_, err := svc.Register(ctx, in)
+		if err == nil {
 			t.Fatalf("%s: registration was accepted", name)
+		}
+		if strings.HasSuffix(name, "authority") && !errors.Is(err, substrate.ErrValidation) {
+			t.Fatalf("%s: refused with %v, want the authority refused as invalid", name, err)
 		}
 		if repos, err := svc.Repositories(ctx); err != nil || len(repos) != 0 {
 			t.Fatalf("%s: a failed registration created %v", name, repos)

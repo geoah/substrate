@@ -362,8 +362,8 @@ func (t *txn) tombstone(ref eref, finalizer string) (bool, error) {
 	return res.changed, err
 }
 
-// applyTombstone and applyBump each return the version the row reached, so
-// the effect that moved it can record the number the public event names.
+// applyTombstone returns the version the row reached, so the effect that
+// moved it can record the number the public event names.
 func (t *txn) applyTombstone(ref eref, finalizer string) (bool, int64, error) {
 	q := `UPDATE records SET deleted_at = $3, version = version + 1, updated_at = $3`
 	args := []any{ref.Kind, ref.ID, t.now}
@@ -373,11 +373,6 @@ func (t *txn) applyTombstone(ref eref, finalizer string) (bool, int64, error) {
 	}
 	q += ` WHERE kind = $1 AND id = $2 AND deleted_at IS NULL RETURNING version`
 	return t.bumpedVersion(q, args...)
-}
-
-func (t *txn) applyBump(ref eref) (bool, int64, error) {
-	return t.bumpedVersion(`UPDATE records SET version = version + 1, updated_at = $3 WHERE kind = $1 AND id = $2 RETURNING version`,
-		ref.Kind, ref.ID, t.now)
 }
 
 // bumpedVersion runs an UPDATE ... RETURNING version that matches at most one

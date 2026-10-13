@@ -471,13 +471,28 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 		t.Fatalf("shared lock: %v", err)
 	}
 
+	// waitWaiter waits for a session to queue on one of the repository's
+	// advisory locks, so each step below starts after the last one parked.
+	waitWaiter := func(name, what string) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for engine.LockWaiters(t, ds, name) == 0 {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s never queued on its lock", what)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+
 	// GC starts now: its snapshot sees `blob` unreferenced, so it marks it a
 	// victim and reaches for the EXCLUSIVE digest lock — which must block behind
 	// tx1's shared hold instead of deleting.
 	gcDone := make(chan error, 1)
 	go func() { _, e := ds.RunGC(ctx); gcDone <- e }()
+	waitWaiter(engine.BlobLockName(blob.Digest), "GC")
 
-	// While GC is blocked, a real reference to `blob` is written.
+	// While GC is blocked, a real reference to `blob` is written. GC holds the
+	// changelog lock inTx takes first, so the reference queues behind it.
 	refDone := make(chan error, 1)
 	go func() {
 		_, e := ds.Put(ctx, owner, substrate.PutInput{
@@ -486,8 +501,7 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 		})
 		refDone <- e
 	}()
-
-	time.Sleep(500 * time.Millisecond) // let GC and the reference both queue on the lock
+	waitWaiter(engine.ChangelogLockName, "the reference")
 
 	// Release the simulated in-flight writer; GC and the reference now resolve.
 	if err := tx1.Rollback(); err != nil {

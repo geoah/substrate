@@ -669,12 +669,16 @@ func TestNetworkBodyCannotReachTheDeploymentsOwnRanges(t *testing.T) {
 	}()
 	_, loopPort, _ := net.SplitHostPort(ln.Addr().String())
 
+	// The public probe waits 2 s, not 5: on a host with no route the connect
+	// hangs out its whole timeout, while the gate's refusal is immediate. 2 s
+	// leaves a slow gate answer room to arrive and fail the test rather than
+	// read as a timeout.
 	const probe = `
 import socket
-def dial(host, port):
+def dial(host, port, timeout):
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(5)
+        s.settimeout(timeout)
         s.connect((host, int(port)))
         s.close()
         return "ok"
@@ -683,9 +687,9 @@ def dial(host, port):
 def main(input, host):
     a = input["args"]
     return {"output": {
-        "loopback": dial("127.0.0.1", a["loopPort"]),
-        "private": dial("10.255.255.1", "5432"),
-        "public": dial("1.1.1.1", "443"),
+        "loopback": dial("127.0.0.1", a["loopPort"], 5),
+        "private": dial("10.255.255.1", "5432", 5),
+        "public": dial("1.1.1.1", "443", 2),
     }}
 `
 	spec := Spec{

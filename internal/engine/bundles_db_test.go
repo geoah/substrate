@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1073,14 +1074,22 @@ func fenceWaiterDoc() map[string]any {
 func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	const waiterFn = mbPackage + "/waiter"
+	// The runner reaches its body only after admission, so the hook firing
+	// means the invocation holds the fence's shared side.
+	admitted := make(chan struct{})
+	var admit sync.Once
+	_, ds := newDataset(t, engine.WithTestInvokeHook(func(function string) {
+		if function == waiterFn {
+			admit.Do(func() { close(admitted) })
+		}
+	}))
 	docs := mbDocs(nil,
 		mbConfigTypeDoc(), mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		fenceWaiterDoc())
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	const waiterFn = mbPackage + "/waiter"
 
 	type callRes struct {
 		effects int
@@ -1091,7 +1100,13 @@ func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
 		_, n, err := ds.CallFunction(ctx, substrate.ActorAPI, waiterFn, map[string]any{})
 		callDone <- callRes{n, err}
 	}()
-	time.Sleep(1 * time.Second) // the invocation is admitted and polling
+	select {
+	case <-admitted:
+	case r := <-callDone:
+		t.Fatalf("the invocation settled before its body ran: %d %v", r.effects, r.err)
+	case <-time.After(20 * time.Second):
+		t.Fatal("the invocation was never admitted")
+	}
 
 	disableDone := make(chan error, 1)
 	go func() { disableDone <- ds.DisableBundle(ctx, mbPackage) }()
