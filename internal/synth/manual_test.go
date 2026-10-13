@@ -119,8 +119,6 @@ func TestManualWritesTheHealthSamplesShapes(t *testing.T) {
 	}
 }
 
-// The hotel weigh-in is on the trip's third day, and only a range holding
-// that day writes it, though a range holding any trip day keeps the trip.
 // A source's class says what sort of source it is, from the source kind's
 // own values: a lab is `lab` and the hand entry `manual`, as the Garmin and
 // Google Fit adapters class the hand entries they see, so an app that
@@ -153,6 +151,8 @@ func TestManualSourcesCarryTheirClass(t *testing.T) {
 	}
 }
 
+// The hotel weigh-in is on the trip's third day, and only a range holding
+// that day writes it, though a range holding any trip day keeps the trip.
 func TestManualWeighsInAtTheHotelInsideTheRange(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
