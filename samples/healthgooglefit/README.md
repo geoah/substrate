@@ -42,7 +42,8 @@ session shorter than three hours that begins between 09:00 and 21:00 on the
 account's clock is `isNap: true`, any other `false`. Any other session
 becomes a `health/workout` with `sportSource` set to Fit's activity code,
 `sport` the code mapped onto the workout kind's code set (1, 14 to 19
-cycling, 7 walking, 8 running, 80 strength, 100 yoga and the rest the
+cycling, 7 walking, 8 running, 80 strength, 100 yoga, 65 to 68 skiing
+(68 is downhill skiing) and the rest the
 function's `SPORTS` table names; any other code `other`) and `duration` from
 `activeTimeMillis`.
 

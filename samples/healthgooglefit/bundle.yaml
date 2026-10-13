@@ -21,7 +21,7 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: healthgooglefit
-  version: 2
+  version: 3
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -135,7 +135,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `healthgooglefit-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthgooglefit@2"
+    ADAPTER = "healthgooglefit@3"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -216,7 +216,7 @@ data:
               53: "rowing", 54: "rowing", 25: "elliptical", 77: "stairs", 78: "stairs",
               114: "hiit", 115: "hiit", 24: "dance", 101: "dance", 20: "boxing",
               42: "boxing", 52: "climbing", 87: "tennis", 32: "golf", 65: "skiing",
-              66: "skiing", 67: "skiing"}
+              66: "skiing", 67: "skiing", 68: "skiing"}
     # The datasource row's device type onto the source kind's class; a phone
     # and the rest have no class there.
     CLASSES = {"watch": "watch", "scale": "scale"}

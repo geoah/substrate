@@ -40,7 +40,7 @@ const (
 	healthAppleAdapter     = "healthapple@2"
 	healthWhoopAdapter     = "healthwhoop@4"
 	healthGarminAdapter    = "healthgarmin@2"
-	healthGoogleFitAdapter = "healthgooglefit@2"
+	healthGoogleFitAdapter = "healthgooglefit@3"
 )
 
 // asFloat reads a number however it reached the test: a float64 from

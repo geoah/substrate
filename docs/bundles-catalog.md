@@ -2093,8 +2093,9 @@ totals and `efficiency` (time asleep over time in bed); Fit sends no nap
 flag, so a session shorter than three hours that begins between 09:00 and
 21:00 on the account's clock is `isNap`. Any other session becomes a
 `health/workout` whose `sport` is Fit's activity code mapped onto the
-workout code set (100 is `yoga`, 80 `strength`, 108 and any code without a
-value of its own `other`) and whose `sportSource` is the code. Fit's sleep
+workout code set (100 is `yoga`, 80 `strength`, 65 to 68 `skiing`, 108 and
+any code without a value of its own `other`) and whose `sportSource` is the
+code. Fit's sleep
 codes map as 1 `awake`, 2 `asleep` (sleep with no stage), 4 `light`, 5
 `deep` and 6 `rem`; 3 (out of bed) and 0 are skipped and counted. A stage's
 id is its session and its start, so a corrected earlier segment renames no

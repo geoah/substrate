@@ -1066,6 +1066,27 @@ func TestHealthGoogleFitWritesNoOffsetWithoutAZone(t *testing.T) {
 	}
 }
 
+// TestHealthGoogleFitMapsDownhillSkiingToSkiing: Fit's activity 68 is
+// downhill skiing, which Apple, Garmin and WHOOP land on `skiing`; a ski day
+// from Fit counts beside theirs, and Fit's code stays in sportSource.
+func TestHealthGoogleFitMapsDownhillSkiingToSkiing(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	ds, _, today := newFitHealth(t, fitCutOn, "enabledActivity")
+	at := today.Add(-30 * time.Hour)
+	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionType, ID: googlefitAccount + "/ski", Properties: map[string]any{
+		"account":   map[string]any{"ref": googlefitAccountType + "/" + googlefitAccount},
+		"sessionId": "ski", "activityType": 68, "name": "Downhill skiing",
+		"at": at.Format(time.RFC3339), "endsAt": at.Add(3 * time.Hour).Format(time.RFC3339),
+		"modifiedTimeMillis": at.Add(4 * time.Hour).UnixMilli(),
+	}})
+	observe(t, ds, googlefitSessionType, googlefitAccount+"/ski")
+	w := mustGet(t, ds, healthWorkout, "googlefit/"+googlefitAccount+"/ski").Properties
+	if w["sport"] != "skiing" || w["sportSource"] != "68" {
+		t.Fatalf("the downhill ski session landed as sport %v from %v, want skiing from 68", w["sport"], w["sportSource"])
+	}
+}
+
 // fitReadProbe runs the shipped adapter's source (stdin) under python3 with
 // the real host.observed (argv[1]) over a host that answers from memory: a
 // sleep stream, a sleep day overlapping two nights, and stage observations
