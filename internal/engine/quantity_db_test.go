@@ -612,6 +612,61 @@ func TestQuantityNarrowingsAreRefusedOverLiveRows(t *testing.T) {
 	}
 }
 
+// Dropping `measures:` narrows too: a code the declared measure admitted may
+// be ambiguous undeclared (J/s is a power or an apparent power), and a
+// temperature stored as a difference would be read as an absolute one. The
+// guard counts those rows and only those.
+func TestDroppingAQuantityMeasureIsANarrowing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	declared := map[string]any{
+		"output": map[string]any{"type": "quantity", "measures": "power"},
+		"drift":  map[string]any{"type": "quantity", "measures": "temperature-difference"},
+	}
+	ds := openInternalDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(quantityPackage, 0), readingManifest(declared),
+	}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	for name, props := range map[string]map[string]any{
+		"joules": {"output": qv("5", "J/s")},
+		"watts":  {"output": qv("5", "W")},
+		"warmer": {"drift": qv("0.3", "Cel")},
+	} {
+		props["name"] = name
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: name, Properties: props}); err != nil {
+			t.Fatalf("put %s: %v", name, err)
+		}
+	}
+	for name, tc := range map[string]struct {
+		override map[string]any
+		want     string
+	}{
+		"an ambiguous code": {
+			map[string]any{"output": map[string]any{"type": "quantity"}, "drift": declared["drift"]},
+			"declares no measures while 1 live records hold a value it refuses",
+		},
+		"a difference read as a temperature": {
+			map[string]any{"drift": map[string]any{"type": "quantity"}, "output": declared["output"]},
+			"declares no measures while 1 live records hold a value it refuses",
+		},
+	} {
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(tc.override)})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: err = %v, want %q", name, err, tc.want)
+		}
+	}
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, "joules", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(map[string]any{
+		"output": map[string]any{"type": "quantity"}, "drift": declared["drift"],
+	})}); err != nil {
+		t.Fatalf("dropping the measure with only W rows left: %v", err)
+	}
+}
+
 // A declared default is a quantity the write path admits, stored on a create
 // that leaves the property out; one no write could store is refused.
 func TestQuantityDefaultFillsACreate(t *testing.T) {

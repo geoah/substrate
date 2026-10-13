@@ -1213,7 +1213,7 @@ func constraintNarrowings(ident, subject string, path []fieldStep, curP, candP *
 				ident, subject, quantityChange(curP.Quantity, candP.Quantity)),
 			query:   propValuesQuery,
 			args:    []any{ident, path[0].key},
-			strands: quantityStrands(path, candP),
+			strands: quantityStrands(path, curP, candP),
 		})
 	}
 	return out
@@ -1256,7 +1256,7 @@ func linkConstraintNarrowings(ident, pname, lname string, curL, candL *vocabular
 			format: fmt.Sprintf("kind %s: reference %q's link property %q declares %s while %%d live references hold a value it refuses; rewrite them first",
 				ident, pname, lname, quantityChange(curL.Quantity, candL.Quantity)),
 			query: linkPropValuesQuery, args: []any{ident, pname, lname},
-			strands: quantityStrands([]fieldStep{{key: lname}}, candL),
+			strands: quantityStrands([]fieldStep{{key: lname}}, curL, candL),
 		})
 	}
 	return out

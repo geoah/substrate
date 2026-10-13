@@ -718,19 +718,22 @@ func linearSQL(value string, f, o *big.Rat) string {
 // --- the narrowing guard ---
 
 // quantityNarrows reports whether a changed quantity declaration could refuse
-// a value the current one admits: a measure named or changed, a unit list
-// added or shortened, a comparator turned off, a bound added or moved. A move
-// of a bound in either direction counts: across units the direction is a
-// conversion away, and the count is what decides.
+// or reread a value the current one admits: a measure named, changed or
+// dropped, a unit list added or shortened, a comparator turned off, a bound
+// added or moved. A dropped measure counts because a code the measure
+// admitted may be ambiguous without it (J/s), and a difference in Cel would
+// read as an absolute temperature. A move of a bound in either direction
+// counts: across units the direction is a conversion away, and the count is
+// what decides.
 func quantityNarrows(cur, cand *vocabulary.QuantitySpec) bool {
 	if cand == nil {
-		return false
+		cand = &vocabulary.QuantitySpec{}
 	}
 	if cur == nil {
 		cur = &vocabulary.QuantitySpec{}
 	}
 	switch {
-	case cand.Measure != "" && cand.Measure != cur.Measure:
+	case cand.Measure != cur.Measure:
 		return true
 	case len(cand.Units) > 0 && (len(cur.Units) == 0 || slices.ContainsFunc(cur.Units, func(u string) bool { return !slices.Contains(cand.Units, u) })):
 		return true
@@ -746,9 +749,16 @@ func quantityNarrows(cur, cand *vocabulary.QuantitySpec) bool {
 
 // quantityStrands judges one stored root value for a quantity narrowing: true
 // when a quantity under the declared path is one the candidate declaration's
-// write coercion refuses, which is the whole rule, so the count and the next
-// write cannot disagree.
-func quantityStrands(path []fieldStep, cand *vocabulary.Property) func([]byte) bool {
+// write coercion refuses, so the count and the next write cannot disagree, or
+// one whose unit the candidate reads in another measure than the current
+// declaration does, so a stored difference is never silently reread.
+func quantityStrands(path []fieldStep, cur, cand *vocabulary.Property) func([]byte) bool {
+	measure := func(p *vocabulary.Property) string {
+		if p == nil || p.Quantity == nil {
+			return ""
+		}
+		return p.Quantity.Measure
+	}
 	return func(raw []byte) bool {
 		var root any
 		if err := json.Unmarshal(raw, &root); err != nil {
@@ -758,7 +768,14 @@ func quantityStrands(path []fieldStep, cand *vocabulary.Property) func([]byte) b
 			if _, ok := leaf.(map[string]any); !ok {
 				continue
 			}
-			if _, err := coerceQuantity(cand, leaf); err != nil {
+			coerced, err := coerceQuantity(cand, leaf)
+			if err != nil {
+				return true
+			}
+			unit, _ := coerced.(map[string]any)[vocabulary.QuantityUnit].(string)
+			was, errWas := vocabulary.ResolveMeasure(unit, measure(cur))
+			now, _ := vocabulary.ResolveMeasure(unit, measure(cand))
+			if errWas == nil && was.Name != now.Name {
 				return true
 			}
 		}
@@ -772,8 +789,15 @@ func quantityChange(cur, cand *vocabulary.QuantitySpec) string {
 	if cur == nil {
 		cur = &vocabulary.QuantitySpec{}
 	}
+	if cand == nil {
+		cand = &vocabulary.QuantitySpec{}
+	}
 	var parts []string
-	if cand.Measure != cur.Measure && cand.Measure != "" {
+	switch {
+	case cand.Measure == cur.Measure:
+	case cand.Measure == "":
+		parts = append(parts, "no measures")
+	default:
 		parts = append(parts, "measures "+cand.Measure)
 	}
 	if !slices.Equal(cand.Units, cur.Units) && len(cand.Units) > 0 {
