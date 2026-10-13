@@ -361,7 +361,7 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 
 	// The records: a sleep per night and nap, a workout per activity, and the
 	// two sources, the account's and the watch's.
-	for kind, n := range map[string]int{healthSleep: len(days) + naps, healthWorkout: workouts, healthSource: 2} {
+	for kind, n := range map[string]int{healthSleep: len(days) + naps, healthWorkout: workouts, obsSource: 2} {
 		if got := countLive(t, ds, kind); got != n {
 			t.Errorf("%d %s, want %d", got, kind, n)
 		}
@@ -369,7 +369,7 @@ func TestSynthGarminConnectsPushesAndAdapts(t *testing.T) {
 	for id, class := range map[string]string{
 		"garmin/" + garminAccountID + "/account": "service", "garmin/" + garminAccountID + "/forerunner265": "watch",
 	} {
-		src := mustGet(t, ds, healthSource, id).Properties
+		src := mustGet(t, ds, obsSource, id).Properties
 		if src["manufacturer"] != "Garmin" || src["class"] != class {
 			t.Errorf("source %s is %v, want class %s", id, src, class)
 		}

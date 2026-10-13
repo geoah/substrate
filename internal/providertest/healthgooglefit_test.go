@@ -27,8 +27,6 @@ import (
 const (
 	fitAdaptPackage = "samples.substrate.reamde.dev/healthgooglefit"
 	fitAdaptFn      = fitAdaptPackage + "/adaptgooglefit"
-	obsHome         = "samples.substrate.reamde.dev"
-	obsMetric       = obsHome + "/observations/metric"
 	fitZone         = "Europe/Athens"
 )
 

@@ -20,14 +20,19 @@ const (
 	obsObservation = samples.Authority + "/observations/observation"
 	obsTrace       = samples.Authority + "/observations/trace"
 	obsSource      = samples.Authority + "/observations/source"
+	obsMetric      = samples.Authority + "/observations/metric"
 	healthSleep    = samples.Authority + "/health/sleep"
 	healthWorkout  = samples.Authority + "/health/workout"
+	// healthMetrics prefixes a health catalogue metric's id into its record
+	// path: healthMetrics + "heart_rate".
+	healthMetrics = obsMetric + "/health/"
 )
 
 // The adapter stamp each shipped adapter writes on its outputs, its
 // function's ADAPTER constant.
 const (
 	healthAppleAdapter     = "healthapple@2"
+	healthWhoopAdapter     = "healthwhoop@2"
 	healthGarminAdapter    = "healthgarmin@2"
 	healthGoogleFitAdapter = "healthgooglefit@2"
 )

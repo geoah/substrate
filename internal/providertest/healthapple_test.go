@@ -21,16 +21,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const (
-	haObs         = "samples.substrate.reamde.dev/observations/"
-	haTrace       = haObs + "trace"
-	haObservation = haObs + "observation"
-	haSource      = haObs + "source"
-	haMetric      = haObs + "metric/health/"
-	haSleep       = "samples.substrate.reamde.dev/health/sleep"
-	haWorkout     = "samples.substrate.reamde.dev/health/workout"
-	haAdapt       = "samples.substrate.reamde.dev/healthapple/adaptapplehealth"
-)
+const haAdapt = "samples.substrate.reamde.dev/healthapple/adaptapplehealth"
 
 // newHealthApple is a repository with the provider, the health sample, the
 // adapter and one account, `iphone`.
@@ -99,7 +90,7 @@ func outputsOf(t *testing.T, ds substrate.Dataset, origin string) []*substrate.R
 	t.Helper()
 	page, err := ds.List(context.Background(), substrate.Query{
 		Filter: substrate.Filter{
-			Kinds:       []string{haTrace, haObservation, haSleep, haWorkout},
+			Kinds:       []string{obsTrace, obsObservation, healthSleep, healthWorkout},
 			Referencing: &substrate.Referencing{Ref: origin},
 		},
 		First: 500,
@@ -144,11 +135,11 @@ func TestHealthAppleMinuteTraces(t *testing.T) {
 	const received = "2026-10-08T05:31:02Z"
 	deliverAt(t, ds, ahRequest(t, "delivery_1_heart_rate_steps_minutes.json"), "hook-minutes", received)
 
-	hr := mustGet(t, ds, haTrace, "applehealth/iphone/apple-watch/heart_rate/2026-10-07T07")
+	hr := mustGet(t, ds, obsTrace, "applehealth/iphone/apple-watch/heart_rate/2026-10-07T07")
 	p := hr.Properties
 	if p["form"] != "gauge" || p["unit"] != "/min" || p["hold"] != "PT4M" || num(t, p["utcOffsetStart"]) != 180 ||
-		storedRefPath(p["metric"]) != haMetric+"heart_rate" ||
-		storedRefPath(p["source"]) != haSource+"/applehealth/iphone/apple-watch" ||
+		storedRefPath(p["metric"]) != healthMetrics+"heart_rate" ||
+		storedRefPath(p["source"]) != obsSource+"/applehealth/iphone/apple-watch" ||
 		num(t, p["revision"]) != unixOf(t, received) {
 		t.Fatalf("heart rate trace = %v", p)
 	}
@@ -174,24 +165,24 @@ func TestHealthAppleMinuteTraces(t *testing.T) {
 	}
 
 	// Steps: a merged `Watch|iPhone` label is the phone's merged source.
-	steps := mustGet(t, ds, haTrace, "applehealth/iphone/health/steps/2026-10-07T04").Properties
+	steps := mustGet(t, ds, obsTrace, "applehealth/iphone/health/steps/2026-10-07T04").Properties
 	vals, offs := strs(steps["values"]), strs(steps["offsets"])
 	if steps["form"] != "amount" || steps["unit"] != "{steps}" || steps["hold"] != nil ||
 		vals[0] != "47.6988740604333" || vals[1] != "null" || offs[0] != "120000" || offs[1] != "180000" ||
 		offs[2] != "420000" {
 		t.Fatalf("steps trace = offsets %v values %v", offs[:4], vals[:4])
 	}
-	dist := mustGet(t, ds, haTrace, "applehealth/iphone/health/distance/2026-10-07T04").Properties
+	dist := mustGet(t, ds, obsTrace, "applehealth/iphone/health/distance/2026-10-07T04").Properties
 	if dist["unit"] != "m" || strs(dist["values"])[0] != "33.8662005829" {
 		t.Fatalf("distance in m = %v", strs(dist["values"])[:2])
 	}
-	energy := mustGet(t, ds, haTrace, "applehealth/iphone/apple-watch/active_energy/2026-10-07T04").Properties
+	energy := mustGet(t, ds, obsTrace, "applehealth/iphone/apple-watch/active_energy/2026-10-07T04").Properties
 	if energy["unit"] != "kcal" || !strings.HasPrefix(strs(energy["values"])[0], "0.0843") {
 		t.Fatalf("active energy in kcal = %v", strs(energy["values"])[:2])
 	}
 
-	watch := mustGet(t, ds, haSource, "applehealth/iphone/apple-watch").Properties
-	merged := mustGet(t, ds, haSource, "applehealth/iphone/health").Properties
+	watch := mustGet(t, ds, obsSource, "applehealth/iphone/apple-watch").Properties
+	merged := mustGet(t, ds, obsSource, "applehealth/iphone/health").Properties
 	if watch["name"] != adaWatch || watch["class"] != "watch" || storedRefPath(watch["account"]) != ahAccount+"/iphone" ||
 		merged["name"] != "Apple Health on Ada's iPhone" || merged["class"] != "app" {
 		t.Fatalf("sources = %v and %v", watch, merged)
@@ -212,7 +203,7 @@ func TestHealthAppleRedelivery(t *testing.T) {
 	const first, second = "2026-10-08T05:31:02Z", "2026-10-08T08:15:44Z"
 	deliverAt(t, ds, ahRequest(t, "delivery_1_heart_rate_steps_minutes.json"), "hook-first", first)
 	before := map[string]int64{}
-	for _, row := range listLive(t, ds, haTrace) {
+	for _, row := range listLive(t, ds, obsTrace) {
 		before[row.ID] = row.Version
 	}
 	if out := adapt(t, ds, ahBatch, "iphone/heart_rate/minutes/2026-10-07T07"); num(t, out["written"]) != 0 || num(t, out["unchanged"]) == 0 {
@@ -221,7 +212,7 @@ func TestHealthAppleRedelivery(t *testing.T) {
 	deliverAt(t, ds, ahRequest(t, "delivery_4_redelivery_corrected.json"), "hook-again", second)
 
 	changed := []string{}
-	for _, row := range listLive(t, ds, haTrace) {
+	for _, row := range listLive(t, ds, obsTrace) {
 		v, seen := before[row.ID]
 		switch {
 		case !seen:
@@ -247,7 +238,7 @@ func TestHealthAppleRedelivery(t *testing.T) {
 	// The run's minutes (08:05 to 08:41 local) left the iPhone's trace for the
 	// merged one: past 08:05 the iPhone's trace holds nothing but the null
 	// that ends its 08:04 bucket.
-	phone := mustGet(t, ds, haTrace, "applehealth/iphone/iphone/steps/2026-10-07T05").Properties
+	phone := mustGet(t, ds, obsTrace, "applehealth/iphone/iphone/steps/2026-10-07T05").Properties
 	offsets, values := strs(phone["offsets"]), strs(phone["values"])
 	for i, off := range offsets {
 		ms, _ := strconv.Atoi(off)
@@ -255,7 +246,7 @@ func TestHealthAppleRedelivery(t *testing.T) {
 			t.Fatalf("the iPhone's steps trace still holds %s steps at %d ms", values[i], ms)
 		}
 	}
-	merged := strs(mustGet(t, ds, haTrace, "applehealth/iphone/health/steps/2026-10-07T05").Properties["offsets"])
+	merged := strs(mustGet(t, ds, obsTrace, "applehealth/iphone/health/steps/2026-10-07T05").Properties["offsets"])
 	if !strings.Contains(","+strings.Join(merged, ",")+",", ",360000,") {
 		t.Fatalf("the merged steps trace has no 08:06 minute: %v", merged)
 	}
@@ -309,7 +300,7 @@ func TestHealthAppleTwoTimeZonesSplitATrace(t *testing.T) {
 
 	var parts []*substrate.Record
 	for _, row := range outputsOf(t, ds, ahBatch+"/iphone/heart_rate/minutes/2026-10-07T07") {
-		if row.Kind == haTrace {
+		if row.Kind == obsTrace {
 			parts = append(parts, row)
 		}
 	}
@@ -335,29 +326,29 @@ func TestHealthAppleBodyObservations(t *testing.T) {
 	ds := newHealthApple(t)
 	deliverAt(t, ds, ahRequest(t, "delivery_3_body_measurements.json"), "hook-body", "2026-10-10T05:05:20Z")
 
-	weight := mustGet(t, ds, haObservation, "applehealth/iphone/garmin-connect/body_mass/2026-09-11T04:02:41Z").Properties
+	weight := mustGet(t, ds, obsObservation, "applehealth/iphone/garmin-connect/body_mass/2026-09-11T04:02:41Z").Properties
 	if weight["form"] != "gauge" || obj(t, weight["value"], "value") != "72.26" || obj(t, weight["value"], "unit") != "kg" ||
 		num(t, weight["utcOffset"]) != 180 || storedRefPath(weight["origin"]) != ahBatch+"/iphone/weight_body_mass/seconds/2026-09-11T04" {
 		t.Fatalf("weigh-in = %v", weight)
 	}
-	if c := mustGet(t, ds, haSource, "applehealth/iphone/garmin-connect").Properties["class"]; c != "service" {
+	if c := mustGet(t, ds, obsSource, "applehealth/iphone/garmin-connect").Properties["class"]; c != "service" {
 		t.Fatalf("Garmin Connect's class = %v", c)
 	}
-	bmi := mustGet(t, ds, haObservation, "applehealth/iphone/garmin-connect/bmi/2026-09-11T04:02:41Z").Properties
+	bmi := mustGet(t, ds, obsObservation, "applehealth/iphone/garmin-connect/bmi/2026-09-11T04:02:41Z").Properties
 	if obj(t, bmi["value"], "unit") != "kg/m2" {
 		t.Fatalf("BMI = %v", bmi["value"])
 	}
-	sys := mustGet(t, ds, haObservation, "applehealth/iphone/garmin-connect/systolic_blood_pressure/2026-09-12T05:10:30Z").Properties
-	dia := mustGet(t, ds, haObservation, "applehealth/iphone/garmin-connect/diastolic_blood_pressure/2026-09-12T05:10:30Z").Properties
+	sys := mustGet(t, ds, obsObservation, "applehealth/iphone/garmin-connect/systolic_blood_pressure/2026-09-12T05:10:30Z").Properties
+	dia := mustGet(t, ds, obsObservation, "applehealth/iphone/garmin-connect/diastolic_blood_pressure/2026-09-12T05:10:30Z").Properties
 	if obj(t, sys["value"], "value") != "118" || obj(t, dia["value"], "value") != "76" || obj(t, sys["value"], "unit") != "mm[Hg]" ||
 		sys["hold"] != "PT0S" || len(sys["components"].([]any)) != 2 {
 		t.Fatalf("blood pressure = %v / %v", sys, dia)
 	}
-	glucose := mustGet(t, ds, haObservation, "applehealth/iphone/iphone/blood_glucose_mass/2026-09-20T05:12:00Z").Properties
+	glucose := mustGet(t, ds, obsObservation, "applehealth/iphone/iphone/blood_glucose_mass/2026-09-20T05:12:00Z").Properties
 	if obj(t, glucose["value"], "unit") != "mg/dL" || obj(t, glucose["qualifiers"].([]any)[0], "code") != "before-meal" {
 		t.Fatalf("glucose = %v", glucose)
 	}
-	for _, row := range listLive(t, ds, haObservation) {
+	for _, row := range listLive(t, ds, obsObservation) {
 		if strings.Contains(row.ID, "lean") {
 			t.Fatalf("lean body mass was written as %s", row.ID)
 		}
@@ -405,7 +396,7 @@ func TestHealthAppleReadsHealthKitUnits(t *testing.T) {
 		{"applehealth/iphone/iphone/blood_glucose/2026-09-20T05:12:00Z", "5.1", "mmol/L"},
 		{"applehealth/iphone/iphone/height/2026-09-21T05:00:00Z", "1.7526", "m"},
 	} {
-		v := mustGet(t, ds, haObservation, c.id).Properties["value"]
+		v := mustGet(t, ds, obsObservation, c.id).Properties["value"]
 		if obj(t, v, "value") != c.value || obj(t, v, "unit") != c.unit {
 			t.Errorf("%s = %v, want %s %s", c.id, v, c.value, c.unit)
 		}
@@ -420,14 +411,14 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 	ds := newHealthApple(t)
 	deliverAt(t, ds, ahRequest(t, "delivery_2_sleep_and_workouts.json"), "hook-night", "2026-10-08T05:20:13Z")
 
-	core := mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/sleep_stage/2026-10-06T19:51:00Z").Properties
+	core := mustGet(t, ds, obsObservation, "applehealth/iphone/apple-watch/sleep_stage/2026-10-06T19:51:00Z").Properties
 	if core["form"] != "amount" || core["code"] != "light" || obj(t, core["value"], "value") != "27" ||
 		obj(t, core["value"], "unit") != "min" || core["endsAt"] != "2026-10-06T20:18:00Z" {
 		t.Fatalf("a Core segment = %v", core)
 	}
 	stages := map[string]int{}
-	for _, row := range listLive(t, ds, haObservation) {
-		if storedRefPath(row.Properties["metric"]) == haMetric+"sleep_stage" {
+	for _, row := range listLive(t, ds, obsObservation) {
+		if storedRefPath(row.Properties["metric"]) == healthMetrics+"sleep_stage" {
 			stages[fmt.Sprint(row.Properties["code"])]++
 		}
 	}
@@ -440,7 +431,7 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 	if out := adapt(t, ds, ahBatch, "iphone/sleep_analysis/seconds/2026-10-06T19"); !strings.Contains(fmt.Sprint(out["skipped"]), "In Bed") {
 		t.Fatalf("the sleep batch's output %v does not count the In Bed segment", out)
 	}
-	nights := listLive(t, ds, haSleep)
+	nights := listLive(t, ds, healthSleep)
 	if len(nights) != 2 {
 		t.Fatalf("%d sleep records, want one per night", len(nights))
 	}
@@ -449,24 +440,24 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 	// spans the time in bed, and carries what the night fields every segment
 	// repeats say: the time in bed and how long it took to fall asleep. Its
 	// stage totals are the stage amounts, which several batches hold.
-	night := mustGet(t, ds, haSleep, "applehealth/iphone/apple-watch/sleep/2026-10-06T19:51:00Z").Properties
-	if storedRefPath(night["source"]) != haSource+"/applehealth/iphone/apple-watch" || night["at"] != "2026-10-06T19:29:00Z" ||
+	night := mustGet(t, ds, healthSleep, "applehealth/iphone/apple-watch/sleep/2026-10-06T19:51:00Z").Properties
+	if storedRefPath(night["source"]) != obsSource+"/applehealth/iphone/apple-watch" || night["at"] != "2026-10-06T19:29:00Z" ||
 		night["endsAt"] != "2026-10-07T03:56:49Z" || night["isNap"] != false ||
 		night["timeInBed"] != "PT8H27M49S" || night["latency"] != "PT22M" {
 		t.Errorf("the night = %v, want the watch's, over the time in bed, 22 minutes to fall asleep, no nap", night)
 	}
 
-	run := mustGet(t, ds, haWorkout, "applehealth/iphone/EB0B1D81-50F6-4AB6-8841-28B68D3DE5C6").Properties
+	run := mustGet(t, ds, healthWorkout, "applehealth/iphone/EB0B1D81-50F6-4AB6-8841-28B68D3DE5C6").Properties
 	if run["sport"] != "running" || run["sportSource"] != "Running" ||
-		storedRefPath(run["source"]) != haSource+"/applehealth/iphone/garmin-connect" ||
+		storedRefPath(run["source"]) != obsSource+"/applehealth/iphone/garmin-connect" ||
 		obj(t, run["distance"], "value") != "6.1" || obj(t, run["distance"], "unit") != "km" ||
 		obj(t, run["averageHeartRate"], "unit") != "/min" || run["duration"] != "PT36M19S" ||
 		run["activeEnergy"] == nil || run["totalEnergy"] != nil ||
 		storedRefPath(run["origin"]) != ahWorkout+"/iphone/EB0B1D81-50F6-4AB6-8841-28B68D3DE5C6" {
 		t.Fatalf("the run = %v", run)
 	}
-	lift := mustGet(t, ds, haWorkout, "applehealth/iphone/E956E694-D171-4E4D-922B-A0B57DC8E5FB").Properties
-	if lift["sport"] != "strength" || storedRefPath(lift["source"]) != haSource+"/applehealth/iphone/apple-watch" {
+	lift := mustGet(t, ds, healthWorkout, "applehealth/iphone/E956E694-D171-4E4D-922B-A0B57DC8E5FB").Properties
+	if lift["sport"] != "strength" || storedRefPath(lift["source"]) != obsSource+"/applehealth/iphone/apple-watch" {
 		t.Fatalf("the strength workout = %v", lift)
 	}
 }
@@ -493,25 +484,25 @@ func TestHealthAppleDailySummaries(t *testing.T) {
 	ds := newHealthApple(t)
 	deliverAt(t, ds, ahRequest(t, "delivery_0_daily_30d.json"), "hook-daily", "2026-10-10T05:02:11Z")
 
-	if n := countLive(t, ds, haTrace); n != 0 {
+	if n := countLive(t, ds, obsTrace); n != 0 {
 		t.Fatalf("a daily delivery wrote %d traces", n)
 	}
-	steps := mustGet(t, ds, haObservation, "applehealth/iphone/health/steps/day/2026-09-10T21:00:00Z/sum").Properties
+	steps := mustGet(t, ds, obsObservation, "applehealth/iphone/health/steps/day/2026-09-10T21:00:00Z/sum").Properties
 	if steps["form"] != "summary" || steps["statistic"] != "sum" || steps["period"] != "day" ||
 		steps["periodId"] != "2026-09-11" || obj(t, steps["value"], "value") != "11187" ||
 		steps["endsAt"] != "2026-09-11T21:00:00Z" {
 		t.Fatalf("daily steps = %v", steps)
 	}
 	for _, stat := range []string{"avg", "min", "max"} {
-		mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/heart_rate/day/2026-09-10T21:00:00Z/"+stat)
+		mustGet(t, ds, obsObservation, "applehealth/iphone/apple-watch/heart_rate/day/2026-09-10T21:00:00Z/"+stat)
 	}
-	rest := mustGet(t, ds, haObservation, "applehealth/iphone/health/resting_heart_rate/day/2026-09-10T21:00:00Z/vendor").Properties
+	rest := mustGet(t, ds, obsObservation, "applehealth/iphone/health/resting_heart_rate/day/2026-09-10T21:00:00Z/vendor").Properties
 	if rest["statistic"] != "vendor" || obj(t, rest["value"], "value") != "49" || obj(t, rest["value"], "unit") != "/min" {
 		t.Fatalf("resting heart rate = %v", rest)
 	}
 	// An aggregated night spans the time in bed (22:47:41 to 06:50:03), and
 	// its inBed total is timeInBed, never an in_bed stage beside the four.
-	night := mustGet(t, ds, haSleep, "applehealth/iphone/apple-watch/sleep/2026-09-10T20:04:41Z").Properties
+	night := mustGet(t, ds, healthSleep, "applehealth/iphone/apple-watch/sleep/2026-09-10T20:04:41Z").Properties
 	if night["light"] == nil || night["deep"] == nil || night["rem"] == nil || night["timeAsleep"] == nil ||
 		night["at"] != "2026-09-10T19:47:41Z" || night["endsAt"] != "2026-09-11T03:50:03Z" ||
 		night["latency"] != "PT17M" || night["isNap"] != false {
@@ -521,11 +512,11 @@ func TestHealthAppleDailySummaries(t *testing.T) {
 	if obj(t, night["efficiency"], "value") != "95.21" {
 		t.Errorf("the aggregated night's efficiency = %v, want 95.21 %%", night["efficiency"])
 	}
-	deep := mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/sleep_stage/2026-09-10T20:04:41Z/deep").Properties
+	deep := mustGet(t, ds, obsObservation, "applehealth/iphone/apple-watch/sleep_stage/2026-09-10T20:04:41Z/deep").Properties
 	if deep["code"] != "deep" || obj(t, deep["value"], "value") != "91" {
 		t.Fatalf("the night's deep total = %v", deep)
 	}
-	for _, row := range listLive(t, ds, haObservation) {
+	for _, row := range listLive(t, ds, obsObservation) {
 		if row.Properties["code"] == "in_bed" {
 			t.Fatalf("%s is an in_bed amount", row.ID)
 		}
@@ -578,8 +569,8 @@ func TestHealthAppleMapsUnstagedSleepAndNaps(t *testing.T) {
 	), "hook-minutes", "2026-10-07T12:00:01Z")
 
 	stages := map[string]string{}
-	for _, row := range listLive(t, ds, haObservation) {
-		if storedRefPath(row.Properties["metric"]) == haMetric+"sleep_stage" {
+	for _, row := range listLive(t, ds, obsObservation) {
+		if storedRefPath(row.Properties["metric"]) == healthMetrics+"sleep_stage" {
 			stages[fmt.Sprint(row.Properties["code"])] = fmt.Sprint(obj(t, row.Properties["value"], "value"))
 		}
 	}
@@ -587,7 +578,7 @@ func TestHealthAppleMapsUnstagedSleepAndNaps(t *testing.T) {
 		t.Errorf("stage amounts %v, want the two unstaged segments as asleep", stages)
 	}
 	n := 0
-	for _, row := range listLive(t, ds, haObservation) {
+	for _, row := range listLive(t, ds, obsObservation) {
 		if row.Properties["code"] == "asleep" {
 			n++
 		}
@@ -595,7 +586,7 @@ func TestHealthAppleMapsUnstagedSleepAndNaps(t *testing.T) {
 	if n != 2 {
 		t.Errorf("%d asleep amounts, want one per unstaged segment", n)
 	}
-	nap := mustGet(t, ds, haSleep, "applehealth/iphone/apple-watch/sleep/2026-10-07T11:10:00Z").Properties
+	nap := mustGet(t, ds, healthSleep, "applehealth/iphone/apple-watch/sleep/2026-10-07T11:10:00Z").Properties
 	if nap["isNap"] != true || nap["latency"] != "PT5M" || nap["timeInBed"] != "PT50M" {
 		t.Errorf("the afternoon sleep = %v, want a nap of 50 minutes in bed, 5 to fall asleep", nap)
 	}
@@ -613,7 +604,7 @@ func TestHealthAppleKeepsIdsApart(t *testing.T) {
 		map[string]any{"date": "2026-10-07 08:05:37 +0300", "systolic": 121, "diastolic": 79, "source": long},
 	}}), "hook-cuff", "2026-10-07T06:00:00Z")
 	var pressures []*substrate.Record
-	for _, row := range listLive(t, ds, haObservation) {
+	for _, row := range listLive(t, ds, obsObservation) {
 		if strings.HasSuffix(storedRefPath(row.Properties["metric"]), "_blood_pressure") {
 			pressures = append(pressures, row)
 		}
@@ -634,7 +625,7 @@ func TestHealthAppleKeepsIdsApart(t *testing.T) {
 	deliverAt(t, ds, haDelivery(t, "hours", row("hours")), "hook-hours", "2026-10-07T06:00:01Z")
 	deliverAt(t, ds, haDelivery(t, "days", row("days")), "hook-days", "2026-10-07T06:00:02Z")
 	for _, period := range []string{"hour", "day"} {
-		p := mustGet(t, ds, haObservation, "applehealth/iphone/apple-watch/heart_rate/"+period+"/2026-10-06T21:00:00Z/avg").Properties
+		p := mustGet(t, ds, obsObservation, "applehealth/iphone/apple-watch/heart_rate/"+period+"/2026-10-06T21:00:00Z/avg").Properties
 		if p["period"] != period {
 			t.Errorf("the %s summary covers period %v", period, p["period"])
 		}

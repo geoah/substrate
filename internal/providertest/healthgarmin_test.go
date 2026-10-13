@@ -20,10 +20,7 @@ import (
 	"github.com/geoah/substrate/samples"
 )
 
-const (
-	healthGarminFn     = samples.Authority + "/healthgarmin/adaptgarmin"
-	garminHealthMetric = samples.Authority + "/observations/metric/health/"
-)
+const healthGarminFn = samples.Authority + "/healthgarmin/adaptgarmin"
 
 // newHealthGarminDataset installs the garmin provider and imports the
 // adapter, which brings the observations and health samples with it.
@@ -66,18 +63,6 @@ func adaptAll(t *testing.T, ds substrate.Dataset, names ...string) {
 			garminAdapt(t, ds, row.Kind, row.ID)
 		}
 	}
-}
-
-// outputs is every adapter output, keyed "<kind>/<id>", with its version.
-func outputs(t *testing.T, ds substrate.Dataset) map[string]*substrate.Record {
-	t.Helper()
-	out := map[string]*substrate.Record{}
-	for _, kind := range []string{obsTrace, obsObservation, healthSleep, healthWorkout} {
-		for _, row := range listLive(t, ds, kind) {
-			out[kind+"/"+row.ID] = row
-		}
-	}
-	return out
 }
 
 func quantity(v any) string {
@@ -123,7 +108,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 		pushGarmin(t, ds, cfg, fmt.Sprintf("webhook-%d", i), loadGarminFixture(t, name).request)
 	}
 	adaptAll(t, ds, "daily", "epoch", "sleep", "activity", "bodycomp")
-	out := outputs(t, ds)
+	out := adapterOutputs(t, ds)
 	acct := "garmin/" + garminAccountID
 
 	// Heart rate: the 2026-09-11 daily starts 21:00Z; its 19:00 local hour has
@@ -134,7 +119,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 		if !strings.HasPrefix(key, obsTrace+"/"+acct+"/account/heart_rate/") {
 			continue
 		}
-		if storedRefPath(row.Properties["metric"]) != garminHealthMetric+"heart_rate" || row.Properties["form"] != "gauge" ||
+		if storedRefPath(row.Properties["metric"]) != healthMetrics+"heart_rate" || row.Properties["form"] != "gauge" ||
 			row.Properties["unit"] != "/min" || row.Properties["hold"] != "PT4M" {
 			t.Fatalf("%s: %v", key, row.Properties)
 		}
@@ -225,7 +210,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	}
 	dayStart := time.Unix(int64(daily["startTimeInSeconds"].(float64)), 0).UTC()
 	read, err := ds.Aggregate(t.Context(), substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
-		Metric: &substrate.AggregateMetric{Ref: garminHealthMetric + "steps"}, From: substrate.AggregateFromSummaries,
+		Metric: &substrate.AggregateMetric{Ref: healthMetrics + "steps"}, From: substrate.AggregateFromSummaries,
 		Range:    &substrate.AggregateRange{Gte: dayStart.Format(time.RFC3339), Lt: dayStart.Add(24 * time.Hour).Format(time.RFC3339)},
 		Reducers: []substrate.AggregateReducer{{Name: substrate.ReducerSum}},
 	}})
@@ -258,7 +243,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 			continue
 		}
 		stages++
-		if row.Properties["form"] != "amount" || storedRefPath(row.Properties["metric"]) != garminHealthMetric+"sleep_stage" {
+		if row.Properties["form"] != "amount" || storedRefPath(row.Properties["metric"]) != healthMetrics+"sleep_stage" {
 			t.Errorf("stage %s: %v", key, row.Properties)
 		}
 		// Minutes, the unit every adapter writes a stage in.
@@ -313,7 +298,7 @@ func TestHealthGarminWritesTheProposalsRows(t *testing.T) {
 	// Garmin's final version of the night clears the tentative marker.
 	pushGarmin(t, ds, cfg, "webhook-final", loadGarminFixture(t, "push_sleeps_2026-10-07_final.json").request)
 	adaptAll(t, ds, "sleep")
-	for key, row := range outputs(t, ds) {
+	for key, row := range adapterOutputs(t, ds) {
 		if strings.HasPrefix(key, obsObservation+"/"+acct+"/"+sid+"/stage/") && row.Properties["quality"] != nil {
 			t.Errorf("stage %s of the final night keeps quality %v", key, row.Properties["quality"])
 		}
@@ -341,7 +326,7 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 	const sid = "x4b2c9e1-6ac56150"
 	mirror := garminAccountID + "/" + sid
 	garminAdapt(t, ds, garminPackage+"/daily", mirror)
-	before := outputs(t, ds)
+	before := adapterOutputs(t, ds)
 	mine := func(all map[string]*substrate.Record) map[string]*substrate.Record {
 		out := map[string]*substrate.Record{}
 		for k, r := range all {
@@ -360,7 +345,7 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 	// Identical: the same delivery again, and the same row adapted again.
 	pushGarmin(t, ds, cfg, "webhook-2", dailies.request)
 	garminAdapt(t, ds, garminPackage+"/daily", mirror)
-	for k, r := range outputs(t, ds) {
+	for k, r := range adapterOutputs(t, ds) {
 		if b := before[k]; b == nil || b.Version != r.Version {
 			t.Errorf("an identical re-send moved %s", k)
 		}
@@ -369,7 +354,7 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 	// Fuller: the full day under the same summaryId.
 	pushGarmin(t, ds, cfg, "webhook-3", loadGarminFixture(t, "push_dailies_2026-10-07_resend.json").request)
 	garminAdapt(t, ds, garminPackage+"/daily", mirror)
-	second := mine(outputs(t, ds))
+	second := mine(adapterOutputs(t, ds))
 	if len(second) <= len(first) {
 		t.Errorf("the full day wrote %d rows, the partial %d", len(second), len(first))
 	}
@@ -406,7 +391,7 @@ func TestHealthGarminReSendsReconcile(t *testing.T) {
 	prefix := obsObservation + "/garmin/" + bp.ID + "/"
 	count := func() int {
 		n := 0
-		for k := range outputs(t, ds) {
+		for k := range adapterOutputs(t, ds) {
 			if strings.HasPrefix(k, prefix) {
 				n++
 			}
@@ -581,7 +566,7 @@ func TestHealthGarminSplitsTracesAtAnOffsetChange(t *testing.T) {
 
 	prefix := obsTrace + "/garmin/" + garminAccountID + "/account/steps/"
 	var traces []*substrate.Record
-	for k, r := range outputs(t, ds) {
+	for k, r := range adapterOutputs(t, ds) {
 		if strings.HasPrefix(k, prefix) {
 			traces = append(traces, r)
 		}
@@ -632,8 +617,8 @@ func TestHealthGarminCoversEveryMirrorKind(t *testing.T) {
 			}
 		}
 	}
-	for _, r := range outputs(t, ds) {
-		byMetric[strings.TrimPrefix(storedRefPath(r.Properties["metric"]), garminHealthMetric)]++
+	for _, r := range adapterOutputs(t, ds) {
+		byMetric[strings.TrimPrefix(storedRefPath(r.Properties["metric"]), healthMetrics)]++
 	}
 	for _, metric := range []string{
 		"garmin_stress", "garmin_body_battery", "vo2_max", "spo2",
@@ -652,7 +637,7 @@ func TestHealthGarminCoversEveryMirrorKind(t *testing.T) {
 	// Respiration is a quarter hour a row and an hour a trace: one trace per
 	// UTC hour the slices fall in (the fixture's day has one offset).
 	resp := 0
-	for k := range outputs(t, ds) {
+	for k := range adapterOutputs(t, ds) {
 		if strings.Contains(k, "/account/respiratory_rate/") && !strings.Contains(k, "/snapshot/") {
 			resp++
 		}
@@ -671,7 +656,7 @@ func TestHealthGarminCoversEveryMirrorKind(t *testing.T) {
 	// The night's HRV and skin temperature cover the sleep, the period word
 	// every adapter uses for one.
 	for _, row := range listLive(t, ds, obsObservation) {
-		metric := strings.TrimPrefix(storedRefPath(row.Properties["metric"]), garminHealthMetric)
+		metric := strings.TrimPrefix(storedRefPath(row.Properties["metric"]), healthMetrics)
 		if (metric == "hrv_rmssd" || metric == "skin_temperature_deviation") && row.Properties["form"] == "summary" &&
 			row.Properties["period"] != "sleep" {
 			t.Errorf("%s %s covers period %v, want sleep", metric, row.ID, row.Properties["period"])
@@ -687,7 +672,7 @@ func TestHealthGarminCoversEveryMirrorKind(t *testing.T) {
 			parts, _ := row["components"].([]any)
 			var named []string
 			for _, part := range parts {
-				named = append(named, strings.TrimPrefix(storedRefPath(part.(map[string]any)["metric"]), garminHealthMetric))
+				named = append(named, strings.TrimPrefix(storedRefPath(part.(map[string]any)["metric"]), healthMetrics))
 			}
 			if strings.Join(named, " ") != "systolic_blood_pressure diastolic_blood_pressure" || row["recordingMethod"] != method {
 				t.Errorf("%s of %s has components %v recorded %v, want both numbers and %s", metric, bp["summaryId"], named, row["recordingMethod"], method)

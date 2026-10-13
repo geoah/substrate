@@ -198,7 +198,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	// heart rate, the weigh-ins and the blood pressure as observations; a
 	// night and its stage totals; a workout each; four sources.
 	gotTraces := map[string]int{}
-	for _, row := range listLive(t, ds, haTrace) {
+	for _, row := range listLive(t, ds, obsTrace) {
 		parts := strings.Split(row.ID, "/")
 		if len(parts) != 5 || parts[0] != "applehealth" || parts[1] != "iphone" {
 			t.Fatalf("trace id %s", row.ID)
@@ -224,7 +224,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 		}
 	}
 	byMetric := map[string]int{}
-	for _, row := range listLive(t, ds, haObservation) {
+	for _, row := range listLive(t, ds, obsObservation) {
 		byMetric[metricOf(row.Properties)]++
 	}
 	for metric, want := range map[string]int{
@@ -240,22 +240,22 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	if len(byMetric) != 7 {
 		t.Errorf("observations of %d metrics, want 7: %v", len(byMetric), byMetric)
 	}
-	for kind, want := range map[string]int{haSleep: nights, haWorkout: workouts} {
+	for kind, want := range map[string]int{healthSleep: nights, healthWorkout: workouts} {
 		if n := countLive(t, ds, kind); n != want {
 			t.Errorf("%d %s, want %d", n, kind, want)
 		}
 	}
 	var sources []string
-	for _, row := range listLive(t, ds, haSource) {
+	for _, row := range listLive(t, ds, obsSource) {
 		sources = append(sources, row.ID)
 	}
 	sort.Strings(sources)
 	if want := "applehealth/iphone/apple-watch applehealth/iphone/health applehealth/iphone/iphone applehealth/iphone/withings"; strings.Join(sources, " ") != want {
 		t.Errorf("sources %v, want %s", sources, want)
 	}
-	for _, row := range listLive(t, ds, haWorkout) {
+	for _, row := range listLive(t, ds, healthWorkout) {
 		pr := row.Properties
-		if storedRefPath(pr["source"]) != haSource+"/applehealth/iphone/apple-watch" || pr["averageHeartRate"] == nil || pr["activeEnergy"] == nil {
+		if storedRefPath(pr["source"]) != obsSource+"/applehealth/iphone/apple-watch" || pr["averageHeartRate"] == nil || pr["activeEnergy"] == nil {
 			t.Errorf("workout %s = %v", row.ID, pr)
 		}
 		switch pr["sport"] {
@@ -280,7 +280,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 			if d := at.Sub(first.WeighInAt); d < 0 || d >= time.Minute {
 				t.Errorf("the weigh-in is sent at %s, the persona stepped on at %s", at, first.WeighInAt)
 			}
-			obs := mustGet(t, ds, haObservation, "applehealth/iphone/withings/body_mass/"+at.Format("2006-01-02T15:04:05Z")).Properties
+			obs := mustGet(t, ds, obsObservation, "applehealth/iphone/withings/body_mass/"+at.Format("2006-01-02T15:04:05Z")).Properties
 			if v, u := quantityOf(t, obs, "value"); v != weight || u != "kg" {
 				t.Errorf("body_mass is %s %s, the delivery sent %s kg", v, u, weight)
 			}

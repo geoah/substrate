@@ -183,7 +183,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	// trace, because WHOOP sends summaries and never samples.
 	sleeps := len(days) + naps
 	byMetric := map[string]int{}
-	for _, row := range listLive(t, ds, healthObservation) {
+	for _, row := range listLive(t, ds, obsObservation) {
 		byMetric[metricOf(row.Properties)]++
 	}
 	for metric, want := range map[string]int{
@@ -200,7 +200,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	if len(byMetric) != 11 {
 		t.Errorf("observations of %d metrics, want 11: %v", len(byMetric), byMetric)
 	}
-	for kind, want := range map[string]int{healthSleep: sleeps, healthWorkout: workouts, healthSource: 1, obsTrace: 0} {
+	for kind, want := range map[string]int{healthSleep: sleeps, healthWorkout: workouts, obsSource: 1, obsTrace: 0} {
 		if n := countLive(t, ds, kind); n != want {
 			t.Errorf("%d %s, want %d", n, kind, want)
 		}
@@ -208,7 +208,7 @@ func TestSynthWhoopSyncsAndAdapts(t *testing.T) {
 	// One value end to end: the first day's recovery score is the persona's.
 	first := cycles[len(cycles)-1]
 	id := strconv.FormatInt(int64(first["id"].(float64)), 10)
-	rec := healthProps(t, ds, healthObservation, hw(id, "recovery"))
+	rec := healthProps(t, ds, obsObservation, hw(id, "recovery"))
 	if v, u := quantityOf(t, rec, "value"); v != strconv.Itoa(p.Day(days[0]).Recovery) || u != "%" {
 		t.Errorf("the first recovery is %s %s, the persona's is %d %%", v, u, p.Day(days[0]).Recovery)
 	}
