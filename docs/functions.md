@@ -663,6 +663,7 @@ host.observed.period_id(at, period)               # "2026-10-07T06"
 host.observed.decimal(value)                      # 1e-05 -> "0.00001"
 host.observed.duration(seconds)                   # 28489 -> "PT7H54M49S"
 host.observed.instant(at)                         # "2026-10-07T06:00:00Z"
+host.observed.percent(part, whole)                # {"value": "87.50", "unit": "%"}
 host.observed.record_id(provider, account, *parts)  # composed, hashed past 128 bytes
 host.observed.reconcile(origins, outputs, *, owned, adapter=None, stored=None)
 host.version(record)                              # an int, for if_version
@@ -838,7 +839,9 @@ civil date at that offset, the day a daily summary belongs to.
 instant in the one spelling the engine stores: digits without an exponent
 (a float is its shortest repr written out, so `1e-05` is `0.00001`), the
 canonical ISO 8601 duration to the microsecond, and RFC 3339 UTC.
-`record_id(provider, account, *parts)` joins `<provider>/<part>/...` into
+`percent(part, whole)` is part over whole as a `%` quantity rounded half up
+to two places, the shape of a night's `efficiency`, and None where the whole
+is not above zero. `record_id(provider, account, *parts)` joins `<provider>/<part>/...` into
 an id and hashes it through `host.ids.external` only where it would leave
 the id alphabet or pass 128 bytes.
 

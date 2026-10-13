@@ -817,7 +817,7 @@ def _same_value(a, b):
 
 class Observed:
     """Builders for observed values (docs/observations.md). `trace`,
-    `local_day`, `period_id`, `decimal`, `duration`, `instant` and
+    `local_day`, `period_id`, `decimal`, `duration`, `instant`, `percent` and
     `record_id` are pure Python: they compute and never write. `reconcile`
     reads an origin's stored outputs and stages the writes and deletes that
     bring them to what the origin implies now."""
@@ -1039,6 +1039,21 @@ class Observed:
         """A timezone-aware datetime as the RFC 3339 UTC text the engine
         stores ("2026-10-07T06:00:00Z"), to the microsecond."""
         return _instant(_epoch_us(_aware("observed.instant", "at", at)))
+
+    def percent(self, part, whole):
+        """`part` over `whole` as a percentage rounded half up to two places,
+        the quantity a ratio such as a night's `efficiency` is written as:
+        {"value": "93.75", "unit": "%"}. Each is a number as `decimal` reads
+        one. None where either is None or `whole` is not above zero."""
+        fn = "observed.percent"
+        if part is None or whole is None:
+            return None
+        num = decimal.Decimal(_decimal_text(fn, part))
+        den = decimal.Decimal(_decimal_text(fn, whole))
+        if den <= 0:
+            return None
+        ratio = (num * 100 / den).quantize(decimal.Decimal("0.01"), rounding=decimal.ROUND_HALF_UP)
+        return {"value": format(ratio, "f"), "unit": "%"}
 
     def record_id(self, provider, account, *parts):
         """An output's id composed from upstream data: `<provider>/<part>/...`

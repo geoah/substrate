@@ -439,8 +439,8 @@ func observedProbe(t *testing.T, probe string, out any) {
 }
 
 // TestObservedSpellsWhatTheEngineStores: host.observed's decimal, duration,
-// instant and record_id write the one spelling the engine stores, so an
-// output a body composes compares equal to the stored row it rewrites.
+// instant, percent and record_id write the one spelling the engine stores, so
+// an output a body composes compares equal to the stored row it rewrites.
 func TestObservedSpellsWhatTheEngineStores(t *testing.T) {
 	var out map[string]any
 	observedProbe(t, `
@@ -468,6 +468,8 @@ print(json.dumps({
     "short id": o.record_id("garmin", "ada", "ada", "x4b2c9e1-6aa31a50", "steps"),
     "long id": o.record_id("garmin", "ada", "ada", "x" * 130, "steps"),
     "odd id": o.record_id("garmin", "ada", "ada", "a b", "steps"),
+    "efficiency": o.percent(25200, 28800), "half up": o.percent(1, 32), "float part": o.percent(7.5, 8),
+    "no whole": o.percent(1, 0), "no part": o.percent(None, 8),
 }))
 `, &out)
 	for key, want := range map[string]any{
@@ -480,6 +482,16 @@ print(json.dumps({
 		"odd id":   ExternalID("garmin", "ada", "garmin/ada/a b/steps"),
 	} {
 		if out[key] != want {
+			t.Errorf("%s = %v, want %v", key, out[key], want)
+		}
+	}
+	for key, want := range map[string]any{
+		"efficiency": map[string]any{"value": "87.50", "unit": "%"},
+		"half up":    map[string]any{"value": "3.13", "unit": "%"},
+		"float part": map[string]any{"value": "93.75", "unit": "%"},
+		"no whole":   nil, "no part": nil,
+	} {
+		if !equalJSON(out[key], want) {
 			t.Errorf("%s = %v, want %v", key, out[key], want)
 		}
 	}
