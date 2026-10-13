@@ -278,7 +278,7 @@ func TestAggregateFlagsBuildEveryField(t *testing.T) {
 			append([]string{
 				"--property", "duration", "--anchor", "endsAt", "--utc-offset", "utcOffsetEnd",
 				"--property-group-by", "sport,source", "--kinds", "ada.example.com/health/workout",
-				"--calendar", "day", "--fallback-timezone", "Europe/Athens", "--reducer", "sum",
+				"--calendar", "day", "--fallback-timezone", "Europe/Athens", "--offset", "PT4H", "--reducer", "sum",
 				"--record-policy", "priority", "--record-order", "whoop,garmin", "--record-source", "source", "--record-match", "sport",
 				"--rolling", "7", "--rolling-reducer", "avg", "--rolling-through", "previous", "--fill", "zero", "--max-groups", "50",
 			}, days...),
@@ -286,7 +286,7 @@ func TestAggregateFlagsBuildEveryField(t *testing.T) {
 			`{"property":{"name":"duration","anchor":"endsAt","utcOffset":"utcOffsetEnd","groupBy":["sport","source"],` +
 				`"sources":{"policy":"priority","order":["whoop","garmin"],"property":"source","match":["sport"]}},` +
 				`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
-				`"bucket":{"calendar":"day","fallbackTimezone":"Europe/Athens"},"reducers":["sum"],"fill":"zero",` +
+				`"bucket":{"calendar":"day","fallbackTimezone":"Europe/Athens","offset":"PT4H"},"reducers":["sum"],"fill":"zero",` +
 				`"rolling":{"buckets":7,"reducers":["avg"],"through":"previous"},"budget":{"maxGroups":50}}`,
 		},
 		"the records time mode": {
@@ -296,7 +296,7 @@ func TestAggregateFlagsBuildEveryField(t *testing.T) {
 				"--around-before", "PT1H", "--around-after", "PT1M", "--max-records", "40",
 				"--records-utc-offsets", "utcOffsetStart,utcOffsetEnd",
 				"--record-policy", "priority", "--record-order", "whoop", "--record-source", "source",
-				"--group-by", "code", "--reducer", "sum", "--unit", "min",
+				"--group-by", "code", "--reducer", "sum", "--reducer", "timeInState:open,closed", "--unit", "min",
 			}, days...),
 			``,
 			`{"metric":{"ref":"ada.example.com/observations/metric/health/sleep_stage"},` +
@@ -305,7 +305,7 @@ func TestAggregateFlagsBuildEveryField(t *testing.T) {
 				`"around":{"before":"PT1H","after":"PT1M"},"maxRecords":40,` +
 				`"sources":{"policy":"priority","order":["whoop"],"property":"source"},` +
 				`"utcOffsets":{"start":"utcOffsetStart","end":"utcOffsetEnd"}}},` +
-				`"groupBy":["code"],"reducers":["sum"],"unit":"min"}`,
+				`"groupBy":["code"],"reducers":["sum",{"timeInState":["open","closed"]}],"unit":"min"}`,
 		},
 		"a fixed bucket placed by its end, at one statistic": {
 			append([]string{
