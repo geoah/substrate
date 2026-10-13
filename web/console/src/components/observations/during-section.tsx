@@ -79,6 +79,9 @@ export function DuringSection({
   if (!during) return null
   return (
     <DuringParts
+      // The record page stays mounted across records of one route, and a
+      // zoom into one record's span means nothing on another's.
+      key={`${record.kind}/${record.id}`}
       during={during}
       noun={lowerFirst(displayName(kind ?? record.kind))}
     />

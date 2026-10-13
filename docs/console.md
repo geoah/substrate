@@ -400,7 +400,7 @@ Under the properties, in order:
   line over the span with its lowest-to-highest band, an aggregate read by
   the minute (or as the timeline's automatic bucket sizes the span), the
   record's own source ranked first where sources overlap; a click or a drag
-  zooms into part of it. A workout adds its time in five heart rate zones
+  zooms into part of it, until the page moves to another record. A workout adds its time in five heart rate zones
   (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute),
   one `durationIn` read over the span. A sleep adds its stages: a
   hypnogram, a row per stage and a block per segment, where its source

@@ -227,12 +227,17 @@ function mount(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  render(
+  const ui = (shown: SubstrateRecord) => (
     <QueryClientProvider client={client}>
-      <DuringSection record={rec} kind={kind} kinds={ALL} />
+      <DuringSection record={shown} kind={kind} kinds={ALL} />
     </QueryClientProvider>
   )
-  return seen
+  const { rerender } = render(ui(rec))
+  // The record page keeps its section mounted when it moves to another
+  // record of the same route.
+  return Object.assign(seen, {
+    moveTo: (next: SubstrateRecord) => rerender(ui(next)),
+  })
 }
 
 const RUN = record(WORKOUT, "garmin/ada/21100008900", {
@@ -313,6 +318,35 @@ describe("during a workout", () => {
         screen.queryByRole("button", { name: "Show the whole workout" })
       ).toBe(null)
     )
+  })
+
+  it("drops the zoom when the page moves to another workout", async () => {
+    const seen = mount(RUN, WORKOUT)
+    const chart = await screen.findByRole("group", {
+      name: "Heart rate during this workout",
+    })
+    act(() => chart.focus())
+    fireEvent.keyDown(chart, { key: "ArrowRight" })
+    fireEvent.keyDown(chart, { key: "Enter" })
+    await screen.findByRole("button", { name: "Show the whole workout" })
+    const next = record(WORKOUT, "garmin/ada/21100009999", {
+      sport: "running",
+      at: "2026-10-13T05:25:00Z",
+      endsAt: "2026-10-13T06:59:00Z",
+      source: { ref: GARMIN },
+    })
+    seen.moveTo(next)
+    await waitFor(() =>
+      expect(
+        seen.filter((s) => s.aggregate?.bucket).at(-1)?.aggregate?.range
+      ).toEqual({
+        gte: expect.stringMatching(/^2026-10-13T08:25:00/),
+        lt: expect.stringMatching(/^2026-10-13T09:59:00/),
+      })
+    )
+    expect(
+      screen.queryByRole("button", { name: "Show the whole workout" })
+    ).toBe(null)
   })
 })
 
