@@ -1322,7 +1322,9 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 				tr.mergedRows++
 			}
 			og := r.rowGroups[row.Group]
-			if !r.admits(og.code) {
+			// A row of nulls alone is kept for the held time it stops
+			// (walkHeld) and merges into no bucket: the raw points make none.
+			if row.N == 0 || !r.admits(og.code) {
 				continue
 			}
 			var targets []*aggBucket
@@ -1354,9 +1356,7 @@ func (r *aggRun) evalRollups(g *aggGroup) (aggCells, error) {
 					}
 				}
 				r.mergeStats(ev, st, g.form, si)
-				if row.N > 0 {
-					ev.sources[s.source] = true
-				}
+				ev.sources[s.source] = true
 				switch {
 				case g.form == vocabulary.FormAmount && row.First != nil:
 					ev.extents = append(ev.extents, rowExtent(row.Stats))

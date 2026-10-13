@@ -1592,3 +1592,32 @@ func TestAggregateIsInexactWhileTheIndexIsRederived(t *testing.T) {
 		t.Errorf("with the trace kind owed, filtered to observations: exact %v, want true", got)
 	}
 }
+
+// A quarter hour that holds only a null makes no row on either path: an
+// amount and a gauge each with a null at 00:20 and a reading at 00:40, read
+// in quarter hours. The null's rollup row (count 0) once made a row of count
+// 0 in [00:15, 00:30) on the rollup path, where the raw points make none.
+func TestAggregateANullAloneMakesNoRow(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, x := range []struct{ id, metric, form, unit, value string }{
+		{"steps", "health/steps", "amount", "{steps}", "5"},
+		{"hr", "health/heart_rate", "gauge", "/min", "60"},
+	} {
+		f.series(x.id, map[string]any{
+			"metric": f.metricRef(x.metric), "source": f.sourceRef("phone"), "form": x.form, "unit": x.unit,
+		}, start, start.Add(time.Hour), []int64{20 * 60000, 40 * 60000}, []any{nil, x.value})
+		res, _, _ := f.bothPaths(substrate.Filter{}, substrate.Aggregate{
+			Metric:   &substrate.AggregateMetric{Ref: f.metricPath(x.metric)},
+			Range:    rng(start, start.Add(time.Hour)),
+			Bucket:   &substrate.AggregateBucket{Every: "PT15M"},
+			Reducers: reducers("count"),
+		})
+		for _, row := range res.Rows {
+			if row.Start.Equal(start.Add(15 * time.Minute)) {
+				t.Errorf("%s: a row for the quarter hour holding only the null: %+v", x.form, row)
+			}
+		}
+	}
+}
