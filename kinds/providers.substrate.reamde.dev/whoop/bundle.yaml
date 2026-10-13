@@ -132,7 +132,10 @@ data:
   # back by when no cycle row exists. Both functions import their row
   # mapping from the bundle's `whoop_mirror` module. ADDITIVE. Versions 19
   # and 20 were never released.
-  version: 21
+  #
+  # 22: the `enabledCycles` description says a cycle runs from one sleep
+  # onset to the next, as WHOOP defines it, not wake to wake. Text only.
+  version: 22
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -673,8 +676,9 @@ data:
       type: bool
       writer: owner
       displayName: Cycles
-      description: mirror the physiological cycles — the wake-to-wake days
-        WHOOP scores strain over, and the identity a recovery hangs off
+      description: mirror the physiological cycles, the days WHOOP scores
+        strain over, each from one sleep onset to the next, and the identity
+        a recovery hangs off
     enabledRecovery:
       type: bool
       writer: owner

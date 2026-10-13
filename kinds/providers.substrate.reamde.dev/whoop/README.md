@@ -51,7 +51,7 @@ revocation is manual:
 
 ## Upgrading from version 18
 
-Version 21 adds the `whoopwebhook` function, the `whoop-webhook` trigger and
+The upgrade to version 22 adds the `whoopwebhook` function, the `whoop-webhook` trigger and
 the `recovery.cycleId` property, and changes no property an installed
 repository holds. Taking the upgrade (the console's Registry page, or
 `substratectl install providers.substrate.reamde.dev/whoop`) writes the
