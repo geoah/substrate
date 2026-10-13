@@ -98,6 +98,29 @@ func TestMeasureOf(t *testing.T) {
 	}
 }
 
+// Two spellings of one term read as one measure: an exponent written with a
+// sign or a leading zero, a reciprocal written as a negative exponent, the
+// components in another order, a group around a counted term.
+func TestEquivalentSpellingsShareAMeasure(t *testing.T) {
+	for _, group := range [][]string{
+		{"m2", "m+2", "m02", "cm+2"},
+		{"/s", "s-1", "/min", "min-1", "h-1"},
+		{"10*3{copies}", "(10*3{copies})", "{copies}"},
+		{"kW.h", "h.kW"},
+		{"mL/(kg.min)", "mL/(min.kg)", "mL/kg/min"},
+	} {
+		want, err := vocabulary.MeasureOf(group[0])
+		if err != nil {
+			t.Fatalf("MeasureOf(%s): %v", group[0], err)
+		}
+		for _, code := range group[1:] {
+			if m, err := vocabulary.MeasureOf(code); err != nil || m.Name != want.Name {
+				t.Errorf("MeasureOf(%s) = %v, %v; want %s, as %s reads", code, m.Name, err, want.Name, group[0])
+			}
+		}
+	}
+}
+
 // A dimension two measures share is refused unless the property names one:
 // the review's rule, because the vector alone is a calculator's answer.
 func TestAmbiguousDimensionsAreRefusedUndeclared(t *testing.T) {

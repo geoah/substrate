@@ -575,8 +575,10 @@ in `observed_points`.
 ## Reading
 
 One record is a list read, as for any kind: today's WHOOP recovery is
-`filter.properties.periodId` equal to the cycle id, every weighing under
-155 lb is `value` less than `{"value": "155", "unit": "[lb_av]"}`. Everything
+`filter.properties.periodId` equal to the cycle id, every body weight under
+155 lb is `metric` equal to the `health/body_mass` metric and `value` less
+than `{"value": "155", "unit": "[lb_av]"}` (without the metric, muscle and
+bone mass rows match too). Everything
 bucketed is the records route's [aggregate read](api.md#the-aggregate-read):
 a metric, a range, a time mode, reducers checked against the form, and a
 source policy, answered from the rollup rows where they answer exactly and

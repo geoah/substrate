@@ -641,6 +641,11 @@ func evalComponent(n node) (value, error) {
 		}
 		if x.note != nil {
 			v.notes[*x.note]++
+			// `10*3{copies}`: an annotated power of ten counts things, as a
+			// bare annotation does, inside a group as well.
+			if c := x.atom.def.code; c == "10*" || c == "10^" {
+				v.counted = true
+			}
 		}
 	case numberNode:
 		f, _ := new(big.Int).SetString(x.digits, 10)
@@ -661,49 +666,6 @@ func evalComponent(n node) (value, error) {
 }
 
 // --- rendering ---
-
-// render writes the tree back as a code; with prefixes false every prefix is
-// dropped, which is the key a prefixed code shares with its table row.
-func render(t *termNode, prefixes bool) string {
-	var b strings.Builder
-	if t.reciprocal {
-		b.WriteByte('/')
-	}
-	renderTerm(&b, t, prefixes)
-	return b.String()
-}
-
-func renderTerm(b *strings.Builder, t *termNode, prefixes bool) {
-	for i, part := range t.parts {
-		if i > 0 {
-			b.WriteByte(t.ops[i-1])
-		}
-		switch x := part.(type) {
-		case unitNode:
-			if prefixes {
-				b.WriteString(x.prefix)
-			}
-			b.WriteString(x.atom.def.code)
-			if x.expSet {
-				b.WriteString(x.expRaw)
-			}
-			if x.note != nil {
-				b.WriteString("{" + *x.note + "}")
-			}
-		case numberNode:
-			b.WriteString(x.digits)
-			if x.note != nil {
-				b.WriteString("{" + *x.note + "}")
-			}
-		case noteNode:
-			b.WriteString("{" + x.text + "}")
-		case groupNode:
-			b.WriteByte('(')
-			renderTerm(b, x.inner, prefixes)
-			b.WriteByte(')')
-		}
-	}
-}
 
 var superscripts = map[rune]rune{
 	'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',

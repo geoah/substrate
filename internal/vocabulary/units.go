@@ -129,12 +129,49 @@ func countKey(m map[string]int) string {
 	return strings.Join(parts, " ")
 }
 
-// plain is the code with every prefix dropped: `GJ` and `kJ` share `J`.
+// plain is the code's prefix-free key: `GJ` and `kJ` share the key of `J`. It
+// lists every atom, number and annotation the term holds with the signed
+// exponent it carries, in a fixed order, so two spellings of one term share it
+// (`m2`, `m+2` and `m02`; `/s` and `s-1`; `kW.h` and `h.kW`). Nothing cancels:
+// `mol/mol` and `g/kg` keep their atoms, and two keys never meet by arithmetic.
 func (u Unit) plain() string {
 	if u.tree == nil {
 		return u.code
 	}
-	return render(u.tree, false)
+	var parts []string
+	plainTerm(u.tree, 1, &parts)
+	sort.Strings(parts)
+	return strings.Join(parts, " ")
+}
+
+// plainTerm appends a term's occurrences to parts, each under the sign the
+// term's position gives it.
+func plainTerm(t *termNode, sign int, parts *[]string) {
+	if t.reciprocal {
+		sign = -sign
+	}
+	for i, part := range t.parts {
+		s := sign
+		if i > 0 && t.ops[i-1] == '/' {
+			s = -sign
+		}
+		switch x := part.(type) {
+		case unitNode:
+			*parts = append(*parts, fmt.Sprintf("%s^%d", x.atom.def.code, x.exp*s))
+			if x.note != nil {
+				*parts = append(*parts, fmt.Sprintf("{%s}^%d", *x.note, s))
+			}
+		case numberNode:
+			*parts = append(*parts, fmt.Sprintf("%s^%d", x.digits, s))
+			if x.note != nil {
+				*parts = append(*parts, fmt.Sprintf("{%s}^%d", *x.note, s))
+			}
+		case noteNode:
+			*parts = append(*parts, fmt.Sprintf("{%s}^%d", x.text, s))
+		case groupNode:
+			plainTerm(x.inner, s, parts)
+		}
+	}
 }
 
 // ParseUnit reads one case-sensitive UCUM code over the table's atoms and
@@ -162,15 +199,6 @@ func parseUnit(code string) (Unit, error) {
 		return Unit{}, fmt.Errorf("%q: %w", code, err)
 	}
 	u := Unit{code: code, tree: t, val: val}
-	for _, n := range t.parts {
-		un, ok := n.(unitNode)
-		if !ok || un.atom.def.code != "10*" && un.atom.def.code != "10^" || un.note == nil {
-			continue
-		}
-		// `10*3{copies}`: an annotated power of ten counts things, as a
-		// bare annotation does.
-		u.val.counted = true
-	}
 	if len(u.val.specials) > 0 {
 		u.misused = true
 		if one, ok := soleUnit(t); ok {
@@ -254,10 +282,12 @@ type unitRow struct {
 }
 
 type unitTable struct {
-	measures     []Measure
-	byName       map[string]*Measure
-	rows         map[string][]unitRow // code -> its rows, in table order
-	plain        map[string][]string  // prefix-free code -> measures listing a code of it
+	measures []Measure
+	byName   map[string]*Measure
+	rows     map[string][]unitRow // code -> its rows, in table order
+	plain    map[string][]string  // prefix-free key (Unit.plain) -> measures listing a code of it
+	// primary is primaryMeasure by prefix-free key, so `mK` reads as `K` does.
+	primary      map[string]string
 	bases        map[string]Unit
 	codesInOrder []string
 }
@@ -280,7 +310,7 @@ func buildTable() (*unitTable, error) {
 	t := &unitTable{
 		measures: make([]Measure, 0, len(measureDefs)),
 		byName:   map[string]*Measure{}, rows: map[string][]unitRow{},
-		plain: map[string][]string{}, bases: map[string]Unit{},
+		plain: map[string][]string{}, bases: map[string]Unit{}, primary: map[string]string{},
 	}
 	parse := parseUnit
 	for _, d := range measureDefs {
@@ -349,6 +379,13 @@ func buildTable() (*unitTable, error) {
 				return nil, fmt.Errorf("primaryMeasure sends %s to %s, which does not list it", code, p)
 			}
 		}
+	}
+	for code, measure := range primaryMeasure {
+		u, err := parse(code)
+		if err != nil {
+			return nil, fmt.Errorf("primaryMeasure names %s: %w", code, err)
+		}
+		t.primary[u.plain()] = measure
 	}
 	for alias, code := range unitAliases {
 		if _, err := parse(alias); err == nil {
@@ -474,7 +511,7 @@ func (t *unitTable) resolve(u Unit, declared string) (*Measure, error) {
 		if len(names) == 1 {
 			return t.byName[names[0]], nil
 		}
-		if p, ok := primaryMeasure[u.plain()]; ok {
+		if p, ok := t.primary[u.plain()]; ok {
 			return t.byName[p], nil
 		}
 		return nil, fmt.Errorf("%s is ambiguous: it could be %s; declare `measures:` on the property", u.code, orList(names))
