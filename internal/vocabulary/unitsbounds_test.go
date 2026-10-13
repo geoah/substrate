@@ -121,3 +121,33 @@ func TestUnitEvaluationIsBounded(t *testing.T) {
 		}
 	}
 }
+
+// A converted value is written back the way any decimal is, so its answer
+// holds at most MaxDecimalDigits digits too: rounded half to even to the
+// fraction digits its integer part leaves, exact false, and refused where
+// its integer part or its first significant digit lies past them.
+func TestConvertDigitsAnswersAWritableDecimal(t *testing.T) {
+	nines := strings.Repeat("9", vocabulary.MaxDecimalDigits)
+	c, err := vocabulary.ConvertDigits(nines, "[lb_av]", "kg", "")
+	if err != nil {
+		t.Fatalf("1000 nines [lb_av] to kg: %v", err)
+	}
+	if _, err := vocabulary.CanonicalDecimal(c.Value); err != nil || c.Exact {
+		t.Errorf("1000 nines [lb_av] to kg = %d characters, exact %v: %v; want a decimal a write admits, rounded", len(c.Value), c.Exact, err)
+	}
+	// 4535923699...99.54640763 rounds half to even to its 1000 integer digits.
+	if want := "45359237" + strings.Repeat("0", vocabulary.MaxDecimalDigits-8); c.Value != want {
+		t.Errorf("1000 nines [lb_av] to kg = %.20s... (%d characters), want 4.5359237e999 in 1000 integer digits", c.Value, len(c.Value))
+	}
+	for _, x := range []struct{ value, from, to, want string }{
+		{strings.Repeat("1", vocabulary.MaxDecimalDigits), "10*24", "1", "1024 integer digits"},
+		{"0." + strings.Repeat("0", vocabulary.MaxDecimalDigits-3) + "1", "mg", "kg", "first significant digit lies past"},
+	} {
+		if c, err := vocabulary.ConvertDigits(x.value, x.from, x.to, ""); err == nil || !strings.Contains(err.Error(), x.want) {
+			t.Errorf("%.12s... %s to %s = %d characters, %v; want a refusal naming %q", x.value, x.from, x.to, len(c.Value), err, x.want)
+		}
+	}
+	if c, err := vocabulary.ConvertDigits("72.4", "kg", "g", ""); err != nil || c.Value != "72400" || !c.Exact {
+		t.Errorf("72.4 kg to g = %+v, %v", c, err)
+	}
+}

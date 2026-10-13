@@ -811,8 +811,10 @@ digits (a `str`, an `int` or a `Decimal`; a `float` is written as its
 shortest repr), reads aliases on both units (`°C`, `kWh`, `mmHg`) and
 answers a decimal `str`: every digit when the result has a finite decimal
 expansion (37 Cel is exactly 98.6 [degF]), else 20 significant digits (72.4
-kg is 159.61467782185136844 lb, rounded). The answer's `exact` attribute is
-`False` exactly when it was rounded. Without `measure` the units are read as
+kg is 159.61467782185136844 lb, rounded), and at most 1000 digits, so the
+answer can be written back: a longer one is rounded to the fraction digits
+its integer part leaves, and one that cannot fit raises a `HostError`. The
+answer's `exact` attribute is `False` exactly when it was rounded. Without `measure` the units are read as
 `MeasureOf` reads them, so Cel to [degF] is an absolute temperature;
 `measure="temperature-difference"` converts a deviation without the offset.
 A conversion across measures (`kg` to `J`) raises a `HostError` carrying the

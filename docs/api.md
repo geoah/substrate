@@ -1816,7 +1816,11 @@ GET /api/v1/units/convert?value=72.4&from=kg&to=%5Blb_av%5D
 ```
 
 `value` is every digit where the result has a finite decimal expansion, else
-20 significant digits with `exact: false`. A missing parameter or an unknown
+20 significant digits with `exact: false`. Either way it holds at most 1000
+digits, so a write takes it back: a longer answer is rounded to the fraction
+digits its integer part leaves, with `exact: false`, and one whose integer
+part (1000 ones from `10*24` to `1`) or whose first significant digit lies
+past 1000 digits is a `422`. A missing parameter or an unknown
 one is `400 bad_request`; a value, a unit or a pair of units the table refuses
 (`kg` to `J`, `mmol/mol` to `%`) is `422 validation` carrying the table's
 reason. Neither route reads the repository; the token gates them as it gates

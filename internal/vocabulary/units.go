@@ -825,7 +825,8 @@ func ConversionMeasure(from, to string) (string, error) {
 // Conversion is one value ConvertDigits converted.
 type Conversion struct {
 	// Value is the converted digits: every one where the result has a finite
-	// decimal expansion, else ConvertedDigits significant digits.
+	// decimal expansion, else ConvertedDigits significant digits, and in
+	// either case at most MaxDecimalDigits (fitDecimal).
 	Value string
 	// Unit is the code converted to.
 	Unit string
@@ -864,7 +865,50 @@ func ConvertDigits(value, from, to, measure string) (Conversion, error) {
 		return Conversion{}, err
 	}
 	out, exact := RatDecimal(r, ConvertedDigits)
+	if _, err := CanonicalDecimal(out); err != nil {
+		if out, err = fitDecimal(r); err != nil {
+			return Conversion{}, err
+		}
+		exact = false
+	}
 	return Conversion{Value: out, Unit: toCode, Measure: measure, Exact: exact}, nil
+}
+
+// fitDecimal rounds a value half to even to the fraction digits a decimal of
+// MaxDecimalDigits keeps beside its integer part, so a converted value can be
+// written back. A value whose integer part, or whose first significant digit,
+// lies past those digits does not fit and is refused naming the bound.
+func fitDecimal(r *big.Rat) (string, error) {
+	abs := new(big.Rat).Abs(r)
+	intDigits := len(new(big.Int).Quo(abs.Num(), abs.Denom()).String())
+	places := MaxDecimalDigits - intDigits
+	if places < 0 {
+		return "", fmt.Errorf("the converted value has %d integer digits, and a decimal holds at most %d digits", intDigits, MaxDecimalDigits)
+	}
+	scaled := new(big.Rat).Mul(abs, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(places)), nil)))
+	q, rem := new(big.Int).QuoRem(scaled.Num(), scaled.Denom(), new(big.Int))
+	switch new(big.Int).Mul(rem, big.NewInt(2)).Cmp(scaled.Denom()) {
+	case 1:
+		q.Add(q, big.NewInt(1))
+	case 0:
+		if q.Bit(0) == 1 {
+			q.Add(q, big.NewInt(1))
+		}
+	}
+	if q.Sign() == 0 {
+		return "", fmt.Errorf("the converted value's first significant digit lies past the %d digits a decimal holds", MaxDecimalDigits)
+	}
+	out := placePoint(q.String(), places)
+	if strings.Contains(out, ".") {
+		out = strings.TrimRight(strings.TrimRight(out, "0"), ".")
+	}
+	if r.Sign() < 0 {
+		out = "-" + out
+	}
+	if _, err := CanonicalDecimal(out); err != nil {
+		return "", fmt.Errorf("the converted value: %w", err)
+	}
+	return out, nil
 }
 
 // ConvertIn converts a value between two codes of the named measure, exactly:
