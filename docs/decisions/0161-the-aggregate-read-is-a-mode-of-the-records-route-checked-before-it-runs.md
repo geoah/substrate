@@ -89,8 +89,12 @@ Chosen: a mode of the records route.
   timeout inside the caller's deadline. Each budget is checked before the
   work it bounds: the groups, the series and the buckets after the
   statements that select the streams and find the range's forms and codes,
-  and before any point is reduced. Over budget is a `422` naming the limit;
-  a result is never truncated.
+  and before any point is reduced. Two checks come later, both before a
+  row is written. A recorded-local read's points can name days the range's
+  offsets do not, so it counts those buckets against `maxBuckets` after
+  evaluating the points. A metric read checks the groups and codes that
+  hold a row against `maxGroups` again after assembling the rows. Over
+  budget is a `422` naming the limit; a result is never truncated.
 - **One response shape**, `AggregateResult` in `internal/substrate`, pinned
   by the wire golden and mirrored in `types.ts`: per-row `start` and `end`
   with offsets, `from`, `sources`, `coverage`, `bounded`, `synthetic` and
@@ -113,8 +117,9 @@ budgets before it runs.
 
 - Good, because a screen is one request, and the console, a function and an
   agent get the same answer.
-- Good, because a wrong reducer, unit or budget is refused before any
-  point is reduced.
+- Good, because a wrong reducer or unit is refused before any point is
+  reduced, and so is a budget, apart from the two later checks above,
+  which still come before a row is written.
 - Bad, because the records route's allow-list gains another mode with its
   own refusals.
 - Bad, because joins beyond a matched record's range, continuous queries

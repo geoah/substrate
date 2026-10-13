@@ -190,7 +190,11 @@ Response:
   reducer that needs them; its `values` are `null`.
 - A request over budget, a reducer illegal for the form, or a unit outside
   the metric's measure is a `422` naming the limit, the form or the measure,
-  before any point is reduced.
+  before any point is reduced. Two budget checks come later: a
+  recorded-local read counts the days its points name against
+  `maxBuckets` after evaluating them, and a metric read checks the groups
+  and codes that hold a row against `maxGroups` again after assembling the
+  rows. Both come before a row is written.
 - The downsample response reuses `AggregateResult` with one row per column
   and the four reducers `first`, `last`, `min`, `max`, each carrying `at`.
 

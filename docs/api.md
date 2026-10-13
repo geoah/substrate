@@ -1090,7 +1090,8 @@ JSON, so a misspelled key is a `400` naming it, and the mode refuses `q`,
 `422 validation` naming the limit, the form, the measure or the parameter, and
 it is refused before any point or rollup row is reduced: the one statement
 that finds which forms and codes the range holds runs first, over the rollup
-rows' keys and the points at the range's cut ends.
+rows' keys and the points at the range's cut ends. Two budget checks come
+later, before a row is written; [budgets](#budgets) names them.
 
 ```http
 GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
@@ -1716,7 +1717,9 @@ one per stream, group and quarter hour, so a year of a dense stream is about
 35,000. The one point per stream and window a gauge's value is carried in from
 counts against no budget. A recorded-local read can meet days its range's
 offsets do not name (a point at another offset); those buckets are counted
-after the points are evaluated, before a row is made.
+after the points are evaluated, before a row is made. A metric read also
+counts the groups and codes that hold a row against `maxGroups` once the
+rows are assembled, before it answers.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
