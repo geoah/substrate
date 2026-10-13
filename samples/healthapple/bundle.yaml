@@ -114,7 +114,6 @@ data:
 
     import datetime
     import decimal
-    import json
     import re
 
     # This code's own version, stamped on every output apart from the row's
