@@ -253,7 +253,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	}
 	for _, row := range listLive(t, ds, haWorkout) {
 		pr := row.Properties
-		if storedRefPath(pr["source"]) != haSource+"/applehealth/iphone/apple-watch" || pr["averageHeartRate"] == nil || pr["energy"] == nil {
+		if storedRefPath(pr["source"]) != haSource+"/applehealth/iphone/apple-watch" || pr["averageHeartRate"] == nil || pr["activeEnergy"] == nil {
 			t.Errorf("workout %s = %v", row.ID, pr)
 		}
 		switch pr["sport"] {

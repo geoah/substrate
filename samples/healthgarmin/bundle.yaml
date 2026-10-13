@@ -180,8 +180,8 @@ data:
         "bmi": ("kg/m2", None),
         "systolic_blood_pressure": ("mm[Hg]", "PT0S"),
         "diastolic_blood_pressure": ("mm[Hg]", "PT0S"),
-        "garmin_stress": ("1", "PT6M"),
-        "garmin_body_battery": ("1", "PT6M"),
+        "garmin_stress": ("{score}", "PT6M"),
+        "garmin_body_battery": ("{score}", "PT6M"),
         "sleep_stage": (None, None),
     }
 
@@ -213,11 +213,23 @@ data:
                       "wheelChairCadenceInPushesPerMinute")
     SNAPSHOT_METRICS = {"heart_rate": "heart_rate", "respiration": "respiratory_rate",
                         "stress": "garmin_stress", "spo2": "spo2", "rmssd_hrv": "hrv_rmssd"}
+    # Garmin's activity types onto the workout kind's code set. A type not
+    # here is `other`; the type itself stays in `sportSource`.
     SPORTS = {"RUNNING": "running", "TRAIL_RUNNING": "running", "TREADMILL_RUNNING": "running",
-              "TRACK_RUNNING": "running", "CYCLING": "cycling", "ROAD_BIKING": "cycling",
-              "MOUNTAIN_BIKING": "cycling", "INDOOR_CYCLING": "cycling", "GRAVEL_CYCLING": "cycling",
-              "WALKING": "walking", "HIKING": "hiking", "STRENGTH_TRAINING": "strength",
-              "LAP_SWIMMING": "swimming", "OPEN_WATER_SWIMMING": "swimming", "YOGA": "yoga"}
+              "TRACK_RUNNING": "running", "STREET_RUNNING": "running", "INDOOR_RUNNING": "running",
+              "VIRTUAL_RUN": "running", "ULTRA_RUN": "running",
+              "CYCLING": "cycling", "ROAD_BIKING": "cycling", "MOUNTAIN_BIKING": "cycling",
+              "INDOOR_CYCLING": "cycling", "GRAVEL_CYCLING": "cycling", "VIRTUAL_RIDE": "cycling",
+              "WALKING": "walking", "CASUAL_WALKING": "walking", "SPEED_WALKING": "walking",
+              "HIKING": "hiking", "STRENGTH_TRAINING": "strength",
+              "LAP_SWIMMING": "swimming", "OPEN_WATER_SWIMMING": "swimming", "SWIMMING": "swimming",
+              "YOGA": "yoga", "PILATES": "pilates", "INDOOR_ROWING": "rowing", "ROWING": "rowing",
+              "ELLIPTICAL": "elliptical", "STAIR_CLIMBING": "stairs", "FLOOR_CLIMBING": "stairs",
+              "HIIT": "hiit", "BOXING": "boxing", "INDOOR_CLIMBING": "climbing",
+              "ROCK_CLIMBING": "climbing", "BOULDERING": "climbing", "TENNIS": "tennis",
+              "GOLF": "golf", "RESORT_SKIING_SNOWBOARDING": "skiing",
+              "BACKCOUNTRY_SKIING_SNOWBOARDING": "skiing", "CROSS_COUNTRY_SKIING": "skiing",
+              "SKATE_SKIING": "skiing"}
     STAGES = ("awake", "light", "deep", "rem")
 
 
@@ -657,16 +669,16 @@ data:
         end = c.end() or c.start
         kind = str(props.get("activityType") or "")
         w = {
-            "sport": SPORTS.get(kind, kind.lower().replace("_", " ") or None),
+            "sport": SPORTS.get(kind, "other" if kind else None),
             "sportSource": kind or None, "source": _ref(src), "origin": _ref(plan.origin),
             "revision": plan.revision, "utcOffsetStart": c.offset, "utcOffsetEnd": c.offset,
             "at": _iso(c.start), "endsAt": _iso(end),
             "duration": _duration(c.duration) if c.duration is not None else None,
-            "distance": None, "energy": None, "averageHeartRate": None, "maxHeartRate": None,
+            "distance": None, "activeEnergy": None, "averageHeartRate": None, "maxHeartRate": None,
             "elevationGain": None, "notes": props.get("activityDescription") or None,
         }
         for field, prop, unit in (("distanceInMeters", "distance", "m"),
-                                  ("activeKilocalories", "energy", "kcal"),
+                                  ("activeKilocalories", "activeEnergy", "kcal"),
                                   ("averageHeartRateInBeatsPerMinute", "averageHeartRate", "/min"),
                                   ("maxHeartRateInBeatsPerMinute", "maxHeartRate", "/min"),
                                   ("totalElevationGainInMeters", "elevationGain", "m")):

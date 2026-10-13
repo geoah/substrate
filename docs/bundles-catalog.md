@@ -1762,8 +1762,10 @@ night is one `health/sleep` from the night fields every segment repeats,
 written by the batch the night's start falls in; an aggregated night row is a
 `health/sleep` with its stage durations plus one stage amount per stage. A
 workout is a `health/workout` with its sport, span, duration, distance,
-energy, heart rate and climb, attributed to the device its heart rate rows
-name.
+`activeEnergy`, heart rate and climb, attributed to the device its heart rate
+rows name. The sport is HealthKit's workout name mapped onto the workout code
+set (`Traditional Strength Training` is `strength`), `other` where the name
+has no value of its own, and the name itself is `sportSource`.
 
 **Ids, sources and reconciliation.** Ids are composed: a trace is
 `applehealth/<account>/<source>/<metric>/<UTC hour>`, a single value
@@ -1932,7 +1934,7 @@ Turns [WHOOP](#whoop) mirror rows into [observations](observations.md) and
 health records under the repository's own authority. WHOOP sends scored
 summaries, never raw samples, so it writes no traces. Package
 `samples.substrate.reamde.dev/healthwhoop` requires `health` (and so
-`observations`) and the WHOOP provider at version 19 or later, the version
+`observations`) and the WHOOP provider at version 21 or later, the version
 that deletes a mirror row WHOOP deleted.
 
 - **Kinds**: none; it writes `observations/observation`, `observations/source`,
@@ -1956,7 +1958,7 @@ that deletes a mirror row WHOOP deleted.
 | recovery `restingHeartRate` | `health/resting_heart_rate` | summary, `vendor`, period `cycle` | `/min` |
 | recovery `spo2Percentage` | `health/spo2` | summary, `vendor`, period `cycle` | `%` |
 | recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `cycle` | `Cel` |
-| cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `1` |
+| cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `{score}` |
 | cycle `kilojoule` | `health/energy_expended` | amount | `kJ`, never converted |
 | cycle `averageHeartRate`, `maxHeartRate` | `health/heart_rate` | summary, `avg` and `max`, period `cycle` | `/min` |
 | workout `averageHeartRate`, `maxHeartRate` | `health/heart_rate`, channel `workout` | summary, `avg` and `max`, period `workout`, over the workout's span | `/min` |
@@ -1964,7 +1966,7 @@ that deletes a mirror row WHOOP deleted.
 | sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `%` |
 | sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `/min` |
 | sleep | `health/sleep`: span, `isNap`, `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency`, `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency` | | |
-| workout | `health/workout`: span, `sport` and `sportSource` (WHOOP's `sportName`), `duration`, `distance`, `energy` (kJ), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
+| workout | `health/workout`: span, `sport` (WHOOP's `sportName` mapped onto the workout code set, `other` where it has no value, so `weightlifting` is `strength` and `padel` is `other`) and `sportSource` (the `sportName` itself), `duration`, `distance`, `totalEnergy` (kJ, resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
 
 **Ids and spans.** Every id is composed from WHOOP's own identifiers, read off
 the mirror row: `whoop/<account record id>/<cycle id>/recovery` (and `hrv`,
@@ -2040,8 +2042,10 @@ repository's own authority. Package
 | `com.google.sleep.segment` | `merged` | `health/sleep_stage` | amount, `min`, with `code` | an observation per segment of a sleep session |
 
 A session with `activityType` 72 becomes a `health/sleep` with its stage
-totals; any other becomes a `health/workout` whose `sportSource` is Fit's
-activity code. Fit's sleep codes map as 1 `awake`, 2 `in_bed` (sleep with no
+totals; any other becomes a `health/workout` whose `sport` is Fit's activity
+code mapped onto the workout code set (100 is `yoga`, 80 `strength`, 108 and
+any code without a value of its own `other`) and whose `sportSource` is the
+code. Fit's sleep codes map as 1 `awake`, 2 `in_bed` (sleep with no
 stage), 4 `light`, 5 `deep` and 6 `rem`; 3 (out of bed) and 0 are skipped and
 counted. Each data type is read from one derived stream, so a quantity Google
 keeps in two views is never counted twice; the resting heart rate stream,
@@ -2089,14 +2093,14 @@ so import it after installing the provider and importing `health`.
 | `sleep.sleepLevelsMap` segments | `sleep_stage`, coded `awake`, `light`, `deep`, `rem` | amount | `s` |
 | `bodycomp` weight, muscle, bone; fat, water; BMI | `body_mass`, `muscle_mass`, `bone_mass`; `body_fat_fraction`, `body_water_fraction`; `bmi` | gauge | `kg` (from grams); `%`; `kg/m2` |
 | `bloodpressure.systolic`, `diastolic`, `pulse` | `systolic_blood_pressure`, `diastolic_blood_pressure`, `heart_rate` | gauge | `mm[Hg]`, `/min` |
-| `stressdetail` stress and Body Battery values | `garmin_stress`, `garmin_body_battery` | gauge trace, hold PT6M | `1` |
+| `stressdetail` stress and Body Battery values | `garmin_stress`, `garmin_body_battery` | gauge trace, hold PT6M | `{score}` |
 | `usermetric.vo2Max` | `vo2_max` | summary, `vendor`, day | `mL/(kg.min)` |
 | `pulseox.timeOffsetSpo2Values` | `spo2` | gauge trace, or one gauge for a spot check | `%` |
 | `respiration.timeOffsetEpochToBreaths` | `respiratory_rate` | gauge trace | `/min` |
 | `healthsnapshot` heart rate, respiration, stress, SpO2, RMSSD | `heart_rate`, `respiratory_rate`, `garmin_stress`, `spo2`, `hrv_rmssd` | gauge trace on channel `snapshot` | as above, `ms` |
 | `hrv.lastNightAvg`, `lastNight5MinHigh`; `hrvValues` | `hrv_rmssd` | summary `avg` and `max`, night; gauge trace | `ms` |
 | `skintemp.avgDeviationCelsius` | `skin_temperature_deviation` | summary, `avg`, night, `delta` | `K` |
-| `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout` | | |
+| `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout`: `sport` (the `activityType` mapped onto the workout code set, `other` where it has no value, so `PADDELBALL` is `other`), `sportSource` (the `activityType`), `activeEnergy` from `activeKilocalories` | | |
 | `activitydetail.samples` heart rate, speed, cadence, power | `heart_rate`, `speed`, `cadence`, `running_power` | gauge trace | `/min`, `m/s`, `/min`, `W` |
 
 **Traces are an hour, from one origin.** A trace covers one metric from one

@@ -148,7 +148,7 @@ data:
         SLEEP: ("source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd", "timeInBed", "timeAsleep",
                 "awake", "light", "deep", "rem", "origin", "adapter"),
         WORKOUT: ("sport", "sportSource", "source", "at", "endsAt", "utcOffsetStart", "utcOffsetEnd",
-                  "duration", "distance", "energy", "averageHeartRate", "maxHeartRate", "elevationGain",
+                  "duration", "distance", "activeEnergy", "averageHeartRate", "maxHeartRate", "elevationGain",
                   "origin", "adapter"),
     }
 
@@ -198,14 +198,20 @@ data:
     STAGES = {"awake": "awake", "core": "light", "deep": "deep", "rem": "rem", "in bed": "in_bed"}
     NIGHT = (("core", "light"), ("deep", "deep"), ("rem", "rem"), ("awake", "awake"), ("inBed", "in_bed"))
 
+    # HealthKit's workout names onto the workout kind's code set. A name not
+    # here is `other`; the name itself stays in `sportSource`.
     SPORTS = {
         "running": "running", "outdoor run": "running", "indoor run": "running",
         "walking": "walking", "outdoor walk": "walking", "indoor walk": "walking",
         "cycling": "cycling", "outdoor cycle": "cycling", "indoor cycle": "cycling",
         "swimming": "swimming", "pool swim": "swimming", "open water swim": "swimming",
-        "hiking": "hiking", "yoga": "yoga", "rowing": "rowing", "elliptical": "elliptical",
+        "hiking": "hiking", "yoga": "yoga", "pilates": "pilates", "rowing": "rowing",
+        "elliptical": "elliptical", "stair stepper": "stairs", "stairs": "stairs",
         "traditional strength training": "strength", "functional strength training": "strength",
-        "high intensity interval training": "hiit",
+        "high intensity interval training": "hiit", "dance": "dance", "cardio dance": "dance",
+        "social dance": "dance", "boxing": "boxing", "kickboxing": "boxing",
+        "climbing": "climbing", "tennis": "tennis", "golf": "golf",
+        "downhill skiing": "skiing", "cross country skiing": "skiing",
     }
 
     DATE_RE = re.compile(
@@ -679,7 +685,7 @@ data:
         slug, src = w.source(label)
         name = props.get("name") if isinstance(props.get("name"), str) else ""
         out = {"source": src, "at": utc_text(s), "utcOffsetStart": offset_of(s),
-               "sport": SPORTS.get(name.strip().lower(), re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "other")}
+               "sport": SPORTS.get(name.strip().lower(), "other")}
         if name:
             out["sportSource"] = name
         if e is not None and e > s:
@@ -689,7 +695,7 @@ data:
             out["duration"] = duration_text(float(props["duration"]))
         hr = props.get("heartRate") if isinstance(props.get("heartRate"), dict) else {}
         for prop, q, target in (("distance", props.get("distance"), None),
-                                ("energy", props.get("activeEnergyBurned"), None),
+                                ("activeEnergy", props.get("activeEnergyBurned"), None),
                                 ("averageHeartRate", props.get("avgHeartRate") or hr.get("avg"), "/min"),
                                 ("maxHeartRate", props.get("maxHeartRate") or hr.get("max"), "/min"),
                                 ("elevationGain", props.get("elevationUp"), None)):

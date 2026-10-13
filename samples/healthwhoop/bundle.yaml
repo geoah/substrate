@@ -37,8 +37,8 @@ data:
   package: healthwhoop
   description: >-
     Turns your WHOOP data into health records: each day's recovery, strain,
-    energy and heart rate, each sleep with its stages, and each workout.
-    Needs the health sample and the WHOOP provider.
+    energy and heart rate, each sleep with its stages, and each workout. Needs
+    the health sample and the WHOOP provider.
   requires:
     - samples.substrate.reamde.dev/observations
     - samples.substrate.reamde.dev/health
@@ -46,9 +46,9 @@ data:
   requiresAtLeast:
     samples.substrate.reamde.dev/observations: 1
     samples.substrate.reamde.dev/health: 1
-    # 19 is the version that deletes a mirror row WHOOP deleted, which is
+    # 21 is the version that deletes a mirror row WHOOP deleted, which is
     # what lets this adapter delete the outputs of one.
-    providers.substrate.reamde.dev/whoop: 19
+    providers.substrate.reamde.dev/whoop: 21
   installs:
     - samples.substrate.reamde.dev/healthwhoop/adaptwhoop
 ---
@@ -157,7 +157,7 @@ data:
                    "respiratoryRate", "disturbances", "scores")
     WORKOUT_PROPS = ("sport", "sportSource", "source", "origin", "revision", "adapter",
                      "utcOffsetStart", "utcOffsetEnd", "at", "endsAt", "duration",
-                     "distance", "energy", "averageHeartRate", "maxHeartRate",
+                     "distance", "totalEnergy", "averageHeartRate", "maxHeartRate",
                      "elevationGain", "strain", "zoneDurations")
     MANAGED = {OBSERVATION: OBSERVATION_PROPS, SLEEP: SLEEP_PROPS,
                WORKOUT: WORKOUT_PROPS}
@@ -199,6 +199,25 @@ data:
         WORKOUT_T: ("percentRecorded", "altitudeChangeMeter"),
     }
     UNMAPPED_STAGES = ("totalNoDataTimeMilli", "sleepCycleCount")
+    # WHOOP's sport names onto the workout kind's code set. A name not here is
+    # `other`; the name itself stays in `sportSource`.
+    SPORTS = {
+        "running": "running", "track-and-field": "running", "stroller-jogging": "running",
+        "walking": "walking", "dog-walking": "walking", "stroller-walking": "walking",
+        "hiking-rucking": "hiking", "hiking": "hiking",
+        "cycling": "cycling", "mountain-biking": "cycling", "spin": "cycling",
+        "swimming": "swimming",
+        "weightlifting": "strength", "powerlifting": "strength",
+        "strength-trainer": "strength", "functional-fitness": "strength",
+        "yoga": "yoga", "hot-yoga": "yoga", "pilates": "pilates",
+        "rowing": "rowing", "elliptical": "elliptical",
+        "stairmaster": "stairs", "stadium-steps": "stairs",
+        "hiit": "hiit", "f45-training": "hiit", "barrys": "hiit",
+        "dance": "dance", "boxing": "boxing", "kickboxing": "boxing",
+        "box-fitness": "boxing", "rock-climbing": "climbing", "climber": "climbing",
+        "tennis": "tennis", "golf": "golf",
+        "skiing": "skiing", "cross-country-skiing": "skiing",
+    }
 
 
     # --------------------------------------------------------------- reading
@@ -380,7 +399,7 @@ data:
                               "at": span[0], "endsAt": span[1],
                               "utcOffset": _offset(p.get("timezoneOffset"))}
                     revision = _seconds(p.get("updatedAt"))
-                    strain = self.quantity(score.get("strain"), "1")
+                    strain = self.quantity(score.get("strain"), "{score}")
                     if strain is not None:
                         desired.append(self.observation(
                             base + "strain", "health/whoop_strain", "summary",
@@ -533,13 +552,15 @@ data:
                 for name in UNMAPPED[WORKOUT_T]:
                     if score.get(name) is not None:
                         self.skip("workout.score." + name)
-                typed = {"sport": p.get("sportName"), "sportSource": p.get("sportName"),
+                name = p.get("sportName")
+                typed = {"sport": SPORTS.get(str(name or "").strip().lower(), "other"),
+                         "sportSource": name,
                          "source": self.source(aid), "origin": origin,
                          "revision": _seconds(p.get("updatedAt")),
                          "utcOffsetStart": offset, "utcOffsetEnd": offset,
                          "at": p.get("at"), "endsAt": p.get("endsAt"),
                          "distance": self.quantity(score.get("distanceMeter"), "m"),
-                         "energy": self.quantity(score.get("kilojoule"), "kJ"),
+                         "totalEnergy": self.quantity(score.get("kilojoule"), "kJ"),
                          "averageHeartRate": self.quantity(score.get("averageHeartRate"), "/min"),
                          "maxHeartRate": self.quantity(score.get("maxHeartRate"), "/min"),
                          "elevationGain": self.quantity(score.get("altitudeGainMeter"), "m"),

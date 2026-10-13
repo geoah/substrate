@@ -446,6 +446,7 @@ func TestHealthAppleSleepAndWorkouts(t *testing.T) {
 		storedRefPath(run["source"]) != haSource+"/applehealth/iphone/garmin-connect" ||
 		obj(t, run["distance"], "value") != "6.1" || obj(t, run["distance"], "unit") != "km" ||
 		obj(t, run["averageHeartRate"], "unit") != "/min" || run["duration"] != "PT36M19S" ||
+		run["activeEnergy"] == nil || run["totalEnergy"] != nil ||
 		storedRefPath(run["origin"]) != ahWorkout+"/iphone/EB0B1D81-50F6-4AB6-8841-28B68D3DE5C6" {
 		t.Fatalf("the run = %v", run)
 	}

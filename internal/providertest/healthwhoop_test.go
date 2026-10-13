@@ -9,6 +9,7 @@ package providertest
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"strconv"
 	"strings"
@@ -181,7 +182,7 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 		}
 	}
 	strain := healthProps(t, ds, healthObservation, hw(whoopExampleCycle, "strain"))
-	if v, u := quantityOf(t, strain, "value"); v != "14.2" || u != "1" || strain["form"] != "summary" ||
+	if v, u := quantityOf(t, strain, "value"); v != "14.2" || u != "{score}" || strain["form"] != "summary" ||
 		storedRefPath(strain["origin"]) != whoopCycleType+"/"+whoopRow("cycle", whoopExampleCycle) {
 		t.Errorf("strain = %s %s %v from %v", v, u, strain["form"], strain["origin"])
 	}
@@ -303,6 +304,19 @@ func TestHealthWhoopWritesTheProposalsTable(t *testing.T) {
 	}
 	if n := countLive(t, ds, healthWorkout); n != 29 {
 		t.Errorf("%d workouts, want 29", n)
+	}
+	// One sport code set for every source: WHOOP's weightlifting is the
+	// strength other adapters write, and a name with no value of its own is
+	// other; WHOOP's word stays in sportSource either way.
+	sports := map[string]string{}
+	for _, row := range listLive(t, ds, healthWorkout) {
+		sports[fmt.Sprint(row.Properties["sportSource"])] = fmt.Sprint(row.Properties["sport"])
+	}
+	if want := map[string]string{
+		"running": "running", "cycling": "cycling", "walking": "walking",
+		"weightlifting": "strength", "padel": "other", "activity": "other",
+	}; !maps.Equal(sports, want) {
+		t.Errorf("workout sports by WHOOP's name %v, want %v", sports, want)
 	}
 	if n := countLive(t, ds, healthSource); n != 1 {
 		t.Errorf("%d sources, want the one WHOOP", n)
@@ -469,15 +483,18 @@ func TestHealthWhoopFollowsARescoreAndADeletion(t *testing.T) {
 		t.Errorf("the rescored cycle's average heart rate is %s, want 76", v)
 	}
 	late := healthProps(t, ds, healthWorkout, hw(whoopLateWorkout, "workout"))
-	if late["sport"] != "padel" {
-		t.Errorf("the hand-logged workout landed as %v", late)
+	// Padel has no value of its own in the workout kind's code set: it is
+	// `other`, and WHOOP's word stays in sportSource.
+	if late["sport"] != "other" || late["sportSource"] != "padel" {
+		t.Errorf("the hand-logged workout landed as sport %v from %v, want other from padel", late["sport"], late["sportSource"])
 	}
 	lateHR := healthProps(t, ds, healthObservation, hw(whoopLateWorkout, "heart_rate_avg"))
 	if v, _ := quantityOf(t, lateHR, "value"); v != "137" || lateHR["channel"] != "workout" {
 		t.Errorf("the hand-logged workout's average heart rate is %s on channel %v, want 137 on workout", v, lateHR["channel"])
 	}
-	if v, u := quantityOf(t, late, "energy"); v != "2816.74341" || u != "kJ" {
-		t.Errorf("the padel energy = %s %s, want 2816.74341 kJ", v, u)
+	// WHOOP's kilojoules are the whole energy spent, resting included.
+	if v, u := quantityOf(t, late, "totalEnergy"); v != "2816.74341" || u != "kJ" || late["activeEnergy"] != nil {
+		t.Errorf("the padel energy = total %s %s, active %v; want 2816.74341 kJ total and no active", v, u, late["activeEnergy"])
 	}
 	if zones, _ := late["zoneDurations"].(map[string]any); len(zones) != 6 || zones["zone5"] != "PT0S" {
 		t.Errorf("the padel zones = %v", late["zoneDurations"])

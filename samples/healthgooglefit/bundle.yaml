@@ -194,10 +194,17 @@ data:
     STAGES = {1: "awake", 2: "in_bed", 4: "light", 5: "deep", 6: "rem"}
     OUT_OF_BED = 3
     ASLEEP = (2, 4, 5, 6)
-    # The activity codes the research verified; any other keeps only
-    # `sportSource`.
-    SPORTS = {1: "cycling", 7: "walking", 8: "running", 16: "cycling",
-              80: "strength", 108: "other"}
+    # Fit's activity codes onto the workout kind's code set. A code not here
+    # is `other`; the code itself stays in `sportSource`.
+    SPORTS = {1: "cycling", 14: "cycling", 15: "cycling", 16: "cycling", 17: "cycling",
+              18: "cycling", 19: "cycling", 7: "walking", 93: "walking", 94: "walking",
+              95: "walking", 116: "walking", 8: "running", 56: "running", 57: "running",
+              58: "running", 35: "hiking", 82: "swimming", 83: "swimming", 84: "swimming",
+              80: "strength", 97: "strength", 41: "strength", 100: "yoga", 49: "pilates",
+              53: "rowing", 54: "rowing", 25: "elliptical", 77: "stairs", 78: "stairs",
+              114: "hiit", 115: "hiit", 24: "dance", 101: "dance", 20: "boxing",
+              42: "boxing", 52: "climbing", 87: "tennis", 32: "golf", 65: "skiing",
+              66: "skiing", 67: "skiing"}
     # The datasource row's device type onto the source kind's class; a phone
     # and the rest have no class there.
     CLASSES = {"watch": "watch", "scale": "scale"}
@@ -713,7 +720,7 @@ data:
                 active = _int(props.get("activeTimeMillis"))
                 _, source = ctx.app_source(app)
                 desired[(WORKOUT, _rid(host, aid, key))] = dict(
-                    base, sport=SPORTS.get(activity),
+                    base, sport=SPORTS.get(activity, "other") if activity is not None else None,
                     sportSource=str(activity) if activity is not None else None,
                     source=source, revision=revision,
                     duration=_duration(active * 10**6) if active is not None else None)
