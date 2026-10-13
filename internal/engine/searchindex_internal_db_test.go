@@ -434,6 +434,9 @@ func TestTheSearchReindexRedoesARowAWriteHeld(t *testing.T) {
 			}
 			ids = append(ids, id)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
 		return ids
 	}
 	deadline := time.Now().Add(30 * time.Second)

@@ -57,6 +57,9 @@ func rmLedger(t *testing.T, db *sql.DB) map[int]string {
 		}
 		out[v] = name
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 

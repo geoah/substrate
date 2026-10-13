@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -464,7 +465,8 @@ func (f *fakeSubstrate) handleVocabularyApply(w http.ResponseWriter, r *http.Req
 		if err == nil {
 			_, err = vocabulary.BuildEachPackage(docs, func(string) string { return vocabulary.SourceInstalled })
 		}
-		if ve, ok := err.(*substrate.ValidationError); ok {
+		var ve *substrate.ValidationError
+		if errors.As(err, &ve) {
 			writeValidation(w, ve.Problems)
 			return
 		}

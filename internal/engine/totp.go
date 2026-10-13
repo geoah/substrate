@@ -3,7 +3,7 @@ package engine
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: RFC 6238 TOTP is HMAC-SHA-1, the algorithm every authenticator app computes
 	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"

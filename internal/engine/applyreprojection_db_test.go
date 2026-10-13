@@ -201,6 +201,9 @@ func TestTheReprojectionKeepsTheRequestOfAnApplyThatDidNotPublish(t *testing.T) 
 		}
 		owed = append(owed, kind)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	_ = rows.Close()
 	if !reflect.DeepEqual(owed, []string{ftsNote}) {
 		t.Fatalf("after the pass the repository owes %v, want the committed request for %s", owed, ftsNote)

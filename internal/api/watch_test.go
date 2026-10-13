@@ -51,7 +51,7 @@ func startWatch(t *testing.T, srv *httptest.Server, path, token string) (*bufio.
 		t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req) //nolint:bodyclose // closed by the returned stop func
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		cancel()
 		t.Fatal(err)

@@ -511,6 +511,9 @@ func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {
 		props["__id"] = id
 		out = append(out, props)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 
@@ -533,6 +536,9 @@ func threadMessages(t *testing.T, ds *dataset, threadID string) []map[string]any
 		props := map[string]any{}
 		_ = json.Unmarshal(raw, &props)
 		out = append(out, props)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 	return out
 }

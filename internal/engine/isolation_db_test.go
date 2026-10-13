@@ -443,6 +443,9 @@ func TestRepositoryIsolation(t *testing.T) {
 				}
 				titles = append(titles, title)
 			}
+			if err := rows.Err(); err != nil {
+				t.Fatal(err)
+			}
 			_ = rows.Close()
 			if len(titles) != 1 || titles[0] != id+" only" {
 				t.Fatalf("%s matched %q, want its own row alone", id, titles)

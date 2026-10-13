@@ -598,6 +598,9 @@ func TestADeliveryCommitsEffectsCursorAndRunTogether(t *testing.T) {
 		}
 		ops = append(ops, s)
 	}
+	if err := list.Err(); err != nil {
+		t.Fatal(err)
+	}
 	_ = list.Close()
 	want := []string{"put samples.substrate.reamde.dev/tasks/task", "delivery " + typeTrigger, "put " + typeTriggerRun}
 	if strings.Join(ops, "|") != strings.Join(want, "|") {

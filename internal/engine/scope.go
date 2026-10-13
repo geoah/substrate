@@ -164,7 +164,7 @@ func openRepositoryPool(ctx context.Context, dsn, role string, maxConns int, tra
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: parse dsn: %w", err)
 	}
-	cfg.MaxConns = int32(min(maxConns, 1<<30)) //nolint:gosec // bounded just above
+	cfg.MaxConns = int32(min(maxConns, 1<<30))
 	cfg.MinConns = 0
 	cfg.MaxConnIdleTime = repositoryConnIdle
 	cfg.ConnConfig.Tracer = tracer

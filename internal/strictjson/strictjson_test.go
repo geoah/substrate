@@ -14,7 +14,7 @@ type sample struct {
 	embedded
 	Kinds  []string `json:"kinds,omitempty"`
 	Filter string   `json:"filter"`
-	hidden string   //nolint:unused // an unexported field is not a wire key
+	hidden string   //nolint:unused,nolintlint // an unexported field is not a wire key; kept for when unused lints tests
 	Skip   string   `json:"-"`
 }
 

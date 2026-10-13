@@ -150,7 +150,7 @@ func loadTree(root string) (*tree, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		t.dirs[path.Dir(rel)] = true
-		raw, err := os.ReadFile(p)
+		raw, err := os.ReadFile(p) //nolint:gosec // G122: a CI tool reading this repository's own checked-out tree
 		if err != nil {
 			return err
 		}

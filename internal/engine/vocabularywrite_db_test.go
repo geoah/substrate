@@ -6,6 +6,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -135,18 +136,7 @@ func TestSchemaApplyRefusesWithTheOfflineCheckProblems(t *testing.T) {
 }
 
 func asValidationErr(err error, target **substrate.ValidationError) bool {
-	for err != nil {
-		if ve, ok := err.(*substrate.ValidationError); ok {
-			*target = ve
-			return true
-		}
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
+	return errors.As(err, target)
 }
 
 // A schema write is activation: changelog rows land with the commit, the new

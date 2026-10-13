@@ -2260,6 +2260,9 @@ func pagedCursors(t *testing.T, db *sql.DB) map[string]float64 {
 		}
 		out[chain] = v
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 

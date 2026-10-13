@@ -20,6 +20,10 @@ func New(mode Mode) *Confiner {
 	return &Confiner{mode: mode, report: Report{OS: runtime.GOOS}}
 }
 
-func (c *Confiner) wrap(*exec.Cmd, Policy) error { return nil }
+// confinerOS keeps no state off Linux. Its wrap and serve apply nothing and
+// reach Confiner by promotion.
+type confinerOS struct{}
 
-func (c *Confiner) serve(*exec.Cmd) (Gate, error) { return noopGate{}, nil }
+func (confinerOS) wrap(*exec.Cmd, Policy) error { return nil }
+
+func (confinerOS) serve(*exec.Cmd) (Gate, error) { return noopGate{}, nil }
