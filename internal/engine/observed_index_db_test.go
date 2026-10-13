@@ -1748,3 +1748,88 @@ func TestObservedRollupRecomputeReadsBoundedPages(t *testing.T) {
 		t.Fatalf("one read of observed points answered %d rows, above the page of %d:\n%s", most, page, q)
 	}
 }
+
+// keysetReads is a pgx tracer that keeps, while armed, the rows each keyset
+// read of observed points answered: the read a recompute sends after a
+// bucket's first page to read on from the last point it took.
+type keysetReads struct {
+	armed atomic.Bool
+	mu    sync.Mutex
+	rows  []int64
+}
+
+type keysetReadKey struct{}
+
+func (k *keysetReads) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	if k.armed.Load() && strings.Contains(d.SQL, "(p.ts, p.record_id, p.ord) >") {
+		return context.WithValue(ctx, keysetReadKey{}, true)
+	}
+	return ctx
+}
+
+func (k *keysetReads) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryEndData) {
+	if ctx.Value(keysetReadKey{}) == nil {
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.rows = append(k.rows, d.CommandTag.RowsAffected())
+}
+
+func (k *keysetReads) take() []int64 {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	out := k.rows
+	k.rows = nil
+	return out
+}
+
+// A write's recompute reads on in a bucket only when the bucket has a point
+// left after its first page: each bucket's share of that page carries one
+// row more than it takes, and only that row's arrival sends the next read.
+// With a page of 50, a trace of one point in each of 50 buckets sends no
+// read past the first pages, and a trace of five buckets holding exactly a
+// page's even share each reads on once per bucket, for the one point left.
+// No read the recompute sends answers nothing.
+func TestObservedRollupRecomputeReadsOnOnlyFullBuckets(t *testing.T) {
+	t.Parallel()
+	const page = 50
+	reads := &keysetReads{}
+	r := openObservedIndex(t, engine.WithTestObservedPageSize(page), engine.WithTestQueryTracer(reads))
+	trace := func(id, source, every string, n int) {
+		t.Helper()
+		values := make([]any, n)
+		for i := range values {
+			values[i] = fmt.Sprintf("%d.5", 20+i%7)
+		}
+		step, err := vocabulary.ParseISODuration(every)
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := mustTime(t, "2026-10-07T00:00:00Z")
+		r.mustPut(t, r.trace, id, map[string]any{
+			"metric": r.metricRef("air_temperature"), "source": r.sourceRef(source), "form": "gauge", "unit": "Cel",
+			"at": start.Format(time.RFC3339), "endsAt": start.Add(time.Duration(n) * step).Format(time.RFC3339),
+			"every": every, "values": values,
+		})
+	}
+	reads.armed.Store(true)
+	trace("sparse", "sparse", "PT15M", page)
+	if got := reads.take(); len(got) != 0 {
+		t.Errorf("a write of one point in each of %d buckets read on %d time(s), answering %v rows; want no read past the first pages",
+			page, len(got), got)
+	}
+	trace("dense", "dense", "PT90S", page)
+	got := reads.take()
+	for _, n := range got {
+		if n == 0 {
+			t.Errorf("a write read on in a bucket with no point left: the reads answered %v rows", got)
+			break
+		}
+	}
+	if len(got) > 5 {
+		t.Errorf("a write of five buckets read on %d times, answering %v rows; want one per bucket at most", len(got), got)
+	}
+	reads.armed.Store(false)
+	checkRollupsMatchSpec(t, r.db)
+}

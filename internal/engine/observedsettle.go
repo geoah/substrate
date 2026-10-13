@@ -322,12 +322,13 @@ func (t *txn) nextCounterBuckets(h obsHold, starts []int64) ([]int64, error) {
 // bucket's points are read in pages of at most observedPage rows and fed to
 // a running state (streamedBucket), so what the recompute holds is one page
 // and each group's state, whatever the bucket's size, and its work is the
-// bucket's points once. The buckets are taken a page's worth at a time.
+// bucket's points once. The buckets are taken half a page's worth at a time,
+// so each bucket's share of the first page is at least two rows.
 func (t *txn) rollupRowsOf(h obsHold, starts []time.Time) ([]rollupRow, error) {
 	page := t.observedPage()
 	var out []rollupRow
 	for len(starts) > 0 {
-		chunk := starts[:min(len(starts), page)]
+		chunk := starts[:min(len(starts), max(page/2, 1))]
 		starts = starts[len(chunk):]
 		rows, err := t.rollupRowsOfChunk(h, chunk, page)
 		if err != nil {
@@ -338,43 +339,24 @@ func (t *txn) rollupRowsOf(h obsHold, starts []time.Time) ([]rollupRow, error) {
 	return out, nil
 }
 
-// rollupRowsOfChunk computes at most a page of buckets. Their first pages
-// come in one statement, the page split evenly between them, one range of
-// the stream index per bucket whatever the planner guesses about the
-// stream's size (as a plain join it put the stream outside the loop and read
-// every point of it on every write); a bucket whose share came back full
-// reads on alone, a page at a time, after the last point it read.
+// rollupRowsOfChunk computes the rows of a chunk of buckets. Their first
+// pages come in one statement, the page split evenly between them, one range
+// of the stream index per bucket whatever the planner guesses about the
+// stream's size. Each bucket's share asks for one row more than it takes:
+// that row's arrival is what says the bucket holds more, so a bucket whose
+// points fit its share is never read again, and one that does not reads on
+// alone (readOn) after the last point it took.
 func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]rollupRow, error) {
-	prevs := map[int64]*observed.Point{}
-	if h.form == vocabulary.FormCounter {
-		rows, err := t.query(`
-			SELECT b.start, `+pointColumns+`
-			FROM unnest($7::timestamptz[]) AS b(start)
-			CROSS JOIN LATERAL (
-				SELECT * FROM observed_points p
-				WHERE `+holdStreamSQL+` AND p.ts < b.start AND `+availablePoint+`
-				ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`, append(h.args(), starts)...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var start time.Time
-			sp, err := scanPoint(rows, &start)
-			if err != nil {
-				_ = rows.Close()
-				return nil, err
-			}
-			p := sp.point
-			prevs[start.UnixMilli()] = &p
-		}
-		if err := finishRows(rows); err != nil {
-			return nil, err
-		}
+	prevs, err := t.counterPrevs(h, starts)
+	if err != nil {
+		return nil, err
 	}
+	limit := max(page/len(starts), 2)
+	share := limit - 1
 	buckets := map[int64]*streamedBucket{}
 	read := map[int64]int{}
 	last := map[int64]pointKey{}
-	share := max(page/len(starts), 1)
+	more := map[int64]bool{}
 	rows, err := t.query(`
 		SELECT b.start, p.record_id, p.ord, `+pointColumns+`
 		FROM unnest($7::timestamptz[]) AS b(start)
@@ -382,7 +364,7 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 			SELECT * FROM observed_points p
 			WHERE `+holdStreamSQL+` AND p.ts >= b.start AND p.ts < b.start + interval '15 minutes'
 			ORDER BY `+pointOrder+` LIMIT $8) p
-		ORDER BY b.start, `+pointOrder, append(h.args(), starts, share)...)
+		ORDER BY b.start, `+pointOrder, append(h.args(), starts, limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -395,6 +377,10 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 			return nil, err
 		}
 		ms := start.UnixMilli()
+		if read[ms] == share {
+			more[ms] = true
+			continue
+		}
 		b := buckets[ms]
 		if b == nil {
 			b = newStreamedBucket(h.form, start.UTC(), prevs[ms])
@@ -416,18 +402,57 @@ func (t *txn) rollupRowsOfChunk(h obsHold, starts []time.Time, page int) ([]roll
 		if b == nil {
 			continue
 		}
-		after := last[ms]
-		end := start.Add(observed.BucketWidth)
-		for full := read[ms] == share; full; {
-			n, err := t.readPointsAfter(h, &after, &end, page, b.add)
-			if err != nil {
+		if more[ms] {
+			if err := t.readOn(h, b, last[ms], page); err != nil {
 				return nil, err
 			}
-			full = n == page
 		}
 		out = append(out, b.rows()...)
 	}
 	return out, nil
+}
+
+// counterPrevs is, for each bucket of a counter stream, the stream's last
+// available point before it: the reading its first step runs from. Other
+// forms read none.
+func (t *txn) counterPrevs(h obsHold, starts []time.Time) (map[int64]*observed.Point, error) {
+	prevs := map[int64]*observed.Point{}
+	if h.form != vocabulary.FormCounter {
+		return prevs, nil
+	}
+	rows, err := t.query(`
+		SELECT b.start, `+pointColumns+`
+		FROM unnest($7::timestamptz[]) AS b(start)
+		CROSS JOIN LATERAL (
+			SELECT * FROM observed_points p
+			WHERE `+holdStreamSQL+` AND p.ts < b.start AND `+availablePoint+`
+			ORDER BY p.ts DESC, p.record_id DESC, p.ord DESC LIMIT 1) p`, append(h.args(), starts)...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var start time.Time
+		sp, err := scanPoint(rows, &start)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		p := sp.point
+		prevs[start.UnixMilli()] = &p
+	}
+	return prevs, finishRows(rows)
+}
+
+// readOn reads the rest of one bucket, a page at a time, after the key at
+// after, into its running state.
+func (t *txn) readOn(h obsHold, b *streamedBucket, after pointKey, page int) error {
+	end := b.start.Add(observed.BucketWidth)
+	for {
+		n, err := t.readPointsAfter(h, &after, &end, page, b.add)
+		if err != nil || n < page {
+			return err
+		}
+	}
 }
 
 // readPointsAfter reads one page of a stream's points after the key at
