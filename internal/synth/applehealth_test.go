@@ -292,9 +292,14 @@ func TestAppleHealthFollowsThePersona(t *testing.T) {
 		for _, m := range doc.Data.Metrics {
 			switch m.Name {
 			case "step_count":
-				sum := 0.0
+				// Where both devices counted one walk, the walk is read once.
+				read := map[string]float64{}
 				for _, row := range m.Data {
-					sum += ahNum(t, row, "qty")
+					read[row["date"].(string)] = math.Max(read[row["date"].(string)], ahNum(t, row, "qty"))
+				}
+				sum := 0.0
+				for _, v := range read {
+					sum += v
 				}
 				if truth := float64(day.StepsTotal()); sum < truth*0.92 || sum > truth*1.06 {
 					t.Errorf("%s: %0.f steps read, the persona walked %0.f", d.Name, sum, truth)
@@ -354,5 +359,46 @@ func TestAppleHealthThreeDaysIsSmall(t *testing.T) {
 	}
 	if len(out.Deliveries) != 3 || size > 250_000 {
 		t.Fatalf("three days are %d deliveries and %d bytes, want 3 under 250 KB", len(out.Deliveries), size)
+	}
+}
+
+// On about one day in four the phone in a pocket and the watch on the wrist
+// both count the walks to work, to lunch and home, and both rows are sent:
+// two sources over the same five minutes, which a reader has to choose
+// between. Every other bucket comes from one device.
+func TestAppleHealthSendsBothDevicesStepsOnSomeDays(t *testing.T) {
+	_, out := ahEmit(t, Options{})
+	days := 0
+	for _, d := range out.Deliveries {
+		doc := ahDecode(t, d)
+		both := 0
+		for _, m := range doc.Data.Metrics {
+			if m.Name != "step_count" {
+				continue
+			}
+			bySlot := map[string][]map[string]any{}
+			for _, row := range m.Data {
+				bySlot[row["date"].(string)] = append(bySlot[row["date"].(string)], row)
+			}
+			for slot, rows := range bySlot {
+				switch len(rows) {
+				case 1:
+				case 2:
+					a, b := ahNum(t, rows[0], "qty"), ahNum(t, rows[1], "qty")
+					if rows[0]["source"] == rows[1]["source"] || math.Abs(a-b) > 0.2*math.Max(a, b) {
+						t.Errorf("%s %s: %v and %v", d.Name, slot, rows[0], rows[1])
+					}
+					both++
+				default:
+					t.Errorf("%s %s has %d step rows", d.Name, slot, len(rows))
+				}
+			}
+		}
+		if both > 0 {
+			days++
+		}
+	}
+	if days < 10 || days > 40 {
+		t.Errorf("%d of 90 days carry both devices' steps, want about one in four", days)
 	}
 }

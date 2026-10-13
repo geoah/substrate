@@ -26,7 +26,9 @@ import (
 //     irregular minutes and misses a few), Min = Avg = Max at rest and a
 //     spread during a workout; source the watch.
 //   - step_count: one row per 5-minute bucket with steps, from the iPhone by
-//     day and from the watch before 07:00, from 22:00 and during a run.
+//     day and from the watch before 07:00, from 22:00 and during a run; on
+//     about one day in four a second row from the watch for each bucket of
+//     the walks to work, to lunch and home.
 //   - walking_running_distance, flights_climbed, active_energy and
 //     basal_energy_burned: one row per local hour, at the hour, energy in kJ
 //     (the recorded user's unit preference) and distance in km.
@@ -168,12 +170,14 @@ func ahMetric(name, units string, rows []map[string]any) map[string]any {
 }
 
 // ahBucket is one 5-minute step bucket: the persona's steps and the device's
-// reading of them.
+// reading of them. A second device's reading of the same bucket is `again`,
+// which the hourly distance, floors and energy do not count twice.
 type ahBucket struct {
 	start time.Time
 	steps int
 	read  float64
 	src   string
+	again bool
 }
 
 type ahDay struct {
@@ -276,25 +280,42 @@ func (e *ahDay) heartRate() []map[string]any {
 	return rows
 }
 
-// buckets is every 5-minute bucket with steps, and which device counted it.
+// buckets is every 5-minute bucket with steps, and which device counted it:
+// the watch before 07:00, from 22:00 and on a run, the phone otherwise. On
+// about one day in four the watch counts the walks to work, to lunch and
+// home as well, and both readings are sent.
 func (e *ahDay) buckets() []ahBucket {
 	var out []ahBucket
+	both := e.rng("bothdevices").Float64() < 0.25
 	i := 0
 	for a := e.day.Start(); a.Before(e.day.EndTime()); a = a.Add(ahStepsStep) {
 		n := e.day.StepsIn(a, a.Add(ahStepsStep))
 		if n > 0 {
+			lt := a.In(e.day.Zone)
 			src, factor := ahIPhone, 0.95
-			if lt := a.In(e.day.Zone); e.running(a) || lt.Hour() < 7 || lt.Hour() >= 22 {
+			if e.running(a) || lt.Hour() < 7 || lt.Hour() >= 22 {
 				src, factor = ahWatch, 1.04
 			}
 			v := math.Max(0, e.noisy("steps", i, float64(n)*factor, math.Max(0.6, float64(n)*0.03)))
 			if v > 0 {
-				out = append(out, ahBucket{a, n, v, src})
+				out = append(out, ahBucket{a, n, v, src, false})
+			}
+			if h := float64(lt.Hour()) + float64(lt.Minute())/60; both && src == ahIPhone && n >= 50 && ahWalk(h) {
+				w := math.Max(0, e.noisy("watchsteps", i, float64(n)*1.04, math.Max(0.6, float64(n)*0.03)))
+				if w > 0 {
+					out = append(out, ahBucket{a, n, w, ahWatch, v > 0})
+				}
 			}
 		}
 		i++
 	}
 	return out
+}
+
+// ahWalk reports whether a local hour falls in one of the persona's walks:
+// to work, to lunch, home.
+func ahWalk(h float64) bool {
+	return h >= 8.25 && h < 8.5 || h >= 13.0 && h < 13.3 || h >= 17.75 && h < 18.0
 }
 
 func (e *ahDay) steps(buckets []ahBucket) []map[string]any {
@@ -312,7 +333,7 @@ func (e *ahDay) distance(buckets []ahBucket) []map[string]any {
 		meters := 0.0
 		watch, phone := false, false
 		for _, s := range buckets {
-			if !s.start.Before(a) && s.start.Before(b) && !e.running(s.start) {
+			if !s.again && !s.start.Before(a) && s.start.Before(b) && !e.running(s.start) {
 				meters += s.read * StrideM
 				watch = watch || s.src == ahWatch
 				phone = phone || s.src == ahIPhone
@@ -385,7 +406,7 @@ func (e *ahDay) activeEnergy(buckets []ahBucket) []map[string]any {
 		b := a.Add(time.Hour)
 		kcal := 0.0
 		for _, s := range buckets {
-			if !s.start.Before(a) && s.start.Before(b) {
+			if !s.again && !s.start.Before(a) && s.start.Before(b) {
 				kcal += float64(s.steps) * KcalPerStep
 			}
 		}
