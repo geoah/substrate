@@ -341,9 +341,13 @@ the same records-mode window:
                       {"reducer": "avg", "value": "96.7872340425532", "unit": "%"}], "count": 47, ...}], ...}
 ```
 
-Garmin samples heart rate every five minutes and each value holds for less
-than that, so the lower-ranked watches fill the gaps between, and the row
-names all three.
+Every point the heart rate row reduces is Garmin's: with the source
+filtered to `garmin/ada/account` the row answers the same `count` 93, `min`
+44, `avg` and 5th percentile. Garmin samples every five minutes and each
+value holds for less than that, so the Apple Watch and the Pixel Watch add
+only held time in the gaps. That is why the row lists all three sources,
+and it moves `coverage` from 6 hours 12 minutes (Garmin alone) to 7 hours
+23 minutes 11 seconds.
 
 No reducer answers when the lowest heart rate happened. A downsample to one
 column does: its `min` carries the instant `at` it was taken.
