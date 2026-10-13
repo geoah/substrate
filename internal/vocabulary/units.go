@@ -764,13 +764,13 @@ type Conversion struct {
 	Exact bool
 }
 
-// ConvertDigits converts a value written as exact digits (QuantityDigits)
+// ConvertDigits converts a value written as exact digits (CanonicalDecimal)
 // between two unit spellings, each read through the aliases (`°C`, `kWh`).
 // Without a measure the two codes are read as Convert reads them; a measure
 // names the one to convert in (`temperature-difference` for a deviation). A
 // refusal names the input it refuses: value, from, to or the conversion.
 func ConvertDigits(value, from, to, measure string) (Conversion, error) {
-	digits, err := QuantityDigits(value)
+	digits, err := CanonicalDecimal(value)
 	if err != nil {
 		return Conversion{}, fmt.Errorf("value: %w", err)
 	}

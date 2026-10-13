@@ -18,13 +18,13 @@ func unitsCall(t *testing.T, host string, params map[string]any) hostCall {
 	return hostCall{Host: host, Params: raw}
 }
 
-// A conversion reads at most vocabulary.MaxQuantityDigits digits, refused by
+// A conversion reads at most vocabulary.MaxDecimalDigits digits, refused by
 // name before any arithmetic, and none once the invocation's context is done:
 // the host-call loop serves it synchronously, so an unbounded one held the
 // invocation past its timeout.
 func TestUnitsConvertIsBounded(t *testing.T) {
 	ctx := context.Background()
-	long := strings.Repeat("7", vocabulary.MaxQuantityDigits+1)
+	long := strings.Repeat("7", vocabulary.MaxDecimalDigits+1)
 	_, handled, err := serveUnits(ctx, unitsCall(t, hostUnitsConvert, map[string]any{"value": long, "from": "kg", "to": "g"}))
 	if !handled || err == nil || !strings.Contains(err.Error(), "at most") {
 		t.Fatalf("a value of %d digits: handled %v, err %v; want a refusal naming the bound", len(long), handled, err)

@@ -68,13 +68,16 @@ type consoleTable struct {
 	// Aliases are the input spellings and the codes they map to.
 	Aliases     map[string]string `json:"aliases"`
 	Comparators []string          `json:"comparators"`
+	// MaxDecimalDigits bounds a quantity value's digits, as CanonicalDecimal
+	// holds them.
+	MaxDecimalDigits int `json:"maxDecimalDigits"`
 }
 
 func renderConsoleTable(t *testing.T) []byte {
 	t.Helper()
 	rules := vocabulary.UnitPrintRules()
 	tbl := consoleTable{Symbols: map[string]string{}, SymbolCodes: map[string]string{}, Primary: map[string]string{},
-		Aliases: vocabulary.UnitAliases(), Comparators: vocabulary.QuantityComparators,
+		Aliases: vocabulary.UnitAliases(), Comparators: vocabulary.QuantityComparators, MaxDecimalDigits: vocabulary.MaxDecimalDigits,
 		Print: consolePrint{rules.Prefixes, rules.Atoms, rules.Prints, rules.Wholes, rules.Annotations}}
 	seen := map[string]int{}
 	for _, m := range vocabulary.Measures() {

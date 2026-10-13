@@ -6,7 +6,7 @@ package runner
 // effects agree on every code. The three calls read nothing from the
 // repository, so they are not reads: they charge no budget and need no grant.
 // The host-call loop serves them synchronously, so each is bounded instead: a
-// value of at most vocabulary.MaxQuantityDigits digits and a code of at most
+// value of at most vocabulary.MaxDecimalDigits digits and a code of at most
 // the grammar's components, and none once the invocation's context is done.
 
 import (
@@ -87,7 +87,7 @@ func unitCode(call hostCall) (string, error) {
 // aliases a writer may send (`°C`, `kWh`), as vocabulary.ConvertDigits does:
 // every digit when the value has a finite decimal expansion, else
 // ConvertedDigits significant digits with `exact: false`. The value holds at
-// most vocabulary.MaxQuantityDigits digits, refused by name before any
+// most vocabulary.MaxDecimalDigits digits, refused by name before any
 // arithmetic.
 func convertUnits(value, from, to, measure string) (map[string]any, error) {
 	c, err := vocabulary.ConvertDigits(value, from, to, measure)

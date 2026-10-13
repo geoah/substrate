@@ -316,7 +316,7 @@ are written and filtered the same way.
 | `text`             | long-form prose                                             |
 | `markdown`         | `text` renderers treat as Markdown                          |
 | `int`, `float`     | numbers, optional `min`/`max`; an `int` is a safe integer, refused past 2^53 - 1 in magnitude because JSON rides float64 |
-| `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded; optional `min`/`max`, compared exactly (`min: 0.01` admits `"0.01"`) |
+| `decimal`          | an exact decimal, written as a string (`"19.99"`), at most 1000 digits; a bare JSON number is refused because it may already be rounded; optional `min`/`max`, compared exactly (`min: 0.01` admits `"0.01"`) |
 | `money`            | an amount in a currency: `{amount: 1999, currency: EUR}` is 19.99 EUR; optional `min`/`max` on the number it denotes |
 | `quantity`         | a measured amount in a unit: `{value: "72.5", unit: kg}`, the digits a string and the unit a UCUM code; optional `measures`, `units`, `comparator`, and `min`/`max` as quantities ([units](units.md)) |
 | `bool`             | true/false                                                  |
@@ -395,7 +395,7 @@ amount beside a currency picker.
 
 **Quantities.** A `quantity` value is a measured amount in a unit, and holds
 three members: `value`, the exact digits written as a string, as a `decimal`
-is (a bare JSON number is refused), at most 1000 of them; `unit`, a case-sensitive
+is (a bare JSON number is refused, and at most 1000 digits); `unit`, a case-sensitive
 [UCUM](https://ucum.org) code; and, only where the property declares
 `comparator: true`, `comparator`, one of `<`, `<=`, `>=` and `>`, which says
 the true value lies in that half-line. A lab's "below 0.5 ng/mL" is:

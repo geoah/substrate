@@ -332,14 +332,20 @@ export function canonicalUnit(input: string): string {
 const DECIMAL = /^[+-]?\d+(\.\d+)?$/
 const DECIMAL_EXPONENT = /^[+-]?\d*\.?\d+[eE][+-]?\d+$/
 
+const MAX_DECIMAL_DIGITS: number = table.maxDecimalDigits
+
 /** One authored decimal held to the grammar (an optional sign, digits, an
- * optional fraction) in its canonical spelling: no `+`, no leading zeros, no
- * negative zero, and the scale kept, so "19.90" stays "19.90"
- * (`vocabulary.CanonicalDecimal`). */
+ * optional fraction) and to the engine's digit bound, in its canonical
+ * spelling: no `+`, no leading zeros, no negative zero, and the scale kept,
+ * so "19.90" stays "19.90" (`vocabulary.CanonicalDecimal`). */
 export function canonicalDecimal(text: string): {
   digits?: string
   error?: string
 } {
+  const tooLong = {
+    error: `a decimal holds at most ${MAX_DECIMAL_DIGITS} digits`,
+  }
+  if (text.length > MAX_DECIMAL_DIGITS + 2) return tooLong
   if (!DECIMAL.test(text)) {
     return {
       error: DECIMAL_EXPONENT.test(text)
@@ -349,7 +355,9 @@ export function canonicalDecimal(text: string): {
   }
   const neg = text.startsWith("-")
   const [whole, frac] = text.replace(/^[+-]/, "").split(".")
-  const out = `${whole.replace(/^0+/, "") || "0"}${frac === undefined ? "" : `.${frac}`}`
+  const integer = whole.replace(/^0+/, "") || "0"
+  if (integer.length + (frac?.length ?? 0) > MAX_DECIMAL_DIGITS) return tooLong
+  const out = `${integer}${frac === undefined ? "" : `.${frac}`}`
   return { digits: neg && /[1-9]/.test(out) ? `-${out}` : out }
 }
 

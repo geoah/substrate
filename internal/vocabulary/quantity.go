@@ -140,12 +140,25 @@ var (
 	reDecimalExponent = regexp.MustCompile(`^[+-]?[0-9]*\.?[0-9]+[eE][+-]?[0-9]+$`)
 )
 
+// MaxDecimalDigits bounds the digits of a decimal, and so of a quantity
+// value, its integer and fraction parts together. Every filter, order and
+// index casts the value to Postgres numeric, which holds at most 16383
+// fractional digits, and big.Rat reads a decimal in time quadratic in its
+// length; no measurement needs more.
+const MaxDecimalDigits = 1000
+
 // CanonicalDecimal holds one authored decimal to the grammar (an optional
-// sign, digits, an optional fraction, and nothing else) and answers the
-// canonical spelling: no '+', no leading zeros, no negative zero. The SCALE is
-// data: "19.90" stays "19.90". No exponent: the datatype is the exact digits,
-// and "1.999e1" admits a second spelling for every value.
+// sign, digits, an optional fraction, and nothing else) and to
+// MaxDecimalDigits, and answers the canonical spelling: no '+', no leading
+// zeros, no negative zero. The SCALE is data: "19.90" stays "19.90". No
+// exponent: the datatype is the exact digits, and "1.999e1" admits a second
+// spelling for every value. The length is checked before anything else reads
+// the text.
 func CanonicalDecimal(s string) (string, error) {
+	tooLong := fmt.Errorf("a decimal holds at most %d digits", MaxDecimalDigits)
+	if len(s) > MaxDecimalDigits+2 {
+		return "", tooLong
+	}
 	if !reDecimal.MatchString(s) {
 		if reDecimalExponent.MatchString(s) {
 			return "", fmt.Errorf("a decimal writes its digits out, without an exponent")
@@ -159,6 +172,9 @@ func CanonicalDecimal(s string) (string, error) {
 	if intPart == "" {
 		intPart = "0"
 	}
+	if len(intPart)+len(frac) > MaxDecimalDigits {
+		return "", tooLong
+	}
 	out := intPart
 	if frac != "" {
 		out += "." + frac
@@ -168,30 +184,6 @@ func CanonicalDecimal(s string) (string, error) {
 		out = "-" + out
 	}
 	return out, nil
-}
-
-// MaxQuantityDigits bounds the digits of a quantity value, its integer and
-// fraction parts together. Every filter, order and index casts the value to
-// Postgres numeric, which holds at most 16383 fractional digits, and big.Rat
-// reads a decimal in time quadratic in its length; no measurement needs more.
-const MaxQuantityDigits = 1000
-
-// QuantityDigits is CanonicalDecimal held to MaxQuantityDigits: the digits a
-// quantity value stores, a filter's operand compares and a unit conversion
-// reads. The length is checked before anything else reads the text.
-func QuantityDigits(s string) (string, error) {
-	tooLong := fmt.Errorf("a quantity value holds at most %d digits", MaxQuantityDigits)
-	if len(s) > MaxQuantityDigits+2 {
-		return "", tooLong
-	}
-	c, err := CanonicalDecimal(s)
-	if err != nil {
-		return "", err
-	}
-	if len(strings.Trim(strings.ReplaceAll(c, ".", ""), "-")) > MaxQuantityDigits {
-		return "", tooLong
-	}
-	return c, nil
 }
 
 // parseQuantitySpec reads a quantity property's own keys: `measures`,
@@ -322,7 +314,7 @@ func parseQuantityBound(raw any, s *QuantitySpec) (*QuantityBound, error) {
 	default:
 		return nil, fmt.Errorf("%s is the bound's digits (\"40\")", QuantityValue)
 	}
-	c, err := QuantityDigits(digits)
+	c, err := CanonicalDecimal(digits)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", QuantityValue, err)
 	}

@@ -116,3 +116,18 @@ func TestAggregateRefusesAUnitOutsideTheMetricsMeasure(t *testing.T) {
 		refused(t, c.metric+" in "+c.unit, read(c.metric, c.unit, c.from), c.unit)
 	}
 }
+
+// A trace's values are decimals, and a decimal holds at most
+// vocabulary.MaxDecimalDigits digits: a point Postgres numeric cannot hold is
+// refused at write, where it once failed the observed index's insert.
+func TestATracePointPastTheDigitBoundIsRefused(t *testing.T) {
+	t.Parallel()
+	r := openObserved(t)
+	_, err := r.put(t, r.trace, "hand/heart_rate/2026-10-07T06", map[string]any{
+		"metric": r.metricRef("health/heart_rate"), "form": "gauge", "unit": "/min",
+		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T06:01:00Z",
+		"utcOffsetStart": 180, "utcOffsetEnd": 180,
+		"offsets": []any{0}, "values": []any{"1." + strings.Repeat("1", 16384)}, "revision": 1,
+	})
+	refused(t, "a 16385-digit point", err, "at most 1000 digits")
+}

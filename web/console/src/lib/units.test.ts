@@ -161,6 +161,16 @@ describe("decimals", () => {
     expect(canonicalDecimal(".5").error).toMatch(/expected a decimal/)
   })
 
+  it("holds a decimal to the engine's digit bound", () => {
+    const bound = "9".repeat(1000)
+    expect(canonicalDecimal(`0000${bound.slice(4)}`)).toEqual({
+      digits: bound.slice(4),
+    })
+    expect(canonicalDecimal(bound)).toEqual({ digits: bound })
+    expect(canonicalDecimal(`1.${bound}`).error).toMatch(/at most 1000 digits/)
+    expect(canonicalDecimal(`${bound}9`).error).toMatch(/at most 1000 digits/)
+  })
+
   it("orders two decimals exactly", () => {
     expect(compareDecimal("40", "39.999")).toBeGreaterThan(0)
     expect(compareDecimal("-2", "-10")).toBeGreaterThan(0)

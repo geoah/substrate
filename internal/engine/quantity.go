@@ -54,7 +54,7 @@ func coerceQuantity(p *vocabulary.Property, v any) (any, error) {
 		return nil, fmt.Errorf(`%s is written as a string ("72.5"): a bare JSON number rides float64 and may already be rounded`,
 			vocabulary.QuantityValue)
 	}
-	digits, err := vocabulary.QuantityDigits(s)
+	digits, err := vocabulary.CanonicalDecimal(s)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", vocabulary.QuantityValue, err)
 	}
@@ -374,11 +374,11 @@ func readStoredUnits(ctx context.Context, x dbx, b *builder, kinds []string, key
 // quantityValueSQL is the stored value's digits as numeric, or NULL where the
 // value at `v` is not a quantity's digits: a name one kind declares a quantity
 // may be another kind's object of another shape, and the cast must not fail
-// that kind's rows. Digits past vocabulary.MaxQuantityDigits read NULL too,
+// that kind's rows. Digits past vocabulary.MaxDecimalDigits read NULL too,
 // because past numeric's own bound the cast fails the whole query.
 func quantityValueSQL(v string) string {
 	value := `(` + v + `->>'` + vocabulary.QuantityValue + `')`
-	return `(CASE WHEN length(` + value + `) <= ` + strconv.Itoa(vocabulary.MaxQuantityDigits+2) +
+	return `(CASE WHEN length(` + value + `) <= ` + strconv.Itoa(vocabulary.MaxDecimalDigits+2) +
 		` AND ` + value + ` ~ '^-?[0-9]+(\.[0-9]+)?$' THEN ` + value + `::numeric END)`
 }
 
