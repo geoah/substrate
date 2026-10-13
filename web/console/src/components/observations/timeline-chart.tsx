@@ -15,8 +15,10 @@
  * between buckets, Enter zooms and Escape leaves. */
 
 import {
+  memo,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -186,72 +188,21 @@ export function TimelineChart({
   const anchor =
     heldAnchor !== null && heldAnchor < buckets.length ? heldAnchor : null
 
-  const lefts = series.filter((s) => (s.axis ?? "left") === "left")
-  const rights = series.filter((s) => s.axis === "right")
-  const top = units?.left || units?.right ? TOP + CAPTION : TOP
-  const height = top + PLOT + AXIS
-  const right = Math.max(
-    LEFT + 40,
-    width - (rights.length ? RIGHT_AXIS : RIGHT)
+  // Laid out once per answer and width: hovering moves the crosshair and
+  // the tooltip, never the marks.
+  const layout = useMemo(
+    () =>
+      layoutOf(
+        buckets,
+        series,
+        domain,
+        size,
+        width,
+        Boolean(units?.left || units?.right)
+      ),
+    [buckets, series, domain, size, width, units?.left, units?.right]
   )
-  const x = linearScale([domain.start, domain.end], [LEFT, right])
-  const windows = buckets.map((b) => {
-    const x0 = x(Math.max(b.start, domain.start))
-    const x1 = x(Math.min(b.end, domain.end))
-    return { x0, x1: Math.max(x1, x0 + 1), mid: (x0 + x1) / 2 }
-  })
-
-  // The left axis reads its series, or, with every left series hidden,
-  // the grid follows the right one.
-  const leftAxis =
-    lefts.length || !rights.length ? yAxisOf(lefts, buckets, top) : undefined
-  const rightAxis = rights.length ? yAxisOf(rights, buckets, top) : undefined
-  const grid = (leftAxis ?? rightAxis)!
-  const scaleOf = (s: ChartSeries) =>
-    (s.axis === "right" ? rightAxis : leftAxis)!
-
-  // Each bucket holds one slot per bar series and one per stack, side by
-  // side, whichever axis each reads on.
-  const slots: string[] = []
-  for (const s of series) {
-    const m = s.mark ?? "line"
-    if (m === "bars") slots.push(s.key)
-    else if (m === "stack") {
-      const key = `stack:${s.stack ?? ""}`
-      if (!slots.includes(key)) slots.push(key)
-    }
-  }
-  function slotOf(b: number, slot: string): { left: number; bar: number } {
-    const w = windows[b]
-    const n = slots.length
-    const room = (w.x1 - w.x0) * 0.8
-    const bar = Math.max(1, Math.min(MAX_BAR, (room - GAP * (n - 1)) / n))
-    const group = n * bar + (n - 1) * GAP
-    return {
-      left: w.mid - group / 2 + slots.indexOf(slot) * (bar + GAP),
-      bar,
-    }
-  }
-  const stacks = new Map<string, ChartSeries[]>()
-  for (const s of series) {
-    if (s.mark !== "stack") continue
-    const key = s.stack ?? ""
-    stacks.set(key, [...(stacks.get(key) ?? []), s])
-  }
-  const lines = series.filter((s) => (s.mark ?? "line") === "line")
-
-  // The x axis is the whole range, its size's boundaries labelled whether a
-  // bucket holds anything there or not. A label needs about 84px, so every
-  // k-th boundary is labelled.
-  const marks = axisTicks(domain, size)
-  const spacing = marks.length > 1 ? x(marks[1]) - x(marks[0]) : right - LEFT
-  const every = Math.max(1, Math.ceil(84 / Math.max(1, spacing)))
-  const xLabels = marks.flatMap((t, i) => {
-    if (i % every) return []
-    const previous = i >= every ? marks[i - every] : undefined
-    const at = Math.min(Math.max(x(t), LEFT + 28), right - 28)
-    return [{ i, at, text: bucketWords(t, size, previous) }]
-  })
+  const { top, height, windows, lines, scaleOf } = layout
 
   function bucketOf(event: PointerEvent<SVGSVGElement>): number {
     const box = event.currentTarget.getBoundingClientRect()
@@ -335,77 +286,7 @@ export function TimelineChart({
           setAnchor(null)
         }}
       >
-        {grid.ticks.map((t) => (
-          <line
-            key={t}
-            x1={LEFT}
-            x2={right}
-            y1={grid.y(t)}
-            y2={grid.y(t)}
-            stroke="var(--border)"
-            shapeRendering="crispEdges"
-          />
-        ))}
-        {leftAxis && (
-          <g data-axis="left">
-            {units?.left && (
-              <text
-                x={LEFT - 8}
-                y={top - 10}
-                textAnchor="end"
-                className="fill-muted-foreground text-[11.5px]"
-              >
-                {units.left}
-              </text>
-            )}
-            {leftAxis.ticks.map((t, i) => (
-              <text
-                key={t}
-                x={LEFT - 8}
-                y={leftAxis.y(t)}
-                textAnchor="end"
-                dominantBaseline="middle"
-                className="fill-faint text-[11.5px] tabular-nums"
-              >
-                {leftAxis.labels[i]}
-              </text>
-            ))}
-          </g>
-        )}
-        {rightAxis && (
-          <g data-axis="right">
-            {units?.right && (
-              <text
-                x={right + 8}
-                y={top - 10}
-                textAnchor="start"
-                className="fill-muted-foreground text-[11.5px]"
-              >
-                {units.right}
-              </text>
-            )}
-            {rightAxis.ticks.map((t, i) => (
-              <text
-                key={t}
-                x={right + 8}
-                y={rightAxis.y(t)}
-                textAnchor="start"
-                dominantBaseline="middle"
-                className="fill-faint text-[11.5px] tabular-nums"
-              >
-                {rightAxis.labels[i]}
-              </text>
-            ))}
-          </g>
-        )}
-        <line
-          x1={LEFT}
-          x2={right}
-          y1={grid.base}
-          y2={grid.base}
-          stroke="var(--border-strong)"
-          shapeRendering="crispEdges"
-        />
+        <Ground layout={layout} units={units} />
         {active !== null && (
           <rect
             x={windows[active].x0}
@@ -425,73 +306,7 @@ export function TimelineChart({
             fill="var(--selection)"
           />
         )}
-        {series.map((s) => {
-          if (s.mark !== "bars") return null
-          const { y, base } = scaleOf(s)
-          return (
-            <g
-              key={s.key}
-              data-series={s.key}
-              opacity={s.stale ? 0.45 : undefined}
-            >
-              {s.points.map((p) => {
-                if (p.value === null) return null
-                const { left, bar } = slotOf(p.bucket, s.key)
-                return (
-                  <path
-                    key={p.bucket}
-                    d={barPath(left, bar, base, y(p.value))}
-                    fill={s.color}
-                  />
-                )
-              })}
-            </g>
-          )
-        })}
-        {[...stacks].map(([stack, members]) => {
-          const { y } = scaleOf(members[0])
-          return buckets.map((_, b) => {
-            const { left, bar } = slotOf(b, `stack:${stack}`)
-            let sum = 0
-            const parts = members.flatMap((s) => {
-              const v = Math.max(0, s.points[b]?.value ?? 0)
-              if (!v) return []
-              const from = sum
-              sum += v
-              return [{ s, from, to: sum }]
-            })
-            return (
-              <g key={`${stack}-${b}`}>
-                {parts.map(({ s, from, to }, i) => {
-                  const lower = from === 0 ? y(from) : y(from) - GAP / 2
-                  const upper = y(to) + (i === parts.length - 1 ? 0 : GAP / 2)
-                  const d =
-                    i === parts.length - 1
-                      ? barPath(left, bar, lower, upper)
-                      : rectPath(left, bar, lower, upper)
-                  return d ? (
-                    <path
-                      key={s.key}
-                      d={d}
-                      fill={s.color}
-                      data-series={s.key}
-                      opacity={s.stale ? 0.45 : undefined}
-                    />
-                  ) : null
-                })}
-              </g>
-            )
-          })
-        })}
-        {lines.map((s) => (
-          <LineSeries
-            key={s.key}
-            series={s}
-            band={s.band === true}
-            mids={windows.map((w) => w.mid)}
-            y={scaleOf(s).y}
-          />
-        ))}
+        <Figures layout={layout} series={series} buckets={buckets} />
         {active !== null && (
           <line
             data-slot="chart-crosshair"
@@ -519,17 +334,6 @@ export function TimelineChart({
               />
             )
           })}
-        {xLabels.map((l) => (
-          <text
-            key={l.i}
-            x={l.at}
-            y={top + PLOT + 17}
-            textAnchor="middle"
-            className="fill-faint text-[11.5px] tabular-nums"
-          >
-            {l.text}
-          </text>
-        ))}
       </svg>
       {buckets.length === 0 && (
         <p className="absolute inset-x-0 top-[90px] text-center text-muted-foreground">
@@ -549,6 +353,300 @@ export function TimelineChart({
     </div>
   )
 }
+
+/** Everything a chart draws that hovering does not move: its size, the x
+ * scale and the buckets' windows on it, the y axes, the bar slots and
+ * stacks, and the x axis's labels. */
+interface Layout {
+  top: number
+  height: number
+  right: number
+  windows: { x0: number; x1: number; mid: number }[]
+  leftAxis?: YAxis
+  rightAxis?: YAxis
+  /** The axis the grid follows. */
+  grid: YAxis
+  scaleOf: (s: ChartSeries) => YAxis
+  lines: ChartSeries[]
+  stacks: Map<string, ChartSeries[]>
+  slotOf: (b: number, slot: string) => { left: number; bar: number }
+  xLabels: { i: number; at: number; text: string }[]
+}
+
+function layoutOf(
+  buckets: readonly Bucket[],
+  series: readonly ChartSeries[],
+  domain: TimeRange,
+  size: BucketSize,
+  width: number,
+  captioned: boolean
+): Layout {
+  const lefts = series.filter((s) => (s.axis ?? "left") === "left")
+  const rights = series.filter((s) => s.axis === "right")
+  const top = captioned ? TOP + CAPTION : TOP
+  const height = top + PLOT + AXIS
+  const right = Math.max(
+    LEFT + 40,
+    width - (rights.length ? RIGHT_AXIS : RIGHT)
+  )
+  const x = linearScale([domain.start, domain.end], [LEFT, right])
+  const windows = buckets.map((b) => {
+    const x0 = x(Math.max(b.start, domain.start))
+    const x1 = x(Math.min(b.end, domain.end))
+    return { x0, x1: Math.max(x1, x0 + 1), mid: (x0 + x1) / 2 }
+  })
+
+  // The left axis reads its series, or, with every left series hidden,
+  // the grid follows the right one.
+  const leftAxis =
+    lefts.length || !rights.length ? yAxisOf(lefts, buckets, top) : undefined
+  const rightAxis = rights.length ? yAxisOf(rights, buckets, top) : undefined
+  const grid = (leftAxis ?? rightAxis)!
+  const scaleOf = (s: ChartSeries) =>
+    (s.axis === "right" ? rightAxis : leftAxis)!
+
+  // Each bucket holds one slot per bar series and one per stack, side by
+  // side, whichever axis each reads on.
+  const slots: string[] = []
+  for (const s of series) {
+    const m = s.mark ?? "line"
+    if (m === "bars") slots.push(s.key)
+    else if (m === "stack") {
+      const key = `stack:${s.stack ?? ""}`
+      if (!slots.includes(key)) slots.push(key)
+    }
+  }
+  function slotOf(b: number, slot: string): { left: number; bar: number } {
+    const w = windows[b]
+    const n = slots.length
+    const room = (w.x1 - w.x0) * 0.8
+    const bar = Math.max(1, Math.min(MAX_BAR, (room - GAP * (n - 1)) / n))
+    const group = n * bar + (n - 1) * GAP
+    return {
+      left: w.mid - group / 2 + slots.indexOf(slot) * (bar + GAP),
+      bar,
+    }
+  }
+  const stacks = new Map<string, ChartSeries[]>()
+  for (const s of series) {
+    if (s.mark !== "stack") continue
+    const key = s.stack ?? ""
+    stacks.set(key, [...(stacks.get(key) ?? []), s])
+  }
+  const lines = series.filter((s) => (s.mark ?? "line") === "line")
+
+  // The x axis is the whole range, its size's boundaries labelled whether a
+  // bucket holds anything there or not. A label needs about 84px, so every
+  // k-th boundary is labelled.
+  const marks = axisTicks(domain, size)
+  const spacing = marks.length > 1 ? x(marks[1]) - x(marks[0]) : right - LEFT
+  const every = Math.max(1, Math.ceil(84 / Math.max(1, spacing)))
+  const xLabels = marks.flatMap((t, i) => {
+    if (i % every) return []
+    const previous = i >= every ? marks[i - every] : undefined
+    const at = Math.min(Math.max(x(t), LEFT + 28), right - 28)
+    return [{ i, at, text: bucketWords(t, size, previous) }]
+  })
+
+  return {
+    top,
+    height,
+    right,
+    windows,
+    leftAxis,
+    rightAxis,
+    grid,
+    scaleOf,
+    lines,
+    stacks,
+    slotOf,
+    xLabels,
+  }
+}
+
+/** The grid, the y axes with their captions, and the baseline: under the
+ * hovered column. */
+const Ground = memo(function Ground({
+  layout,
+  units,
+}: {
+  layout: Layout
+  units?: { left?: string; right?: string }
+}) {
+  const { top, right, grid, leftAxis, rightAxis } = layout
+  return (
+    <>
+      {grid.ticks.map((t) => (
+        <line
+          key={t}
+          x1={LEFT}
+          x2={right}
+          y1={grid.y(t)}
+          y2={grid.y(t)}
+          stroke="var(--border)"
+          shapeRendering="crispEdges"
+        />
+      ))}
+      {leftAxis && (
+        <g data-axis="left">
+          {units?.left && (
+            <text
+              x={LEFT - 8}
+              y={top - 10}
+              textAnchor="end"
+              className="fill-muted-foreground text-[11.5px]"
+            >
+              {units.left}
+            </text>
+          )}
+          {leftAxis.ticks.map((t, i) => (
+            <text
+              key={t}
+              x={LEFT - 8}
+              y={leftAxis.y(t)}
+              textAnchor="end"
+              dominantBaseline="middle"
+              className="fill-faint text-[11.5px] tabular-nums"
+            >
+              {leftAxis.labels[i]}
+            </text>
+          ))}
+        </g>
+      )}
+      {rightAxis && (
+        <g data-axis="right">
+          {units?.right && (
+            <text
+              x={right + 8}
+              y={top - 10}
+              textAnchor="start"
+              className="fill-muted-foreground text-[11.5px]"
+            >
+              {units.right}
+            </text>
+          )}
+          {rightAxis.ticks.map((t, i) => (
+            <text
+              key={t}
+              x={right + 8}
+              y={rightAxis.y(t)}
+              textAnchor="start"
+              dominantBaseline="middle"
+              className="fill-faint text-[11.5px] tabular-nums"
+            >
+              {rightAxis.labels[i]}
+            </text>
+          ))}
+        </g>
+      )}
+      <line
+        x1={LEFT}
+        x2={right}
+        y1={grid.base}
+        y2={grid.base}
+        stroke="var(--border-strong)"
+        shapeRendering="crispEdges"
+      />
+    </>
+  )
+})
+
+/** The bars, the stacks, the lines and the x axis's labels: over the
+ * hovered column, under the crosshair. */
+const Figures = memo(function Figures({
+  layout,
+  series,
+  buckets,
+}: {
+  layout: Layout
+  series: readonly ChartSeries[]
+  buckets: readonly Bucket[]
+}) {
+  const { top, windows, scaleOf, slotOf, stacks, lines, xLabels } = layout
+  const mids = windows.map((w) => w.mid)
+  return (
+    <>
+      {series.map((s) => {
+        if (s.mark !== "bars") return null
+        const { y, base } = scaleOf(s)
+        return (
+          <g
+            key={s.key}
+            data-series={s.key}
+            opacity={s.stale ? 0.45 : undefined}
+          >
+            {s.points.map((p) => {
+              if (p.value === null) return null
+              const { left, bar } = slotOf(p.bucket, s.key)
+              return (
+                <path
+                  key={p.bucket}
+                  d={barPath(left, bar, base, y(p.value))}
+                  fill={s.color}
+                />
+              )
+            })}
+          </g>
+        )
+      })}
+      {[...stacks].map(([stack, members]) => {
+        const { y } = scaleOf(members[0])
+        return buckets.map((_, b) => {
+          const { left, bar } = slotOf(b, `stack:${stack}`)
+          let sum = 0
+          const parts = members.flatMap((s) => {
+            const v = Math.max(0, s.points[b]?.value ?? 0)
+            if (!v) return []
+            const from = sum
+            sum += v
+            return [{ s, from, to: sum }]
+          })
+          return (
+            <g key={`${stack}-${b}`}>
+              {parts.map(({ s, from, to }, i) => {
+                const lower = from === 0 ? y(from) : y(from) - GAP / 2
+                const upper = y(to) + (i === parts.length - 1 ? 0 : GAP / 2)
+                const d =
+                  i === parts.length - 1
+                    ? barPath(left, bar, lower, upper)
+                    : rectPath(left, bar, lower, upper)
+                return d ? (
+                  <path
+                    key={s.key}
+                    d={d}
+                    fill={s.color}
+                    data-series={s.key}
+                    opacity={s.stale ? 0.45 : undefined}
+                  />
+                ) : null
+              })}
+            </g>
+          )
+        })
+      })}
+      {lines.map((s) => (
+        <LineSeries
+          key={s.key}
+          series={s}
+          band={s.band === true}
+          mids={mids}
+          y={scaleOf(s).y}
+        />
+      ))}
+      {xLabels.map((l) => (
+        <text
+          key={l.i}
+          x={l.at}
+          y={top + PLOT + 17}
+          textAnchor="middle"
+          className="fill-faint text-[11.5px] tabular-nums"
+        >
+          {l.text}
+        </text>
+      ))}
+    </>
+  )
+})
 
 function LineSeries({
   series,
