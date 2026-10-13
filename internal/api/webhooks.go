@@ -13,13 +13,16 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// The bounds on one public webhook delivery. A non-multipart body rides the
-// envelope whole into the function's input frame, so it is held to the 8 MiB
-// a function body's own frame may carry (host.py MAX_FRAME_BYTES, under the
-// runner's 16 MiB line ceiling); the ledger keeps it in the blob store by
-// digest, never inline in the changelog. A multipart request may carry files,
-// which the engine spools to the blob store, so its total is bounded below the
-// blob store's own cap while its inline parts share the inline budget.
+// The bounds on one public webhook delivery. A non-multipart body is held in
+// memory whole and rides the envelope whole into the callable, so it is held
+// to 8 MiB: a slot's worth of memory times maxConcurrentWebhooks, and enough
+// for a day of minute-grouped Health Auto Export samples. The ledger keeps
+// the body in the blob store by digest. An agent callable reads the body in
+// its user message, which becomes an llm/message record and a model turn, so
+// the engine holds a body bound for an agent to 1 MiB (ErrTooLarge, 413). A
+// multipart request may carry files, which the engine spools to the blob
+// store, so its total is bounded below the blob store's own cap while its
+// inline parts share the inline budget.
 const (
 	maxWebhookInline      = 8 << 20
 	maxWebhookBody        = 32 << 20

@@ -329,7 +329,11 @@ declaration cannot express (GitHub's `sha256=` prefix on
 hashing it against a secret it reads from its bundle's configuration. The host stores
 a part in the blob store when it declares a filename or a media type outside
 `text/*`, and hands every other part inline as `value`. A body up to 8 MiB
-rides inline; a multipart request may total 32 MiB. An authenticated wake
+rides inline; a multipart request may total 32 MiB. An [agent](agents.md)
+callable reads the request in its user message, which is stored as an
+`llm/message` record and sent to the model, so a request bound for one
+carries at most 1 MiB inline, its body or its parts' values together, and
+the door answers a larger one `413`. An authenticated wake
 (`POST …/trigger/{id}/wake`) carries no `request`.
 
 **One `kind`, everywhere.** A kind is named by a reference:

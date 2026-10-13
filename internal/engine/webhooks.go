@@ -26,6 +26,14 @@ const actorWebhook substrate.Actor = "substrate.webhook"
 // authenticated wake's ("wake-").
 const webhookFirePrefix = "hook-"
 
+// maxAgentWebhookInline bounds the inline bytes of a request bound for an
+// agent callable: its body, or its multipart inline values. An agent reads
+// the request in its user message, which is an llm/message record in the
+// changelog and a turn sent to the model provider, so it is held to the 1 MiB
+// an authenticated agent call's body may carry. A function callable reads
+// the door's 8 MiB.
+const maxAgentWebhookInline = 1 << 20
+
 // errWebhookRefused is every refusal the door must not explain: no such
 // repository, no such trigger, a trigger of another source, a disabled one, an
 // unresolvable callable, a wrong or missing key, and a keyless trigger's
@@ -124,7 +132,8 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 // spool and the pending entry. Every check that fails answers
 // errWebhookRefused, except the declared signature's on a keyed trigger,
 // which answers errWebhookSignature: by then the request has named a live
-// trigger and carried its key. A repeat of a signature the door admitted inside its
+// trigger and carried its key. A request too large for an agent callable
+// answers ErrTooLarge once it has passed the signature. A repeat of a signature the door admitted inside its
 // window answers webhookRepeat, naming the first admission's fire, and
 // stores nothing (webhookReplays). Past the checks the request is written
 // into the ledger as a parked failure carrying pendingWebhookError, in its
@@ -156,6 +165,11 @@ func (ds *dataset) admitWebhook(ctx context.Context, triggerID, key string, req 
 	presented, err := ds.checkWebhookSignature(ctx, tr, req, at)
 	if err != nil {
 		return nil, foldFailure{}, err
+	}
+	if tr.Agent != nil {
+		if n := webhookInlineBytes(req); n > maxAgentWebhookInline {
+			return nil, foldFailure{}, fmt.Errorf("%w: webhook carries %d inline bytes, and an agent callable reads at most 1 MiB", substrate.ErrTooLarge, n)
+		}
 	}
 	var replay *webhookReplay
 	if !presented.signedAt.IsZero() {
@@ -660,6 +674,19 @@ func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string
 		parts[i] = restored
 	}
 	return nil
+}
+
+// webhookInlineBytes is what of a request rides the envelope inline: the
+// body, or a multipart request's inline part values. File parts go to the
+// blob store and ride by digest.
+func webhookInlineBytes(req substrate.WebhookRequest) int {
+	n := len(req.Body)
+	for _, p := range req.Parts {
+		if p.Data == nil {
+			n += len(p.Value)
+		}
+	}
+	return n
 }
 
 // webhookRequestEnvelope is the `request` the callable reads: method, media

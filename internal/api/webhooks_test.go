@@ -166,6 +166,16 @@ func TestWebhookSignatureRefusalIsATerse401(t *testing.T) {
 	}
 }
 
+// A body the service holds too large for what the trigger calls (an agent
+// reads at most 1 MiB) is a 413, as the door's own caps are.
+func TestWebhookTooLargeForTheCallableIs413(t *testing.T) {
+	_, h := webhookHandler("", fmt.Errorf("%w: an agent callable reads at most 1 MiB", substrate.ErrTooLarge))
+	rec := postHook(h, "/webhooks/geoah.example.com/to-agent", bytes.Repeat([]byte("x"), 2<<20), map[string]string{"Content-Type": "text/plain"})
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "bad_request") {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // The bounds: a non-multipart body past 8 MiB is 413, headers past 16 KiB are
 // 431, and neither reaches the service.
 func TestWebhookBounds(t *testing.T) {

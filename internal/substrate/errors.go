@@ -79,6 +79,11 @@ var (
 	// ErrUnavailable does not loop on it. The API still answers it `503
 	// unavailable` with Retry-After, and the message names the restart.
 	ErrRestartRequired = errors.New("substrate: refused until the server restarts")
+	// ErrTooLarge marks a request body past a bound only the engine knows,
+	// because it depends on what the request addresses: a webhook body over
+	// what an agent callable reads as its user message. The API answers 413
+	// `bad_request`.
+	ErrTooLarge = errors.New("substrate: request body too large")
 )
 
 // ErrorEnvelope is the one body every refused request answers with.
