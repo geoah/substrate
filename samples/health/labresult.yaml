@@ -254,3 +254,18 @@ data:
       kind: any
       repeated: true
       description: the results this one was computed from
+    conversion:
+      type: object
+      description: how a derived result was computed from the one it came
+        from
+      fields:
+        formula:
+          type: string
+          description: the formula's id, such as molar-mass
+        parameters:
+          type: decimal
+          keyed: true
+          description: the formula's inputs by name
+        version:
+          type: string
+          description: the formula's version

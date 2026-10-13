@@ -229,6 +229,8 @@ var loincAxes = map[string]struct{ component, property, system string }{
 	"2276-4":  {"Ferritin", "MCnc", "Ser/Plas"},
 	"718-7":   {"Hemoglobin", "MCnc", "Bld"},
 	"1988-5":  {"C reactive protein", "MCnc", "Ser/Plas"},
+	"4548-4":  {"Hemoglobin A1c/Hemoglobin.total", "MFr", "Bld"},
+	"59261-8": {"Hemoglobin A1c/Hemoglobin.total^^standardized per IFCC-RMP for CDT", "SFr", "Bld"},
 }
 
 // loincConcentration is the measure a concentration's LOINC property names.
@@ -403,5 +405,82 @@ func TestRevisionKindsBindTheRuleThatHoldsIt(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no kind declares revision; the test reads the wrong place")
+	}
+}
+
+// EVERY LAB TWIN HAS ITS ANALYTES. A lab analyte the catalogue lists in both
+// unit systems is two metrics (`ldl_cholesterol` in mmol/L and
+// `ldl_cholesterol_mass` in mg/dL), and the health sample's `convertlab`
+// function writes a result of one in the other from the `analyte` records:
+// one per metric of a pair, its LOINC parts the ones LOINC publishes for the
+// metric's code, one molar mass on both and a conversion onto the twin.
+// HbA1c's two units convert by a formula, not a molar mass.
+func TestHealthAnalytesPairEveryLabTwin(t *testing.T) {
+	metrics := healthRecords(t, "observations/metric")
+	analytes := healthRecords(t, "health/analyte")
+	metricPath := samples.Authority + "/observations/metric/"
+	conversion := func(id string) (target, formula string) {
+		a := analytes[id]
+		if a == nil {
+			t.Errorf("%s has no analyte record", id)
+			return "", ""
+		}
+		meta, _ := a["metric"].(map[string]any)
+		if meta["ref"] != metricPath+id {
+			t.Errorf("analyte %s points at %v", id, a["metric"])
+		}
+		convs, _ := a["conversions"].([]any)
+		if len(convs) != 1 {
+			t.Errorf("analyte %s lists %d conversions, want the one onto its twin", id, len(convs))
+			return "", ""
+		}
+		c, _ := convs[0].(map[string]any)
+		ref, _ := c["target"].(map[string]any)
+		target, _ = ref["ref"].(string)
+		formula, _ = c["formula"].(string)
+		return strings.TrimPrefix(target, metricPath), formula
+	}
+	loincOf := func(id string) string {
+		codes, _ := metrics[id]["codes"].([]any)
+		for _, raw := range codes {
+			if c, _ := raw.(map[string]any); c["system"] == "http://loinc.org" {
+				code, _ := c["code"].(string)
+				return code
+			}
+		}
+		return ""
+	}
+	pairs := 0
+	for id, props := range metrics {
+		twin := id + "_mass"
+		if props["measures"] != "amount-concentration" || metrics[twin] == nil {
+			continue
+		}
+		pairs++
+		for _, side := range [][2]string{{id, twin}, {twin, id}} {
+			target, formula := conversion(side[0])
+			if target != side[1] || formula != "molar-mass" {
+				t.Errorf("analyte %s converts onto %q by %q, want %s by molar-mass", side[0], target, formula, side[1])
+			}
+		}
+		if analytes[id]["molarMass"] == nil || analytes[id]["molarMass"] != analytes[twin]["molarMass"] {
+			t.Errorf("%s and %s carry molar masses %v and %v, want one", id, twin, analytes[id]["molarMass"], analytes[twin]["molarMass"])
+		}
+	}
+	if pairs < 8 {
+		t.Errorf("%d lab twins, want the eight the catalogue lists", pairs)
+	}
+	for id, a := range analytes {
+		parts, _ := a["loincParts"].(map[string]any)
+		ax, known := loincAxes[loincOf(id)]
+		if !known || parts["component"] != ax.component || parts["property"] != ax.property || parts["system"] != ax.system {
+			t.Errorf("analyte %s has LOINC parts %v; its metric's code %s is %+v", id, parts, loincOf(id), ax)
+		}
+	}
+	if target, formula := conversion("health/hba1c"); target != "health/hba1c_ifcc" || formula != "ngsp-to-ifcc" {
+		t.Errorf("hba1c converts onto %q by %q", target, formula)
+	}
+	if target, formula := conversion("health/hba1c_ifcc"); target != "health/hba1c" || formula != "ifcc-to-ngsp" {
+		t.Errorf("hba1c_ifcc converts onto %q by %q", target, formula)
 	}
 }

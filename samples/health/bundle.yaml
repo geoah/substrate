@@ -25,9 +25,10 @@ data:
   version: 1
 ---
 # ---- the bundle document: the import unit -------------------------------------
-# Kinds and the metric catalogue (metrics.yaml) as data. The metric rows are
-# records of the base package's kind, so a re-import of this sample rewrites
-# them and its removal leaves them.
+# Kinds, one function and the metric catalogue (metrics.yaml) with the lab
+# analytes (metrics_analytes.yaml) as data. The metric rows are records of
+# the base package's kind, so a re-import of this sample rewrites them and
+# its removal leaves them.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: samples.substrate.reamde.dev/health
@@ -48,3 +49,282 @@ data:
     - samples.substrate.reamde.dev/health/workout
     - samples.substrate.reamde.dev/health/labreport
     - samples.substrate.reamde.dev/health/labresult
+    - samples.substrate.reamde.dev/health/convertlab
+---
+# ---- lab results in the other unit system ------------------------------------
+# Fired by `health-on-labresult` (triggers.yaml) on every create, update and
+# delete of a lab result. A mass and an amount concentration of one analyte
+# are two metrics and two measures (metrics.yaml), so a read of LDL in mmol/L
+# cannot answer a result a lab reported in mg/dL. This function writes each
+# result's value in the paired metric too, as a derived lab result, using the
+# conversions the `analyte` records list (metrics_analytes.yaml).
+kind: substrate.reamde.dev/core/function
+metadata:
+  id: samples.substrate.reamde.dev/health/convertlab
+data:
+  authority: samples.substrate.reamde.dev
+  package: health
+  description: >-
+    Write a lab result's value in its paired unit system as a derived lab
+    result, such as LDL cholesterol in mmol/L for a result in mg/dL, and delete
+    the derived results a changed or deleted result no longer implies.
+  runtime: python
+  timeout: PT30S
+  permissions:
+    reads:
+      kinds:
+        - samples.substrate.reamde.dev/health/labresult
+        - samples.substrate.reamde.dev/health/analyte
+        - samples.substrate.reamde.dev/observations/metric
+      budgets:
+        calls: 32
+        rows: 200
+    writes:
+      - samples.substrate.reamde.dev/health/labresult
+  source: |
+    """Lab results in the paired unit system, as derived results.
+
+    ONE INPUT AT A TIME. A delivery names one `labresult`. The body reads the
+    `analyte` records that point at the result's metric and, for each conversion
+    one lists, writes the value in the target metric as a `labresult` of its
+    own: the input's report, source, time, specimen, status and flags, the
+    target metric, `derivedFrom` naming the input and `conversion` saying how.
+    It then deletes the input's derived results it no longer implies, so a
+    corrected input rewrites them and a deleted one takes them with it.
+
+    SKIPPED: an input that carries `derivedFrom` (a derivation is never converted
+    again, which also keeps the body from feeding itself), an input with no
+    `value` (a coded, ratio, text or absent result), a conversion onto the
+    input's own metric, and a value or a target whose measure the formula does
+    not read. Each skip is counted in the output.
+
+    IDS are `<input id>/as/<target metric id>`. Past 128 characters the input id
+    is hashed with host.ids.external.
+
+    FORMULAS. `molar-mass` divides a mass concentration by the analyte's
+    `molarMass` (grams per mole) into an amount concentration, or multiplies the
+    other way. `ngsp-to-ifcc` is IFCC mmol/mol = (NGSP % - intercept) x slope and
+    `ifcc-to-ngsp` its inverse, with the conversion's own `parameters`. Every
+    formula is increasing, so a comparator (`<0.01`) carries over. The input's
+    `revision` is copied, so a rewrite of the input rewrites its derivations.
+
+    DIGITS. A derived value keeps one significant digit more than the value it
+    came from, rounded half to even, so a conversion neither invents precision
+    nor loses the input's.
+    """
+    from decimal import Context, Decimal, ROUND_HALF_EVEN
+
+    HOME = "samples.substrate.reamde.dev"
+    LABRESULT = HOME + "/health/labresult"
+    ANALYTE = HOME + "/health/analyte"
+    METRIC = HOME + "/observations/metric"
+    FORMULA_VERSION = "1"
+    MAX_ID = 128
+
+    # Every property a derived result gets from this body. Each write names all
+    # of them, None where the input implies nothing, so a rewrite clears what the
+    # previous one set.
+    DERIVED = ("metric", "source", "about", "report", "form", "hold", "value",
+               "at", "endsAt", "utcOffset", "specimen", "method", "status",
+               "interpretation", "referenceRanges", "revision", "derivedFrom",
+               "conversion")
+    # The input's own properties a derived result repeats as they are.
+    COPIED = ("source", "about", "report", "form", "hold", "at", "endsAt",
+              "utcOffset", "specimen", "method", "status", "interpretation",
+              "revision")
+    # Each formula's input and output unit; molar-mass reads the input's measure.
+    AFFINE = {"ngsp-to-ifcc": ("%", "mmol/mol"), "ifcc-to-ngsp": ("mmol/mol", "%")}
+    MASS, AMOUNT = "mass-concentration", "amount-concentration"
+    MOLAR_BASE = {MASS: "g/L", AMOUNT: "mol/L"}
+
+
+    def _path(value):
+        """A stored reference's record path, in either spelling."""
+        if isinstance(value, dict):
+            value = value.get("ref")
+        return value if isinstance(value, str) else ""
+
+
+    def _id_in(path, kind):
+        prefix = kind + "/"
+        return path[len(prefix):] if path.startswith(prefix) else ""
+
+
+    def _text(d):
+        """A Decimal as the plain digits the engine reads."""
+        return format(d, "f")
+
+
+    def _digits(converted):
+        """host.units.convert's answer as digits, whether it is the bare digits
+        or carries its exactness beside them."""
+        if isinstance(converted, dict):
+            return converted.get("value")
+        if isinstance(converted, (tuple, list)):
+            return converted[0]
+        return converted
+
+
+    def _rounded(value, digits):
+        """value at one significant digit more than `digits` holds."""
+        places = max(1, len(Decimal(digits).as_tuple().digits)) + 1
+        return _text(Context(prec=places, rounding=ROUND_HALF_EVEN).plus(value))
+
+
+    class _Run:
+        def __init__(self, host):
+            self.host = host
+            self.units = {}
+            self.factors = {}
+            self.metric_units = {}
+            self.wrote = 0
+            self.deleted = 0
+            self.skipped = {}
+
+        def skip(self, why):
+            self.skipped[why] = self.skipped.get(why, 0) + 1
+
+        def measure(self, unit):
+            """The measure a unit belongs to, or None for one the table cannot
+            place."""
+            if unit not in self.units:
+                try:
+                    self.units[unit] = self.host.units.measure(unit)
+                except Exception:
+                    self.units[unit] = None
+            return self.units[unit]
+
+        def factor(self, frm, to):
+            """What one `frm` is in `to`, both of one measure."""
+            if frm == to:
+                return Decimal(1)
+            if (frm, to) not in self.factors:
+                self.factors[(frm, to)] = Decimal(_digits(self.host.units.convert("1", frm, to)))
+            return self.factors[(frm, to)]
+
+        def target_unit(self, path):
+            if path not in self.metric_units:
+                row = self.host.records.get(METRIC, _id_in(path, METRIC))
+                self.metric_units[path] = ((row or {}).get("properties") or {}).get("unit")
+            return self.metric_units[path]
+
+        def apply(self, formula, analyte, conversion, quantity, unit):
+            """One quantity in `unit` by one formula -> (Decimal, parameters), or
+            None where the formula does not read the units."""
+            digits, frm = quantity.get("value"), quantity.get("unit")
+            if not isinstance(digits, str) or not frm:
+                return None
+            x = Decimal(digits)
+            if formula == "molar-mass":
+                raw = analyte.get("molarMass")
+                if raw is None:
+                    return None
+                grams = Decimal(str(raw))
+                source, target = self.measure(frm), self.measure(unit)
+                if grams <= 0 or {source, target} != {MASS, AMOUNT}:
+                    return None
+                base = x * self.factor(frm, MOLAR_BASE[source])
+                out = base / grams if source == MASS else base * grams
+                return out * self.factor(MOLAR_BASE[target], unit), {"molarMass": _text(grams)}
+            if formula in AFFINE:
+                params = conversion.get("parameters") or {}
+                if params.get("slope") is None or params.get("intercept") is None:
+                    return None
+                slope, intercept = Decimal(str(params["slope"])), Decimal(str(params["intercept"]))
+                reads, writes = AFFINE[formula]
+                if self.measure(frm) != self.measure(reads) or self.measure(unit) != self.measure(writes):
+                    return None
+                x = x * self.factor(frm, reads)
+                out = (x - intercept) * slope if formula == "ngsp-to-ifcc" else x / slope + intercept
+                return out * self.factor(writes, unit), {"slope": _text(slope), "intercept": _text(intercept)}
+            return None
+
+        def ranges(self, formula, analyte, conversion, ranges, unit):
+            out = []
+            for rng in ranges or []:
+                if not isinstance(rng, dict):
+                    continue
+                moved = {k: v for k, v in rng.items() if k not in ("low", "high")}
+                for bound in ("low", "high"):
+                    q = rng.get(bound)
+                    if not isinstance(q, dict):
+                        continue
+                    got = self.apply(formula, analyte, conversion, q, unit)
+                    if got is not None:
+                        moved[bound] = {"value": _rounded(got[0], q["value"]), "unit": unit}
+                out.append(moved)
+            return out or None
+
+        def derived_id(self, rid, target_id):
+            did = "%s/as/%s" % (rid, target_id)
+            if len(did) > MAX_ID:
+                did = "%s/as/%s" % (self.host.ids.external("health", "labresult", rid), target_id)
+            return did
+
+        def derive(self, rid, p):
+            """Every derived result one input implies, by id."""
+            desired = {}
+            if p is None:
+                return desired
+            if p.get("derivedFrom"):
+                self.skip("derived")
+                return desired
+            value = p.get("value")
+            if not isinstance(value, dict):
+                self.skip("no value")
+                return desired
+            metric = _path(p.get("metric"))
+            page = self.host.records.list(ANALYTE, where={"metric": {"eq": metric}}, first=10)
+            for row in page.get("records") or []:
+                analyte = row.get("properties") or {}
+                for conversion in analyte.get("conversions") or []:
+                    formula = conversion.get("formula")
+                    target = _path(conversion.get("target"))
+                    unit = self.target_unit(target) if target and target != metric else None
+                    got = self.apply(formula, analyte, conversion, value, unit) if unit else None
+                    if got is None:
+                        self.skip("%s onto %s" % (formula, _id_in(target, METRIC) or "nothing"))
+                        continue
+                    out, params = got
+                    derived = {name: p.get(name) for name in COPIED}
+                    quantity = {"value": _rounded(out, value["value"]), "unit": unit}
+                    if value.get("comparator"):
+                        quantity["comparator"] = value["comparator"]
+                    derived.update({
+                        "metric": {"ref": target},
+                        "value": quantity,
+                        "referenceRanges": self.ranges(formula, analyte, conversion,
+                                                       p.get("referenceRanges"), unit),
+                        "derivedFrom": [{"ref": LABRESULT + "/" + rid}],
+                        "conversion": {"formula": formula, "parameters": params,
+                                       "version": FORMULA_VERSION},
+                    })
+                    desired[self.derived_id(rid, _id_in(target, METRIC))] = derived
+            return desired
+
+        def reconcile(self, rid, desired):
+            """Write what one input implies and delete what it no longer does."""
+            page = self.host.records.list(
+                LABRESULT, where={"derivedFrom": {"eq": LABRESULT + "/" + rid}}, first=100)
+            for did in sorted(desired):
+                whole = {name: desired[did].get(name) for name in DERIVED}
+                self.host.effects.put(LABRESULT, did, properties=whole)
+                self.wrote += 1
+            for row in page.get("records") or []:
+                if row.get("id") not in desired:
+                    self.host.effects.delete(LABRESULT, row["id"])
+                    self.deleted += 1
+
+
+    def main(input, host):
+        envelope = input.get("envelope") or {}
+        change = envelope.get("change") or {}
+        rid = change.get("id") or ""
+        if change.get("kind") != LABRESULT or not rid:
+            return {"output": {"skipped": "not a lab result"}}
+        record = envelope.get("record")
+        live = bool(record) and not record.get("deletedAt")
+        run = _Run(host)
+        run.reconcile(rid, run.derive(rid, (record.get("properties") or {}) if live else None))
+        return {"output": {"input": rid, "wrote": run.wrote, "deleted": run.deleted,
+                           "skipped": run.skipped}}

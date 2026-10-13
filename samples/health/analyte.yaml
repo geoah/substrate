@@ -1,8 +1,9 @@
 # what a lab measures, beyond what the base metric says: the LOINC parts, the
-# molar mass a function converts a mass concentration with, the conversions
-# it may write, and a fallback reference range. One analyte per lab metric,
-# pointing at it, because a domain never adds a property to a base kind
-# (decision record 0159).
+# molar mass the sample's `convertlab` function converts a mass concentration
+# with, the conversions it writes, and a fallback reference range. One analyte
+# per lab metric, pointing at it, because a domain never adds a property to a
+# base kind (decision record 0159). The sample ships one per metric of each
+# lab pair (metrics_analytes.yaml).
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: samples.substrate.reamde.dev/health/analyte

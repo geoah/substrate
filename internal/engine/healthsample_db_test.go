@@ -2,11 +2,16 @@ package engine_test
 
 // The health sample's own kinds on the write path, imported the way a
 // repository imports them: the revision a session kind holds, a lab result's
-// reference range, and a workout's sport and energy.
+// reference range, a workout's sport and energy, and the function that
+// writes a lab result in its paired unit system.
 
 import (
+	"context"
+	"fmt"
+	"os/exec"
 	"testing"
 
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -98,4 +103,127 @@ func TestWorkoutSportIsOneCodeSetAndEnergyIsSplit(t *testing.T) {
 	refused(t, "a provider's own word as the sport", err, "props.sport")
 	_, err = r.put(t, workout, "y", session(map[string]any{"sport": "running", "energy": quantity("400", "kcal")}))
 	refused(t, "energy that says neither active nor total", err, "energy")
+}
+
+// THE HEALTH SAMPLE WRITES A LAB RESULT IN ITS PAIRED UNIT SYSTEM. A US lab's
+// LDL in mg/dL and an HbA1c in NGSP % land, through the sample's own trigger,
+// as derived results in mmol/L and IFCC mmol/mol: the value at one
+// significant digit more than the input's, the range converted with it, and
+// derivedFrom and conversion saying how. A derived result is never converted
+// again, a corrected input rewrites its derivation, and a deleted one takes
+// it with it.
+func TestLabResultIsWrittenInItsPairedUnitSystem(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is not on PATH; the health sample's function cannot run")
+	}
+	r := openObserved(t)
+	ctx := context.Background()
+	drain := func() {
+		t.Helper()
+		for range 20 {
+			n, err := r.ds.ProcessTriggers(ctx)
+			if err != nil {
+				t.Fatalf("process triggers: %v", err)
+			}
+			if n == 0 {
+				statuses, err := r.ds.TriggerStatuses(ctx)
+				if err != nil {
+					t.Fatalf("trigger statuses: %v", err)
+				}
+				for _, st := range statuses {
+					if st.Parked > 0 {
+						t.Fatalf("%s parked %d: %s", st.ID, st.Parked, st.LastParkedError)
+					}
+				}
+				return
+			}
+		}
+		t.Fatal("the trigger chain did not drain")
+	}
+	derivedOf := func(input string) []*substrate.Record {
+		t.Helper()
+		page, err := r.ds.List(ctx, substrate.Query{Filter: substrate.Filter{
+			Kinds:      []string{r.labresult},
+			Properties: map[string]substrate.Cond{"derivedFrom": {Eq: r.labresult + "/" + input}},
+		}, First: 10})
+		if err != nil {
+			t.Fatalf("list the derived results: %v", err)
+		}
+		return page.Records
+	}
+	result := func(metric, value, unit string, revision int, extra map[string]any) map[string]any {
+		props := map[string]any{
+			"metric": r.metricRef(metric), "form": "gauge", "hold": "PT0S",
+			"value": quantity(value, unit), "at": "2026-09-14T08:05:00-04:00", "utcOffset": -240,
+			"status": "final", "revision": revision,
+		}
+		for k, v := range extra {
+			props[k] = v
+		}
+		return props
+	}
+	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("health/ldl_cholesterol_mass", "130", "mg/dL", 1,
+		map[string]any{"referenceRanges": []any{map[string]any{"high": quantity("100", "mg/dL"), "text": "optimal"}}})); err != nil {
+		t.Fatalf("put the LDL: %v", err)
+	}
+	if _, err := r.put(t, r.labresult, "quest/2026-09-14/a1c", result("health/hba1c", "5.2", "%", 1, nil)); err != nil {
+		t.Fatalf("put the HbA1c: %v", err)
+	}
+	drain()
+
+	ldl := r.get(t, r.labresult, "quest/2026-09-14/ldl/as/health/ldl_cholesterol").Properties
+	if v := ldl["value"].(map[string]any); v["value"] != "3.362" || v["unit"] != "mmol/L" {
+		t.Errorf("derived LDL = %v, want 3.362 mmol/L (130 mg/dL over 386.65 g/mol)", v)
+	}
+	if got := storedPath(ldl["metric"]); got != r.metric+"/health/ldl_cholesterol" {
+		t.Errorf("derived LDL metric = %v", got)
+	}
+	if from := ldl["derivedFrom"].([]any); len(from) != 1 || storedPath(from[0]) != r.labresult+"/quest/2026-09-14/ldl" {
+		t.Errorf("derivedFrom = %v", from)
+	}
+	conv, _ := ldl["conversion"].(map[string]any)
+	if conv["formula"] != "molar-mass" || conv["parameters"].(map[string]any)["molarMass"] != "386.65" {
+		t.Errorf("conversion = %v, want molar-mass at 386.65", conv)
+	}
+	rng := ldl["referenceRanges"].([]any)[0].(map[string]any)
+	if high := rng["high"].(map[string]any); high["value"] != "2.586" || high["unit"] != "mmol/L" || rng["text"] != "optimal" {
+		t.Errorf("derived range = %v, want high 2.586 mmol/L, text kept", rng)
+	}
+	a1c := r.get(t, r.labresult, "quest/2026-09-14/a1c/as/health/hba1c_ifcc").Properties
+	if v := a1c["value"].(map[string]any); v["value"] != "33.3" || v["unit"] != "mmol/mol" {
+		t.Errorf("derived HbA1c = %v, want 33.3 mmol/mol ((5.2 - 2.15) x 10.929)", v)
+	}
+	if n := len(derivedOf("quest/2026-09-14/ldl/as/health/ldl_cholesterol")); n != 0 {
+		t.Errorf("a derived result was converted again: %d derivations of it", n)
+	}
+
+	if _, err := r.put(t, r.labresult, "quest/2026-09-14/ldl", result("health/ldl_cholesterol_mass", "140", "mg/dL", 2, nil)); err != nil {
+		t.Fatalf("correct the LDL: %v", err)
+	}
+	drain()
+	ldl = r.get(t, r.labresult, "quest/2026-09-14/ldl/as/health/ldl_cholesterol").Properties
+	if v := ldl["value"].(map[string]any); v["value"] != "3.621" || fmt.Sprint(ldl["revision"]) != "2" {
+		t.Errorf("after the correction: value %v at revision %v; want 3.621 at 2", v, ldl["revision"])
+	}
+
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.labresult, "quest/2026-09-14/ldl", substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the LDL: %v", err)
+	}
+	drain()
+	if n := len(derivedOf("quest/2026-09-14/ldl")); n != 0 {
+		t.Errorf("%d derived results outlive their deleted input", n)
+	}
+	if n := len(derivedOf("quest/2026-09-14/a1c")); n != 1 {
+		t.Errorf("the HbA1c has %d derived results, want its one", n)
+	}
+}
+
+// storedPath is a stored reference's record path, in either spelling.
+func storedPath(v any) string {
+	if m, ok := v.(map[string]any); ok {
+		v = m["ref"]
+	}
+	s, _ := v.(string)
+	return s
 }

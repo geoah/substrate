@@ -329,7 +329,7 @@ a rewrite that changes no point writes nothing.
 
 `samples.substrate.reamde.dev/health` requires `observations` with a
 `requiresAtLeast` floor (`TestHealthRequiresObservations`) and adds five
-kinds and a catalogue. `sleep`, `workout` and `labreport` carry `origin` and
+kinds, a catalogue, the lab analytes and one function. `sleep`, `workout` and `labreport` carry `origin` and
 `revision` as the base kinds do, and `sleep` and `workout` carry `adapter`,
 because an adapter writes them too. The three bind core's `revised` trait, so
 a rewrite with a lower `revision` is refused on them as it is on an
@@ -341,7 +341,7 @@ observation.
 | `sleep` | one night or nap: the span, `timeInBed`, `timeAsleep`, the stage durations `awake`, `light`, `deep` and `rem`, `latency`, `efficiency`, `respiratoryRate`, `disturbances` and the device's `scores` by their own names |
 | `workout` | one session: `sport`, one code set every adapter maps onto (`running`, `walking`, `hiking`, `cycling`, `swimming`, `strength`, `yoga`, `rowing`, `hiit` and more, `other` for a sport with no value of its own) with the provider's own word in `sportSource`; the span, `duration`, `distance`, `activeEnergy` (above the resting rate) and `totalEnergy` (resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` by zone name, and the device's original `file` as a blob |
 | `labreport` | one report from a lab: `lab`, `accession`, `orderedAt`, `issuedAt`, `status`, the original `file` and the owner's `review` |
-| `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age}`), `interpretation`, `status` and `provenance` |
+| `labresult` | one analyte's result, binding `observed(single)`: `report` (deleted with it), `coding` (the analyte's code as the lab sent it), the result shapes, `specimen`, `method`, `referenceRanges` (each bound a quantity, `{low, high, text, appliesTo, age}`), `interpretation`, `status`, `provenance`, and for a derived result `derivedFrom` and `conversion` |
 
 The catalogue (`samples/health/metrics.yaml`) is 61 `metric` records with ids
 `health/<name>`: the heart, sleep, activity, body, blood pressure, glucose
@@ -351,12 +351,40 @@ write, the vendor scores (`whoop_recovery`, `whoop_strain`,
 common labs. A lab analyte reported in both unit systems is two metrics, the
 amount concentration unsuffixed (`ldl_cholesterol`, mmol/L) and the mass
 concentration suffixed `_mass` (`ldl_cholesterol_mass`, mg/dL), because the
-two are different measures and only a derived observation bridges them. HbA1c
-is `hba1c` (NGSP %, measure `fraction`) and `hba1c_ifcc` (IFCC mmol/mol,
-measure `amount-fraction`): the two relate by a formula, not a unit, so a
-read of one in the other's unit is refused. The codes were written from
-the vendors' published documentation without a check against a live account;
-a metric's description marks the least certain ones.
+two are different measures and a read of one in the other's unit is refused.
+HbA1c is `hba1c` (NGSP %, measure `fraction`) and `hba1c_ifcc` (IFCC
+mmol/mol, measure `amount-fraction`), which relate by a formula, not a unit.
+The codes were written from the vendors' published documentation without a
+check against a live account; a metric's description marks the least
+certain ones.
+
+### Lab results in both unit systems
+
+The sample ships an `analyte` record for each metric of the nine lab pairs
+(`samples/health/metrics_analytes.yaml`, ids the metric's): the LOINC parts
+of the metric's code, the analyte's `molarMass` in grams per mole, and one
+conversion onto the other metric of the pair. A mass and an amount
+concentration convert by the molar mass (`molar-mass`: cholesterol 386.65,
+glucose 180.156, creatinine 113.12, 25-hydroxyvitamin D 400.64, and 885.7 for
+triglycerides by the clinical convention); HbA1c converts by the IFCC and
+NGSP master equation, IFCC mmol/mol = (NGSP % - 2.15) x 10.929
+(`ngsp-to-ifcc` and `ifcc-to-ngsp`).
+
+The sample's function `convertlab`, fired by its trigger `health-on-labresult`
+on every write of a lab result, writes the result's value in the paired
+metric as a `labresult` of its own, with id `<input id>/as/<target metric
+id>`. The derived result repeats the input's report, source, time, specimen,
+status, flags and `revision`, converts its reference ranges with it, and
+names the input in `derivedFrom` and the formula in `conversion` (`{formula,
+parameters, version}`). Its value keeps one significant digit more than the
+input's: 130 mg/dL of LDL is 3.362 mmol/L. A derived result is never
+converted again, a corrected input rewrites its derivations, and a deleted
+input takes them with it. A read of one metric counts each reading once, the
+lab's own or the derived one; a read that names both metrics, or groups the
+latest values by metric, shows both. A result written before the sample was
+imported is converted by replaying the trigger from 0. Meter and continuous
+monitor readings of glucose are observations, not lab results, and are not
+converted.
 
 Every gauge metric but `height` and `vo2_max` carries a `hold`, which a
 writer copies onto each value: about twice the time between a source's

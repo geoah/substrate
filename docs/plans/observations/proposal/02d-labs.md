@@ -82,7 +82,7 @@ GET /api/v1/records?filter={"kinds":["george.example.com/health/labresult"],
 
 Two rules keep the trend honest:
 
-- A value in `mg/dL` (mass concentration) and a value in `mmol/L` (amount concentration) are two quantity kinds and never pool. A function reads the `health/analyte` record's molar mass, writes a derived observation under the molar LOINC code with `derivedFrom` and the formula version, and the aggregate counts the original and its derivation as one reading.
+- A value in `mg/dL` (mass concentration) and a value in `mmol/L` (amount concentration) are two quantity kinds and never pool. A function reads the `health/analyte` record's molar mass and writes a derived lab result under the paired metric with `derivedFrom` and the formula version. A read of one metric counts each reading once, the lab's own or the derived one.
 - A comparator value matches a filter only when the match is certain: a stored `<0.01` matches `lt: 0.1` and not `lt: 0.005`, and `in` is refused on bounded values.
 
 Reference ranges and interpretation flags are shown as the lab reported them, per result, because they vary by lab, sex, age and method. The `analyte` record carries a labelled fallback range only.

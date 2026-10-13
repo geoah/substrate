@@ -14,8 +14,9 @@
 # Two rules the ids follow. A lab analyte reported in both unit systems is
 # two metrics, the amount concentration unsuffixed (`ldl_cholesterol`, mmol/L)
 # and the mass concentration suffixed `_mass` (mg/dL): the two are different
-# measures, and a function bridges them with the analyte's molar mass as a
-# derived observation. A vendor's score is named for the vendor
+# measures, and the sample's `convertlab` function writes a lab result of one
+# in the other as a derived result, from the analyte's molar mass
+# (metrics_analytes.yaml). A vendor's score is named for the vendor
 # (`whoop_recovery`) and never mapped onto another vendor's.
 #
 # Code systems: `http://loinc.org` (LOINC), `healthkit` (an Apple HealthKit
@@ -959,9 +960,10 @@ data:
     name: Blood glucose
     description: >-
       Glucose in the blood as an amount concentration, from a meter or a continuous
-      monitor. A reading in mg/dL is blood_glucose_mass; the two pool only
-      through a derived observation. A writer copies the hold, PT15M, onto
-      each value: a continuous monitor reads every 5 to 15 minutes.
+      monitor. A reading in mg/dL is blood_glucose_mass. A lab result in one
+      is written in the other by the sample's convertlab function; a meter's
+      readings are not converted. A writer copies the hold, PT15M, onto each
+      value: a continuous monitor reads every 5 to 15 minutes.
     codes:
       - system: "http://loinc.org"
         code: "15074-8"

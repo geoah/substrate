@@ -3432,8 +3432,11 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		if g.Source != vocabulary.SourceInstalled {
 			t.Errorf("%s source = %q — an installed package is the repository's", g.Identity, g.Source)
 		}
-		if len(g.Functions) != 0 || len(g.Agents) != 0 {
-			t.Errorf("%s ships callables — these sample packages are kinds and nothing else", g.Identity)
+		// health ships one function, which writes a lab result's value in
+		// the paired unit system; every other one ships kinds alone.
+		functions := map[string]int{"samples.substrate.reamde.dev/health": 1}[g.Identity]
+		if len(g.Functions) != functions || len(g.Agents) != 0 {
+			t.Errorf("%s ships %d functions and %d agents, want %d and none", g.Identity, len(g.Functions), len(g.Agents), functions)
 		}
 	}
 	// Everything that maps onto people says so, so an import into a
