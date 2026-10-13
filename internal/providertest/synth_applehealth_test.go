@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -256,6 +257,7 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 		"health/systolic_blood_pressure": pressures, "health/diastolic_blood_pressure": pressures,
 		"health/sleep_stage": stages, "health/blood_glucose_mass": glucose,
 		"health/vo2_max": runs, "health/skin_temperature": len(days), "health/bmi": weighIns,
+		"health/height": 1,
 	}
 	for metric, want := range wantMetric {
 		if byMetric[metric] != want {
@@ -264,6 +266,16 @@ func TestSynthAppleHealthIngestsAndAdapts(t *testing.T) {
 	}
 	if len(byMetric) != len(wantMetric) {
 		t.Errorf("observations of %d metrics, want %d: %v", len(byMetric), len(wantMetric), byMetric)
+	}
+	// The height is sent in centimeters and lands in the metric's meters.
+	for _, row := range listLive(t, ds, obsObservation) {
+		if metricOf(row.Properties) != "health/height" {
+			continue
+		}
+		v, u := quantityOf(t, row.Properties, "value")
+		if f, err := strconv.ParseFloat(v, 64); err != nil || f != p.Person.HeightM || u != "m" {
+			t.Errorf("the height lands as %s %s, the persona is %v m", v, u, p.Person.HeightM)
+		}
 	}
 	for kind, want := range map[string]int{healthSleep: nights, healthWorkout: workouts} {
 		if n := countLive(t, ds, kind); n != want {

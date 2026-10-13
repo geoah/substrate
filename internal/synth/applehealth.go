@@ -40,7 +40,8 @@ import (
 //   - vo2_max after each run, from the watch.
 //   - weight_body_mass, body_fat_percentage and body_mass_index on weigh-in
 //     mornings and blood_pressure on Sundays, source "Withings";
-//     blood_glucose in mg/dL on meter mornings, source "Contour".
+//     blood_glucose in mg/dL on meter mornings, source "Contour"; height in
+//     cm once, on the first morning, from the iPhone.
 //   - sleep_analysis: the night that ended that morning as one aggregated
 //     row (inBed, asleep, core, deep, rem, awake and their bounds).
 //   - workouts: every persona workout under the app's activity name, with
@@ -242,6 +243,7 @@ func (e *ahDay) metrics() []any {
 		ahMetric("vo2_max", "ml/(kg·min)", e.vo2Max()),
 		ahMetric("apple_sleeping_wrist_temperature", "degC", e.wristTemperature()),
 		ahMetric("body_mass_index", "count", bmi),
+		ahMetric("height", "cm", e.height()),
 		ahMetric("sleep_analysis", "hr", e.sleep()),
 	}
 	out := []any{}
@@ -509,6 +511,16 @@ func (e *ahDay) vo2Max() []map[string]any {
 		rows = append(rows, map[string]any{"qty": v, "date": e.date(w.End.Add(2 * time.Minute)), "source": ahWatch})
 	}
 	return rows
+}
+
+// height is typed into the phone's Health app once, on the range's first
+// morning, in the centimeters a metric locale shows.
+func (e *ahDay) height() []map[string]any {
+	if e.d != e.p.Options.Start {
+		return nil
+	}
+	at := e.day.atRest(e.d.At(e.day.Zone, 9, 12), time.Minute)
+	return []map[string]any{{"qty": round(e.p.Person.HeightM*100, 1), "date": e.date(at), "source": ahIPhone}}
 }
 
 // wristTemperature is the night's sleeping wrist temperature, absolute, at

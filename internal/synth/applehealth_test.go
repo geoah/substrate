@@ -31,6 +31,7 @@ var ahUnits = map[string]string{
 	"blood_oxygen_saturation": "%", "weight_body_mass": "kg", "body_fat_percentage": "%",
 	"blood_pressure": "mmHg", "sleep_analysis": "hr", "blood_glucose": "mg/dL",
 	"vo2_max": "ml/(kg·min)", "apple_sleeping_wrist_temperature": "degC", "body_mass_index": "count",
+	"height": "cm",
 }
 
 func ahEmit(t *testing.T, o Options) (*Persona, *Output) {
@@ -181,6 +182,11 @@ func TestAppleHealthEmitsTheDefaultLife(t *testing.T) {
 		}
 		if v := byName["vo2_max"]; len(v) != runs {
 			t.Errorf("%s: %d VO2 max estimates after %d runs", d.Name, len(v), runs)
+		}
+		// The height is typed into the phone once, on the first day.
+		if h := byName["height"]; (i == 0) != (len(h) == 1) || len(h) > 1 ||
+			(len(h) == 1 && (ahNum(t, h[0], "qty") != p.Person.HeightM*100 || h[0]["source"] != ahIPhone)) {
+			t.Errorf("%s: height %v", d.Name, h)
 		}
 		if b := byName["body_mass_index"]; len(b) != len(byName["weight_body_mass"]) {
 			t.Errorf("%s: BMI %v beside weight %v", d.Name, b, byName["weight_body_mass"])

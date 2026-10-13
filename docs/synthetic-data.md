@@ -96,7 +96,8 @@ three SDNN readings, respiratory rate every 15 minutes, SpO2 every 10 and the
 sleeping wrist temperature, without a `source` key, as the app sends them.
 The watch sends a VO2 max estimate after each run. Weight, body fat and BMI
 come on weigh-in mornings and blood pressure on Sundays, from "Withings", and
-glucose in mg/dL on meter mornings, from "Contour". The night is one
+glucose in mg/dL on meter mornings, from "Contour". The height is typed into
+the phone once, in centimeters, on the first morning. The night is one
 aggregated `sleep_analysis` row, and each workout carries the app's activity
 name and `heartRateData` every 60 s. Dates are `yyyy-MM-dd HH:mm:ss Z` in the
 day's zone, `+0300` at home and `+0100` in London. The 90-day default is 90
