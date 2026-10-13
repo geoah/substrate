@@ -309,6 +309,14 @@ export const REDUCER_WORDS: Record<string, string> = {
   circularMean: "Circular average",
 }
 
+/** A summary's `statistic` in words: a reducer's word where it is one
+ * ("Average"), and the two a reducer never is. */
+export function statisticWords(statistic: string): string {
+  if (statistic === "vendor") return "The vendor's own"
+  if (statistic === "median") return "Median"
+  return REDUCER_WORDS[statistic] ?? codeWords(statistic)
+}
+
 /** A reducer's name: the word, or the key of a structured one. */
 export function reducerName(reducer: AggregateReducer): string {
   if (typeof reducer === "string") return reducer

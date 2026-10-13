@@ -180,6 +180,31 @@ describe("a single value", () => {
     )
   })
 
+  it("says a summary's statistic in words, as a chart's reducer reads", () => {
+    const summary = (statistic: string, period: string): SubstrateRecord => ({
+      ...WEIGHING,
+      properties: {
+        ...WEIGHING.properties,
+        form: "summary",
+        statistic,
+        period,
+      },
+    })
+    const fact = (view: ReturnType<typeof mount>) =>
+      within(
+        view.container.querySelector(
+          "[data-slot=observed-value]"
+        ) as HTMLElement
+      ).getByText("Statistic").nextElementSibling?.textContent
+    expect(fact(mount(summary("avg", "night"), observationKind))).toBe(
+      "Average, per night"
+    )
+    cleanup()
+    expect(fact(mount(summary("vendor", "day"), observationKind))).toBe(
+      "The vendor's own, per day"
+    )
+  })
+
   it("shows nothing for a kind that does not bind the trait", () => {
     const view = mount(WEIGHING, metricKind)
     expect(view.container.textContent).toBe("")

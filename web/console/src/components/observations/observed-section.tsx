@@ -24,6 +24,7 @@ import {
   observedVariant,
   readingText,
   recordTimelineSearch,
+  statisticWords,
   type ReadingShape,
 } from "@/lib/observations"
 import { coverageWords, durationMs, secondWords } from "@/lib/observations-time"
@@ -153,7 +154,10 @@ function ValueSection({
         </Fact>
         {(str(p.statistic) || str(p.period)) && (
           <Fact label="Statistic">
-            {[str(p.statistic), str(p.period) && `per ${str(p.period)}`]
+            {[
+              str(p.statistic) && statisticWords(str(p.statistic) ?? ""),
+              str(p.period) && `per ${str(p.period)}`,
+            ]
               .filter(Boolean)
               .join(", ")}
           </Fact>
