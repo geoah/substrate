@@ -762,7 +762,11 @@ numbers are one click below.
 
 Each metric is one aggregate read naming it, and a chart composes its
 metrics' reads on one bucket axis, each read loading, refreshing or failing
-on its own row. A metric that declares no unit is read in the unit of its
+on its own row. While a changed read loads, the chart keeps drawing the
+earlier answer and the row says Updating…, where that answer has the same
+unit and grouping and carries the new reducer; after a change of unit or
+grouping, or to a reducer the earlier answer lacks, the row says Reading…
+over an empty chart. A metric that declares no unit is read in the unit of its
 newest selected stream, named in the request, so the axis and the answer
 agree. Grouped by anything but source, two or more sources are
 resolved by `sources.policy: priority` in the order you chose them (or the

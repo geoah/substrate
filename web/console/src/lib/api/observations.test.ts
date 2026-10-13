@@ -105,46 +105,91 @@ describe("aggregateQueryOptions", () => {
 })
 
 describe("heldAnswer", () => {
-  it("is the newest answer for the metric over the same range", () => {
+  const kinds = [OBSERVATION, TRACE]
+  const read = (
+    reducers: string[],
+    change: Partial<AggregateRead["aggregate"]> = {}
+  ): AggregateRead => ({
+    ...sleepRead,
+    aggregate: { ...sleepRead.aggregate, reducers, ...change },
+  })
+  const answer = (n: number) => ({ ...LATEST, rows: LATEST.rows.slice(n) })
+
+  /** A client holding each read's answer, the later ones newer. */
+  function cached(...held: [AggregateRead, number][]): QueryClient {
     const client = new QueryClient()
-    const kinds = [OBSERVATION, TRACE]
-    const read = (reducer: string, gte = sleepRead.aggregate.range!.gte) => ({
-      ...sleepRead,
-      aggregate: {
-        ...sleepRead.aggregate,
-        reducers: [reducer],
-        range: { ...sleepRead.aggregate.range!, gte },
-      },
-    })
-    const answer = (n: number) => ({ ...LATEST, rows: LATEST.rows.slice(n) })
     vi.useFakeTimers()
     try {
-      vi.setSystemTime(1000)
-      client.setQueryData(
-        aggregateQueryOptions(read("sum"), kinds).queryKey,
-        answer(1)
-      )
-      vi.setSystemTime(2000)
-      client.setQueryData(
-        aggregateQueryOptions(read("count"), kinds).queryKey,
-        answer(2)
-      )
-      vi.setSystemTime(3000)
-      // Another range is another chart.
-      client.setQueryData(
-        aggregateQueryOptions(read("max", "2026-08-01T00:00:00+03:00"), kinds)
-          .queryKey,
-        answer(3)
-      )
+      held.forEach(([r, n], at) => {
+        vi.setSystemTime(1000 * (at + 1))
+        client.setQueryData(aggregateQueryOptions(r, kinds).queryKey, answer(n))
+      })
     } finally {
       vi.useRealTimers()
     }
-    expect(heldAnswer(client, read("min"), kinds)).toEqual(answer(2))
-    expect(heldAnswer(client, read("min"), [OBSERVATION])).toBeUndefined()
+    return client
+  }
+
+  it("is the newest answer for the metric over the same range", () => {
+    const client = cached(
+      [read(["sum", "count"]), 1],
+      [read(["count", "sum"], { bucket: { calendar: "day" } }), 2],
+      // Another range is another chart.
+      [
+        read(["count"], {
+          range: {
+            gte: "2026-08-01T00:00:00+03:00",
+            lt: "2026-09-01T00:00:00+03:00",
+          },
+        }),
+        3,
+      ]
+    )
+    expect(heldAnswer(client, read(["count"]), kinds)).toEqual(answer(2))
+    expect(heldAnswer(client, read(["count"]), [OBSERVATION])).toBeUndefined()
     expect(
-      heldAnswer(client, read("min", "2026-07-01T00:00:00+03:00"), kinds)
+      heldAnswer(
+        client,
+        read(["count"], {
+          range: {
+            gte: "2026-07-01T00:00:00+03:00",
+            lt: "2026-09-01T00:00:00+03:00",
+          },
+        }),
+        kinds
+      )
     ).toBeUndefined()
     expect(heldAnswer(client, latestRead(), kinds)).toBeUndefined()
+  })
+
+  it("holds nothing the new read would caption, group or pick otherwise", () => {
+    const client = cached(
+      [read(["sum", "count"]), 1],
+      [read(["sum", "count"], { unit: "h" }), 2],
+      [read(["sum", "count"], { groupBy: ["source", "channel"] }), 3]
+    )
+    // A reducer no held read asked for draws nothing.
+    expect(heldAnswer(client, read(["max"]), kinds)).toBeUndefined()
+    expect(heldAnswer(client, read(["sum", "max"]), kinds)).toBeUndefined()
+    // Minutes are not hours: each unit holds its own answer.
+    expect(heldAnswer(client, read(["sum"]), kinds)).toEqual(answer(1))
+    expect(heldAnswer(client, read(["sum"], { unit: "h" }), kinds)).toEqual(
+      answer(2)
+    )
+    expect(
+      heldAnswer(client, read(["sum"], { unit: "s" }), kinds)
+    ).toBeUndefined()
+    // Rows grouped by code are not series of sources.
+    expect(
+      heldAnswer(
+        client,
+        read(["sum"], { groupBy: ["source", "channel"] }),
+        kinds
+      )
+    ).toEqual(answer(3))
+    expect(
+      heldAnswer(client, read(["sum"], { groupBy: ["about"] }), kinds)
+    ).toBeUndefined()
   })
 })
 

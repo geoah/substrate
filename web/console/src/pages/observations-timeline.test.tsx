@@ -244,15 +244,8 @@ describe("the timeline's requests", () => {
     )
   })
 
-  it("holds the chart while a changed reducer is read, and says it is updating", async () => {
-    mount(`?metric=health/body_mass&${WINDOW}`)
-    const weight = await lane("Weight")
-    await waitFor(() =>
-      expect(weight.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
-        null
-      )
-    )
-    // Every read of the metric from here on never answers.
+  /** Leaves every read of a metric from here on unanswered. */
+  function hangMetricReads() {
     const served = globalThis.fetch
     vi.stubGlobal(
       "fetch",
@@ -264,12 +257,79 @@ describe("the timeline's requests", () => {
           : served(input)
       })
     )
+  }
+
+  async function drawn(section: HTMLElement) {
+    await waitFor(() =>
+      expect(section.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
+        null
+      )
+    )
+  }
+
+  it("holds the chart while a changed reducer is read, and says it is updating", async () => {
+    mount(`?metric=health/body_mass&${WINDOW}`)
+    const weight = await lane("Weight")
+    await drawn(weight)
+    hangMetricReads()
     fireEvent.click(within(weight).getByRole("button", { name: /^Show:/ }))
     fireEvent.click(await screen.findByRole("option", { name: /Highest/ }))
     await waitFor(() => expect(within(weight).getByText("Updating…")))
     expect(weight.querySelector("[data-slot=timeline-chart] svg")).not.toBe(
       null
     )
+  })
+
+  it("holds no kilograms under an axis in pounds while the pounds are read", async () => {
+    mount(`?metric=health/body_mass&${WINDOW}`)
+    const weight = await lane("Weight")
+    await drawn(weight)
+    expect(within(weight).getAllByText(/72\.6/).length).toBeGreaterThan(0)
+    hangMetricReads()
+    fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /\[lb_av\]/ }))
+    await waitFor(() => expect(within(weight).getByText("Reading…")))
+    expect(within(weight).queryByText("Updating…")).toBe(null)
+    expect(within(weight).queryAllByText(/72\.6/)).toEqual([])
+    expect(weight.querySelector("[data-slot=timeline-chart] svg")).toBe(null)
+  })
+
+  it("holds no answer that lacks the reducer picked while it is read", async () => {
+    mount(`?metric=health/body_mass&${WINDOW}`)
+    const weight = await lane("Weight")
+    await drawn(weight)
+    hangMetricReads()
+    fireEvent.click(within(weight).getByRole("button", { name: /^Show:/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /Latest/ }))
+    await waitFor(() => expect(within(weight).getByText("Reading…")))
+    expect(within(weight).queryByText("Updating…")).toBe(null)
+    expect(within(weight).queryByText(/No latest in this range/)).toBe(null)
+  })
+
+  it("says nothing of a held answer's values while the next is read", async () => {
+    // Every value empty, and every row twice over in its bucket.
+    const rows = WEIGHT.rows.map((r) => ({
+      ...r,
+      values: (r.values ?? []).map((v) => ({ ...v, value: null })),
+    }))
+    const odd: AggregateResult = { ...WEIGHT, rows: [...rows, ...rows] }
+    const notes = [/No average in this range/, /a bucket with another row/]
+    mount(
+      `?metric=health/body_mass&source=withings-body-plus&${WINDOW}`,
+      false,
+      (read) => (read.aggregate.metric ? odd : answer(read))
+    )
+    const weight = await lane("Weight")
+    for (const note of notes) await within(weight).findByText(note)
+    hangMetricReads()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Source filter" })
+    )
+    const held = await lane("Weight")
+    await waitFor(() => expect(within(held).getByText("Updating…")))
+    for (const note of notes) {
+      expect(within(held).queryByText(note)).toBe(null)
+    }
   })
 
   it("reads a category metric grouped by code", async () => {

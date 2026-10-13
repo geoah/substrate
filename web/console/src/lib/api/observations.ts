@@ -62,10 +62,12 @@ export function aggregateQueryOptions(
   })
 }
 
-/** The newest answer the cache holds for a read of the same metric over
- * the same range, whatever its reducer, unit, bucket or filter: the frame a
- * chart holds while that read's successor loads. A new range is a new
- * chart, so nothing holds across one. */
+/** The newest answer the cache holds that a chart can draw while `read`
+ * loads: a read of the same metric over the same range, in the same unit
+ * and grouping, that asked for every reducer `read` asks for, whatever its
+ * bucket, filter or source. Any other answer would draw under the new
+ * read's axis caption, series and column what it does not hold. A new
+ * range is a new chart, so nothing holds across one. */
 export function heldAnswer(
   client: QueryClient,
   read: AggregateRead,
@@ -86,7 +88,8 @@ export function heldAnswer(
       !data ||
       held?.aggregate.metric?.ref !== metric.ref ||
       held.aggregate.range?.gte !== range.gte ||
-      held.aggregate.range?.lt !== range.lt
+      held.aggregate.range?.lt !== range.lt ||
+      !drawsAs(held.aggregate, read.aggregate)
     ) {
       continue
     }
@@ -95,6 +98,17 @@ export function heldAnswer(
     }
   }
   return newest?.data
+}
+
+/** Whether an answer to `held` carries what a chart of `next` draws: the
+ * same unit and grouping, and every reducer `next` asks for. */
+function drawsAs(held: Aggregate, next: Aggregate): boolean {
+  const asked = new Set((held.reducers ?? []).map((r) => JSON.stringify(r)))
+  return (
+    held.unit === next.unit &&
+    JSON.stringify(held.groupBy ?? []) === JSON.stringify(next.groupBy ?? []) &&
+    (next.reducers ?? []).every((r) => asked.has(JSON.stringify(r)))
+  )
 }
 
 /** The request as a person would type it at a shell, against the server

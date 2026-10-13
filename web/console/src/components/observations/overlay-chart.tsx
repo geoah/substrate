@@ -138,7 +138,8 @@ export function OverlayChart({
       const read = plot.read ?? latestRead()
       return {
         ...aggregateQueryOptions(read, obs.observedIds),
-        // A changed reducer, unit or bucket holds the frame while it loads.
+        // A changed bucket, filter or reducer the cached answer carries
+        // holds the frame while it loads (`heldAnswer`).
         placeholderData: (prev?: AggregateResult) =>
           prev ?? heldAnswer(client, read, obs.observedIds),
         enabled: obs.ready && Boolean(plot.read),
@@ -155,6 +156,9 @@ export function OverlayChart({
       pending: reads && query.isPending,
       failed: reads && query.isError,
       stale: reads && query.isFetching && !query.isPending,
+      // An earlier read's answer drawn while this one loads: what it lacks
+      // or drops says nothing of this read.
+      held: reads && query.isPlaceholderData,
     }
   })
 
@@ -339,7 +343,7 @@ export function OverlayChart({
   }
 
   const notes: string[] = []
-  for (const { plot, query } of states) {
+  for (const { plot, query, held } of states) {
     const own: string[] = []
     const ranked = [
       ...plot.sourceOrder.map(sourceText),
@@ -354,7 +358,7 @@ export function OverlayChart({
     const dropped = all
       .filter((d) => d.plot === plot)
       .reduce((n, d) => n + d.series.dropped, 0)
-    if (dropped > 0) {
+    if (dropped > 0 && !held) {
       own.push(
         `${dropped === 1 ? "1 row shares" : `${dropped} rows share`} a bucket with another row of the same series and ${dropped === 1 ? "is" : "are"} left out of the chart; the table below lists every row.`
       )
@@ -382,7 +386,7 @@ export function OverlayChart({
     }
     // `exact` is false whenever a float reduction was involved, so an
     // average is never exact: a developer's fact, not an everyday warning.
-    if (technical && query.data && query.data.exact === false) {
+    if (technical && !held && query.data?.exact === false) {
       own.push("Not exact: a float reduction or a rounded conversion.")
     }
     for (const note of own) {
@@ -403,7 +407,7 @@ export function OverlayChart({
         />
       )}
       <div className="flex flex-col gap-1.5">
-        {states.map(({ plot, query, rows, pending, failed, stale }) => (
+        {states.map(({ plot, query, rows, pending, failed, stale, held }) => (
           <div
             key={plot.metric}
             role="group"
@@ -515,6 +519,7 @@ export function OverlayChart({
             )}
             {!pending &&
               !failed &&
+              !held &&
               rows.length > 0 &&
               all
                 .filter((d) => d.plot === plot)
