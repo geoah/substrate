@@ -597,3 +597,24 @@ func HoldVocabularyWrites(ds substrate.Dataset) (release func()) {
 	d.vocabularyWriteMu.Lock()
 	return d.vocabularyWriteMu.Unlock
 }
+
+// SetOAuthClock points the OAuth facility's clock (its state expiry and its
+// refresh backoff) at now, so a test moves past a backoff step instead of
+// sleeping through it. Call it before the service's first OAuth use.
+func SetOAuthClock(svc substrate.Service, now func() time.Time) { svc.(*service).oauth.Now = now }
+
+// OAuthRefreshHands is how many callers hold or wait for the refresh turn of
+// any credential in ds's repository, so a test that holds one refresh at the
+// provider can wait until every other caller it started has queued behind it.
+func OAuthRefreshHands(ds substrate.Dataset) int {
+	repository := ds.(*dataset).scope.Repository
+	oauthRefreshes.mu.Lock()
+	defer oauthRefreshes.mu.Unlock()
+	n := 0
+	for k, e := range oauthRefreshes.entries {
+		if k.repository == repository {
+			n += e.users
+		}
+	}
+	return n
+}

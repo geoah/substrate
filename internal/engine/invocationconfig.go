@@ -140,7 +140,9 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 					if err != nil {
 						// A dead grant must not park every delivery of the
 						// bundle: the body sees the error beside the account
-						// and decides.
+						// and decides. A credential in backoff answers with
+						// its last refusal, so a refused grant costs no
+						// provider call per delivery.
 						entry["tokenError"] = err.Error()
 					} else {
 						entry["token"] = token

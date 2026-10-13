@@ -15,7 +15,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/oauth2"
 
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/substrate"
@@ -70,9 +73,10 @@ func oauthWrites(ty *vocabulary.Kind, name string) bool {
 // noteTokenRefresh stamps one refresh's outcome onto the account: a failure
 // writes `erroring` with its reason and when, a success writes `connected` and
 // clears both. It writes nothing when the row already says so, because the
-// loop retries an account erroring for any reason but `invalid_grant` every
-// pass, an invocation can refresh on demand as often, and each write is a
-// changelog entry; `tokenErrorAt` is therefore when the current reason first appeared.
+// loop retries an account erroring with a failure that may pass (a 5xx, a
+// timeout) every pass, an invocation can refresh on demand as often, and each
+// write is a changelog entry; `tokenErrorAt` is therefore when the current
+// reason first appeared.
 // The reason is the flow package's text, which carries the HTTP status and
 // the RFC 6749 code and never the provider's description, a token or the
 // client secret.
@@ -591,9 +595,258 @@ func stringsToAny(ss []string) []any {
 	return out
 }
 
+// oauthPassBudget bounds one repository's refresh pass and one finalizer
+// pass. The process walks every repository in turn, so a token endpoint
+// that answers slowly, each call inside oauthflow.CallTimeout, still cannot
+// hold every later repository's refresh behind it.
+const oauthPassBudget = 2 * time.Minute
+
+// The refresh backoff (#913). A refresh the token endpoint refused with a 4xx
+// other than 408 or 429 (oauthflow.Refused) meets the same refusal when it is
+// sent again, so neither the refresh loop nor an invocation sends it again
+// until the backoff ends: a minute after the first refusal, doubling with
+// each refusal after that, up to six hours. A new generation of the
+// credential (a reconnect, a refresh that landed) starts over.
+const (
+	oauthBackoffFirst = time.Minute
+	oauthBackoffMax   = 6 * time.Hour
+)
+
+// oauthRefreshes is every credential's refresh state in this process, keyed
+// by repository and credential ref. A repository has one writer process
+// (0083), so a turn taken here serializes every refresh of a credential.
+// It is memory only: a restart forgets every backoff, and the first refresh
+// after it meets the refusal again and starts at the first step.
+var oauthRefreshes = &refreshTable{entries: map[refreshKey]*refreshEntry{}}
+
+type refreshKey struct{ repository, ref string }
+
+// refreshTable holds the entries. mu guards the map and every field of an
+// entry except turn.
+type refreshTable struct {
+	mu      sync.Mutex
+	entries map[refreshKey]*refreshEntry
+}
+
+type refreshEntry struct {
+	// turn holds one token, taken from reading the stored token to storing
+	// the fresh one. Two refreshes of one rotating refresh token would both
+	// reach the provider, and the compare-and-swap would keep the token the
+	// provider rotated away.
+	turn chan struct{}
+	// users counts the hands holding or waiting for the turn. The entry
+	// leaves the table at zero unless a backoff is armed.
+	users int
+	// The backoff: the generation (sealed.updated_at) it was armed for, its
+	// step, when it ends, and the refusal it answers with until then. step
+	// is zero when none is armed.
+	gen   time.Time
+	step  time.Duration
+	until time.Time
+	err   error
+}
+
+// take waits for the credential's turn, or for ctx to end.
+func (t *refreshTable) take(ctx context.Context, k refreshKey) (*refreshEntry, error) {
+	t.mu.Lock()
+	e := t.entries[k]
+	if e == nil {
+		e = &refreshEntry{turn: make(chan struct{}, 1)}
+		t.entries[k] = e
+	}
+	e.users++
+	t.mu.Unlock()
+	select {
+	case e.turn <- struct{}{}:
+		return e, nil
+	case <-ctx.Done():
+		t.leave(k, e)
+		return nil, ctx.Err()
+	}
+}
+
+// give hands the turn back.
+func (t *refreshTable) give(k refreshKey, e *refreshEntry) {
+	<-e.turn
+	t.leave(k, e)
+}
+
+func (t *refreshTable) leave(k refreshKey, e *refreshEntry) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e.users--
+	if e.users == 0 && e.step == 0 {
+		delete(t.entries, k)
+	}
+}
+
+// backedOff returns the refusal a backoff armed for generation gen still
+// answers with at now, or nil. A backoff armed for another generation is
+// dropped: the credential it refused has been replaced.
+func (t *refreshTable) backedOff(e *refreshEntry, gen, now time.Time) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if e.step == 0 {
+		return nil
+	}
+	if !e.gen.Equal(gen) {
+		e.gen, e.step, e.until, e.err = time.Time{}, 0, time.Time{}, nil
+		return nil
+	}
+	if now.Before(e.until) {
+		return e.err
+	}
+	return nil
+}
+
+// arm records a refusal of generation gen at now and returns the step it
+// waits: the first step, or double the last one for the same generation, up
+// to the cap.
+func (t *refreshTable) arm(e *refreshEntry, gen, now time.Time, err error) time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	step := oauthBackoffFirst
+	if e.step > 0 && e.gen.Equal(gen) {
+		step = min(2*e.step, oauthBackoffMax)
+	}
+	e.gen, e.step, e.until, e.err = gen, step, now.Add(step), err
+	// An entry nobody uses whose backoff ended more than the cap ago has not
+	// been refused since, a deleted credential's among them. Forgetting it
+	// keeps the table to the credentials refused lately; a refusal after
+	// that starts at the first step, as one after a restart does.
+	cutoff := now.Add(-oauthBackoffMax)
+	for k, other := range t.entries {
+		if other.users == 0 && other.step > 0 && other.until.Before(cutoff) {
+			delete(t.entries, k)
+		}
+	}
+	return step
+}
+
+// clear drops the backoff once a refresh landed.
+func (t *refreshTable) clear(e *refreshEntry) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e.gen, e.step, e.until, e.err = time.Time{}, 0, time.Time{}, nil
+}
+
+// oauthNow is the clock the refresh backoff runs on: the OAuth client's own
+// (oauthflow.Client.Now, the seam its state expiry reads), else the wall
+// clock.
+func (ds *dataset) oauthNow() time.Time {
+	if c := ds.svc.oauth; c != nil && c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
+}
+
+// refreshOutcome is what one refreshCredential call came to.
+type refreshOutcome struct {
+	// tok is the token to use: the fresh one, or the one another hand
+	// stored while the caller waited for the turn. Nil when the refresh
+	// failed.
+	tok *oauth2.Token
+	// gen is the generation read under the turn, the anchor a caller parks a
+	// refused credential on.
+	gen time.Time
+	// refreshed is set when this call's fresh token landed in the store.
+	refreshed bool
+	// failed is why the stored token was not refreshed: the provider's
+	// refusal, a transport error, the refusal a backoff still answers with,
+	// or a stored credential that cannot be refreshed at all.
+	failed error
+	// backedOff is set when failed is a backoff's answer and the provider
+	// was not asked.
+	backedOff bool
+	// armed is set when failed armed a backoff step, which logged it.
+	armed bool
+}
+
+// refreshCredential refreshes the credential under ref, bound to the account
+// want, whose token the caller read at generation seen and found due. It is
+// the one path from a stored refresh token to the provider, shared by the
+// refresh loop and an invocation's token resolution. It holds the
+// credential's turn from reading the token to storing the fresh one and
+// reads the token again under it, so a refresh that waited behind another
+// finds the token the other stored instead of sending a refresh token the
+// provider may have rotated away. A credential in backoff answers with its
+// last refusal and the provider is not asked. The error is the engine's own
+// failure (the turn, the store); everything else is the outcome's.
+func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref, seen time.Time, ep oauthEndpoints) (refreshOutcome, error) {
+	k := refreshKey{repository: ds.scope.Repository, ref: ref}
+	e, err := oauthRefreshes.take(ctx, k)
+	if err != nil {
+		return refreshOutcome{}, err
+	}
+	defer oauthRefreshes.give(k, e)
+	tok, account, gen, err := ds.getCredential(ctx, ref)
+	if err != nil {
+		return refreshOutcome{}, err
+	}
+	out := refreshOutcome{gen: gen}
+	if account != want {
+		out.failed = errors.New("the stored credential reference belongs to another account")
+		return out, nil
+	}
+	// Another hand stored a token after the caller read its own (a refresh
+	// that held the turn first, a reconnect): that token is the answer while
+	// it is unexpired, however short a lifetime the provider gave it, so
+	// concurrent callers make one provider call.
+	if !gen.Equal(seen) && (tok.Expiry.IsZero() || nowUTC().Before(tok.Expiry)) {
+		out.tok = tok
+		return out, nil
+	}
+	if tok.RefreshToken == "" {
+		out.failed = fmt.Errorf("token for %s expired and cannot refresh", account.ID)
+		return out, nil
+	}
+	if refusal := oauthRefreshes.backedOff(e, gen, ds.oauthNow()); refusal != nil {
+		out.failed, out.backedOff = refusal, true
+		return out, nil
+	}
+	fresh, err := ds.svc.oauth.Refresh(ctx, ep, tok)
+	if err != nil {
+		out.failed = err
+		// A refresh cut short by the caller's own context says nothing
+		// about the grant.
+		if ctx.Err() == nil && oauthflow.Refused(err) {
+			step := oauthRefreshes.arm(e, gen, ds.oauthNow(), err)
+			out.armed = true
+			ds.svc.log.Warn("substrate: oauth refresh refused; no refresh of this credential is sent until the backoff ends or the account reconnects",
+				"record", account.ID, "backoff", step, "error", err)
+		}
+		ds.noteTokenRefresh(ctx, account, err)
+		return out, nil
+	}
+	// Update-only, compare-and-swap on the generation read under the turn: a
+	// teardown or a reconnect that landed while the provider call was in
+	// flight wins, and this refresh persists nothing (never recreating a
+	// deleted credential). The fresh token still serves the caller.
+	swapped, err := ds.updateCredential(ctx, ref, account, fresh, gen)
+	if err != nil {
+		return refreshOutcome{}, err
+	}
+	out.tok = fresh
+	if !swapped {
+		// A provider that rotates refresh tokens has spent the one this call
+		// sent, and the token it returned is dropped here. A lost swap was
+		// the first suspect when a credential was refused for days (#913),
+		// and nothing recorded whether one had happened.
+		ds.svc.log.Warn("substrate: oauth refresh succeeded, but a reconnect or a teardown replaced the credential first; the refreshed token is not stored",
+			"record", account.ID)
+		return out, nil
+	}
+	oauthRefreshes.clear(e)
+	ds.noteTokenRefresh(ctx, account, nil)
+	out.refreshed = true
+	return out, nil
+}
+
 // accountAccessToken resolves a credential ref into a LIVE access token for
-// one invocation: a token expiring within the refresh window refreshes and
-// persists on the spot, so a slow refresh loop never hands a body a corpse.
+// one invocation: a token expiring within a minute refreshes and persists on
+// the spot (refreshCredential), so a slow refresh loop never hands a body a
+// corpse. While the credential is backed off, the error is its last refusal
+// and the provider is not asked.
 // `want` is the account the ref was read off. A credential row records the
 // account it was issued for, and the two must agree: `tokenRef` is a
 // `writer: oauth` property, but the facility is not the only hand that can
@@ -606,31 +859,28 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, ep oauthE
 		return "", err
 	}
 	if account != want {
-		return "", fmt.Errorf("the stored credential reference belongs to another account")
+		return "", errors.New("the stored credential reference belongs to another account")
 	}
-	if tok.Expiry.IsZero() || nowUTC().Add(time.Minute).Before(tok.Expiry) {
+	if !accessTokenDue(tok) {
 		return tok.AccessToken, nil
 	}
 	if ds.svc.oauth == nil || tok.RefreshToken == "" {
 		return "", fmt.Errorf("token for %s expired and cannot refresh", account.ID)
 	}
-	fresh, err := ds.svc.oauth.Refresh(ctx, ep, tok)
-	if err != nil {
-		ds.noteTokenRefresh(ctx, account, err)
-		return "", err
-	}
-	// Update-only, compare-and-swap: a teardown or reconnect that landed
-	// while the provider call was in flight wins, and this refresh persists
-	// nothing (never recreating a deleted credential). The fresh token still
-	// serves THIS invocation.
-	swapped, err := ds.updateCredential(ctx, ref, account, fresh, seen)
+	out, err := ds.refreshCredential(ctx, ref, account, seen, ep)
 	if err != nil {
 		return "", err
 	}
-	if swapped {
-		ds.noteTokenRefresh(ctx, account, nil)
+	if out.failed != nil {
+		return "", out.failed
 	}
-	return fresh.AccessToken, nil
+	return out.tok.AccessToken, nil
+}
+
+// accessTokenDue reports whether a stored token is too close to its expiry to
+// hand an invocation: inside a minute of it, or past it.
+func accessTokenDue(tok *oauth2.Token) bool {
+	return !tok.Expiry.IsZero() && !nowUTC().Add(time.Minute).Before(tok.Expiry)
 }
 
 // RefreshOAuthTokens is the central refresh loop's pass: every credential
@@ -641,7 +891,10 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 	if ds.svc.oauth == nil {
 		return 0, nil
 	}
-	refs, err := ds.expiringCredentials(ctx, nowUTC().Add(oauthRefreshWindow))
+	ctx, cancel := context.WithTimeout(ctx, oauthPassBudget)
+	defer cancel()
+	horizon := nowUTC().Add(oauthRefreshWindow)
+	refs, err := ds.expiringCredentials(ctx, horizon)
 	if err != nil {
 		return 0, err
 	}
@@ -654,12 +907,22 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for _, ref := range refs {
+		// The budget ran out or the process is stopping: what is left waits
+		// for the next pass.
+		if ctx.Err() != nil {
+			return n, ctx.Err()
+		}
 		tok, account, seen, err := ds.getCredential(ctx, ref)
 		if err != nil {
 			ds.svc.log.Warn("substrate: oauth refresh: reading a credential", "ref", ref, "error", err)
 			continue
 		}
 		if tok.RefreshToken == "" {
+			continue
+		}
+		// An invocation or a reconnect stored a token past the window since
+		// the list was read: nothing is due this pass.
+		if tok.Expiry.IsZero() || !tok.Expiry.Before(horizon) {
 			continue
 		}
 		row, err := ds.loadRowDB(ctx, account)
@@ -685,40 +948,39 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 			continue
 		}
 		ep := oauthEndpointsFor(meta, clientID, clientSecret, nil)
-		fresh, err := ds.svc.oauth.Refresh(ctx, ep, tok)
+		out, err := ds.refreshCredential(ctx, ref, account, seen, ep)
+		if errors.Is(err, errCredentialGone) {
+			continue // torn down since the list was read
+		}
 		if err != nil {
-			ds.noteTokenRefresh(ctx, account, err)
+			return n, err
+		}
+		switch {
+		case out.backedOff:
+			// Logged when its step was armed.
+		case out.failed != nil:
 			// `invalid_grant` is final for this refresh token, and only a
 			// reconnect replaces it: retrying it every pass would call the
 			// provider once a minute for nothing. A parked credential leaves
 			// the work list, so the refusal is logged once, here.
-			if oauthflow.GrantRefused(err) && ctx.Err() == nil {
-				parked, perr := ds.parkRefusedCredential(ctx, ref, account, seen)
+			if oauthflow.GrantRefused(out.failed) && ctx.Err() == nil {
+				parked, perr := ds.parkRefusedCredential(ctx, ref, account, out.gen)
 				if perr != nil {
 					return n, perr
 				}
 				if parked {
 					ds.svc.log.Warn("substrate: oauth refresh refused with invalid_grant; the refresh loop skips this credential until the account reconnects",
-						"record", account.ID, "error", err)
+						"record", account.ID, "error", out.failed)
 				}
 				continue
 			}
-			ds.svc.log.Warn("substrate: oauth refresh failed — the account needs a reconnect if this persists",
-				"record", account.ID, "error", err)
-			continue
+			if !out.armed {
+				ds.svc.log.Warn("substrate: oauth refresh failed — the account needs a reconnect if this persists",
+					"record", account.ID, "error", out.failed)
+			}
+		case out.refreshed:
+			n++
 		}
-		// Update-only, compare-and-swap on the generation this pass read: a
-		// finalizer teardown or a reconnect that landed while the provider
-		// call was blocked wins, and the late refresh recreates nothing.
-		swapped, err := ds.updateCredential(ctx, ref, account, fresh, seen)
-		if err != nil {
-			return n, err
-		}
-		if !swapped {
-			continue
-		}
-		ds.noteTokenRefresh(ctx, account, nil)
-		n++
 	}
 	return n, nil
 }
@@ -729,6 +991,8 @@ func (ds *dataset) RefreshOAuthTokens(ctx context.Context) (int, error) {
 // its stored credentials dropped, and the finalizer released — after which
 // the ordinary GC sweep collects it. Purge rides exactly this path.
 func (ds *dataset) ProcessOAuthFinalizers(ctx context.Context) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, oauthPassBudget)
+	defer cancel()
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, kind FROM records
 		WHERE deleted_at IS NOT NULL AND $1 = ANY(finalizers) ORDER BY id`, finalizerOAuth)

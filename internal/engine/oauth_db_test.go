@@ -43,6 +43,10 @@ type fakeProvider struct {
 	// unavailable answers every refresh with a 503 and no RFC 6749 code: a
 	// failure that may pass.
 	unavailable bool
+	// refuseStatus, when set, answers every refresh with that status and
+	// refuseCode as the RFC 6749 error code.
+	refuseStatus int
+	refuseCode   string
 	// refreshCalls counts every refresh request, answered or refused.
 	refreshCalls int
 }
@@ -72,6 +76,12 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 			p.refreshCalls++
 			if p.unavailable {
 				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if p.refuseStatus != 0 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(p.refuseStatus)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": p.refuseCode})
 				return
 			}
 			if p.refuseRefresh {
@@ -324,6 +334,8 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 // beside `erroring`, from the central loop and from the on-demand refresh an
 // invocation makes alike; the reason carries the RFC 6749 code and never the
 // provider's description, and a later good refresh or a reconnect clears it.
+// The refusal backs the credential off, so the clock moves past each step
+// before the provider is asked again.
 func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -332,6 +344,8 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/substrate.reamde.dev/core/oauth/callback", p.ts.Client()),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 	)
+	clock := &engine.TestClock{}
+	engine.SetOAuthClock(svc, clock.Now)
 	docs := mbStandardDocs()
 	for _, d := range docs {
 		if meta, _ := d["metadata"].(map[string]any); d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) && meta["id"] == mbAccountType {
@@ -398,14 +412,23 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 		t.Fatalf("refused refresh: %d %v", n, err)
 	}
 	first := wantFailure("after a refused loop refresh")
-	// The same reason is not written again.
+	// Past the first backoff step an invocation asks the provider again, and
+	// the same reason is not written again.
+	clock.Advance(time.Minute + time.Second)
 	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
+	}
+	p.mu.Lock()
+	calls := p.refreshCalls
+	p.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("%d provider refresh calls, want 2: the invocation past the backoff did not ask", calls)
 	}
 	if again := mustGet(t, ds, account.Kind, account.ID); again.Version != first.Version {
 		t.Fatalf("a repeated failure rewrote the account: version %d, then %d", first.Version, again.Version)
 	}
 	refuse(false)
+	clock.Advance(2*time.Minute + time.Second)
 	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
