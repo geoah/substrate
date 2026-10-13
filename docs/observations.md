@@ -395,15 +395,17 @@ stream's reading before its bucket, which may be another record's
 changelog; `repository verify` and the export never read them.
 
 A **stream** is one run of readings: the `kind`, `metric`, `source`, `about`
-and `channel` of a value. A reference column holds the target's record path
+and `channel` of a value. A summary's `statistic` splits a stream's latest
+row: a night's average and its maximum at one instant keep a latest row
+each. A reference column holds the target's record path
 (`ada.example.com/observations/metric/health/heart_rate`); an absent
-`source`, `about` or `channel` is the empty string.
+`source`, `about`, `channel` or `statistic` is the empty string.
 
 | Table | One row per | Holds |
 | --- | --- | --- |
 | `observed_points` | value: one per observation, one per point of a trace | the stream, `form`, `ts` and `ts_end`, `utc_offset_min`, `offset_known`, `unit`, `delta`, `value` (float8), `value_exact` (the stored digits), `value_base` (in the measure's base unit), `code`, `statistic`, `bounded`, `quality`, and the parameters a hold and a counter step read: `hold_ms`, `reset_rule`, `reset_at`, `wrap_at`, `circular`, `revision` |
 | `observed_rollups` | stream, form, 15-minute bucket and group (`code`, `unit`, `delta`, `utc_offset_min`, `offset_known`) | `n`, `bounded`, `sum`, `min`, `max`, `mean`, `m2`, `first_ts`, `first_value`, `last_ts`, `last_value`, `covered_ms`, `held_ms`, `twa_sum`, `last_hold_ms`, `max_gap_ms`, `start_gap_ms`, `increase`, `resets`, `sin_sum`, `cos_sum`, `span_end`, `first_record_id`, `first_ord`, `last_record_id`, `last_ord`, `min_value`, `max_value` |
-| `observed_latest` | stream | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `offset_known`, `record_id`, `revision`, and `points`, the stream's count of available points |
+| `observed_latest` | stream and `statistic` | its newest available point: `ts`, `ts_end`, `value`, `code`, `unit`, `delta`, `form`, `statistic`, `bounded`, `hold_ms`, `utc_offset_min`, `offset_known`, `record_id`, `revision`, and `points`, the stream's count of available points |
 
 The rules every column follows are written once, as Go, in
 `internal/observed`: the engine computes each rollup row with it, and the
@@ -546,14 +548,22 @@ row whose readings have no reading before them holds no step, and its
 
 ### The latest row
 
-`observed_latest` holds each stream's newest available point. Two points at
-one instant go to the greater record id in byte order, then the later point
-of one trace: the point the `last` reducer answers. A `revision` counts one
-record's rewrites, so it breaks no tie between two records. A write that moves a stream's newest point to
-another stream (a corrected `source`) recomputes both streams' rows, and a
-stream left with no available point loses its row. A null after the newest
-value does not replace it: the row keeps the last value, and a reader that
-must say "unavailable since" finds the null in `observed_points`.
+`observed_latest` holds each stream's newest available point, one row per
+summary `statistic` (the empty string for the other forms). A night's `avg`
+and `max` summaries at one instant are two rows, so neither stands for the
+other. The aggregate read takes one row per stream: the newest of its rows,
+and the sum of their `points`.
+
+Two points at one instant go to the greater record id in byte order, then
+the later point of one trace: the point the `last` reducer answers. A
+`revision` counts one record's rewrites, so it breaks no tie between two
+records.
+
+A write that moves a stream's newest point to another stream (a corrected
+`source`) recomputes both streams' rows, and a row left with no available
+point goes. A null after the newest value does not replace it: the row keeps
+the last value, and a reader that must say "unavailable since" finds the null
+in `observed_points`.
 
 ## Reading
 

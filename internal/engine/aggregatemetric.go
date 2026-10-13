@@ -204,9 +204,14 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	if len(b.where) > 0 {
 		where = strings.Join(b.where, " AND ")
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT metric, kind, source, about, channel, form, unit, code, delta, value::text,
-		ts, ts_end, statistic, bounded, utc_offset_min, record_id, revision, points
-		FROM observed_latest WHERE `+where+` ORDER BY metric, kind, source, about, channel`, b.args...)
+	// observed_latest keeps a row per summary statistic; the read takes one
+	// row per stream, its newest point and every statistic's points.
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT ON (metric, kind, source, about, channel)
+		metric, kind, source, about, channel, form, unit, code, delta, value::text,
+		ts, ts_end, nullif(statistic, ''), bounded, utc_offset_min, record_id, revision,
+		(sum(points) OVER (PARTITION BY metric, kind, source, about, channel))::bigint
+		FROM observed_latest WHERE `+where+`
+		ORDER BY metric, kind, source, about, channel, ts DESC, record_id DESC`, b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate streams: %w", err)
 	}

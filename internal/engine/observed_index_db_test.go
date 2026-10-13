@@ -1018,6 +1018,82 @@ func TestObservedMarksAValueWrittenWithoutAnOffset(t *testing.T) {
 	r.rebuildMatches(t)
 }
 
+// Several statistics of one metric over one span keep a latest row each: a
+// night's average and its maximum at one instant are two rows of
+// observed_latest, so neither stands for the other, and a tombstone moves
+// only its own statistic's row. A read that names no statistic still sees
+// the stream once: the latest read counts every summary once, and a read of
+// the summaries counts each once.
+func TestObservedLatestKeepsOneRowPerStatistic(t *testing.T) {
+	t.Parallel()
+	r := openObservedIndex(t)
+	ctx := context.Background()
+	summary := func(id, stat, value string, night int) {
+		start := mustTime(t, "2026-10-05T22:00:00Z").AddDate(0, 0, night)
+		r.mustPut(t, r.observation, id, map[string]any{
+			"metric": r.metricRef("health/heart_rate"), "source": r.sourceRef("ring"), "form": "summary",
+			"statistic": stat, "period": "PT8H", "value": quantity(value, "/min"),
+			"at": start.Format(time.RFC3339), "endsAt": start.Add(8 * time.Hour).Format(time.RFC3339),
+		})
+	}
+	latestRows := func() string {
+		t.Helper()
+		rows, err := r.db.Query(`SELECT statistic, record_id, value::text, points FROM observed_latest
+			WHERE metric = $1 ORDER BY statistic`, r.metric+"/health/heart_rate")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		var out []string
+		for rows.Next() {
+			var stat, id, value string
+			var points int
+			if err := rows.Scan(&stat, &id, &value, &points); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, fmt.Sprintf("%s=%s:%s/%d", stat, id, value, points))
+		}
+		return strings.Join(out, " ")
+	}
+	summary("hrv/1/avg", "avg", "62", 0)
+	summary("hrv/1/max", "max", "84", 0)
+	if got, want := latestRows(), "avg=hrv/1/avg:62/1 max=hrv/1/max:84/1"; got != want {
+		t.Errorf("after one night the latest rows are %q, want %q", got, want)
+	}
+	summary("hrv/2/avg", "avg", "60", 1)
+	summary("hrv/2/max", "max", "80", 1)
+	if got, want := latestRows(), "avg=hrv/2/avg:60/2 max=hrv/2/max:80/2"; got != want {
+		t.Errorf("after two nights the latest rows are %q, want %q", got, want)
+	}
+	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, "hrv/2/max", substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := latestRows(), "avg=hrv/2/avg:60/2 max=hrv/1/max:84/1"; got != want {
+		t.Errorf("after the tombstone the latest rows are %q, want %q", got, want)
+	}
+	latest, err := r.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: r.metric + "/health/heart_rate"}, Reducers: []substrate.AggregateReducer{{Name: "last"}},
+	}})
+	if err != nil {
+		t.Fatalf("the latest read: %v", err)
+	}
+	if len(latest.Rows) != 1 || latest.Rows[0].Count != 3 {
+		t.Errorf("the latest read answers %+v, want one row counting the three summaries", latest.Rows)
+	}
+	read, err := r.ds.Aggregate(ctx, substrate.AggregateQuery{Aggregate: &substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: r.metric + "/health/heart_rate"}, From: substrate.AggregateFromSummaries,
+		Range:    &substrate.AggregateRange{Gte: "2026-10-05T00:00:00Z", Lt: "2026-10-08T00:00:00Z"},
+		Reducers: []substrate.AggregateReducer{{Name: "count"}},
+	}})
+	if err != nil {
+		t.Fatalf("the summaries read: %v", err)
+	}
+	if len(read.Rows) != 1 || read.Rows[0].Values[0].Value == nil || *read.Rows[0].Values[0].Value != "3" {
+		t.Errorf("the summaries read answers %+v, want a count of 3", read.Rows)
+	}
+	r.rebuildMatches(t)
+}
+
 // A kind that starts binding `observed` derives its existing rows' points
 // behind the apply that bound it, and one that stops drops them.
 func TestObservedIndexFollowsTheBinding(t *testing.T) {

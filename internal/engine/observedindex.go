@@ -21,8 +21,10 @@ package engine
 // recomputes every row after its replay (t.rebuild), because a replay never
 // passes through inTx.
 //
-// A stream is (kind, metric, source, about, channel): one row of
-// observed_latest. Its points with one form are what a hold runs across and
+// A stream is (kind, metric, source, about, channel), and a summary's
+// statistic splits it in observed_latest: one row per stream and statistic
+// (obsLatestKey), so a night's average and its maximum at one instant keep a
+// newest point each. Its points with one form are what a hold runs across and
 // a counter steps across (obsHold); a rollup row is one bucket of that, for
 // one group: a code, a unit, the delta flag, a UTC offset and whether the
 // offset was recorded.
@@ -40,9 +42,16 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// obsStream is one stream, the key of observed_latest.
+// obsStream is one stream.
 type obsStream struct {
 	metric, kind, source, about, channel string
+}
+
+// obsLatestKey is one row of observed_latest: a stream and a summary's
+// statistic, "" for every other form.
+type obsLatestKey struct {
+	obsStream
+	statistic string
 }
 
 // obsHold is one stream's points of one form: what a hold and a counter's
@@ -64,14 +73,14 @@ type observedTouch struct {
 	// tracked.
 	all     bool
 	buckets map[obsBucket]bool
-	// streams holds the change in each touched stream's count of available
-	// points.
-	streams map[obsStream]int64
+	// streams holds the change in each touched latest row's count of
+	// available points.
+	streams map[obsLatestKey]int64
 }
 
 func (t *txn) observedTouched() *observedTouch {
 	if t.observed == nil {
-		t.observed = &observedTouch{buckets: map[obsBucket]bool{}, streams: map[obsStream]int64{}}
+		t.observed = &observedTouch{buckets: map[obsBucket]bool{}, streams: map[obsLatestKey]int64{}}
 	}
 	return t.observed
 }
@@ -471,23 +480,24 @@ func (t *txn) dropObserved(ref eref) error {
 	rows, err := t.query(`
 		WITH d AS (
 			DELETE FROM observed_points WHERE kind = $1 AND record_id = $2
-			RETURNING metric, source, about, channel, form, ts, value, code)
-		SELECT p.metric, p.source, p.about, p.channel, p.form,
+			RETURNING metric, source, about, channel, form, statistic, ts, value, code)
+		SELECT p.metric, p.source, p.about, p.channel, p.form, coalesce(p.statistic, ''),
 		       (extract(epoch FROM date_bin('15 minutes', p.ts, TIMESTAMPTZ '2000-01-01 00:00:00+00')) * 1000)::bigint,
 		       count(*) FILTER (WHERE `+availablePoint+`)
-		FROM d p GROUP BY 1, 2, 3, 4, 5, 6`, ref.Kind, ref.ID)
+		FROM d p GROUP BY 1, 2, 3, 4, 5, 6, 7`, ref.Kind, ref.ID)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: observed points of %s %s: %w", ref.Kind, ref.ID, err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var h obsHold
+		var statistic string
 		var bucket, available int64
-		if err := rows.Scan(&h.metric, &h.source, &h.about, &h.channel, &h.form, &bucket, &available); err != nil {
+		if err := rows.Scan(&h.metric, &h.source, &h.about, &h.channel, &h.form, &statistic, &bucket, &available); err != nil {
 			return err
 		}
 		h.kind = ref.Kind
-		touch.streams[h.obsStream] -= available
+		touch.streams[obsLatestKey{obsStream: h.obsStream, statistic: statistic}] -= available
 		if h.form != vocabulary.FormSummary {
 			touch.buckets[obsBucket{obsHold: h, start: bucket}] = true
 		}
@@ -514,6 +524,10 @@ func (t *txn) insertObserved(r *observedRows) error {
 	bounded := make([]bool, n)
 	quality := make([]*string, n)
 	touch := t.observedTouched()
+	latest := obsLatestKey{obsStream: r.obsStream}
+	if r.statistic != nil {
+		latest.statistic = *r.statistic
+	}
 	unavailable := "unavailable"
 	for i, p := range r.points {
 		ord[i], ts[i], tsEnd[i], offset[i], known[i] = int64(p.ord), p.ts, p.tsEnd, p.offset, p.offsetKnown
@@ -526,9 +540,9 @@ func (t *txn) insertObserved(r *observedRows) error {
 			continue
 		}
 		if p.available() {
-			touch.streams[r.obsStream]++
-		} else if _, ok := touch.streams[r.obsStream]; !ok {
-			touch.streams[r.obsStream] = 0
+			touch.streams[latest]++
+		} else if _, ok := touch.streams[latest]; !ok {
+			touch.streams[latest] = 0
 		}
 		if r.form != vocabulary.FormSummary {
 			touch.buckets[obsBucket{obsHold: r.obsHold, start: bucketOf(p.ts)}] = true

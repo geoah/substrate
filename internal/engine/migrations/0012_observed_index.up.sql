@@ -151,10 +151,13 @@ CREATE TABLE IF NOT EXISTS observed_rollups (
     CHECK (increase IS NULL OR form = 'counter')
 );
 
--- observed_latest: one row per stream, its newest available point, so the
--- stream list and the current value of each read one row. Ties at one
--- instant go to the greater record id, then the later point: the order the
--- `last` reducer reads. `points` counts the stream's available points.
+-- observed_latest: one row per stream and statistic, its newest available
+-- point, so the stream list and the current value of each read one row. A
+-- summary's `statistic` is part of the key ('' for every other form): a
+-- night's average and its maximum at one instant are two rows, and neither
+-- stands for the other. Ties at one instant go to the greater record id,
+-- then the later point: the order the `last` reducer reads. `points` counts
+-- the row's available points.
 CREATE TABLE IF NOT EXISTS observed_latest (
     repository     text        NOT NULL DEFAULT current_setting('substrate.repository'),
     metric         text        NOT NULL,
@@ -169,7 +172,7 @@ CREATE TABLE IF NOT EXISTS observed_latest (
     unit           text        NOT NULL,
     delta          boolean     NOT NULL,
     form           text        NOT NULL,
-    statistic      text,
+    statistic      text        NOT NULL,
     bounded        boolean     NOT NULL,
     hold_ms        bigint,
     utc_offset_min integer     NOT NULL,
@@ -177,7 +180,7 @@ CREATE TABLE IF NOT EXISTS observed_latest (
     record_id      text        COLLATE "C" NOT NULL,
     revision       bigint,
     points         bigint      NOT NULL,
-    PRIMARY KEY (repository, metric, kind, source, about, channel)
+    PRIMARY KEY (repository, metric, kind, source, about, channel, statistic)
 );
 
 -- Repository-scoped like every table a dataset writes, with 0011's row

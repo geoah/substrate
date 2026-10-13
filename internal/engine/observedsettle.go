@@ -233,6 +233,13 @@ func streamLess(a, b obsStream) bool {
 	return false
 }
 
+func latestKeyLess(a, b obsLatestKey) bool {
+	if a.obsStream != b.obsStream {
+		return streamLess(a.obsStream, b.obsStream)
+	}
+	return a.statistic < b.statistic
+}
+
 // recomputeRollups recomputes the rows of every touched bucket, stream by
 // stream: a counter's next bucket holding an available point joins them,
 // because its first step comes from the touched bucket's last point.
@@ -567,9 +574,9 @@ func digitsOf(p *observed.Point) *string {
 	return ptrTo(p.Exact)
 }
 
-// latestColumns are the columns observed_latest takes from a point, in
-// insertLatest's order.
-const latestColumns = `p.ts, p.ts_end, p.value_exact::text, p.code, p.unit, p.delta, p.form, p.statistic,
+// latestColumns are the columns observed_latest takes from a point beside its
+// key, in recomputeLatest's scan order.
+const latestColumns = `p.ts, p.ts_end, p.value_exact::text, p.code, p.unit, p.delta, p.form,
 	p.bounded, p.hold_ms, p.utc_offset_min, p.offset_known, p.record_id, p.revision`
 
 // latestOrder picks a stream's newest point: pointOrder's last, the latest
@@ -578,28 +585,29 @@ const latestColumns = `p.ts, p.ts_end, p.value_exact::text, p.code, p.unit, p.de
 // A revision counts one record's rewrites and orders nothing across records.
 const latestOrder = `p.ts DESC, p.record_id DESC, p.ord DESC`
 
-// recomputeLatest rewrites the latest row of every touched stream from its
-// newest available point, and its point count by the transaction's change in
-// it; a stream left with no available point loses its row.
-func (t *txn) recomputeLatest(touched map[obsStream]int64) error {
+// recomputeLatest rewrites every touched latest row (a stream and a
+// statistic) from its newest available point, and its point count by the
+// transaction's change in it; a row left with no available point goes.
+func (t *txn) recomputeLatest(touched map[obsLatestKey]int64) error {
 	if len(touched) == 0 {
 		return nil
 	}
-	streams := make([]obsStream, 0, len(touched))
-	for s := range touched {
-		streams = append(streams, s)
+	keys := make([]obsLatestKey, 0, len(touched))
+	for k := range touched {
+		keys = append(keys, k)
 	}
-	sort.Slice(streams, func(i, j int) bool { return streamLess(streams[i], streams[j]) })
-	metric, kind, source, about, channel := streamColumns(streams)
+	sort.Slice(keys, func(i, j int) bool { return latestKeyLess(keys[i], keys[j]) })
+	metric, kind, source, about, channel, statistic := latestKeyColumns(keys)
 	rows, err := t.query(`
 		SELECT k.i, `+latestColumns+`
-		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
-		     WITH ORDINALITY AS k(metric, kind, source, about, channel, i)
+		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+		     WITH ORDINALITY AS k(metric, kind, source, about, channel, statistic, i)
 		CROSS JOIN LATERAL (
 			SELECT * FROM observed_points p
 			WHERE p.metric = k.metric AND p.kind = k.kind AND p.source = k.source
-			  AND p.about = k.about AND p.channel = k.channel AND `+availablePoint+`
-			ORDER BY `+latestOrder+` LIMIT 1) p`, metric, kind, source, about, channel)
+			  AND p.about = k.about AND p.channel = k.channel AND coalesce(p.statistic, '') = k.statistic
+			  AND `+availablePoint+`
+			ORDER BY `+latestOrder+` LIMIT 1) p`, metric, kind, source, about, channel, statistic)
 	if err != nil {
 		return err
 	}
@@ -607,7 +615,7 @@ func (t *txn) recomputeLatest(touched map[obsStream]int64) error {
 	for rows.Next() {
 		var i int
 		var l latestRow
-		if err := rows.Scan(&i, &l.ts, &l.tsEnd, &l.value, &l.code, &l.unit, &l.delta, &l.form, &l.statistic,
+		if err := rows.Scan(&i, &l.ts, &l.tsEnd, &l.value, &l.code, &l.unit, &l.delta, &l.form,
 			&l.bounded, &l.hold, &l.offset, &l.offsetKnown, &l.recordID, &l.revision); err != nil {
 			_ = rows.Close()
 			return err
@@ -618,35 +626,37 @@ func (t *txn) recomputeLatest(touched map[obsStream]int64) error {
 		return err
 	}
 	var keep []latestRow
-	var gone []obsStream
-	for i, s := range streams {
+	var gone []obsLatestKey
+	for i, k := range keys {
 		l, ok := found[i]
 		if !ok {
-			gone = append(gone, s)
+			gone = append(gone, k)
 			continue
 		}
-		l.obsStream, l.points = s, touched[s]
+		l.obsLatestKey, l.points = k, touched[k]
 		keep = append(keep, l)
 	}
 	if len(gone) > 0 {
-		m, k, so, a, c := streamColumns(gone)
+		m, k, so, a, c, st := latestKeyColumns(gone)
 		if _, err := t.exec(`
-			DELETE FROM observed_latest l USING unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
-			     AS k(metric, kind, source, about, channel)
-			WHERE l.metric = k.metric AND l.kind = k.kind AND l.source = k.source AND l.about = k.about AND l.channel = k.channel`,
-			m, k, so, a, c); err != nil {
+			DELETE FROM observed_latest l
+			USING unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+			     AS k(metric, kind, source, about, channel, statistic)
+			WHERE l.metric = k.metric AND l.kind = k.kind AND l.source = k.source AND l.about = k.about
+			  AND l.channel = k.channel AND l.statistic = k.statistic`,
+			m, k, so, a, c, st); err != nil {
 			return err
 		}
 	}
 	return t.upsertLatest(keep)
 }
 
-// latestRow is one row of observed_latest; points is the change in the
-// stream's count of available points.
+// latestRow is one row of observed_latest; points is the change in its
+// count of available points.
 type latestRow struct {
-	obsStream
+	obsLatestKey
 	ts, tsEnd        time.Time
-	value, statistic sql.NullString
+	value            sql.NullString
 	code, unit, form string
 	delta, bounded   bool
 	hold, revision   sql.NullInt64
@@ -656,35 +666,33 @@ type latestRow struct {
 	points           int64
 }
 
-func streamColumns(streams []obsStream) (metric, kind, source, about, channel []string) {
-	for _, s := range streams {
-		metric, kind = append(metric, s.metric), append(kind, s.kind)
-		source, about, channel = append(source, s.source), append(about, s.about), append(channel, s.channel)
+func latestKeyColumns(keys []obsLatestKey) (metric, kind, source, about, channel, statistic []string) {
+	for _, k := range keys {
+		metric, kind = append(metric, k.metric), append(kind, k.kind)
+		source, about, channel = append(source, k.source), append(about, k.about), append(channel, k.channel)
+		statistic = append(statistic, k.statistic)
 	}
-	return metric, kind, source, about, channel
+	return metric, kind, source, about, channel, statistic
 }
 
 func (t *txn) upsertLatest(rows []latestRow) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	streams := make([]obsStream, len(rows))
+	keys := make([]obsLatestKey, len(rows))
 	n := len(rows)
 	ts, tsEnd := make([]time.Time, n), make([]time.Time, n)
-	value, statistic := make([]*string, n), make([]*string, n)
+	value := make([]*string, n)
 	code, unit, form, recordID := make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	delta, bounded, known := make([]bool, n), make([]bool, n), make([]bool, n)
 	hold, revision := make([]*int64, n), make([]*int64, n)
 	offset, points := make([]int64, n), make([]int64, n)
 	for i, l := range rows {
-		streams[i] = l.obsStream
+		keys[i] = l.obsLatestKey
 		ts[i], tsEnd[i], code[i], unit[i], form[i], recordID[i] = l.ts, l.tsEnd, l.code, l.unit, l.form, l.recordID
 		delta[i], bounded[i], offset[i], known[i], points[i] = l.delta, l.bounded, l.offset, l.offsetKnown, l.points
 		if l.value.Valid {
 			value[i] = ptrTo(l.value.String)
-		}
-		if l.statistic.Valid {
-			statistic[i] = ptrTo(l.statistic.String)
 		}
 		if l.hold.Valid {
 			hold[i] = ptrTo(l.hold.Int64)
@@ -693,7 +701,7 @@ func (t *txn) upsertLatest(rows []latestRow) error {
 			revision[i] = ptrTo(l.revision.Int64)
 		}
 	}
-	metric, kind, source, about, channel := streamColumns(streams)
+	metric, kind, source, about, channel, statistic := latestKeyColumns(keys)
 	_, err := t.exec(`
 		INSERT INTO observed_latest (metric, kind, source, about, channel, ts, ts_end, value, code, unit, delta,
 			form, statistic, bounded, hold_ms, utc_offset_min, offset_known, record_id, revision, points)
@@ -704,9 +712,9 @@ func (t *txn) upsertLatest(rows []latestRow) error {
 		            $15::bigint[], $16::int[], $17::text[], $18::bigint[], $19::bigint[], $20::boolean[])
 		     AS u(metric, kind, source, about, channel, ts, ts_end, value, code, unit, delta,
 		          form, statistic, bounded, hold, off, record_id, revision, points, known)
-		ON CONFLICT (repository, metric, kind, source, about, channel) DO UPDATE SET
+		ON CONFLICT (repository, metric, kind, source, about, channel, statistic) DO UPDATE SET
 			ts = EXCLUDED.ts, ts_end = EXCLUDED.ts_end, value = EXCLUDED.value, code = EXCLUDED.code,
-			unit = EXCLUDED.unit, delta = EXCLUDED.delta, form = EXCLUDED.form, statistic = EXCLUDED.statistic,
+			unit = EXCLUDED.unit, delta = EXCLUDED.delta, form = EXCLUDED.form,
 			bounded = EXCLUDED.bounded, hold_ms = EXCLUDED.hold_ms, utc_offset_min = EXCLUDED.utc_offset_min,
 			offset_known = EXCLUDED.offset_known, record_id = EXCLUDED.record_id, revision = EXCLUDED.revision,
 			points = observed_latest.points + EXCLUDED.points`,
@@ -727,12 +735,12 @@ func (t *txn) rederiveObservedAll() error {
 	if _, err := t.exec(`
 		INSERT INTO observed_latest (metric, kind, source, about, channel, ts, ts_end, value, code, unit, delta,
 			form, statistic, bounded, hold_ms, utc_offset_min, offset_known, record_id, revision, points)
-		SELECT DISTINCT ON (p.metric, p.kind, p.source, p.about, p.channel)
+		SELECT DISTINCT ON (p.metric, p.kind, p.source, p.about, p.channel, coalesce(p.statistic, ''))
 			p.metric, p.kind, p.source, p.about, p.channel, p.ts, p.ts_end, p.value_exact, p.code, p.unit, p.delta,
-			p.form, p.statistic, p.bounded, p.hold_ms, p.utc_offset_min, p.offset_known, p.record_id, p.revision,
-			count(*) OVER (PARTITION BY p.metric, p.kind, p.source, p.about, p.channel)
+			p.form, coalesce(p.statistic, ''), p.bounded, p.hold_ms, p.utc_offset_min, p.offset_known, p.record_id, p.revision,
+			count(*) OVER (PARTITION BY p.metric, p.kind, p.source, p.about, p.channel, coalesce(p.statistic, ''))
 		FROM observed_points p WHERE ` + availablePoint + `
-		ORDER BY p.metric, p.kind, p.source, p.about, p.channel, ` + latestOrder); err != nil {
+		ORDER BY p.metric, p.kind, p.source, p.about, p.channel, coalesce(p.statistic, ''), ` + latestOrder); err != nil {
 		return fmt.Errorf("substrate/engine: rebuild the observed latest rows: %w", err)
 	}
 	rows, err := t.query(`SELECT DISTINCT metric, kind, source, about, channel, form FROM observed_points WHERE form <> $1`,
