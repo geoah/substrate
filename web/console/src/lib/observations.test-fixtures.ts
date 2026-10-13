@@ -125,6 +125,7 @@ export const METRICS: SubstrateRecord[] = [
     name: "Heart rate",
     form: "gauge",
     unit: "/min",
+    category: "heart",
   }),
   record(METRIC, "health/steps", {
     title: "Steps",
@@ -144,6 +145,7 @@ export const METRICS: SubstrateRecord[] = [
     form: "amount",
     unit: "min",
     codeSet: ["rem", "deep", "light", "awake"],
+    category: "sleep",
   }),
   record(METRIC, "health/whoop_recovery", {
     title: "Recovery",

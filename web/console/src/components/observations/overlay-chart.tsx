@@ -121,6 +121,14 @@ function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1)
 }
 
+/** A plot's reducer as its Show menu names it. */
+function choiceWords(plot: Plot): string {
+  return (
+    plot.reducerMenu.find((o) => o.value === plot.reducer)?.label ??
+    reducerLabel(plot.reducer)
+  )
+}
+
 export function OverlayChart({
   obs,
   plots,
@@ -246,9 +254,7 @@ export function OverlayChart({
   const reads = states.filter((s) => s.plot.read)
   const landed = reads.filter((s) => !s.pending && !s.failed)
   const names = listWords(drawn.map((p) => p.name))
-  const label = drawn
-    .map((p) => `${p.name}, ${reducerLabel(p.reducer)}`)
-    .join("; ")
+  const label = drawn.map((p) => `${p.name}, ${choiceWords(p)}`).join("; ")
 
   function groupCell(plot: Plot) {
     return (value: string | undefined): ReactNode => {
@@ -326,7 +332,7 @@ export function OverlayChart({
         {byPlot.map(({ plot, rows }) => (
           <div key={plot.metric} className="mt-2 border-t border-border pt-2">
             <p className="mb-1 text-faint">
-              {plot.name}, {lowerFirst(reducerLabel(plot.reducer))}
+              {plot.name}, {lowerFirst(choiceWords(plot))}
             </p>
             <dl className="grid grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-0.5">
               {rows.map((d) => {
@@ -563,9 +569,11 @@ function PlotHead({
         {axis && <span className="text-[12.5px] text-faint">{axis}</span>}
         <Picker
           label="Show"
-          options={plot.reducers.map((value) => ({
-            value,
-            label: reducerLabel(value),
+          options={plot.reducerMenu.map((o) => ({
+            value: o.value,
+            label: o.label,
+            ...(o.hint ? { hint: o.hint } : {}),
+            ...(o.disabled ? { disabled: true } : {}),
           }))}
           selected={[plot.reducer]}
           onChange={([next]) =>
@@ -631,12 +639,10 @@ function PlotHead({
         rows.length > 0 &&
         series.every((d) => d.series.points.every((p) => p.value === null)) && (
           <p className="text-[12.5px] text-muted-foreground">
-            No {lowerFirst(reducerLabel(plot.reducer))} in this range.
+            No {lowerFirst(choiceWords(plot))} in this range.
             {plot.fromReason === "some-summaries"
               ? " Its streams mix raw points and vendor summaries: group by source to see each, or pick another under Show."
-              : plot.fromReason === "summaries-only"
-                ? " A vendor summary answers only the statistic it keeps: pick another under Show."
-                : ""}
+              : ""}
           </p>
         )}
       {failed && query.error && (
@@ -707,6 +713,11 @@ function chartNotes(
     if (plot.shape === "coded") own.push("Stacked by category.")
     if (plot.fromReason === "summaries-only") {
       own.push("Read from the vendor's summaries, the only values it has.")
+    }
+    if (plot.fromReason === "raw-only" && plot.summarySources.length) {
+      own.push(
+        `Reads raw points alone: no vendor summary takes ${lowerFirst(choiceWords(plot))}, so ${listWords(plot.summarySources.map(words.sourceText))}’s summaries are left out.`
+      )
     }
     if (words.technical && plot.fromReason === "some-summaries") {
       own.push(

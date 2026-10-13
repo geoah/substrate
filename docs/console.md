@@ -720,7 +720,7 @@ it, and a filter that hides a selected row leaves it selected and drawn.
 **Timeline** (`?timeline=true`) opens a panel above the grid that draws the
 selected streams in one chart over a range (the last 30 days until you pick
 another), with the bucket, where its days start, and what to group the
-series by: metric, source, about or category (`?by=`). Each metric is one aggregate read narrowed to
+series by: metric, source or about (`?by=`). Each metric is one aggregate read narrowed to
 its selected sources, and to its things and channels where every selected
 stream names one; each keeps its own reducer and unit (`?reducer=`,
 `?unit=`). A stream the read takes that the selection leaves out (WHOOP's
@@ -743,19 +743,25 @@ the bucket (automatic from the range, 1, 5 or 15 minutes, an hour, a day, a
 week, a month; automatic reads a window of two hours or less, such as a
 workout's trace, by the minute), where a day, week or month starts (where
 you were, or your time zone), what to group by (metric,
-source, about or category), where to read from (automatic, raw points,
+source or about; a category metric is always grouped by code), where to read from (automatic, raw points,
 vendor summaries, or raw where a bucket is covered), and the sources,
 things and channels to keep. Under each chart, each metric's numbers as a table that
 copies as tab-separated text; with Technical details on, each request itself
 as JSON and as a `curl` command.
 
 **One chart, several metrics.** Above the chart, one row per metric holds
-its name, which axis it reads on, its reducer (from the ones its form
-allows, held to the ones a summary takes where a vendor summary may serve a
-bucket) and its output unit (the units of the stored unit's measure the
-server converts it to: never another annotation, another assay unit, a
-level or a factor of pi), and its
-legend. A level is a line with its lowest-to-highest band where its metric
+its name, which axis it reads on, its reducer (**Show**) and its output unit
+(the units of the stored unit's measure the server converts it to: never
+another annotation, another assay unit, a level or a factor of pi; minutes,
+seconds or hours for a time in a range), and its legend. **Show** offers
+every reducer the metric's form takes ([the table](api.md#reducers-by-form)):
+a level adds the median, the 90th percentile and, for a heart rate, the time
+in each of five zones (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171
+to 220 a minute). Where a vendor summary may serve a bucket, the reducers a
+summary takes come first and the rest read raw points alone: picking one
+(the time-weighted average, a percentile, a zone) reads the metric from raw
+points and the chart says whose summaries it leaves out, and where you
+picked where to read from yourself it is listed disabled, with the reason. A level is a line with its lowest-to-highest band where its metric
 shows one line, an amount or a count is bars, and a category is bars
 stacked per code that counts as one unit, its time. The series of one unit
 share the left axis and a second unit reads on the right, each axis

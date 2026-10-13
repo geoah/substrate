@@ -9,6 +9,7 @@
  * the metric records, the URL state and the answer. */
 
 import type {
+  AggregateFrom,
   AggregateReducer,
   AggregateResult,
   AggregateRow,
@@ -301,36 +302,148 @@ export function shapeOf(
   return formOf(metric, stream) ?? "gauge"
 }
 
+/** Heart rate zones as `durationIn` bounds in `/min`, zone 1 to zone 5: the
+ * five 19-beat bands from half of a 190 maximum, the top one open to 220. */
+export const HEART_RATE_ZONES: readonly (readonly [number, number])[] = [
+  [95, 114],
+  [114, 133],
+  [133, 152],
+  [152, 171],
+  [171, 220],
+]
+
+/** A heart rate zone's reducer key and words: `durationIn:114,133`, "Time
+ * in zone 2, 114 to 133". */
+export function zoneKey(zone: readonly [number, number]): string {
+  return `durationIn:${zone[0]},${zone[1]}`
+}
+
+/** The metrics a reader reads heart rate zones of: a heart metric counted
+ * per minute. */
+function heartRate(metric?: Pick<MetricInfo, "category" | "unit">): boolean {
+  return metric?.category === "heart" && metric.unit === "/min"
+}
+
 /** The reducers a shape may ask for, the default first, each one its form
- * takes (docs/api.md, "Reducers, by form"). A coded gauge answers time per
- * code, a coded amount its total per code. */
-export function reducerOptions(shape: ReadingShape, form?: Form): string[] {
+ * takes (docs/api.md, "Reducers, by form"), as reducer keys
+ * (`reducerKey`). A level adds the median and the 90th percentile, the time
+ * in each heart rate zone where it is a heart rate (`HEART_RATE_ZONES`), and
+ * the circular mean where it is an angle; an amount the median and the
+ * 90th percentile. A coded gauge answers time per code, a coded amount its
+ * total per code; their first and last are codes, which no chart draws. A
+ * summary takes what `summaryReducers` lists. */
+export function reducerOptions(
+  shape: ReadingShape,
+  form?: Form,
+  metric?: Pick<MetricInfo, "category" | "unit" | "measures">,
+  statistic?: string
+): string[] {
   switch (shape) {
     case "gauge":
-      return ["avg", "twa", "min", "max", "first", "last", "count", "stddev"]
+      return [
+        "avg",
+        "twa",
+        "min",
+        "max",
+        "first",
+        "last",
+        "count",
+        "stddev",
+        "percentile:0.5",
+        "percentile:0.9",
+        ...(heartRate(metric) ? HEART_RATE_ZONES.map(zoneKey) : []),
+        ...(metric?.measures === "angle" ? ["circularMean"] : []),
+      ]
     case "amount":
-      return ["sum", "count", "min", "max"]
+      return [
+        "sum",
+        "count",
+        "avg",
+        "min",
+        "max",
+        "first",
+        "last",
+        "stddev",
+        "percentile:0.5",
+        "percentile:0.9",
+      ]
     case "counter":
-      return ["increase", "rate", "last"]
+      return ["increase", "rate", "last", "first", "min", "max", "count"]
     case "coded":
-      return form === "amount" ? ["sum", "count"] : ["timeInState", "count"]
+      return form === "amount"
+        ? ["sum", "count", "min", "max"]
+        : ["timeInState", "count"]
     case "summary":
-      return ["last"]
+      return summaryReducers(statistic, "summaries")
   }
 }
 
-/** The reducers a vendor summary takes (docs/api.md, "Reducers, by
- * form"). A read that may serve a bucket from a summary is held to these
- * besides its form's own. */
-export const SUMMARY_REDUCERS: readonly string[] = [
-  "count",
-  "first",
-  "last",
-  "sum",
-  "min",
-  "max",
-  "avg",
-]
+/** Whether a summary's statistic adds up: a `sum` or a `count`. */
+export function additive(statistic: string | undefined): boolean {
+  return statistic === "sum" || statistic === "count"
+}
+
+/** The reducers a vendor summary takes (docs/api.md, "Reducers, by form"):
+ * `avg`, `min`, `max`, `first`, `last` and `count` over the one statistic
+ * a row reads, and `sum` where that statistic adds up (the default then).
+ * Under `prefer-raw` a bucket served by a summary of another statistic
+ * answers `sum` null instead of a refusal, so `sum` is taken there too, and
+ * an unknown statistic offers `sum` last and leaves the server to say. */
+export function summaryReducers(
+  statistic: string | undefined,
+  from: AggregateFrom
+): string[] {
+  const shared = ["avg", "min", "max", "first", "last", "count"]
+  if (additive(statistic)) return ["sum", ...shared]
+  return statistic === undefined || from === "prefer-raw"
+    ? [...shared, "sum"]
+    : shared
+}
+
+/** The reducers that read raw points alone: no summary takes them, so a
+ * read asking for one leaves the summaries out (`from: raw`). */
+export function rawOnly(key: string): boolean {
+  return !summaryReducers(undefined, "prefer-raw").includes(
+    reducerName(reducerOf(key))
+  )
+}
+
+/** The reducers whose values are in the metric's own unit, which a level's
+ * lowest-to-highest band reads beside: never a count, a spread, a time in
+ * a range or an angle's mean. */
+export function bandedReducer(key: string): boolean {
+  const name = reducerName(reducerOf(key))
+  return ["avg", "twa", "min", "max", "first", "last", "percentile"].includes(
+    name
+  )
+}
+
+/** A reducer key (`reducerKey`) as the aggregate reads it: `avg` as is,
+ * `percentile:0.9` as `{"percentile": 0.9}`, `durationIn:95,114` as
+ * `{"durationIn": [95, 114]}`. */
+export function reducerOf(key: string): AggregateReducer {
+  const at = key.indexOf(":")
+  if (at < 0) return key
+  const name = key.slice(0, at)
+  const arg = key.slice(at + 1)
+  if (name === "percentile") return { percentile: Number(arg) }
+  if (name === "durationIn") return { durationIn: arg.split(",").map(Number) }
+  if (name === "timeInState") return { timeInState: arg.split(",") }
+  return key
+}
+
+/** A reducer key in a menu's words: a heart rate zone by its number and
+ * bounds ("Time in zone 2, 114 to 133"), the 50th percentile as the median,
+ * every other as `reducerLabel` says it. */
+export function reducerChoiceWords(key: string): string {
+  const zone = HEART_RATE_ZONES.findIndex((z) => zoneKey(z) === key)
+  if (zone >= 0) {
+    const [lo, hi] = HEART_RATE_ZONES[zone]
+    return `Time in zone ${zone + 1}, ${lo} to ${hi}`
+  }
+  if (key === "percentile:0.5") return "Median"
+  return reducerLabel(reducerOf(key))
+}
 
 export const REDUCER_WORDS: Record<string, string> = {
   avg: "Average",

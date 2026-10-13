@@ -289,6 +289,67 @@ describe("the timeline's requests", () => {
     expect(read.aggregate.sources).toBeUndefined()
   })
 
+  it("offers every reducer the read's forms take, a zone reading raw points alone", async () => {
+    // WHOOP keeps heart rate as summaries beside the watches' raw points.
+    const whoop = {
+      ...LATEST.rows[0],
+      form: "summary",
+      group: { metric: `${METRIC}/health/heart_rate`, source: WHOOP },
+    }
+    const server = mount(
+      `?metric=health/heart_rate&${WINDOW}`,
+      false,
+      (read) =>
+        read.aggregate.metric
+          ? answer(read)
+          : latestAnswer(read, { ...LATEST, rows: [...LATEST.rows, whoop] })
+    )
+    const heart = await lane("Heart rate")
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    expect(charts(server.seen, "health/heart_rate")[0].aggregate.from).toBe(
+      "prefer-raw"
+    )
+    fireEvent.click(within(heart).getByRole("button", { name: /^Show:/ }))
+    const zone = await screen.findByRole("option", {
+      name: /Time in zone 2, 114 to 133/,
+    })
+    expect(zone.textContent).toContain("Raw points only")
+    fireEvent.click(zone)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(2)
+    )
+    expect(charts(server.seen, "health/heart_rate")[1].aggregate).toMatchObject(
+      {
+        from: "raw",
+        reducers: [{ durationIn: [114, 133] }],
+        unit: "min",
+      }
+    )
+    await waitFor(() =>
+      expect(heart.textContent).toContain(
+        "Reads raw points alone: no vendor summary takes time in zone 2, 114 to 133, so WHOOP 4.0’s summaries are left out."
+      )
+    )
+  })
+
+  it("groups by metric, source or thing; a category metric always by code", async () => {
+    const server = mount(`?metric=health/body_mass&group=code&${WINDOW}`)
+    await waitFor(() =>
+      expect(charts(server.seen, "health/body_mass")).toHaveLength(1)
+    )
+    expect(
+      charts(server.seen, "health/body_mass")[0].aggregate.groupBy
+    ).toBeUndefined()
+    const group = screen.getByRole("radiogroup", { name: "Group by" })
+    expect(
+      within(group)
+        .getAllByRole("radio")
+        .map((r) => r.textContent)
+    ).toEqual(["Metric", "Source", "About"])
+  })
+
   it("keeps a metric's reducer when another metric is picked", async () => {
     const server = mount(
       `?metric=health/body_mass&reducer=health%2Fbody_mass~max&${WINDOW}`
@@ -1284,7 +1345,7 @@ describe("the charts", () => {
     )
     expect(
       charts(server.seen, "health/whoop_recovery")[0].aggregate
-    ).toMatchObject({ from: "summaries", reducers: ["last"] })
+    ).toMatchObject({ from: "summaries", reducers: ["avg"] })
   })
 
   it("shows the request to run again, in technical mode only", async () => {

@@ -226,31 +226,74 @@ describe("where a metric reads from", () => {
     expect(planned.fromReason).toBe("some-summaries")
     expect(planned.summarySources).toEqual([WHOOP])
     expect(planned.read?.aggregate.from).toBe("prefer-raw")
-    // A summary in range answers only what a summary takes: no twa, no
-    // stddev, and an address asking for one reads the default.
-    expect(planned.reducers).toEqual([
-      "avg",
-      "min",
-      "max",
-      "first",
-      "last",
-      "count",
+    // What a summary takes comes first; the rest read raw points alone.
+    expect(planned.reducerMenu.slice(0, 7)).toEqual([
+      { value: "avg", label: "Average" },
+      { value: "min", label: "Lowest" },
+      { value: "max", label: "Highest" },
+      { value: "first", label: "First" },
+      { value: "last", label: "Latest" },
+      { value: "count", label: "Count" },
+      {
+        value: "twa",
+        label: "Time-weighted average",
+        raw: true,
+        hint: "Raw points only",
+      },
     ])
-    expect(
-      planPlot(source([whoop, ...streams]), HEART, {
-        ...SCOPE,
-        streams: [whoop, garmin],
-        reducer: "twa",
-      }).reducer
-    ).toBe("avg")
+    expect(planned.reducers).toContain("durationIn:114,133")
+  })
+
+  it("reads raw points alone for a reducer no summary takes, or says why it cannot", () => {
+    const streams = streamsOf(LATEST)
+    const garmin = streams.find(
+      (s) => s.metric === HEART && s.source === GARMIN
+    )!
+    const whoop: Stream = {
+      ...garmin,
+      key: "whoop-heart",
+      source: WHOOP,
+      form: "summary",
+    }
+    const obs = source([whoop, ...streams])
+    const scope = { ...SCOPE, streams: [whoop, garmin] }
+    // Picked from the automatic read, time in a zone reads raw points and
+    // says so; WHOOP's summaries take no durationIn.
+    const zone = planPlot(obs, HEART, {
+      ...scope,
+      reducer: "durationIn:114,133",
+    })
+    expect(zone).toMatchObject({
+      reducer: "durationIn:114,133",
+      from: "raw",
+      fromReason: "raw-only",
+      mark: "bars",
+      band: false,
+      unit: "min",
+      units: ["min", "s", "h"],
+    })
+    expect(zone.read?.aggregate).toMatchObject({
+      from: "raw",
+      reducers: [{ durationIn: [114, 133] }],
+      unit: "min",
+    })
+    // Where the reader picked prefer-raw, it is offered disabled with the
+    // reason, and an address asking for it reads the default.
+    const held = planPlot(obs, HEART, {
+      ...scope,
+      from: "prefer-raw",
+      reducer: "twa",
+    })
+    expect(held.reducer).toBe("avg")
+    expect(held.from).toBe("prefer-raw")
+    expect(held.reducerMenu.find((o) => o.value === "twa")).toMatchObject({
+      disabled: true,
+      hint: "Needs raw points: set Read from to Raw",
+    })
     // A raw read leaves the summaries out, and offers the level's every one.
-    expect(
-      planPlot(source([whoop, ...streams]), HEART, {
-        ...SCOPE,
-        streams: [whoop, garmin],
-        from: "raw",
-      }).reducers
-    ).toContain("twa")
+    const raw = planPlot(obs, HEART, { ...scope, from: "raw" })
+    expect(raw.reducers).toContain("twa")
+    expect(raw.reducerMenu.every((o) => !o.hint)).toBe(true)
   })
 
   it("lets the reader's pick win", () => {

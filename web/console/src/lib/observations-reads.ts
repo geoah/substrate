@@ -14,18 +14,25 @@ import {
   type AggregateReducer,
   type RecordFilter,
 } from "@/lib/api/types"
-import { OBSERVED_TRAIT_IDENTITY, type ReadingShape } from "@/lib/observations"
+import {
+  bandedReducer,
+  OBSERVED_TRAIT_IDENTITY,
+  reducerOf,
+  type ReadingShape,
+} from "@/lib/observations"
 import { isoWithOffset, type TimeRange } from "@/lib/observations-time"
 
 // ── the timeline's requests ────────────────────────────────────────────────
 
-export type GroupChoice = "metric" | "source" | "about" | "code"
+/** What a chart's series are told apart by, beside each metric's own. A
+ * coded metric is always grouped by code (`laneGroupKey`), and no other
+ * metric has codes, so code is no choice. */
+export type GroupChoice = "metric" | "source" | "about"
 
 export const GROUP_CHOICES: readonly { value: GroupChoice; label: string }[] = [
   { value: "metric", label: "Metric" },
   { value: "source", label: "Source" },
   { value: "about", label: "About" },
-  { value: "code", label: "Category" },
 ]
 
 export const FROM_CHOICES: readonly { value: AggregateFrom; label: string }[] =
@@ -64,7 +71,8 @@ export interface LaneSpec {
   /** The metric record's path. */
   metricPath: string
   shape: ReadingShape
-  /** The reducer the reader picked, a word from `reducerOptions`. */
+  /** The reducer the reader picked, a key from `reducerOptions`
+   * (`durationIn:95,114` for a structured one). */
   reducer: string
   /** The output unit; absent keeps the stored one. */
   unit?: string
@@ -94,12 +102,12 @@ export interface LaneSpec {
   byChannel?: boolean
 }
 
-/** The reducers a lane asks for: the reader's, then (on a level) the
- * lowest and highest, which the chart draws as a band. `timeInState` goes
- * bare, which answers the time each code holds. */
+/** The reducers a lane asks for: the reader's, then (on a level read in its
+ * own unit) the lowest and highest, which the chart draws as a band.
+ * `timeInState` goes bare, which answers the time each code holds. */
 export function laneReducers(spec: LaneSpec): AggregateReducer[] {
-  const picked: AggregateReducer = spec.reducer
-  if (spec.shape !== "gauge") return [picked]
+  const picked = reducerOf(spec.reducer)
+  if (spec.shape !== "gauge" || !bandedReducer(spec.reducer)) return [picked]
   return [picked, ...["min", "max"].filter((r) => r !== spec.reducer)]
 }
 

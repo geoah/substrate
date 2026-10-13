@@ -14,7 +14,9 @@ import {
   readingText,
   recordTimelineSearch,
   reducerKey,
+  reducerChoiceWords,
   reducerLabel,
+  reducerOf,
   reducerOptions,
   refPathOf,
   roundDigits,
@@ -110,7 +112,9 @@ describe("forms and reducers", () => {
   })
 
   it("offers the reducers each form allows, the default first", () => {
-    expect(reducerOptions(shapeOf(info("health/heart_rate")))).toEqual([
+    // Every reducer docs/api.md's form table lists, as reducer keys.
+    const heart = info("health/heart_rate")
+    expect(reducerOptions(shapeOf(heart), "gauge", heart)).toEqual([
       "avg",
       "twa",
       "min",
@@ -119,15 +123,81 @@ describe("forms and reducers", () => {
       "last",
       "count",
       "stddev",
+      "percentile:0.5",
+      "percentile:0.9",
+      // A heart rate's zones, as five times in a range.
+      "durationIn:95,114",
+      "durationIn:114,133",
+      "durationIn:133,152",
+      "durationIn:152,171",
+      "durationIn:171,220",
     ])
-    expect(reducerOptions("amount")).toEqual(["sum", "count", "min", "max"])
-    expect(reducerOptions("counter")).toEqual(["increase", "rate", "last"])
-    expect(reducerOptions("summary")).toEqual(["last"])
+    // A level that is no heart rate has no zones; an angle's mean is
+    // circular.
+    expect(
+      reducerOptions("gauge", "gauge", info("health/body_mass"))
+    ).not.toContain("durationIn:95,114")
+    expect(reducerOptions("gauge", "gauge", { measures: "angle" })).toContain(
+      "circularMean"
+    )
+    expect(reducerOptions("amount")).toEqual([
+      "sum",
+      "count",
+      "avg",
+      "min",
+      "max",
+      "first",
+      "last",
+      "stddev",
+      "percentile:0.5",
+      "percentile:0.9",
+    ])
+    expect(reducerOptions("counter")).toEqual([
+      "increase",
+      "rate",
+      "last",
+      "first",
+      "min",
+      "max",
+      "count",
+    ])
+    // A summary reads its one statistic: a vendor's averages first, a
+    // total's sum first.
+    expect(reducerOptions("summary", "summary", undefined, "vendor")).toEqual([
+      "avg",
+      "min",
+      "max",
+      "first",
+      "last",
+      "count",
+    ])
+    expect(reducerOptions("summary", "summary", undefined, "sum")[0]).toBe(
+      "sum"
+    )
     // A coded gauge answers time per code; a coded amount takes no
     // timeInState (docs/api.md, "Reducers, by form").
     expect(reducerOptions("coded", "gauge")).toEqual(["timeInState", "count"])
     expect(shapeOf(info("health/sleep_stage"))).toBe("coded")
-    expect(reducerOptions("coded", "amount")).toEqual(["sum", "count"])
+    expect(reducerOptions("coded", "amount")).toEqual([
+      "sum",
+      "count",
+      "min",
+      "max",
+    ])
+  })
+
+  it("reads a reducer key as the aggregate asks for it", () => {
+    expect(reducerOf("avg")).toBe("avg")
+    expect(reducerOf("percentile:0.9")).toEqual({ percentile: 0.9 })
+    expect(reducerOf("durationIn:114,133")).toEqual({ durationIn: [114, 133] })
+    expect(reducerKey(reducerOf("durationIn:114,133"))).toBe(
+      "durationIn:114,133"
+    )
+    expect(reducerChoiceWords("durationIn:114,133")).toBe(
+      "Time in zone 2, 114 to 133"
+    )
+    expect(reducerChoiceWords("percentile:0.5")).toBe("Median")
+    expect(reducerChoiceWords("percentile:0.9")).toBe("Percentile 90")
   })
 
   it("reads a stream's own form and code before the metric's default", () => {

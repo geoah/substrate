@@ -16,16 +16,19 @@ import type {
   AggregateRow,
 } from "@/lib/api/types"
 import {
+  bandedReducer,
   channelKey,
   DEFAULT_PRECISION,
   distinct,
   formOf,
+  rawOnly,
+  reducerChoiceWords,
   reducerKey,
   reducerOptions,
   refPathOf,
   sameRef,
   shapeOf,
-  SUMMARY_REDUCERS,
+  summaryReducers,
   type Form,
   type MetricInfo,
   type ObservedPins,
@@ -69,8 +72,12 @@ export function markOf(shape: ReadingShape, reducer: string): ChartMark {
   if (shape === "coded") return "stack"
   if (shape === "amount") return "bars"
   if (["sum", "count", "increase"].includes(reducer)) return "bars"
+  if (reducer.startsWith("durationIn")) return "bars"
   return "line"
 }
+
+/** The duration units a time in a range may be shown in, minutes first. */
+const DURATION_UNITS = ["min", "s", "h"]
 
 /** The unit a reducer's values come back in, which is the axis they read
  * on: none for a count, a duration for `timeInState` and `durationIn` (the
@@ -210,6 +217,18 @@ export interface PlotScope {
   streams?: readonly Stream[]
 }
 
+/** One entry of a plot's Show menu. */
+export interface ReducerOption {
+  /** The reducer key (`reducerKey`). */
+  value: string
+  label: string
+  /** Picking it reads raw points alone: no vendor summary takes it. */
+  raw?: boolean
+  /** Why it reads raw points alone, or why it cannot be picked. */
+  hint?: string
+  disabled?: boolean
+}
+
 /** One metric of a chart, planned before its read answers. */
 export interface Plot {
   metric: string
@@ -217,8 +236,12 @@ export interface Plot {
   shape: ReadingShape
   form?: Form
   reducer: string
-  /** The reducers its form allows, the default first. */
+  /** The reducers it may ask for, the default first. */
   reducers: string[]
+  /** The Show menu: every reducer its forms take, a raw-only one marked as
+   * such, and one the reader's pick of where to read from rules out
+   * disabled with the reason. */
+  reducerMenu: ReducerOption[]
   /** The unit its answer reads in, which is its axis (`assignAxes`,
    * `splitCharts`). */
   unit: string
@@ -260,9 +283,10 @@ export interface Plot {
   abouts: string[]
   /** Where it reads from, and why, where the reader picked nothing:
    * `summaries` because the metric has nothing else, `prefer-raw` because
-   * some of its streams keep summaries and others raw points. */
+   * some of its streams keep summaries and others raw points, `raw` because
+   * the reducer picked takes no summary. */
   from: AggregateFrom
-  fromReason?: "summaries-only" | "some-summaries"
+  fromReason?: "summaries-only" | "some-summaries" | "raw-only"
   /** The sources among its streams that keep vendor summaries. */
   summarySources: string[]
   /** Where its buckets are recorded-local days, weeks or months: their size
@@ -330,30 +354,42 @@ export function planPlot(
   const shape = shapeOf(info, newest)
   const form = formOf(info, newest)
   const auto = fromOf(selected)
-  const from: AggregateFrom = scope.from ?? auto.from
-  // Past a raw read, a bucket may be served by a summary, and the server
-  // refuses a reducer a summary does not take.
-  const summaries = from !== "raw" && selected.some((s) => s.form === "summary")
-  const reducers = reducerOptions(shape, form).filter(
-    (r) => !summaries || SUMMARY_REDUCERS.includes(r)
-  )
+  const askedFrom: AggregateFrom = scope.from ?? auto.from
+  const reducerMenu = menuOf(shape, form, info, {
+    from: askedFrom,
+    // Past a raw read, a bucket may be served by a summary, and the server
+    // refuses a reducer a summary does not take.
+    summaries: selected.some((s) => s.form === "summary"),
+    // Where the reader picked nothing and some streams hold raw points, a
+    // reducer no summary takes reads those alone.
+    switchable: !scope.from && selected.some((s) => s.form !== "summary"),
+  })
+  const reducers = reducerMenu.filter((o) => !o.disabled).map((o) => o.value)
   const reducer =
     scope.reducer && reducers.includes(scope.reducer)
       ? scope.reducer
       : reducers[0]
+  const rawPick = Boolean(reducerMenu.find((o) => o.value === reducer)?.raw)
+  const from: AggregateFrom = rawPick ? "raw" : askedFrom
   // The server answers in the picked unit, else the metric's, else its
   // first stream's, which need not be the newest: where the metric names
-  // no unit, the read names the one the axis is captioned with.
+  // no unit, the read names the one the axis is captioned with. A time in
+  // a range is a duration, in minutes unless the reader picks another.
   const stored =
     info?.unit ??
     (
       selected.find((s) => s.unit && s.form !== "summary") ??
       selected.find((s) => s.unit)
     )?.unit
-  const units = unitChoices(stored, info?.measures)
+  const timed = reducer.startsWith("durationIn")
+  const units = timed ? DURATION_UNITS : unitChoices(stored, info?.measures)
   const picked =
-    scope.unit && units.includes(scope.unit) ? scope.unit : undefined
-  const unit = picked !== stored ? picked : undefined
+    scope.unit && units.includes(scope.unit)
+      ? scope.unit
+      : timed
+        ? DURATION_UNITS[0]
+        : undefined
+  const unit = timed || picked !== stored ? picked : undefined
   const asked = picked ?? (info?.unit ? undefined : stored)
   const codes = info?.codeSet
   // The key a chart's series are told apart by, as `laneGroupKey` has it,
@@ -459,6 +495,7 @@ export function planPlot(
     form,
     reducer,
     reducers,
+    reducerMenu,
     unit: answerUnitOf(reducer, unit ?? stored),
     outputUnit: unit,
     stored,
@@ -466,7 +503,7 @@ export function planPlot(
     precision: info?.displayPrecision ?? DEFAULT_PRECISION,
     codes,
     mark,
-    band: mark === "line" && shape === "gauge",
+    band: mark === "line" && shape === "gauge" && bandedReducer(reducer),
     spec,
     read: spec && !blocked ? laneRead(spec) : undefined,
     groupKey: spec ? laneGroupKey(spec) : undefined,
@@ -496,12 +533,63 @@ export function planPlot(
       )
     ),
     from,
-    ...(scope.from ? {} : auto.reason ? { fromReason: auto.reason } : {}),
+    ...(scope.from
+      ? {}
+      : rawPick
+        ? { fromReason: "raw-only" as const }
+        : auto.reason
+          ? { fromReason: auto.reason }
+          : {}),
     summarySources: distinct(
       selected.filter((s) => s.form === "summary").map((s) => s.source)
     ),
     ...(local ? { local: { size: scope.size, range: scope.range } } : {}),
   }
+}
+
+/** A plot's Show menu: every reducer its form takes (`reducerOptions`).
+ * Where the read may take a vendor summary, those a summary takes come
+ * first and the rest read raw points alone: picking one switches the read
+ * to `raw` where the reader left where to read from automatic and some
+ * stream holds raw points, and is disabled with the reason otherwise. A
+ * metric whose streams all keep summaries reads in a summary's terms. */
+function menuOf(
+  shape: ReadingShape,
+  form: Form | undefined,
+  info: MetricInfo | undefined,
+  read: {
+    from: AggregateFrom
+    summaries: boolean
+    switchable: boolean
+    statistic?: string
+  }
+): ReducerOption[] {
+  const option = (value: string): ReducerOption => ({
+    value,
+    label: reducerChoiceWords(value),
+  })
+  const own = reducerOptions(shape, form, info, read.statistic)
+  if (read.from === "raw" || !read.summaries || shape === "summary") {
+    return own.map(option)
+  }
+  const takes = summaryReducers(read.statistic, read.from)
+  const shared = own.filter((k) => !rawOnly(k) && takes.includes(k))
+  return [
+    ...shared.map(option),
+    ...own
+      .filter((k) => !shared.includes(k))
+      .map((k) =>
+        read.switchable && rawOnly(k)
+          ? { ...option(k), raw: true, hint: "Raw points only" }
+          : {
+              ...option(k),
+              disabled: true,
+              hint: rawOnly(k)
+                ? "Needs raw points: set Read from to Raw"
+                : "Adds only summaries of a sum or a count",
+            }
+      ),
+  ]
 }
 
 /** The rows of one plot's answer the chart draws and tabulates: every
