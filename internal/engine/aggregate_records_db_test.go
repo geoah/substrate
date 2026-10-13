@@ -770,10 +770,10 @@ func TestAggregateRecordWindowsAreWrittenAtTheRecordsOffsets(t *testing.T) {
 	}}, "aggregate.bucket.records.utcOffsets.start")
 }
 
-// A records-mode window is [at, endsAt): WHOOP stamps a cycle's recovery at
-// the instant the night before it ends, so the night's window leaves it out,
-// and widening the window by a minute after its end takes it, the night and
-// its recovery on one row (docs/observations.md, a night and its recovery).
+// A records-mode window is [at, endsAt): a summary that starts at the
+// instant the window ends lies outside it, and `around` widening the window
+// by a minute after its end takes it, the window's record and the summary on
+// one row.
 func TestAggregateRecordWindowTakesItsRecoveryWhenWidened(t *testing.T) {
 	t.Parallel()
 	f := openAgg(t)
@@ -799,7 +799,7 @@ func TestAggregateRecordWindowTakesItsRecoveryWhenWidened(t *testing.T) {
 		})
 	}
 	if res := read(nil); len(res.Rows) != 0 {
-		t.Errorf("the night's own window: %d rows, want none (the recovery is stamped at its end)", len(res.Rows))
+		t.Errorf("the night's own window: %d rows, want none (the summary starts at the window's end)", len(res.Rows))
 	}
 	res := read(&substrate.AggregateAround{After: "PT1M"})
 	if len(res.Rows) != 1 || res.Rows[0].Record == nil || res.Rows[0].Record.Ref != f.sleepKind()+"/whoop/night" {
