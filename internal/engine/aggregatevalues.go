@@ -37,7 +37,11 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 		}
 		row.Group = &key
 	}
+	// A stream that names no source adds no path, as on the latest read.
 	for s := range ev.sources {
+		if s == "" {
+			continue
+		}
 		row.Sources = append(row.Sources, s)
 		if !b.lookback {
 			r.meta.sources[s] = true

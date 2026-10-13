@@ -1513,7 +1513,7 @@ where summaries did.
 | `from` | the request's `from`; on a several-metric read, the metrics' `from` where they all read from the same points |
 | `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value) or a conversion rounded to 20 significant digits. `min` and `max` compare the stored digits exactly and answer the winner's, so they are exact unless their conversion rounds. Also `false` on a metric, downsample or latest read while the background pass re-derives the observed index of a kind the read selects ([observations](observations.md#the-observed-index)): until the pass reaches a record, the rows hold the points its previous declaration derived |
 | `rows` | one per bucket and group, ordered by bucket, then group, then code |
-| `sources` | every source that fed a row, by record path |
+| `sources` | every source that fed a row, by record path; a stream that names no source adds none |
 | `head` | `{changelog, generation}`: the changelog position and history generation the read was served at, as a list page's `head` and `generation` |
 
 | Row key | Means |
@@ -1523,7 +1523,7 @@ where summaries did.
 | `group` | present with `groupBy`: a record path for `source`, `about` and `metric`, the kind for `kind`, the code for `code`, the summaries' statistic for `statistic`; a money property's `currency` |
 | `record` | `{ref, version}`, the records mode's matched record |
 | `from` | `raw` or `summaries` |
-| `sources` | the sources that fed the row |
+| `sources` | the sources that fed the row, by record path; a stream that names no source adds none |
 | `coverage` | an ISO 8601 duration: held time for a gauge, the union of spans for an amount or a summary, the time a counter's steps span |
 | `values` | one per reducer in request order (`timeInState` without states, one per code), then the rolling values |
 | `count` | the points that fed the row; on the latest read the group's point count |

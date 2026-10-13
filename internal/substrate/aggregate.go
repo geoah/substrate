@@ -465,7 +465,8 @@ type AggregateResult struct {
 	// conversion with no finite decimal expansion.
 	Exact bool           `json:"exact"`
 	Rows  []AggregateRow `json:"rows"`
-	// Sources lists every source that fed a row, by record path.
+	// Sources lists every source that fed a row, by record path; a stream
+	// that names no source adds none.
 	Sources []string      `json:"sources,omitempty"`
 	Head    AggregateHead `json:"head"`
 }
@@ -490,7 +491,8 @@ type AggregateRow struct {
 	Record *AggregateRecord `json:"record,omitempty"`
 	// From says whether raw points or summaries served the row.
 	From string `json:"from,omitempty"`
-	// Sources lists the sources that fed the row, by record path.
+	// Sources lists the sources that fed the row, by record path; a stream
+	// that names no source adds none.
 	Sources []string `json:"sources,omitempty"`
 	// Coverage is the time the row's points cover, an ISO 8601 duration:
 	// held time for a gauge, the union of spans for an amount or a summary,

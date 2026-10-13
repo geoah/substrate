@@ -7,6 +7,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -227,6 +228,34 @@ func TestAggregatePriorityRanksAStreamWithNoSourceLast(t *testing.T) {
 		}
 		if v, _ := val(res.Rows[0], "max"); v != "60" {
 			t.Errorf("%+v answers %s, want the scale's 60 ahead of the typed 63", sources, v)
+		}
+	}
+}
+
+// A stream that names no source feeds a row and adds no path to its sources
+// or the result's, which list record paths, as the latest read does.
+func TestAggregateSourcesListNoPathForAStreamWithNoSource(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	at := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
+	f.mustPut(t, f.observation, "typed", map[string]any{
+		"metric": f.metricRef("health/heart_rate"), "form": "gauge", "value": quantity("61", "/min"),
+		"at": at.Format(time.RFC3339), "hold": "PT1M", "utcOffset": 0,
+	})
+	f.weighing("w", "scale", "70", at, nil)
+	for _, metric := range []string{"health/heart_rate", "health/body_mass"} {
+		for _, bucket := range []*substrate.AggregateBucket{nil, {Calendar: "day", Timezone: "UTC"}} {
+			res := f.agg(context.Background(), substrate.Filter{}, substrate.Aggregate{
+				Metric: &substrate.AggregateMetric{Ref: f.metricPath(metric)}, Range: rng(at.Add(-time.Hour), at.Add(time.Hour)),
+				Bucket: bucket, Reducers: reducers("avg"),
+			})
+			want := []string(nil)
+			if metric == "health/body_mass" {
+				want = []string{f.sourcePath("scale")}
+			}
+			if len(res.Rows) != 1 || !slices.Equal(res.Rows[0].Sources, want) || !slices.Equal(res.Sources, want) {
+				t.Errorf("%s bucket %+v: rows %+v, sources %q; want one row, sources %q on it and the result", metric, bucket, res.Rows, res.Sources, want)
+			}
 		}
 	}
 }
