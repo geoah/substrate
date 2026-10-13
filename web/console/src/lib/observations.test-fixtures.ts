@@ -6,6 +6,9 @@
  * `from` per row, a weight trend, sleep stages grouped by code). Only test
  * suites import this file. */
 
+import { fireEvent, screen, waitFor } from "@testing-library/react"
+import { expect } from "vitest"
+
 import type {
   Aggregate,
   AggregateGroupKey,
@@ -716,6 +719,41 @@ export function observationsServer(
     return json({ records, head: 0, generation: "g" })
   }
   return { fetch, seen, sent }
+}
+
+/** The server's 503 for a read it could not run just then. */
+export function unavailable(): Response {
+  return new Response(
+    JSON.stringify({
+      error: { code: "unavailable", message: "the database is restarting" },
+    }),
+    { status: 503, headers: { "Content-Type": "application/json" } }
+  )
+}
+
+/** A stand-in server's `fetch` for a page under test: where `kindsFail`,
+ * the registry's own read answers 503 (`unavailable`) and every other read
+ * goes to the server. */
+export function pageFetch(
+  server: { fetch: (input: RequestInfo | URL) => Promise<Response> },
+  kindsFail = false
+): (input: RequestInfo | URL) => Promise<Response> {
+  return (input) =>
+    kindsFail && String(input).includes("core%2Fkind")
+      ? Promise.resolve(unavailable())
+      : server.fetch(input)
+}
+
+/** Picks one value of a facet from the filter bar's "Add filter", then
+ * closes the menu. */
+export async function addFilter(facet: string, value: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
+  fireEvent.click(await screen.findByRole("option", { name: facet }))
+  fireEvent.click(await screen.findByRole("option", { name: value }))
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+  await waitFor(() =>
+    expect(screen.queryByRole("option", { name: value })).toBe(null)
+  )
 }
 
 /** One answer alone as buckets and series, the way a chart of one read

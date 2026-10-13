@@ -42,10 +42,13 @@ import {
   STEPS_METRIC,
   WHOOP,
   WITHINGS,
+  addFilter,
   latestAnswer,
   metricKind,
   observationsServer,
+  pageFetch,
   sourceKind,
+  unavailable,
   type SeenRead,
 } from "@/lib/observations.test-fixtures"
 
@@ -92,14 +95,7 @@ function mount(
   kindsFail = false
 ) {
   const server = observationsServer(respond, kinds)
-  vi.stubGlobal(
-    "fetch",
-    vi.fn((input: RequestInfo | URL) =>
-      kindsFail && String(input).includes("core%2Fkind")
-        ? Promise.resolve(unavailable())
-        : server.fetch(input)
-    )
-  )
+  vi.stubGlobal("fetch", vi.fn(pageFetch(server, kindsFail)))
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -159,16 +155,6 @@ function refusal(problem = PROBLEM): Response {
 const CAP_PROBLEM =
   "aggregate.budget.maxGroups: the read makes 2001 groups, over 2000; narrow the filter or raise maxGroups (the cap is 2000)"
 
-/** The server's 503 for a read it could not run just then. */
-function unavailable(): Response {
-  return new Response(
-    JSON.stringify({
-      error: { code: "unavailable", message: "the database is restarting" },
-    }),
-    { status: 503, headers: { "Content-Type": "application/json" } }
-  )
-}
-
 /** The table's body rows, once the streams have landed. */
 async function rows(): Promise<HTMLElement[]> {
   const table = await screen.findByRole("table")
@@ -186,17 +172,6 @@ function bodyRows(): HTMLElement[] {
 /** An applied filter's control, by its field's label: `Source | Garmin`. */
 function filterControl(label: string): HTMLElement {
   return screen.getAllByRole("button", { name: new RegExp(`^${label}.+`) })[0]
-}
-
-/** Picks one value of a facet from "Add filter", then closes the menu. */
-async function addFilter(facet: string, value: RegExp) {
-  fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
-  fireEvent.click(await screen.findByRole("option", { name: facet }))
-  fireEvent.click(await screen.findByRole("option", { name: value }))
-  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
-  await waitFor(() =>
-    expect(screen.queryByRole("option", { name: value })).toBe(null)
-  )
 }
 
 describe("the streams table", () => {

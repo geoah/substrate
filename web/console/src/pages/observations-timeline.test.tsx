@@ -43,8 +43,10 @@ import {
   WEIGHT,
   WHOOP,
   ZONES,
+  addFilter,
   latestAnswer,
   observationsServer,
+  pageFetch,
   type SeenRead,
 } from "@/lib/observations.test-fixtures"
 
@@ -83,24 +85,7 @@ function mount(
   kindsFail = false
 ) {
   const server = observationsServer(respond)
-  vi.stubGlobal(
-    "fetch",
-    vi.fn((input: RequestInfo | URL) =>
-      kindsFail && String(input).includes("core%2Fkind")
-        ? Promise.resolve(
-            new Response(
-              JSON.stringify({
-                error: {
-                  code: "unavailable",
-                  message: "the database is restarting",
-                },
-              }),
-              { status: 503, headers: { "Content-Type": "application/json" } }
-            )
-          )
-        : server.fetch(input)
-    )
-  )
+  vi.stubGlobal("fetch", vi.fn(pageFetch(server, kindsFail)))
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -138,17 +123,6 @@ function charts(seen: SeenRead[], metric: string): SeenRead[] {
 /** The chart section drawing exactly these metrics, by name. */
 async function lane(name: string): Promise<HTMLElement> {
   return screen.findByRole("region", { name })
-}
-
-/** Picks one value of a facet from "Add filter", then closes the menu. */
-async function addFilter(facet: string, value: RegExp) {
-  fireEvent.click(screen.getByRole("button", { name: /Add filter/ }))
-  fireEvent.click(await screen.findByRole("option", { name: facet }))
-  fireEvent.click(await screen.findByRole("option", { name: value }))
-  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
-  await waitFor(() =>
-    expect(screen.queryByRole("option", { name: value })).toBe(null)
-  )
 }
 
 describe("the timeline's requests", () => {
