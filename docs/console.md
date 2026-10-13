@@ -719,8 +719,8 @@ token per stream, by id where the reference's pin allows), so a link carries
 it, and a filter that hides a selected row leaves it selected and drawn.
 **Timeline** (`?timeline=true`) opens a panel above the grid that draws the
 selected streams in one chart over a range (the last 30 days until you pick
-another), with the bucket and what to group the series by: metric, source,
-about or category (`?by=`). Each metric is one aggregate read narrowed to
+another), with the bucket, where its days start, and what to group the
+series by: metric, source, about or category (`?by=`). Each metric is one aggregate read narrowed to
 its selected sources, and to its things and channels where every selected
 stream names one; each keeps its own reducer and unit (`?reducer=`,
 `?unit=`). A stream the read takes that the selection leaves out (WHOOP's
@@ -740,8 +740,9 @@ rate, HRV and steps are two charts, heart rate with HRV and then steps. One
 row of controls scopes every chart: the metrics, the range (today, the last
 7 or 30 days, 6 months, a year, or a custom range of days on the calendar),
 the bucket (automatic from the range, 1, 5 or 15 minutes, an hour, a day, a
-week, a month; calendar buckets in your time zone; automatic reads a window
-of two hours or less, such as a workout's trace, by the minute), what to group by (metric,
+week, a month; automatic reads a window of two hours or less, such as a
+workout's trace, by the minute), where a day, week or month starts (where
+you were, or your time zone), what to group by (metric,
 source, about or category), where to read from (automatic, raw points,
 vendor summaries, or raw where a bucket is covered), and the sources,
 things and channels to keep. Under each chart, each metric's numbers as a table that
@@ -772,6 +773,24 @@ channel (no channel counting as one), the read groups by channel too and
 each channel is a line of its own, named after it ("Heart rate (workout)"). Click a bucket or
 drag across several to zoom in; from the keyboard the arrow keys move
 between buckets and Enter zooms.
+
+**Days where you were.** A day, week or month bucket reads, by default,
+the day as you lived it (**Days**: Where I was): the recorded-local calendar,
+each value on the date its own UTC offset names, so a day spent in London
+is London's day from midnight to midnight, whatever zone the browser is in.
+The read names no `timezone` and sends yours as `bucket.fallbackTimezone`,
+which places a value written without an offset and which the server
+otherwise refuses. Each bucket is the date its row's `start` names, never
+its instant: one slot per date, labelled with it, though a day lived west of
+the next overlaps it in time. A range of whole days is read from its first
+day's start at `+14:00` to its last day's end at `-12:00`, so every date in
+it is whole at any offset, and the dates outside it that the wider read
+meets are left out; a week or month keeps the range's own instants. The
+tooltip and the table give each row's UTC offsets (`+03:00 to +01:00` on a
+flight day) and how many points were written without one. Clicking a day
+zooms into the hours it was lived. Picking your zone (`?days=zone`) cuts
+the buckets at your midnights instead; an hour or finer is always an
+instant.
 
 **The pattern.** The chart follows Grafana's time series panel: the series
 of one unit share a y axis, a second unit gets an axis on the right, one

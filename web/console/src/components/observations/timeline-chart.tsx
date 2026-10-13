@@ -189,10 +189,20 @@ export function TimelineChart({
     return bucketAt(event.clientX - box.left, windows)
   }
 
+  // A recorded-local date zooms to the instants its rows cover: the day as
+  // it was lived, wherever its slot sits on the reader's axis.
   function zoom(lo: number, hi: number, keyboard = false) {
     const a = buckets[Math.min(lo, hi)]
     const b = buckets[Math.max(lo, hi)]
-    if (a && b) onZoom({ start: a.start, end: b.end }, keyboard)
+    if (a && b) {
+      onZoom(
+        {
+          start: a.instants?.start ?? a.start,
+          end: b.instants?.end ?? b.end,
+        },
+        keyboard
+      )
+    }
   }
 
   function onKey(event: KeyboardEvent<HTMLDivElement>) {

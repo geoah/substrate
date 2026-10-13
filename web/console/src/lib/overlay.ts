@@ -35,11 +35,14 @@ import {
 import {
   bucketEstimate,
   bucketOf,
+  dayBucket,
   MAX_BUCKETS,
   MAX_BUCKETS_CAP,
+  readRange,
   type BucketSize,
   type TimeRange,
 } from "@/lib/observations-time"
+import { rowsInRange } from "@/lib/observations-answer"
 import {
   laneGroupKey,
   laneRead,
@@ -184,7 +187,12 @@ export interface PlotSource {
 export interface PlotScope {
   range: TimeRange
   size: BucketSize
+  /** The reader's zone: calendar buckets are cut in it, and a recorded-local
+   * read places a value written without a UTC offset by it. */
   timezone?: string
+  /** Day, week and month buckets read where each value was recorded (the
+   * recorded-local calendar), not in the reader's zone. */
+  recordedLocal?: boolean
   group: GroupChoice
   /** The reader's pick; absent, each metric reads what its streams hold
    (`fromOf`). */
@@ -257,6 +265,10 @@ export interface Plot {
   fromReason?: "summaries-only" | "some-summaries"
   /** The sources among its streams that keep vendor summaries. */
   summarySources: string[]
+  /** Where its buckets are recorded-local days, weeks or months: their size
+   * and the range the reader asked for, which the read widens
+   * (`readRange`). */
+  local?: { size: BucketSize; range: TimeRange }
 }
 
 /** Where a metric reads from when the reader picked nothing, from the
@@ -373,7 +385,9 @@ export function planPlot(
   const groups =
     (shape === "coded" ? codes?.length || 4 : 1) *
     (new Set(selected.map(partOf)).size || 1)
-  const estimate = bucketEstimate(scope.range, scope.size, groups)
+  const local = Boolean(scope.recordedLocal) && dayBucket(scope.size)
+  const range = readRange(scope.range, scope.size, local)
+  const estimate = bucketEstimate(range, scope.size, groups)
   const metricPath = obs.metricPath(metric)
   const sourceOrder = chosenSources.length
     ? chosenSources
@@ -400,8 +414,8 @@ export function planPlot(
         reducer,
         ...(asked ? { unit: asked } : {}),
         from,
-        range: scope.range,
-        bucket: bucketOf(scope.size, scope.timezone),
+        range,
+        bucket: bucketOf(scope.size, scope.timezone, local),
         group: scope.group,
         sources: chosenSources.map((s) => refPathOf(s, obs.pins.source) ?? s),
         sourceOrder,
@@ -475,18 +489,24 @@ export function planPlot(
     summarySources: distinct(
       selected.filter((s) => s.form === "summary").map((s) => s.source)
     ),
+    ...(local ? { local: { size: scope.size, range: scope.range } } : {}),
   }
 }
 
 /** The rows of one plot's answer the chart draws and tabulates: every
- * row, but those of a series the selection leaves out (`Plot.only`). */
+ * row, but those of a series the selection leaves out (`Plot.only`) and,
+ * in the recorded-local calendar, those of a date outside the range the
+ * reader asked for. */
 export function plotRows(
-  plot: Pick<Plot, "only" | "groupKey" | "byChannel">,
+  plot: Pick<Plot, "only" | "groupKey" | "byChannel" | "local">,
   rows: readonly AggregateRow[]
 ): readonly AggregateRow[] {
+  const dated = plot.local
+    ? rowsInRange(rows, plot.local.size, plot.local.range)
+    : rows
   const only = plot.only
-  if (!only) return rows
-  return rows.filter((r) => {
+  if (!only) return dated
+  return dated.filter((r) => {
     const base =
       plot.groupKey === "source"
         ? (r.group?.source ?? "")

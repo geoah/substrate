@@ -10,12 +10,15 @@ import {
   answerReducers,
   bucketsOf,
   rollupText,
+  rowsInRange,
   rowValue,
   seriesOn,
 } from "@/lib/observations-answer"
+import { windowWords } from "@/lib/observations-time"
 import {
   GARMIN,
   HEART,
+  LONDON_TRIP,
   SLEEP,
   STEPS,
   WEIGHT,
@@ -55,6 +58,59 @@ describe("an answer as buckets and series", () => {
     expect(
       seriesOn(buckets, heart, "avg")[0].points.map((p) => p.value)
     ).toEqual([61, 64, 60])
+  })
+
+  it("draws one slot per recorded-local date across the London trip", () => {
+    // The suite runs in Athens. By instant, London's Sep 24 runs from 02:00
+    // to 02:00 here and overlaps Sep 25; by the date each row names, every
+    // day is one slot of the reader's axis, midnight to midnight.
+    const rows = LONDON_TRIP.rows.slice(1, -1)
+    const byInstant = bucketsOf([rows])
+    expect(windowWords(byInstant[5].start, byInstant[5].end)).toBe(
+      "Sep 24, 2026, 02:00 to Sep 25, 2026, 02:00"
+    )
+    expect(byInstant[5].end).toBeGreaterThan(byInstant[6].start)
+
+    const buckets = bucketsOf([rows], "day")
+    expect(buckets.map((b) => b.local)).toEqual([
+      "2026-09-19",
+      "2026-09-20",
+      "2026-09-21",
+      "2026-09-22",
+      "2026-09-23",
+      "2026-09-24",
+      "2026-09-25",
+    ])
+    expect(buckets.map((b) => windowWords(b.start, b.end))).toEqual([
+      "Sep 19, 2026",
+      "Sep 20, 2026",
+      "Sep 21, 2026",
+      "Sep 22, 2026",
+      "Sep 23, 2026",
+      "Sep 24, 2026",
+      "Sep 25, 2026",
+    ])
+    buckets.slice(1).forEach((b, i) => expect(b.start).toBe(buckets[i].end))
+    // Each slot keeps the instants it was lived in, for a zoom.
+    expect(buckets[5].instants).toEqual({
+      start: Date.parse("2026-09-24T00:00:00+01:00"),
+      end: Date.parse("2026-09-25T00:00:00+01:00"),
+    })
+    const [series] = seriesOn(buckets, rows, "avg", undefined, "day")
+    expect(series.points.map((p) => p.value)).toEqual([
+      64, 71, 66, 65, 67, 69, 63,
+    ])
+    expect(series.dropped).toBe(0)
+  })
+
+  it("keeps the recorded-local dates the range holds, never those a wider read met", () => {
+    const range = {
+      start: new Date(2026, 8, 19).getTime(),
+      end: new Date(2026, 8, 26).getTime(),
+    }
+    expect(
+      rowsInRange(LONDON_TRIP.rows, "day", range).map((r) => r.start)
+    ).toEqual(LONDON_TRIP.rows.slice(1, -1).map((r) => r.start))
   })
 
   it("keeps a source's channels apart as two series", () => {

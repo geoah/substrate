@@ -9,6 +9,7 @@ import { parseAsStringLiteral, useQueryState } from "nuqs"
 
 import {
   BucketControl,
+  DayControl,
   GroupControl,
 } from "@/components/observations/chart-controls"
 import { DiscoveryError } from "@/components/observations/discovery-error"
@@ -70,6 +71,7 @@ export function TimelinePanel({
       range,
       size,
       timezone: controls.timezone,
+      recordedLocal: controls.days === "local",
       group: by,
       sources: entry.sources,
       abouts: entry.abouts,
@@ -113,6 +115,7 @@ export function TimelinePanel({
           onCustom={controls.onCustom}
         />
         <BucketControl controls={controls} />
+        <DayControl controls={controls} />
         <GroupControl
           value={by}
           onChange={(next) => void setBy(next === "metric" ? null : next)}

@@ -51,6 +51,7 @@ import {
 } from "@/lib/api/types"
 import {
   codeWords,
+  distinct,
   readingText,
   reducerKey,
   reducerLabel,
@@ -58,6 +59,7 @@ import {
 } from "@/lib/observations"
 import {
   coverageWords,
+  offsetWords,
   windowWords,
   type BucketSize,
   type TimeRange,
@@ -186,7 +188,13 @@ export function OverlayChart({
     }
   })
 
-  const buckets = bucketsOf(states.map((s) => s.rows))
+  // Every plot of a chart shares its scope, so one says whether its days
+  // are recorded-local.
+  const local = drawn.find((p) => p.local)?.local
+  const buckets = bucketsOf(
+    states.map((s) => s.rows),
+    local?.size
+  )
   const sourceText = (value: string) => obs.nameOf(value, obs.pins.source)
   function labelOf(plot: Plot, s: Series): string {
     const name =
@@ -202,7 +210,7 @@ export function OverlayChart({
     return s.channel ? `${name} (${s.channel})` : name
   }
 
-  const all = drawnSeries(states, buckets, sideOf, labelOf)
+  const all = drawnSeries(states, buckets, sideOf, labelOf, local?.size)
   const shown = all.filter((d) => !hidden.has(d.key))
   // A level's band is drawn where its metric shows one line: under several,
   // the washes pile up over the lines they belong to.
@@ -295,9 +303,23 @@ export function OverlayChart({
         rows: shown.filter((d) => d.plot === plot && d.series.points[b]?.row),
       }))
       .filter((p) => p.rows.length)
+    // A recorded-local date's rows say at which offsets it was lived.
+    const offsets = local
+      ? distinct(
+          byPlot.flatMap(({ rows }) =>
+            rows.map((d) => {
+              const row = d.series.points[b].row!
+              return offsetWords(row.start, row.end)
+            })
+          )
+        )
+      : []
     return (
       <>
         {head}
+        {offsets.length > 0 && (
+          <p className="text-faint">UTC offset {offsets.join("; ")}</p>
+        )}
         {byPlot.length === 0 && (
           <p className="mt-1 text-muted-foreground">Nothing measured.</p>
         )}
@@ -419,6 +441,8 @@ export function OverlayChart({
             label={`${plot.name} in numbers`}
             caption={drawn.length > 1 ? plot.name : undefined}
             precision={plot.precision}
+            local={Boolean(plot.local)}
+            fallbackZone={plot.read?.aggregate.bucket?.fallbackTimezone}
           />
         ) : null
       )}
@@ -444,7 +468,8 @@ function drawnSeries(
   states: readonly PlotState[],
   buckets: readonly Bucket[],
   sideOf: (plot: Plot) => AxisSide,
-  labelOf: (plot: Plot, s: Series) => string
+  labelOf: (plot: Plot, s: Series) => string,
+  local?: BucketSize
 ): Drawn[] {
   const universe: string[] = []
   const all: Drawn[] = []
@@ -454,7 +479,8 @@ function drawnSeries(
       buckets,
       state.rows,
       plot.pickedKey,
-      plot.groupKey
+      plot.groupKey,
+      local
     )
     const own = universeOf(
       plot,
@@ -744,6 +770,15 @@ function SeriesDetail({
           />
         ))}
         <TipLine label="Points" value={row.count.toLocaleString("en")} />
+        {plot.local && (
+          <TipLine label="UTC offset" value={offsetWords(row.start, row.end)} />
+        )}
+        {row.offsetless ? (
+          <TipLine
+            label="No offset"
+            value={`${row.offsetless.toLocaleString("en")}, placed in ${plot.read?.aggregate.bucket?.fallbackTimezone ?? "your zone"}`}
+          />
+        ) : null}
         {row.coverage && (
           <TipLine label="Covered" value={coverageWords(row.coverage)} />
         )}

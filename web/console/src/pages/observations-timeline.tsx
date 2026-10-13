@@ -21,6 +21,7 @@ import { PageHeader } from "@/components/identity/page-header"
 import { TablePage } from "@/components/identity/page-layout"
 import {
   BucketControl,
+  DayControl,
   GroupControl,
 } from "@/components/observations/chart-controls"
 import {
@@ -164,6 +165,7 @@ export function ObservationsTimelinePage() {
       range,
       size,
       timezone: controls.timezone,
+      recordedLocal: controls.days === "local",
       group,
       from: fromParam ?? undefined,
       sources,
@@ -247,6 +249,7 @@ export function ObservationsTimelinePage() {
         )}
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <BucketControl controls={controls} />
+          <DayControl controls={controls} />
           <GroupControl
             value={group}
             onChange={(next) => void setGroup(next === "metric" ? null : next)}

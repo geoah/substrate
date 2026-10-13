@@ -437,6 +437,50 @@ export const WEIGHT: AggregateResult = {
   ],
 }
 
+/** Daily heart rate in the recorded-local calendar across the persona's
+ * London trip (decision 0161): Athens at +03:00 until the flight on Sep 20,
+ * London at +01:00 until the night of Sep 24, home again from Sep 25. Each
+ * row starts at its own first point's offset and ends at its last one's,
+ * so the flight day runs 26 hours and Sep 24 and Sep 25 overlap in time.
+ * Sep 18 and Sep 26 are the dates a range of whole local days reads past
+ * its ends (`readRange`), cut where the read stops. */
+export const LONDON_TRIP: AggregateResult = {
+  metric: HEART,
+  unit: "/min",
+  bucket: { calendar: "day", fallbackTimezone: "Europe/Athens" },
+  from: "raw",
+  exact: false,
+  head: HEAD,
+  sources: [GARMIN],
+  rows: (
+    [
+      ["2026-09-18T13:00:00+03:00", "2026-09-19T00:00:00+03:00", "61", 132],
+      ["2026-09-19T00:00:00+03:00", "2026-09-20T00:00:00+03:00", "64", 288],
+      ["2026-09-20T00:00:00+03:00", "2026-09-21T00:00:00+01:00", "71", 312],
+      ["2026-09-21T00:00:00+01:00", "2026-09-22T00:00:00+01:00", "66", 288],
+      ["2026-09-22T00:00:00+01:00", "2026-09-23T00:00:00+01:00", "65", 288],
+      ["2026-09-23T00:00:00+01:00", "2026-09-24T00:00:00+01:00", "67", 288],
+      ["2026-09-24T00:00:00+01:00", "2026-09-25T00:00:00+01:00", "69", 282],
+      ["2026-09-25T00:00:00+03:00", "2026-09-26T00:00:00+03:00", "63", 288],
+      ["2026-09-26T00:00:00+03:00", "2026-09-26T15:00:00+03:00", "58", 180],
+    ] as const
+  ).map(([start, end, value, count]) =>
+    row({
+      start,
+      end,
+      form: "gauge",
+      from: "raw",
+      sources: [GARMIN],
+      values: [
+        { reducer: "avg", value, unit: "/min" },
+        { reducer: "min", value: "48", unit: "/min" },
+        { reducer: "max", value: "131", unit: "/min" },
+      ],
+      count,
+    })
+  ),
+}
+
 /** Sleep stages per night, a coded amount grouped by code, each night the
  * sleep record's own span. */
 export const SLEEP: AggregateResult = {

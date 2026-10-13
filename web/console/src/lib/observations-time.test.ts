@@ -1,6 +1,6 @@
 /** Time on the observations pages: ranges, instants and windows in words,
- * the axis's ticks, bucket sizes and their time modes, and durations. The
- * suite runs in Europe/Athens (vite.config.ts). */
+ * the axis's ticks, bucket sizes and their time modes, recorded-local days,
+ * and durations. The suite runs in Europe/Athens (vite.config.ts). */
 
 import { describe, expect, it, vi } from "vitest"
 
@@ -15,9 +15,14 @@ import {
   durationMs,
   isoWithOffset,
   labelledTicks,
+  localKey,
+  localSlot,
+  localWindowWords,
+  offsetWords,
   presetRange,
   rangeWords,
   readerTimezone,
+  readRange,
   spanWords,
 } from "@/lib/observations-time"
 
@@ -136,6 +141,80 @@ describe("ranges and buckets", () => {
       timezone: "Europe/Athens",
     })
     expect(bucketOf("week")).toEqual({ calendar: "week", weekStart: "monday" })
+  })
+
+  it("reads days, weeks and months where each value was recorded", () => {
+    // No zone: the reader's places only a value written without an offset.
+    expect(bucketOf("day", "Europe/Athens", true)).toEqual({
+      calendar: "day",
+      fallbackTimezone: "Europe/Athens",
+    })
+    expect(bucketOf("week", "Europe/Athens", true)).toEqual({
+      calendar: "week",
+      weekStart: "monday",
+      fallbackTimezone: "Europe/Athens",
+    })
+    // An hour is an instant's, wherever it was lived.
+    expect(bucketOf("hour", "Europe/Athens", true)).toEqual({
+      calendar: "hour",
+      timezone: "Europe/Athens",
+    })
+    expect(bucketOf("15m", "Europe/Athens", true)).toEqual({ every: "PT15M" })
+  })
+
+  it("reads whole local days at any offset, and only for day buckets", () => {
+    const week = {
+      start: new Date(2026, 8, 19).getTime(),
+      end: new Date(2026, 8, 26).getTime(),
+    }
+    expect(readRange(week, "day", true)).toEqual({
+      start: Date.parse("2026-09-19T00:00:00+14:00"),
+      end: Date.parse("2026-09-26T00:00:00-12:00"),
+    })
+    expect(readRange(week, "day", false)).toBe(week)
+    expect(readRange(week, "week", true)).toBe(week)
+    const hours = { ...week, start: new Date(2026, 8, 19, 6).getTime() }
+    expect(readRange(hours, "day", true)).toBe(hours)
+  })
+
+  it("keys a recorded-local row by the date its own start names", () => {
+    // 23:30 in London is 01:30 in Athens, and still the 20th.
+    expect(localKey("2026-09-20T23:30:00+01:00", "day")).toBe("2026-09-20")
+    expect(localKey("2026-09-24T00:00:00-05:00", "week")).toBe("2026-09-21")
+    expect(localKey("2026-09-21T00:00:00+01:00", "week")).toBe("2026-09-21")
+    expect(localKey("2026-09-27T22:00:00+01:00", "week")).toBe("2026-09-21")
+    expect(localKey("2026-09-30T23:00:00+01:00", "month")).toBe("2026-09-01")
+    expect(localKey("not a time", "day")).toBeUndefined()
+    // Its slot is that date on the reader's axis, midnight to midnight.
+    expect(localSlot("2026-09-20", "day")).toEqual({
+      start: new Date(2026, 8, 20).getTime(),
+      end: new Date(2026, 8, 21).getTime(),
+    })
+    expect(localSlot("2026-09-21", "week").end).toBe(
+      new Date(2026, 8, 28).getTime()
+    )
+    expect(localSlot("2026-12-01", "month").end).toBe(
+      new Date(2027, 0, 1).getTime()
+    )
+  })
+
+  it("says a recorded-local row's dates and the offsets it was lived at", () => {
+    expect(
+      localWindowWords("2026-09-20T00:00:00+03:00", "2026-09-21T00:00:00+01:00")
+    ).toBe("Sep 20, 2026")
+    expect(
+      localWindowWords("2026-09-21T00:00:00+01:00", "2026-09-28T00:00:00+03:00")
+    ).toBe("Sep 21 to Sep 27, 2026")
+    // A range that cuts the day still names it.
+    expect(
+      localWindowWords("2026-09-18T13:00:00+03:00", "2026-09-19T00:00:00+03:00")
+    ).toBe("Sep 18, 2026")
+    expect(
+      offsetWords("2026-09-20T00:00:00+03:00", "2026-09-21T00:00:00+01:00")
+    ).toBe("+03:00 to +01:00")
+    expect(offsetWords("2026-09-21T00:00:00Z", "2026-09-22T00:00:00Z")).toBe(
+      "+00:00"
+    )
   })
 
   it("reads the reader's zone, UTC where the runtime names none", () => {

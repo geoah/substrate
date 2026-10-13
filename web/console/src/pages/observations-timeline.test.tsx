@@ -31,6 +31,7 @@ import {
   GARMIN,
   LATEST,
   LATEST_CHANNELS,
+  LONDON_TRIP,
   LATEST_PEOPLE,
   LEO,
   METRIC,
@@ -160,15 +161,19 @@ describe("the timeline's requests", () => {
     expect(weight.filter).toEqual({
       implements: "substrate.reamde.dev/core/observed",
     })
+    // Days where each value was recorded: no zone, the reader's placing a
+    // value written without an offset, and the three weeks' local days
+    // whole at any offset, from Sep 21 at +14:00 to Oct 11's end at -12:00.
     expect(weight.aggregate).toMatchObject({
       from: "raw",
       reducers: ["avg", "min", "max"],
-      bucket: { calendar: "day" },
+      bucket: { calendar: "day", fallbackTimezone: "Europe/Athens" },
       range: {
-        gte: isoWithOffset(Date.parse("2026-09-20T21:00:00Z")),
-        lt: isoWithOffset(Date.parse("2026-10-11T21:00:00Z")),
+        gte: isoWithOffset(Date.parse("2026-09-20T10:00:00Z")),
+        lt: isoWithOffset(Date.parse("2026-10-12T12:00:00Z")),
       },
     })
+    expect(weight.aggregate.bucket?.timezone).toBeUndefined()
     expect(weight.aggregate.groupBy).toBeUndefined()
     expect(charts(server.seen, "health/steps")[0].aggregate.reducers).toEqual([
       "sum",
@@ -1071,7 +1076,8 @@ describe("the charts", () => {
   })
 
   it("reads a bucket out from the keyboard and zooms into it", async () => {
-    const server = mount(`?metric=health/body_mass&${WINDOW}`)
+    // The fixture answers weeks.
+    const server = mount(`?metric=health/body_mass&${WINDOW}&bucket=week`)
     const weight = await lane("Weight")
     const chart = await within(weight).findByRole("group", {
       name: "Weight, Average",
@@ -1127,6 +1133,84 @@ describe("the charts", () => {
     })
     await waitFor(() => expect(redrawn.querySelector("svg")).not.toBe(null))
     expect(document.activeElement).not.toBe(redrawn)
+  })
+
+  it("reads the days where they were lived across the London trip, or in the reader's zone", async () => {
+    // Sep 19 to Sep 25 in Athens, read in days.
+    const trip =
+      "range=custom&start=2026-09-18T21:00:00.000Z&end=2026-09-25T21:00:00.000Z&bucket=day"
+    const server = mount(`?metric=health/heart_rate&${trip}`, false, (read) =>
+      read.aggregate.metric ? LONDON_TRIP : latestAnswer(read)
+    )
+    const heart = await lane("Heart rate")
+    const days = within(screen.getByRole("radiogroup", { name: "Days" }))
+    expect(
+      days
+        .getByRole("radio", { name: "Where I was" })
+        .getAttribute("aria-checked")
+    ).toBe("true")
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(1)
+    )
+    expect(charts(server.seen, "health/heart_rate")[0].aggregate).toMatchObject(
+      {
+        bucket: { calendar: "day", fallbackTimezone: "Europe/Athens" },
+        range: {
+          gte: isoWithOffset(Date.parse("2026-09-19T00:00:00+14:00")),
+          lt: isoWithOffset(Date.parse("2026-09-26T00:00:00-12:00")),
+        },
+      }
+    )
+    // One row per date the range holds, named by its own date, with the
+    // offsets it was lived at; the wider read's Sep 18 and 26 are left out.
+    fireEvent.click(
+      await within(heart).findByRole("button", { name: "Show the numbers" })
+    )
+    const table = within(heart).getByRole("table", {
+      name: "Heart rate in numbers",
+    })
+    const lines = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((r) =>
+        within(r)
+          .getAllByRole("cell")
+          .slice(0, 2)
+          .map((c) => c.textContent)
+      )
+    expect(lines).toEqual([
+      ["Sep 19, 2026", "+03:00"],
+      ["Sep 20, 2026", "+03:00 to +01:00"],
+      ["Sep 21, 2026", "+01:00"],
+      ["Sep 22, 2026", "+01:00"],
+      ["Sep 23, 2026", "+01:00"],
+      ["Sep 24, 2026", "+01:00"],
+      ["Sep 25, 2026", "+03:00"],
+    ])
+    // The tooltip names London's Sep 24 as the 24th, never 02:00 to 02:00.
+    const chart = within(heart).getByRole("group", {
+      name: "Heart rate, Average",
+    })
+    act(() => chart.focus())
+    for (let i = 0; i < 6; i++) fireEvent.keyDown(chart, { key: "ArrowRight" })
+    const tip = within(heart).getByRole("status")
+    expect(tip.textContent).toContain("Sep 24, 2026")
+    expect(tip.textContent).not.toContain("02:00")
+    expect(tip.textContent).toContain("UTC offset+01:00")
+
+    fireEvent.click(days.getByRole("radio", { name: "Europe/Athens" }))
+    await waitFor(() =>
+      expect(charts(server.seen, "health/heart_rate")).toHaveLength(2)
+    )
+    const zoned = charts(server.seen, "health/heart_rate")[1].aggregate
+    expect(zoned.bucket).toEqual({
+      calendar: "day",
+      timezone: "Europe/Athens",
+    })
+    expect(zoned.range).toEqual({
+      gte: isoWithOffset(Date.parse("2026-09-18T21:00:00Z")),
+      lt: isoWithOffset(Date.parse("2026-09-25T21:00:00Z")),
+    })
   })
 
   it("puts the numbers under the chart, a column per reducer with its unit", async () => {

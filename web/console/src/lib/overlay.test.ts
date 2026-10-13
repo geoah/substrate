@@ -278,6 +278,37 @@ describe("one metric's plot", () => {
     expect(steps).toMatchObject({ unit: "{steps}", mark: "bars", band: false })
   })
 
+  it("reads days where each value was recorded unless the reader picks a zone", () => {
+    const days = {
+      ...SCOPE,
+      size: "day" as const,
+      timezone: "Europe/Athens",
+      recordedLocal: true,
+    }
+    const local = planPlot(source(), HEART, days)
+    expect(local.read?.aggregate.bucket).toEqual({
+      calendar: "day",
+      fallbackTimezone: "Europe/Athens",
+    })
+    // Whole local days at any offset; the chart keeps the range's dates.
+    expect(local.spec?.range.start).toBe(Date.UTC(2026, 9, 1) - 14 * 3_600_000)
+    expect(local.local).toEqual({ size: "day", range: SCOPE.range })
+    const zone = planPlot(source(), HEART, { ...days, recordedLocal: false })
+    expect(zone.read?.aggregate.bucket).toEqual({
+      calendar: "day",
+      timezone: "Europe/Athens",
+    })
+    expect(zone.spec?.range).toEqual(SCOPE.range)
+    expect(zone.local).toBeUndefined()
+    // An hour is the instant's, wherever it was lived.
+    const hour = planPlot(source(), HEART, { ...days, size: "hour" })
+    expect(hour.read?.aggregate.bucket).toEqual({
+      calendar: "hour",
+      timezone: "Europe/Athens",
+    })
+    expect(hour.local).toBeUndefined()
+  })
+
   it("moves its axis with the reducer and the unit picked", () => {
     expect(planPlot(source(), HEART, { ...SCOPE, reducer: "count" }).unit).toBe(
       COUNT_UNIT

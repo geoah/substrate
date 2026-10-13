@@ -2,9 +2,11 @@
  * answer (a bucket, or one group of a bucket) with its window, one column per
  * reducer with its unit, the points, the covered time, the sources that fed
  * it and whether raw points or a vendor summary served it. Grouped by
- * source, a source's channel has its own column. The whole table copies as
- * tab-separated text, the exact digits and the wire's instants, folded or
- * not. */
+ * source, a source's channel has its own column. Recorded-local days read
+ * as the dates each row names, with the UTC offsets they were lived at and
+ * any points placed by the reader's zone for want of one. The whole table
+ * copies as tab-separated text, the exact digits and the wire's instants,
+ * folded or not. */
 
 import { useState, type ReactNode } from "react"
 import { ChevronRightIcon } from "lucide-react"
@@ -19,7 +21,12 @@ import type {
   AggregateRow,
 } from "@/lib/api/types"
 import { reducerKey, reducerLabel, reducerName } from "@/lib/observations"
-import { coverageWords, windowWords } from "@/lib/observations-time"
+import {
+  coverageWords,
+  localWindowWords,
+  offsetWords,
+  windowWords,
+} from "@/lib/observations-time"
 import { namedSources, rollupText, rowValue } from "@/lib/observations-answer"
 import { unitSymbol } from "@/lib/units"
 import { cn } from "@/lib/utils"
@@ -62,6 +69,8 @@ export function RollupTable({
   label,
   caption,
   precision,
+  local = false,
+  fallbackZone,
 }: {
   rows: readonly AggregateRow[]
   reducers: readonly AggregateReducer[]
@@ -76,11 +85,16 @@ export function RollupTable({
   label: string
   /** The decimal places a value is shown to; the copy keeps every digit. */
   precision?: number
+  /** The rows are recorded-local days, weeks or months. */
+  local?: boolean
+  /** The zone that placed a point written without a UTC offset. */
+  fallbackZone?: string
 }) {
   // Folded by default, so a timeline of several metrics reads chart after
   // chart; one click shows the numbers.
   const [open, setOpen] = useState(false)
   const channels = rows.some((r) => r.group?.channel)
+  const offsetless = rows.some((r) => r.offsetless)
   const count =
     rows.length === 1 ? "1 row" : `${rows.length.toLocaleString("en")} rows`
   return (
@@ -115,6 +129,7 @@ export function RollupTable({
             <thead className="sticky top-0 bg-background">
               <tr className="[&>th]:h-[34px] [&>th]:border-b [&>th]:border-border [&>th]:px-2.5 [&>th]:text-left [&>th]:text-[12.5px] [&>th]:font-medium [&>th]:whitespace-nowrap [&>th]:text-faint">
                 <th scope="col">When</th>
+                {local && <th scope="col">UTC offset</th>}
                 {groupKey && <th scope="col">{GROUP_WORDS[groupKey]}</th>}
                 {channels && <th scope="col">Channel</th>}
                 {reducers.map((r) => (
@@ -125,6 +140,15 @@ export function RollupTable({
                 <th scope="col" className="text-right!">
                   Points
                 </th>
+                {offsetless && (
+                  <th
+                    scope="col"
+                    className="text-right!"
+                    title={`Points written without a UTC offset, placed in ${fallbackZone ?? "your zone"}`}
+                  >
+                    No offset
+                  </th>
+                )}
                 <th scope="col">Covered</th>
                 <th scope="col">Sources</th>
                 <th scope="col">From</th>
@@ -137,8 +161,15 @@ export function RollupTable({
                   className="[&:last-child>td]:border-b-0 [&>td]:h-[30px] [&>td]:border-b [&>td]:border-border [&>td]:px-2.5 [&>td]:whitespace-nowrap"
                 >
                   <td title={`${row.start} to ${row.end}`}>
-                    {windowWords(Date.parse(row.start), Date.parse(row.end))}
+                    {local
+                      ? localWindowWords(row.start, row.end)
+                      : windowWords(Date.parse(row.start), Date.parse(row.end))}
                   </td>
+                  {local && (
+                    <td className="tabular-nums">
+                      {offsetWords(row.start, row.end)}
+                    </td>
+                  )}
                   {groupKey && <td>{groupCell(row.group?.[groupKey])}</td>}
                   {channels && <td>{row.group?.channel ?? <EmptyValue />}</td>}
                   {reducers.map((r) => {
@@ -162,6 +193,15 @@ export function RollupTable({
                   <td className="text-right tabular-nums">
                     {row.count.toLocaleString("en")}
                   </td>
+                  {offsetless && (
+                    <td className="text-right tabular-nums">
+                      {row.offsetless ? (
+                        row.offsetless.toLocaleString("en")
+                      ) : (
+                        <EmptyValue />
+                      )}
+                    </td>
+                  )}
                   <td title={row.coverage}>
                     {row.coverage ? (
                       coverageWords(row.coverage)

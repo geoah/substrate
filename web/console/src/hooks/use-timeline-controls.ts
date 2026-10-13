@@ -1,8 +1,9 @@
 /** The controls every timeline shares, in the address: the range (a preset
- * or a custom window), the bucket, and each metric's reducer and output
- * unit. The timeline page and the streams page's Timeline panel read them
- * the same way and differ only in the preset they open on; what each groups
- * by, and the panel's selection, stay with the page. */
+ * or a custom window), the bucket, where a day starts, and each metric's
+ * reducer and output unit. The timeline page and the streams page's
+ * Timeline panel read them the same way and differ only in the preset they
+ * open on; what each groups by, and the panel's selection, stay with the
+ * page. */
 
 import { useMemo, useState } from "react"
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs"
@@ -13,12 +14,14 @@ import {
   readerTimezone,
   type BucketChoice,
   type BucketSize,
+  type DayBoundary,
   type RangePreset,
   type TimeRange,
 } from "@/lib/observations-time"
 import {
   ARRAY,
   BUCKET_VALUES,
+  DAY_VALUES,
   RANGE_VALUES,
   choiceOf,
   customRange,
@@ -35,6 +38,9 @@ export interface TimelineControls {
   size: BucketSize
   /** The zone calendar buckets are cut in. */
   timezone: string
+  /** Where a day, week or month bucket starts: where each value was
+   * recorded (the default), or the reader's zone. */
+  days: DayBoundary
   /** A metric's picked reducer and output unit, whichever way the address
    * spells the metric. */
   reducerOf: (metric: string) => string | undefined
@@ -42,6 +48,7 @@ export interface TimelineControls {
   onPreset: (preset: RangePreset) => void
   onCustom: (range: TimeRange) => void
   onBucket: (bucket: BucketChoice) => void
+  onDays: (days: DayBoundary) => void
   onReducer: (metric: string, value: string) => void
   onUnit: (metric: string, value: string) => void
   /** Reads a window: a custom range, the bucket back to automatic. */
@@ -60,6 +67,10 @@ export function useTimelineControls(
   const [bucket, setBucket] = useQueryState(
     "bucket",
     parseAsStringLiteral(BUCKET_VALUES).withDefault("auto")
+  )
+  const [days, setDays] = useQueryState(
+    "days",
+    parseAsStringLiteral(DAY_VALUES).withDefault("local")
   )
   const [reducerTokens, setReducerTokens] = useQueryState("reducer", ARRAY)
   const [unitTokens, setUnitTokens] = useQueryState("unit", ARRAY)
@@ -91,6 +102,7 @@ export function useTimelineControls(
     bucket,
     size: bucketSizeOf(bucket, range),
     timezone,
+    days,
     reducerOf: (metric) => choiceOf(reducers, metric),
     unitOf: (metric) => choiceOf(units, metric),
     onPreset: (p) => {
@@ -100,6 +112,7 @@ export function useTimelineControls(
     },
     onCustom,
     onBucket: (next) => void setBucket(next === "auto" ? null : next),
+    onDays: (next) => void setDays(next === "local" ? null : next),
     onReducer: (metric, value) => {
       const next = writeChoice(reducerTokens, metric, value)
       void setReducerTokens(next.length ? next : null)

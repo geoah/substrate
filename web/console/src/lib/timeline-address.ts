@@ -7,6 +7,7 @@ import { parseAsArrayOf, parseAsString } from "nuqs"
 import { sameRef } from "@/lib/observations"
 import {
   BUCKET_CHOICES,
+  DAY_BOUNDARIES,
   RANGE_PRESETS,
   type TimeRange,
 } from "@/lib/observations-time"
@@ -19,6 +20,7 @@ export const RANGE_VALUES = [
   "custom",
 ] as const
 export const BUCKET_VALUES = BUCKET_CHOICES.map((b) => b.value)
+export const DAY_VALUES = DAY_BOUNDARIES
 export const GROUP_VALUES = GROUP_CHOICES.map((g) => g.value)
 export const FROM_VALUES = FROM_CHOICES.map((f) => f.value)
 

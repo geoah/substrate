@@ -1,8 +1,9 @@
 /** Time on the observations pages, without React: the ranges a timeline
  * reads (presets, custom days), instants and windows in words, the axis's
- * ticks, the bucket sizes and the aggregate's time mode for each, and ISO
- * 8601 durations. Local time is the browser's; a calendar bucket names the
- * reader's zone. */
+ * ticks, the bucket sizes and the aggregate's time mode for each, the
+ * recorded-local calendar's days, and ISO 8601 durations. Local time is the
+ * browser's; a calendar bucket names the reader's zone, or reads a day, week
+ * or month where each value was recorded. */
 
 import type { AggregateBucket } from "@/lib/api/types"
 
@@ -371,12 +372,39 @@ export const MAX_BUCKETS = 1440
 /** The most `budget.maxBuckets` may raise it to. */
 export const MAX_BUCKETS_CAP = 10000
 
+/** Whether a size is a calendar window of a day or more: where its days
+ * start is the reader's choice (`DayBoundary`). Finer sizes are instants. */
+export function dayBucket(size: BucketSize): boolean {
+  return size === "day" || size === "week" || size === "month"
+}
+
+/** Where a day, a week or a month starts: `local` is the recorded-local
+ * calendar, each value on the date its own UTC offset names, so a day spent
+ * in London is London's day wherever the reader is; `zone` is the reader's
+ * time zone. */
+export type DayBoundary = "local" | "zone"
+
+export const DAY_BOUNDARIES: readonly DayBoundary[] = ["local", "zone"]
+
 /** A size as the aggregate's time mode: a size in minutes is a physical
  * window on UTC instants, the rest calendar windows in the zone given,
- * weeks from Monday. With no zone, a calendar window is the recorded-local
- * one (each point's own offset). */
-export function bucketOf(size: BucketSize, timezone?: string): AggregateBucket {
-  const zone = timezone ? { timezone } : {}
+ * weeks from Monday. A day, week or month read `local` is the recorded-local
+ * calendar instead (no `timezone`): the zone given places only a value
+ * written without a UTC offset (`fallbackTimezone`), which the server
+ * otherwise refuses. */
+export function bucketOf(
+  size: BucketSize,
+  timezone?: string,
+  local = false
+): AggregateBucket {
+  const zone =
+    local && dayBucket(size)
+      ? timezone
+        ? { fallbackTimezone: timezone }
+        : {}
+      : timezone
+        ? { timezone }
+        : {}
   switch (size) {
     case "1m":
       return { every: "PT1M" }
@@ -393,6 +421,105 @@ export function bucketOf(size: BucketSize, timezone?: string): AggregateBucket {
     case "month":
       return { calendar: "month", ...zone }
   }
+}
+
+// ── recorded-local days ────────────────────────────────────────────────────
+
+/** The instants a read of `range` asks for. A range of whole local days read
+ * in the recorded-local calendar asks from the first day's start at the
+ * earliest UTC offset (+14:00) to the last day's end at the latest (-12:00),
+ * since a day lived at another offset starts and ends at other instants than
+ * the reader's; the chart then drops the dates outside the range
+ * (`localSlot`). Weeks and months keep the range's own instants, since a
+ * partial one would take hours of a date the range leaves out. */
+export function readRange(
+  range: TimeRange,
+  size: BucketSize,
+  local: boolean
+): TimeRange {
+  if (!local || size !== "day") return range
+  if (!isMidnight(range.start) || !isMidnight(range.end)) return range
+  const a = new Date(range.start)
+  const b = new Date(range.end)
+  return {
+    start: Date.UTC(a.getFullYear(), a.getMonth(), a.getDate()) - 14 * HOUR_MS,
+    end: Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) + 12 * HOUR_MS,
+  }
+}
+
+/** The calendar date an instant's text names, before its offset is applied:
+ * `2026-09-20T23:30:00+01:00` is 2026-09-20 whatever the reader's zone. */
+function wallDate(iso: string): [number, number, number] | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T/.exec(iso)
+  return m ? [+m[1], +m[2], +m[3]] : undefined
+}
+
+function dateKey(y: number, m: number, d: number): string {
+  return `${y}-${pad(m)}-${pad(d)}`
+}
+
+/** The recorded-local bucket a row's own `start` names, by its calendar
+ * date and never by its instant: the date for a day, that week's Monday for
+ * a week, the first for a month (`YYYY-MM-DD`). Undefined where the text
+ * names no date. */
+export function localKey(start: string, size: BucketSize): string | undefined {
+  const date = wallDate(start)
+  if (!date) return undefined
+  const [y, m, d] = date
+  if (size === "month") return dateKey(y, m, 1)
+  if (size !== "week") return dateKey(y, m, d)
+  const t = Date.UTC(y, m - 1, d)
+  const back = (new Date(t).getUTCDay() + 6) % 7
+  const monday = new Date(t - back * DAY_MS)
+  return dateKey(
+    monday.getUTCFullYear(),
+    monday.getUTCMonth() + 1,
+    monday.getUTCDate()
+  )
+}
+
+/** Where a recorded-local bucket sits on the reader's axis: its date's
+ * midnight to the next bucket's, in the reader's zone, so every date is one
+ * slot and the axis's day ticks fall between them. */
+export function localSlot(key: string, size: BucketSize): TimeRange {
+  const [y, m, d] = key.split("-").map(Number)
+  const end =
+    size === "month"
+      ? new Date(y, m, 1)
+      : new Date(y, m - 1, d + (size === "week" ? 7 : 1))
+  return { start: new Date(y, m - 1, d).getTime(), end: end.getTime() }
+}
+
+/** A recorded-local row's days in words, from the dates its own `start` and
+ * `end` name: `Sep 20, 2026`, or `Sep 14 to Sep 20, 2026` for a week. An end
+ * at midnight ends the day before. */
+export function localWindowWords(start: string, end: string): string {
+  const a = wallDate(start)
+  const b = wallDate(end)
+  if (!a || !b) return windowWords(Date.parse(start), Date.parse(end))
+  const first = new Date(a[0], a[1] - 1, a[2])
+  const midnight = /T00:00(?::00(?:\.0+)?)?(?:Z|[+-])/.test(end)
+  const last = new Date(b[0], b[1] - 1, b[2] - (midnight ? 1 : 0))
+  const lastAt = Math.max(last.getTime(), first.getTime())
+  const after = new Date(lastAt)
+  after.setDate(after.getDate() + 1)
+  return rangeWords({ start: first.getTime(), end: after.getTime() })
+}
+
+/** The UTC offset an instant's text carries: `+01:00`, `+00:00` for `Z`. */
+export function offsetOf(iso: string): string | undefined {
+  const m = /(Z|[+-]\d{2}:\d{2})$/.exec(iso)
+  if (!m) return undefined
+  return m[1] === "Z" || m[1] === "-00:00" ? "+00:00" : m[1]
+}
+
+/** A row's UTC offsets in words: `+01:00`, or `+03:00 to +01:00` across a
+ * change (a flight on the day). */
+export function offsetWords(start: string, end: string): string {
+  const a = offsetOf(start)
+  const b = offsetOf(end)
+  if (!a || !b) return a ?? b ?? ""
+  return a === b ? a : `${a} to ${b}`
 }
 
 /** The reader's time zone, for calendar buckets: the runtime's, else UTC.
