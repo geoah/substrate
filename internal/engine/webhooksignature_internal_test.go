@@ -1,8 +1,14 @@
 package engine
 
 import (
+	"crypto/hmac"
+	"encoding/hex"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // whoopSignatureDecl is WHOOP's scheme as a trigger declares it.
@@ -203,5 +209,93 @@ func TestWebhookReplaysHoldASignatureForItsWindow(t *testing.T) {
 	}
 	if _, held := bounded.seen[soonest]; held {
 		t.Fatal("the entry closest to closing survived the bound")
+	}
+}
+
+// rfc4231Case2 is RFC 4231's HMAC-SHA-256 test case 2: the key "Jefe" over
+// "what do ya want for nothing?". stampedVector is the same key over
+// "1791720000." and that data, computed with `openssl dgst -sha256 -hmac`.
+const (
+	rfc4231Case2       = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+	rfc4231Case2Base64 = "W9zBRr9gdU5qBCQmCJV1x1oAPwidJzmDnexYuWTsOEM="
+	stampedVector      = "kAnNc/Ehuxxya6XNAqkxMt9aA1zXryYgdzzQ+t7NX0Y="
+	rfc4231Data        = "what do ya want for nothing?"
+)
+
+// The door computes standard HMAC-SHA256 over the declared message, pinned
+// to vectors from outside this package rather than to its own recipe: RFC
+// 4231 as a body-only message and split across a literal and the body, and
+// an openssl vector over a signed timestamp. It reads the signature header
+// as a provider sends it, hex in either case or base64.
+func TestWebhookSignatureMatchesKnownVectors(t *testing.T) {
+	t.Parallel()
+	at := time.Unix(1791720000, 0).UTC()
+	for _, c := range []struct {
+		name, message, encoding, header, stamp, body string
+	}{
+		{"a body-only message, lowercase hex", "{body}", "hex", rfc4231Case2, "", rfc4231Data},
+		{"a body-only message, uppercase hex", "{body}", "hex", strings.ToUpper(rfc4231Case2), "", rfc4231Data},
+		{"a body-only message, base64", "{body}", "base64", rfc4231Case2Base64, "", rfc4231Data},
+		{"a literal and the body", "what do ya want {body}", "hex", rfc4231Case2, "", "for nothing?"},
+		{"a signed timestamp", "{timestamp}.{body}", "base64", stampedVector, "1791720000", rfc4231Data},
+	} {
+		decl := map[string]any{
+			"algorithm": "hmac-sha256", "signatureHeader": "x-sig", "message": c.message,
+			"encoding": c.encoding, "secret": "oauthClientSecret",
+		}
+		req := substrate.WebhookRequest{Headers: map[string]string{"x-sig": c.header}, Body: []byte(c.body)}
+		if c.stamp != "" {
+			decl["timestampHeader"] = "x-ts"
+			req.Headers["x-ts"] = c.stamp
+		}
+		sig, err := parseWebhookSignature(decl)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		p, reason := sig.presented(req, at)
+		if reason != "" {
+			t.Fatalf("%s: refused before the key: %s", c.name, reason)
+		}
+		if !hmac.Equal(sig.expected("Jefe", p.stamp, req.Body), p.mac) {
+			t.Fatalf("%s: computed %s, the vector is %s", c.name, hex.EncodeToString(sig.expected("Jefe", p.stamp, req.Body)), c.header)
+		}
+	}
+}
+
+// The checks that need no key, at their edges: a timestamp exactly maxSkew
+// from the receipt passes on either side and one millisecond further is
+// stale, and a signature that decodes to other than 32 bytes is refused.
+func TestWebhookSignaturePresentedAtItsEdges(t *testing.T) {
+	t.Parallel()
+	sig, err := parseWebhookSignature(map[string]any{
+		"algorithm": "hmac-sha256", "signatureHeader": "x-sig", "timestampHeader": "x-ts",
+		"maxSkew": "PT5M", "message": "{timestamp}{body}", "encoding": "hex", "secret": "oauthClientSecret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	request := func(signedAt time.Time, mac string) substrate.WebhookRequest {
+		return substrate.WebhookRequest{Headers: map[string]string{
+			"x-sig": mac, "x-ts": strconv.FormatInt(signedAt.UnixMilli(), 10),
+		}}
+	}
+	for _, c := range []struct {
+		name     string
+		signedAt time.Time
+		mac      string
+		want     string
+	}{
+		{"exactly maxSkew before", at.Add(-5 * time.Minute), rfc4231Case2, ""},
+		{"exactly maxSkew after", at.Add(5 * time.Minute), rfc4231Case2, ""},
+		{"a millisecond past maxSkew before", at.Add(-5*time.Minute - time.Millisecond), rfc4231Case2, signatureRefusedStale},
+		{"a millisecond past maxSkew after", at.Add(5*time.Minute + time.Millisecond), rfc4231Case2, signatureRefusedStale},
+		{"31 bytes", at, rfc4231Case2[:62], signatureRefusedInvalid},
+		{"33 bytes", at, rfc4231Case2 + "00", signatureRefusedInvalid},
+		{"an odd hex digit", at, rfc4231Case2 + "0", signatureRefusedInvalid},
+	} {
+		if _, got := sig.presented(request(c.signedAt, c.mac), at); got != c.want {
+			t.Errorf("%s: refusal %q, want %q", c.name, got, c.want)
+		}
 	}
 }

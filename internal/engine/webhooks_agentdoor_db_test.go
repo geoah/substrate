@@ -6,8 +6,14 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -85,5 +91,173 @@ func TestAnAgentWebhookIsHeldToOneMiB(t *testing.T) {
 	}
 	if a, f := stored(agent), stored(function); a != 1 || f != 1 {
 		t.Fatalf("pending rows: agent %d, function %d, want one each", a, f)
+	}
+}
+
+// sigBundlePackage is a bundle with an oauth2 block whose one agent is a
+// webhook trigger's callable, so `secret: oauthClientSecret` resolves
+// through the agent's package.
+const sigBundlePackage = "sighook.test.dev/sighook"
+
+// installSignedAgentBundle installs sigBundlePackage: its OAuth client config
+// kind, the config record holding clientSecret, and the `hooked` agent on a
+// fresh provider row against fake.
+func installSignedAgentBundle(t *testing.T, ds *dataset, fake *fakeLLM, clientSecret string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "sighookllm",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-sighookllm"},
+	}); err != nil {
+		t.Fatalf("put llm/provider row: %v", err)
+	}
+	docs := []map[string]any{
+		vocabulary.PackageManifest(sigBundlePackage, 0),
+		vocabulary.BundleManifest(sigBundlePackage, map[string]any{
+			"description": "an agent behind a signed webhook",
+			"inputs":      map[string]any{"client": map[string]any{"kind": sigBundlePackage + "/sigconfig"}},
+			"installs":    []any{sigBundlePackage + "/sigconfig", sigBundlePackage + "/hooked"},
+			"oauth2": map[string]any{
+				"clientInput":           "client",
+				"authorizationEndpoint": "https://provider.example/authorize",
+				"tokenEndpoint":         "https://provider.example/token",
+			},
+		}),
+		vocabulary.KindManifest(sigBundlePackage,
+			map[string]any{"singular": "sigconfig"},
+			map[string]any{
+				"traits": []any{"substrate.reamde.dev/core/oauth2"},
+				"properties": map[string]any{
+					"authorizationEndpoint": map[string]any{"type": "url"},
+					"tokenEndpoint":         map[string]any{"type": "url"},
+					"clientId":              map[string]any{"type": "string"},
+					"clientSecret":          map[string]any{"type": "secret"},
+				},
+			}),
+		vocabulary.AgentManifest(sigBundlePackage, "hooked", map[string]any{
+			"description": "reads a signed delivery", "prompt": "You read deliveries.",
+			"provider": "sighookllm", "model": "sighook",
+		}),
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		t.Fatalf("install the signed agent bundle: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: sigBundlePackage + "/sigconfig", ID: "default",
+		Properties: map[string]any{"clientId": "client-1", "clientSecret": clientSecret},
+	}); err != nil {
+		t.Fatalf("put the client record: %v", err)
+	}
+}
+
+// agentSignature is a hex, millisecond-stamped `{timestamp}{body}` scheme
+// under the callable's bundle's OAuth client secret, WHOOP's minus its
+// base64.
+func agentSignature() map[string]any {
+	return map[string]any{
+		"algorithm": "hmac-sha256", "signatureHeader": "x-agent-signature", "timestampHeader": "x-agent-timestamp",
+		"message": "{timestamp}{body}", "encoding": "hex", "secret": "oauthClientSecret",
+	}
+}
+
+// agentSignedHook is a JSON request signed under secret now.
+func agentSignedHook(body, secret string) substrate.WebhookRequest {
+	stamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(stamp + body))
+	return substrate.WebhookRequest{
+		Method: "POST", ContentType: "application/json",
+		Headers: map[string]string{
+			"content-type": "application/json", "x-agent-timestamp": stamp,
+			"x-agent-signature": hex.EncodeToString(mac.Sum(nil)),
+		},
+		Body: []byte(body),
+	}
+}
+
+// A declared signature in front of an agent callable resolves
+// `oauthClientSecret` through the agent's own package, at write time and at
+// the door, and holds a stored request to it before the loop runs. On a
+// package with no oauth2 block the declaration never lands. At the door a
+// request under another secret is refused and one under the client secret
+// runs the agent. A request stored before the trigger declared the
+// signature is checked on its retry: the one the client secret signed runs,
+// and a forged one parks naming the signature without a model turn.
+func TestAnAgentWebhookChecksItsBundlesClientSecret(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	const clientSecret = "the-client-secret"
+	installSignedAgentBundle(t, ds, fake, clientSecret)
+	hooked := vocabulary.RecordPath(kindAgent, sigBundlePackage+"/hooked")
+	authority := testdb.Repository(t)
+
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"source":   map[string]any{"webhook": map[string]any{"signature": agentSignature()}},
+			"callable": vocabulary.RecordPath(kindAgent, crewPackage+"/keeper"),
+		},
+	}); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "declares no oauth2 block") {
+		t.Fatalf("oauthClientSecret on an agent whose package has no oauth2 block: err = %v, want refused", err)
+	}
+
+	door := putWebhookTrigger(t, ds, hooked, map[string]any{"signature": agentSignature()})
+	if _, err := ds.svc.receiveWebhook(ctx, authority, door, "", agentSignedHook(`{"n":"forged"}`, "not-the-client-secret"), webhookFireInline); !errors.Is(err, substrate.ErrNotFound) || !strings.Contains(err.Error(), "signature does not match") {
+		t.Fatalf("a request under another secret: err = %v, want refused, signature does not match", err)
+	}
+	if n := threadCountOf(t, ds, sigBundlePackage+"/hooked"); n != 0 {
+		t.Fatalf("the refused request opened %d threads", n)
+	}
+	fake.script("sighook", fakeTurn{content: "read it"})
+	if _, err := ds.svc.receiveWebhook(ctx, authority, door, "", agentSignedHook(`{"n":"signed"}`, clientSecret), webhookFireInline); err != nil {
+		t.Fatalf("a request under the client secret: %v", err)
+	}
+	if n := threadCountOf(t, ds, sigBundlePackage+"/hooked"); n != 1 {
+		t.Fatalf("the signed request opened %d threads, want 1", n)
+	}
+	if left, err := ds.TriggerFailures(ctx, door); err != nil || len(left) != 0 {
+		t.Fatalf("the signed delivery left %+v (%v)", left, err)
+	}
+
+	kept := []any{"x-agent-signature", "x-agent-timestamp"}
+	later := putWebhookTrigger(t, ds, hooked, map[string]any{"headers": kept})
+	signed, err := ds.svc.receiveWebhook(ctx, authority, later, "", agentSignedHook(`{"n":"stored-signed"}`, clientSecret), webhookFireHeld)
+	if err != nil {
+		t.Fatalf("receive the stored signed request: %v", err)
+	}
+	forged, err := ds.svc.receiveWebhook(ctx, authority, later, "", agentSignedHook(`{"n":"stored-forged"}`, "not-the-client-secret"), webhookFireHeld)
+	if err != nil {
+		t.Fatalf("receive the stored forged request: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger, ID: later,
+		Properties: map[string]any{
+			"source":   map[string]any{"webhook": map[string]any{"headers": kept, "signature": agentSignature()}},
+			"callable": hooked,
+		},
+	}); err != nil {
+		t.Fatalf("declare the signature: %v", err)
+	}
+	rows, err := ds.TriggerFailures(ctx, later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byFire := map[string]int64{}
+	for _, r := range rows {
+		byFire[r.FireID] = r.ID
+	}
+	if _, err := ds.RetryTriggerFailure(ctx, later, byFire[forged]); !errors.Is(err, substrate.ErrParked) || !strings.Contains(err.Error(), "signature does not match") {
+		t.Fatalf("the stored forged request: err = %v, want parked, signature does not match", err)
+	}
+	if n := threadCountOf(t, ds, sigBundlePackage+"/hooked"); n != 1 {
+		t.Fatalf("the forged stored request opened a thread: %d, want 1", n)
+	}
+	fake.script("sighook", fakeTurn{content: "read the stored one"})
+	if _, err := ds.RetryTriggerFailure(ctx, later, byFire[signed]); err != nil {
+		t.Fatalf("the stored signed request: %v", err)
+	}
+	if n := threadCountOf(t, ds, sigBundlePackage+"/hooked"); n != 2 {
+		t.Fatalf("the stored signed request opened %d threads in all, want 2", n)
 	}
 }
