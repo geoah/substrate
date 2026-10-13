@@ -18,6 +18,8 @@
  * held to the engine's own answers by `units.prints.json`. The console does
  * not judge such a code: whether it belongs to a measure is the server's. */
 
+import { durationWords } from "@/lib/observations-time"
+
 import table from "./units.table.json"
 
 export interface Measure {
@@ -504,6 +506,32 @@ export function withSymbol(head: string, unit: string): string {
   return `${head} ${symbol}`
 }
 
+/** Each time unit a reader takes in hours and minutes, by its length. A
+ * millisecond is not among them: a heart's variability reads in ms. */
+const TIME_UNITS: Record<string, number> = {
+  s: 1000,
+  min: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+}
+
+/** A time of a minute or more in a time unit, in words, the way a
+ * duration property reads (`4h 42m 36s` for `282.6 min`); undefined for
+ * any other unit, a negative time, or one under a minute, which reads as
+ * its digits (`0.35 s`). */
+export function timeWords(digits: string, unit: string): string | undefined {
+  if (!isTimeUnit(unit)) return undefined
+  const per = TIME_UNITS[unit]
+  const ms = Number(digits) * per
+  if (!Number.isFinite(ms) || ms < 60_000) return undefined
+  return durationWords(ms)
+}
+
+/** Whether a unit's times read in hours and minutes (`timeWords`). */
+export function isTimeUnit(unit: string): boolean {
+  return Object.hasOwn(TIME_UNITS, unit)
+}
+
 /** Decimal digits with the whole part in groups of three, as a count is
  * shown: `18194.61` is `18,194.61`, `-1234` is `-1,234`. Digits of any
  * other shape come back as they are. */
@@ -544,15 +572,19 @@ export const DISPLAY_PLACES = 2
 
 /** A stored value as a reader sees it outside Technical details: the
  * digits to `places` (`DISPLAY_PLACES` by default), grouped in threes,
- * with the unit's print symbol, `97.18 %`, `18,194.61 m`; the stored digits
- * stay on hover. Not a quantity: "". */
+ * with the unit's print symbol, `97.18 %`, `18,194.61 m`, and a time of a
+ * minute or more in words (`timeWords`); the stored digits stay on hover.
+ * Not a quantity: "". */
 export function displayQuantity(
   value: unknown,
   places: number = DISPLAY_PLACES
 ): string {
   if (!isQuantity(value)) return ""
+  const comparator = value.comparator ?? ""
+  const time = timeWords(value.value, value.unit)
+  if (time) return `${comparator}${time}`
   const digits = groupDigits(roundDigits(value.value, places))
-  return withSymbol(`${value.comparator ?? ""}${digits}`, value.unit)
+  return withSymbol(`${comparator}${digits}`, value.unit)
 }
 
 /** A stored value as the exact text an editor holds, the unit as its code so

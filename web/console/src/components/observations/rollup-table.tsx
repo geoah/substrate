@@ -28,7 +28,7 @@ import {
   windowWords,
 } from "@/lib/observations-time"
 import { namedSources, rollupText, rowValue } from "@/lib/observations-answer"
-import { unitSymbol } from "@/lib/units"
+import { isTimeUnit, unitSymbol } from "@/lib/units"
 import { cn } from "@/lib/utils"
 
 /** The rows the box shows before it scrolls, and the head's and a row's
@@ -53,7 +53,8 @@ const GROUP_WORDS: Record<AggregateGroupKey, string> = {
   statistic: "Statistic",
 }
 
-/** A reducer's column head: its words, and the unit its values carry. */
+/** A reducer's column head: its words, and the unit its values carry,
+ * unless they are times its cells say in hours and minutes. */
 function headOf(
   reducer: AggregateReducer,
   rows: readonly AggregateRow[]
@@ -62,7 +63,7 @@ function headOf(
   const unit = rows
     .map((row) => rowValue(row, key)?.unit)
     .find((u): u is string => Boolean(u))
-  const symbol = unit ? unitSymbol(unit) : ""
+  const symbol = unit && !isTimeUnit(unit) ? unitSymbol(unit) : ""
   return symbol ? `${reducerLabel(reducer)} (${symbol})` : reducerLabel(reducer)
 }
 

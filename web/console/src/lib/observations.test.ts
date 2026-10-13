@@ -225,6 +225,9 @@ describe("forms and reducers", () => {
     expect(roundDigits("72.40", 2)).toBe("72.40")
     expect(roundDigits("9812", 0)).toBe("9812")
     expect(readingText("160.011509893784", "[lb_av]", 1)).toBe("160.0 lb")
+    // A tooltip's stage minutes read as a sleep's page reads them.
+    expect(readingText("282.6", "min", 2)).toBe("4h 42m 36s")
+    expect(readingText("61200", "{steps}", 0)).toBe("61,200 steps")
     // Half up on the digits themselves, which a binary float is not.
     expect(roundDigits("1.005", 2)).toBe("1.01")
     expect(roundDigits("2.675", 2)).toBe("2.68")

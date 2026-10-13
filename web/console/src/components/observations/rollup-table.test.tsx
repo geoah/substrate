@@ -71,6 +71,29 @@ describe("the rollup table", () => {
     expect(cells).toContain("22h 25m")
   })
 
+  it("says a stage's minutes in hours and minutes, under a head with no unit", () => {
+    render(
+      <RollupTable
+        rows={[
+          {
+            ...day(0, "0"),
+            values: [{ reducer: "sum", value: "257.73", unit: "min" }],
+          },
+        ]}
+        reducers={["sum"]}
+        groupCell={() => null}
+        sourceText={(s) => s}
+        label="Sleep stage in numbers"
+        precision={2}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Show the numbers" }))
+    expect(screen.getAllByRole("cell").map((c) => c.textContent)).toContain(
+      "4h 17m 44s"
+    )
+    expect(screen.getByRole("columnheader", { name: "Total" })).toBeTruthy()
+  })
+
   it("holds every row of a short table, and scrolls a long one", () => {
     const ten = table(Array.from({ length: 10 }, (_, i) => day(i, "8000")))
     expect(ten.style.maxHeight).toBe("")

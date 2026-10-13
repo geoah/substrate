@@ -104,6 +104,14 @@ describe("the unit table", () => {
     expect(displayQuantity({ value: "12008", unit: "kJ" }, 0)).toBe("12,008 kJ")
   })
 
+  it("says a time of a minute or more in hours and minutes", () => {
+    expect(displayQuantity({ value: "282.6", unit: "min" })).toBe("4h 42m 36s")
+    expect(displayQuantity({ value: "21.08", unit: "min" })).toBe("21m 5s")
+    // Under a minute, and a heart's variability in ms, read as digits.
+    expect(displayQuantity({ value: "0.35", unit: "s" })).toBe("0.35 s")
+    expect(displayQuantity({ value: "62", unit: "ms" })).toBe("62 ms")
+  })
+
   it("labels a unit by its symbol with the code beside it where they differ", () => {
     expect(unitLabel("Cel")).toBe("°C (Cel)")
     expect(unitLabel("kg")).toBe("kg")

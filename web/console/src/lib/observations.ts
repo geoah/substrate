@@ -28,6 +28,7 @@ import {
   formatQuantity,
   groupDigits,
   roundDigits,
+  timeWords,
   withSymbol,
 } from "@/lib/units"
 
@@ -245,13 +246,16 @@ export function codeWords(code: string): string {
 
 /** A reading as text, for a tooltip line or a table cell: the digits in
  * groups of three and the unit's print symbol, the digits alone where no
- * unit came, and "no reading" where there is none. */
+ * unit came, a time of a minute or more in words (`4h 42m 36s`), and "no
+ * reading" where there is none. */
 export function readingText(
   value: string | null | undefined,
   unit?: string,
   precision?: number
 ): string {
   if (value === null || value === undefined) return "no reading"
+  const time = unit ? timeWords(value, unit) : undefined
+  if (time) return time
   const shown = precision === undefined ? value : roundDigits(value, precision)
   const digits = groupDigits(shown)
   return unit && formatQuantity({ value: shown, unit })
