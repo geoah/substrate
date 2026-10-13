@@ -92,7 +92,8 @@ func (s Span) Contains(d Date) bool { return !d.Before(s.Start) && !d.After(s.En
 
 // Options shape a Persona. The zero value is Ada's default life: 90 days
 // ending 2026-10-11, Athens, a cold in late August and a trip to London in
-// September.
+// September. A range of other days keeps the cold and the trip where it
+// holds a day of them.
 type Options struct {
 	Start, End Date
 	Seed       string
@@ -129,7 +130,9 @@ func DefaultOptions() Options {
 	}
 }
 
-// Persona is one person's deterministic life over a date range.
+// Persona is one person's deterministic life over a date range. It caches
+// the days it builds and is not safe for concurrent use: build one per
+// goroutine, as every emitter and test here does.
 type Persona struct {
 	Options Options
 	Person  Person
@@ -153,10 +156,13 @@ func NewPersona(o Options) (*Persona, error) {
 	if o.HomeZone == "" {
 		o.HomeZone = def.HomeZone
 	}
-	if o.Trip == nil && o.Start == def.Start && o.End == def.End {
+	// The default trip and cold belong to every range that holds a day of
+	// them, so a month cut from the default life is the same month.
+	inRange := func(s *Span) bool { return !s.End.Before(o.Start) && !s.Start.After(o.End) }
+	if o.Trip == nil && inRange(def.Trip) {
 		o.Trip = def.Trip
 	}
-	if o.Illness == nil && o.Start == def.Start && o.End == def.End {
+	if o.Illness == nil && inRange(def.Illness) {
 		o.Illness = def.Illness
 	}
 	if o.End.Before(o.Start) {

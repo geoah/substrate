@@ -130,7 +130,22 @@ func TestPersonaOptions(t *testing.T) {
 		t.Fatalf("%d days, want 3", n)
 	}
 	if p.Options.Trip != nil || p.Options.Illness != nil {
-		t.Fatal("a custom range took the default trip or illness")
+		t.Fatal("a range outside the default trip and illness took them")
+	}
+	// A range that holds the default trip or illness keeps it.
+	sept, err := NewPersona(Options{Start: NewDate(2026, time.September, 1), End: NewDate(2026, time.September, 30)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sept.Trip(NewDate(2026, time.September, 22)) || sept.Day(NewDate(2026, time.September, 22)).Zone.String() != "Europe/London" {
+		t.Error("a September range dropped the London trip it holds")
+	}
+	aug, err := NewPersona(Options{Start: NewDate(2026, time.August, 28), End: NewDate(2026, time.September, 4)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !aug.Ill(NewDate(2026, time.August, 28)) || aug.Trip(NewDate(2026, time.September, 22)) {
+		t.Error("a range that holds the end of the cold dropped it, or took a trip it does not hold")
 	}
 	if z := p.Day(NewDate(2026, time.March, 2)).Zone.String(); z != "America/New_York" {
 		t.Fatalf("zone %s", z)
