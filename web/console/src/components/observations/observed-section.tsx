@@ -379,27 +379,53 @@ function Sparkline({
 }) {
   const { ref, width } = useWidth(640)
   const [active, setActive] = useState<number | null>(null)
-  const numbers = points.map((p) => numberOf(p.value))
-  const { domain } = niceDomain(
-    numbers.filter((n): n is number => n !== null),
-    { zero: bars, count: 2 }
-  )
-  const x = linearScale(
-    [window.start, Math.max(window.end, window.start + 1)],
-    [SPARK_PAD, width - SPARK_PAD]
-  )
-  const y = linearScale(domain, [SPARK_H - SPARK_PAD, SPARK_PAD])
-  const line = breakAtGaps(points, holdMs).map((p) => {
-    const n = p ? numberOf(p.value) : null
-    return p && n !== null ? { x: x(p.at), y: y(n) } : null
-  })
-  const base = y(Math.max(domain[0], 0))
+  // Laid out once per trace and width: a hover moves the marker alone.
+  const { start, end } = window
+  const {
+    xs,
+    y,
+    path,
+    bars: barPaths,
+    base,
+  } = useMemo(() => {
+    const numbers = points.map((p) => numberOf(p.value))
+    const { domain } = niceDomain(
+      numbers.filter((n): n is number => n !== null),
+      { zero: bars, count: 2 }
+    )
+    const x = linearScale(
+      [start, Math.max(end, start + 1)],
+      [SPARK_PAD, width - SPARK_PAD]
+    )
+    const y = linearScale(domain, [SPARK_H - SPARK_PAD, SPARK_PAD])
+    const base = y(Math.max(domain[0], 0))
+    return {
+      xs: points.map((p) => x(p.at)),
+      y,
+      base,
+      path: bars
+        ? ""
+        : linePath(
+            breakAtGaps(points, holdMs).map((p) => {
+              const n = p ? numberOf(p.value) : null
+              return p && n !== null ? { x: x(p.at), y: y(n) } : null
+            })
+          ),
+      bars: bars
+        ? numbers.map((n, i) =>
+            n === null
+              ? null
+              : barPath(x(points[i].at) - 1.5, 3, base, y(n), 1.5)
+          )
+        : [],
+    }
+  }, [points, start, end, width, holdMs, bars])
 
   function nearest(px: number): number {
     let best = 0
     let gap = Infinity
-    points.forEach((p, i) => {
-      const d = Math.abs(x(p.at) - px)
+    xs.forEach((at, i) => {
+      const d = Math.abs(at - px)
       if (d < gap) {
         gap = d
         best = i
@@ -460,18 +486,12 @@ function Sparkline({
             shapeRendering="crispEdges"
           />
           {bars ? (
-            numbers.map((n, i) =>
-              n === null ? null : (
-                <path
-                  key={i}
-                  d={barPath(x(points[i].at) - 1.5, 3, base, y(n), 1.5)}
-                  fill="var(--series-1)"
-                />
-              )
+            barPaths.map((d, i) =>
+              d === null ? null : <path key={i} d={d} fill="var(--series-1)" />
             )
           ) : (
             <path
-              d={linePath(line)}
+              d={path}
               fill="none"
               stroke="var(--series-1)"
               strokeWidth={2}
@@ -482,14 +502,14 @@ function Sparkline({
           {picked && numberOf(picked.value) !== null && (
             <>
               <line
-                x1={x(picked.at)}
-                x2={x(picked.at)}
+                x1={xs[active!]}
+                x2={xs[active!]}
                 y1={SPARK_PAD}
                 y2={SPARK_H - SPARK_PAD}
                 stroke="var(--border-strong)"
               />
               <circle
-                cx={x(picked.at)}
+                cx={xs[active!]}
                 cy={y(numberOf(picked.value)!)}
                 r={4}
                 fill="var(--series-1)"
