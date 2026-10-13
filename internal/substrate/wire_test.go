@@ -189,6 +189,11 @@ var wireTypes = map[string]any{
 	"TriggerRan":      TriggerRan{},
 	"FunctionCalled":  FunctionCalled{},
 	"WebhookAccepted": WebhookAccepted{},
+	// The unit table route and one conversion (GET /units, /units/convert).
+	"UnitTable":      UnitTable{},
+	"UnitMeasure":    UnitMeasure{},
+	"UnitCode":       UnitCode{},
+	"UnitConversion": UnitConversion{},
 }
 
 // wireFields maps the wire names a struct serializes to whether each is

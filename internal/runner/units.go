@@ -13,7 +13,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/big"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -85,36 +84,15 @@ func unitCode(call hostCall) (string, error) {
 }
 
 // convertUnits converts exact digits between two units, read through the
-// aliases a writer may send (`°C`, `kWh`). Without a measure, both units are
-// read the way MeasureOf reads them (Cel to [degF] is an absolute
-// temperature); `measure` names the one to convert in
-// (`temperature-difference` for a deviation). The answer is every digit when
-// the value has a finite decimal expansion, else ConvertedDigits significant
-// digits with `exact: false`. The value holds at most
-// vocabulary.MaxQuantityDigits digits, refused by name before any arithmetic.
+// aliases a writer may send (`°C`, `kWh`), as vocabulary.ConvertDigits does:
+// every digit when the value has a finite decimal expansion, else
+// ConvertedDigits significant digits with `exact: false`. The value holds at
+// most vocabulary.MaxQuantityDigits digits, refused by name before any
+// arithmetic.
 func convertUnits(value, from, to, measure string) (map[string]any, error) {
-	digits, err := vocabulary.QuantityDigits(value)
-	if err != nil {
-		return nil, fmt.Errorf("%s: value: %w", hostUnitsConvert, err)
-	}
-	fromCode, err := vocabulary.CanonicalUnit(from)
-	if err != nil {
-		return nil, fmt.Errorf("%s: from: %w", hostUnitsConvert, err)
-	}
-	toCode, err := vocabulary.CanonicalUnit(to)
-	if err != nil {
-		return nil, fmt.Errorf("%s: to: %w", hostUnitsConvert, err)
-	}
-	v, _ := new(big.Rat).SetString(digits)
-	var r *big.Rat
-	if measure != "" {
-		r, err = vocabulary.ConvertIn(measure, v, fromCode, toCode)
-	} else {
-		r, err = vocabulary.Convert(v, fromCode, toCode)
-	}
+	c, err := vocabulary.ConvertDigits(value, from, to, measure)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", hostUnitsConvert, err)
 	}
-	out, exact := vocabulary.RatDecimal(r, vocabulary.ConvertedDigits)
-	return map[string]any{"value": out, "unit": toCode, "exact": exact}, nil
+	return map[string]any{"value": c.Value, "unit": c.Unit, "exact": c.Exact}, nil
 }

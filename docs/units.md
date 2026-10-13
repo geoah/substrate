@@ -20,6 +20,9 @@ Each factor is exact, a rational number: a value converts to the measure's base 
 level, an arbitrary unit, and `rad`, which is 180/pi degrees. Such a code converts
 to nothing but itself.
 
+`GET /api/v1/units` serves this table with each code's exact factor, and
+`GET /api/v1/units/convert` converts one value ([the API](api.md#the-unit-table)).
+
 Unit codes are from UCUM 2.2, copyright Regenstrief Institute, Inc., used under the
 UCUM license. `dBm` is the substrate's own code; UCUM has no spelling for it.
 

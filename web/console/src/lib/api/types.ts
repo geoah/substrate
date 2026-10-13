@@ -1329,3 +1329,51 @@ export interface BundleUninstalled {
 export interface BundlePurged {
   purged: number
 }
+
+/** `GET /api/v1/units` (`substrate.UnitTable`): the engine's unit table, every
+ * measure with its listed codes, and the input aliases a write reads. */
+export interface UnitTable {
+  measures: UnitMeasure[]
+  /** Each spelling a write reads (`°C`, `bpm`) and the code it stores. */
+  aliases: Record<string, string>
+}
+
+/** One measure of the unit table (`substrate.UnitMeasure`). */
+export interface UnitMeasure {
+  name: string
+  /** The code every factor converts to; empty for `arbitrary`. */
+  base: string
+  /** `ratio`, `affine`, `difference`, `logarithmic`, `arbitrary` or `count`. */
+  scale: string
+  display: string
+  /** Over L M T I Θ N J A B, "1" for a dimensionless measure, empty for a
+   * level or an arbitrary unit. */
+  dimension: string
+  note?: string
+  units: UnitCode[]
+}
+
+/** One listed code (`substrate.UnitCode`): base = value x factor + offset. */
+export interface UnitCode {
+  code: string
+  /** The symbol a title shows, empty for `1`. */
+  print: string
+  /** The exact rational to the base (`45359237/100000000`); absent where no
+   * rational number states it (a level, an arbitrary unit, rad). */
+  factor?: string
+  /** An absolute temperature's zero in the base, absent where zero. */
+  offset?: string
+}
+
+/** `GET /api/v1/units/convert` (`substrate.UnitConversion`): one value
+ * converted exactly. */
+export interface UnitConversion {
+  /** Every digit where the result has a finite decimal expansion, else 20
+   * significant digits. */
+  value: string
+  unit: string
+  /** The measure the value converted in. */
+  measure: string
+  /** False where `value` was rounded. */
+  exact: boolean
+}

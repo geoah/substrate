@@ -221,6 +221,8 @@ func renderUnitsPage(t *testing.T) []byte {
 	w("`value x factor + offset`. \"none\" marks a code no rational factor reaches: a\n")
 	w("level, an arbitrary unit, and `rad`, which is 180/pi degrees. Such a code converts\n")
 	w("to nothing but itself.\n\n")
+	w("`GET /api/v1/units` serves this table with each code's exact factor, and\n")
+	w("`GET /api/v1/units/convert` converts one value ([the API](api.md#the-unit-table)).\n\n")
 	w("Unit codes are from UCUM 2.2, copyright Regenstrief Institute, Inc., used under the\n")
 	w("UCUM license. `dBm` is the substrate's own code; UCUM has no spelling for it.\n\n")
 

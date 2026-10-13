@@ -721,25 +721,79 @@ func orList(names []string) string {
 // The two codes are read the same way whichever comes first: where one alone is
 // ambiguous (J/s is a power or an apparent power), the other's measure decides.
 func Convert(v *big.Rat, from, to string) (*big.Rat, error) {
+	measure, err := ConversionMeasure(from, to)
+	if err != nil {
+		return nil, err
+	}
+	return ConvertIn(measure, v, from, to)
+}
+
+// ConversionMeasure names the measure Convert converts two codes in.
+func ConversionMeasure(from, to string) (string, error) {
 	mf, errFrom := MeasureOf(from)
 	if errFrom == nil {
 		if _, err := ResolveMeasure(to, mf.Name); err == nil {
-			return ConvertIn(mf.Name, v, from, to)
+			return mf.Name, nil
 		}
 	}
 	mt, errTo := MeasureOf(to)
 	if errTo == nil {
 		if _, err := ResolveMeasure(from, mt.Name); err == nil {
-			return ConvertIn(mt.Name, v, from, to)
+			return mt.Name, nil
 		}
 	}
 	switch {
 	case errFrom != nil:
-		return nil, errFrom
+		return "", errFrom
 	case errTo != nil:
-		return nil, errTo
+		return "", errTo
 	}
-	return nil, fmt.Errorf("%s is %s and %s is %s: a value converts only inside one measure", from, mf.Name, to, mt.Name)
+	return "", fmt.Errorf("%s is %s and %s is %s: a value converts only inside one measure", from, mf.Name, to, mt.Name)
+}
+
+// Conversion is one value ConvertDigits converted.
+type Conversion struct {
+	// Value is the converted digits: every one where the result has a finite
+	// decimal expansion, else ConvertedDigits significant digits.
+	Value string
+	// Unit is the code converted to.
+	Unit string
+	// Measure is the measure the value converted in.
+	Measure string
+	// Exact is false where Value was rounded.
+	Exact bool
+}
+
+// ConvertDigits converts a value written as exact digits (QuantityDigits)
+// between two unit spellings, each read through the aliases (`°C`, `kWh`).
+// Without a measure the two codes are read as Convert reads them; a measure
+// names the one to convert in (`temperature-difference` for a deviation). A
+// refusal names the input it refuses: value, from, to or the conversion.
+func ConvertDigits(value, from, to, measure string) (Conversion, error) {
+	digits, err := QuantityDigits(value)
+	if err != nil {
+		return Conversion{}, fmt.Errorf("value: %w", err)
+	}
+	fromCode, err := CanonicalUnit(from)
+	if err != nil {
+		return Conversion{}, fmt.Errorf("from: %w", err)
+	}
+	toCode, err := CanonicalUnit(to)
+	if err != nil {
+		return Conversion{}, fmt.Errorf("to: %w", err)
+	}
+	if measure == "" {
+		if measure, err = ConversionMeasure(fromCode, toCode); err != nil {
+			return Conversion{}, err
+		}
+	}
+	v, _ := new(big.Rat).SetString(digits)
+	r, err := ConvertIn(measure, v, fromCode, toCode)
+	if err != nil {
+		return Conversion{}, err
+	}
+	out, exact := RatDecimal(r, ConvertedDigits)
+	return Conversion{Value: out, Unit: toCode, Measure: measure, Exact: exact}, nil
 }
 
 // ConvertIn converts a value between two codes of the named measure, exactly:

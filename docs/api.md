@@ -1436,6 +1436,36 @@ what is built in these points, each for a stated reason:
 - `exact` is `false` whenever a float64 reduction was involved, so an `avg`
   is never exact.
 
+## The unit table
+
+`GET /api/v1/units` answers the engine's [unit table](units.md), the one a
+write holds a quantity to: every measure (`name`, `base`, `scale`, `display`,
+`dimension`, `note`) with the codes it lists, each code's `print` symbol and
+its exact rational `factor` to the base, an absolute temperature's `offset`,
+and the `aliases` a write reads. A code no rational number converts (a level,
+an arbitrary unit, `rad`) has no `factor`. The route takes no parameter.
+
+`GET /api/v1/units/convert` converts one value exactly, as `host.units.convert`
+does in a function. `value` is exact digits, at most 1000 of them; `from` and
+`to` are codes or aliases, percent-encoded in the query (`%5Blb_av%5D` for
+`[lb_av]`); and `measure`, optional, names the measure to convert in where the
+units' own reading is not meant (`temperature-difference` for a deviation):
+
+```http
+GET /api/v1/units/convert?value=72.4&from=kg&to=%5Blb_av%5D
+```
+
+```json
+{"value": "159.61467782185136844", "unit": "[lb_av]", "measure": "mass", "exact": false}
+```
+
+`value` is every digit where the result has a finite decimal expansion, else
+20 significant digits with `exact: false`. A missing parameter or an unknown
+one is `400 bad_request`; a value, a unit or a pair of units the table refuses
+(`kg` to `J`, `mmol/mol` to `%`) is `422 validation` carrying the table's
+reason. Neither route reads the repository; the token gates them as it gates
+every route under `/api/v1`.
+
 ## Actors
 
 Every write is attributed to an **actor**: what wrote the record. The domain is
