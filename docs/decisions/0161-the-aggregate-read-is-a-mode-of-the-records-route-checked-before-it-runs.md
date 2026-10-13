@@ -70,7 +70,8 @@ Chosen: a mode of the records route.
   does not change with the bucket width. `priority` weighs the higher
   sources' amounts and summaries around the read's windows too, so a total
   does not change with where the range starts either, and under `priority`
-  and `summaries` the one-statistic rule holds per source and per row.
+  and `summaries` the one-statistic rule holds per source, per row and per
+  rolling window.
 - **Records' source policy.** The records mode's windows and the property
   read's records are records several sources write of one night or one run.
   `bucket.records.sources` and `property.sources` (`separate` by default, or

@@ -102,8 +102,10 @@ type aggGroup struct {
 	rollups bool
 	// mixedStatistics says the group's sources hold different statistics,
 	// one each, which the priority and summaries policies admit
-	// (checkStatistics) and each row holds to one (rowStatistic).
+	// (checkStatistics) and each row and rolling value holds to one
+	// (rowStatistic, roll). statisticAt is where the read names one.
 	mixedStatistics bool
+	statisticAt     string
 	// context are the streams of the group's key and form that hold points
 	// only outside the read's windows, which the priority policy weighs and
 	// never places (priorityContext).
@@ -1519,7 +1521,7 @@ func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 						source, andList(own), p.statisticPath(), split)
 				}
 			}
-			g.mixedStatistics = true
+			g.mixedStatistics, g.statisticAt = true, p.statisticPath()
 		case len(stats) > 1:
 			return refuse(p.at, "the summaries from %s hold the statistics %s, and a row reads one; name it with %s%s",
 				strings.Join(sources, ", "), andList(stats), p.statisticPath(), split)

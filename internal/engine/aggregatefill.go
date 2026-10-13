@@ -6,10 +6,13 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -77,6 +80,9 @@ func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*agg
 					Synthetic: true, NonAdditive: template.row.NonAdditive,
 				}}
 				made.row.Values = p.filled(template, prev)
+				if p.fill == substrate.FillLOCF && prev != nil {
+					made.stat = prev.stat
+				}
 				o = &made
 			}
 			if o == nil {
@@ -171,7 +177,9 @@ func (p *aggPlan) filled(template, prev *aggOut) []substrate.AggregateValue {
 // (localBuckets), so the bucket weighs once. A window value is matched by
 // its reducer and code, and a null one is skipped; n says how many places
 // held one. A row's window is up to the cap's buckets long, so the context
-// is checked before each row.
+// is checked before each row. Where a group's sources hold different
+// statistics, a window whose values come from rows of two is refused, as a
+// row taking two is (rowStatistic).
 func (p *aggPlan) roll(ctx context.Context, rows []aggOut, buckets []*aggBucket, meta *aggMeta) error {
 	pos := positions(buckets)
 	n := p.rolling.Buckets
@@ -183,16 +191,54 @@ func (p *aggPlan) roll(ctx context.Context, rows []aggOut, buckets []*aggBucket,
 	type series struct {
 		rows []int
 		// at is each place's values, and whole whether a lookback row set
-		// them.
-		at    map[int]map[key]float64
-		whole map[int]bool
+		// them; stat and sources are the statistic and the sources of the
+		// row that set them, kept where the group mixes statistics.
+		at      map[int]map[key]float64
+		whole   map[int]bool
+		stat    map[int]string
+		sources map[int][]string
+	}
+	split := ""
+	if p.source == substrate.AggregateFromSummaries {
+		split = ", or split the series with groupBy statistic"
+	}
+	// mixed refuses a window whose values of k, from place first to last,
+	// come from rows of two statistics, naming each one's sources.
+	mixed := func(o aggOut, s *series, k key, first, last int) error {
+		if !o.group.mixedStatistics {
+			return nil
+		}
+		by := map[string][]string{}
+		for place := first; place <= last; place++ {
+			st := s.stat[place]
+			if _, ok := s.at[place][k]; !ok || st == "" {
+				continue
+			}
+			if _, ok := by[st]; !ok {
+				by[st] = []string{}
+			}
+			for _, src := range s.sources[place] {
+				if !slices.Contains(by[st], src) {
+					by[st] = append(by[st], src)
+				}
+			}
+		}
+		if len(by) < 2 {
+			return nil
+		}
+		var parts []string
+		for _, st := range sortedKeys(by) {
+			parts = append(parts, fmt.Sprintf("%s from %s", orNoStatistic(st), strings.Join(by[st], ", ")))
+		}
+		return refuse("aggregate.rolling", "the window of the row from %s to %s takes the summaries %s, and a rolling value reads one statistic; name one with %s%s",
+			o.row.Start.Format(time.RFC3339), o.row.End.Format(time.RFC3339), andList(parts), o.group.statisticAt, split)
 	}
 	bySeries := map[string]*series{}
 	for i, o := range rows {
 		k := o.group.sortKey + "\x1e" + o.code
 		s := bySeries[k]
 		if s == nil {
-			s = &series{at: map[int]map[key]float64{}, whole: map[int]bool{}}
+			s = &series{at: map[int]map[key]float64{}, whole: map[int]bool{}, stat: map[int]string{}, sources: map[int][]string{}}
 			bySeries[k] = s
 		}
 		s.rows = append(s.rows, i)
@@ -210,6 +256,9 @@ func (p *aggPlan) roll(ctx context.Context, rows []aggOut, buckets []*aggBucket,
 			}
 		}
 		s.at[place], s.whole[place] = values, lookback
+		if o.group.mixedStatistics {
+			s.stat[place], s.sources[place] = o.stat, o.row.Sources
+		}
 	}
 	for _, s := range bySeries {
 		for _, i := range s.rows {
@@ -224,6 +273,9 @@ func (p *aggPlan) roll(ctx context.Context, rows []aggOut, buckets []*aggBucket,
 			base := append([]substrate.AggregateValue(nil), rows[i].row.Values...)
 			for _, v := range base {
 				of := v.Reducer
+				if err := mixed(rows[i], s, key{of.String(), v.Code}, here-last-n+1, here-last); err != nil {
+					return err
+				}
 				for _, rr := range p.rolling.Reducers {
 					var acc []float64
 					for place := here - last - n + 1; place <= here-last; place++ {

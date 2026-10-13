@@ -1440,7 +1440,13 @@ not take is a `422` naming the form: `sum does not apply to a gauge`.
   Garmin missed from WHOOP; the row's `sources` say which. A row that would
   take two statistics (a week of nights each source filled alone) is a `422`
   naming each source's statistic: read by the bucket each source fills alone,
-  or name one statistic.
+  or name one statistic. So is a `rolling` window whose values come from
+  rows of two statistics (a seven-night baseline over Garmin's and WHOOP's
+  nights), at `aggregate.rolling`; on a read from summaries,
+  `groupBy: ["statistic"]` rolls each statistic apart. Under `prefer-raw` a
+  reducer answers `null` from a summary row of another statistic, so a
+  rolling `avg` takes one statistic's values and only a rolling `count` is
+  refused.
 - Under `prefer-raw` one series holds raw rows and summary rows, so a bucket
   that falls to summaries answers a reducer only from the statistic that is
   the same quantity over raw points: `sum` from `sum`, `avg` from `avg`,

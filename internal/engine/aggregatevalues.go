@@ -16,8 +16,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// row assembles one output row from its evidence.
-func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, from string) (substrate.AggregateRow, error) {
+// row assembles one output row from its evidence, and answers the one
+// statistic a summary row reads (rowStatistic).
+func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, from string) (substrate.AggregateRow, string, error) {
 	rangeFrom, rangeTo := r.p.rangeOf(b)
 	ends := &ev.ends
 	if r.p.sharedEnds {
@@ -50,15 +51,15 @@ func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, fr
 	sort.Strings(row.Sources)
 	stat, err := r.rowStatistic(g, ev, b)
 	if err != nil {
-		return row, err
+		return row, "", err
 	}
 	if row.Values, err = r.values(ev, g, code, stat, start.Location()); err != nil {
-		return row, err
+		return row, "", err
 	}
 	if tr := traceOf(r.ctx); tr != nil {
 		tr.rows++
 	}
-	return row, nil
+	return row, stat, nil
 }
 
 // values answers every reducer over one row's evidence, in request order. A

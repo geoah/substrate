@@ -142,6 +142,9 @@ type aggOut struct {
 	group  *aggGroup
 	code   string
 	row    substrate.AggregateRow
+	// stat is the one statistic a summary row's values read (rowStatistic),
+	// a locf row's the row it copies, and "" for any other row.
+	stat string
 }
 
 // eval reduces every group of the run into its cells, raw and summary, by
@@ -194,11 +197,11 @@ func (r *aggRun) assemble(groups []*aggGroup, raws, sums []aggCells) (out []aggO
 					seen[code] = true
 					series++
 				}
-				row, err := r.row(b, g, code, ev, from)
+				row, stat, err := r.row(b, g, code, ev, from)
 				if err != nil {
 					return nil, 0, err
 				}
-				out = append(out, aggOut{bucket: bi, group: g, code: code, row: row})
+				out = append(out, aggOut{bucket: bi, group: g, code: code, row: row, stat: stat})
 			}
 		}
 	}

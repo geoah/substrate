@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -322,5 +323,89 @@ func TestAggregatePriorityFallsBackAcrossSourcesOfDifferentStatistics(t *testing
 	res, err := read("separate", []any{"avg", "vendor"}, byEnd)
 	if err != nil || len(res.Rows) != 5 {
 		t.Errorf("separate over avg and vendor: %v rows (%v), want garmin's two nights and whoop's three", rowsOf(res), err)
+	}
+}
+
+// A rolling window over nights the priority policy fills from two sources of
+// different statistics would average Garmin's `avg` with WHOOP's `vendor`,
+// which a row of both is refused for, so the window is refused the same way.
+// A window of one statistic answers: one night wide, Garmin's alone, each
+// source apart, or under prefer-raw, where a vendor night answers no avg
+// (but is counted, so a rolling count is refused there).
+func TestAggregateRollingTakesOneStatistic(t *testing.T) {
+	t.Parallel()
+	f := openAgg(t)
+	night := time.Date(2026, 9, 1, 22, 0, 0, 0, time.UTC)
+	for n, v := range []string{"60", "", "64"} {
+		if v != "" {
+			f.summary(fmt.Sprintf("garmin/avg/%d", n), "health/hrv_rmssd", "garmin", "avg", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
+		}
+	}
+	for n, v := range []string{"71", "72", "73"} {
+		f.summary(fmt.Sprintf("whoop/%d", n), "health/hrv_rmssd", "whoop", "vendor", v, "ms", night.AddDate(0, 0, n), 8*time.Hour)
+	}
+	reducer := "avg"
+	read := func(policy, from string, stats []any, buckets int) (*substrate.AggregateResult, error) {
+		sources := &substrate.AggregateSources{Policy: policy, Order: []string{"garmin", "whoop"}}
+		if policy == "separate" {
+			sources.Order = nil
+		}
+		return f.ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Filter: substrate.Filter{Properties: map[string]substrate.Cond{"statistic": {In: stats}}},
+			Aggregate: &substrate.Aggregate{
+				Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/hrv_rmssd")}, From: from,
+				Range:    rng(night.Add(-24*time.Hour), night.AddDate(0, 0, 4)),
+				Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC", Place: "end"},
+				Reducers: reducers(reducer),
+				Rolling:  &substrate.AggregateRolling{Buckets: buckets},
+				Sources:  sources,
+			},
+		})
+	}
+	both := []any{"avg", "vendor"}
+	for _, policy := range []string{"priority", "summaries"} {
+		_, err := read(policy, "summaries", both, 3)
+		if err == nil || !strings.Contains(err.Error(), "aggregate.rolling: ") || !strings.Contains(err.Error(), "avg from "+f.sourcePath("garmin")+" and vendor from "+f.sourcePath("whoop")) {
+			t.Errorf("%s, three nights of both sources: %v, want a refusal at aggregate.rolling naming each source's statistic", policy, err)
+		}
+		if _, err := read(policy, "summaries", both, 1); err != nil {
+			t.Errorf("%s, one night wide: %v", policy, err)
+		}
+	}
+	rolled := func(res *substrate.AggregateResult, day string) string {
+		for _, row := range res.Rows {
+			if row.Start.Format("01-02") != day {
+				continue
+			}
+			for _, v := range row.Values {
+				if v.Of != nil && v.Value != nil {
+					return *v.Value + " n=" + strconv.Itoa(*v.N)
+				}
+			}
+		}
+		return ""
+	}
+	for _, x := range []struct {
+		label, policy, from string
+		stats               []any
+	}{
+		{"garmin's avg alone", "priority", "summaries", []any{"avg"}},
+		{"prefer-raw", "priority", "prefer-raw", both},
+	} {
+		res, err := read(x.policy, x.from, x.stats, 3)
+		if err != nil {
+			t.Errorf("%s: %v", x.label, err)
+			continue
+		}
+		if got := rolled(res, "09-04"); got != "62 n=2" {
+			t.Errorf("%s: 09-04 rolls %q, want Garmin's 60 and 64 alone", x.label, got)
+		}
+	}
+	if res, err := read("separate", "summaries", both, 3); err != nil || len(res.Rows) != 5 {
+		t.Errorf("separate: %v rows (%v), want each source's nights rolled apart", rowsOf(res), err)
+	}
+	reducer = "count"
+	if _, err := read("priority", "prefer-raw", both, 3); err == nil || !strings.Contains(err.Error(), "aggregate.rolling: ") {
+		t.Errorf("prefer-raw, a rolling count of both sources' nights: %v, want a refusal at aggregate.rolling", err)
 	}
 }
