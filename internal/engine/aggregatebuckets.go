@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -296,14 +297,13 @@ func (ds *dataset) buckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggB
 	case bucketRange:
 		return []*aggBucket{{start: p.from, end: p.to, zone: p.from.Location()}}, nil
 	case bucketEvery:
-		k0 := floorDiv(p.from.Sub(s.origin), s.every)
-		k1 := floorDiv(p.to.Sub(s.origin)-1, s.every)
-		if n := k1 - k0 + 1; n > int64(limit) {
+		first := everyStart(p.from, s.origin, s.every)
+		// The span saturates past 292 years, which is past every budget.
+		if n := int64((p.to.Sub(first)-1)/s.every) + 1; n > int64(limit) {
 			return nil, tooMany(int(min(n, 1<<30)))
 		}
 		var out []*aggBucket
-		for k := k0; k <= k1; k++ {
-			start := s.origin.Add(time.Duration(k) * s.every)
+		for start := first; start.Before(p.to); start = start.Add(s.every) {
 			out = append(out, clipBucket(start, start.Add(s.every), p, p.from.Location()))
 		}
 		return out, nil
@@ -344,12 +344,17 @@ func clipBucket(start, end time.Time, p *aggPlan, zone *time.Location) *aggBucke
 	return &aggBucket{start: start.UTC(), end: end.UTC(), zone: zone}
 }
 
-func floorDiv(d, w time.Duration) int64 {
-	q := int64(d / w)
-	if d%w != 0 && d < 0 {
-		q--
+// everyStart is the start of the every bucket holding t: the origin moved by
+// whole steps. The distance is taken in big integers, because a
+// time.Duration saturates at 292 years and an origin may lie further away.
+func everyStart(t, origin time.Time, every time.Duration) time.Time {
+	nanos := func(x time.Time) *big.Int {
+		n := new(big.Int).Mul(big.NewInt(x.Unix()), big.NewInt(int64(time.Second)))
+		return n.Add(n, big.NewInt(int64(x.Nanosecond())))
 	}
-	return q
+	phase := new(big.Int).Sub(nanos(t), nanos(origin))
+	phase.Mod(phase, big.NewInt(int64(every)))
+	return t.Add(-time.Duration(phase.Int64()))
 }
 
 // localBucketAt is the recorded-local bucket holding a wall-clock time,

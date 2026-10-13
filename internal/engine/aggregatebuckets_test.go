@@ -101,3 +101,29 @@ func TestAggregateRefusesANegativeBudget(t *testing.T) {
 		}
 	}
 }
+
+// An every bucket's origin may lie centuries from the range: the buckets are
+// counted from the origin in whole steps, which a time.Duration of the
+// distance (292 years at most) cannot hold.
+func TestAggregateEveryFromAFarOrigin(t *testing.T) {
+	for _, origin := range []string{"1700-01-01T00:00:00Z", "1700-01-01T06:00:00Z", "2400-01-01T00:00:00Z"} {
+		p, bs := planBuckets(t, "2026-09-01T00:00:00Z", "2026-09-04T00:00:00Z", substrate.AggregateBucket{Every: "P1D", Origin: origin})
+		if len(bs) == 0 {
+			t.Fatalf("origin %s: no bucket", origin)
+		}
+		partitions(t, "origin "+origin, p, bs)
+		o, _ := time.Parse(time.RFC3339, origin)
+		want := 3
+		if o.Hour() != 0 {
+			want = 4
+		}
+		if len(bs) != want {
+			t.Errorf("origin %s: %d buckets, want %d", origin, len(bs), want)
+		}
+		for i, b := range bs[1:] {
+			if b.start.Hour() != o.Hour() {
+				t.Errorf("origin %s: bucket %d starts at %s, off the origin's whole days", origin, i+1, b.start.Format(time.RFC3339))
+			}
+		}
+	}
+}
