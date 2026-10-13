@@ -526,6 +526,8 @@ export interface AggregateValue {
   value: string | null
   /** Absent for `count`. */
   unit?: string
+  /** The code a coded `first` or `last` answers, or the state a
+   * `timeInState` value is the time of. */
   code?: string
   /** A rolling value: `of` rolled over `rolling` buckets. */
   rolling?: number

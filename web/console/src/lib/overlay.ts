@@ -270,9 +270,8 @@ export function fromOf(streams: readonly Pick<Stream, "form">[]): {
 }
 
 /** One metric's plot: its form, reducer, unit, mark, axis, and the read it
- * makes, or why it makes none. The same arithmetic the timeline used per
- * chart: the budget counts groups times buckets, guessing the groups
- * before the answer says. */
+ * makes, or why it makes none. The budget counts groups times buckets, the
+ * groups worked out from the streams before the answer says. */
 export function planPlot(
   obs: PlotSource,
   metric: string,

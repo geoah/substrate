@@ -270,9 +270,9 @@ export function shapeOf(
   return formOf(metric, stream) ?? "gauge"
 }
 
-/** The reducers a shape may ask for, the default first: the brief's table,
- * each legal for its form (docs/api.md, "Reducers, by form"). A coded gauge
- * answers time per code, a coded amount its total per code. */
+/** The reducers a shape may ask for, the default first, each one its form
+ * takes (docs/api.md, "Reducers, by form"). A coded gauge answers time per
+ * code, a coded amount its total per code. */
 export function reducerOptions(shape: ReadingShape, form?: Form): string[] {
   switch (shape) {
     case "gauge":
@@ -1008,8 +1008,8 @@ const METRICS_PER_READ = 8
 const MAX_STREAM_READS = 32
 
 /** The metrics as the batches discovery reads their streams in: at most
- * `MAX_STREAM_READS` batches, each of at least `METRICS_PER_READ`
- * metrics. */
+ * `MAX_STREAM_READS` batches of one size, at least `METRICS_PER_READ`
+ * metrics, the last holding what is left. */
 export function discoveryChunks(metrics: readonly string[]): string[][] {
   const size = Math.max(
     METRICS_PER_READ,
