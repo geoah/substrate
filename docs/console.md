@@ -721,7 +721,8 @@ the one a coded `last` answers in `code`), when, and how many points the
 stream holds. A summary's value follows the statistic it is: "Average 74
 /min". An amount's or a vendor summary's newest point covers a
 window, and **When** says which (`Oct 7, 09:45 to 10:00`), so a quarter
-hour's steps never reads as the day's.
+hour's steps never reads as the day's. A long metric name and a window
+wrap to a second line rather than lose their ends.
 
 The rows sit in the grid a collection's records do
 ([A collection](#a-collection)), with the same controls, applied in the page

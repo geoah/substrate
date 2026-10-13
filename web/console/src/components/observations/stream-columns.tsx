@@ -115,8 +115,9 @@ export function streamColumns(
         <Link
           to="/observations/timeline"
           search={rowSearch(row.original) as never}
-          className="block truncate font-medium underline-offset-[3px] hover:underline hover:decoration-border-strong"
-          title={technical ? row.original.metric : undefined}
+          // Two lines before it cuts: a metric's name is what the row is.
+          className="line-clamp-2 leading-tight font-medium break-words whitespace-normal underline-offset-[3px] hover:underline hover:decoration-border-strong"
+          title={technical ? row.original.metric : row.original.metricName}
         >
           {row.original.metricName}
         </Link>
@@ -139,7 +140,7 @@ export function streamColumns(
         ) : (
           <EmptyValue />
         ),
-      meta: { label: "Source", width: 210 },
+      meta: { label: "Source", width: 240 },
     },
     {
       id: "about",
@@ -236,9 +237,10 @@ export function streamColumns(
         // The wire's instants on hover, as every time cell has them. An
         // amount's or a summary's newest point is a window, which says so
         // rather than read as the day's.
+        // A window's end is what the cell is for: two lines before it cuts.
         return windowed(row.original) && end ? (
           <span
-            className="block truncate data text-muted-foreground"
+            className="line-clamp-2 data leading-tight whitespace-normal text-muted-foreground"
             title={`${at} to ${end}`}
           >
             {spanWords(Date.parse(at), Date.parse(end))}

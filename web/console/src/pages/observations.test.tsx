@@ -58,12 +58,22 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     to,
     search,
+    className,
+    title,
   }: {
     children: ReactNode
     to?: string
     search?: unknown
+    className?: string
+    title?: string
   }) => (
-    <a href="#" data-to={to} data-search={JSON.stringify(search ?? null)}>
+    <a
+      href="#"
+      data-to={to}
+      data-search={JSON.stringify(search ?? null)}
+      className={className}
+      title={title}
+    >
       {children}
     </a>
   ),
@@ -383,6 +393,19 @@ describe("the streams table", () => {
     )!
     expect(garmin.textContent).not.toContain("Average")
     expect(garmin.textContent).not.toContain("Summaries")
+  })
+
+  it("wraps a long metric name and a window to a second line, never cutting them", async () => {
+    mount()
+    const body = await rows()
+    const steps = body.find((r) => r.textContent?.includes("Steps"))!
+    const metric = within(steps).getByText("Steps")
+    expect(metric.className).toContain("line-clamp-2")
+    expect(metric.className).not.toContain("truncate")
+    // The newest quarter hour's window, its end included.
+    const when = within(steps).getByTitle(/ to /)
+    expect(when.className).toContain("line-clamp-2")
+    expect(when.className).not.toContain("truncate")
   })
 
   it("shows a newest value to the metric's places, the stored digits on hover and in technical mode", async () => {
