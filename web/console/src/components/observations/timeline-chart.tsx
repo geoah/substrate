@@ -319,7 +319,9 @@ export function TimelineChart({
         }}
         onPointerUp={(e) => {
           const at = bucketOf(e)
-          if (anchor !== null) zoom(anchor, at >= 0 ? at : anchor)
+          // Released outside every window, the run is the one highlighted:
+          // the anchor to the last bucket the drag reached.
+          if (anchor !== null) zoom(anchor, at >= 0 ? at : (active ?? anchor))
           setAnchor(null)
         }}
       >

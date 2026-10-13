@@ -5,7 +5,7 @@
  * of an answer that came back with 18). */
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { WEIGHT, seriesOf } from "@/lib/observations.test-fixtures"
 
@@ -60,5 +60,53 @@ describe("TimelineChart", () => {
     const d = line.getAttribute("d") ?? ""
     expect(d.match(/M/g)).toHaveLength(2)
     expect(d).not.toContain("L")
+  })
+})
+
+describe("a drag", () => {
+  // jsdom has no PointerEvent; a MouseEvent carries what the chart reads.
+  if (!("PointerEvent" in window)) {
+    Object.assign(window, {
+      PointerEvent: class extends MouseEvent {
+        pointerId: number
+        constructor(type: string, init: PointerEventInit = {}) {
+          super(type, init)
+          this.pointerId = init.pointerId ?? 1
+        }
+      },
+    })
+  }
+
+  it("zooms into every bucket it crossed when released past the plot", () => {
+    const onZoom = vi.fn()
+    const { buckets, series } = seriesOf(WEIGHT.rows, "avg")
+    const view = render(
+      <TimelineChart
+        buckets={buckets}
+        series={series.map((s) => ({
+          key: s.key,
+          label: "Weight",
+          color: "var(--series-1)",
+          points: s.points,
+        }))}
+        domain={domain}
+        size="week"
+        label="Weight, Average"
+        tooltip={(b) => `bucket ${b}`}
+        onZoom={onZoom}
+      />
+    )
+    const svg = view.container.querySelector("svg")!
+    // The plot runs from x 52 to 706 at the fallback width of 720: three
+    // weeks. Pressed on the first, dragged to the last, released in the
+    // right margin.
+    fireEvent.pointerDown(svg, { clientX: 60, pointerId: 1 })
+    fireEvent.pointerMove(svg, { clientX: 690, pointerId: 1 })
+    fireEvent.pointerUp(svg, { clientX: 716, pointerId: 1 })
+    expect(onZoom).toHaveBeenCalledTimes(1)
+    expect(onZoom.mock.calls[0][0]).toEqual({
+      start: buckets[0].start,
+      end: buckets[buckets.length - 1].end,
+    })
   })
 })
