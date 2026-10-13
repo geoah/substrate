@@ -44,7 +44,10 @@ counter field and pays nothing for declaring them. The host checks what a
 trait cannot say: exactly one of `value` and `code`, equal lengths of
 `offsets` and `values`, a form from the four
 ([0156](0156-the-forms-are-gauge-amount-counter-and-summary-and-live-on-the-value.md)),
-and a `revision` that never falls.
+and a `revision` that never falls. The loader also holds each binding kind's
+property shapes, because the rules and the index read them: `offsets`,
+`values` and `codes` are lists and every other `observed` property is one
+unkeyed value.
 
 A later need never adds a property to `observed`. It lands as a second trait
 that the kinds needing it bind beside `observed`. Versioned variants are a
@@ -72,7 +75,9 @@ under each user's authority, so their reference differs per repository.
 ### Confirmation
 
 `TestObservedTraitContractIsPinned` (internal/vocabulary) pins both variants'
-property names and datatypes and fails on any addition, removal or retype. `mise run kinds:check` refuses a changed
+property names and datatypes and fails on any addition, removal or retype.
+`TestObservedBindingHoldsListAndSingleShapes` holds a binding kind's list and
+single shapes. `mise run kinds:check` refuses a changed
 core declaration that ships without a version bump.
 
 ## More information
