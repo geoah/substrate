@@ -49,13 +49,18 @@ the surface; a list that spans kinds names each one in `filter.kinds`.
 An id that holds a `/` needs care: a client percent-encodes each `/` in it,
 and the API decodes it exactly once. Unencoded, each `/` starts a path
 segment, so the path names no record. A [kind declaration](vocabulary.md)'s
-id **is** a kind reference, so it always holds two, and the ids the
+id **is** a kind reference, so it always holds two, and most ids the
 [observation adapters](observations.md#the-adapters) write hold several:
 
 ```http
 GET /api/v1/substrate.reamde.dev/core/kind/samples.substrate.reamde.dev%2Ftasks%2Ftask
 GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fsteps%2F2026-08-26T19
 ```
+
+An adapter's `record_id` ([the SDK](functions.md#the-sdk)) hashes an id that
+would leave the id alphabet or pass 128 bytes into one with no `/`, such as
+Google Fit's `googlefit-bdc260a3bb2334ce971b24bf9b102a7a`, which needs no
+encoding.
 
 ### The records route
 
