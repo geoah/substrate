@@ -629,9 +629,10 @@ it trusts:
 - **The observed index is re-derived in the background** when the binary
   derives it by newer rules than the ones recorded in `observed_index`, or
   when none are recorded (a repository written before migration 0012). The
-  open asks the pass above for every row of every kind that binds the
-  `observed` trait and logs `substrate: the observed index was derived under
-  older rules; re-deriving it behind the open` with `from`, `to` and `kinds`.
+  open hands every row of every kind that binds the `observed` trait to the
+  pass that re-derives a reshaped kind's indexes, and logs `substrate: the
+  observed index was derived under older rules; re-deriving it behind the
+  open` with `from`, `to` and `kinds`.
   A rebuild and a boot import derive the index whole and record the rules
   they used, so the open after one asks for nothing.
 - Persisted function bodies re-warm in the background. One that no longer
