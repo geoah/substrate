@@ -703,7 +703,8 @@ requests below are the proposal's screens
 ([reading the data](plans/observations/proposal/03-reading-the-data.md)),
 each one request. They name the source ids the four adapters write for the
 repository [synthetic data](synthetic-data.md) loads (`garmin/ada/forerunner265`,
-`whoop/e2e`).
+`whoop/e2e`). [Building health apps](health-apps.md) has more, a section for
+each screen of a health app, each with the answer a demo repository gave.
 
 Heart rate zones per week for six months is
 [the aggregate read's first example](api.md#the-aggregate-read) with its

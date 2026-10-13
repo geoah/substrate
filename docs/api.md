@@ -1132,6 +1132,10 @@ GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
 The `order` ranks the two watches first; the other sources follow by path,
 and each fills what the ones above it do not cover.
 
+[Building health apps](health-apps.md) has a section for each screen of a
+health app, each with the reads that fill it and the answer a demo
+repository gave.
+
 A function reads the same body with
 [`host.records.aggregate`](functions.md#the-sdk), an agent with the `query`
 tool's `filter`, `aggregate` and `downsample` arguments
@@ -1390,10 +1394,6 @@ phone's step amounts win over Garmin's where they overlap.
   and `end`: the offsets of the first and last value the read takes in that
   bucket over every metric and group. A client joins the metrics of one day
   on `start` however far the day's points were apart.
-- The latest read selects several metrics with `filter.properties.metric`,
-  and a downsample reads one metric: `metrics` is refused on both.
-
-### Reducers, by form
 - The metrics share one list of buckets, so in the recorded-local calendar
   a day that one metric's values name is a bucket of every metric. With
   `fill`, a metric answers a made row on a day only another metric's values
@@ -1402,6 +1402,10 @@ phone's step amounts win over Garmin's where they overlap.
   2026-09-21 at `+03:00`, while the points are at `+01:00`, answers a
   synthetic 2026-09-20 row from `22:00+01:00` to midnight, because heart
   rate has points there.
+- The latest read selects several metrics with `filter.properties.metric`,
+  and a downsample reads one metric: `metrics` is refused on both.
+
+### Reducers, by form
 
 Every reducer is checked against the forms the read takes: each form a
 stream's points hold inside the range (or the records-mode windows),
