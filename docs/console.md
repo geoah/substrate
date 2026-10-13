@@ -801,10 +801,12 @@ that. With Technical details on, each request itself
 as JSON and as a `curl` command.
 
 **One chart, several metrics.** Above the chart, one row per metric holds
-its name, which axis it reads on, its reducer (**Show**) and its output unit
+its name, how it reads (**Reading**: Level, Amount and so on), which axis it reads on, its reducer (**Show**) and its output unit
 (the units of the stored unit's measure the server converts it to: never
 another annotation, another assay unit, a level or a factor of pi; minutes,
-seconds or hours for a time in a range), and its legend. **Unit** names each
+seconds or hours for a time in a range), and its legend; a metric drawn
+as one series has no separate legend, its name being the entry that hides
+and shows it. **Unit** names each
 unit by its symbol (`lb`, not `[lb_av]`) and offers the units a stored unit is
 read in day to day where there is such a list (kilograms, pounds and stones
 for a weight in kilograms); with Technical details on it offers every unit

@@ -31,7 +31,7 @@ import {
   GroupRecord,
   ShapeWord,
 } from "@/components/observations/marks"
-import { Picker } from "@/components/observations/picker"
+import { Labelled, Picker } from "@/components/observations/picker"
 import { RollupTable } from "@/components/observations/rollup-table"
 import {
   TimelineChart,
@@ -722,6 +722,12 @@ function PlotHead({
   onStatistic: (metric: string, value: string) => void
 }) {
   const { plot, rows, pending, failed, error, stale, held } = state
+  // A metric drawn as one series that carries its name: the name is its
+  // legend entry, never a second line repeating it.
+  const lone =
+    legend && named && series.length === 1 && series[0].label === plot.name
+      ? series[0]
+      : undefined
   return (
     <div
       key={plot.metric}
@@ -731,15 +737,22 @@ function PlotHead({
       className="flex flex-col gap-1"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {named ? (
-          <span className="flex items-baseline gap-1.5 text-[13px] font-medium">
-            {plot.name}
-            <ShapeWord
-              shape={plot.shape}
-              className="text-[12.5px] font-normal text-faint"
-            />
-          </span>
+        {lone ? (
+          <LegendEntry
+            drawn={lone}
+            mark={plot.mark}
+            off={hidden.has(lone.key)}
+            onToggle={onToggle}
+            className="text-[13px] font-medium text-foreground"
+          />
+        ) : named ? (
+          <span className="text-[13px] font-medium">{plot.name}</span>
         ) : null}
+        {named && (
+          <Labelled label="Reading">
+            <ShapeWord shape={plot.shape} className="text-[12.5px]" />
+          </Labelled>
+        )}
         {axis && <span className="text-[12.5px] text-faint">{axis}</span>}
         <Picker
           label="Show"
@@ -795,34 +808,21 @@ function PlotHead({
         {stale && <span className="text-[12.5px] text-faint">Updating…</span>}
       </div>
       {technical && plot.spec && <IdText value={plot.spec.metricPath} copy />}
-      {legend && (
+      {legend && !lone && (
         <ul
           aria-label={`Legend, ${plot.name}`}
           className="flex flex-wrap gap-x-1 gap-y-0.5 text-[12.5px]"
         >
-          {series.map((d) => {
-            const off = hidden.has(d.key)
-            return (
-              <li key={d.key}>
-                <button
-                  type="button"
-                  aria-pressed={!off}
-                  title={off ? `Show ${d.label}` : `Hide ${d.label}`}
-                  className={cn(
-                    "inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-[5px] px-1.5 text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
-                    off && "text-faint line-through"
-                  )}
-                  onClick={() => onToggle(d.key)}
-                >
-                  <Swatch
-                    mark={plot.mark}
-                    color={off ? "var(--border-strong)" : d.color}
-                  />
-                  {d.label}
-                </button>
-              </li>
-            )
-          })}
+          {series.map((d) => (
+            <li key={d.key}>
+              <LegendEntry
+                drawn={d}
+                mark={plot.mark}
+                off={hidden.has(d.key)}
+                onToggle={onToggle}
+              />
+            </li>
+          ))}
         </ul>
       )}
       {plot.blocked && (
@@ -981,6 +981,39 @@ function chartNotes(
     }
   }
   return notes
+}
+
+/** One series' legend entry: its swatch and label, a toggle that hides or
+ * shows it. */
+function LegendEntry({
+  drawn,
+  mark,
+  off,
+  onToggle,
+  className,
+}: {
+  drawn: Drawn
+  mark: ChartMark
+  off: boolean
+  onToggle: (key: string) => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={!off}
+      title={off ? `Show ${drawn.label}` : `Hide ${drawn.label}`}
+      className={cn(
+        "inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-[5px] px-1.5 text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+        className,
+        off && "text-faint line-through"
+      )}
+      onClick={() => onToggle(drawn.key)}
+    >
+      <Swatch mark={mark} color={off ? "var(--border-strong)" : drawn.color} />
+      {drawn.label}
+    </button>
+  )
 }
 
 /** A series' colour in the shape it is drawn: a stroke for a line, a square

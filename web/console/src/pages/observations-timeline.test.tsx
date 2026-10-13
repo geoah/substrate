@@ -1443,15 +1443,17 @@ describe("the charts", () => {
   it("hides a series from its legend entry and shows it again", async () => {
     mount(`?metric=health/body_mass,health/steps&${WINDOW}`, false, overlaid)
     const chart = await lane("Weight and Steps")
-    const legend = await within(chart).findByRole("list", {
-      name: "Legend, Steps",
-    })
     await waitFor(() =>
       expect(
         chart.querySelectorAll("svg path[fill='var(--series-2)']")
       ).toHaveLength(3)
     )
-    const entry = within(legend).getByRole("button", { name: /Steps/ })
+    // A metric drawn as one series is its own legend entry: its name, with
+    // its swatch, and no second line repeating it. Its form is labelled.
+    const row = within(chart).getByRole("group", { name: "Steps" })
+    expect(within(row).queryByRole("list")).toBe(null)
+    expect(row.textContent).toContain("ReadingAmount")
+    const entry = within(row).getByRole("button", { name: "Steps" })
     expect(entry.getAttribute("aria-pressed")).toBe("true")
     fireEvent.click(entry)
     expect(entry.getAttribute("aria-pressed")).toBe("false")
