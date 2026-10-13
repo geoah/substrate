@@ -295,7 +295,7 @@ func TestObservedTraceBuilderOutputPassesTheEngine(t *testing.T) {
 	}
 	if b := built["bounded later"]; len(b.Docs) != 1 || b.Docs[0]["at"] != "2026-10-11T05:20:00Z" ||
 		b.Docs[0]["endsAt"] != "2026-10-11T05:40:00Z" || b.Docs[0]["every"] != "PT5M" || b.IDs[0] != "2026-10-11T05:20" {
-		t.Errorf("bounded later: %v %v, want [05:20, 05:40) every PT5M, labelled 2026-10-11T05:20", b.Docs, b.IDs)
+		t.Errorf("bounded later: %v %v, want [05:20, 05:40) every PT5M, labeled 2026-10-11T05:20", b.Docs, b.IDs)
 	}
 }
 
