@@ -1085,14 +1085,61 @@ func TestAggregatePropertyOverMoney(t *testing.T) {
 
 func vocabularyPackage(pkg string) map[string]any { return vocabulary.PackageManifest(pkg, 0) }
 
-// spendManifest is a kind with a money property and a datetime to place it.
+// spendManifest is a kind with a money property, a datetime and a date to
+// place it, and a string that places nothing.
 func spendManifest() map[string]any {
 	return vocabulary.KindManifest(moneyPackage, map[string]any{"singular": "spend"}, map[string]any{
 		"properties": map[string]any{
 			"price":  map[string]any{"type": "money"},
 			"paidAt": map[string]any{"type": "datetime"},
+			"paidOn": map[string]any{"type": "date"},
+			"note":   map[string]any{"type": "string"},
 		},
 	})
+}
+
+// A property read's anchor is a time: a record column that holds none
+// (version, title, id, body, deletedAt) or a declared string is a 422 naming
+// it, where version once failed in SQL and the others matched nothing. A
+// declared date places a record at the start of its day in the calendar's
+// zone: a spend paid on 2026-09-03 is in New York's 2026-09-03, not in
+// 2026-09-02, where UTC midnight falls there.
+func TestAggregatePropertyAnchorIsATime(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
+		vocabularyPackage(moneyPackage),
+		spendManifest(),
+	}); err != nil {
+		t.Fatalf("install the spend kind: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: moneyPackage + "/spend", ID: "1", Properties: map[string]any{
+		"price": moneyValue(1005, "EUR"), "paidAt": "2026-09-03T10:00:00Z", "paidOn": "2026-09-03", "note": "lunch",
+	}})
+	read := func(anchor string) (*substrate.AggregateResult, error) {
+		return ds.Aggregate(context.Background(), substrate.AggregateQuery{
+			Filter: substrate.Filter{Kinds: []string{moneyPackage + "/spend"}},
+			Aggregate: &substrate.Aggregate{
+				Property: &substrate.AggregateProperty{Name: "price", Anchor: anchor},
+				Range:    rng(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC)),
+				Bucket:   &substrate.AggregateBucket{Calendar: "day", Timezone: "America/New_York"},
+				Reducers: reducers("count"),
+			},
+		})
+	}
+	for _, anchor := range []string{"version", "title", "id", "body", "deletedAt", "note"} {
+		_, err := read(anchor)
+		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "aggregate.property.anchor") {
+			t.Errorf("anchor %s: %v, want a 422 naming the anchor", anchor, err)
+		}
+	}
+	res, err := read("paidOn")
+	if err != nil {
+		t.Fatalf("anchor paidOn: %v", err)
+	}
+	if len(res.Rows) != 1 || res.Rows[0].Start.Format(time.DateOnly) != "2026-09-03" {
+		t.Errorf("anchor paidOn: %+v, want the one row of 2026-09-03", res.Rows)
+	}
 }
 
 // A request is refused before it reads a point or a rollup row: over a

@@ -1128,7 +1128,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | Key | Means | Default |
 | --- | --- | --- |
 | `metric` | `{"ref": "<metric record path>"}`: read the observed index for this metric; a path that is not a metric's, or that no metric record has and no observed value names, is a `422` | |
-| `property` | `{"name", "anchor"?}`: reduce a declared number of the filtered kinds instead, placed in time by the datetime property `anchor` | `anchor` is `at` |
+| `property` | `{"name", "anchor"?}`: reduce a declared number of the filtered kinds instead, placed in time by `anchor` | `anchor` is `at` |
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
 | `reducers` | the reducers, each a name or a one-key object with its argument | required |
@@ -1348,9 +1348,12 @@ width. It is refused beside `reducers`, `rolling`, `fill` and `bucket`.
 kinds with `count`, `sum`, `avg`, `min` and `max`, in exact arithmetic: money
 grouped by currency (each row's `group.currency`, the values' `unit` the
 currency), a quantity converted into `unit` or the first value's unit. The
-anchor is `at`, `endsAt`, `dueAt`, `createdAt`, `updatedAt` or a declared
-`datetime`. A record carries no offset of its own, so the recorded-local
-calendar is refused (name a `timezone`), and so is the records mode.
+anchor is `at`, `endsAt`, `dueAt`, `createdAt`, `updatedAt`, a declared
+`datetime`, or a declared `date`, which places its record at the start of
+its day in the calendar's `timezone` (UTC in the `every` mode and with no
+bucket); any other column or property is a `422` naming it. A record
+carries no offset of its own, so the recorded-local calendar is refused
+(name a `timezone`), and so is the records mode.
 
 ```json
 {"filter": {"kinds": ["ada.example.com/finance/expense"]},

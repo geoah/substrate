@@ -203,18 +203,9 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	if p.unit != "" && family != propQuantity {
 		return nil, refuse("aggregate.unit", "%s is not a quantity, so no unit converts it", name)
 	}
-	anchorExpr, err := columnFor(anchor)
+	anchorExpr, err := propertyAnchor(b, p, types, anchor)
 	if err != nil {
 		return nil, err
-	}
-	if anchorExpr == "" {
-		for _, t := range types {
-			prop, ok := t.Prop(anchor)
-			if !ok || prop.Repeated || (prop.Datatype != vocabulary.DatatypeDatetime && prop.Datatype != vocabulary.DatatypeDate) {
-				return nil, refuse("aggregate.property.anchor", "%s declares no datetime property %q to place its records in time", t.Identity, anchor)
-			}
-		}
-		anchorExpr = `(props->>` + b.arg(anchor) + `)::timestamptz`
 	}
 	b.add(anchorExpr + ` >= ` + b.arg(p.from) + ` AND ` + anchorExpr + ` < ` + b.arg(p.to))
 	b.add(`jsonb_exists(props, ` + b.arg(name) + `)`)
@@ -399,6 +390,44 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		res.Exact = false
 	}
 	return res, nil
+}
+
+// propertyAnchor is the SQL instant a property read places each record at:
+// one of the record's time columns, a declared datetime, or a declared date
+// at the start of its day in the calendar's zone (UTC outside the calendar
+// mode), so a date lands in the day it names. Every other column is refused
+// by name: it is not a time.
+func propertyAnchor(b *builder, p *aggPlan, types []*vocabulary.Kind, anchor string) (string, error) {
+	col, err := columnFor(anchor)
+	if err != nil {
+		return "", err
+	}
+	switch anchor {
+	case substrate.PropAt, substrate.PropEndsAt, substrate.PropDueAt, "createdAt", "updatedAt":
+		return col, nil
+	}
+	if col != "" {
+		return "", refuse("aggregate.property.anchor", "%s is not a time to place a record at; the anchor is at, endsAt, dueAt, createdAt, updatedAt, or a declared datetime or date", anchor)
+	}
+	var datatype vocabulary.Datatype
+	for _, t := range types {
+		prop, ok := t.Prop(anchor)
+		if !ok || prop.Repeated || prop.Keyed || (prop.Datatype != vocabulary.DatatypeDatetime && prop.Datatype != vocabulary.DatatypeDate) {
+			return "", refuse("aggregate.property.anchor", "%s declares no datetime or date property %q to place its records in time", t.Identity, anchor)
+		}
+		if datatype != "" && prop.Datatype != datatype {
+			return "", refuse("aggregate.property.anchor", "%s is a datetime on one filtered kind and a date on another", anchor)
+		}
+		datatype = prop.Datatype
+	}
+	if datatype == vocabulary.DatatypeDate {
+		zone := "UTC"
+		if p.bucket.mode == bucketCalendar {
+			zone = p.bucket.loc.String()
+		}
+		return `(((props->>` + b.arg(anchor) + `)::date)::timestamp AT TIME ZONE ` + b.arg(zone) + `::text)`, nil
+	}
+	return `(props->>` + b.arg(anchor) + `)::timestamptz`, nil
 }
 
 // propValue reads one stored value of the family as an exact number.
