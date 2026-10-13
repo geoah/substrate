@@ -32,7 +32,7 @@ const (
 // function's ADAPTER constant.
 const (
 	healthAppleAdapter     = "healthapple@2"
-	healthWhoopAdapter     = "healthwhoop@2"
+	healthWhoopAdapter     = "healthwhoop@3"
 	healthGarminAdapter    = "healthgarmin@2"
 	healthGoogleFitAdapter = "healthgooglefit@2"
 )

@@ -4,7 +4,7 @@ Turns WHOOP mirror rows into observations and health records under the
 repository's own authority. WHOOP sends scored summaries, never raw samples,
 so it writes no traces. Package `samples.substrate.reamde.dev/healthwhoop`
 requires the `health` sample (and so `observations`) and the WHOOP provider
-at version 19 or later.
+at version 21 or later.
 
 `bundle.yaml` is the closure (the `adaptwhoop` function) and `triggers.yaml`
 is the delivery wiring: `healthwhoop-on-mirror` fires the function on every
@@ -23,6 +23,15 @@ average is not the plain mean of the cycle's and a run's. They are what puts
 WHOOP beside the watches as a heart rate source: read them with `from:
 summaries` (or `prefer-raw`) and the `avg` and `max` reducers, because a raw
 read takes gauges and WHOOP sends no samples.
+
+A workout's `sport` is WHOOP's sport name mapped onto the workout kind's code
+set (`weightlifting` is `strength`), `other` where the name has no value of
+its own (`padel`), and the name itself is `sportSource`. Its kilojoules are
+`totalEnergy`: WHOOP's figure includes the resting energy.
+
+A cycle runs from one sleep onset to the next, so a cycle's summaries and its
+recovery's start the evening before the morning WHOOP scores the recovery: a
+calendar-day read files that recovery under the previous date.
 
 The trigger starts at the changelog's head, so a mirror that already held
 rows when this sample was imported is converted by replaying the trigger from

@@ -23,8 +23,11 @@ data:
   authority: samples.substrate.reamde.dev
   package: healthwhoop
   # 2: a cycle's and a workout's average and maximum heart rate are written
-  # as `health/heart_rate` summaries; ADAPTER is healthwhoop@2.
-  version: 2
+  # as `health/heart_rate` summaries.
+  # 3: a workout's sport maps onto the workout code set and its kilojoules
+  # are `totalEnergy`, strain is in `{score}`, and every output is written
+  # through host.observed.reconcile; ADAPTER is healthwhoop@3.
+  version: 3
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # One function and its record trigger (triggers.yaml). No inputs and no
@@ -131,7 +134,7 @@ data:
     # `revision` (decision record 0162). Raise it with any change to what a
     # mirror row becomes, then replay `healthwhoop-on-mirror` from 0: every
     # output is rewritten at the revision it already holds.
-    ADAPTER = "healthwhoop@2"
+    ADAPTER = "healthwhoop@3"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"

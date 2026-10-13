@@ -1975,7 +1975,8 @@ that deletes a mirror row WHOOP deleted.
 - **Kinds**: none; it writes `observations/observation`, `observations/source`,
   `health/sleep` and `health/workout`.
 - **Functions (1)**: `adaptwhoop` rebuilds every record one mirror row
-  implies and deletes the records naming that row in `origin` that it no
+  implies and hands the set to `host.observed.reconcile`, which writes what
+  changed and deletes the records naming that row in `origin` that it no
   longer implies. A deleted mirror row implies nothing, so its records go with
   it. A cycle delivery rebuilds the cycle's recoveries too, because a
   recovery's records span its cycle.
@@ -2000,7 +2001,7 @@ that deletes a mirror row WHOOP deleted.
 | sleep stage totals (awake, light, slow wave, REM) | `health/sleep_stage`, `code` `awake`, `light`, `deep`, `rem` | amount over the sleep's span | `min` |
 | sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `%` |
 | sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `/min` |
-| sleep | `health/sleep`: span, `isNap`, `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency`, `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency` | | |
+| sleep | `health/sleep`: span, `isNap` (WHOOP's `nap`), `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency` (WHOOP's own), `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency`; WHOOP sends no latency | | |
 | workout | `health/workout`: span, `sport` (WHOOP's `sportName` mapped onto the workout code set, `other` where it has no value, so `weightlifting` is `strength` and `padel` is `other`) and `sportSource` (the `sportName` itself), `duration`, `distance`, `totalEnergy` (kJ, resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
 
 **Ids and spans.** Every id is composed from WHOOP's own identifiers, read off
@@ -2015,6 +2016,11 @@ cycle's and a recovery's observations span the cycle and carry its id in
 the workout and carries the workout id. The current cycle has no end yet, so
 its span ends at the cycle's `updatedAt` and moves as WHOOP rescores it. A recovery whose cycle row
 is absent (cycles toggled off) writes nothing until the cycle row lands.
+A cycle runs from one sleep onset to the next, so a cycle's and its
+recovery's `at` is the evening the member fell asleep: a calendar-day read
+files the recovery scored on waking under the previous date. Read a
+recovery by `periodId`, or by a range that starts the evening before, until
+an observation carries the date it belongs to.
 Every record carries `origin` (the mirror row), `revision` (WHOOP's
 `updated_at` in seconds since the epoch, for a recovery the later of its own
 and its cycle's) and the UTC offset WHOOP recorded. While WHOOP is still
