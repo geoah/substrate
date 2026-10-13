@@ -35,7 +35,9 @@ type fakeSubstrate struct {
 	// busy is how many webhook posts the door answers 503 before it takes one.
 	busy int
 	// parkAt is the webhook post (1-based) whose delivery parks, 0 for none.
-	parkAt   int
+	parkAt int
+	// pendingPolls is how many status reads see a delivery still pending.
+	pendingPolls int
 	posts    int
 	webhooks []*http.Request
 	records  map[string]map[string]any
@@ -108,9 +110,14 @@ func (f *fakeSubstrate) serve(w http.ResponseWriter, r *http.Request) {
 			reply(http.StatusOK, map[string]any{"id": id, "installed": true})
 		}
 	case path == "substrate.reamde.dev/core/trigger/status":
+		pending := 0
+		if f.pendingPolls > 0 {
+			f.pendingPolls--
+			pending = 1
+		}
 		var items []map[string]any
 		for id := range f.triggers {
-			items = append(items, map[string]any{"id": id, "kind": "webhook", "parked": f.parked[id], "pending": 0, "inFlight": 0})
+			items = append(items, map[string]any{"id": id, "kind": "webhook", "parked": f.parked[id], "pending": pending, "inFlight": 0})
 		}
 		reply(http.StatusOK, map[string]any{"items": items})
 	case strings.HasPrefix(path, "substrate.reamde.dev/core/trigger/"):
@@ -345,5 +352,20 @@ func TestWebhookPostsCarryNoRepositoryToken(t *testing.T) {
 	last := f.webhooks[len(f.webhooks)-1]
 	if got := last.Header.Get("Authorization"); got != "" {
 		t.Errorf("a post with its key in the path carried Authorization %q", got)
+	}
+}
+
+// The door records a delivery as pending before it answers, so the first
+// status read always sees it; the next read comes in milliseconds, not half
+// a second, or 700 deliveries spend six minutes asleep.
+func TestAwaitSettledPollsAgainSoon(t *testing.T) {
+	f := newFakeSubstrate(t)
+	f.pendingPolls = 2
+	started := time.Now()
+	if _, err := f.client().awaitSettled(t.Context(), "garmin-webhook", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(started); took > 250*time.Millisecond {
+		t.Errorf("settling after two pending reads took %s", took)
 	}
 }

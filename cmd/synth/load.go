@@ -188,8 +188,14 @@ func (c *client) settled(ctx context.Context, id string) (bool, int64, error) {
 	return false, 0, fmt.Errorf("trigger %s is not in the status list", id)
 }
 
+// awaitSettled polls the trigger until nothing is pending or in flight and
+// answers its parked count. The door records a delivery before it answers,
+// so the first read sees it pending; the wait between reads starts at 20 ms
+// and doubles to half a second, so a run that takes milliseconds is not
+// waited on for longer.
 func (c *client) awaitSettled(ctx context.Context, id string, within time.Duration) (int64, error) {
 	deadline := time.Now().Add(within)
+	wait := 20 * time.Millisecond
 	for {
 		ok, parked, err := c.settled(ctx, id)
 		if err != nil {
@@ -201,7 +207,22 @@ func (c *client) awaitSettled(ctx context.Context, id string, within time.Durati
 		if time.Now().After(deadline) {
 			return parked, fmt.Errorf("trigger %s did not settle within %s", id, within)
 		}
-		time.Sleep(500 * time.Millisecond)
+		if err := sleep(ctx, wait); err != nil {
+			return parked, err
+		}
+		wait = min(2*wait, 500*time.Millisecond)
+	}
+}
+
+// sleep waits d or until ctx is done.
+func sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
