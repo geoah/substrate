@@ -488,3 +488,68 @@ func TestInterruptRemovesTheRunnerConfig(t *testing.T) {
 		}
 	}
 }
+
+// runnerServes starts the mock the way the e2e runner does for one e2e.json
+// and prints what it answers for one path.
+const runnerServes = `
+import json, pathlib, sys, urllib.request
+runner, recordings, config, log, path = sys.argv[1:]
+sys.path.insert(0, runner)
+import e2e
+cfg = json.loads(pathlib.Path(config).read_text())
+# A fixed port may belong to a run in progress, whose mock the runner reaps.
+cfg["mockPort"] = 0
+proc, url = e2e.start_mock(pathlib.Path(recordings), "googlefit", pathlib.Path(log), cfg)
+try:
+    sys.stdout.write(urllib.request.urlopen(url + path, timeout=10).read().decode())
+finally:
+    proc.terminate()
+    proc.wait()
+`
+
+// The runner's mock moves Google Fit's recorded instants to the run date
+// unless e2e.json says not to. The generated days describe one life with
+// the other emitters' days, so the runner serves them as generated.
+func TestRunnerServesFitRecordingsAsGenerated(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	base := filepath.Join(generated(t, testAuthority, synth.GoogleFit{}), "googlefit")
+	runner, err := filepath.Abs(filepath.Join("..", "..", "internal", "providere2e", "runner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const sessions = "/fitness/v1/users/me/sessions"
+	cmd := exec.Command(python, "-I", "-B", "-c", runnerServes, runner, //nolint:gosec // the test's own script over its own files
+		filepath.Join(base, "recordings"), filepath.Join(base, "e2e.json"), filepath.Join(t.TempDir(), "mock.log"), sessions)
+	cmd.Env = append(os.Environ(), "SUBSTRATE_E2E_ROOT="+filepath.Dir(runner))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	served, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("the runner's mock: %v\n%s", err, stderr.String())
+	}
+	recorded, err := os.ReadFile(filepath.Join(base, "recordings", synth.RecordingName("GET", sessions)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, want struct {
+		Session []map[string]any `json:"session"`
+	}
+	if err := json.Unmarshal(served, &got); err != nil {
+		t.Fatalf("%v: %s", err, served)
+	}
+	if err := json.Unmarshal(recorded, &want); err != nil {
+		t.Fatal(err)
+	}
+	if len(want.Session) == 0 || len(got.Session) != len(want.Session) {
+		t.Fatalf("served %d sessions of %d", len(got.Session), len(want.Session))
+	}
+	for i, s := range want.Session {
+		if got.Session[i]["startTimeMillis"] != s["startTimeMillis"] || got.Session[i]["endTimeMillis"] != s["endTimeMillis"] {
+			t.Errorf("session %v is served from %v to %v, generated from %v to %v",
+				s["id"], got.Session[i]["startTimeMillis"], got.Session[i]["endTimeMillis"], s["startTimeMillis"], s["endTimeMillis"])
+		}
+	}
+}

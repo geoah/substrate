@@ -310,7 +310,8 @@ func fitBackfill(p *Persona) string {
 
 // fitE2E is providers/googlefit/e2e.json for this data: the recorded one's
 // hosts, config, triggers, continuation and port, every toggle on, the
-// owner's zone, and a backfill that reaches the whole range.
+// owner's zone, a backfill that reaches the whole range, and the mock's time
+// shift off, so the points land on the days the other emitters describe.
 func fitE2E(p *Persona) map[string]any {
 	return map[string]any{
 		"_generated": fmt.Sprintf("internal/synth (googlefit.go): %s to %s, seed %q. The runner reads this in place of the recorded e2e.json.",
@@ -332,6 +333,8 @@ func fitE2E(p *Persona) map[string]any {
 		"continueRounds":  20,
 		"continue":        map[string]any{"property": "syncRequestedAt", "value": "now"},
 		"mockPort":        fitMockPort,
+		"_timeShift":      "the recordings describe the generated days, beside the other emitters' data for the same days, so the mock serves their instants as written.",
+		"timeShift":       false,
 	}
 }
 

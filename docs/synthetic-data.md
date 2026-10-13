@@ -152,10 +152,13 @@ gauges are.
 Recordings for a mock-driven provider are named by `synth.RecordingName`,
 the Go form of the rule in `internal/providere2e/runner/mockserver.py`
 (`recording_test.go` pins it against names the Python produced and reads the
-server's parameter sets from the file), so the provider e2e runner serves them
-unchanged. A webhook provider's requests are saved as the `{"request": {...}}`
-envelopes the provider tests hold under `testdata/`, one file per delivery in
-posting order, with the trigger they go to.
+server's parameter sets from the file), so the provider e2e runner finds every
+one. The runner's mock moves Google Fit's recorded instants to the run date
+unless `e2e.json` sets `timeShift: false`; the generated `e2e.json` sets it, so
+the Fit points keep the days the other emitters describe. A webhook
+provider's requests are saved as the `{"request": {...}}` envelopes the
+provider tests hold under `testdata/`, one file per delivery in posting
+order, with the trigger they go to.
 
 ## The command
 
@@ -214,7 +217,9 @@ and removes the temporary config that holds the token.
   all four emitters agreeing on every night and workout within a minute.
 - `cmd/synth`'s tests drive `load` against a fake substrate: the import
   order, the authority check, the catalog read, the webhook key, the retries,
-  `-resume`, the token kept off the webhook door, and an interrupt.
+  `-resume`, the token kept off the webhook door, and an interrupt. One
+  starts the runner's mock over generated Fit recordings and holds what it
+  serves to what was generated.
 - `internal/providertest` drives the emitted data through the real
   functions over the real engine: a delivery through `applehealthingest`, a
   push through `garminpush`, a sync through the loopback fake over the

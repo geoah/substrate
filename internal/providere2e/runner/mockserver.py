@@ -58,7 +58,9 @@ on.
 A provider in TIME_SHIFTS (Google Fit) has the instants in every response it
 is served moved by the whole days from the day its recordings were cut on to
 the day the mock started, so a sync reading a window that ends today finds
-them in it.
+them in it. `--no-time-shift` serves them as written, for recordings dated on
+purpose: internal/synth's describe the days they were generated for, beside
+other providers' data for the same days.
 
 A miss is `404` with a JSON body naming every file it looked for, so the
 provider agent sees exactly what to record and under what name.
@@ -407,7 +409,8 @@ HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 class Mock:
     """The state one served directory carries."""
 
-    def __init__(self, directory: pathlib.Path, provider: str = ""):
+    def __init__(self, directory: pathlib.Path, provider: str = "",
+                 time_shift: bool = True):
         self.dir = directory
         self.provider = provider or directory.parent.name
         self.lock = threading.Lock()
@@ -418,7 +421,7 @@ class Mock:
         self.faults: list[dict] = []      # injected failures, in order
         shift = TIME_SHIFTS.get(self.provider)
         self.shift_days = 0
-        if shift is not None:
+        if shift is not None and time_shift:
             today = datetime.datetime.now(datetime.timezone.utc).date()
             self.shift_days = (today - shift[0]).days
 
@@ -749,11 +752,11 @@ def load_faults(path) -> list:
 
 
 def build(directory: pathlib.Path, port: int = 0, provider: str = "",
-          faults=None):
+          faults=None, time_shift: bool = True):
     """One server over one directory. The handler is a SUBCLASS per server, so
     two mocks in one process do not share the `mock` class attribute — which
     a scenario running its own second-pass mock beside the runner's would."""
-    mock = Mock(directory, provider)
+    mock = Mock(directory, provider, time_shift)
     if faults:
         mock.set_faults(faults)
     handler = type("Handler_%s" % (provider or "mock"), (Handler,), {"mock": mock})
@@ -775,8 +778,8 @@ def serve_bg(directory, port: int = 0, provider: str = ""):
 
 
 def serve(directory: pathlib.Path, port: int, provider: str = "",
-          faults=None) -> None:
-    httpd, mock = build(directory, port, provider, faults)
+          faults=None, time_shift: bool = True) -> None:
+    httpd, mock = build(directory, port, provider, faults, time_shift)
     n = len(list(directory.glob("*.json"))) if directory.is_dir() else 0
     sys.stderr.write("mockserver: %s (%d recordings) on http://127.0.0.1:%d%s\n"
                      % (directory, n, httpd.server_address[1],
@@ -799,6 +802,8 @@ def main() -> None:
                     help="a JSON file of injected-failure rules (see the "
                          "module docstring); a scenario can also POST them to "
                          "/__mock/faults mid-run")
+    ap.add_argument("--no-time-shift", action="store_true",
+                    help="serve a TIME_SHIFTS provider's instants as written")
     ap.add_argument("--name", nargs="*", metavar="METHOD PATH [QUERY]",
                     help="print the recording name for a request and exit")
     a = ap.parse_args()
@@ -811,7 +816,7 @@ def main() -> None:
         a.dir.mkdir(parents=True, exist_ok=True)
         sys.stderr.write("mockserver: %s did not exist; created it empty\n" % a.dir)
     serve(a.dir, a.port, a.provider,
-          load_faults(a.faults) if a.faults else None)
+          load_faults(a.faults) if a.faults else None, not a.no_time_shift)
 
 
 if __name__ == "__main__":
