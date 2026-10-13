@@ -33,6 +33,13 @@
 # anchor (so the schedule retries and no window floor advances past unread
 # data) but DOES write `syncStatus` at most once per episode, so the account's
 # own update cannot re-fire the on-connect trigger into a loop.
+#
+# A stream that never completes keeps its guard open, so each on-connect
+# guard also refuses a change any google function wrote: the dispatcher's
+# `running` and settle stamps and a body's failure are updates to the
+# account as well, and two streams failing their first sync delivered each
+# other without end. An owner edit, the OAuth facility's connect and
+# reconnect, and the package's own hand still deliver it.
 # The first backfill: an account whose OAuth just landed (tokenStatus
 # connected), that wants contacts, and that has never synced contacts yet.
 kind: substrate.reamde.dev/core/trigger
@@ -55,7 +62,7 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledContacts" in record.properties && record.properties.enabledContacts
-          == true && !("contactsLastSyncedAt" in record.properties)
+          == true && !("contactsLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccontacts
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
@@ -94,7 +101,7 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledGmail" in record.properties && record.properties.enabledGmail
-          == true && !("gmailLastSyncedAt" in record.properties)
+          == true && !("gmailLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncgmail
 ---
 # Gmail's steady-state re-sync: hourly, honoring each account's syncFrequency.
@@ -128,7 +135,7 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledCalendar" in record.properties && record.properties.enabledCalendar
-          == true && !("calendarLastSyncedAt" in record.properties)
+          == true && !("calendarLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccalendar
 ---
 # Calendar's steady-state re-sync.
@@ -266,7 +273,7 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledDrive" in record.properties && record.properties.enabledDrive
-          == true && !("driveLastSyncedAt" in record.properties)
+          == true && !("driveLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncdrive
 ---
 # Drive's steady-state re-sync: hourly, honoring each account's syncFrequency.

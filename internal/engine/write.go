@@ -855,6 +855,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		return nil, err
 	}
 	t.syncClearOnRecovery(sp)
+	t.syncMergeStreams(sp)
 
 	take := func(name string, cur any, had bool, next any) bool {
 		if next == nil {

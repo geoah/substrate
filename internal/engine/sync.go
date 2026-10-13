@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,9 @@ const (
 	// propLastSyncedAt is the body's, read here only to see a run finish
 	// healthy (syncClearOnRecovery).
 	propLastSyncedAt = "lastSyncedAt"
+	// propSyncStreams is the body's, merged here per stream
+	// (syncMergeStreams).
+	propSyncStreams = "syncStreams"
 )
 
 // syncErrorMax bounds the error text a park stamps onto the record: a
@@ -193,6 +197,39 @@ func (t *txn) syncClearOnRecovery(sp *applySpec) {
 	}
 	sp.props[propSyncError] = nil
 	sp.props[propSyncErrorAt] = nil
+}
+
+// syncMergeStreams completes a write to a stored `syncStreams` map one stream
+// at a time: each entry the write names replaces that stream's entry, a null
+// entry removes it, and the entries it leaves out stand. Two functions keep
+// separate streams of one record and each writes from the record as its
+// invocation read it, so a whole-map write put one stream's older entry back
+// over the newer one its own delivery had committed meanwhile. The merge runs
+// under the record lock, so the delta the changelog keeps is the merged map.
+func (t *txn) syncMergeStreams(sp *applySpec) {
+	if !sp.ty.Implements(vocabulary.TraitSyncCore) {
+		return
+	}
+	written, ok := sp.props[propSyncStreams].(map[string]any)
+	if !ok {
+		return
+	}
+	var stored map[string]any
+	if sp.existing != nil {
+		stored, _ = sp.existing.Props[propSyncStreams].(map[string]any)
+	}
+	merged := maps.Clone(stored)
+	if merged == nil {
+		merged = make(map[string]any, len(written))
+	}
+	for name, entry := range written {
+		if entry == nil {
+			delete(merged, name)
+			continue
+		}
+		merged[name] = entry
+	}
+	sp.props[propSyncStreams] = merged
 }
 
 // writesAsPackage reports whether the transaction writes under one of pkg's
@@ -643,7 +680,7 @@ func syncStatusOf(row *erow) substrate.SyncStatus {
 			Pending: syncInt(prog, "pending"),
 		}
 	}
-	if streams, ok := p["syncStreams"].(map[string]any); ok && len(streams) > 0 {
+	if streams, ok := p[propSyncStreams].(map[string]any); ok && len(streams) > 0 {
 		st.Streams = make(map[string]substrate.SyncStream, len(streams))
 		for name, raw := range streams {
 			s, _ := raw.(map[string]any)

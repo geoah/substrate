@@ -235,7 +235,9 @@ opt into twice:
   read. The body
   owns the rest through its effects: `syncMessage`, `lastSyncedAt`,
   `syncProgress` (`{phase, done, total, pending}`), `syncStreams` (a map of
-  stream name to `{cursor, lastAt, pending, state, message, requestedAck}`)
+  stream name to `{cursor, lastAt, pending, state, message, requestedAck}`,
+  merged per stream: a write replaces the entries it names, a null entry
+  removes one, and the rest stand)
   and `syncRequestedAck`, the acknowledgement of the owner's
   `syncRequestedAt`. A write by the kind's own package that moves
   `lastSyncedAt` and leaves `syncState` at `ok` clears an error pair older

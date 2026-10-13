@@ -378,7 +378,7 @@ description = "shellcheck over every tracked shell script"
 run = "git ls-files -z '*.sh' | xargs -0 sh -c 'test \"$#\" -eq 0 || shellcheck -x \"$@\"' sh"
 
 [tasks."lint:python"]
-description = "ruff over the runner's Python host, every function body under kinds/ and samples/, the provider suite and .mise"
+description = "ruff over the runner's Python host, every function body under kinds/ and samples/, the provider suites and .mise"
 # internal/runner/host.py is the long-lived child every `runtime: python`
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. The bodies are YAML literal
@@ -386,7 +386,7 @@ description = "ruff over the runner's Python host, every function body under kin
 # findings at their bundle.yaml line and column; it fails when a python
 # document's source cannot be read, rather than linting less. Config is
 # .ruff.toml.
-run = "python3 .mise/pybodies.py lint internal/runner/host.py .mise internal/providere2e"
+run = "python3 .mise/pybodies.py lint internal/runner/host.py .mise internal/providere2e internal/providertest/py"
 
 [tasks."lint:migrations"]
 description = "The shape of internal/engine/migrations and the repository migrations: naming, numbering, no gaps"

@@ -266,7 +266,24 @@ data:
   # `calendar`, `drive`), so `sync status` marks only the stream a parked
   # delivery ran for as erroring and leaves the other three as the body
   # stamped them. ADDITIVE.
-  version: 43
+  #
+  # 44: A HEALTHY STREAM'S RECORD-SOURCED DELIVERY WRITES ANOTHER ENABLED
+  # STREAM'S FAILURE as the account's `syncState` and `syncMessage` (#817):
+  # it wrote none, and the dispatcher's settle turned its `running` into
+  # `ok`, so a 401 on contacts read `ok` after the next drive or gmail run.
+  # Each stream writes its own `syncStreams` entry alone, which the engine
+  # merges per stream, so two streams' deliveries no longer undo each
+  # other's entry. Gmail and drive answer a record-sourced request when the
+  # budget runs out before the walk begins (#818), where the on-request
+  # trigger re-fired on every change to the account. A record-sourced run
+  # that meets a failure its stream already stated writes the failing state
+  # again, so the settle no longer reads it as a recovery, and moves the
+  # error pair only for a new request or an account that holds none. A
+  # repeated 429 writes its later wall in all four streams, and a stream's
+  # `throttled` no longer hides another stream's `erroring`. The on-connect
+  # triggers refuse the google functions' own writes, which delivered two
+  # failing streams to each other without end. Source and triggers only.
+  version: 44
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -5680,6 +5697,17 @@ data:
         return str(props.get(name + "SyncStatus") or "").startswith("erroring")
 
 
+    def _trait_failure(props, streams, name):
+        """THAT stream's failure in the trait's words: its entry's state and
+        message, or `erroring` and the legacy sentence where the sentence alone
+        says it is broken (the stream has not run under the trait yet)."""
+        entry = streams.get(name) or {}
+        state = str(entry.get("state") or "")
+        if state in ("erroring", "throttled"):
+            return state, str(entry.get("message") or "")
+        return "erroring", str(props.get(name + "SyncStatus") or "")
+
+
     def _trait_answered(props, streams, name, requested):
         """Has THAT stream answered this request generation?
 
@@ -5702,8 +5730,10 @@ data:
 
           - this stream's entry in `syncStreams` is unconditional;
           - the ACCOUNT-LEVEL state is RAISED and never cleared over another
-            ENABLED stream's live failure, so a healthy contacts run cannot make a
-            broken gmail read `ok` on the Connections page;
+            ENABLED stream's live failure: a healthy record-sourced run writes
+            that failure's state and message and a scheduled one leaves the
+            stored state, so a healthy contacts run cannot make a broken gmail
+            read `ok` on the Connections page;
           - the owner's request is acknowledged at the account level only once
             EVERY enabled stream has answered that same generation. Three streams
             answer independently, and one shared ack spent by whichever ran first
@@ -5728,9 +5758,15 @@ data:
         if requested:
             entry["requestedAck"] = requested
         streams[stream] = entry
-        out = {"syncStreams": streams}
+        # THIS STREAM'S ENTRY ALONE IS WRITTEN. `streams` is the account as this
+        # invocation read it, and another stream's delivery may have written its
+        # own entry since: the engine merges a `syncStreams` write per stream,
+        # so naming only this one cannot put that stream's older entry back over
+        # its newer one (a stale `requestedAck`, an `erroring` read as `ok`).
+        out = {"syncStreams": {stream: entry}}
         others = [s for s in _TRAIT_STREAMS if s != stream
                   and props.get("enabled" + s.capitalize())]
+        failing = [s for s in others if _trait_broken(props, streams, s)]
         # THE ACCOUNT HOLDS ONE PROGRESS, SO IT IS RAISED THE WAY THE STATE IS.
         # `syncProgress` is the trait's single bounded-drain report and all three
         # streams write it, so a stream that finished with nothing owed must not
@@ -5756,14 +5792,59 @@ data:
             # two error fields are the only place the cause survives a recovery.
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
+            if state == "throttled":
+                # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
+                # stream's `erroring` outranks this stream's `throttled`, as it
+                # does on a healthy run, so the account reads broken while one
+                # stream is.
+                worse = next((s for s in failing
+                              if _trait_failure(props, streams, s)[0] == "erroring"),
+                             "")
+                if worse:
+                    out["syncState"], said = _trait_failure(props, streams, worse)
+                    out["syncMessage"] = said[:400]
             out["syncError"] = str(message)[:400]
             out["syncErrorAt"] = now
-        elif not any(_trait_broken(props, streams, s) for s in others):
+        elif failing and not started:
+            # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
+            # state where the dispatcher watches the delivery (no `started`): it
+            # has already written `running`, and its settle turns a `running` it
+            # finds into `ok` and clears the error pair, so a broken account read
+            # `ok` after any healthy stream's run. On the scheduled path nothing
+            # settles, and the stored state, newer than this invocation's read
+            # of it, stands. An `erroring` stream outranks a `throttled` one, and
+            # the error pair stays as the failing stream wrote it.
+            worst = next((s for s in failing
+                          if _trait_failure(props, streams, s)[0] == "erroring"),
+                         failing[0])
+            out["syncState"], said = _trait_failure(props, streams, worst)
+            out["syncMessage"] = said[:400]
+        elif not failing:
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
+        return out
+
+
+    def _trait_restate(props, stream, state, message, now, asked, scheduled):
+        """The trait's half of a patch for a failure THIS stream already stated.
+
+        A RECORD-SOURCED REPEAT STILL WRITES ITS STATE. The dispatcher wrote
+        `running` before the body ran, and its settle turns a `running` it finds
+        into `ok` and clears the error pair, so a failure left unwritten reads
+        as a recovery. The error pair moves only for news: a new request
+        (`asked`), or an account that holds no pair, which a reconnect clears
+        while this stream's sentence stands. A scheduled run with no new
+        request writes nothing, because nothing settles it.
+        """
+        if scheduled and not asked:
+            return {}
+        out = _trait_stamp(props, stream, state, message, now)
+        if not asked and props.get("syncErrorAt"):
+            out.pop("syncError", None)
+            out.pop("syncErrorAt", None)
         return out
 
 
@@ -5889,11 +5970,12 @@ data:
         return bool(began) and (_clock() - began) >= _drain_seconds(cur)
 
 
-    def _erroring(host, acct, reason, retry_at=""):
+    def _erroring(host, acct, reason, retry_at="", *, scheduled):
         # ONE bounded stamp per episode, on THIS stream's own status, so a
         # gmail or calendar failure can never swallow a contacts one. NEITHER
         # lastSyncedAt NOR contactsLastSyncedAt is written: the run did not
-        # complete, so the cadence must keep retrying.
+        # complete, so the cadence must keep retrying. `scheduled` is the
+        # cursor's: only a record-sourced delivery has a dispatcher settling it.
         props = acct.get("properties") or {}
         status = "erroring: " + str(reason)[:REASON_MAX]
         now = _iso(_now())
@@ -5905,23 +5987,26 @@ data:
         # is what the end-to-end runner and the seed parse.
         state = "throttled" if retry_at else "erroring"
         stamp = _ack(props, {}, "contacts")
+        asked = bool(stamp)
+        # A 429 SAYS WHEN, and the wall is the ACCOUNT's: every stream is
+        # behind the same quota, so one stream meeting it stops the others
+        # walking into it too (docs/provider-practices.md §5). A repeated 429
+        # writes it again, because the wall it names is later than the one the
+        # stream waited out.
+        if retry_at:
+            stamp["retryNotBefore"] = retry_at
         # The ack is stamped EVEN WHEN THE STATUS HAS NOT MOVED: a repeated
         # failure that left the request unacknowledged would re-fire the
         # on-request trigger against the same failure forever. The trait's half of
         # that answer rides with the legacy one — the two are never out of step —
-        # and the failure is re-stated with it. A tick that changes nothing
-        # returns without a patch at all, so `syncErrorAt` never moves for no news.
+        # and the failure is re-stated with it (`_trait_restate`).
         if str(props.get("contactsSyncStatus") or "") == status:
+            stamp.update(_trait_restate(props, "contacts", state, status, now,
+                                        asked, scheduled))
             if stamp:
-                stamp.update(_trait_stamp(props, "contacts", state, status, now))
                 host.effects.patch((acct.get("kind") or ACCOUNT_TYPE),
                                    acct.get("id"), properties=stamp)
             return
-        # A 429 SAYS WHEN, and the wall is the ACCOUNT's: every stream is
-        # behind the same quota, so one stream meeting it stops the others
-        # walking into it too (docs/provider-practices.md §5).
-        if retry_at:
-            stamp["retryNotBefore"] = retry_at
         stamp.update({"contactsSyncStatus": status,
                       "contactsSyncState": "erroring"})
         if not str(props.get("syncStatus") or "").startswith("erroring"):
@@ -6510,7 +6595,8 @@ data:
             acct = accounts.get(queue[0])
             if acct is not None and acct.get("tokenError"):
                 host.log("google-contacts: skip %s: %s" % (queue[0], acct["tokenError"]))
-                _erroring(host, acct, acct["tokenError"])
+                _erroring(host, acct, acct["tokenError"],
+                          scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):
                 queue = queue[1:]
@@ -6727,7 +6813,8 @@ data:
             host.log("google-contacts: %s/%s failed for %s: %s"
                      % (cur.get("phase"), cur.get("stream") or "connections", aid,
                         _reason(e)))
-            _erroring(host, acct, _reason(e), _retry_after(e))
+            _erroring(host, acct, _reason(e), _retry_after(e),
+                      scheduled=cur.get("scheduled"))
             rest = queue[1:]
             if rest:
                 return {"more": host.page.more(_carry_budget(cur, _sync_cursor(rest)))}
@@ -9491,6 +9578,17 @@ data:
         return str(props.get(name + "SyncStatus") or "").startswith("erroring")
 
 
+    def _trait_failure(props, streams, name):
+        """THAT stream's failure in the trait's words: its entry's state and
+        message, or `erroring` and the legacy sentence where the sentence alone
+        says it is broken (the stream has not run under the trait yet)."""
+        entry = streams.get(name) or {}
+        state = str(entry.get("state") or "")
+        if state in ("erroring", "throttled"):
+            return state, str(entry.get("message") or "")
+        return "erroring", str(props.get(name + "SyncStatus") or "")
+
+
     def _trait_answered(props, streams, name, requested):
         """Has THAT stream answered this request generation?
 
@@ -9513,8 +9611,10 @@ data:
 
           - this stream's entry in `syncStreams` is unconditional;
           - the ACCOUNT-LEVEL state is RAISED and never cleared over another
-            ENABLED stream's live failure, so a healthy contacts run cannot make a
-            broken gmail read `ok` on the Connections page;
+            ENABLED stream's live failure: a healthy record-sourced run writes
+            that failure's state and message and a scheduled one leaves the
+            stored state, so a healthy contacts run cannot make a broken gmail
+            read `ok` on the Connections page;
           - the owner's request is acknowledged at the account level only once
             EVERY enabled stream has answered that same generation. Three streams
             answer independently, and one shared ack spent by whichever ran first
@@ -9539,9 +9639,15 @@ data:
         if requested:
             entry["requestedAck"] = requested
         streams[stream] = entry
-        out = {"syncStreams": streams}
+        # THIS STREAM'S ENTRY ALONE IS WRITTEN. `streams` is the account as this
+        # invocation read it, and another stream's delivery may have written its
+        # own entry since: the engine merges a `syncStreams` write per stream,
+        # so naming only this one cannot put that stream's older entry back over
+        # its newer one (a stale `requestedAck`, an `erroring` read as `ok`).
+        out = {"syncStreams": {stream: entry}}
         others = [s for s in _TRAIT_STREAMS if s != stream
                   and props.get("enabled" + s.capitalize())]
+        failing = [s for s in others if _trait_broken(props, streams, s)]
         # THE ACCOUNT HOLDS ONE PROGRESS, SO IT IS RAISED THE WAY THE STATE IS.
         # `syncProgress` is the trait's single bounded-drain report and all three
         # streams write it, so a stream that finished with nothing owed must not
@@ -9567,14 +9673,59 @@ data:
             # two error fields are the only place the cause survives a recovery.
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
+            if state == "throttled":
+                # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
+                # stream's `erroring` outranks this stream's `throttled`, as it
+                # does on a healthy run, so the account reads broken while one
+                # stream is.
+                worse = next((s for s in failing
+                              if _trait_failure(props, streams, s)[0] == "erroring"),
+                             "")
+                if worse:
+                    out["syncState"], said = _trait_failure(props, streams, worse)
+                    out["syncMessage"] = said[:400]
             out["syncError"] = str(message)[:400]
             out["syncErrorAt"] = now
-        elif not any(_trait_broken(props, streams, s) for s in others):
+        elif failing and not started:
+            # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
+            # state where the dispatcher watches the delivery (no `started`): it
+            # has already written `running`, and its settle turns a `running` it
+            # finds into `ok` and clears the error pair, so a broken account read
+            # `ok` after any healthy stream's run. On the scheduled path nothing
+            # settles, and the stored state, newer than this invocation's read
+            # of it, stands. An `erroring` stream outranks a `throttled` one, and
+            # the error pair stays as the failing stream wrote it.
+            worst = next((s for s in failing
+                          if _trait_failure(props, streams, s)[0] == "erroring"),
+                         failing[0])
+            out["syncState"], said = _trait_failure(props, streams, worst)
+            out["syncMessage"] = said[:400]
+        elif not failing:
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
+        return out
+
+
+    def _trait_restate(props, stream, state, message, now, asked, scheduled):
+        """The trait's half of a patch for a failure THIS stream already stated.
+
+        A RECORD-SOURCED REPEAT STILL WRITES ITS STATE. The dispatcher wrote
+        `running` before the body ran, and its settle turns a `running` it finds
+        into `ok` and clears the error pair, so a failure left unwritten reads
+        as a recovery. The error pair moves only for news: a new request
+        (`asked`), or an account that holds no pair, which a reconnect clears
+        while this stream's sentence stands. A scheduled run with no new
+        request writes nothing, because nothing settles it.
+        """
+        if scheduled and not asked:
+            return {}
+        out = _trait_stamp(props, stream, state, message, now)
+        if not asked and props.get("syncErrorAt"):
+            out.pop("syncError", None)
+            out.pop("syncErrorAt", None)
         return out
 
 
@@ -9783,7 +9934,7 @@ data:
         return bool(mine) and (now - mine) >= float(cur.get("shareSeconds") or 0)
 
 
-    def _erroring(batch, acct, reason, retry_at=""):
+    def _erroring(batch, acct, reason, retry_at="", *, scheduled):
         # ONE bounded stamp per episode (F2/F3). The failure is recorded on
         # THIS STREAM's own status property, so a gmail failure can never
         # swallow a calendar one (and vice versa) the way a single shared
@@ -9793,7 +9944,8 @@ data:
         # trigger into a two-stream ping-pong. NEITHER lastSyncedAt NOR
         # gmailLastSyncedAt is written — the run did not complete, so the
         # cadence must keep retrying and the next window floor must not
-        # advance past mail this run never read.
+        # advance past mail this run never read. `scheduled` is the cursor's:
+        # only a record-sourced delivery has a dispatcher settling it.
         props = acct.get("properties") or {}
         status = "erroring: " + str(reason)[:REASON_MAX]
         now = _iso(_now())
@@ -9805,6 +9957,7 @@ data:
         # parse.
         state = "throttled" if retry_at else "erroring"
         stamp = _ack(props, {}, "gmail")
+        asked = bool(stamp)
         # A 429 SAYS WHEN, and the wall is the ACCOUNT's: every stream is behind
         # the same quota, so one stream meeting it stops the other two walking
         # into it too (docs/provider-practices.md §5). Stamped even when the
@@ -9813,15 +9966,12 @@ data:
             stamp["retryNotBefore"] = retry_at
         # Acknowledged even when the status has not moved: an unacknowledged
         # request re-fires the on-request trigger against the same failure.
+        # The failure is re-stated with the answer (`_trait_restate`); a later
+        # wall alone is no news, so it never moves `syncErrorAt`.
         if str(props.get("gmailSyncStatus") or "") == status:
+            stamp.update(_trait_restate(props, "gmail", state, status, now,
+                                        asked, scheduled))
             if stamp:
-                # ONLY WHEN THE ACK MOVED. The account is patched here because a
-                # new request arrived, so the trait's half of that answer rides
-                # with the legacy one — the two are never out of step — and the
-                # failure is re-stated with it. A tick that changes NOTHING
-                # returns above without a patch, so an unchanged failure never
-                # moves `syncErrorAt` for no news.
-                stamp.update(_trait_stamp(props, "gmail", state, status, now))
                 batch.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"),
                             properties=stamp)
             return
@@ -9835,6 +9985,44 @@ data:
         stamp.update(_trait_stamp(props, "gmail", state, status, now))
         batch.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"),
                     properties=stamp)
+
+
+    def _ack_unstarted(batch, aid, acct, cur):
+        """Answer the owner's request when the budget ran out before the walk began.
+
+        The `google-gmail-on-request` trigger fires while `gmailSyncRequestedAck`
+        trails `syncRequestedAt`, so a delivery that hands back here unanswered
+        is delivered again on every later change to the account. A
+        record-sourced delivery's queue is the one account it names, and that
+        is the account answered: the legacy ack and the trait's entry move
+        together, `ok` with one walk pending unless the stream is failing. A
+        scheduled queue's account is left unanswered, because its request is
+        still owed and its own on-request delivery is what serves it.
+        Answering spends the request, so the next walk is the one the cadence
+        starts.
+        """
+        if cur.get("scheduled"):
+            return
+        props = acct.get("properties") or {}
+        stamp = _ack(props, {}, "gmail")
+        if not stamp:
+            return
+        streams = _trait_streams(props)
+        if _trait_broken(props, streams, "gmail"):
+            # Nothing here called Google, so this stream's failure is still the
+            # last thing it knows: it stands, and its error pair keeps its time.
+            state, said = _trait_failure(props, streams, "gmail")
+            trait = _trait_stamp(props, "gmail", state, said, _iso(_now()))
+            trait.pop("syncError", None)
+            trait.pop("syncErrorAt", None)
+        else:
+            trait = _trait_stamp(
+                props, "gmail", "ok", "ok (1 pending): the budget ran out before "
+                "the walk began", _iso(_now()),
+                progress=_trait_progress("gmail: " + str(cur.get("phase") or "plan"),
+                                         cur.get("records"), 1))
+        stamp.update(trait)
+        batch.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=stamp)
 
 
     # --------------------------------------------------------------------------
@@ -10274,10 +10462,12 @@ data:
                 _hold(host, aid, cur, cur["pageToken"])
                 cur["pending"] = []
                 return _stamp(host, batch, aid, acct, cur)
-            # Nothing walked yet: nothing is stamped either, so `_due` still
-            # holds and the next scheduled run starts this account over.
+            # Nothing walked yet: nothing but the request's answer is stamped,
+            # so the cadence anchor stands and the next due run starts this
+            # account over.
             host.log("google-gmail: no invocation budget left to start %s — it "
                      "syncs on the next run" % aid)
+            _ack_unstarted(batch, aid, acct, cur)
             return {}
         params = _list_params(cur)
         if cur.get("pageToken"):
@@ -10926,10 +11116,13 @@ data:
         if phase == "plan":
             if _spent(cur, CALL_RESERVE):
                 # A later account in the queue, with the chain's clock already
-                # spent. It is NOT stamped — nothing was read — so `_due` still
-                # holds and the next scheduled run starts here.
+                # spent, or a record-sourced delivery whose clock ran out
+                # before the walk began. Nothing was read, so nothing but the
+                # request's answer is stamped: the cadence anchor stands and the
+                # next due run starts here.
                 host.log("google-gmail: the drain's invocation budget is spent "
                          "before %s — it syncs on the next run" % aid)
+                _ack_unstarted(batch, aid, acct, cur)
                 return {}
             began = _clock()
             cur = _plan_account(host, aid, props, base, token, cur)
@@ -11061,7 +11254,8 @@ data:
             acct = accounts.get(queue[0])
             if acct is not None and acct.get("tokenError"):
                 host.log("google-gmail: skip %s: %s" % (queue[0], acct["tokenError"]))
-                _erroring(batch, acct, acct["tokenError"])
+                _erroring(batch, acct, acct["tokenError"],
+                          scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):
                 queue = queue[1:]
@@ -11099,7 +11293,8 @@ data:
             host.log("google-gmail: %s failed for %s: %s"
                      % (cur.get("phase"), aid, _reason(e)))
             failure = _Batch()
-            _erroring(failure, acct, _reason(e), _retry_after(e))
+            _erroring(failure, acct, _reason(e), _retry_after(e),
+                      scheduled=cur.get("scheduled"))
             failure.flush(host)
             rest = queue[1:]
             if rest:
@@ -15049,6 +15244,17 @@ data:
         return str(props.get(name + "SyncStatus") or "").startswith("erroring")
 
 
+    def _trait_failure(props, streams, name):
+        """THAT stream's failure in the trait's words: its entry's state and
+        message, or `erroring` and the legacy sentence where the sentence alone
+        says it is broken (the stream has not run under the trait yet)."""
+        entry = streams.get(name) or {}
+        state = str(entry.get("state") or "")
+        if state in ("erroring", "throttled"):
+            return state, str(entry.get("message") or "")
+        return "erroring", str(props.get(name + "SyncStatus") or "")
+
+
     def _trait_answered(props, streams, name, requested):
         """Has THAT stream answered this request generation?
 
@@ -15071,8 +15277,10 @@ data:
 
           - this stream's entry in `syncStreams` is unconditional;
           - the ACCOUNT-LEVEL state is RAISED and never cleared over another
-            ENABLED stream's live failure, so a healthy contacts run cannot make a
-            broken gmail read `ok` on the Connections page;
+            ENABLED stream's live failure: a healthy record-sourced run writes
+            that failure's state and message and a scheduled one leaves the
+            stored state, so a healthy contacts run cannot make a broken gmail
+            read `ok` on the Connections page;
           - the owner's request is acknowledged at the account level only once
             EVERY enabled stream has answered that same generation. Three streams
             answer independently, and one shared ack spent by whichever ran first
@@ -15097,9 +15305,15 @@ data:
         if requested:
             entry["requestedAck"] = requested
         streams[stream] = entry
-        out = {"syncStreams": streams}
+        # THIS STREAM'S ENTRY ALONE IS WRITTEN. `streams` is the account as this
+        # invocation read it, and another stream's delivery may have written its
+        # own entry since: the engine merges a `syncStreams` write per stream,
+        # so naming only this one cannot put that stream's older entry back over
+        # its newer one (a stale `requestedAck`, an `erroring` read as `ok`).
+        out = {"syncStreams": {stream: entry}}
         others = [s for s in _TRAIT_STREAMS if s != stream
                   and props.get("enabled" + s.capitalize())]
+        failing = [s for s in others if _trait_broken(props, streams, s)]
         # THE ACCOUNT HOLDS ONE PROGRESS, SO IT IS RAISED THE WAY THE STATE IS.
         # `syncProgress` is the trait's single bounded-drain report and all three
         # streams write it, so a stream that finished with nothing owed must not
@@ -15125,14 +15339,59 @@ data:
             # two error fields are the only place the cause survives a recovery.
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
+            if state == "throttled":
+                # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
+                # stream's `erroring` outranks this stream's `throttled`, as it
+                # does on a healthy run, so the account reads broken while one
+                # stream is.
+                worse = next((s for s in failing
+                              if _trait_failure(props, streams, s)[0] == "erroring"),
+                             "")
+                if worse:
+                    out["syncState"], said = _trait_failure(props, streams, worse)
+                    out["syncMessage"] = said[:400]
             out["syncError"] = str(message)[:400]
             out["syncErrorAt"] = now
-        elif not any(_trait_broken(props, streams, s) for s in others):
+        elif failing and not started:
+            # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
+            # state where the dispatcher watches the delivery (no `started`): it
+            # has already written `running`, and its settle turns a `running` it
+            # finds into `ok` and clears the error pair, so a broken account read
+            # `ok` after any healthy stream's run. On the scheduled path nothing
+            # settles, and the stored state, newer than this invocation's read
+            # of it, stands. An `erroring` stream outranks a `throttled` one, and
+            # the error pair stays as the failing stream wrote it.
+            worst = next((s for s in failing
+                          if _trait_failure(props, streams, s)[0] == "erroring"),
+                         failing[0])
+            out["syncState"], said = _trait_failure(props, streams, worst)
+            out["syncMessage"] = said[:400]
+        elif not failing:
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
+        return out
+
+
+    def _trait_restate(props, stream, state, message, now, asked, scheduled):
+        """The trait's half of a patch for a failure THIS stream already stated.
+
+        A RECORD-SOURCED REPEAT STILL WRITES ITS STATE. The dispatcher wrote
+        `running` before the body ran, and its settle turns a `running` it finds
+        into `ok` and clears the error pair, so a failure left unwritten reads
+        as a recovery. The error pair moves only for news: a new request
+        (`asked`), or an account that holds no pair, which a reconnect clears
+        while this stream's sentence stands. A scheduled run with no new
+        request writes nothing, because nothing settles it.
+        """
+        if scheduled and not asked:
+            return {}
+        out = _trait_stamp(props, stream, state, message, now)
+        if not asked and props.get("syncErrorAt"):
+            out.pop("syncError", None)
+            out.pop("syncErrorAt", None)
         return out
 
 
@@ -15258,7 +15517,7 @@ data:
         return bool(began) and (_clock() - began) >= _drain_seconds(cur)
 
 
-    def _erroring(host, acct, reason, retry_at=""):
+    def _erroring(host, acct, reason, retry_at="", *, scheduled):
         # ONE bounded stamp per episode (F2/F3). The failure is recorded on
         # THIS STREAM's own state AND its own sentence, so a gmail failure can
         # never swallow a calendar one; the shared rollup the console reads
@@ -15267,6 +15526,8 @@ data:
         # on-connect trigger into a two-stream ping-pong. NEITHER lastSyncedAt
         # NOR calendarLastSyncedAt is written: the run did not complete, so
         # the cadence must keep retrying and the window floor must not advance.
+        # `scheduled` is the cursor's: only a record-sourced delivery has a
+        # dispatcher settling it.
         props = acct.get("properties") or {}
         status = "erroring: " + str(reason)[:REASON_MAX]
         now = _iso(_now())
@@ -15278,23 +15539,26 @@ data:
         # parse.
         state = "throttled" if retry_at else "erroring"
         stamp = _ack(props, {}, "calendar")
+        asked = bool(stamp)
+        # A 429 SAYS WHEN, and the wall is the ACCOUNT's: every stream is
+        # behind the same quota, so one stream meeting it stops the others
+        # walking into it too (docs/provider-practices.md §5). A repeated 429
+        # writes it again, because the wall it names is later than the one the
+        # stream waited out.
+        if retry_at:
+            stamp["retryNotBefore"] = retry_at
         # Acknowledged even when the status has not moved: an unacknowledged
         # request re-fires the on-request trigger against the same failure. The
         # trait's half of that answer rides with the legacy one — the two are
-        # never out of step — and the failure is re-stated with it. A tick that
-        # changes nothing returns without a patch at all, so `syncErrorAt` never
-        # moves for no news.
+        # never out of step — and the failure is re-stated with it
+        # (`_trait_restate`).
         if str(props.get("calendarSyncStatus") or "") == status:
+            stamp.update(_trait_restate(props, "calendar", state, status, now,
+                                        asked, scheduled))
             if stamp:
-                stamp.update(_trait_stamp(props, "calendar", state, status, now))
                 host.effects.patch((acct.get("kind") or ACCOUNT_TYPE),
                                    acct.get("id"), properties=stamp)
             return
-        # A 429 SAYS WHEN, and the wall is the ACCOUNT's: every stream is
-        # behind the same quota, so one stream meeting it stops the others
-        # walking into it too (docs/provider-practices.md §5).
-        if retry_at:
-            stamp["retryNotBefore"] = retry_at
         stamp.update({"calendarSyncStatus": status,
                       "calendarSyncState": "erroring"})
         if not str(props.get("syncStatus") or "").startswith("erroring"):
@@ -16064,7 +16328,8 @@ data:
             if acct is not None and acct.get("tokenError"):
                 host.log("google-calendar: skip %s: %s"
                          % (queue[0], acct["tokenError"]))
-                _erroring(host, acct, acct["tokenError"])
+                _erroring(host, acct, acct["tokenError"],
+                          scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):
                 queue = queue[1:]
@@ -16096,7 +16361,8 @@ data:
             # calendar the phases after `calendars` are working on (the head of
             # `cals`). The log already carried the phase; the status line is what
             # the owner and the console read.
-            _erroring(host, acct, _where(cur) + _reason(e), _retry_after(e))
+            _erroring(host, acct, _where(cur) + _reason(e), _retry_after(e),
+                      scheduled=cur.get("scheduled"))
             rest = queue[1:]
             if rest:
                 return {"more": host.page.more(_carry_budget(cur, _fresh(rest)))}
@@ -17170,6 +17436,17 @@ data:
         return str(props.get(name + "SyncStatus") or "").startswith("erroring")
 
 
+    def _trait_failure(props, streams, name):
+        """THAT stream's failure in the trait's words: its entry's state and
+        message, or `erroring` and the legacy sentence where the sentence alone
+        says it is broken (the stream has not run under the trait yet)."""
+        entry = streams.get(name) or {}
+        state = str(entry.get("state") or "")
+        if state in ("erroring", "throttled"):
+            return state, str(entry.get("message") or "")
+        return "erroring", str(props.get(name + "SyncStatus") or "")
+
+
     def _trait_answered(props, streams, name, requested):
         entry = streams.get(name) or {}
         return (str(entry.get("requestedAck") or "") == requested
@@ -17180,8 +17457,10 @@ data:
                      progress=None, started="", elapsed_ms=None):
         """The trait's half of one account patch — this stream's entry
         unconditionally, the account-level state RAISED and never cleared over
-        another enabled stream's live failure, the owner's request acknowledged
-        at the account level only once EVERY enabled stream has answered it."""
+        another enabled stream's live failure (a healthy record-sourced run
+        writes that failure's state and message), the owner's request
+        acknowledged at the account level only once EVERY enabled stream has
+        answered it."""
         streams = _trait_streams(props)
         entry = dict(streams.get(stream) or {})
         entry["state"] = state
@@ -17194,9 +17473,15 @@ data:
         if requested:
             entry["requestedAck"] = requested
         streams[stream] = entry
-        out = {"syncStreams": streams}
+        # THIS STREAM'S ENTRY ALONE IS WRITTEN. `streams` is the account as this
+        # invocation read it, and another stream's delivery may have written its
+        # own entry since: the engine merges a `syncStreams` write per stream,
+        # so naming only this one cannot put that stream's older entry back over
+        # its newer one (a stale `requestedAck`, an `erroring` read as `ok`).
+        out = {"syncStreams": {stream: entry}}
         others = [s for s in _TRAIT_STREAMS if s != stream
                   and props.get("enabled" + s.capitalize())]
+        failing = [s for s in others if _trait_broken(props, streams, s)]
         owed_elsewhere = any(int((streams.get(s) or {}).get("pending") or 0) > 0
                              for s in others)
         if progress is not None and (int(progress.get("pending") or 0) > 0
@@ -17210,14 +17495,59 @@ data:
         if state in ("erroring", "throttled"):
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
+            if state == "throttled":
+                # A RATE LIMIT DOES NOT HIDE A BREAKAGE: another enabled
+                # stream's `erroring` outranks this stream's `throttled`, as it
+                # does on a healthy run, so the account reads broken while one
+                # stream is.
+                worse = next((s for s in failing
+                              if _trait_failure(props, streams, s)[0] == "erroring"),
+                             "")
+                if worse:
+                    out["syncState"], said = _trait_failure(props, streams, worse)
+                    out["syncMessage"] = said[:400]
             out["syncError"] = str(message)[:400]
             out["syncErrorAt"] = now
-        elif not any(_trait_broken(props, streams, s) for s in others):
+        elif failing and not started:
+            # ANOTHER ENABLED STREAM'S LIVE FAILURE IS WRITTEN as the account's
+            # state where the dispatcher watches the delivery (no `started`): it
+            # has already written `running`, and its settle turns a `running` it
+            # finds into `ok` and clears the error pair, so a broken account read
+            # `ok` after any healthy stream's run. On the scheduled path nothing
+            # settles, and the stored state, newer than this invocation's read
+            # of it, stands. An `erroring` stream outranks a `throttled` one, and
+            # the error pair stays as the failing stream wrote it.
+            worst = next((s for s in failing
+                          if _trait_failure(props, streams, s)[0] == "erroring"),
+                         failing[0])
+            out["syncState"], said = _trait_failure(props, streams, worst)
+            out["syncMessage"] = said[:400]
+        elif not failing:
             out["syncState"] = state
             out["syncMessage"] = str(message)[:400]
         if requested and all(_trait_answered(props, streams, s, requested)
                              for s in others):
             out["syncRequestedAck"] = requested
+        return out
+
+
+    def _trait_restate(props, stream, state, message, now, asked, scheduled):
+        """The trait's half of a patch for a failure THIS stream already stated.
+
+        A RECORD-SOURCED REPEAT STILL WRITES ITS STATE. The dispatcher wrote
+        `running` before the body ran, and its settle turns a `running` it finds
+        into `ok` and clears the error pair, so a failure left unwritten reads
+        as a recovery. The error pair moves only for news: a new request
+        (`asked`), or an account that holds no pair, which a reconnect clears
+        while this stream's sentence stands. A scheduled run with no new
+        request writes nothing, because nothing settles it.
+        """
+        if scheduled and not asked:
+            return {}
+        out = _trait_stamp(props, stream, state, message, now)
+        if not asked and props.get("syncErrorAt"):
+            out.pop("syncError", None)
+            out.pop("syncErrorAt", None)
         return out
 
 
@@ -17311,20 +17641,29 @@ data:
         return bool(mine) and (now - mine) >= float(cur.get("shareSeconds") or 0)
 
 
-    def _erroring(batch, acct, reason, retry_at="", reconsent=False):
+    def _erroring(batch, acct, reason, retry_at="", reconsent=False, *,
+                  scheduled):
         """ONE bounded stamp per episode, on THIS STREAM's own status, the
         rollup raised only when not already erroring. NEITHER lastSyncedAt NOR
         driveLastSyncedAt is written — the run did not complete."""
+        # `scheduled` is the cursor's: only a record-sourced delivery has a
+        # dispatcher settling it.
         props = acct.get("properties") or {}
         status = "erroring: " + str(reason)[:REASON_MAX]
         now = _iso(_now())
         state = "throttled" if retry_at else "erroring"
         stamp = _ack(props, {}, "drive")
+        asked = bool(stamp)
+        # A repeated 429 writes the wall again: the one it names is later.
         if retry_at:
             stamp["retryNotBefore"] = retry_at
         if str(props.get("driveSyncStatus") or "") == status:
+            # A `needsreconsent` stream lands here on every owner edit of the
+            # account and every reconnect: it never stamps `driveLastSyncedAt`,
+            # so its on-connect guard stays open.
+            stamp.update(_trait_restate(props, "drive", state, status, now,
+                                        asked, scheduled))
             if stamp:
-                stamp.update(_trait_stamp(props, "drive", state, status, now))
                 batch.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"),
                             properties=stamp)
             return
@@ -17337,6 +17676,44 @@ data:
         stamp.update(_trait_stamp(props, "drive", state, status, now))
         batch.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"),
                     properties=stamp)
+
+
+    def _ack_unstarted(batch, aid, acct, cur):
+        """Answer the owner's request when the budget ran out before the walk began.
+
+        The `google-drive-on-request` trigger fires while `driveSyncRequestedAck`
+        trails `syncRequestedAt`, so a delivery that hands back here unanswered
+        is delivered again on every later change to the account. A
+        record-sourced delivery's queue is the one account it names, and that
+        is the account answered: the legacy ack and the trait's entry move
+        together, `ok` with one walk pending unless the stream is failing. A
+        scheduled queue's account is left unanswered, because its request is
+        still owed and its own on-request delivery is what serves it.
+        Answering spends the request, so the next walk is the one the cadence
+        starts.
+        """
+        if cur.get("scheduled"):
+            return
+        props = acct.get("properties") or {}
+        stamp = _ack(props, {}, "drive")
+        if not stamp:
+            return
+        streams = _trait_streams(props)
+        if _trait_broken(props, streams, "drive"):
+            # Nothing here called Google, so this stream's failure is still the
+            # last thing it knows: it stands, and its error pair keeps its time.
+            state, said = _trait_failure(props, streams, "drive")
+            trait = _trait_stamp(props, "drive", state, said, _iso(_now()))
+            trait.pop("syncError", None)
+            trait.pop("syncErrorAt", None)
+        else:
+            trait = _trait_stamp(
+                props, "drive", "ok", "ok (1 pending): the budget ran out before "
+                "the walk began", _iso(_now()),
+                progress=_trait_progress("drive: " + str(cur.get("phase") or "plan"),
+                                         cur.get("records"), 1))
+        stamp.update(trait)
+        batch.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=stamp)
 
 
     # --------------------------------------------------------------------------
@@ -17574,7 +17951,7 @@ data:
                 raise _NeedsReconsent(
                     "Google refused changes/startPageToken (403): the grant "
                     "lacks drive.readonly; the owner must reconnect the "
-                    "account and grant Drive access")
+                    "account and grant Drive access") from e
             raise
         cur["startToken"] = str(start.get("startPageToken") or "")
         anchor = str(props.get("driveBackfillAnchorAt") or "")
@@ -17643,6 +18020,7 @@ data:
                 return _stamp(host, batch, aid, acct, cur)
             host.log("google-drive: no invocation budget left to start %s — it "
                      "syncs on the next run" % aid)
+            _ack_unstarted(batch, aid, acct, cur)
             return {}
         params = _list_params(cur)
         if cur.get("pageToken"):
@@ -17872,6 +18250,7 @@ data:
             if _spent(cur, CALL_RESERVE):
                 host.log("google-drive: the drain's invocation budget is spent "
                          "before %s — it syncs on the next run" % aid)
+                _ack_unstarted(batch, aid, acct, cur)
                 return {}
             cur = _plan_account(host, aid, props, base, token, cur)
             phase = cur["phase"]
@@ -17934,7 +18313,8 @@ data:
             acct = accounts.get(queue[0])
             if acct is not None and acct.get("tokenError"):
                 host.log("google-drive: skip %s: %s" % (queue[0], acct["tokenError"]))
-                _erroring(batch, acct, acct["tokenError"])
+                _erroring(batch, acct, acct["tokenError"],
+                          scheduled=cur.get("scheduled"))
             if acct is None or not _wants(acct) or acct.get("tokenError") \
                     or not acct.get("token"):
                 queue = queue[1:]
@@ -17975,7 +18355,7 @@ data:
                          % (cur.get("phase"), aid, _reason(e)))
             failure = _Batch()
             _erroring(failure, acct, _reason(e), _retry_after(e),
-                      reconsent=reconsent)
+                      reconsent=reconsent, scheduled=cur.get("scheduled"))
             failure.flush(host)
             rest = queue[1:]
             if rest:
