@@ -36,7 +36,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | R-TIME-1 | Daily values on the local day of each value's own UTC offset (must) [S30] [S33] | supported | `bucket: {"calendar": "day"}` with no `timezone`, the recorded-local calendar; each row's `start` and `end` carry the offsets its values were taken at, so a travel day reads 26 hours. [Steps across travel](../../health-apps.md#steps-across-travel) |
 | R-TIME-2 | Weeks, months and years in a named zone, across DST, with a week start (must) [S8] [S28] [S30] | supported | `bucket: {"calendar": "week", "timezone": "Europe/Athens", "weekStart": "sunday"}`; a day across a clock change is 23 or 25 hours. [Weekly load](../../health-apps.md#weekly-load) |
 | R-TIME-3 | A sleep counted on the day the user woke up (must) [S6] [S32] | supported | A metric read takes `bucket.place: "end"`; a property read over `health/sleep` takes `anchor: "endsAt"` with `utcOffset: "utcOffsetEnd"`. Oura's 18:00 day boundary is not a request. [A night](../../health-apps.md#a-night) |
-| R-TIME-4 | Vendor days and physiological cycles as buckets (should) | partly | The records mode makes each WHOOP cycle mirror record a bucket, and `bucket.offset` starts a day later (`PT4H`). A day that starts the evening before and is labelled with the next date has no request: `offset` is never negative. |
+| R-TIME-4 | Vendor days and physiological cycles as buckets (should) [S6] | partly | The records mode makes each WHOOP cycle mirror record a bucket, and `bucket.offset` starts a day later (`PT4H`). A day that starts the evening before and is labelled with the next date has no request: `offset` is never negative. |
 | R-TIME-5 | Values with no offset, and where the user was (must) [S32] [S40] | partly | A recorded-local read of a stream holding a value with no offset is a `422` unless `bucket.fallbackTimezone` places it, and each row counts those values in `offsetless`. Nothing infers an offset or records where the user was: [G-30](#g-30-guessed-utc-offsets), [G-33](#g-33-kinds-an-app-writes-about-the-person). |
 
 ## Apps: aggregation
@@ -60,7 +60,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | Id | Need | Status | Request, or what is missing |
 | --- | --- | --- | --- |
 | R-BASE-1 | Personal baseline band per nightly metric (must) [S5] [S11] [S14] [S23] [S41] | supported | `rolling: {"buckets": 30, "reducers": ["avg", "stddev"], "through": "previous"}` leaves the night out of its own baseline, and `n` says how many nights the window held, which is the "calibrating" count. A log transform before the mean is the app's. [Trends with a baseline](../../health-apps.md#trends-with-a-baseline) |
-| R-BASE-2 | Short window against long window (must) [S5] [S11] [S17] [S18] | partly | Two reads, one per window length, over the same buckets. No recency-weighted mean. |
+| R-BASE-2 | Short window against long window (must) [S5] [S7] [S11] [S17] [S18] | partly | Two reads, one per window length, over the same buckets. No recency-weighted mean. |
 | R-BASE-3 | Several metrics off baseline on the same night (should) [S10] [S14] | supported | `metrics` with `rolling`: each metric's nightly value and its band in one read; the app counts the metrics outside their bands. |
 
 ## Apps: sleep
@@ -93,7 +93,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 
 | Id | Need | Status | Request, or what is missing |
 | --- | --- | --- | --- |
-| R-SCORE-1 | Vendor scores under their own names, scales and bands (must) [S1] [S2] [S12c] [S13] [S13b] [S23] | partly | Each vendor score is a metric of its own in `{score}` or `%` (`whoop_recovery`, `whoop_strain`, `garmin_stress`, `garmin_body_battery`) with its `algorithm`. A metric carries no bands or colours: [G-50](#g-50-reducers-and-filter-arms). |
+| R-SCORE-1 | Vendor scores under their own names, scales and bands (must) [S1] [S12c] [S13] [S13b] [S23] | partly | Each vendor score is a metric of its own in `{score}` or `%` (`whoop_recovery`, `whoop_strain`, `garmin_stress`, `garmin_body_battery`) with its `algorithm`. A metric carries no bands or colours: [G-50](#g-50-reducers-and-filter-arms). |
 | R-SCORE-2 | The contributors behind a score (should) [S5] [S6b] [S12c] | partly | WHOOP's recovery, HRV and resting heart rate share a `periodId` (the cycle id) and come in one `metrics` read; no reference links a score to its inputs. |
 | R-SCORE-3 | Intraday vendor curves and their states (should) [S13b] | partly | Garmin stress and Body Battery are gauge traces; Garmin's sentinel values (-1, -2) are written as nulls, so the "too active to measure" state is lost. |
 | R-SCORE-4 | Scores the app computes itself from raw inputs (must) [S38] [S39] [S41] | partly | Inputs and baselines come in one read; the write-back is one record per request ([C-14](#c-14-multi-record-writes)), and a recompute on a changed input needs the time ranges a change touched ([G-32](#g-32-change-feed-time-ranges)). |
@@ -106,7 +106,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | R-LAB-2 | One analyte's trend across labs and years, in one unit (must) | supported | The health sample's `convertlab` function writes every lab result in its paired metric (molar mass, or the NGSP and IFCC equation for HbA1c), so a read of either metric holds every lab's result. [Labs](../../health-apps.md#labs-in-both-unit-systems) |
 | R-LAB-3 | High and low flags, with censored values (must) | supported | `interpretation`, `referenceRanges` (quantities, converted with a derived result) and `comparator`; a read counts bounded values in `bounded`. |
 | R-LAB-4 | Preliminary, final and corrected results (should) | partly | `status` and `revision` are stored and a corrected input rewrites its derived results; no aggregate read filters on `status`: [G-50](#g-50-reducers-and-filter-arms). |
-| R-GLU-1 | CGM day view, time in ranges, wear, mean, CV and GMI (must) [S34] [S35b] [S36] | partly | `durationIn` bands, `avg`, `stddev` and `coverage` answer it over one glucose metric. Meter and monitor readings are not converted between unit systems the way lab results are: the demo's Contour meter reads 5.3125 mmol/L on average in September through Google Fit (`blood_glucose`) and 95.625 mg/dL through Apple Health (`blood_glucose_mass`), and neither metric reads in the other's unit. GMI and the target range are the app's. |
+| R-GLU-1 | CGM day view, time in ranges, wear, mean, CV and GMI (must) [S35b] [S36] | partly | `durationIn` bands, `avg`, `stddev` and `coverage` answer it over one glucose metric. Meter and monitor readings are not converted between unit systems the way lab results are: the demo's Contour meter reads 5.3125 mmol/L on average in September through Google Fit (`blood_glucose`) and 95.625 mg/dL through Apple Health (`blood_glucose_mass`), and neither metric reads in the other's unit. GMI and the target range are the app's. |
 | R-GLU-2 | Glucose response to a meal or another logged event (should) [S35] | follow-up | No meal or journal record to anchor a window ([G-33](#g-33-kinds-an-app-writes-about-the-person)), and no filter on a reading's meal qualifier ([C-12](#c-12-qualifier-filters)). |
 
 ## Apps: body and activity goals
@@ -138,7 +138,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | R-SRC-4 | Overlapping sleep sessions from several devices (must) [S33] | supported | `bucket.records.sources` keeps one device's night, and the request's `sources` chooses each metric's points inside it. Merging two devices' stages into one timeline is not a request. |
 | R-SRC-5 | Vendor daily totals against raw samples, never mixed (must) | supported | `from: "prefer-raw"` with `minCoverage`; each row's `from` says which served it. [Steps across travel](../../health-apps.md#steps-across-travel) |
 | R-SRC-6 | Sleep stage and sport vocabularies mapped to one set (must) | supported | One `sport` code set and one stage code set (with `asleep`) every adapter maps onto, the provider's word kept in `sportSource`; `adapter` names the mapping's version. |
-| R-SRC-7 | Sources side by side (must) | supported | `sources: {"policy": "separate"}`, the default, or `groupBy: ["source"]`. [Resting heart rate](../../health-apps.md#resting-heart-rate-across-providers-and-merged) |
+| R-SRC-7 | Sources side by side (should) | supported | `sources: {"policy": "separate"}`, the default, or `groupBy: ["source"]`. [Resting heart rate](../../health-apps.md#resting-heart-rate-across-providers-and-merged) |
 | R-SRC-8 | Same name, different quantity, never pooled (must) [S41b] | supported | `hrv_rmssd` and `hrv_sdnn`, `skin_temperature` and `skin_temperature_deviation` are separate metrics; a read takes one metric's streams, and a value whose unit does not convert is a `422` naming its source. |
 
 ## Apps: ingestion lifecycle
@@ -177,21 +177,21 @@ partly, 2 are follow-ups and 2 are out of scope.
 
 | Id | Primitive | Status | Request, or what is missing |
 | --- | --- | --- | --- |
-| P-1 | Calendar buckets in a named IANA zone, correct across DST (must) [hk-scq] [hc-agg] [gfit-agg] [gh-daily] [flux-aw] [ts-gapfill] | supported | `calendar` with `timezone`. |
-| P-2 | Recorded-local time: each sample's own offset decides its day (must) [hc-trf] [gh-dp] [whoop-spec] [oura-spec] | supported | The recorded-local calendar; see R-TIME-1 and R-TIME-5. |
-| P-3 | Fixed-width buckets with an anchor, origin or offset (must) [hk-scq-article] [hc-agg] [influxql] | supported | `every` with `origin`; `offset` and `weekStart` on calendars. |
-| P-4 | Physical time and civil time kept apart in requests (should) [gh-filters] [hc-agg] | partly | A range is two instants with offsets, never a wall-clock date, so "the local days of a trip" needs the offsets known first; a read by wall-clock range is a follow-up. |
-| P-5 | A rule for which day a session belongs to (should) [oura-spec] [gh-filters] | supported | `place: "end"`; the property read's `anchor`. |
-| P-6 | Interval amounts that straddle a bucket boundary (should) | supported | Stated per mode: whole in the bucket of its start (or end) in the `every` and calendar modes, prorated in the records mode. |
+| P-1 | Calendar buckets in a named IANA zone, correct across DST (must) [hk-scq] [hk-scq-article] [hc-agg] [gfit-agg] [gh-daily] [flux-aw] [influx3-time] [ts-gapfill] [prom-fn] | supported | `calendar` with `timezone`. |
+| P-2 | Recorded-local time: each sample's own offset decides its day (must) [hc-trf] [gh-dp] [gh-filters] [whoop-spec] [oura-spec] | supported | The recorded-local calendar; see R-TIME-1 and R-TIME-5. |
+| P-3 | Fixed-width buckets with an anchor, origin or offset (must) [hk-scq-article] [hc-agg] [gfit-agg] [gh-rollup] [flux-aw] [influxql] [influx3-time] | supported | `every` with `origin`; `offset` and `weekStart` on calendars. |
+| P-4 | Physical time and civil time kept apart in requests (should) [gh-rollup] [gh-daily] [gh-filters] [hc-agg] | partly | A range is two instants with offsets, never a wall-clock date, so "the local days of a trip" needs the offsets known first; a read by wall-clock range is a follow-up. |
+| P-5 | A rule for which day a session belongs to (should) [oura-spec] [gh-filters] [whoop-spec] | supported | `place: "end"`; the property read's `anchor`. |
+| P-6 | Interval amounts that straddle a bucket boundary (should) [hk-scq] [hc-agg] | supported | Stated per mode: whole in the bucket of its start (or end) in the `every` and calendar modes, prorated in the records mode. |
 | P-7 | Aggregation style declared per metric; wrong reducers refused (must) [hk-opts] [hk-sq] [hc-agg] | supported | Each value's `form` decides its reducers; `sum` of a gauge is a `422`. |
 | P-8 | Core statistics: sum, avg, min, max, count, most recent, duration covered (must) [hk-opts] [hk-stats] [fhir-stats] [prom-fn] | supported | The reducers by form, `last`, and each row's `coverage`. |
 | P-9 | Several statistics and several metrics on one bucket axis (must) [hk-opts] [hc-agg] [gfit-agg] | supported | Several `reducers`, and `metrics`. |
 | P-10 | Time-weighted average for irregular sampling (should) [ts-tw] | supported | `twa`. |
-| P-11 | Dispersion and percentiles (should) [fhir-stats] [prom-fn] [ts-hyper] | supported | `stddev`, `{"percentile": q}`; not over summaries. |
-| P-12 | Histograms, time in range and heart-rate zones (must) [whoop-spec] [hk-workout] [hk-zone] [gh-dp] [ts-hist] | supported | `durationIn`, one per band. |
+| P-11 | Dispersion and percentiles (should) [fhir-stats] [prom-fn] [ts-hyper] [hk-opts] | supported | `stddev`, `{"percentile": q}`; not over summaries. |
+| P-12 | Histograms, time in range and heart-rate zones (must) [whoop-spec] [hk-workout] [hk-zone] [gh-dp] [ts-hist] [prom-fn] | supported | `durationIn`, one per band. |
 | P-13 | Time in state for categorical streams (must) [hc-sessions] [whoop-spec] [oura-spec] [ts-state] | supported | `timeInState` for a coded gauge; `sum` by `code` for coded amounts such as sleep stages. |
-| P-14 | Statistics scoped to a session's window (must) [gfit-agg] [hk-query] [hc-sessions] | supported | The records mode, with `around`. |
-| P-15 | Counter increase and rate across resets (could) [prom-fn] | supported | `increase` and `rate` under the counter contracts. |
+| P-14 | Statistics scoped to a session's window (must) [gfit-agg] [hk-query] [hk-workout] [hc-sessions] | supported | The records mode, with `around`. |
+| P-15 | Counter increase and rate across resets (could) [prom-fn] [ts-hyper] | supported | `increase` and `rate` under the counter contracts. |
 | P-16 | Smoothing, trend and regression (could) [prom-fn] [fhir-stats] | partly | `rolling` gives windowed means; exponential smoothing and regression are the app's. |
 | P-17 | Merged statistics by default, per-source on request (must) [hk-stats] [hc-agg] [gfit-agg] | supported | `priority` merges, `separate` (the default) splits. |
 | P-18 | User-ordered source priority, resolved per time slice (must) [apple-support] [hc-agg] | supported | `priority`, resolved per stored interval before buckets are cut. |
@@ -200,18 +200,18 @@ partly, 2 are follow-ups and 2 are out of scope.
 | P-21 | Source discovery for a metric (should) [hk-source] | supported | The latest read grouped by `metric` and `source` (and `about`, `channel`, `statistic`): 124 streams from 16 sources on the demo in one request. [The stream list](../../health-apps.md#the-stream-list) |
 | P-22 | A reconciled raw stream (should) [gh-reconcile] | partly | `priority` resolves points into buckets; no read answers the resolved points themselves. |
 | P-23 | Provenance on every value: app, device type, recording method (must) [gh-dp] [withings-spec] [hc-sync] | supported | See R-SRC-1. |
-| P-24 | Most recent value per metric or code, and last N (must) [fhir-lastn] [hk-opts] [oura-spec] [hc-rrr] [prom-fn] | partly | The latest read answers the newest value per metric, source or code. The last N values of a metric is a list read ordered by `at:desc` only where each value is a record of its own. For `health/heart_rate` on the demo that list answers the pulse of Garmin's weekly blood pressure readings and WHOOP's workout and cycle summaries, or, over `observations/trace`, hourly traces of 12 values each, so the app unpacks the last N from the traces' `values`. |
-| P-25 | Raw sample reads with filter, order, limit and cursor (must) [hc-rrr] [hc-read] [hk-sample] [whoop-spec] [gh-rollup] | supported | The list read, keyset-paged. |
+| P-24 | Most recent value per metric or code, and last N (must) [fhir-lastn] [hk-opts] [hk-stats] [oura-spec] [hc-rrr] [prom-fn] | partly | The latest read answers the newest value per metric, source or code. The last N values of a metric is a list read ordered by `at:desc` only where each value is a record of its own. For `health/heart_rate` on the demo that list answers the pulse of Garmin's weekly blood pressure readings and WHOOP's workout and cycle summaries, or, over `observations/trace`, hourly traces of 12 values each, so the app unpacks the last N from the traces' `values`. |
+| P-25 | Raw sample reads with filter, order, limit and cursor (must) [hc-rrr] [hc-read] [hk-sample] [oura-spec] [whoop-spec] [withings-spec] [gh-rollup] | supported | The list read, keyset-paged. |
 | P-26 | Predicates on values, metadata and a parent's child statistics (should) [hk-query] [gh-filters] | partly | Filters on `value` and declared properties; none on statistics of a session's children. |
 | P-27 | Field projection (could) [oura-spec] | follow-up | [G-52](#g-52-records-route-limits). |
 | P-28 | Range and page caps with an explicit signal (should) [gh-rollup] [gh-daily] [whoop-spec] | supported | Budgets refuse with a `422` naming the limit, never a cut answer. |
 | P-29 | Incremental change feed with an anchor, deletions included (must) [hk-aoq] [hc-sync] [gfit-changes] [withings-spec] [fhir-http] | supported | `/api/v1/changes?watch=1` from a read's `head` and `generation`, deletions included, resumable from the last `seq`. [Incremental sync](../../health-apps.md#incremental-sync) |
-| P-30 | Push notification of changes and long-running queries (should) [whoop-hooks] [oura-spec] [hk-obs] [hk-scq] | partly | The watch stream (`watch=1`) pushes changed records; nothing pushes a changed aggregate. |
+| P-30 | Push notification of changes and long-running queries (should) [whoop-hooks] [oura-spec] [hk-obs] [hk-scq] [garmin-ow-blog] | partly | The watch stream (`watch=1`) pushes changed records; nothing pushes a changed aggregate. |
 | P-31 | Deletion propagation and cascade rules (must) [hc-sync] [hc-sessions] [hk-aoq] [whoop-hooks] [oura-spec] [withings-spec] | partly | See R-SYNC-3. |
 | P-32 | Writer idempotency key plus version (upsert) (must) [hk-sync] [hc-sync] [fhir-http] | supported | Composed ids and a `revision` that never falls. |
-| P-33 | Upstream natural keys and whole-document replace (should) [whoop-spec] [withings-spec] [oura-spec] | supported | Composed ids, and a `put` replaces the properties it names. `host.observed.trace` writes both keys of an exclusive pair (`every` and `offsets`, `values` and `codes`), the unused one null, so a rewrite replaces a period whole; a writer outside it nulls the other key itself. |
+| P-33 | Upstream natural keys and whole-document replace (should) [whoop-spec] [withings-spec] [oura-spec] [garmin-ow-blog] | supported | Composed ids, and a `put` replaces the properties it names. `host.observed.trace` writes both keys of an exclusive pair (`every` and `offsets`, `values` and `codes`), the unused one null, so a rewrite replaces a period whole; a writer outside it nulls the other key itself. |
 | P-34 | Provisional and final values, algorithm version (should) [whoop-spec] [oura-spec] | partly | Garmin's tentative nights and WHOOP's recoveries while it calibrates carry `quality: estimated`; WHOOP's adapter writes no value while a score is pending or unscorable; a metric names its `algorithm`. No read filters on `quality`: [G-50](#g-50-reducers-and-filter-arms). |
-| P-35 | History window and backfill (could) [hc-agg] | out of scope | A provider's matter, not the read's. |
+| P-35 | History window and backfill (could) [hc-agg] [garmin-ow-blog] | out of scope | A provider's matter, not the read's. |
 | P-36 | The value shapes: instant, interval, session, daily summary (must) [gh-filters] | supported | The forms `gauge`, `amount`, `counter`, `summary`, and the `sleep` and `workout` kinds. |
 | P-37 | Packed sample arrays inside one record (must) [oura-spec] [fhir-dt] | supported | `trace`. |
 | P-38 | Categorical samples (must) [hc-sessions] [oura-spec] | supported | `code` and `codeSet`. |
@@ -231,9 +231,9 @@ partly, 2 are follow-ups and 2 are out of scope.
 | P-52 | Panels: a report and its member results (must) [fhir-obs] [hk-query] | supported | `report` and `referencing`. |
 | P-53 | Result status and issued time apart from effective time (should) [fhir-obs] [fhir-stats] | partly | `status` and `issuedAt` stored; no read filters on `status`. |
 | P-54 | Coded test identity and grouping by code (should) [fhir-lastn] | supported | `coding` and the metric's `codes` (LOINC). |
-| P-55 | FHIR resource interchange (could) | out of scope | The build's scope list. |
+| P-55 | FHIR resource interchange (could) [hk-query] | out of scope | The build's scope list. |
 | P-56 | Gap filling with a declared policy (must) [ts-gapfill] [influxql] [flux-aw] [influx3-time] [gfit-agg] [hk-scq-article] [hc-agg] | supported | `fill` `null`, `zero` or `locf`; no linear interpolation. |
-| P-57 | Rolling windows (must) [prom-fn] [flux-tma] | supported | `rolling`. |
+| P-57 | Rolling windows (must) [prom-fn] [flux-tma] [hk-opts] [hc-agg] [gh-rollup] | supported | `rolling`. |
 | P-58 | Personal baselines and deviation from them (should) [oura-spec] [hc-skin] [garmin-hrv] | supported | See R-BASE-1. |
 | P-59 | Downsampling to a point budget (should) [ts-lttb] [gh-rollup] | supported | `downsample` (M4) with each extreme's `at`. |
 
@@ -423,7 +423,9 @@ Apps:
   https://ouraring.com/blog/symptom-radar/
 - S11 [fetched] Garmin manual, Heart Rate Variability Status: https://www8.garmin.com/manuals/webhelp/GUID-4462687B-8DF5-4719-872E-E16754F9D4B0/EN-US/GUID-5247CEC7-AF06-44FB-B6AD-87C53D4F7941.html
 - S12 [fetched] Garmin manual, Training Status: https://www8.garmin.com/manuals/webhelp/GUID-3A4F9C4A-8735-46C0-8DA9-65F11400B150/EN-US/GUID-44C7BB4B-EFF7-4A42-AC03-8A6AABB94807.html
-- S12b [search] Garmin manual, Acute Load: https://www8.garmin.com/manuals-apac/webhelp/forerunner170/EN-SG/GUID-EEFF46B0-70D8-407F-B380-2379C7CDD71E-3066.html
+- S12b [search] Garmin manual, Acute Load: https://www8.garmin.com/manuals-apac/webhelp/forerunner170/EN-SG/GUID-EEFF46B0-70D8-407F-B380-2379C7CDD71E-3066.html;
+  the 7-day and 28-day windows come from secondary sources, such as
+  https://www.wareable.com/garmin/garmin-watch-what-is-chronic-load-training-status
 - S12c [search] Garmin manual, Training Readiness: https://www8.garmin.com/manuals/webhelp/GUID-31D23DBB-57C2-4DF7-A0C9-8D1A00AB4BE7/EN-US/GUID-C21BE0C8-A08E-4DA1-B6C6-2E0E2DDDB372.html
 - S13 [search] Garmin manual, Heart Rate Variability and Stress Level: https://www8.garmin.com/manuals/webhelp/venu/EN-US/GUID-9282196F-D969-404D-B678-F48A13D8D0CB.html
 - S13b [search] Garmin manual, Body Battery: https://www8.garmin.com/manuals-apac/webhelp/forerunner965/EN-SG/GUID-DC1CDE44-C3A4-459E-B10D-B711D9DF8B26-7186.html
@@ -443,7 +445,8 @@ Apps:
 - S25 [search] Fitbit, sleep score: https://support.google.com/fitbit/answer/14236513
 - S26 [fetched] Strava, Run Pace Zone Analysis: https://support.strava.com/hc/en-us/articles/216918297-Run-Pace-Zone-Analysis-Premium-
 - S27 [search] Strava, pace and splits: https://support.strava.com/hc/en-us/articles/115001136770-Pace-Speed
-- S28 [search] Apple developer, statistics collection queries: https://developer.apple.com/documentation/healthkit/executing-statistics-collection-queries
+- S28 [search] Apple developer, statistics collection queries and options: https://developer.apple.com/documentation/healthkit/executing-statistics-collection-queries,
+  https://developer.apple.com/documentation/healthkit/hkstatisticsoptions
 - S29 [search] Strava, Best Efforts: https://support.strava.com/hc/en-us/articles/16601494390285-Best-Efforts-Running
 - S30 [fetched] Android Health Connect, aggregated data: https://developer.android.com/health-and-fitness/health-connect/aggregate-data
 - S31 [search] Cult of Mac on duplicate workouts: https://www.cultofmac.com/how-to/how-to-fix-apple-watch-duplicate-workouts
@@ -465,8 +468,9 @@ Apps:
 - S45 [search] Apple Health glucose units: https://www.mobihealthnews.com/news/apple-add-glucose-tracking-back-health
 - S46 [fetched] WHOOP developer, webhooks: https://developer.whoop.com/docs/developing/webhooks
 - S47 [fetched] Thryve, duplicate health data: https://www.thryve.health/blog/duplicate-health-data
+- [search] Welltory, how scores are computed (no id: camera PPG and HRV, no published formula, and no requirement beyond R-BASE-1 and R-WRITE-2 depends on it): https://help.welltory.com/en/articles/3352603-how-is-welltory-getting-your-health-scores-and-recommendations
 
-Platforms (all fetched 2026-10-13):
+Platforms (all fetched 2026-10-13; `(secondary)` marks a third party describing a platform whose docs are gated):
 
 - [hk-scq] https://developer.apple.com/documentation/healthkit/hkstatisticscollectionquery
 - [hk-scq-article] https://developer.apple.com/documentation/healthkit/executing-statistics-collection-queries
@@ -508,9 +512,11 @@ Platforms (all fetched 2026-10-13):
 - [fhir-stats] https://hl7.org/fhir/R4/observation-operation-stats.html
 - [fhir-http] https://hl7.org/fhir/R4/http.html
 - [fhir-dt] https://hl7.org/fhir/R4/datatypes-definitions.html
-- [oura-spec] https://cloud.ouraring.com/v2/static/json/openapi-1.41.json
+- [oura-spec] https://cloud.ouraring.com/v2/static/json/openapi-1.41.json (linked from https://cloud.ouraring.com/v2/docs)
 - [whoop-spec] https://api.prod.whoop.com/developer/doc/openapi.json
 - [whoop-hooks] https://developer.whoop.com/docs/developing/webhooks
+- [garmin-ow-blog] https://openwearables.io/blog/garmin-connect-api-developer-guide-activities-health-metrics (secondary)
+- [garmin-ow-doc] https://openwearables.io/docs/providers/garmin-api-integration.md (secondary)
 - [garmin-hrv] https://www8.garmin.com/manuals-apac/webhelp/venu33s/EN-SG/GUID-16D80A47-53F1-44B2-8C97-98DBB188E5AF-4096.html
 - [withings-spec] https://developer.withings.com/openapi.yaml
 - [flux-aw] https://docs.influxdata.com/flux/v0/stdlib/universe/aggregatewindow/
@@ -522,6 +528,7 @@ Platforms (all fetched 2026-10-13):
 - [ts-hyper] https://www.tigerdata.com/docs/api/latest/hyperfunctions
 - [ts-state] https://www.tigerdata.com/docs/api/latest/hyperfunctions/state-tracking/state_agg
 - [ts-tw] https://www.tigerdata.com/docs/api/latest/hyperfunctions/time-weighted-calculations/time_weight
+- [ts-cagg] https://www.tigerdata.com/docs/use-timescale/latest/continuous-aggregates/about-continuous-aggregates (real-time aggregation is disabled by default since 2.13; hierarchical aggregates)
 - [ts-lttb] https://www.tigerdata.com/docs/reference/toolkit/downsampling/lttb
 - [ts-hist] https://www.tigerdata.com/docs/api/latest/hyperfunctions/histogram/
 - [ucum-lhc] https://github.com/LHNCBC/ucum-lhc
