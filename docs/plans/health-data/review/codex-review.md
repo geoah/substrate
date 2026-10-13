@@ -2,7 +2,7 @@
 
 The proposed aggregate API can return incorrect totals because its storage model drops interval boundaries, summary classification, and filter distinctions before aggregation. Build with changes. Keep canonical records, provider-owned mirrors, a user-owned health package, and derived indexes. Settle the measurement and correction contracts before committing to the proposed tables or API.
 
-Reviewed on 2026-10-08 against the supplied worktree. I read `docs/plans/health-data.md` in full first, then `CLAUDE.md`, relevant decisions, sections of all six research reports, benchmark SQL and output, and the implementation cited below. Repository references are relative to `/home/geoah/.t3/worktrees/substrate/t3-d9d5090b`. This was read-only: no repository edits, database suites, database benchmarks, or dev server. Performance objections below come from inspection of the supplied SQL, not a replacement benchmark. A small local Python calculation checked storage arithmetic and a historical timezone counterexample.
+Reviewed on 2026-10-08 against the supplied worktree. I read `docs/plans/health-data.md` in full first, then `CLAUDE.md`, relevant decisions, sections of all six research reports, benchmark SQL and output, and the implementation cited below. Repository references are relative to the repository root. This was read-only: no repository edits, database suites, database benchmarks, or dev server. Performance objections below come from inspection of the supplied SQL, not a replacement benchmark. A small local Python calculation checked storage arithmetic and a historical timezone counterexample.
 
 The changes required before implementation are:
 

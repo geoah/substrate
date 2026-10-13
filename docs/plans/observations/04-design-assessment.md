@@ -1,7 +1,6 @@
 # Widening the health model to every observed quantity: a design assessment
 
-Status: assessment, 2026-10-08. Read-only against the worktree at
-`/home/geoah/.t3/worktrees/substrate/t3-d9d5090b` (branch `t3/d9d5090b`).
+Status: assessment, 2026-10-08. Read-only against this repository on branch `t3/d9d5090b`.
 Inputs: `docs/plans/health-data.md` (the revised health proposal, called "the
 proposal" below), the three reviews under `docs/plans/health-data/review/`,
 `CLAUDE.md`, `docs/terms.md`, decision records 0012, 0015, 0020, 0034, 0044,
