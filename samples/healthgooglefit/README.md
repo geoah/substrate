@@ -18,11 +18,11 @@ the provider this was tested against recordings only.
 | `com.google.heart_rate.bpm` | `merge_heart_rate_bpm` | `health/heart_rate` | gauge, hold `PT4M` | `/min` | hourly trace per device |
 | `com.google.step_count.delta` | `estimated_steps` | `health/steps` | amount | `{steps}` | hourly trace per device |
 | `com.google.calories.expended` | `merge_calories_expended` | `health/energy_expended` | amount | `kcal` | hourly trace per device |
-| `com.google.weight` | `merge_weight` | `health/body_mass` | gauge | `kg` | one observation per reading |
+| `com.google.weight` | `merge_weight` | `health/body_mass` | gauge, hold `P1D` | `kg` | one observation per reading |
 | `com.google.height` | `merge_height` | `health/height` | gauge | `m` | one observation per reading |
-| `com.google.body.fat.percentage` | `merged` | `health/body_fat_fraction` | gauge | `%` | one observation per reading |
-| `com.google.oxygen_saturation` | `merged` | `health/spo2` | gauge | `%` | one observation per reading |
-| `com.google.blood_glucose` | `merged` | `health/blood_glucose` | gauge | `mmol/L` | one observation per reading |
+| `com.google.body.fat.percentage` | `merged` | `health/body_fat_fraction` | gauge, hold `P1D` | `%` | one observation per reading |
+| `com.google.oxygen_saturation` | `merged` | `health/spo2` | gauge, hold `PT20M` | `%` | one observation per reading |
+| `com.google.blood_glucose` | `merged` | `health/blood_glucose` | gauge, hold `PT15M` | `mmol/L` | one observation per reading |
 | `com.google.blood_pressure` | `merged` | `health/systolic_blood_pressure`, `health/diastolic_blood_pressure` | gauge, hold `PT0S` | `mm[Hg]` | two observations per reading, each carrying both as `components` |
 | `com.google.sleep.segment` | `merged` | `health/sleep_stage` | amount | `min` | one observation per segment inside a sleep session, `code` beside the duration |
 
@@ -36,10 +36,14 @@ below, and not split between two hourly traces: the amount stays whole and
 neither hour claims time it does not cover.
 
 A session with `activityType` 72 becomes a `health/sleep` (span, `timeInBed`,
-`timeAsleep` and the `awake`, `light`, `deep` and `rem` totals); any other
-session becomes a `health/workout` with `sportSource` set to Fit's activity
-code, `sport` where the code is one the research verified (1 and 16 cycling,
-7 walking, 8 running, 80 strength, 108 other) and `duration` from
+`timeAsleep`, the `awake`, `light`, `deep` and `rem` totals, and
+`efficiency`, time asleep over time in bed). Fit sends no nap flag: a sleep
+session shorter than three hours that begins between 09:00 and 21:00 on the
+account's clock is `isNap: true`, any other `false`. Any other session
+becomes a `health/workout` with `sportSource` set to Fit's activity code,
+`sport` the code mapped onto the workout kind's code set (1, 14 to 19
+cycling, 7 walking, 8 running, 80 strength, 100 yoga and the rest the
+function's `SPORTS` table names; any other code `other`) and `duration` from
 `activeTimeMillis`.
 
 Each data type is read from ONE derived stream. Google keeps several views
@@ -53,7 +57,7 @@ metric). Distance is never mirrored: the provider does not request the
 location scope it needs.
 
 Fit's sleep segment codes map onto the catalogue's code set as 1 `awake`, 2
-`in_bed` (sleep with no stage), 4 `light`, 5 `deep` and 6 `rem`. Code 3 (out
+`asleep` (sleep with no stage), 4 `light`, 5 `deep` and 6 `rem`. Code 3 (out
 of bed) and 0 (unspecified) are no stage of the set and are skipped and
 counted; out-of-bed time is left out of `timeInBed`.
 
@@ -61,7 +65,8 @@ counted; out-of-bed time is left out of `timeInBed`.
 
 - A trace is `googlefit/<account id>/<device slug>/<metric>/<UTC hour>`, a
   reading `googlefit/<dataset row id>/<source slug>/<metric>/<start in epoch
-  ns>`, a stage `googlefit/<session row id>/stage/<n>`, and a sleep or
+  ns>`, a stage `googlefit/<session row id>/stage/<start in epoch ns>`
+  (so a corrected earlier segment renames no later one), and a sleep or
   workout `googlefit/<session row id>`. A reading's id names its source and
   its full `startTimeNanos`, so two sources reading one instant, or one
   source reading twice inside a millisecond, are separate observations, and
@@ -79,14 +84,21 @@ counted; out-of-bed time is left out of `timeInBed`.
   `originDataSourceId`'s. Two devices of one model are therefore two sources,
   and their readings at one instant two observations, `withings-body.4a91be20`
   beside `withings-body.4a91be21`. A hand entry is the `manual` source; a
-  session's source is its app (`com-strava`).
+  session's source is its app (`com-strava`). A source is minted
+  `ifAbsent`, so an owner's rename or `priorities` stands.
 - Fit stores no UTC offset. Each value's offset comes from the account's
-  `timezone`, read at write time, or UTC when the account names none. An
-  observation records which in a qualifier, `{system: utcOffsetRule, code:
-  timezone:Europe/Athens}` or `code: utc`. A trace, a sleep and a workout
-  declare no property for it, so the rule is not stamped on them; it is the
-  same for every row of one account. `quality` is left alone, because
-  `estimated` would describe the values, not their offset.
+  `timezone`, read at write time, and an observation records it in a
+  qualifier, `{system: utcOffsetRule, code: timezone:Europe/Athens}`. An
+  account that names no zone gives no offset, so none is written on any
+  output (the observed index marks such a value offsetless) rather than a
+  guessed UTC. `quality` is left alone, because `estimated` would describe
+  the values, not their offset.
+- The zone is the account's CURRENT one, which costs two things. A day spent
+  in another zone is stamped with the account's: a London night reads as an
+  Athens one, filed on the Athens date by a recorded-local read. And a
+  replay from 0, which the upgrade note below asks for, rewrites every past
+  value with the zone in force at the replay, so after the owner moves and
+  updates the zone every past Fit value moves onto the new zone's days.
 
 ## How a row's outputs stay right
 
@@ -101,7 +113,8 @@ it overlaps, and a stage observation lists the day rows it was cut from in
 
 `revision` is the newest `modifiedTimeMillis`, in seconds, among the points
 an output was built from, and never falls: a rewrite that would lower it
-keeps the stored one. That is per output rather than per day row, so a late
+keeps the stored one (`host.observed.reconcile` holds every adapter to that,
+and leaves an output that already holds what the row implies unwritten). That is per output rather than per day row, so a late
 point rewrites only the hour or the reading it lands in.
 
 Every output also carries `adapter: healthgooglefit@<version>`, the

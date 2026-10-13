@@ -46,9 +46,9 @@ const (
 func newFitHealth(t *testing.T, cutOn time.Time, toggles ...string) (substrate.Dataset, *fakeFit, time.Time) {
 	t.Helper()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	importVocabulary(t, ds, "healthgooglefit")
 	today := utcToday()
+	installFit(t, ds, today)
+	importVocabulary(t, ds, "healthgooglefit")
 	fake := newFakeFit(t, today, cutOn)
 	googlefitAccountWith(t, ds, toggles...)
 	googlefitSync(t, ds, fake)
@@ -149,15 +149,20 @@ func parseInstant(t *testing.T, v any) time.Time {
 // composed id readable in.
 var fitIDAlphabet = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
 
-// fitReadingID is the id the adapter gives one reading: the dataset row, the
-// source's slug, the metric and the start in nanoseconds, hashed the way
-// `_rid` hashes an id past 128 bytes or outside the alphabet.
-func fitReadingID(dayRow, slug, metric string, start time.Time) string {
-	readable := fmt.Sprintf("googlefit/%s/%s/%s/%d", dayRow, slug, metric, start.UnixNano())
+// fitReadingIDOf is a composed id as the adapter's `_rid` keeps it: as
+// written, or hashed past 128 bytes or outside the id alphabet.
+func fitReadingIDOf(readable string) string {
 	if len(readable) <= 128 && fitIDAlphabet.MatchString(readable) {
 		return readable
 	}
 	return runner.ExternalID("googlefit", googlefitAccount, readable)
+}
+
+// fitReadingID is the id the adapter gives one reading: the dataset row, the
+// source's slug, the metric and the start in nanoseconds, hashed the way
+// `_rid` hashes an id past 128 bytes or outside the alphabet.
+func fitReadingID(dayRow, slug, metric string, start time.Time) string {
+	return fitReadingIDOf(fmt.Sprintf("googlefit/%s/%s/%s/%d", dayRow, slug, metric, start.UnixNano()))
 }
 
 // TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts: one delivery
@@ -301,6 +306,36 @@ func TestHealthGoogleFitWritesTracesObservationsSleepAndWorkouts(t *testing.T) {
 	if checked < 25 {
 		t.Fatalf("only %d nights had stage amounts to check", checked)
 	}
+	// Fit's code 2 is sleep it did not stage, the catalogue's `asleep`; no
+	// stage is `in_bed`. A stage's id names its session and its start, so a
+	// segment corrected earlier in the night renames no later one.
+	codes := map[string]int{}
+	for _, row := range withMetric(t, ds, obsObservation, "sleep_stage") {
+		codes[fmt.Sprint(row.Properties["code"])]++
+		session := strings.TrimPrefix(storedRefPath(row.Properties["origin"]), googlefitSessionType+"/")
+		readable := fmt.Sprintf("googlefit/%s/stage/%d", session, parseInstant(t, row.Properties["at"]).UnixNano())
+		if want := fitReadingIDOf(readable); row.ID != want {
+			t.Fatalf("stage %s, want the id %s its session and start compose", row.ID, want)
+		}
+	}
+	if codes["asleep"] != 1 || codes["in_bed"] != 0 {
+		t.Fatalf("stage codes %v, want the recording's one unstaged segment as asleep and no in_bed", codes)
+	}
+	// Every night carries its efficiency, time asleep over time in bed, and
+	// none of the recorded sessions is a nap.
+	for _, sl := range sleeps {
+		asleep, err1 := parseISODuration(fmt.Sprint(sl.Properties["timeAsleep"]))
+		inBed, err2 := parseISODuration(fmt.Sprint(sl.Properties["timeInBed"]))
+		eff, _ := sl.Properties["efficiency"].(map[string]any)
+		if err1 != nil || err2 != nil || inBed == 0 {
+			continue
+		}
+		want := new(big.Rat).SetFrac64(asleep.Milliseconds()*100, inBed.Milliseconds()).FloatString(2)
+		if eff == nil || eff["value"] != want || eff["unit"] != "%" || sl.Properties["isNap"] != false {
+			t.Fatalf("sleep %s efficiency %v nap %v, want %s %% and no nap", sl.ID, sl.Properties["efficiency"], sl.Properties["isNap"], want)
+		}
+	}
+	assertCatalogueHolds(t, ds)
 
 	// Workouts: every other session, the Strava run among them.
 	run := mustGet(t, ds, healthWorkout, "googlefit/"+googlefitAccount+"/strava-16238731866").Properties
@@ -444,9 +479,9 @@ func TestHealthGoogleFitKeepsAnAmountsEnd(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	importVocabulary(t, ds, "healthgooglefit")
 	today := utcToday()
+	installFit(t, ds, today)
+	importVocabulary(t, ds, "healthgooglefit")
 	fake := newFakeFit(t, today, fitCutOn)
 	watch := fake.points[fitSteps][0].raw["originDataSourceId"]
 	recorded := time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC)
@@ -522,9 +557,9 @@ func TestHealthGoogleFitKeepsTwoSourcesAmountsAcrossAnHourApart(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	importVocabulary(t, ds, "healthgooglefit")
 	today := utcToday()
+	installFit(t, ds, today)
+	importVocabulary(t, ds, "healthgooglefit")
 	fake := newFakeFit(t, today, fitCutOn)
 	watch := fake.points[fitSteps][0].raw["originDataSourceId"]
 	recorded := time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC)
@@ -607,9 +642,9 @@ func TestHealthGoogleFitKeepsTwoSourcesReadingsApart(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	importVocabulary(t, ds, "healthgooglefit")
 	today := utcToday()
+	installFit(t, ds, today)
+	importVocabulary(t, ds, "healthgooglefit")
 	fake := newFakeFit(t, today, fitCutOn)
 	recorded := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
 	const (
@@ -743,9 +778,9 @@ func TestHealthGoogleFitKeepsSameModelDevicesApart(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	importVocabulary(t, ds, "healthgooglefit")
 	today := utcToday()
+	installFit(t, ds, today)
+	importVocabulary(t, ds, "healthgooglefit")
 	fake := newFakeFit(t, today, fitCutOn)
 	const (
 		fitGlucose = "derived:com.google.blood_glucose:com.google.android.gms:merged"
@@ -912,6 +947,7 @@ func TestHealthGoogleFitKeepsSameModelDevicesApart(t *testing.T) {
 	}
 	want("diastolic after cuff A dropped out", fitReadings(t, ds, "diastolic_blood_pressure"),
 		map[string]string{key(cb): "90.5"})
+	assertCatalogueHolds(t, ds)
 }
 
 // parseISODuration reads the PT#H#M#S durations the adapter writes.
@@ -931,9 +967,9 @@ func TestHealthGoogleFitWritesASmallReadingWithoutAnExponent(t *testing.T) {
 	requireUV(t)
 	t.Parallel()
 	_, ds := newCoreDataset(t)
-	install(t, ds, googlefitDir, nil)
-	importVocabulary(t, ds, "healthgooglefit")
 	today := utcToday()
+	installFit(t, ds, today)
+	importVocabulary(t, ds, "healthgooglefit")
 	fake := newFakeFit(t, today, fitCutOn)
 	recorded := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
 	start := strconv.FormatInt(recorded.UnixNano(), 10)
@@ -952,5 +988,41 @@ func TestHealthGoogleFitWritesASmallReadingWithoutAnExponent(t *testing.T) {
 	values := fitValues(fitReadings(t, ds, "body_mass"))
 	if len(values) != 1 || slices.Collect(maps.Values(values))[0] != "0.00001" {
 		t.Fatalf("the reading = %v, want 0.00001", values)
+	}
+}
+
+// TestHealthGoogleFitWritesNoOffsetWithoutAZone: Fit sends no offset, and an
+// account that names no zone gives none, so the adapter writes no offset
+// (the observed index marks such a value offsetless) rather than claiming
+// UTC; and a short afternoon sleep session is a nap, by the rule the README
+// states, since Fit sends no nap flag.
+func TestHealthGoogleFitWritesNoOffsetWithoutAZone(t *testing.T) {
+	requireUV(t)
+	t.Parallel()
+	recordedToday := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	ds, _, today := newFitHealth(t, recordedToday, "enabledBody")
+	mustPut(t, ds, substrate.PutInput{Kind: googlefitAccountType, ID: googlefitAccount, Properties: map[string]any{"timezone": nil}})
+	observeAll(t, ds)
+	weights := withMetric(t, ds, obsObservation, "body_mass")
+	if len(weights) == 0 {
+		t.Fatal("no weigh-in written")
+	}
+	for _, w := range weights {
+		if w.Properties["utcOffset"] != nil || w.Properties["qualifiers"] != nil {
+			t.Fatalf("weigh-in %s carries offset %v and qualifiers %v with no zone, want neither",
+				w.ID, w.Properties["utcOffset"], w.Properties["qualifiers"])
+		}
+	}
+	nap := today.Add(-11 * time.Hour)
+	mustPut(t, ds, substrate.PutInput{Kind: googlefitSessionType, ID: googlefitAccount + "/nap", Properties: map[string]any{
+		"account":   map[string]any{"ref": googlefitAccountType + "/" + googlefitAccount},
+		"sessionId": "nap", "activityType": 72, "name": "Nap",
+		"at": nap.Format(time.RFC3339), "endsAt": nap.Add(40 * time.Minute).Format(time.RFC3339),
+		"modifiedTimeMillis": nap.Add(time.Hour).UnixMilli(),
+	}})
+	observe(t, ds, googlefitSessionType, googlefitAccount+"/nap")
+	sl := mustGet(t, ds, healthSleep, "googlefit/"+googlefitAccount+"/nap").Properties
+	if sl["isNap"] != true || sl["utcOffsetStart"] != nil || sl["timeInBed"] != "PT40M" {
+		t.Fatalf("the afternoon session = %v, want a nap of 40 minutes with no offset", sl)
 	}
 }

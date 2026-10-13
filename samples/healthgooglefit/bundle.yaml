@@ -106,10 +106,12 @@ data:
 
     Fit stores no UTC offset on any point or session. Each value's offset comes
     from the account's owner-set `timezone`, read when the value is written,
-    and from UTC when the account names none. An observation says which in a
-    qualifier (`utcOffsetRule`: `timezone:<name>` or `utc`); a trace, a sleep
-    and a workout declare no property for it, and the rule is the same for
-    every row of one account.
+    and an observation names that zone in a qualifier (`utcOffsetRule`:
+    `timezone:<name>`). An account that names no zone gives no offset, so
+    nothing is written for one (the observed index marks such a value
+    offsetless) rather than a guessed UTC. The zone is the account's current
+    one: a value written after the owner moves takes the new zone, and a
+    replay rewrites every past value with it.
 
     A data type is written from ONE derived stream (MAPPINGS): Google keeps
     several views of the same quantity (estimated_steps and merge_step_deltas
@@ -121,7 +123,7 @@ data:
     import re as _re
     import zoneinfo
     from collections import Counter
-    from decimal import Decimal
+    from decimal import ROUND_HALF_UP, Decimal
 
     # The zone database is the tzdata package's: the sandbox does not promise
     # the host's own files are readable.
@@ -131,7 +133,7 @@ data:
     # `revision` (decision record 0162). Raise it with any change to what a
     # mirror row becomes, then replay `healthgooglefit-on-mirror` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "healthgooglefit@1"
+    ADAPTER = "healthgooglefit@2"
 
     HOME = "samples.substrate.reamde.dev"
     OBSERVATION = HOME + "/observations/observation"
@@ -156,8 +158,10 @@ data:
     SLEEP_TYPE = "com.google.sleep.segment"
     OFFSET_RULE = "utcOffsetRule"
 
-    # data type -> the derived streams read, the catalogue metric, its form and
-    # unit, Fit's own unit, and how the points are stored.
+    # data type -> the derived streams read, the catalogue metric, its form,
+    # unit and hold (samples/health/metrics.yaml: a gauge with no hold stands
+    # until its stream's next point), Fit's own unit, and how the points are
+    # stored.
     MAPPINGS = {
         "com.google.heart_rate.bpm": {
             "streams": ("merge_heart_rate_bpm",), "metric": "heart_rate",
@@ -171,19 +175,19 @@ data:
             "form": "amount", "unit": "kcal", "fitUnit": "kcal", "shape": "trace"},
         "com.google.weight": {
             "streams": ("merge_weight",), "metric": "body_mass", "form": "gauge",
-            "unit": "kg", "fitUnit": "kg", "shape": "single"},
+            "unit": "kg", "fitUnit": "kg", "hold": "P1D", "shape": "single"},
         "com.google.height": {
             "streams": ("merge_height",), "metric": "height", "form": "gauge",
             "unit": "m", "fitUnit": "m", "shape": "single"},
         "com.google.body.fat.percentage": {
             "streams": ("merged",), "metric": "body_fat_fraction", "form": "gauge",
-            "unit": "%", "fitUnit": "%", "shape": "single"},
+            "unit": "%", "fitUnit": "%", "hold": "P1D", "shape": "single"},
         "com.google.oxygen_saturation": {
             "streams": ("merged",), "metric": "spo2", "form": "gauge",
-            "unit": "%", "fitUnit": "%", "shape": "single"},
+            "unit": "%", "fitUnit": "%", "hold": "PT20M", "shape": "single"},
         "com.google.blood_glucose": {
             "streams": ("merged",), "metric": "blood_glucose", "form": "gauge",
-            "unit": "mmol/L", "fitUnit": "mmol/L", "shape": "single"},
+            "unit": "mmol/L", "fitUnit": "mmol/L", "hold": "PT15M", "shape": "single"},
         "com.google.blood_pressure": {
             "streams": ("merged",), "form": "gauge", "unit": "mm[Hg]",
             "fitUnit": "mm[Hg]", "hold": "PT0S", "shape": "pressure"},
@@ -192,11 +196,15 @@ data:
     PRESSURE = ("systolic_blood_pressure", "diastolic_blood_pressure")
 
     # Fit's sleep segment codes onto health/sleep_stage's code set. 2 is sleep
-    # with no stage, which the set spells in_bed. 3 (out of bed) and 0
-    # (unspecified) are no stage of the set and are skipped and counted.
-    STAGES = {1: "awake", 2: "in_bed", 4: "light", 5: "deep", 6: "rem"}
+    # with no stage, the set's `asleep`. 3 (out of bed) and 0 (unspecified)
+    # are no stage of the set and are skipped and counted.
+    STAGES = {1: "awake", 2: "asleep", 4: "light", 5: "deep", 6: "rem"}
     OUT_OF_BED = 3
     ASLEEP = (2, 4, 5, 6)
+    # Fit sends no nap flag: a sleep session shorter than this that begins
+    # between NAP_HOURS on the account's clock is a nap.
+    NAP_LONGEST = 3 * 3600 * NS
+    NAP_HOURS = (9, 21)
     # Fit's activity codes onto the workout kind's code set. A code not here
     # is `other`; the code itself stays in `sportSource`.
     SPORTS = {1: "cycling", 14: "cycling", 15: "cycling", 16: "cycling", 17: "cycling",
@@ -225,8 +233,8 @@ data:
                 "utcOffsetStart", "utcOffsetEnd", "every", "offsets", "values",
                 "codes", "origins", "revision", "adapter"),
         SLEEP: ("source", "origin", "revision", "adapter", "at", "endsAt", "utcOffsetStart",
-                "utcOffsetEnd", "timeInBed", "timeAsleep", "awake", "light", "deep",
-                "rem"),
+                "utcOffsetEnd", "isNap", "timeInBed", "timeAsleep", "awake", "light", "deep",
+                "rem", "efficiency"),
         WORKOUT: ("sport", "sportSource", "source", "origin", "revision", "adapter", "at",
                   "endsAt", "utcOffsetStart", "utcOffsetEnd", "duration"),
     }
@@ -314,7 +322,7 @@ data:
 
 
     class _Clock:
-        """The account's zone, or UTC, and the rule that says which."""
+        """The account's zone, and no offset at all where it names none."""
 
         def __init__(self, name):
             self.zone = None
@@ -323,16 +331,22 @@ data:
                     self.zone = zoneinfo.ZoneInfo(str(name))
                 except (zoneinfo.ZoneInfoNotFoundError, ValueError):
                     self.zone = None
-            self.rule = ("timezone:" + str(name)) if self.zone else "utc"
+            self.name = str(name) if self.zone else None
 
         def local(self, t):
+            """t on the account's clock, or in UTC for want of one; the UTC
+            reading carries no offset into what is written."""
             return t.astimezone(self.zone or UTC)
 
         def offset(self, t):
+            if self.zone is None:
+                return None
             return int(self.local(t).utcoffset().total_seconds() // 60)
 
         def qualifiers(self):
-            return [{"system": OFFSET_RULE, "code": self.rule}]
+            if self.zone is None:
+                return None
+            return [{"system": OFFSET_RULE, "code": "timezone:" + self.name}]
 
 
     class _Ctx:
@@ -550,6 +564,8 @@ data:
                                            source={"ref": source}, unit=unit, form=m["form"],
                                            period=PERIOD, hold=m.get("hold"))
             for doc in docs:
+                if ctx.clock.zone is None:
+                    doc["utcOffsetStart"] = doc["utcOffsetEnd"] = None
                 lo, hi = _parse(doc["at"]), _parse(doc["endsAt"])
                 mods = [mod for at, _, mod in pts if lo <= at < hi]
                 pid = ctx.host.observed.period_id(lo, PERIOD)
@@ -564,6 +580,7 @@ data:
         path = DATASET + "/" + rid
         desired, out = {}, {"skipped": 0}
         sessions = {}
+        ctx = None
         if row is not None:
             props = row.get("properties") or {}
             aid = _ref_id(props.get("account"), ACCOUNT)
@@ -596,9 +613,10 @@ data:
                 else:
                     out["skipped"] = _single(ctx, m, rid, pts, desired)
                 ctx.flush()
-        if "sleep.segment" in rid or row is None:
-            # A stage observation names the day rows it was cut from in
-            # `derivedFrom`, which finds the nights an emptied day touched.
+        if row is None:
+            # A deleted day has no span to find its nights by. A stage
+            # observation names the day rows it was cut from in `derivedFrom`,
+            # which finds the nights the day touched.
             for r in _list(host, {"kinds": [OBSERVATION],
                                   "referencing": {"ref": path, "property": "derivedFrom"}}):
                 sid = _ref_id((r.get("properties") or {}).get("origin"), SESSION)
@@ -608,7 +626,7 @@ data:
                         sessions[sid] = s
         out.update(_apply(host, path, desired, (OBSERVATION, TRACE)))
         for sid, s in sorted(sessions.items()):
-            sub = _session(host, sid, s)
+            sub = _session(host, sid, s, ctx)
             for k in ("written", "unchanged", "deleted", "skipped"):
                 out[k] = out.get(k, 0) + sub.get(k, 0)
         return out
@@ -649,14 +667,17 @@ data:
         return (delta.days * 86400 + delta.seconds) * NS + delta.microseconds * 1000
 
 
-    def _session(host, rid, row):
+    def _session(host, rid, row, ctx=None):
+        """A sleep or workout session. A dataset delivery that refreshes the
+        nights it overlaps passes the account's context it already read."""
         path = SESSION + "/" + rid
         desired, out = {}, {"skipped": 0}
         if row is not None:
             props = row.get("properties") or {}
             aid = _ref_id(props.get("account"), ACCOUNT)
             at, end = _parse(props.get("at")), _parse(props.get("endsAt"))
-            ctx = _Ctx(host, aid)
+            if ctx is None or ctx.aid != aid:
+                ctx = _Ctx(host, aid)
             revision = (_int(props.get("modifiedTimeMillis")) or 0) // 1000
             app = str((props.get("application") or {}).get("packageName") or "")
             base = {"origin": _ref(SESSION, rid), "at": _iso(at), "endsAt": _iso(end) if end else None,
@@ -684,7 +705,6 @@ data:
         skipped = 0
         totals = Counter()
         origins = Counter()
-        n = 0
         stage_metric = _ref(METRIC, "health/sleep_stage")
         for seg in segs:
             totals[seg["code"]] += seg["end"] - seg["start"]
@@ -692,12 +712,13 @@ data:
             if code is None:
                 skipped += 1
                 continue
-            n += 1
+            # A stage's id is its session and its start, never its place in
+            # the night, so a corrected earlier segment renames no later one.
             start = _ns_time(seg["start"])
             slug, source = ctx.source_for(seg["origin"])
             origins[slug, source["ref"]] += 1
             seconds = str(Decimal(seg["end"] - seg["start"]) / Decimal(NS))
-            oid = _rid(ctx.host, ctx.aid, "googlefit/%s/stage/%d" % (rid, n))
+            oid = _rid(ctx.host, ctx.aid, "googlefit/%s/stage/%d" % (rid, seg["start"]))
             desired[(OBSERVATION, oid)] = {
                 "metric": stage_metric, "source": source, "form": "amount", "code": code,
                 "value": {"value": ctx.host.units.convert(seconds, "s", "min"), "unit": "min"},
@@ -712,14 +733,21 @@ data:
         else:
             _, source = ctx.app_source(app)
         span = _ns(end) - _ns(at)
+        in_bed = span - totals[OUT_OF_BED]
+        start_hour = ctx.clock.local(at).hour
         sleep = dict(base, source=source,
                      revision=max([revision] + [s["modified"] // 1000 for s in segs]),
-                     timeInBed=ctx.duration(span - totals[OUT_OF_BED]))
+                     timeInBed=ctx.duration(in_bed),
+                     isNap=span < NAP_LONGEST and NAP_HOURS[0] <= start_hour < NAP_HOURS[1])
         if segs:
+            asleep = sum(totals[c] for c in ASLEEP)
             sleep.update({
-                "timeAsleep": ctx.duration(sum(totals[c] for c in ASLEEP)),
+                "timeAsleep": ctx.duration(asleep),
                 "awake": ctx.duration(totals[1]), "light": ctx.duration(totals[4]),
                 "deep": ctx.duration(totals[5]), "rem": ctx.duration(totals[6])})
+            if in_bed > 0:
+                ratio = (Decimal(asleep) * 100 / Decimal(in_bed)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                sleep["efficiency"] = {"value": format(ratio, "f"), "unit": "%"}
         desired[(SLEEP, _rid(ctx.host, ctx.aid, "googlefit/" + rid))] = sleep
         return skipped
 

@@ -29,7 +29,7 @@ const (
 const (
 	healthAppleAdapter     = "healthapple@2"
 	healthGarminAdapter    = "healthgarmin@2"
-	healthGoogleFitAdapter = "healthgooglefit@1"
+	healthGoogleFitAdapter = "healthgooglefit@2"
 )
 
 // adapterOutputs is every observation, trace, sleep and workout an adapter

@@ -2068,21 +2068,25 @@ repository's own authority. Package
 | `com.google.heart_rate.bpm` | `merge_heart_rate_bpm` | `health/heart_rate` | gauge, `/min`, hold `PT4M` | hourly trace per device |
 | `com.google.step_count.delta` | `estimated_steps` | `health/steps` | amount, `{steps}` | hourly trace per device |
 | `com.google.calories.expended` | `merge_calories_expended` | `health/energy_expended` | amount, `kcal` | hourly trace per device |
-| `com.google.weight` | `merge_weight` | `health/body_mass` | gauge, `kg` | an observation per reading |
+| `com.google.weight` | `merge_weight` | `health/body_mass` | gauge, `kg`, hold `P1D` | an observation per reading |
 | `com.google.height` | `merge_height` | `health/height` | gauge, `m` | an observation per reading |
-| `com.google.body.fat.percentage` | `merged` | `health/body_fat_fraction` | gauge, `%` | an observation per reading |
-| `com.google.oxygen_saturation` | `merged` | `health/spo2` | gauge, `%` | an observation per reading |
-| `com.google.blood_glucose` | `merged` | `health/blood_glucose` | gauge, `mmol/L` | an observation per reading |
+| `com.google.body.fat.percentage` | `merged` | `health/body_fat_fraction` | gauge, `%`, hold `P1D` | an observation per reading |
+| `com.google.oxygen_saturation` | `merged` | `health/spo2` | gauge, `%`, hold `PT20M` | an observation per reading |
+| `com.google.blood_glucose` | `merged` | `health/blood_glucose` | gauge, `mmol/L`, hold `PT15M` | an observation per reading |
 | `com.google.blood_pressure` | `merged` | `health/systolic_blood_pressure` and `health/diastolic_blood_pressure` | gauge, `mm[Hg]`, hold `PT0S` | two observations per reading, each with both as `components` |
 | `com.google.sleep.segment` | `merged` | `health/sleep_stage` | amount, `min`, with `code` | an observation per segment of a sleep session |
 
 A session with `activityType` 72 becomes a `health/sleep` with its stage
-totals; any other becomes a `health/workout` whose `sport` is Fit's activity
-code mapped onto the workout code set (100 is `yoga`, 80 `strength`, 108 and
-any code without a value of its own `other`) and whose `sportSource` is the
-code. Fit's sleep codes map as 1 `awake`, 2 `in_bed` (sleep with no
-stage), 4 `light`, 5 `deep` and 6 `rem`; 3 (out of bed) and 0 are skipped and
-counted. Each data type is read from one derived stream, so a quantity Google
+totals and `efficiency` (time asleep over time in bed); Fit sends no nap
+flag, so a session shorter than three hours that begins between 09:00 and
+21:00 on the account's clock is `isNap`. Any other session becomes a
+`health/workout` whose `sport` is Fit's activity code mapped onto the
+workout code set (100 is `yoga`, 80 `strength`, 108 and any code without a
+value of its own `other`) and whose `sportSource` is the code. Fit's sleep
+codes map as 1 `awake`, 2 `asleep` (sleep with no stage), 4 `light`, 5
+`deep` and 6 `rem`; 3 (out of bed) and 0 are skipped and counted. A stage's
+id is its session and its start, so a corrected earlier segment renames no
+later one. Each data type is read from one derived stream, so a quantity Google
 keeps in two views is never counted twice; the resting heart rate stream,
 `merge_step_deltas`, `com.google.calories.bmr` (a rate, kcal per day),
 activity segments and active and heart minutes have no catalogue metric here
@@ -2095,11 +2099,20 @@ Every output names its origin row (`origin`, or `origins` on a trace), and a
 delivery rewrites that row's whole output set, deleting what the row no
 longer implies, so a re-read day, an emptied day and a deleted session
 converge. `revision` is the newest `modifiedTimeMillis`, in seconds, of the
-points an output was built from, and a stored higher one is kept. Fit stores
-no UTC offset, so each offset comes from the account's `timezone`, or UTC
-where none is set; an observation names the rule in a `utcOffsetRule`
-qualifier, and a trace, a sleep and a workout have no property for it. The
-ids, the sources and the rest are in the sample's
+points an output was built from, and a stored higher one is kept. Sources are
+minted `ifAbsent`, so an owner's edit to one stands.
+
+**Offsets come from the account's current zone.** Fit stores no UTC offset,
+so each offset comes from the account's `timezone` as it is when the value
+is written, and an observation names it in a `utcOffsetRule` qualifier
+(`timezone:Europe/Athens`). An account that names no zone gives no offset,
+and none is written: the observed index marks such a value offsetless,
+never a guessed UTC. Two costs follow. A day spent in another zone is
+stamped with the account's zone, so a recorded-local read files a London
+night by its Athens date. And a replay, which an adapter upgrade asks for,
+rewrites every past value with the zone in force at the replay, so an owner
+who moves and updates the zone moves every past Fit value onto the new
+zone's days. The ids, the sources and the rest are in the sample's
 [README](../samples/healthgooglefit/README.md).
 
 ## Garmin to health (sample)
