@@ -52,7 +52,9 @@ data:
     - providers.substrate.reamde.dev/whoop
   requiresAtLeast:
     samples.substrate.reamde.dev/observations: 1
-    samples.substrate.reamde.dev/health: 1
+    # 2 declares the sleep's and the workout's `name`, which this adapter
+    # writes.
+    samples.substrate.reamde.dev/health: 2
     # 21 is the version that deletes a mirror row WHOOP deleted, which is
     # what lets this adapter delete the outputs of one.
     providers.substrate.reamde.dev/whoop: 21

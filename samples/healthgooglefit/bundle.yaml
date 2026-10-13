@@ -39,7 +39,9 @@ data:
     - providers.substrate.reamde.dev/googlefit
   requiresAtLeast:
     samples.substrate.reamde.dev/observations: 1
-    samples.substrate.reamde.dev/health: 1
+    # 2 declares the sleep's and the workout's `name`, which this adapter
+    # writes.
+    samples.substrate.reamde.dev/health: 2
     providers.substrate.reamde.dev/googlefit: 1
   installs:
     - samples.substrate.reamde.dev/healthgooglefit/adaptgooglefit

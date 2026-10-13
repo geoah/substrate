@@ -22,7 +22,11 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: health
-  version: 1
+  # 2: a sleep and a workout declare a `name` heading and title themselves
+  # from it, which the adapters' `name` writes need; `health/bmi`'s Garmin
+  # code is `bodyMassIndex`; a converted reference bound takes the converted
+  # value's decimal places.
+  version: 2
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # Kinds, one function and the metric catalogue (metrics.yaml) with the lab
