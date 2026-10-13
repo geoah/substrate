@@ -1519,87 +1519,91 @@ func (r *aggRun) amountCoverage(g *aggGroup, cells aggCells) error {
 
 // rollupFragments merges the raw points of an amount's or a counter's cut bucket
 // ends into the buckets, through observed.Bucket as a rollup row would, its
-// groups in key order so the merge does not follow a map's.
+// groups in key order so the merge does not follow a map's. The segments and
+// each segment's points are in time order, so a cut end's points are found
+// by binary search: a bucket narrower than a rollup row is all cut end, and a
+// scan per bucket would take buckets times points.
 func (r *aggRun) rollupFragments(out aggCells, g *aggGroup, s *aggStream, si int) error {
-	ser := r.series[s]
+	segs := r.series[s].segs
 	for _, b := range r.buckets {
 		if err := r.canceled(); err != nil {
 			return err
 		}
 		_, frags := split(b)
 		for _, e := range frags {
-			for _, seg := range ser.segs {
-				if seg.from.After(e[0]) || seg.to.Before(e[1]) {
+			k := sort.Search(len(segs), func(i int) bool { return !segs[i].to.Before(e[1]) })
+			if k == len(segs) || segs[k].from.After(e[0]) {
+				continue
+			}
+			seg := &segs[k]
+			lo := sort.Search(len(seg.points), func(i int) bool { return !seg.points[i].At.Before(e[0]) })
+			hi := sort.Search(len(seg.points), func(i int) bool { return !seg.points[i].At.Before(e[1]) })
+			var pts []observed.Point
+			groups := map[string]string{}
+			for _, ap := range seg.points[lo:hi] {
+				if err := r.canceled(); err != nil {
+					return err
+				}
+				if !r.admits(ap.Code) {
 					continue
 				}
-				var pts []observed.Point
-				groups := map[string]string{}
-				for _, ap := range seg.points {
-					if err := r.canceled(); err != nil {
-						return err
-					}
-					if ap.At.Before(e[0]) || !ap.At.Before(e[1]) || !r.admits(ap.Code) {
-						continue
-					}
-					q := ap.Point
-					ck := r.codeKey(ap.Code)
-					q.Group = ck + "\x1f" + ap.Unit
-					groups[q.Group] = ck
-					pts = append(pts, q)
+				q := ap.Point
+				ck := r.codeKey(ap.Code)
+				q.Group = ck + "\x1f" + ap.Unit
+				groups[q.Group] = ck
+				pts = append(pts, q)
+			}
+			if len(pts) == 0 {
+				continue
+			}
+			var prev *observed.Point
+			for i := lo - 1; i >= 0; i-- {
+				if err := r.canceled(); err != nil {
+					return err
 				}
-				if len(pts) == 0 {
-					continue
-				}
-				var prev *observed.Point
-				for i := len(seg.points) - 1; i >= 0; i-- {
-					if err := r.canceled(); err != nil {
-						return err
-					}
-					if ap := seg.points[i]; ap.At.Before(e[0]) && !ap.Unavailable {
-						p := ap.Point
-						prev = &p
-						break
-					}
-				}
-				if prev == nil && seg.prev != nil {
-					p := seg.prev.Point
+				if ap := seg.points[i]; !ap.Unavailable {
+					p := ap.Point
 					prev = &p
+					break
 				}
-				stats := observed.Bucket(g.form, e[0], e[1], prev, pts)
-				for _, key := range sortedKeys(stats) {
-					st := stats[key]
-					unit := strings.SplitN(key, "\x1f", 2)[1]
-					conv, err := r.convertStats(*st, obsGroup{unit: unit}, s.source)
-					if err != nil {
+			}
+			if prev == nil && seg.prev != nil {
+				p := seg.prev.Point
+				prev = &p
+			}
+			stats := observed.Bucket(g.form, e[0], e[1], prev, pts)
+			for _, key := range sortedKeys(stats) {
+				st := stats[key]
+				unit := strings.SplitN(key, "\x1f", 2)[1]
+				conv, err := r.convertStats(*st, obsGroup{unit: unit}, s.source)
+				if err != nil {
+					return err
+				}
+				ev := cell(out, b, groups[key], g.form, false)
+				r.mergeStats(ev, conv, g.form, si)
+				if st.N > 0 {
+					ev.sources[s.source] = true
+				}
+				if g.form == vocabulary.FormCounter {
+					ev.coverage += st.CoveredMs
+				}
+				if conv.Increase != nil {
+					ev.steps.add(conv.Increase, false, st.CoveredMs)
+					ev.steps.resets += st.Resets
+				}
+			}
+			if g.form == vocabulary.FormAmount {
+				// A cut end's spans are known exactly, so they join the
+				// rows' extents as raw spans.
+				for _, p := range pts {
+					if err := r.canceled(); err != nil {
 						return err
 					}
-					ev := cell(out, b, groups[key], g.form, false)
-					r.mergeStats(ev, conv, g.form, si)
-					if st.N > 0 {
-						ev.sources[s.source] = true
-					}
-					if g.form == vocabulary.FormCounter {
-						ev.coverage += st.CoveredMs
-					}
-					if conv.Increase != nil {
-						ev.steps.add(conv.Increase, false, st.CoveredMs)
-						ev.steps.resets += st.Resets
+					if !p.Unavailable {
+						ev := cell(out, b, r.codeKey(p.Code), g.form, false)
+						ev.extents = append(ev.extents, observed.Extent{Start: p.At, End: p.End, Ms: p.End.Sub(p.At).Milliseconds(), Exact: true})
 					}
 				}
-				if g.form == vocabulary.FormAmount {
-					// A cut end's spans are known exactly, so they join the
-					// rows' extents as raw spans.
-					for _, p := range pts {
-						if err := r.canceled(); err != nil {
-							return err
-						}
-						if !p.Unavailable {
-							ev := cell(out, b, r.codeKey(p.Code), g.form, false)
-							ev.extents = append(ev.extents, observed.Extent{Start: p.At, End: p.End, Ms: p.End.Sub(p.At).Milliseconds(), Exact: true})
-						}
-					}
-				}
-				break
 			}
 		}
 	}
