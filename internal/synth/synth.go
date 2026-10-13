@@ -150,9 +150,14 @@ func EmitterByName(name string) (Emitter, bool) {
 }
 
 // WriteOutput writes the output under dir/<name>/, deliveries as numbered
-// envelope files beside the rest, and answers the paths written.
+// envelope files beside the rest, and answers the paths written. It removes
+// dir/<name>/ first: `load` posts every delivery and applies every document
+// it finds there, so a file an earlier run left would load beside this one.
 func WriteOutput(dir string, e Emitter, out *Output) ([]string, error) {
 	base := filepath.Join(dir, e.Name())
+	if err := os.RemoveAll(base); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return nil, err
 	}
