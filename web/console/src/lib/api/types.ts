@@ -367,13 +367,7 @@ export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
 /** A stream key a result may be grouped by; `statistic` on a read from
  * summaries only. */
 export type AggregateGroupKey =
-  | "source"
-  | "about"
-  | "code"
-  | "metric"
-  | "kind"
-  | "channel"
-  | "statistic"
+  "source" | "about" | "code" | "metric" | "kind" | "channel" | "statistic"
 
 /** The `aggregate` parameter of `GET /records` (`substrate.Aggregate`,
  * decision 0161). Exactly one of `metric` and `property`, except the latest

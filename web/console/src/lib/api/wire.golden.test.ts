@@ -408,8 +408,10 @@ const aggregateBucket: Shape<AggregateBucket> = {
   origin: false,
   calendar: false,
   timezone: false,
+  fallbackTimezone: false,
   weekStart: false,
   offset: false,
+  place: false,
   records: false,
 }
 
@@ -432,6 +434,7 @@ const aggregateSources: Shape<AggregateSources> = {
 const aggregateRolling: Shape<AggregateRolling> = {
   buckets: true,
   reducers: false,
+  through: false,
 }
 
 const aggregateBudget: Shape<AggregateBudget> = {
@@ -470,6 +473,7 @@ const aggregateRow: Shape<AggregateRow> = {
   coverage: false,
   values: true,
   count: true,
+  offsetless: false,
   bounded: true,
   synthetic: true,
   unavailable: true,
@@ -483,6 +487,7 @@ const aggregateGroup: Shape<AggregateGroup> = {
   metric: false,
   kind: false,
   channel: false,
+  statistic: false,
   currency: false,
 }
 
@@ -495,6 +500,7 @@ const aggregateValue: Shape<AggregateValue> = {
   code: false,
   rolling: false,
   of: false,
+  n: false,
 }
 
 const tokenInfo: Shape<TokenInfo> = {

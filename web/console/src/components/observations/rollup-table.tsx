@@ -37,6 +37,7 @@ const GROUP_WORDS: Record<AggregateGroupKey, string> = {
   metric: "Metric",
   kind: "Collection",
   channel: "Channel",
+  statistic: "Statistic",
 }
 
 /** A reducer's column head: its words, and the unit its values carry. */
