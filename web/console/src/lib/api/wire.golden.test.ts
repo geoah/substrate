@@ -47,6 +47,7 @@ import type {
   AggregateGroup,
   AggregateHead,
   AggregateMetric,
+  AggregateMetricRead,
   AggregateProperty,
   AggregateRange,
   AggregateRecord,
@@ -381,6 +382,7 @@ const occurrenceProblem: Shape<OccurrenceProblem> = {
 
 const aggregate: Shape<Aggregate> = {
   metric: false,
+  metrics: false,
   property: false,
   from: false,
   minCoverage: false,
@@ -397,6 +399,14 @@ const aggregate: Shape<Aggregate> = {
 }
 
 const aggregateMetric: Shape<AggregateMetric> = { ref: true }
+
+const aggregateMetricRead: Shape<AggregateMetricRead> = {
+  ref: true,
+  unit: false,
+  reducers: false,
+  from: false,
+  statistic: false,
+}
 
 const aggregateProperty: Shape<AggregateProperty> = {
   name: true,
@@ -468,6 +478,7 @@ const aggregateResult: Shape<AggregateResult> = {
   metric: false,
   property: false,
   unit: false,
+  units: false,
   bucket: false,
   from: false,
   exact: true,
@@ -891,6 +902,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   Page: page,
   Aggregate: aggregate,
   AggregateMetric: aggregateMetric,
+  AggregateMetricRead: aggregateMetricRead,
   AggregateProperty: aggregateProperty,
   AggregateRange: aggregateRange,
   AggregateBucket: aggregateBucket,

@@ -103,9 +103,9 @@ const amountReachSQL = `
 // amountReach is how far before a records-mode window each stream's amounts
 // may start and still reach into it: its longest span among those meeting
 // the windows' extent. A stream it does not name has no span there. The
-// amounts it reads count against maxSamples (read is how many), and past
-// it the read is refused.
-func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time) (reach map[obsStream]time.Duration, read int64, err error) {
+// amounts it reads count against maxSamples (read is how many) beside the
+// spent the read counted before it, and past it the read is refused.
+func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, p *aggPlan, streams []*aggStream, windows [][2]time.Time, spent int64) (reach map[obsStream]time.Duration, read int64, err error) {
 	out := map[obsStream]time.Duration{}
 	if len(windows) == 0 {
 		return out, 0, nil
@@ -128,7 +128,7 @@ func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, p *aggPlan, stre
 		}
 	}
 	ids := streamKeys(keys, false)
-	rows, err := tx.QueryContext(ctx, amountReachSQL, ids[0], ids[1], ids[2], ids[3], ids[4], lo, hi, p.maxSamples+1)
+	rows, err := tx.QueryContext(ctx, amountReachSQL, ids[0], ids[1], ids[2], ids[3], ids[4], lo, hi, max(p.maxSamples-spent, 0)+1)
 	if err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate amount reach: %w", err)
 	}
@@ -145,9 +145,13 @@ func (ds *dataset) amountReach(ctx context.Context, tx *sql.Tx, p *aggPlan, stre
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
-	if read > p.maxSamples {
-		return nil, 0, refuse("aggregate.budget.maxSamples", "finding how far amounts reach into the windows reads every value with a span from the first window's start to each stream's newest, more than %d; read windows nearer the newest values, narrow the filter, or raise maxSamples (the cap is %d)",
-			p.maxSamples, substrate.AggregateMaxSamplesCap)
+	if read+spent > p.maxSamples {
+		beside := ""
+		if spent > 0 {
+			beside = fmt.Sprintf(" beside the %d raw points the read counted before it", spent)
+		}
+		return nil, 0, refuse("aggregate.budget.maxSamples", "finding how far amounts reach into the windows reads every value with a span from the first window's start to each stream's newest%s, more than %d; read windows nearer the newest values, narrow the filter, or raise maxSamples (the cap is %d)",
+			beside, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
 	return out, read, nil
 }
@@ -227,7 +231,7 @@ func (r *aggRun) conversion(unit string, delta bool, source string) (*convFactor
 		if source != "" {
 			from = " from " + source
 		}
-		return nil, refuse("aggregate.unit", "a value%s stored in %s does not convert to %s: %v", from, unit, r.u.value, err)
+		return nil, refuse(r.p.path("unit"), "a value%s stored in %s does not convert to %s: %v", from, unit, r.u.value, err)
 	}
 	return c, nil
 }

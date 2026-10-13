@@ -24,8 +24,14 @@ func (d *fakeDataset) Aggregate(_ context.Context, q substrate.AggregateQuery) (
 	if q.Aggregate == nil {
 		return nil, fmt.Errorf("%w: aggregate: the read needs an aggregate body", substrate.ErrValidation)
 	}
-	if q.Aggregate.Metric != nil && q.Aggregate.Property != nil {
-		return nil, &substrate.ValidationError{Problems: []string{"aggregate: name metric or property, not both"}}
+	selectors := 0
+	for _, set := range []bool{q.Aggregate.Metric != nil, q.Aggregate.Metrics != nil, q.Aggregate.Property != nil} {
+		if set {
+			selectors++
+		}
+	}
+	if selectors > 1 {
+		return nil, &substrate.ValidationError{Problems: []string{"aggregate: name one of metric, metrics and property"}}
 	}
 	if d.aggregateResult != nil {
 		out := *d.aggregateResult

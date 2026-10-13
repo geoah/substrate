@@ -136,12 +136,13 @@ type aggOut struct {
 	row    substrate.AggregateRow
 }
 
-// run reduces every group into rows. Every group is evaluated before any
-// row is written, because a recorded-local read creates buckets as it goes.
-func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
-	raws, sums := make([]aggCells, len(groups)), make([]aggCells, len(groups))
+// eval reduces every group of the run into its cells, raw and summary, by
+// bucket and code. Every group of every metric of the read is evaluated
+// before any row is written, because a recorded-local read creates buckets
+// as it goes (aggregateMetric).
+func (r *aggRun) eval(groups []*aggGroup) (raws, sums []aggCells, err error) {
+	raws, sums = make([]aggCells, len(groups)), make([]aggCells, len(groups))
 	for gi, g := range groups {
-		var err error
 		if len(g.raw) > 0 && r.p.source != substrate.AggregateFromSummaries {
 			if g.rollups {
 				raws[gi], err = r.evalRollups(g)
@@ -149,26 +150,27 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 				raws[gi], err = r.evalRaw(g, g.raw, g.form)
 			}
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 		if len(g.sums) > 0 && r.p.source != substrate.AggregateFromRaw {
 			if sums[gi], err = r.evalRaw(g, g.sums, vocabulary.FormSummary); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
-	if n := len(r.buckets) * max(r.nSeries, 1); n > r.p.maxBuckets {
-		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d series is %d, over %d; narrow the range or raise maxBuckets",
-			len(r.buckets), r.nSeries, n, r.p.maxBuckets)
-	}
-	var out []aggOut
-	codeGroups := 0
+	return raws, sums, nil
+}
+
+// assemble writes the rows of every group's cells, in bucket order over the
+// read's buckets, and counts the series (a group and a code) that hold a
+// row, which the read holds to maxGroups.
+func (r *aggRun) assemble(groups []*aggGroup, raws, sums []aggCells) (out []aggOut, series int, err error) {
 	for gi, g := range groups {
 		seen := map[string]bool{}
 		for bi, b := range r.buckets {
 			if err := r.canceled(); err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			codes := map[string]bool{}
 			for c := range raws[gi][b] {
@@ -184,21 +186,17 @@ func (r *aggRun) run(groups []*aggGroup) ([]aggOut, error) {
 				}
 				if !seen[code] {
 					seen[code] = true
-					codeGroups++
+					series++
 				}
 				row, err := r.row(b, g, code, ev, from)
 				if err != nil {
-					return nil, err
+					return nil, 0, err
 				}
 				out = append(out, aggOut{bucket: bi, group: g, code: code, row: row})
 			}
 		}
 	}
-	if codeGroups > r.p.maxGroups {
-		return nil, refuse("aggregate.budget.maxGroups", "grouping by code makes %d groups, over %d; filter the codes or raise maxGroups (the cap is %d)",
-			codeGroups, r.p.maxGroups, substrate.AggregateMaxGroupsCap)
-	}
-	return out, nil
+	return out, series, nil
 }
 
 // choose picks a bucket's evidence: raw points or summaries, never both;

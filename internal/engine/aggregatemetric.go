@@ -139,11 +139,107 @@ type aggMeta struct {
 	inexact bool
 }
 
+// metricRun is one metric of a read as it runs: its plan's run, its groups
+// and, once reduced, their cells.
+type metricRun struct {
+	r          *aggRun
+	groups     []*aggGroup
+	raws, sums []aggCells
+}
+
+// aggregateMetric answers a metric read, a downsample or a several-metric
+// read. Every metric is settled first (its streams, units, forms and
+// groups, each refusal naming the metric's own options), then each plans
+// and is charged, then each is reduced, and only then are rows written: the
+// metrics share the read's buckets, its budgets and, in the recorded-local
+// calendar, each bucket's bounds.
 func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) (*substrate.AggregateResult, error) {
 	buckets, err := ds.buckets(ctx, tx, p)
 	if err != nil {
 		return nil, err
 	}
+	windows, err := p.windows(ctx, buckets)
+	if err != nil {
+		return nil, err
+	}
+	plans := p.metrics
+	if plans == nil {
+		plans = []*aggPlan{p}
+	}
+	runs := make([]*metricRun, len(plans))
+	var samples int64
+	groups, series := 0, 0
+	for i, mp := range plans {
+		m, err := ds.settleMetric(ctx, tx, mp, buckets, windows, samples)
+		if err != nil {
+			return nil, err
+		}
+		runs[i], samples = m, m.r.samples
+		groups, series = groups+len(m.groups), series+m.r.nSeries
+	}
+	if err := p.checkMetrics(len(plans), groups, series, len(buckets)); err != nil {
+		return nil, err
+	}
+	for _, m := range runs {
+		m.r.samples = samples
+		if err := m.r.plan(m.groups); err != nil {
+			return nil, err
+		}
+		samples = m.r.samples
+	}
+	if tr := traceOf(ctx); tr != nil && tr.afterPlan != nil {
+		tr.afterPlan()
+	}
+	// A recorded-local read makes a bucket where a point names a day the
+	// range's enumeration did not; each metric reduces into the buckets the
+	// metrics before it made, so one day is one bucket for every metric.
+	for _, m := range runs {
+		m.r.buckets, m.r.samples = buckets, samples
+		if m.raws, m.sums, err = m.r.eval(m.groups); err != nil {
+			return nil, err
+		}
+		buckets, samples = m.r.buckets, m.r.samples
+	}
+	if n := len(buckets) * max(series, 1); n > p.maxBuckets {
+		return nil, refuse("aggregate.budget.maxBuckets", "the points fall in %d recorded-local buckets, times %d series is %d, over %d; narrow the range or raise maxBuckets",
+			len(buckets), series, n, p.maxBuckets)
+	}
+	meta := aggMeta{sources: map[string]bool{}}
+	var rows []aggOut
+	held := 0
+	for _, m := range runs {
+		m.r.buckets = buckets
+		out, n, err := m.r.assemble(m.groups, m.raws, m.sums)
+		if err != nil {
+			return nil, err
+		}
+		rows, held = append(rows, out...), held+n
+		meta.inexact = meta.inexact || m.r.meta.inexact
+		for s := range m.r.meta.sources {
+			meta.sources[s] = true
+		}
+	}
+	if held > p.maxGroups {
+		return nil, refuse("aggregate.budget.maxGroups", "grouping by code makes %d groups, over %d; filter the codes or raise maxGroups (the cap is %d)",
+			held, p.maxGroups, substrate.AggregateMaxGroupsCap)
+	}
+	res := p.metricResult(runs)
+	if res.Rows, err = p.fillAndRoll(ctx, rows, buckets, &meta); err != nil {
+		return nil, err
+	}
+	res.Exact = !meta.inexact
+	for s := range meta.sources {
+		res.Sources = append(res.Sources, s)
+	}
+	sort.Strings(res.Sources)
+	return res, nil
+}
+
+// settleMetric selects one metric's streams and settles its units, forms
+// and groups, refusing what the metric's options do not admit before any
+// rollup row or point is read to reduce. spent is the raw points the read's
+// statements counted before it, which the metric's discovery adds to.
+func (ds *dataset) settleMetric(ctx context.Context, tx *sql.Tx, p *aggPlan, buckets []*aggBucket, windows [][2]time.Time, spent int64) (*metricRun, error) {
 	selected, err := ds.selectStreams(ctx, tx, p)
 	if err != nil {
 		return nil, err
@@ -154,18 +250,15 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 	if err != nil {
 		return nil, err
 	}
-	windows, err := p.windows(ctx, buckets)
-	if err != nil {
-		return nil, err
-	}
 	var reach map[obsStream]time.Duration
-	var reachRead int64
 	if p.bucket.mode == bucketRecords && p.source != substrate.AggregateFromSummaries {
-		if reach, reachRead, err = ds.amountReach(ctx, tx, p, selected, windows); err != nil {
+		var read int64
+		if reach, read, err = ds.amountReach(ctx, tx, p, selected, windows, spent); err != nil {
 			return nil, err
 		}
+		spent += read
 	}
-	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows, reach, reachRead)
+	streams, samples, err := ds.discoverForms(ctx, tx, p, selected, windows, reach, spent)
 	if err != nil {
 		return nil, err
 	}
@@ -187,38 +280,62 @@ func (ds *dataset) aggregateMetric(ctx context.Context, tx *sql.Tx, p *aggPlan) 
 		return nil, refuse("aggregate.budget.maxBuckets", "%d series (groups, and codes where grouped by code) times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
 			series, len(buckets), n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
-	res := &substrate.AggregateResult{
-		Metric: p.metric, Unit: units.value, Bucket: p.bucket.echo, From: p.source, Exact: true,
-	}
-	if p.kind == aggDownsample {
-		res.Bucket = p.a.Bucket
-	}
-	if res.Unit == "" {
-		res.Unit = units.duration
-	}
 	r := &aggRun{
 		ds: ds, ctx: ctx, tx: tx, p: p, u: units, buckets: buckets, windows: windows,
 		meta: aggMeta{sources: map[string]bool{}}, nSeries: series, samples: samples, spanReach: reach,
 	}
-	if err := r.plan(groups); err != nil {
-		return nil, err
+	return &metricRun{r: r, groups: groups}, nil
+}
+
+// checkMetrics holds a several-metric read's metrics to the read's budgets
+// together: their groups (their series, where grouped by code) to
+// maxGroups, and their series times the buckets to maxBuckets. Each metric
+// was held to them alone as it settled.
+func (p *aggPlan) checkMetrics(metrics, groups, series, buckets int) error {
+	if p.metrics == nil {
+		return nil
 	}
-	if tr := traceOf(ctx); tr != nil && tr.afterPlan != nil {
-		tr.afterPlan()
+	n := groups
+	if p.grouped[substrate.GroupCode] {
+		n = series
 	}
-	rows, err := r.run(groups)
-	if err != nil {
-		return nil, err
+	if n > p.maxGroups {
+		return refuse("aggregate.budget.maxGroups", "the %d metrics make %d groups, over %d; name fewer metrics, narrow the filter or group by fewer keys (the cap is %d)",
+			metrics, n, p.maxGroups, substrate.AggregateMaxGroupsCap)
 	}
-	if res.Rows, err = p.fillAndRoll(ctx, rows, r.buckets, units, &r.meta); err != nil {
-		return nil, err
+	if n := buckets * max(series, 1); n > p.maxBuckets {
+		return refuse("aggregate.budget.maxBuckets", "the %d metrics make %d series (groups, and codes where grouped by code), times %d buckets is %d, over %d; name fewer metrics, narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			metrics, series, buckets, n, p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
-	res.Exact = !r.meta.inexact
-	for s := range r.meta.sources {
-		res.Sources = append(res.Sources, s)
+	return nil
+}
+
+// metricResult is the answer's head: the metric and its unit, or on a
+// several-metric read each metric's unit in units, and from where every
+// metric reads from the same points.
+func (p *aggPlan) metricResult(runs []*metricRun) *substrate.AggregateResult {
+	res := &substrate.AggregateResult{Bucket: p.bucket.echo, From: p.source, Exact: true}
+	if p.kind == aggDownsample {
+		res.Bucket = p.a.Bucket
 	}
-	sort.Strings(res.Sources)
-	return res, nil
+	unitOf := func(u *aggUnits) string {
+		if u.value != "" {
+			return u.value
+		}
+		return u.duration
+	}
+	if p.metrics == nil {
+		res.Metric, res.Unit = p.metric, unitOf(runs[0].r.u)
+		return res
+	}
+	res.Units, res.From = map[string]string{}, runs[0].r.p.source
+	for _, m := range runs {
+		res.Units[m.r.p.metric] = unitOf(m.r.u)
+		if m.r.p.source != res.From {
+			res.From = ""
+		}
+	}
+	return res
 }
 
 // --- stream selection ---
@@ -245,10 +362,10 @@ func (p *aggPlan) checkOffsets(streams []*aggStream) error {
 // metric record deleted after its values were written still reads them). An
 // unknown metric would otherwise answer no rows, as a metric with no values
 // in the range does.
-func (ds *dataset) checkMetric(ctx context.Context, tx *sql.Tx, ref string) error {
+func (ds *dataset) checkMetric(ctx context.Context, tx *sql.Tx, path, ref string) error {
 	kind, id, _ := vocabulary.SplitRecordPath(ref)
 	if pins := ds.metricKinds(); pins != nil && !slices.Contains(pins, kind) {
-		return refuse("aggregate.metric.ref", "%s is a record of %s, not a metric; a metric is a record of %s", ref, kind, strings.Join(pins, " or "))
+		return refuse(path, "%s is a record of %s, not a metric; a metric is a record of %s", ref, kind, strings.Join(pins, " or "))
 	}
 	var known bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL)
@@ -256,7 +373,7 @@ func (ds *dataset) checkMetric(ctx context.Context, tx *sql.Tx, ref string) erro
 		return fmt.Errorf("substrate/engine: aggregate metric: %w", err)
 	}
 	if !known {
-		return refuse("aggregate.metric.ref", "%s names no metric: no record has that path and no observed value names it", ref)
+		return refuse(path, "%s names no metric: no record has that path and no observed value names it", ref)
 	}
 	return nil
 }
@@ -332,13 +449,17 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		}
 	}
 	// A statistic narrows the summaries; every other form's values carry
-	// none and are kept.
+	// none and are kept. A several-metric read's metric may name its own,
+	// which narrows beside the filter's.
 	if c, ok := p.q.Filter.Properties[substrate.GroupStatistic]; ok {
 		vals, err := condStrings("filter.properties.statistic", c)
 		if err != nil {
 			return nil, err
 		}
 		b.add(`(statistic = '' OR statistic = ANY(` + b.textArray(vals) + `))`)
+	}
+	if p.statistic != "" {
+		b.add(`(statistic = '' OR statistic = ` + b.arg(p.statistic) + `)`)
 	}
 	where := "TRUE"
 	if len(b.where) > 0 {
@@ -645,7 +766,7 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 	if samples+spent > p.maxSamples {
 		beside := ""
 		if spent > 0 {
-			beside = fmt.Sprintf(" beside the %d amounts read for how far they reach", spent)
+			beside = fmt.Sprintf(" beside the %d raw points the read counted before it", spent)
 		}
 		return nil, 0, refuse("aggregate.budget.maxSamples", "finding the forms the range holds reads %d raw points at its cut ends and in its summaries%s, over %d; align the range to quarter hours, narrow it, or raise maxSamples (the cap is %d)",
 			samples, beside, p.maxSamples, substrate.AggregateMaxSamplesCap)
@@ -993,9 +1114,9 @@ func (ds *dataset) aggregateUnits(ctx context.Context, tx *sql.Tx, p *aggPlan, s
 		case inDuration && durations:
 			u.duration = p.unit
 		case u.measure == "":
-			return nil, refuse("aggregate.unit", "%s converts nothing here: the selected streams hold codes, and only a duration unit (beside timeInState) applies", p.unit)
+			return nil, refuse(p.path("unit"), "%s converts nothing here: the selected streams hold codes, and only a duration unit (beside timeInState) applies", p.unit)
 		default:
-			return nil, refuse("aggregate.unit", "%s is not a %s unit, the measure of %s; name one of its units, or a duration unit beside durationIn or timeInState",
+			return nil, refuse(p.path("unit"), "%s is not a %s unit, the measure of %s; name one of its units, or a duration unit beside durationIn or timeInState",
 				p.unit, u.measure, aggMetricName(p))
 		}
 	}
@@ -1110,7 +1231,7 @@ func (p *aggPlan) checkStatistics(groups []*aggGroup) error {
 		}
 		for i, r := range p.reducers {
 			if r.Name == substrate.ReducerSum {
-				return refuse(fmt.Sprintf("aggregate.reducers[%d]", i), "sum adds summaries whose statistic is sum or count; the summaries from %s are %s, so read them with count, first, last, avg, min or max",
+				return refuse(p.reducerPath(i), "sum adds summaries whose statistic is sum or count; the summaries from %s are %s, so read them with count, first, last, avg, min or max",
 					strings.Join(sources, ", "), orNoStatistic(stats[0]))
 			}
 		}
@@ -1161,11 +1282,11 @@ func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
 		for _, form := range forms {
 			for i, r := range p.reducers {
 				if !slices.Contains(formReducers[form], r.Name) {
-					return refuse(fmt.Sprintf("aggregate.reducers[%d]", i), "%s does not apply to %s %s: %s; %s %s takes %s",
+					return refuse(p.reducerPath(i), "%s does not apply to %s %s: %s; %s %s takes %s",
 						r.String(), article(form), form, formWhy[form], article(form), form, strings.Join(formReducers[form], ", "))
 				}
 				if r.Name == substrate.ReducerCircularMean && u.measure != "angle" {
-					return refuse(fmt.Sprintf("aggregate.reducers[%d]", i), "circularMean averages angles on the circle; %s is a %s",
+					return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s is a %s",
 						aggMetricName(p), orNothing(u.measure))
 				}
 			}

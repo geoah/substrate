@@ -87,6 +87,11 @@ const (
 	// AggregateTimeout is the statement timeout of a read whose caller set no
 	// earlier deadline.
 	AggregateTimeout = 30 * time.Second
+	// AggregateMaxMetrics bounds the metrics one read names in `metrics`.
+	// Each metric runs its own statements (its streams, its forms, its rows
+	// and points) in the read's one snapshot, so the count bounds the
+	// statements a read runs; a day's or a vitals screen names fewer.
+	AggregateMaxMetrics = 16
 )
 
 // AggregateQuery is one aggregate read: the records filter, the aggregate
@@ -104,6 +109,10 @@ type AggregateQuery struct {
 type Aggregate struct {
 	// Metric selects the observed index by a metric record's reference.
 	Metric *AggregateMetric `json:"metric,omitempty"`
+	// Metrics selects several metrics read over one range, bucket, groupBy
+	// and sources policy, each with its own unit, reducers, from and
+	// statistic: one set of rows, grouped by metric.
+	Metrics []AggregateMetricRead `json:"metrics,omitempty"`
 	// Property selects a declared number of the filtered kinds instead.
 	Property *AggregateProperty `json:"property,omitempty"`
 	// From is raw (the default), summaries or prefer-raw.
@@ -130,6 +139,18 @@ type Aggregate struct {
 // AggregateMetric names a metric record by its full record path.
 type AggregateMetric struct {
 	Ref string `json:"ref"`
+}
+
+// AggregateMetricRead is one metric of a several-metric read: its record
+// path, the unit its values answer in (the metric record's by default), its
+// reducers and from (the read's by default), and the one summary statistic
+// its summaries are read at.
+type AggregateMetricRead struct {
+	Ref       string             `json:"ref"`
+	Unit      string             `json:"unit,omitempty"`
+	Reducers  []AggregateReducer `json:"reducers,omitempty"`
+	From      string             `json:"from,omitempty"`
+	Statistic string             `json:"statistic,omitempty"`
 }
 
 // AggregateProperty names a declared numeric, quantity, money or duration
@@ -363,10 +384,16 @@ type AggregateResult struct {
 	// Metric is the metric record's path, or Property the property, as read.
 	Metric   string `json:"metric,omitempty"`
 	Property string `json:"property,omitempty"`
-	// Unit is the unit the values are in.
-	Unit   string           `json:"unit,omitempty"`
-	Bucket *AggregateBucket `json:"bucket,omitempty"`
-	From   string           `json:"from,omitempty"`
+	// Unit is the unit the values are in; absent on a several-metric read,
+	// whose Units names each metric's.
+	Unit string `json:"unit,omitempty"`
+	// Units is, on a several-metric read, each metric's unit by its record
+	// path: its values' unit, or a coded metric's durations unit.
+	Units  map[string]string `json:"units,omitempty"`
+	Bucket *AggregateBucket  `json:"bucket,omitempty"`
+	// From is the request's from; absent on a several-metric read whose
+	// metrics read from different points.
+	From string `json:"from,omitempty"`
 	// Exact is false when any value came from a float64 reduction or a unit
 	// conversion with no finite decimal expansion.
 	Exact bool           `json:"exact"`

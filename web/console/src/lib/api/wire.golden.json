@@ -43,6 +43,7 @@
     "groupBy": false,
     "maxGap": false,
     "metric": false,
+    "metrics": false,
     "minCoverage": false,
     "property": false,
     "range": false,
@@ -89,6 +90,13 @@
   "AggregateMetric": {
     "ref": true
   },
+  "AggregateMetricRead": {
+    "from": false,
+    "reducers": false,
+    "ref": true,
+    "statistic": false,
+    "unit": false
+  },
   "AggregateProperty": {
     "anchor": false,
     "groupBy": false,
@@ -130,7 +138,8 @@
     "property": false,
     "rows": true,
     "sources": false,
-    "unit": false
+    "unit": false,
+    "units": false
   },
   "AggregateRolling": {
     "buckets": true,

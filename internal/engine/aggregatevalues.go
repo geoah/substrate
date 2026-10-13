@@ -19,7 +19,11 @@ import (
 // row assembles one output row from its evidence.
 func (r *aggRun) row(b *aggBucket, g *aggGroup, code string, ev *aggEvidence, from string) (substrate.AggregateRow, error) {
 	rangeFrom, rangeTo := r.p.rangeOf(b)
-	start, end := b.shown(&ev.ends, rangeFrom, rangeTo)
+	ends := &ev.ends
+	if r.p.sharedEnds {
+		ends = &b.ends
+	}
+	start, end := b.shown(ends, rangeFrom, rangeTo)
 	row := substrate.AggregateRow{
 		Start: start, End: end, Form: ev.form, Record: b.record, From: from,
 		Count: ev.count, Bounded: ev.bounded, Offsetless: ev.offsetless, Prorated: ev.prorated,

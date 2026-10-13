@@ -91,14 +91,16 @@ var wireTypes = map[string]any{
 	// console builds them, and the one answer every mode returns. The
 	// reducer is a name or a one-key object, a union no struct names, so
 	// AggregateReducer is the console's type alias and not pinned here.
-	"Aggregate":         Aggregate{},
-	"AggregateMetric":   AggregateMetric{},
-	"AggregateProperty": AggregateProperty{},
-	"AggregateRange":    AggregateRange{},
-	"AggregateBucket":   AggregateBucket{},
-	"AggregateRecords":  AggregateRecords{},
-	"AggregateAround":   AggregateAround{},
-	"AggregateSources":  AggregateSources{},
+	"Aggregate":       Aggregate{},
+	"AggregateMetric": AggregateMetric{},
+	// One metric of a several-metric read, with its own options.
+	"AggregateMetricRead": AggregateMetricRead{},
+	"AggregateProperty":   AggregateProperty{},
+	"AggregateRange":      AggregateRange{},
+	"AggregateBucket":     AggregateBucket{},
+	"AggregateRecords":    AggregateRecords{},
+	"AggregateAround":     AggregateAround{},
+	"AggregateSources":    AggregateSources{},
 	// The records' source policy, on the records mode and the property read,
 	// and the properties a records-mode row's ends are written at.
 	"AggregateRecordSources": AggregateRecordSources{},

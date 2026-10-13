@@ -22,7 +22,7 @@ import (
 // dropped after them; a series is filled from its rows in the range, and a
 // lookback row carries nothing into the range, so the rows answered are the
 // ones the read answers without rolling. Both loops check ctx as they go.
-func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*aggBucket, u *aggUnits, meta *aggMeta) ([]substrate.AggregateRow, error) {
+func (p *aggPlan) fillAndRoll(ctx context.Context, rows []aggOut, buckets []*aggBucket, meta *aggMeta) ([]substrate.AggregateRow, error) {
 	var steps everyThousand
 	type series struct {
 		key  string

@@ -24,6 +24,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strings"
@@ -91,7 +92,28 @@ type aggPlan struct {
 	// propBySource says property.sources' priority policy chooses among the
 	// property read's records.
 	propBySource bool
+	// metrics are a several-metric read's metrics, each a plan of its own
+	// over the read's range, bucket, groupBy and sources (forMetric); nil on
+	// any other read.
+	metrics []*aggPlan
+	// at is where the plan's metric options are named in a refusal
+	// (aggregate, or aggregate.metrics[i] on a several-metric read), refAt
+	// its metric's reference and reducersAt its reducers.
+	at, refAt, reducersAt string
+	// statistic is the one summary statistic a several-metric read's metric
+	// reads its summaries at; "" reads every statistic the filter admits.
+	statistic string
+	// sharedEnds writes a recorded-local row at its bucket's bounds, which
+	// every metric of a several-metric read marks, so the metrics' rows of
+	// one day carry one start and one end.
+	sharedEnds bool
 }
+
+// path names one of the plan's metric options in a refusal.
+func (p *aggPlan) path(option string) string { return p.at + "." + option }
+
+// reducerPath names the plan's i-th reducer in a refusal.
+func (p *aggPlan) reducerPath(i int) string { return fmt.Sprintf("%s[%d]", p.reducersAt, i) }
 
 // refuse is a validation refusal naming what it refuses.
 func refuse(path, format string, args ...any) error {
@@ -155,6 +177,9 @@ func (ds *dataset) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*
 		return nil, err
 	}
 	p.forceRaw = aggregateForceRaw(ctx)
+	for _, m := range p.metrics {
+		m.forceRaw = p.forceRaw
+	}
 	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return nil, err
@@ -167,8 +192,11 @@ func (ds *dataset) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*
 	if err := tx.QueryRowContext(ctx, `SELECT max(seq) FROM changelog`).Scan(&head); err != nil {
 		return nil, err
 	}
-	if p.metric != "" {
-		if err := ds.checkMetric(ctx, tx, p.metric); err != nil {
+	for _, m := range append([]*aggPlan{p}, p.metrics...) {
+		if m.metric == "" {
+			continue
+		}
+		if err := ds.checkMetric(ctx, tx, m.refAt, m.metric); err != nil {
 			return nil, err
 		}
 	}
@@ -242,9 +270,15 @@ func planAggregate(q substrate.AggregateQuery) (*aggPlan, error) {
 		return nil, refuse("aggregate", "the read needs an aggregate body: a metric or a property, a range and reducers")
 	}
 	a := *q.Aggregate
-	p := &aggPlan{q: q, a: a, grouped: map[string]bool{}}
-	if a.Metric != nil && a.Property != nil {
-		return nil, refuse("aggregate", "name metric or property, not both")
+	p := &aggPlan{q: q, a: a, grouped: map[string]bool{}, at: "aggregate", refAt: "aggregate.metric.ref", reducersAt: "aggregate.reducers"}
+	selectors := 0
+	for _, set := range []bool{a.Metric != nil, a.Metrics != nil, a.Property != nil} {
+		if set {
+			selectors++
+		}
+	}
+	if selectors > 1 {
+		return nil, refuse("aggregate", "name one of metric, metrics and property")
 	}
 	if a.Range != nil {
 		from, err := time.Parse(time.RFC3339Nano, a.Range.Gte)
@@ -283,7 +317,7 @@ func planAggregate(q substrate.AggregateQuery) (*aggPlan, error) {
 		if err := p.parseProperty(); err != nil {
 			return nil, err
 		}
-	case a.Bucket == nil && !p.hasRange && len(p.reducers) == 1 && p.reducers[0].Name == substrate.ReducerLast:
+	case a.Metrics == nil && a.Bucket == nil && !p.hasRange && len(p.reducers) == 1 && p.reducers[0].Name == substrate.ReducerLast:
 		p.kind = aggLatest
 		if err := p.parseLatest(); err != nil {
 			return nil, err
@@ -291,31 +325,124 @@ func planAggregate(q substrate.AggregateQuery) (*aggPlan, error) {
 		return p, nil
 	default:
 		p.kind = aggMetric
-		if p.metric == "" {
-			return nil, refuse("aggregate.metric", `name the metric, {"ref": "<authority>/observations/metric/<id>"}, or a property; only the latest read (no bucket, no range, the one reducer last) selects by filter alone`)
+		if p.metric == "" && a.Metrics == nil {
+			return nil, refuse("aggregate.metric", `name the metric, {"ref": "<authority>/observations/metric/<id>"}, several in metrics, or a property; only the latest read (no bucket, no range, the one reducer last) selects by filter alone`)
 		}
 	}
 	if !p.hasRange {
+		if a.Metrics != nil {
+			return nil, refuse("aggregate.range", `a several-metric read is bucketed and needs a range, {"gte": "<instant>", "lt": "<instant>"}; the latest read selects several metrics with filter.properties.metric`)
+		}
 		return nil, refuse("aggregate.range", `a bucketed read needs a range, {"gte": "<instant>", "lt": "<instant>"}; only the latest read takes none`)
 	}
-	if len(p.reducers) == 0 && p.kind != aggDownsample {
+	if len(p.reducers) == 0 && p.kind != aggDownsample && a.Metrics == nil {
 		return nil, refuse("aggregate.reducers", "name at least one reducer, such as avg")
 	}
 	if err := p.parseBucket(); err != nil {
 		return nil, err
 	}
 	if p.kind == aggMetric || p.kind == aggDownsample {
-		if err := p.parseMetricOptions(); err != nil {
+		if err := p.parseCodes(); err != nil {
 			return nil, err
 		}
-		if err := p.parseCodes(); err != nil {
+		if a.Metrics != nil {
+			if err := p.parseMetrics(); err != nil {
+				return nil, err
+			}
+		} else if err := p.parseMetricOptions(); err != nil {
 			return nil, err
 		}
 	}
 	if err := p.planLookback(); err != nil {
 		return nil, err
 	}
+	for _, m := range p.metrics {
+		m.readFrom, m.lookback = p.readFrom, p.lookback
+	}
 	return p, nil
+}
+
+// parseMetrics makes a several-metric read's plans: one per metric, over the
+// read's range, bucket, groupBy and sources, each with its own unit,
+// reducers, from and statistic and grouped by metric, so every row names
+// its metric. Each metric's options are checked here on their own, and its
+// forms and units once its streams are selected, before any point is read.
+func (p *aggPlan) parseMetrics() error {
+	a := p.a
+	switch {
+	case len(a.Metrics) == 0:
+		return refuse("aggregate.metrics", `name at least one metric, {"ref": "<authority>/observations/metric/<id>"}`)
+	case len(a.Metrics) > substrate.AggregateMaxMetrics:
+		return refuse("aggregate.metrics", "a read names at most %d metrics, not %d; read the rest in another request", substrate.AggregateMaxMetrics, len(a.Metrics))
+	case p.unit != "":
+		return refuse("aggregate.unit", "a unit converts one metric's values; name it in each aggregate.metrics entry")
+	}
+	preferRaw := false
+	for i, m := range a.Metrics {
+		at := fmt.Sprintf("aggregate.metrics[%d]", i)
+		if _, _, ok := vocabulary.SplitRecordPath(m.Ref); !ok {
+			return refuse(at+".ref", "%q is not a record path, <authority>/<package>/<kind>/<id>", m.Ref)
+		}
+		for j := range i {
+			if a.Metrics[j].Ref == m.Ref {
+				return refuse(at+".ref", "%s is named at aggregate.metrics[%d] too; read a metric once, and split its summaries' statistics with groupBy statistic", m.Ref, j)
+			}
+		}
+		mp, err := p.forMetric(at, m)
+		if err != nil {
+			return err
+		}
+		preferRaw = preferRaw || mp.source == substrate.AggregateFromPreferRaw
+		p.metrics = append(p.metrics, mp)
+	}
+	if a.MinCoverage != nil && !preferRaw {
+		return refuse("aggregate.minCoverage", "minCoverage is prefer-raw's floor, and no metric of this read is from prefer-raw")
+	}
+	return nil
+}
+
+// forMetric is the plan of one metric of a several-metric read: the read's
+// plan with the metric's own options, grouped by metric.
+func (p *aggPlan) forMetric(at string, m substrate.AggregateMetricRead) (*aggPlan, error) {
+	mp := *p
+	mp.metrics, mp.sharedEnds = nil, true
+	mp.metric, mp.at, mp.refAt, mp.statistic = m.Ref, at, at+".ref", m.Statistic
+	mp.grouped = maps.Clone(p.grouped)
+	mp.groupBy = slices.Clone(p.groupBy)
+	if !mp.grouped[substrate.GroupMetric] {
+		mp.grouped[substrate.GroupMetric] = true
+		mp.groupBy = append(mp.groupBy, substrate.GroupMetric)
+	}
+	if m.Reducers != nil {
+		mp.reducersAt, mp.reducers = at+".reducers", nil
+		for i, r := range m.Reducers {
+			if err := checkReducer(mp.reducerPath(i), r); err != nil {
+				return nil, err
+			}
+			mp.reducers = append(mp.reducers, r)
+		}
+	}
+	if len(mp.reducers) == 0 {
+		return nil, refuse(at+".reducers", "name at least one reducer, such as avg, here or in aggregate.reducers for every metric")
+	}
+	if m.Unit != "" {
+		code, err := vocabulary.CanonicalUnit(m.Unit)
+		if err != nil {
+			return nil, refuse(at+".unit", "%v", err)
+		}
+		mp.unit = code
+	}
+	from := m.From
+	if from == "" {
+		from = p.a.From
+	}
+	if err := mp.parseFrom(from); err != nil {
+		return nil, err
+	}
+	if err := mp.parseMetricOptions(); err != nil {
+		return nil, err
+	}
+	return &mp, nil
 }
 
 // planLookback sets where the read takes points from: a rolling window over
@@ -358,8 +485,7 @@ func (p *aggPlan) planLookback() error {
 // parseReducers checks every reducer's name and argument.
 func (p *aggPlan) parseReducers() error {
 	for i, r := range p.a.Reducers {
-		path := fmt.Sprintf("aggregate.reducers[%d]", i)
-		if err := checkReducer(path, r); err != nil {
+		if err := checkReducer(p.reducerPath(i), r); err != nil {
 			return err
 		}
 		p.reducers = append(p.reducers, r)
@@ -418,23 +544,14 @@ func (p *aggPlan) parseCommon() error {
 			return refuse("aggregate.sources.policy", "%q is not a policy; the policies are separate, priority and summaries", a.Sources.Policy)
 		}
 	}
-	p.source = substrate.AggregateFromRaw
-	switch a.From {
-	case "", substrate.AggregateFromRaw:
-	case substrate.AggregateFromSummaries, substrate.AggregateFromPreferRaw:
-		p.source = a.From
-	default:
-		return refuse("aggregate.from", "%q is not a source of points; from is raw, summaries or prefer-raw", a.From)
-	}
-	if p.policy == substrate.SourcesSummaries {
-		if a.From != "" && a.From != substrate.AggregateFromSummaries {
-			return refuse("aggregate.from", "the summaries policy reads summaries; from %s contradicts it", a.From)
-		}
-		p.source = substrate.AggregateFromSummaries
+	if err := p.parseFrom(a.From); err != nil {
+		return err
 	}
 	p.minCoverage = 0.9
 	if a.MinCoverage != nil {
-		if p.source != substrate.AggregateFromPreferRaw {
+		// A several-metric read takes it where any metric reads prefer-raw
+		// (parseMetrics).
+		if p.source != substrate.AggregateFromPreferRaw && a.Metrics == nil {
 			return refuse("aggregate.minCoverage", "minCoverage is prefer-raw's floor; this read is from %s", p.source)
 		}
 		if c := *a.MinCoverage; c < 0 || c > 1 || math.IsNaN(c) {
@@ -485,7 +602,7 @@ func (p *aggPlan) parseCommon() error {
 	if a.Unit != "" {
 		code, err := vocabulary.CanonicalUnit(a.Unit)
 		if err != nil {
-			return refuse("aggregate.unit", "%v", err)
+			return refuse(p.path("unit"), "%v", err)
 		}
 		p.unit = code
 	}
@@ -512,6 +629,26 @@ func (p *aggPlan) parseCommon() error {
 		if b.MaxGroups > 0 {
 			p.maxGroups = b.MaxGroups
 		}
+	}
+	return nil
+}
+
+// parseFrom reads which points the plan takes: from, or under the summaries
+// policy the summaries.
+func (p *aggPlan) parseFrom(from string) error {
+	p.source = substrate.AggregateFromRaw
+	switch from {
+	case "", substrate.AggregateFromRaw:
+	case substrate.AggregateFromSummaries, substrate.AggregateFromPreferRaw:
+		p.source = from
+	default:
+		return refuse(p.path("from"), "%q is not a source of points; from is raw, summaries or prefer-raw", from)
+	}
+	if p.policy == substrate.SourcesSummaries {
+		if from != "" && from != substrate.AggregateFromSummaries {
+			return refuse(p.path("from"), "the summaries policy reads summaries; from %s contradicts it", from)
+		}
+		p.source = substrate.AggregateFromSummaries
 	}
 	return nil
 }
@@ -679,7 +816,11 @@ func (p *aggPlan) parseMetricOptions() error {
 		return refuse("aggregate.rolling", "the records time mode's windows are not a sequence of buckets; a rolling window has nothing to roll over")
 	}
 	if p.grouped[substrate.GroupStatistic] && p.source != substrate.AggregateFromSummaries {
-		return refuse("aggregate.groupBy", "groupBy statistic splits summaries, and this read is from %s; read from summaries, or name one statistic with filter.properties.statistic", p.source)
+		what := "this read"
+		if p.sharedEnds {
+			what = p.metric
+		}
+		return refuse("aggregate.groupBy", "groupBy statistic splits summaries, and %s is from %s; read from summaries, or name one statistic with filter.properties.statistic", what, p.source)
 	}
 	return nil
 }

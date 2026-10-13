@@ -124,7 +124,7 @@ func TestAggregateIsRefusedBesideListParameters(t *testing.T) {
 	two.Property = &substrate.AggregateProperty{Name: "price"}
 	rec = env.do(t, http.MethodGet, aggregatePath(t, two), tok, nil)
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
-	wantMessage(t, rec, "name metric or property, not both")
+	wantMessage(t, rec, "name one of metric, metrics and property")
 
 	ds.errs["Aggregate"] = &substrate.ValidationError{Problems: []string{"aggregate.budget.maxBuckets: 2880 buckets, over 1440"}}
 	rec = env.do(t, http.MethodGet, aggregatePath(t, a), tok, nil)
@@ -217,4 +217,27 @@ func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 		strings.Join(p.GroupBy, ",") != "sport,source" {
 		t.Fatalf("property = %+v", p)
 	}
+}
+
+// A several-metric read's metrics decode strictly, each with its unit,
+// reducers in both spellings, from and statistic, and reach the dataset as
+// written; a key a metric does not take is a 400 naming it.
+func TestRecordsAggregateCarriesSeveralMetrics(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	body := `{"metrics":[{"ref":"ada.example.com/observations/metric/health/heart_rate","unit":"/min","reducers":["avg",{"percentile":0.9}]},` +
+		`{"ref":"ada.example.com/observations/metric/health/resting_heart_rate","from":"summaries","statistic":"vendor"}],` +
+		`"range":{"gte":"2026-09-24T00:00:00+03:00","lt":"2026-09-25T00:00:00+03:00"},"bucket":{"calendar":"day"},"reducers":["last"]}`
+	rec := env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	m := ds.lastAggregate.Aggregate.Metrics
+	if len(m) != 2 || m[0].Ref != "ada.example.com/observations/metric/health/heart_rate" || m[0].Unit != "/min" ||
+		len(m[0].Reducers) != 2 || *m[0].Reducers[1].Percentile != 0.9 ||
+		m[1].From != "summaries" || m[1].Statistic != "vendor" || m[1].Reducers != nil {
+		t.Fatalf("metrics = %+v", m)
+	}
+	rec = env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(`{"metrics":[{"ref":"x/y/z/w","fill":"zero"}]}`), tok, nil)
+	wantStatus(t, rec, http.StatusBadRequest)
+	wantMessage(t, rec, "aggregate", "fill")
 }

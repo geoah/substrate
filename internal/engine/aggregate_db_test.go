@@ -1175,7 +1175,7 @@ func TestAggregateRefusesOverBudgetBeforeRunning(t *testing.T) {
 			a.Reducers = reducers("increase")
 		}), "does not apply to an amount"},
 		{"unit outside the measure", base(func(a *substrate.Aggregate) { a.Unit = "kg" }), "is not a rate unit"},
-		{"two selectors", base(func(a *substrate.Aggregate) { a.Property = &substrate.AggregateProperty{Name: "x"} }), "name metric or property, not both"},
+		{"two selectors", base(func(a *substrate.Aggregate) { a.Property = &substrate.AggregateProperty{Name: "x"} }), "name one of metric, metrics and property"},
 		{"no range", base(func(a *substrate.Aggregate) { a.Range = nil }), "aggregate.range"},
 		{"an unknown reducer", base(func(a *substrate.Aggregate) { a.Reducers = reducers("median") }), `"median" is not a reducer`},
 		{"downsample beside reducers", substrate.AggregateQuery{

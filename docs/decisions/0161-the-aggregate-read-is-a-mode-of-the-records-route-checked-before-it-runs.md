@@ -30,7 +30,12 @@ their shape is hard to change once clients exist
 Chosen: a mode of the records route.
 
 - **Selector.** Exactly one of `metric` (a full reference; the index is
-  read) and `property` (a declared number, quantity, money or duration
+  read), `metrics` (up to 16 full references read over one range, bucket,
+  `groupBy` and sources policy, each with its own unit, reducers, `from`
+  and summary statistic, checked each on its own and held to the budgets
+  together; every row names its metric, and in the recorded-local calendar
+  the rows of one bucket share its bounds, so the metrics join on `start`)
+  and `property` (a declared number, quantity, money or duration
   property on the filtered kinds, read from `records` in exact arithmetic,
   grouped by the records' own string, enum or reference properties where
   `property.groupBy` names them), never a bare word. A record's UTC offset

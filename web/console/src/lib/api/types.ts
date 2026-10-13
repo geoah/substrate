@@ -370,11 +370,15 @@ export type AggregateGroupKey =
   "source" | "about" | "code" | "metric" | "kind" | "channel" | "statistic"
 
 /** The `aggregate` parameter of `GET /records` (`substrate.Aggregate`,
- * decision 0161). Exactly one of `metric` and `property`, except the latest
- * read (no `bucket`, no `range`, the one reducer `last`), which may name
- * neither. */
+ * decision 0161). Exactly one of `metric`, `metrics` and `property`, except
+ * the latest read (no `bucket`, no `range`, the one reducer `last`), which
+ * may name none. */
 export interface Aggregate {
   metric?: AggregateMetric
+  /** Up to 16 metrics read over one range, bucket, groupBy and sources
+   * policy, each with its own unit, reducers, from and statistic; every row
+   * names its metric in `group.metric`. */
+  metrics?: AggregateMetricRead[]
   property?: AggregateProperty
   /** `raw` by default. */
   from?: AggregateFrom
@@ -398,6 +402,17 @@ export interface Aggregate {
 
 export interface AggregateMetric {
   ref: string
+}
+
+/** One metric of a several-metric read. `unit` defaults to the metric
+ * record's, `reducers` and `from` to the read's; `statistic` names the one
+ * summary statistic its summaries are read at. */
+export interface AggregateMetricRead {
+  ref: string
+  unit?: string
+  reducers?: AggregateReducer[]
+  from?: AggregateFrom
+  statistic?: string
 }
 
 export interface AggregateProperty {
@@ -505,8 +520,13 @@ export interface Downsample {
 export interface AggregateResult {
   metric?: string
   property?: string
+  /** Absent on a several-metric read, whose `units` names each metric's. */
   unit?: string
+  /** A several-metric read's unit of each metric, by its record path. */
+  units?: Record<string, string>
   bucket?: AggregateBucket
+  /** Absent on a several-metric read whose metrics read from different
+   * points. */
   from?: string
   /** False when a value came from a float reduction or a rounded unit
    * conversion. */

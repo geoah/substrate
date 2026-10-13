@@ -1128,6 +1128,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | Key | Means | Default |
 | --- | --- | --- |
 | `metric` | `{"ref": "<metric record path>"}`: read the observed index for this metric; a path that is not a metric's, or that no metric record has and no observed value names, is a `422` | |
+| `metrics` | `[{"ref", "unit"?, "reducers"?, "from"?, "statistic"?}]`: up to 16 metrics in one read ([several metrics](#several-metrics-in-one-read)) | `reducers` and `from` are the read's |
 | `property` | `{"name", "anchor"?, "utcOffset"?, "groupBy"?, "sources"?}`: reduce a declared number or duration of the filtered kinds instead, placed in time by `anchor` ([the property read](#the-property-read)) | `anchor` is `at` |
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
@@ -1142,7 +1143,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | `rolling` | `{"buckets", "reducers"?, "through"?}`: `avg`, `sum`, `min`, `max` or `stddev` over a window of buckets ending at this bucket (`through: "current"`) or the one before it (`"previous"`) | `reducers` is `["avg"]`, `through` is `current` |
 | `budget` | `{"maxBuckets"?, "maxSamples"?, "maxGroups"?}` | see [budgets](#budgets) |
 
-Exactly one of `metric` and `property`; both is a `422`. A metric read's
+Exactly one of `metric`, `metrics` and `property`; two is a `422`. A metric read's
 `filter` takes `kinds` and `implements` (a kind that does not bind `observed`
 is refused by name) and `eq` or `in` on the stream properties `source`,
 `about`, `metric` and `channel`; `eq` beside `in` on one property admits what
@@ -1246,7 +1247,7 @@ at another offset than the range's is cut where the range starts and ends: a
 range of 2026-09-21 at `+03:00` over points at `+01:00` answers 2026-09-20
 from `22:00+01:00` to midnight and 2026-09-21 from midnight to `22:00+01:00`.
 A row's `start` and `end` are its own group's and code's, whatever else the
-read selects.
+read selects, except on a [several-metric read](#several-metrics-in-one-read).
 
 A value written without a UTC offset has no recorded-local date. A
 recorded-local read of a stream holding one in the range is a `422` naming
@@ -1269,6 +1270,82 @@ offset, its `count` the group's point count.
 {"filter": {"implements": "substrate.reamde.dev/core/observed"},
  "aggregate": {"groupBy": ["metric", "source", "about"], "reducers": ["last"]}}
 ```
+
+### Several metrics in one read
+
+`metrics` names up to 16 metrics read over one `range`, `bucket`,
+`groupBy`, `sources` policy, `fill`, `rolling` and `budget`, so a day's
+screen is one request. Sleep, resting heart rate, HRV and steps for
+2026-09-24 in Athens, each night on the day it ended:
+
+```http
+GET /api/v1/records?aggregate=
+  {"metrics": [{"ref": "ada.example.com/observations/metric/health/sleep_stage", "reducers": ["sum"], "unit": "h"},
+               {"ref": "ada.example.com/observations/metric/health/resting_heart_rate", "from": "summaries", "statistic": "vendor"},
+               {"ref": "ada.example.com/observations/metric/health/hrv_rmssd", "from": "summaries", "statistic": "avg"},
+               {"ref": "ada.example.com/observations/metric/health/steps", "reducers": ["sum"]}],
+   "range": {"gte": "2026-09-24T00:00:00+03:00", "lt": "2026-09-25T00:00:00+03:00"},
+   "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
+   "groupBy": ["code"],
+   "sources": {"policy": "priority"},
+   "reducers": ["last"]}
+
+→ {"units": {"ada.example.com/observations/metric/health/hrv_rmssd": "ms",
+             "ada.example.com/observations/metric/health/resting_heart_rate": "/min",
+             "ada.example.com/observations/metric/health/sleep_stage": "h",
+             "ada.example.com/observations/metric/health/steps": "{steps}"},
+   "bucket": {"calendar": "day", "timezone": "Europe/Athens", "place": "end"},
+   "exact": false,
+   "rows": [{"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "summary",
+             "group": {"metric": "ada.example.com/observations/metric/health/hrv_rmssd"}, "from": "summaries",
+             "values": [{"reducer": "last", "value": "61", "unit": "ms"}], "count": 1, "bounded": 0, "synthetic": false, "unavailable": false},
+            {"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "summary",
+             "group": {"metric": "ada.example.com/observations/metric/health/resting_heart_rate"}, "from": "summaries",
+             "values": [{"reducer": "last", "value": "52", "unit": "/min"}], "count": 1, "bounded": 0, "synthetic": false, "unavailable": false},
+            {"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "amount",
+             "group": {"metric": "ada.example.com/observations/metric/health/sleep_stage", "code": "deep"}, "from": "raw",
+             "values": [{"reducer": "sum", "value": "1.25", "unit": "h"}], "count": 3, "bounded": 0, "synthetic": false, "unavailable": false},
+            {"start": "2026-09-24T00:00:00+03:00", "end": "2026-09-25T00:00:00+03:00", "form": "amount",
+             "group": {"metric": "ada.example.com/observations/metric/health/steps"}, "from": "raw",
+             "values": [{"reducer": "sum", "value": "8412", "unit": "{steps}"}], "count": 96, "bounded": 0, "synthetic": false, "unavailable": false}],
+   "sources": ["ada.example.com/observations/source/garmin-forerunner-265", "ada.example.com/observations/source/whoop-4-0"],
+   "head": {"changelog": 2171240, "generation": "7f3a0c2e9b1d4e6f"}}
+```
+
+The answer above leaves out the sleep stages other than `deep`; each code is
+a row of its own.
+
+- An entry names the metric by its record path in `ref`, the unit its values
+  answer in (the metric record's `unit` by default), its `reducers` and
+  `from` (the read's by default), and `statistic`, the one summary statistic
+  its summaries are read at. The read's own `unit` is refused beside
+  `metrics`, because a unit belongs to one measure.
+- The filter and every other option are the read's and apply to every
+  metric. `filter.properties.statistic` narrows every metric's summaries
+  beside an entry's `statistic`; `filter.properties.code` filters every
+  metric's values, so a metric whose values carry no code answers no row
+  under it; `filter.properties.metric` narrows too, so a metric it leaves
+  out answers none. `minCoverage` applies to the metrics read from
+  `prefer-raw` and is refused where none is.
+- Every row names its metric in `group.metric`, whatever `groupBy` says,
+  and the rows are ordered by bucket, then metric path, then the other
+  groups and the code. Each value carries its unit. The response has no
+  `metric` and no `unit`: `units` names each metric's, its values' unit or a
+  coded metric's durations unit. `from` is the metrics' `from` where they
+  all read from the same points, and absent otherwise.
+- Each metric's reducers, unit, forms and statistics are checked on their
+  own before any rollup row or point is read for a reduction, and a refusal
+  names the entry: `aggregate.metrics[1].reducers[0]: twa does not apply to
+  an amount`. A metric named twice is a `422`.
+- The budgets hold the metrics together: `maxGroups` counts every metric's
+  groups, `maxBuckets` every metric's series times the buckets, and
+  `maxSamples` adds up every metric's statements.
+- In the recorded-local calendar the rows of one bucket share its `start`
+  and `end`: the offsets of the first and last value the read takes in that
+  bucket over every metric and group. A client joins the metrics of one day
+  on `start` however far the day's points were apart.
+- The latest read selects several metrics with `filter.properties.metric`,
+  and a downsample reads one metric: `metrics` is refused on both.
 
 ### Reducers, by form
 
@@ -1376,10 +1453,11 @@ where summaries did.
 
 | Key | Means |
 | --- | --- |
-| `metric`, `property` | what was read |
-| `unit` | the values' unit (a coded read's durations unit) |
+| `metric`, `property` | what was read; neither on a several-metric read |
+| `unit` | the values' unit (a coded read's durations unit); absent on a several-metric read |
+| `units` | on a several-metric read, each metric's unit by its record path |
 | `bucket` | the bucket as the read applied it, defaults filled in; a downsample's computed columns |
-| `from` | the request's `from` |
+| `from` | the request's `from`; on a several-metric read, the metrics' `from` where they all read from the same points |
 | `exact` | `false` when any value came from a float64 reduction (`sum`, `avg`, `twa`, `stddev`, `rate`, `percentile`, `circularMean`, a rolling value) or a conversion rounded to 20 significant digits. `min` and `max` compare the stored digits exactly and answer the winner's, so they are exact unless their conversion rounds. Also `false` on a metric, downsample or latest read while the background pass re-derives the observed index of a kind the read selects ([observations](observations.md#the-observed-index)): until the pass reaches a record, the rows hold the points its previous declaration derived |
 | `rows` | one per bucket and group, ordered by bucket, then group, then code |
 | `sources` | every source that fed a row, by record path |
@@ -1585,9 +1663,9 @@ after the points are evaluated, before a row is made.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
-| `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
+| `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode), over every metric of a several-metric read; a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
 | `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up, and in the records mode the values with a span it visits to find how far amounts reach; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
-| `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds, currencies and `property.groupBy` values before it reads a value | 200 | 2,000 |
+| `maxGroups` | the groups a `groupBy` or the `separate` policy makes, every metric's together on a several-metric read; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds, currencies and `property.groupBy` values before it reads a value | 200 | 2,000 |
 | `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row; with a source policy, also the records outside the range it weighs | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
@@ -1611,7 +1689,9 @@ merged as one row.
   cannot test.
 - `404`: a kind in `filter.kinds` the repository never declared.
 - `422`: two selectors, or a bucketed metric read with neither; a `metric.ref`
-  that names no metric; no range or no reducers; an unknown reducer or a bad
+  that names no metric; no range or no reducers; `metrics` empty, over 16, naming
+  a metric twice, beside the read's `unit`, on the latest read or beside
+  `downsample`; an unknown reducer or a bad
   argument; a reducer the form does not take (naming the form); `circularMean`
   off an angle; a `unit` outside the measure (naming the measure); a value the
   read takes whose unit does not convert; a group of two forms; a
