@@ -1158,20 +1158,19 @@ read takes the whole [filter grammar](#the-filter-grammar).
 | --- | --- | --- |
 | `{"every": "PT5M", "origin"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
 | `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
-| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows' |
+| `{"calendar": "day"}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows', else the range's |
 | `{"records": {"filter", "around"?, "maxRecords"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations) | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
 week's, month's or year's start by less than a day (`PT4H` for a vendor day
 from 04:00). A bucket that the range cuts is clipped to the range, and its
 `start` or `end` says so. In the recorded-local calendar the range selects
-points by instant, so a day at another offset than the range's is cut at the
-range's edges: a range of 2026-09-21 at `+03:00` over points at `+01:00`
-answers 2026-09-20 from `22:00+01:00` to midnight and 2026-09-21 from
-midnight to `22:00+01:00`. A row's `start` and `end` are its own group's
-and code's, whatever else the read selects. A point without an offset was
-written at offset 0 and falls on its UTC date in the recorded-local
-calendar.
+points by instant, so a day at another offset than the range's is cut where
+the range starts and ends: a range of 2026-09-21 at `+03:00` over points at
+`+01:00` answers 2026-09-20 from `22:00+01:00` to midnight and 2026-09-21 from
+midnight to `22:00+01:00`. A row's `start` and `end` are its own group's and
+code's, whatever else the read selects. A point without an offset was written
+at offset 0 and falls on its UTC date in the recorded-local calendar.
 
 **The latest read.** No `bucket`, no `range` and the one reducer `last` is the
 newest point of each group, straight from the index's latest table: the
@@ -1253,13 +1252,14 @@ entry in the wrong measure refuses only the reads that take it.
 - `summaries` reads summary points alone, from the first source in `order`
   that has one in the bucket.
 
-`from: "prefer-raw"` reads raw points where the bucket holds at least one
-and they cover at least `minCoverage` of the row (held time for a gauge, the
-union of spans for an amount, over the row's own `start` to `end`), and the
-summaries otherwise. A gauge's value held in from an earlier bucket, under
-its `hold` and `maxGap`, adds held time but is no reading of the bucket: a
-day with no reading of its own is served by its summary. A bucket never mixes the two, and each row's `from` says
-which served it; the row's `form` is `summary` where summaries did.
+`from: "prefer-raw"` reads raw points where the bucket holds at least one and
+they cover at least `minCoverage` of the row (held time for a gauge, the union
+of spans for an amount, over the row's own `start` to `end`), and the
+summaries otherwise. A gauge's value held in from an earlier bucket, under its
+`hold` and `maxGap`, adds held time but is no reading of the bucket: a day
+with no reading of its own is served by its summary. A bucket never mixes the
+two, and each row's `from` says which served it; the row's `form` is `summary`
+where summaries did.
 
 ### The response
 
@@ -1382,16 +1382,16 @@ groups, the code series and series times buckets are checked after the
 statement that finds the range's forms and codes, before any point is read
 for a reduction. Each statement that reads raw points or rollup rows counts
 them first and adds them to the read's `maxSamples` total: finding the forms
-(the points at the range's cut ends, and its summaries), the rollup rows
-(one statement for every group they serve; a group sent to raw points after
-all gives its rows back), the reduction's raw points, and the raw spans an
+(the points at the range's cut ends, and its summaries), the rollup rows (one
+statement for every group they serve; a group sent to raw points after all
+gives its rows back), the reduction's raw points, and the raw spans an
 amount's coverage is joined from where two rollup rows may overlap, which is
-counted once the rows are merged. A rollup row counts as one: there is at
-most one per stream, group and quarter hour, so a year of a dense stream is
-about 35,000. The one point per stream and window a gauge's value is
-carried in from counts against no budget. A recorded-local read can meet days its range's offsets do not name
-(a point at another offset); those buckets are counted after the points are
-evaluated, before a row is made.
+counted once the rows are merged. A rollup row counts as one: there is at most
+one per stream, group and quarter hour, so a year of a dense stream is about
+35,000. The one point per stream and window a gauge's value is carried in from
+counts against no budget. A recorded-local read can meet days its range's
+offsets do not name (a point at another offset); those buckets are counted
+after the points are evaluated, before a row is made.
 
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |

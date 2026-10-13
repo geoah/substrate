@@ -178,7 +178,7 @@ func (b *aggBucket) aligned() bool {
 // recorded-local row is written at its ends' offsets, or the range's where it
 // has none, and clipped to the range as a calendar bucket is: the range cuts
 // a day by instant, so a day at another offset than the range's is partial
-// at the range's edges, and its start or end says so.
+// where the range starts and ends, and its start or end says so.
 func (b *aggBucket) shown(ends *rowEnds, rangeFrom, rangeTo time.Time) (time.Time, time.Time) {
 	if !b.local {
 		return b.start.In(b.zone), b.end.In(b.zone)
