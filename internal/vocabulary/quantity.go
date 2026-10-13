@@ -286,8 +286,9 @@ func (l *loader) parseQuantitySpec(where string, d map[string]any, inherited *Qu
 // value of another measure has nothing to be compared with, and every code
 // the declaration lists (its `units:`, else its measure's codes) must convert
 // into the bound's unit, or the bound would refuse every value in that code:
-// a rate's {count}/min never reaches /min, a count's annotations never reach
-// one another, and rad reaches deg only through pi.
+// the count measure's {count} never reaches 1, and rad reaches deg only
+// through pi. A code the measure admits without listing it (kg{body_wt}
+// under mass) is not checked here; CheckBounds refuses it at write.
 func parseQuantityBound(raw any, s *QuantitySpec) (*QuantityBound, error) {
 	m := asMapOrNil(raw)
 	if m == nil {
