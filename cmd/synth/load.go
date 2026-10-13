@@ -490,13 +490,16 @@ func copyDir(src, dst string) error {
 	})
 }
 
+// applyYAML writes every document of one file generate wrote. Each names
+// the authority generate was given, in its kind and in its references, so a
+// file for another repository is refused before anything is written.
 func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) error {
 	raw, err := os.ReadFile(path) //nolint:gosec // the path generate wrote
 	if err != nil {
 		return err
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	n := 0
+	var docs []map[string]any
 	for {
 		var doc map[string]any
 		if err := dec.Decode(&doc); err != nil {
@@ -505,12 +508,18 @@ func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) er
 			}
 			return fmt.Errorf("%s: %w", path, err)
 		}
+		kind, _ := doc["kind"].(string)
+		if authority, _, _ := strings.Cut(kind, "/"); authority != c.authority {
+			return fmt.Errorf("%s was generated for %s; generate it again with -authority %s", path, authority, c.authority)
+		}
+		docs = append(docs, doc)
+	}
+	for _, doc := range docs {
 		if err := c.put(ctx, doc); err != nil {
 			return err
 		}
-		n++
 	}
-	fmt.Fprintf(stdout, "%d records written from %s\n", n, path)
+	fmt.Fprintf(stdout, "%d records written from %s\n", len(docs), path)
 	return nil
 }
 

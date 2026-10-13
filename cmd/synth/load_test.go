@@ -211,3 +211,19 @@ func TestLoadImportsTheSamplesBeforeTheManualRecords(t *testing.T) {
 		}
 	}
 }
+
+// labs.yaml names the authority generate was given; a load into another
+// repository is refused before it writes anything, and says how to fix it.
+func TestLoadRefusesRecordsGeneratedForAnotherAuthority(t *testing.T) {
+	f := newFakeSubstrate(t)
+	dir := generated(t, "other.example.com", synth.Manual{})
+	out, err := f.runLoad(t, "-dir", dir, "-providers", "manual")
+	if err == nil || !strings.Contains(err.Error(), "other.example.com") || !strings.Contains(err.Error(), "-authority "+testAuthority) {
+		t.Fatalf("load = %v, want a refusal naming both authorities\n%s", err, out)
+	}
+	for _, r := range f.log() {
+		if strings.HasPrefix(r, "PUT ") {
+			t.Fatalf("the refused load wrote %s", r)
+		}
+	}
+}
