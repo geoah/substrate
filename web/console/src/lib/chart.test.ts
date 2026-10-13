@@ -99,9 +99,14 @@ describe("ticks", () => {
     expect(labels[0]).toMatch(/e-10[012]$/)
   })
 
-  it("reaches a step past an extreme that lands on a tick", () => {
-    // 159.97 to 160 lb: the top is no longer the frame the point sits on.
+  it("reaches a step past an extreme on or against a tick", () => {
+    // 160 lb on a 160 top: the top is no longer the frame the point sits on.
     expect(niceDomain([158.4, 160]).domain[1]).toBeGreaterThan(160)
+    // 159.97 lb, a few hundredths under the 160 tick, is as close.
+    expect(niceDomain([158.4, 159.97]).domain[1]).toBeGreaterThan(160)
+    expect(niceDomain([156.18, 159.97]).domain[1]).toBeGreaterThan(160)
+    // 40.02 above a 40 tick, at the bottom.
+    expect(niceDomain([40.02, 43.5]).domain[0]).toBeLessThan(40)
     // LDL 2.8 to 3.1 mmol/L: neither end sits on the frame.
     const ldl = niceDomain([2.8, 3.1]).domain
     expect(ldl[0]).toBeLessThan(2.8)
