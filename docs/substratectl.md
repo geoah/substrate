@@ -164,12 +164,14 @@ substratectl aggregate ada.example.com/observations/metric/health/heart_rate \
 Daily steps for a year, one row per source, from a source's step amounts
 where they cover 90 percent of a day and from its daily total where they do
 not ([which sources write a total](observations.md#reading)). A `--calendar`
-with no `--timezone` is the recorded-local day:
+with no `--timezone` is the recorded-local day. Four sources times 365 days
+pass the default `maxBuckets` of 1,440, so `--max-buckets` raises it:
 
 ```
 substratectl aggregate ada.example.com/observations/metric/health/steps \
   --gte 2025-10-05T00:00:00+03:00 --lt 2026-10-05T00:00:00+03:00 \
-  --calendar day --from prefer-raw --reducer sum --unit '{steps}'
+  --calendar day --from prefer-raw --reducer sum --unit '{steps}' \
+  --max-buckets 2000
 ```
 
 The latest value of each metric from each source needs no range or bucket:

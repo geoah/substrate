@@ -723,10 +723,13 @@ Daily steps for a year on each sample's own local day. Under the default
 each source's day from its step amounts where they cover 90 percent of it
 and from its daily total (a `sum` summary) otherwise; each row's `from` says
 which. Garmin writes both under one source, so its days can swap. Apple
-Health writes its daily totals under the Health app's own source
-(`applehealth/<account>/health`), a row beside the watch's and the phone's
-amounts, and Google Fit writes no daily total; a day of a source with no
-total is served from its amounts whatever they cover:
+Health writes a `sum` summary only from an export grouped by hour, day,
+week, month or year, under the device the export's row names, or under the
+Health app's own source (`applehealth/<account>/health`) where the row names
+no device or joins several. Google Fit writes no daily total. A day of a
+source with no total is served from its amounts whatever they cover. Four
+step sources times 365 days is 1,460 series times buckets, over the default
+`maxBuckets` of 1,440 ([budgets](api.md#budgets)), so the read raises it:
 
 ```json
 {"aggregate": {
@@ -735,7 +738,8 @@ total is served from its amounts whatever they cover:
    "range": {"gte": "2025-10-05T00:00:00+03:00", "lt": "2026-10-05T00:00:00+03:00"},
    "bucket": {"calendar": "day"},
    "reducers": ["sum"],
-   "unit": "{steps}"}}
+   "unit": "{steps}",
+   "budget": {"maxBuckets": 2000}}}
 ```
 
 Weight weekly with a four-week rolling mean, one row per source, from rollup
