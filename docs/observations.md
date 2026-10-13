@@ -723,7 +723,7 @@ total is served from its amounts whatever they cover:
    "unit": "{steps}"}}
 ```
 
-Weight weekly with a four-week rolling mean, one row per scale, from rollup
+Weight weekly with a four-week rolling mean, one row per source, from rollup
 rows alone:
 
 ```json
