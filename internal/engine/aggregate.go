@@ -88,6 +88,9 @@ type aggPlan struct {
 	// forceRaw reads raw points where rollups could serve (the tests'
 	// lever; aggregateForceRaw).
 	forceRaw bool
+	// propBySource says property.sources' priority policy chooses among the
+	// property read's records.
+	propBySource bool
 }
 
 // refuse is a validation refusal naming what it refuses.
@@ -606,8 +609,16 @@ func (p *aggPlan) parseProperty() error {
 		{a.MinCoverage != nil, "aggregate.minCoverage"},
 	} {
 		if x.set {
-			return refuse(x.path, "a property read reduces records, not the observed index; drop it")
+			hint := "drop it"
+			if x.path == "aggregate.sources" {
+				hint = "property.sources chooses among records"
+			}
+			return refuse(x.path, "a property read reduces records, not the observed index; %s", hint)
 		}
+	}
+	var err error
+	if p.propBySource, err = checkRecordSources("aggregate.property.sources", a.Property.Sources); err != nil {
+		return err
 	}
 	for _, g := range p.groupBy {
 		if g != substrate.GroupKind {

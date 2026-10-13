@@ -59,6 +59,9 @@ type bucketSpec struct {
 	records       *substrate.AggregateRecords
 	before, after time.Duration
 	maxRecords    int
+	// bySource says records.sources' priority policy chooses among the
+	// windows.
+	bySource bool
 	// echo is the bucket as the response states it.
 	echo *substrate.AggregateBucket
 }
@@ -361,6 +364,10 @@ func (p *aggPlan) parseBucket() error {
 				*x.dst = d
 			}
 		}
+		var err error
+		if spec.bySource, err = checkRecordSources("aggregate.bucket.records.sources", b.Records.Sources); err != nil {
+			return err
+		}
 		spec.maxRecords = substrate.AggregateMaxRecords
 		if n := b.Records.MaxRecords; n != 0 {
 			if err := checkBudget("aggregate.bucket.records.maxRecords", int64(n), substrate.AggregateMaxRecordsCap); err != nil {
@@ -573,36 +580,51 @@ func calNext(start time.Time, s bucketSpec) time.Time { return calStep(start, s,
 func calPrev(start time.Time, s bucketSpec) time.Time { return calStep(start, s, -1) }
 
 // recordBuckets reads the records time mode's records: those the filter
-// matches whose `at` lies in the range, each one bucket.
+// matches whose `at` lies in the range, each one bucket, less those the
+// records' source policy drops.
 func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([]*aggBucket, error) {
 	s := p.bucket
 	b := &builder{overRecords: true}
-	if _, err := ds.buildFilter(ctx, tx, b, s.records.Filter); err != nil {
+	types, err := ds.buildFilter(ctx, tx, b, s.records.Filter)
+	if err != nil {
 		return nil, prefixValidation("aggregate.bucket.records.filter", err)
 	}
 	if err := planWithValues(ctx, tx, b); err != nil {
 		return nil, err
 	}
-	b.add(`at >= ` + b.arg(p.from) + ` AND at < ` + b.arg(p.to))
+	const path = "aggregate.bucket.records.sources"
+	cols := `kind, id, version, at, ends_at, '', '[]'`
+	var pol *recordPolicy
+	if s.bySource {
+		if pol, err = newRecordPolicy(types, path, s.records.Sources); err != nil {
+			return nil, err
+		}
+		cols = `kind, id, version, at, ends_at, ` + pol.source + `, ` + pol.match
+	}
+	base := b.clone()
+	inRange := func(b *builder) string { return `at >= ` + b.arg(p.from) + ` AND at < ` + b.arg(p.to) }
+	b.add(inRange(b))
 	limit := min(s.maxRecords, p.maxBuckets)
-	rows, err := tx.QueryContext(ctx, `SELECT kind, id, version, at, ends_at FROM records WHERE `+strings.Join(b.where, " AND ")+
+	rows, err := tx.QueryContext(ctx, `SELECT `+cols+` FROM records WHERE `+strings.Join(b.where, " AND ")+
 		` ORDER BY at, kind, id LIMIT `+b.arg(limit+1), b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate records: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var out []*aggBucket
+	var weighed []policyRecord
+	var lo, hi time.Time
 	// The limit counts the records the filter matches, the ones whose window
 	// is empty (no endsAt, no widening) included: the LIMIT reads that many
 	// rows, so counting only the windows kept would end the read short
 	// without a word.
 	matched := 0
 	for rows.Next() {
-		var kind, id string
+		var kind, id, source, match string
 		var version int64
 		var at time.Time
 		var endsAt sql.NullTime
-		if err := rows.Scan(&kind, &id, &version, &at, &endsAt); err != nil {
+		if err := rows.Scan(&kind, &id, &version, &at, &endsAt, &source, &match); err != nil {
 			return nil, err
 		}
 		if matched++; matched > limit {
@@ -616,16 +638,39 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		if endsAt.Valid {
 			end = endsAt.Time
 		}
-		start, stop := at.Add(-s.before), end.Add(s.after)
-		if !stop.After(start) {
-			continue
+		var w *aggBucket
+		if start, stop := at.Add(-s.before), end.Add(s.after); stop.After(start) {
+			w = &aggBucket{
+				start: start.UTC(), end: stop.UTC(), zone: p.from.Location(),
+				record: &substrate.AggregateRecord{Ref: kind + "/" + id, Version: version},
+			}
 		}
-		out = append(out, &aggBucket{
-			start: start.UTC(), end: stop.UTC(), zone: p.from.Location(),
-			record: &substrate.AggregateRecord{Ref: kind + "/" + id, Version: version},
-		})
+		out = append(out, w)
+		if pol != nil {
+			r := newPolicyRecord(pol, sql.NullTime{Time: at, Valid: true}, endsAt, source, match)
+			r.widen(&lo, &hi)
+			weighed = append(weighed, r)
+		}
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if pol != nil && !lo.IsZero() {
+		around, err := policyContext(ctx, tx, base, pol, func(b *builder) string { return `NOT (` + inRange(b) + `)` }, lo, hi, limit, path)
+		if err != nil {
+			return nil, err
+		}
+		keep, err := keepBySource(ctx, append(weighed, around...))
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if !keep[i] {
+				out[i] = nil
+			}
+		}
+	}
+	return slices.DeleteFunc(out, func(w *aggBucket) bool { return w == nil }), nil
 }
 
 // prefixValidation names where a validation refusal from a nested filter came

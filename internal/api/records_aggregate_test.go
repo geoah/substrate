@@ -183,3 +183,34 @@ func TestRecordsAggregateCarriesTheTimeOptions(t *testing.T) {
 		t.Fatalf("rolling = %+v", r)
 	}
 }
+
+// The options that read records decode strictly and reach the dataset as
+// written: the records mode's and the property read's source policies.
+func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token(fakeRepository)
+	ds := env.svc.datasets[fakeRepository]
+	sources := `{"policy":"priority","order":["whoop-4-0","garmin-forerunner-265"],"property":"source","match":["sport"]}`
+	body := `{"metric":{"ref":"ada.example.com/observations/metric/health/sleep_stage"},` +
+		`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
+		`"bucket":{"records":{"filter":{"kinds":["ada.example.com/health/sleep"]},"sources":` + sources + `}},` +
+		`"reducers":["sum"]}`
+	rec := env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	want := substrate.AggregateRecordSources{Policy: "priority", Order: []string{"whoop-4-0", "garmin-forerunner-265"}, Property: "source", Match: []string{"sport"}}
+	sameSources := func(got *substrate.AggregateRecordSources) bool {
+		return got != nil && got.Policy == want.Policy && strings.Join(got.Order, ",") == strings.Join(want.Order, ",") &&
+			got.Property == want.Property && strings.Join(got.Match, ",") == strings.Join(want.Match, ",")
+	}
+	if b := ds.lastAggregate.Aggregate.Bucket; b == nil || b.Records == nil || !sameSources(b.Records.Sources) {
+		t.Fatalf("bucket = %+v", b)
+	}
+
+	body = `{"property":{"name":"distance","sources":` + sources + `},` +
+		`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},"reducers":["sum"]}`
+	rec = env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if p := ds.lastAggregate.Aggregate.Property; p == nil || !sameSources(p.Sources) {
+		t.Fatalf("property = %+v", p)
+	}
+}

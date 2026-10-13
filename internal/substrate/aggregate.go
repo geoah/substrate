@@ -138,6 +138,29 @@ type AggregateMetric struct {
 type AggregateProperty struct {
 	Name   string `json:"name"`
 	Anchor string `json:"anchor,omitempty"`
+	// Sources chooses among records of several sources before any is
+	// reduced, as the records mode's sources choose among its windows.
+	Sources *AggregateRecordSources `json:"sources,omitempty"`
+}
+
+// The records' source policies: every record (the default), or the
+// highest-ranked source's where two sources' records overlap.
+const (
+	RecordSourcesSeparate = "separate"
+	RecordSourcesPriority = "priority"
+)
+
+// AggregateRecordSources chooses among records several sources wrote of one
+// thing (a night, a run): under priority a record whose [at, endsAt)
+// overlaps a record of a higher-ranked source, the Match properties equal,
+// is dropped. Property names the records' declared property that holds
+// their source (a reference, a string or an enum), and Order ranks its
+// values, first highest; a value Order does not name ranks last.
+type AggregateRecordSources struct {
+	Policy   string   `json:"policy,omitempty"`
+	Order    []string `json:"order,omitempty"`
+	Property string   `json:"property,omitempty"`
+	Match    []string `json:"match,omitempty"`
 }
 
 // AggregateRange is the half-open range [gte, lt), two RFC 3339 instants.
@@ -183,11 +206,13 @@ const (
 )
 
 // AggregateRecords is the records time mode: the records the filter matches
-// inside the range are the buckets, each widened by Around.
+// inside the range are the buckets, each widened by Around. Sources keeps
+// one source's record where several sources' records overlap.
 type AggregateRecords struct {
-	Filter     Filter           `json:"filter"`
-	Around     *AggregateAround `json:"around,omitempty"`
-	MaxRecords int              `json:"maxRecords,omitempty"`
+	Filter     Filter                  `json:"filter"`
+	Around     *AggregateAround        `json:"around,omitempty"`
+	MaxRecords int                     `json:"maxRecords,omitempty"`
+	Sources    *AggregateRecordSources `json:"sources,omitempty"`
 }
 
 // AggregateAround widens each record's window, two ISO 8601 durations.

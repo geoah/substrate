@@ -54,6 +54,16 @@ Chosen: a mode of the records route.
 - **Source policies** (`separate` by default, `priority` with an ordered
   list, `summaries`) resolve per stored interval before bucketing, so a total
   does not change with the bucket width.
+- **Records' source policy.** The records mode's windows and the property
+  read's records are records several sources write of one night or one run.
+  `bucket.records.sources` and `property.sources` (`separate` by default, or
+  `priority`) drop a record whose own `[at, endsAt)` overlaps a kept record
+  of a higher-ranked source, the amounts' rule, optionally only where named
+  `match` properties are equal. The request names the property holding a
+  record's source, because core contracts no source on a record that does
+  not bind `observed`, and the policy takes its own `order`, apart from the
+  points' policy, so a read may take one source's nights and another's
+  stages.
 - **Budgets.** `maxBuckets` (groups times buckets, default 1,440, cap
   10,000), `maxSamples` and a statement timeout inside the caller's deadline
   are checked before the read runs. Over budget is a `422` naming the limit;

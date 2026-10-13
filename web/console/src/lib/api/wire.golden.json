@@ -90,7 +90,8 @@
   },
   "AggregateProperty": {
     "anchor": false,
-    "name": true
+    "name": true,
+    "sources": false
   },
   "AggregateRange": {
     "gte": true,
@@ -100,10 +101,17 @@
     "ref": true,
     "version": true
   },
+  "AggregateRecordSources": {
+    "match": false,
+    "order": false,
+    "policy": false,
+    "property": false
+  },
   "AggregateRecords": {
     "around": false,
     "filter": true,
-    "maxRecords": false
+    "maxRecords": false,
+    "sources": false
   },
   "AggregateResult": {
     "bucket": false,

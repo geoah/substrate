@@ -1128,7 +1128,7 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 | Key | Means | Default |
 | --- | --- | --- |
 | `metric` | `{"ref": "<metric record path>"}`: read the observed index for this metric; a path that is not a metric's, or that no metric record has and no observed value names, is a `422` | |
-| `property` | `{"name", "anchor"?}`: reduce a declared number of the filtered kinds instead, placed in time by `anchor` | `anchor` is `at` |
+| `property` | `{"name", "anchor"?, "sources"?}`: reduce a declared number of the filtered kinds instead, placed in time by `anchor` ([the property read](#the-property-read)) | `anchor` is `at` |
 | `range` | `{"gte", "lt"}`, two RFC 3339 instants, the half-open range | required, except on the latest read |
 | `bucket` | one of the four time modes below; absent is one bucket over the whole range | |
 | `reducers` | the reducers, each a name or a one-key object with its argument | required |
@@ -1174,7 +1174,7 @@ gauge's, an amount's or a counter's values carry none and are kept.
 | `{"every": "PT5M", "origin"?, "place"?}` | fixed lengths counted from `origin` (the Unix epoch by default), on UTC instants | in the range's offset |
 | `{"calendar": "day", "timezone": "Europe/Athens", "weekStart"?, "offset"?, "place"?}` | `minute`, `hour`, `day`, `week`, `month` or `year` in the zone; a day across a clock change is 23 or 25 hours | in the zone, each with its own offset |
 | `{"calendar": "day", "fallbackTimezone"?, "place"?}` (no `timezone`) | the recorded-local calendar: each point lands on the date its own UTC offset names, so a travel day can be 20 or 31 hours | `start` at the offset of the row's own first point, `end` at its last point's (points at one instant ordered by record id, then index); a row with no point, at the offsets of the first and last value held in it; a row `fill` makes, at its bucket's other rows', else the range's |
-| `{"records": {"filter", "around"?, "maxRecords"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations) | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
+| `{"records": {"filter", "around"?, "maxRecords"?, "sources"?}}` | each record the filter matches with `at` inside the range is one bucket, `[at, endsAt)` widened by `around` (`{"before", "after"}`, two durations), less the records `sources` drops | the record's window; the row carries `record: {ref, version}` and `nonAdditive: true`, because windows may overlap |
 
 `weekStart` is a day name (`monday` by default) and `offset` shifts a day's,
 week's, month's or year's start by less than a day (`PT4H` for a vendor day
@@ -1190,6 +1190,30 @@ wherever they start (a night started the evening before the range counts),
 reads amounts from raw points, and is a `422` where it would take a gauge's or
 a counter's points, which are instants; the records mode and the property read
 refuse it.
+
+**The records' source policy.** Several sources write one night or one run
+as a record each, and the records mode makes a window of every record the
+filter matches, so a night three devices recorded is three windows.
+`bucket.records.sources` chooses among them:
+
+```json
+{"policy": "priority", "order": ["whoop-4-0", "garmin-forerunner-265"], "property": "source", "match": ["sport"]}
+```
+
+`property` names the records' declared property that holds their source (a
+reference, a string or an enum, declared by every kind the filter selects),
+and `order` ranks its values, first highest; a reference's bare id is
+completed as the filter completes it. A record whose own `[at, endsAt)` (an
+instant's `at`) overlaps a kept record of a higher-ranked source is dropped
+and makes no window. A source the order does not name ranks last, and two
+records of one rank never drop each other. `match` (optional) names
+declared string, enum or reference properties that must also be equal: with
+`["sport"]` a band's three-hour activity drops neither the run nor the walk
+a watch recorded inside it unless they name its sport. A record outside the
+range that overlaps one inside still drops it, so two adjacent ranges never
+count one night twice. `separate`, the default, keeps every record. This
+policy chooses the windows, the request's `sources` chooses among the points
+inside each window, and each takes its own `order`.
 
 In the recorded-local calendar the range selects points by instant, so a day
 at another offset than the range's is cut where the range starts and ends: a
@@ -1443,6 +1467,13 @@ bucket); any other column or property is a `422` naming it. A record
 carries no offset of its own, so the recorded-local calendar is refused
 (name a `timezone`), and so is the records mode.
 
+`property.sources` is the [records' source policy](#the-four-time-modes),
+applied to the records the read reduces before any value is: a weekly
+running distance over workouts four devices each recorded counts each run
+once. It weighs the records that hold the property, so a higher-ranked
+source's workout without a `distance` drops no other source's. The request's
+`sources` is the points' policy and is refused on a property read.
+
 ```json
 {"filter": {"kinds": ["ada.example.com/finance/expense"]},
  "aggregate": {"property": {"name": "amount", "anchor": "paidAt"},
@@ -1474,9 +1505,9 @@ after the points are evaluated, before a row is made.
 | Budget | Bounds | Default | Cap |
 | --- | --- | --- | --- |
 | `maxBuckets` | series times buckets, a series being a group, or with `groupBy` on `code` a group's code (columns on a downsample, records in the records mode); a `fill` is checked again before it makes a row, and no read answers more rows | 1,440 | 10,000 |
-| `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up; the records a property read takes | 1,000,000 | 20,000,000 |
+| `maxSamples` | the raw points and rollup rows a read's statements take, each statement's counted before it runs and added up; the records a property read takes, and those outside the range its source policy weighs | 1,000,000 | 20,000,000 |
 | `maxGroups` | the groups a `groupBy` or the `separate` policy makes; a `groupBy` on `code` counts the codes the selected streams' points hold in the range, before a point is read for a reduction; a property read counts its kinds and currencies before it reads a value | 200 | 2,000 |
-| `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row | 1,000 | 10,000 |
+| `bucket.records.maxRecords` | the records the records mode matches, a record whose window is empty (no `endsAt`, no `around`) included though it makes no row; with a source policy, also the records outside the range it weighs | 1,000 | 10,000 |
 
 Every statement runs under a timeout inside the caller's remaining deadline,
 30 seconds where the caller set none or a later one. The work after the
@@ -1513,7 +1544,10 @@ merged as one row.
   cap, or a read over a budget (naming the limit); `rolling` without a
   `bucket`; `downsample` beside `reducers`, `rolling`, `fill` or `bucket`;
   `minCoverage` without `prefer-raw`; a `fill`, `rolling` or `maxGap` on the
-  latest read.
+  latest read; a records source policy that is not `separate` or
+  `priority`, a `priority` without `property` or `order`, or a `property`
+  or `match` entry the selected kinds do not all declare as a single
+  string, enum or reference; `sources` on a property read.
 
 ### Where this differs from the plan
 

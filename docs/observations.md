@@ -750,14 +750,19 @@ nights the window held):
 
 Sleep stages per night: the coded stage amounts summed by code inside each
 `health/sleep` record, one row per night and code, each carrying the night's
-`record`:
+`record`. Every device writes the night as a sleep record of its own, so
+`bucket.records.sources` keeps one per night, the WHOOP's where it has one
+and the Garmin's otherwise, and the request's `sources` keeps one device's
+stages inside it:
 
 ```json
 {"filter": {"kinds": ["ada.example.com/observations/observation"]},
  "aggregate": {
    "metric": {"ref": "ada.example.com/observations/metric/health/sleep_stage"},
    "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
-   "bucket": {"records": {"filter": {"kinds": ["ada.example.com/health/sleep"]}}},
+   "bucket": {"records": {
+     "filter": {"kinds": ["ada.example.com/health/sleep"]},
+     "sources": {"policy": "priority", "order": ["whoop-4-0", "garmin-forerunner-265"], "property": "source"}}},
    "groupBy": ["code"],
    "reducers": ["sum"],
    "sources": {"policy": "priority", "order": ["whoop-4-0", "garmin-forerunner-265"]},

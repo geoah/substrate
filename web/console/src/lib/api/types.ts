@@ -404,6 +404,20 @@ export interface AggregateProperty {
   name: string
   /** The datetime property placing a record in time; `at` by default. */
   anchor?: string
+  /** Chooses among records several sources wrote of one thing. */
+  sources?: AggregateRecordSources
+}
+
+/** The records' source policy: `separate` (every record, the default) or
+ * `priority`, which drops a record whose `[at, endsAt)` overlaps a record of
+ * a higher-ranked source, the `match` properties equal. `property` names
+ * the records' declared property holding their source, and `order` ranks
+ * its values, first highest. */
+export interface AggregateRecordSources {
+  policy?: string
+  order?: string[]
+  property?: string
+  match?: string[]
 }
 
 /** The half-open range [gte, lt), RFC 3339 instants. */
@@ -435,6 +449,8 @@ export interface AggregateRecords {
   filter: RecordFilter
   around?: AggregateAround
   maxRecords?: number
+  /** Keeps one source's record where several sources' records overlap. */
+  sources?: AggregateRecordSources
 }
 
 export interface AggregateAround {

@@ -50,6 +50,7 @@ import type {
   AggregateProperty,
   AggregateRange,
   AggregateRecord,
+  AggregateRecordSources,
   AggregateRecords,
   AggregateResult,
   AggregateRolling,
@@ -399,6 +400,14 @@ const aggregateMetric: Shape<AggregateMetric> = { ref: true }
 const aggregateProperty: Shape<AggregateProperty> = {
   name: true,
   anchor: false,
+  sources: false,
+}
+
+const aggregateRecordSources: Shape<AggregateRecordSources> = {
+  policy: false,
+  order: false,
+  property: false,
+  match: false,
 }
 
 const aggregateRange: Shape<AggregateRange> = { gte: true, lt: true }
@@ -419,6 +428,7 @@ const aggregateRecords: Shape<AggregateRecords> = {
   filter: true,
   around: false,
   maxRecords: false,
+  sources: false,
 }
 
 const aggregateAround: Shape<AggregateAround> = {
@@ -876,6 +886,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   AggregateRecords: aggregateRecords,
   AggregateAround: aggregateAround,
   AggregateSources: aggregateSources,
+  AggregateRecordSources: aggregateRecordSources,
   AggregateRolling: aggregateRolling,
   AggregateBudget: aggregateBudget,
   Downsample: downsample,

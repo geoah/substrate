@@ -193,8 +193,19 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	if err != nil {
 		return nil, err
 	}
-	b.add(anchorExpr + ` >= ` + b.arg(p.readFrom) + ` AND ` + anchorExpr + ` < ` + b.arg(p.to))
+	const policyPath = "aggregate.property.sources"
+	var pol *recordPolicy
+	if p.propBySource {
+		if pol, err = newRecordPolicy(types, policyPath, p.a.Property.Sources); err != nil {
+			return nil, err
+		}
+	}
 	b.add(`jsonb_exists(props, ` + b.arg(name) + `)`)
+	base := b.clone()
+	inRange := func(b *builder) string {
+		return anchorExpr + ` >= ` + b.arg(p.readFrom) + ` AND ` + anchorExpr + ` < ` + b.arg(p.to)
+	}
+	b.add(inRange(b))
 	where := strings.Join(b.where, " AND ")
 	var n int64
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE `+where, b.args...).Scan(&n); err != nil {
@@ -232,7 +243,12 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		return nil, refuse("aggregate.budget.maxBuckets", "%d groups times %d buckets is %d, over %d; raise maxBuckets or widen the bucket (the cap is %d)",
 			nGroups, len(buckets), cells, p.maxBuckets, substrate.AggregateMaxBucketsCap)
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT kind, `+anchorExpr+`, (props->`+b.arg(name)+`)::text FROM records WHERE `+where+
+	source, match := `''`, `'[]'`
+	if pol != nil {
+		source, match = pol.source, pol.match
+	}
+	cols := `kind, ` + anchorExpr + `, at, ends_at, ` + source + `, ` + match + `, (props->` + b.arg(name) + `)::text`
+	rows, err := tx.QueryContext(ctx, `SELECT `+cols+` FROM records WHERE `+where+
 		` ORDER BY `+anchorExpr+`, kind, id`, b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: aggregate property: %w", err)
@@ -250,16 +266,10 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	groups := map[string]*aggGroup{}
 	target := p.unit
 	var steps everyThousand
-	for rows.Next() {
-		var kind string
-		var at time.Time
-		var raw string
-		if err := rows.Scan(&kind, &at, &raw); err != nil {
-			return nil, err
-		}
-		v, unit, currency, ok := propValue(family, raw)
+	take := func(r propRecord) error {
+		v, unit, currency, ok := propValue(family, r.raw)
 		if !ok {
-			continue
+			return nil
 		}
 		if family == propQuantity {
 			if target == "" {
@@ -269,31 +279,31 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			if m == "" {
 				mm, err := vocabulary.MeasureOf(target)
 				if err != nil {
-					return nil, refuse("aggregate.unit", "%v", err)
+					return refuse("aggregate.unit", "%v", err)
 				}
 				m = mm.Name
 			}
 			if !resolves(target, m) {
-				return nil, refuse("aggregate.unit", "%s is not a %s unit, the measure of %s", target, m, name)
+				return refuse("aggregate.unit", "%s is not a %s unit, the measure of %s", target, m, name)
 			}
 			cv, err := vocabulary.ConvertIn(m, v, unit, target)
 			if err != nil {
-				return nil, refuse("aggregate.unit", "a %s of %s does not convert to %s: %v", name, unit, target, err)
+				return refuse("aggregate.unit", "a %s of %s does not convert to %s: %v", name, unit, target, err)
 			}
 			v, unit = cv, target
 		}
-		bi, err := firstEndingAfter(buckets, at, func() error { return steps.check(ctx) })
+		bi, err := firstEndingAfter(buckets, r.anchor, func() error { return steps.check(ctx) })
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if bi == len(buckets) || at.Before(buckets[bi].start) {
-			continue
+		if bi == len(buckets) || r.anchor.Before(buckets[bi].start) {
+			return nil
 		}
 		var key substrate.AggregateGroup
 		var parts []string
 		if p.grouped[substrate.GroupKind] {
-			key.Kind = kind
-			parts = append(parts, kind)
+			key.Kind = r.kind
+			parts = append(parts, r.kind)
 		}
 		if family == propMoney {
 			key.Currency = currency
@@ -305,7 +315,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 			// The groups were counted before the scan; one more than
 			// counted stops it rather than reduce past the budget.
 			if int64(len(groups)) >= nGroups {
-				return nil, refuse("aggregate.budget.maxGroups", "the read met more groups than the %d it counted; read again", nGroups)
+				return refuse("aggregate.budget.maxGroups", "the read met more groups than the %d it counted; read again", nGroups)
 			}
 			g = &aggGroup{key: key, sortKey: gk}
 			groups[gk] = g
@@ -324,9 +334,54 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 		if c.hi == nil || v.Cmp(c.hi) > 0 {
 			c.hi = new(big.Rat).Set(v)
 		}
+		return nil
+	}
+	// Without a source policy each record is reduced as it is read; with
+	// one, the read holds the records (maxSamples bounds them) until the
+	// policy has weighed them all.
+	var held []propRecord
+	var weighed []policyRecord
+	var lo, hi time.Time
+	for rows.Next() {
+		var r propRecord
+		var at, endsAt sql.NullTime
+		var source, match string
+		if err := rows.Scan(&r.kind, &r.anchor, &at, &endsAt, &source, &match, &r.raw); err != nil {
+			return nil, err
+		}
+		if pol == nil {
+			if err := take(r); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		w := newPolicyRecord(pol, at, endsAt, source, match)
+		w.widen(&lo, &hi)
+		held, weighed = append(held, r), append(weighed, w)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if pol != nil && len(held) > 0 {
+		var around []policyRecord
+		if !lo.IsZero() {
+			outside := func(b *builder) string { return `NOT coalesce(` + inRange(b) + `, false)` }
+			if around, err = policyContext(ctx, tx, base, pol, outside, lo, hi, int(p.maxSamples-n), "aggregate.budget.maxSamples"); err != nil {
+				return nil, err
+			}
+		}
+		keep, err := keepBySource(ctx, append(weighed, around...))
+		if err != nil {
+			return nil, err
+		}
+		for i, r := range held {
+			if !keep[i] {
+				continue
+			}
+			if err := take(r); err != nil {
+				return nil, err
+			}
+		}
 	}
 	res := &substrate.AggregateResult{Property: name, Unit: target, Bucket: p.bucket.echo, Exact: true}
 	meta := &aggMeta{sources: map[string]bool{}}
@@ -412,6 +467,14 @@ func propertyAnchor(b *builder, p *aggPlan, types []*vocabulary.Kind, anchor str
 		return `(((props->>` + b.arg(anchor) + `)::date)::timestamp AT TIME ZONE ` + b.arg(zone) + `::text)`, nil
 	}
 	return `(props->>` + b.arg(anchor) + `)::timestamptz`, nil
+}
+
+// propRecord is one record a property read reduces: its kind, its anchor's
+// instant and the property's stored value.
+type propRecord struct {
+	kind   string
+	anchor time.Time
+	raw    string
 }
 
 // propValue reads one stored value of the family as an exact number.
