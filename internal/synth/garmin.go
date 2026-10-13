@@ -721,7 +721,7 @@ type garminActivity struct {
 }
 
 // garminAltitude is the ground an activity starts on in each home of the
-// persona's, in metres; elsewhere 50.
+// persona's, in meters; elsewhere 50.
 var garminAltitude = map[string]float64{"Europe/Athens": 95, "Europe/London": 20}
 
 // activities is each workout of d as an activity summary and its details.
@@ -862,7 +862,7 @@ func (e *garminEmitter) altitude(w *Workout, samples []map[string]any, summary m
 	}
 }
 
-// Running power is about 1.04 W per kilogram for each metre a second, on
+// Running power is about 1.04 W per kilogram for each meter a second, on
 // the watch's stored weight for the runner.
 const (
 	garminWattsPerKgMps = 1.04
@@ -870,7 +870,7 @@ const (
 )
 
 // stride is a run's step cadence and running power, sample by sample, with
-// the summary's cadence and steps, and a lap at every kilometre.
+// the summary's cadence and steps, and a lap at every kilometer.
 func (e *garminEmitter) stride(d Date, k int, w *Workout, samples []map[string]any, summary map[string]any, r *rand.Rand) []any {
 	a, dur := w.Start.Unix(), int64(w.Duration().Seconds())
 	base := 166.0

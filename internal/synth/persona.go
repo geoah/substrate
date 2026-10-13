@@ -235,7 +235,7 @@ func (p *Persona) Noisy(key string, value, sd float64) float64 {
 // The body's constants every emitter shares, so two providers' readings of
 // the same walk differ by their device noise and nothing else.
 const (
-	// StrideM is the length of one step on foot, in metres.
+	// StrideM is the length of one step on foot, in meters.
 	StrideM = 0.74
 	// KcalPerStep is the active energy one step on foot burns.
 	KcalPerStep = 0.04
@@ -1008,7 +1008,7 @@ type LabPanel struct {
 
 // Labs is the three panels, independent of the date range: two from an
 // Athens lab in SI units, and between them a home collection kit a US lab
-// analysed and reported in US conventional units (mg/dL, ng/mL), on the
+// analyzed and reported in US conventional units (mg/dL, ng/mL), on the
 // metrics' mass twins. Each panel has the same body behind it, so the
 // health sample's lab conversion puts every reading on one trend.
 func (p *Persona) Labs() []LabPanel {
