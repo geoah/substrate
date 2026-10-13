@@ -120,12 +120,11 @@ func (a *app) triggerRunCommand() *cobra.Command {
 callable, without moving the cursor.
 
 A record is addressed by (kind, id) — an id alone names no record, since two
-kinds may share one — so the delivery takes BOTH. The kind may be the name the
-registry knows ("task") or the full reference
-("samples.substrate.reamde.dev/tasks/task").`,
-		Example: `  substratectl trigger run classify-page task t9
-  substratectl trigger run classify-page samples.substrate.reamde.dev/tasks/task t9`,
-		Args: cobra.ExactArgs(3),
+kinds may share one — so the delivery takes BOTH. The kind is named in full,
+<authority>/<package>/<name>; the server refuses a bare name, listing the
+full spellings the repository declares under it.`,
+		Example: `  substratectl trigger run classify-page geoah.example.com/tasks/task t9`,
+		Args:    cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			cl, err := a.client()
@@ -139,8 +138,8 @@ registry knows ("task") or the full reference
 			// bare name with the spellings it declares, so the argument travels
 			// as given.
 			recordKind := args[1]
-			// {"type", "id"}, both: the server refuses a body missing either
-			//, so an id-only call was a 400 every single time.
+			// The body carries both "kind" and "id": the server refuses a body
+			// missing either.
 			body := map[string]any{"kind": recordKind, "id": args[2]}
 			if err := cl.do(ctx, http.MethodPost, triggersPath(args[0], "run"), nil, body, &res); err != nil {
 				return err

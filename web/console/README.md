@@ -41,29 +41,32 @@ build; `mise run ci:console:test` runs the tests. Both are what CI runs.
 
 ## Pages
 
-| Route                                    | Surface                                                                                                            |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `/login`, `/register`                    | the door; everything else needs a session                                                                          |
-| `/`                                      | overview                                                                                                           |
-| `/changelog`                             | the repository's change feed                                                                                       |
-| `/registry`, `/registry/:id`             | the catalog: install, upgrade, lifecycle verbs, input resolution + bind, accountconfig trait query + OAuth connect |
-| `/search`                                | the ranked read (`GET /api/v1/records?q=`) as a page                                                               |
-| `/connections`                           | every provider account: token status, sync state, and the connect, sync now, edit and disconnect verbs             |
-| `/connections/:authority/:pkg/:name/:id` | one account: its record, its `sync` trait, its triggers and their runs                                             |
-| `/settings`, `/settings/:id`             | every bundle that ships a `setting` or `secret` record; the `:id` route is that bundle's form                      |
-| `/agents`, `/agents/:id`                 | declared agents; the `:id` route is the ndjson streaming chat                                                      |
-| `/merge-requests/:id`                    | a duplicate-suggestion verdict                                                                                     |
-| `/change-requests/:id`                   | a proposed change, what accepting it would do, and its verdict                                                     |
-| `/data/:authority`                       | one authority's packages                                                                                           |
-| `/data/:authority/:pkg`                  | one package's collections                                                                                          |
-| `/data/:authority/:pkg/:name`            | browse a kind's records                                                                                            |
-| `/data/:authority/:pkg/:name/new`        | create a record                                                                                                    |
-| `/data/:authority/:pkg/:name/:id`        | one record, and `/edit` beside it                                                                                  |
-| `/actors/:id`                            | an actor's view                                                                                                    |
-| `/account`, `/account/tokens`            | the account, and the tokens it has minted                                                                          |
+The live routes in `src/router.tsx`, each with the page it renders:
 
-`/account/tokens` is deliberately not `/tokens`: the API door answers
-`GET /tokens`, so a browser refreshing that path would be handed JSON.
+| Route                                      | Page                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------- |
+| `/login`, `/register`                      | the door; everything else needs a session                                       |
+| `/`                                        | Home: what the repository holds and what just happened                          |
+| `/data`                                    | All data: every collection, and Add a collection                                |
+| `/data/$authority`                         | one authority's packages                                                        |
+| `/data/$authority/$pkg`                    | one package: its collections and the tools it ships                             |
+| `/data/$authority/$pkg/$name`              | browse a kind's records                                                         |
+| `/data/$authority/$pkg/$name/new`          | create a record                                                                 |
+| `/data/$authority/$pkg/$name/$id`          | one record, and `/edit` beside it                                               |
+| `/agents`, `/agents/$id`                   | the chat over every agent; the `$id` route is one agent's page                  |
+| `/tools`, `/tools/$authority/$pkg/$name`   | every function that can act on the data; the second route is one tool           |
+| `/providers`, `/providers/$authority/$pkg` | every provider, and one provider's accounts, sync state and settings            |
+| `/history`                                 | the changelog as sentences                                                      |
+| `/search`                                  | the ranked read (`GET /api/v1/records?q=`) as a page                            |
+| `/settings`                                | the console's settings: layout, the account, its tokens and the recovery export |
+| `/merge-requests/$id`                      | a duplicate-suggestion verdict                                                  |
+| `/change-requests/$id`                     | a proposed change, what accepting it would do, and its verdict                  |
+| `/actors/$actorId`                         | an actor's view                                                                 |
+
+Old addresses redirect: `/changelog` to `/history`; `/registry`,
+`/registry/$id`, `/connections`, `/connections/$authority/$pkg/$name/$id` and
+`/settings/$id` to `/providers` or one provider's page (a sample's
+`/registry/$id` to `/data`); `/account` and `/account/tokens` to `/settings`.
 
 ## Adding shadcn components
 

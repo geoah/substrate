@@ -4,7 +4,7 @@ A fresh substrate is empty: no users, no records, nothing but the vocabulary
 compiled into the binary. This page takes it from there to a task you can read
 back, in four moves: register, log in, write a record, watch it land.
 
-You need a running substrate and its invite code.
+You need a running substrate and its invite code, if it has one.
 [Running one locally](running-locally.md) stands one up on your own machine and
 [running a substrate](operations.md) is the deployment; if somebody else runs
 yours, they hand you the address and the code.
@@ -45,7 +45,8 @@ registration leaves nothing behind. Registration ends logged in: `substratectl` 
 the minted token as a context in `~/.config/substratectl/config.yaml`. The
 repository name IS its **authority**, the hostname every package you declare
 kinds in lives under: any name you control (`ada.example.com`), or a bare
-label the substrate completes under its own host.
+label the substrate completes under its own host. The commands below spell it
+`$AUTHORITY`, so set it once: `export AUTHORITY=ada.example.com`.
 
 Unattended, bring your own seed and skip the prompts:
 
@@ -148,7 +149,7 @@ declaration stamps `completedAt` for you:
 
 ```bash
 substratectl get $AUTHORITY/tasks/task kq3v9x2m41pf -o yaml
-substratectl patch task kq3v9x2m41pf --state status=done
+substratectl patch $AUTHORITY/tasks/task kq3v9x2m41pf --state status=done
 ```
 
 ## Watch the change stream

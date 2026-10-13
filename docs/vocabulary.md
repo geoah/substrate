@@ -51,7 +51,8 @@ data:
 ```
 
 Each declarable kind has a collection under `substrate.reamde.dev/core`, named
-for the kind, and declarations list and read there like any other record. A
+for the kind. A declaration is read there like any other record, and listed
+through `GET /api/v1/records` with its kind in `filter.kinds`. A
 declaration's id is the one id form that carries a `/`, which is legal in a
 URI path segment only percent-encoded, so a REST path spells it `%2F` and the
 API decodes it once:

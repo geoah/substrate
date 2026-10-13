@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-08
 decision-makers: George Antoniadis
+amended-by: 0165
 ---
 
 # 0062. A write is on disk before its commit, and its final newline is the commit marker

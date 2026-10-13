@@ -11,8 +11,8 @@ package takes, what an import rewrites and how an upgrade is offered are in
 samples this page does not table (notes, llm, readinglist, firecrawl and pebble, whose
 kinds are described beside the functions and agents that write them), are in
 the [bundles catalog](bundles-catalog.md). Every declaration is queryable in
-your own repository (`substratectl kinds`, or
-`GET …/substrate.reamde.dev/core/kind`), descriptions included, so this page
+your own repository (`substratectl kinds`, or `GET /api/v1/records` with
+`substrate.reamde.dev/core/kind` in `filter.kinds`), descriptions included, so this page
 is the map and the repository is the source of truth.
 
 The tables for core are [below](#substratereamdedevcore); what follows first is

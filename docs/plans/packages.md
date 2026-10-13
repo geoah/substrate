@@ -2,9 +2,9 @@
 
 Status: design settled with the owner 2026-09-02, landed as
 [decision record 0047](../decisions/0047-a-kind-lives-in-a-package.md). Sample
-import (phase 2 of [the samples plan](providers-and-samples.md)) is still
-future work: the samples install as ordinary bundles. It is a plan, not a
-contract: the code that landed is the contract.
+import (phase 2 of [the samples plan](providers-and-samples.md)) landed
+later, in #352: a sample is imported under the repository's own authority. It
+is a plan, not a contract: the code that landed is the contract.
 
 ## The problem
 

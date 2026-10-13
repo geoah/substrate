@@ -1,6 +1,6 @@
 # Context compaction for the agent loop
 
-Status: phase 1 is built on this branch, 2026-09-28, and not yet merged;
+Status: phase 1 merged in #748 (`internal/engine/agentcompaction.go`);
 phases 2 and 3 are not built. Tracks issue #76. The storage choice is
 [decision 0138](../decisions/0138-a-compacted-thread-keeps-its-rows-and-replays-a-summary-message-over-the-range-it-covers.md).
 

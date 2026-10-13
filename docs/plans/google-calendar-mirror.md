@@ -33,11 +33,12 @@ rows, which is right. Decision 0043 then put the expansion in a SEPARATE read
 assigned the merge of rows and occurrences to every consumer. That is the part
 that is wrong: the one read that answers "what is on my timeline this week",
 the records read over `temporal` with an `at` window, answers without the
-occurrences. The separate read is also broken today: it filters on the shipped
-sample spelling of the `recurring` trait
-(`internal/api/occurrences.go`), which a sample import rehomes onto the
-repository's authority (`internal/vocabulary/rehome.go`), so in a real
-repository it matches nothing.
+occurrences. The separate read was also broken when this was written: it
+filtered on the shipped sample spelling of the `recurring` trait
+(`internal/api/occurrences.go`, removed when section 2 landed), which a
+sample import rehomes onto the repository's authority
+(`internal/vocabulary/rehome.go`), so in a real repository it matched
+nothing.
 
 One fix serves both halves.
 

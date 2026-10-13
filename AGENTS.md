@@ -93,7 +93,7 @@ mise run dev:status     # container, this tree's database, server, console, URLs
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:stop       # stop THIS TREE'S server; the shared container keeps running
 mise run dev:logs
-mise run dev:wipe       # DROP this tree's database and DELETE .dev/data: the next start is a fresh substrate
+mise run dev:wipe       # DROP this tree's database and DELETE .dev/ (data root, credential key, pid, log): the next start is a fresh substrate
 mise run dev:wipe:all   # dev:wipe, then remove the container — EVERY tree's dev database
 ```
 
@@ -147,11 +147,12 @@ that writes sealed material (`user reset`) reads the same file, and
 key refuses to boot.
 
 **Run the engine suite on its own.** `internal/engine`'s `*_db_test.go` files
-each start a pgvector testcontainer, and they starve under a full-tree parallel
-run — `go test ./...` can fail there while `go test ./internal/engine/...` passes
+share one pgvector testcontainer per test binary, and they starve under a
+full-tree parallel run — `go test ./...` can fail there while `go test ./internal/engine/...` passes
 clean. A `*_db_test.go` failure that looks arbitrary usually is; confirm it
-alone before believing it. The full engine suite (`mise run test:db:engine`)
-takes about 106 s on 16 cores (docs/testing.md says where the time goes).
+alone before believing it. The full engine suite is `mise run test:db:engine`;
+[docs/testing.md](docs/testing.md) says where its time goes, and
+`mise run test:timing` reads a run's timings on this machine.
 
 **One full database suite per machine at a time, never one per worktree.**
 A full `test:db*` run uses the whole machine: sixteen parallel tests, a
@@ -194,7 +195,7 @@ never HTTP, and refuses before touching anything without one.
 bin/substratectl register                    # invite code, repository, password, TOTP enroll, recovery key (auto-saved to 1Password when `op` is signed in)
 bin/substratectl login --repository <yours>  # password + TOTP; mints a token record
 bin/substratectl kinds                       # every installed kind
-bin/substratectl get kind <ref> -o yaml      # one kind's definition
+bin/substratectl get substrate.reamde.dev/core/kind <ref> -o yaml  # one kind's definition
 bin/substratectl get <authority>/tasks/task           # list one kind: GET /api/v1/records with the kind in filter.kinds
 bin/substratectl get <authority>/tasks/task <id> -o yaml  # one record, apply-able envelope; a bare `task` is refused
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
@@ -224,11 +225,14 @@ No row sets a `reasoningEffort` default: the accepted set is the MODEL's, not
 the row's (`gpt-5` refuses `none`, the gpt-5.6 family needs it for tools), so
 a tool-using agent names the value itself. `tasks` is a SAMPLE
 package the repository still imports, so a walkthrough
-that reaches for any collection outside the seed takes one first: `bin/substratectl import
-samples.substrate.reamde.dev/tasks`, the console's Registry page, or `POST
-/api/v1/catalog/{id}/import` (the id is the package, so its slash is
-percent-encoded: `samples.substrate.reamde.dev%2Ftasks`), which are three doors
-to the same admission. The import REHOMES the closure onto the repository's own
+that reaches for any collection outside the seed takes one first. `tasks`
+`requires:` `people` and `scheduling`, and an import whose requirement is
+missing is refused, so the order is `samples.substrate.reamde.dev/people`, then
+`…/scheduling`, then `…/tasks`, each through `bin/substratectl import <sample>`
+or `POST /api/v1/catalog/{id}/import` (the id is the package, so its slash is
+percent-encoded: `samples.substrate.reamde.dev%2Ftasks`). The console's All
+data → Add a collection → Start from a sample is the third door to the same
+admission, and it imports the requirements first. The import REHOMES the closure onto the repository's own
 authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
 (record 0048). A PROVIDER (`providers.substrate.reamde.dev/google`) takes the
 other door, `…/install`, and lands under the authority that publishes it. A
@@ -271,7 +275,7 @@ words, and what each one replaced:
 
 | Word          | Is                                                        | Not          |
 | ------------- | --------------------------------------------------------- | ------------ |
-| **record**    | the thing stored; `record_kind`/`record_id` in every table | entity       |
+| **record**    | the thing stored; `kind`/`id` in `records`, `record_kind`/`record_id` in the tables keyed by one record | entity       |
 | **kind**      | what a record is; `{authority}/{package}/{name}`           | type, schema |
 | **package**   | the kinds one authority versions, owns and quarantines together | namespace, module |
 | **authority** | who publishes a package; one DNS-style name                | group        |
@@ -307,9 +311,11 @@ under a server-assigned id is `POST /api/v1/records` with `kind` in the body
 
 The **package** is the unit. A kind may pin its own `version`, else it takes
 its package's; a stored closure the loader refuses parks its package; and
-`authorizeDeclarationWrite` reads the package row's `source`, so the seeded
-`substrate.reamde.dev/core` is the one closure a repository's token may not
-write. A bundle owns one package and its id IS that package.
+`authorizeDeclarationWrite` reads the package row's `source`, so a
+repository's token may not write a `builtin` package (the seeded `core` and
+`llm`) or a `published` one (an installed provider); its own packages and the
+samples it imported are `installed` and writable. A bundle owns one package
+and its id IS that package.
 
 `substrate.reamde.dev` is a **placeholder**. Moving kind identity to URLs (so
 anyone can publish kinds from a git repo without owning DNS) is real design
@@ -355,18 +361,26 @@ first label.
   from. A skill there speaks to a user of a substrate, never to this repo's
   developers, whose skills stay under `.claude/skills/`. No package is named
   for a language construct: no `types.go`, no `iface.go`, no `utils`. An
-  interface lives with the subject it describes.
+  interface lives with the subject it describes. Three known exceptions are
+  not precedent: `web/console/src/lib/utils.ts` (the path shadcn's
+  generated components import), `web/console/src/lib/api/types.ts` (the wire
+  mirror below) and `internal/vocabulary/types.go`.
 - **The changelog is the truth.** It lives in the repository's directory
   under `SUBSTRATE_DATA_ROOT` as checksummed segment files, and the
   `changelog` table indexes them; `internal/engine/fold.go` is the one path
   from changelog to `records`, so a live write, a boot import and
   `RebuildRepository` cannot drift. Anything that writes `records` directly,
   or a changelog entry that reaches one store and not the other outside
-  `inTx`, is wrong. The one exception is `fts`, the search index over each
-  row: it is derived from the row and the kind's declaration, so a vocabulary
-  apply that changes what a kind indexes re-derives it for that kind's rows
-  (`reprojectFTS`, also in `fold.go`) without moving `version`, `updated_at`
-  or the changelog.
+  `inTx`, is wrong. The exceptions are derived storage, a function of the
+  fold and the declarations in force: each is written outside the fold
+  without moving `version`, `updated_at` or the changelog, and
+  `repository rebuild` derives it again. They are `fts`, the search index over
+  each row (`rederiveFTS`, run by the background pass in `reprojection.go`
+  behind a vocabulary apply or the boot upgrade and by the open-time reindex
+  in `searchindex.go`, and `reprojectFTS` for the declaration rows inside the
+  boot upgrade's transaction); `orphaned_at` and
+  `ambiguous_at` on `records` (`orphans.go`, `ambiguous.go`); and the
+  `property_offers` table (`mapping.go`).
 - **A changed declaration ships a changed version.** Every document under
   `kinds/` and `samples/` projects with a `version`, an incremental integer (a
   kind's own `data.version` where it pins one, else its package's, else 1). The boot
@@ -397,7 +411,7 @@ first label.
   escape hatch
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
   `unique` and `deprecated` are reserved today: stored, refused where they
-  could not be honored, and acted on by nothing. A kind's `purpose`
+  could not be honored, and acted on by no server path. A kind's `purpose`
   (`primary`, `supporting` or `internal`; absent reads as `primary`) is
   validated and stored and read by clients alone, to decide what they list;
   every seeded kind is `internal`
@@ -497,16 +511,21 @@ first label.
   leaves its row in `repository_migrations`
   ([0099](docs/decisions/0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md)).
   Reach for one only where a SQL migration cannot decide the answer from the
-  rows alone.
+  rows alone. A SQL migration never writes a row of a fold table (every table
+  `repository rebuild` clears and fills again from the changelog): it changes
+  their schema alone, and a change to what a row holds is a repository
+  migration, so a rebuild replays it.
+  `TestEveryMigrationLeavesAFoldTheRebuildReproduces` holds every embedded
+  migration to this
+  ([upgrading the binary](docs/operations.md#upgrading-the-binary)).
 - **`lint:docs` is the one docs linter**, and it holds two halves. What the
   pages point at: every Markdown link and `#anchor` resolves against the tree,
   offline, so renaming a doc or a heading means fixing what points at it, and
   external URLs are never fetched because somebody else's outage is not this
-  repo's build failure. What they say: `.mise/docscheck.sh` refuses a dead
-  word from [docs/terms.md](docs/terms.md), a retired envelope key in an
-  example, a `mise run` name that no longer exists, and a page
-  `docs/README.md` does not list. A mechanical docs rule worth enforcing goes
-  in that script, so there is one place to run and one place to add to.
+  repo's build failure. What they say: `.mise/docscheck.sh`, whose header
+  says which files its rules read and how to list the rules. A mechanical
+  docs rule worth enforcing goes in that script, so there is one place to run
+  and one place to add to.
 - **A decision that outlives its argument gets a record.**
   [docs/decisions/](docs/decisions/README.md) is one short, dated page per
   choice, frozen once accepted and superseded rather than edited, which

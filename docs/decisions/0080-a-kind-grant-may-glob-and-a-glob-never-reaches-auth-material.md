@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-14
 decision-makers: George Antoniadis
+amended-by: 0165
 ---
 
 # 0080. A kind grant may glob, and a glob never reaches auth material
