@@ -30,6 +30,7 @@ import { StateBadge } from "@/components/identity/state-badge"
 import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
 import { readReference } from "@/lib/api/types"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import { FUNCTION_KIND } from "@/lib/core-kinds"
 import {
   columnProperties,
   kindByIdentity,
@@ -98,7 +99,7 @@ export function columnIdOf(property: string): string {
  * SHIPPED declaration is known here, because hiding a property of a kind this
  * console did not ship would be guessing at somebody else's vocabulary. */
 const DEFAULT_HIDDEN: Record<string, string[]> = {
-  "substrate.reamde.dev/core/function": [
+  [FUNCTION_KIND]: [
     "authority",
     "package",
     "version",

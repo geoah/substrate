@@ -82,7 +82,7 @@ export function RecentChats() {
           >
             <Link
               to="/agents"
-              search={{ thread: row.thread.id } as never}
+              search={{ thread: row.thread.id }}
               className="flex items-center gap-3 px-3.5 py-2.5 text-foreground no-underline transition-colors hover:bg-panel"
             >
               {agent && <ActorMark identity={agent} size="md" />}

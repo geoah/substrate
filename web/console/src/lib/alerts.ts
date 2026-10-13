@@ -6,7 +6,7 @@
 import { readReference, type SubstrateRecord } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
 import { CORE_PACKAGE } from "@/lib/api/http"
-import { AGENT_KIND, FUNCTION_KIND } from "@/lib/tools"
+import { AGENT_KIND, FUNCTION_KIND } from "@/lib/core-kinds"
 
 export const ALERT_KIND = `${CORE_PACKAGE}/alert`
 

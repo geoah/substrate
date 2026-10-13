@@ -44,7 +44,8 @@ import {
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
-import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
+import { SYNC_TRAIT } from "@/lib/core-kinds"
+import { kindHasTrait } from "@/lib/sync"
 import { recordRoute } from "@/router"
 
 const NO_KINDS: KindInfo[] = []
@@ -125,7 +126,7 @@ export function RecordDocument({
     () => sheetRows(record, kind, readOnly).body,
     [record, kind, readOnly]
   )
-  const syncable = kindHasTrait(kind, SYNC_TRAIT_IDENTITY)
+  const syncable = kindHasTrait(kind, SYNC_TRAIT)
   const noun = lowerFirst(displayName(kind ?? record.kind))
 
   return (

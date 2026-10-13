@@ -17,14 +17,16 @@
  *
  * The set mirrors `vocabularyRecordKinds` (engine/vocabularywrite.go). */
 
-import { CORE_PACKAGE } from "@/lib/api/http"
+import {
+  AGENT_KIND,
+  CORE_PACKAGE,
+  FUNCTION_KIND,
+  KIND_KIND,
+} from "@/lib/core-kinds"
 
 export const ACTOR_KIND = `${CORE_PACKAGE}/actor`
-export const AGENT_KIND = `${CORE_PACKAGE}/agent`
 export const AUTHORITY_KIND = `${CORE_PACKAGE}/authority`
 export const BUNDLE_KIND = `${CORE_PACKAGE}/bundle`
-const FUNCTION_KIND = `${CORE_PACKAGE}/function`
-export const KIND_KIND = `${CORE_PACKAGE}/kind`
 const PACKAGE_KIND = `${CORE_PACKAGE}/package`
 const PROPERTY_TYPE_KIND = `${CORE_PACKAGE}/propertytype`
 const RECORD_MAPPING_KIND = `${CORE_PACKAGE}/recordmapping`

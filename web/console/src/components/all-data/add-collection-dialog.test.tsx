@@ -360,3 +360,21 @@ describe("Add a collection: Ask an agent", () => {
     )
   })
 })
+
+describe("Add a collection: Write it yourself", () => {
+  afterEach(cleanup)
+
+  it("copies a command the CLI runs, the kind kind named in full", () => {
+    render(
+      <QueryClientProvider client={client()}>
+        <AddCollectionDialog way="yaml" onWayChange={vi.fn()} />
+      </QueryClientProvider>
+    )
+    // `substratectl get kind …` is refused: a bare word names no kind
+    // (record 0101).
+    const command =
+      "substratectl get substrate.reamde.dev/core/kind <reference> -o yaml"
+    expect(screen.getByText(command)).toBeTruthy()
+    expect(screen.getByRole("button", { name: `Copy ${command}` })).toBeTruthy()
+  })
+})

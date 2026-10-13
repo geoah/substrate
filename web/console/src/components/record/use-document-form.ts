@@ -10,7 +10,8 @@
 import { useMemo, useState } from "react"
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { AGENT_KIND, grantHints } from "@/lib/agent-grants"
+import { grantHints } from "@/lib/agent-grants"
+import { AGENT_KIND } from "@/lib/core-kinds"
 import {
   AUTHORITY_PROPERTY,
   PACKAGE_PROPERTY,

@@ -9,14 +9,9 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
-import {
-  CORE_PACKAGE,
-  collectionPath,
-  corePath,
-  request,
-  rootPath,
-  seg,
-} from "./http"
+import { TRIGGER_KIND, TRIGGER_RUN_KIND } from "@/lib/core-kinds"
+
+import { collectionPath, corePath, request, rootPath, seg } from "./http"
 import { listPath, patchRecord, recordPath } from "./records"
 import { splitKind } from "./http"
 import type {
@@ -30,8 +25,6 @@ import type {
 } from "./types"
 
 const TRIGGERS = corePath("trigger")
-const TRIGGER_KIND = `${CORE_PACKAGE}/trigger`
-const TRIGGER_RUN_KIND = `${CORE_PACKAGE}/triggerrun`
 
 /** Every `sync`-trait record's synchronization, joined with its triggers. */
 export const syncStatusesQueryOptions = queryOptions({

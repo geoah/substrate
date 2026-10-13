@@ -25,7 +25,8 @@ import { PropertySheet } from "@/components/property-sheet/property-sheet"
 import type { SheetRow } from "@/components/property-sheet/sheet-rows"
 import { RecordBody } from "@/components/record/record-body"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { grantHints, AGENT_KIND } from "@/lib/agent-grants"
+import { grantHints } from "@/lib/agent-grants"
+import { AGENT_KIND } from "@/lib/core-kinds"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   AUTHORITY_PROPERTY,

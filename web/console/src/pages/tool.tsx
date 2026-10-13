@@ -55,6 +55,7 @@ import { toast } from "@/components/ui/toast"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { setTriggerEnabled } from "@/lib/api/functions"
 import { LLM_PACKAGE } from "@/lib/api/http"
+import { FUNCTION_KIND, TRIGGER_KIND, TRIGGER_RUN_KIND } from "@/lib/core-kinds"
 import type { TriggerStatus } from "@/lib/api/types"
 import {
   requestSync,
@@ -64,7 +65,6 @@ import {
 } from "@/lib/api/sync"
 import {
   PERMISSION_NONE,
-  TRIGGER_RUN_KIND,
   agoWords,
   argumentLabel,
   argumentTypeWords,
@@ -87,7 +87,6 @@ import {
   type StartKind,
   type Tool,
   type ToolRun,
-  FUNCTION_KIND,
 } from "@/lib/tools"
 import { cn } from "@/lib/utils"
 import { toolRoute } from "@/router"
@@ -754,9 +753,7 @@ function Developer({ tool }: { tool: Tool }) {
                     }}
                     className="hover:underline"
                   >
-                    <IdText
-                      value={`substrate.reamde.dev/core/trigger/${t.id}`}
-                    />
+                    <IdText value={`${TRIGGER_KIND}/${t.id}`} />
                   </Link>
                   {!t.enabled && <span className="text-faint">off</span>}
                   <TriggerProgress

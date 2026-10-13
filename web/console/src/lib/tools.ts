@@ -6,6 +6,7 @@
  * label. */
 
 import { CORE_AUTHORITY, CORE_PACKAGE, splitKind } from "@/lib/api/http"
+import { FUNCTION_KIND } from "@/lib/core-kinds"
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
   PROVIDERS_AUTHORITY,
@@ -21,10 +22,6 @@ import {
   packageDisplayName,
   splitWords,
 } from "@/lib/kind-names"
-
-export const FUNCTION_KIND = `${CORE_PACKAGE}/function`
-export const TRIGGER_RUN_KIND = `${CORE_PACKAGE}/triggerrun`
-export const AGENT_KIND = `${CORE_PACKAGE}/agent`
 
 /** The four host functions core ships. */
 export const HOST_QUERY = `${CORE_PACKAGE}/query`

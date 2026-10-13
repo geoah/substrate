@@ -22,6 +22,7 @@ import {
   valueIdentity,
 } from "@/lib/agent-grants"
 import type { ChangeOp, Decision } from "@/lib/changerequests"
+import { AGENT_KIND, FUNCTION_KIND } from "@/lib/core-kinds"
 import type { KindPurpose } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
@@ -36,8 +37,7 @@ import { kindPatternWords, toolName } from "@/lib/tools"
 /** The `ask` host function, named with the other three in agent-grants. */
 export { HOST_FUNCTION_ASK }
 
-const AGENT_KIND = "substrate.reamde.dev/core/agent"
-const FUNCTION_PREFIX = "substrate.reamde.dev/core/function/"
+const FUNCTION_PREFIX = `${FUNCTION_KIND}/`
 
 function capitalise(text: string): string {
   return text ? text[0].toUpperCase() + text.slice(1) : text

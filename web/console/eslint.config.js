@@ -44,6 +44,13 @@ const ABOVE_COMPONENTS = {
     "Components and hooks sit below pages and the router: pass the value in as a prop or move the shared code down.",
 }
 
+// A seeded core or llm reference is spelled once, in src/lib/core-kinds.ts,
+// so a renamed or moved kind is one edit there. esquery ends a regex at its
+// first `/`, so the pattern spells the slash as `\x2F`.
+const CORE_REFERENCE = "/^substrate\\.reamde\\.dev\\x2F(core|llm)\\x2F/"
+const CORE_REFERENCE_MESSAGE =
+  "Name a core or llm kind through src/lib/core-kinds.ts, not a string spelled here."
+
 export default defineConfig([
   globalIgnores(["dist"]),
   {
@@ -121,6 +128,25 @@ export default defineConfig([
       "no-restricted-imports": [
         "error",
         { patterns: [PARENT_RELATIVE, RAW_REQUEST, ABOVE_COMPONENTS] },
+      ],
+    },
+  },
+  {
+    // Tests spell references as fixtures, and core-kinds.ts is where the
+    // spelling lives.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.test.{ts,tsx}", "src/lib/core-kinds.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: `Literal[value=${CORE_REFERENCE}]`,
+          message: CORE_REFERENCE_MESSAGE,
+        },
+        {
+          selector: `TemplateElement[value.raw=${CORE_REFERENCE}]`,
+          message: CORE_REFERENCE_MESSAGE,
+        },
       ],
     },
   },

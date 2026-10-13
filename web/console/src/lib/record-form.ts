@@ -30,6 +30,7 @@
 
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
 import { REFERENCE_KEY, readReference } from "@/lib/api/types"
+import { CORE_PACKAGE } from "@/lib/core-kinds"
 import { temporalProperties } from "@/lib/definition"
 import { MONEY_TEXT_EXAMPLE, moneyText } from "@/lib/money"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
@@ -644,13 +645,13 @@ export function toProperties(
  * one occurrence. A kind declares them, but they are how a series is kept,
  * not what a new record is first given. */
 const TRAIT_MACHINERY: Record<string, readonly string[]> = {
-  "substrate.reamde.dev/core/recurring": [
+  [`${CORE_PACKAGE}/recurring`]: [
     "recurrence",
     "rdates",
     "exdates",
     "timezone",
   ],
-  "substrate.reamde.dev/core/override": ["recurrenceOf", "originalAt"],
+  [`${CORE_PACKAGE}/override`]: ["recurrenceOf", "originalAt"],
 }
 
 function machinery(kind: KindInfo): Set<string> {

@@ -9,31 +9,22 @@
  * `/{authority}/{package}/{kind}`, three segments, and the last of them is the
  * kind name. */
 
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/core-kinds"
+
 import { getToken, sessionExpired } from "./session"
 import { ApiError, type ErrorCode, type ErrorEnvelope } from "./types"
 
 export const API_BASE = "/api/v1"
 
-/** The authority the substrate publishes its own vocabulary under. */
-export const CORE_AUTHORITY = "substrate.reamde.dev"
-
-/** The core package's own word — the middle segment of every core kind
- * reference. */
-export const CORE_PACKAGE_NAME = "core"
-
-/** The core package IDENTITY, `<authority>/<package>`: the package whose
- * meta-model collections (`kind`, `bundle`, `agent`, …) the console addresses
- * by name. Every other collection comes out of the registry. */
-export const CORE_PACKAGE = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}`
-
-/** The llm package's own word: the agent runtime's four data kinds
- * (`provider`, `thread`, `message`, `interaction`) are the SECOND package the
- * binary seeds, out of core so core is not everything (decision record 0077). */
-export const LLM_PACKAGE_NAME = "llm"
-
-/** The llm package IDENTITY, `<authority>/<package>`. Seeded like core, so
- * these collections are always present. */
-export const LLM_PACKAGE = `${CORE_AUTHORITY}/${LLM_PACKAGE_NAME}`
+// The seeded packages are declared in lib/core-kinds.ts; these names stay
+// importable from here, where every collection path is built.
+export {
+  CORE_AUTHORITY,
+  CORE_PACKAGE,
+  CORE_PACKAGE_NAME,
+  LLM_PACKAGE,
+  LLM_PACKAGE_NAME,
+} from "@/lib/core-kinds"
 
 /** The console names which door a write came through: `X-Substrate-Actor` is
  * ATTRIBUTION, not authorization. */

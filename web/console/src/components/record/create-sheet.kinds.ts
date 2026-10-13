@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo } from "@/lib/api/types"
+import { KIND_KIND } from "@/lib/core-kinds"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { templateYAML } from "@/lib/record-yaml"
 
@@ -45,7 +46,7 @@ function shipped(): KindInfo[] {
         metadata?: { id?: string }
         data?: Record<string, unknown>
       } | null
-      if (d?.kind !== "substrate.reamde.dev/core/kind" || !d.data) continue
+      if (d?.kind !== KIND_KIND || !d.data) continue
       const identity = d.metadata?.id ?? ""
       const [authority = "", pkg = "", name = ""] = identity.split("/")
       out.push({

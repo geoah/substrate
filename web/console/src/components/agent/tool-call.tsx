@@ -77,7 +77,7 @@ function ConversationLink({ thread }: { thread: string }) {
   return (
     <Link
       to="/agents"
-      search={{ thread } as never}
+      search={{ thread }}
       className="text-[12px] text-faint underline-offset-2 hover:underline"
     >
       Open its conversation

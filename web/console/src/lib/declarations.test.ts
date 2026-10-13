@@ -4,13 +4,12 @@
 
 import { describe, expect, it } from "vitest"
 
+import { AGENT_KIND, KIND_KIND } from "./core-kinds"
 import {
   ACTOR_KIND,
-  AGENT_KIND,
   AUTHORITY_KIND,
   BUNDLE_KIND,
   DECLARATION_KINDS,
-  KIND_KIND,
   authorityIsDerived,
   declarationIdShape,
   derivedAuthority,

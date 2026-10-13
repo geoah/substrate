@@ -11,6 +11,7 @@ import type {
   TriggerStatus,
 } from "@/lib/api/types"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
+import { FUNCTION_KIND } from "@/lib/core-kinds"
 import { mappedKind } from "@/lib/provenance"
 import { refId, toolName, writeKinds } from "@/lib/tools"
 import type { AccountView, ProviderView, SyncFields } from "@/lib/sync"
@@ -540,7 +541,7 @@ export function triggerCallable(trigger: SubstrateRecord): string | undefined {
         ? (callable as { ref?: unknown }).ref
         : undefined
   if (typeof ref !== "string") return undefined
-  const prefix = "substrate.reamde.dev/core/function/"
+  const prefix = `${FUNCTION_KIND}/`
   return ref.startsWith(prefix) ? ref.slice(prefix.length) : ref
 }
 

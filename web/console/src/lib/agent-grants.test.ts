@@ -15,7 +15,6 @@ import {
   HOST_FUNCTION_PROPOSE,
   HOST_FUNCTION_QUERY,
   HOST_FUNCTION_WRITE,
-  LLM_INTERACTION_KIND,
   RECORD_PATCH_REQUEST_KIND,
   canDeclareKinds,
   collectionMaker,
@@ -30,6 +29,7 @@ import {
   patternCovers,
   permissionsWith,
 } from "./agent-grants"
+import { INTERACTION_KIND } from "./core-kinds"
 
 const WIDGET = "crew.test.dev/widget"
 
@@ -269,8 +269,8 @@ describe("grantHints", () => {
     )
     expect(unpaid).toHaveLength(1)
     expect(unpaid[0].function).toBe(HOST_FUNCTION_ASK)
-    expect(unpaid[0].message).toContain(LLM_INTERACTION_KIND)
-    for (const writes of [[LLM_INTERACTION_KIND], ["*"]]) {
+    expect(unpaid[0].message).toContain(INTERACTION_KIND)
+    for (const writes of [[INTERACTION_KIND], ["*"]]) {
       expect(
         grantHints(
           agent({ ...tools(HOST_FUNCTION_ASK), permissions: { writes } })
@@ -377,7 +377,7 @@ describe("editing the grants", () => {
     expect(permissionsWith(proposer, "writes", [TASK]).writes).toEqual([
       `${KIND}${TASK}`,
       `${KIND}${RECORD_PATCH_REQUEST_KIND}`,
-      `${KIND}${LLM_INTERACTION_KIND}`,
+      `${KIND}${INTERACTION_KIND}`,
     ])
     // Even dropping every collection leaves both tools paid for.
     expect(
