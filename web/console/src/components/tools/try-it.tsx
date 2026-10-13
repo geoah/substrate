@@ -116,7 +116,7 @@ export function TryIt({
             <span className="text-[12.5px] text-destructive">
               It didn’t run.{" "}
               {olderServerMessage(run.error, "run a tool from here") ??
-                (run.error as Error).message}
+                run.error.message}
             </span>
           )}
         </div>

@@ -4,9 +4,11 @@
 import { describe, expect, it } from "vitest"
 
 // Vitest empties an imported stylesheet, `?raw` included, so the file is read
-// from disk; the console's tsconfig carries no Node types, hence the cast.
+// from disk. The console's tsconfig carries no Node types, so the specifier
+// is a `string` tsc does not try to resolve.
+const NODE_FS: string = "node:fs"
 const fs: { readFileSync: (path: URL, encoding: "utf8") => string } =
-  await import(/* @vite-ignore */ "node:fs" as string)
+  await import(/* @vite-ignore */ NODE_FS)
 const css = fs.readFileSync(new URL("./index.css", import.meta.url), "utf8")
 
 function block(selector: string): string {

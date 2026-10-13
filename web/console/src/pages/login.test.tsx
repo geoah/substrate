@@ -245,10 +245,10 @@ describe("LoginPage and the door's own answer", () => {
     )
     // The two fields survived the answer. A password manager fills them the
     // moment the page paints, and nothing here may throw that away.
-    expect(
-      (screen.getByLabelText("Repository") as HTMLInputElement).value
-    ).toBe("geoah")
-    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>("Repository").value).toBe(
+      "geoah"
+    )
+    expect(screen.getByLabelText<HTMLInputElement>("Password").value).toBe(
       "correct horse battery"
     )
 

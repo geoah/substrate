@@ -55,7 +55,8 @@ function shipped(): KindInfo[] {
         package: pkg,
         version: 1,
         source: "installed",
-        description: String(d.data.description ?? ""),
+        description:
+          typeof d.data.description === "string" ? d.data.description : "",
         definition: d.data,
       })
     }
@@ -81,7 +82,8 @@ export function shownRows(): string[] {
 export function renderSheet(
   kind: KindInfo,
   kinds: KindInfo[] = KINDS,
-  technical = true
+  technical = true,
+  text = templateYAML(kind)
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, enabled: false } },
@@ -107,7 +109,7 @@ export function renderSheet(
         QueryClientProvider,
         { client },
         createElement(CreateSheet, {
-          text: templateYAML(kind),
+          text,
           kind,
           kinds,
           onChange: () => {},

@@ -120,26 +120,6 @@ export function syncFieldsOf(properties: Record<string, unknown>): SyncFields {
   }
 }
 
-/** The same fields off a `sync/status` ROW, so one renderer serves both. */
-export function syncFieldsOfStatus(s: SyncStatus): SyncFields {
-  const state = syncStateOf(s.state)
-  return {
-    state,
-    rawState: s.state !== state ? s.state : undefined,
-    message: s.message,
-    paused: s.paused,
-    lastSyncedAt: s.lastSyncedAt,
-    lastSyncStartedAt: s.lastSyncStartedAt,
-    lastSyncDurationMs: s.lastSyncDurationMs,
-    requestedAt: s.requestedAt,
-    requestedAck: s.requestedAck,
-    progress: s.progress,
-    error: s.error,
-    errorAt: s.errorAt,
-    streams: s.streams ?? {},
-  }
-}
-
 /** A record's parked runs as `sync/status` counts them, with the newest one's
  * error and when it parked. */
 export interface SyncParked {
@@ -291,8 +271,8 @@ export function accountViewOf(
   }
 }
 
-/** The trait identity, spelled here so this module stays free of the API
- * layer's constants. Must equal `lib/api/sync.ts` `SYNC_TRAIT`. */
+/** The core `sync` trait by its full identity, the spelling every host check
+ * compares (a package-local look-alike can never answer for it). */
 export const SYNC_TRAIT_IDENTITY = "substrate.reamde.dev/core/sync"
 
 /** The trait's two OWNER hands, by name: `syncRequestedAt` is Sync now and
@@ -610,6 +590,6 @@ export function cursorText(cursor: unknown): string {
   if (cursor === undefined || cursor === null || cursor === "") return "—"
   if (Array.isArray(cursor)) return `${cursor.length.toLocaleString()} entries`
   if (typeof cursor === "object")
-    return `${Object.keys(cursor as object).length.toLocaleString()} keys`
+    return `${Object.keys(cursor).length.toLocaleString()} keys`
   return "set"
 }

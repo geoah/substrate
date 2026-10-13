@@ -261,7 +261,7 @@ describe("ProvidersPage", () => {
 
   function serve(wire: Wire = {}) {
     fetchMock.mockImplementation(async (url, init) => {
-      const method = (init as RequestInit | undefined)?.method ?? "GET"
+      const method = init?.method ?? "GET"
       const path = String(url)
       const catalog = wire.catalog ?? [PEOPLE, BASE, SHARED, GOOGLE, LINEAR]
       if (path === STATUS_PATH) {
@@ -341,8 +341,7 @@ describe("ProvidersPage", () => {
     return fetchMock.mock.calls
       .filter(
         ([url, init]) =>
-          /\/(install|import)$/.test(String(url)) &&
-          (init as RequestInit | undefined)?.method === "POST"
+          /\/(install|import)$/.test(String(url)) && init?.method === "POST"
       )
       .map(([url]) => {
         const u = String(url)
@@ -357,11 +356,10 @@ describe("ProvidersPage", () => {
     return fetchMock.mock.calls
       .filter(
         ([url, init]) =>
-          /\/(install|import)$/.test(String(url)) &&
-          (init as RequestInit | undefined)?.method === "POST"
+          /\/(install|import)$/.test(String(url)) && init?.method === "POST"
       )
       .map(([, init]) => {
-        const raw = (init as RequestInit | undefined)?.body
+        const raw = init?.body
         return raw ? JSON.parse(String(raw)) : {}
       })
   }

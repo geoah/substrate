@@ -15,6 +15,7 @@ import { RecordRef } from "@/components/identity/record-ref"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
 import type { KindInfo } from "@/lib/api/types"
+import { scalarText } from "@/lib/format"
 import type { RefValue } from "@/lib/record-form"
 import { humanizeName, type PropSpec } from "@/lib/record-schema"
 
@@ -43,7 +44,9 @@ function LinkData({
         return (
           <span key={key}>
             {label.charAt(0).toUpperCase() + label.slice(1)}:{" "}
-            {typeof value === "object" ? JSON.stringify(value) : String(value)}
+            {typeof value === "object"
+              ? JSON.stringify(value)
+              : scalarText(value)}
           </span>
         )
       })}

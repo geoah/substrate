@@ -9,6 +9,8 @@
 import { cleanup, fireEvent, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { setIn, templateYAML } from "@/lib/record-yaml"
+
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
   useNavigate: () => vi.fn(),
@@ -96,5 +98,18 @@ describe("the create sheet", () => {
       screen.getByRole("button", { name: /^Relationship .*edit$/ })
     )
     expect(screen.getByText("Public figure")).toBeTruthy()
+  })
+
+  // The draft is YAML the user types, so the title property can hold a
+  // mapping; the heading field is text and must not print "[object Object]".
+  it("leaves the title field empty while the draft's title is not text", () => {
+    const task = kindOf(TASK)
+    const text = setIn(templateYAML(task), ["data", "properties", "name"], {
+      first: "a",
+    })
+    renderSheet(task, KINDS, false, text)
+    expect(
+      screen.getByRole<HTMLInputElement>("textbox", { name: "Name" }).value
+    ).toBe("")
   })
 })

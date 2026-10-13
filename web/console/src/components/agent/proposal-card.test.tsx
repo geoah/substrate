@@ -141,7 +141,7 @@ describe("ProposalCard", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock)
     fetchMock.mockImplementation(async (url, init) => {
-      const method = (init as RequestInit | undefined)?.method ?? "GET"
+      const method = init?.method ?? "GET"
       const path = String(url)
       if (listedKinds(path).includes("substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
@@ -215,23 +215,19 @@ describe("ProposalCard", () => {
     )
     // Asked, not written.
     expect(
-      fetchMock.mock.calls.some(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PUT"
-      )
+      fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")
     ).toBe(false)
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Apply and always allow" })
     )
     await waitFor(() => {
       const writes = fetchMock.mock.calls.filter(([, init]) =>
-        ["PUT", "PATCH"].includes(
-          (init as RequestInit | undefined)?.method ?? ""
-        )
+        ["PUT", "PATCH"].includes(init?.method ?? "")
       )
       expect(writes).toHaveLength(3)
     })
     const writes = fetchMock.mock.calls.filter(([, init]) =>
-      ["PUT", "PATCH"].includes((init as RequestInit | undefined)?.method ?? "")
+      ["PUT", "PATCH"].includes(init?.method ?? "")
     )
     const bodies = writes.map(([, init]) =>
       JSON.parse((init as RequestInit).body as string)
@@ -280,7 +276,7 @@ describe("ProposalCard", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(String(patch![0])).toBe(REQUEST_PATH)
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
@@ -315,14 +311,12 @@ describe("ProposalCard", () => {
     const dialog = await screen.findByRole("dialog")
     expect(dialog.textContent).toContain("Delete this record?")
     expect(
-      fetchMock.mock.calls.some(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
-      )
+      fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")
     ).toBe(false)
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete it" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
         properties: { decision: "accepted" },

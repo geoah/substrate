@@ -159,7 +159,7 @@ function normalize(value: unknown): unknown {
     "ref" in value &&
     Object.keys(value).length === 1
   ) {
-    return (value as { ref: unknown }).ref
+    return value.ref
   }
   return value
 }

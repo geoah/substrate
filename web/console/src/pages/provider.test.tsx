@@ -401,7 +401,7 @@ describe("ProviderPage", () => {
 
   function serve(wire: Wire = {}) {
     fetchMock.mockImplementation(async (url, init) => {
-      const method = (init as RequestInit | undefined)?.method ?? "GET"
+      const method = init?.method ?? "GET"
       const path = String(url)
       const filter = filterOf(path)
       if (path === STATUS_PATH) {
@@ -546,17 +546,11 @@ describe("ProviderPage", () => {
 
   function calls(method: string) {
     return fetchMock.mock.calls
-      .filter(
-        ([, init]) =>
-          ((init as RequestInit | undefined)?.method ?? "GET") === method
-      )
+      .filter(([, init]) => (init?.method ?? "GET") === method)
       .map(([url, init]) => ({
         url: String(url),
-        body: (init as RequestInit | undefined)?.body
-          ? (JSON.parse(String((init as RequestInit).body)) as Record<
-              string,
-              unknown
-            >)
+        body: init?.body
+          ? (JSON.parse(String(init.body)) as Record<string, unknown>)
           : undefined,
       }))
   }
@@ -1005,8 +999,8 @@ describe("ProviderPage", () => {
           fetchMock.mock.calls.some(
             ([url, init]) =>
               String(url).endsWith(`${ACCOUNT}/george-work`) &&
-              (init as RequestInit | undefined)?.method === "PATCH" &&
-              String((init as RequestInit).body).includes("syncRequestedAt")
+              init?.method === "PATCH" &&
+              String(init.body).includes("syncRequestedAt")
           )
         ).toBe(true)
       )

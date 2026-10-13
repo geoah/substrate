@@ -97,7 +97,7 @@ export function RecordBody({
           className="flex flex-col gap-2"
           onBlur={(e) => {
             // Moving to the footer's buttons is not leaving the editor.
-            if (editor.current?.contains(e.relatedTarget as Node | null)) return
+            if (editor.current?.contains(e.relatedTarget)) return
             void save()
           }}
         >

@@ -15,15 +15,7 @@ import {
   within,
 } from "@testing-library/react"
 import type { ReactNode } from "react"
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   ConsolePreferencesContext,
@@ -75,10 +67,6 @@ const PROVIDER = "substrate.reamde.dev/llm/provider"
 const PERSON = "samples.substrate.reamde.dev/people/person"
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
-
-beforeAll(() => {
-  Element.prototype.scrollIntoView ??= () => {}
-})
 
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
 

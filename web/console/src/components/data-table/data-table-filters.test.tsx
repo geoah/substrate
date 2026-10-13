@@ -12,7 +12,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { DataTableFilters } from "./data-table-filters"
 import {
@@ -407,10 +407,6 @@ describe("a declared set", () => {
     [...document.querySelectorAll("[data-slot=command-item]")].map(
       (r) => r.textContent
     )
-
-  beforeAll(() => {
-    Element.prototype.scrollIntoView ??= () => {}
-  })
 
   it("lists a state's words and applies picks as its stored values", async () => {
     const onChange = mount([])

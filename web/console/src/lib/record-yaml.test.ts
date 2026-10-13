@@ -277,7 +277,7 @@ const stampedAgentKind: KindInfo = {
   ...agentKind,
   definition: {
     properties: {
-      ...(agentKind.definition!.properties as Record<string, unknown>),
+      ...(agentKind.definition.properties as Record<string, unknown>),
       version: { type: "int", managed: true },
     },
   },

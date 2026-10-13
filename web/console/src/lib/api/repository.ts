@@ -9,6 +9,8 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { scalarText } from "@/lib/format"
+
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, request } from "./http"
 import { listPath } from "./records"
 import type { Page } from "./types"
@@ -38,8 +40,8 @@ async function fetchRepository(
   )
   const record = page.records?.[0]
   if (!record) return undefined
-  const properties = (record.properties ?? {}) as Record<string, unknown>
-  return { authority: String(properties.authority ?? "") }
+  const properties = record.properties ?? {}
+  return { authority: scalarText(properties.authority) }
 }
 
 export const repositoryQueryOptions = queryOptions({

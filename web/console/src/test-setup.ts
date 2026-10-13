@@ -40,6 +40,20 @@ function installBrowserGaps() {
     Element.prototype.scrollTo = function scrollTo() {}
   }
 
+  /** The router's scroll restoration scrolls the window back to the top after
+   * every navigation it renders (TanStack Router, under every page test).
+   * jsdom defines the method only to print "Not implemented", so it is
+   * replaced rather than filled in. */
+  window.scrollTo = function scrollTo() {}
+
+  /** The register page draws the TOTP enrolment QR code on a canvas
+   * (`QRCodeCanvas`). jsdom has no canvas backend and defines `getContext`
+   * only to print "Not implemented" and answer null, so the stub answers the
+   * same null without the noise. */
+  HTMLCanvasElement.prototype.getContext = function getContext() {
+    return null
+  }
+
   /** base-ui's popover positioning measures text ranges through the DOM Range
    * API. jsdom implements Range but not its geometry, so both readers return
    * empty boxes; positioning needs them only to exist. */
@@ -49,7 +63,7 @@ function installBrowserGaps() {
         length: 0,
         item: () => null,
         [Symbol.iterator]: [][Symbol.iterator],
-      } as unknown as DOMRectList
+      }
     }
   }
   if (!Range.prototype.getBoundingClientRect) {
@@ -73,9 +87,9 @@ function installBrowserGaps() {
    * `jsdom` is vitest's handle on the window the tests render into; the install
    * is unconditional, because no value read tells jsdom's accessor from node's. */
   // `jsdom` is declared by vitest/jsdom as a JSDOM, a type the jsdom package
-  // does not ship, so annotate the window to keep the storages typed.
-  const jsdomWindow: Window | undefined =
-    typeof jsdom === "undefined" ? undefined : jsdom.window
+  // does not ship, so it is read off the global as the one field used here.
+  const jsdomWindow = (globalThis as { jsdom?: { window: Window } }).jsdom
+    ?.window
   if (jsdomWindow) {
     for (const key of ["localStorage", "sessionStorage"] as const) {
       Object.defineProperty(globalThis, key, {

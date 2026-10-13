@@ -34,7 +34,7 @@ import {
   type YamlLinkTargets,
 } from "@/lib/yaml-annotations"
 
-export type { KeyDoc, KeyDocs, YamlLinkTargets }
+export type { KeyDocs, YamlLinkTargets }
 
 /** What a described key says on hover: the one-liner, and under it the
  * declared datatype in the data voice. */

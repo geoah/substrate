@@ -42,7 +42,7 @@ export function useOAuthConnect(record?: string, label?: string) {
 
   const connect = useMutation({
     mutationFn: async (target: ConnectTarget | void) => {
-      const chosen = (target ?? undefined) as ConnectTarget | undefined
+      const chosen = target ?? undefined
       const path = chosen?.record ?? record
       if (!path) throw new Error("There is no account to connect.")
       const name = chosen?.label ?? label ?? path

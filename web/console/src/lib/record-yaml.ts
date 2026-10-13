@@ -32,6 +32,7 @@ import {
 
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { isDeclarationKind } from "@/lib/declarations"
+import { scalarText } from "@/lib/format"
 import {
   checkValue,
   exampleFor,
@@ -240,7 +241,7 @@ export function parseApplyDoc(text: string): ParsedDoc {
   if (typeof value !== "object" || Array.isArray(value)) {
     return { error: { message: "The document must be a YAML mapping." } }
   }
-  return { value: value as ApplyDoc }
+  return { value }
 }
 
 /** One issue the editor surfaces inline. `line` is 1-based when we could locate
@@ -363,7 +364,7 @@ export function validateApplyDoc(
       { severity: "error", message: "`data.properties` must be a mapping." },
     ]
   }
-  const values = (props ?? {}) as Record<string, unknown>
+  const values = props ?? {}
 
   // The system columns ride in `properties` on the wire and the write path
   // splits them out, so they are checked like any other value and never
@@ -410,8 +411,8 @@ export function validateApplyDoc(
     ) {
       problems.push({
         severity: "error",
-        message: `\`${spec.name}\` is a state. It changes by transition, not by editing. Leave it at \`${String(
-          ctx.record.properties?.[spec.name] ?? ""
+        message: `\`${spec.name}\` is a state. It changes by transition, not by editing. Leave it at \`${scalarText(
+          ctx.record.properties?.[spec.name]
         )}\`.`,
         path: spec.name,
         line: lineOfKey(text, spec.name),
@@ -453,7 +454,7 @@ export function propertiesOf(
   const props = parsed.value.data?.properties
   if (props === undefined) return {}
   if (typeof props !== "object" || Array.isArray(props)) return undefined
-  return props as Record<string, unknown>
+  return props
 }
 
 /** Whether the document holds anything at this path. What separates a
@@ -489,7 +490,7 @@ export function canSetIn(text: string, path: EditPath): boolean {
       return false
     }
     if (i === path.length - 1) return true
-    node = node.get(key as never, true)
+    node = node.get(key, true)
   }
   return true
 }
@@ -629,10 +630,7 @@ export function toPutInput(doc: ApplyDoc, kind?: KindInfo): PutInput {
   if (data.properties && typeof data.properties === "object") {
     // Managed properties never reach the wire from this lens: a hand-typed
     // version would disagree with the engine's stamp and the write refused.
-    out.properties = pruneBlanks(
-      withoutManaged(data.properties as Record<string, unknown>, kind),
-      kind
-    )
+    out.properties = pruneBlanks(withoutManaged(data.properties, kind), kind)
   }
   return out
 }

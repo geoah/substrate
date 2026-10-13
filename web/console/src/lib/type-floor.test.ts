@@ -7,14 +7,14 @@ import { describe, expect, it } from "vitest"
 
 const FLOOR = 11.5
 
-const sources = import.meta.glob(
+const sources = import.meta.glob<string>(
   ["/src/**/*.{ts,tsx,css}", "!/src/**/*.test.*"],
   {
     query: "?raw",
     import: "default",
     eager: true,
   }
-) as Record<string, string>
+)
 
 /** Every `text-[<n>px]` and `text-[<n>rem]` below the floor, with its file. */
 function belowFloor(): string[] {

@@ -13,7 +13,7 @@ import {
 } from "@/lib/api/types"
 import { changedProperties } from "@/lib/changelog"
 import { declaredReferences, kindPurpose } from "@/lib/definition"
-import { recordTitle } from "@/lib/format"
+import { recordTitle, scalarText } from "@/lib/format"
 import { displayName, lowerFirst } from "@/lib/kind-names"
 import { splitRecordPath } from "@/lib/record-path"
 import { humanizeName, propSpecsByName, titleEditor } from "@/lib/record-schema"
@@ -147,8 +147,8 @@ export function changeSentence(
   record: SubstrateRecord
 ): string {
   const noun = lowerFirst(displayName(record.kind))
-  const winner = String(row.payload?.winner ?? "")
-  const loser = String(row.payload?.loser ?? "")
+  const winner = scalarText(row.payload?.winner)
+  const loser = scalarText(row.payload?.loser)
   switch (row.op) {
     case "put":
       if (row.payload?.created === true) return `added this ${noun}`

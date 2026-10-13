@@ -494,8 +494,14 @@ function packageName(identity: string): string {
     : packageDisplayName(word)
 }
 
-function newVersion(moves: readonly ValueMove[] | undefined): unknown {
-  return moves?.find((m) => m.name === "version")?.after
+/** The version a change moved a record to. A cleared `version` arrives with
+ * no `after`, and anything that is not a number names no version, so the
+ * sentence leaves the version out. */
+function newVersion(
+  moves: readonly ValueMove[] | undefined
+): number | undefined {
+  const after = moves?.find((m) => m.name === "version")?.after
+  return typeof after === "number" ? after : undefined
 }
 
 /** What a trigger run ran, by name: its `callableRef` names the function

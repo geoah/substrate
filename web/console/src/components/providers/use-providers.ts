@@ -13,7 +13,6 @@ import { providerInfo, type ProviderInfo } from "@/lib/actor-identity"
 import {
   ACCOUNT_CONFIG_TRAIT,
   bundleStatusesQueryOptions,
-  setupCount,
   traitRecordsQueryOptions,
 } from "@/lib/api/bundles"
 import {
@@ -260,9 +259,3 @@ export function useProviders() {
 }
 
 export type ProvidersData = ReturnType<typeof useProviders>
-
-/** The setup items a bundle's status still lists, as the sidebar and the
- * card count them. */
-export function setupLeft(row: BundleRow): number {
-  return row.status ? setupCount(row.status) : 0
-}

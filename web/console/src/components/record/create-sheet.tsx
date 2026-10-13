@@ -37,6 +37,7 @@ import {
   isDeclarationKind,
   packageIsDerived,
 } from "@/lib/declarations"
+import { scalarText } from "@/lib/format"
 import { displayName, lowerFirst, untitled } from "@/lib/kind-names"
 import { arrangeNewRecord, rowProblem } from "@/lib/record-form"
 import {
@@ -208,7 +209,7 @@ export function CreateSheet({
     onChange(value ? setIn(text, path, value) : deleteIn(text, path))
   }
 
-  const titleValue = titleSpec ? String(properties[titleSpec.name] ?? "") : ""
+  const titleValue = titleSpec ? scalarText(properties[titleSpec.name]) : ""
   const hints = kind.identity === AGENT_KIND ? grantHints(properties) : []
   const elsewhere = Object.keys(properties).filter((name) => !specs.has(name))
   const showId = declared || technical

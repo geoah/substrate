@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, ...rest }: { children?: ReactNode }) => (
-    <a href="#" {...(rest as object)}>
+    <a href="#" {...rest}>
       {children}
     </a>
   ),

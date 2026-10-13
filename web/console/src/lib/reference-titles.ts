@@ -18,9 +18,8 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
-import { request } from "@/lib/api/http"
-import { listPath } from "@/lib/api/records"
-import { readReference, type Page, type SubstrateRecord } from "@/lib/api/types"
+import { fetchRecordsPage } from "@/lib/api/records"
+import { readReference, type SubstrateRecord } from "@/lib/api/types"
 import { recordTitle } from "@/lib/format"
 import { isRecordId } from "@/lib/kind-pointer"
 import { splitRecordPath } from "@/lib/record-path"
@@ -28,9 +27,6 @@ import { splitRecordPath } from "@/lib/record-path"
 /** Record path → the referent's title. Read-only: a resolver is handed down
  * through the render, never written to by it. */
 export type ReferenceTitles = ReadonlyMap<string, string>
-
-/** The resolver a surface with no second read hands down. */
-export const NO_TITLES: ReferenceTitles = new Map<string, string>()
 
 /** The titles a list page's `included` sidecar carries, keyed the way the
  * pointing rows wrote the path. A referent with no title of its own is left
@@ -164,10 +160,11 @@ async function flush(): Promise<void> {
     const kinds = [...new Set(batch.map((w) => w.kind))].sort()
     const ids = [...new Set(batch.map((w) => w.id))].sort()
     try {
-      const page = await request<Page>(
-        "GET",
-        listPath({ kinds, first: BATCH * 2, filter: { ids } })
-      )
+      const page = await fetchRecordsPage({
+        kinds,
+        first: BATCH * 2,
+        filter: { ids },
+      })
       const titles = titlesFromRecords(page.records ?? [])
       for (const w of batch) {
         const title = titles.get(`${w.kind}/${w.id}`) ?? null

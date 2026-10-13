@@ -13,7 +13,7 @@ import {
   request,
   seg,
 } from "./http"
-import { fetchRecordsPage, patchRecord, recordQueryOptions } from "./records"
+import { fetchRecordsPage, patchRecord } from "./records"
 import type { FunctionCalled, Page, SubstrateRecord } from "./types"
 
 const FUNCTION_KIND = `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/function`
@@ -31,11 +31,6 @@ export const functionsQueryOptions = queryOptions({
   },
   staleTime: 60_000,
 })
-
-/** One function by its reference. */
-export function functionQueryOptions(ref: string) {
-  return recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, "function", ref)
-}
 
 /** Run one function now with `input` as its arguments; what it changes lands
  * under the function's own actor. */

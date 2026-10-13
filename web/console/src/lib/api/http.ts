@@ -102,7 +102,7 @@ export function envelopeError(
   retryAfter?: number
 ): ApiError {
   const err = (body as Partial<ErrorEnvelope> | undefined)?.error
-  const code = (err?.code ?? fallbackCode(status)) as ErrorCode
+  const code = err?.code ?? fallbackCode(status)
   const message = err?.message ?? `request failed (${status})`
   return new ApiError(
     code,

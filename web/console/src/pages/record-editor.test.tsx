@@ -16,7 +16,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 
 import { Toaster } from "@/components/ui/toast"
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
@@ -142,7 +142,7 @@ function renderEditor(
  * owns. */
 async function yamlLens() {
   const dom = await screen.findByLabelText("Record YAML")
-  const view = EditorView.findFromDOM(dom as HTMLElement)
+  const view = EditorView.findFromDOM(dom)
   if (!view) throw new Error("the YAML lens is not mounted")
   return {
     text: () => view.state.doc.toString(),
@@ -154,6 +154,13 @@ async function yamlLens() {
       }),
   }
 }
+
+// The YAML lens is a React.lazy chunk (CodeMirror and its grammar). Loading it
+// once here keeps that first transform out of the timeout of whichever test
+// opens the lens first, which a loaded machine otherwise runs past.
+beforeAll(async () => {
+  await import("@/components/record/yaml-editor")
+}, 30_000)
 
 afterEach(() => {
   cleanup()
@@ -204,7 +211,7 @@ describe("the new-record sheet", () => {
     expect(yaml.text()).toContain("title: write the editor")
     yaml.replace(yaml.text().replace("write the editor", "renamed"))
     fireEvent.click(screen.getByRole("button", { name: "Use the form" }))
-    expect((screen.getByLabelText(/^Title/) as HTMLInputElement).value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>(/^Title/).value).toBe(
       "renamed"
     )
   })
@@ -296,7 +303,7 @@ describe("the record editor (edit)", () => {
     renderEditor({ mode: "edit", record: openTask, seed: EDIT_SEED })
     expect((await yamlLens()).text()).toContain("title: write it")
     fireEvent.click(screen.getByRole("tab", { name: "Form" }))
-    expect((screen.getByLabelText(/^Title/) as HTMLInputElement).value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>(/^Title/).value).toBe(
       "write it"
     )
   })
@@ -309,11 +316,9 @@ describe("the record editor (edit)", () => {
       expect(screen.getByText(/changes by transition/)).toBeTruthy()
     )
     expect(
-      (
-        screen.getByRole("button", {
-          name: "Save changes",
-        }) as HTMLButtonElement
-      ).disabled
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Save changes",
+      }).disabled
     ).toBe(true)
   })
 })

@@ -42,6 +42,18 @@ describe("EmptyValue", () => {
     }
   })
 
+  it("leaves a null inside a repeated json value spelled out", () => {
+    // A `json` list may hold null; only the value as a whole being absent is
+    // the empty mark.
+    const spec = { ...SPEC, kind: "json", repeated: true } as PropSpec
+    const { container } = render(
+      <DeclaredValue spec={spec} value={[null, 3]} />
+    )
+    expect(
+      [...container.querySelectorAll("li")].map((li) => li.textContent)
+    ).toEqual(["1null", "23"])
+  })
+
   it("gives way to words where the absence says more", () => {
     const { container } = render(<EmptyValue>Cleared</EmptyValue>)
     expect(container.textContent).toBe("Cleared")

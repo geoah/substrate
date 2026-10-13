@@ -4,7 +4,7 @@
  * alone enough to pick, and several at once where the caller allows. */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { ChoiceList, type ChoiceOption } from "./choice-list"
 import {
@@ -13,10 +13,6 @@ import {
 } from "@/hooks/use-console-preferences"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 
-beforeAll(() => {
-  // cmdk scrolls the highlighted row into view; jsdom has no layout.
-  Element.prototype.scrollIntoView ??= () => {}
-})
 afterEach(cleanup)
 
 const OPTIONS: ChoiceOption[] = [

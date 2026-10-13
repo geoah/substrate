@@ -48,7 +48,7 @@ export function ChangeValue({
     const item = spec && elementSpec(spec)
     return (
       <span className="inline-flex flex-wrap items-center gap-x-1">
-        {value.map((v, i) => (
+        {value.map((v: unknown, i) => (
           <span key={i} className="inline-flex items-center">
             <ChangeValue value={v} spec={item} />
             {i < value.length - 1 && <span className="text-faint">,</span>}
@@ -123,7 +123,7 @@ function Move({ move, spec }: { move: ValueMove; spec?: PropSpec }) {
     <>
       <Word>renamed from</Word>
       <span className={cn(technical && "font-mono text-[11.5px]")}>
-        {technical ? move.renamedFrom : humanizeName(move.renamedFrom!)}
+        {technical ? move.renamedFrom : humanizeName(move.renamedFrom)}
       </span>
     </>
   )

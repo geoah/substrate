@@ -1,4 +1,5 @@
 packages: []
-allowBuilds:
-  esbuild: true
-  msw: false
+# The dependencies whose install scripts pnpm runs. None in the lockfile has
+# one today, and pnpm skips every script whose package is not named here, so
+# name a package only once its script is read and needed.
+allowBuilds: {}

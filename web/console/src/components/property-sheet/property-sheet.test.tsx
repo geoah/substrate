@@ -18,7 +18,15 @@ import {
   within,
 } from "@testing-library/react"
 import type { TiptapEditorHTMLElement } from "@tiptap/core"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -201,7 +209,14 @@ function renderSheet(
 const row = (name: string) =>
   document.querySelector(`[data-property="${name}"]`) as HTMLElement
 const valueOf = (name: string) =>
-  row(name).querySelector("[role=button]") as HTMLElement | null
+  row(name).querySelector<HTMLElement>("[role=button]")
+
+// The Markdown editor is a React.lazy chunk (Tiptap). Loading it once here
+// keeps that first transform out of the timeout of whichever test mounts it
+// first, which a loaded machine otherwise runs past.
+beforeAll(async () => {
+  await import("@/components/markdown/markdown-editor")
+}, 30_000)
 
 beforeEach(() => {
   wire.writes = []
@@ -584,7 +599,7 @@ describe("PropertySheet lists", () => {
       },
     })
   const box = (name: string) =>
-    screen.getByRole("textbox", { name }) as HTMLInputElement
+    screen.getByRole<HTMLInputElement>("textbox", { name })
 
   it("reads short tokens as chips and longer text one per line", () => {
     renderSheet(listed())

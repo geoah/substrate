@@ -31,7 +31,7 @@ import {
   wakeTrigger,
 } from "@/lib/api/sync"
 import type { SubstrateRecord, TriggerStatus } from "@/lib/api/types"
-import { relativeTime, tableDateTime } from "@/lib/format"
+import { relativeTime, scalarText, tableDateTime } from "@/lib/format"
 import {
   statusesOnKind,
   syncParkedOf,
@@ -406,8 +406,8 @@ function RunsList({
       return typeof rec !== "string" || rec === recordId
     })
     .sort((a, b) =>
-      String(b.properties.finishedAt ?? "").localeCompare(
-        String(a.properties.finishedAt ?? "")
+      scalarText(b.properties.finishedAt).localeCompare(
+        scalarText(a.properties.finishedAt)
       )
     )
   if (!rows.length) {
@@ -428,7 +428,7 @@ function RunsList({
         </thead>
         <tbody>
           {rows.map((r) => {
-            const status = String(r.properties.status ?? "")
+            const status = scalarText(r.properties.status)
             const finished =
               typeof r.properties.finishedAt === "string"
                 ? r.properties.finishedAt

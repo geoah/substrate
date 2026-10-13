@@ -30,13 +30,14 @@ drops it.
 
 ```bash
 pnpm typecheck   # tsc --build --force
-pnpm lint        # eslint
+pnpm lint        # eslint with type-checked rules and import layering, then knip
 pnpm fmt:check   # prettier --check
 pnpm test        # vitest run
 pnpm build       # tsc -b && vite build
 ```
 
-`mise run ci:console` is all five, and what CI runs.
+`mise run ci:console` runs the type-check, lint, format check and a Vite
+build; `mise run ci:console:test` runs the tests. Both are what CI runs.
 
 ## Pages
 

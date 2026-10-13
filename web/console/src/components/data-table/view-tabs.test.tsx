@@ -77,7 +77,7 @@ describe("ViewTabs", () => {
       screen.getByRole("button", { name: "More for the “Open” view" })
     )
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }))
-    const name = screen.getByLabelText("Name") as HTMLInputElement
+    const name = screen.getByLabelText<HTMLInputElement>("Name")
     expect(name.value).toBe("Open")
     fireEvent.change(name, { target: { value: "mine" } })
     expect(

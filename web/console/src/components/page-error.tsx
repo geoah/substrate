@@ -88,7 +88,7 @@ export class SectionBoundary extends Component<
   SectionBoundaryProps,
   SectionBoundaryState
 > {
-  state: SectionBoundaryState = { key: this.props.resetKey }
+  override state: SectionBoundaryState = { key: this.props.resetKey }
 
   static getDerivedStateFromError(error: unknown): SectionBoundaryState {
     return { error }
@@ -103,11 +103,11 @@ export class SectionBoundary extends Component<
       : null
   }
 
-  componentDidCatch(error: unknown, info: ErrorInfo) {
+  override componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error(`${this.props.name} failed`, error, info.componentStack)
   }
 
-  render() {
+  override render() {
     if (this.state.error === undefined) return this.props.children
     return (
       <p

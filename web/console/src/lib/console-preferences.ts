@@ -16,14 +16,9 @@
  * default. */
 
 import { queryOptions } from "@tanstack/react-query"
-import {
-  CORE_AUTHORITY,
-  CORE_PACKAGE_NAME,
-  collectionPath,
-  request,
-} from "@/lib/api/http"
+import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import { getRepository } from "@/lib/api/session"
-import { putRecord } from "@/lib/api/records"
+import { fetchRecord, putRecord } from "@/lib/api/records"
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { viewsFrom, type SavedView } from "@/lib/saved-views"
 
@@ -290,11 +285,12 @@ async function readPreferences(
   signal?: AbortSignal
 ): Promise<SubstrateRecord | null> {
   try {
-    return await request<SubstrateRecord>(
-      "GET",
-      `${collectionPath(CORE_AUTHORITY, CORE_PACKAGE_NAME, NAME)}/${ID}`,
-      undefined,
-      { signal }
+    return await fetchRecord(
+      CORE_AUTHORITY,
+      CORE_PACKAGE_NAME,
+      NAME,
+      ID,
+      signal
     )
   } catch (error) {
     if (error instanceof ApiError && error.code === "not_found") return null

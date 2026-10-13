@@ -82,7 +82,7 @@ const fetchMock = vi.fn<typeof fetch>()
 function serve(catalog: CatalogItem[]) {
   fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(String(input), "http://console.test")
-    const method = (init as RequestInit | undefined)?.method ?? "GET"
+    const method = init?.method ?? "GET"
     if (url.pathname === "/api/v1/substrate.reamde.dev/core/bundle/status")
       return json({ items: [COPY] })
     if (url.pathname === CATALOG_PATH) return json({ items: catalog })
@@ -179,9 +179,7 @@ describe("SampleList", () => {
       await waitFor(() =>
         expect(
           fetchMock.mock.calls
-            .filter(
-              ([, init]) => (init as RequestInit | undefined)?.method === "POST"
-            )
+            .filter(([, init]) => init?.method === "POST")
             .map(([url]) => String(url))
         ).toEqual([`${CATALOG_PATH}/${encodeURIComponent(OTHER.id)}/import`])
       )
