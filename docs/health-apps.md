@@ -31,6 +31,7 @@ name, by the bare id a filter and `sources.order` take:
 | `googlefit/e2e/google-pixel-watch-2.8d1f3c7a` | a Pixel Watch, through Google Fit |
 | `googlefit/e2e/withings-body.4a91be20`, `googlefit/e2e/withings-bpm-connect.7c03d5e1` | the Withings scale and cuff, through Google Fit |
 | `googlefit/e2e/com-strava` | Strava's workouts, through Google Fit |
+| `manual` | values Ada entered by hand: a hotel scale's weighing in London |
 | `bioiatriki`, `harborpoint` | an Athens lab (SI units) and a US lab (mg/dL) |
 
 A source's record path is `ada.example.com/observations/source/<id>`, and a
