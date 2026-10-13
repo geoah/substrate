@@ -1993,13 +1993,16 @@ stage in `code` beside its minutes in `value`, over the sleep's span. WHOOP's
 
 **Heart rate.** WHOOP's API has no heart rate samples, only each scored
 cycle's and workout's average and maximum. Each is a `summary` with the
-statistic it is, `avg` or `max`, not `vendor`, so the aggregate read's `avg`
-and `max` reducers take WHOOP's values beside the other sources' with `from:
-summaries` or `prefer-raw`. A raw read takes gauges alone and shows no WHOOP
-heart rate. A workout's two are on the `workout` channel: the `avg` reducer
-over summaries is the plain mean of the values in a bucket, so on one stream
-a day's average would mix the cycle's with the run's. Group or filter by
-`channel` to read either alone.
+statistic it is, `avg` or `max`, not `vendor`. An aggregate read with `from:
+summaries` or `prefer-raw` reads one statistic per row, so it names WHOOP's
+with `filter.properties.statistic` (`avg` reads the averages beside the other
+sources' average summaries) or splits them with `groupBy: ["statistic"]`; a
+read that would pool both is refused. A raw read takes gauges alone and
+shows no WHOOP heart rate. A workout's two are on the `workout` channel: the
+`avg` reducer over summaries is the plain mean of the values in a bucket, so
+on one stream a day's average would mix the cycle's with the run's. Group by
+`channel` to read the two apart, or filter `channel` with `exists: false`
+for the cycles alone.
 
 **Skipped.** A field no metric and no health property holds is counted in the
 function's output and not written: a sleep's `sleepNeeded`,
