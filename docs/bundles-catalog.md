@@ -879,8 +879,10 @@ of those reads deletes the row. `sleep.deleted` and `workout.deleted` delete
 the row the id names, and `recovery.deleted` deletes the recovery whose
 `sleep` reference is the named sleep. A paused account drops every event. A
 toggle that is off, a missing token, a `retryNotBefore` still in the future,
-a `429`, or a `401` or `403` on a read back drops an update and leaves it to
-the next sync's window; the output's `skipped` names the reason. An account
+a `429`, or a `401` or `403` on a read back drops an update; the output's
+`skipped` names the reason. The next sync re-reads the object only if it
+started within its window, the 48 hours before the collection's cursor, so a
+dropped edit to an older sleep or workout does not reach the mirror. An account
 connected with recoveries on before `enabledRecovery` requested `read:sleep`
 has its `recovery.updated` events dropped this way until it reconnects. A
 deletion needs no read and is applied whatever the toggles say.

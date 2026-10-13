@@ -2747,8 +2747,9 @@ data:
     REVISIONS. `updated_at` is the object's revision: an answer older than the
     stored row's `updatedAt` is not written over it. A 429, a 401 or 403, a
     missing token or a retry hold drops an update rather than parking it,
-    because a retry meets the same answer; the sync's next window re-reads the
-    object.
+    because a retry meets the same answer. The sync's next window re-reads the
+    object only if it started in the 48 hours before that collection's cursor
+    (OVERLAP_HOURS in `whoopsync`); an edit to an older object is lost.
     """
     import base64
     import datetime as _dt
