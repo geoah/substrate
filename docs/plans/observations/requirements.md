@@ -148,7 +148,7 @@ partly, 2 are follow-ups and 2 are out of scope.
 | R-SYNC-1 | Re-ingest changes nothing (must) | supported | Ids are composed from upstream identity, and an unchanged output is not written again. |
 | R-SYNC-2 | Rescoring and revised upstream values (must) | supported | `revision` never falls; a rescore rewrites the record, and every aggregate read is computed at read time, so it follows. |
 | R-SYNC-3 | Deletions upstream and disconnecting a provider (must) [S46] | partly | WHOOP and Google Fit deletions reach the adapters' outputs, and a disconnect's cascade deletes them. Garmin and Apple Health push no deletion, so a record built from a value deleted upstream stays until its mirror row is deleted. |
-| R-SYNC-4 | Late and backfilled data, and telling the app what changed (must) | partly | The change feed (`/api/v1/changes?watch=1` from a read's `head`) names each changed record, and `values=1` its `metric`, `at` and `endsAt` before and after; the days to read again are the app's to derive, and a delete carries no values: [G-32](#g-32-change-feed-time-ranges). [Incremental sync](../../health-apps.md#incremental-sync) |
+| R-SYNC-4 | Late and backfilled data, and telling the app what changed (must) | partly | The change feed (`/api/v1/changes?watch=1` from a read's `head`) names each changed record, and `values=1` the properties the write moved, before and after. A creation names its `metric`, `at` and `endsAt`; an update that changes only `value` or `values` names neither, and a delete names nothing, so the app reads the record or keeps its own map from record to day: [G-32](#g-32-change-feed-time-ranges). [Incremental sync](../../health-apps.md#incremental-sync) |
 | R-SYNC-5 | Freshness per source and per adapter (should) | supported | `GET /api/v1/substrate.reamde.dev/core/trigger/status` (each adapter's cursor and lag), `substratectl sync status`, and the latest read's newest point per stream. |
 
 ## Apps: the app's write side
@@ -270,8 +270,11 @@ the tolerance needs that decision reopened for linked sources.
 
 The change feed names the records a write changed, never the metrics and time
 ranges, so an app that caches daily rows re-reads the visible range or keeps
-its own map from record to day. `values=1` gives each record's `at` and
-`endsAt` before and after, which is enough to derive the days. Proposal: a
+its own map from record to day. `values=1` names only the properties a write
+moved: a creation's `metric`, `at` and `endsAt` place it, but an update that
+changes only `value` or `values` (a rescore, a re-delivered trace hour) names
+neither, and a delete names nothing. So every update costs the app a record
+read or a lookup in its own map, and every delete a lookup. Proposal: a
 change row for an observed kind carries its metric, source and `[at,
 endsAt)` before and after, or a read answers "the buckets changed since this
 head".

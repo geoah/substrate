@@ -983,11 +983,16 @@ an hour of Apple Watch steps on 2026-08-26, so an app showing that day's
 steps reads it again.
 
 The stream opens with a bookmark and sends one line per change. With
-`values=1` a line names each property the write moved, before and after, so
-an observation's `metric`, `source`, `at` and `endsAt` tell the app which
-days to read again. A delete moves no property, so the app keeps its own map
-from record to day for those; a feed that names the time ranges a write
-touched is a follow-up
+`values=1` a line names only the properties the write moved, before and
+after. A creation moves every property, so its `metric`, `source`, `at` and
+`endsAt` tell the app which days to read again. An update names only what
+changed: a rescore, or a re-delivered hour of a trace, that changes `value`
+or `values` names neither `metric` nor `at`. To place an update the app
+reads the record at its path, the id percent-encoded
+(`GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fsteps%2F2026-08-26T19`),
+or keeps its own map from record to day. A delete moves no property and
+leaves no record to read, so only that map places it. A feed that names the
+time ranges a write touched is a follow-up
 ([G-32](plans/observations/requirements.md#g-32-change-feed-time-ranges)).
 A connection that drops resumes from the last `seq` it read, with the same
 `generation`.
