@@ -1108,6 +1108,25 @@ describe("the charts", () => {
       )
     )
     expect(document.activeElement).not.toBe(chart)
+    const zoomed = document.activeElement
+    // A unit read anew draws the chart anew in the same window, and that
+    // chart leaves the focus where the reader put it.
+    fireEvent.click(within(weight).getByRole("button", { name: /^Unit:/ }))
+    fireEvent.click(await screen.findByRole("option", { name: /\[lb_av\]/ }))
+    await waitFor(() =>
+      expect(
+        charts(server.seen, "health/body_mass").at(-1)!.aggregate.unit
+      ).toBe("[lb_av]")
+    )
+    const redrawn = await waitFor(() => {
+      const next = within(weight).getByRole("group", {
+        name: "Weight, Average",
+      })
+      expect(next).not.toBe(zoomed)
+      return next
+    })
+    await waitFor(() => expect(redrawn.querySelector("svg")).not.toBe(null))
+    expect(document.activeElement).not.toBe(redrawn)
   })
 
   it("puts the numbers under the chart, a column per reducer with its unit", async () => {
