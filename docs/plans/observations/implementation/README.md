@@ -242,6 +242,9 @@ written before this build; these points differ, each for a stated reason:
   on a row that holds no step.
 - `observed_points` carries each point's hold, counter contract, `delta`,
   `circular` and `revision`, and its index `ord` in its record; the plan
+  named neither, and the rollups are computed from the points alone.
+- `observed_latest` names its hold `hold_ms` and adds `ts_end`, `delta`,
+  `statistic`, `bounded` and `points`.
 
 ### From this brief's wire contract
 
