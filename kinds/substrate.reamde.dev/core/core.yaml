@@ -63,7 +63,10 @@ data:
   # checks before it stores a request (decision record 0164).
   # version 42: the `revised` trait, which carries the rule that a revision
   # never falls to kinds that do not bind `observed` (decision record 0162).
-  version: 42
+  # version 43: the query tool card takes `downsample` beside `aggregate`,
+  # and its `aggregate` argument names several metrics, the property read
+  # and the latest read.
+  version: 43
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

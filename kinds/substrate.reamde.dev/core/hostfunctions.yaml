@@ -98,9 +98,15 @@ data:
     - name: aggregate
       type: json
       description: >-
-        {metric: {ref}, range: {gte, lt}, bucket: {calendar: day, timezone}
-        or {every: PT1H}, reducers: [avg, sum, count, {percentile: 0.05}],
-        groupBy, unit}; filter.kinds names the kinds read
+        {metric: {ref}, range: {gte, lt}, bucket: {calendar: day, timezone},
+        reducers: [avg], groupBy, unit}, or metrics: [{ref}], or property:
+        {name} of filter.kinds; reducers: [last] alone reads the newest
+    - name: downsample
+      type: json
+      description: >-
+        beside aggregate (a metric and a range, no bucket or reducers): {points:
+        N} cuts the range into N columns, each answering first, last, min
+        and max
 ---
 # ---- write: the agent-scoped write ------------------------------------------
 # No `emit:` of its own, and that is the point: the ceiling is the CALLING
