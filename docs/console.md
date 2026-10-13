@@ -761,8 +761,8 @@ selected streams in one chart over a range (the last 30 days until you pick
 another), with the bucket, where its days start, and what to group the
 series by: metric, source or about (`?by=`). Each metric's read is narrowed to
 its selected sources, things and channels where every selected stream names
-one, because no filter names a stream with none: a typed weigh-in selected
-beside the scale's reads every source of the metric. Each keeps its own reducer and unit (`?reducer=`,
+one, because no filter names a stream with none: with a typed weigh-in
+selected beside the scale's, the read takes every source of the metric. Each keeps its own reducer and unit (`?reducer=`,
 `?unit=`), and metrics whose reads match in everything else share one
 request, as on the timeline. A stream the read takes that the selection leaves out (WHOOP's
 heart rate on no channel, beside its selected workouts) is left out of the
