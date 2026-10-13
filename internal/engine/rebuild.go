@@ -613,7 +613,7 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 				SELECT * FROM observed_rollups
 				ORDER BY metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min, offset_known) r`,
 		"observed_latest": `SELECT to_jsonb(l) - 'repository' FROM (
-				SELECT * FROM observed_latest ORDER BY metric, kind, source, about, channel) l`,
+				SELECT * FROM observed_latest ORDER BY metric, kind, source, about, channel, statistic) l`,
 		// A resume row whose last page named its cursor by hash comes back
 		// from the cursor the table held (decision 0141); an import into an
 		// empty database brings it back null.

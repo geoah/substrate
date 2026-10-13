@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"os"
 	"slices"
@@ -174,6 +175,18 @@ func MigrateThrough(ctx context.Context, dsn string, through int) error {
 // derives from the replayed rows (rederiveOffers).
 func FoldTables() []string {
 	return append(slices.Clone(foldTables), "property_offers")
+}
+
+// FoldSnapshotOver is FoldSnapshot read through db, a connection row level
+// security does not bind. With no repository predicate the planner cannot
+// take a table's rows in key order from its primary key, so each ORDER BY
+// must decide the order on its own.
+func FoldSnapshotOver(ctx context.Context, db *sql.DB) ([]byte, error) {
+	snap, err := foldSnapshot(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(snap, "", "  ")
 }
 
 // WithTestCommitFault runs fn at each durable step of a write's commit

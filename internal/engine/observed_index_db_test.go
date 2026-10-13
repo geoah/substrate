@@ -8,6 +8,7 @@ package engine_test
 // point to another stream, a vocabulary change and a rebuild.
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -633,6 +634,18 @@ func TestObservedRollupEqualsTheRawAggregate(t *testing.T) {
 	checkRollupsMatchSpec(t, r.db)
 }
 
+// foldSnapshot is the operator's fold snapshot, read through the raw
+// connection so the rows' order is the snapshot's ORDER BY and not an index
+// walk the repository predicate allows.
+func (r obsIndex) foldSnapshot(t *testing.T) []byte {
+	t.Helper()
+	raw, err := engine.FoldSnapshotOver(context.Background(), r.db)
+	if err != nil {
+		t.Fatalf("snapshot the fold: %v", err)
+	}
+	return raw
+}
+
 // observedTables renders the three tables whole, in key order.
 func observedTables(t *testing.T, db *sql.DB) string {
 	t.Helper()
@@ -640,7 +653,7 @@ func observedTables(t *testing.T, db *sql.DB) string {
 	for _, q := range []string{
 		`SELECT coalesce(jsonb_agg(to_jsonb(p) - 'repository' ORDER BY kind, record_id, ord), '[]')::text FROM observed_points p`,
 		`SELECT coalesce(jsonb_agg(to_jsonb(r) - 'repository' ORDER BY metric, kind, source, about, channel, form, bucket15, code, unit, delta, utc_offset_min, offset_known), '[]')::text FROM observed_rollups r`,
-		`SELECT coalesce(jsonb_agg(to_jsonb(l) - 'repository' ORDER BY metric, kind, source, about, channel), '[]')::text FROM observed_latest l`,
+		`SELECT coalesce(jsonb_agg(to_jsonb(l) - 'repository' ORDER BY metric, kind, source, about, channel, statistic), '[]')::text FROM observed_latest l`,
 	} {
 		var doc string
 		if err := db.QueryRow(q).Scan(&doc); err != nil {
@@ -1023,7 +1036,9 @@ func TestObservedMarksAValueWrittenWithoutAnOffset(t *testing.T) {
 // observed_latest, so neither stands for the other, and a tombstone moves
 // only its own statistic's row. A read that names no statistic still sees
 // the stream once: the latest read counts every summary once, and a read of
-// the summaries counts each once.
+// the summaries counts each once. The first night writes its maximum before
+// its average, so the live rows and the rebuilt ones tie on every column but
+// statistic in opposite insertion orders.
 func TestObservedLatestKeepsOneRowPerStatistic(t *testing.T) {
 	t.Parallel()
 	r := openObservedIndex(t)
@@ -1055,11 +1070,12 @@ func TestObservedLatestKeepsOneRowPerStatistic(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	summary("hrv/1/avg", "avg", "62", 0)
 	summary("hrv/1/max", "max", "84", 0)
+	summary("hrv/1/avg", "avg", "62", 0)
 	if got, want := latestRows(), "avg=hrv/1/avg:62/1 max=hrv/1/max:84/1"; got != want {
 		t.Errorf("after one night the latest rows are %q, want %q", got, want)
 	}
+	r.rebuildMatches(t)
 	summary("hrv/2/avg", "avg", "60", 1)
 	summary("hrv/2/max", "max", "80", 1)
 	if got, want := latestRows(), "avg=hrv/2/avg:60/2 max=hrv/2/max:80/2"; got != want {
@@ -1519,16 +1535,20 @@ func (r obsIndex) applyPackedClosure(t *testing.T, pkg string, bound bool) {
 	}
 }
 
-// rebuildMatches rebuilds the repository and holds the three tables to what
-// they were before it, and the rollups to the specification.
+// rebuildMatches rebuilds the repository and holds the three tables and the
+// fold snapshot to what they were before it, and the rollups to the
+// specification.
 func (r obsIndex) rebuildMatches(t *testing.T) {
 	t.Helper()
-	before := observedTables(t, r.db)
+	before, fold := observedTables(t, r.db), r.foldSnapshot(t)
 	if _, err := r.svc.(rebuilder).RebuildRepository(context.Background(), testdb.Repository(t)); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := observedTables(t, r.db); after != before {
 		t.Fatalf("the live observed tables are not the rebuilt ones\n%s", firstDifference([]byte(before), []byte(after)))
+	}
+	if after := r.foldSnapshot(t); !bytes.Equal(after, fold) {
+		t.Fatalf("the live fold snapshot is not the rebuilt one\n%s", firstDifference(fold, after))
 	}
 	checkRollupsMatchSpec(t, r.db)
 }
