@@ -306,6 +306,10 @@ mise run console:render http://127.0.0.1:8080   # the served console, in headles
 
 Vitest with jsdom, beside the code it covers: every module in
 `src/lib/api/` has a `.test.ts` next to it, and the pages have component tests.
+Every run is in Europe/Athens (`TZ` in `vite.config.ts`), a zone whose clocks
+change, so a local-time test means the same on every machine and can cross an
+offset change; a suite that needs another zone sets it for its own file with
+`vi.stubEnv("TZ", …)` (`src/lib/observations.santiago.test.ts`).
 
 **The render check** (`web/console/scripts/render-smoke.mjs`) opens the
 console a running substrate serves in headless Chrome. jsdom cannot stand in
