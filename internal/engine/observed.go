@@ -28,7 +28,7 @@ func observedBinding(ty *vocabulary.Kind) (vocabulary.TraitBinding, bool) {
 // `stats` is DROPPED, not refused as a managed property's would be, because
 // the engine computes it from the values and a function that writes back a
 // trace it read carries the stored one; and a written `unit` is rewritten to
-// its table code (`bpm` is stored as `{beats}/min`), the way a quantity's
+// its table code (`bpm` is stored as `/min`), the way a quantity's
 // unit is. A unit the table cannot read is left for CheckObserved to refuse
 // by name.
 func prepareObserved(sp *applySpec) {
