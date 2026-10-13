@@ -6,6 +6,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -80,6 +81,43 @@ describe("a trace", () => {
     expect(fact("Average")).toBe("131.6 /min")
     expect(fact("Standard deviation")).toBe("34.87 /min")
     expect(fact("Covered")).toBe("59m 58s")
+  })
+
+  it("follows its box's width as the page around it changes", () => {
+    let width = 500
+    let resized = () => {}
+    const clientWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth"
+    )
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get: () => width,
+    })
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resized = callback
+        }
+        observe() {}
+        disconnect() {}
+      }
+    )
+    try {
+      const view = mount(HEART_TRACE, traceKind)
+      const svg = () =>
+        view.container.querySelector("[aria-roledescription=chart] svg")!
+      expect(svg().getAttribute("width")).toBe("500")
+      // The sidebar folds: the box narrows.
+      width = 300
+      act(() => resized())
+      expect(svg().getAttribute("width")).toBe("300")
+    } finally {
+      if (clientWidth) {
+        Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth)
+      }
+    }
   })
 
   it("lists every value with its time and unit", () => {

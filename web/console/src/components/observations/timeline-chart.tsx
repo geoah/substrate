@@ -17,15 +17,14 @@
 import {
   memo,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
 } from "react"
 
+import { useWidth } from "@/hooks/use-width"
 import {
   bandPath,
   barPath,
@@ -125,23 +124,6 @@ function yAxisOf(
     labels: tickLabels(ticks),
     base: zero ? y(Math.max(domain[0], 0)) : top + PLOT,
   }
-}
-
-function useWidth(fallback: number) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(fallback)
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (el.clientWidth) setWidth(el.clientWidth)
-    if (typeof ResizeObserver === "undefined") return
-    const ro = new ResizeObserver(() => {
-      if (el.clientWidth) setWidth(el.clientWidth)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  return { ref, width }
 }
 
 export function TimelineChart({

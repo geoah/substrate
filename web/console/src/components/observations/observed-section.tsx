@@ -5,13 +5,7 @@
  * what was measured, by what, about what and how. Both link to the timeline
  * narrowed to the record's stream. */
 
-import {
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react"
+import { useMemo, useState, type KeyboardEvent } from "react"
 import { Link } from "@tanstack/react-router"
 import { ChartLineIcon } from "lucide-react"
 
@@ -21,6 +15,7 @@ import { ReferenceValue } from "@/components/identity/reference-value"
 import { SectionHead } from "@/components/identity/section-head"
 import { CodeMark, Reading, ShapeWord } from "@/components/observations/marks"
 import { Button } from "@/components/ui/button"
+import { useWidth } from "@/hooks/use-width"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { barPath, linePath, linearScale, niceDomain } from "@/lib/chart"
 import { tableDateTime } from "@/lib/format"
@@ -378,13 +373,8 @@ function Sparkline({
   holdMs?: number
   bars: boolean
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(640)
+  const { ref, width } = useWidth(640)
   const [active, setActive] = useState<number | null>(null)
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (el?.clientWidth) setWidth(el.clientWidth)
-  }, [])
   const numbers = points.map((p) => numberOf(p.value))
   const { domain } = niceDomain(
     numbers.filter((n): n is number => n !== null),
