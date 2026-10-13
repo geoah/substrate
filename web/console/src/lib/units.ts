@@ -492,11 +492,26 @@ export function readQuantity(raw: unknown): Quantity | undefined {
  * (`vocabulary.FormatQuantity`). Not a quantity: "". */
 export function formatQuantity(value: unknown): string {
   if (!isQuantity(value)) return ""
-  const head = `${value.comparator ?? ""}${value.value}`
-  const symbol = unitSymbol(value.unit)
+  return withSymbol(`${value.comparator ?? ""}${value.value}`, value.unit)
+}
+
+/** Digits already written for a reader, and the unit's print symbol: an
+ * angle against the number, no unit's symbol nothing at all. */
+export function withSymbol(head: string, unit: string): string {
+  const symbol = unitSymbol(unit)
   if (!symbol) return head
-  if (ANGLES.has(value.unit)) return `${head}${symbol}`
+  if (ANGLES.has(unit)) return `${head}${symbol}`
   return `${head} ${symbol}`
+}
+
+/** Decimal digits with the whole part in groups of three, as a count is
+ * shown: `18194.61` is `18,194.61`, `-1234` is `-1,234`. Digits of any
+ * other shape come back as they are. */
+export function groupDigits(digits: string): string {
+  const m = /^(-?)(\d+)(\.\d+)?$/.exec(digits)
+  if (!m) return digits
+  const [, sign, whole, rest = ""] = m
+  return `${sign}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${rest}`
 }
 
 /** Decimal digits cut to `precision` places for display, rounded half
@@ -528,14 +543,16 @@ export function roundDigits(value: string, precision: number): string {
 export const DISPLAY_PLACES = 2
 
 /** A stored value as a reader sees it outside Technical details: the
- * digits to `places` (`DISPLAY_PLACES` by default) with the unit's print
- * symbol, `97.18 %`; the stored digits stay on hover. Not a quantity: "". */
+ * digits to `places` (`DISPLAY_PLACES` by default), grouped in threes,
+ * with the unit's print symbol, `97.18 %`, `18,194.61 m`; the stored digits
+ * stay on hover. Not a quantity: "". */
 export function displayQuantity(
   value: unknown,
   places: number = DISPLAY_PLACES
 ): string {
   if (!isQuantity(value)) return ""
-  return formatQuantity({ ...value, value: roundDigits(value.value, places) })
+  const digits = groupDigits(roundDigits(value.value, places))
+  return withSymbol(`${value.comparator ?? ""}${digits}`, value.unit)
 }
 
 /** A stored value as the exact text an editor holds, the unit as its code so

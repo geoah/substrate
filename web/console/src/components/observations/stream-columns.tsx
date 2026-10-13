@@ -29,7 +29,7 @@ import {
   statisticLabel,
   windowed,
 } from "@/lib/observations"
-import { coverageWords, spanWords } from "@/lib/observations-time"
+import { coveredWords, spanWords } from "@/lib/observations-time"
 import type { StreamRow } from "@/lib/stream-table"
 
 /** A row's or the header's selection box. The header's is mixed while
@@ -284,7 +284,7 @@ export function streamColumns(
       cell: ({ row }) =>
         row.original.coverage ? (
           <span title={row.original.coverage}>
-            {coverageWords(row.original.coverage)}
+            {coveredWords(row.original.coverage)}
           </span>
         ) : (
           <EmptyValue />

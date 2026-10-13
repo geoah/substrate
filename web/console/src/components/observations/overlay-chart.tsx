@@ -62,7 +62,7 @@ import {
   statisticWords,
 } from "@/lib/observations"
 import {
-  coverageWords,
+  coveredWords,
   offsetWords,
   windowWords,
   type BucketSize,
@@ -1015,7 +1015,7 @@ function SeriesDetail({
           />
         ) : null}
         {row.coverage && (
-          <TipLine label="Covered" value={coverageWords(row.coverage)} />
+          <TipLine label="Covered" value={coveredWords(row.coverage)} />
         )}
         {namedSources(row).length ? (
           <TipLine

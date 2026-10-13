@@ -24,7 +24,12 @@ import { daysEnding, type TimeRange } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
 import { FORM_WORDS, OBSERVED_TRAIT_IDENTITY } from "@/lib/observed-form"
 import { kindHasTrait } from "@/lib/traits"
-import { formatQuantity, roundDigits } from "@/lib/units"
+import {
+  formatQuantity,
+  groupDigits,
+  roundDigits,
+  withSymbol,
+} from "@/lib/units"
 
 // ── discovery ──────────────────────────────────────────────────────────────
 
@@ -238,9 +243,9 @@ export function codeWords(code: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** A reading as text, for a tooltip line or a copied table: the digits and
- * the unit's print symbol, the digits alone where no unit came, and "no
- * reading" where there is none. */
+/** A reading as text, for a tooltip line or a table cell: the digits in
+ * groups of three and the unit's print symbol, the digits alone where no
+ * unit came, and "no reading" where there is none. */
 export function readingText(
   value: string | null | undefined,
   unit?: string,
@@ -248,7 +253,10 @@ export function readingText(
 ): string {
   if (value === null || value === undefined) return "no reading"
   const shown = precision === undefined ? value : roundDigits(value, precision)
-  return (unit && formatQuantity({ value: shown, unit })) || shown
+  const digits = groupDigits(shown)
+  return unit && formatQuantity({ value: shown, unit })
+    ? withSymbol(digits, unit)
+    : digits
 }
 
 /** A metric id read as words when no record names it, its last segment

@@ -22,7 +22,7 @@ import type {
 } from "@/lib/api/types"
 import { reducerKey, reducerLabel, reducerName } from "@/lib/observations"
 import {
-  coverageWords,
+  coveredWords,
   localWindowWords,
   offsetWords,
   windowWords,
@@ -30,6 +30,12 @@ import {
 import { namedSources, rollupText, rowValue } from "@/lib/observations-answer"
 import { unitSymbol } from "@/lib/units"
 import { cn } from "@/lib/utils"
+
+/** The rows the box shows before it scrolls, and the head's and a row's
+ * heights, which the table's classes set. */
+const SHOWN_ROWS = 12
+const HEAD_PX = 34
+const ROW_PX = 30
 
 const FROM_WORDS: Record<string, string> = {
   raw: "Raw points",
@@ -129,7 +135,16 @@ export function RollupTable({
         />
       </div>
       {open && (
-        <div className="mt-1 max-h-80 overflow-auto rounded-md border border-border">
+        <div
+          className="mt-1 overflow-auto rounded-md border border-border"
+          // Up to a dozen rows the box holds them all; past that it scrolls,
+          // half a row showing that more follow.
+          style={
+            rows.length > SHOWN_ROWS
+              ? { maxHeight: HEAD_PX + (SHOWN_ROWS + 0.5) * ROW_PX }
+              : undefined
+          }
+        >
           <table aria-label={label} className="w-full text-[13px]">
             <thead className="sticky top-0 bg-background">
               <tr className="[&>th]:h-[34px] [&>th]:border-b [&>th]:border-border [&>th]:px-2.5 [&>th]:text-left [&>th]:text-[12.5px] [&>th]:font-medium [&>th]:whitespace-nowrap [&>th]:text-faint">
@@ -218,11 +233,7 @@ export function RollupTable({
                     </td>
                   )}
                   <td title={row.coverage}>
-                    {row.coverage ? (
-                      coverageWords(row.coverage)
-                    ) : (
-                      <EmptyValue />
-                    )}
+                    {row.coverage ? coveredWords(row.coverage) : <EmptyValue />}
                   </td>
                   <td>
                     {namedSources(row).length ? (

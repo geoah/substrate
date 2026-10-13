@@ -1360,7 +1360,8 @@ describe("the charts", () => {
     expect(tip.textContent).toContain("Weight, average")
     expect(tip.textContent).toContain("72.6 kg")
     expect(tip.textContent).toContain("Steps, total")
-    expect(tip.textContent).toContain("61200 steps")
+    // Digits in groups of three, as a count is shown.
+    expect(tip.textContent).toContain("61,200 steps")
     // One crosshair, a marker on the line.
     expect(chart.querySelectorAll("[data-slot=chart-crosshair]")).toHaveLength(
       1

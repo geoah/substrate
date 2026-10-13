@@ -38,4 +38,44 @@ describe("the rollup table", () => {
     const cells = screen.getAllByRole("cell").map((c) => c.textContent)
     expect(cells).toContain("named withings-body-plus")
   })
+
+  const day = (i: number, value: string, coverage?: string): AggregateRow => ({
+    start: new Date(2026, 8, 18 + i).toISOString(),
+    end: new Date(2026, 8, 19 + i).toISOString(),
+    values: [{ reducer: "sum", value, unit: "kJ" }],
+    count: 1,
+    bounded: 0,
+    synthetic: false,
+    unavailable: false,
+    ...(coverage ? { coverage } : {}),
+  })
+
+  function table(rows: AggregateRow[]) {
+    render(
+      <RollupTable
+        rows={rows}
+        reducers={["sum"]}
+        groupCell={() => null}
+        sourceText={(s) => s}
+        label="Energy in numbers"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Show the numbers" }))
+    return screen.getByRole("table").parentElement!
+  }
+
+  it("groups a value's digits and gives the covered time to the minute", () => {
+    table([day(0, "12008", "PT22H25M17S")])
+    const cells = screen.getAllByRole("cell").map((c) => c.textContent)
+    expect(cells).toContain("12,008 kJ")
+    expect(cells).toContain("22h 25m")
+  })
+
+  it("holds every row of a short table, and scrolls a long one", () => {
+    const ten = table(Array.from({ length: 10 }, (_, i) => day(i, "8000")))
+    expect(ten.style.maxHeight).toBe("")
+    cleanup()
+    const many = table(Array.from({ length: 30 }, (_, i) => day(i, "8000")))
+    expect(many.style.maxHeight).toBe("409px")
+  })
 })

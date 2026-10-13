@@ -786,7 +786,10 @@ every metric drawn is one, **Group by** is disabled and says so, and beside
 other metrics its chart says Group by does not apply to it), where to read from (automatic, raw points,
 vendor summaries, or raw where a bucket is covered), and the sources,
 things and channels to keep. Under each chart, each metric's numbers as a table that
-copies as tab-separated text; with Technical details on, each request itself
+copies as tab-separated text (the exact digits; on screen a value's digits
+are in groups of three, `12,008 kJ`, and the covered time is to the minute
+from an hour up); the table shows up to a dozen rows whole and scrolls past
+that. With Technical details on, each request itself
 as JSON and as a `curl` command.
 
 **One chart, several metrics.** Above the chart, one row per metric holds

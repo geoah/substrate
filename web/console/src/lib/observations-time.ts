@@ -584,3 +584,12 @@ export function coverageWords(text: string | undefined): string {
   const ms = durationMs(text)
   return ms === undefined ? (text ?? "") : durationWords(ms)
 }
+
+/** The time a bucket's values cover, in words: to the minute from an hour
+ * up (`22h 25m`, never `22h 25m 17s`), to the second under it; the stored
+ * text where it does not parse. */
+export function coveredWords(text: string | undefined): string {
+  const ms = durationMs(text)
+  if (ms === undefined) return text ?? ""
+  return durationWords(ms >= 3_600_000 ? Math.round(ms / 60_000) * 60_000 : ms)
+}

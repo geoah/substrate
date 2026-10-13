@@ -25,6 +25,8 @@ import {
   readQuantity,
   rememberUnit,
   unitLabel,
+  displayQuantity,
+  groupDigits,
   unitSymbol,
   unitsFor,
 } from "./units"
@@ -89,6 +91,17 @@ describe("the unit table", () => {
     expect(measureOf("1")).toBe("fraction")
     expect(measureOf("GJ")).toBeUndefined()
     expect(measureOf("toString")).toBeUndefined()
+  })
+
+  it("shows a value to its places, in groups of three, with its symbol", () => {
+    expect(groupDigits("18194.61")).toBe("18,194.61")
+    expect(groupDigits("-1234")).toBe("-1,234")
+    expect(groupDigits("999")).toBe("999")
+    expect(displayQuantity({ value: "18194.61", unit: "m" })).toBe(
+      "18,194.61 m"
+    )
+    expect(displayQuantity({ value: "97.1836248", unit: "%" })).toBe("97.18 %")
+    expect(displayQuantity({ value: "12008", unit: "kJ" }, 0)).toBe("12,008 kJ")
   })
 
   it("labels a unit by its symbol with the code beside it where they differ", () => {

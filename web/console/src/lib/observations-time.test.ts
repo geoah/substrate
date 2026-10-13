@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   autoBucket,
+  coveredWords,
   nightBucket,
   axisTicks,
   bucketEstimate,
@@ -306,5 +307,14 @@ describe("durations", () => {
     expect(durationMs("P1M")).toBeUndefined()
     expect(coverageWords("P6DT22H10M")).toBe("6d 22h 10m")
     expect(coverageWords("PT59M58S")).toBe("59m 58s")
+  })
+})
+
+describe("the covered time", () => {
+  it("reads to the minute from an hour up, to the second under it", () => {
+    expect(coveredWords("PT22H25M17S")).toBe("22h 25m")
+    expect(coveredWords("PT7H10M40S")).toBe("7h 11m")
+    expect(coveredWords("PT8M12S")).toBe("8m 12s")
+    expect(coveredWords("soon")).toBe("soon")
   })
 })
