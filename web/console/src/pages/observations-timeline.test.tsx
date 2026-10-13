@@ -1478,6 +1478,28 @@ describe("the charts", () => {
     ).toBeTruthy()
   })
 
+  it("says where every day is one vendor's daily summary, which Days cannot re-cut", async () => {
+    const daily = {
+      ...STEPS,
+      rows: STEPS.rows.map((r) => ({
+        ...r,
+        form: "summary",
+        from: "summaries" as const,
+        sources: [GARMIN],
+        count: 1,
+      })),
+    }
+    mount(`?metric=health/steps&${WINDOW}`, false, (read) =>
+      read.aggregate.metric ? daily : answer(read)
+    )
+    const steps = await lane("Steps")
+    expect(
+      await within(steps).findByText(
+        "Each day is Garmin Forerunner 265’s own daily summary, cut where the vendor starts its days, so Days does not change it."
+      )
+    ).toBeTruthy()
+  })
+
   it("reads a metric with a summary stream raw where covered, and says so in technical mode", async () => {
     const whoopHeart = {
       ...LATEST.rows[0],

@@ -944,6 +944,23 @@ function chartNotes(
         `Reads raw points alone: no vendor summary takes ${lowerFirst(choiceWords(plot))}, so ${listWords(plot.summarySources.map(words.sourceText))}’s summaries are left out.`
       )
     }
+    // Every bucket one vendor summary of one source: the vendor cut it, so
+    // neither the bucket nor where days start re-cuts it.
+    const summarized = rows.filter((r) => r.count > 0)
+    const vendors = distinct(summarized.flatMap(namedSources))
+    if (
+      !held &&
+      summarized.length > 0 &&
+      vendors.length === 1 &&
+      summarized.every((r) => r.from === "summaries" && r.count === 1)
+    ) {
+      const vendor = words.sourceText(vendors[0])
+      own.push(
+        plot.read?.aggregate.bucket?.calendar === "day"
+          ? `Each day is ${vendor}’s own daily summary, cut where the vendor starts its days, so Days does not change it.`
+          : `Each bucket is one of ${vendor}’s own summaries.`
+      )
+    }
     if (!held && mixedFrom(rows)) {
       own.push(
         "Some buckets read a vendor summary and others raw points, so a line mixes the two."

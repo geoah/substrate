@@ -931,7 +931,9 @@ raw read takes no summary and WHOOP's summary-only heart rate would draw
 nothing; with Technical details on, the chart says so. Where one line then
 reads a summary in some buckets and raw points in others (Garmin's
 nightly HRV average on one day, its five-minute trace on the next), the
-chart says the line mixes the two. A stream may keep
+chart says the line mixes the two. Where every bucket is one summary of
+one source (Garmin's daily steps over a trip), the chart says so, and for
+days that the vendor cut them, so **Days** does not change them. A stream may keep
 both: Garmin's HRV keeps each night's average and highest beside its
 five-minute trace, and reads `prefer-raw`. A row reads one statistic of the
 summaries, so where a metric's summaries keep several (WHOOP's average and
