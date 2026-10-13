@@ -285,11 +285,23 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		if !ok {
 			continue
 		}
-		vals, err := condStrings("filter.properties."+name, c)
+		path := "filter.properties." + name
+		var vals []string
+		if name == "channel" {
+			vals, err = condStrings(path, c)
+		} else {
+			vals, err = condValues(path, c, func(v any) (string, error) { return ds.streamRef(kinds, name, path, v) })
+		}
 		if err != nil {
 			return nil, err
 		}
 		b.add(name + ` = ANY(` + b.textArray(vals) + `)`)
+	}
+	order := make([]string, len(p.order))
+	for i, o := range p.order {
+		if order[i], err = ds.streamRef(kinds, "source", fmt.Sprintf("aggregate.sources.order[%d]", i), o); err != nil {
+			return nil, err
+		}
 	}
 	// A statistic narrows the summaries; every other form's values carry
 	// none and are kept.
@@ -327,15 +339,53 @@ func (ds *dataset) selectStreams(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 		return nil, err
 	}
 	for _, s := range out {
-		s.rank = len(p.order)
-		for i, o := range p.order {
-			if o == s.source || strings.HasSuffix(s.source, "/"+o) {
-				s.rank = i
-				break
-			}
+		s.rank = len(order)
+		if i := slices.Index(order, s.source); i >= 0 {
+			s.rank = i
 		}
 	}
 	return out, nil
+}
+
+// streamRef is the record path a filter value or an order entry names for a
+// stream's reference property (metric, source, about): a full path as
+// written, as a string or {ref}, or a bare id completed with the kind the
+// selected kinds' declaration of the property pins, as a list filter
+// completes it (referenceFilterPath). A bare id is refused where those kinds
+// pin no kind, any kind, or two. kinds nil is every kind binding observed.
+func (ds *dataset) streamRef(kinds []string, name, path string, v any) (string, error) {
+	s := referencePathOf(v)
+	if s == "" {
+		return "", refuse(path, "compares against a record path or a reference, not %v", v)
+	}
+	if _, _, ok := vocabulary.SplitRecordPath(s); ok {
+		return s, nil
+	}
+	reg := ds.registry()
+	var pins []string
+	for _, t := range reg.Kinds() {
+		if !bindsObserved(t) || (kinds != nil && !slices.Contains(kinds, t.Identity)) {
+			continue
+		}
+		pin := ""
+		if prop, ok := t.Prop(name); ok {
+			pin = prop.To
+		}
+		if !slices.Contains(pins, pin) {
+			pins = append(pins, pin)
+		}
+	}
+	if len(pins) != 1 {
+		slices.Sort(pins)
+		for i, pin := range pins {
+			if pin == "" {
+				pins[i] = "no kind"
+			}
+		}
+		return "", refuse(path, "%q is a bare id, and the selected kinds' %s references pin %s; name the full path, <kind>/<id>",
+			s, name, andList(pins))
+	}
+	return referenceFilterPath(path, &vocabulary.Property{To: pins[0]}, s)
 }
 
 // windows are the spans a metric read takes points from: the range with the

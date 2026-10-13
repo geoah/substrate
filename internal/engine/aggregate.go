@@ -669,16 +669,20 @@ func (p *aggPlan) parseMetricOptions() error {
 }
 
 // condStrings reads an eq or in condition as the strings it admits: a code, a
-// channel, or a reference written as a path or as {ref: path}. Both on one
-// condition admit what both admit, as the list's filter does, so `eq` A
-// beside `in` [B] admits nothing.
+// channel or a statistic. Both on one condition admit what both admit, as the
+// list's filter does, so `eq` A beside `in` [B] admits nothing.
 func condStrings(path string, c substrate.Cond) ([]string, error) {
-	str := func(v any) (string, error) {
+	return condValues(path, c, func(v any) (string, error) {
 		if s := referencePathOf(v); s != "" {
 			return s, nil
 		}
 		return "", refuse(path, "compares against a string or a reference, not %v", v)
-	}
+	})
+}
+
+// condValues reads an eq or in condition as the strings str turns its values
+// into.
+func condValues(path string, c substrate.Cond, str func(v any) (string, error)) ([]string, error) {
 	if c.Prefix != "" || c.Gt != nil || c.Gte != nil || c.Lt != nil || c.Lte != nil || c.Contains != nil || c.Exists != nil || c.Match != "" {
 		return nil, refuse(path, "an aggregate read narrows a stream key by eq or in alone")
 	}

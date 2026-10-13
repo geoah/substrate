@@ -1145,8 +1145,13 @@ tool's `aggregate` argument ([agents](agents.md#tools)), and a person with
 Exactly one of `metric` and `property`; both is a `422`. A metric read's
 `filter` takes `kinds` and `implements` (a kind that does not bind `observed`
 is refused by name) and `eq` or `in` on the stream properties `source`,
-`about`, `metric` and `channel`, each a record path or `{ref}`; `eq` beside
-`in` on one property admits what both admit, as the list's filter does.
+`about`, `metric` and `channel`; `eq` beside `in` on one property admits what
+both admit, as the list's filter does. A `source`, `about` or `metric` value
+is a record path, `{ref}`, or a bare id the read completes with the kind the
+selected kinds' reference pins, as the list's filter does: `manual` is
+`<authority>/observations/source/manual` and never
+`.../source/googlefit/x/manual`. A bare id is a `422` where those kinds pin
+no kind, any kind (`about`) or two. A path no stream holds answers no rows.
 `code` filters the intervals by code after they are built from every
 transition, so a door's `closed` still ends the `open` before it.
 `statistic` (`eq` or `in`) narrows the summaries to those statistics; a
@@ -1264,8 +1269,9 @@ reads that take it.
 
 - `separate` keeps every source apart: one row per source per bucket, each
   naming its source in `sources`.
-- `priority` resolves an ordered list (`order` names sources by record path
-  or by id) per stored interval before any bucket is cut: the first source
+- `priority` resolves an ordered list (`order` names sources as the filter
+  does: a record path, or a bare id completed exactly, so an entry no stream
+  holds ranks nothing) per stored interval before any bucket is cut: the first source
   holds where it has a value, the next fills what it does not cover, and a
   lower source's point inside a higher source's hold is dropped. An amount
   or a summary of a lower source is dropped whole where it overlaps a higher
