@@ -1605,7 +1605,7 @@ The code set is closed. The client-error codes:
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
 | `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
-| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature the trigger declares that the request fails ([webhooks](#webhooks)). |
+| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). |
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
 
