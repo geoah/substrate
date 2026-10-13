@@ -149,6 +149,3 @@ export function ConsolePreferencesProvider({
     </ConsolePreferencesContext.Provider>
   )
 }
-
-/** The name the shell has always mounted. */
-export const NavigationProvider = ConsolePreferencesProvider

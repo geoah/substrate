@@ -355,7 +355,7 @@ describe("Add a collection: Ask an agent", () => {
     openAgents(href)
     expect(await screen.findByText(/This agent can’t answer yet/)).toBeTruthy()
     expect(chats).toHaveLength(0)
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "My recipes"
     )
   })

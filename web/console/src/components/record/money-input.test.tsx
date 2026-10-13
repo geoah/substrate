@@ -34,9 +34,9 @@ function Harness({
   )
 }
 
-const amount = () => screen.getByLabelText("Price, amount") as HTMLInputElement
+const amount = () => screen.getByLabelText<HTMLInputElement>("Price, amount")
 const currency = () =>
-  screen.getByLabelText("Price, currency") as HTMLSelectElement
+  screen.getByLabelText<HTMLSelectElement>("Price, currency")
 
 describe("MoneyInput", () => {
   it("splits a stored text into its amount and its currency", () => {

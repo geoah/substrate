@@ -87,9 +87,7 @@ describe("BundleSettingsForm", () => {
 
   function patches(): [string, unknown][] {
     return fetchMock.mock.calls
-      .filter(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
-      )
+      .filter(([, init]) => init?.method === "PATCH")
       .map(([url, init]) => [
         String(url),
         JSON.parse(String((init as RequestInit).body)),
@@ -143,7 +141,7 @@ describe("BundleSettingsForm", () => {
       `${SECRETS_PATH}/ada.example.com%2Ffirecrawl%2FapiKey`,
       { properties: { value: "sk-live-secret" } },
     ])
-    expect((screen.getByLabelText(/Key hint/) as HTMLInputElement).value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>(/Key hint/).value).toBe(
       "hint"
     )
   })

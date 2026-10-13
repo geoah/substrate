@@ -100,7 +100,7 @@ class NeedsConsent extends Error {
  * the toast can name it: one of five calls failing is not "the add failed". */
 class ChainFailure extends Error {
   bundle: string
-  cause: unknown
+  override cause: unknown
   constructor(bundle: string, cause: unknown) {
     super(bundle)
     this.bundle = bundle
@@ -698,7 +698,7 @@ export function RemoveBundleButton({
           : `Removing ${name} failed`,
         description:
           (failed?.cause instanceof Error ? failed.cause.message : undefined) ??
-          (error as Error).message,
+          error.message,
       })
       refresh()
     },
@@ -750,7 +750,7 @@ export function RemoveBundleButton({
 
 class LadderFailure extends Error {
   step: LadderStep
-  cause: unknown
+  override cause: unknown
   constructor(step: LadderStep, cause: unknown) {
     super(step)
     this.step = step

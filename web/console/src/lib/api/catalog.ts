@@ -8,10 +8,8 @@ import { queryOptions } from "@tanstack/react-query"
 
 import { rootPath, request, seg } from "./http"
 import type {
-  BundleClosure,
   BundleStatus,
   CatalogItem,
-  CatalogTier,
   ConversionConfirm,
   OperationalList,
   ShippedUpgrade,
@@ -19,8 +17,6 @@ import type {
 
 /** One shipped bundle closure plus whether this repository already has it. */
 export type { CatalogItem } from "./types"
-/** What installing lands, by kind — the detail preview before installing. */
-export type CatalogClosure = BundleClosure
 
 const CATALOG = rootPath("catalog")
 
@@ -239,14 +235,6 @@ export function importBundle(
     `${CATALOG}/${seg(id)}/import`,
     confirm && { confirm }
   )
-}
-
-/** The door a catalog entry takes, by tier. */
-export function takeBundle(item: {
-  id: string
-  tier: CatalogTier
-}): Promise<BundleStatus> {
-  return item.tier === "sample" ? importBundle(item.id) : installBundle(item.id)
 }
 
 /** The substrate origin that actually receives the provider OAuth redirect —

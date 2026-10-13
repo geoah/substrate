@@ -43,6 +43,7 @@ import {
 import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel, type PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
+import { scalarText } from "@/lib/format"
 import { lowerFirst } from "@/lib/kind-names"
 import { originOfActor } from "@/lib/origin"
 
@@ -125,7 +126,7 @@ function plain(value: unknown, spec: PropSpec): string {
   if (spec.kind === "reference") return "another record"
   if (Array.isArray(value)) return value.map(String).join(", ")
   if (typeof value === "object") return JSON.stringify(value)
-  return String(value)
+  return scalarText(value)
 }
 
 export function OwnershipChip({

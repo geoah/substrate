@@ -101,7 +101,7 @@ describe("Conversation", () => {
     act(() => calls[0].onError?.(new Error("dispatch refused")))
 
     expect(screen.getByText(/dispatch refused/)).toBeTruthy()
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "hello there"
     )
     const send = screen.getByRole("button", { name: "Send" })
@@ -144,8 +144,7 @@ describe("Conversation", () => {
       target: { value: "again" },
     })
     expect(
-      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
-        .disabled
+      screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled
     ).toBe(false)
 
     fail = false

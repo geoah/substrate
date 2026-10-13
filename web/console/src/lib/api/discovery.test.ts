@@ -1,6 +1,11 @@
+import { QueryClient } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { fetchAuthPolicy, resetAuthPolicy } from "./discovery"
+import {
+  discoveryQueryOptions,
+  fetchAuthPolicy,
+  resetAuthPolicy,
+} from "./discovery"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -97,5 +102,35 @@ describe("fetchAuthPolicy", () => {
       inviteRequired: false,
       totpRequired: false,
     })
+  })
+})
+
+describe("discoveryQueryOptions", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("reads the whole document anonymously, even with a session stored", async () => {
+    const doc = {
+      server: { version: "1.2.3" },
+      features: [{ name: "triggers", stability: "stable" }],
+      surfaces: { rest: { endpoint: "/api/v1" } },
+      registration: { inviteRequired: false, totpRequired: true },
+    }
+    const fetchMock = vi.fn<typeof fetch>(() =>
+      Promise.resolve(jsonResponse(200, doc))
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    vi.stubGlobal("localStorage", { getItem: () => "substrate_tok_stored" })
+
+    const read = await new QueryClient().fetchQuery(discoveryQueryOptions)
+
+    expect(read).toEqual(doc)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("/.well-known/substrate/server.json")
+    expect(init?.method).toBe("GET")
+    expect(
+      (init?.headers as Record<string, string>).Authorization
+    ).toBeUndefined()
   })
 })

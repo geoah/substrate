@@ -291,7 +291,7 @@ export function RecordEditorForm({
       const api =
         error instanceof ApiError
           ? error
-          : new ApiError("network", (error as Error).message, 0)
+          : new ApiError("network", error.message, 0)
       setServerError(api)
       toast.add({
         type: "error",

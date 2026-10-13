@@ -28,7 +28,8 @@ import {
   useTechnicalDetails,
 } from "@/hooks/use-console-preferences"
 import { downloadExport } from "@/lib/api/export"
-import { CORE_AUTHORITY, olderServerMessage, request } from "@/lib/api/http"
+import { discoveryQueryOptions } from "@/lib/api/discovery"
+import { CORE_AUTHORITY, olderServerMessage } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
   CONSOLE_PREFERENCE_KIND,
@@ -165,26 +166,8 @@ function DownloadRow() {
   )
 }
 
-/** What `GET /.well-known/substrate/server.json` says; the page reads a few
- * fields and shows them, so nothing here is a wire contract of its own. */
-interface ServerDoc {
-  server?: { version?: string }
-  features?: { name: string; stability: string }[]
-  surfaces?: Record<string, { endpoint?: string }>
-}
-
 function ServerRows() {
-  const server = useQuery({
-    queryKey: ["discovery", "server"],
-    queryFn: () =>
-      request<ServerDoc>(
-        "GET",
-        "/.well-known/substrate/server.json",
-        undefined,
-        { anonymous: true }
-      ),
-    staleTime: 5 * 60_000,
-  })
+  const server = useQuery(discoveryQueryOptions)
   const doc = server.data
   return (
     <SettingRow

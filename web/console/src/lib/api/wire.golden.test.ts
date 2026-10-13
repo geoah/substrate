@@ -743,8 +743,6 @@ const mirrors: Record<string, Record<string, boolean>> = {
  * export must be in the golden. */
 const notOnTheWire: Record<string, string> = {
   // types.ts
-  LinkedReference:
-    "an open map: a reference value is `ref` plus whatever link properties the declaration names, not a struct",
   EnumValue:
     "one element of a property declaration's `values`, declared in internal/vocabulary and out of the golden's reach",
   // discovery.ts

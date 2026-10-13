@@ -195,9 +195,8 @@ describe("RegisterPage", () => {
     // Logged in, but NOT navigated: the recovery key arrives only on this
     // response, and the page holds the reader until they carry it off.
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
-    const recovery = (await screen.findByLabelText(
-      "Recovery key"
-    )) as HTMLInputElement
+    const recovery =
+      await screen.findByLabelText<HTMLInputElement>("Recovery key")
     expect(recovery.value).toBe("AGE-SECRET-KEY-1TEST")
     expect(navigate).not.toHaveBeenCalled()
 

@@ -28,7 +28,7 @@ const DOC =
 
 function editor() {
   const view = EditorView.findFromDOM(
-    screen.getByLabelText("Record YAML") as HTMLElement
+    screen.getByLabelText<HTMLElement>("Record YAML")
   )
   if (!view) throw new Error("the editor is not mounted")
   return view

@@ -197,7 +197,12 @@ describe("systemPhrase", () => {
         : undefined
     return systemPhrase(entry, moves)
   }
-  function versioned(kind: string, id: string, actor: string): ChangeRow {
+  function versioned(
+    kind: string,
+    id: string,
+    actor: string,
+    after: unknown = 35
+  ): ChangeRow {
     return row({
       kind: `${CORE}/${kind}`,
       recordId: id,
@@ -208,7 +213,7 @@ describe("systemPhrase", () => {
           kind: `${CORE}/${kind}`,
           id,
           version: 3,
-          properties: [{ name: "version", before: 34, after: 35 }],
+          properties: [{ name: "version", before: 34, after }],
         },
       ],
     })
@@ -224,6 +229,18 @@ describe("systemPhrase", () => {
     expect(said([versioned("package", GOOGLE, "console")])?.words).toBe(
       "updated the Google package to version 35"
     )
+  })
+
+  it("names no version when the change moved it to something else", () => {
+    // A cleared `version` arrives with no `after`, and anything that is not
+    // a number names no version: the sentence leaves the version out.
+    expect(
+      said([versioned("package", GOOGLE, GOOGLE_ACTOR, null)])?.words
+    ).toBe("updated its package")
+    expect(said([versioned("bundle", GOOGLE, GOOGLE_ACTOR, null)])).toEqual({
+      words: "changed its setup",
+      complete: false,
+    })
   })
 
   it("says a sample package whose only change is the host's bookkeeping", () => {

@@ -35,7 +35,7 @@ const TASK: KindInfo = {
       },
     },
   },
-} as never
+}
 
 const prop = (name: string) =>
   groupableProperties(TASK).find((p) => p.name === name) as DeclaredProperty

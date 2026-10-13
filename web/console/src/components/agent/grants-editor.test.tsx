@@ -16,15 +16,7 @@ import {
   within,
 } from "@testing-library/react"
 import type { ReactNode } from "react"
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   ConsolePreferencesContext,
@@ -60,11 +52,6 @@ const QUERY = "substrate.reamde.dev/core/query"
 const AGENT_PATH =
   "/api/v1/substrate.reamde.dev/core/agent/samples.substrate.reamde.dev%2Fllm%2Fhelper"
 const PROVIDER_PATH = "/api/v1/substrate.reamde.dev/llm/provider/openai"
-
-beforeAll(() => {
-  // cmdk scrolls the highlighted row into view; jsdom has no layout.
-  Element.prototype.scrollIntoView ??= () => {}
-})
 
 function kind(identity: string, name: string): KindInfo {
   const [authority, pkg] = identity.split("/")
@@ -178,7 +165,7 @@ describe("GrantsEditor and ModelKeyDialog", () => {
     vi.stubGlobal("fetch", fetchMock)
     fetchMock.mockImplementation(async (url, init) => {
       const path = String(url)
-      const method = (init as RequestInit | undefined)?.method ?? "GET"
+      const method = init?.method ?? "GET"
       if (path.startsWith("/api/v1/records")) {
         return jsonResponse(200, {
           kinds: [
@@ -210,9 +197,7 @@ describe("GrantsEditor and ModelKeyDialog", () => {
   })
 
   const patches = () =>
-    fetchMock.mock.calls.filter(
-      ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
-    )
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")
   const patchBody = (i = 0) =>
     JSON.parse((patches()[i][1] as RequestInit).body as string)
 

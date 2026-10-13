@@ -157,7 +157,7 @@ function MarkdownRowEditor(props: InlineEditorProps) {
         }
       }}
       onBlur={(e) => {
-        if (box.current?.contains(e.relatedTarget as Node | null)) return
+        if (box.current?.contains(e.relatedTarget)) return
         commit()
       }}
     >
@@ -309,7 +309,7 @@ function MoneyEditor(props: InlineEditorProps) {
         }
       }}
       onBlur={(e) => {
-        if (box.current?.contains(e.relatedTarget as Node | null)) return
+        if (box.current?.contains(e.relatedTarget)) return
         commit()
       }}
     >

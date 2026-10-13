@@ -151,18 +151,6 @@ export interface LinkedRecord {
  * it. */
 export const REFERENCE_KEY = "ref"
 
-/** One reference value. The object is what a read hands back; the string is the
- * write-time shorthand a document may still author. A repeated reference is an
- * array of these. */
-export type ReferenceValue = string | LinkedReference
-
-/** A reference value: the referent's path under `ref`, the declaration's own
- * link properties beside it. */
-export interface LinkedReference {
-  ref: string
-  [property: string]: unknown
-}
-
 /** Read one reference value as its path plus whatever link data rides with it.
  * `undefined` for a value that is neither shape. A reader renders that raw
  * rather than inventing a pointer.

@@ -29,14 +29,6 @@ import type {
   TriggerStatus,
 } from "./types"
 
-/** The core `sync` trait by its full identity, the spelling every host check
- * compares (a package-local look-alike can never answer for it). */
-export const SYNC_TRAIT = `${CORE_PACKAGE}/sync`
-
-/** The core `oauth2` trait, the kinds whose records are a provider's client
- * credentials. */
-export const OAUTH2_TRAIT = `${CORE_PACKAGE}/oauth2`
-
 const TRIGGERS = corePath("trigger")
 const TRIGGER_KIND = `${CORE_PACKAGE}/trigger`
 const TRIGGER_RUN_KIND = `${CORE_PACKAGE}/triggerrun`

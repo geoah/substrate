@@ -18,7 +18,7 @@ import {
   waitFor,
 } from "@testing-library/react"
 import type { TiptapEditorHTMLElement } from "@tiptap/core"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 
 const wire = vi.hoisted(() => ({ writes: [] as unknown[] }))
 
@@ -109,6 +109,13 @@ async function type(markdown: string) {
 
 /** Whether an element caps its own width: the body must not. */
 const capped = (el: Element) => /(^|\s)max-w-/.test(el.className)
+
+// The Markdown editor is a React.lazy chunk (Tiptap). Loading it once here
+// keeps that first transform out of the timeout of whichever test mounts it
+// first, which a loaded machine otherwise runs past.
+beforeAll(async () => {
+  await import("@/components/markdown/markdown-editor")
+}, 30_000)
 
 afterEach(() => {
   cleanup()

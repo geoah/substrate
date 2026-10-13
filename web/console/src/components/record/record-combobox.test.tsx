@@ -27,14 +27,17 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 
 type Answer = { records: unknown[]; cursor?: string } | "hang" | Error
 
-const wire = vi.hoisted(() => ({
-  /** Every list read the picker made, as its parsed filter. */
-  reads: [] as { first: number; filter: Record<string, unknown> }[],
+type Answerer = (filter: Record<string, unknown>) => unknown
+
+const wire = vi.hoisted(() => {
   /** What a read answers, by the filter it carried. */
-  answer: ((): unknown => ({ records: [] })) as (
-    filter: Record<string, unknown>
-  ) => unknown,
-}))
+  const answer: Answerer = () => ({ records: [] })
+  return {
+    /** Every list read the picker made, as its parsed filter. */
+    reads: [] as { first: number; filter: Record<string, unknown> }[],
+    answer,
+  }
+})
 
 vi.mock("@/lib/api/http", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/http")>()
@@ -169,7 +172,7 @@ function open(
 }
 
 function search(): HTMLInputElement {
-  return screen.getByPlaceholderText(/^Search/) as HTMLInputElement
+  return screen.getByPlaceholderText<HTMLInputElement>(/^Search/)
 }
 
 /** The record rows the list is offering right now, in order. */

@@ -18,7 +18,7 @@ import {
   waitFor,
 } from "@testing-library/react"
 import type { TiptapEditorHTMLElement } from "@tiptap/core"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
@@ -147,7 +147,7 @@ function emitted(onChange: { mock: { calls: unknown[][] } }): string {
 // ── the record dropdown, as a caller drives it ──────────────────────────────
 
 function searchBox(): HTMLInputElement {
-  return screen.getByPlaceholderText(/^Search /) as HTMLInputElement
+  return screen.getByPlaceholderText<HTMLInputElement>(/^Search /)
 }
 
 /** The values an open choice list offers, in order. */
@@ -179,6 +179,13 @@ function pickTyped(control: string | RegExp, typed: string) {
   fireEvent.change(searchBox(), { target: { value: typed } })
   fireEvent.click(screen.getByText(/^Use/))
 }
+
+// The Markdown editor is a React.lazy chunk (Tiptap). Loading it once here
+// keeps that first transform out of the timeout of whichever test mounts it
+// first, which a loaded machine otherwise runs past.
+beforeAll(async () => {
+  await import("@/components/markdown/markdown-editor")
+}, 30_000)
 
 afterEach(cleanup)
 
@@ -258,7 +265,7 @@ data:
     apiKey: <redacted>
 `
     const { onChange } = renderForm(seeded, { record })
-    const apiKey = screen.getByLabelText(/API key|Api key/) as HTMLInputElement
+    const apiKey = screen.getByLabelText<HTMLInputElement>(/API key|Api key/)
     expect(apiKey.type).toBe("password")
     expect(apiKey.value).toBe("")
     // Typing one seals a new value; clearing it again leaves the sealed one.
@@ -581,9 +588,9 @@ data:
       dueAt: datetime
 `
     const { onChange } = renderKindForm(mappingKind, seeded)
-    expect(
-      (screen.getByLabelText("Keys key 1") as HTMLInputElement).value
-    ).toBe("displayName")
+    expect(screen.getByLabelText<HTMLInputElement>("Keys key 1").value).toBe(
+      "displayName"
+    )
     fireEvent.click(screen.getByRole("button", { name: "Remove Keys entry 2" }))
     expect(propertiesOf(emitted(onChange))?.keys).toEqual({
       displayName: "string",
@@ -800,7 +807,7 @@ data:
   it("asks for a DECLARATION's id, and shows the shape it is spelled in", () => {
     stubCollections()
     renderKindForm(agentKind, templateYAML(agentKind), { kinds: REGISTRY })
-    const id = screen.getByLabelText(/^Record id/) as HTMLInputElement
+    const id = screen.getByLabelText<HTMLInputElement>(/^Record id/)
     expect(id.placeholder).toBe("<authority>/<package>/<name>")
     expect(id.getAttribute("aria-invalid")).toBe("true")
     expect(screen.getByText(/carries its own id/)).toBeTruthy()
@@ -825,7 +832,7 @@ data:
 
   it("still asks an ORDINARY kind for everything, id included", () => {
     const { onChange } = renderKindForm(mappingKind, templateYAML(mappingKind))
-    const id = screen.getByLabelText(/^Record id/) as HTMLInputElement
+    const id = screen.getByLabelText<HTMLInputElement>(/^Record id/)
     expect(id.placeholder).toMatch(/mints one/)
     expect(id.getAttribute("aria-invalid")).not.toBe("true")
     fireEvent.change(id, { target: { value: "m1" } })

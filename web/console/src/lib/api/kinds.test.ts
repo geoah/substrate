@@ -104,6 +104,29 @@ describe("normalizeKinds", () => {
     })
   })
 
+  it("falls back to the reference's parts where a declaration holds no scalar", () => {
+    // A malformed declaration must not reach the sidebar as "[object Object]".
+    const [k] = normalizeKinds({
+      records: [
+        {
+          id: "samples.substrate.reamde.dev/tasks/task",
+          properties: {
+            names: { singular: { en: "Task" } },
+            authority: ["samples.substrate.reamde.dev"],
+            package: {},
+            source: null,
+          },
+        },
+      ],
+    })
+    expect(k).toMatchObject({
+      name: "task",
+      authority: "samples.substrate.reamde.dev",
+      package: "tasks",
+      source: "builtin",
+    })
+  })
+
   it("reads a bare (repository-local) kind's id as an authority-less reference", () => {
     const [k] = normalizeKinds({ records: [{ id: "task", properties: {} }] })
     expect(k).toMatchObject({ identity: "task", name: "task", authority: "" })

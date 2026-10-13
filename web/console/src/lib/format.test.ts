@@ -12,6 +12,7 @@ import {
   referenceID,
   referenceObjects,
   feedStamp,
+  scalarText,
   shortDate,
   tableDateTime,
 } from "./format"
@@ -172,5 +173,22 @@ describe("cleanTitle", () => {
     expect(cleanTitle("C++")).toBe("C++")
     expect(cleanTitle("Q3: plan")).toBe("Q3: plan")
     expect(cleanTitle("-5 degrees")).toBe("-5 degrees")
+  })
+})
+
+describe("scalarText", () => {
+  it("spells a JSON scalar the way String does", () => {
+    expect(scalarText("open")).toBe("open")
+    expect(scalarText("")).toBe("")
+    expect(scalarText(35)).toBe("35")
+    expect(scalarText(0)).toBe("0")
+    expect(scalarText(false)).toBe("false")
+  })
+
+  it("answers the fallback for anything that is not a scalar", () => {
+    expect(scalarText(undefined)).toBe("")
+    expect(scalarText(null, "builtin")).toBe("builtin")
+    expect(scalarText({ en: "Task" }, "task")).toBe("task")
+    expect(scalarText(["a", "b"])).toBe("")
   })
 })

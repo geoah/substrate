@@ -10,6 +10,17 @@ const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
+/** A JSON scalar as text: a string as itself, a number or a boolean as
+ * `String` spells it. Anything else (absent, null, an object, a list) is
+ * `fallback`, so a malformed value never reaches the page as
+ * "[object Object]". */
+export function scalarText(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value)
+  return fallback
+}
+
 /** `3m ago` / `2h ago` / `5d ago`, falling to a date once it stops being
  * recent. Future stamps read `in …` (calendar events legitimately are). */
 export function relativeTime(iso: string, now = Date.now()): string {
@@ -165,10 +176,10 @@ export function cellValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(cellValue).join(", ")
   if (isMoney(value)) return moneyText(value)
   if (typeof value === "object") {
-    const keys = Object.keys(value as Record<string, unknown>)
+    const keys = Object.keys(value)
     return keys.length ? `{${keys.join(", ")}}` : "{}"
   }
-  return String(value)
+  return scalarText(value)
 }
 
 /** The row's display name: the title property when a source set one, else
@@ -188,12 +199,4 @@ export function cleanTitle(title: string): string {
     .replace(/^\s*[:·—–+-](\s+|$)/, "")
     .replace(/(^|\s+)[:·—–+-]\s*$/, "")
     .trim()
-}
-
-/** A machine actor's short voice: the first two labels
- * (`providers.substrate.reamde.dev` → `providers.substrate`); short names pass
- * through whole. */
-export function actorShortName(actor: string): string {
-  const parts = actor.split(".")
-  return parts.length > 2 ? parts.slice(0, 2).join(".") : actor
 }

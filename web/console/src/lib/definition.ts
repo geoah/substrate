@@ -109,7 +109,7 @@ export function propertyTypeLabel(p: DeclaredProperty): string {
 type Definition = Record<string, unknown>
 
 function definitionOf(k: KindInfo): Definition {
-  return (k.definition ?? {}) as Definition
+  return k.definition ?? {}
 }
 
 export function declaredProperties(k: KindInfo): DeclaredProperty[] {
@@ -154,7 +154,7 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
  * surface needs to say what rides along. */
 function linkPropertyNames(raw: unknown): string[] | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
-  const names = Object.keys(raw as Record<string, unknown>).sort()
+  const names = Object.keys(raw).sort()
   return names.length ? names : undefined
 }
 
@@ -254,27 +254,4 @@ export function expandableReferences(k: KindInfo): string[] {
   return declaredReferences(k)
     .filter((p) => !p.keyed)
     .map((p) => p.name)
-}
-
-/** What the far side of a reference pointing HERE is called. The name a
- * fan-in row carries is written from the source's side (`thread`, on a
- * message), which reads backwards standing on the target — so the label is
- * the declaration's `inverse` where its author wrote one, and an honest
- * fallback naming both sides where nobody did. */
-export function inverseLabel(
-  kinds: KindInfo[],
-  fromKind: string,
-  property: string
-): { label: string; description?: string } {
-  const source = kindByIdentity(kinds, fromKind)
-  const declared = source
-    ? declaredReferences(source).find((p) => p.name === property)
-    : undefined
-  if (declared?.inverse) {
-    return { label: declared.inverse, description: declared.inverseDescription }
-  }
-  return {
-    label: `${property} of ${splitKind(fromKind).name}`,
-    description: declared?.description,
-  }
 }

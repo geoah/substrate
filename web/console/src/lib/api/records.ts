@@ -593,6 +593,21 @@ export function searchQueryOptions(
 
 // ── single record ───────────────────────────────────────────────────────────
 
+export function fetchRecord(
+  authority: string,
+  pkg: string,
+  name: string,
+  id: string,
+  signal?: AbortSignal
+): Promise<SubstrateRecord> {
+  return request<SubstrateRecord>(
+    "GET",
+    `${collectionPath(authority, pkg, name)}/${seg(id)}`,
+    undefined,
+    { signal }
+  )
+}
+
 export function recordQueryOptions(
   authority: string,
   pkg: string,
@@ -601,13 +616,7 @@ export function recordQueryOptions(
 ) {
   return queryOptions({
     queryKey: ["record", authority, pkg, name, id],
-    queryFn: ({ signal }) =>
-      request<SubstrateRecord>(
-        "GET",
-        `${collectionPath(authority, pkg, name)}/${seg(id)}`,
-        undefined,
-        { signal }
-      ),
+    queryFn: ({ signal }) => fetchRecord(authority, pkg, name, id, signal),
   })
 }
 
@@ -903,6 +912,7 @@ export function recordChangesInfiniteOptions(
   recordKind: string,
   first = 25
 ) {
+  const start: HistoryPosition = { before: 0 }
   return infiniteQueryOptions({
     queryKey: ["changes", "record", recordKind, recordId],
     queryFn: ({ pageParam, signal }) =>
@@ -913,7 +923,7 @@ export function recordChangesInfiniteOptions(
         filter: { recordId, recordKind, values: true },
         signal,
       }),
-    initialPageParam: { before: 0 } as HistoryPosition,
+    initialPageParam: start,
     // The server cursor is the continuation — it advances past scope-filtered
     // rows, so a short page is not the end. The walk ends when the cursor is
     // omitted (exhausted). The continuation resends the page's generation.

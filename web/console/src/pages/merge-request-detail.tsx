@@ -70,7 +70,12 @@ import {
 } from "@/lib/api/mergerequests"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
-import { cellValue, referenceObjects, relativeTime } from "@/lib/format"
+import {
+  cellValue,
+  referenceObjects,
+  relativeTime,
+  scalarText,
+} from "@/lib/format"
 import {
   DECISION_INITIAL,
   decisionOf,
@@ -294,7 +299,7 @@ function SideBySide({
                   {refTitle({
                     id: loser.id,
                     kind: loser.kind,
-                    title: String(loser.properties.title ?? ""),
+                    title: scalarText(loser.properties.title),
                   })}{" "}
                   <span className="font-mono text-xs font-normal text-faint">
                     {loser.id}
@@ -311,7 +316,7 @@ function SideBySide({
                   {refTitle({
                     id: winner.id,
                     kind: winner.kind,
-                    title: String(winner.properties.title ?? ""),
+                    title: scalarText(winner.properties.title),
                   })}{" "}
                   <span className="font-mono text-xs font-normal text-faint">
                     {winner.id}

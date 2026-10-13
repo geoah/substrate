@@ -44,7 +44,7 @@ export interface ViewState {
 
 const stringList = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((v) => typeof v === "string")
-    ? (value as string[])
+    ? value
     : undefined
 
 const text = (value: unknown): string | undefined =>

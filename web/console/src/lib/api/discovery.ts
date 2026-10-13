@@ -2,7 +2,8 @@
  * serves, answered without a token and without opening a repository — which
  * is what lets the DOOR read it. The login and register pages ask it two
  * things: does this substrate read an invite code, and does it verify a
- * second factor at all?
+ * second factor at all? The Settings page shows the version, the REST
+ * endpoint and the features it lists.
  *
  * A local substrate with no `SUBSTRATE_INVITE_CODE` reads none, and one booted
  * with `SUBSTRATE_INSECURE_DISABLE_TOTP` verifies no code, so a console that
@@ -10,6 +11,7 @@
  * refusing the sign-in itself when the digits are not to hand. */
 
 import { useEffect, useState } from "react"
+import { queryOptions } from "@tanstack/react-query"
 
 import { request } from "./http"
 
@@ -20,9 +22,32 @@ export interface AuthPolicy {
   totpRequired: boolean
 }
 
+/** The fields of server.json the console reads, every one optional so an
+ * older server's document still parses. It mirrors internal/api's
+ * discoveryDoc, not a struct in internal/substrate, so it stays unexported
+ * and out of the wire golden. */
 interface DiscoveryDoc {
   registration?: Partial<AuthPolicy>
+  server?: { version?: string }
+  features?: { name: string; stability: string }[]
+  surfaces?: Record<string, { endpoint?: string }>
 }
+
+const DISCOVERY_PATH = "/.well-known/substrate/server.json"
+
+function fetchDiscovery(): Promise<DiscoveryDoc> {
+  return request<DiscoveryDoc>("GET", DISCOVERY_PATH, undefined, {
+    anonymous: true,
+  })
+}
+
+/** The whole document, for a page that shows what the server says about
+ * itself. */
+export const discoveryQueryOptions = queryOptions({
+  queryKey: ["discovery", "server"],
+  queryFn: fetchDiscovery,
+  staleTime: 5 * 60_000,
+})
 
 /** The STRICT shape, and what an unanswered or unreadable discovery falls back
  * to: a deployment that wants a code and a console that hid the field would
@@ -44,12 +69,7 @@ export const STRICT_AUTH_POLICY: AuthPolicy = {
 let pending: Promise<AuthPolicy> | null = null
 
 export function fetchAuthPolicy(): Promise<AuthPolicy> {
-  pending ??= request<DiscoveryDoc>(
-    "GET",
-    "/.well-known/substrate/server.json",
-    undefined,
-    { anonymous: true }
-  )
+  pending ??= fetchDiscovery()
     .then((doc) => ({
       inviteRequired: doc?.registration?.inviteRequired !== false,
       totpRequired: doc?.registration?.totpRequired !== false,

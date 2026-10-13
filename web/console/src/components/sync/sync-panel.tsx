@@ -30,7 +30,6 @@ import {
   requestServed,
   syncErrorIsCurrent,
   syncStateOf,
-  type Health,
   type SyncFields,
   type SyncParked,
 } from "@/lib/sync"
@@ -74,32 +73,6 @@ export function SyncStateBadge({
     >
       {word}
     </Pill>
-  )
-}
-
-const HEALTH_DOT: Record<Health, string> = {
-  healthy: "bg-primary",
-  attention: "bg-warning",
-  broken: "bg-destructive",
-  idle: "bg-muted-foreground/40",
-}
-
-const HEALTH_LABEL: Record<Health, string> = {
-  healthy: "healthy: connected and syncing",
-  attention: "needs attention: not connected, paused or throttled",
-  broken: "broken: the grant or the sync is erroring",
-  idle: "idle: connected, never synced",
-}
-
-/** The one dot a row wears, with its meaning on hover and for a reader. */
-export function HealthDot({ health }: { health: Health }) {
-  return (
-    <span
-      role="img"
-      aria-label={HEALTH_LABEL[health]}
-      title={HEALTH_LABEL[health]}
-      className={cn("inline-block size-2.5 rounded-full", HEALTH_DOT[health])}
-    />
   )
 }
 

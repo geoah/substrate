@@ -12,6 +12,7 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { scalarText } from "@/lib/format"
 import { rememberKindLabels } from "@/lib/kind-names"
 
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, request, splitKind } from "./http"
@@ -29,7 +30,7 @@ const REGISTRY_PAGE = 500
  * properties carry the rest. */
 function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
   const properties = (item?.properties ?? {}) as Record<string, unknown>
-  const identity = String(item?.id ?? "")
+  const identity = scalarText(item?.id)
   if (!identity) return undefined
   const { authority, pkg, name } = splitKind(identity)
   // THE PROPERTIES ARE THE DECLARATION. `definition` was the blob a declaration
@@ -44,13 +45,13 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
   const label = definition.label as Record<string, unknown> | undefined
   return {
     identity,
-    name: String(names.singular ?? properties.name ?? name),
-    authority: String(properties.authority ?? authority),
-    package: String(properties.package ?? pkg),
+    name: scalarText(names.singular ?? properties.name, name),
+    authority: scalarText(properties.authority, authority),
+    package: scalarText(properties.package, pkg),
     // The declaration version is an incremental int64; 0 (absent) covers a
     // declaration written before the server versioned them.
     version: Number(properties.version) || 0,
-    source: String(properties.source ?? "builtin"),
+    source: scalarText(properties.source, "builtin"),
     // A STRING or nothing — this renders as prose, and `String()` would turn a
     // malformed declaration's object into "[object Object]" on the page.
     description:

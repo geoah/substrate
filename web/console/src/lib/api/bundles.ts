@@ -62,13 +62,12 @@ export function bundleStatusQueryOptions(id: string) {
   })
 }
 
-/** The lifecycle transitions. A bundle's runtime lifecycle IS record state the
- * substrate owns (decision 0033), so each is a PATCH of the bundle record's
- * `disabled`/`uninstalled`/`purging` state, not a verb. disable/enable answer
- * with the fresh status; uninstall tears the bundle row down, so there is no
- * status to answer and the server acks instead; purge answers with the
- * tombstoned-row count. */
-export type BundleVerb = "disable" | "enable" | "uninstall"
+// The lifecycle transitions. A bundle's runtime lifecycle IS record state the
+// substrate owns (decision 0033), so each is a PATCH of the bundle record's
+// `disabled`/`uninstalled`/`purging` state, not a verb. disable/enable answer
+// with the fresh status; uninstall tears the bundle row down, so there is no
+// status to answer and the server acks instead; purge answers with the
+// tombstoned-row count.
 
 /** PATCH one bundle-state property. */
 function patchBundleState<T>(

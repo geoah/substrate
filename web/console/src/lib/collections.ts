@@ -59,7 +59,8 @@ const byReferenceName = (a: KindInfo, b: KindInfo) =>
 function treeOf(kinds: KindInfo[]): CollectionAuthority[] {
   const byAuthority = new Map<string, Map<string, KindInfo[]>>()
   for (const k of kinds) {
-    const packages = byAuthority.get(k.authority) ?? new Map()
+    const packages =
+      byAuthority.get(k.authority) ?? new Map<string, KindInfo[]>()
     byAuthority.set(k.authority, packages)
     const list = packages.get(k.package) ?? []
     packages.set(k.package, list)

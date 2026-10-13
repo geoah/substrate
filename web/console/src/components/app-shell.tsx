@@ -10,7 +10,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 
-import { NavigationProvider } from "@/components/console-preferences"
+import { ConsolePreferencesProvider } from "@/components/console-preferences"
 import { AppSidebar, type SidebarPeek } from "@/components/app-sidebar"
 import { CommandMenu } from "@/components/command-menu"
 import { KindGlyph } from "@/components/identity/kind-glyph"
@@ -411,9 +411,9 @@ export function useSidebarPeek(): SidebarPeek & {
 
 export function AppShell() {
   return (
-    <NavigationProvider>
+    <ConsolePreferencesProvider>
       <ShellBody />
-    </NavigationProvider>
+    </ConsolePreferencesProvider>
   )
 }
 

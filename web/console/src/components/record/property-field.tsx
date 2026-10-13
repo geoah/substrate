@@ -426,7 +426,7 @@ export function PropertyField({
           ))}
           <AddButton
             label={`Add ${field.label} row`}
-            onClick={() => onChange([...rows, {} as FieldBag])}
+            onClick={() => onChange([...rows, {}])}
           />
         </div>
         {help()}

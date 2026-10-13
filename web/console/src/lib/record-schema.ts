@@ -33,6 +33,7 @@ import {
   parseMoneyText,
   splitMoneyText,
 } from "@/lib/money"
+import { scalarText } from "@/lib/format"
 import { coerceReferencePath, recordPath } from "@/lib/record-path"
 
 /** The `kind:` pin a reference wears when it is pinned to no kind at all. */
@@ -298,7 +299,7 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
 }
 
 function rawProps(kind: KindInfo): Record<string, Record<string, unknown>> {
-  const def = (kind.definition ?? {}) as Record<string, unknown>
+  const def = kind.definition ?? {}
   return (def.properties ?? {}) as Record<string, Record<string, unknown>>
 }
 
@@ -368,7 +369,7 @@ export function movesFrom(spec: PropSpec, current: string): StateTransition[] {
  * property holds. */
 export function titleProperty(kind: KindInfo | undefined): string | undefined {
   if (!kind) return "title"
-  const template = (kind.definition as Record<string, unknown>).displayTemplate
+  const template = kind.definition.displayTemplate
   if (typeof template !== "string" || !template.trim()) return "title"
   const m = template
     .trim()
@@ -432,7 +433,7 @@ export function elementSpec(spec: PropSpec): PropSpec {
  * rebuilds a value has to be able to write "empty" rather than dropping the
  * key. `json` is deliberately absent: its emptiness is whatever its text
  * says, and nobody but the author owns that shape. */
-export function emptyContainer(spec: PropSpec): unknown | undefined {
+export function emptyContainer(spec: PropSpec): unknown {
   if (spec.keyed) return {}
   if (spec.repeated) return []
   if (spec.kind === "object" && spec.fields?.length) return {}
@@ -874,7 +875,7 @@ export function formatValue(spec: PropSpec, value: unknown): string {
       .join("\n")
   }
   if (typeof value === "object") return JSON.stringify(value, null, 2)
-  return String(value)
+  return scalarText(value)
 }
 
 /** The value an EDITABLE control is seeded with. A blob-ref reads as its

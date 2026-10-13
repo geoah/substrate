@@ -53,7 +53,7 @@ describe("Signed in and API tokens", () => {
     saveSession("substrate_tok_current", "geoah", "tok-1")
     navigate.mockClear()
     fetchMock.mockImplementation(async (url, init) => {
-      const method = (init as RequestInit | undefined)?.method ?? "GET"
+      const method = init?.method ?? "GET"
       const path = String(url)
       if (path === "/tokens" && method === "GET") {
         return jsonResponse(200, { items: TOKENS })
@@ -107,9 +107,7 @@ describe("Signed in and API tokens", () => {
   })
 
   const deletes = () =>
-    fetchMock.mock.calls.filter(
-      ([, init]) => (init as RequestInit | undefined)?.method === "DELETE"
-    )
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
 
   it("signs another token out, after asking", async () => {
     renderWithClient(<SignedInRows />)

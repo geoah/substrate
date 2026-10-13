@@ -186,7 +186,7 @@ function ToolDoc({
       toast.add({
         type: "error",
         title: "Couldn’t change it.",
-        description: (err as Error).message,
+        description: err.message,
       })
     },
   })
@@ -207,7 +207,7 @@ function ToolDoc({
       toast.add({
         type: "error",
         title: "Couldn’t start the sync.",
-        description: (err as Error).message,
+        description: err.message,
       }),
   })
 

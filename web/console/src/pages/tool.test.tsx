@@ -318,9 +318,7 @@ describe("ToolPage", () => {
     expect(dialog.textContent).toContain("Pause Google Calendar sync?")
     expect(dialog.textContent).toContain("won’t run on its own")
     const patches = () =>
-      fetchMock.mock.calls.filter(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
-      )
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")
     expect(patches()).toHaveLength(0)
     fireEvent.click(within(dialog).getByRole("button", { name: "Pause" }))
     await waitFor(() => expect(patches().length).toBeGreaterThan(0))

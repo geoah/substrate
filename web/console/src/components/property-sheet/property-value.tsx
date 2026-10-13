@@ -15,6 +15,7 @@ import { MoneyValue } from "@/components/identity/money-value"
 import { ReferenceValue } from "@/components/identity/reference-value"
 import { StateBadge } from "@/components/identity/state-badge"
 import { readReference } from "@/lib/api/types"
+import { scalarText } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
 import { REDACTED, elementSpec, type PropSpec } from "@/lib/record-schema"
 
@@ -200,7 +201,7 @@ export function DeclaredValue({
     if (blocked) {
       return (
         <ol className="flex w-full flex-col gap-2">
-          {value.map((one, i) => (
+          {value.map((one: unknown, i) => (
             <li key={i} className="flex min-w-0 items-baseline gap-2">
               <span className="text-xs text-faint tabular-nums">{i + 1}</span>
               <div className="min-w-0 flex-1">
@@ -219,7 +220,7 @@ export function DeclaredValue({
           data-layout="chips"
           className="flex min-w-0 flex-wrap items-center gap-1.5 py-[3px]"
         >
-          {value.map((one, i) => (
+          {value.map((one: unknown, i) => (
             <li
               key={i}
               className={
@@ -236,7 +237,7 @@ export function DeclaredValue({
     }
     return (
       <ul data-layout="lines" className="flex w-full min-w-0 flex-col gap-1">
-        {value.map((one, i) => (
+        {value.map((one: unknown, i) => (
           <li key={i} className="min-w-0 break-words">
             <ScalarValue spec={item} value={one} />
           </li>
@@ -254,5 +255,5 @@ export function LooseValue({ value }: { value: unknown }) {
   if (held && splitRecordPath(held.path))
     return <ReferenceValue value={value} />
   if (typeof value === "object") return <JsonBlock value={value} />
-  return <span className="break-words">{String(value)}</span>
+  return <span className="break-words">{scalarText(value)}</span>
 }

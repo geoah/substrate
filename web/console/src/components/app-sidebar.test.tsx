@@ -44,7 +44,7 @@ import { saveSession } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
 import { useSidebarPeek } from "./app-shell"
 import { AppSidebar, CollectionGroupNav, Favorites } from "./app-sidebar"
-import { NavigationProvider } from "./console-preferences"
+import { ConsolePreferencesProvider } from "./console-preferences"
 import { SidebarProvider, SidebarTrigger } from "./ui/sidebar"
 
 function kind(identity: string, purpose?: string): KindInfo {
@@ -112,7 +112,7 @@ function renderTree(tree: ReactNode) {
   const rootRoute = createRootRoute({
     component: () => (
       <QueryClientProvider client={client}>
-        <NavigationProvider>{tree}</NavigationProvider>
+        <ConsolePreferencesProvider>{tree}</ConsolePreferencesProvider>
       </QueryClientProvider>
     ),
   })
@@ -232,11 +232,9 @@ describe("everyday groups", () => {
     renderGroups()
     await waitFor(() =>
       expect(
-        (
-          screen.getByRole("button", {
-            name: "Move People up",
-          }) as HTMLButtonElement
-        ).disabled
+        screen.getByRole<HTMLButtonElement>("button", {
+          name: "Move People up",
+        }).disabled
       ).toBe(true)
     )
     // The folded group lists nothing; the favorite still reaches its kind.

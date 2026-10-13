@@ -172,7 +172,7 @@ describe("ChangeRequestDetailPage", () => {
     opts: { target?: SubstrateRecord; patch?: () => Response } = {}
   ) {
     fetchMock.mockImplementation(async (url, init) => {
-      const method = (init as RequestInit | undefined)?.method ?? "GET"
+      const method = init?.method ?? "GET"
       const path = String(url)
       if (listedKinds(path).includes("substrate.reamde.dev/core/kind")) {
         return jsonResponse(200, { kinds: KINDS })
@@ -249,7 +249,7 @@ describe("ChangeRequestDetailPage", () => {
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(patch).toBeTruthy()
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
@@ -277,9 +277,7 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.getByText("Your edit")).toBeTruthy()
     // Nothing reached the server yet.
     expect(
-      fetchMock.mock.calls.some(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
-      )
+      fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")
     ).toBe(false)
 
     // Leaving the note out means it is not applied.
@@ -289,7 +287,7 @@ describe("ChangeRequestDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
         properties: {
@@ -313,8 +311,7 @@ describe("ChangeRequestDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Leave out Note" }))
     expect(screen.getByText(/Nothing is left to apply/)).toBeTruthy()
     expect(
-      (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement)
-        .disabled
+      screen.getByRole<HTMLButtonElement>("button", { name: "Apply" }).disabled
     ).toBe(true)
     // And comes back to the suggestion in one press.
     fireEvent.click(
@@ -347,7 +344,7 @@ describe("ChangeRequestDetailPage", () => {
     fireEvent.click(apply)
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
         properties: {
@@ -391,7 +388,7 @@ describe("ChangeRequestDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
         properties: { decision: "rejected" },
@@ -499,7 +496,7 @@ describe("ChangeRequestDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add it" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({
         properties: {
@@ -536,7 +533,7 @@ describe("ChangeRequestDetailPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete it" }))
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH"
+        ([, init]) => init?.method === "PATCH"
       )
       expect(patch).toBeTruthy()
     })

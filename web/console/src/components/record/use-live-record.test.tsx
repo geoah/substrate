@@ -57,7 +57,9 @@ describe("useLiveRecord", () => {
     })
     rerender({ r: rec(2, { status: "done", name: "A" }) })
     expect([...result.current]).toEqual(["status"])
-    act(() => vi.advanceTimersByTime(3000))
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
     expect(result.current.size).toBe(0)
   })
 
@@ -76,10 +78,14 @@ describe("useLiveRecord", () => {
     })
     rerender({ r: rec(11, { status: "done", name: "A" }) })
     expect([...result.current]).toEqual(["status"])
-    act(() => vi.advanceTimersByTime(1000))
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
     noteWrite(TASK, "t1", 12)
     rerender({ r: rec(12, { status: "done", name: "B" }) })
-    act(() => vi.advanceTimersByTime(3000))
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
     expect(result.current.size).toBe(0)
   })
 
@@ -88,10 +94,14 @@ describe("useLiveRecord", () => {
       initialProps: { r: rec(20, { status: "open" }) },
     })
     rerender({ r: rec(21, { status: "done" }) })
-    act(() => vi.advanceTimersByTime(1000))
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
     rerender({ r: rec(21, { status: "done" }) })
     expect([...result.current]).toEqual(["status"])
-    act(() => vi.advanceTimersByTime(3000))
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
     expect(result.current.size).toBe(0)
   })
 })

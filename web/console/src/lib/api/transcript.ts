@@ -145,7 +145,7 @@ export function toolOK(record: SubstrateRecord): boolean {
   try {
     const parsed: unknown = JSON.parse(content)
     if (typeof parsed !== "object" || parsed === null) return true
-    const keys = Object.keys(parsed as Record<string, unknown>)
+    const keys = Object.keys(parsed)
     return !(keys.length === 1 && keys[0] === "error")
   } catch {
     return true
@@ -268,7 +268,7 @@ export function proposedRequestId(call: ToolCallView): string | undefined {
   try {
     const parsed: unknown = JSON.parse(payload)
     if (typeof parsed !== "object" || parsed === null) return undefined
-    const keys = Object.keys(parsed as Record<string, unknown>)
+    const keys = Object.keys(parsed)
     if (keys.length !== 1 || keys[0] !== "id") return undefined
     const id = (parsed as Record<string, unknown>).id
     if (typeof id !== "string" || !MINTED_ID.test(id)) return undefined

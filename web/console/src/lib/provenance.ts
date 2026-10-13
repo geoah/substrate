@@ -285,7 +285,7 @@ export function unionMembers(
   if (!offers.length) return []
   const same = (a: unknown, b: unknown) =>
     JSON.stringify(a) === JSON.stringify(b)
-  return value.map((item) => {
+  return value.map((item: unknown) => {
     const sources: string[] = []
     if (meta.tier === "machine" && meta.source) sources.push(meta.source)
     for (const offer of offers) {

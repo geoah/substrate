@@ -23,10 +23,8 @@ import {
 } from "@/lib/kind-names"
 
 export const FUNCTION_KIND = `${CORE_PACKAGE}/function`
-export const TRIGGER_KIND = `${CORE_PACKAGE}/trigger`
 export const TRIGGER_RUN_KIND = `${CORE_PACKAGE}/triggerrun`
 export const AGENT_KIND = `${CORE_PACKAGE}/agent`
-export const KIND_KIND = `${CORE_PACKAGE}/kind`
 
 /** The four host functions core ships. */
 export const HOST_QUERY = `${CORE_PACKAGE}/query`
@@ -962,7 +960,7 @@ export function valueWords(value: unknown): string {
     return value.length === 1
       ? "1 item"
       : `${value.length.toLocaleString()} items`
-  const n = Object.keys(value as object).length
+  const n = Object.keys(value).length
   return n === 1 ? "1 field" : `${n} fields`
 }
 

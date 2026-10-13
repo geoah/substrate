@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // The render check runs under node from `mise run console:render`, outside
+  // the Vite entry, and is what uses playwright-core.
+  "entry": ["scripts/render-smoke.mjs"],
+  "ignoreExportsUsedInFile": true,
+  // shadcn's CLI writes src/components/ui and re-exports every part of a
+  // component whether this console uses it or not. The files are never forked
+  // by hand, so their export lists are the registry's, not dead code here.
+  "ignoreIssues": {
+    "src/components/ui/**": ["exports", "types"]
+  }
+}

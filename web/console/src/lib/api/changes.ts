@@ -295,6 +295,7 @@ export function historyInfiniteOptions(
 ) {
   const first = opts.first ?? HISTORY_RUNS
   const rows = opts.rows ?? HISTORY_ROWS
+  const start: HistoryPosition = { before: 0 }
   return infiniteQueryOptions({
     queryKey: ["changes", "history", filterKey(filter), { first, rows }],
     queryFn: ({ pageParam, signal }) =>
@@ -306,7 +307,7 @@ export function historyInfiniteOptions(
         filter,
         signal,
       }),
-    initialPageParam: { before: 0 } as HistoryPosition,
+    initialPageParam: start,
     // The cursor is the oldest run's first row (or the page's oldest row):
     // its absence is the feed's beginning.
     getNextPageParam: (last): HistoryPosition | undefined =>
@@ -489,7 +490,7 @@ export function parseWatchLine(line: string): WatchLine | null {
         code: typeof e.code === "string" ? e.code : "internal",
         message: typeof e.message === "string" ? e.message : "stream failed",
         problems: Array.isArray(e.problems)
-          ? (e.problems.filter((p) => typeof p === "string") as string[])
+          ? e.problems.filter((p) => typeof p === "string")
           : undefined,
         problemDetails: Array.isArray(e.problemDetails)
           ? (e.problemDetails.filter(
