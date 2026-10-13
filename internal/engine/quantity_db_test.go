@@ -363,6 +363,71 @@ func TestFilterByComparatorReadsTheHalfLine(t *testing.T) {
 	}
 }
 
+// An order is resolved over the kinds the filter names: another kind that
+// declares the same name differently (a string weight, a secret value, a text
+// score) cannot turn a quantity order into a text sort or refuse it. With no
+// kind named, the order spans every kind, and a disagreement keeps the text
+// ordering it has always had.
+func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	labelKind := quantityPackage + "/label"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.PackageManifest(quantityPackage, 0),
+		readingManifest(map[string]any{
+			"value": map[string]any{"type": "quantity", "measures": "mass"},
+			"score": map[string]any{"type": "int"},
+		}),
+		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "label"}, map[string]any{
+			"properties": map[string]any{
+				"weight": map[string]any{"type": "string"},
+				"score":  map[string]any{"type": "string"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("install the kinds: %v", err)
+	}
+	for name, props := range map[string]map[string]any{
+		"grams": {"weight": qv("500", "g"), "value": qv("500", "g"), "score": 9},
+		"nine":  {"weight": qv("9", "kg"), "value": qv("9", "kg"), "score": 10},
+		"ten":   {"weight": qv("10", "kg"), "value": qv("10", "kg"), "score": 100},
+	} {
+		props["name"] = name
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: name, Properties: props}); err != nil {
+			t.Fatalf("put %s: %v", name, err)
+		}
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: labelKind, ID: "tag", Properties: map[string]any{
+		"weight": "heavy", "score": "high",
+	}}); err != nil {
+		t.Fatalf("put the label: %v", err)
+	}
+	for _, property := range []string{"weight", "value", "score"} {
+		t.Run(property, func(t *testing.T) {
+			got := readingNames(t, ds, substrate.Query{OrderBy: []substrate.Order{{Property: property}}})
+			if want := "grams,nine,ten"; strings.Join(got, ",") != want {
+				t.Fatalf("ordered by %s: %v, want %s", property, got, want)
+			}
+		})
+	}
+	// Unfiltered, the label's string weight still decides: the text order.
+	page, err := ds.List(ctx, substrate.Query{OrderBy: []substrate.Order{{Property: "score"}}, First: 50,
+		Filter: substrate.Filter{Kinds: []string{readingKind, labelKind}}})
+	if err != nil {
+		t.Fatalf("list across both kinds: %v", err)
+	}
+	var mixed []string
+	for _, r := range page.Records {
+		if n, ok := r.Properties["name"].(string); ok {
+			mixed = append(mixed, n)
+		}
+	}
+	if want := "nine,ten,grams"; strings.Join(mixed, ",") != want {
+		t.Fatalf("across kinds that disagree, ordered %v, want the text order %s", mixed, want)
+	}
+}
+
 // An order sorts by the value at its measure's base, so 155 pounds sits
 // between 50 kg and 71000 g; one-row pages put a cursor at every boundary.
 // The declared index on the property holds the same expression, and Postgres

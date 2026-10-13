@@ -416,11 +416,12 @@ func quantityClause(b *builder, v string, g quantityGroup, decls []quantityDecl,
 
 // --- ordering and the index expression ---
 
-// quantityProp reports the declarations of a name when EVERY loaded kind that
-// declares it declares one quantity, under numericProp's every-not-any rule.
-func (ds *dataset) quantityProp(name string) ([]*vocabulary.QuantitySpec, bool) {
+// quantityProp reports the declarations of a name when EVERY candidate kind
+// (readKinds) that declares it declares one quantity, under numericProp's
+// every-not-any rule.
+func (ds *dataset) quantityProp(types []*vocabulary.Kind, name string) ([]*vocabulary.QuantitySpec, bool) {
 	var specs []*vocabulary.QuantitySpec
-	for _, t := range ds.registry().Kinds() {
+	for _, t := range ds.readKinds(types) {
 		p, ok := t.Prop(name)
 		if !ok {
 			continue
@@ -530,7 +531,7 @@ func quantityBaseSQL(v string, specs []*vocabulary.QuantitySpec, stored ...strin
 // stays the declared index's.
 func (ds *dataset) quantityOrderTerms(ctx context.Context, x dbx, b *builder, types []*vocabulary.Kind, orders []substrate.Order, terms []orderTerm) ([]orderTerm, error) {
 	for i, o := range orders {
-		specs, ok := ds.quantityProp(o.Property)
+		specs, ok := ds.quantityProp(types, o.Property)
 		if !ok || i >= len(terms) {
 			continue
 		}
@@ -538,12 +539,8 @@ func (ds *dataset) quantityOrderTerms(ctx context.Context, x dbx, b *builder, ty
 		if terms[i].expr != quantityBaseSQL(v, specs) {
 			continue
 		}
-		among := types
-		if len(among) == 0 {
-			among = ds.registry().Kinds()
-		}
 		var open []string
-		for _, d := range quantityDecls(among, o.Property) {
+		for _, d := range quantityDecls(ds.readKinds(types), o.Property) {
 			if !quantityUnitsClosed(d.spec) {
 				open = append(open, d.kind)
 			}

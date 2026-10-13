@@ -626,7 +626,14 @@ filter makes. `rad` sorts through pi at 40 places; a level or an arbitrary
 unit sorts by its own number. A declared index on a quantity holds the same
 expression over the declared codes and needs `measures:` or `units:`; it
 serves the order while every stored unit is one of those codes, which
-`units:` guarantees. Only declared properties filter and order:
+`units:` guarantees. The engine resolves an order over the kinds the filter
+selects (`kinds`, narrowed by `implements` and `purposes`), or over every kind
+when the filter names none, so another kind's declaration of the same name
+changes nothing. Where two selected kinds declare the name differently (a
+quantity on one, a string on another), the order sorts by the property's
+stored JSON text, and a filter naming the one kind restores the typed order. A
+name any selected kind declares `secret` or `digest` is refused. Only declared
+properties filter and order:
 **filterable, indexed, and declared are the same set**, so a query that would
 be slow is one the grammar cannot express.
 

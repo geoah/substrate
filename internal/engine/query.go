@@ -472,7 +472,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	if err != nil {
 		return nil, err
 	}
-	terms, err := ds.orderTerms(q.OrderBy)
+	terms, err := ds.orderTerms(types, q.OrderBy)
 	if err != nil {
 		return nil, err
 	}
@@ -1390,14 +1390,24 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 	return nil
 }
 
-// numericProp reports whether EVERY loaded kind that declares this property
-// declares it as a number. Every one, and not any: a name that is an int on one
-// kind and a string on another cannot be cast without failing the query for the
-// rows that hold text, so a disagreement falls back to the text ordering it has
-// always had.
-func (ds *dataset) numericProp(name string) bool {
+// readKinds are the kinds an order is resolved over: the kinds the filter
+// names, else every loaded kind. A kind the read never selects has no row in
+// the order, so its declaration has no say in the expression.
+func (ds *dataset) readKinds(types []*vocabulary.Kind) []*vocabulary.Kind {
+	if len(types) > 0 {
+		return types
+	}
+	return ds.registry().Kinds()
+}
+
+// numericProp reports whether EVERY candidate kind (readKinds) that declares
+// this property declares it as a number. Every one, and not any: a name that is
+// an int on one kind and a string on another cannot be cast without failing
+// the query for the rows that hold text, so a disagreement falls back to the
+// text ordering it has always had.
+func (ds *dataset) numericProp(types []*vocabulary.Kind, name string) bool {
 	found := false
-	for _, t := range ds.registry().Kinds() {
+	for _, t := range ds.readKinds(types) {
 		p, ok := t.Prop(name)
 		if !ok {
 			continue
@@ -1412,11 +1422,11 @@ func (ds *dataset) numericProp(name string) bool {
 	return found
 }
 
-// moneyProp reports whether EVERY loaded kind that declares this property
+// moneyProp reports whether EVERY candidate kind that declares this property
 // declares it as one money value, under numericProp's every-not-any rule.
-func (ds *dataset) moneyProp(name string) bool {
+func (ds *dataset) moneyProp(types []*vocabulary.Kind, name string) bool {
 	found := false
-	for _, t := range ds.registry().Kinds() {
+	for _, t := range ds.readKinds(types) {
 		p, ok := t.Prop(name)
 		if !ok {
 			continue
@@ -1429,14 +1439,14 @@ func (ds *dataset) moneyProp(name string) bool {
 	return found
 }
 
-// datetimeProp reports whether EVERY loaded kind that declares this property
+// datetimeProp reports whether EVERY candidate kind that declares this property
 // declares it as an instant (datetime or date, the pair condJSON casts to
 // timestamptz), under numericProp's every-not-any rule: one kind holding text
 // at the same name would fail the cast for its rows, so a disagreement keeps
 // the text ordering.
-func (ds *dataset) datetimeProp(name string) bool {
+func (ds *dataset) datetimeProp(types []*vocabulary.Kind, name string) bool {
 	found := false
-	for _, t := range ds.registry().Kinds() {
+	for _, t := range ds.readKinds(types) {
 		p, ok := t.Prop(name)
 		if !ok {
 			continue
@@ -1449,15 +1459,15 @@ func (ds *dataset) datetimeProp(name string) bool {
 	return found
 }
 
-// referenceProp reports whether EVERY loaded kind that declares this property
+// referenceProp reports whether EVERY candidate kind that declares this property
 // declares it as a single reference, under numericProp's every-not-any rule: a
 // name that is a reference on one kind and text on another has no one
 // expression that reads both, so a disagreement keeps the text ordering.
 //
 // Repeated and keyed are excluded because there is no single path to order by.
-func (ds *dataset) referenceProp(name string) bool {
+func (ds *dataset) referenceProp(types []*vocabulary.Kind, name string) bool {
 	found := false
-	for _, t := range ds.registry().Kinds() {
+	for _, t := range ds.readKinds(types) {
 		p, ok := t.Prop(name)
 		if !ok {
 			continue
@@ -1719,8 +1729,10 @@ var nonNullColumns = map[string]bool{
 // no null branch and its ORDER BY needs no NULLS LAST.
 func (t orderTerm) nonNull() bool { return nonNullColumns[t.expr] }
 
-// orderExpr resolves one order property to its SQL expression.
-func (ds *dataset) orderExpr(property string) (string, error) {
+// orderExpr resolves one order property to its SQL expression over the kinds
+// the read selects (readKinds): a declaration on a kind the filter leaves out
+// decides nothing, and every candidate kind still has to agree.
+func (ds *dataset) orderExpr(types []*vocabulary.Kind, property string) (string, error) {
 	col, err := columnFor(property)
 	if err != nil {
 		return "", err
@@ -1728,13 +1740,13 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 	switch {
 	case col != "":
 		return col, nil
-	case ds.stateProp(nil, property):
+	case ds.stateProp(types, property):
 		// Built by concatenation, so escaped the same way indices.go builds its
 		// jsonb paths: the ValidCamel load-time invariant already forbids a
 		// quote, and sqlLiteral is the defense-in-depth that does not rely on it.
 		return `states->>` + sqlLiteral(property), nil
 	case vocabulary.ValidCamel(property):
-		if ds.sensitiveProp(nil, property) {
+		if ds.sensitiveProp(types, property) {
 			return "", fmt.Errorf("%w: %s is sensitive and cannot be ordered by",
 				substrate.ErrValidation, property)
 		}
@@ -1743,17 +1755,17 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// which is not an ordering anyone asked for and is silent about it.
 		// The declared datatype is the only thing that can say otherwise, and
 		// the same cast the FILTER already applies (condJSON) applies here.
-		if ds.numericProp(property) {
+		if ds.numericProp(types, property) {
 			return `(props->>` + sqlLiteral(property) + `)::numeric`, nil
 		}
 		// MONEY sorts by the exact number it denotes, across currencies: an
 		// order is one key, and a list that wants one currency filters on it.
-		if ds.moneyProp(property) {
+		if ds.moneyProp(types, property) {
 			return moneyValueSQL(`(props->` + sqlLiteral(property) + `)`), nil
 		}
 		// A QUANTITY sorts by the value converted to its measure's base, the
 		// expression a declared index on it holds (indices.go).
-		if specs, ok := ds.quantityProp(property); ok {
+		if specs, ok := ds.quantityProp(types, property); ok {
 			return quantityBaseSQL(`(props->`+sqlLiteral(property)+`)`, specs), nil
 		}
 		// An INSTANT sorts as an instant. validate.go normalizes a datetime to
@@ -1764,7 +1776,7 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// compare equal here, exactly as they already do in every range
 		// filter (condJSON casts the same way), and fall to the (kind, id)
 		// tiebreak, so the order stays strict and paging is unaffected.
-		if ds.datetimeProp(property) {
+		if ds.datetimeProp(types, property) {
 			return `(props->>` + sqlLiteral(property) + `)::timestamptz`, nil
 		}
 		// A REFERENCE sorts by the path it points at. Its stored value is the
@@ -1772,7 +1784,7 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// object text: rows would order by a JSON spelling nobody asked for,
 		// and silently. referencePathSQL reads the path out of either shape,
 		// the same expression the filters use.
-		if ds.referenceProp(property) {
+		if ds.referenceProp(types, property) {
 			return referencePathSQL("props", property), nil
 		}
 		return `props->>` + sqlLiteral(property), nil
@@ -1785,15 +1797,16 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 // including the trailing (`kind`, `id`) tiebreak that makes the order a STRICT
 // TOTAL order over the (type, id) identity. The
 // default order is newest-first (created_at DESC); the tiebreak takes the
-// leading key's direction, as it always has.
-func (ds *dataset) orderTerms(orders []substrate.Order) ([]orderTerm, error) {
+// leading key's direction, as it always has. types are the kinds the filter
+// selects, which orderExpr resolves each property over.
+func (ds *dataset) orderTerms(types []*vocabulary.Kind, orders []substrate.Order) ([]orderTerm, error) {
 	var terms []orderTerm
 	tieDesc := true
 	if len(orders) == 0 {
 		terms = append(terms, orderTerm{expr: "created_at", desc: true})
 	} else {
 		for _, o := range orders {
-			expr, err := ds.orderExpr(o.Property)
+			expr, err := ds.orderExpr(types, o.Property)
 			if err != nil {
 				return nil, err
 			}
