@@ -67,7 +67,10 @@ Chosen: a mode of the records route.
   0.9) and the summary otherwise, and each row says which it used.
 - **Source policies** (`separate` by default, `priority` with an ordered
   list, `summaries`) resolve per stored interval before bucketing, so a total
-  does not change with the bucket width.
+  does not change with the bucket width. `priority` weighs the higher
+  sources' amounts and summaries around the read's windows too, so a total
+  does not change with where the range starts either, and under `priority`
+  and `summaries` the one-statistic rule holds per source and per row.
 - **Records' source policy.** The records mode's windows and the property
   read's records are records several sources write of one night or one run.
   `bucket.records.sources` and `property.sources` (`separate` by default, or
@@ -83,8 +86,9 @@ Chosen: a mode of the records route.
   `zero` or `locf`), and `rolling` adds `avg`, `sum`, `min`, `max` or
   `stddev` over a window of buckets ending at each bucket or the one before
   it, reading the buckets the window needs before the range.
-- **Budgets.** `maxBuckets` (series times buckets, default 1,440, cap
-  10,000), `maxSamples` (the raw points and rollup rows the statements take,
+- **Budgets.** `maxBuckets` (series times the buckets the read answers,
+  default 1,440, cap 10,000; a rolling window's buckets before the range
+  are held to the cap instead), `maxSamples` (the raw points and rollup rows the statements take,
   each statement's counted before it runs), `maxGroups`, and a statement
   timeout inside the caller's deadline. Each budget is checked before the
   work it bounds: the groups, the series and the buckets after the
