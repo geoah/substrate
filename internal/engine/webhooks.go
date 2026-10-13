@@ -572,20 +572,11 @@ func (ds *dataset) spoolParkedBody(ctx context.Context, body, req map[string]any
 	if _, referenced := body["blob"]; referenced {
 		return body, nil
 	}
-	var data []byte
-	encoding := ""
-	switch {
-	case body["text"] != nil:
-		text, _ := body["text"].(string)
-		data, encoding = []byte(text), "text"
-	case body["base64"] != nil:
-		enc, _ := body["base64"].(string)
-		decoded, err := base64.StdEncoding.DecodeString(enc)
-		if err != nil {
-			return nil, fmt.Errorf("substrate: parked body: %w", err)
-		}
-		data, encoding = decoded, "base64"
-	default:
+	data, encoding, ok, err := ds.storedBodyBytes(ctx, body)
+	if err != nil {
+		return nil, fmt.Errorf("substrate: parked body: %w", err)
+	}
+	if !ok {
 		return body, nil
 	}
 	mediaType, _ := req["contentType"].(string)
@@ -637,17 +628,15 @@ func (ds *dataset) spoolParkedParts(ctx context.Context, parts []any) ([]any, er
 // alone.
 func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string]any) error {
 	req, _ := envelope["request"].(map[string]any)
-	if body, _ := req["body"].(map[string]any); body != nil {
-		if digest, _ := body["blob"].(string); digest != "" {
-			_, data, err := ds.GetBlob(ctx, digest)
-			if err != nil {
-				return fmt.Errorf("substrate: parked body %s: %w", digest, err)
-			}
-			if encoding, _ := body["encoding"].(string); encoding == "base64" {
-				req["body"] = map[string]any{"base64": base64.StdEncoding.EncodeToString(data)}
-			} else {
-				req["body"] = map[string]any{"text": string(data)}
-			}
+	if body, _ := req["body"].(map[string]any); body != nil && body["blob"] != nil {
+		data, encoding, _, err := ds.storedBodyBytes(ctx, body)
+		if err != nil {
+			return fmt.Errorf("substrate: parked body: %w", err)
+		}
+		if encoding == "base64" {
+			req["body"] = map[string]any{"base64": base64.StdEncoding.EncodeToString(data)}
+		} else {
+			req["body"] = map[string]any{"text": string(data)}
 		}
 	}
 	parts, _ := req["parts"].([]any)
@@ -674,6 +663,37 @@ func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string
 		parts[i] = restored
 	}
 	return nil
+}
+
+// storedBodyBytes reads a stored request body's raw bytes in any of its
+// shapes: `{text}` and `{base64}` as the callable reads it, and `{blob,
+// encoding}` as the ledger parks it, read back from the blob store. encoding
+// is the shape the callable reads the bytes in, `text` or `base64`. ok is
+// false for a body in none of them. Every reader of a stored body goes
+// through here, so a new shape is one case and no reader is left decoding
+// it as empty.
+func (ds *dataset) storedBodyBytes(ctx context.Context, body map[string]any) (data []byte, encoding string, ok bool, err error) {
+	switch {
+	case body["blob"] != nil:
+		digest, _ := body["blob"].(string)
+		if _, data, err = ds.GetBlob(ctx, digest); err != nil {
+			return nil, "", false, fmt.Errorf("blob %s: %w", digest, err)
+		}
+		if encoding, _ = body["encoding"].(string); encoding != "base64" {
+			encoding = "text"
+		}
+		return data, encoding, true, nil
+	case body["base64"] != nil:
+		enc, _ := body["base64"].(string)
+		if data, err = base64.StdEncoding.DecodeString(enc); err != nil {
+			return nil, "", false, err
+		}
+		return data, "base64", true, nil
+	case body["text"] != nil:
+		text, _ := body["text"].(string)
+		return []byte(text), "text", true, nil
+	}
+	return nil, "", false, nil
 }
 
 // webhookInlineBytes is what of a request rides the envelope inline: the

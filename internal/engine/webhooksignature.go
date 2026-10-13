@@ -678,26 +678,12 @@ func (ds *dataset) storedWebhookRequest(ctx context.Context, req map[string]any)
 		out.Parts = []substrate.WebhookPart{}
 		return out, nil
 	}
-	body, _ := req["body"].(map[string]any)
-	switch {
-	case body == nil:
-	case body["blob"] != nil:
-		digest, _ := body["blob"].(string)
-		_, data, err := ds.GetBlob(ctx, digest)
-		if err != nil {
-			return out, fmt.Errorf("substrate: stored webhook body %s: %w", digest, err)
-		}
-		out.Body = data
-	case body["base64"] != nil:
-		enc, _ := body["base64"].(string)
-		data, err := base64.StdEncoding.DecodeString(enc)
+	if body, _ := req["body"].(map[string]any); body != nil {
+		data, _, _, err := ds.storedBodyBytes(ctx, body)
 		if err != nil {
 			return out, fmt.Errorf("substrate: stored webhook body: %w", err)
 		}
 		out.Body = data
-	default:
-		text, _ := body["text"].(string)
-		out.Body = []byte(text)
 	}
 	return out, nil
 }
