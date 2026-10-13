@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,9 +37,15 @@ type client struct {
 }
 
 func (c *client) do(ctx context.Context, method, path string, body []byte, headers map[string]string) (int, []byte, error) {
+	st, out, _, err := c.request(ctx, method, path, body, headers)
+	return st, out, err
+}
+
+// request is do with the response's headers.
+func (c *client) request(ctx context.Context, method, path string, body []byte, headers map[string]string) (int, []byte, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.server+path, bytes.NewReader(body))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	// The token reaches the API alone: a webhook post carries the trigger's
 	// key and the door never needs the repository's credential.
@@ -53,11 +60,40 @@ func (c *client) do(ctx context.Context, method, path string, body []byte, heade
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
 	out, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, out, err
+	return resp.StatusCode, out, resp.Header, err
+}
+
+// postTries is how many times one delivery is posted before the load stops.
+const postTries = 6
+
+// postWebhook posts one delivery to the door, posting it again while the
+// door answers 503 (after its Retry-After) or the connection fails, with a
+// wait that doubles from a second. A delivery the door took before the
+// connection failed is posted twice; the providers key their rows by the
+// delivery's own ids, so the second post rewrites them unchanged.
+func (c *client) postWebhook(ctx context.Context, path string, body []byte, headers map[string]string) (int, []byte, error) {
+	wait := time.Second
+	for try := 1; ; try++ {
+		st, out, hdr, err := c.request(ctx, http.MethodPost, path, body, headers)
+		if err == nil && st != http.StatusServiceUnavailable {
+			return st, out, nil
+		}
+		if try == postTries || ctx.Err() != nil {
+			return st, out, err
+		}
+		next := wait
+		if secs, perr := strconv.Atoi(hdr.Get("Retry-After")); err == nil && perr == nil && secs >= 0 {
+			next = time.Duration(secs) * time.Second
+		}
+		if err := sleep(ctx, next); err != nil {
+			return st, out, err
+		}
+		wait = min(2*wait, 30*time.Second)
+	}
 }
 
 // put writes one record document (kind, metadata.id, data.properties).
@@ -234,6 +270,7 @@ func load(args []string, stdout, stderr io.Writer) error {
 	providers := fs.String("providers", "", "comma-separated providers; empty is every one with output in -dir")
 	key := fs.String("key", "", "the webhook key to arm the push triggers with (default $SYNTH_WEBHOOK_KEY)")
 	replaceKey := fs.Bool("replace-key", false, "replace a webhook key a push trigger already has")
+	resume := fs.String("resume", "", "take up an interrupted load at PROVIDER/NNNN, such as garmin/0400: the providers before it and its own setup are skipped")
 	settle := fs.Duration("settle", 5*time.Minute, "how long to wait for each delivery's run")
 	repo := fs.String("repo", ".", "the substrate checkout the e2e runner and the bundles are read from (any directory inside it)")
 	ctl := fs.String("ctl", "", "the substratectl binary the runner applies bundles with (default <repo>/bin/substratectl)")
@@ -269,6 +306,27 @@ func load(args []string, stdout, stderr io.Writer) error {
 		loading = append(loading, e)
 		if _, posts := statOK(filepath.Join(base, "deliveries")); posts && !webhookKeyPattern.MatchString(*key) {
 			return fmt.Errorf("%s posts to a webhook door: name its key with -key or SYNTH_WEBHOOK_KEY, 16 to 128 of A-Z, a-z, 0-9, _ and -", e.Name())
+		}
+	}
+	post := &poster{c: c, key: *key, replaceKey: *replaceKey, settle: *settle, stdout: stdout}
+	if *resume != "" {
+		provider, n, err := parseResume(*resume)
+		if err != nil {
+			return err
+		}
+		for i, e := range loading {
+			if e.Name() != provider {
+				continue
+			}
+			if err := post.deliveries(ctx, provider, filepath.Join(*dir, provider), n); err != nil {
+				return fmt.Errorf("%s: %w", provider, err)
+			}
+			loading = loading[i+1:]
+			*resume = ""
+			break
+		}
+		if *resume != "" {
+			return fmt.Errorf("-resume %s: no %s output under %s", *resume, provider, *dir)
 		}
 	}
 	for _, e := range loading {
@@ -321,7 +379,7 @@ func load(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 		if hasDeliveries {
-			if err := postDeliveries(ctx, c, base, *key, *replaceKey, *settle, stdout); err != nil {
+			if err := post.deliveries(ctx, e.Name(), base, 1); err != nil {
 				return fmt.Errorf("%s: %w", e.Name(), err)
 			}
 		}
@@ -630,10 +688,32 @@ type envelope struct {
 	Trigger string `json:"trigger"`
 }
 
-// postDeliveries posts every delivery under base in order, arming each
-// trigger first. A trigger the loader found disabled is disabled again when
-// it returns, so the door it opened with the key closes with it.
-func postDeliveries(ctx context.Context, c *client, base, key string, replaceKey bool, settle time.Duration, stdout io.Writer) (err error) {
+// parseResume reads -resume's PROVIDER/NNNN.
+func parseResume(v string) (string, int, error) {
+	provider, num, ok := strings.Cut(v, "/")
+	n, err := strconv.Atoi(num)
+	if !ok || provider == "" || err != nil || n < 1 {
+		return "", 0, fmt.Errorf("-resume %s: want PROVIDER/NNNN, such as garmin/0400", v)
+	}
+	return provider, n, nil
+}
+
+// poster posts a provider's deliveries to the webhook door.
+type poster struct {
+	c          *client
+	key        string
+	replaceKey bool
+	settle     time.Duration
+	stdout     io.Writer
+}
+
+// deliveries posts the deliveries under base in order from the from-th,
+// arming each trigger first and waiting for each run. It stops on a delivery
+// the door refuses or that parks, naming the -resume that takes the load up
+// again. A trigger the loader found disabled is disabled again when it
+// returns, so the door it opened with the key closes with it.
+func (p *poster) deliveries(ctx context.Context, provider, base string, from int) (err error) {
+	c := p.c
 	files, err := filepath.Glob(filepath.Join(base, "deliveries", "*.json"))
 	if err != nil {
 		return err
@@ -641,8 +721,14 @@ func postDeliveries(ctx context.Context, c *client, base, key string, replaceKey
 	if len(files) == 0 {
 		return fmt.Errorf("no deliveries under %s", base)
 	}
+	if from > len(files) {
+		return fmt.Errorf("-resume %s/%04d: %s has %d deliveries", provider, from, base, len(files))
+	}
 	sort.Strings(files)
 	armed := map[string]bool{}
+	// parked is each trigger's parked count before this load posted to it:
+	// a delivery an earlier run parked is not this run's to stop on.
+	parked := map[string]int64{}
 	defer func() {
 		for id, wasEnabled := range armed {
 			if wasEnabled {
@@ -654,7 +740,8 @@ func postDeliveries(ctx context.Context, c *client, base, key string, replaceKey
 		}
 	}()
 	started := time.Now()
-	for i, f := range files {
+	for i := from - 1; i < len(files); i++ {
+		f := files[i]
 		raw, err := os.ReadFile(f) //nolint:gosec // the path generate wrote
 		if err != nil {
 			return err
@@ -673,11 +760,14 @@ func postDeliveries(ctx context.Context, c *client, base, key string, replaceKey
 					headers = append(headers, h)
 				}
 			}
-			wasEnabled, err := c.arm(ctx, env.Trigger, key, replaceKey, headers)
+			wasEnabled, err := c.arm(ctx, env.Trigger, p.key, p.replaceKey, headers)
 			if err != nil {
 				return err
 			}
 			armed[env.Trigger] = wasEnabled
+			if _, parked[env.Trigger], err = c.settled(ctx, env.Trigger); err != nil {
+				return err
+			}
 		}
 		path := "/webhooks/" + c.authority + "/" + env.Trigger
 		headers := map[string]string{}
@@ -688,9 +778,9 @@ func postDeliveries(ctx context.Context, c *client, base, key string, replaceKey
 			headers[k] = v
 		}
 		if env.Request.Headers["authorization"] == "" {
-			path += "/" + key
+			path += "/" + p.key
 		} else {
-			headers["authorization"] = "Bearer " + key
+			headers["authorization"] = "Bearer " + p.key
 		}
 		if len(env.Request.Query) > 0 {
 			q := url.Values{}
@@ -699,22 +789,23 @@ func postDeliveries(ctx context.Context, c *client, base, key string, replaceKey
 			}
 			path += "?" + q.Encode()
 		}
-		st, out, err := c.do(ctx, http.MethodPost, path, []byte(env.Request.Body.Text), headers)
+		st, out, err := c.postWebhook(ctx, path, []byte(env.Request.Body.Text), headers)
 		if err != nil {
-			return fmt.Errorf("%s: %w", filepath.Base(f), err)
+			return fmt.Errorf("%s: %w; take the load up with -resume %s/%04d", filepath.Base(f), err, provider, i+1)
 		}
 		if st >= 300 {
-			return fmt.Errorf("%s: %d %s", filepath.Base(f), st, truncate(out))
+			return fmt.Errorf("%s: %d %s; take the load up with -resume %s/%04d", filepath.Base(f), st, truncate(out), provider, i+1)
 		}
-		parked, err := c.awaitSettled(ctx, env.Trigger, settle)
+		now, err := c.awaitSettled(ctx, env.Trigger, p.settle)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w; take the load up with -resume %s/%04d", err, provider, i+2)
 		}
-		if parked > 0 {
-			return fmt.Errorf("%s: %d deliveries parked on %s; `substratectl trigger parked %s` names why", filepath.Base(f), parked, env.Trigger, env.Trigger)
+		if now > parked[env.Trigger] {
+			return fmt.Errorf("%s parked on %s; `substratectl trigger parked %s` names why, and -resume %s/%04d takes the load up after it",
+				filepath.Base(f), env.Trigger, env.Trigger, provider, i+2)
 		}
-		fmt.Fprintf(stdout, "\r%s: %d/%d posted (%s)", filepath.Base(base), i+1, len(files), time.Since(started).Round(time.Second))
+		fmt.Fprintf(p.stdout, "\r%s: %d/%d posted (%s)", provider, i+1, len(files), time.Since(started).Round(time.Second))
 	}
-	fmt.Fprintln(stdout)
+	fmt.Fprintln(p.stdout)
 	return nil
 }

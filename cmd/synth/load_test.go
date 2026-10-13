@@ -38,9 +38,9 @@ type fakeSubstrate struct {
 	parkAt int
 	// pendingPolls is how many status reads see a delivery still pending.
 	pendingPolls int
-	posts    int
-	webhooks []*http.Request
-	records  map[string]map[string]any
+	posts        int
+	webhooks     []*http.Request
+	records      map[string]map[string]any
 }
 
 func newFakeSubstrate(t *testing.T) *fakeSubstrate {
@@ -367,5 +367,64 @@ func TestAwaitSettledPollsAgainSoon(t *testing.T) {
 	}
 	if took := time.Since(started); took > 250*time.Millisecond {
 		t.Errorf("settling after two pending reads took %s", took)
+	}
+}
+
+// A busy door answers 503 with Retry-After; the loader waits and posts the
+// same delivery again instead of abandoning the load.
+func TestLoadRetriesABusyDoor(t *testing.T) {
+	f := newFakeSubstrate(t)
+	f.busy = 1
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
+	}
+	if f.posts != 2 || len(f.webhooks) != 3 {
+		t.Errorf("%d deliveries taken over %d posts, want 2 over 3", f.posts, len(f.webhooks))
+	}
+}
+
+// A delivery an earlier run parked is not this run's failure: the loader
+// stops on a park its own post caused, and names where to resume.
+func TestLoadStopsOnTheParkItCaused(t *testing.T) {
+	f := newFakeSubstrate(t)
+	f.parked["applehealth-webhook"] = 1
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth"); err != nil {
+		t.Fatalf("a load beside an earlier park: %v\n%s", err, out)
+	}
+
+	f = newFakeSubstrate(t)
+	f.parkAt = 1
+	out, err := f.runLoad(t, "-dir", dir, "-providers", "applehealth")
+	if err == nil || !strings.Contains(err.Error(), "-resume applehealth/0002") {
+		t.Fatalf("a load whose first delivery parked = %v, want a stop naming -resume applehealth/0002\n%s", err, out)
+	}
+	if f.posts != 1 {
+		t.Errorf("the load posted %d deliveries after a park", f.posts)
+	}
+}
+
+// -resume takes up an interrupted load at one provider's delivery: the
+// providers before it and its own setup ran already.
+func TestLoadResumesAtADelivery(t *testing.T) {
+	f := newFakeSubstrate(t)
+	dir := generated(t, testAuthority, synth.AppleHealth{})
+	t.Setenv("SYNTH_WEBHOOK_KEY", testKey)
+	if out, err := f.runLoad(t, "-dir", dir, "-resume", "applehealth/0002"); err != nil {
+		t.Fatalf("load: %v\n%s", err, out)
+	}
+	if len(f.webhooks) != 1 || !strings.HasSuffix(f.webhooks[0].URL.Path, "/applehealth-webhook") {
+		t.Errorf("a resume at the second delivery posted %d", len(f.webhooks))
+	}
+	for _, r := range f.log() {
+		if strings.Contains(r, "/catalog/") || strings.HasPrefix(r, "PUT ") {
+			t.Errorf("a resume ran setup again: %s", r)
+		}
+	}
+	if _, err := f.runLoad(t, "-dir", dir, "-resume", "whoop/0001"); err == nil {
+		t.Error("a resume at a provider with nothing generated was taken")
 	}
 }
