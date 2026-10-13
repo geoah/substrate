@@ -10,8 +10,8 @@ data:
   package: health
   description: >-
     One workout, such as a run or a ride. The sport, when it began and ended,
-    how long and how far, the energy it took, the heart rate during it and
-    the time spent in each heart rate zone.
+    how long and how far, the active and total energy it took, the heart rate
+    during it and the time spent in each heart rate zone.
   purpose: primary
   names:
     singular: workout
@@ -20,12 +20,39 @@ data:
     - substrate.reamde.dev/core/revised
   displayTemplate: "{sport} {at}"
   properties:
+    # one code set for every source, so a reader counts a WHOOP
+    # weightlifting session and a Garmin strength session as one sport. An
+    # adapter maps the provider's word onto it, writes other for a word it
+    # cannot map, and keeps the word itself in sportSource. A new value is
+    # an additive upgrade.
     sport:
-      type: string
-      description: the sport, such as running, cycling or strength
+      type: enum
+      description: the sport, from one code set every source maps onto; other
+        where the source's sport has no value of its own
+      values:
+        - running
+        - walking
+        - hiking
+        - cycling
+        - swimming
+        - strength
+        - yoga
+        - pilates
+        - rowing
+        - elliptical
+        - stairs
+        - hiit
+        - dance
+        - boxing
+        - climbing
+        - tennis
+        - golf
+        - skiing
+        - other
     sportSource:
       type: string
-      description: the sport as the source named it, before mapping
+      description: the sport as the source named it, before mapping, such
+        as weightlifting or TRAIL_RUNNING
     source:
       type: reference
       kind: samples.substrate.reamde.dev/observations/source
@@ -65,10 +92,17 @@ data:
       type: quantity
       measures: length
       description: how far
-    energy:
+    # the split the metric catalogue keeps (health/active_energy and
+    # health/energy_expended): WHOOP reports the total, Apple and Garmin the
+    # active part, and the two never add
+    activeEnergy:
       type: quantity
       measures: energy
-      description: the energy it took
+      description: the energy spent above the resting rate during it
+    totalEnergy:
+      type: quantity
+      measures: energy
+      description: all the energy spent during it, resting and active together
     averageHeartRate:
       type: quantity
       measures: rate
