@@ -135,7 +135,8 @@ data:
   # reads the sleep a `recovery.updated` event names to find its cycle.
   # `whoopwebhook` drops an event WHOOP answers 401 or 403 for instead of
   # failing the delivery. `recovery` declares `cycleId`, the id the sync
-  # reads a recovery back by when no cycle row exists. ADDITIVE.
+  # reads a recovery back by when no cycle row exists. Both functions import
+  # their row mapping from the bundle's `whoop_mirror` module. ADDITIVE.
   version: 21
 ---
 # ---- the bundle document: the install unit --------------------------------
@@ -230,6 +231,292 @@ data:
     - providers.substrate.reamde.dev/whoop/workout
     - providers.substrate.reamde.dev/whoop/whoopsync
     - providers.substrate.reamde.dev/whoop/whoopwebhook
+  # The functions' shared library: one module on the import path of every
+  # function the bundle installs. A body cannot import another body.
+  modules:
+    whoop_mirror.py: |
+      """The WHOOP closure's shared library: what `whoopsync` and `whoopwebhook`
+      must agree on, kept once.
+
+      A function body cannot import another body, so the mapping from a WHOOP v2
+      object to its mirror row, the origin the token may reach and the 429 hold
+      live here, in the bundle's `modules:`, and both bodies import them. A WHOOP
+      object either body reads is therefore written as one shape.
+      """
+      import datetime as _dt
+      from urllib.parse import urlsplit as _urlsplit
+
+      PKG = "providers.substrate.reamde.dev/whoop"
+      ACCOUNT_KIND = PKG + "/account"
+      USER_KIND = PKG + "/user"
+      CYCLE_KIND = PKG + "/cycle"
+      RECOVERY_KIND = PKG + "/recovery"
+      SLEEP_KIND = PKG + "/sleep"
+      WORKOUT_KIND = PKG + "/workout"
+
+      DEFAULT_API_BASE = "https://api.prod.whoop.com/developer"
+      API_HOST = "api.prod.whoop.com"   # the ONLY non-loopback origin the token may reach
+      LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+      # The three values the v2 schema closes `score_state` at, and the spelling the
+      # loader admits. THE SYNC CARRIES THE SAME TABLE THE DECLARATION DOES (§2): a
+      # value outside it leaves the property ABSENT rather than refusing the page,
+      # because one new WHOOP word must not cost an account its whole run.
+      SCORE_STATES = {"SCORED": "scored", "PENDING_SCORE": "pendingscore",
+                      "UNSCORABLE": "unscorable"}
+
+      CYCLE_SCORE = (("strain", "strain"), ("kilojoule", "kilojoule"),
+                     ("average_heart_rate", "averageHeartRate"),
+                     ("max_heart_rate", "maxHeartRate"))
+      RECOVERY_SCORE = (("user_calibrating", "userCalibrating"),
+                        ("recovery_score", "recoveryScore"),
+                        ("resting_heart_rate", "restingHeartRate"),
+                        ("hrv_rmssd_milli", "hrvRmssdMilli"),
+                        ("spo2_percentage", "spo2Percentage"),
+                        ("skin_temp_celsius", "skinTempCelsius"))
+      SLEEP_SCORE = (("respiratory_rate", "respiratoryRate"),
+                     ("sleep_performance_percentage", "sleepPerformancePercentage"),
+                     ("sleep_consistency_percentage", "sleepConsistencyPercentage"),
+                     ("sleep_efficiency_percentage", "sleepEfficiencyPercentage"))
+      STAGE_SUMMARY = (("total_in_bed_time_milli", "totalInBedTimeMilli"),
+                       ("total_awake_time_milli", "totalAwakeTimeMilli"),
+                       ("total_no_data_time_milli", "totalNoDataTimeMilli"),
+                       ("total_light_sleep_time_milli", "totalLightSleepTimeMilli"),
+                       ("total_slow_wave_sleep_time_milli", "totalSlowWaveSleepTimeMilli"),
+                       ("total_rem_sleep_time_milli", "totalRemSleepTimeMilli"),
+                       ("sleep_cycle_count", "sleepCycleCount"),
+                       ("disturbance_count", "disturbanceCount"))
+      SLEEP_NEEDED = (("baseline_milli", "baselineMilli"),
+                      ("need_from_sleep_debt_milli", "needFromSleepDebtMilli"),
+                      ("need_from_recent_strain_milli", "needFromRecentStrainMilli"),
+                      ("need_from_recent_nap_milli", "needFromRecentNapMilli"))
+      WORKOUT_SCORE = (("strain", "strain"),
+                       ("average_heart_rate", "averageHeartRate"),
+                       ("max_heart_rate", "maxHeartRate"), ("kilojoule", "kilojoule"),
+                       ("percent_recorded", "percentRecorded"),
+                       ("distance_meter", "distanceMeter"),
+                       ("altitude_gain_meter", "altitudeGainMeter"),
+                       ("altitude_change_meter", "altitudeChangeMeter"))
+      ZONE_DURATIONS = (("zone_zero_milli", "zoneZeroMilli"),
+                        ("zone_one_milli", "zoneOneMilli"),
+                        ("zone_two_milli", "zoneTwoMilli"),
+                        ("zone_three_milli", "zoneThreeMilli"),
+                        ("zone_four_milli", "zoneFourMilli"),
+                        ("zone_five_milli", "zoneFiveMilli"))
+
+
+      # ------------------------------------------------------------------ plumbing
+
+      def parse(value):
+          """An RFC 3339 instant, or None. WHOOP spells them with a `Z` and with
+          fractional seconds; fromisoformat takes both from 3.11."""
+          if not value:
+              return None
+          try:
+              return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+          except ValueError:
+              return None
+
+
+      def check_origin(url):
+          """The bundle-side origin pin.
+
+          A request that would carry the injected token may reach ONLY the pinned
+          production host over HTTPS, or loopback (the test seam and the mock
+          server). `apiBase` is an owner-editable config property, so it is checked,
+          never trusted.
+          """
+          u = _urlsplit(url)
+          host = (u.hostname or "").lower()
+          if host in LOOPBACK_HOSTS:
+              return
+          if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
+              return
+          raise RuntimeError(
+              "whoop: refusing to send credentials to %s://%s:%s; only "
+              "https://api.prod.whoop.com or loopback"
+              % (u.scheme, host or "?", u.port or "-"))
+
+
+      def api_base(cfg):
+          """The data API's origin: the client input's `apiBase`, else WHOOP's."""
+          client = ((cfg.get("inputs") or {}).get("client") or {})
+          base = ((client.get("properties") or {}).get("apiBase") or "").strip()
+          return (base or DEFAULT_API_BASE).rstrip("/")
+
+
+      def held(props):
+          """Whether the account's 429 hold is still ahead. WHOOP named an instant to
+          come back, and a read before it earns the next 429, so every entry path
+          asks this, not only the schedule."""
+          hold = parse(props.get("retryNotBefore"))
+          return hold is not None and _dt.datetime.now(_dt.timezone.utc) < hold
+
+
+      def rid(host, aid, prefix, key):
+          """A row id: host.ids.external("whoop", account, "<prefix>/<WHOOP id>"),
+          so a re-read composes the same id and two accounts never collide."""
+          return host.ids.external("whoop", aid, prefix + "/" + str(key))
+
+
+      # ----------------------------------------------------------- property shapes
+      # One rule, everywhere: from an AUTHORITATIVE payload a declared property the
+      # response omits is None, which the PATCH writes as a delete; a key carried as
+      # null is None too. `mint` is the non-null half, which is what a create may
+      # carry.
+
+      def take(dst, src, pairs, authoritative=True):
+          """One scalar each, with §1's presence rule.
+
+          An EXPLICIT EMPTY IS A CLEAR, and `""` is never written through: nothing
+          WHOOP sends has the empty string as a legal value, and half of these
+          properties are `datetime`, which would refuse it and take the whole page
+          down with it (§1, and the Slack v2 amendment behind it).
+          """
+          for api, prop in pairs:
+              if api in src:
+                  value = src[api]
+                  dst[prop] = None if value == "" else value
+              elif authoritative:
+                  dst[prop] = None
+          return dst
+
+
+      def mint(props):
+          return {k: v for k, v in props.items() if v is not None}
+
+
+      def score_state(props, rec):
+          """`score_state` onto the row, by the table the declaration carries (§2).
+
+          A word the table holds is the spelled enum value. A word it does not hold
+          leaves the property absent: the enum would refuse it, and losing one
+          property beats refusing the page. The key missing from an authoritative
+          payload is None, a delete.
+          """
+          if "score_state" not in rec:
+              props["scoreState"] = None
+              return
+          value = SCORE_STATES.get(str(rec.get("score_state") or "").upper())
+          if value is not None:
+              props["scoreState"] = value
+
+
+      def obj(src, pairs):
+          """One nested object, written whole or not at all (§1: a patch replaces an
+          object value entire). None when WHOOP sent no object: `score` is absent
+          unless the record is SCORED, and an empty object is not the same thing."""
+          if not isinstance(src, dict):
+              return None
+          out = take({}, src, pairs, authoritative=False)
+          return out or None
+
+
+      def span(props, rec):
+          """`start` and `end` into the temporal trait's slots (§4).
+
+          `end` is absent on the CURRENT cycle, and an authoritative payload's
+          absence is a clear: a cycle that comes back open has to lose its `endsAt`.
+          `at` is never nulled, because `start` is required on all three kinds that
+          bind a range and a record without one is malformed.
+          """
+          if rec.get("start"):
+              props["at"] = rec["start"]
+          props["endsAt"] = rec.get("end") or None
+
+
+      # --------------------------------------------------------- the row mappings
+      # Each answers (kind, row id, properties) for one WHOOP v2 object, or raises
+      # ValueError for a record that carries no id to key it on. `user_rid` is the
+      # member row the record belongs to.
+
+      def cycle_row(host, aid, user_rid, rec):
+          cid = rec.get("id")
+          if cid in (None, ""):
+              raise ValueError("cycle record carries no id")
+          props = {"account": aid, "cycleId": int(cid), "user": user_rid}
+          span(props, rec)
+          take(props, rec, (("timezone_offset", "timezoneOffset"),
+                            ("created_at", "createdAt"),
+                            ("updated_at", "updatedAt")))
+          score_state(props, rec)
+          props["score"] = obj(rec.get("score"), CYCLE_SCORE)
+          return CYCLE_KIND, rid(host, aid, "cycle", cid), props
+
+
+      def recovery_row(host, aid, user_rid, rec):
+          """A v2 recovery has no id of its own: its row is keyed on the cycle it
+          scores, which is how WHOOP addresses it, and keeps that `cycleId` to be
+          read back by."""
+          cid = rec.get("cycle_id")
+          if cid in (None, ""):
+              raise ValueError("recovery record carries no cycle_id, and a v2 "
+                               "recovery has no id of its own to fall back on")
+          sid = rec.get("sleep_id")
+          if sid in (None, ""):
+              raise ValueError("recovery record carries no sleep_id")
+          props = {"account": aid, "user": user_rid, "cycleId": int(cid),
+                   "cycle": rid(host, aid, "cycle", cid),
+                   "sleep": rid(host, aid, "sleep", sid)}
+          # `created_at` is the trait's `at` and is not redeclared.
+          if rec.get("created_at"):
+              props["at"] = rec["created_at"]
+          take(props, rec, (("updated_at", "updatedAt"),))
+          score_state(props, rec)
+          props["score"] = obj(rec.get("score"), RECOVERY_SCORE)
+          return RECOVERY_KIND, rid(host, aid, "recovery", cid), props
+
+
+      def sleep_row(host, aid, user_rid, rec):
+          sid = rec.get("id")
+          if sid in (None, ""):
+              raise ValueError("sleep record carries no id")
+          cid = rec.get("cycle_id")
+          if cid in (None, ""):
+              raise ValueError("sleep record carries no cycle_id")
+          props = {"account": aid, "sleepId": str(sid), "user": user_rid,
+                   "cycle": rid(host, aid, "cycle", cid)}
+          span(props, rec)
+          take(props, rec, (("v1_id", "v1Id"),
+                            ("timezone_offset", "timezoneOffset"),
+                            ("nap", "nap"), ("created_at", "createdAt"),
+                            ("updated_at", "updatedAt")))
+          score_state(props, rec)
+          score = obj(rec.get("score"), SLEEP_SCORE) or {}
+          raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
+          stages = obj(raw.get("stage_summary"), STAGE_SUMMARY)
+          if stages:
+              score["stageSummary"] = stages
+          needed = obj(raw.get("sleep_needed"), SLEEP_NEEDED)
+          if needed:
+              score["sleepNeeded"] = needed
+          props["score"] = score or None
+          return SLEEP_KIND, rid(host, aid, "sleep", sid), props
+
+
+      def workout_row(host, aid, user_rid, rec):
+          wid = rec.get("id")
+          if wid in (None, ""):
+              raise ValueError("workout record carries no id")
+          props = {"account": aid, "workoutId": str(wid), "user": user_rid}
+          span(props, rec)
+          take(props, rec, (("v1_id", "v1Id"),
+                            ("timezone_offset", "timezoneOffset"),
+                            ("sport_name", "sportName"), ("sport_id", "sportId"),
+                            ("created_at", "createdAt"),
+                            ("updated_at", "updatedAt")))
+          score_state(props, rec)
+          score = obj(rec.get("score"), WORKOUT_SCORE) or {}
+          raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
+          # v2 spells it `zone_durations`; v1 spelled it `zone_duration`. Both are
+          # read so a v1-era recording is not silently dropped, and the property
+          # takes the API's CURRENT name.
+          zones = obj(raw.get("zone_durations") or raw.get("zone_duration"),
+                      ZONE_DURATIONS)
+          if zones:
+              score["zoneDurations"] = zones
+          props["score"] = score or None
+          return WORKOUT_KIND, rid(host, aid, "workout", wid), props
 ---
 # ---- the config type: the `client` input's kind ----------------------------
 # oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
@@ -1503,21 +1790,21 @@ data:
     """
     import datetime as _dt
     from urllib.parse import quote as _quote
-    from urllib.parse import urlsplit as _urlsplit
 
     import requests
 
-    AUTHORITY = "providers.substrate.reamde.dev/whoop"
-    USER_TYPE = AUTHORITY + "/user"
-    CYCLE_TYPE = AUTHORITY + "/cycle"
-    RECOVERY_TYPE = AUTHORITY + "/recovery"
-    SLEEP_TYPE = AUTHORITY + "/sleep"
-    WORKOUT_TYPE = AUTHORITY + "/workout"
-    ACCOUNT_TYPE = AUTHORITY + "/account"
-
-    DEFAULT_API_BASE = "https://api.prod.whoop.com/developer"
-    API_HOST = "api.prod.whoop.com"   # the ONLY non-loopback origin the token may reach
-    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    # The bundle's shared module (`modules:` on the bundle document): the row
+    # mapping, the origin pin and the 429 hold `whoopwebhook` uses too.
+    from whoop_mirror import (ACCOUNT_KIND, CYCLE_KIND, RECOVERY_KIND, SLEEP_KIND,
+                              USER_KIND, WORKOUT_KIND, cycle_row, recovery_row,
+                              sleep_row, workout_row)
+    from whoop_mirror import api_base as _api_base
+    from whoop_mirror import check_origin as _check_origin
+    from whoop_mirror import held as _held
+    from whoop_mirror import mint as _mint
+    from whoop_mirror import parse as _parse
+    from whoop_mirror import rid as _rid
+    from whoop_mirror import take as _take
 
     # WHOOP caps a page at 25 and defaults to 10. It is a request parameter, so it
     # is part of the recording name the mock's exact lookup builds — and it is one
@@ -1560,19 +1847,13 @@ data:
     # A status line, never a body.
     REASON_MAX = 200
 
-    # The three values the v2 schema closes `score_state` at, and the spelling the
-    # loader admits. THE SYNC CARRIES THE SAME TABLE THE DECLARATION DOES (§2): a
-    # value outside it leaves the property ABSENT rather than refusing the page,
-    # because one new WHOOP word must not cost an account its whole run.
-    SCORE_STATES = {"SCORED": "scored", "PENDING_SCORE": "pendingscore",
-                    "UNSCORABLE": "unscorable"}
 
     # Per stream: the mirror kind it writes, the collection field its row id is
     # composed from (a recovery has no id and is keyed on the cycle it scores),
     # the stored property holding that WHOOP id, and the read that fetches one
     # object back by it.
-    KINDS = {"cycle": CYCLE_TYPE, "recovery": RECOVERY_TYPE, "sleep": SLEEP_TYPE,
-             "workout": WORKOUT_TYPE}
+    KINDS = {"cycle": CYCLE_KIND, "recovery": RECOVERY_KIND, "sleep": SLEEP_KIND,
+             "workout": WORKOUT_KIND}
     UPSTREAM_KEY = {"cycle": "id", "recovery": "cycle_id", "sleep": "id",
                     "workout": "id"}
     UPSTREAM_PROPERTY = {"cycle": "cycleId", "sleep": "sleepId",
@@ -1597,38 +1878,6 @@ data:
 
     def _iso(ts):
         return ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-    def _parse(value):
-        """An RFC 3339 instant, or None. WHOOP spells them with a `Z` and with
-        fractional seconds; fromisoformat takes both from 3.11."""
-        if not value:
-            return None
-        try:
-            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-
-
-    def _check_origin(url):
-        """The bundle-side origin pin.
-
-        A request that would carry the injected token may reach ONLY the pinned
-        production host over HTTPS, or loopback (the test seam / the mock server).
-        `apiBase` is an owner-editable config property, so it is checked, never
-        trusted; the engine's `network` capability is declared-but-unenforced, so
-        this refusal is the defence until host-side egress enforcement exists.
-        """
-        u = _urlsplit(url)
-        host = (u.hostname or "").lower()
-        if host in LOOPBACK_HOSTS:
-            return
-        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
-            return
-        raise RuntimeError(
-            "whoop: refusing to send credentials to %s://%s:%s — only "
-            "https://api.prod.whoop.com or loopback"
-            % (u.scheme, host or "?", u.port or "-"))
 
 
     class _Permanent(Exception):
@@ -1747,16 +1996,6 @@ data:
         return bool(want) and str(want) != str(props.get("syncRequestedAck") or "")
 
 
-    def _held(props):
-        """A 429 said WHEN, and that beats EVERY reason to start — a schedule, an
-        explicit `syncRequestedAt`, a record trigger, an operator's
-        `args.account`. Retrying inside the window is what earns the next one, so
-        this is checked on every entry path and not only on the cadence sweep
-        (Codex review, finding 2)."""
-        hold = _parse(props.get("retryNotBefore"))
-        return hold is not None and _dt.datetime.now(_dt.timezone.utc) < hold
-
-
     def _due(props):
         if _held(props):
             return False
@@ -1819,10 +2058,6 @@ data:
     # is keyed on the cycle it scores, which is literally how WHOOP addresses it
     # (`GET /v2/cycle/{cycleId}/recovery`).
 
-    def _rid(host, aid, prefix, key):
-        return host.ids.external("whoop", aid, prefix + "/" + str(key))
-
-
     def _row_id(host, aid, key, rec):
         """The row id one collection record lands at, or "" when it carries no
         id to compose it from (the ingest then skips and counts it)."""
@@ -1859,99 +2094,8 @@ data:
 
 
     # ------------------------------------------------------ property shapes
-    # One rule, everywhere: from an AUTHORITATIVE payload a declared property the
-    # response omits is None, which the PATCH writes as a delete; a key carried as
-    # null is None too. `_mint` is the non-null half, which is what a create may
-    # carry.
-
-    def _take(dst, src, pairs, authoritative=True):
-        """One scalar each, with §1's presence rule.
-
-        An EXPLICIT EMPTY IS A CLEAR, and `""` is never written through: nothing
-        WHOOP sends has the empty string as a legal value, and half of these
-        properties are `datetime`, which would refuse it and take the whole page
-        down with it (§1, and the Slack v2 amendment behind it).
-        """
-        for api, prop in pairs:
-            if api in src:
-                value = src[api]
-                dst[prop] = None if value == "" else value
-            elif authoritative:
-                dst[prop] = None
-        return dst
-
-
-    def _mint(props):
-        return {k: v for k, v in props.items() if v is not None}
-
-
-    def _score_state(props, rec):
-        """`score_state` onto the row, by the table the DECLARATION carries (§2).
-
-        Three outcomes, and they are three different facts:
-          * a word the table holds -> the spelled enum value;
-          * a word it does NOT hold -> the property is left ABSENT. The enum would
-            refuse a value it does not know, and losing one property beats refusing
-            the whole page; a new WHOOP word is a widening, so bump the package;
-          * the key missing from an AUTHORITATIVE payload -> None, a delete.
-        """
-        if "score_state" not in rec:
-            props["scoreState"] = None
-            return
-        value = SCORE_STATES.get(str(rec.get("score_state") or "").upper())
-        if value is not None:
-            props["scoreState"] = value
-
-
-    def _obj(src, pairs):
-        """One nested object, written WHOLE or not at all (§1: a patch replaces an
-        object value entire). None when WHOOP sent no object — `score` is absent
-        unless the record is SCORED, and an empty object is not the same thing."""
-        if not isinstance(src, dict):
-            return None
-        out = _take({}, src, pairs, authoritative=False)
-        return out or None
-
-
-    CYCLE_SCORE = (("strain", "strain"), ("kilojoule", "kilojoule"),
-                   ("average_heart_rate", "averageHeartRate"),
-                   ("max_heart_rate", "maxHeartRate"))
-    RECOVERY_SCORE = (("user_calibrating", "userCalibrating"),
-                      ("recovery_score", "recoveryScore"),
-                      ("resting_heart_rate", "restingHeartRate"),
-                      ("hrv_rmssd_milli", "hrvRmssdMilli"),
-                      ("spo2_percentage", "spo2Percentage"),
-                      ("skin_temp_celsius", "skinTempCelsius"))
-    SLEEP_SCORE = (("respiratory_rate", "respiratoryRate"),
-                   ("sleep_performance_percentage", "sleepPerformancePercentage"),
-                   ("sleep_consistency_percentage", "sleepConsistencyPercentage"),
-                   ("sleep_efficiency_percentage", "sleepEfficiencyPercentage"))
-    STAGE_SUMMARY = (("total_in_bed_time_milli", "totalInBedTimeMilli"),
-                     ("total_awake_time_milli", "totalAwakeTimeMilli"),
-                     ("total_no_data_time_milli", "totalNoDataTimeMilli"),
-                     ("total_light_sleep_time_milli", "totalLightSleepTimeMilli"),
-                     ("total_slow_wave_sleep_time_milli", "totalSlowWaveSleepTimeMilli"),
-                     ("total_rem_sleep_time_milli", "totalRemSleepTimeMilli"),
-                     ("sleep_cycle_count", "sleepCycleCount"),
-                     ("disturbance_count", "disturbanceCount"))
-    SLEEP_NEEDED = (("baseline_milli", "baselineMilli"),
-                    ("need_from_sleep_debt_milli", "needFromSleepDebtMilli"),
-                    ("need_from_recent_strain_milli", "needFromRecentStrainMilli"),
-                    ("need_from_recent_nap_milli", "needFromRecentNapMilli"))
-    WORKOUT_SCORE = (("strain", "strain"),
-                     ("average_heart_rate", "averageHeartRate"),
-                     ("max_heart_rate", "maxHeartRate"), ("kilojoule", "kilojoule"),
-                     ("percent_recorded", "percentRecorded"),
-                     ("distance_meter", "distanceMeter"),
-                     ("altitude_gain_meter", "altitudeGainMeter"),
-                     ("altitude_change_meter", "altitudeChangeMeter"))
-    ZONE_DURATIONS = (("zone_zero_milli", "zoneZeroMilli"),
-                      ("zone_one_milli", "zoneOneMilli"),
-                      ("zone_two_milli", "zoneTwoMilli"),
-                      ("zone_three_milli", "zoneThreeMilli"),
-                      ("zone_four_milli", "zoneFourMilli"),
-                      ("zone_five_milli", "zoneFiveMilli"))
-
+    # The rules every row shares are the shared module's (`take`, `mint`,
+    # `span`); the member's mailbox is this body's alone.
 
     def _email(value):
         """§2: a value that does not parse as a mailbox is not written. One bad
@@ -1963,25 +2107,6 @@ data:
         if not local or not domain or "." not in domain or " " in v:
             return None
         return v
-
-
-    def _span(props, rec):
-        """`start` and `end` into the temporal trait's slots.
-
-        They are the trait's and are NOT redeclared (§4). `end` is absent on the
-        CURRENT cycle, and because a collection payload is AUTHORITATIVE that
-        absence is a CLEAR and not something to leave alone: a cycle that WAS
-        closed and comes back open — which is what WHOOP sends the moment it
-        reopens one — has to lose its `endsAt`, or the row says the day ended and
-        the API says it did not. §4 decides where the instant lands; it does not
-        exempt the slot from §1's write contract. (Codex review, finding 7.)
-
-        `at` is never nulled: `start` is required on all three kinds that bind a
-        range, so an absent one is a malformed record and the caller skips it.
-        """
-        if rec.get("start"):
-            props["at"] = rec["start"]
-        props["endsAt"] = rec.get("end") or None
 
 
     class _Sink:
@@ -2021,7 +2146,7 @@ data:
             hydrated."""
             rid = _rid(self.host, self.aid, "user", user_id)
             if rid not in self.seen:
-                self.host.effects.put(USER_TYPE, rid, if_absent=True, properties={
+                self.host.effects.put(USER_KIND, rid, if_absent=True, properties={
                     "account": self.aid, "userId": int(user_id)})
                 self.seen.add(rid)
             return rid
@@ -2045,98 +2170,26 @@ data:
                 _take(props, body, (("height_meter", "heightMeter"),
                                     ("weight_kilogram", "weightKilogram"),
                                     ("max_heart_rate", "maxHeartRate")))
-            self.host.effects.put(USER_TYPE, rid, properties=_mint(props),
+            self.host.effects.put(USER_KIND, rid, properties=_mint(props),
                                   if_absent=True)
-            self.host.effects.patch(USER_TYPE, rid, properties=props)
+            self.host.effects.patch(USER_KIND, rid, properties=props)
             self.seen.add(rid)
             return rid
 
         # -- the four streams ------------------------------------------------
+        # The mapping is the shared module's, so the webhook writes the same
+        # shape for the same object.
         def cycle(self, rec, user_rid):
-            cid = rec.get("id")
-            if cid in (None, ""):
-                raise ValueError("cycle record carries no id")
-            props = {"account": self.aid, "cycleId": int(cid), "user": user_rid}
-            _span(props, rec)
-            _take(props, rec, (("timezone_offset", "timezoneOffset"),
-                               ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            props["score"] = _obj(rec.get("score"), CYCLE_SCORE)
-            return self.write(CYCLE_TYPE, _rid(self.host, self.aid, "cycle", cid),
-                              props)
+            return self.write(*cycle_row(self.host, self.aid, user_rid, rec))
 
         def recovery(self, rec, user_rid):
-            cid = rec.get("cycle_id")
-            if cid in (None, ""):
-                raise ValueError("recovery record carries no cycle_id — and a v2 "
-                                 "recovery has no id of its own to fall back on")
-            sid = rec.get("sleep_id")
-            if sid in (None, ""):
-                raise ValueError("recovery record carries no sleep_id")
-            props = {"account": self.aid, "user": user_rid, "cycleId": int(cid),
-                     "cycle": _rid(self.host, self.aid, "cycle", cid),
-                     "sleep": _rid(self.host, self.aid, "sleep", sid)}
-            # `created_at` is the trait's `at` and is not redeclared.
-            if rec.get("created_at"):
-                props["at"] = rec["created_at"]
-            _take(props, rec, (("updated_at", "updatedAt"),))
-            _score_state(props, rec)
-            props["score"] = _obj(rec.get("score"), RECOVERY_SCORE)
-            return self.write(RECOVERY_TYPE,
-                              _rid(self.host, self.aid, "recovery", cid), props)
+            return self.write(*recovery_row(self.host, self.aid, user_rid, rec))
 
         def sleep(self, rec, user_rid):
-            sid = rec.get("id")
-            if sid in (None, ""):
-                raise ValueError("sleep record carries no id")
-            cid = rec.get("cycle_id")
-            if cid in (None, ""):
-                raise ValueError("sleep record carries no cycle_id")
-            props = {"account": self.aid, "sleepId": str(sid), "user": user_rid,
-                     "cycle": _rid(self.host, self.aid, "cycle", cid)}
-            _span(props, rec)
-            _take(props, rec, (("v1_id", "v1Id"),
-                               ("timezone_offset", "timezoneOffset"),
-                               ("nap", "nap"), ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            score = _obj(rec.get("score"), SLEEP_SCORE) or {}
-            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
-            stages = _obj(raw.get("stage_summary"), STAGE_SUMMARY)
-            if stages:
-                score["stageSummary"] = stages
-            needed = _obj(raw.get("sleep_needed"), SLEEP_NEEDED)
-            if needed:
-                score["sleepNeeded"] = needed
-            props["score"] = score or None
-            return self.write(SLEEP_TYPE, _rid(self.host, self.aid, "sleep", sid),
-                              props)
+            return self.write(*sleep_row(self.host, self.aid, user_rid, rec))
 
         def workout(self, rec, user_rid):
-            wid = rec.get("id")
-            if wid in (None, ""):
-                raise ValueError("workout record carries no id")
-            props = {"account": self.aid, "workoutId": str(wid), "user": user_rid}
-            _span(props, rec)
-            _take(props, rec, (("v1_id", "v1Id"),
-                               ("timezone_offset", "timezoneOffset"),
-                               ("sport_name", "sportName"), ("sport_id", "sportId"),
-                               ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            score = _obj(rec.get("score"), WORKOUT_SCORE) or {}
-            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
-            # v2 spells it `zone_durations`; v1 spelled it `zone_duration`. Both are
-            # read so a v1-era recording is not silently dropped, and the property
-            # takes the API's CURRENT name.
-            zones = _obj(raw.get("zone_durations") or raw.get("zone_duration"),
-                         ZONE_DURATIONS)
-            if zones:
-                score["zoneDurations"] = zones
-            props["score"] = score or None
-            return self.write(WORKOUT_TYPE,
-                              _rid(self.host, self.aid, "workout", wid), props)
+            return self.write(*workout_row(self.host, self.aid, user_rid, rec))
 
 
     _INGEST = {"cycle": _Sink.cycle, "recovery": _Sink.recovery,
@@ -2160,12 +2213,6 @@ data:
                 "profileDone": False, "userRid": "", "skipped": 0, "records": 0,
                 "requested": "", "drained": [], "failed": [], "retryAt": "",
                 "dispatch": dispatch, "startedAt": started or _now()}
-
-
-    def _api_base(cfg):
-        client = ((cfg.get("inputs") or {}).get("client") or {})
-        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
-        return (base or DEFAULT_API_BASE).rstrip("/")
 
 
     def _elapsed_ms(started, ended):
@@ -2307,7 +2354,7 @@ data:
             patch["lastSyncStartedAt"] = cur["startedAt"]
             if took is not None:
                 patch["lastSyncDurationMs"] = took
-        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=patch)
+        host.effects.patch((acct.get("kind") or ACCOUNT_KIND), aid, properties=patch)
 
 
     def _next_account(host, cur, queue):
@@ -2331,7 +2378,7 @@ data:
         cid = _ref_id(props.get("cycle"))
         if not cid:
             return None
-        cycle = host.records.get(CYCLE_TYPE, cid)
+        cycle = host.records.get(CYCLE_KIND, cid)
         return ((cycle or {}).get("properties") or {}).get("cycleId")
 
 
@@ -2447,7 +2494,7 @@ data:
                             [["body", str(e)[:60]]]
                 user_rid = sink.user_row(user_id, profile, body)
                 # The account's own identity, as a reference (§1).
-                host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
+                host.effects.patch((acct.get("kind") or ACCOUNT_KIND), aid,
                                    properties={"user": user_rid})
             cur.update({"profileDone": True, "userRid": user_rid})
             if budget.spent():
@@ -2518,7 +2565,7 @@ data:
             if not user_rid and minted:
                 user_rid = sorted(minted.values())[0]
                 cur["userRid"] = user_rid
-                host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
+                host.effects.patch((acct.get("kind") or ACCOUNT_KIND), aid,
                                    properties={"user": user_rid})
             for rec in page:
                 # Records are independent: a malformed one is skipped and counted,
@@ -2578,7 +2625,7 @@ data:
             record = (input.get("envelope") or {}).get("record") or {}
             named = args.get("accounts") or (
                 [args["account"]] if args.get("account") else [])
-            if (record.get("kind") or "") == ACCOUNT_TYPE:
+            if (record.get("kind") or "") == ACCOUNT_KIND:
                 queue = [record.get("id")]
             elif named:
                 queue = [str(a) for a in named]
@@ -2623,7 +2670,7 @@ data:
                         # renders as `erroring` with the reason, not as one that
                         # has simply not run (substrate decision 0085).
                         host.effects.patch(
-                            (acct.get("kind") or ACCOUNT_TYPE), queue[0],
+                            (acct.get("kind") or ACCOUNT_KIND), queue[0],
                             properties={"syncStatus": want,
                                         "syncState": "erroring",
                                         "syncMessage": str(terr)[:400],
@@ -2679,8 +2726,8 @@ data:
 # the host checks it against the config record's client secret before the
 # request is stored (decision 0164), so the secret never reaches this body
 # and a request that reaches it is one WHOOP signed. The mapping from a WHOOP
-# object to its row is the sync's, repeated here because a body cannot import
-# another; a delivery for an object the sync already wrote leaves the row's
+# object to its row is the sync's, from the bundle's shared `whoop_mirror`
+# module; a delivery for an object the sync already wrote leaves the row's
 # version where it was, which the provider tests hold.
 kind: substrate.reamde.dev/core/function
 metadata:
@@ -2752,67 +2799,33 @@ data:
     (OVERLAP_HOURS in `whoopsync`); an edit to an older object is lost.
     """
     import base64
-    import datetime as _dt
     import json
     from urllib.parse import quote as _quote
-    from urllib.parse import urlsplit as _urlsplit
 
     import requests
 
-    AUTHORITY = "providers.substrate.reamde.dev/whoop"
-    USER_TYPE = AUTHORITY + "/user"
-    RECOVERY_TYPE = AUTHORITY + "/recovery"
-    SLEEP_TYPE = AUTHORITY + "/sleep"
-    WORKOUT_TYPE = AUTHORITY + "/workout"
-
-    DEFAULT_API_BASE = "https://api.prod.whoop.com/developer"
-    API_HOST = "api.prod.whoop.com"   # the ONLY non-loopback origin the token may reach
-    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    # The bundle's shared module: the row mapping, the origin pin and the 429
+    # hold are `whoopsync`'s, so an object either body reads lands as one shape.
+    from whoop_mirror import (RECOVERY_KIND, SLEEP_KIND, USER_KIND, WORKOUT_KIND,
+                              recovery_row, sleep_row, workout_row)
+    from whoop_mirror import api_base as _api_base
+    from whoop_mirror import check_origin as _check_origin
+    from whoop_mirror import held as _held
+    from whoop_mirror import mint
+    from whoop_mirror import parse as _parse
+    from whoop_mirror import rid as _rid
 
     # The event's object -> the account toggle that must be on to write it, and
     # the mirror kind its row is.
     TOGGLES = {"sleep": "enabledSleep", "recovery": "enabledRecovery",
                "workout": "enabledWorkouts"}
-    KINDS = {"sleep": SLEEP_TYPE, "recovery": RECOVERY_TYPE,
-             "workout": WORKOUT_TYPE}
+    KINDS = {"sleep": SLEEP_KIND, "recovery": RECOVERY_KIND,
+             "workout": WORKOUT_KIND}
     READ_BACK = {"sleep": "/v2/activity/sleep/%s",
                  "workout": "/v2/activity/workout/%s"}
 
-    SCORE_STATES = {"SCORED": "scored", "PENDING_SCORE": "pendingscore",
-                    "UNSCORABLE": "unscorable"}
-
 
     # --------------------------------------------------------------- plumbing
-
-    def _parse(value):
-        if not value:
-            return None
-        try:
-            return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-
-
-    def _check_origin(url):
-        """The sync's origin pin: the token reaches the production host over
-        HTTPS or loopback, nothing else."""
-        u = _urlsplit(url)
-        host = (u.hostname or "").lower()
-        if host in LOOPBACK_HOSTS:
-            return
-        if u.scheme == "https" and host == API_HOST and u.port in (None, 443):
-            return
-        raise RuntimeError(
-            "whoop webhook: refusing to send credentials to %s://%s:%s; only "
-            "https://api.prod.whoop.com or loopback"
-            % (u.scheme, host or "?", u.port or "-"))
-
-
-    def _api_base(cfg):
-        client = ((cfg.get("inputs") or {}).get("client") or {})
-        base = ((client.get("properties") or {}).get("apiBase") or "").strip()
-        return (base or DEFAULT_API_BASE).rstrip("/")
-
 
     class _NotFound(Exception):
         """WHOOP holds no such object."""
@@ -2851,17 +2864,6 @@ data:
         return resp.json()
 
 
-    def _held(props):
-        """The sync's 429 hold: WHOOP named an instant to come back, and a read
-        before it earns the next 429."""
-        hold = _parse(props.get("retryNotBefore"))
-        return hold is not None and _dt.datetime.now(_dt.timezone.utc) < hold
-
-
-    def _rid(host, aid, prefix, key):
-        return host.ids.external("whoop", aid, prefix + "/" + str(key))
-
-
     def _ref_path(value):
         if isinstance(value, dict):
             value = value.get("ref")
@@ -2888,87 +2890,9 @@ data:
                 continue
             rid = _rid(host, aid, "user", user_id)
             have = _ref_path((acct.get("properties") or {}).get("user"))
-            if have in (USER_TYPE + "/" + rid, rid):
+            if have in (USER_KIND + "/" + rid, rid):
                 return acct, rid
         return None, ""
-
-
-    # ------------------------------------------------- the sync's row mapping
-    # The same tables and the same rules as `whoopsync` (its comments say why):
-    # an authoritative payload's omitted property is written null, a row is
-    # minted with its non-null half and then patched whole.
-
-    def _take(dst, src, pairs, authoritative=True):
-        for api, prop in pairs:
-            if api in src:
-                value = src[api]
-                dst[prop] = None if value == "" else value
-            elif authoritative:
-                dst[prop] = None
-        return dst
-
-
-    def _mint(props):
-        return {k: v for k, v in props.items() if v is not None}
-
-
-    def _score_state(props, rec):
-        if "score_state" not in rec:
-            props["scoreState"] = None
-            return
-        value = SCORE_STATES.get(str(rec.get("score_state") or "").upper())
-        if value is not None:
-            props["scoreState"] = value
-
-
-    def _obj(src, pairs):
-        if not isinstance(src, dict):
-            return None
-        out = _take({}, src, pairs, authoritative=False)
-        return out or None
-
-
-    def _span(props, rec):
-        if rec.get("start"):
-            props["at"] = rec["start"]
-        props["endsAt"] = rec.get("end") or None
-
-
-    RECOVERY_SCORE = (("user_calibrating", "userCalibrating"),
-                      ("recovery_score", "recoveryScore"),
-                      ("resting_heart_rate", "restingHeartRate"),
-                      ("hrv_rmssd_milli", "hrvRmssdMilli"),
-                      ("spo2_percentage", "spo2Percentage"),
-                      ("skin_temp_celsius", "skinTempCelsius"))
-    SLEEP_SCORE = (("respiratory_rate", "respiratoryRate"),
-                   ("sleep_performance_percentage", "sleepPerformancePercentage"),
-                   ("sleep_consistency_percentage", "sleepConsistencyPercentage"),
-                   ("sleep_efficiency_percentage", "sleepEfficiencyPercentage"))
-    STAGE_SUMMARY = (("total_in_bed_time_milli", "totalInBedTimeMilli"),
-                     ("total_awake_time_milli", "totalAwakeTimeMilli"),
-                     ("total_no_data_time_milli", "totalNoDataTimeMilli"),
-                     ("total_light_sleep_time_milli", "totalLightSleepTimeMilli"),
-                     ("total_slow_wave_sleep_time_milli", "totalSlowWaveSleepTimeMilli"),
-                     ("total_rem_sleep_time_milli", "totalRemSleepTimeMilli"),
-                     ("sleep_cycle_count", "sleepCycleCount"),
-                     ("disturbance_count", "disturbanceCount"))
-    SLEEP_NEEDED = (("baseline_milli", "baselineMilli"),
-                    ("need_from_sleep_debt_milli", "needFromSleepDebtMilli"),
-                    ("need_from_recent_strain_milli", "needFromRecentStrainMilli"),
-                    ("need_from_recent_nap_milli", "needFromRecentNapMilli"))
-    WORKOUT_SCORE = (("strain", "strain"),
-                     ("average_heart_rate", "averageHeartRate"),
-                     ("max_heart_rate", "maxHeartRate"), ("kilojoule", "kilojoule"),
-                     ("percent_recorded", "percentRecorded"),
-                     ("distance_meter", "distanceMeter"),
-                     ("altitude_gain_meter", "altitudeGainMeter"),
-                     ("altitude_change_meter", "altitudeChangeMeter"))
-    ZONE_DURATIONS = (("zone_zero_milli", "zoneZeroMilli"),
-                      ("zone_one_milli", "zoneOneMilli"),
-                      ("zone_two_milli", "zoneTwoMilli"),
-                      ("zone_three_milli", "zoneThreeMilli"),
-                      ("zone_four_milli", "zoneFourMilli"),
-                      ("zone_five_milli", "zoneFiveMilli"))
 
 
     class _Rows:
@@ -2993,7 +2917,7 @@ data:
                 # An answer older than the row: a later write already landed.
                 self.kept.append(kind + "/" + rid)
                 return
-            self.host.effects.put(kind, rid, properties=_mint(props), if_absent=True)
+            self.host.effects.put(kind, rid, properties=mint(props), if_absent=True)
             self.host.effects.patch(kind, rid, properties=props)
             self.wrote.append(kind + "/" + rid)
 
@@ -3007,72 +2931,13 @@ data:
             self.deleted.append(kind + "/" + rid)
 
         def recovery(self, rec):
-            cid = rec.get("cycle_id")
-            if cid in (None, ""):
-                raise ValueError("recovery record carries no cycle_id")
-            sid = rec.get("sleep_id")
-            if sid in (None, ""):
-                raise ValueError("recovery record carries no sleep_id")
-            props = {"account": self.aid, "user": self.user_rid, "cycleId": int(cid),
-                     "cycle": _rid(self.host, self.aid, "cycle", cid),
-                     "sleep": _rid(self.host, self.aid, "sleep", sid)}
-            if rec.get("created_at"):
-                props["at"] = rec["created_at"]
-            _take(props, rec, (("updated_at", "updatedAt"),))
-            _score_state(props, rec)
-            props["score"] = _obj(rec.get("score"), RECOVERY_SCORE)
-            self.write(RECOVERY_TYPE, _rid(self.host, self.aid, "recovery", cid),
-                       props)
+            self.write(*recovery_row(self.host, self.aid, self.user_rid, rec))
 
         def sleep(self, rec):
-            sid = rec.get("id")
-            if sid in (None, ""):
-                raise ValueError("sleep record carries no id")
-            cid = rec.get("cycle_id")
-            if cid in (None, ""):
-                raise ValueError("sleep record carries no cycle_id")
-            props = {"account": self.aid, "sleepId": str(sid),
-                     "user": self.user_rid,
-                     "cycle": _rid(self.host, self.aid, "cycle", cid)}
-            _span(props, rec)
-            _take(props, rec, (("v1_id", "v1Id"),
-                               ("timezone_offset", "timezoneOffset"),
-                               ("nap", "nap"), ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            score = _obj(rec.get("score"), SLEEP_SCORE) or {}
-            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
-            stages = _obj(raw.get("stage_summary"), STAGE_SUMMARY)
-            if stages:
-                score["stageSummary"] = stages
-            needed = _obj(raw.get("sleep_needed"), SLEEP_NEEDED)
-            if needed:
-                score["sleepNeeded"] = needed
-            props["score"] = score or None
-            self.write(SLEEP_TYPE, _rid(self.host, self.aid, "sleep", sid), props)
+            self.write(*sleep_row(self.host, self.aid, self.user_rid, rec))
 
         def workout(self, rec):
-            wid = rec.get("id")
-            if wid in (None, ""):
-                raise ValueError("workout record carries no id")
-            props = {"account": self.aid, "workoutId": str(wid),
-                     "user": self.user_rid}
-            _span(props, rec)
-            _take(props, rec, (("v1_id", "v1Id"),
-                               ("timezone_offset", "timezoneOffset"),
-                               ("sport_name", "sportName"), ("sport_id", "sportId"),
-                               ("created_at", "createdAt"),
-                               ("updated_at", "updatedAt")))
-            _score_state(props, rec)
-            score = _obj(rec.get("score"), WORKOUT_SCORE) or {}
-            raw = rec.get("score") if isinstance(rec.get("score"), dict) else {}
-            zones = _obj(raw.get("zone_durations") or raw.get("zone_duration"),
-                         ZONE_DURATIONS)
-            if zones:
-                score["zoneDurations"] = zones
-            props["score"] = score or None
-            self.write(WORKOUT_TYPE, _rid(self.host, self.aid, "workout", wid),
-                       props)
+            self.write(*workout_row(self.host, self.aid, self.user_rid, rec))
 
 
     # --------------------------------------------------------------- the events
@@ -3080,7 +2945,7 @@ data:
     def _recoveries_of(host, aid, sleep_rid):
         """The recovery rows whose `sleep` is this sleep row: a recovery event
         names the sleep, and the row is keyed on the cycle."""
-        page = host.records.list(RECOVERY_TYPE,
+        page = host.records.list(RECOVERY_KIND,
                                  where={"account": {"eq": aid},
                                         "sleep": {"eq": sleep_rid}},
                                  first=10)
@@ -3092,7 +2957,7 @@ data:
         aid = rows.aid
         if obj == "recovery":
             for rid in _recoveries_of(host, aid, _rid(host, aid, "sleep", oid)):
-                rows.delete(RECOVERY_TYPE, rid)
+                rows.delete(RECOVERY_KIND, rid)
             return
         rows.delete(KINDS[obj], _rid(host, aid, obj, oid))
 
@@ -3116,8 +2981,8 @@ data:
         except _NotFound:
             # WHOOP deletes a recovery with its sleep.
             for rid in _recoveries_of(host, aid, sleep_rid):
-                rows.delete(RECOVERY_TYPE, rid)
-            rows.delete(SLEEP_TYPE, sleep_rid)
+                rows.delete(RECOVERY_KIND, rid)
+            rows.delete(SLEEP_KIND, sleep_rid)
             return
         cid = srec.get("cycle_id")
         if cid in (None, ""):
@@ -3128,7 +2993,7 @@ data:
             rrec = _get(base, token, "/v2/cycle/%s/recovery"
                         % _quote(str(cid), safe=""))
         except _NotFound:
-            rows.delete(RECOVERY_TYPE, _rid(host, aid, "recovery", cid))
+            rows.delete(RECOVERY_KIND, _rid(host, aid, "recovery", cid))
             return
         rows.recovery(rrec)
 
