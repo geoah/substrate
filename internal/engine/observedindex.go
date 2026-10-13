@@ -32,10 +32,8 @@ package engine
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"slices"
 	"strconv"
@@ -331,7 +329,7 @@ func singlePoint(row *erow) (obsPoint, string, bool) {
 	if row.EndsAt != nil && row.EndsAt.After(*row.At) {
 		p.tsEnd = *row.EndsAt
 	}
-	if off, ok := intOf(props["utcOffset"]); ok {
+	if off, ok := vocabulary.ObservedOffsetOf(props, "utcOffset"); ok {
 		p.offset, p.offsetKnown = off, true
 	}
 	var unit string
@@ -382,8 +380,8 @@ func tracePoints(row *erow, r *observedRows) []obsPoint {
 		end = *row.EndsAt
 	}
 	mid := row.At.Add(end.Sub(*row.At) / 2)
-	startOff, hasStart := intOf(props["utcOffsetStart"])
-	endOff, hasEnd := intOf(props["utcOffsetEnd"])
+	startOff, hasStart := vocabulary.ObservedOffsetOf(props, "utcOffsetStart")
+	endOff, hasEnd := vocabulary.ObservedOffsetOf(props, "utcOffsetEnd")
 	if !hasStart {
 		startOff = endOff
 	}
@@ -482,30 +480,6 @@ func optString(props map[string]any, name string) *string {
 		return &s
 	}
 	return nil
-}
-
-// intOf reads a stored integer the way it arrives: int64 from a write's
-// coercion, float64 from a jsonb read-back, json.Number from a replay, whose
-// segment line spells it with an exponent (180 is `1.8E2`).
-func intOf(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case float64:
-		if n != math.Trunc(n) {
-			return 0, false
-		}
-		return int64(n), true
-	case json.Number:
-		r, ok := new(big.Rat).SetString(string(n))
-		if !ok || !r.IsInt() || !r.Num().IsInt64() {
-			return 0, false
-		}
-		return r.Num().Int64(), true
-	}
-	return 0, false
 }
 
 // bucketOf is the start of the 15-minute bucket holding t, in Unix

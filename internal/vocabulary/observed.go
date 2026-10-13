@@ -483,6 +483,18 @@ func ObservedRevisionOf(props map[string]any) (int64, bool) {
 	return obsInt(raw)
 }
 
+// ObservedOffsetOf reads a stored UTC offset in minutes (utcOffset,
+// utcOffsetStart or utcOffsetEnd), false when there is none. It reads the
+// value the way the offset check does, so the index and the write rules
+// agree on what an offset is.
+func ObservedOffsetOf(props map[string]any, name string) (int64, bool) {
+	raw, held := props[name]
+	if !held || raw == nil {
+		return 0, false
+	}
+	return obsInt(raw)
+}
+
 // TracePoint is one point of a packed record.
 type TracePoint struct {
 	// At is the point's instant: the record's at plus its offset.
