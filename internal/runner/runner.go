@@ -1166,10 +1166,12 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		lowered := q.LimitRows(rem)
 		res, err := s.backend.Aggregate(ctx, q)
 		if substrate.AggregateRowsRefused(err, lowered) {
-			// The read's refusal is text here, never wrapped: the trip is the
-			// function's fault, and a ValidationError in its chain would answer
-			// the caller 422 on a field the caller never sent.
-			return nil, s.trip(fmt.Errorf("%w: aggregate answers more rows than the %d left: %s", ErrReadBudget, rem, err.Error()))
+			// The read's refusal is left out: it is a ValidationError, which in
+			// the trip's chain would answer the caller 422 on a field the caller
+			// never sent, and its advice to raise maxBuckets cannot help, since
+			// the row budget lowers it again.
+			return nil, s.trip(fmt.Errorf("%w: aggregate could answer more rows than the %d left, which lowers %s to %d, so a larger value does not help; "+
+				"raise permissions.reads.budgets.rows or make the read answer fewer rows", ErrReadBudget, rem, strings.Join(lowered, " and "), rem))
 		}
 		if err != nil {
 			return nil, err

@@ -91,7 +91,8 @@ func (f *fakeBackend) Aggregate(_ context.Context, q substrate.AggregateQuery) (
 		b := q.Aggregate.Budget
 		f.aggregatesRefused++
 		return nil, &substrate.ValidationError{Problems: []string{fmt.Sprintf(
-			"aggregate.budget.maxBuckets: 1 series times %d buckets is %d, over %d", f.aggregateRows, f.aggregateRows, b.MaxBuckets)}}
+			"aggregate.budget.maxBuckets: 1 series times %d buckets is %d, over %d; narrow the filter, widen the bucket or raise maxBuckets (the cap is %d)",
+			f.aggregateRows, f.aggregateRows, b.MaxBuckets, substrate.AggregateMaxBucketsCap)}}
 	}
 	res := &substrate.AggregateResult{Exact: true, Rows: []substrate.AggregateRow{}}
 	for i := range f.aggregateRows {
@@ -1250,6 +1251,11 @@ def main(input, host):
 	// it never sent.
 	if ve := (*substrate.ValidationError)(nil); errors.As(err, &ve) {
 		t.Fatalf("over the row budget: the trip carries the read's ValidationError %v", ve)
+	}
+	// The read's advice to raise maxBuckets cannot help: the row budget
+	// lowers it again. The trip names the budget that does.
+	if msg := err.Error(); strings.Contains(msg, "raise maxBuckets") || !strings.Contains(msg, "permissions.reads.budgets.rows") {
+		t.Fatalf("over the row budget: %q; want the row budget's remedy, not the read's", msg)
 	}
 	if backend.aggregatesRefused != 1 || len(backend.aggregates) != 1 || backend.aggregates[0].Aggregate.Budget.MaxBuckets != 2 {
 		t.Fatalf("over the row budget: %d reads, %d refused before any work, want the one read refused at maxBuckets 2",

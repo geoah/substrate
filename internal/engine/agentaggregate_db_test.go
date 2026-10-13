@@ -246,4 +246,9 @@ func TestAgentQueryToolAggregateHoldsEveryArgument(t *testing.T) {
 	if tr := traceOf(traced); ok || rows != 0 || tr.rawPoints != 0 || tr.rollupRows != 0 || !strings.Contains(out, "read budget") {
 		t.Fatalf("over the row budget: ok %v rows %d, read %d points and %d rollup rows: %s", ok, rows, tr.rawPoints, tr.rollupRows, out)
 	}
+	// The read's own advice to raise maxBuckets cannot help, since the row
+	// budget lowers it again, so a model that followed it would spend a call.
+	if strings.Contains(out, "raise maxBuckets") || !strings.Contains(out, "does not help") {
+		t.Fatalf("over the row budget: %s; want the read budget's remedy, not the read's", out)
+	}
 }

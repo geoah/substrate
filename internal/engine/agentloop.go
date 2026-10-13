@@ -1745,8 +1745,11 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, args 
 	lowered := q.LimitRows(scope.rows)
 	res, err := ds.Aggregate(ctx, q)
 	if substrate.AggregateRowsRefused(err, lowered) {
-		return toolError(fmt.Sprintf("the aggregate answers more rows than the %d left of the read budget; widen the bucket, narrow the range or the filter (%v)",
-			scope.rows, err)), false, 0
+		// The read's own refusal is left out: its advice to raise maxBuckets
+		// cannot help, since the row budget lowers it again.
+		return toolError(fmt.Sprintf("the aggregate could answer more rows than the %d left of the read budget, which lowers %s to %d, so a larger value does not help; "+
+			"widen the bucket, narrow the range, narrow the filter or group by fewer keys",
+			scope.rows, strings.Join(lowered, " and "), scope.rows)), false, 0
 	}
 	if err != nil {
 		return toolError(err.Error()), false, 0
