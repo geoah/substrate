@@ -208,7 +208,7 @@ data:
 (`mustExist: true`); the `source` need not, so a writer may create it after.
 `hold` copies the `health/body_mass` metric's, so the weighing stands for a
 day; without one it stands until the next weighing, and a read counts it as
-covering every day between ([holds](#what-the-health-sample-adds)).
+covering every day between ([holds](#how-long-a-gauge-value-stands)).
 `recordingMethod: manual` says a person entered it.
 
 ## Writing a trace
@@ -405,6 +405,8 @@ latest values by metric, shows both. A result written before the sample was
 imported is converted by replaying the trigger from 0. Meter and continuous
 monitor readings of glucose are observations, not lab results, and are not
 converted.
+
+### How long a gauge value stands
 
 Every gauge metric but `height` and `vo2_max` carries a `hold`, which a
 writer copies onto each value: about twice the time between a source's
