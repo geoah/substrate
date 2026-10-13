@@ -210,3 +210,42 @@ func TestPersonaNeverSleepsThroughAWorkout(t *testing.T) {
 		}
 	}
 }
+
+// A weigh-in and a blood pressure reading happen awake and at rest: after
+// the night, outside every workout.
+func TestPersonaWeighsInAndReadsPressureAwake(t *testing.T) {
+	p, err := NewPersona(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	weighIns, readings := 0, 0
+	for _, d := range p.Days() {
+		day := p.Day(d)
+		check := func(what string, at time.Time) {
+			if s := day.AsleepAt(at); s != nil {
+				t.Errorf("%s: the %s at %s is inside the sleep %s to %s", d, what,
+					at.Format("15:04"), s.Start.Format("15:04"), s.End.Format("15:04"))
+			}
+			if !at.After(day.Sleep.End) {
+				t.Errorf("%s: the %s at %s is before waking at %s", d, what, at.Format("15:04"), day.Sleep.End.Format("15:04"))
+			}
+			for _, w := range day.Workouts {
+				if !at.Before(w.Start.Add(-10*time.Minute)) && at.Before(w.End.Add(30*time.Minute)) {
+					t.Errorf("%s: the %s at %s falls in the %s from %s to %s or the half hour after it", d, what,
+						at.Format("15:04"), w.Name, w.Start.Format("15:04"), w.End.Format("15:04"))
+				}
+			}
+		}
+		if day.WeightKg != 0 {
+			weighIns++
+			check("weigh-in", day.WeighInAt)
+		}
+		if bp := day.BloodPressure; bp != nil {
+			readings++
+			check("blood pressure reading", bp.At)
+		}
+	}
+	if weighIns < 40 || readings < 10 {
+		t.Fatalf("%d weigh-ins and %d readings; the check read too few", weighIns, readings)
+	}
+}

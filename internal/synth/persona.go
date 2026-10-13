@@ -902,7 +902,7 @@ func (p *Persona) Day(d Date) *Day {
 	switch d.Weekday() {
 	case time.Monday, time.Wednesday, time.Friday, time.Saturday:
 		if !trip {
-			day.WeighInAt = d.At(loc, 7, 10+int(r.NormFloat64()*4))
+			day.WeighInAt = day.atRest(d.At(loc, 7, 10+int(r.NormFloat64()*4)), 4*time.Minute)
 			w := 73.4 - 1.8*i/span + r.NormFloat64()*0.28
 			if ill {
 				w += 0.4
@@ -912,10 +912,7 @@ func (p *Persona) Day(d Date) *Day {
 		}
 	case time.Sunday:
 		if !trip {
-			at := d.At(loc, 8, int(r.NormFloat64()*10))
-			if sleep.End.After(at) {
-				at = sleep.End.Add(12 * time.Minute)
-			}
+			at := day.atRest(d.At(loc, 8, int(r.NormFloat64()*10)), 12*time.Minute)
 			day.BloodPressure = &BloodPressure{int(118 + r.NormFloat64()*4), int(76 + r.NormFloat64()*3), sleep.RestingHR + 6 + int(r.NormFloat64()*3), at}
 		}
 	}
@@ -929,6 +926,22 @@ func (p *Persona) Day(d Date) *Day {
 	day.Readiness = int(math.Max(5, math.Min(99, float64(day.Recovery)*0.6+36+r.NormFloat64()*5)))
 	p.cache[d] = day
 	return day
+}
+
+// atRest is the first instant from `want` that is awake and at rest: at
+// least `afterWake` after the night ends, and outside every workout from
+// ten minutes before it starts to half an hour after it ends.
+func (d *Day) atRest(want time.Time, afterWake time.Duration) time.Time {
+	at := want
+	if woke := d.Sleep.End.Add(afterWake); at.Before(woke) {
+		at = woke
+	}
+	for _, w := range d.Workouts {
+		if !at.Before(w.Start.Add(-10*time.Minute)) && at.Before(w.End.Add(30*time.Minute)) {
+			at = w.End.Add(30 * time.Minute)
+		}
+	}
+	return at
 }
 
 // --- labs -------------------------------------------------------------------
