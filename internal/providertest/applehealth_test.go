@@ -541,6 +541,68 @@ func TestAppleHealthCorrectedRedelivery(t *testing.T) {
 	}
 }
 
+// ahMetricRequest is a request carrying one metric's rows, built the way the
+// app sends a JSON export at one time grouping.
+func ahMetricRequest(t *testing.T, grouping, name, units string, rows []map[string]any) map[string]any {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"data": map[string]any{"metrics": []any{
+		map[string]any{"name": name, "units": units, "data": rows},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string]any{
+		"method": "POST", "contentType": "application/json",
+		"headers": map[string]any{"content-type": "application/json", "automation-aggregation": grouping},
+		"query":   map[string]any{},
+		"body":    map[string]any{"text": string(body)},
+	}
+}
+
+// heartRows is one heart rate row per app date.
+func heartRows(dates ...string) []map[string]any {
+	out := make([]map[string]any, 0, len(dates))
+	for i, d := range dates {
+		out = append(out, map[string]any{"Min": 50 + i, "Avg": 55 + i, "Max": 60 + i, "date": d, "source": adaWatch})
+	}
+	return out
+}
+
+// A redelivery replaces what it covers. The first delivery writes heart
+// rate in four UTC hours; the user then deletes the 11:05 sample in Health,
+// and a Previous 7 Days export carries 10:05 and 12:05. The 11:00 batch,
+// which the redelivery carries no row for, lies inside its span and is
+// deleted; the 09:00 batch lies outside it and stays.
+func TestAppleHealthRedeliveryEmptiesBatchesInsideItsSpan(t *testing.T) {
+	_, ds := newAppleHealth(t, "iphone")
+	first := ahMetricRequest(t, "minutes", "heart_rate", "count/min", heartRows(
+		"2026-10-01 09:05:00 +0000", "2026-10-01 10:05:00 +0000",
+		"2026-10-01 11:05:00 +0000", "2026-10-01 12:05:00 +0000"))
+	deliverAH(t, ds, first, "hook-first")
+	hour := func(h string) string { return batchID("iphone", "heart_rate", "minutes", "2026-10-01T"+h) }
+	for _, h := range []string{"09", "10", "11", "12"} {
+		if got := len(rowsOf(t, mustGet(t, ds, ahBatch, hour(h)))); got != 1 {
+			t.Fatalf("hour %s holds %d rows after the first delivery, want 1", h, got)
+		}
+	}
+
+	again := ahMetricRequest(t, "minutes", "heart_rate", "count/min", heartRows(
+		"2026-10-01 10:05:00 +0000", "2026-10-01 12:05:00 +0000"))
+	out, _ := deliverAH(t, ds, again, "hook-again")
+	if whoopLive(t, ds, ahBatch, hour("11")) {
+		t.Fatalf("the 11:00 batch survived a redelivery whose span covers it and carries none of its rows (output %v)", out)
+	}
+	if !whoopLive(t, ds, ahBatch, hour("09")) {
+		t.Fatal("the 09:00 batch, outside the redelivery's span, was removed")
+	}
+	if got := countLive(t, ds, ahBatch); got != 3 {
+		t.Fatalf("%d batches after the redelivery, want 3", got)
+	}
+	if num(t, out["written"]) != 3 {
+		t.Fatalf("redelivery output = %v, want 3 written: two rewritten batches and one deleted", out)
+	}
+}
+
 // Day buckets are midnights of the phone's zone when it sent. A delivery from
 // London on 2026-09-25, then a 30-day one from Athens on 2026-10-10: the
 // Athens span covers London's two buckets, so the month batch ends holding the

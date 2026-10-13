@@ -1641,9 +1641,12 @@ keyed `<account>/<metric>/<grouping>/<period>`, where the grouping is the
 minutes, the UTC day at hours, the UTC month at days and the UTC year above.
 A row is keyed by its instant and never by `source`, because a correction
 sends the same bucket again under another label: a later delivery replaces
-the batch's rows inside the span it covers for that metric, keeps the rest,
-and leaves a batch whose rows did not change unwritten. A change of units
-replaces the batch whole. A workout and a state of mind entry are keyed by
+the batch's rows inside the span it covers for that metric (its first to its
+last row), keeps the rest, and leaves a batch whose rows did not change
+unwritten. A batch inside that span the delivery carries no row for is read
+back and deleted, so a sample deleted in Health leaves the mirror with the
+next export that spans it; a delivery reads back at most 1000 such periods per
+metric, six weeks of hour batches. A change of units replaces the batch whole. A workout and a state of mind entry are keyed by
 their HealthKit id; a medication dose, a symptom, a cycle tracking entry, an
 ECG and a heart rate notification, which carry none, by their name and
 start. The `export` receipt, at the webhook fire id, holds the automation's

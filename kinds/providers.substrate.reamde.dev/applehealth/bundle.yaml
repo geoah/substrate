@@ -1773,8 +1773,11 @@ data:
     under another `source` label, so a metric row is keyed by its instant and a
     metric batch by (account, metric, grouping, period): a redelivery rewrites the
     same batch, and a row the later delivery no longer carries inside the span it
-    covers is gone from the batch. Every other section is keyed by the app's own
-    `id`, or by its name and start where it has none.
+    covers is gone from the batch, and a batch left with no row is deleted. The
+    span is the metric's first to last row in the delivery; up to GAP_PERIODS
+    periods inside it that carry no fresh row are read back too. Every other
+    section is keyed by the app's own `id`, or by its name and start where it
+    has none.
 
     A delivery the body cannot read raises, so it parks with its body kept and a
     retry after the fix (an account created, a provider upgraded) delivers it.
@@ -1809,6 +1812,9 @@ data:
     PAGE_UNITS = 900
     MAX_ID = 128
     MAX_DROPPED = 100
+    # How many periods inside one metric's span, carrying none of its rows, a
+    # delivery reads back (one call each) to empty: six weeks of hour batches.
+    GAP_PERIODS = 1000
 
     UTC = datetime.timezone.utc
 
@@ -1969,6 +1975,13 @@ data:
 
     class Refused(Exception):
         """A delivery this body will not write: the run fails with the message."""
+
+
+    # What a builder answers besides a property map (write it) and None (the
+    # stored record already holds it): the stored record goes, or nothing is
+    # stored and nothing is to be written.
+    DROP = object()
+    ABSENT = object()
 
 
     # ---- values -----------------------------------------------------------------
@@ -2312,6 +2325,18 @@ data:
                                     batch_builder(account_ref, receipt, name, entry["units"], grouping,
                                                   start, end, fresh, lo, hi, tz),
                                     True))
+            # The periods inside the span this delivery carries no row for: a
+            # batch stored there holds rows the delivery no longer carries.
+            at, last, gaps = period(size, lo)[2], period(size, hi)[1], 0
+            while at < last and gaps < GAP_PERIODS:
+                key, start, end = period(size, at)
+                if key not in batches:
+                    d.units.append(Unit(METRICBATCH, compose(aid, name, grouping, key),
+                                        batch_builder(account_ref, receipt, name, entry["units"],
+                                                      grouping, start, end, [], lo, hi, tz),
+                                        True))
+                    gaps += 1
+                at = end
 
         # ---- everything else ----
         for section, toggle, kind, spec, own_id, name_keys in SECTIONS:
@@ -2384,6 +2409,8 @@ data:
                     if when is None or when < lo or when > hi:
                         kept.append((when or start, row))
             rows = [row for _, row in sorted(kept + list(fresh), key=row_order)]
+            if not rows:
+                return DROP if stored else ABSENT
             props = {"account": account_ref, "name": name, "grouping": grouping,
                      "at": rfc3339(start), "endsAt": rfc3339(end), "rows": rows}
             if units is not None:
@@ -2418,6 +2445,7 @@ data:
 
         raw = body_bytes(request)
         d = read_delivery(raw, headers, account, fire_id, received)
+        receipt = {"export": {"ref": EXPORT + "/" + fire_id}, "receivedAt": received}
 
         cur = host.page.resume() or {}
         i = int(cur.get("next") or 0)
@@ -2431,8 +2459,17 @@ data:
             unit = d.units[i]
             stored = host.records.get(unit.kind, unit.id)
             props = unit.build(stored)
-            if props is None:
+            if props is ABSENT:
+                pass
+            elif props is None:
                 unchanged += 1
+            elif props is DROP:
+                # A delete takes no version guard, so the receipt patch before
+                # it carries the one a concurrent delivery's write would trip.
+                host.effects.patch(unit.kind, unit.id, properties=receipt,
+                                   if_version=host.version(stored))
+                host.effects.delete(unit.kind, unit.id)
+                written += 1
             else:
                 size = len(json.dumps(props))
                 if used_units and used_bytes + size > PAGE_BYTES:

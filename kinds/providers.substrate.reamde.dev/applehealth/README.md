@@ -98,8 +98,10 @@ day at Hours, one UTC month at Days and one UTC year above that, so it holds
 at most a few thousand rows. Its rows are keyed by their instant, never by
 `source`, because a correction sends the same bucket again under another
 label: a later delivery replaces the rows inside the time span it covers for
-that metric and keeps the rest. A metric sampled less often than the period
-(a weigh-in at minute grouping) gets one batch per sample.
+that metric and keeps the rest, and deletes a batch inside that span it
+carries no row for. A metric sampled less often than the period (a weigh-in
+at minute grouping) gets one batch per sample, so a weigh-in deleted in Health
+leaves the mirror with the next export that spans it.
 
 Units are the app's own Unit Preferences, kept verbatim (`count/min`, `kJ`,
 `kcal/hr·kg`). Dates are kept as the app wrote them; the offset is the
