@@ -391,7 +391,7 @@ export function planPlot(
     from: askedFrom,
     // Past a raw read, a bucket may be served by a summary, and the server
     // refuses a reducer a summary does not take.
-    summaries: selected.some((s) => s.form === "summary"),
+    summaries: summaryStreams.length > 0,
     // Where the reader picked nothing and some streams hold raw points, a
     // reducer no summary takes reads those alone.
     switchable: !scope.from && selected.some((s) => s.form !== "summary"),
