@@ -1128,7 +1128,7 @@ func (ds *dataset) aggregateUnits(ctx context.Context, tx *sql.Tx, p *aggPlan, s
 		case u.measure == "":
 			return nil, refuse(p.path("unit"), "%s converts nothing here: the selected streams hold codes, and only a duration unit (beside timeInState) applies", p.unit)
 		default:
-			return nil, refuse(p.path("unit"), "%s is not a %s unit, the measure of %s; name one of its units, or a duration unit beside durationIn or timeInState",
+			return nil, refuse(p.path("unit"), "%s is not a unit of %s, the measure of %s; name one of its units, or a duration unit beside durationIn or timeInState",
 				p.unit, u.measure, aggMetricName(p))
 		}
 	}
@@ -1298,7 +1298,7 @@ func (p *aggPlan) checkForms(groups []*aggGroup, u *aggUnits) error {
 						r.String(), article(form), form, formWhy[form], article(form), form, strings.Join(formReducers[form], ", "))
 				}
 				if r.Name == substrate.ReducerCircularMean && u.measure != "angle" {
-					return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s is a %s",
+					return refuse(p.reducerPath(i), "circularMean averages angles on the circle; %s holds %s",
 						aggMetricName(p), orNothing(u.measure))
 				}
 			}
@@ -1316,7 +1316,7 @@ func article(word string) string {
 
 func orNothing(measure string) string {
 	if measure == "" {
-		return "code"
+		return "codes"
 	}
-	return measure + " value"
+	return "values of " + measure
 }

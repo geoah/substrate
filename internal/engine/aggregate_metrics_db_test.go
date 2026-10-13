@@ -168,7 +168,7 @@ func TestAggregateSeveralMetricsAreCheckedBeforeTheyRun(t *testing.T) {
 		}, Reducers: reducers("sum")}), "aggregate.reducers[0]: in aggregate.metrics[1] (" + hr + "), sum does not apply to a gauge"},
 		{"a unit outside the metric's measure", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: mass}, {Ref: hr, Unit: "kg"},
-		}, Reducers: reducers("last")}), "aggregate.metrics[1].unit: kg is not a rate unit"},
+		}, Reducers: reducers("last")}), "aggregate.metrics[1].unit: kg is not a unit of rate"},
 		{"summaries holding two statistics", read(substrate.Aggregate{Metrics: []substrate.AggregateMetricRead{
 			{Ref: hr}, {Ref: rhr, From: substrate.AggregateFromSummaries},
 		}, Reducers: reducers("last")}), "aggregate.metrics[1]: the summaries from " + f.sourcePath("watch") +

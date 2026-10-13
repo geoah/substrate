@@ -254,7 +254,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 				m = mm.Name
 			}
 			if !resolves(target, m) {
-				return refuse("aggregate.unit", "%s is not a %s unit, the measure of %s", target, m, name)
+				return refuse("aggregate.unit", "%s is not a unit of %s, the measure of %s", target, m, name)
 			}
 			cv, err := vocabulary.ConvertIn(m, v, unit, target)
 			if err != nil {

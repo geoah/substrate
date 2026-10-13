@@ -1174,7 +1174,10 @@ func TestAggregateRefusesOverBudgetBeforeRunning(t *testing.T) {
 			a.Metric = &substrate.AggregateMetric{Ref: f.metricPath("health/steps")}
 			a.Reducers = reducers("increase")
 		}), "does not apply to an amount"},
-		{"unit outside the measure", base(func(a *substrate.Aggregate) { a.Unit = "kg" }), "is not a rate unit"},
+		{"unit outside the measure", base(func(a *substrate.Aggregate) { a.Unit = "kg" }), "is not a unit of rate"},
+		{"a negative offset", base(func(a *substrate.Aggregate) {
+			a.Bucket = &substrate.AggregateBucket{Calendar: "day", Timezone: "UTC", Offset: "-PT1H"}
+		}), "never earlier; -PT1H is not one"},
 		{"two selectors", base(func(a *substrate.Aggregate) { a.Property = &substrate.AggregateProperty{Name: "x"} }), "name one of metric, metrics and property"},
 		{"no range", base(func(a *substrate.Aggregate) { a.Range = nil }), "aggregate.range"},
 		{"an unknown reducer", base(func(a *substrate.Aggregate) { a.Reducers = reducers("median") }), `"median" is not a reducer`},

@@ -336,7 +336,7 @@ func (p *aggPlan) parseBucket() error {
 				return refuse("aggregate.bucket.offset", "%v", err)
 			}
 			if d < 0 || d >= 24*time.Hour {
-				return refuse("aggregate.bucket.offset", "an offset shifts a bucket's start by less than a day")
+				return refuse("aggregate.bucket.offset", "an offset shifts a bucket's start later by zero to less than a day, never earlier; %s is not one", b.Offset)
 			}
 			if d%time.Minute != 0 {
 				return refuse("aggregate.bucket.offset", "an offset is whole minutes")
