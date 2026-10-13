@@ -1,5 +1,7 @@
 # one night or one nap as a session. The stage segments themselves are coded
-# `amount` observations of `health/sleep_stage` beside it; this record holds
+# `amount` observations of `health/sleep_stage` beside it (`asleep` for sleep
+# the device did not stage, never an `in_bed` span over the whole night,
+# which is `timeInBed`); this record holds
 # the session's totals and the vendor's scores, so a reader lists nights
 # without aggregating anything. `at` and `endsAt` are the session's span.
 kind: substrate.reamde.dev/core/kind
@@ -56,7 +58,8 @@ data:
       description: the whole time in bed
     timeAsleep:
       type: duration
-      description: the time asleep, every stage but awake
+      description: the time asleep, light, deep and rem sleep and sleep the
+        device did not stage
     awake:
       type: duration
       description: time awake while in bed

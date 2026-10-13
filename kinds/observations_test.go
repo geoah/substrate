@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path"
 	"slices"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -315,4 +316,46 @@ func TestHealthGaugesCarryAHold(t *testing.T) {
 	if gauges == 0 {
 		t.Fatal("no gauge metrics found")
 	}
+}
+// metricFormReducers is the aggregate read's reducers by form, as docs/api.md
+// "Reducers, by form" lists them; a coded metric (one with a codeSet) takes
+// the coded row.
+var metricFormReducers = map[string][]string{
+	"gauge":        {"count", "avg", "twa", "min", "max", "first", "last", "stddev", "percentile", "durationIn", "circularMean"},
+	"coded gauge":  {"count", "first", "last", "timeInState"},
+	"amount":       {"count", "sum", "avg", "min", "max", "first", "last", "stddev", "percentile"},
+	"coded amount": {"count", "sum", "min", "max"},
+	"counter":      {"count", "first", "last", "min", "max", "increase", "rate"},
+	"summary":      {"count", "first", "last", "sum", "min", "max", "avg"},
+}
+
+// A METRIC'S REDUCERS ARE ONES ITS FORM TAKES. `reducers` is the catalogue's
+// advice on what answers something useful, and a reader builds its choices
+// from it: one the aggregate read refuses for the form is a 422 offered as a
+// choice.
+func TestHealthMetricReducersAreOnesTheirFormTakes(t *testing.T) {
+	for id, props := range healthRecords(t, "observations/metric") {
+		form, _ := props["form"].(string)
+		if _, coded := props["codeSet"]; coded {
+			form = "coded " + form
+		}
+		takes, ok := metricFormReducers[form]
+		if !ok {
+			t.Errorf("%s has form %q", id, form)
+			continue
+		}
+		reducers, _ := props["reducers"].([]any)
+		for _, r := range reducers {
+			if !slices.Contains(takes, r.(string)) {
+				t.Errorf("%s lists %s, which the aggregate read refuses for %s %s", id, r, article(form), form)
+			}
+		}
+	}
+}
+
+func article(form string) string {
+	if strings.HasPrefix(form, "amount") {
+		return "an"
+	}
+	return "a"
 }
