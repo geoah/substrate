@@ -189,6 +189,11 @@ data:
                   type: float
                   description: a durationIn band's upper bound, in the metric's
                     unit
+                rank:
+                  type: float
+                  min: 0
+                  max: 1
+                  description: a percentile's rank, such as 0.9
                 label:
                   type: string
                   description: what the value is called, such as Zone 2
