@@ -17,8 +17,10 @@ with `synth` ([synthetic provider data](synthetic-data.md)): 90 days, from
 2026-07-14 to 2026-10-11, of one invented person, Ada. She lives in Athens
 (UTC+3), has a cold from 2026-08-26 to 2026-08-29, and spends 2026-09-20 to
 2026-09-24 in London (UTC+1). Four providers deliver her data through their
-adapters, and two labs report three blood panels. The sources the answers
-name, by the bare id a filter and `sources.order` take:
+adapters, and two labs report three blood panels. The answers were read on
+build `729abf0f` at changelog head 177628, with every adapter's trigger at
+lag 0. The sources the answers name, by the bare id a filter and
+`sources.order` take:
 
 | Source id | Is |
 | --- | --- |
