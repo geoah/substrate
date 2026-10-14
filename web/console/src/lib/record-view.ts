@@ -1,0 +1,639 @@
+/** Record views (decision record 0166) without React: a
+ * `substrate.reamde.dev/console/recordview` record read into the blocks a
+ * record page draws above its generic sheet, the window a view binds on a
+ * record by its properties' names, and the reads its chart and spans blocks
+ * make over that window. Nothing here names a sample or a metric: every
+ * kind, metric id, reducer and code comes from the view record. */
+
+import type { AggregateRead } from "@/lib/api/observations"
+import { CORE_AUTHORITY, CORE_PACKAGE } from "@/lib/api/http"
+import type { ListParams } from "@/lib/api/records"
+import {
+  readReference,
+  type AggregateReducer,
+  type AggregateSources,
+  type Cond,
+  type KindInfo,
+  type RecordFilter,
+  type SubstrateRecord,
+} from "@/lib/api/types"
+import {
+  OBSERVED_TRAIT_IDENTITY,
+  observedKinds,
+  observedPins,
+  reducerKey,
+} from "@/lib/observations"
+import {
+  autoBucket,
+  bucketOf,
+  isoWithOffset,
+  type BucketSize,
+  type TimeRange,
+} from "@/lib/observations-time"
+
+/** The kind a record view is a record of. */
+export const RECORD_VIEW_KIND = `${CORE_AUTHORITY}/console/recordview`
+
+/** The kind a kind's declaration is a record of: a view's `appliesTo`
+ * points at one. */
+const KIND_DECLARATION = `${CORE_PACKAGE}/kind`
+
+/** The record path of a kind's declaration, which a view's `appliesTo`
+ * names. */
+export function kindDeclarationPath(identity: string): string {
+  return `${KIND_DECLARATION}/${identity}`
+}
+
+/** The list read of the views of one kind. */
+export function recordViewsParams(identity: string): ListParams {
+  return {
+    kinds: [RECORD_VIEW_KIND],
+    first: 20,
+    filter: {
+      properties: { appliesTo: { eq: kindDeclarationPath(identity) } },
+    },
+  }
+}
+
+/** Which of the record's own properties hold its window, who it is about
+ * and what recorded it. */
+export interface ViewWindow {
+  start: string
+  end: string
+  about?: string
+  source?: string
+}
+
+/** How a read takes the record's own source: first then the sources'
+ * priorities, alone, or the priorities alone. */
+export type SourcePolicy = "prefer" | "only" | "priority"
+
+export type ChartBucket = "auto" | "whole" | "minute" | "hour" | "day"
+
+/** One reducer of a chart, as the aggregate read takes it, its key in an
+ * answer (`reducerKey`) and what it is called. */
+export interface ChartReducer {
+  reducer: AggregateReducer
+  key: string
+  label?: string
+}
+
+export interface HeadingBlock {
+  type: "heading"
+  text: string
+  note?: string
+}
+
+export interface TextBlock {
+  type: "text"
+  text: string
+}
+
+export interface PropertiesBlock {
+  type: "properties"
+  label?: string
+  list: { property: string; label?: string }[]
+}
+
+export interface RelatedBlock {
+  type: "related"
+  label?: string
+  /** An outgoing reference property of the record. */
+  property?: string
+  /** A kind whose records reference this one, through `via`. */
+  kind?: string
+  via?: string
+  show: "list" | "count"
+  limit: number
+}
+
+export interface ChartBlock {
+  type: "chart"
+  label?: string
+  metrics: string[]
+  reducers: ChartReducer[]
+  bucket: ChartBucket
+  unit?: string
+  sources: SourcePolicy
+}
+
+export interface SpansBlock {
+  type: "spans"
+  label?: string
+  metric: string
+  codes: { code: string; label?: string }[]
+  totals: boolean
+  sources: SourcePolicy
+}
+
+export type Block =
+  | HeadingBlock
+  | TextBlock
+  | PropertiesBlock
+  | RelatedBlock
+  | ChartBlock
+  | SpansBlock
+
+/** The block types this console draws, in the order a notice names them. */
+export const BLOCK_TYPES = [
+  "heading",
+  "text",
+  "properties",
+  "related",
+  "chart",
+  "spans",
+] as const
+
+/** One section: the block it holds, or why it cannot be drawn. */
+export type Section = { block: Block } | { problem: string }
+
+export interface RecordView {
+  id: string
+  name?: string
+  intro?: string
+  window?: ViewWindow
+  fold: string[]
+  sections: Section[]
+}
+
+/** The reducers a chart may name: the aggregate read's, less
+ * `timeInState`, which a spans block reads instead. */
+const CHART_REDUCERS = new Set([
+  "count",
+  "sum",
+  "avg",
+  "twa",
+  "min",
+  "max",
+  "first",
+  "last",
+  "stddev",
+  "percentile",
+  "durationIn",
+  "increase",
+  "rate",
+  "circularMean",
+])
+
+const CHART_BUCKETS: readonly ChartBucket[] = [
+  "auto",
+  "whole",
+  "minute",
+  "hour",
+  "day",
+]
+const SOURCE_POLICIES: readonly SourcePolicy[] = ["prefer", "only", "priority"]
+
+type Bag = Record<string, unknown>
+
+function isBag(v: unknown): v is Bag {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+function text(v: unknown): string | undefined {
+  return typeof v === "string" && v ? v : undefined
+}
+
+function texts(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v.flatMap((x) => (text(x) ? [x as string] : []))
+    : []
+}
+
+function bags(v: unknown): Bag[] {
+  return Array.isArray(v) ? v.filter(isBag) : []
+}
+
+function oneOf<T extends string>(
+  v: unknown,
+  allowed: readonly T[],
+  fallback: T
+): T | undefined {
+  if (v === undefined || v === null) return fallback
+  return allowed.includes(v as T) ? (v as T) : undefined
+}
+
+/** A record view record as the console draws it. A section holding no
+ * block, two blocks, or a block this console does not know or cannot read
+ * is kept as a problem, so the page says so where the section would be. */
+export function recordViewOf(record: SubstrateRecord): RecordView {
+  const p = record.properties ?? {}
+  const w = isBag(p.window) ? p.window : undefined
+  const start = text(w?.start)
+  const end = text(w?.end)
+  return {
+    id: record.id,
+    name: text(p.name),
+    intro: text(p.intro),
+    window:
+      start && end
+        ? {
+            start,
+            end,
+            ...(text(w?.about) ? { about: text(w?.about) } : {}),
+            ...(text(w?.source) ? { source: text(w?.source) } : {}),
+          }
+        : undefined,
+    fold: texts(p.fold),
+    sections: bags(p.sections).map(sectionOf),
+  }
+}
+
+function sectionOf(raw: Bag): Section {
+  const set = Object.keys(raw).filter(
+    (k) => raw[k] !== undefined && raw[k] !== null
+  )
+  const known = set.filter((k) =>
+    (BLOCK_TYPES as readonly string[]).includes(k)
+  )
+  if (!set.length) return { problem: "This section holds no block." }
+  if (!known.length) {
+    return {
+      problem: `This section holds a block this console does not draw: ${set.join(", ")}.`,
+    }
+  }
+  if (known.length > 1) {
+    return {
+      problem: `This section holds ${known.length} blocks (${known.join(", ")}); a section holds one.`,
+    }
+  }
+  const type = known[0] as Block["type"]
+  const body = raw[type]
+  if (!isBag(body)) return { problem: `This ${type} block is not an object.` }
+  return blockOf(type, body)
+}
+
+function blockOf(type: Block["type"], b: Bag): Section {
+  switch (type) {
+    case "heading": {
+      const t = text(b.text)
+      if (!t) return { problem: "This heading has no text." }
+      return { block: { type, text: t, note: text(b.note) } }
+    }
+    case "text": {
+      const t = text(b.text)
+      if (!t) return { problem: "This text block has no text." }
+      return { block: { type, text: t } }
+    }
+    case "properties": {
+      const list = bags(b.list).flatMap((item) => {
+        const property = text(item.property)
+        return property ? [{ property, label: text(item.label) }] : []
+      })
+      if (!list.length) {
+        return { problem: "This properties block names no property." }
+      }
+      return { block: { type, label: text(b.label), list } }
+    }
+    case "related": {
+      const property = text(b.property)
+      const kind = text(b.kind)
+      const via = text(b.via)
+      const show = oneOf(b.show, ["list", "count"] as const, "list")
+      if (!show) return { problem: `This related block's show is ${b.show}.` }
+      if (property ? kind || via : !(kind && via)) {
+        return {
+          problem:
+            "This related block names neither one outgoing reference property nor a kind and the property on it that points here.",
+        }
+      }
+      const limit =
+        typeof b.limit === "number" && b.limit >= 1
+          ? Math.min(100, b.limit)
+          : 10
+      return {
+        block: {
+          type,
+          label: text(b.label),
+          ...(property ? { property } : { kind, via }),
+          show,
+          limit,
+        },
+      }
+    }
+    case "chart": {
+      const metrics = texts(b.metrics)
+      if (!metrics.length) return { problem: "This chart names no metric." }
+      const bucket = oneOf(b.bucket, CHART_BUCKETS, "auto")
+      if (!bucket) return { problem: `This chart's bucket is ${b.bucket}.` }
+      const sources = oneOf(b.sources, SOURCE_POLICIES, "prefer")
+      if (!sources) return { problem: `This chart's sources is ${b.sources}.` }
+      const reducers: ChartReducer[] = []
+      for (const r of bags(b.reducers)) {
+        const read = chartReducerOf(r)
+        if (typeof read === "string") return { problem: read }
+        reducers.push(read)
+      }
+      if (!reducers.length) return { problem: "This chart names no reducer." }
+      return {
+        block: {
+          type,
+          label: text(b.label),
+          metrics,
+          reducers,
+          bucket,
+          unit: text(b.unit),
+          sources,
+        },
+      }
+    }
+    case "spans": {
+      const metric = text(b.metric)
+      if (!metric) return { problem: "This spans block names no metric." }
+      const sources = oneOf(b.sources, SOURCE_POLICIES, "only")
+      if (!sources) {
+        return { problem: `This spans block's sources is ${b.sources}.` }
+      }
+      const codes = bags(b.codes).flatMap((c) => {
+        const code = text(c.code)
+        return code ? [{ code, label: text(c.label) }] : []
+      })
+      return {
+        block: {
+          type,
+          label: text(b.label),
+          metric,
+          codes,
+          totals: b.totals !== false,
+          sources,
+        },
+      }
+    }
+  }
+}
+
+/** One declared reducer as the read takes it, or why it cannot be read. */
+function chartReducerOf(r: Bag): ChartReducer | string {
+  const name = text(r.reducer)
+  const label = text(r.label)
+  if (!name || !CHART_REDUCERS.has(name)) {
+    return `This chart names a reducer this console does not read: ${name ?? "none"}.`
+  }
+  let reducer: AggregateReducer = name
+  if (name === "durationIn") {
+    if (typeof r.low !== "number" || typeof r.high !== "number") {
+      return "A durationIn reducer needs a low and a high bound."
+    }
+    reducer = { durationIn: [r.low, r.high] }
+  } else if (name === "percentile") {
+    if (typeof r.rank !== "number") return "A percentile reducer needs a rank."
+    reducer = { percentile: r.rank }
+  }
+  return { reducer, key: reducerKey(reducer), ...(label ? { label } : {}) }
+}
+
+/** The properties the views fold away from the generic sheet. */
+export function foldedBy(views: readonly RecordView[]): string[] {
+  return [...new Set(views.flatMap((v) => v.fold))]
+}
+
+/** The views in the order a page draws them: by id. */
+export function viewsOf(records: readonly SubstrateRecord[]): RecordView[] {
+  return records.map(recordViewOf).sort((a, b) => a.id.localeCompare(b.id))
+}
+
+// ── the window a view binds on one record ─────────────────────────────────
+
+/** What a view's chart and spans blocks read on one record: its window,
+ * who it is about (`aboutBound` where the view names the property; absent
+ * then reads the owner's), what recorded it, and the observed kinds and
+ * metric kind the reads go through. */
+export interface Bound {
+  window: TimeRange
+  aboutBound: boolean
+  about?: string
+  source?: string
+  /** The kind the observed kinds pin their `metric` at. */
+  metricKind: string
+  observed: string[]
+}
+
+/** The view's window on a record: the instants its bound properties hold,
+ * an end after the start, in a repository whose observed kinds pin a
+ * metric kind. Undefined otherwise, and the chart and spans blocks then
+ * say they have nothing to read. */
+export function boundOf(
+  view: RecordView,
+  record: SubstrateRecord,
+  kinds: readonly KindInfo[]
+): Bound | undefined {
+  const w = view.window
+  if (!w) return undefined
+  const p = record.properties ?? {}
+  const at =
+    typeof p[w.start] === "string" ? Date.parse(p[w.start] as string) : NaN
+  const end =
+    typeof p[w.end] === "string" ? Date.parse(p[w.end] as string) : NaN
+  if (Number.isNaN(at) || Number.isNaN(end) || end <= at) return undefined
+  const observed = observedKinds(kinds)
+  const metricKind = observedPins(observed).metric
+  if (!metricKind) return undefined
+  return {
+    window: { start: at, end },
+    aboutBound: Boolean(w.about),
+    about: w.about ? readReference(p[w.about])?.path : undefined,
+    source: w.source ? readReference(p[w.source])?.path : undefined,
+    metricKind,
+    observed: observed.map((k) => k.identity),
+  }
+}
+
+/** A metric id as the record path a read names. */
+export function metricPathOf(b: Pick<Bound, "metricKind">, id: string) {
+  return `${b.metricKind}/${id}`
+}
+
+function rangeOf(window: TimeRange) {
+  return { gte: isoWithOffset(window.start), lt: isoWithOffset(window.end) }
+}
+
+/** The narrowing every read takes: who the record is about where the view
+ * binds it (a named record, or the owner's, which name nobody), and the
+ * record's own source where the policy reads it alone. */
+function narrowing(b: Bound, policy: SourcePolicy): Record<string, Cond> {
+  return {
+    ...(b.aboutBound
+      ? { about: b.about ? { eq: b.about } : { exists: false } }
+      : {}),
+    ...(policy === "only" && b.source ? { source: { eq: b.source } } : {}),
+  }
+}
+
+/** Where sources overlap, which one answers. `prefer` puts the record's own
+ * source first and the rest by priority; `only` narrows to it in the
+ * filter and needs no order, except where the record names none. */
+function sourcesOf(
+  b: Bound,
+  policy: SourcePolicy
+): AggregateSources | undefined {
+  if (policy === "only" && b.source) return undefined
+  return {
+    policy: "priority",
+    ...(policy === "prefer" && b.source ? { order: [b.source] } : {}),
+  }
+}
+
+function filterOf(b: Bound, policy: SourcePolicy): RecordFilter {
+  const properties = narrowing(b, policy)
+  return {
+    implements: OBSERVED_TRAIT_IDENTITY,
+    ...(Object.keys(properties).length ? { properties } : {}),
+  }
+}
+
+const BUCKET_SIZES: Record<
+  Exclude<ChartBucket, "auto" | "whole">,
+  BucketSize
+> = {
+  minute: "1m",
+  hour: "hour",
+  day: "day",
+}
+
+/** The bucket size a line chart reads `window` at. */
+export function chartBucketSize(
+  bucket: ChartBucket,
+  window: TimeRange
+): BucketSize {
+  return bucket === "auto" || bucket === "whole"
+    ? autoBucket(window)
+    : BUCKET_SIZES[bucket]
+}
+
+/** One metric of a chart over `window` (the record's, or a part zoomed
+ * into): a line's buckets, or one row over the window where the chart's
+ * bucket is `whole`. */
+export function chartRead(
+  b: Bound,
+  chart: ChartBlock,
+  metric: string,
+  window: TimeRange,
+  timezone: string
+): AggregateRead {
+  const sources = sourcesOf(b, chart.sources)
+  return {
+    filter: filterOf(b, chart.sources),
+    aggregate: {
+      metric: { ref: metricPathOf(b, metric) },
+      from: "raw",
+      range: rangeOf(window),
+      ...(chart.bucket === "whole"
+        ? {}
+        : {
+            bucket: bucketOf(chartBucketSize(chart.bucket, window), timezone),
+          }),
+      reducers: chart.reducers.map((r) => r.reducer),
+      ...(chart.unit ? { unit: chart.unit } : {}),
+      ...(sources ? { sources } : {}),
+    },
+  }
+}
+
+/** A coded metric's total per code over the whole window. */
+export function spansTotalsRead(b: Bound, spans: SpansBlock): AggregateRead {
+  const sources = sourcesOf(b, spans.sources)
+  return {
+    filter: filterOf(b, spans.sources),
+    aggregate: {
+      metric: { ref: metricPathOf(b, spans.metric) },
+      from: "raw",
+      range: rangeOf(b.window),
+      groupBy: ["code"],
+      reducers: ["sum"],
+      unit: "min",
+      ...(sources ? { sources } : {}),
+    },
+  }
+}
+
+/** The list of a coded metric's spans that start inside the window,
+ * oldest first. */
+export function spansListParams(b: Bound, spans: SpansBlock): ListParams {
+  return {
+    kinds: b.observed,
+    first: 500,
+    orderBy: "at:asc",
+    filter: {
+      properties: {
+        metric: { eq: metricPathOf(b, spans.metric) },
+        ...narrowing(b, spans.sources),
+        at: {
+          gte: new Date(b.window.start).toISOString(),
+          lt: new Date(b.window.end).toISOString(),
+        },
+      },
+    },
+  }
+}
+
+/** One span of a coded metric: its code and its instants. */
+export interface Span {
+  code: string
+  start: number
+  end: number
+}
+
+/** Coded records as spans, oldest first: each naming a code over a span
+ * that ends after it starts. */
+export function spansOf(records: readonly SubstrateRecord[]): Span[] {
+  const out: Span[] = []
+  for (const r of records) {
+    const p = r.properties ?? {}
+    const start = typeof p.at === "string" ? Date.parse(p.at) : NaN
+    const end = typeof p.endsAt === "string" ? Date.parse(p.endsAt) : NaN
+    if (typeof p.code !== "string" || !p.code) continue
+    if (Number.isNaN(start) || Number.isNaN(end) || end <= start) continue
+    out.push({ code: p.code, start, end })
+  }
+  return out.sort((a, b) => a.start - b.start)
+}
+
+/** The spans as a sequence, where they are one: two or more that never
+ * overlap, so each instant holds one code. A source that writes one span
+ * per code over the whole window gives totals and no order, and draws
+ * none. */
+export function sequenceOf(spans: readonly Span[]): Span[] | undefined {
+  if (spans.length < 2) return undefined
+  for (let i = 1; i < spans.length; i++) {
+    if (spans[i].start < spans[i - 1].end) return undefined
+  }
+  return [...spans]
+}
+
+/** The rows of a spans block, top to bottom: the codes the spans hold, in
+ * the block's order, and a code it does not list after them by name. */
+export function spanRows(
+  spans: readonly Span[],
+  order: readonly string[]
+): string[] {
+  const codes = [...new Set(spans.map((s) => s.code))]
+  const rank = (c: string) => {
+    const at = order.indexOf(c)
+    return at < 0 ? order.length : at
+  }
+  return codes.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+}
+
+/** The timeline over the record's window, with every metric the view's
+ * line charts and spans read, about who the record is about. */
+export function viewTimelineSearch(
+  b: Bound,
+  view: RecordView
+): Record<string, string> | undefined {
+  const metrics = new Set<string>()
+  for (const s of view.sections) {
+    if (!("block" in s)) continue
+    if (s.block.type === "chart" && s.block.bucket !== "whole") {
+      for (const m of s.block.metrics) metrics.add(metricPathOf(b, m))
+    }
+    if (s.block.type === "spans") metrics.add(metricPathOf(b, s.block.metric))
+  }
+  if (!metrics.size) return undefined
+  return {
+    metric: [...metrics].join(","),
+    ...(b.about ? { about: b.about } : {}),
+    range: "custom",
+    start: new Date(b.window.start).toISOString(),
+    end: new Date(b.window.end).toISOString(),
+  }
+}

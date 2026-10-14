@@ -129,17 +129,11 @@ describe("forms and reducers", () => {
       "stddev",
       "percentile:0.5",
       "percentile:0.9",
-      // A heart rate's zones, as five times in a range.
-      "durationIn:95,114",
-      "durationIn:114,133",
-      "durationIn:133,152",
-      "durationIn:152,171",
-      "durationIn:171,220",
     ])
-    // A level that is no heart rate has no zones; an angle's mean is
-    // circular.
+    // No metric is offered bands: which bands a reader wants is a record
+    // view's to say, not the console's. An angle's mean is circular.
     expect(
-      reducerOptions("gauge", "gauge", info("health/body_mass"))
+      reducerOptions("gauge", "gauge", info("health/heart_rate"))
     ).not.toContain("durationIn:95,114")
     expect(reducerOptions("gauge", "gauge", { measures: "angle" })).toContain(
       "circularMean"
@@ -198,7 +192,7 @@ describe("forms and reducers", () => {
       "durationIn:114,133"
     )
     expect(reducerChoiceWords("durationIn:114,133")).toBe(
-      "Time in zone 2, 114 to 133"
+      "Time in range 114 to 133"
     )
     expect(reducerChoiceWords("percentile:0.5")).toBe("Median")
     expect(reducerChoiceWords("percentile:0.9")).toBe("Percentile 90")

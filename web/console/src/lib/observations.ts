@@ -199,6 +199,9 @@ export interface MetricInfo {
   displayPrecision?: number
   /** Where a reader lists it (`heart`, `sleep`, `body`). */
   category?: string
+  /** Where a read by the day or longer places a value's span: `end` lands
+   * a night on the day it ends. Absent is the start. */
+  bucketPlace?: "start" | "end"
 }
 
 /** A metric record read as `MetricInfo`. A `codeSet` entry may be a bare
@@ -227,6 +230,9 @@ export function metricInfoOf(record: SubstrateRecord): MetricInfo {
     codeSet: codeSet?.length ? codeSet : undefined,
     ...(typeof p.category === "string" && p.category
       ? { category: p.category }
+      : {}),
+    ...(p.bucketPlace === "start" || p.bucketPlace === "end"
+      ? { bucketPlace: p.bucketPlace }
       : {}),
     ...(typeof p.displayPrecision === "number" &&
     Number.isInteger(p.displayPrecision)
@@ -354,7 +360,7 @@ function text(value: unknown): string | undefined {
 }
 
 /** A metric id read as words when no record names it, its last segment
- * as a code is: `health/heart_rate` is "Heart rate". */
+ * as a code is: `body/resting_rate` is "Resting rate". */
 export function metricWords(id: string): string {
   return codeWords(id.slice(id.lastIndexOf("/") + 1) || id)
 }
@@ -386,40 +392,18 @@ export function shapeOf(
   return formOf(metric, stream) ?? "gauge"
 }
 
-/** Heart rate zones as `durationIn` bounds in `/min`, zone 1 to zone 5: the
- * five 19-beat bands from half of a 190 maximum, the top one open to 220. */
-export const HEART_RATE_ZONES: readonly (readonly [number, number])[] = [
-  [95, 114],
-  [114, 133],
-  [133, 152],
-  [152, 171],
-  [171, 220],
-]
-
-/** A heart rate zone's reducer key and words: `durationIn:114,133`, "Time
- * in zone 2, 114 to 133". */
-export function zoneKey(zone: readonly [number, number]): string {
-  return `durationIn:${zone[0]},${zone[1]}`
-}
-
-/** The metrics a reader reads heart rate zones of: a heart metric counted
- * per minute. */
-function heartRate(metric?: Pick<MetricInfo, "category" | "unit">): boolean {
-  return metric?.category === "heart" && metric.unit === "/min"
-}
-
 /** The reducers a shape may ask for, the default first, each one its form
  * takes (docs/api.md, "Reducers, by form"), as reducer keys
- * (`reducerKey`). A level adds the median and the 90th percentile, the time
- * in each heart rate zone where it is a heart rate (`HEART_RATE_ZONES`), and
- * the circular mean where it is an angle; an amount the median and the
- * 90th percentile. A coded gauge answers time per code, a coded amount its
+ * (`reducerKey`). A level adds the median and the 90th percentile, and the
+ * circular mean where it is an angle; an amount the median and the 90th
+ * percentile. A `durationIn` band is read where an address names one
+ * (`reducerOf`); the menu offers no bands, since no metric says which. A coded gauge answers time per code, a coded amount its
  * total per code; their first and last are codes, which no chart draws. A
  * summary takes what `summaryReducers` lists. */
 export function reducerOptions(
   shape: ReadingShape,
   form?: Form,
-  metric?: Pick<MetricInfo, "category" | "unit" | "measures">,
+  metric?: Pick<MetricInfo, "measures">,
   statistic?: string
 ): string[] {
   switch (shape) {
@@ -435,7 +419,6 @@ export function reducerOptions(
         "stddev",
         "percentile:0.5",
         "percentile:0.9",
-        ...(heartRate(metric) ? HEART_RATE_ZONES.map(zoneKey) : []),
         ...(metric?.measures === "angle" ? ["circularMean"] : []),
       ]
     case "amount":
@@ -516,15 +499,9 @@ export function reducerOf(key: string): AggregateReducer {
   return key
 }
 
-/** A reducer key in a menu's words: a heart rate zone by its number and
- * bounds ("Time in zone 2, 114 to 133"), the 50th percentile as the median,
- * every other as `reducerLabel` says it. */
+/** A reducer key in a menu's words: the 50th percentile as the median,
+ * every other as `reducerLabel` says it ("Time in range 95 to 114"). */
 export function reducerChoiceWords(key: string): string {
-  const zone = HEART_RATE_ZONES.findIndex((z) => zoneKey(z) === key)
-  if (zone >= 0) {
-    const [lo, hi] = HEART_RATE_ZONES[zone]
-    return `Time in zone ${zone + 1}, ${lo} to ${hi}`
-  }
   if (key === "percentile:0.5") return "Median"
   return reducerLabel(reducerOf(key))
 }

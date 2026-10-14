@@ -50,7 +50,7 @@ import { useTimelineControls } from "@/hooks/use-timeline-controls"
 import type { AggregateFrom } from "@/lib/api/types"
 import { distinct, sameRef } from "@/lib/observations"
 import { FROM_CHOICES } from "@/lib/observations-reads"
-import { nightBucket } from "@/lib/observations-time"
+import { endPlacedBucket } from "@/lib/observations-time"
 import { groupFixed, planPlot, splitCharts } from "@/lib/overlay"
 import { shortRef } from "@/lib/stream-table"
 import { ARRAY, FROM_VALUES, GROUP_VALUES } from "@/lib/timeline-address"
@@ -159,9 +159,10 @@ export function ObservationsTimelinePage() {
       ].map((value) => ({ value, label: value })),
     },
   ]
-  // A sleep metric reads a week in days, never in hours a night overfills.
-  const size = metrics.some((m) => obs.metricOf(m)?.category === "sleep")
-    ? nightBucket(controls.bucket, controls.size)
+  // A metric placed by its end reads a week in days, never in hours its
+  // spans overfill.
+  const size = metrics.some((m) => obs.metricOf(m)?.bucketPlace === "end")
+    ? endPlacedBucket(controls.bucket, controls.size)
     : controls.size
   const sized = { ...controls, size }
   // A metric is planned once its streams are read, so one being added waits

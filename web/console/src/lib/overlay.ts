@@ -411,6 +411,7 @@ export function planPlot(
     // Where the reader picked nothing and some streams hold raw points, a
     // reducer no summary takes reads those alone.
     switchable: !scope.from && selected.some((s) => s.form !== "summary"),
+    asked: scope.reducer,
   })
   const reducers = reducerMenu.filter((o) => !o.disabled).map((o) => o.value)
   const reducer =
@@ -479,11 +480,12 @@ export function planPlot(
     (new Set(selected.map(partOf)).size || 1)
   const local = Boolean(scope.recordedLocal) && dayBucket(scope.size)
   const range = readRange(scope.range, scope.size, local)
-  // A night lands on the day it ends, so each day holds one night and a
-  // week or a month is the sum of its days. The server places only spans
-  // so: a gauge's or a counter's points are instants, and it refuses them.
+  // A metric placed by its end (`bucketPlace`, a night's stages) lands on
+  // the day it ends, so each day holds one night and a week or a month is
+  // the sum of its days. The server places only spans so: a gauge's or a
+  // counter's points are instants, and it refuses them.
   const wake =
-    info?.category === "sleep" &&
+    info?.bucketPlace === "end" &&
     dayBucket(scope.size) &&
     selected.length > 0 &&
     selected.every((s) => s.form === "amount" || s.form === "summary")
@@ -614,6 +616,13 @@ export function planPlot(
  * to `raw` where the reader left where to read from automatic and some
  * stream holds raw points, and is disabled with the reason otherwise. A
  * metric whose streams all keep summaries reads in a summary's terms. */
+/** Whether a reducer key is a `durationIn` band whose low bound is under
+ * its high one: `durationIn:114,133`. */
+function bandKey(key: string): boolean {
+  const m = /^durationIn:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(key)
+  return Boolean(m && Number(m[1]) < Number(m[2]))
+}
+
 function menuOf(
   shape: ReadingShape,
   form: Form | undefined,
@@ -623,6 +632,9 @@ function menuOf(
     summaries: boolean
     switchable: boolean
     statistic?: string
+    /** The reducer the address asks for: a level's `durationIn` band is
+     * offered where an address names one, since no metric says which. */
+    asked?: string
   }
 ): ReducerOption[] {
   // A level's plain average counts each reading once, so a source that
@@ -648,6 +660,14 @@ function menuOf(
     }
   }
   const own = reducerOptions(shape, form, info, read.statistic)
+  if (
+    shape === "gauge" &&
+    read.asked &&
+    bandKey(read.asked) &&
+    !own.includes(read.asked)
+  ) {
+    own.push(read.asked)
+  }
   if (read.from === "raw" || !read.summaries || shape === "summary") {
     return own.map(option)
   }

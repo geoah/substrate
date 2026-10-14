@@ -175,6 +175,7 @@ const WORDS = new Set([
   "updated",
   "url",
   "user",
+  "view",
   "web",
   "workflow",
   "workout",

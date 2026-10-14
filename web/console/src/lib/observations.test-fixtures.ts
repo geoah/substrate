@@ -148,7 +148,7 @@ export const METRICS: SubstrateRecord[] = [
     form: "amount",
     unit: "min",
     codeSet: ["rem", "deep", "light", "awake"],
-    category: "sleep",
+    bucketPlace: "end",
   }),
   record(METRIC, "health/whoop_recovery", {
     title: "Recovery",

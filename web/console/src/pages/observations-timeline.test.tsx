@@ -521,7 +521,7 @@ describe("the timeline's requests", () => {
     expect(read.aggregate.sources).toBeUndefined()
   })
 
-  it("offers every reducer the read's forms take, a zone reading raw points alone", async () => {
+  it("offers every reducer the read's forms take, one no summary takes reading raw points alone", async () => {
     // WHOOP keeps heart rate as summaries beside the watches' raw points.
     const whoop = {
       ...LATEST.rows[0],
@@ -544,24 +544,26 @@ describe("the timeline's requests", () => {
       "prefer-raw"
     )
     fireEvent.click(within(heart).getByRole("button", { name: /^Show:/ }))
-    const zone = await screen.findByRole("option", {
-      name: /Time in zone 2, 114 to 133/,
+    // No band is offered: which bands a reader wants is a record view's.
+    expect(screen.queryByRole("option", { name: /Time in range/ })).toBe(null)
+    const twa = await screen.findByRole("option", {
+      name: /Time-weighted average/,
     })
-    expect(zone.textContent).toContain("Raw points only")
-    fireEvent.click(zone)
+    expect(twa.textContent).toContain("raw points only")
+    fireEvent.click(twa)
     await waitFor(() =>
       expect(charts(server.seen, "health/heart_rate")).toHaveLength(2)
     )
     expect(charts(server.seen, "health/heart_rate")[1].aggregate).toMatchObject(
       {
         from: "raw",
-        reducers: [{ durationIn: [114, 133] }],
-        unit: "min",
+        // The band beside the line, in the level's own unit.
+        reducers: ["twa", "min", "max"],
       }
     )
     await waitFor(() =>
       expect(heart.textContent).toContain(
-        "Reads raw points alone: no vendor summary takes time in zone 2, 114 to 133, so WHOOP 4.0’s summaries are left out."
+        "Reads raw points alone: no vendor summary takes time-weighted average, so WHOOP 4.0’s summaries are left out."
       )
     )
   })

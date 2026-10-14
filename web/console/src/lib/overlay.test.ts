@@ -245,7 +245,9 @@ describe("where a metric reads from", () => {
         hint: "Each reading weighed by how long it held; raw points only",
       },
     ])
-    expect(planned.reducers).toContain("durationIn:114,133")
+    // No band is offered unasked: which bands a reader wants is a record
+    // view's to say.
+    expect(planned.reducers).not.toContain("durationIn:114,133")
   })
 
   it("reads raw points alone for a reducer no summary takes, or says why it cannot", () => {
@@ -261,8 +263,9 @@ describe("where a metric reads from", () => {
     }
     const obs = source([whoop, ...streams])
     const scope = { ...SCOPE, streams: [whoop, garmin] }
-    // Picked from the automatic read, time in a zone reads raw points and
-    // says so; WHOOP's summaries take no durationIn.
+    // A band an address asks for is read: picked from the automatic read,
+    // time in a range reads raw points and says so; WHOOP's summaries take
+    // no durationIn.
     const zone = planPlot(obs, HEART, {
       ...scope,
       reducer: "durationIn:114,133",

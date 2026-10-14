@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useObservations } from "@/hooks/use-observations"
 import { useTimelineControls } from "@/hooks/use-timeline-controls"
-import { nightBucket, type RangePreset } from "@/lib/observations-time"
+import { endPlacedBucket, type RangePreset } from "@/lib/observations-time"
 import { groupFixed, planPlot } from "@/lib/overlay"
 import {
   selectedStreams,
@@ -70,9 +70,10 @@ export function TimelinePanel({
   const picked = selectedStreams(selection, own.streams).filter(
     (s) => !own.failed(s.metric)
   )
-  // A sleep metric reads a week in days, never in hours a night overfills.
-  const size = metrics.some((m) => own.metricOf(m)?.category === "sleep")
-    ? nightBucket(controls.bucket, controls.size)
+  // A metric placed by its end reads a week in days, never in hours its
+  // spans overfill.
+  const size = metrics.some((m) => own.metricOf(m)?.bucketPlace === "end")
+    ? endPlacedBucket(controls.bucket, controls.size)
     : controls.size
   const sized = { ...controls, size }
   const plots = selectionByMetric(picked).map((entry) =>
