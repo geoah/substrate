@@ -194,7 +194,7 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 }
 
 // seedRefoldSource opens a store in a schema of its own and writes one
-// repository's history into it: the seeded core and llm declarations, the
+// repository's history into it: the seeded core, llm and console declarations, the
 // tasks sample with the people and scheduling packages it requires, task
 // records created, patched, labeled, annotated, referenced, deleted and put
 // back (writeSomeHistory), people fed by three mapped sources, with offers

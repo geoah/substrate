@@ -26,10 +26,15 @@ import (
 // loop's own data, out of core so core is not everything. It is seeded, so
 // nothing keys on its NAME — the seed, the boot upgrade, the
 // declaration-write refusal all read `source: builtin`.
+//
+// PackageConsole is the third (record 0166): what the console shows, as
+// records, so a sample's kinds are presented from data and no console code
+// names them.
 const (
 	AuthorityPublisher = "substrate.reamde.dev"
 	PackageCore        = AuthorityPublisher + "/core"
 	PackageLLM         = AuthorityPublisher + "/llm"
+	PackageConsole     = AuthorityPublisher + "/console"
 )
 
 // The manifest document kinds — the local names under PackageCore. The

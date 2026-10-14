@@ -2464,10 +2464,10 @@ func admissionUnits(built []*vocabulary.Package) [][]*vocabulary.Package {
 }
 
 // seededPackageName reports whether a declaration group is one the binary
-// seeds: the two packages, and the authority row that owns them.
+// seeds: the three packages, and the authority row that owns them.
 func seededPackageName(name string) bool {
 	return name == vocabulary.PackageCore || name == vocabulary.PackageLLM ||
-		name == vocabulary.AuthorityPublisher
+		name == vocabulary.PackageConsole || name == vocabulary.AuthorityPublisher
 }
 
 // markGroupQuarantined records the quarantine state on the package's own row,
