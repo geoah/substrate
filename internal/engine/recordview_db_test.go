@@ -20,6 +20,30 @@ import (
 
 const recordViewKind = "substrate.reamde.dev/console/recordview"
 
+// authorityRowBeforeConsole is the seed authority's own row exactly as the
+// binary before the console package shipped it, a fixed copy so the upgrade
+// it tests does not move with the tree.
+const authorityRowBeforeConsole = `kind: substrate.reamde.dev/core/authority
+metadata:
+  id: substrate.reamde.dev
+data:
+  version: 2
+  description: >-
+    The substrate's own vocabulary: the core and llm packages every repository
+    is seeded with.
+`
+
+// authorityRowVersion is the version the stored seed authority row holds.
+func authorityRowVersion(t *testing.T, ds substrate.Dataset) int64 {
+	t.Helper()
+	row, err := ds.Get(context.Background(), "substrate.reamde.dev/core/authority", vocabulary.AuthorityPublisher)
+	if err != nil {
+		t.Fatalf("read the seed authority row: %v", err)
+	}
+	v, _ := vocabulary.VersionValue(row.Properties["version"])
+	return v
+}
+
 // aRecordView is a view every block of which is well formed, over a kind the
 // seed declares.
 func aRecordView() map[string]any {
@@ -54,9 +78,14 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
 
-	// --- binary N: the seed authority without the console package.
+	// --- binary N: the seed authority without the console package, its own
+	// row at the version that binary shipped.
 	before := shippedTree(t)
 	if err := os.RemoveAll(filepath.Join(before, vocabulary.PackageConsole)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(before, vocabulary.AuthorityPublisher, "authority.yaml"),
+		[]byte(authorityRowBeforeConsole), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	svc1 := openTree(t, dsn, before)
@@ -70,6 +99,9 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 	}
 	if _, err := ds1.KindByRef(ctx, recordViewKind); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("binary N already declares %s: %v", recordViewKind, err)
+	}
+	if v := authorityRowVersion(t, ds1); v != 2 {
+		t.Fatalf("binary N seeded the authority row at version %d, want 2", v)
 	}
 	head := maxSeq(t, ds1)
 	_ = svc1.Close()
@@ -87,17 +119,27 @@ func TestBootUpgradeSeedsTheConsolePackageIntoAnOlderRepository(t *testing.T) {
 	if info.Source != vocabulary.SourceBuiltin {
 		t.Errorf("%s source = %q, want %q", recordViewKind, info.Source, vocabulary.SourceBuiltin)
 	}
-	sawPackage := false
+	sawPackage, sawAuthority := false, false
 	for _, ch := range changesSince(t, ds2, head) {
 		if ch.Actor != substrate.ActorSystem {
 			t.Fatalf("upgrade entry %d is attributed to %q", ch.Seq, ch.Actor)
 		}
-		if ch.RecordID == vocabulary.PackageConsole {
+		switch ch.RecordID {
+		case vocabulary.PackageConsole:
 			sawPackage = true
+		case vocabulary.AuthorityPublisher:
+			sawAuthority = true
 		}
 	}
 	if !sawPackage {
 		t.Fatal("the upgrade entries do not include the console package row")
+	}
+	// The authority row names the package now, and moved from 2 to 3.
+	if !sawAuthority {
+		t.Fatal("the upgrade entries do not include the authority row")
+	}
+	if v := authorityRowVersion(t, ds2); v != 3 {
+		t.Fatalf("the upgraded authority row is at version %d, want 3", v)
 	}
 	// The upgraded repository takes a view like a fresh one does.
 	if _, err := ds2.Put(ctx, substrate.ActorAPI, substrate.PutInput{
