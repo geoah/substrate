@@ -184,3 +184,50 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 		})
 	}
 }
+
+// A closure's shipped view replaces the stored one while every property of it
+// was last written by the installing bundle, and stays as the owner left it
+// once any other actor wrote one.
+func TestReinstallReplacesAnUneditedViewAndKeepsAnEditedOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCoreDataset(t)
+	pkg := ds.Repository().Authority + "/viewtest"
+	installer := substrate.BundleActor(ds.Repository().Authority, "viewtest")
+	closure := []map[string]any{vocabulary.PackageManifest(pkg, 0)}
+	install := func(name string) {
+		t.Helper()
+		views := make([]substrate.PutInput, 0, 2)
+		for _, id := range []string{"untouched", "edited"} {
+			v := aRecordView()
+			v["name"] = name
+			views = append(views, substrate.PutInput{Kind: recordViewKind, ID: id, Properties: v})
+		}
+		if _, err := ds.InstallBundleClosure(ctx, installer, closure, views, substrate.BundleInstall{}); err != nil {
+			t.Fatalf("install %s: %v", name, err)
+		}
+	}
+	name := func(id string) string {
+		t.Helper()
+		v, err := ds.Get(ctx, recordViewKind, id)
+		if err != nil {
+			t.Fatalf("read %s: %v", id, err)
+		}
+		s, _ := v.Properties["name"].(string)
+		return s
+	}
+
+	install("shipped one")
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, "edited", substrate.PatchInput{
+		Properties: map[string]any{"intro": "mine"},
+	}); err != nil {
+		t.Fatalf("edit a view: %v", err)
+	}
+	install("shipped two")
+	if got := name("untouched"); got != "shipped two" {
+		t.Errorf("an unedited view kept %q, want the newer shipped one", got)
+	}
+	if got := name("edited"); got != "shipped one" {
+		t.Errorf("an edited view became %q, want the owner's copy left alone", got)
+	}
+}

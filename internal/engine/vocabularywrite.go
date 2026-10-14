@@ -282,7 +282,8 @@ func claimedOrigin(origin string, docs []vocabulary.Document) (string, int64, er
 // document that fails to admit — a malformed trigger, an unresolvable callable,
 // a failed write — rolls the schema apply back with it, so a failed install
 // never leaves a live half-installed closure. The data documents
-// are UPSERTS: a re-install refreshes the wiring in place. The transaction's
+// are UPSERTS: a re-install refreshes the wiring in place, except a record of
+// a console kind the owner edited (keepsOwnersEdit), which it leaves alone. The transaction's
 // declarations are the candidate registry, so a data document may name a kind,
 // a mapping or a callable the same closure installs.
 func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
@@ -313,12 +314,12 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 					}
 				}
-				if createOnlyShipped(in.Kind) {
-					live, err := t.liveAt(eref{Kind: in.Kind, ID: in.ID})
+				if keepsOwnersEdit(in.Kind) {
+					edited, err := t.editedSince(eref{Kind: in.Kind, ID: in.ID}, actor)
 					if err != nil {
 						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 					}
-					if live {
+					if edited {
 						continue
 					}
 				}
@@ -341,29 +342,51 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	return out, nil
 }
 
-// createOnlyShipped reports whether a closure's shipped record of this kind is
-// written only where the repository holds no live record at its id. A record
-// of a console kind (a record view) is presentation its owner edits, and a
-// re-import or an upgrade that upserted it would overwrite the edit without a
-// word (record 0166). A tombstone counts as absent, so deleting a view and
-// importing again is how an owner takes the newer shipped one.
-func createOnlyShipped(kind string) bool {
+// keepsOwnersEdit reports whether a closure's shipped record of this kind is
+// written only where the owner has not edited the stored one. A record of a
+// console kind (a record view) is presentation its owner edits, and an
+// upsert would overwrite the edit without a word (record 0166). Every other
+// shipped data record is an upsert.
+func keepsOwnersEdit(kind string) bool {
 	return vocabulary.KindPackage(kind) == vocabulary.PackageConsole
 }
 
-// liveAt reports whether a live record stands at ref, under the record's
-// advisory lock so a concurrent writer of the same id serializes behind the
-// check.
-func (t *txn) liveAt(ref eref) (bool, error) {
+// editedSince reports whether a live record stands at ref with a property
+// some actor other than `installer` last wrote, read off the manager ledger
+// under the record's advisory lock so a concurrent writer of the same id
+// serializes behind the check. An absent or deleted record is not edited, so
+// the shipped one lands; a live row with no manager row at all cannot be told
+// from an edit and counts as one. A property the owner DELETED leaves no
+// manager row, so a view whose only edit was a removal reads as unedited.
+func (t *txn) editedSince(ref eref, installer substrate.Actor) (bool, error) {
 	at, err := t.lockCanonical(ref)
 	if err != nil {
 		return false, err
 	}
 	row, err := t.loadRow(at, false)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return false, err
+	}
+	rows, err := t.query(`SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2`, at.Kind, at.ID)
 	if err != nil {
 		return false, err
 	}
-	return row != nil && row.DeletedAt == nil, nil
+	defer func() { _ = rows.Close() }()
+	managed := false
+	for rows.Next() {
+		var actor string
+		if err := rows.Scan(&actor); err != nil {
+			return false, err
+		}
+		if substrate.Actor(actor) != installer {
+			return true, nil
+		}
+		managed = true
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return !managed, nil
 }
 
 // applyVocabularyBatch is the write path for schema: candidate before the

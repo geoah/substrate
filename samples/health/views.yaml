@@ -4,9 +4,11 @@
 # sample, so these records are the only place a sleep's hypnogram or a
 # workout's heart rate zones are asked for.
 #
-# The import writes a view only where the repository holds none at its id, so
-# an owner's edit survives a re-import or an upgrade of this sample. To take a
-# newer shipped view, delete yours and import again.
+# An import or upgrade replaces a view nobody but the import has written, and
+# leaves one alone once its owner edited any property of it, so the edit
+# survives. To take a newer shipped view over an edited one, delete yours and
+# import again. `substratectl apply -f` of this file writes the views directly
+# and skips that rule.
 #
 # `appliesTo` names the kind's declaration, which the import rehomes with the
 # kind, so a view lands pointing at the repository's own `health/sleep`.

@@ -33,8 +33,8 @@ data:
 # analytes (metrics_analytes.yaml) as data. The metric rows are records of
 # the base package's kind, so a re-import of this sample rewrites them and
 # its removal leaves them. The record views of a sleep and a workout
-# (views.yaml) are data too, and a re-import writes one only where the
-# repository holds none at its id.
+# (views.yaml) are data too, and a re-import replaces one only where its
+# owner has not edited it.
 kind: substrate.reamde.dev/core/bundle
 metadata:
   id: samples.substrate.reamde.dev/health
