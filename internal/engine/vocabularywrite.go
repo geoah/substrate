@@ -313,6 +313,15 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 					}
 				}
+				if createOnlyShipped(in.Kind) {
+					live, err := t.liveAt(eref{Kind: in.Kind, ID: in.ID})
+					if err != nil {
+						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
+					}
+					if live {
+						continue
+					}
+				}
 				if _, err := t.put(in); err != nil {
 					return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 				}
@@ -330,6 +339,31 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		}
 	}
 	return out, nil
+}
+
+// createOnlyShipped reports whether a closure's shipped record of this kind is
+// written only where the repository holds no live record at its id. A record
+// of a console kind (a record view) is presentation its owner edits, and a
+// re-import or an upgrade that upserted it would overwrite the edit without a
+// word (record 0166). A tombstone counts as absent, so deleting a view and
+// importing again is how an owner takes the newer shipped one.
+func createOnlyShipped(kind string) bool {
+	return vocabulary.KindPackage(kind) == vocabulary.PackageConsole
+}
+
+// liveAt reports whether a live record stands at ref, under the record's
+// advisory lock so a concurrent writer of the same id serializes behind the
+// check.
+func (t *txn) liveAt(ref eref) (bool, error) {
+	at, err := t.lockCanonical(ref)
+	if err != nil {
+		return false, err
+	}
+	row, err := t.loadRow(at, false)
+	if err != nil {
+		return false, err
+	}
+	return row != nil && row.DeletedAt == nil, nil
 }
 
 // applyVocabularyBatch is the write path for schema: candidate before the
