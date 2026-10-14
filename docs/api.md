@@ -1131,7 +1131,7 @@ GET /api/v1/records?filter={"kinds":["ada.example.com/observations/trace"]}
                "ada.example.com/observations/source/garmin/ada/account",
                "ada.example.com/observations/source/garmin/ada/forerunner265",
                "ada.example.com/observations/source/googlefit/e2e/google-pixel-watch-2.8d1f3c7a"],
-   "head": {"changelog": 103320, "generation": "d6tchnk5ub2w"}}
+   "head": {"changelog": 177628, "generation": "hwdgolnslprs"}}
 ```
 
 The `order` ranks the two watches first; the other sources follow by path,
@@ -1356,7 +1356,7 @@ GET /api/v1/records?aggregate=
                "ada.example.com/observations/source/applehealth/iphone/health",
                "ada.example.com/observations/source/applehealth/iphone/iphone",
                "ada.example.com/observations/source/garmin/ada/account"],
-   "head": {"changelog": 106076, "generation": "d6tchnk5ub2w"}}
+   "head": {"changelog": 177628, "generation": "hwdgolnslprs"}}
 ```
 
 The answer above leaves out the sleep stages other than `deep`; each code is
