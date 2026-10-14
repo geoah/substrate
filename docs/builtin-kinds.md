@@ -205,8 +205,8 @@ it at its next open.
 | ------------ | ------------------------------------------------------------------------------------------------ |
 | `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart` or `spans` ([record views](console.md#record-views)). |
 
-A sample ships its views as records; an import writes one only where the
-repository holds none at its id, so an edited view survives a re-import.
+A sample ships its views as records; a re-import replaces a view nobody
+edited and leaves an edited one alone.
 `consolepreference` stays in core.
 
 Back to [the documentation index](README.md).

@@ -462,8 +462,9 @@ for a table's saved filters and columns, which live elsewhere.
 
 A view binds its **window** by the names of the record's own properties:
 `start` and `end` (such as `at` and `endsAt`), and optionally `about` (who
-the record is about; a record naming nobody reads the owner's observations)
-and `source` (what recorded it). Its `fold` lists properties the sheet folds
+the record is about) and `source` (what recorded it). The chart and spans
+blocks read the observations of who the record names, and the owner's where
+the view binds no `about` or the record names nobody, never everyone's. Its `fold` lists properties the sheet folds
 away because a section shows them. Then come its `sections`, in order, each
 holding one block:
 
@@ -473,8 +474,9 @@ holding one block:
   under the view's `label` or its own; a property the record does not hold
   is left out.
 - **related**: records linked to this one, as a list or a count. Either an
-  outgoing reference `property` of the record, or a `kind` whose records
-  point here through its `via` property; `limit` caps the list.
+  outgoing reference `property` of the record, or a `kind` (a reference to
+  the kind's declaration, as `appliesTo` is) whose records point here
+  through its `via` property, not both; `limit` caps the list.
 - **chart**: what was measured during the record, one chart per metric id in
   `metrics`, read with the aggregate read over the bound window. A `bucket`
   of `auto` draws a line in buckets sized to the window, its first reducer in
@@ -482,17 +484,18 @@ holding one block:
   or a drag zooms into part of it; `minute`, `hour` and `day` fix the size;
   `whole` reads one row over the window and draws a bar per reducer, such as
   one `durationIn` band per heart rate zone. `reducers` are the aggregate
-  read's, with `low` and `high` for a `durationIn` band and `rank` for a
-  percentile, and a `label` each. `sources` is `prefer` (the record's own
+  read's, with `low` and `high` for a `durationIn` band (low under high) and
+  `rank` for a percentile, and a `label` each. `sources` is `prefer` (the record's own
   source first, then the sources' priorities; the sources that drew the line
   are named under it), `only` (the record's own source alone) or `priority`.
-- **spans**: a coded metric's values over the window as spans, one row per
-  code in the order `codes` lists them (a code it does not list goes last),
-  each under its `label`. The rows are drawn only where the spans follow one
+- **spans**: a coded amount metric's values over the window as spans, one
+  row per code in the order `codes` lists them (a code it does not list goes
+  last), each under its `label`. A metric of any other form, or one listing
+  no codes, is a notice: a coded gauge's values are instants, not spans. The rows are drawn only where the spans follow one
   another; a source writing one span per code over the whole window gives
   the time in each code alone, which `totals` shows under the rows. Each code
   wears its place in the metric's `codeSet` as its colour, as on the
-  timeline.
+  timeline, and nothing is drawn before the metric record is read.
 
 The chart and spans blocks share one time axis: a zoom in one moves every
 line and spans block of the view, and the bars and totals stay whole. **Open
@@ -500,9 +503,13 @@ in the timeline** opens the same window with every metric the view's lines
 and spans read. The engine refuses a view whose blocks do not match their
 declared shapes. What the declaration cannot say, the console says where the
 section would be: a section with no block or two, a block type this console
-does not draw (one a newer console package added), or a reducer it does not
-read. A chart in a view that binds no window, or on a record whose window has
-no end after its start, says it has nothing to read.
+does not draw (one a newer console package added), a related block naming
+both or neither of its two ways, a reducer it does not read, a `durationIn`
+without both bounds or with its low not under its high, and a percentile
+without its rank. A chart or spans block in a view that binds no window says
+it has nothing to read. On a record that does not hold the window the view
+binds (no end yet, or an end before its start), the view leaves its chart and
+spans blocks out, and is left out itself where nothing else remains.
 
 **How a sample ships views.** A sample ships its views as data records beside
 its kinds, naming each kind's declaration in `appliesTo`
@@ -510,9 +517,14 @@ its kinds, naming each kind's declaration in `appliesTo`
 and the import rehomes that reference with the kind. The health sample ships
 two ([what the health sample adds](observations.md#what-the-health-sample-adds)).
 
-**Upgrades.** An import or an upgrade writes a shipped view only where the
-repository holds no live record at its id, so an edit of yours survives it.
-To take a newer shipped view, delete yours and import the sample again.
+**Upgrades.** An import or an upgrade replaces a shipped view that nothing
+but the import has written, and leaves a view alone once you edited any
+property of it (the property ledger names who last wrote each), so your edit
+survives. To take a newer shipped view over an edited one, delete yours and
+import the sample again. A view whose only edit was removing a property reads
+as unedited, because a removed property has no writer, and is replaced.
+`substratectl apply -f` of a sample's files writes its views directly, as
+any apply does, and replaces an edited view.
 
 ## The record editor
 

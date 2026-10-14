@@ -348,8 +348,8 @@ first label.
   fake (`internal/api/fake_test.go`).
 - **The top level stays empty.** Every Go package is under `internal/` (or
   `cmd/`), and four directories are the exceptions. Two are the vocabulary as
-  files: `kinds/` (the seeded `core` and `llm` packages and the shipped
-  providers) and `samples/` (the sample packages a repository copies), each
+  files: `kinds/` (the seeded `core`, `llm` and `console` packages and the
+  shipped providers) and `samples/` (the sample packages a repository copies), each
   with the one Go file that embeds it. Two are for people building on a
   substrate: `skills/`, the agent skills they install (the upgrade runbook),
   and `.claude-plugin/`, the marketplace manifest Claude Code installs them
