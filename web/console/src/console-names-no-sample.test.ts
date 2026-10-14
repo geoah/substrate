@@ -1,9 +1,8 @@
 /** The console gives no kind outside the seeded packages special treatment
  * (decision record 0166): how a sample's kinds are presented comes from
  * record views, which are data. This holds the console's own source to it,
- * tests and fixtures aside: no string in it names a sample package, a
- * sample's metric id, or the sleep and workout kinds the record page used
- * to recognise by name. */
+ * tests and fixtures aside: no string or object key in it names a sample
+ * package, a sample's metric id, or a sample's kind by its bare name. */
 
 import { describe, expect, it } from "vitest"
 
@@ -41,6 +40,12 @@ const NAMES: { name: string; pattern: RegExp }[] = [
   { name: "the health package", pattern: /["'`]health["'`]/ },
   { name: "the sleep kind", pattern: /["'`]sleep["'`]/ },
   { name: "the workout kind", pattern: /["'`]workout["'`]/ },
+  // `health` is also a sync's health, a field of its own, so only the
+  // kind names are refused as keys.
+  {
+    name: "a sample's kind as an object key",
+    pattern: /(^|[{,\s])(sleep|workout)\??\s*:/m,
+  },
   {
     name: "a sample package by its shipped reference",
     pattern: /samples\.substrate\.reamde\.dev\/[a-z]/,

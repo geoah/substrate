@@ -105,7 +105,10 @@ describe("a record view read into blocks", () => {
           { related: { property: "route" } },
           {
             related: {
-              kind: `${AUTHORITY}/fitness/lap`,
+              // Stored as a reference to the kind's declaration.
+              kind: {
+                ref: `substrate.reamde.dev/core/kind/${AUTHORITY}/fitness/lap`,
+              },
               via: "session",
               show: "count",
             },
@@ -153,7 +156,11 @@ describe("a record view read into blocks", () => {
       show: "list",
       limit: 10,
     })
-    expect(incoming).toMatchObject({ show: "count", via: "session" })
+    expect(incoming).toMatchObject({
+      kind: `${AUTHORITY}/fitness/lap`,
+      show: "count",
+      via: "session",
+    })
     expect(line).toMatchObject({
       bucket: "auto",
       sources: "prefer",
@@ -187,6 +194,13 @@ describe("a record view read into blocks", () => {
           {
             chart: {
               metrics: ["m"],
+              reducers: [{ reducer: "durationIn", low: 133, high: 114 }],
+            },
+          },
+          { chart: { metrics: ["m"], reducers: [{ reducer: "percentile" }] } },
+          {
+            chart: {
+              metrics: ["m"],
               bucket: "fortnight",
               reducers: [{ reducer: "avg" }],
             },
@@ -204,6 +218,8 @@ describe("a record view read into blocks", () => {
       "This section holds 2 blocks (heading, text); a section holds one.",
       "This chart names a reducer this console does not read: median.",
       "A durationIn reducer needs a low and a high bound.",
+      "A durationIn reducer's low bound must be under its high one: 133 to 114.",
+      "A percentile reducer needs a rank.",
       "This chart's bucket is fortnight.",
       "This related block names neither one outgoing reference property nor a kind and the property on it that points here.",
       "drawn",
@@ -238,7 +254,6 @@ describe("the window a view binds on a record", () => {
         start: Date.parse("2026-10-11T05:25:00Z"),
         end: Date.parse("2026-10-11T06:59:00Z"),
       },
-      aboutBound: true,
       about: undefined,
       source: GARMIN,
       metricKind: METRIC,
@@ -312,12 +327,21 @@ describe("the reads over the window", () => {
     expect(read.aggregate.bucket).toBeUndefined()
     expect(read.aggregate.unit).toBe("min")
     expect(read.aggregate.reducers).toEqual([{ durationIn: [95, 114] }])
-    // A view that binds no `about` reads everyone's.
-    const unbound: Bound = { ...bound, aboutBound: false }
-    expect(
-      chartRead(unbound, whole, "body/pulse", bound.window, "UTC").filter
-    ).toEqual({
+  })
+
+  it("reads the owner's observations where the view binds no about", () => {
+    const own = recordViewOf(
+      view({ window: { start: "begins", end: "ends", source: "by" } })
+    )
+    const b = boundOf(
+      own,
+      { ...SESSION, properties: { ...SESSION.properties, who: { ref: MIA } } },
+      KINDS
+    )!
+    expect(b.about).toBeUndefined()
+    expect(chartRead(b, whole, "body/pulse", b.window, "UTC").filter).toEqual({
       implements: "substrate.reamde.dev/core/observed",
+      properties: { about: { exists: false } },
     })
   })
 

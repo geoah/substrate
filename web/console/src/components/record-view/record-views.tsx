@@ -104,6 +104,14 @@ function RecordViewSection({
   }
   const search = bound ? viewTimelineSearch(bound, view) : undefined
   const title = view.name ?? `${displayName(kind ?? record.kind)} view`
+  // A view binding a window the record does not hold (no end yet, say)
+  // leaves out the blocks that read it, and is left out itself where
+  // nothing else remains, as a page with no view would be.
+  const windowless = Boolean(view.window) && !bound
+  const sections = view.sections.filter(
+    (s) => !windowless || !("block" in s) || !readsWindow(s.block)
+  )
+  if (!sections.length) return null
   return (
     <section aria-label={title} data-record-view={view.id}>
       <SectionHead
@@ -133,7 +141,7 @@ function RecordViewSection({
           />
         </div>
       )}
-      {view.sections.map((section, i) =>
+      {sections.map((section, i) =>
         "problem" in section ? (
           <Notice key={i}>{section.problem}</Notice>
         ) : (
@@ -142,6 +150,11 @@ function RecordViewSection({
       )}
     </section>
   )
+}
+
+/** Whether a block reads the record's window. */
+function readsWindow(block: Block): boolean {
+  return block.type === "chart" || block.type === "spans"
 }
 
 function BlockView({ block, ctx }: { block: Block; ctx: BlockContext }) {

@@ -225,8 +225,14 @@ interface Seen {
 function mount(
   views: SubstrateRecord[],
   rec: SubstrateRecord = RUN,
-  kind: KindInfo = SESSION
+  kind: KindInfo = SESSION,
+  opts: {
+    metrics?: SubstrateRecord[]
+    /** Holds every metric record read until it resolves. */
+    metricsAnswer?: Promise<void>
+  } = {}
 ) {
+  const metrics = opts.metrics ?? METRICS
   const seen: Seen[] = []
   vi.stubGlobal(
     "fetch",
@@ -243,7 +249,8 @@ function mount(
         new Response(JSON.stringify(body), { status: 200 })
       if (url.pathname !== "/api/v1/records") {
         // One record by its path: a metric record.
-        const metric = METRICS.find((m) =>
+        await opts.metricsAnswer
+        const metric = metrics.find((m) =>
           url.pathname.endsWith(`/${encodeURIComponent(m.id)}`)
         )
         return metric
@@ -529,4 +536,99 @@ it("draws nothing for a kind with no view, and asks for the kind's views by its 
   await act(async () => {})
   expect(container.textContent).toBe("")
   expect(seen).toHaveLength(1)
+})
+
+const STAGES_VIEW = (sections?: unknown[]) =>
+  view("fitness/session", {
+    name: "Stages",
+    window: WINDOW,
+    sections: sections ?? [
+      {
+        spans: {
+          label: "Sleep stages",
+          metric: "health/sleep_stage",
+          codes: [
+            { code: "awake", label: "Awake" },
+            { code: "rem", label: "REM" },
+            { code: "light", label: "Light" },
+            { code: "deep", label: "Deep" },
+          ],
+        },
+      },
+    ],
+  })
+
+it("draws no span before the metric's own codes give each its colour", async () => {
+  let answer!: () => void
+  const metricsAnswer = new Promise<void>((resolve) => (answer = resolve))
+  const { seen } = mount([STAGES_VIEW()], RUN, SESSION, { metricsAnswer })
+  const stages = await screen.findByRole("group", { name: "Sleep stages" })
+  // The spans would be read by now; nothing is drawn or read until the
+  // metric record says which colour each code wears.
+  await act(async () => {})
+  expect(stages.querySelector("rect[data-code]")).toBe(null)
+  expect(seen.some((s) => s.filter.properties?.metric)).toBe(false)
+  answer()
+  const rows = await within(stages).findByRole("img", {
+    name: /^Sleep stages from/,
+  })
+  const fill = (code: string) =>
+    rows.querySelector(`rect[data-code=${code}]`)!.getAttribute("fill")
+  expect(fill("rem")).toBe("var(--series-1)")
+  expect(fill("awake")).toBe("var(--series-4)")
+})
+
+it("says a spans block draws coded amounts, and reads nothing for a coded gauge", async () => {
+  const door = {
+    ...METRICS[0],
+    id: "health/sleep_stage",
+    properties: {
+      name: "Door",
+      form: "gauge",
+      codeSet: ["open", "closed"],
+    },
+  }
+  const { seen } = mount([STAGES_VIEW()], RUN, SESSION, { metrics: [door] })
+  const section = await screen.findByRole("region", { name: "Stages" })
+  await waitFor(() =>
+    expect(within(section).getByRole("note").textContent).toBe(
+      "This spans block draws a coded amount metric, and Door is a gauge."
+    )
+  )
+  expect(seen.some((s) => s.aggregate)).toBe(false)
+  expect(seen.some((s) => s.filter.properties?.metric)).toBe(false)
+})
+
+it("leaves out the blocks that read a window the record does not hold", async () => {
+  const open = record(SESSION.identity, "run-2", {
+    sport: "running",
+    begins: "2026-10-11T05:25:00Z",
+    by: { ref: GARMIN },
+  })
+  mount(
+    [
+      STAGES_VIEW([
+        { heading: { text: "Kept" } },
+        {
+          chart: {
+            label: "Pulse",
+            metrics: ["health/heart_rate"],
+            reducers: [{ reducer: "avg" }],
+          },
+        },
+        { spans: { label: "Sleep stages", metric: "health/sleep_stage" } },
+      ]),
+      { ...STAGES_VIEW(), id: "fitness/z-only-spans" },
+    ],
+    open
+  )
+  const section = await screen.findByRole("region", { name: "Stages" })
+  expect(within(section).getByRole("heading", { name: "Kept" })).toBeTruthy()
+  expect(within(section).queryByRole("group", { name: "Pulse" })).toBe(null)
+  expect(within(section).queryByRole("group", { name: "Sleep stages" })).toBe(
+    null
+  )
+  expect(section.textContent).not.toContain("Nothing to read here")
+  // A view with nothing else to draw is left out whole.
+  expect(screen.getAllByRole("region")).toHaveLength(1)
 })

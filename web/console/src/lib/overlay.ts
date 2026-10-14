@@ -610,12 +610,6 @@ export function planPlot(
   }
 }
 
-/** A plot's Show menu: every reducer its form takes (`reducerOptions`).
- * Where the read may take a vendor summary, those a summary takes come
- * first and the rest read raw points alone: picking one switches the read
- * to `raw` where the reader left where to read from automatic and some
- * stream holds raw points, and is disabled with the reason otherwise. A
- * metric whose streams all keep summaries reads in a summary's terms. */
 /** Whether a reducer key is a `durationIn` band whose low bound is under
  * its high one: `durationIn:114,133`. */
 function bandKey(key: string): boolean {
@@ -623,6 +617,12 @@ function bandKey(key: string): boolean {
   return Boolean(m && Number(m[1]) < Number(m[2]))
 }
 
+/** A plot's Show menu: every reducer its form takes (`reducerOptions`).
+ * Where the read may take a vendor summary, those a summary takes come
+ * first and the rest read raw points alone: picking one switches the read
+ * to `raw` where the reader left where to read from automatic and some
+ * stream holds raw points, and is disabled with the reason otherwise. A
+ * metric whose streams all keep summaries reads in a summary's terms. */
 function menuOf(
   shape: ReadingShape,
   form: Form | undefined,

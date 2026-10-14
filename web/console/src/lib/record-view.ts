@@ -287,7 +287,7 @@ function blockOf(type: Block["type"], b: Bag): Section {
     }
     case "related": {
       const property = text(b.property)
-      const kind = text(b.kind)
+      const kind = kindOfDeclaration(b.kind)
       const via = text(b.via)
       const show = oneOf(b.show, ["list", "count"] as const, "list")
       if (!show) return { problem: `This related block's show is ${b.show}.` }
@@ -362,6 +362,16 @@ function blockOf(type: Block["type"], b: Bag): Section {
   }
 }
 
+/** The kind identity a reference to its declaration names: the stored
+ * `{ref}` or the bare path. A bare word is stored as the id of a
+ * declaration nobody made, and reads as that word. */
+function kindOfDeclaration(v: unknown): string | undefined {
+  const path = readReference(v)?.path ?? text(v)
+  if (!path) return undefined
+  const prefix = `${KIND_DECLARATION}/`
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path
+}
+
 /** One declared reducer as the read takes it, or why it cannot be read. */
 function chartReducerOf(r: Bag): ChartReducer | string {
   const name = text(r.reducer)
@@ -373,6 +383,9 @@ function chartReducerOf(r: Bag): ChartReducer | string {
   if (name === "durationIn") {
     if (typeof r.low !== "number" || typeof r.high !== "number") {
       return "A durationIn reducer needs a low and a high bound."
+    }
+    if (r.low >= r.high) {
+      return `A durationIn reducer's low bound must be under its high one: ${r.low} to ${r.high}.`
     }
     reducer = { durationIn: [r.low, r.high] }
   } else if (name === "percentile") {
@@ -395,12 +408,11 @@ export function viewsOf(records: readonly SubstrateRecord[]): RecordView[] {
 // ── the window a view binds on one record ─────────────────────────────────
 
 /** What a view's chart and spans blocks read on one record: its window,
- * who it is about (`aboutBound` where the view names the property; absent
- * then reads the owner's), what recorded it, and the observed kinds and
- * metric kind the reads go through. */
+ * who it is about (absent where the view binds no `about` or the record
+ * names nobody, which reads the owner's), what recorded it, and the
+ * observed kinds and metric kind the reads go through. */
 export interface Bound {
   window: TimeRange
-  aboutBound: boolean
   about?: string
   source?: string
   /** The kind the observed kinds pin their `metric` at. */
@@ -430,7 +442,6 @@ export function boundOf(
   if (!metricKind) return undefined
   return {
     window: { start: at, end },
-    aboutBound: Boolean(w.about),
     about: w.about ? readReference(p[w.about])?.path : undefined,
     source: w.source ? readReference(p[w.source])?.path : undefined,
     metricKind,
@@ -447,14 +458,13 @@ function rangeOf(window: TimeRange) {
   return { gte: isoWithOffset(window.start), lt: isoWithOffset(window.end) }
 }
 
-/** The narrowing every read takes: who the record is about where the view
- * binds it (a named record, or the owner's, which name nobody), and the
- * record's own source where the policy reads it alone. */
+/** The narrowing every read takes: who the record is about (a named
+ * record, or the owner's, which name nobody), and the record's own source
+ * where the policy reads it alone. Never everyone's: a repository may hold
+ * another person's observations beside the owner's. */
 function narrowing(b: Bound, policy: SourcePolicy): Record<string, Cond> {
   return {
-    ...(b.aboutBound
-      ? { about: b.about ? { eq: b.about } : { exists: false } }
-      : {}),
+    about: b.about ? { eq: b.about } : { exists: false },
     ...(policy === "only" && b.source ? { source: { eq: b.source } } : {}),
   }
 }
@@ -474,10 +484,9 @@ function sourcesOf(
 }
 
 function filterOf(b: Bound, policy: SourcePolicy): RecordFilter {
-  const properties = narrowing(b, policy)
   return {
     implements: OBSERVED_TRAIT_IDENTITY,
-    ...(Object.keys(properties).length ? { properties } : {}),
+    properties: narrowing(b, policy),
   }
 }
 

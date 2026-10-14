@@ -9,7 +9,14 @@
 import { useMemo, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { Failed, Loading, Part, Quiet, type BlockContext } from "./parts"
+import {
+  Failed,
+  Loading,
+  Notice,
+  Part,
+  Quiet,
+  type BlockContext,
+} from "./parts"
 import { TimelineChart } from "@/components/observations/timeline-chart"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -64,9 +71,10 @@ import { AXIS_LEFT, timeAxis } from "@/lib/time-axis"
 import { listWords } from "@/lib/tools"
 import { unitSymbol } from "@/lib/units"
 
-/** Why a block bound to the record's window has nothing to read. */
-const UNBOUND =
-  "Nothing to read here: the view binds no window this record holds, or no observed kind names a metric."
+/** Why a chart or spans block has nothing to read: its view binds no
+ * window. A view that binds one the record does not hold leaves these
+ * blocks out (`RecordViewSection`). */
+const UNBOUND = "Nothing to read here: the view binds no window."
 
 /** Whether a read found nothing to say: a repository with no such metric
  * record, which the server refuses by its `metric.ref`. */
@@ -80,13 +88,38 @@ function noMetric(error: Error | null): boolean {
 
 /** The metric record a metric id names, read for its name, unit and codes. */
 function useMetric(bound: Bound, id: string): MetricInfo | undefined {
+  return useMetricRead(bound, id).info
+}
+
+/** The metric record a metric id names, and whether its read is still
+ * out. */
+function useMetricRead(
+  bound: Bound,
+  id: string
+): { info?: MetricInfo; pending: boolean } {
   const parts = splitRecordPath(metricPathOf(bound, id))
   const [authority = "", pkg = "", name = ""] = parts?.kind.split("/") ?? []
   const read = useQuery({
     ...recordQueryOptions(authority, pkg, name, parts?.id ?? ""),
     retry: false,
   })
-  return read.data?.kind ? metricInfoOf(read.data) : undefined
+  return {
+    info: read.data?.kind ? metricInfoOf(read.data) : undefined,
+    pending: read.isPending,
+  }
+}
+
+/** Why a spans block cannot draw a metric: it draws a coded amount, whose
+ * values each hold a code over a span. Undefined where it can. */
+function notSpans(info: MetricInfo, id: string): string | undefined {
+  const name = info.name ?? metricWords(id)
+  if (!info.codeSet?.length) {
+    return `This spans block draws a coded amount metric, and ${name} lists no codes.`
+  }
+  if (info.form && info.form !== "amount") {
+    return `This spans block draws a coded amount metric, and ${name} is a ${info.form}.`
+  }
+  return undefined
 }
 
 export function ChartBlockView({
@@ -468,20 +501,46 @@ function BoundSpans({
   window: TimeRange
   ctx: BlockContext
 }) {
-  const info = useMetric(bound, block.metric)
+  const metric = useMetricRead(bound, block.metric)
+  const info = metric.info
   const name = info?.name ?? metricWords(block.metric)
+  // Nothing is read before the metric record says it is a coded amount: a
+  // coded gauge's points hold no span and the server refuses its sum.
+  const refused = info ? notSpans(info, block.metric) : undefined
+  const readable = Boolean(info) && !refused
   const totals = useQuery({
     ...aggregateQueryOptions(spansTotalsRead(bound, block), bound.observed),
-    enabled: block.totals,
+    enabled: readable && block.totals,
   })
-  const spans = useQuery(recordsQueryOptions(spansListParams(bound, block)))
+  const spans = useQuery({
+    ...recordsQueryOptions(spansListParams(bound, block)),
+    enabled: readable,
+  })
   const order = block.codes.map((c) => c.code)
-  // The metric's own codes give each code the colour the timeline gives
-  // it; the view's order stands in until the metric record answers.
-  const palette = info?.codeSet ?? order
+  // The metric's own codes give each code the colour the timeline gives it,
+  // and nothing draws before they are read, so a colour never swaps.
+  const palette = info?.codeSet ?? []
   const words = (code: string) =>
     block.codes.find((c) => c.code === code)?.label ?? codeWords(code)
   const label = block.label ?? name
+  if (metric.pending) {
+    return (
+      <Part title={label}>
+        <Loading />
+      </Part>
+    )
+  }
+  if (!info) {
+    return (
+      <Part title={label}>
+        <Quiet>
+          No record names the metric {block.metric}, so there is nothing to
+          read.
+        </Quiet>
+      </Part>
+    )
+  }
+  if (refused) return <Notice>{refused}</Notice>
   if (spans.isPending || (block.totals && totals.isPending)) {
     return (
       <Part title={label}>
