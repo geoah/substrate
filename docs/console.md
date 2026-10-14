@@ -851,8 +851,9 @@ row of controls scopes every chart:
 - the bucket: automatic from the range, 1, 5 or 15 minutes, an hour, a day,
   a week or a month. Automatic reads a window of two hours or less, such as
   a workout's trace, by the minute. It reads in days where it would read in
-  hours and a sleep metric is drawn, since a source may write a night's time
-  in each stage as one span over the whole night;
+  hours and a metric placed by its end is drawn (its record's `bucketPlace`
+  is `end`, as the sleep stages' is), since a source may write a night's
+  time in each stage as one span over the whole night;
 - where a day, week or month starts: where you were, or your time zone;
 - what to group by: metric, source or about. A category metric is always
   grouped by code. Where every metric drawn is one, **Group by** is
@@ -865,7 +866,7 @@ row of controls scopes every chart:
 Under each chart, a table holds each metric's numbers and copies them as
 tab-separated text, the exact digits. On screen a value's digits are in
 groups of three (`12,008 kJ`). A time of a minute or more in seconds,
-minutes or hours reads in words, as a sleep's page reads it (`4h 42m 36s`
+minutes or hours reads in words, as a record view reads it (`4h 42m 36s`
 for `282.6 min`). The covered time is to the minute from an hour up. The
 table shows up to a dozen rows whole and scrolls past that.
 With Technical details on, each request follows it, as JSON and as a `curl`
@@ -887,9 +888,10 @@ stored digits (`19 score`), and the text a write takes (`19 {score}`) only
 with Technical details on.
 **Show** offers every reducer the metric's form takes
 ([the table](api.md#reducers-by-form)). For a level or an amount these
-include the median and the 90th percentile, for an angle the circular mean,
-and for a heart rate the time in each of five zones (95 to 114, 114 to 133,
-133 to 152, 152 to 171 and 171 to 220 a minute). A vendor summary defaults
+include the median and the 90th percentile, and for an angle the circular
+mean. It offers no `durationIn` band, since no metric says which bands a
+reader wants; an address naming one (`durationIn:114,133`) is read and
+offered, and a [record view](#record-views) names its own. A vendor summary defaults
 to its average, or its total where it keeps a sum or a count. For a level,
 the menu says what its two averages are. **Average**, the default, counts
 each reading once, so a source that reads more often in a workout weighs
@@ -897,16 +899,16 @@ more. **Time-weighted average** weighs each reading by how long it held,
 and the menu says so beside why it reads raw points alone where it does.
 Where a vendor summary may serve a bucket, the reducers a summary takes
 come first and the rest read raw points alone. Picking one of the rest (the
-time-weighted average, a percentile, a zone) reads the metric from raw
+time-weighted average, a percentile, a band) reads the metric from raw
 points, and the chart says whose summaries it leaves out. Where you picked
 where to read from yourself, such a reducer is listed disabled, with the
 reason.
 A level is a line, with its lowest-to-highest band where its metric shows
 one line and the reducer answers in the metric's own unit (not a count, a
-standard deviation, a time in a zone or a circular mean). The line joins
+standard deviation, a time in a band or a circular mean). The line joins
 across a bucket its hold covered with no reading of its own (a day between
 two weigh-ins), and breaks where the answer has no row or filled a gap. An
-amount, a count, a counter's increase and a time in a zone are bars. A
+amount, a count, a counter's increase and a time in a band are bars. A
 category is bars stacked per code that counts as one unit, its time, each
 code in the colour of its place in the metric's `codeSet` whatever else the
 chart draws. The other series take the colours of the codes the answer does
@@ -943,9 +945,9 @@ tooltip and the table give each row's UTC offsets (`+03:00 to +01:00` on a
 flight day) and how many points were written without one. Clicking a day
 zooms into the hours it was lived. Picking your zone (`?days=zone`) cuts
 the buckets at your midnights instead; an hour or finer is always an
-instant. A sleep metric (its record's `category` is `sleep`) in days, weeks
-or months is placed by its end (`bucket.place: "end"`), so a night lands on
-the day you woke and a week is the sum of its days. Where a category's
+instant. A metric whose record's `bucketPlace` is `end` (the sleep stages)
+in days, weeks or months is placed by its end (`bucket.place: "end"`), so a
+night lands on the day you woke and a week is the sum of its days. Where a category's
 bucket holds more time than it lasts (a night's spans counted whole in the
 hour they start in), the chart says so and suggests a day bucket.
 
@@ -975,7 +977,7 @@ tooltip and the table caption them by the bucket (**Day's UTC offset**,
 the metrics read together, not the metric's own. A shared request
 answers `exact` once for all its metrics, so with Technical details on, the
 request's details say when its answer is not exact, and no metric's row does.
-Reads that differ in anything else go apart: a sleep metric placed by its end
+Reads that differ in anything else go apart: a metric placed by its end
 beside heart rate, or a metric from one source beside one resolved across
 several.
 A metric is planned once its streams are read: a metric
