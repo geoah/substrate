@@ -195,11 +195,11 @@ every source's numbers:
 ```text
 {"units": {"health/active_energy": "kcal", "health/basal_energy": "kcal", "health/energy_expended": "kcal"},
  "rows": [{..., "group": {"metric": "health/active_energy", "source": "applehealth/iphone/apple-watch"},
-           "values": [{"reducer": "sum", "value": "597.972379825741", "unit": "kcal"}], ...},
+           "values": [{"reducer": "sum", "value": "597.972379825885", "unit": "kcal"}], ...},
           {..., "group": {"metric": "health/active_energy", "source": "garmin/ada/account"},
            "values": [{"reducer": "sum", "value": "552", "unit": "kcal"}], ...},
           {..., "group": {"metric": "health/basal_energy", "source": "applehealth/iphone/apple-watch"},
-           "values": [{"reducer": "sum", "value": "1420.20805254708", "unit": "kcal"}], ...},
+           "values": [{"reducer": "sum", "value": "1420.20805254493", "unit": "kcal"}], ...},
           {..., "group": {"metric": "health/basal_energy", "source": "garmin/ada/account"}, "from": "summaries",
            "values": [{"reducer": "sum", "value": "1421", "unit": "kcal"}], ...},
           {..., "group": {"metric": "health/energy_expended", "source": "googlefit/e2e/google-pixel-watch-2.8d1f3c7a"},
@@ -1056,33 +1056,33 @@ day's total; a day's total is the [today](#today) read.
 
 An app that keeps its own copy of the screens it drew re-reads only what
 changed. Every read answers the changelog position it was served at, in
-`head` (a steps read answered `"head": {"changelog": 107096, "generation":
-"d6tchnk5ub2w"}`), and the change feed resumes from there, naming each
+`head` (a steps read answered `"head": {"changelog": 63410, "generation":
+"hwdgolnslprs"}`), and the change feed resumes from there, naming each
 record a later write touched:
 
 ```bash
-curl -sN "$SUBSTRATE_SERVER/api/v1/changes?watch=1&from=107096&generation=d6tchnk5ub2w&values=1&kinds=ada.example.com/observations/observation,ada.example.com/observations/trace,ada.example.com/health/sleep,ada.example.com/health/workout" \
+curl -sN "$SUBSTRATE_SERVER/api/v1/changes?watch=1&from=63410&generation=hwdgolnslprs&values=1&kinds=ada.example.com/observations/observation,ada.example.com/observations/trace,ada.example.com/health/sleep,ada.example.com/health/workout" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN"
 ```
 
 ```text
-{"bookmark": 107096, "generation": "d6tchnk5ub2w"}
-{"seq": 107097, "op": "put", "kind": "ada.example.com/observations/trace",
- "recordId": "applehealth/iphone/apple-watch/steps/2026-08-26T19", "actor": "function:ada.example.com:healthapple:adaptapplehealth",
+{"bookmark": 63410, "generation": "hwdgolnslprs"}
+{"seq": 63431, "op": "put", "kind": "ada.example.com/observations/trace",
+ "recordId": "garmin/ada/account/active_energy/2026-07-28T00", "actor": "function:ada.example.com:healthgarmin:adaptgarmin",
  "payload": {"created": true, ...},
- "affected": [{"kind": "ada.example.com/observations/trace", "id": "applehealth/iphone/apple-watch/steps/2026-08-26T19", "version": 1,
-               "properties": [{"name": "at", "after": "2026-08-26T19:00:00Z"},
-                              {"name": "endsAt", "after": "2026-08-26T20:00:00Z"},
-                              {"name": "metric", "after": {"ref": "ada.example.com/observations/metric/health/steps"}},
-                              {"name": "source", "after": {"ref": ".../source/applehealth/iphone/apple-watch"}},
+ "affected": [{"kind": "ada.example.com/observations/trace", "id": "garmin/ada/account/active_energy/2026-07-28T00", "version": 1,
+               "properties": [{"name": "at", "after": "2026-07-28T00:00:00Z"},
+                              {"name": "endsAt", "after": "2026-07-28T01:00:00Z"},
+                              {"name": "metric", "after": {"ref": "ada.example.com/observations/metric/health/active_energy"}},
+                              {"name": "source", "after": {"ref": ".../source/garmin/ada/account"}},
                               {"name": "utcOffsetStart", "after": 180}, ...]}]}
 ...
 ```
 
-The head came from a read taken while the Apple Health adapter was still
-writing its backlog: 39 changes arrived in the next few seconds, the first
-an hour of Apple Watch steps on 2026-08-26, so an app showing that day's
-steps reads it again.
+The head came from a read taken while the Garmin and Apple Health adapters
+were still writing their backlogs: 18 changes arrived in the next ten
+seconds. The first three are one hour of Garmin's active energy, distance
+and steps on 2026-07-28, so an app showing that day's steps reads it again.
 
 The stream opens with a bookmark and sends one line per change. With
 `values=1` a line names only the properties the write moved, before and
@@ -1091,7 +1091,7 @@ after. A creation moves every property, so its `metric`, `source`, `at` and
 changed: a rescore, or a re-delivered hour of a trace, that changes `value`
 or `values` names neither `metric` nor `at`. To place an update the app
 reads the record at its path, the id percent-encoded
-(`GET /api/v1/ada.example.com/observations/trace/applehealth%2Fiphone%2Fapple-watch%2Fsteps%2F2026-08-26T19`),
+(`GET /api/v1/ada.example.com/observations/trace/garmin%2Fada%2Faccount%2Fsteps%2F2026-07-28T00`),
 or keeps its own map from record to day. A delete moves no property and
 leaves no record to read, so only that map places it. A feed that names the
 time ranges a write touched is a follow-up
