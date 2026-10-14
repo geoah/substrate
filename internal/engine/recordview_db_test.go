@@ -197,6 +197,9 @@ func TestRecordViewRefusesAMalformedView(t *testing.T) {
 		{"a band bound that is no number", func(v map[string]any) {
 			section(v, 4)["chart"].(map[string]any)["reducers"].([]any)[0].(map[string]any)["low"] = "ninety"
 		}, "low"},
+		{"a related kind named by a pointer at another kind's record", func(v map[string]any) {
+			v["sections"] = append(v["sections"].([]any), map[string]any{"related": map[string]any{"kind": "substrate.reamde.dev/core/token/t1", "via": "session"}})
+		}, "kind"},
 		{"a related list shown as a grid", func(v map[string]any) {
 			section(v, 3)["related"].(map[string]any)["show"] = "grid"
 		}, "show"},

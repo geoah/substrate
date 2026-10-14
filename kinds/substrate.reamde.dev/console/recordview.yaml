@@ -4,10 +4,16 @@
 #
 # A BLOCK IS A FIELD OF A SECTION. The object grammar has no union, so a
 # section declares one optional field per block type and the console renders
-# the one that is set. "Exactly one block per section" is the one rule the
-# grammar cannot state: the console checks it and shows a section with none or
-# with two as a notice, as it does a block this console does not know. A new
-# block type is a new field here, which is an upgrade of this package.
+# the one that is set. A new block type is a new field here, which is an
+# upgrade of this package.
+#
+# FOUR RULES THE GRAMMAR CANNOT STATE, which the console checks and shows as a
+# notice where the section would be, as it does a block it does not know:
+# - a section holds exactly one block;
+# - a related block names an outgoing `property`, or a `kind` and the `via`
+#   property on it, and not both;
+# - a durationIn reducer names `low` and `high`, low under high;
+# - a percentile reducer names `rank`.
 #
 # The chart and spans blocks read the observations the sample packages
 # declare, by the metric record's id, over the window the view binds: the
@@ -79,8 +85,8 @@ data:
     sections:
       type: object
       repeated: true
-      description: the view's sections in page order, each holding exactly
-        one block
+      description: the view's sections in page order; each holds exactly one
+        block, which the console checks
       fields:
         heading:
           type: object
@@ -124,7 +130,8 @@ data:
         related:
           type: object
           description: records linked by an outgoing reference property, or
-            records of a kind that reference this one
+            records of a kind that reference this one through via; one of
+            the two, which the console checks
           fields:
             label:
               type: string
@@ -132,10 +139,15 @@ data:
             property:
               type: string
               description: an outgoing reference property of this record
+            # A reference to the kind's declaration, as appliesTo is: the
+            # import rehomes it, and a pointer at any other kind's record is
+            # refused. A bare word reads as the id of a declaration nobody
+            # made, which the console shows as a notice.
             kind:
-              type: string
-              description: a kind whose records reference this one, as a full
-                kind reference
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              description: a kind whose records reference this one; give via
+                with it
             via:
               type: string
               description: the reference property on that kind that points
@@ -183,17 +195,18 @@ data:
                     durationIn
                 low:
                   type: float
-                  description: a durationIn band's lower bound, in the metric's
-                    unit
+                  description: a durationIn band's lower bound in the metric's
+                    unit, required for durationIn and under high
                 high:
                   type: float
-                  description: a durationIn band's upper bound, in the metric's
-                    unit
+                  description: a durationIn band's upper bound in the metric's
+                    unit, required for durationIn
                 rank:
                   type: float
                   min: 0
                   max: 1
-                  description: a percentile's rank, such as 0.9
+                  description: a percentile's rank, such as 0.9, required
+                    for percentile
                 label:
                   type: string
                   description: what the value is called, such as Zone 2
@@ -223,8 +236,9 @@ data:
                 reads it alone, priority reads the sources' priorities
         spans:
           type: object
-          description: a coded metric over the record's window drawn as spans,
-            one row per code, such as sleep stages
+          description: a coded amount metric over the record's window drawn
+            as spans, one row per code, such as sleep stages; the console
+            shows any other form as a notice
           fields:
             label:
               type: string
@@ -232,7 +246,8 @@ data:
             metric:
               type: string
               required: true
-              description: the coded metric record id to read, such as health/sleep_stage
+              description: the coded amount metric record id to read, such
+                as health/sleep_stage
             codes:
               type: object
               repeated: true
