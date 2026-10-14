@@ -95,6 +95,7 @@ nothing, there are none.
 | **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `agents`, `network` and `mutations`, six grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
 | **llm/provider** | One place an agent buys completions: a wire, an endpoint and a key, as data. The kind is `provider` in the seeded `substrate.reamde.dev/llm` package, written here with its package because the bare word also names a catalog tier. Alpha. |
+| **record view** | How the console lays out the record page of one kind: a record of the seeded `substrate.reamde.dev/console/recordview` kind, an ordered list of sections each holding one block. Not a **saved view**, which is a table's saved filters and columns. Decision record 0166. |
 | **wire** | The protocol an `llm/provider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |
 | **model** | The model id an agent sends on every completion, a plain string its provider understands. There is no model record and no tier. |
 | **trigger** | One delivery binding: exactly one source (`record`, `schedule` or `webhook`) to one callable. |

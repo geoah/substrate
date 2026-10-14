@@ -366,6 +366,11 @@ provider's copy, or the kind never declared it. The record's prose, where the
 kind has a body property, reads under the sheet and edits in place the same
 way.
 
+Where the record's kind has [record views](#record-views), they sit above
+the properties, and the properties a view shows are folded into one line
+under the sheet ("2 shown under During this workout"), which opens them for
+editing.
+
 **Who holds each value** is read off the record's
 [`propertyMeta`](projection.md#reading-provenance-propertymeta). Where every
 value is yours the head says so once; otherwise a chip at the end of a row
@@ -408,28 +413,6 @@ Under the properties, in order:
   on its own statistic. A `form` reads in the same words everywhere the
   console shows it: **Level**, **Amount**, **Running total** or **Vendor
   summary**.
-- **During this**, on a record of the health sample spanning `[at,
-  endsAt)` that is no measured value itself (a workout, a sleep): what was
-  measured while it lasted, about the same person. The heart rate is one
-  line over the span with its lowest-to-highest band, an aggregate read by
-  the minute (or as the timeline's automatic bucket sizes the span), the
-  record's own source ranked first where sources overlap, and the sources
-  that drew it named under it (where the record's own source kept no heart
-  rate, as WHOOP's sleeps keep none, it says so); its tooltip lists the
-  average, lowest and highest, each value with its unit; a click or a drag
-  zooms into part of it, until the page moves to another record. A workout adds its time in five heart rate zones
-  (95 to 114, 114 to 133, 133 to 152, 152 to 171 and 171 to 220 a minute),
-  one `durationIn` read over the span. A sleep adds its stages: a
-  hypnogram on the heart rate chart's time axis (the same width, margins
-  and labelled times, through a zoom too, which cuts the segments to the
-  zoomed window), a row per stage and a block per segment, where its source
-  recorded the stages one after another (Garmin, Google Fit), and its time
-  in each stage over the whole night, summed by code, which is all a source
-  writing one span per stage over the night (WHOOP, Apple Health) gives. Each stage wears one
-  colour on the hypnogram, its time bar and the timeline: its place in the
-  stage metric's `codeSet`. **Open in the
-  timeline** opens the same window, heart rate and a sleep's stages
-  together.
 - **Connected to**: the records that point here, read through the
   [`referencing`](api.md#who-points-at-a-record-referencing) filter arm and
   grouped by the kind they are and the property they point through ("Tasks
@@ -464,6 +447,72 @@ Under the properties, in order:
 With Technical details on, the **source** button in the head swaps the page
 for the record's [envelope](data-model.md#the-envelope) as YAML, every kind
 reference and record reference a link, and **Edit YAML** opens the editor.
+
+### Record views
+
+A **record view** says how the record page of one kind is laid out: a record
+of the seeded `substrate.reamde.dev/console/recordview` kind
+([0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)).
+The console reads every view whose `appliesTo` names the page's kind and draws
+each, in id order, above the property sheet, under the view's `name` and
+`intro`. A kind with no view gets the generic page and nothing else. The
+console names no kind of its own accord: a sample's kinds get a layout only
+from a view the sample ships or the owner writes. "Saved view" stays the name
+for a table's saved filters and columns, which live elsewhere.
+
+A view binds its **window** by the names of the record's own properties:
+`start` and `end` (such as `at` and `endsAt`), and optionally `about` (who
+the record is about; a record naming nobody reads the owner's observations)
+and `source` (what recorded it). Its `fold` lists properties the sheet folds
+away because a section shows them. Then come its `sections`, in order, each
+holding one block:
+
+- **heading**: a heading, and an optional `note` under it.
+- **text**: a paragraph, in Markdown.
+- **properties**: chosen properties of the record in the view's order, each
+  under the view's `label` or its own; a property the record does not hold
+  is left out.
+- **related**: records linked to this one, as a list or a count. Either an
+  outgoing reference `property` of the record, or a `kind` whose records
+  point here through its `via` property; `limit` caps the list.
+- **chart**: what was measured during the record, one chart per metric id in
+  `metrics`, read with the aggregate read over the bound window. A `bucket`
+  of `auto` draws a line in buckets sized to the window, its first reducer in
+  the metric's unit as the line and `min` and `max` as its band, and a click
+  or a drag zooms into part of it; `minute`, `hour` and `day` fix the size;
+  `whole` reads one row over the window and draws a bar per reducer, such as
+  one `durationIn` band per heart rate zone. `reducers` are the aggregate
+  read's, with `low` and `high` for a `durationIn` band and `rank` for a
+  percentile, and a `label` each. `sources` is `prefer` (the record's own
+  source first, then the sources' priorities; the sources that drew the line
+  are named under it), `only` (the record's own source alone) or `priority`.
+- **spans**: a coded metric's values over the window as spans, one row per
+  code in the order `codes` lists them (a code it does not list goes last),
+  each under its `label`. The rows are drawn only where the spans follow one
+  another; a source writing one span per code over the whole window gives
+  the time in each code alone, which `totals` shows under the rows. Each code
+  wears its place in the metric's `codeSet` as its colour, as on the
+  timeline.
+
+The chart and spans blocks share one time axis: a zoom in one moves every
+line and spans block of the view, and the bars and totals stay whole. **Open
+in the timeline** opens the same window with every metric the view's lines
+and spans read. The engine refuses a view whose blocks do not match their
+declared shapes. What the declaration cannot say, the console says where the
+section would be: a section with no block or two, a block type this console
+does not draw (one a newer console package added), or a reducer it does not
+read. A chart in a view that binds no window, or on a record whose window has
+no end after its start, says it has nothing to read.
+
+**How a sample ships views.** A sample ships its views as data records beside
+its kinds, naming each kind's declaration in `appliesTo`
+(`substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/sleep`),
+and the import rehomes that reference with the kind. The health sample ships
+two ([what the health sample adds](observations.md#what-the-health-sample-adds)).
+
+**Upgrades.** An import or an upgrade writes a shipped view only where the
+repository holds no live record at its id, so an edit of yours survives it.
+To take a newer shipped view, delete yours and import the sample again.
 
 ## The record editor
 
@@ -647,7 +696,7 @@ this repository holds of them. A card says in one pill where the provider
 stands (**On**, **Set up**, **Needs attention**, **Paused**) or offers
 **Add**, and one line says what is true right now. With Technical details on,
 **Other packages** lists every other bundle the repository holds (imported
-samples, the seeded `llm` package, anything applied directly) with its
+samples, the seeded `llm` and `console` packages, anything applied directly) with its
 version, state, update and removal, and states any pending upgrade of the
 seeded packages.
 

@@ -210,8 +210,9 @@ bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay
 bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
-**Registration seeds `core` and `llm`, three keyless provider rows, and the
-LLM sample.** The agent runtime's
+**Registration seeds `core`, `llm` and `console` (record views,
+[0166](docs/decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)),
+three keyless provider rows, and the LLM sample.** The agent runtime's
 four data kinds are the second seeded package, `substrate.reamde.dev/llm`
 (`provider`, `thread`, `message`, `interaction`), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));

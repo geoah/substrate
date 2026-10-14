@@ -200,9 +200,10 @@ its own package: `samples.substrate.reamde.dev/people`,
 `calendar` and `tasks` require; `recurring` is core's now), and the function
 and agent examples `notes`, `llm`, `readinglist`, `firecrawl`, `pebble` and `healthapple`
 under the same authority (each a bundle you **import**), and the substrate's
-own machinery in `substrate.reamde.dev/core` and the agent runtime's data in
-`substrate.reamde.dev/llm`, which are the two packages a new repository is
-seeded with. An import lands the closure under your repository's own
+own machinery in `substrate.reamde.dev/core`, the agent runtime's data in
+`substrate.reamde.dev/llm` and the console's record views in
+`substrate.reamde.dev/console`, which are the three packages a new repository
+is seeded with. An import lands the closure under your repository's own
 authority, so `samples.substrate.reamde.dev/tasks/task` becomes
 `ada.example.com/tasks/task` in a repository whose authority is
 `ada.example.com`. Registration also imports the `llm` sample and writes three
@@ -212,7 +213,7 @@ reference crosses packages as easily as it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever package it declares into. Your repository was
-seeded with those two packages and the `llm` sample when it was created, and
+seeded with those three packages and the `llm` sample when it was created, and
 everything else (the vocabulary above included) arrived as an import you
 asked for; either way the declarations are rows in your repository, not a file
 the server reads at query time. [Vocabulary as records](vocabulary.md) is that whole story.

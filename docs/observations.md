@@ -133,6 +133,10 @@ reducers that answer something useful; `compatibility` names the class values
 pool within where the measure alone is not enough, such as serum against
 whole-blood glucose, and nothing in the engine reads it; `displayPrecision`
 is the decimal places a reader shows; `category` groups it for navigation;
+`bucketPlace` (`start` or `end`) says where a read by the day or longer
+places a value's span, which a client passes as the aggregate's
+`bucket.place` and nothing in the engine reads (`health/sleep_stage` sets
+`end`, so a night lands on the day it ends);
 `algorithm` (`{vendor, name, version}`) names a vendor's scoring method. The sample ships
 six metrics several domains share: `air_temperature`, `relative_humidity`,
 `energy`, `power`, `illuminance` and `atmospheric_pressure`.
@@ -374,6 +378,18 @@ they relate by a formula, not a unit.
 The codes were written from the vendors' published documentation without a
 check against a live account; a metric's description marks the least
 certain ones.
+
+The sample ships two [record views](console.md#record-views)
+(`samples/health/views.yaml`), records of the seeded console package's
+`recordview` kind that lay out a record page. `health/sleep` reads the heart
+rate, heart rate variability (`hrv_rmssd`) and respiratory rate over the
+night, and draws the night's `sleep_stage` spans in the order awake, in bed,
+REM, asleep, light, deep, from the sleep's own source, with the time in each.
+`health/workout` shows the workout's distance and time moving, the heart rate
+over the workout, the time in five heart rate zones (95 to 114, 114 to 133,
+133 to 152, 152 to 171 and 171 to 220 a minute, five 19-beat bands from half
+of a 190 maximum) and the speed. Edit a view to change what a page shows,
+such as zone bounds from a measured maximum; a re-import keeps your edit.
 
 ### Lab results in both unit systems
 

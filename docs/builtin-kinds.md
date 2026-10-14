@@ -1,8 +1,8 @@
 # Built-in kinds
 
-This page maps the vocabulary this binary ships, package by package: the two
-packages a repository is seeded with, `substrate.reamde.dev/core` and
-`substrate.reamde.dev/llm`, the LLM sample copied onto the repository's own
+This page maps the vocabulary this binary ships, package by package: the three
+packages a repository is seeded with, `substrate.reamde.dev/core`,
+`substrate.reamde.dev/llm` and `substrate.reamde.dev/console`, the LLM sample copied onto the repository's own
 authority at registration, and the other sample packages it can import. A kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
 spells it, under the placeholder authority an import rewrites. Which door a
@@ -123,6 +123,8 @@ analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol).
 Its function `convertlab`, fired by its trigger `health-on-labresult` on every
 write of a `labresult`, writes the result again in the other metric of its
 pair ([lab results in both unit systems](observations.md#lab-results-in-both-unit-systems)).
+It ships two [record views](console.md#record-views), the record pages of a
+sleep and a workout ([what the health sample adds](observations.md#what-the-health-sample-adds)).
 
 ## substrate.reamde.dev/core
 
@@ -189,5 +191,22 @@ unfrozen at v1 and not part of the frozen core:
 
 The `agent` kind itself stays in core: it is one of the declarable kinds, and a
 manifest document is a record of a core kind whatever package it describes.
+
+## substrate.reamde.dev/console
+
+The third package the binary seeds: what the console shows, as records, so a
+sample's kinds are presented from data and no console code names them
+(decision record
+[0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)).
+It is seeded as core and llm are, and a repository created before it receives
+it at its next open.
+
+| Kind         | What it is                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart` or `spans` ([record views](console.md#record-views)). |
+
+A sample ships its views as records; an import writes one only where the
+repository holds none at its id, so an edited view survives a re-import.
+`consolepreference` stays in core.
 
 Back to [the documentation index](README.md).

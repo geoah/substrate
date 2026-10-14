@@ -323,3 +323,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0162](0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md) | An observed row names its origin and source, and composes its id from upstream data | proposed |
 | [0163](0163-positions-forecasts-and-money-stay-out-of-the-observed-index.md) | Positions, forecasts and money stay out of the observed index | proposed |
 | [0164](0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md) | A webhook's signature is verified by the host when the trigger declares one | proposed |
+| [0166](0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md) | A record page's layout is a record in a seeded console package | proposed |
