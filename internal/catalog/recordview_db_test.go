@@ -50,6 +50,17 @@ func TestImportedRecordViewsFollowTheRehome(t *testing.T) {
 		if got := appliesTo(t, ds, "health/"+kind); got != want {
 			t.Errorf("the %s view applies to %q, want %q", kind, got, want)
 		}
+		// The console finds a kind's views by this one filter.
+		page, err := ds.List(context.Background(), substrate.Query{Filter: substrate.Filter{
+			Kinds:      []string{recordViewKind},
+			Properties: map[string]substrate.Cond{"appliesTo": {Eq: want}},
+		}})
+		if err != nil {
+			t.Fatalf("list the views of %s: %v", kind, err)
+		}
+		if len(page.Records) != 1 || page.Records[0].ID != "health/"+kind {
+			t.Errorf("the views of %s are %d records, want the one health/%s", kind, len(page.Records), kind)
+		}
 	}
 }
 
