@@ -698,7 +698,9 @@ func (p *aggPlan) windows(ctx context.Context, buckets []*aggBucket) ([][2]time.
 // it recorded their UTC offset, which the recorded-local calendar needs.
 // Under place end a point is found by where it is placed (placedPoints), and the
 // read passes the window's end as its whole rows' ends, so no row answers.
-func discoverFormsSQL(placeEnd bool) string {
+// The straddling amounts (discoverStraddle, reach at $13) are read only
+// where straddle is set; without it the statement takes twelve parameters.
+func discoverFormsSQL(placeEnd, straddle bool) string {
 	return `
 	SELECT DISTINCT s.n, f.form, x.code, x.known
 	FROM ` + discoverStreams + `
@@ -712,9 +714,9 @@ func discoverFormsSQL(placeEnd bool) string {
 		SELECT p.code, p.offset_known FROM ` + placedPoints(placeEnd, discoverCutEnd+` AND `+availablePoint, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + `
 		UNION
 		SELECT p.code, p.offset_known FROM ` + placedPoints(placeEnd, discoverSummary+` AND `+availablePoint, "w.a", "w.b") + `
-		UNION
-		SELECT p.code, p.offset_known FROM ` + discoverStraddle("$13", availablePoint) + `
-		UNION
+		UNION` + discoverStraddleBranch(straddle, `
+		SELECT p.code, p.offset_known FROM `+discoverStraddle("$13", availablePoint)+`
+		UNION`) + `
 		SELECT c.code, c.offset_known FROM (
 			SELECT p.code, p.value, p.ts, p.hold_ms, p.offset_known FROM (
 				SELECT DISTINCT r.bucket15 FROM observed_rollups r
@@ -757,8 +759,10 @@ const discoverSummary = `f.form = 'summary'
 // discoverCountSQL counts the points discoverFormsSQL reads, its cut ends
 // and its summaries, before it runs: they count against
 // maxSamples like any raw point a read takes. The gauge's carry is one point
-// per stream and window and is not counted.
-func discoverCountSQL(placeEnd bool) string {
+// per stream and window and is not counted. The straddling amounts (reach at
+// $12) are counted only where straddle is set; without it the statement
+// takes eleven parameters.
+func discoverCountSQL(placeEnd, straddle bool) string {
 	return `
 	SELECT coalesce(sum(x.c), 0)::bigint
 	FROM ` + discoverStreams + `
@@ -767,10 +771,23 @@ func discoverCountSQL(placeEnd bool) string {
 		UNION ALL
 		SELECT count(*) FROM ` + placedPoints(placeEnd, discoverCutEnd, "GREATEST(w.wb, w.a, LEAST(w.wa, w.b))", "w.b") + `
 		UNION ALL
-		SELECT count(*) FROM ` + placedPoints(placeEnd, discoverSummary, "w.a", "w.b") + `
+		SELECT count(*) FROM ` + placedPoints(placeEnd, discoverSummary, "w.a", "w.b") + discoverStraddleBranch(straddle, `
 		UNION ALL
-		SELECT count(*) FROM ` + discoverStraddle("$12", "TRUE") + `
+		SELECT count(*) FROM `+discoverStraddle("$12", "TRUE")) + `
 	) x`
+}
+
+// discoverStraddleBranch is branch where straddle is set and nothing
+// otherwise. A read with no reach must not carry the branch behind a guard
+// its reach parameter turns false: a custom plan folds the guard to a
+// constant and plans the branch as a parallel sequential scan of
+// observed_points, which it then launches workers for once per stream, form
+// and window, and the scan's estimate pushes the statement past jit_above_cost.
+func discoverStraddleBranch(straddle bool, branch string) string {
+	if !straddle {
+		return ""
+	}
+	return branch
 }
 
 // discoverStraddle is the amounts of stream s that start before window w and
@@ -840,8 +857,13 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 	for _, d := range reach {
 		longest = max(longest, d)
 	}
-	if err := tx.QueryRowContext(ctx, discoverCountSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms,
-		longest.Microseconds()).Scan(&samples); err != nil {
+	straddle := longest > 0
+	args := []any{ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms}
+	countArgs := args
+	if straddle {
+		countArgs = append(slices.Clip(args), longest.Microseconds())
+	}
+	if err := tx.QueryRowContext(ctx, discoverCountSQL(p.bucket.placeEnd, straddle), countArgs...).Scan(&samples); err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms count: %w", err)
 	}
 	if samples+spent > p.maxSamples {
@@ -853,8 +875,11 @@ func (ds *dataset) discoverForms(ctx context.Context, tx *sql.Tx, p *aggPlan, st
 			samples, beside, p.maxSamples, substrate.AggregateMaxSamplesCap)
 	}
 	samples += spent
-	rows, err := tx.QueryContext(ctx, discoverFormsSQL(p.bucket.placeEnd), ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms, p.maxGap.Milliseconds(),
-		longest.Microseconds())
+	formsArgs := append(slices.Clip(args), p.maxGap.Milliseconds())
+	if straddle {
+		formsArgs = append(formsArgs, longest.Microseconds())
+	}
+	rows, err := tx.QueryContext(ctx, discoverFormsSQL(p.bucket.placeEnd, straddle), formsArgs...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("substrate/engine: aggregate forms: %w", err)
 	}

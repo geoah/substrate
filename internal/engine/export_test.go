@@ -687,8 +687,8 @@ func ExplainPlacedReads(ctx context.Context, db *sql.DB, placeEnd bool, metric, 
 		name, query string
 		args        []any
 	}{
-		{"discover count", discoverCountSQL(placeEnd), append(slices.Clone(discover), int64(0))},
-		{"discover forms", discoverFormsSQL(placeEnd), append(slices.Clone(discover), int64(0), int64(0))},
+		{"discover count", discoverCountSQL(placeEnd, false), slices.Clone(discover)},
+		{"discover forms", discoverFormsSQL(placeEnd, false), append(slices.Clone(discover), int64(0))},
 		{"count", countPointsSQL(placeEnd, false), append(s.args(), a, b)},
 		{"read", readSeriesSQL(placeEnd, false), append(s.args(), a, b)},
 	}

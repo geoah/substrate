@@ -8,6 +8,7 @@ package engine_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"math/bits"
@@ -23,6 +24,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // bothPaths runs one read from rollups where they serve and once from raw
@@ -88,10 +90,11 @@ func (s *statements) since(mark int, fragment string) int {
 // the amount coverage taken from raw spans, a property read's values, and the
 // read of a stream's rollup rows.
 const (
-	discoverStatement = "SELECT DISTINCT s.n, f.form, x.code"
-	coverageStatement = "sum(x.brk) OVER"
-	propertyStatement = ")::text FROM records WHERE"
-	rollupStatement   = "r.first_record_id, r.first_ord"
+	discoverStatement      = "SELECT DISTINCT s.n, f.form, x.code"
+	discoverCountStatement = "SELECT coalesce(sum(x.c), 0)::bigint"
+	coverageStatement      = "sum(x.brk) OVER"
+	propertyStatement      = ")::text FROM records WHERE"
+	rollupStatement        = "r.first_record_id, r.first_ord"
 )
 
 // A range holding no point answers in its streams' unit, where the metric
@@ -1765,4 +1768,146 @@ func TestAggregateANullAloneMakesNoRow(t *testing.T) {
 			}
 		}
 	}
+}
+
+// bound is a pgx tracer that keeps every statement the service sends with
+// the values bound to it, so a test can plan a statement as the read ran it.
+type bound struct {
+	mu   sync.Mutex
+	list []boundStatement
+}
+
+type boundStatement struct {
+	sql  string
+	args []any
+}
+
+func (b *bound) TraceQueryStart(ctx context.Context, _ *pgx.Conn, d pgx.TraceQueryStartData) context.Context {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.list = append(b.list, boundStatement{sql: d.SQL, args: slices.Clone(d.Args)})
+	return ctx
+}
+
+func (b *bound) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+// since is the statements sent after mark that hold fragment.
+func (b *bound) since(mark int, fragment string) []boundStatement {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []boundStatement
+	for _, s := range b.list[mark:] {
+		if strings.Contains(s.sql, fragment) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (b *bound) mark() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.list)
+}
+
+// The forms discovery of a read from raw points, the night's heart rate a
+// sleep page charts, reads observed_points by the stream index alone when
+// Postgres plans it for the values bound to it, as it does for a
+// connection's first five runs of the statement. A read with no straddling
+// amounts carried their branch behind a guard its zero reach made false; the
+// custom plan scanned observed_points sequentially under that guard, and on
+// the demo substrate it launched parallel workers once per stream, form and
+// window and crossed jit_above_cost: 12 s against 2 ms for the generic plan,
+// whichever filter the read named. Every filter the console sends takes the
+// same streams, rollup rows and raw points as no filter.
+func TestAggregateDiscoveryPlansOnTheStreamIndex(t *testing.T) {
+	t.Parallel()
+	log := &bound{}
+	f := aggFix{obsIndex: openObservedIndex(t, engine.WithTestQueryTracer(log)), t: t}
+	day := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	f.heartRate("watch", day, time.Minute, 0, day, day)
+	f.heartRate("ring", day, time.Minute, 4, day, day)
+	if _, err := f.db.ExecContext(context.Background(), `ANALYZE observed_points; ANALYZE observed_rollups`); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	db, err := engine.SharedScopedDB(f.svc, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := substrate.Aggregate{
+		Metric: &substrate.AggregateMetric{Ref: f.metricPath("health/heart_rate")}, From: substrate.AggregateFromRaw,
+		Range:  rng(day.Add(13*time.Minute), day.Add(8*time.Hour+28*time.Minute)),
+		Bucket: &substrate.AggregateBucket{Every: "PT15M"}, Reducers: reducers("avg", "min", "max"),
+	}
+	var want []byte
+	var wantRollups, wantRaw int64
+	for _, x := range []struct {
+		name   string
+		filter substrate.Filter
+	}{
+		{"no filter", substrate.Filter{}},
+		{"implements observed", substrate.Filter{Implements: vocabulary.TraitObservedCore}},
+		{"implements observed, no about", substrate.Filter{
+			Implements: vocabulary.TraitObservedCore,
+			Properties: map[string]substrate.Cond{"about": {Exists: new(false)}},
+		}},
+		{"every observed kind", substrate.Filter{Kinds: []string{f.observation, f.trace}}},
+	} {
+		mark := log.mark()
+		ctx, trace := engine.AggregateTraced(context.Background())
+		res := f.agg(ctx, x.filter, a)
+		rows, _ := json.Marshal(res.Rows)
+		if want == nil {
+			want, wantRollups, wantRaw = rows, trace.RollupRows(), trace.RawPoints()
+			if len(res.Rows) == 0 {
+				t.Fatalf("%s: no rows, want the night's", x.name)
+			}
+		}
+		if string(rows) != string(want) || trace.RollupRows() != wantRollups || trace.RawPoints() != wantRaw {
+			t.Errorf("%s: %d rollup rows and %d raw points, want %d and %d, and the rows of no filter:\n%s\nwant\n%s",
+				x.name, trace.RollupRows(), trace.RawPoints(), wantRollups, wantRaw, rows, want)
+		}
+		forms, counts := log.since(mark, discoverStatement), log.since(mark, discoverCountStatement)
+		if len(forms) == 0 || len(counts) == 0 {
+			t.Fatalf("%s: %d forms and %d count statements, want the discovery's", x.name, len(forms), len(counts))
+		}
+		for _, st := range append(forms, counts...) {
+			plan := customPlan(t, db, st)
+			if strings.Contains(plan, "Seq Scan on observed_") || strings.Contains(plan, "Gather") {
+				t.Errorf("%s: the custom plan of %.40q scans an observed table without its index:\n%s", x.name, strings.TrimSpace(st.sql), plan)
+			}
+		}
+	}
+}
+
+// customPlan is the plan Postgres makes for one statement and the values
+// bound to it, the plan a connection's first runs of the statement take.
+func customPlan(t *testing.T, db *sql.DB, st boundStatement) string {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL plan_cache_mode = force_custom_plan`); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.QueryContext(ctx, `EXPLAIN (COSTS OFF) `+st.sql, st.args...)
+	if err != nil {
+		t.Fatalf("explain: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var plan []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, line)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(plan, "\n")
 }
