@@ -103,6 +103,15 @@ data:
       min: 0
       max: 12
       description: the decimal places a reader shows
+    # read by clients alone: the aggregate read takes `bucket.place` from the
+    # request, and a reader that reads this metric by the day passes it.
+    bucketPlace:
+      type: enum
+      values:
+        - start
+        - end
+      description: where a read by the day or longer places a value's span;
+        end lands a night on the day it ends. Absent is start
     # navigation only: nothing groups or filters by it server-side
     category:
       type: string

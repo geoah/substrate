@@ -1056,6 +1056,8 @@ data:
     reducers:
       - sum
       - count
+    # A night lands on the day it ends, so each day holds one night.
+    bucketPlace: end
     category: sleep
 ---
 kind: samples.substrate.reamde.dev/observations/metric
