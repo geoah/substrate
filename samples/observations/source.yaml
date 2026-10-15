@@ -1,0 +1,69 @@
+# the device that produced a value, never the delivery that brought it: one
+# watch reached through two providers without a shared upstream identity is
+# two sources, and a read's source policy chooses between them (decision
+# record 0162). The delivery is each value's `origin`.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: samples.substrate.reamde.dev/observations/source
+data:
+  authority: samples.substrate.reamde.dev
+  package: observations
+  description: >-
+    A device, app, service or lab that produces measured values, such as a
+    watch or a scale.
+  purpose: primary
+  names:
+    singular: source
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the source is called, such as Garmin Forerunner 265
+    class:
+      type: enum
+      description: what sort of source it is
+      values:
+        - watch
+        - ring
+        - scale
+        - thermometer
+        - meter
+        - contact
+        - camera
+        - app
+        - service
+        - lab
+        - manual
+    manufacturer:
+      type: string
+      description: who made it
+    hardwareModel:
+      type: string
+      description: the maker's model name
+    firmware:
+      type: string
+      description: the firmware or app version it last reported
+    resolution:
+      type: quantity
+      description: the smallest step it reports, such as 0.1 kg
+    # writers copy it onto each value; the index never reads it from here
+    about:
+      type: reference
+      kind: any
+      description: the thing it is fixed to, such as a room; writers copy
+        it onto each value
+    account:
+      type: reference
+      trait: substrate.reamde.dev/core/accountconfig
+      description: the connected account it syncs through
+    # keyed by the metric's id, such as health/heart_rate: the owner's order
+    # per metric, because a chest strap wins for heart rate and a watch for
+    # steps. The aggregate read's priority and summaries policies take it as
+    # their order when a request names none; an explicit order wins.
+    priorities:
+      type: int
+      keyed: true
+      description: this source's rank per metric id when sources overlap,
+        1 first; the aggregate read's priority and summaries policies take
+        it as their order when a request names none, an unranked source last

@@ -11,7 +11,7 @@ your account too.
 ## The invite code
 
 Registering creates the user and, in the same transaction, the repository,
-seeded with the `core` and `llm` packages, three keyless `llm/provider` rows
+seeded with the `core`, `llm` and `console` packages, three keyless `llm/provider` rows
 (`openai`, `anthropic`, `gemini`) and the LLM sample. One **invite code**, configured on the
 service as `SUBSTRATE_INVITE_CODE`, gates that door: with one set,
 `/register` and `/register/enroll` admit only a request that presents it, and
@@ -83,8 +83,8 @@ beside the token secret: that `recoveryKey` is what opens the repository's
 client that generated its own pair sends `recoveryPublicKey` instead and no
 key comes back.
 
-That second call is **one creation act**: the seed (the `core` and `llm`
-packages and the provider rows), the sealed material, the credential record and
+That second call is **one creation act**: the seed (the `core`, `llm` and
+`console` packages and the provider rows), the sealed material, the credential record and
 the first token all commit as one transaction in the new repository's changelog, and the control-plane row that
 _is_ the user is written last, so the user exists exactly when the repository
 is already complete. Anything that fails before that erases what it wrote: a

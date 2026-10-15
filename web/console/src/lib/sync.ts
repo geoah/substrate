@@ -15,8 +15,9 @@ import type {
   SyncStream,
   TriggerStatus,
 } from "@/lib/api/types"
-import { CORE_PACKAGE, splitKind } from "@/lib/api/http"
+import { splitKind } from "@/lib/api/http"
 import { kindPackage } from "@/lib/definition"
+import { kindHasTrait } from "@/lib/traits"
 
 /** The trait's five words, in the order a legend lists them. */
 export const SYNC_STATES: readonly SyncState[] = [
@@ -237,20 +238,7 @@ export interface AccountView {
   health: Health
 }
 
-/** A kind carries a trait when its reconciled declaration lists it, by
- * its full identity (every stored declaration names it in full, decision
- * 0101) or by the bare shipped spelling an older declaration kept. A bare
- * `trait` argument names the core trait of that name. */
-export function kindHasTrait(
-  kind: KindInfo | undefined,
-  trait: string
-): boolean {
-  const traits = (kind?.definition as { traits?: unknown } | undefined)?.traits
-  if (!Array.isArray(traits)) return false
-  const bare = trait.slice(trait.lastIndexOf("/") + 1)
-  const full = trait.includes("/") ? trait : `${CORE_PACKAGE}/${trait}`
-  return traits.some((t) => t === full || t === bare)
-}
+export { kindHasTrait }
 
 export function accountViewOf(
   record: SubstrateRecord,

@@ -29,6 +29,7 @@ import { StateBadge } from "@/components/identity/state-badge"
 import { LazyMarkdownEditor } from "@/components/markdown/lazy-markdown-editor"
 import { MoneyInput } from "@/components/record/money-input"
 import { PropertyField } from "@/components/record/property-field"
+import { QuantityInput } from "@/components/record/quantity-input"
 import { RecordCombobox } from "@/components/record/record-combobox"
 import { Button } from "@/components/ui/button"
 import { ChoiceList } from "@/components/ui/choice-list"
@@ -74,8 +75,9 @@ export function InlineEditor(props: InlineEditorProps) {
     return <ReferencePicker {...props} />
   }
   if (isMarkdownRow(props)) return <MarkdownRowEditor {...props} />
-  if (props.row.field.spec.kind === "money" && control === "text") {
-    return <MoneyEditor {...props} />
+  const kind = props.row.field.spec.kind
+  if ((kind === "money" || kind === "quantity") && control === "text") {
+    return <PairEditor {...props} />
   }
   if (style === "line") return <LineEditor {...props} />
   return <PanelEditor {...props} />
@@ -268,9 +270,10 @@ function LineEditor(props: InlineEditorProps) {
   )
 }
 
-/** A money row: the amount beside its currency. Enter or leaving the pair
- * saves, Esc cancels; moving from the amount to the currency is not leaving. */
-function MoneyEditor(props: InlineEditorProps) {
+/** A money row, the amount beside its currency, or a quantity row, the value
+ * beside its unit. Enter or leaving the pair saves, Esc cancels; moving from
+ * one part to another is not leaving. */
+function PairEditor(props: InlineEditorProps) {
   const { row, onDone, onError } = props
   const { field } = row
   const { save, pending } = useSave(props)
@@ -313,15 +316,27 @@ function MoneyEditor(props: InlineEditorProps) {
         commit()
       }}
     >
-      <MoneyInput
-        label={field.label}
-        value={text}
-        onChange={setText}
-        fallbackCurrency={moneyCurrency(field.spec.default)}
-        autoFocus
-        disabled={pending}
-        boxClassName={INPUT}
-      />
+      {field.spec.kind === "quantity" ? (
+        <QuantityInput
+          label={field.label}
+          value={text}
+          onChange={setText}
+          spec={field.spec}
+          autoFocus
+          disabled={pending}
+          boxClassName={INPUT}
+        />
+      ) : (
+        <MoneyInput
+          label={field.label}
+          value={text}
+          onChange={setText}
+          fallbackCurrency={moneyCurrency(field.spec.default)}
+          autoFocus
+          disabled={pending}
+          boxClassName={INPUT}
+        />
+      )}
       {pending && <Spinner className="size-3.5 shrink-0" />}
     </div>
   )

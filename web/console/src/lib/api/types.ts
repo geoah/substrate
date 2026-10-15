@@ -350,6 +350,276 @@ export interface OccurrenceProblem {
   message: string
 }
 
+/** One reducer of the aggregate read: a bare name, or an object naming one
+ * reducer with its argument (`{percentile: 0.05}`, `{durationIn: [95, 114]}`,
+ * `{timeInState: ["open"]}`). A value's `reducer` is spelled as the request
+ * spelled it. */
+export type AggregateReducer =
+  | string
+  | { percentile: number }
+  | { durationIn: number[] }
+  | { timeInState: string[] }
+
+/** Where an aggregate reads from: raw points, vendor `summary` points, or
+ * raw where a bucket is covered and the summary otherwise. */
+export type AggregateFrom = "raw" | "summaries" | "prefer-raw"
+
+/** A stream key a result may be grouped by; `statistic` on a read from
+ * summaries only. */
+export type AggregateGroupKey =
+  "source" | "about" | "code" | "metric" | "kind" | "channel" | "statistic"
+
+/** The `aggregate` parameter of `GET /records` (`substrate.Aggregate`,
+ * decision 0161). Exactly one of `metric`, `metrics` and `property`, except
+ * the latest read (no `bucket`, no `range`, the one reducer `last`), which
+ * may name none. */
+export interface Aggregate {
+  metric?: AggregateMetric
+  /** Up to 16 metrics read over one range, bucket, groupBy and sources
+   * policy, each with its own unit, reducers, from and statistic; every row
+   * names its metric in `group.metric`. */
+  metrics?: AggregateMetricRead[]
+  property?: AggregateProperty
+  /** `raw` by default. */
+  from?: AggregateFrom
+  /** prefer-raw's coverage floor, 0 to 1 (default 0.9). */
+  minCoverage?: number
+  range?: AggregateRange
+  bucket?: AggregateBucket
+  groupBy?: AggregateGroupKey[]
+  reducers?: AggregateReducer[]
+  sources?: AggregateSources
+  /** A unit of the metric's measure, or a duration unit for `durationIn` and
+   * `timeInState`. */
+  unit?: string
+  /** An ISO 8601 duration capping a gauge's hold. */
+  maxGap?: string
+  /** `null`, `zero` or `locf`. */
+  fill?: string
+  rolling?: AggregateRolling
+  budget?: AggregateBudget
+}
+
+export interface AggregateMetric {
+  ref: string
+}
+
+/** One metric of a several-metric read. `unit` defaults to the metric
+ * record's, `reducers` and `from` to the read's; `statistic` names the one
+ * summary statistic its summaries are read at. */
+export interface AggregateMetricRead {
+  ref: string
+  unit?: string
+  reducers?: AggregateReducer[]
+  from?: AggregateFrom
+  statistic?: string
+}
+
+export interface AggregateProperty {
+  name: string
+  /** The datetime property placing a record in time; `at` by default. */
+  anchor?: string
+  /** The declared int property holding each record's UTC offset in minutes
+   * at its anchor, which the recorded-local calendar places it by. */
+  utcOffset?: string
+  /** Declared string, enum or reference properties to group the records
+   * by, each row naming its values in `group.properties`. */
+  groupBy?: string[]
+  /** Chooses among records several sources wrote of one thing. */
+  sources?: AggregateRecordSources
+}
+
+/** The records' source policy: `separate` (every record, the default) or
+ * `priority`, which drops a record whose `[at, endsAt)` overlaps a record of
+ * a higher-ranked source, the `match` properties equal. `property` names
+ * the records' declared property holding their source, and `order` ranks
+ * its values, first highest. */
+export interface AggregateRecordSources {
+  policy?: string
+  order?: string[]
+  property?: string
+  match?: string[]
+}
+
+/** The half-open range [gte, lt), RFC 3339 instants. */
+export interface AggregateRange {
+  gte: string
+  lt: string
+}
+
+/** One of the four time modes: `every` (+ `origin`), `calendar` with a
+ * `timezone`, `calendar` alone (the recorded-local calendar), or `records`. */
+export interface AggregateBucket {
+  every?: string
+  origin?: string
+  /** `minute`, `hour`, `day`, `week`, `month` or `year`. */
+  calendar?: string
+  timezone?: string
+  /** The zone the recorded-local calendar places a value written without a
+   * UTC offset by; without it such a value is refused. */
+  fallbackTimezone?: string
+  weekStart?: string
+  offset?: string
+  /** Where a value with a span lands: `start` (the default) or `end`, the
+   * bucket its last instant lies in, so a night lands on the day it ends. */
+  place?: string
+  records?: AggregateRecords
+}
+
+export interface AggregateRecords {
+  filter: RecordFilter
+  around?: AggregateAround
+  maxRecords?: number
+  /** Keeps one source's record where several sources' records overlap. */
+  sources?: AggregateRecordSources
+  /** The properties a row's start and end are written at. */
+  utcOffsets?: AggregateRecordOffsets
+}
+
+/** The records' declared int properties holding their UTC offset in minutes
+ * where they start and end (`end` is `start`'s where absent); a record
+ * holding none is written at the range's offset. */
+export interface AggregateRecordOffsets {
+  start: string
+  end?: string
+}
+
+export interface AggregateAround {
+  before?: string
+  after?: string
+}
+
+/** `separate` (the default), `priority` with `order`, or `summaries`. */
+export interface AggregateSources {
+  policy?: string
+  order?: string[]
+}
+
+/** A window of `buckets` buckets ending at the row's own (`through`
+ * `current`, the default) or at the one before it (`previous`). */
+export interface AggregateRolling {
+  buckets: number
+  reducers?: AggregateReducer[]
+  through?: string
+}
+
+export interface AggregateBudget {
+  maxBuckets?: number
+  maxSamples?: number
+  maxGroups?: number
+}
+
+/** The `downsample` parameter: `points` columns, each first, last, min and
+ * max (M4). Refused beside `reducers`, `rolling` and `fill`. */
+export interface Downsample {
+  points: number
+  method?: string
+}
+
+/** The one answer of an aggregate read (`substrate.AggregateResult`). */
+export interface AggregateResult {
+  metric?: string
+  property?: string
+  /** Absent on a several-metric read, whose `units` names each metric's. */
+  unit?: string
+  /** A several-metric read's unit of each metric, by its record path. */
+  units?: Record<string, string>
+  bucket?: AggregateBucket
+  /** Absent on a several-metric read whose metrics read from different
+   * points. */
+  from?: string
+  /** False when a value came from a float reduction or a rounded unit
+   * conversion. */
+  exact: boolean
+  rows: AggregateRow[]
+  /** Every source that fed a row, by record path; `""` stands for a stream
+   * that names no source. */
+  sources?: string[]
+  head: AggregateHead
+}
+
+/** The changelog position and history generation the read was served at. */
+export interface AggregateHead {
+  changelog: number
+  generation: string
+}
+
+/** One bucket of one group. `start` and `end` carry their own offsets. */
+export interface AggregateRow {
+  start: string
+  end: string
+  /** `gauge`, `amount`, `counter` or `summary`; absent on a property read. */
+  form?: string
+  group?: AggregateGroup
+  /** The matched record, in the records time mode only. */
+  record?: AggregateRecord
+  /** `raw` or `summaries`: which served the row. */
+  from?: string
+  /** The sources that fed the row, by record path; `""` stands for a stream
+   * that names no source. */
+  sources?: string[]
+  /** An ISO 8601 duration. */
+  coverage?: string
+  /** Null where the row holds no value: the server writes an empty list as
+   * null (a coded state that held no time). */
+  values: AggregateValue[] | null
+  count: number
+  /** In the recorded-local calendar, the points among `count` written
+   * without a UTC offset and placed by `bucket.fallbackTimezone`. */
+  offsetless?: number
+  /** In the records mode, the amounts among `count` the window cut, each
+   * counted by the part of its span inside it. */
+  prorated?: number
+  bounded: number
+  synthetic: boolean
+  unavailable: boolean
+  /** The records time mode: windows may overlap, so sums do not add up. */
+  nonAdditive?: boolean
+}
+
+/** A row's group: a record path for `source`, `about` and `metric`, the kind
+ * reference for `kind`, the code for `code`, the summaries' statistic for
+ * `statistic`, a money property's currency, and on a property read each
+ * `property.groupBy` property's value (absent where the records hold none). */
+export interface AggregateGroup {
+  source?: string
+  about?: string
+  code?: string
+  metric?: string
+  kind?: string
+  channel?: string
+  statistic?: string
+  currency?: string
+  properties?: Record<string, string>
+}
+
+export interface AggregateRecord {
+  ref: string
+  version: number
+}
+
+/** One reducer's answer. `value` is a decimal string, or null: no answer, an
+ * unavailable row, or a coded `first`/`last`, whose answer is `code`. */
+export interface AggregateValue {
+  reducer: AggregateReducer
+  value: string | null
+  /** Absent for `count`. */
+  unit?: string
+  /** The code a coded `first` or `last` answers, or the state a
+   * `timeInState` value is the time of. */
+  code?: string
+  /** On a downsample, the instant a column's `first`, `last`, `min` or
+   * `max` was taken at (of equal extremes, the earliest). A `min` or `max`
+   * served from rollup rows leaves it out where finding it would pass
+   * `maxSamples`. */
+  at?: string
+  /** A rolling value: `of` rolled over `rolling` buckets, `n` of which held
+   * a value. */
+  rolling?: number
+  of?: AggregateReducer
+  n?: number
+}
+
 /** One row of the cross-collection change feed. The payload's `properties` key
  * names what moved without its values, and `affected` names the records the
  * write moved with the version each reached; the write's stored replay
@@ -1151,4 +1421,52 @@ export interface BundleUninstalled {
 /** What a purge answers: how many live data rows it tombstoned. */
 export interface BundlePurged {
   purged: number
+}
+
+/** `GET /api/v1/units` (`substrate.UnitTable`): the engine's unit table, every
+ * measure with its listed codes, and the input aliases a write reads. */
+export interface UnitTable {
+  measures: UnitMeasure[]
+  /** Each spelling a write reads (`°C`, `bpm`) and the code it stores. */
+  aliases: Record<string, string>
+}
+
+/** One measure of the unit table (`substrate.UnitMeasure`). */
+export interface UnitMeasure {
+  name: string
+  /** The code every factor converts to; empty for `arbitrary`. */
+  base: string
+  /** `ratio`, `affine`, `difference`, `logarithmic`, `arbitrary` or `count`. */
+  scale: string
+  display: string
+  /** Over L M T I Θ N J A B, "1" for a dimensionless measure, empty for a
+   * level or an arbitrary unit. */
+  dimension: string
+  note?: string
+  units: UnitCode[]
+}
+
+/** One listed code (`substrate.UnitCode`): base = value x factor + offset. */
+export interface UnitCode {
+  code: string
+  /** The symbol a title shows, empty for `1`. */
+  print: string
+  /** The exact rational to the base (`45359237/100000000`); absent where no
+   * rational number states it (a level, an arbitrary unit, rad). */
+  factor?: string
+  /** An absolute temperature's zero in the base, absent where zero. */
+  offset?: string
+}
+
+/** `GET /api/v1/units/convert` (`substrate.UnitConversion`): one value
+ * converted exactly. */
+export interface UnitConversion {
+  /** Every digit where the result has a finite decimal expansion, else 20
+   * significant digits. */
+  value: string
+  unit: string
+  /** The measure the value converted in. */
+  measure: string
+  /** False where `value` was rounded. */
+  exact: boolean
 }

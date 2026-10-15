@@ -45,7 +45,7 @@ mise run audit          # the vulnerability scans: govulncheck and pnpm audit
 mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
 mise run fmt:check      # the same, as a check — what CI runs
 mise run console:dev    # the console on :5173, proxying /api to :8080
-mise run console:render <url>  # a running substrate's console in headless Chrome: sign-in, register, two signed-in pages
+mise run console:render <url>  # a running substrate's console in headless Chrome: sign-in, register, four signed-in pages
 mise run ci             # every CI job, locally. The whole pipeline.
 ```
 
@@ -210,8 +210,9 @@ bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay
 bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
 
-**Registration seeds `core` and `llm`, three keyless provider rows, and the
-LLM sample.** The agent runtime's
+**Registration seeds `core`, `llm` and `console` (record views,
+[0166](docs/decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)),
+three keyless provider rows, and the LLM sample.** The agent runtime's
 four data kinds are the second seeded package, `substrate.reamde.dev/llm`
 (`provider`, `thread`, `message`, `interaction`), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
@@ -347,8 +348,8 @@ first label.
   fake (`internal/api/fake_test.go`).
 - **The top level stays empty.** Every Go package is under `internal/` (or
   `cmd/`), and four directories are the exceptions. Two are the vocabulary as
-  files: `kinds/` (the seeded `core` and `llm` packages and the shipped
-  providers) and `samples/` (the sample packages a repository copies), each
+  files: `kinds/` (the seeded `core`, `llm` and `console` packages and the
+  shipped providers) and `samples/` (the sample packages a repository copies), each
   with the one Go file that embeds it. Two are for people building on a
   substrate: `skills/`, the agent skills they install (the upgrade runbook),
   and `.claude-plugin/`, the marketplace manifest Claude Code installs them

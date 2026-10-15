@@ -39,7 +39,9 @@ The sidebar holds, top to bottom: the repository name, which opens the account
 menu (**Account and settings**, **Appearance**, the **Technical details**
 switch, and **Sign out…**, which asks first), a search button that opens ⌘K,
 the five places (**Home**, **All data**, **Agents**, **Tools**,
-**Providers**, with the number of providers added beside the last),
+**Providers**, with the number of providers added beside the last, and
+[**Observations**](#observations) after All data where some kind records
+measurements),
 **Favorites**, the collections, and at the foot **History**, **Settings** and
 the **Technical details** switch. Collapsed, it peeks over the page while the
 pointer rests at the window's left side or on its toggle.
@@ -248,7 +250,8 @@ pinned title column. The columns come from the declaration: the title first,
 then the states, the time stamps the kind's temporal trait binds, the
 references (each read as the referent's title, fetched beside the page with
 `expand`), the enums and the other short values; paragraphs and blobs never
-earn a column, and the last change closes the row. A column that holds nothing
+earn a column, and the last change closes the row. A duration reads in
+words (`8m 12s`), as on the record page, the stored text on hover. A column that holds nothing
 on the rows loaded opens hidden, and the **Columns** button says how many
 are. So does a property the kind marks `deprecated`, and on a provider's
 collection every property a writer role other than the owner keeps (sync
@@ -339,7 +342,16 @@ here throughout, and says to change it at the provider.
 
 **The properties** are a sheet: one row per property, its label (and
 its key, with Technical details on) on the left and its value on the right,
-with empty properties folded into one line that expands. Clicking a value
+with empty properties folded into one line that expands. A duration reads in
+words (`1h 51m 31s`), the stored text on hover. A date reads as every
+table, chart and record section says one, month first: Today, Tomorrow,
+a weekday within the coming week, else `Oct 5` (`Oct 5, 2025` outside
+this year), with its clock where it has one. A quantity reads to two
+decimal places (`97.18 %`, a kind's property declaring none of its own),
+or to its first two significant digits where it is under one (`0.004
+mIU/L`), the stored digits on hover; with Technical details on, as stored.
+A value with a comparator is a bound and reads every digit (`<0.005
+ng/mL`). Clicking a value
 edits it in place, with the control its datatype earns: a text box, a number,
 a date and time, a textarea for prose, a list to pick from for an enum, the
 moves a state may make, a record picker for a reference, and, for the shapes
@@ -353,6 +365,11 @@ it (a declared `writer:` other than the owner), the whole record is a
 provider's copy, or the kind never declared it. The record's prose, where the
 kind has a body property, reads under the sheet and edits in place the same
 way.
+
+Where the record's kind has [record views](#record-views), they sit above
+the properties, and the properties a view shows are folded into one line
+under the sheet ("2 shown under During this workout"), which opens them for
+editing.
 
 **Who holds each value** is read off the record's
 [`propertyMeta`](projection.md#reading-provenance-propertymeta). Where every
@@ -375,6 +392,27 @@ Under the properties, in order:
 - **Sync**, on a record of any kind binding the core `sync` trait (a
   provider's account): the trait rendered whole, with **Sync now** and
   **Pause**, and a link to the account on its provider's page.
+- **Measurement** or **Readings**, on a record of any kind binding the core
+  `observed` trait, sits above the properties instead. A single value (the
+  trait's `single` variant) reads its value with its unit, to the places
+  its metric declares (`displayPrecision`) as the streams table does,
+  beside a lab result's flag and first reference range in words (`108
+  mg/dL` beside "normal (under 120 mg/dL)"; a flag with no `display` and an
+  HL7 v3 code such as `H` reads as "high"), the metric,
+  source and thing it is about as record mentions, the form, the statistic
+  and period of a vendor summary, when (one time where `endsAt` equals
+  `at`), the revision and the record that delivered it. A trace (the `packed` variant, told apart by declaring
+  `values`) draws its values over `[at, endsAt)` as a line broken wherever
+  two values sit further apart than its `hold`, its managed `stats` as
+  labelled values, and every value with its time in a table fifty to a
+  page, each to its metric's places. Both open the timeline on the record's stream. The property sheet
+  under it folds the properties the section shows into one line ("12 shown
+  under Measurement"), which opens them for editing, and keeps the rest (a
+  lab result's coding, specimen and report). A list of objects numbers its
+  items only where it holds more than one. A summary opens the timeline
+  on its own statistic. A `form` reads in the same words everywhere the
+  console shows it: **Level**, **Amount**, **Running total** or **Vendor
+  summary**.
 - **Connected to**: the records that point here, read through the
   [`referencing`](api.md#who-points-at-a-record-referencing) filter arm and
   grouped by the kind they are and the property they point through ("Tasks
@@ -409,6 +447,84 @@ Under the properties, in order:
 With Technical details on, the **source** button in the head swaps the page
 for the record's [envelope](data-model.md#the-envelope) as YAML, every kind
 reference and record reference a link, and **Edit YAML** opens the editor.
+
+### Record views
+
+A **record view** says how the record page of one kind is laid out: a record
+of the seeded `substrate.reamde.dev/console/recordview` kind
+([0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)).
+The console reads every view whose `appliesTo` names the page's kind and draws
+each, in id order, above the property sheet, under the view's `name` and
+`intro`. A kind with no view gets the generic page and nothing else. The
+console names no kind of its own accord: a sample's kinds get a layout only
+from a view the sample ships or the owner writes. "Saved view" stays the name
+for a table's saved filters and columns, which live elsewhere.
+
+A view binds its **window** by the names of the record's own properties:
+`start` and `end` (such as `at` and `endsAt`), and optionally `about` (who
+the record is about) and `source` (what recorded it). The chart and spans
+blocks read the observations of who the record names, and the owner's where
+the view binds no `about` or the record names nobody, never everyone's. Its `fold` lists properties the sheet folds
+away because a section shows them. Then come its `sections`, in order, each
+holding one block:
+
+- **heading**: a heading, and an optional `note` under it.
+- **text**: a paragraph, in Markdown.
+- **properties**: chosen properties of the record in the view's order, each
+  under the view's `label` or its own; a property the record does not hold
+  is left out.
+- **related**: records linked to this one, as a list or a count. Either an
+  outgoing reference `property` of the record, or a `kind` (a reference to
+  the kind's declaration, as `appliesTo` is) whose records point here
+  through its `via` property, not both; `limit` caps the list.
+- **chart**: what was measured during the record, one chart per metric id in
+  `metrics`, read with the aggregate read over the bound window. A `bucket`
+  of `auto` draws a line in buckets sized to the window, its first reducer in
+  the metric's unit as the line and `min` and `max` as its band, and a click
+  or a drag zooms into part of it; `minute`, `hour` and `day` fix the size;
+  `whole` reads one row over the window and draws a bar per reducer, such as
+  one `durationIn` band per heart rate zone. `reducers` are the aggregate
+  read's, with `low` and `high` for a `durationIn` band (low under high) and
+  `rank` for a percentile, and a `label` each. `sources` is `prefer` (the record's own
+  source first, then the sources' priorities; the sources that drew the line
+  are named under it), `only` (the record's own source alone) or `priority`.
+- **spans**: a coded amount metric's values over the window as spans, one
+  row per code in the order `codes` lists them (a code it does not list goes
+  last), each under its `label`. A metric of any other form, or one listing
+  no codes, is a notice: a coded gauge's values are instants, not spans. The rows are drawn only where the spans follow one
+  another; a source writing one span per code over the whole window gives
+  the time in each code alone, which `totals` shows under the rows. Each code
+  wears its place in the metric's `codeSet` as its colour, as on the
+  timeline, and nothing is drawn before the metric record is read.
+
+The chart and spans blocks share one time axis: a zoom in one moves every
+line and spans block of the view, and the bars and totals stay whole. **Open
+in the timeline** opens the same window with every metric the view's lines
+and spans read. The engine refuses a view whose blocks do not match their
+declared shapes. What the declaration cannot say, the console says where the
+section would be: a section with no block or two, a block type this console
+does not draw (one a newer console package added), a related block naming
+both or neither of its two ways, a reducer it does not read, a `durationIn`
+without both bounds or with its low not under its high, and a percentile
+without its rank. A chart or spans block in a view that binds no window says
+it has nothing to read. On a record that does not hold the window the view
+binds (no end yet, or an end before its start), the view leaves its chart and
+spans blocks out, and is left out itself where nothing else remains.
+
+**How a sample ships views.** A sample ships its views as data records beside
+its kinds, naming each kind's declaration in `appliesTo`
+(`substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/health/sleep`),
+and the import rehomes that reference with the kind. The health sample ships
+two ([what the health sample adds](observations.md#what-the-health-sample-adds)).
+
+**Upgrades.** An import or an upgrade replaces a shipped view that nothing
+but the import has written, and leaves a view alone once you edited any
+property of it (the property ledger names who last wrote each), so your edit
+survives. To take a newer shipped view over an edited one, delete yours and
+import the sample again. A view whose only edit was removing a property reads
+as unedited, because a removed property has no writer, and is replaced.
+`substratectl apply -f` of a sample's files writes its views directly, as
+any apply does, and replaces an edited view.
 
 ## The record editor
 
@@ -592,7 +708,7 @@ this repository holds of them. A card says in one pill where the provider
 stands (**On**, **Set up**, **Needs attention**, **Paused**) or offers
 **Add**, and one line says what is true right now. With Technical details on,
 **Other packages** lists every other bundle the repository holds (imported
-samples, the seeded `llm` package, anything applied directly) with its
+samples, the seeded `llm` and `console` packages, anything applied directly) with its
 version, state, update and removal, and states any pending upgrade of the
 seeded packages.
 
@@ -644,6 +760,302 @@ The old addresses land here: `/registry` and `/connections` open Providers,
 `/registry/{bundle id}` that bundle's page (a shipped sample's opens All
 data), `/connections/{authority}/{package}/{kind}/{id}` its provider's page at
 that account, and `/settings/{bundle id}` that page's Settings.
+
+## Observations
+
+**Observations** (`/observations`) lists what your devices, apps and providers
+measured, one row per stream: a metric written by one source about one
+thing, on one of the source's channels where a source measures a metric
+twice (a WHOOP cycle's heart rate beside a workout's). It is a place in the
+sidebar and ⌘K only where some kind binds core's
+`observed` trait, which the console finds in the registry by the trait and
+never by a fixed authority, so an imported `observations` or `health` sample
+under your own authority is found the same way. Where nothing records
+measurements yet, or nothing has been measured, the page says so and offers
+**Add a sample** (All data's **Add a collection**, on its samples) and
+**Providers**. The rows come from one
+aggregate latest read: `GET /api/v1/records` with
+`filter={"implements":"substrate.reamde.dev/core/observed"}` and
+`aggregate={"groupBy":["metric","source","about","channel","statistic"],"reducers":["last"],"budget":{"maxGroups":2000}}`,
+no bucket and no range: a stream whose vendor summaries keep several
+statistics answers a row for each, and the page folds them into one row
+that knows them. Where the server refuses that read for making more
+than 2,000 groups, the page lists the metrics with a point first and reads
+their streams a few metrics at a time, and does not ask the refused read
+again under the same filters. Each row shows:
+
+- **Metric**: the metric, by its record's name.
+- **Source**: the source, as a record mention.
+- **About**: what it is about, **You** where it names nothing, which means
+  the owner.
+- **Channel**: its channel.
+- **Reading**: how its newest value reads, its form in words: **Level**,
+  **Amount**, **Running total** or **Vendor summary**, or **Category** for a
+  coded stream. Under it are the statistics its vendor summaries keep, such
+  as "Summaries: average, highest".
+- **Latest**: that value in its unit, to the metric's places. Hover shows
+  the stored digits, and with Technical details on the value is shown as
+  stored. A category shows the code a coded `last` answers. A summary's
+  value follows the statistic it is: "Average 74 /min".
+- **When**: when it was taken. An amount's or a vendor summary's newest
+  point covers a window, and **When** says which (`Oct 7, 09:45 to 10:00`),
+  so a quarter hour's steps never reads as the day's.
+- **Points**: how many points the stream holds.
+
+A long metric name and a window wrap to a second line rather than lose
+their ends.
+
+The rows sit in the grid a collection's records do
+([A collection](#a-collection)), with the same controls, applied in the page
+because discovery loads every stream. **Sort** or a header click picks the
+order (`?sort=`, newest first by default). **Filters** offer metric, source,
+about, reading and channel, each a set of values to pick, several meaning any
+of them (`?filter=`). Chosen metrics narrow discovery on the server to one
+latest read per metric, so adding a metric keeps the rows already read;
+with no metric chosen, the chosen sources and things narrow the one read
+instead. Where one chosen metric's stream read fails and another's
+answers, a note names the metric, gives the reason and retries that read
+alone, and the other metrics' rows stay. The search box matches the rows' words
+(`?search=`). **Columns** shows, hides and reorders the columns, and
+**Group** cuts the rows by metric, source, about, reading or channel
+(`?group=`). **Saved views** keep a filter, sort, column set and grouping on
+the console preference record under the collection key
+`observations/streams`; a view is lit while the address matches it and never
+holds the search or the selection. A bare address restores the filters, sort
+and grouping last used in this browser. A row's metric opens the timeline
+narrowed to its stream; an amount's opens on today, bucketed by day, so it
+reads the day's total.
+
+A box on each row selects its stream: shift-click selects the run from the
+row clicked before, and the header box selects or clears every row shown.
+The selection is in the address (`?select=`, one `metric|source|about|channel`
+token per stream, by id where the reference's pin allows), so a link carries
+it, and a filter that hides a selected row leaves it selected and drawn.
+**Timeline** (`?timeline=true`) opens a panel above the grid that draws the
+selected streams in one chart over a range (the last 30 days until you pick
+another), with the bucket, where its days start, and what to group the
+series by: metric, source or about (`?by=`). Each metric's read is narrowed to
+its selected sources, things and channels where every selected stream names
+one, because no filter names a stream with none: with a typed weigh-in
+selected beside the scale's, the read takes every source of the metric. Each keeps its own reducer and unit (`?reducer=`,
+`?unit=`), and metrics whose reads match in everything else share one
+request, as on the timeline. A stream the read takes that the selection leaves out (WHOOP's
+heart rate on no channel, beside its selected workouts) is left out of the
+chart where it would draw a line of its own (grouped by source or about, or
+on another channel), and named under the chart where it joins a selected
+line. The panel reads the
+selected metrics' streams on its own and nothing while no stream is
+selected; where that read fails, it says why and offers to try again, and
+where one selected metric's read fails, the note names that metric and the
+others draw.
+
+**The timeline** (`/observations/timeline`) draws the chosen metrics over one
+range on one time axis. Opened with no metric, it draws the newest stream's
+metric under the chosen sources and things and writes it into the address
+(`?metric=`), so a later read never swaps the chart. They overlay in one chart while they fit two units
+and otherwise split into as few charts as hold them two units each: heart
+rate, HRV and steps are two charts, heart rate with HRV and then steps. One
+row of controls scopes every chart:
+
+- the metrics;
+- the range: today, the last 7 or 30 days, 6 months, a year, or a custom
+  range of days on the calendar;
+- the bucket: automatic from the range, 1, 5 or 15 minutes, an hour, a day,
+  a week or a month. Automatic reads a window of two hours or less, such as
+  a workout's trace, by the minute. It reads in days where it would read in
+  hours and a metric placed by its end is drawn (its record's `bucketPlace`
+  is `end`, as the sleep stages' is), since a source may write a night's
+  time in each stage as one span over the whole night;
+- where a day, week or month starts: where you were, or your time zone;
+- what to group by: metric, source or about. A category metric is always
+  grouped by code. Where every metric drawn is one, **Group by** is
+  disabled and says so, and beside other metrics its chart says Group by
+  does not apply to it;
+- where to read from: automatic, raw points, vendor summaries, or raw where
+  a bucket is covered;
+- the sources, things and channels to keep.
+
+Under each chart, a table holds each metric's numbers and copies them as
+tab-separated text, the exact digits. On screen a value's digits are in
+groups of three (`12,008 kJ`). A time of a minute or more in seconds,
+minutes or hours reads in words, as a record view reads it (`4h 42m 36s`
+for `282.6 min`). The covered time is to the minute from an hour up. The
+table shows up to a dozen rows whole and scrolls past that.
+With Technical details on, each request follows it, as JSON and as a `curl`
+command.
+
+**One chart, several metrics.** Above the chart, one row per metric holds
+its name, how it reads (**Reading**: Level, Amount and so on), which axis
+it reads on, its reducer (**Show**), its output unit and its legend. A
+metric drawn as one series has no separate legend: its name is the entry
+that hides and shows it. The output unit is one of the units of the stored
+unit's measure the server converts it to: never another annotation, another
+assay unit, a level or a factor of pi; minutes, seconds or hours for a time
+in a range. **Unit** names each unit by its symbol (`lb`, not `[lb_av]`).
+Where the stored unit has a list of units it is read in day to day,
+**Unit** offers that list (kilograms, pounds and stones for a weight in
+kilograms). With Technical details on, it offers every unit the server
+converts to, each with its code. A quantity's hover gives its symbol and
+stored digits (`19 score`), and the text a write takes (`19 {score}`) only
+with Technical details on.
+**Show** offers every reducer the metric's form takes
+([the table](api.md#reducers-by-form)). For a level or an amount these
+include the median and the 90th percentile, and for an angle the circular
+mean. It offers no `durationIn` band, since no metric says which bands a
+reader wants; an address naming one (`durationIn:114,133`) is read and
+offered, and a [record view](#record-views) names its own. A vendor summary defaults
+to its average, or its total where it keeps a sum or a count. For a level,
+the menu says what its two averages are. **Average**, the default, counts
+each reading once, so a source that reads more often in a workout weighs
+more. **Time-weighted average** weighs each reading by how long it held,
+and the menu says so beside why it reads raw points alone where it does.
+Where a vendor summary may serve a bucket, the reducers a summary takes
+come first and the rest read raw points alone. Picking one of the rest (the
+time-weighted average, a percentile, a band) reads the metric from raw
+points, and the chart says whose summaries it leaves out. Where you picked
+where to read from yourself, such a reducer is listed disabled, with the
+reason.
+A level is a line, with its lowest-to-highest band where its metric shows
+one line and the reducer answers in the metric's own unit (not a count, a
+standard deviation, a time in a band or a circular mean). The line joins
+across a bucket its hold covered with no reading of its own (a day between
+two weigh-ins), and breaks where the answer has no row or filled a gap. An
+amount, a count, a counter's increase and a time in a band are bars. A
+category is bars stacked per code that counts as one unit, its time, each
+code in the colour of its place in the metric's `codeSet` whatever else the
+chart draws. The other series take the colours of the codes the answer does
+not hold first. The series of one unit
+share the left axis and a second unit reads on the right, each axis
+captioned with its unit; a third unit is not drawn, and the chart names the
+metrics it leaves out and what to deselect to draw them. One crosshair marks
+the hovered bucket with a dot on every line, and one tooltip lists every
+series there with its value and unit; a chart of one series keeps the full
+readout (every reducer, the points, the covered time, the sources, and
+where it was read from). Each legend entry hides or
+shows its series, and an axis goes with the last series on it. Grouping
+applies to the whole chart: heart rate grouped by source is one line per
+device, and ungrouped it is one line resolved across them. A source's
+channels never merge: where the streams a read takes are on more than one
+channel (no channel counting as one), the read groups by channel too and
+each channel is a line of its own, named after it ("Heart rate (workout)"). Click a bucket or
+drag across several to zoom in; from the keyboard the arrow keys move
+between buckets and Enter zooms.
+
+**Days where you were.** A day, week or month bucket reads, by default,
+the day as you lived it (**Days**: Where I was): the recorded-local calendar,
+each value on the date its own UTC offset names, so a day spent in London
+is London's day from midnight to midnight, whatever zone the browser is in.
+The read names no `timezone` and sends yours as `bucket.fallbackTimezone`,
+which places a value written without an offset and which the server
+otherwise refuses. Each bucket is the date its row's `start` names, never
+its instant: one slot per date, labelled with it, though a day lived west of
+the next overlaps it in time. A range of whole days is read from its first
+day's start at `+14:00` to its last day's end at `-12:00`, so every date in
+it is whole at any offset, and the dates outside it that the wider read
+meets are left out; a week or month keeps the range's own instants. The
+tooltip and the table give each row's UTC offsets (`+03:00 to +01:00` on a
+flight day) and how many points were written without one. Clicking a day
+zooms into the hours it was lived. Picking your zone (`?days=zone`) cuts
+the buckets at your midnights instead; an hour or finer is always an
+instant. A metric whose record's `bucketPlace` is `end` (the sleep stages)
+in days, weeks or months is placed by its end (`bucket.place: "end"`), so a
+night lands on the day you woke and a week is the sum of its days. Where a category's
+bucket holds more time than it lasts (a night's spans counted whole in the
+hour they start in), the chart says so and suggests a day bucket.
+
+Each metric plans its own read, and the reads that match in filter, range,
+bucket, grouping and sources are one request, across the timeline's charts,
+which names each metric in `aggregate.metrics` with its own unit, reducers,
+`from` and statistic
+([several metrics in one read](api.md#several-metrics-in-one-read)). A
+request names at most 16 metrics, whose expected buckets add up to at most
+the server's cap of 10,000; past either, the metrics take another request.
+Its budget adds up its metrics' budgets, each sum held to the server's cap,
+so once a sum passes a cap the metrics share the cap: eleven metrics at the
+default 200 groups each pass the 2,000 groups one read may make. Each
+metric's row draws the answer's rows naming it in `group.metric`, and says
+on its own whether it is loading, refreshing or failed, and where its read
+lands with no rows beside a metric that draws, that nothing was measured in
+the range, with no axis claimed for it. Where the server
+refuses a request of several metrics, for a budget they pass together or for
+any other reason, the chart reads each of them apart, so a refusal sits on
+the one metric it concerns and the others draw. A server older than
+`aggregate.metrics` refuses the key with a `400`, and the chart reads each
+metric apart there too. In the recorded-local calendar, every row of one day,
+week or month in a shared request has the same `start` and `end`, written at
+the offsets of the first and last value any of its metrics takes in it. The
+tooltip and the table caption them by the bucket (**Day's UTC offset**,
+**Week's UTC offset**, **Month's UTC offset**): the bucket's offsets across
+the metrics read together, not the metric's own. A shared request
+answers `exact` once for all its metrics, so with Technical details on, the
+request's details say when its answer is not exact, and no metric's row does.
+Reads that differ in anything else go apart: a metric placed by its end
+beside heart rate, or a metric from one source beside one resolved across
+several.
+A metric is planned once its streams are read: a metric
+being added waits under the charts already drawn, a metric whose stream
+read fails is a note with a retry above the charts of the others, and choosing a source, a
+thing or a channel re-reads the charts, never the streams. While a changed
+read loads, the chart keeps drawing a metric's earlier answer, alone or from
+a shared request, if that answer has the same unit, grouping and summary
+statistic and carries the new reducer. The row then says Updating… After a
+change of unit, grouping or statistic, or to a reducer the earlier answer
+lacks, the row says Reading… and draws nothing of that metric. A
+change to one metric of a shared request (its reducer, unit or statistic),
+or a metric added to the request or removed from it, makes a new request:
+every metric in it is read again, across the timeline's charts, and each of
+their rows says Updating… or Reading… until it lands. A metric that declares no unit is read in the unit of its
+newest selected stream, named in the request, so the axis and the answer
+agree. Grouped by anything but source, two or more sources (a stream that
+names no source counting as one) are resolved by
+`sources.policy: priority`. Where you picked sources in the Source filter,
+the read sends them as `order`, in the order you picked them, each new
+pick last; the Source filter lists the chosen sources in that order, each
+with a move up and a move down, and the chart says which source wins.
+Picking a source leaves out a stream that names none. With no source
+picked, and always in the streams page's panel, whose selection is no
+order, the read sends no `order`. The server then ranks the sources by each
+source record's `priorities` for the metric, then by kind and record path
+([the read](api.md#sources-and-from)), and a stream that names no source
+after every named one, so a scale's weight wins over a typed one. The chart
+says which source wins in that order ("Where sources overlap, Garmin
+Forerunner 265 is used first, then Apple Watch S10"). It reads each source
+record's `priorities` from the batch that reads its title, and gives the
+ranking rule itself only with Technical details on. Grouped by source,
+each keeps its own rows, and a source's channels stay apart
+(`groupBy: ["source", "channel"]`). Until you pick where to read from, a
+metric reads raw points, summaries where every one of its streams keeps
+vendor summaries alone, and `prefer-raw` where some keep summaries, since a
+raw read takes no summary and WHOOP's summary-only heart rate would draw
+nothing; with Technical details on, the chart says so. Where one line then
+reads a summary in some buckets and raw points in others (Garmin's
+nightly HRV average on one day, its five-minute trace on the next), the
+chart says the line mixes the two. Where every bucket is one summary of
+one source (Garmin's daily steps over a trip), the chart says so, and for
+days that the vendor cut them, so **Days** never re-cuts them. A summary
+lands on the date its start names, so **Days** moves it to another date
+where the vendor's day starts at another UTC offset than yours (00:00 in
+Tokyo is 18:00 the day before in Athens). The chart says Days does not
+change them only where it can tell: recorded-local days of the metric read
+alone, every one at your own offsets. A stream may keep
+both: Garmin's HRV keeps each night's average and highest beside its
+five-minute trace, and reads `prefer-raw`. A row reads one statistic of the
+summaries, so where a metric's summaries keep several (WHOOP's average and
+highest heart rate per cycle, Garmin's nightly HRV) the read names one in
+`filter.properties.statistic`, or in a shared request in the metric's
+`statistic`: the average where they keep it, else the one
+kept, else the vendor's own, and **Statistic** picks another
+(`?statistic=`). A source whose summaries keep none of it is left out, and
+the chart says so; a summary's record opens the timeline on its own
+statistic. A metric that answers no values
+says why and what helps. A category metric is always grouped by code: a
+coded gauge asks for the time in each category (the bare `timeInState`), a
+coded amount for its total. A read the console expects to make more than
+1,440 buckets (the server's default), counting every group, raises its
+budget to the server's cap (`budget.maxBuckets: 10000`). A shared request
+adds up its metrics' budgets to at most the cap. The console does not ask
+for a read past the cap, and the metric's row says to pick a larger bucket.
+A refusal the server makes anyway is shown with its reason. The read itself is [the aggregate read](api.md#the-aggregate-read).
 
 ## History
 

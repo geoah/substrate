@@ -22,8 +22,8 @@ import (
 const (
 	googleDir          = providersDir + "/google"
 	googlePackage      = "providers.substrate.reamde.dev/google"
-	googleAccountType  = googlePackage + "/account"
-	googleGmailMsgType = googlePackage + "/gmailmessage"
+	googleAccountKind  = googlePackage + "/account"
+	googleGmailMsgKind = googlePackage + "/gmailmessage"
 	googleGmailSyncFn  = googlePackage + "/syncgmail"
 	gmailBackfillPages = 30
 	gmailListPage      = 100
@@ -202,7 +202,7 @@ func b64url(s string) string {
 func gmailMessageIDs(t *testing.T, ds substrate.Dataset) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
-	for _, row := range listLive(t, ds, googleGmailMsgType) {
+	for _, row := range listLive(t, ds, googleGmailMsgKind) {
 		if id, ok := row.Properties["messageId"].(string); ok {
 			out[id] = true
 		}
@@ -231,7 +231,7 @@ func TestGoogleGmailScheduledRunServesEveryAccount(t *testing.T) {
 
 	for _, id := range []string{"acct-a", "acct-b"} {
 		mustPut(t, ds, substrate.PutInput{
-			Kind: googleAccountType, ID: id,
+			Kind: googleAccountKind, ID: id,
 			Properties: map[string]any{"enabledGmail": true},
 		})
 	}
@@ -249,8 +249,8 @@ func TestGoogleGmailScheduledRunServesEveryAccount(t *testing.T) {
 	config := func(a map[string]any) map[string]any {
 		return map[string]any{
 			"accounts": []any{
-				map[string]any{"id": "acct-a", "type": googleAccountType, "properties": a, "token": "at-a"},
-				map[string]any{"id": "acct-b", "type": googleAccountType, "properties": propsB, "token": "at-b"},
+				map[string]any{"id": "acct-a", "type": googleAccountKind, "properties": a, "token": "at-a"},
+				map[string]any{"id": "acct-b", "type": googleAccountKind, "properties": propsB, "token": "at-b"},
 			},
 			"inputs": map[string]any{"client": map[string]any{
 				"properties": map[string]any{"apiBase": fake.ts.URL},
@@ -299,7 +299,7 @@ func TestGoogleGmailScheduledRunServesEveryAccount(t *testing.T) {
 
 	// The next run starts the delta where this one ended, not at the walk's
 	// watermark again. The stored row is what the injected config carries.
-	row := mustGet(t, ds, googleAccountType, "acct-a")
+	row := mustGet(t, ds, googleAccountKind, "acct-a")
 	next := syncProps(base)
 	next["gmailHistoryId"] = "4000"
 	next["gmailBackfillResume"] = row.Properties["gmailBackfillResume"]
@@ -420,7 +420,7 @@ func TestGoogleGmailASlowMessageDoesNotHoldTheAccount(t *testing.T) {
 	}
 	fake.start(t)
 	mustPut(t, ds, substrate.PutInput{
-		Kind: googleAccountType, ID: "acct-slow", Properties: map[string]any{"enabledGmail": true},
+		Kind: googleAccountKind, ID: "acct-slow", Properties: map[string]any{"enabledGmail": true},
 	})
 	base := map[string]any{
 		"enabledGmail": true, "syncFrequency": "hourly", "backfillDepth": "all",
@@ -428,7 +428,7 @@ func TestGoogleGmailASlowMessageDoesNotHoldTheAccount(t *testing.T) {
 		"gmailHistoryId": "8000",
 	}
 	config := func(props map[string]any) map[string]any {
-		cfg := stepConfig(googleAccountType, "acct-slow", props)
+		cfg := stepConfig(googleAccountKind, "acct-slow", props)
 		cfg["inputs"] = map[string]any{"client": map[string]any{
 			"properties": map[string]any{"apiBase": fake.ts.URL},
 		}}
@@ -479,7 +479,7 @@ func TestGoogleGmailASlowMessageDoesNotHoldTheAccount(t *testing.T) {
 
 	// The next fire: the thin read lands the message with its headers and
 	// no body, the pending list empties, and the watermark advances.
-	row := mustGet(t, ds, googleAccountType, "acct-slow")
+	row := mustGet(t, ds, googleAccountKind, "acct-slow")
 	next := syncProps(base)
 	next["gmailBackfillResume"] = row.Properties["gmailBackfillResume"]
 	s2 := newStepper(t, ds, googleGmailSyncFn, config(next))
@@ -492,7 +492,7 @@ func TestGoogleGmailASlowMessageDoesNotHoldTheAccount(t *testing.T) {
 	if !slices.Contains(gets, "s-slow:metadata") {
 		t.Fatalf("no metadata read of the slow message; gets %v", gets)
 	}
-	slow := mustGet(t, ds, googleGmailMsgType, message(t, ds, "s-slow"))
+	slow := mustGet(t, ds, googleGmailMsgKind, message(t, ds, "s-slow"))
 	if slow.Properties["subject"] != "subject s-slow" || slow.Properties["body"] != nil || slow.Properties["payload"] != nil {
 		t.Fatalf("the thin row = %v, want its subject and no body or payload", slow.Properties)
 	}
@@ -508,7 +508,7 @@ func TestGoogleGmailASlowMessageDoesNotHoldTheAccount(t *testing.T) {
 // message is the row id of a mirrored Gmail message.
 func message(t *testing.T, ds substrate.Dataset, id string) string {
 	t.Helper()
-	for _, row := range listLive(t, ds, googleGmailMsgType) {
+	for _, row := range listLive(t, ds, googleGmailMsgKind) {
 		if row.Properties["messageId"] == id {
 			return row.ID
 		}

@@ -289,7 +289,8 @@ record](#two-invocations-over-one-record)). `repository` carries the repository'
 kinds and webhook URLs under. A schedule or webhook delivery has no changelog
 entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
-`record`.
+`record`. `at` is RFC 3339 with the fraction of a second it was taken at, if
+any; a webhook's is the instant the door received the request.
 
 A delivery through the public webhook endpoint adds `request` beside them: the
 HTTP request as it arrived, minus the bytes of any file it carried.
@@ -297,7 +298,7 @@ HTTP request as it arrived, minus the bytes of any file it carried.
 ```yaml
 fire:
   id: hook-k7f3x2m9ab4c
-  at: 2026-09-02T12:00:00Z
+  at: 2026-09-02T12:00:00.418273Z
 repository:
   authority: geoah.example.com
 request:
@@ -320,12 +321,22 @@ request:
 
 A request that is not multipart carries `body` instead of `parts`:
 `{text: "…"}` when the bytes are valid UTF-8, `{base64: "…"}` otherwise. Both
-are byte-exact, so a body verifies a provider's signature (GitHub's
-`X-Hub-Signature-256` over the raw JSON) by re-encoding the text and hashing
-it against a secret it reads from its bundle's configuration. The host stores
+are byte-exact. A provider signature the trigger declares is verified by the
+door before the fire ([webhook signatures](#webhook-signatures)), and a
+request that passed carries `signatureVerified: true`; a scheme the
+declaration cannot express (GitHub's `sha256=` prefix on
+`X-Hub-Signature-256`) is the body's to verify, by re-encoding the text and
+hashing it against a secret it reads from its bundle's configuration. The host stores
 a part in the blob store when it declares a filename or a media type outside
-`text/*`, and hands every other part inline as `value`. A body under 1 MiB
-rides inline; a multipart request may total 32 MiB. An authenticated wake
+`text/*`, and hands every other part inline as `value`. A body up to 8 MiB
+rides inline; a multipart request may total 32 MiB. An [agent](agents.md)
+callable reads the request in its user message, which is stored as an
+`llm/message` record and sent to the model, so a request bound for one
+carries at most 1 MiB inline, its body or its parts' values together, and
+the door answers a larger one `413`. A retry or a resume runs a stored
+request through the callable the trigger names at that time, so a larger
+request stored for a function parks without a model turn once the trigger
+names an agent. An authenticated wake
 (`POST …/trigger/{id}/wake`) carries no `request`.
 
 **One `kind`, everywhere.** A kind is named by a reference:
@@ -627,6 +638,7 @@ The whole surface:
 host.records.get(kind, id)                        # the record, or None
 host.records.list(kinds, where=None, first=None, after=None, order=None)
 host.records.search(q, kinds, k=None, mode=None)  # hits, with .pending beside them
+host.records.aggregate(body)                      # the aggregate read's result
 host.functions.call(function, input=None)         # permissions.call gated
 host.agents.call(agent, input)                    # permissions.agents gated
 host.effects.put(kind, id, properties=None, if_absent=False, if_version=<int>,
@@ -640,6 +652,20 @@ host.ids.external(provider, account, external_id)
 host.ids.url(url)
 host.page.resume()                                # the previous page's cursor
 host.page.more(cursor)                            # the continuation to return
+host.units.convert(value, from_unit, to_unit, measure=None)  # a decimal str; .exact
+host.units.canonical(code)                        # "bpm" -> "/min"
+host.units.measure(code)                          # "kg" -> "mass"
+host.observed.trace(points, *, metric, source, unit, form, period="PT1H",
+                    hold=None, about=None, channel=None, reset_rule=None,
+                    wrap_at=None, delta=None, circular=None, start=None, end=None)
+host.observed.local_day(at, utc_offset_minutes)   # "2026-10-07"
+host.observed.period_id(at, period)               # "2026-10-07T06"
+host.observed.decimal(value)                      # 1e-05 -> "0.00001"
+host.observed.duration(seconds)                   # 28489 -> "PT7H54M49S"
+host.observed.instant(at)                         # "2026-10-07T06:00:00Z"
+host.observed.percent(part, whole)                # {"value": "87.50", "unit": "%"}
+host.observed.record_id(provider, account, *parts)  # composed, hashed past 128 bytes
+host.observed.reconcile(origins, outputs, *, owned, adapter=None, stored=None)
 host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
@@ -688,10 +714,51 @@ page = host.records.list(["providers.substrate.reamde.dev/google/calendarseries"
 # page["records"]: [{"id": "abc_20260924T130000Z", "computed": True, ...}, ...]
 ```
 
+`host.records.aggregate(body)` is the records route's
+[aggregate read](api.md#the-aggregate-read), its parameters as one document:
+`{"filter": ..., "aggregate": ..., "downsample": ...}`. `filter.kinds` names
+the observed kinds it reads (and `aggregate.bucket.records.filter.kinds` the
+records mode's), each held to the reads allowlist; a body that names none
+trips the allowlist. So are the kind of every metric `metric` and `metrics`
+name, whose record the read looks up, the targets of either filter's
+`referencing` (as a list's are), and, where a `priority` or `summaries`
+policy names no `order`, the kind of the source records whose priorities
+rank the sources. It answers the result dict, and pays one call and its
+rows against the read budget. Before the read runs, its `budget.maxBuckets`
+(and on the latest read `budget.maxGroups`) is lowered to the rows left. The
+read checks its series times the buckets it answers, the rows it could
+answer, against that before it takes a point (a rolling window's buckets
+before the range, and the records a records-mode source policy drops, are
+not counted), so a read that could pass the row budget is refused
+before it runs, however few points it holds: a read by day over 2025 and
+2026 makes 730 buckets, over the default 500 rows. That refusal is a budget
+trip like any other. A larger `budget.maxBuckets` does not help, because it
+is lowered again; a larger `permissions.reads.budgets.rows` does.
+
+```python
+# permissions.reads.kinds grants observations/trace and observations/metric
+res = host.records.aggregate({
+    "filter": {"kinds": ["ada.example.com/observations/trace"]},
+    "aggregate": {
+        "metric": {"ref": "ada.example.com/observations/metric/health/heart_rate"},
+        "range": {"gte": "2026-09-01T00:00:00+03:00", "lt": "2026-10-01T00:00:00+03:00"},
+        "bucket": {"calendar": "day", "timezone": "Europe/Athens"},
+        "reducers": [{"percentile": 0.05}, "min"],
+    },
+})
+# res["rows"]: [{"start": "2026-09-01T00:00:00+03:00", "values": [...], ...}, ...]
+```
+
 **Reads are scoped and budgeted.** Reads see committed state, never this
 delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
 empty, so every `list` and `search` is refused and every `get` answers absent.
+A `list` whose `filter.referencing` names a record of a kind outside the
+allowlist trips as one naming that kind in `filter.kinds` does. The record
+the delivery's envelope names is the exception, a delete's included: a
+`list` or `aggregate` may name it, which is how `host.observed.reconcile`
+finds what the body wrote from that record before, whatever kinds the
+trigger fires on.
 A forbidden kind answers exactly like an absent id, same nil shape and same
 budget charge, so a disallowed `get` is never an existence or kind oracle.
 Calls are charged before they run, `first` and `k` clamp to the remaining row
@@ -746,6 +813,101 @@ to the runner boundary by the same scrubber. The key is absent when the bundle
 ships no settings, and one setting's own key is absent when nobody has written
 its value at all, so a body that needs one refuses in its own words
 ([record 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)).
+
+**Units come from the engine's table.** `host.units.convert`,
+`canonical` and `measure` are host calls answered by the same unit table
+the write path holds a quantity to ([units](units.md)); there is no Python
+copy of it. They read nothing from the repository, so no grant gates them
+and no budget is charged; a value holds at most 1000 digits, and a call made
+after the invocation's deadline is refused. `convert` takes the value as
+digits (a `str`, an `int` or a `Decimal`; a `float` is written as its
+shortest repr), reads aliases on both units (`°C`, `kWh`, `mmHg`) and
+answers a decimal `str`: every digit when the result has a finite decimal
+expansion (37 Cel is exactly 98.6 [degF]), else 20 significant digits (72.4
+kg is 159.61467782185136844 lb, rounded), and at most 1000 digits, so the
+answer can be written back: a longer one is rounded to the fraction digits
+its integer part leaves, and one that cannot fit raises a `HostError`. The
+answer's `exact` attribute is `False` exactly when it was rounded. Without `measure` the units are read as
+`MeasureOf` reads them, so Cel to [degF] is an absolute temperature;
+`measure="temperature-difference"` converts a deviation without the offset.
+A conversion across measures (`kg` to `J`) raises a `HostError` carrying the
+engine's refusal.
+
+**`host.observed` builds observed values in the body.** It is pure Python and
+writes nothing; [observations](observations.md) has the rules its output
+meets. `trace(points, ...)` packs `[(at, value)]` or `[(at, code)]`,
+each `at` a timezone-aware `datetime` and a value `None` where the source had
+nothing, into the property maps a trace kind (one binding core's
+`observed(packed)`) admits: one map per fixed UTC period (`period`, aligned to
+the epoch, so `PT1H` is the UTC hour), split where the points' UTC offset
+changes so each map has one offset, and split again before a map passes
+20,000 points or 1 MiB less 64 KiB of JSON (the 64 KiB is left for the
+properties the body adds, such as `origins`). A map takes `every` where the
+points are regularly spaced from its start and `offsets` in milliseconds
+otherwise, and names the key it does not use as `None` (`every` or
+`offsets`, `values` or `codes`, and `unit` on a trace of codes), so a put
+over a period stored in the other shape replaces that shape. `start` and
+`end` bound the span the delivery covers: each map claims only the part of
+its period inside `[start, end)`, so two deliveries that share an hour write
+two maps side by side, and a point outside them raises. A counter with
+`reset_rule="wrap"` needs `wrap_at`; `delta=True` marks temperature
+differences and `circular=True` angles. Ids are the caller's: compose each from
+`period_id(doc["at"], period)`, which writes `at` in UTC at the period's
+resolution (`2026-10-07T06` for `PT1H`) and adds the finer fields a split
+part's later start needs (`2026-10-07T06:40`). `local_day(at, offset)` is the
+civil date at that offset, the day a daily summary belongs to.
+
+`decimal`, `duration` and `instant` write a number, a length of time and an
+instant in the one spelling the engine stores: digits without an exponent
+(a float is its shortest repr written out, so `1e-05` is `0.00001`), the
+canonical ISO 8601 duration to the microsecond, and RFC 3339 UTC.
+`percent(part, whole)` is part over whole as a `%` quantity rounded half up
+to two places, the shape of a night's `efficiency`, and None where the whole
+is not above zero. `record_id(provider, account, *parts)` joins
+`<provider>/<part>/...` into an id and hashes it through `host.ids.external`
+only where it would leave the id alphabet or pass 128 bytes.
+
+`reconcile(origins, outputs, *, owned, adapter=None)` is the per-origin
+loop every health adapter runs, and the one call here that reads and
+stages. `origins` is the path of the row the outputs come from (a list
+where one delivery answers for several); `outputs` maps `(kind, id)` to the
+properties the row implies now; `owned` maps each output kind to every
+property the body sets on it. It reads the stored records of those kinds
+whose `origin` or `origins` names the path, page by page (another
+reference, such as `derivedFrom`, does not count). That read needs no grant
+for the row the delivery's envelope names; every other origin's kind must
+be in `permissions.reads`. It then reads by id each
+output that read did not find, 500 ids to a call against the read budget,
+because another origin may hold it: an hour's trace built from several rows
+names all of them. Then it:
+
+- writes each output in one put naming every owned property, `None` for
+  one the row no longer implies, which the put clears;
+- leaves unwritten an output that already holds those properties,
+  `revision` aside;
+- writes `revision` as the higher of the one given and the one stored,
+  because the write path refuses a falling revision and a delivery that
+  reads its rows as they stand computes a lower one only when a row it was
+  built from went away;
+- deletes every output the origin's read holds that `outputs` does not
+  name, and never one only the read by id found.
+
+It answers `{"written": n, "unchanged": n, "deleted": n}`, stamps `adapter`
+on every output where given, and takes `stored=` where the body has
+already read the records.
+
+```python
+device = "forerunner265"
+docs = host.observed.trace(
+    [(sample_time, sample["bpm"]) for sample in samples],
+    metric={"ref": home + "/observations/metric/health/heart_rate"},
+    source={"ref": home + "/observations/source/garmin/%s/%s" % (account_id, device)},
+    unit="/min", form="gauge", hold="PT4M")
+for doc in docs:
+    period = host.observed.period_id(datetime.fromisoformat(doc["at"]), "PT1H")
+    host.effects.put(home + "/observations/trace",
+                     "garmin/%s/%s/heart_rate/%s" % (account_id, device, period), doc)
+```
 
 **Two ceilings.** `host.log(msg)` and `print` write a line to the server log
 the moment the body writes it, as `substrate: function log` with the function,
@@ -948,7 +1110,7 @@ data:
   authority and `trigger` the record's id,
   delivers one fire carrying the request
   ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
-  delivers one bare fire. Both its fields are optional. `key`: absent, the
+  delivers one bare fire. All three of its fields are optional. `key`: absent, the
   endpoint accepts every POST that reaches the server (a substrate on a private
   network wants exactly that); present, a request must carry it as a trailing
   path segment, as `?key=`, or as `Authorization: Bearer`. `substratectl
@@ -967,6 +1129,8 @@ data:
   now receives the body-describing headers alone: the record declares, or the
   header does not arrive
   ([decision 0097](decisions/0097-a-webhook-trigger-declares-the-headers-its-callable-reads.md)).
+  `signature` is the provider's HMAC, which the door verifies before it
+  stores the request ([webhook signatures](#webhook-signatures)).
 
 `callable` is a [reference](data-model.md#property-types) naming the function
 or [agent](agents.md) to run, written as one `<kind>/<id>` path (the example
@@ -1035,6 +1199,96 @@ boolean over three read-only bindings, `change`, `record` (null after a
 delete), and `repository`. There is deliberately no clock and no way to fetch
 other records: a guard is a cheap filter, not the computation. The computation
 is the function body.
+
+### Webhook signatures
+
+A webhook trigger that declares `source.webhook.signature` has the door check
+each request's signature before the body becomes a blob, before a delivery is
+appended and before anything runs. The repository keeps no trace of a
+request that fails. On a trigger with no `key` the door answers it `404`, the
+answer it gives every refusal, so a POST cannot tell that the repository has
+the trigger installed. A request that carried the trigger's `key` already
+proved it knows the endpoint, so it is answered `401` with the body `webhook
+signature refused`, which tells the sender the signature is what failed. The
+secret stays in the server, so the callable verifies only what the door
+cannot
+([decision 0164](decisions/0164-a-webhook-signature-is-verified-by-the-host-when-the-trigger-declares-one.md)).
+This is WHOOP's scheme as its provider ships it:
+
+```yaml
+source:
+  webhook:
+    signature:
+      algorithm: hmac-sha256
+      signatureHeader: X-WHOOP-Signature
+      timestampHeader: X-WHOOP-Signature-Timestamp
+      maxSkew: PT5M
+      message: "{timestamp}{body}"
+      encoding: base64
+      secret: oauthClientSecret
+```
+
+| Field | Required | What it is |
+| --- | --- | --- |
+| `algorithm` | yes | `hmac-sha256`, the one the door computes |
+| `signatureHeader` | yes | the header the provider puts the signature in |
+| `timestampHeader` | no | the header carrying the signed Unix time, in seconds, or in milliseconds from 10^11 up |
+| `maxSkew` | no | how far that time may sit from when the door received the request: an ISO duration from `PT1S` to `PT1H`, `PT5M` when absent; needs `timestampHeader` |
+| `message` | no | the signed bytes as a template: literal text, `{body}` exactly once (the raw body, byte-exact) and `{timestamp}` exactly when `timestampHeader` is declared; `{body}` when absent |
+| `encoding` | yes | `hex` or `base64`, how the header spells the MAC |
+| `secret` | yes | `substrate.reamde.dev/core/secret/<id>` for a [`secret` record](bundles.md#settings), or `oauthClientSecret` for the client secret of the callable's bundle's OAuth client input |
+
+The door refuses a request whose signature header is missing or does not
+match, whose timestamp is missing or outside `maxSkew`, whose body is
+multipart (the door keeps no raw bytes of one), or whose secret does not
+resolve: a missing or empty `secret` record, or a bundle whose `config` holds
+no client secret yet. A secret that does not resolve is also logged for the
+operator, at most once a minute per trigger, each line counting the refusals
+since the last one, because anyone who posts reaches that check. The key is
+checked first and a wrong one answers `404`, so a trigger may carry both. A
+store that fails while the door reads the secret refuses nothing: the door
+answers `500`, stores nothing, and checks the sender's retry afresh.
+`oauthClientSecret` on a callable whose bundle declares no `oauth2` block is
+refused when the trigger is written. A `secret` record whose id sits under a
+bundle's prefix is also injected into that bundle's functions
+([decision 0076](decisions/0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md)),
+so a secret meant for the door alone takes an id outside every bundle's
+(`webhooks/github`).
+
+The door remembers the signatures it admitted under a declaration that signs
+a timestamp. A request that repeats one while its timestamp is still inside
+`maxSkew` is the same delivery: the door answers `202` with the first
+request's fire id and stores nothing, so a captured request posted again, or
+a provider's resend of a request whose answer it lost, runs once. While the
+first is still being stored, a repeat is answered `503` with `Retry-After`.
+The record
+lives in the server's memory, so a restart forgets it, and it holds 4096
+signatures per repository, forgetting first the one whose window closes
+soonest. A declaration with no `timestampHeader` has no window, and the door
+admits every repeat of a correctly signed body as a new delivery: its
+callable deduplicates by the provider's event id. The signature covers the
+signed timestamp and the body alone. A header the trigger keeps through
+`headers` reaches the callable unsigned, and `signatureVerified` says nothing
+about it.
+
+A request the door verified is stored with `request.signatureVerified: true`,
+and a resumed pending delivery or a retry by hand runs it without checking
+its timestamp again, however long after `maxSkew` it runs. A request stored
+while the trigger declared no signature carries no such mark. Once the
+trigger declares one, the resume, a retry by hand and the rerun of an
+interrupted agent delivery check that request's kept body and headers
+against the declaration, measuring the timestamp against `fire.at`, when the
+door received it, to the microsecond. An envelope stored before `fire.at`
+kept a fraction of a second names only the whole second: the check then
+uses the receipt the door recorded in the request's admission entry, and
+without one treats the receipt as the start of that second. A request that
+verifies runs. One that does not, because
+it is unsigned, its signature header is not among the headers the trigger
+kept, or its signature does not match, is parked with an error starting
+`webhook signature refused at delivery`, and the callable never runs it. A
+declaration that signs no timestamp checks the body alone and never reads
+the receipt. A store that fails during the check refuses nothing: the
+delivery is retried like any other transient failure.
 
 ## What makes this safe to run unattended
 

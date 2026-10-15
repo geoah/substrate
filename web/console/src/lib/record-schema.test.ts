@@ -392,6 +392,117 @@ describe("money", () => {
   })
 })
 
+describe("quantity", () => {
+  /** A lab panel's kind: a bounded weight, a temperature, a result that may
+   * be stated as a bound, and a list of readings in any unit. */
+  const labKind: KindInfo = {
+    ...wideKind,
+    definition: {
+      properties: {
+        weight: {
+          type: "quantity",
+          measures: "mass",
+          units: ["kg", "[lb_av]"],
+          min: { value: "40", unit: "kg" },
+          max: { value: 300, unit: "kg" },
+        },
+        temperature: {
+          type: "quantity",
+          measures: "temperature",
+          default: { value: "37", unit: "Cel" },
+        },
+        result: {
+          type: "quantity",
+          measures: "mass-concentration",
+          comparator: true,
+        },
+        readings: { type: "quantity", repeated: true },
+      },
+    },
+  }
+  const weight = { value: "72.5", unit: "kg" }
+
+  it("reads the declaration, bounds as quantities and never as numbers", () => {
+    const one = spec(labKind, "weight")
+    expect(one).toMatchObject({
+      measures: "mass",
+      units: ["kg", "[lb_av]"],
+      comparator: false,
+      minQuantity: { value: "40", unit: "kg" },
+      maxQuantity: { value: "300", unit: "kg" },
+    })
+    expect(one.min).toBeUndefined()
+    expect(one.max).toBeUndefined()
+    expect(spec(labKind, "result").comparator).toBe(true)
+    expect(spec(wideKind, "cost").measures).toBeUndefined()
+  })
+
+  it("checks the stored shape, the declared units and the bound", () => {
+    const one = spec(labKind, "weight")
+    expect(controlFor(one)).toBe("text")
+    expect(controlFor(spec(labKind, "readings"))).toBe("list")
+    expect(checkValue(one, weight)).toBeUndefined()
+    expect(checkValue(one, "72.5 kg")).toMatch(/is an object/)
+    expect(checkValue(one, { ...weight, value: 72.5 })).toMatch(
+      /written as a string/
+    )
+    expect(checkValue(one, { value: "72", unit: "g" })).toMatch(
+      /not one of the declared units/
+    )
+    expect(checkValue(one, { value: "39", unit: "kg" })).toBe(
+      "must be >= 40 kg"
+    )
+    // Across units the bound is the server's to convert.
+    expect(checkValue(one, { value: "80", unit: "[lb_av]" })).toBeUndefined()
+    expect(checkValue(one, { ...weight, comparator: "<" })).toMatch(
+      /states values exactly/
+    )
+    expect(
+      checkValue(spec(labKind, "result"), {
+        value: "0.5",
+        unit: "ng/mL",
+        comparator: "<",
+      })
+    ).toBeUndefined()
+    expect(
+      checkValue(spec(labKind, "readings"), [weight, { value: "1" }])
+    ).toMatch(/^\[1\]: /)
+  })
+
+  it("edits as its exact text and reads back to the same value", () => {
+    const one = spec(labKind, "weight")
+    expect(formatValue(one, weight)).toBe("72.5 kg")
+    expect(parseValue(one, "72.5 kg")).toEqual({ value: weight })
+    expect(parseValue(one, "160 lb")).toEqual({
+      value: { value: "160", unit: "[lb_av]" },
+    })
+    expect(parseValue(one, "39 kg").error).toBe("must be >= 40 kg")
+    expect(parseValue(one, "72.5").error).toBe("choose a unit")
+    expect(parseValue(spec(labKind, "result"), "<0.5 ng/mL")).toEqual({
+      value: { value: "0.5", unit: "ng/mL", comparator: "<" },
+    })
+    const many = spec(labKind, "readings")
+    const list = [weight, { value: "37", unit: "Cel" }]
+    expect(formatValue(many, list)).toBe("72.5 kg\n37 Cel")
+    expect(parseValue(many, "72.5 kg\n37 °C")).toEqual({ value: list })
+  })
+
+  it("seeds its default, else blank, and shows the YAML shape in its unit", () => {
+    expect(seedValue(spec(labKind, "temperature"))).toEqual({
+      value: "37",
+      unit: "Cel",
+    })
+    expect(seedValue(spec(labKind, "readings"))).toEqual([])
+    expect(seedValue(spec(labKind, "result"))).toBe("")
+    expect(exampleFor(spec(labKind, "temperature"))).toBe(
+      '{value: "37", unit: Cel}'
+    )
+    expect(exampleFor(spec(labKind, "weight"))).toBe(
+      '{value: "72.5", unit: kg}'
+    )
+  })
+})
+
 describe("parseValue / formatValue", () => {
   it("round-trips a value through its control's text", () => {
     const calls = spec(wideKind, "calls")

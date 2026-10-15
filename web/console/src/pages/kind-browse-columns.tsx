@@ -25,6 +25,7 @@ import {
 } from "@/components/data-table/data-table-tree"
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { MoneyValue } from "@/components/identity/money-value"
+import { QuantityValue } from "@/components/identity/quantity-value"
 import { RecordRef } from "@/components/identity/record-ref"
 import { StateBadge } from "@/components/identity/state-badge"
 import { PROVIDERS_AUTHORITY } from "@/lib/actor-identity"
@@ -51,6 +52,7 @@ import {
   titleProperties,
 } from "@/lib/grid-values"
 import { untitled } from "@/lib/kind-names"
+import { coverageWords } from "@/lib/observations-time"
 import { splitRecordPath } from "@/lib/record-path"
 import type { ReferenceTitles } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
@@ -161,6 +163,7 @@ const WIDTHS: Record<string, number> = {
   float: 100,
   decimal: 100,
   money: 120,
+  quantity: 130,
   email: 240,
   url: 220,
   phone: 170,
@@ -323,10 +326,27 @@ function propertyCell(
   if (NUMERIC.has(prop.kind)) {
     return <span className="tabular-nums">{cellValue(value)}</span>
   }
+  // As the record page reads it (`property-value.tsx`), never the ISO text.
+  if (prop.kind === "duration" && typeof first === "string") {
+    return (
+      <FirstOf count={values.length}>
+        <span className="truncate tabular-nums" title={first}>
+          {coverageWords(first)}
+        </span>
+      </FirstOf>
+    )
+  }
   if (prop.kind === "money" && !prop.keyed) {
     return (
       <FirstOf count={values.length}>
         <MoneyValue value={first} className="truncate" />
+      </FirstOf>
+    )
+  }
+  if (prop.kind === "quantity" && !prop.keyed) {
+    return (
+      <FirstOf count={values.length}>
+        <QuantityValue value={first} className="truncate" />
       </FirstOf>
     )
   }
@@ -565,7 +585,8 @@ export function buildColumns(
     prop: DeclaredProperty
   ): DataTableColumn<SubstrateRecord> => {
     const numeric =
-      NUMERIC.has(prop.kind) || (prop.kind === "money" && !prop.keyed)
+      NUMERIC.has(prop.kind) ||
+      ((prop.kind === "money" || prop.kind === "quantity") && !prop.keyed)
     return {
       id: propertyColumnId(prop.name),
       accessorFn: (e) => e.properties[prop.name],

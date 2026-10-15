@@ -1,0 +1,25 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json",
+   "content-length": "670",
+   "user-agent": "Health%20Auto%20Export/10.0.3 CFNetwork/3860.100.1 Darwin/27.0.0",
+   "automation-name": "substrate daily",
+   "automation-id": "32833106-536E-45DF-80B2-D002CC92D33D",
+   "automation-aggregation": "days",
+   "automation-period": "Default",
+   "session-id": "68BD4635-801B-412E-8AA4-9C1C0BA73315"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"data\":{\"metrics\":[{\"name\":\"step_count\",\"units\":\"count\",\"data\":[{\"qty\":17298,\"source\":\"Ada’s Apple Watch|Ada’s iPhone\",\"date\":\"2026-09-24 00:00:00 +0100\"},{\"qty\":14288,\"source\":\"Ada’s Apple Watch|Ada’s iPhone\",\"date\":\"2026-09-25 00:00:00 +0100\"}]},{\"name\":\"resting_heart_rate\",\"units\":\"count/min\",\"data\":[{\"qty\":53,\"date\":\"2026-09-24 00:00:00 +0100\"},{\"qty\":56,\"date\":\"2026-09-25 00:00:00 +0100\"}]},{\"name\":\"heart_rate\",\"units\":\"count/min\",\"data\":[{\"source\":\"Ada’s Apple Watch\",\"Min\":49,\"date\":\"2026-09-24 00:00:00 +0100\",\"Max\":161,\"Avg\":75.313318},{\"source\":\"Ada’s Apple Watch\",\"Min\":49,\"date\":\"2026-09-25 00:00:00 +0100\",\"Max\":161,\"Avg\":75.40593}]}]}}"
+  }
+ },
+ "_fixture": {
+  "sentAt": "2026-09-25 22:14:09 +0100",
+  "appVersion": "10.0.3",
+  "note": "Sent from London on 2026-09-25 22:14 +0100. The 2026-09-24 bucket is London midnight to London midnight and its date reads '2026-09-24 00:00:00 +0100'; delivery 0 reports the same day as '2026-09-24 00:00:00 +0300' with a different total. The 2026-09-25 row is a day in progress."
+ }
+}

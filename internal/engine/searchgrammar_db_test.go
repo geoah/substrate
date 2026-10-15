@@ -262,6 +262,8 @@ func TestRankedReadTakesTheSearchGrammar(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "calendar")
 	seedEvents(t, ds)
+	// Scoped to the events, so a word in a seeded declaration never joins the hits.
+	events := []string{"samples.substrate.reamde.dev/calendar/calendarevent"}
 
 	for name, tc := range map[string]struct {
 		q    string
@@ -273,7 +275,7 @@ func TestRankedReadTakesTheSearchGrammar(t *testing.T) {
 		"OR":           {"standup OR lunch", []string{"gcal-event:e2", "gcal-event:e3"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: tc.q, Mode: substrate.SearchLexical}))
+			hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: tc.q, Mode: substrate.SearchLexical, Kinds: events}))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -285,7 +287,7 @@ func TestRankedReadTakesTheSearchGrammar(t *testing.T) {
 		})
 	}
 	// The title band still outranks the prose with a prefix query.
-	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "rack lay*", Mode: substrate.SearchLexical}))
+	hits, err := searchHits(ds.Search(ctx, substrate.SearchInput{Q: "rack lay*", Mode: substrate.SearchLexical, Kinds: events}))
 	if err != nil {
 		t.Fatal(err)
 	}

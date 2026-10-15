@@ -47,7 +47,7 @@ import (
 const (
 	firecrawlDir      = samplesDir + "/firecrawl"
 	firecrawlPackage  = "samples.substrate.reamde.dev/firecrawl"
-	firecrawlDocType  = firecrawlPackage + "/webdocument"
+	firecrawlDocKind  = firecrawlPackage + "/webdocument"
 	firecrawlSearchFn = firecrawlPackage + "/websearch"
 	firecrawlScrapeFn = firecrawlPackage + "/scrapepage"
 
@@ -123,7 +123,7 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	// The webdocument type carries the scrape's durable shape, every mirror
 	// property labeled (fleet review F7). `title` stays the reserved
 	// built-in — never a declared property.
-	doc := mustKind(t, reg, firecrawlDocType)
+	doc := mustKind(t, reg, firecrawlDocKind)
 	for _, name := range []string{"url", "content", "truncated", "fetchedAt", "raw"} {
 		p, ok := doc.Prop(name)
 		if !ok {
@@ -157,8 +157,8 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scrape.Caps.Emit) != 1 || scrape.Caps.Emit[0] != firecrawlDocType {
-		t.Fatalf("%s emit = %v, want [%s]", firecrawlScrapeFn, scrape.Caps.Emit, firecrawlDocType)
+	if len(scrape.Caps.Emit) != 1 || scrape.Caps.Emit[0] != firecrawlDocKind {
+		t.Fatalf("%s emit = %v, want [%s]", firecrawlScrapeFn, scrape.Caps.Emit, firecrawlDocKind)
 	}
 	search, err := reg.ResolveFunction(firecrawlSearchFn)
 	if err != nil {
@@ -237,7 +237,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	}
 	assertMembers(t, ds, map[string]string{
 		firecrawlPackage:  typeBundle,
-		firecrawlDocType:  typeKind,
+		firecrawlDocKind:  typeKind,
 		firecrawlSearchFn: typeFunction,
 		firecrawlScrapeFn: typeFunction,
 	})
@@ -299,7 +299,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 			t.Fatalf("%s against a hostile baseUrl applied %d effects", fn, applied)
 		}
 	}
-	if n := countLive(t, ds, firecrawlDocType); n != 0 {
+	if n := countLive(t, ds, firecrawlDocKind); n != 0 {
 		t.Fatalf("a refused call minted %d webdocuments", n)
 	}
 
@@ -330,7 +330,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	if n := scrapes.Load(); n != 0 {
 		t.Fatalf("an invalid url reached the provider %d times — validation must run before the call", n)
 	}
-	if n := countLive(t, ds, firecrawlDocType); n != 0 {
+	if n := countLive(t, ds, firecrawlDocKind); n != 0 {
 		t.Fatalf("an invalid url minted %d webdocuments — validation must run before hashing", n)
 	}
 
@@ -352,7 +352,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 		first["snippet"] != "the primitive set, end to end" {
 		t.Fatalf("websearch first hit: %v", first)
 	}
-	if n := countLive(t, ds, firecrawlDocType); n != 0 {
+	if n := countLive(t, ds, firecrawlDocKind); n != 0 {
 		t.Fatalf("websearch minted %d webdocuments", n)
 	}
 
@@ -374,11 +374,11 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	if len(content) != 24000 || om["truncated"] != true {
 		t.Fatalf("scrapepage cap: len=%d truncated=%v", len(content), om["truncated"])
 	}
-	doc, err := ds.Get(ctx, firecrawlDocType, docID)
+	doc, err := ds.Get(ctx, firecrawlDocKind, docID)
 	if err != nil {
 		t.Fatalf("get the webdocument: %v", err)
 	}
-	if doc.Kind != firecrawlDocType || doc.Title != "How Substrates Compose" {
+	if doc.Kind != firecrawlDocKind || doc.Title != "How Substrates Compose" {
 		t.Fatalf("webdocument shape: type=%s title=%q", doc.Kind, doc.Title)
 	}
 	if got, _ := doc.Properties["content"].(string); len(got) != 24000 {
@@ -402,7 +402,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	if applied != 1 {
 		t.Fatalf("re-scrape applied %d effects, want 1", applied)
 	}
-	updated, err := ds.Get(ctx, firecrawlDocType, docID)
+	updated, err := ds.Get(ctx, firecrawlDocKind, docID)
 	if err != nil {
 		t.Fatalf("get the re-scraped webdocument: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 		t.Fatalf("re-scrape shape: truncated=%v version %d -> %d",
 			updated.Properties["truncated"], doc.Version, updated.Version)
 	}
-	if n := countLive(t, ds, firecrawlDocType); n != 1 {
+	if n := countLive(t, ds, firecrawlDocKind); n != 1 {
 		t.Fatalf("re-scrape left %d webdocuments, want the one", n)
 	}
 }

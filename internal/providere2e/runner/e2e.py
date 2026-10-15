@@ -119,6 +119,9 @@ is wrong:
     already uses, so a 429/500/401/404 matrix needs no hand-made recording.
     A scenario drives the same thing BETWEEN two syncs by POSTing
     `{"rules": […]}` to `MOCK_URL/__mock/faults`.
+  * `timeShift`: `false` serves the recordings' instants as written, for a
+    provider whose recordings the mock otherwise moves to the run date
+    (mockserver.py's TIME_SHIFTS). Recordings dated on purpose set it.
 
 `providers/<p>/scenario.py` is yours too. It is run with:
 
@@ -1420,6 +1423,10 @@ def preferred_port(want: int) -> int:
         reaped = False
         while True:
             s = socket.socket()
+            # The mock binds with SO_REUSEADDR (http.server does), so the probe
+            # does too: a TIME_WAIT socket left by a run that just ended does
+            # not hold the port, while a live listener still does.
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", int(want)))
                 s.close()
@@ -1483,14 +1490,18 @@ def reap_orphan_mocks(port: int) -> bool:
 
 
 def start_mock(recordings: pathlib.Path, provider: str, log: pathlib.Path,
-               want_port: int = 0, faults: pathlib.Path | None = None):
-    port = preferred_port(want_port)
+               cfg: dict, faults: pathlib.Path | None = None):
+    """The mock over the recordings, as e2e.json's `mockPort` and `timeShift`
+    say."""
+    port = preferred_port(int(cfg.get("mockPort") or 0))
     fh = log.open("w")
     # `providers/<p>/e2e/faults.json`, when the provider agent wrote one, is
     # the run's failure matrix: statuses per endpoint, over the SAME
     # recordings the success path uses. A scenario that wants a failure only
     # for its second sync POSTs the rules to MOCK_URL/__mock/faults instead.
     extra = ["--faults", str(faults)] if faults and faults.is_file() else []
+    if cfg.get("timeShift") is False:
+        extra.append("--no-time-shift")
     proc = subprocess.Popen(
         [sys.executable, str(ROOT / "runner" / "mockserver.py"),
          "--dir", str(recordings), "--port", str(port), "--provider", provider,
@@ -1687,8 +1698,8 @@ def run(a) -> int:
     print("    workdir     %s" % work)
 
     faults = edir / (cfg.get("faults") or "faults.json")
-    proc, mock = start_mock(recordings, a.provider, work / "mock.log",
-                            int(cfg.get("mockPort") or 0), faults)
+    proc, mock = start_mock(recordings, a.provider, work / "mock.log", cfg,
+                            faults)
     say("mock upstream on %s%s" % (mock, "" if not faults.is_file()
                                    else "  (failure matrix %s)"
                                    % _rel(faults)))
@@ -2087,10 +2098,17 @@ def _test_rewire(fails: list) -> None:
         text = f.read_text().replace('"network":', "network:")
         out, n = allow_mock_host(text, host)
         props = len(re.findall(r"(?m)^\s*network:\s*$", "\n".join(_kind_docs(text))))
-        _check(n >= 1 and _kind_docs(text) == _kind_docs(out),
+        pinned = n == 0 if f.parent.name in NO_EGRESS else n >= 1
+        _check(pinned and _kind_docs(text) == _kind_docs(out),
                "%s: %d egress pin(s); %d kind propert%s named `network`, "
                "unquoted, untouched" % (_rel(f), n, props,
                                         "y" if props == 1 else "ies"), fails)
+
+
+# The provider bundles whose functions make no outbound call, so no function
+# declares `permissions.network` and the rewire has no pin to take the mock.
+# Apple Health is a receiver: the app on the phone posts to it.
+NO_EGRESS = {"applehealth"}
 
 
 def _kind_docs(text: str) -> list[str]:

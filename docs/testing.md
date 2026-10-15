@@ -10,7 +10,7 @@ suites are where most of the behaviour is actually pinned down.
 | ----- | ---- | ----- | ------- |
 | Short | `mise run test:short` | nothing | seconds |
 | Database | `mise run test:db` | Docker, or a DSN; `uv` and `python3` for the provider suite | ~2 minutes, plus 3 to 5 for the provider suite |
-| Providers | `mise run test:db:providers` | Docker, or a DSN; `uv` and `python3` | 3 to 5 minutes: the seven cases run side by side, so it is the slowest one |
+| Providers | `mise run test:db:providers` | Docker, or a DSN; `uv` and `python3` | 3 to 5 minutes: the nine cases run side by side, so it is the slowest one; Apple Health, which has no upstream to record, is tested in `internal/providertest` alone |
 | Both | `mise run test` | the same as `test:db` | ~2 minutes, plus 3 to 5 for the provider suite |
 | Race | `mise run test:race` | nothing | ~1 minute |
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |
@@ -306,6 +306,10 @@ mise run console:render http://127.0.0.1:8080   # the served console, in headles
 
 Vitest with jsdom, beside the code it covers: every module in
 `src/lib/api/` has a `.test.ts` next to it, and the pages have component tests.
+Every run is in Europe/Athens (`TZ` in `vite.config.ts`), a zone whose clocks
+change, so a local-time test means the same on every machine and can cross an
+offset change; a suite that needs another zone sets it for its own file with
+`vi.stubEnv("TZ", …)` (`src/lib/observations-time.santiago.test.ts`).
 
 **The render check** (`web/console/scripts/render-smoke.mjs`) opens the
 console a running substrate serves in headless Chrome. jsdom cannot stand in
@@ -587,7 +591,7 @@ and do not block a merge.
 | db rest | `ci:db:rest` | `internal/providertest`, `internal/testenv` without the acceptance drill, and `substratectl` | through `go gate` |
 | go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes |
 | acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no |
-| providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams | no |
+| providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs nine of the ten provider closures against a `substrated` it starts, over recorded upstreams (Apple Health receives a webhook and has none) | no |
 | race | `ci:race` | the short suite under `-race` | no |
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 | no |
 | image builds | `ci:image` | the image builds from a clean tree, boots, and renders the console in headless Chrome | no |

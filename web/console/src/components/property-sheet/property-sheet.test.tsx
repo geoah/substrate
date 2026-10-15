@@ -287,6 +287,111 @@ describe("PropertySheet rows", () => {
   })
 })
 
+describe("PropertySheet on a kind binding observed", () => {
+  const SLEEP = "ada.example.com/health/observation"
+  const observation = kind(SLEEP, {
+    traits: ["substrate.reamde.dev/core/observed(single)"],
+    properties: {
+      value: { type: "quantity" },
+      form: { type: "enum", values: ["gauge", "amount", "counter", "summary"] },
+      hold: { type: "duration" },
+      specimen: { type: "string" },
+    },
+  })
+  const reading = record({
+    kind: SLEEP,
+    properties: {
+      value: { value: "72.4", unit: "kg" },
+      form: "gauge",
+      hold: "PT1H51M31S",
+      specimen: "capillary",
+    },
+    propertyMeta: {},
+  })
+
+  it("reads a duration in words, the stored text on hover", () => {
+    renderSheet(reading, observation)
+    const hold = row("hold")
+    expect(hold.textContent).toContain("1h 51m 31s")
+    expect(hold.querySelector("[title='PT1H51M31S']")).not.toBeNull()
+  })
+
+  it("reads a quantity to two places, the stored digits on hover", () => {
+    renderSheet(
+      {
+        ...reading,
+        properties: {
+          ...reading.properties,
+          value: { value: "97.1836248", unit: "%" },
+        },
+      },
+      observation
+    )
+    const value = row("value")
+    expect(value.textContent).toContain("97.18 %")
+    expect(value.textContent).not.toContain("97.1836248")
+    expect(value.querySelector("[title='97.1836248 %']")).not.toBeNull()
+  })
+
+  it("numbers a list of objects only where it holds more than one", () => {
+    const ranged = kind(SLEEP, {
+      properties: {
+        ranges: {
+          type: "object",
+          repeated: true,
+          fields: { text: { type: "string" } },
+        },
+      },
+    })
+    renderSheet(
+      record({ kind: SLEEP, properties: { ranges: [{ text: "optimal" }] } }),
+      ranged
+    )
+    expect(row("ranges").textContent).not.toMatch(/1/)
+    cleanup()
+    renderSheet(
+      record({
+        kind: SLEEP,
+        properties: { ranges: [{ text: "female" }, { text: "male" }] },
+      }),
+      ranged
+    )
+    expect(row("ranges").textContent).toMatch(/1.*female.*2.*male/)
+  })
+
+  it("names a form in the words the observations pages use", () => {
+    renderSheet(reading, observation)
+    expect(row("form").textContent).toContain("Level")
+    expect(row("form").textContent).not.toContain("Gauge")
+  })
+
+  it("folds away what the observed section shows, and opens it on asking", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <PropertySheet
+          record={reading}
+          kind={observation}
+          kinds={[observation]}
+          elsewhere={{ names: ["value", "form"], where: "Measurement" }}
+        />
+      </QueryClientProvider>
+    )
+    expect(row("value")).toBeNull()
+    expect(row("form")).toBeNull()
+    expect(row("specimen")).not.toBeNull()
+    const fold = screen.getByRole("button", {
+      name: /2 shown under Measurement/,
+    })
+    expect(fold.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(fold)
+    expect(row("value")).not.toBeNull()
+    expect(row("form")).not.toBeNull()
+  })
+})
+
 describe("PropertySheet inline edit", () => {
   it("saves one property as a PATCH with ifVersion on Enter", async () => {
     renderSheet(record())
@@ -498,6 +603,12 @@ describe("PropertySheet dates", () => {
         birthday: "1990-03-14",
       },
     })
+
+  it("says a date month first, as the record's other sections do", () => {
+    renderSheet(withDates(), dated)
+    // A year away from now, so neither relative nor this year's.
+    expect(row("birthday").textContent).toContain("Mar 14, 1990")
+  })
 
   it("picks a date from the calendar in one click", async () => {
     renderSheet(withDates(), dated)

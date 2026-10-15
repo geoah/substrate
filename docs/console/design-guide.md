@@ -184,6 +184,18 @@ yellow was about 3.5:1), because an enum value is its words on its hue:
 every ink now clears 4.5:1 on its own fill in both modes, and
 `src/index-css.test.ts` holds it.
 
+### Chart series
+
+`--series-1` to `--series-8` colour a chart's series, one per identity in a
+fixed order and never cycled: blue, orange, aqua, yellow, magenta, green,
+violet, red, stepped separately for the light and the dark page. A series
+keeps its slot through a filter (its place among every value the chart could
+show, not its rank), and a ninth takes the quiet `--faint`. On white, slots 3
+to 5 sit under 3:1, so every chart has a legend for two or more series and
+its numbers in a table under it. Text on a chart wears the text tokens, never
+a series colour. The observations timeline (`components/observations/`) is
+the first user; `lib/chart.ts` holds its scales and paths.
+
 ### Kind hues
 
 Ten hues, each a tile background and a glyph ink, used by `KindGlyph`,

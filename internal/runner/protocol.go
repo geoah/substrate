@@ -49,9 +49,14 @@ import (
 // invocation — each carrying the invoke's reqId and answered by the
 // parent's next line:
 //
-//	child → parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search", "params": {...}}
+//	child → parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate", "params": {...}}
 //	child → parent   {"kind": "call", "reqId": N, "host": "call", "params": {"function": "<identity>", "input": ...}}
+//	child → parent   {"kind": "call", "reqId": N, "host": "units.convert"|"units.canonical"|"units.measure", "params": {...}}
 //	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "..."}
+//
+// The three `units.*` calls answer from the engine's unit table (units.go):
+// they read nothing from the repository, so no grant gates them and no budget
+// is charged.
 //
 // A `call` runs the target function to completion INSIDE the caller's
 // invocation: the parent gates it on `permissions.call` and
@@ -186,6 +191,8 @@ type Backend interface {
 	Get(ctx context.Context, typ, id string) (*substrate.Record, error)
 	List(ctx context.Context, q substrate.Query) (*substrate.Page, error)
 	Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error)
+	// Aggregate is the aggregate read (substrate.Dataset.Aggregate).
+	Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error)
 	Call(ctx context.Context, function string, args any) (any, error)
 	ResolveKind(name string) string
 	Log(line string)
@@ -268,11 +275,15 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryAuthority stri
 //	    - {name: transcription, value: "…"}
 //	    - {name: audio, filename: rec.m4a, mediaType: audio/mp4, size: 4194304,
 //	       blob: blob-sha256-…}             # a file part, stored before the fire
+//
+// `at` keeps its fraction of a second: a webhook's is the instant the door
+// received the request, and a stored request's signature timestamp, which
+// may be in milliseconds, is measured against it on a retry.
 func FireEnvelope(fireID string, at time.Time, repositoryAuthority string) map[string]any {
 	return map[string]any{
 		"fire": map[string]any{
 			"id": fireID,
-			"at": at.UTC().Format(time.RFC3339),
+			"at": at.UTC().Format(time.RFC3339Nano),
 		},
 		"repository": map[string]any{"authority": repositoryAuthority},
 	}

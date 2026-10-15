@@ -467,8 +467,15 @@ def main(input, host):
 // and a delivery parked by a binary that wrote no authority into its payload.
 func newHookDatasetWithDSN(t *testing.T, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset, string) {
 	t.Helper()
+	return newHookDatasetWithOptions(t, nil, triggers, fns...)
+}
+
+// newHookDatasetWithOptions is newHookDatasetWithDSN on a service opened
+// with opts, for a test that sets one of the engine's test clocks.
+func newHookDatasetWithOptions(t *testing.T, opts []engine.Option, triggers []enginetest.Trigger, fns ...map[string]any) (substrate.Service, substrate.Dataset, string) {
+	t.Helper()
 	ctx := context.Background()
-	svc, dsn := newService(t)
+	svc, dsn := newService(t, opts...)
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}

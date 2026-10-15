@@ -10,8 +10,7 @@ Provenance legend used throughout:
 - **[web]** checked on the web today, URL given.
 - **[bench]** measured today on this machine (Postgres 16.15 + TimescaleDB
   2.30.2 in a throwaway container, scripts in `/tmp/health-research/bench/`).
-- **[repo]** read in the substrate tree at
-  `/home/geoah/.t3/worktrees/substrate/t3-d9d5090b`.
+- **[repo]** read in this repository's tree on branch `t3/d9d5090b`.
 - **[recalled]** from memory, not re-verified today. Treat as unverified.
 
 ## Contents

@@ -33,8 +33,17 @@ API call that completes a task.
 
 - [The data model](data-model.md) — the repository and its changelog, records and
   kinds, property types, traits, and validation
+- [Units](units.md): every measure a `quantity` value converts inside, and
+  every unit code, with its exact factor
 - [Traits and interfaces](traits.md) — shared properties, declaring your own,
   and the cross-kind queries binding unlocks
+- [Observations](observations.md): measured values (readings, traces, lab
+  results), core's `observed` trait and the rules every write of one is held
+  to, the `observations` and `health` samples, the observed index, and the
+  aggregate reads that answer a screen of a health app
+- [Building health apps](health-apps.md): the requests behind each screen of
+  a health app (a day, a night, a workout, trends, labs, sync), each run
+  against a demo repository
 - [Vocabulary as records](vocabulary.md) — the declarable kinds, admission,
   and how the vocabulary evolves
 - [Projection](projection.md) — record mappings, managed properties, and merges
@@ -67,6 +76,8 @@ API call that completes a task.
   request, and how a change reaches `CHANGELOG.md`
 - [Testing](testing.md) — every suite, which to reach for, and how to give the
   live one keys
+- [Synthetic provider data](synthetic-data.md): one invented person's 90 days
+  in the shapes the provider functions read, for demos and the contract tests
 - [Built-in kinds](builtin-kinds.md) — reference
 
 ---

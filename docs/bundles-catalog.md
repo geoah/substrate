@@ -1,15 +1,18 @@
 # Bundles catalog
 
-The catalog in the binary serves seventeen bundles, in the two tiers
+The catalog in the binary serves twenty-six bundles, in the two tiers
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: seven providers and ten samples. This page covers twelve of them; the
-five vocabulary samples (`people`, `tasks`, `calendar`, `messaging` and
-`scheduling`) are in [built-in kinds](builtin-kinds.md).
+draws: ten providers and sixteen samples. This page covers nineteen of them;
+the seven vocabulary samples (`people`, `tasks`, `calendar`, `messaging`,
+`scheduling`, `observations` and `health`) are in
+[built-in kinds](builtin-kinds.md).
 
-**Seven providers**: Google, GitHub, Linear, WHOOP, Notion, Beeper and Slack.
-Each is a package its publisher owns, installed under
-`providers.substrate.reamde.dev` and upgraded there. Every one syncs from the
-provider into the repository. Three also ship one write each, a function
+**Ten providers**: Google, GitHub, Linear, WHOOP, Garmin, Google Fit, Notion,
+Beeper, Slack and Apple Health. Each is a package its publisher owns,
+installed under `providers.substrate.reamde.dev` and upgraded there. Nine sync
+from the provider into the repository; Apple Health has no API to read, so its
+provider receives what the Health Auto Export app on the phone sends to a
+webhook. Three also ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
 GitHub's `submitreview`. A write sends one request with the credential the
 sync spends and writes no record; what it sent reaches the mirror only when
@@ -18,8 +21,9 @@ write below and
 [0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
 Do not treat the mirror as confirmation that a send happened.
 
-**Five samples**: LLM, notes, the reading list, Firecrawl and Pebble. Each is
-a worked example to read and copy, imported under the repository's own
+**Nine samples**: LLM, notes, the reading list, Firecrawl, Pebble, WHOOP to
+health, Apple Health to health, Garmin to health and Google Fit to health.
+Each is a worked example to read and copy, imported under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
 imported it as an upgrade offer read off the copy's origin stamp, taken by
 importing again
@@ -63,15 +67,22 @@ thing, and the Records column counts them.
 | Google        | Provider | OAuth          | 14    | 4         | 12      | 0      |
 | GitHub        | Provider | OAuth          | 15    | 2         | 3       | 0      |
 | Linear        | Provider | API key        | 13    | 1         | 3       | 0      |
-| WHOOP         | Provider | OAuth          | 7     | 1         | 3       | 0      |
+| WHOOP         | Provider | OAuth          | 7     | 2         | 4       | 0      |
+| Garmin        | Provider | OAuth          | 19    | 2         | 4       | 0      |
+| Google Fit    | Provider | OAuth          | 5     | 1         | 3       | 0      |
 | Notion        | Provider | Internal token | 8     | 1         | 3       | 0      |
 | Beeper        | Provider | Pasted token   | 9     | 2         | 3       | 0      |
 | Slack         | Provider | User token     | 9     | 2         | 3       | 0      |
+| Apple Health  | Provider | Webhook key    | 10    | 1         | 1       | 0      |
 | LLM           | Sample   | Key, per row   | 1     | 0         | 3       | 6      |
 | Notes         | Sample   | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Sample   | API key        | 1     | 2         | 2       | 0      |
 | Reading list  | Sample   | none           | 2     | 4         | 6       | 3      |
 | Pebble        | Sample   | none           | 2     | 1         | 2       | 1      |
+| WHOOP to health | Sample | none        | 0     | 1         | 1       | 0      |
+| Apple Health to health | Sample | none      | 0     | 1         | 1       | 0      |
+| Garmin to health | Sample | none          | 0     | 1         | 1       | 0      |
+| Google Fit to health | Sample | none        | 0     | 1         | 1       | 0      |
 
 ## Connecting an OAuth provider
 
@@ -84,8 +95,8 @@ and how often, and *Create and connect* opens the provider in a new tab, where
 once you approve the account's first sync starts on its own. The current step
 is highlighted with its one action.
 
-Over the API and the CLI, Google, GitHub and WHOOP take the same four steps,
-because the host runs the flow and the bundle only declares it
+Over the API and the CLI, Google, GitHub, WHOOP, Garmin and Google Fit take
+the same four steps, because the host runs the flow and the bundle only declares it
 ([bundles](bundles.md#the-oauth-facility)):
 
 1. **Register an app** with the provider and note its client id and secret.
@@ -107,7 +118,8 @@ because the host runs the flow and the bundle only declares it
 
 Linear, Notion, Beeper and Slack take a pasted key or token instead: their
 `config` record holds it and there is no consent step, so step 4 is the
-account's own create.
+account's own create. Apple Health takes neither: the phone sends, and the
+key is the one set on its webhook trigger ([Apple Health](#apple-health)).
 
 **`backfillDepth` bounds the FIRST window only.** Every run after it reads
 from that stream's own stored watermark instead, so the value decides how far
@@ -726,26 +738,30 @@ the WHOOP v2 API at `https://api.prod.whoop.com/developer`. Read only: nothing
 in this closure writes back to WHOOP. The bundle's `oauth2` block carries the
 endpoints and the toggle-to-scope map, so each consent requests the union the
 account's enabled toggles derive: `read:cycles` for `enabledCycles`,
-`read:recovery` and `read:cycles` for `enabledRecovery`, `read:sleep`,
-`read:workout`, `read:profile` with `read:body_measurement` for
+`read:recovery`, `read:cycles` and `read:sleep` for `enabledRecovery` (a
+recovery webhook names a sleep, which `whoopwebhook` reads for its cycle),
+`read:sleep`, `read:workout`, `read:profile` with `read:body_measurement` for
 `enabledProfile`, and `read:profile` with `offline` on every toggle.
 
 - **Kinds (7)**: `config` (the WHOOP OAuth app), `account` (the connection,
   and every cursor in the closure), and the mirrors `user` (the member),
-  `cycle` (the wake-to-wake day WHOOP scores strain over), `recovery` (the
-  verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
+  `cycle` (WHOOP's physiological day, from one sleep onset to the next,
+  which WHOOP scores strain over), `recovery` (the verdict on one cycle), `sleep` (a night or a nap, which WHOOP tells apart
   with `nap`) and `workout` (a recorded activity).
-- **Functions (1)**: `whoopsync` reads the member's profile and body
+- **Functions (2)**: `whoopsync` reads the member's profile and body
   measurement, then walks `/v2/cycle`, `/v2/recovery`, `/v2/activity/sleep`
   and `/v2/activity/workout` in that order (cycles first, because a recovery
   and a sleep reference a cycle). One invocation asks for one page of 25
   records and hands its checkpoint back; a page that drains its collection
   lets the same invocation start the next while its 40-second budget lasts.
-- **Triggers (3)**: `whoop-on-connect` fires `whoopsync` the first time an
+  `whoopwebhook` takes one webhook WHOOP posts and rewrites or deletes the one
+  mirror row it names.
+- **Triggers (4)**: `whoop-on-connect` fires `whoopsync` the first time an
   account is connected, has a toggle on and has no `lastSyncedAt`;
   `whoop-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
   disagree; `whoop-scheduled` fires it hourly, and the body syncs the
-  accounts due by their own `syncFrequency`.
+  accounts due by their own `syncFrequency`. `whoop-webhook` is the webhook
+  endpoint, declares WHOOP's signature, and fires `whoopwebhook`.
 - **Mappings**: none shipped. The mirrors describe one member: `user` is that
   member's row, keyed on WHOOP's `user_id`, and `account.user` points at it.
   The `people` sample ships `googlecontactperson`, `googleaddressperson`,
@@ -819,8 +835,57 @@ current cycle has no `end` and so no `endsAt`. `recovery` binds
 `sleep.sleepId` and `workout.workoutId` are v2 UUID strings, each carrying the
 retired v1 integer beside it as `v1Id`; `cycle.cycleId` and `user.userId` are
 integers; a v2 recovery has no id of its own, so its row is keyed on the cycle
-it scores. The references are `recovery.cycle`, `recovery.sleep`,
+it scores and keeps that cycle's `cycleId`, which is what the sync reads it
+back by when no cycle row exists. The references are `recovery.cycle`, `recovery.sleep`,
 `sleep.cycle`, and `user` and `account` on every mirror.
+
+**Revisions and deletions.** WHOOP's `updated_at` is the only revision an
+object has: the sync and the webhook never write a payload whose `updated_at`
+is older than the stored row's `updatedAt`, and a payload equal to the stored
+row changes nothing, so re-reading a page is silent and a rescored cycle is
+rewritten. A deleted object just stops appearing in its collection. When a
+collection that already has a cursor drains, `whoopsync` reads back by id
+each row the mirror holds in that run's window (the 48 hours before the
+cursor, and later) that the walk did not see, at most 25 per collection: a
+`404` deletes the row, and any other answer keeps it. A first sync reads
+nothing back, and a deletion older than the window reaches the mirror only
+through the webhook.
+
+**Webhooks.** WHOOP posts `{user_id, id, type, trace_id}` to one URL per WHOOP
+app when a sleep, a recovery or a workout is written or deleted; it sends no
+event for a cycle or the member. To receive them, set the app's webhook URL
+in WHOOP's developer dashboard to
+`https://<your-substrate-host>/webhooks/<authority>/whoop-webhook` with model
+version v2. `substratectl trigger status` prints the path in its `WEBHOOK`
+column.
+
+The `whoop-webhook` trigger declares WHOOP's signature: `X-WHOOP-Signature`
+is base64(HMAC-SHA256(client secret, `X-WHOOP-Signature-Timestamp` + raw
+body)), and the server checks it against the `config` record's client secret
+before it stores the request
+([webhook signatures](functions.md#webhook-signatures)). The secret never
+reaches a function. A delivery whose signature is missing or does not match,
+or whose timestamp is more than five minutes from when the server received
+it, is answered `404` and leaves nothing behind: the trigger carries no key,
+so a refusal gets the answer a trigger that does not exist gets. The trigger
+ships enabled because the check fails closed: until the `config` record holds
+the client secret, every delivery is refused the same way. A verified event is
+matched to the account whose `account.user` is the member row for its
+`user_id`, which the first sync writes. `sleep.updated` and `workout.updated`
+read the object by id and rewrite its row; a create arrives as `.updated`.
+`recovery.updated` carries the sleep's id, so the body reads that sleep for
+its `cycle_id` and then `GET /v2/cycle/{cycle_id}/recovery`. A `404` on any
+of those reads deletes the row. `sleep.deleted` and `workout.deleted` delete
+the row the id names, and `recovery.deleted` deletes the recovery whose
+`sleep` reference is the named sleep. A paused account drops every event. A
+toggle that is off, a missing token, a `retryNotBefore` still in the future,
+a `429`, or a `401` or `403` on a read back drops an update; the output's
+`skipped` names the reason. The next sync re-reads the object only if it
+started within its window, the 48 hours before the collection's cursor, so a
+dropped edit to an older sleep or workout does not reach the mirror. An account
+connected with recoveries on before `enabledRecovery` requested `read:sleep`
+has its `recovery.updated` events dropped this way until it reconnects. A
+deletion needs no read and is applied whatever the toggles say.
 
 **What it does not do.** No writeback, and no mirror carries a `json` blob, a
 sync cursor or a page token. There is no `sport` kind: `workout.sportName` is
@@ -846,6 +911,249 @@ none of version 9's derived properties: `recovery.date`, `workout.calories` and
 trait beside its own bookkeeping: `syncPaused`, `syncState`, `syncMessage`,
 `syncProgress`, `syncError`, `syncErrorAt`, `lastSyncStartedAt`,
 `lastSyncDurationMs` and `syncStreams`.
+
+## Garmin
+
+Package `providers.substrate.reamde.dev/garmin`. An OAuth provider that
+mirrors what Garmin's Health API and Activity API push about one Garmin
+Connect user. Read only. **Not verified against Garmin**: Garmin's Connect
+Developer Program was reported closed to new partners through mid-2026
+(checked 2026-10-11), its API specifications sit behind its partner login,
+and every field below follows Garmin's OpenAPI description of the wellness
+API as republished outside Garmin. The bundle is tested against deliveries
+built from that description and a mock Garmin, never a live account; the
+bundle's [README](../kinds/providers.substrate.reamde.dev/garmin/README.md)
+lists the sources.
+
+- **Kinds (19)**: `config` (the Garmin app), `account` (the connection, the
+  Garmin user id every push is matched on, and every cursor), `notice` (a
+  disconnect or a permission change Garmin pushed), and one mirror per
+  summary type Garmin pushes: `daily`, `epoch`, `sleep`, `bodycomp`,
+  `stressdetail`, `usermetric`, `pulseox`, `respiration`, `healthsnapshot`,
+  `hrv`, `bloodpressure`, `skintemp`, `activity`, `activitydetail`,
+  `manuallyupdatedactivity` and `moveiq`.
+- **Functions (2)**: `garminpush` writes one push delivery; `garminsync` records
+  the user id and permissions and asks Garmin to backfill history.
+- **Triggers (4)**: `garmin-webhook` fires `garminpush` for each delivery
+  Garmin posts, and ships disabled; `garmin-on-connect` fires `garminsync` the
+  first time an account is connected and has no `lastSyncedAt`;
+  `garmin-on-request` fires it while `syncRequestedAt` and `syncRequestedAck`
+  disagree; `garmin-scheduled` fires it hourly for every account with backfill
+  left.
+- **Mappings**: none shipped.
+
+**Garmin pushes; the substrate does not poll.** Garmin POSTs each summary type
+to the URL its app registers for it in Garmin's Endpoint Configuration tool,
+as `{"<summary type>": [<summary>, ...]}`. Every summary type can share the
+one URL, `https://<your-substrate-host>/webhooks/<authority>/garmin-webhook/<key>`.
+Garmin signs nothing, so the trigger's key is the only credential: set
+`source.webhook.key` on `garmin-webhook` to 16 to 128 characters of
+`[A-Za-z0-9_-]` before enabling it. Where Garmin sends the
+`garmin-client-id` header, a push naming another app's client id is refused.
+
+**Each summary is matched to its account by `userId`.** `garminsync` reads the
+user id from `GET /rest/user/id` on the first sync and commits it in an
+invocation of its own, before it asks for any backfill window. A push for an
+account whose first sync has not committed the id has nothing to match. A
+delivery none of whose
+summaries names a known user fails with an error naming the user id, and parks
+for a retry; a delivery that mixes users writes the known ones and lists the
+rest in its output.
+
+**One row per `summaryId`, rewritten whole.** A row's id is
+`<account id>/<summaryId>` (a hash when that would leave the id alphabet), and
+each summary is one put carrying every declared property, absent ones as null.
+Garmin re-sends a summary under the same id when it has more (a day filling
+in, a sleep turning from tentative to final), and the re-send replaces the row:
+what it no longer carries is cleared. Every field keeps Garmin's camelCase name
+and Garmin's units (seconds since the epoch, metres, grams, kilocalories,
+beats per minute), including the per-second sample maps, the sleep stage map
+and an activity's samples. `startTimeInSeconds`, `startTimeOffsetInSeconds`
+and `calendarDate` are kept as Garmin sends them; `at` and `endsAt` are the
+same seconds as instants (a sleep ends at its last stage; a `bodycomp` and a
+`bloodpressure` sit at `measurementTimeInSeconds`; a `usermetric` carries a date
+and no instant). A ping (`callbackURL` instead of summaries) is followed with
+the account's token, only to a URL under `apiBase`.
+
+**The toggles choose what is written and backfilled.** Each summary type has
+its own toggle on the account, on by default, and each maps in `featureScopes`
+to the Garmin permission that covers it: `HEALTH_EXPORT` for the Health API
+types, `ACTIVITY_EXPORT` for `activities`, `activityDetails` and
+`manuallyUpdatedActivities`. Garmin's consent asks for no scopes (the user
+picks what to share on Garmin's page), so `grantedScopes` records what the
+account asked for and `account.permissions` what the user granted, read from
+`GET /rest/user/permissions` and updated by each permission change Garmin
+pushes. A push for a type whose toggle is off, or for a paused account, is not
+written, and Garmin does not send it again.
+
+**Backfill asks; the data arrives by push.** `garminsync` asks for every enabled
+type except `manuallyUpdatedActivities` (Garmin offers no backfill for it), one
+24-hour window per request, the newest day first across every type, back to
+`backfillDepth`: `none`, `last7d`, `last30d` (the default) or `last90d`, counted
+from `backfillUntil`, the instant of the first sync. Garmin answers `202` and
+pushes the summaries later; it answers `409` to a window it already accepted,
+which counts as accepted too. `syncCursors` keeps, per type, the start of the
+oldest accepted window, so a run cut off by its 100-second budget, a `429` or an
+outage continues on the next hourly run, and a deeper `backfillDepth` extends
+the walk. A `429` holds the account until Garmin's `Retry-After` and reads
+`throttled`; a `4xx` on one type (a `403` for a permission the user did not
+grant) stops that type and names it in `syncMessage` while the others go on.
+The refusal stays in `backfillRefused`, and the type is not asked for again
+until Garmin pushes a permission change dated after it or the owner asks for a
+sync now, so a refused type does not keep the account due every hour.
+Garmin is reported to backfill 30 or 90 days per request and only within about
+a month of the first connection, by sources that disagree.
+
+**The account reports both paths.** It binds core's `sync` trait. A push stamps
+`lastSyncedAt`, `lastPushAt`, `syncState: ok` and a `syncMessage` counting what
+it wrote; a backfill run stamps the same with `syncProgress` counted in summary
+types, and `lastCompletedAt` once every enabled type reached its floor with
+nothing refused. A disconnect Garmin pushes lands as a `notice`, sets
+`deregisteredAt` and reads `erroring`; the schedule passes over the account
+until a push of data, or a "sync now" that reaches Garmin, clears the mark.
+
+**What it does not do.** Garmin's disconnect is `DELETE
+/rest/user/registration` under the user's token, which the OAuth facility
+cannot send, so the bundle declares no `revocationEndpoint` and deleting the
+account here does not deregister it at Garmin: disconnect the app in Garmin
+Connect as well. No activity files (FIT), no solar intensity, blood glucose,
+menstrual cycle or pregnancy summaries, and no writeback. The webhook door
+refuses an inline body over 8 MiB (`413`), and `garminpush` skips (and names
+in its output) a single summary over 6 MiB, because no function frame holds
+one. At one sample a second, 1 MiB of activity details is about 50 minutes, so
+an activity of up to about five hours (a marathon, for example) arrives whole
+by push. A longer one does not: `garminpush` skips it up to 8 MiB (about six
+and a half hours) and the door refuses it past that. Ping mode avoids the
+door's cap when one push carries several large activities, because a ping
+carries only the callback URL; it does not avoid the 6 MiB skip. `garminpush`
+writes any body the door admits over several invocations of one chain.
+Garmin pushes no deletion: a summary or activity deleted in Garmin Connect
+stays mirrored, and so do the health records the
+[adapter](#garmin-to-health-sample) built from it. A re-send of a summary
+clears the fields it no longer carries. To remove one, delete its mirror row
+(`substratectl delete <kind> <id>`, the kind in full, such as
+`providers.substrate.reamde.dev/garmin/daily`): the adapter's delete trigger
+removes what it built.
+
+## Google Fit
+
+Package `providers.substrate.reamde.dev/googlefit`. An OAuth provider that
+mirrors one Google account's fitness data from the Google Fit REST API v1 at
+`https://www.googleapis.com/fitness/v1`. Read only: nothing in this closure
+writes back to Google.
+
+**Dated caveat.** Google announced that the Fit APIs, the REST API included,
+end with 2026, and closed them to new sign-ups on 2024-05-01: a Google Cloud
+project that has not enabled the Fitness API before cannot enable it now. The
+Google Health API that replaces it is not onboarding new projects either. The
+bundle is built against Google's published reference and tested against a
+loopback fake and recordings; nothing was run against a live account.
+
+- **Kinds (5)**: `config` (the Google OAuth client), `account` (the
+  connection, its time zone and every cursor), and the mirrors `datasource`
+  (one entry of `GET users/me/dataSources`, raw or derived), `dataset` (one
+  data source over one UTC day, every page joined) and `session` (a workout,
+  a walk or a night's sleep).
+- **Functions (1)**: `googlefitsync` lists the data sources, reads every
+  derived source of each enabled data type one UTC day at a time, then walks
+  the session list.
+- **Triggers (3)**: `googlefit-on-connect` fires `googlefitsync` the first
+  time an account is connected, has a toggle on and has no `lastSyncedAt`;
+  `googlefit-on-request` fires it while `syncRequestedAt` and
+  `syncRequestedAck` disagree; `googlefit-scheduled` fires it every 15
+  minutes, and the body syncs the accounts that are due.
+- **Mappings**: none shipped. The
+  [Google Fit to health](#google-fit-to-health-sample) sample turns these
+  mirror rows into health observations.
+
+**Seven toggles, one scope each**, every scope under
+`https://www.googleapis.com/auth/`:
+
+| Toggle | Scope | Data types read |
+| --- | --- | --- |
+| `enabledActivity` | `fitness.activity.read` | `com.google.step_count.delta`, `com.google.calories.expended`, `com.google.calories.bmr`, `com.google.activity.segment`, `com.google.active_minutes`, `com.google.heart_minutes`, and the sessions |
+| `enabledBody` | `fitness.body.read` | `com.google.weight`, `com.google.height`, `com.google.body.fat.percentage` |
+| `enabledHeartRate` | `fitness.heart_rate.read` | `com.google.heart_rate.bpm` |
+| `enabledSleep` | `fitness.sleep.read` | `com.google.sleep.segment`, and the sessions |
+| `enabledOxygenSaturation` | `fitness.oxygen_saturation.read` | `com.google.oxygen_saturation` |
+| `enabledBloodPressure` | `fitness.blood_pressure.read` | `com.google.blood_pressure` |
+| `enabledBloodGlucose` | `fitness.blood_glucose.read` | `com.google.blood_glucose` |
+
+Every toggle also asks for `userinfo.email`, which is how the facility fills
+the account's `email`. Location is not requested: `fitness.location.read` also
+grants GPS samples, and Google files `com.google.distance.delta` under it, so
+the bundle reads no distance. The health scopes need Google's verification
+before a published client may ask for them. The bundle declares Google's
+RFC 7009 `revocationEndpoint`, so deleting the account revokes the grant.
+
+**Which streams are read.** Every data source whose `type` is `derived` and
+whose data type a toggle covers. Google merges each raw device stream into
+those, and each derived point names its raw writer in `originDataSourceId`,
+so reading the raw streams too would store every point twice. Every listed
+source, raw ones included, gets a `datasource` row, which is where a point's
+origin resolves to a device.
+
+**One row per data source per UTC day.** A `dataset` id is
+`<account id>/<data source id>/<YYYY-MM-DD>`, a `datasource` id is
+`<account id>/<data source id>` and a `session` id is
+`<account id>/<session id>`. The account comes first because a derived
+stream's id is the same for every Google user. Where a data source or session
+id leaves the record id alphabet (a space in a device model, the `<` in
+`resting_heart_rate<-merge_heart_rate_bpm`) that segment is
+`host.ids.external("googlefit", <account id>, <id>)`, and so is a whole id past
+128 bytes. `at` and `endsAt` are the day's bounds. The row holds every point
+that started on the day, sorted by end time: Fit answers every point that
+overlaps a range, so a sleep segment crossing midnight comes back on both
+days, and the later day's row leaves it to the earlier one. Every int64 stays
+Google's decimal string (`startTimeNanos`, `endTimeNanos`,
+`modifiedTimeMillis`). `value[]` keeps its positions; an empty `mapVal` is not
+stored, and a map entry's `value.fpVal` sits beside its `key` because a
+declaration nests four levels at most. A day with more than 20,000 points is
+skipped and counted rather than written short.
+
+**Cursors and re-reads.** `syncCursors` holds, per data type, when the last
+walk that reached today began, and the next walk starts two UTC days before
+it, so a late upload from a watch lands. A re-read day whose points changed
+is rewritten in one put, an unchanged day is a no-op, and a day that comes
+back empty deletes its row. An edit to a day older than the overlap is not
+seen. The first walk starts where `backfillDepth` says: `none` is today's UTC
+day, and `last2d`, `last30d` (the default), `last90d` and `last1y` reach that
+far back. There is no `all`, because every day is one request per data
+source. A walk the two-minute drain budget cuts off saves the day it reached
+in `syncFloors`, and its `syncMessage` reads `ok (N pending)`; the 15-minute
+schedule treats it as due, so the tick rate is the backfill rate. A run drops
+the saved day of a data type it does not walk, because its toggle is off or
+Google refused it. Once nothing is left over, the account syncs at its
+`syncFrequency`: `off`, `hourly` (the default) or `daily`.
+
+**Sessions** come from Google's own sync token, kept in
+`syncTokens.sessions`. With no token the list answers what changed in the
+last 30 days, page by page, until a page names nothing, and that page's token
+is where the next run starts. A deeper first backfill (`last90d`, `last1y`)
+reads its window with `startTime` and `endTime` first. On the first walk a
+session that ended before the backfill floor is not written, and a session
+the list reports in `deletedSession` is deleted here.
+
+**Time zones.** Fit stores no UTC offset on any point or session. The
+account's owner-set `timezone`, an IANA name, records where the data was
+recorded; the sync never reads it, and a reader that needs local days uses
+it.
+
+**The account reports the run.** It binds core's `sync` trait
+([connections](bundles.md#connections)) like WHOOP's: `syncState`,
+`syncMessage`, `syncProgress` counted in data types plus the session list,
+and `syncError` with `syncErrorAt`. A 429 puts Google's `Retry-After` instant
+on `retryNotBefore` and reads `throttled`. A 401 fails the whole account as
+`erroring`. A 403 abandons that data type for the run, which records it in
+`syncMessage`, and a 404 on one data source drops that source for the run.
+`lastCompletedAt` is written only by a run that reached today with nothing
+left over, skipped or failed.
+
+**What it does not do.** No writeback, no distance or location, and no
+nutrition, body temperature or reproductive health. It calls neither the
+aggregate read (`POST dataset:aggregate`) nor the change feed
+(`dataPointChanges`), whose behaviour on derived streams Google does not
+document.
 
 ## Notion
 
@@ -1305,6 +1613,218 @@ conversation's newest message, and misses it otherwise.
 Redirects are refused rather than followed, so the origin pin holds for the
 one request made.
 
+## Apple Health
+
+Package `providers.substrate.reamde.dev/applehealth`. A receiver for what the
+Health Auto Export iOS app sends from the phone: Apple Health has no cloud
+API, so the app's REST API automation POSTs its JSON export to a webhook and
+the bundle writes it as mirror rows, in the app's field names and units.
+Nothing here calls out and there is no OAuth.
+
+- **Kinds (10)**: `account` (one phone, created by hand, carrying its
+  toggles and the `sync` trait), `export` (the receipt for one delivery), and
+  the mirrors `metricbatch` (one metric over one period), `workout`,
+  `stateofmind`, `medication`, `symptom`, `cycleevent` (one cycle tracking
+  entry), `ecg` and `heartratenotification`.
+- **Functions (1)**: `applehealthingest` reads one delivery, resolves its
+  account, writes the mirror rows and the receipt, and stamps the account.
+- **Triggers (1)**: `applehealth-webhook`, shipped disabled and without a
+  key.
+- **Mappings**: none. The `health` sample's adapter reads these mirrors.
+
+**Setting it up.** Install it, create an `account` per phone with an id of
+your choosing (`iphone`), then set `source.webhook.key` (16 to 128 characters
+of `[A-Za-z0-9_-]`) and `enabled: true` on the `applehealth-webhook` trigger:
+an enabled trigger with no key would write health records for anyone who
+reaches the server. In the app's automation, the URL is
+`https://<your-substrate-host>/webhooks/<authority>/applehealth-webhook`
+(`substratectl trigger status` prints the path), the headers are
+`Authorization: Bearer <key>` and `X-Substrate-Account: <account id>`, the
+format is JSON at Export Version 2, the date range Since Last Sync, Summarize
+Data on with a Time Grouping of Minutes or coarser, and Batch Requests on.
+The door reads the key and strips `Authorization` before the function runs;
+the trigger declares `x-substrate-account` and the five headers the app adds
+itself (`automation-name`, `automation-id`, `automation-aggregation`,
+`automation-period`, `session-id`), which is what makes them reach the
+function ([functions](functions.md#triggers)). With one account the
+`X-Substrate-Account` header may be left out.
+
+**What a delivery writes.** Each metric's rows land in `metricbatch` records
+keyed `<account>/<metric>/<grouping>/<period>`, where the grouping is the
+`automation-aggregation` header and the period is the UTC hour at seconds or
+minutes, the UTC day at hours, the UTC month at days and the UTC year above.
+A row is keyed by its instant and never by `source`, because a correction
+sends the same bucket again under another label: a later delivery replaces
+the batch's rows inside the span it covers for that metric (its first to its
+last row), keeps the rest, and leaves a batch whose rows did not change
+unwritten. A batch inside that span the delivery carries no row for is read
+back and deleted, so a sample deleted in Health leaves the mirror with the
+next export that spans it; a delivery reads back at most 1000 such periods per
+metric, six weeks of hour batches. A change of units replaces the batch whole.
+A record deleted here is absent to later deliveries: one that carries it again
+writes it again, without the rows the deleted batch held. A workout and a state of mind entry are keyed by
+their HealthKit id; a medication dose, a symptom, a cycle tracking entry, an
+ECG and a heart rate notification, which carry none, by their name and
+start. The `export` receipt, at the webhook fire id, holds the automation's
+headers, the body's size and SHA-256 (the body itself is not kept), the
+count per section, the metric names, the time span covered, the sections a
+toggle dropped, the fields no declaration has a place for, and how many
+records the delivery wrote (`written`), left as they were (`unchanged`) and
+deleted (`deleted`, the batches its spans emptied). Every mirror
+names the receipt of the delivery that last changed it in `export` and its
+arrival in `receivedAt`.
+
+**The app's own words.** Units are the app's Unit Preferences, verbatim
+(`count/min`, `kJ`, `kcal/hr·kg`). Every date stays the string the app wrote
+(`2026-10-07 08:05:37 +0300`; the offset is the phone's zone when it sent,
+not where the sample was taken), and `at` and `endsAt` hold the instants; a
+date without an offset is read in the account's `timezone`, else UTC.
+`source` is Health's name for the device: a Garmin watch's data arrives as
+`Garmin Connect`, a bucket fed by several sources joins them with `|`, and
+app 10.0.4 sends merged series with an empty `source`. The app's `Min`,
+`Avg` and `Max` are the fields `min`, `avg` and `max`. Workouts carry no
+`source`; their `heartRateData` and series rows do.
+
+**Bounds and failures.** A non-multipart webhook body may be 8 MiB
+([API](api.md#webhooks)); the function writes a large delivery over several
+pages so its own response stays under the 8 MiB frame. One record bigger than
+6 MiB as written (a workout route of more than about 30,000 points) fits no
+frame: it is skipped, and the receipt's `oversized` and the function's output
+name it. A full-history export
+is hundreds of megabytes and is not supported by push. The app skips a part
+answered with anything but 2xx, or not answered in 60 seconds, and never sends
+it again in that run. A delivery the function refuses after the door's `202`
+(no account, two accounts and no header, a CSV body, a body that is not the
+app's JSON, a version 1 workout) parks on the trigger with its body kept, and
+`substratectl trigger retry applehealth-webhook <parked-id>` writes it once
+the cause is fixed. A section whose toggle is off, and every delivery while
+`syncPaused` is true, is dropped unwritten. Since Last Sync misses samples the
+phone writes back-dated (a resting heart rate, another app's backfill); a
+manual Previous 7 Days export catches them up, and overlapping deliveries
+rewrite the same records. The app sends no deletion. A sample deleted on the
+phone drops out of a metric batch only when a later export re-sends the
+batch's surviving samples on both sides of it; one at the start or end of
+what a delivery covers, a lone weigh-in, an emptied hour, and a deleted
+workout or other id-keyed record stay mirrored, and so do the health records the
+[adapter](#apple-health-to-health-sample) built from them. To remove one,
+delete its mirror row (`substratectl delete <kind> <id>`, the kind in full,
+such as `providers.substrate.reamde.dev/applehealth/metricbatch`): the
+adapter's delete trigger removes what it built. The provider's
+[README](../kinds/providers.substrate.reamde.dev/applehealth/README.md) has
+the setup as steps.
+
+## Apple Health to health (sample)
+
+Turns [Apple Health](#apple-health) mirror rows into
+[observations](observations.md), traces and health records under the
+repository's own authority. Package `samples.substrate.reamde.dev/healthapple`
+requires `observations`, `health` and
+`providers.substrate.reamde.dev/applehealth`, each with a `requiresAtLeast`
+floor of 1.
+
+- **Kinds (0)**: it writes the `observations` and `health` kinds.
+- **Functions (1)**: `adaptapplehealth` reads one mirror row and writes
+  everything that row implies.
+- **Triggers (1)**: `healthapple-on-mirror`, on the provider's `metricbatch`
+  and `workout` kinds, for `create`, `update` and `delete`, coalesced.
+
+**What it writes.** A Health Auto Export metric maps to a `health/` metric
+or is skipped and named in the function's `skipped` result, never guessed.
+Values are converted into the metric's unit through the engine's unit table
+(`host.units`), which reads HealthKit's spellings (`lb`, `mi`, `hr`,
+`count/min`, `bpm`, `mmol<180.1558800000541>/L` and the rest) as
+[aliases](units.md#aliases). The adapter maps two spellings itself: `ft` is
+a foot, which the table reads as the femtotonne, and `st` a stone, which UCUM
+spells as the stere. The app's `count` is the metric's own counted unit,
+which the table refuses as a bare spelling.
+
+| App metric | Metric | Written as | Unit |
+| --- | --- | --- | --- |
+| `heart_rate` | `heart_rate` | gauge trace of `Avg`, hold `PT4M` | `/min` |
+| `respiratory_rate` | `respiratory_rate` | gauge trace, hold `PT30M` | `/min` |
+| `blood_oxygen_saturation` | `spo2` | gauge trace, hold `PT20M` | `%` |
+| `step_count` | `steps` | amount trace | `{steps}` |
+| `walking_running_distance` | `distance` | amount trace | `m` |
+| `flights_climbed` | `floors` | amount trace | `{floors}` |
+| `active_energy` | `active_energy` | amount trace | `kcal` |
+| `basal_energy_burned` | `basal_energy` | amount trace | `kcal` |
+| `heart_rate_variability` | `hrv_sdnn` | gauge observation, hold `PT6H` | `ms` |
+| `apple_sleeping_wrist_temperature` | `skin_temperature` | gauge observation, hold `P1D` | `Cel` |
+| `vo2_max` | `vo2_max` | gauge observation | `mL/(kg.min)` |
+| `weight_body_mass` | `body_mass` | gauge observation, hold `P1D` | `kg` |
+| `body_fat_percentage` | `body_fat_fraction` | gauge observation, hold `P1D` | `%` |
+| `body_mass_index` | `bmi` | gauge observation, hold `P1D` | `kg/m2` |
+| `height` | `height` | gauge observation | `m` |
+| `blood_pressure` | `systolic_blood_pressure`, `diastolic_blood_pressure` | two gauge observations, each with both as `components`, hold `PT0S` | `mm[Hg]` |
+| `blood_glucose` | `blood_glucose_mass` or `blood_glucose`, by the app's unit | gauge observation, hold `PT15M`, `mealTime` as a qualifier | `mg/dL`, `mmol/L` |
+| `resting_heart_rate` | `resting_heart_rate` | summary, `statistic: vendor`, `period: day` | `/min` |
+| `sleep_analysis` | `sleep_stage` and a `health/sleep` | amount observations with the stage as `code` and its minutes as `value`; see Sleep below | `min` |
+
+Everything else the app sends (`apple_exercise_time`, `physical_effort`,
+`walking_asymmetry_percentage`, `lean_body_mass` and the rest) is skipped.
+
+**Raw values come from the Seconds and Minutes groupings only.** A batch at
+Hours, Days or a coarser grouping holds the app's own aggregates, so each row
+becomes `summary` observations (`sum` for an amount, `avg` for a gauge, and
+`avg`, `min` and `max` for heart rate) with the bucket as `period`, which a
+raw read never adds to the minutes. A dense metric is one trace per source and
+UTC hour, split where the UTC offset changes; an amount's minute ends in a
+`null` where the next minute has no row. Every gauge carries its metric's
+hold from the health catalogue, so a night's last SpO2 reading stops
+standing at the hold.
+
+**Sleep.** A sleep segment is one `amount` observation per segment
+(`awake`, `light` for the app's Core, `deep`, `rem`, and `asleep` for Asleep
+and Unspecified, sleep the device did not stage). The iPhone's In Bed
+segment spans the night under the watches' stages, so it is the night's
+`timeInBed` and no stage: summed by code, the night would count twice; the
+function's `skipped` result counts it. A night is one `health/sleep`
+spanning the time in bed (`inBedStart` to `inBedEnd` where the app names
+them), with `timeInBed`, `latency` (from getting into bed to falling
+asleep) and `isNap`. A night told by segments is written by the batch its
+`sleepStart` falls in, from the night fields every segment repeats, under
+the source most of that batch's stages of the night come from (the first
+by name on a tie); its stage totals are the stage amounts, which the hours'
+batches hold between them. An aggregated night row adds its stage
+durations, `timeAsleep`, `efficiency` (time asleep over time in bed) and
+one stage amount per stage over the sleep, `asleep` included; its `inBed`
+total is `timeInBed`, never an `in_bed` amount. The app sends no nap flag,
+so a sleep shorter than three hours that begins between 09:00 and 21:00 on
+its own clock is a nap.
+
+A workout is a `health/workout` with its sport, span, duration, distance,
+`activeEnergy`, heart rate and climb, attributed to the device its heart rate
+rows name. The sport is HealthKit's workout name mapped onto the workout code
+set (`Traditional Strength Training` is `strength`), `other` where the name
+has no value of its own, and the name itself is `sportSource`. A sleep's and
+a workout's `name` is its heading on the clock the app wrote it in: `Night
+of Tue 6 Oct`, `Nap, Wed 7 Oct 14:05`, `Running, Wed 7 Oct 08:05`.
+
+**Ids, sources and reconciliation.** Ids are composed: a trace is
+`applehealth/<account>/<source>/<metric>/<UTC hour>`, a single value
+`applehealth/<account>/<source>/<metric>/<instant>`, a summary
+`.../<metric>/<period>/<instant>/<statistic>` (the period keeps an hours and
+a days automation's buckets at one instant apart), a workout
+`applehealth/<account>/<HealthKit id>`; an id past 128 bytes is hashed
+through `host.ids.external`. The source is
+the row's `source` label with the owner's name taken off (`Ada's Apple Watch`
+is `apple-watch`, `Garmin Connect` is `garmin-connect`), and a label that is
+empty, absent or joins several devices with `|` is `health`, the phone's
+merged series; each is an `observations/source` record at
+`applehealth/<account>/<source>`, minted `ifAbsent` so an owner's edit
+stands. Every output names its mirror row in `origin` (`origins` on a trace)
+and carries `revision`, the row's `receivedAt` in Unix seconds. Each delivery
+hands the whole set the row implies to `host.observed.reconcile`, which
+leaves an output that already holds it unwritten, never lowers a stored
+revision, and deletes the outputs that point at the row and are no longer
+implied, so a corrected redelivery rewrites the same ids at a higher revision
+and a deleted row (an account deleted, say) takes its outputs with it.
+
+**One rule for the automations.** Send each metric at one raw grouping:
+a Seconds automation and a Minutes automation both carrying heart rate write
+the same trace ids from two rows, and each delivery replaces the other's
+points.
+
 ## Firecrawl (sample)
 
 Package `samples.substrate.reamde.dev/firecrawl`. Not a provider: no
@@ -1444,5 +1964,276 @@ curl -s -X POST "https://<your-substrate-host>/webhooks/<authority>/pebble-webho
   -F "client=ring" \
   -F "audio=@empty.m4a;type=audio/mp4;filename=recording.m4a"
 ```
+
+## WHOOP to health (sample)
+
+Turns [WHOOP](#whoop) mirror rows into [observations](observations.md) and
+health records under the repository's own authority. WHOOP sends scored
+summaries, never raw samples, so it writes no traces. Package
+`samples.substrate.reamde.dev/healthwhoop` requires `health` (and so
+`observations`) and the WHOOP provider at version 21 or later, the version
+that deletes a mirror row WHOOP deleted.
+
+- **Kinds**: none; it writes `observations/observation`, `observations/source`,
+  `health/sleep` and `health/workout`.
+- **Functions (1)**: `adaptwhoop` rebuilds every record one mirror row
+  implies and hands the set to `host.observed.reconcile`, which writes what
+  changed and deletes the records naming that row in `origin` that it no
+  longer implies. A deleted mirror row implies nothing, so its records go with
+  it. A sleep delivery rebuilds the recoveries that name the sleep, because
+  a recovery's records span its night, and a cycle delivery rebuilds the
+  cycle's recoveries whose sleep row is absent.
+- **Triggers (1)**: `healthwhoop-on-mirror` fires `adaptwhoop` on every
+  create, update and delete of a WHOOP `cycle`, `recovery`, `sleep` or
+  `workout` row. It starts at the changelog's head: to convert rows the mirror
+  held before the import, replay it from the start (`POST
+  /api/v1/substrate.reamde.dev/core/trigger/healthwhoop-on-mirror/replay` with
+  `{"from": 0}`). A replay over converted rows writes nothing.
+
+| WHOOP field | Written as | Form | Unit |
+| --- | --- | --- | --- |
+| recovery `recoveryScore` | `health/whoop_recovery` | summary, `vendor`, period `sleep`, over the night it scores | `%` |
+| recovery `hrvRmssdMilli` | `health/hrv_rmssd` | summary, `vendor`, period `sleep`, over the night it scores | `ms` |
+| recovery `restingHeartRate` | `health/resting_heart_rate` | summary, `vendor`, period `sleep`, over the night it scores | `/min` |
+| recovery `spo2Percentage` | `health/spo2` | summary, `vendor`, period `sleep`, over the night it scores | `%` |
+| recovery `skinTempCelsius` | `health/skin_temperature` | summary, `vendor`, period `sleep`, over the night it scores | `Cel` |
+| cycle `strain` | `health/whoop_strain` | summary, `vendor`, period `cycle` | `{score}` |
+| cycle `kilojoule` | `health/energy_expended` | amount | `kJ`, never converted |
+| cycle `averageHeartRate`, `maxHeartRate` | `health/heart_rate` | summary, `avg` and `max`, period `cycle` | `/min` |
+| workout `averageHeartRate`, `maxHeartRate` | `health/heart_rate`, channel `workout` | summary, `avg` and `max`, period `workout`, over the workout's span | `/min` |
+| sleep stage totals (awake, light, slow wave, REM) | `health/sleep_stage`, `code` `awake`, `light`, `deep`, `rem` | amount over the sleep's span | `min` |
+| sleep `sleepPerformancePercentage` | `health/whoop_sleep_performance` | summary, `vendor`, period `sleep` | `%` |
+| sleep `respiratoryRate` | `health/respiratory_rate` | summary, `vendor`, period `sleep` | `/min` |
+| sleep | `health/sleep`: `name` (`Night of Tue 6 Oct` by the evening before the morning it ended, `Nap, Sun 27 Sep 14:20` by its local start), span, `isNap` (WHOOP's `nap`), `timeInBed`, the four stage durations, `timeAsleep` (light, deep and REM together), `efficiency` (WHOOP's own), `respiratoryRate`, `disturbances`, `scores.sleepPerformance` and `scores.sleepConsistency`; WHOOP sends no latency | | |
+| workout | `health/workout`: `name` (`Running, Sat 10 Oct 07:08`, the sport and the local start, `Workout` for `other`), span, `sport` (WHOOP's `sportName` mapped onto the workout code set, `other` where it has no value, so `weightlifting` is `strength` and `padel` is `other`) and `sportSource` (the `sportName` itself), `duration`, `distance`, `totalEnergy` (kJ, resting and active together), `averageHeartRate`, `maxHeartRate`, `elevationGain`, `strain`, `zoneDurations` `zone0` to `zone5` | | |
+
+**Ids and spans.** Every id is composed from WHOOP's own identifiers, read off
+the mirror row: `whoop/<account record id>/<cycle id>/recovery` (and `hrv`,
+`resting_heart_rate`, `spo2`, `skin_temperature`, `strain`, `energy`),
+`whoop/<account>/<sleep id>/sleep`, `.../<sleep id>/stage/<code>`,
+`.../<sleep id>/sleep_performance` and `respiratory_rate`, and
+`whoop/<account>/<workout id>/workout`; the heart rate summaries are
+`heart_rate_avg` and `heart_rate_max` under the cycle id or the workout id. A
+cycle's observations span the cycle and carry its id in `periodId`, so two
+cycles on one date stay two; a workout's heart rate spans the workout and
+carries the workout id. The current cycle has no end yet, so its span ends
+at the cycle's `updatedAt` and moves as WHOOP rescores it.
+A recovery's observations measure the night the recovery scores: they span
+the sleep the recovery names and carry the sleep's id in `periodId`, as the
+night's sleep performance and respiratory rate do. A day read with
+`bucket.place` `end` therefore puts them on the wake day, the way it places
+Garmin's nightly summaries, and a records-mode window over the
+WHOOP night holds them. A recovery whose sleep row is absent (sleeps toggled
+off, or the sleep in a later page) spans its cycle with `period` `cycle`
+until the sleep row lands; one whose cycle row is absent too writes nothing.
+A cycle runs from one sleep onset to the next, so a cycle's `at` is the
+evening the member fell asleep, and `place` `start` files its strain and
+energy under that evening's date.
+Every record carries `origin` (the mirror row), `revision` (WHOOP's
+`updated_at` in seconds since the epoch, for a recovery the later of its own
+and its sleep's) and the UTC offset WHOOP recorded. While WHOOP is still
+calibrating the member, the recovery score is written with `quality:
+estimated`. The source is `whoop/<account record id>`, class `watch`, pointing
+at the WHOOP account: the API names no hardware model.
+
+**A stage total spans the whole sleep.** WHOOP reports the minutes in each
+stage, not when each stage happened, so each total is one amount with its
+stage in `code` beside its minutes in `value`, over the sleep's span. WHOOP's
+`totalInBedTimeMilli` is every stage together, so it is the sleep's
+`timeInBed` and never an `in_bed` total, which would count the night twice.
+
+**Heart rate.** WHOOP's API has no heart rate samples, only each scored
+cycle's and workout's average and maximum. Each is a `summary` with the
+statistic it is, `avg` or `max`, not `vendor`. An aggregate read with `from:
+summaries` or `prefer-raw` reads one statistic per row, so it names WHOOP's
+with `filter.properties.statistic` (`avg` reads the averages beside the other
+sources' average summaries) or splits them with `groupBy: ["statistic"]`; a
+read that would pool both is refused. A raw read takes gauges alone and
+shows no WHOOP heart rate. A workout's two are on the `workout` channel: the
+`avg` reducer over summaries is the plain mean of the values in a bucket, so
+on one stream a day's average would mix the cycle's with the run's. Group by
+`channel` to read the two apart, or filter `channel` with `exists: false`
+for the cycles alone.
+
+**Skipped.** A field no metric and no health property holds is counted in the
+function's output and not written: a sleep's `sleepNeeded`,
+`totalNoDataTimeMilli` and `sleepCycleCount`, and a workout's
+`percentRecorded` and `altitudeChangeMeter`. A cycle's `step_count` never
+reaches the mirror.
+
+## Google Fit to health (sample)
+
+Turns [Google Fit](#google-fit) mirror rows into
+[observations](observations.md), traces and health records under the
+repository's own authority. Package
+`samples.substrate.reamde.dev/healthgooglefit` requires `observations`,
+`health` and `providers.substrate.reamde.dev/googlefit`, each with a
+`requiresAtLeast` floor, so install the provider and import `health` first.
+
+- **Kinds (0)**: it writes the `observations` and `health` kinds.
+- **Functions (1)**: `adaptgooglefit` rebuilds the observed values one
+  mirror row implies and deletes the ones it no longer does.
+- **Triggers (1)**: `healthgooglefit-on-mirror` delivers every create, update
+  and delete of a `googlefit/dataset` or `googlefit/session` row, one
+  delivery per row per batch (`coalesce`).
+
+| Fit data type | Stream read | Metric | Form and unit | Written as |
+| --- | --- | --- | --- | --- |
+| `com.google.heart_rate.bpm` | `merge_heart_rate_bpm` | `health/heart_rate` | gauge, `/min`, hold `PT4M` | hourly trace per device |
+| `com.google.step_count.delta` | `estimated_steps` | `health/steps` | amount, `{steps}` | hourly trace per device |
+| `com.google.calories.expended` | `merge_calories_expended` | `health/energy_expended` | amount, `kcal` | hourly trace per device |
+| `com.google.weight` | `merge_weight` | `health/body_mass` | gauge, `kg`, hold `P1D` | an observation per reading |
+| `com.google.height` | `merge_height` | `health/height` | gauge, `m` | an observation per reading |
+| `com.google.body.fat.percentage` | `merged` | `health/body_fat_fraction` | gauge, `%`, hold `P1D` | an observation per reading |
+| `com.google.oxygen_saturation` | `merged` | `health/spo2` | gauge, `%`, hold `PT20M` | an observation per reading |
+| `com.google.blood_glucose` | `merged` | `health/blood_glucose` | gauge, `mmol/L`, hold `PT15M` | an observation per reading |
+| `com.google.blood_pressure` | `merged` | `health/systolic_blood_pressure` and `health/diastolic_blood_pressure` | gauge, `mm[Hg]`, hold `PT0S` | two observations per reading, each with both as `components` |
+| `com.google.sleep.segment` | `merged` | `health/sleep_stage` | amount, `min`, with `code` | an observation per segment of a sleep session |
+
+A session with `activityType` 72 becomes a `health/sleep` with its stage
+totals and `efficiency` (time asleep over time in bed); Fit sends no nap
+flag, so a session shorter than three hours that begins between 09:00 and
+21:00 on the account's clock is `isNap`. Any other session becomes a
+`health/workout` whose `sport` is Fit's activity code mapped onto the
+workout code set (100 is `yoga`, 80 `strength`, 65 to 68 `skiing`, 108 and
+any code without a value of its own `other`) and whose `sportSource` is the
+code. Each one's `name` is its heading on the account's clock (such as
+`Running, Sat 11 Oct 08:43`), in UTC and saying so where the account names no zone. Fit's
+sleep codes map as 1 `awake`, 2 `asleep` (sleep with no stage), 4 `light`, 5
+`deep` and 6 `rem`; 3 (out of bed) and 0 are skipped and counted. A stage's
+id is its session and its start, so a corrected earlier segment renames no
+later one. Each data type is read from one derived stream, so a quantity Google
+keeps in two views is never counted twice; the resting heart rate stream,
+`merge_step_deltas`, `com.google.calories.bmr` (a rate, kcal per day),
+activity segments and active and heart minutes have no catalogue metric here
+and are skipped and counted. A step or energy delta keeps its end: a null
+follows it in its trace at `endTimeNanos` unless the next delta starts there,
+and a delta that crosses a UTC hour is one `amount` observation over its own
+span instead of a point in either hour's trace.
+
+Every output names its origin row (`origin`, or `origins` on a trace), and a
+delivery rewrites that row's whole output set, deleting what the row no
+longer implies, so a re-read day, an emptied day and a deleted session
+converge. `revision` is the newest `modifiedTimeMillis`, in seconds, of the
+points an output was built from, and a stored higher one is kept. Sources are
+minted `ifAbsent`, so an owner's edit to one stands. A reading entered by
+hand in the Fit app carries `recordingMethod: manual`.
+
+**Offsets come from the account's current zone.** Fit stores no UTC offset,
+so each offset comes from the account's `timezone` as it is when the value
+is written, and an observation names it in a `utcOffsetRule` qualifier
+(`timezone:Europe/Athens`). An account that names no zone gives no offset,
+and none is written: the observed index marks such a value offsetless,
+never a guessed UTC. Two costs follow. A day spent in another zone is
+stamped with the account's zone, so a recorded-local read files a London
+night by its Athens date. And a replay, which an adapter upgrade asks for,
+rewrites every past value with the zone in force at the replay, so an owner
+who moves and updates the zone moves every past Fit value onto the new
+zone's days. The ids, the sources and the rest are in the sample's
+[README](../samples/healthgooglefit/README.md).
+
+## Garmin to health (sample)
+
+Turns [Garmin](#garmin) mirror rows into [observations](observations.md),
+traces and health records under the repository's own authority. Package
+`samples.substrate.reamde.dev/healthgarmin` requires
+`samples.substrate.reamde.dev/observations`,
+`samples.substrate.reamde.dev/health` and the installed
+`providers.substrate.reamde.dev/garmin`, each with a `requiresAtLeast` floor,
+so import it after installing the provider and importing `health`.
+
+- **Kinds**: none of its own; it writes the base and health kinds.
+- **Functions (1)**: `adaptgarmin` rebuilds what one mirror row implies.
+- **Triggers (1)**: `healthgarmin-on-mirror` delivers every create, update and
+  delete of the fifteen Garmin mirror kinds that carry measurements (every
+  kind but `notice` and `moveiq`), coalescing a burst on one row.
+
+| Garmin field | Metric | Form | Unit |
+| --- | --- | --- | --- |
+| `daily.timeOffsetHeartRateSamples` | `heart_rate` | gauge trace, hold PT4M | `/min` |
+| `daily.steps`, `distanceInMeters`, `floorsClimbed`, `activeKilocalories`, `bmrKilocalories` | `steps`, `distance`, `floors`, `active_energy`, `basal_energy` | summary, `sum`, day | `{steps}`, `m`, `{floors}`, `kcal`, `kcal` |
+| `daily.restingHeartRateInBeatsPerMinute` | `resting_heart_rate` | summary, `vendor`, day | `/min` |
+| `daily.averageStressLevel` | `garmin_stress` | summary, `avg`, day | `{score}` |
+| `epoch.steps`, `distanceInMeters`, `activeKilocalories`, summed per slice | `steps`, `distance`, `active_energy` | amount trace | `{steps}`, `m`, `kcal` |
+| `sleep` | a `health/sleep` (and one per nap, `isNap` true), with `efficiency` the time asleep over the span and `name` its heading on Garmin's offset (`Night of Tue 6 Oct`, `Nap, Sun 12 Oct 14:30`) | | |
+| `sleep.sleepLevelsMap` segments | `sleep_stage`, coded `awake`, `light`, `deep`, `rem` | amount; `quality: estimated` while `validation` is tentative; `recordingMethod` `manual` for a `MANUAL` night, else `automatic` | `min` |
+| `bodycomp` weight, muscle, bone; fat, water; BMI | `body_mass`, `muscle_mass`, `bone_mass`; `body_fat_fraction`, `body_water_fraction`; `bmi` | gauge, hold P1D | `kg` (from grams); `%`; `kg/m2` |
+| `bloodpressure.systolic`, `diastolic`, `pulse` | `systolic_blood_pressure`, `diastolic_blood_pressure`, `heart_rate` | gauge, the two pressures each with both as `components`, `recordingMethod` from `sourceType` | `mm[Hg]`, `/min` |
+| `stressdetail` stress and Body Battery values | `garmin_stress`, `garmin_body_battery` | gauge trace, hold PT6M | `{score}` |
+| `usermetric.vo2Max` | `vo2_max` | gauge at the local midnight of `calendarDate` | `mL/(kg.min)` |
+| `pulseox.timeOffsetSpo2Values` | `spo2` | gauge trace, or one gauge for a spot check, hold PT20M | `%` |
+| `respiration.timeOffsetEpochToBreaths` | `respiratory_rate` | gauge trace, hold PT30M | `/min` |
+| `healthsnapshot` heart rate, respiration, stress, SpO2, RMSSD | `heart_rate`, `respiratory_rate`, `garmin_stress`, `spo2`, `hrv_rmssd` | gauge trace on channel `snapshot`, each metric's hold | as above, `ms` |
+| `hrv.lastNightAvg`, `lastNight5MinHigh`; `hrvValues` | `hrv_rmssd` | summary `avg` and `max`, period `sleep`; gauge trace, hold PT10M | `ms` |
+| `skintemp.avgDeviationCelsius` | `skin_temperature_deviation` | summary, `avg`, period `sleep`, `delta` | `K` |
+| `activity` (or its `manuallyupdatedactivity` edit) | a `health/workout`: `name` (`Workout, Fri 11 Sep 19:05` for the padel session, the sport and the local start), `sport` (the `activityType` mapped onto the workout code set, `other` where it has no value, so `PADDELBALL` is `other`), `sportSource` (the `activityType`), `activeEnergy` from `activeKilocalories` | | |
+| `activitydetail.samples` heart rate, speed, step cadence, power | `heart_rate`, `speed`, `cadence`, `running_power` | gauge trace, each metric's hold | `/min`, `m/s`, `/min`, `W` |
+| `activitydetail.samples` pedal cadence (a ride) | `cycling_cadence` | gauge trace, hold PT10S | `/min` |
+| `activitydetail.samples.totalDistanceInMeters` | `distance` | amount trace, each sample's step from the one before, summing to the activity's distance | `m` |
+
+**Traces are an hour, from one origin.** A trace covers one metric from one
+source over one UTC hour, split where the UTC offset changes, and it never
+claims time outside the row it came from: the last hour of one daily and the
+first of the next, or two activities in one hour, are separate traces, each
+named for its own start. Epochs and respiration rows are a quarter hour each,
+so their traces are rebuilt per hour from every slice of that hour, and step
+amounts sum the slice's activity types. Ids are
+`garmin/<account id>/<source>/<metric>/<hour>` for a trace and
+`garmin/<account id>/<summaryId>/<role>` for a single record (a stage segment
+is `.../stage/<start second>`), hashed only where Garmin's data would leave
+the id alphabet.
+
+**Every gauge carries its metric's hold** from the health catalogue (heart
+rate PT4M, HRV PT10M, SpO2 PT20M, respiration PT30M, stress and Body
+Battery PT6M, an activity's speed, cadence and power PT10S, the body
+measurements P1D), so a night's last reading stops standing at the hold
+instead of until the next morning.
+
+**Sources** are `garmin/<account id>/account`, named `Garmin Connect` with
+class `service`, for everything Garmin pushes without naming a device
+(dailies, sleeps, a scale's weigh-ins, a cuff's pressure), and
+`garmin/<account id>/<deviceName>` for each device an activity names
+(`forerunner265`, class `watch`), named for the product (`Garmin Forerunner
+265`, `Garmin fēnix 7S`) with the `deviceName` itself as `hardwareModel`. An activity that names no device (or
+`unknown`) is `.../unknown-device`, so its samples never share the stream
+the daily's heart rate fills, and a hand-entered one is `.../manual`. Each
+points at the Garmin account and is written once, so the owner's edits to
+it stand.
+
+**Day totals and VO2 max.** The five day totals are `sum` summaries over the
+day, so a `from: summaries` read's `sum` answers Garmin's total and a
+`prefer-raw` read falls back to it; resting heart rate is Garmin's own figure
+and stays `vendor`. A user metric carries a date and no instant: its VO2 max
+is a gauge at the local midnight of `calendarDate`, taking the start and the
+offset of that date's daily summary. With no daily for the date it stands at
+the UTC midnight with no `utcOffset` (the index marks it offsetless), and the
+daily's delivery rebuilds it at the local one.
+
+**Reconciled per origin.** Every row written names the mirror row it came
+from (`origin`, or `origins` on a trace). A delivery reads what that row
+produced before and hands the new set to `host.observed.reconcile`, which
+writes what changed and deletes what the row no longer implies; a deleted
+mirror row takes its outputs with it. `revision` is the
+mirror row's own version, which the garmin provider moves only when a re-send
+changes the summary: an identical re-send writes nothing, and a fuller one
+rewrites the same ids at a higher revision. A trace built from several rows
+carries the highest of their versions, and never a lower one than it holds.
+An edit in Garmin Connect wins over the activity it edits while the edit
+lives. A deleted mirror row counts as absent: deleting the edit rebuilds the
+workout from the activity, deleting the activity keeps the edit's, and the
+workout is deleted once both are, whichever of the two deletes is delivered.
+
+**What it skips, and counts.** Each delivery's output names the fields it
+left unwritten: those with no catalogue metric (minimum, maximum and average
+daily heart rate, intensity and stress durations, Body Battery charge and
+drain, goals, fitness age, cycling VO2 max, MET and motion intensity, Body
+Battery events, a snapshot's SDRR), positions and elevation samples (no
+`geopoint` and no altitude metric yet; the rise between samples is not
+written as `elevation_gain`, because summed raw it overstates the climb:
+84.9 m against Garmin's own 21 m on the recorded run), a ride's power (the
+catalogue has only running power), air temperature, Garmin's `unmeasurable`
+sleep level, and a sleep's own SpO2 and respiration maps, which the Pulse Ox and
+respiration summaries already carry. Move IQ events and lifecycle notices
+imply no observation. Garmin sends no sleep latency, so none is written.
 
 Next: [substratectl](substratectl.md), the command line over all of it.

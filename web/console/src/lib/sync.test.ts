@@ -215,6 +215,18 @@ describe("kindHasTrait", () => {
       kindHasTrait(kind(ACCOUNT, ["a.example.com/p/oauth2"]), "oauth2")
     ).toBe(false)
   })
+
+  it("reads a binding that picks a variant as the trait it names", () => {
+    const trace = kind("a.example.com/observations/trace", [
+      "substrate.reamde.dev/core/observed(packed)",
+    ])
+    expect(kindHasTrait(trace, "substrate.reamde.dev/core/observed")).toBe(true)
+    expect(kindHasTrait(trace, "substrate.reamde.dev/core/sync")).toBe(false)
+    const task = kind("a.example.com/tasks/task", [
+      "substrate.reamde.dev/core/temporal(point: dueAt)",
+    ])
+    expect(kindHasTrait(task, "temporal")).toBe(true)
+  })
 })
 
 describe("providerViews", () => {

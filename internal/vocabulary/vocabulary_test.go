@@ -3213,24 +3213,29 @@ func TestShippedSchemaLoads(t *testing.T) {
 		"substrate.reamde.dev/llm/provider", "substrate.reamde.dev/llm/thread",
 		"substrate.reamde.dev/llm/message", "substrate.reamde.dev/llm/interaction",
 		"substrate.reamde.dev/core/agent", "substrate.reamde.dev/core/function", "substrate.reamde.dev/core/bundle",
+		"substrate.reamde.dev/console/recordview",
 	} {
 		if _, ok := r.ByIdentity(ident); !ok {
 			t.Errorf("%s missing", ident)
 		}
 	}
-	// THE SEEDED TREE IS CORE AND LLM, beside the authority row that owns
-	// them. Every other package is one a repository installs; a domain
-	// package reappearing here would silently go back to being seeded into
-	// every new repository.
-	seeded := map[string]bool{vocabulary.PackageCore: true, vocabulary.PackageLLM: true}
+	// THE SEEDED TREE IS CORE, LLM AND CONSOLE, beside the authority row
+	// that owns them. Every other package is one a repository installs; a
+	// domain package reappearing here would silently go back to being seeded
+	// into every new repository.
+	seeded := map[string]bool{vocabulary.PackageCore: true, vocabulary.PackageLLM: true, vocabulary.PackageConsole: true}
 	for _, g := range r.PackageList() {
 		if g.IsAuthority() {
 			continue
 		}
 		if !seeded[g.Identity] {
-			t.Errorf("the seeded tree declares %s — only %s and %s are seeded; vocabulary ships as an installable package",
-				g.Identity, vocabulary.PackageCore, vocabulary.PackageLLM)
+			t.Errorf("the seeded tree declares %s: only %s, %s and %s are seeded; vocabulary ships as an installable package",
+				g.Identity, vocabulary.PackageCore, vocabulary.PackageLLM, vocabulary.PackageConsole)
 		}
+		delete(seeded, g.Identity)
+	}
+	for missing := range seeded {
+		t.Errorf("the seeded tree does not declare %s", missing)
 	}
 	// The actor domain is closed and flat: the three doors
 	// and the substrate's own hand.
@@ -3318,7 +3323,9 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 // admits alongside them.
 var shippedVocabularyDirs = []string{
 	"../../samples/calendar",
+	"../../samples/health",
 	"../../samples/messaging",
+	"../../samples/observations",
 	"../../samples/people",
 	"../../samples/scheduling",
 	"../../samples/tasks",
@@ -3352,7 +3359,12 @@ func TestShippedVocabularyBundles(t *testing.T) {
 				} else if err != nil {
 					t.Fatalf("%s: %v", e.Name(), err)
 				}
-				if len(m) > 0 {
+				// A sample's DATA records (the health metric catalogue) are
+				// put after its closure lands; they are records, not
+				// declarations, and nothing here builds them.
+				kind, _ := m["kind"].(string)
+				if len(m) > 0 && vocabulary.KindPackage(kind) == vocabulary.PackageCore &&
+					vocabulary.VocabularyDocumentKind(vocabulary.KindName(kind)) {
 					raw = append(raw, m)
 				}
 			}
@@ -3395,11 +3407,13 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		t.Fatalf("import the shipped vocabulary: %v", err)
 	}
 	want := map[string]string{
-		"samples.substrate.reamde.dev/calendar":   "samples.substrate.reamde.dev/calendar",
-		"samples.substrate.reamde.dev/messaging":  "samples.substrate.reamde.dev/messaging",
-		"samples.substrate.reamde.dev/people":     "samples.substrate.reamde.dev/people",
-		"samples.substrate.reamde.dev/scheduling": "samples.substrate.reamde.dev/scheduling",
-		"samples.substrate.reamde.dev/tasks":      "samples.substrate.reamde.dev/tasks",
+		"samples.substrate.reamde.dev/calendar":     "samples.substrate.reamde.dev/calendar",
+		"samples.substrate.reamde.dev/health":       "samples.substrate.reamde.dev/health",
+		"samples.substrate.reamde.dev/messaging":    "samples.substrate.reamde.dev/messaging",
+		"samples.substrate.reamde.dev/observations": "samples.substrate.reamde.dev/observations",
+		"samples.substrate.reamde.dev/people":       "samples.substrate.reamde.dev/people",
+		"samples.substrate.reamde.dev/scheduling":   "samples.substrate.reamde.dev/scheduling",
+		"samples.substrate.reamde.dev/tasks":        "samples.substrate.reamde.dev/tasks",
 	}
 	for _, g := range authorities {
 		id, ok := want[g.Identity]
@@ -3423,8 +3437,11 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		if g.Source != vocabulary.SourceInstalled {
 			t.Errorf("%s source = %q — an installed package is the repository's", g.Identity, g.Source)
 		}
-		if len(g.Functions) != 0 || len(g.Agents) != 0 {
-			t.Errorf("%s ships callables — these sample packages are kinds and nothing else", g.Identity)
+		// health ships one function, which writes a lab result's value in
+		// the paired unit system; every other one ships kinds alone.
+		functions := map[string]int{"samples.substrate.reamde.dev/health": 1}[g.Identity]
+		if len(g.Functions) != functions || len(g.Agents) != 0 {
+			t.Errorf("%s ships %d functions and %d agents, want %d and none", g.Identity, len(g.Functions), len(g.Agents), functions)
 		}
 	}
 	// Everything that maps onto people says so, so an import into a

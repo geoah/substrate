@@ -87,7 +87,7 @@ unique per kind, never per repository.
 
 ## Reading
 
-`GET /api/v1/records` is every read, in three modes told apart by their
+`GET /api/v1/records` is every read, in four modes told apart by their
 parameters, and each mode refuses the parameters it does not honor by name
 ([the records route](api.md#the-records-route)):
 
@@ -101,6 +101,11 @@ parameters, and each mode refuses the parameters it does not honor by name
   `records` in rank order with `scores`, and no cursor.
 - **Watch** (`watch=1`, `filter.kinds`, `from`, `generation`): the tail,
   below.
+- **Aggregate** (`aggregate`, `downsample`, `filter`): measured values
+  reduced into time buckets, such as average heart rate per week, or a
+  declared number of the filtered kinds
+  ([the aggregate read](api.md#the-aggregate-read)). The `query` tool takes
+  the same `aggregate` and `downsample` arguments.
 
 One record is `GET /api/v1/<authority>/<package>/<kind>/<id>`, and
 `substratectl get <kind> <id> -o yaml` prints the same record as an envelope

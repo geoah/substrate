@@ -27,7 +27,7 @@ nothing, there are none.
 | **property type** | A named refinement of a base type plus its validations, declared in a package and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
 | **purpose** | Why a kind exists, declared on the kind: `primary` (browsed and opened directly), `supporting` (a detail reached from the records it belongs to) or `internal` (machinery); absent reads as `primary`. Clients read it to decide what they list, `filter.purposes` narrows a read by it, and search ranks machinery lower. Decision records 0133 and 0136. |
-| **series** | A temporal record with a repeat rule (`recurrence`, or `rdates`) under core's `recurring` trait. Its bound slot is the rule's first occurrence; the substrate stores the rule and never expands it into rows. |
+| **series** | A temporal record with a repeat rule (`recurrence`, or `rdates`) under core's `recurring` trait. Its bound slot is the rule's first occurrence; the substrate stores the rule and never expands it into rows. In an aggregate read the word means something else: one group's rows across the buckets (with `groupBy` on `code`, one code's rows within a group), which `fill` makes dense and `maxBuckets` multiplies by the buckets. |
 | **occurrence** | One instant a series' rule names. Computed by the window read, never stored: it is served in the record envelope as `<seriesId>_<slot>` with `computed: true`, and on a kind that binds `override` a put at that id turns it into one. |
 | **override** | A temporal record standing in for one occurrence of a series, moved or edited: it names the series in `recurrenceOf` and the slot it replaces in `originalAt`, under core's `override` trait. iCalendar's `RECURRENCE-ID`. |
 | **window read** | A records list whose filter bounds `at` on both ends: the rows in the window plus every series' computed occurrences, minus `exdates` and overridden slots, ordered by slot. |
@@ -58,6 +58,25 @@ nothing, there are none.
 | **dialect** | A monotonic integer stamped on each repository naming a shape it speaks. A binary older than the stamp refuses to open the repository. There are two, refused the same way and stamped differently: the **vocabulary dialect** over its stored declarations, stamped at the repository's first open, and the **changelog dialect** over the entries in its changelog, claimed by the transaction that appends them. |
 | **managed** | A declared property the ENGINE stamps (`managed: true`): a declaration's `version`, its `source`, a package's `declaredBy`, the quarantine marks, a bundle's lifecycle bools, and the decision stamps `decidedAt` and `resolvedAt`. A write may echo the stored value, but a different one is refused rather than dropped, and a client renders it read-only. The one exception is a declaration's `version`, which the engine resolves itself: an incoming value is honored only when it moves past the stored one, and anything else (absent, echoed, lower) is stamped server-side. Not projection's *managed properties*, which is the ownership rule over a record's values. |
 
+## Measured values
+
+| Term | What it is |
+| ---- | ---------- |
+| **quantity** | A value of the `quantity` datatype: exact decimal digits and a case-sensitive UCUM unit code, `{value, unit, comparator?}`. Decision record 0153. |
+| **measure** | A named quantity in the engine's [unit table](units.md) (`mass`, `energy`, `torque`): a dimension, a base unit and the codes that convert into it. A value converts and compares only within its measure; a declaration names it with `measures:`. |
+| **observed value** | A record of a kind that binds core's `observed` trait: one value (`observed(single)`, an observation) or many values of one metric over one fixed period (`observed(packed)`, a trace). Decision record 0154. |
+| **metric** | A record of the `observations` sample's `metric` kind: what can be measured, its codes in other systems and the measure its values convert into. |
+| **source** | On an observed value, the device, app, service or lab that produced it. The mirror row that delivered it is its `origin`. Not a declaration's managed `source`. |
+| **form** | What an observed value's number means, written on the value: `gauge` (a level), `amount` (accrued over a span), `counter` (a running total) or `summary` (a statistic its source computed). It decides which reducers apply. Decision record 0156. |
+| **hold** | How long a gauge's value stands after its point when no newer one arrives. Decision record 0158. |
+| **stream** | One run of readings: the kind, metric, source, about and channel a value names. Decision record 0160. |
+| **point** | One value in the observed index: one per observation, one per point of a trace. It is **available** when it holds a value or a code that is not empty; a `null` is an unavailable point and counts in nothing. |
+| **rollup row** | One row of `observed_rollups`: one stream's points of one form in one 15-minute bucket and group, reduced to the statistics a read merges exactly. |
+| **group** | In the observed index, the points of one stream, form and bucket that share a code, unit, `delta` and UTC offset: one rollup row each. In an aggregate read, the streams one combination of `groupBy` values selects: one row per bucket each. Never the old word for an authority. |
+| **bucket** | One time window of an aggregate read: a fixed length, a calendar unit in a zone, a recorded-local day, or a matched record's span. |
+| **recorded-local calendar** | The calendar time mode with no `timezone`: each value lands on the date its own UTC offset names, so a day spent abroad is that place's day. |
+| **adapter** | A sample whose function turns one provider's mirror rows into observed values and health records, stamping `adapter` (`healthwhoop@3`) on each. Also the code that speaks an `llm/provider`'s [wire](#installed-things). |
+
 ## Installed things
 
 | Term | What it is |
@@ -76,6 +95,7 @@ nothing, there are none.
 | **function** | A callable whose body is inline Python, bounded by its declared `permissions`: `reads`, `writes`, `call`, `agents`, `network` and `mutations`, six grants in one object on the declaration. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
 | **llm/provider** | One place an agent buys completions: a wire, an endpoint and a key, as data. The kind is `provider` in the seeded `substrate.reamde.dev/llm` package, written here with its package because the bare word also names a catalog tier. Alpha. |
+| **record view** | How the console lays out the record page of one kind: a record of the seeded `substrate.reamde.dev/console/recordview` kind, an ordered list of sections each holding one block. Not a **saved view**, which is a table's saved filters and columns. Decision record 0166. |
 | **wire** | The protocol an `llm/provider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |
 | **model** | The model id an agent sends on every completion, a plain string its provider understands. There is no model record and no tier. |
 | **trigger** | One delivery binding: exactly one source (`record`, `schedule` or `webhook`) to one callable. |
@@ -98,7 +118,7 @@ nothing, there are none.
 | ---- | ---------- |
 | **token** | A bearer credential, itself a record. It has full access to its repository; it carries no scopes. |
 | **blob** | Content-addressed bytes whose digest is its id and whose manifest is an ordinary record. |
-| **records route** | `GET /api/v1/records`: the one read of many records, in three modes told apart by their parameters: the list (`filter`, `orderBy`, `first`, `after`, `offset`, `expand`), the ranked read (`q`) and the tail (`watch=1`). `POST` there creates one record under a server-assigned id. Decision record 0079. |
+| **records route** | `GET /api/v1/records`: the one read of many records, in four modes told apart by their parameters: the list (`filter`, `orderBy`, `first`, `after`, `offset`, `expand`), the ranked read (`q`), the tail (`watch=1`) and the aggregate read (`aggregate`, decision record 0161). `POST` there creates one record under a server-assigned id. Decision record 0079. |
 | **record path** | `/api/v1/{authority}/{package}/{kind}/{id}`: one record's URL, which is its reference value. Decision record 0033. |
 | **referencing** | The filter arm that reads a reference backwards: the records pointing at one record (`ref`) or at any of several (`refs`), each matched by its canonical and former ids. The page carries `matches` naming the property each pointed from. |
 | **expand** | The list parameter naming reference properties whose referents come back beside the page under `included`, keyed by record path, one hop. |

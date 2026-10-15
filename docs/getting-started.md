@@ -83,7 +83,7 @@ There is no session object beside it: a session **is** a token record, and
 
 ## Write your first record
 
-Registration seeded `core`, `llm` and the LLM sample, so the task kinds are
+Registration seeded `core`, `llm`, `console` and the LLM sample, so the task kinds are
 not there yet. IMPORT the sample that ships them from the catalog built into
 the binary, and the kind exists. A catalog id is a package identity,
 `{authority}/{package}`, so the slash in it is percent-encoded to stay one path

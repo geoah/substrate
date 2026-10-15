@@ -33,6 +33,10 @@ A trait contracts **presence and datatype only**. It carries no cardinality
 (a binding kind adds its own `repeated: true`) and no state values (each
 binding kind declares its own machine). That is deliberate: the trait
 is the shared question, and each kind keeps its own answer's shape.
+Core's `observed` is the one exception, because its write rules and the
+observed index read each property's shape: the loader refuses a binding kind
+whose `offsets`, `values` or `codes` is not `repeated: true`, and one whose
+other `observed` properties are lists or keyed maps.
 
 ## Declaring one
 
@@ -215,6 +219,28 @@ opt into twice:
   an ordinary record. The `scheduling` sample's **`occurrencelog`** is how a
   slot gets its done-or-skipped mark: a temporal record of its own in the
   same window.
+- **`observed`** marks a kind whose records hold observed values: one value
+  per record (`observed(single)`: a reading, a vendor score, a lab result) or
+  many values packed into one record over a fixed period (`observed(packed)`:
+  an hour of heart rate). Every write of an implementor, a patch included, is
+  held to the rules the trait's property list cannot state: `form` is
+  `gauge`, `amount`, `counter` or `summary`; a single record holds `value` or
+  `code`, never both, except an amount, which may carry its category in
+  `code`; a packed record's `offsets` line up with its
+  `values` or `codes` inside `[at, endsAt)`; `hold` goes only on a gauge and
+  `resetRule` only on a counter; a `revision` never falls. The substrate
+  computes a packed record's `stats` from its values and drops any a writer
+  sends. The trait's property list never grows: a later need is a second
+  trait bound beside it
+  ([decision 0154](decisions/0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md)).
+  [Observations](observations.md) has every rule and the sample kinds that
+  bind it.
+- **`revised`** marks a kind an adapter rewrites from an upstream that
+  numbers its versions, such as the health sample's `sleep`, `workout` and
+  `labreport`. A write of an implementor whose `revision` is below the stored
+  one, or that removes it, is refused, the rule `observed` holds for observed
+  values, so a stale delivery never reverts a newer result
+  ([decision 0162](decisions/0162-an-observed-row-names-its-origin-and-source-and-composes-its-id-from-upstream-data.md)).
 - **`accountconfig`** and **`oauth2`** are how the substrate's OAuth
   facility recognizes a provider account and its client credentials,
   whatever the bundle called its kinds; [bundles](bundles.md) puts them to

@@ -27,6 +27,8 @@ import { SearchPage } from "@/pages/search"
 import { KindBrowsePage } from "@/pages/kind-browse"
 import { AllDataPage } from "@/pages/all-data"
 import { HistoryPage } from "@/pages/history"
+import { ObservationsPage } from "@/pages/observations"
+import { ObservationsTimelinePage } from "@/pages/observations-timeline"
 import { ToolsPage } from "@/pages/tools"
 import { ToolPage } from "@/pages/tool"
 import { ProvidersPage } from "@/pages/providers"
@@ -314,6 +316,21 @@ export const historyRoute = createRoute({
   component: HistoryPage,
 })
 
+// Measured values across every kind binding core's `observed` trait: the
+// streams, and the timeline. Both read their filters through nuqs, so the
+// routes declare no search params and strip none.
+export const observationsRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/observations",
+  component: ObservationsPage,
+})
+
+export const observationsTimelineRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/observations/timeline",
+  component: ObservationsTimelinePage,
+})
+
 export const toolsRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/tools",
@@ -381,6 +398,8 @@ const routeTree = rootRoute.addChildren([
     accountRoute,
     allDataRoute,
     historyRoute,
+    observationsRoute,
+    observationsTimelineRoute,
     toolsRoute,
     toolRoute,
     providersRoute,

@@ -1,0 +1,21 @@
+# The Apple Health adapter's delivery wiring: one record trigger over the two
+# applehealth mirror kinds it reads. All three ops: a create and an update
+# write the row's outputs, a delete removes them (the envelope's `record` is
+# null then, and the function finds the outputs by the row they point at).
+# `coalesce` keeps the latest change per row in a batch, because the function
+# reads the row as it stands now, never the change.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: healthapple-on-mirror
+data:
+  properties:
+    enabled: true
+    label: Apple Health to health
+    source:
+      record:
+        kinds:
+          - providers.substrate.reamde.dev/applehealth/metricbatch
+          - providers.substrate.reamde.dev/applehealth/workout
+        ops: [create, update, delete]
+        coalesce: true
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthapple/adaptapplehealth

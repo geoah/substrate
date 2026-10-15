@@ -138,6 +138,10 @@ type options struct {
 	// (export_test.go WithTestReprojectionHook): a hook run before each
 	// page with the kind it is about to re-derive. Tests only.
 	reprojectionHook func(ctx context.Context, kind string) error
+	// observedPage is the observed index's test seam (export_test.go
+	// WithTestObservedPageSize): a page of points below observedPageSize,
+	// so a few points span several pages. Tests only.
+	observedPage int
 	// inadmissible is the loader's test seam (export_test.go
 	// WithTestInadmissible): the stored packages it refuses as a binary
 	// whose contract tightened would, so a test parks a package without
@@ -177,6 +181,10 @@ type options struct {
 	// clock when nil. A test that spends one window's codes advances it
 	// instead of sleeping through a real 30 second step.
 	now func() time.Time
+	// webhookNow is the instant the webhook door records as a request's
+	// receipt (export_test.go WithTestWebhookClock); nowUTC when nil. A test
+	// pins a receipt to the millisecond instead of racing the wall clock.
+	webhookNow func() time.Time
 	// queryTracer sees every statement the shared repository pool sends
 	// (export_test.go WithTestQueryTracer), so a test can assert which
 	// statements a read ran and not only what it answered. Tests only; nil
@@ -438,6 +446,9 @@ type service struct {
 	totpDisabled bool
 	// now is the clock the TOTP verifier reads; nowUTC outside a test.
 	now func() time.Time
+	// webhookNow is the webhook door's receipt clock (webhooks.go
+	// admitWebhook); nowUTC outside a test, never nil.
+	webhookNow func() time.Time
 	// readOnly is WithDirectoryReadOnly: this process is not the repository
 	// directories' writer and must not become one (repodir.go).
 	readOnly bool
@@ -490,6 +501,9 @@ type service struct {
 	// testReprojectionHook is the options' reprojection hook
 	// (reprojection.go reprojectKind). Tests only.
 	testReprojectionHook func(ctx context.Context, kind string) error
+	// testObservedPage is the options' page size for reading observed
+	// points (observedsettle.go); zero is observedPageSize. Tests only.
+	testObservedPage int
 	// testInadmissible is the options' loader seam (vocabularywrite.go
 	// admitStored). Tests only.
 	testInadmissible map[string]bool
@@ -546,7 +560,7 @@ func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, er
 }
 
 func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
-	o := options{log: slog.Default(), now: nowUTC, progressEvery: progressEvery, digestBytesPerSecond: DefaultDigestBytesPerSecond}
+	o := options{log: slog.Default(), now: nowUTC, webhookNow: nowUTC, progressEvery: progressEvery, digestBytesPerSecond: DefaultDigestBytesPerSecond}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -662,6 +676,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,
 		now:                o.now,
+		webhookNow:         o.webhookNow,
 		readOnly:           o.dirReadOnly,
 		seedLLMSample:      o.seedLLMSample,
 		seedLLMProviders:   o.seedLLMProviders,
@@ -686,6 +701,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		searchReindexBatch:    o.searchReindexBatch,
 		testSearchReindexHook: o.searchReindexHook,
 		testReprojectionHook:  o.reprojectionHook,
+		testObservedPage:      o.observedPage,
 		testInadmissible:      o.inadmissible,
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
@@ -1130,6 +1146,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.checkSearchIndex,
+		ds.checkObservedIndex,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		ds.ensureTriggerCursors,

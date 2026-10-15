@@ -5,9 +5,12 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -176,6 +179,18 @@ func FoldTables() []string {
 	return append(slices.Clone(foldTables), "property_offers")
 }
 
+// FoldSnapshotOver is FoldSnapshot read through db, a connection row level
+// security does not bind. With no repository predicate the planner cannot
+// take a table's rows in key order from its primary key, so each ORDER BY
+// must decide the order on its own.
+func FoldSnapshotOver(ctx context.Context, db *sql.DB) ([]byte, error) {
+	snap, err := foldSnapshot(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(snap, "", "  ")
+}
+
 // WithTestCommitFault runs fn at each durable step of a write's commit
 // (dataset.go commitAndMirror), six stages. Around the manifest write that
 // precedes the first append in a new changelog dialect (repodir.go
@@ -316,6 +331,21 @@ func WithTestQueryTracer(tr pgx.QueryTracer) Option {
 // from it fails the page, as a database error would.
 func WithTestReprojectionHook(hook func(ctx context.Context, kind string) error) Option {
 	return func(o *options) { o.reprojectionHook = hook }
+}
+
+// WithTestWebhookClock is the clock the webhook door records each request's
+// receipt by (webhooks.go admitWebhook), and nothing else, so a test that
+// measures a stored request's skew from its receipt names that instant to
+// the millisecond instead of sleeping to it.
+func WithTestWebhookClock(now func() time.Time) Option {
+	return func(o *options) { o.webhookNow = now }
+}
+
+// WithTestObservedPageSize sets how many observed points one read of a
+// bucket's or a stream's points takes at most (observedsettle.go), so a test
+// spans a bucket over several pages with a few points.
+func WithTestObservedPageSize(n int) Option {
+	return func(o *options) { o.observedPage = n }
 }
 
 // IndexReprojectionDone is closed when the dataset's latest background index
@@ -596,4 +626,99 @@ func HoldVocabularyWrites(ds substrate.Dataset) (release func()) {
 	d := ds.(*dataset)
 	d.vocabularyWriteMu.Lock()
 	return d.vocabularyWriteMu.Unlock
+}
+
+// AggregateRaw makes every aggregate read under the context take raw points
+// where rollup rows could serve, so a test holds the rollup answer against
+// the raw one.
+func AggregateRaw(ctx context.Context) context.Context {
+	return context.WithValue(ctx, aggregateRawKey{}, true)
+}
+
+// AggregateTrace counts what an aggregate read took from observed_rollups
+// and observed_points.
+type AggregateTrace struct{ t *aggTrace }
+
+// RollupRows is the rollup rows the read took.
+func (a AggregateTrace) RollupRows() int64 { return a.t.rollupRows }
+
+// RawPoints is the raw points the read took.
+func (a AggregateTrace) RawPoints() int64 { return a.t.rawPoints }
+
+// MergedRows is the rollup rows the reads' reductions merged.
+func (a AggregateTrace) MergedRows() int64 { return a.t.mergedRows }
+
+// AfterPlan sets a hook each metric read under the trace's context runs once
+// its plan has read every row and point it reduces, before the reduction.
+func (a AggregateTrace) AfterPlan(hook func()) { a.t.afterPlan = hook }
+
+// BeforeReducer sets a hook each metric read under the trace's context runs
+// as each reducer of a row begins, after the read's last check of its context
+// before it.
+func (a AggregateTrace) BeforeReducer(hook func()) { a.t.beforeReducer = hook }
+
+// Rows is the rows the reads assembled, every reducer answered.
+func (a AggregateTrace) Rows() int64 { return a.t.rows }
+
+// PlaceSteps is the steps the property reads counted placing their records.
+func (a AggregateTrace) PlaceSteps() int64 { return a.t.placeSteps }
+
+// AggregateTraced counts what each aggregate read under the context takes.
+func AggregateTraced(ctx context.Context) (context.Context, AggregateTrace) {
+	t := &aggTrace{}
+	return context.WithValue(ctx, aggregateTraceKey{}, t), AggregateTrace{t: t}
+}
+
+// ExplainPlacedReads answers, by name, the plan of each statement a metric
+// read finds and reads one stream's points placed in [from, to) with, as
+// the read binds them, under EXPLAIN ANALYZE on db with sequential scans
+// priced out, so a small table shows the rows each index range reads.
+func ExplainPlacedReads(ctx context.Context, db *sql.DB, placeEnd bool, metric, kind, source, form string, from, to time.Time) (map[string]string, error) {
+	s := &aggStream{obsStream: obsStream{metric: metric, kind: kind, source: source}, form: form}
+	ids := streamKeys([]*aggStream{s}, false)
+	stats, forms := []string{s.stat}, []string{form}
+	a, b := []time.Time{from}, []time.Time{to}
+	wa, wb := []time.Time{ceil15(from)}, []time.Time{floor15(to)}
+	if placeEnd {
+		wa, wb = b, b
+	}
+	discover := []any{ids[0], ids[1], ids[2], ids[3], ids[4], stats, a, b, wa, wb, forms}
+	statements := []struct {
+		name, query string
+		args        []any
+	}{
+		{"discover count", discoverCountSQL(placeEnd, false), slices.Clone(discover)},
+		{"discover forms", discoverFormsSQL(placeEnd, false), append(slices.Clone(discover), int64(0))},
+		{"count", countPointsSQL(placeEnd, false), append(s.args(), a, b)},
+		{"read", readSeriesSQL(placeEnd, false), append(s.args(), a, b)},
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, st := range statements {
+		rows, err := tx.QueryContext(ctx, `EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) `+st.query, st.args...)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", st.name, err)
+		}
+		var plan []string
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			plan = append(plan, line)
+		}
+		if err := finishRows(rows); err != nil {
+			return nil, fmt.Errorf("%s: %w", st.name, err)
+		}
+		out[st.name] = strings.Join(plan, "\n")
+	}
+	return out, nil
 }

@@ -407,6 +407,11 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		return t.foldRecordOp(op)
 	case foldTombstone:
 		changed, version, err := t.applyTombstone(op.ref(), op.Finalizer)
+		if err == nil && changed {
+			// A tombstone keeps its refs rows (decision 0027) and loses its
+			// observed points: a deleted reading is in no aggregate.
+			err = t.dropObservedOf(op.ref())
+		}
 		return foldResult{changed: changed, version: version}, err
 	case foldPurge:
 		if err := t.applyPurge(op.ref()); err != nil {
@@ -514,8 +519,28 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// derives from its stored declaration (foldView), live and in a
 		// replay alike.
 		ty, _ := t.derivationView().ByIdentity(row.Kind)
+		// A repository migration folds before the stored vocabulary loads,
+		// so its registry need not hold the row's kind: the row's refs and
+		// observed points are left as they stand, not dropped as a kind's
+		// that is gone, and the pass behind the open re-derives every row of
+		// the kind under the loaded declarations (requestUnprojected).
+		if ty == nil && t.migrating {
+			if t.unprojected == nil {
+				t.unprojected = map[string]bool{}
+			}
+			t.unprojected[row.Kind] = true
+			return foldResult{changed: changed, created: created, row: row, version: version}, nil
+		}
 		if ty == nil || declaresReference(ty) {
 			if err := t.syncRefs(ref, ty, row.Props); err != nil {
+				return foldResult{}, err
+			}
+		}
+		// The observed index's points are the same kind of projection
+		// (observedindex.go), skipped the same way for a kind that cannot
+		// derive any.
+		if t.derivesObserved(ty) {
+			if err := t.syncObserved(ref, ty, row); err != nil {
 				return foldResult{}, err
 			}
 		}

@@ -1,6 +1,6 @@
 # Substrate fit for high-volume health data: what the codebase can and cannot do today
 
-Researcher 6 of 6, 2026-10-08. Scope: the substrate code itself at `/home/geoah/.t3/worktrees/substrate/t3-d9d5090b` (branch `t3/d9d5090b`, head `33e03af1`), read only. Nothing was edited, no database suite and no server was run. Every claim cites a file and line in that checkout unless marked "inferred" (read from code, not executed) or "unverified". Changelog line sizes were measured from real dev segment files on this machine (read only). GitHub issues were read with `gh` on 2026-10-08. The mneme v6 health package cited in section 7 is outside this repository, at `~/src/github.com/geoah/rxtx.dev/svc/mneme-v6/kinds/health/`.
+Researcher 6 of 6, 2026-10-08. Scope: the substrate code itself on branch `t3/d9d5090b` (head `33e03af1`), read only. Nothing was edited, no database suite and no server was run. Every claim cites a file and line in that checkout unless marked "inferred" (read from code, not executed) or "unverified". Changelog line sizes were measured from real dev segment files on this machine (read only). GitHub issues were read with `gh` on 2026-10-08. The mneme v6 health package cited in section 7 is outside this repository, in mneme v6's private source under `kinds/health/`.
 
 ## Summary
 
@@ -16,7 +16,7 @@ Researcher 6 of 6, 2026-10-08. Scope: the substrate code itself at `/home/geoah/
 
 ## 1. Write path: what one `put` costs
 
-All paths are under `/home/geoah/.t3/worktrees/substrate/t3-d9d5090b`. Verified by reading the code on 2026-10-08 unless marked otherwise.
+All paths are relative to the repository root. Verified by reading the code on 2026-10-08 unless marked otherwise.
 
 ### What one record write does, statement by statement
 
@@ -327,7 +327,7 @@ Several source kinds may target one kind through separate mappings; recompute pi
 
 ### Prior art: mneme v6's health package (outside this repo)
 
-`~/src/github.com/geoah/rxtx.dev/svc/mneme-v6/kinds/health/` is a real substrate package (16 kinds) built on this engine. Its `observation` (definition: `unit` as a free string, `valueKind`, `aggregation` enum `sum|avg|min|max|count|latest`, `target`) plus `observationlog` (one reading: `temporal(point)`, `observation` reference, `value` float, `source` reference, `indices: [[observation, at]]`) is the "root + log" pattern; `bloodmarker` carries `value`, `unit` string, `referenceLow`/`referenceHigh`. `mappings.whoop.yaml` explains in four quoted "walls" why the WHOOP projection is a **function, not a `recordmapping`**: one source row makes one target row, a mapping cannot name a constant, cannot fill `source`, cannot do arithmetic. The function `whoophealth` (`timeout: PT20S`, read budget 12 calls / 24 rows) runs on record triggers for the four WHOOP kinds, writes 3 readings per recovery, 2 per sleep (computing minutes asleep), 1 per cycle, converts kJ to kcal (`KJ_PER_KCAL = 4.184`) for `health/workout`, keys every row with `host.ids.external`, and deletes a reading when WHOOP retracts a score. It stores **one record per reading**, with the unit on the definition and the aggregation rule as data the reader applies. This is the closest existing design to the question, and it confirms three gaps: no unit type, no aggregation read, and canonicalisation only possible in a function.
+mneme v6's `kinds/health/` is a real substrate package (16 kinds) built on this engine. Its `observation` (definition: `unit` as a free string, `valueKind`, `aggregation` enum `sum|avg|min|max|count|latest`, `target`) plus `observationlog` (one reading: `temporal(point)`, `observation` reference, `value` float, `source` reference, `indices: [[observation, at]]`) is the "root + log" pattern; `bloodmarker` carries `value`, `unit` string, `referenceLow`/`referenceHigh`. `mappings.whoop.yaml` explains in four quoted "walls" why the WHOOP projection is a **function, not a `recordmapping`**: one source row makes one target row, a mapping cannot name a constant, cannot fill `source`, cannot do arithmetic. The function `whoophealth` (`timeout: PT20S`, read budget 12 calls / 24 rows) runs on record triggers for the four WHOOP kinds, writes 3 readings per recovery, 2 per sleep (computing minutes asleep), 1 per cycle, converts kJ to kcal (`KJ_PER_KCAL = 4.184`) for `health/workout`, keys every row with `host.ids.external`, and deletes a reading when WHOOP retracts a score. It stores **one record per reading**, with the unit on the definition and the aggregation rule as data the reader applies. This is the closest existing design to the question, and it confirms three gaps: no unit type, no aggregation read, and canonicalisation only possible in a function.
 
 Related history in this repo: issue #498 and commit `f47c21f5` (2026-09-10) deleted the mneme-ported `samples/health` (484 lines) and `samples/fitness` (306 lines) because nothing imported them; issue #125 flagged `workoutset.weight` "carries no unit ... kg vs lb is ambiguous from the first record written"; issue #275 split `fitness/workout` plan from session; issue #143 aligned provider timestamp naming.
 

@@ -12,7 +12,8 @@
 # patch cannot re-trigger it. Steady-state re-syncs come from the schedule,
 # which honors each account's syncFrequency; "sync now" comes from the
 # on-request trigger, which fires exactly while the owner's stamp and the
-# connector's acknowledgement disagree.
+# connector's acknowledgement disagree. A fourth, `whoop-webhook` at the end
+# of this file, fires `whoopwebhook` once per event WHOOP posts.
 # The first backfill: an account whose OAuth just landed (tokenStatus
 # connected), that wants at least one collection, and that has never synced.
 kind: substrate.reamde.dev/core/trigger
@@ -88,3 +89,41 @@ data:
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/whoop/whoopsync
+---
+# WHOOP's webhooks: one HTTPS URL per WHOOP app, set in WHOOP's developer
+# dashboard, POSTed a signed notification when a sleep, a recovery or a
+# workout is written or deleted. The URL is
+# POST /webhooks/<authority>/whoop-webhook (`substratectl trigger status`
+# prints it).
+#
+# The door checks WHOOP's signature before it stores anything (decision
+# 0164): `X-WHOOP-Signature` is base64(HMAC-SHA256(client secret,
+# `X-WHOOP-Signature-Timestamp` + raw body)), the timestamp in milliseconds.
+# `oauthClientSecret` is the client secret on the bundle's `client` input,
+# which the host resolves and `whoopwebhook` never receives. A request that
+# fails the check is answered 404, the door's answer to every refusal,
+# because the trigger carries no key, and leaves no blob, no ledger entry and
+# no invocation.
+#
+# Enabled as shipped because the check fails closed: until the owner writes
+# the config record with its client secret, every delivery is refused and
+# nothing is stored. No `headers`: the function reads only the body, so the
+# signature headers never reach it or the changelog (decision 0097).
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: whoop-webhook
+data:
+  properties:
+    enabled: true
+    label: WHOOP webhook
+    source:
+      webhook:
+        signature:
+          algorithm: hmac-sha256
+          signatureHeader: X-WHOOP-Signature
+          timestampHeader: X-WHOOP-Signature-Timestamp
+          maxSkew: PT5M
+          message: "{timestamp}{body}"
+          encoding: base64
+          secret: oauthClientSecret
+    callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/whoop/whoopwebhook

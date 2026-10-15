@@ -29,8 +29,9 @@
 # naming them is quarantined until it names `query` and `write`.
 # ---- query: the capability-scoped read -------------------------------------
 # The records route's grammar as a tool: one record by (kind, id), a ranked
-# read by `q`, otherwise a filtered, ordered, keyset-paged list with one hop
-# of expansion. Every arm is held to the calling agent's `reads:`.
+# read by `q`, the aggregate read by `aggregate`, otherwise a filtered,
+# ordered, keyset-paged list with one hop of expansion. Every arm is held to
+# the calling agent's `reads:`.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: substrate.reamde.dev/core/query
@@ -39,18 +40,19 @@ data:
   package: core
   description: >-
     Read records. Pass kind + id for one record; q (+ mode, first, filter.kinds)
-    to rank by relevance; otherwise filter (+ orderBy, first, after, expand)
-    to list. A filter is {search, kinds, purposes, ids, implements, properties,
-    labels, deleted, referencing}: properties maps a name to a condition (eq,
-    in, prefix, match, gt, gte, lt, lte, contains, exists), timestamps RFC3339,
-    so a day is properties: {at: {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}};
-    search is words against the indexed text, match against one text property,
-    both in q's grammar (words, "a phrase", -word, a OR b, prefix*); referencing:
-    {ref: "<kind>/<id>" or refs: [up to 256], property?} lists what points
-    AT them. A list answers {records, cursor, head, generation, included?,
-    matches?}: resend cursor as after for the next page; expand names reference
-    properties whose targets ride in included, keyed by "<kind>/<id>". Records
-    are addressed by their full reference (kind + id), never a bare id. Read-only.
+    to rank by relevance; aggregate to bucket values; otherwise filter (+
+    orderBy, first, after, expand) to list. A filter is {search, kinds, purposes,
+    ids, implements, properties, labels, deleted, referencing}: properties
+    maps a name to a condition (eq, in, prefix, match, gt, gte, lt, lte, contains,
+    exists), timestamps RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z",
+    lt: "2026-08-16T00:00:00Z"}}; search is words against the indexed text,
+    match against one text property, both in q's grammar (words, "a phrase",
+    -word, a OR b, prefix*); referencing: {ref: "<kind>/<id>" or refs: [up
+    to 256], property?} lists what points AT them. A list answers {records,
+    cursor, head, generation, included?, matches?}: resend cursor as after
+    for more; expand names references whose targets ride in included, keyed
+    by "<kind>/<id>". Records are addressed by their full reference (kind
+    + id), never a bare id. Read-only.
   runtime: host
   arguments:
     - name: id
@@ -93,6 +95,18 @@ data:
         - lexical
         - semantic
       description: how q ranks (default hybrid)
+    - name: aggregate
+      type: json
+      description: >-
+        {metric: {ref}, range: {gte, lt}, bucket: {calendar: day, timezone},
+        reducers: [avg], groupBy, unit}, or metrics: [{ref}], or property:
+        {name} of filter.kinds; reducers: [last] alone reads the newest
+    - name: downsample
+      type: json
+      description: >-
+        beside aggregate (a metric and a range, no bucket or reducers): {points:
+        N} cuts the range into N columns, each answering first, last, min
+        and max
 ---
 # ---- write: the agent-scoped write ------------------------------------------
 # No `emit:` of its own, and that is the point: the ceiling is the CALLING

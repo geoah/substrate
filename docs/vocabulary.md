@@ -68,7 +68,8 @@ there, each an ordinary changelog entry attributed to the hand that wrote it and
 auditable in the [changelog](changelog.md):
 
 - **The seed, once, at creation.** Creating a repository writes the binary's
-  shipped vocabulary, the `substrate.reamde.dev` authority (`core` and `llm`),
+  shipped vocabulary, the `substrate.reamde.dev` authority (`core`, `llm` and
+  `console`),
   into the new repository's changelog as ordinary record entries, under the
   actor `bundle:core`, in the same transaction as the repository itself. The
   provider closures embedded beside it are the catalog, not the seed, and the
@@ -398,6 +399,16 @@ once. The narrowing diffs that refuse:
   bound's float64, which is how every door carries a bound and how a read of
   the kind writes it back: the digits you wrote when they are at most 15
   significant ones
+- on a `quantity` property, naming, changing or dropping `measures:`, adding
+  a `units:` list or dropping a code from it, adding or moving a `min:` or
+  `max:`, or turning `comparator:` off, while records hold a value the new
+  declaration refuses or reads in another measure (a `Cel` stored under
+  `temperature-difference` would read as an absolute temperature without
+  it). The refusal counts the two cases apart and names each. The count runs
+  the write path's own quantity check over each stored
+  value in Go, because whether a unit belongs to a measure is the unit
+  grammar's question, which SQL cannot ask. Dropping `units:`, or turning
+  `comparator:` on, only widens and admits
 - every one of those inside an object property's declared `fields:`, at each
   level the dialect nests: a dropped field, a field whose datatype or container
   changed, a field's removed enum value, a field's tightened keys, a field's

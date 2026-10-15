@@ -1,8 +1,9 @@
 /** One record, read like a document and kept live off the change feed: its
- * head, its properties as a sheet that edits in place (a value that changes
- * under the reader is marked briefly), its prose, what it is connected to,
- * where it comes from, what was merged into it and its history, top to bottom
- * on one left-aligned page. Technical mode adds the record's own facts and a
+ * head, the record views its kind has (decision record 0166), its
+ * properties as a sheet that edits in place (a value that changes under the
+ * reader is marked briefly), its prose, what it is connected to, where it
+ * comes from, what was merged into it and its history, top to bottom on one
+ * left-aligned page. Technical mode adds the record's own facts and a
  * Source toggle that shows the YAML envelope or the JSON. */
 
 import { useMemo, useState } from "react"
@@ -23,6 +24,8 @@ import { MergedSection, SourcesSection } from "@/components/record/sources"
 import { useLiveRecord } from "@/components/record/use-live-record"
 import { useRecordChanges } from "@/components/record/use-record-changes"
 import { SourceView } from "@/components/record/source-view"
+import { ObservedSection } from "@/components/observations/observed-section"
+import { RecordViews } from "@/components/record-view/record-views"
 import { SyncRail } from "@/components/sync/sync-rail"
 import { Button } from "@/components/ui/button"
 import {
@@ -35,6 +38,7 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
+import { useRecordViews } from "@/hooks/use-record-views"
 import { providerOfKind } from "@/lib/actor-identity"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import {
@@ -44,6 +48,8 @@ import {
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import { kindByCollection } from "@/lib/definition"
 import { displayName, lowerFirst } from "@/lib/kind-names"
+import { OBSERVED_SHOWN, observedVariant } from "@/lib/observations"
+import { foldedBy } from "@/lib/record-view"
 import { SYNC_TRAIT_IDENTITY, kindHasTrait } from "@/lib/sync"
 import { recordRoute } from "@/router"
 
@@ -126,6 +132,20 @@ export function RecordDocument({
     [record, kind, readOnly]
   )
   const syncable = kindHasTrait(kind, SYNC_TRAIT_IDENTITY)
+  // A kind binding observed opens on its measurement, and its sheet folds
+  // away what that section already shows; a record view folds away what
+  // its own sections show.
+  const variant = observedVariant(kind)
+  const views = useRecordViews(kind)
+  const elsewhere = useMemo(() => {
+    const folded = foldedBy(views)
+    const shown = variant ? OBSERVED_SHOWN[variant] : undefined
+    if (!folded.length) return shown
+    return {
+      names: [...(shown?.names ?? []), ...folded],
+      where: shown?.where ?? views[0]?.name ?? "the view above",
+    }
+  }, [variant, views])
   const noun = lowerFirst(displayName(kind ?? record.kind))
 
   return (
@@ -143,6 +163,13 @@ export function RecordDocument({
         <SourceView record={record} kind={kind} kinds={kinds} />
       ) : (
         <>
+          {variant && <ObservedSection record={record} kind={kind} />}
+          <RecordViews
+            views={views}
+            record={record}
+            kind={kind}
+            kinds={kinds}
+          />
           <PropertySheet
             record={record}
             kind={kind}
@@ -150,6 +177,7 @@ export function RecordDocument({
             readOnly={readOnly}
             holders={holders}
             mappings={mappings.data?.records}
+            elsewhere={elsewhere}
             moved={moved}
           />
           {body && (

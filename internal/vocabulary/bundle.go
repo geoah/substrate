@@ -64,6 +64,30 @@ const (
 	TraitOverrideCore  = PackageCore + "/" + TraitOverride
 )
 
+// The observed trait (decision 0154): a kind that binds it holds observed
+// values, one per record (`single`) or many packed over a fixed period
+// (`packed`), and the write path holds every record of it to the rules a
+// trait cannot state (observed.go). Its property list never grows: a later
+// need is a second trait bound beside it.
+const (
+	TraitObserved     = "observed"
+	TraitObservedCore = PackageCore + "/" + TraitObserved
+
+	// ObservedSingle and ObservedPacked are the trait's two variants.
+	ObservedSingle = "single"
+	ObservedPacked = "packed"
+)
+
+// The revised trait (decision 0162): a kind rewritten from an upstream that
+// numbers its versions, such as a night's sleep or a workout, whose
+// `revision` the write path never lets fall. `observed` holds the same rule
+// for observed values, and its property list cannot grow, so the session
+// kinds beside them bind this one.
+const (
+	TraitRevised     = "revised"
+	TraitRevisedCore = PackageCore + "/" + TraitRevised
+)
+
 // ComputedSlotLen is the width of the slot a computed occurrence's id carries
 // after its series' id and a `_`: `YYYYMMDDTHHMMSSZ`. MaxSeriesIDLen keeps the
 // whole `<seriesId>_<slot>` inside MaxIDLen, and the write path holds a kind
@@ -691,11 +715,11 @@ func (r *Registry) resolveBundle(g *Package) []string {
 				where, req, floor, held.Version))
 		}
 	}
-	// The SEEDED packages need no `requires:` line: the binary writes both
+	// The SEEDED packages need no `requires:` line: the binary writes each
 	// into every repository at creation, so they are always present, and a
 	// bundle taking an `llm/provider` input is asking for a row of a kind
 	// nobody can be without (record 0077).
-	required := map[string]bool{PackageCore: true, PackageLLM: true, g.Identity: true}
+	required := map[string]bool{PackageCore: true, PackageLLM: true, PackageConsole: true, g.Identity: true}
 	for _, req := range b.Requires {
 		required[req] = true
 	}

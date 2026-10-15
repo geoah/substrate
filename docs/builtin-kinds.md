@@ -1,8 +1,8 @@
 # Built-in kinds
 
-This page maps the vocabulary this binary ships, package by package: the two
-packages a repository is seeded with, `substrate.reamde.dev/core` and
-`substrate.reamde.dev/llm`, the LLM sample copied onto the repository's own
+This page maps the vocabulary this binary ships, package by package: the three
+packages a repository is seeded with, `substrate.reamde.dev/core`,
+`substrate.reamde.dev/llm` and `substrate.reamde.dev/console`, the LLM sample copied onto the repository's own
 authority at registration, and the other sample packages it can import. A kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
 spells it, under the placeholder authority an import rewrites. Which door a
@@ -85,6 +85,47 @@ Like every suggested mapping it lands only where the Linear provider is already
 installed, and importing this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
+## samples.substrate.reamde.dev/observations (a sample)
+
+Measured values and where they came from, the base every observing sample
+requires. [Observations](observations.md) has every property and the rules a
+write is held to.
+
+| Kind          | What it is                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `metric`      | Something that can be measured: its names, its codes in other systems, its unit and how its values are read. |
+| `observation` | One measured value, binding core's `observed(single)`: a number with its unit, or a code.                   |
+| `trace`       | The values of one metric from one source over one fixed period, binding `observed(packed)`.                  |
+| `source`      | The device, app, service or lab a value came from.                                                           |
+
+It ships six metric records several domains share: `air_temperature`,
+`relative_humidity`, `energy`, `power`, `illuminance` and
+`atmospheric_pressure`.
+
+## samples.substrate.reamde.dev/health (a sample)
+
+A person's body, sleep, training and blood tests, on top of `observations`,
+which it requires.
+
+| Kind        | What it is                                                                                            |
+| ----------- | ----------------------------------------------------------------------------------------------------- |
+| `analyte`   | The lab facts about one blood test metric: LOINC parts, molar mass, conversions, a fallback range.   |
+| `sleep`     | One night or nap: its span, time in each stage, efficiency and the device's scores.                   |
+| `workout`   | One session: sport, span, distance, active and total energy, heart rate and time in each zone.        |
+| `labreport` | One report from a lab, with its status and the original document.                                     |
+| `labresult` | One analyte's result, binding `observed(single)`, with the lab's range, flag, specimen and status.     |
+
+It ships a catalogue of 61 metric records with ids `health/<name>`, such as
+`health/heart_rate` and `health/ldl_cholesterol`, each with its LOINC,
+HealthKit, Health Connect, Google Fit, WHOOP, Garmin or Withings codes. It
+ships 18 `analyte` records, one for each metric of the nine lab pairs (one
+analyte in mass and in molar units, and HbA1c as NGSP % and IFCC mmol/mol).
+Its function `convertlab`, fired by its trigger `health-on-labresult` on every
+write of a `labresult`, writes the result again in the other metric of its
+pair ([lab results in both unit systems](observations.md#lab-results-in-both-unit-systems)).
+It ships two [record views](console.md#record-views), the record pages of a
+sleep and a workout ([what the health sample adds](observations.md#what-the-health-sample-adds)).
+
 ## substrate.reamde.dev/core
 
 The substrate's own machinery, declared as kinds so it lists, reads, and
@@ -121,11 +162,14 @@ console-editable and changelog-visible like anything else
 
 The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
-`agent`, `bundle`, `actor`) live in core too, and so do the six shipped traits:
+`agent`, `bundle`, `actor`) live in core too, and so do the eight shipped traits:
 `temporal`, which puts a record on the timeline; `recurring` and `override`,
 the repeat rule and the moved occurrence ([traits](traits.md)); `sync`, the
-state a provider's function reports on one connected account; and
-`accountconfig` and `oauth2`, which the OAuth facility recognizes. Core also
+state a provider's function reports on one connected account;
+`accountconfig` and `oauth2`, which the OAuth facility recognizes; and
+`observed`, which marks a kind whose records hold observed values and holds
+every write of one to the trait's rules; and `revised`, which refuses a
+rewrite whose `revision` is below the stored one. Core also
 ships four host functions as `function` records (`query`, `write`, `propose`,
 `ask`), the built-ins an agent calls ([agents](agents.md)).
 
@@ -147,5 +191,22 @@ unfrozen at v1 and not part of the frozen core:
 
 The `agent` kind itself stays in core: it is one of the declarable kinds, and a
 manifest document is a record of a core kind whatever package it describes.
+
+## substrate.reamde.dev/console
+
+The third package the binary seeds: what the console shows, as records, so a
+sample's kinds are presented from data and no console code names them
+(decision record
+[0166](decisions/0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md)).
+It is seeded as core and llm are, and a repository created before it receives
+it at its next open.
+
+| Kind         | What it is                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart` or `spans` ([record views](console.md#record-views)). |
+
+A sample ships its views as records; a re-import replaces a view nobody
+edited and leaves an edited one alone.
+`consolepreference` stays in core.
 
 Back to [the documentation index](README.md).

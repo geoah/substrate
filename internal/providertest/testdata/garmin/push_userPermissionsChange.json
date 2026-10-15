@@ -1,0 +1,17 @@
+{
+ "request": {
+  "method": "POST",
+  "contentType": "application/json",
+  "headers": {
+   "content-type": "application/json",
+   "content-length": "188",
+   "garmin-client-id": "9f2d6c1a-3b4e-4f5a-8c7d-0e1f2a3b4c5d"
+  },
+  "query": {},
+  "body": {
+   "text": "{\"userPermissionsChange\":[{\"userId\":\"7c1e5b9a0d2f4c3e8b6a1f0e9d8c7b6a\",\"summaryId\":\"x4b2c9e1-6ac92c60\",\"permissions\":[\"ACTIVITY_EXPORT\",\"HEALTH_EXPORT\"],\"changeTimeInSeconds\":1791568992}]}"
+  }
+ },
+ "_fixture": "the user turned off WORKOUT_IMPORT and COURSE_IMPORT; HEALTH_EXPORT and ACTIVITY_EXPORT stay",
+ "_receivedAt": "2026-10-09T18:03:20Z"
+}

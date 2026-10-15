@@ -1,0 +1,20 @@
+# One record trigger over both Google Fit mirror kinds. Deletes are delivered
+# too, with `record` null, because an emptied day and a deleted session both
+# delete what they implied. `coalesce` keeps one delivery per mirror row in a
+# batch: the function rebuilds a row's whole output set, so only the row's
+# latest state matters.
+kind: substrate.reamde.dev/core/trigger
+metadata:
+  id: healthgooglefit-on-mirror
+data:
+  properties:
+    enabled: true
+    label: Google Fit to health
+    source:
+      record:
+        kinds:
+          - providers.substrate.reamde.dev/googlefit/dataset
+          - providers.substrate.reamde.dev/googlefit/session
+        ops: [create, update, delete]
+        coalesce: true
+    callable: substrate.reamde.dev/core/function/samples.substrate.reamde.dev/healthgooglefit/adaptgooglefit

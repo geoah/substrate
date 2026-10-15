@@ -87,6 +87,33 @@ var wireTypes = map[string]any{
 	// watch, so a field that moves here moves that handoff.
 	"Page":              Page{},
 	"OccurrenceProblem": OccurrenceProblem{},
+	// The aggregate read (decision 0161): the request's parts as the
+	// console builds them, and the one answer every mode returns. The
+	// reducer is a name or a one-key object, a union no struct names, so
+	// AggregateReducer is the console's type alias and not pinned here.
+	"Aggregate":       Aggregate{},
+	"AggregateMetric": AggregateMetric{},
+	// One metric of a several-metric read, with its own options.
+	"AggregateMetricRead": AggregateMetricRead{},
+	"AggregateProperty":   AggregateProperty{},
+	"AggregateRange":      AggregateRange{},
+	"AggregateBucket":     AggregateBucket{},
+	"AggregateRecords":    AggregateRecords{},
+	"AggregateAround":     AggregateAround{},
+	"AggregateSources":    AggregateSources{},
+	// The records' source policy, on the records mode and the property read,
+	// and the properties a records-mode row's ends are written at.
+	"AggregateRecordSources": AggregateRecordSources{},
+	"AggregateRecordOffsets": AggregateRecordOffsets{},
+	"AggregateRolling":       AggregateRolling{},
+	"AggregateBudget":        AggregateBudget{},
+	"Downsample":             Downsample{},
+	"AggregateResult":        AggregateResult{},
+	"AggregateHead":          AggregateHead{},
+	"AggregateRow":           AggregateRow{},
+	"AggregateGroup":         AggregateGroup{},
+	"AggregateRecord":        AggregateRecord{},
+	"AggregateValue":         AggregateValue{},
 	// The operational-list envelope. Element type does not change the field
 	// names, so any instantiation pins items/cursor.
 	"OperationalList": OperationalList[TokenInfo]{},
@@ -168,6 +195,11 @@ var wireTypes = map[string]any{
 	"TriggerRan":      TriggerRan{},
 	"FunctionCalled":  FunctionCalled{},
 	"WebhookAccepted": WebhookAccepted{},
+	// The unit table route and one conversion (GET /units, /units/convert).
+	"UnitTable":      UnitTable{},
+	"UnitMeasure":    UnitMeasure{},
+	"UnitCode":       UnitCode{},
+	"UnitConversion": UnitConversion{},
 }
 
 // wireFields maps the wire names a struct serializes to whether each is

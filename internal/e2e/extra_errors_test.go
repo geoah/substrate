@@ -43,10 +43,10 @@ const (
 	xeTrigger  = "xe-on-note"
 
 	// maxJSONBody is the cap internal/api holds every JSON request body to,
-	// and maxWebhookInline the webhook door's cap on a non-multipart body.
-	// Both are 1 MiB; the cases send one byte past them.
+	// 1 MiB, and maxWebhookInline the webhook door's cap on a non-multipart
+	// body, 8 MiB; the cases send one byte past them.
 	maxJSONBody      = 1 << 20
-	maxWebhookInline = 1 << 20
+	maxWebhookInline = 8 << 20
 	// maxBlobBody is the blob door's cap on one uploaded blob.
 	maxBlobBody = 64 << 20
 	// maxConcurrentWebhooks is how many deliveries the webhook door holds at
@@ -63,7 +63,7 @@ func init() {
 	registerCase(710, "ERR-03", "An unknown kind is a 404 naming it, and the body caps refuse",
 		"A read, a write and a list of a kind nobody declared answer 404 `not_found` naming the kind; a "+
 			"record body past 1 MiB is refused 400 `bad_request` and writes nothing, and the webhook door past "+
-			"1 MiB and the blob door past 64 MiB answer 413.",
+			"8 MiB and the blob door past 64 MiB answer 413.",
 		xeCaseUnknownKindAndCaps)
 	registerCase(720, "ERR-04", "Every published error code is reachable over the live door",
 		"Each code internal/api declares is produced by one live request and answered with its status and "+
@@ -248,9 +248,9 @@ func xeCaseUnknownKindAndCaps(c *C) {
 	hook := "/webhooks/" + url.PathEscape(c.r.authority) + "/xe-no-such-trigger"
 	body := strings.NewReader(`{"pad":"` + strings.Repeat("x", maxWebhookInline) + `"}`)
 	status, _, raw = xeRaw(c, c.r.hc, "", http.MethodPost, hook, body, -1, map[string]string{"Content-Type": "application/json"})
-	e = xeRequireError(c, "a webhook body past 1 MiB", status, raw, http.StatusRequestEntityTooLarge, "bad_request")
-	c.requiref(strings.Contains(e.Error.Message, "exceeds 1 MiB"), "the 413 says %q, want it to name the cap", e.Error.Message)
-	c.stepf("a webhook delivery past 1 MiB answered 413 `bad_request` %q", e.Error.Message)
+	e = xeRequireError(c, "a webhook body past 8 MiB", status, raw, http.StatusRequestEntityTooLarge, "bad_request")
+	c.requiref(strings.Contains(e.Error.Message, "exceeds 8 MiB"), "the 413 says %q, want it to name the cap", e.Error.Message)
+	c.stepf("a webhook delivery past 8 MiB answered 413 `bad_request` %q", e.Error.Message)
 
 	// The blob door streams to disk under its own cap, one byte past it.
 	blob := io.LimitReader(xeZeros{}, maxBlobBody+1)

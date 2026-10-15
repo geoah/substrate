@@ -266,18 +266,20 @@ func TestWriteGateHandsOnAnAdmissionItsWaiterGaveUp(t *testing.T) {
 	}
 }
 
-// The overdue timer, an admission and a cancel landing together leave the
-// gate as clean as any one of them. The gate's mutex is held past the
-// waiter's wait bound, so the timer fires and its branch waits for the mutex
-// while the cancel lands. Even iterations admit the waiter by the holder's
-// release; odd ones leave it held back by an owner write until the timer's
-// branch, running after the cancel, admits it as overdue. Either way the
-// waiter then meets a closed admission and an ended context together, and
-// its select picks one at random.
+// The overdue signal, an admission and a cancel landing together leave the
+// gate as clean as any one of them. The test fires the waiter's overdue
+// signal while it holds the gate's mutex, so the signal's branch waits for
+// the mutex while the cancel lands; the signal is the test's, never a timer,
+// so a descheduled test cannot see the waiter admitted as overdue before it
+// queued. Even iterations admit the waiter by the holder's release; odd ones
+// leave it held back by an owner write until the signal's branch, running
+// after the cancel, admits it as overdue. Either way the waiter then meets a
+// closed admission and an ended context together, and its select picks one
+// at random.
 func TestWriteGateSettlesAWaiterOverdueAdmittedAndCanceledAtOnce(t *testing.T) {
 	t.Parallel()
-	const wait = 10 * time.Millisecond
-	g := &writeGate{maxPasses: 1000, maxWait: wait}
+	fire := make(chan time.Time)
+	g := &writeGate{maxPasses: 1000, overdue: func() <-chan time.Time { return fire }}
 	var went, gaveUp int
 	for i := range 60 {
 		byRelease := i%2 == 0
@@ -292,7 +294,9 @@ func TestWriteGateSettlesAWaiterOverdueAdmittedAndCanceledAtOnce(t *testing.T) {
 		waiter := enterAsync(ctx, g, false)
 		waitGate(t, g, "the waiter queues", func(_ bool, q, _ int) bool { return q == 1 })
 		g.mu.Lock()
-		time.Sleep(3 * wait)
+		// Unbuffered: the send returns once the waiter took the overdue
+		// branch, which now waits for the mutex.
+		fire <- time.Now()
 		if byRelease {
 			releaseHeld(g)
 		}

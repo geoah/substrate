@@ -17,6 +17,17 @@ describe("crumbsFor", () => {
     expect(crumbsFor("/tools")).toEqual([{ label: "Tools" }])
     expect(crumbsFor("/providers")).toEqual([{ label: "Providers" }])
     expect(crumbsFor("/agents")).toEqual([{ label: "Agents" }])
+    expect(crumbsFor("/observations")).toEqual([{ label: "Observations" }])
+  })
+
+  it("keeps the timeline under Observations", () => {
+    expect(crumbsFor("/observations/timeline")).toEqual([
+      { label: "Observations", to: "/observations" },
+      { label: "Timeline" },
+    ])
+    expect(pageTitle(crumbsFor("/observations/timeline"))).toBe(
+      "Timeline · Observations"
+    )
   })
 
   it("reads a record in everyday words: where it lives, its collection, the record", () => {

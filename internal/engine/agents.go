@@ -113,6 +113,22 @@ func agentResult(advance bool, ares *substrate.AgentResult) deliverResult {
 // deliverToAgent: the fire state moves with the claim before the loop, so a
 // concurrent dispatcher's duplicate loses the swap there and runs nothing.
 func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, envelope map[string]any, settle *settlement) (int, error) {
+	// Before the claim, so a refused request parks as itself rather than as
+	// an interrupted run.
+	if err := ds.checkStoredWebhookSignature(ctx, tr, envelope, settle.retire); err != nil {
+		return 0, err
+	}
+	env, err := ds.fireEnvelope(ctx, envelope, fid, at)
+	if err != nil {
+		return 0, err
+	}
+	// The door's bound for an agent holds here too: a request admitted while
+	// the trigger called a function rides up to the function's 8 MiB, and a
+	// retry, a resume or a rerun runs it through the callable the trigger
+	// names now.
+	if n := deliveredInlineBytes(env); n > maxAgentWebhookInline {
+		return 0, fmt.Errorf("%w: the request carries %d inline bytes, and an agent callable reads at most 1 MiB", errAgentWebhookTooLarge, n)
+	}
 	// Admission under the lifecycle fence, held through the claim, the
 	// loop's writes and the completion below (bundles.go).
 	ctx, release, err := ds.admitCallable(ctx, tr.Agent.Package, tr.Agent.Identity())
@@ -121,10 +137,6 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 	}
 	defer release()
 	claim, err := ds.claimAgentDelivery(ctx, settle)
-	if err != nil {
-		return 0, err
-	}
-	env, err := ds.fireEnvelope(ctx, envelope, fid, at)
 	if err != nil {
 		return 0, err
 	}

@@ -38,7 +38,13 @@ export function DataTableViewOptions<TData extends RowData>({
   toolbar,
 }: DataTableViewOptionsProps<TData>) {
   const order = table.state.columnOrder
+  // A fixed column (a selection box) leads every order and is not the
+  // reader's to hide or move.
+  const isFixed = (id: string) =>
+    Boolean(table.getColumn(id)?.columnDef.meta?.fixed)
+  const fixed = order.filter(isFixed)
   const columns = order
+    .filter((id) => !isFixed(id))
     .map((id) => table.getColumn(id))
     .filter((c): c is NonNullable<typeof c> => Boolean(c))
 
@@ -64,13 +70,14 @@ export function DataTableViewOptions<TData extends RowData>({
     Object.keys(table.state.columnSizing).length > 0
 
   function move(id: string, delta: -1 | 1) {
-    const at = order.indexOf(id)
+    const movable = order.filter((c) => !isFixed(c))
+    const at = movable.indexOf(id)
     const to = at + delta
-    if (at < 0 || to < 0 || to >= order.length) return
-    const next = [...order]
+    if (at < 0 || to < 0 || to >= movable.length) return
+    const next = [...movable]
     next.splice(at, 1)
     next.splice(to, 0, id)
-    table.setColumnOrder(next)
+    table.setColumnOrder([...fixed, ...next])
   }
 
   function reset() {

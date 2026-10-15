@@ -10,7 +10,7 @@ data:
     range or a value set (`isbn`, `asin`). Package-local — only the package
     that declares it may use it — so a shape is stated once instead of repeated
     on every property that wants it.
-  version: 13
+  version: 14
   purpose: internal
   names:
     singular: propertytype
@@ -62,6 +62,7 @@ data:
         - float
         - decimal
         - money
+        - quantity
         - bool
         - datetime
         - date
@@ -87,6 +88,21 @@ data:
     max:
       type: float
       description: the highest admitted number
+    # A quantity refinement's own three keys. Its bounds are quantities, which
+    # min and max above cannot hold, so a quantity property declares its bounds
+    # where it is used.
+    measures:
+      type: string
+      description: the measure every unit of a quantity belongs to (mass,
+        temperature)
+    units:
+      type: string
+      repeated: true
+      description: the unit codes a quantity is narrowed to
+    comparator:
+      type: bool
+      description: whether a quantity value may carry a comparator (<, <=,
+        >=, >)
     values:
       type: object
       repeated: true

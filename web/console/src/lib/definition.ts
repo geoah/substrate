@@ -6,6 +6,7 @@
 
 import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
+import { withFormWords } from "@/lib/observed-form"
 
 /** A kind reference split into `{authority, pkg, name}`:
  * `samples.substrate.reamde.dev/people/person` →
@@ -130,7 +131,7 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
         : undefined,
       initial: typeof def.initial === "string" ? def.initial : undefined,
       required: def.required === true,
-      values: parseEnumValues(def.values),
+      values: withFormWords(k, name, parseEnumValues(def.values)),
       // A reference pins its target under `kind:`, the one spelling the loader
       // accepts.
       to: typeof def.kind === "string" ? def.kind : undefined,

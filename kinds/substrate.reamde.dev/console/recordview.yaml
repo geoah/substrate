@@ -1,0 +1,277 @@
+# How the console lays out the record page of one kind: a list of sections,
+# each holding one block, rendered above the generic property sheet. A record
+# page with no view is the generic page.
+#
+# A BLOCK IS A FIELD OF A SECTION. The object grammar has no union, so a
+# section declares one optional field per block type and the console renders
+# the one that is set. A new block type is a new field here, which is an
+# upgrade of this package.
+#
+# FOUR RULES THE GRAMMAR CANNOT STATE, which the console checks and shows as a
+# notice where the section would be, as it does a block it does not know:
+# - a section holds exactly one block;
+# - a related block names an outgoing `property`, or a `kind` and the `via`
+#   property on it, and not both;
+# - a durationIn reducer names `low` and `high`, low under high;
+# - a percentile reducer names `rank`.
+#
+# The chart and spans blocks read the observations the sample packages
+# declare, by the metric record's id, over the window the view binds: the
+# names of the record's own properties that hold its start, its end, who it is
+# about and what recorded it. Names, never expressions.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/console/recordview
+data:
+  authority: substrate.reamde.dev
+  package: console
+  description: >-
+    How the console lays out the record page of one kind: an ordered list
+    of sections of headings, text, chosen properties, related records and
+    charts of what was measured during the record. A sample ships its views
+    as records, and the owner edits them.
+  purpose: internal
+  names:
+    singular: recordview
+  displayTemplate: "{name}"
+  properties:
+    # A reference to the kind's DECLARATION rather than a string: the import's
+    # rehoming rewrites it with the kind it names, a filter on it reads the
+    # views of one kind, and the kind's page lists its views as `recordViews`.
+    # A dangling one is admitted, as every reference is, and lays out nothing.
+    appliesTo:
+      type: reference
+      kind: substrate.reamde.dev/core/kind
+      required: true
+      inverse: recordViews
+      inverseDescription: the record views that lay out this kind's record
+        pages
+      description: the kind whose record pages this view lays out
+    name:
+      type: string
+      description: the view's heading, shown above its sections
+    intro:
+      type: markdown
+      description: a short text under the heading
+    # The record's own properties the chart and spans blocks read, by name.
+    window:
+      type: object
+      description: which of the record's own properties hold the window the
+        charts read, who it is about and what recorded it
+      fields:
+        start:
+          type: string
+          required: true
+          description: the property holding when the record starts, such as
+            at
+        end:
+          type: string
+          required: true
+          description: the property holding when the record ends, such as
+            endsAt
+        about:
+          type: string
+          description: the reference property naming who the record is about;
+            a record that names nobody reads the owner's observations
+        source:
+          type: string
+          description: the reference property naming the device or app that
+            recorded the record
+    fold:
+      type: string
+      repeated: true
+      description: properties the generic sheet folds away, because a section
+        of the view shows them
+    sections:
+      type: object
+      repeated: true
+      description: the view's sections in page order; each holds exactly one
+        block, which the console checks
+      fields:
+        heading:
+          type: object
+          description: a section heading with an optional line under it
+          fields:
+            text:
+              type: string
+              required: true
+              description: the heading
+            note:
+              type: string
+              description: the line under the heading
+        text:
+          type: object
+          description: a paragraph
+          fields:
+            text:
+              type: markdown
+              required: true
+              description: the paragraph, in markdown
+        properties:
+          type: object
+          description: chosen properties of the record, in order
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            list:
+              type: object
+              repeated: true
+              required: true
+              description: the properties to show, in order
+              fields:
+                property:
+                  type: string
+                  required: true
+                  description: the property's name
+                label:
+                  type: string
+                  description: the label shown instead of the property's own
+        related:
+          type: object
+          description: records linked by an outgoing reference property, or
+            records of a kind that reference this one through via; one of
+            the two, which the console checks
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            property:
+              type: string
+              description: an outgoing reference property of this record
+            # A reference to the kind's declaration, as appliesTo is: the
+            # import rehomes it, and a pointer at any other kind's record is
+            # refused. A bare word reads as the id of a declaration nobody
+            # made, which the console shows as a notice.
+            kind:
+              type: reference
+              kind: substrate.reamde.dev/core/kind
+              description: a kind whose records reference this one; give via
+                with it
+            via:
+              type: string
+              description: the reference property on that kind that points
+                here
+            show:
+              type: enum
+              default: list
+              values:
+                - list
+                - count
+              description: a list of the records or their count
+            limit:
+              type: int
+              min: 1
+              max: 100
+              description: the most records a list shows
+        chart:
+          type: object
+          description: what was measured during the record, read over its
+            window, one chart per metric
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            metrics:
+              type: string
+              repeated: true
+              required: true
+              description: the metric record ids to read, such as health/heart_rate
+            # The aggregate read's reducer names (avg, min, max, durationIn and
+            # the rest): a string, because an enum value is one lowercase word
+            # and durationIn is camelCase. The console refuses one it does not
+            # know, as a notice.
+            reducers:
+              type: object
+              repeated: true
+              required: true
+              description: the reducers to read, in order; a line draws the
+                first, with min and max as its band
+              fields:
+                reducer:
+                  type: string
+                  required: true
+                  description: the aggregate read's reducer, such as avg or
+                    durationIn
+                low:
+                  type: float
+                  description: a durationIn band's lower bound in the metric's
+                    unit, required for durationIn and under high
+                high:
+                  type: float
+                  description: a durationIn band's upper bound in the metric's
+                    unit, required for durationIn
+                rank:
+                  type: float
+                  min: 0
+                  max: 1
+                  description: a percentile's rank, such as 0.9, required
+                    for percentile
+                label:
+                  type: string
+                  description: what the value is called, such as Zone 2
+            bucket:
+              type: enum
+              default: auto
+              values:
+                - auto
+                - whole
+                - minute
+                - hour
+                - day
+              description: auto sizes the buckets to the window and draws
+                a line; whole reads one value per reducer and draws bars
+            unit:
+              type: string
+              description: the unit the read answers in, such as min for a
+                durationIn
+            sources:
+              type: enum
+              default: prefer
+              values:
+                - prefer
+                - only
+                - priority
+              description: prefer reads the record's own source first, only
+                reads it alone, priority reads the sources' priorities
+        spans:
+          type: object
+          description: a coded amount metric over the record's window drawn
+            as spans, one row per code, such as sleep stages; the console
+            shows any other form as a notice
+          fields:
+            label:
+              type: string
+              description: the block's heading
+            metric:
+              type: string
+              required: true
+              description: the coded amount metric record id to read, such
+                as health/sleep_stage
+            codes:
+              type: object
+              repeated: true
+              description: the codes top to bottom, each with an optional
+                label; a code not listed goes last
+              fields:
+                code:
+                  type: string
+                  required: true
+                  description: the code
+                label:
+                  type: string
+                  description: what the code is called
+            totals:
+              type: bool
+              default: true
+              description: whether the time in each code is shown under the
+                spans
+            sources:
+              type: enum
+              default: only
+              values:
+                - prefer
+                - only
+                - priority
+              description: prefer reads the record's own source first, only
+                reads it alone, priority reads the sources' priorities

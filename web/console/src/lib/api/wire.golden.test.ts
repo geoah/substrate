@@ -40,6 +40,25 @@ import type { RecordPatch } from "./records"
 import golden from "./wire.golden.json"
 import type {
   AffectedRecord,
+  Aggregate,
+  AggregateAround,
+  AggregateBucket,
+  AggregateBudget,
+  AggregateGroup,
+  AggregateHead,
+  AggregateMetric,
+  AggregateMetricRead,
+  AggregateProperty,
+  AggregateRange,
+  AggregateRecord,
+  AggregateRecordOffsets,
+  AggregateRecordSources,
+  AggregateRecords,
+  AggregateResult,
+  AggregateRolling,
+  AggregateRow,
+  AggregateSources,
+  AggregateValue,
   BundleClosure,
   BundlePurged,
   BundleStatus,
@@ -59,6 +78,7 @@ import type {
   ConversionConfirm,
   ConversionPlan,
   ConversionStep,
+  Downsample,
   ErrorEnvelope,
   ErrorPayload,
   FunctionCalled,
@@ -96,6 +116,10 @@ import type {
   TriggerRan,
   TriggerReplayed,
   TriggerStatus,
+  UnitCode,
+  UnitConversion,
+  UnitMeasure,
+  UnitTable,
   VocabularyPlan,
   WebhookAccepted,
 } from "./types"
@@ -354,6 +378,162 @@ const occurrenceProblem: Shape<OccurrenceProblem> = {
   kind: true,
   id: true,
   message: true,
+}
+
+const aggregate: Shape<Aggregate> = {
+  metric: false,
+  metrics: false,
+  property: false,
+  from: false,
+  minCoverage: false,
+  range: false,
+  bucket: false,
+  groupBy: false,
+  reducers: false,
+  sources: false,
+  unit: false,
+  maxGap: false,
+  fill: false,
+  rolling: false,
+  budget: false,
+}
+
+const aggregateMetric: Shape<AggregateMetric> = { ref: true }
+
+const aggregateMetricRead: Shape<AggregateMetricRead> = {
+  ref: true,
+  unit: false,
+  reducers: false,
+  from: false,
+  statistic: false,
+}
+
+const aggregateProperty: Shape<AggregateProperty> = {
+  name: true,
+  anchor: false,
+  utcOffset: false,
+  groupBy: false,
+  sources: false,
+}
+
+const aggregateRecordSources: Shape<AggregateRecordSources> = {
+  policy: false,
+  order: false,
+  property: false,
+  match: false,
+}
+
+const aggregateRange: Shape<AggregateRange> = { gte: true, lt: true }
+
+const aggregateBucket: Shape<AggregateBucket> = {
+  every: false,
+  origin: false,
+  calendar: false,
+  timezone: false,
+  fallbackTimezone: false,
+  weekStart: false,
+  offset: false,
+  place: false,
+  records: false,
+}
+
+const aggregateRecords: Shape<AggregateRecords> = {
+  filter: true,
+  around: false,
+  maxRecords: false,
+  sources: false,
+  utcOffsets: false,
+}
+
+const aggregateRecordOffsets: Shape<AggregateRecordOffsets> = {
+  start: true,
+  end: false,
+}
+
+const aggregateAround: Shape<AggregateAround> = {
+  before: false,
+  after: false,
+}
+
+const aggregateSources: Shape<AggregateSources> = {
+  policy: false,
+  order: false,
+}
+
+const aggregateRolling: Shape<AggregateRolling> = {
+  buckets: true,
+  reducers: false,
+  through: false,
+}
+
+const aggregateBudget: Shape<AggregateBudget> = {
+  maxBuckets: false,
+  maxSamples: false,
+  maxGroups: false,
+}
+
+const downsample: Shape<Downsample> = { points: true, method: false }
+
+const aggregateResult: Shape<AggregateResult> = {
+  metric: false,
+  property: false,
+  unit: false,
+  units: false,
+  bucket: false,
+  from: false,
+  exact: true,
+  rows: true,
+  sources: false,
+  head: true,
+}
+
+const aggregateHead: Shape<AggregateHead> = {
+  changelog: true,
+  generation: true,
+}
+
+const aggregateRow: Shape<AggregateRow> = {
+  start: true,
+  end: true,
+  form: false,
+  group: false,
+  record: false,
+  from: false,
+  sources: false,
+  coverage: false,
+  values: true,
+  count: true,
+  offsetless: false,
+  prorated: false,
+  bounded: true,
+  synthetic: true,
+  unavailable: true,
+  nonAdditive: false,
+}
+
+const aggregateGroup: Shape<AggregateGroup> = {
+  source: false,
+  about: false,
+  code: false,
+  metric: false,
+  kind: false,
+  channel: false,
+  statistic: false,
+  currency: false,
+  properties: false,
+}
+
+const aggregateRecord: Shape<AggregateRecord> = { ref: true, version: true }
+
+const aggregateValue: Shape<AggregateValue> = {
+  reducer: true,
+  value: true,
+  unit: false,
+  code: false,
+  at: false,
+  rolling: false,
+  of: false,
+  n: false,
 }
 
 const tokenInfo: Shape<TokenInfo> = {
@@ -670,6 +850,32 @@ const triggerRan: Shape<TriggerRan> = { ran: true }
 const functionCalled: Shape<FunctionCalled> = { output: true, effects: true }
 const webhookAccepted: Shape<WebhookAccepted> = { fire: true }
 
+const unitTable: Shape<UnitTable> = { measures: true, aliases: true }
+
+const unitMeasure: Shape<UnitMeasure> = {
+  name: true,
+  base: true,
+  scale: true,
+  display: true,
+  dimension: true,
+  note: false,
+  units: true,
+}
+
+const unitCode: Shape<UnitCode> = {
+  code: true,
+  print: true,
+  factor: false,
+  offset: false,
+}
+
+const unitConversion: Shape<UnitConversion> = {
+  value: true,
+  unit: true,
+  measure: true,
+  exact: true,
+}
+
 const mirrors: Record<string, Record<string, boolean>> = {
   ErrorEnvelope: errorEnvelope,
   ErrorPayload: errorPayload,
@@ -695,6 +901,26 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ChangeRun: changeRun,
   ChangeRunPage: changeRunPage,
   Page: page,
+  Aggregate: aggregate,
+  AggregateMetric: aggregateMetric,
+  AggregateMetricRead: aggregateMetricRead,
+  AggregateProperty: aggregateProperty,
+  AggregateRange: aggregateRange,
+  AggregateBucket: aggregateBucket,
+  AggregateRecords: aggregateRecords,
+  AggregateAround: aggregateAround,
+  AggregateSources: aggregateSources,
+  AggregateRecordSources: aggregateRecordSources,
+  AggregateRecordOffsets: aggregateRecordOffsets,
+  AggregateRolling: aggregateRolling,
+  AggregateBudget: aggregateBudget,
+  Downsample: downsample,
+  AggregateResult: aggregateResult,
+  AggregateHead: aggregateHead,
+  AggregateRow: aggregateRow,
+  AggregateGroup: aggregateGroup,
+  AggregateRecord: aggregateRecord,
+  AggregateValue: aggregateValue,
   RankedPage: rankedPage,
   Scores: scores,
   OperationalList: operationalList,
@@ -736,6 +962,10 @@ const mirrors: Record<string, Record<string, boolean>> = {
   TriggerRan: triggerRan,
   FunctionCalled: functionCalled,
   WebhookAccepted: webhookAccepted,
+  UnitTable: unitTable,
+  UnitMeasure: unitMeasure,
+  UnitCode: unitCode,
+  UnitConversion: unitConversion,
 }
 
 /** The interfaces the modules in this directory export that mirror no Go
@@ -791,6 +1021,9 @@ const notOnTheWire: Record<string, string> = {
   ReferencingRow:
     "one (record, site) pair the console folds from a referencing page and its matches",
   ReferencingGroup: "a client-side fold of ReferencingRow rows",
+  // observations.ts
+  AggregateRead:
+    "the `filter` and `aggregate` query parameters of one read, each JSON on its own, never one body",
   // repository.ts
   RepositoryInfo:
     "one property read off the repository record; not the operator's substrate.RepositoryInfo",

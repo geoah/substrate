@@ -596,16 +596,18 @@ it trusts:
   previous declaration of that row.
 
   A `POST …/vocabulary/apply` and a provider upgrade (the catalog's install
-  over an older version) use the same pass for the search index alone. Their
-  transaction holds the registry lock every write waits on, so it
-  re-derives only the refs rows of the rows carrying a moved reference
-  property, logging `substrate: vocabulary apply: re-deriving the refs
-  index`, and records the `fts` half for the pass, logging `substrate:
-  vocabulary apply: requesting the search index re-derivation behind the
-  commit` with `kinds`. The pass starts once the batch has committed and
-  logs the lines above. A reverse read is current when the batch answers;
-  until the pass reaches a row, a search over a moved `fts` flag answers
-  for the declaration the batch replaced. A batch whose commit answer was
+  over an older version) use the same pass for the search index and the
+  observed index. Their transaction holds the registry lock every write
+  waits on, so it re-derives only the refs rows of the rows carrying a
+  moved reference property, logging `substrate: vocabulary apply:
+  re-deriving the refs index`, and records the `fts` half and the observed
+  points of a kind that starts or stops binding the `observed` trait for
+  the pass, logging `substrate: vocabulary apply: requesting the search and
+  observed index re-derivation behind the commit` with `kinds`. The pass
+  starts once the batch has committed and logs the lines above. A reverse
+  read is current when the batch answers; until the pass reaches a row, a
+  search over a moved `fts` flag and the observed index of a rebound kind
+  answer for the declaration the batch replaced. A batch whose commit answer was
   lost leaves the repository refusing writes until restart, and may leave
   this process serving the declarations it replaced, so the pass stops
   there without touching a request, logging `substrate: the index
@@ -624,6 +626,15 @@ it trusts:
   is tried again after a pause of up to a minute. A reindex a shutdown
   interrupts starts again at the next open; `repository rebuild` finishes
   it, because the replay indexes every row.
+- **The observed index is re-derived in the background** when the binary
+  derives it by newer rules than the ones recorded in `observed_index`, or
+  when none are recorded (a repository written before migration 0012). The
+  open hands every row of every kind that binds the `observed` trait to the
+  pass that re-derives a reshaped kind's indexes, and logs `substrate: the
+  observed index was derived under older rules; re-deriving it behind the
+  open` with `from`, `to` and `kinds`.
+  A rebuild and a boot import derive the index whole and record the rules
+  they used, so the open after one asks for nothing.
 - Persisted function bodies re-warm in the background. One that no longer
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.
@@ -947,7 +958,12 @@ in `repository_migrations` (`version`, `name`, `applied_at`, one row per
 repository), and never runs again on that database. The ledger is checked the
 way `schema_migrations` is: a recorded version this binary does not carry, a
 recorded name that differs, or a pending version below one already recorded
-refuses that repository's open by name, and the API answers `503`. A
+refuses that repository's open by name, and the API answers `503`. A row
+a migration rewrites whose kind the binary's registry does not yet hold keeps
+its refs rows and observed points as they stand, and its kind is queued in
+`index_reprojections`, so the background pass after the open re-derives the
+refs rows, search bands and observed points of every row of it under the
+loaded vocabulary. A
 migration is written to find nothing to do the second time, because a
 repository directory imported into a fresh database carries its changelog and
 not the database's ledger, so every migration runs once more there. That is
@@ -968,7 +984,8 @@ stored bare, resolving each word the way that binary did.
 table `repository rebuild` clears and fills again from the changelog
 (`internal/engine/rebuild.go`): `records` with its derived columns `fts`,
 `orphaned_at` and `ambiguous_at`, `refs`, `former_ids`, `annotations`,
-`property_managers`, `property_offers`, and the delivery ledger
+`property_managers`, `property_offers`, the three tables of the
+[observed index](observations.md#the-observed-index), and the delivery ledger
 (`trigger_cursors`, `trigger_schedule`, `trigger_failures`,
 `paged_cursors`; a rebuild brings a cursor back at its last acknowledged
 delivery, not at the scan position past it). A SQL migration changes their

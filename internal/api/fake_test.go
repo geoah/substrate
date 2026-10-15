@@ -300,9 +300,13 @@ type fakeDataset struct {
 
 	// recorded inputs
 	lastQuery substrate.Query
-	lastPut   substrate.PutInput
-	lastPatch substrate.PatchInput
-	lastActor substrate.Actor
+	// lastAggregate is the last aggregate read's query; aggregateResult the
+	// canned answer it returns (fake_aggregate_test.go).
+	lastAggregate   *substrate.AggregateQuery
+	aggregateResult *substrate.AggregateResult
+	lastPut         substrate.PutInput
+	lastPatch       substrate.PatchInput
+	lastActor       substrate.Actor
 	// lastPrincipal is what the engine reads off the write's context: the
 	// token id the door resolved, never anything the caller sent.
 	lastPrincipal string
@@ -371,6 +375,8 @@ func testTypes() []substrate.KindInfo {
 					// An unpinned reference: the stored value carries the
 					// "<kind>/<id>" path under `ref`.
 					"manager": map[string]any{"type": "reference"},
+					// A quantity: {value, unit}, the value a digit string.
+					"height": map[string]any{"type": "quantity", "measures": "length"},
 				},
 			},
 		},
@@ -529,7 +535,8 @@ const fakeMaxSafeInt = 1<<53 - 1
 // refuseUnsafeNumbers mirrors the numeric refusals of decision 0012 on a kind's
 // top-level properties: an `int` (scalar, repeated, or a link property inside
 // a reference) past |2^53-1|, a money `amount` past the same bound, and a
-// `decimal` that arrives as a JSON number instead of its digit string. The
+// `decimal` or a quantity's `value` that arrives as a JSON number instead of
+// its digit string. The
 // REST door decodes its body with json.Number, and this is the fake's proof that what arrives is what the
 // engine would refuse, rather than a value rounded into range or a number
 // turned back into a string. Nested sites and the wording of the refusal are
@@ -565,6 +572,11 @@ func refuseUnsafeNumbersIn(defs, props map[string]any) error {
 				m, _ := v.(map[string]any)
 				if f, ok := fakeNumber(m["amount"]); ok && (f > fakeMaxSafeInt || f < -fakeMaxSafeInt) {
 					return fmt.Errorf("%w: %s: amount: an int is a safe integer (|value| <= %d)", substrate.ErrValidation, name, int64(fakeMaxSafeInt))
+				}
+			case "quantity":
+				m, _ := v.(map[string]any)
+				if _, ok := fakeNumber(m["value"]); ok {
+					return fmt.Errorf("%w: %s: value: a quantity's digits are a string, not a JSON number", substrate.ErrValidation, name)
 				}
 			case "reference":
 				link, _ := v.(map[string]any)

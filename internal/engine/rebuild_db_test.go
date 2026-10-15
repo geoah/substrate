@@ -232,10 +232,23 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 	cleared := writeSomeHistory(t, ds)
 	installPeopleSourcesWithDir(t, ds)
 	writeMappedHistory(t, ds)
+	writeObservedHistory(t, ds)
 
 	before := foldOf(t, ds)
 	if offersIn(t, before) == 0 {
 		t.Fatal("the fold holds no property_offers; the rebuild would prove nothing about them")
+	}
+	for _, table := range []string{"observed_points", "observed_rollups", "observed_latest"} {
+		if strings.Contains(string(before), `"`+table+`": []`) || !strings.Contains(string(before), `"`+table+`": [`) {
+			t.Fatalf("the fold holds no %s row; the rebuild would prove nothing about them", table)
+		}
+	}
+	// The rebuild must DERIVE the observed index: emptied here, it is back
+	// only if the replay put it back.
+	for _, table := range []string{"observed_points", "observed_rollups", "observed_latest"} {
+		if _, err := rawDB(t, dsn).Exec(`DELETE FROM ` + table); err != nil {
+			t.Fatalf("empty %s: %v", table, err)
+		}
 	}
 	head := maxSeq(t, ds)
 

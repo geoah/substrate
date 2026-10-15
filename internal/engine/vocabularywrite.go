@@ -282,7 +282,8 @@ func claimedOrigin(origin string, docs []vocabulary.Document) (string, int64, er
 // document that fails to admit — a malformed trigger, an unresolvable callable,
 // a failed write — rolls the schema apply back with it, so a failed install
 // never leaves a live half-installed closure. The data documents
-// are UPSERTS: a re-install refreshes the wiring in place. The transaction's
+// are UPSERTS: a re-install refreshes the wiring in place, except a record of
+// a console kind the owner edited (keepsOwnersEdit), which it leaves alone. The transaction's
 // declarations are the candidate registry, so a data document may name a kind,
 // a mapping or a callable the same closure installs.
 func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
@@ -313,6 +314,15 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 					}
 				}
+				if keepsOwnersEdit(in.Kind) {
+					edited, err := t.editedSince(eref{Kind: in.Kind, ID: in.ID}, actor)
+					if err != nil {
+						return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
+					}
+					if edited {
+						continue
+					}
+				}
 				if _, err := t.put(in); err != nil {
 					return fmt.Errorf("delivery wiring %s: %w", in.ID, err)
 				}
@@ -330,6 +340,53 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 		}
 	}
 	return out, nil
+}
+
+// keepsOwnersEdit reports whether a closure's shipped record of this kind is
+// written only where the owner has not edited the stored one. A record of a
+// console kind (a record view) is presentation its owner edits, and an
+// upsert would overwrite the edit without a word (record 0166). Every other
+// shipped data record is an upsert.
+func keepsOwnersEdit(kind string) bool {
+	return vocabulary.KindPackage(kind) == vocabulary.PackageConsole
+}
+
+// editedSince reports whether a live record stands at ref with a property
+// some actor other than `installer` last wrote, read off the manager ledger
+// under the record's advisory lock so a concurrent writer of the same id
+// serializes behind the check. An absent or deleted record is not edited, so
+// the shipped one lands; a live row with no manager row at all cannot be told
+// from an edit and counts as one. A property the owner DELETED leaves no
+// manager row, so a view whose only edit was a removal reads as unedited.
+func (t *txn) editedSince(ref eref, installer substrate.Actor) (bool, error) {
+	at, err := t.lockCanonical(ref)
+	if err != nil {
+		return false, err
+	}
+	row, err := t.loadRow(at, false)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return false, err
+	}
+	rows, err := t.query(`SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2`, at.Kind, at.ID)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	managed := false
+	for rows.Next() {
+		var actor string
+		if err := rows.Scan(&actor); err != nil {
+			return false, err
+		}
+		if substrate.Actor(actor) != installer {
+			return true, nil
+		}
+		managed = true
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return !managed, nil
 }
 
 // applyVocabularyBatch is the write path for schema: candidate before the
@@ -573,19 +630,20 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if err := t.rederiveMovedRefs(reshaped); err != nil {
 			return err
 		}
-		// `fts` re-derives BEHIND THE COMMIT, in the pass the boot upgrade
-		// leaves its reshaped kinds to (reprojection.go): a kind of many rows
-		// takes minutes, and this transaction holds the registry lock every
-		// write waits on. The request commits with the declarations, and
-		// until the pass reaches a row, a search answers for the declaration
+		// `fts` and the observed points re-derive BEHIND THE COMMIT, in the
+		// pass the boot upgrade leaves its reshaped kinds to
+		// (reprojection.go): a kind of many rows takes minutes, and this
+		// transaction holds the registry lock every write waits on. The
+		// request commits with the declarations, and until the pass reaches
+		// a row, a search and the observed index answer for the declaration
 		// the batch replaced.
-		owed, err := t.requestMovedFTS(reshaped)
+		owed, err := t.requestMovedBehindCommit(reshaped)
 		if err != nil {
 			return err
 		}
 		if len(owed) > 0 {
 			requested = true
-			ds.logApply("requesting the search index re-derivation behind the commit", "kinds", len(owed))
+			ds.logApply("requesting the search and observed index re-derivation behind the commit", "kinds", len(owed))
 		}
 		if b.extra != nil {
 			if err := b.extra(t); err != nil {
@@ -2463,10 +2521,10 @@ func admissionUnits(built []*vocabulary.Package) [][]*vocabulary.Package {
 }
 
 // seededPackageName reports whether a declaration group is one the binary
-// seeds: the two packages, and the authority row that owns them.
+// seeds: the three packages, and the authority row that owns them.
 func seededPackageName(name string) bool {
 	return name == vocabulary.PackageCore || name == vocabulary.PackageLLM ||
-		name == vocabulary.AuthorityPublisher
+		name == vocabulary.PackageConsole || name == vocabulary.AuthorityPublisher
 }
 
 // markGroupQuarantined records the quarantine state on the package's own row,

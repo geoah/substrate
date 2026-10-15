@@ -1,0 +1,1342 @@
+{
+  "measures": [
+    {
+      "name": "mass",
+      "base": "kg",
+      "scale": "ratio",
+      "display": "kg",
+      "dimension": "M",
+      "units": [
+        "kg",
+        "g",
+        "mg",
+        "ug",
+        "ng",
+        "t",
+        "[lb_av]",
+        "[oz_av]",
+        "[stone_av]"
+      ]
+    },
+    {
+      "name": "length",
+      "base": "m",
+      "scale": "ratio",
+      "display": "m",
+      "dimension": "L",
+      "units": [
+        "m",
+        "km",
+        "cm",
+        "mm",
+        "nm",
+        "[in_i]",
+        "[ft_i]",
+        "[yd_i]",
+        "[mi_i]",
+        "[nmi_i]"
+      ]
+    },
+    {
+      "name": "area",
+      "base": "m2",
+      "scale": "ratio",
+      "display": "m2",
+      "dimension": "L2",
+      "units": [
+        "m2",
+        "cm2",
+        "har",
+        "[sft_i]"
+      ]
+    },
+    {
+      "name": "volume",
+      "base": "m3",
+      "scale": "ratio",
+      "display": "L",
+      "dimension": "L3",
+      "units": [
+        "m3",
+        "L",
+        "dL",
+        "mL",
+        "[gal_us]",
+        "[qt_us]",
+        "[pt_us]",
+        "[cup_us]",
+        "[foz_us]",
+        "[tbs_us]",
+        "[tsp_us]",
+        "[gal_br]",
+        "[foz_br]",
+        "[cup_m]",
+        "[tbs_m]",
+        "[tsp_m]",
+        "[cft_i]"
+      ]
+    },
+    {
+      "name": "duration",
+      "base": "s",
+      "scale": "ratio",
+      "display": "min",
+      "dimension": "T",
+      "units": [
+        "s",
+        "ms",
+        "us",
+        "min",
+        "h",
+        "d",
+        "wk",
+        "mo",
+        "a"
+      ],
+      "note": "the month mo and the year a are UCUM's mean Julian month (30.4375 d) and year (365.25 d), never a calendar month or year"
+    },
+    {
+      "name": "temperature",
+      "base": "K",
+      "scale": "affine",
+      "display": "Cel",
+      "dimension": "Θ",
+      "units": [
+        "K",
+        "Cel",
+        "[degF]"
+      ],
+      "note": "an absolute temperature: Cel and [degF] convert with their offsets"
+    },
+    {
+      "name": "temperature-difference",
+      "base": "K",
+      "scale": "difference",
+      "display": "K",
+      "dimension": "Θ",
+      "units": [
+        "K",
+        "Cel",
+        "[degF]"
+      ],
+      "note": "a difference or deviation: the same codes, the offsets suppressed"
+    },
+    {
+      "name": "energy",
+      "base": "J",
+      "scale": "ratio",
+      "display": "kJ",
+      "dimension": "L2 M T-2",
+      "units": [
+        "J",
+        "kJ",
+        "MJ",
+        "cal",
+        "kcal",
+        "[Cal]",
+        "W.h",
+        "kW.h",
+        "eV",
+        "[Btu_IT]"
+      ],
+      "note": "the calorie cal is the thermochemical one (4.184 J); [Cal] is the nutrition Calorie, a kcal"
+    },
+    {
+      "name": "power",
+      "base": "W",
+      "scale": "ratio",
+      "display": "W",
+      "dimension": "L2 M T-3",
+      "units": [
+        "W",
+        "mW",
+        "kW",
+        "MW",
+        "[HP]",
+        "kcal/d",
+        "kcal/h",
+        "[Btu_IT]/h"
+      ]
+    },
+    {
+      "name": "apparent-power",
+      "base": "V.A",
+      "scale": "ratio",
+      "display": "V.A",
+      "dimension": "L2 M T-3",
+      "units": [
+        "V.A"
+      ],
+      "note": "volt-amperes: the same factor as the watt and never converted into it"
+    },
+    {
+      "name": "reactive-power",
+      "base": "V.A{reactive}",
+      "scale": "ratio",
+      "display": "V.A{reactive}",
+      "dimension": "L2 M T-3",
+      "units": [
+        "V.A{reactive}"
+      ],
+      "note": "UCUM has no code for var, so it is the annotated volt-ampere"
+    },
+    {
+      "name": "pressure",
+      "base": "Pa",
+      "scale": "ratio",
+      "display": "hPa",
+      "dimension": "L-1 M T-2",
+      "units": [
+        "Pa",
+        "hPa",
+        "kPa",
+        "bar",
+        "mbar",
+        "atm",
+        "mm[Hg]",
+        "cm[H2O]",
+        "[psi]",
+        "[in_i'Hg]"
+      ]
+    },
+    {
+      "name": "speed",
+      "base": "m/s",
+      "scale": "ratio",
+      "display": "km/h",
+      "dimension": "L T-1",
+      "units": [
+        "m/s",
+        "km/h",
+        "[mi_i]/h",
+        "[kn_i]",
+        "[ft_i]/s"
+      ]
+    },
+    {
+      "name": "pace",
+      "base": "s/m",
+      "scale": "ratio",
+      "display": "min/km",
+      "dimension": "L-1 T",
+      "units": [
+        "s/m",
+        "min/km",
+        "s/km",
+        "min/[mi_i]",
+        "s/(100.m)",
+        "s/(100.[yd_i])",
+        "s/(500.m)"
+      ],
+      "note": "the reciprocal of a speed: a mean pace is total time over total distance"
+    },
+    {
+      "name": "acceleration",
+      "base": "m/s2",
+      "scale": "ratio",
+      "display": "m/s2",
+      "dimension": "L T-2",
+      "units": [
+        "m/s2",
+        "[g]"
+      ]
+    },
+    {
+      "name": "frequency",
+      "base": "Hz",
+      "scale": "ratio",
+      "display": "Hz",
+      "dimension": "T-1",
+      "units": [
+        "Hz",
+        "kHz"
+      ]
+    },
+    {
+      "name": "rate",
+      "base": "/s",
+      "scale": "ratio",
+      "display": "/min",
+      "dimension": "T-1",
+      "units": [
+        "/s",
+        "/min",
+        "/h",
+        "/d",
+        "/wk"
+      ],
+      "note": "events per time; an annotated rate ({beats}/min) converts only to the same annotation"
+    },
+    {
+      "name": "count",
+      "base": "1",
+      "scale": "count",
+      "display": "{count}",
+      "dimension": "1",
+      "units": [
+        "{count}",
+        "1"
+      ],
+      "note": "a count of things, named by an annotation alone ({steps}); two annotations never convert"
+    },
+    {
+      "name": "fraction",
+      "base": "1",
+      "scale": "ratio",
+      "display": "%",
+      "dimension": "1",
+      "units": [
+        "1",
+        "%",
+        "[ppth]",
+        "[ppm]",
+        "[ppb]"
+      ],
+      "note": "a part of a whole"
+    },
+    {
+      "name": "amount-fraction",
+      "base": "mol/mol",
+      "scale": "ratio",
+      "display": "mmol/mol",
+      "dimension": "1",
+      "units": [
+        "mmol/mol"
+      ],
+      "note": "an amount of substance per amount of substance (HbA1c IFCC); a mol over a mol under any prefixes belongs here and never converts to a fraction such as an NGSP %"
+    },
+    {
+      "name": "score",
+      "base": "{score}",
+      "scale": "ratio",
+      "display": "{score}",
+      "dimension": "1",
+      "units": [
+        "{score}"
+      ],
+      "note": "a vendor's number on its own scale (WHOOP strain, Garmin stress): it converts to nothing but itself, never to a percent"
+    },
+    {
+      "name": "amount-of-substance",
+      "base": "mol",
+      "scale": "ratio",
+      "display": "mmol",
+      "dimension": "N",
+      "units": [
+        "mol",
+        "mmol",
+        "umol"
+      ]
+    },
+    {
+      "name": "amount-concentration",
+      "base": "mol/m3",
+      "scale": "ratio",
+      "display": "mmol/L",
+      "dimension": "L-3 N",
+      "units": [
+        "mol/L",
+        "mmol/L",
+        "umol/L",
+        "nmol/L",
+        "pmol/L"
+      ]
+    },
+    {
+      "name": "mass-concentration",
+      "base": "kg/m3",
+      "scale": "ratio",
+      "display": "mg/dL",
+      "dimension": "L-3 M",
+      "units": [
+        "g/L",
+        "g/dL",
+        "mg/dL",
+        "mg/L",
+        "ug/L",
+        "ng/mL",
+        "pg/mL",
+        "ug/dL",
+        "g/m3",
+        "mg/m3",
+        "ug/m3",
+        "kg/m3"
+      ]
+    },
+    {
+      "name": "number-concentration",
+      "base": "/m3",
+      "scale": "ratio",
+      "display": "10*9/L",
+      "dimension": "L-3",
+      "units": [
+        "/L",
+        "/uL",
+        "10*3/uL",
+        "10*6/uL",
+        "10*9/L",
+        "10*12/L"
+      ],
+      "note": "things counted per volume, such as blood cells: 10*9/L and 10*3/uL are one value"
+    },
+    {
+      "name": "catalytic-concentration",
+      "base": "mol/(s.m3)",
+      "scale": "ratio",
+      "display": "U/L",
+      "dimension": "L-3 T-1 N",
+      "units": [
+        "U/L"
+      ],
+      "note": "enzyme activity per volume: U is 1 umol/min, a proper unit"
+    },
+    {
+      "name": "catalytic-activity",
+      "base": "mol/s",
+      "scale": "ratio",
+      "display": "U",
+      "dimension": "T-1 N",
+      "units": [
+        "kat",
+        "U"
+      ]
+    },
+    {
+      "name": "arbitrary",
+      "base": "",
+      "scale": "arbitrary",
+      "display": "[IU]",
+      "dimension": "",
+      "units": [
+        "[IU]",
+        "[IU]/L",
+        "m[IU]/L",
+        "[IU]/mL",
+        "[arb'U]"
+      ],
+      "note": "defined by an assay: converts only to the same atom and annotation under another metric prefix"
+    },
+    {
+      "name": "illuminance",
+      "base": "lx",
+      "scale": "ratio",
+      "display": "lx",
+      "dimension": "L-2 J A2",
+      "units": [
+        "lx"
+      ]
+    },
+    {
+      "name": "luminous-flux",
+      "base": "lm",
+      "scale": "ratio",
+      "display": "lm",
+      "dimension": "J A2",
+      "units": [
+        "lm"
+      ]
+    },
+    {
+      "name": "luminous-intensity",
+      "base": "cd",
+      "scale": "ratio",
+      "display": "cd",
+      "dimension": "J",
+      "units": [
+        "cd"
+      ]
+    },
+    {
+      "name": "luminance",
+      "base": "cd/m2",
+      "scale": "ratio",
+      "display": "cd/m2",
+      "dimension": "L-2 J",
+      "units": [
+        "cd/m2"
+      ]
+    },
+    {
+      "name": "irradiance",
+      "base": "W/m2",
+      "scale": "ratio",
+      "display": "W/m2",
+      "dimension": "M T-3",
+      "units": [
+        "W/m2"
+      ]
+    },
+    {
+      "name": "level",
+      "base": "dB",
+      "scale": "logarithmic",
+      "display": "dB",
+      "dimension": "",
+      "units": [
+        "dB"
+      ],
+      "note": "a ratio in decibels against no stated reference: never converted; a sum of levels is not a level, so the aggregate read refuses sum over any logarithmic measure"
+    },
+    {
+      "name": "sound-pressure-level",
+      "base": "dB[SPL]",
+      "scale": "logarithmic",
+      "display": "dB[SPL]",
+      "dimension": "",
+      "units": [
+        "dB[SPL]"
+      ],
+      "note": "20 lg(p/20 uPa) dB"
+    },
+    {
+      "name": "power-level",
+      "base": "dB[W]",
+      "scale": "logarithmic",
+      "display": "dBm",
+      "dimension": "",
+      "units": [
+        "dB[W]",
+        "dBm"
+      ],
+      "note": "the level dB[W] is 10 lg(P/1 W) dB; dBm is 10 lg(P/1 mW) dB, a substrate code because UCUM has none"
+    },
+    {
+      "name": "acidity",
+      "base": "[pH]",
+      "scale": "logarithmic",
+      "display": "[pH]",
+      "dimension": "",
+      "units": [
+        "[pH]"
+      ]
+    },
+    {
+      "name": "electric-potential",
+      "base": "V",
+      "scale": "ratio",
+      "display": "V",
+      "dimension": "L2 M T-3 I-1",
+      "units": [
+        "V",
+        "mV"
+      ]
+    },
+    {
+      "name": "electric-current",
+      "base": "A",
+      "scale": "ratio",
+      "display": "A",
+      "dimension": "I",
+      "units": [
+        "A",
+        "mA"
+      ]
+    },
+    {
+      "name": "electric-resistance",
+      "base": "Ohm",
+      "scale": "ratio",
+      "display": "Ohm",
+      "dimension": "L2 M T-3 I-2",
+      "units": [
+        "Ohm",
+        "kOhm"
+      ]
+    },
+    {
+      "name": "electric-charge",
+      "base": "C",
+      "scale": "ratio",
+      "display": "mA.h",
+      "dimension": "T I",
+      "units": [
+        "C",
+        "A.h",
+        "mA.h"
+      ]
+    },
+    {
+      "name": "electric-conductivity",
+      "base": "S/m",
+      "scale": "ratio",
+      "display": "uS/cm",
+      "dimension": "L-3 M-1 T3 I2",
+      "units": [
+        "uS/cm"
+      ]
+    },
+    {
+      "name": "information",
+      "base": "bit",
+      "scale": "ratio",
+      "display": "By",
+      "dimension": "B",
+      "units": [
+        "bit",
+        "By",
+        "kBy",
+        "MBy",
+        "GBy",
+        "KiBy",
+        "MiBy",
+        "GiBy"
+      ]
+    },
+    {
+      "name": "data-rate",
+      "base": "bit/s",
+      "scale": "ratio",
+      "display": "Mbit/s",
+      "dimension": "T-1 B",
+      "units": [
+        "bit/s",
+        "kbit/s",
+        "Mbit/s",
+        "By/s"
+      ]
+    },
+    {
+      "name": "angle",
+      "base": "deg",
+      "scale": "ratio",
+      "display": "deg",
+      "dimension": "A",
+      "units": [
+        "deg",
+        "'",
+        "''",
+        "rad"
+      ],
+      "note": "the radian rad is 180/pi deg, which no rational number states, so rad converts to nothing but itself"
+    },
+    {
+      "name": "volume-flow",
+      "base": "m3/s",
+      "scale": "ratio",
+      "display": "L/min",
+      "dimension": "L3 T-1",
+      "units": [
+        "L/min",
+        "L/h",
+        "mL/min",
+        "m3/h",
+        "[gal_us]/min"
+      ]
+    },
+    {
+      "name": "mass-flow",
+      "base": "kg/s",
+      "scale": "ratio",
+      "display": "g/s",
+      "dimension": "M T-1",
+      "units": [
+        "g/s"
+      ]
+    },
+    {
+      "name": "force",
+      "base": "N",
+      "scale": "ratio",
+      "display": "N",
+      "dimension": "L M T-2",
+      "units": [
+        "N",
+        "[lbf_av]"
+      ]
+    },
+    {
+      "name": "torque",
+      "base": "N.m",
+      "scale": "ratio",
+      "display": "N.m",
+      "dimension": "L2 M T-2",
+      "units": [
+        "N.m",
+        "[lbf_av].[ft_i]"
+      ],
+      "note": "the same dimension as energy, and never converted into it"
+    },
+    {
+      "name": "activity-concentration",
+      "base": "Bq/m3",
+      "scale": "ratio",
+      "display": "Bq/m3",
+      "dimension": "L-3 T-1",
+      "units": [
+        "Bq/m3",
+        "pCi/L"
+      ]
+    },
+    {
+      "name": "absorbed-dose",
+      "base": "Gy",
+      "scale": "ratio",
+      "display": "mGy",
+      "dimension": "L2 T-2",
+      "units": [
+        "Gy",
+        "mGy"
+      ],
+      "note": "energy absorbed per mass of tissue: never a dose equivalent and never a specific energy, though all three are J/kg"
+    },
+    {
+      "name": "dose-equivalent",
+      "base": "Sv",
+      "scale": "ratio",
+      "display": "mSv",
+      "dimension": "L2 T-2",
+      "units": [
+        "Sv",
+        "mSv",
+        "uSv"
+      ],
+      "note": "an absorbed dose weighted by its radiation's effect: never converted to a Gy"
+    },
+    {
+      "name": "dose-equivalent-rate",
+      "base": "Sv/s",
+      "scale": "ratio",
+      "display": "uSv/h",
+      "dimension": "L2 T-3",
+      "units": [
+        "uSv/h"
+      ]
+    },
+    {
+      "name": "radioactivity",
+      "base": "Bq",
+      "scale": "ratio",
+      "display": "Bq",
+      "dimension": "T-1",
+      "units": [
+        "Bq",
+        "kBq",
+        "MBq"
+      ],
+      "note": "decays per second: never a frequency or a rate of events, though all three are s-1"
+    },
+    {
+      "name": "body-mass-index",
+      "base": "kg/m2",
+      "scale": "ratio",
+      "display": "kg/m2",
+      "dimension": "L-2 M",
+      "units": [
+        "kg/m2"
+      ]
+    },
+    {
+      "name": "oxygen-uptake-rate",
+      "base": "m3/(kg.s)",
+      "scale": "ratio",
+      "display": "mL/(kg.min)",
+      "dimension": "L3 M-1 T-1",
+      "units": [
+        "mL/(kg.min)",
+        "[MET]"
+      ],
+      "note": "one MET is 3.5 mL/(kg.min)"
+    },
+    {
+      "name": "specific-power",
+      "base": "W/kg",
+      "scale": "ratio",
+      "display": "W/kg",
+      "dimension": "L2 T-3",
+      "units": [
+        "W/kg"
+      ]
+    },
+    {
+      "name": "specific-energy",
+      "base": "J/kg",
+      "scale": "ratio",
+      "display": "kcal/kg",
+      "dimension": "L2 T-2",
+      "units": [
+        "kcal/kg"
+      ]
+    },
+    {
+      "name": "energy-per-distance",
+      "base": "J/m",
+      "scale": "ratio",
+      "display": "kW.h/(100.km)",
+      "dimension": "L M T-2",
+      "units": [
+        "kW.h/(100.km)",
+        "W.h/km"
+      ]
+    },
+    {
+      "name": "fuel-consumption",
+      "base": "m3/m",
+      "scale": "ratio",
+      "display": "L/(100.km)",
+      "dimension": "L2",
+      "units": [
+        "L/(100.km)"
+      ],
+      "note": "the reciprocal of a fuel economy, never converted into one"
+    },
+    {
+      "name": "fuel-economy",
+      "base": "m/m3",
+      "scale": "ratio",
+      "display": "km/L",
+      "dimension": "L-2",
+      "units": [
+        "[mi_i]/[gal_us]",
+        "km/L"
+      ]
+    },
+    {
+      "name": "precipitation-rate",
+      "base": "m/s",
+      "scale": "ratio",
+      "display": "mm/h",
+      "dimension": "L T-1",
+      "units": [
+        "mm/h",
+        "[in_i]/h"
+      ]
+    }
+  ],
+  "symbols": {
+    "%": "%",
+    "'": "′",
+    "''": "″",
+    "/L": "/L",
+    "/d": "/d",
+    "/h": "/h",
+    "/min": "/min",
+    "/s": "/s",
+    "/uL": "/μL",
+    "/wk": "/wk",
+    "1": "",
+    "10*12/L": "10¹²/L",
+    "10*3/uL": "10³/μL",
+    "10*6/uL": "10⁶/μL",
+    "10*9/L": "10⁹/L",
+    "A": "A",
+    "A.h": "Ah",
+    "Bq": "Bq",
+    "Bq/m3": "Bq/m³",
+    "By": "B",
+    "By/s": "B/s",
+    "C": "C",
+    "Cel": "°C",
+    "GBy": "GB",
+    "GiBy": "GiB",
+    "Gy": "Gy",
+    "Hz": "Hz",
+    "J": "J",
+    "K": "K",
+    "KiBy": "KiB",
+    "L": "L",
+    "L/(100.km)": "L/100 km",
+    "L/h": "L/h",
+    "L/min": "L/min",
+    "MBq": "MBq",
+    "MBy": "MB",
+    "MJ": "MJ",
+    "MW": "MW",
+    "Mbit/s": "Mbit/s",
+    "MiBy": "MiB",
+    "N": "N",
+    "N.m": "N·m",
+    "Ohm": "Ω",
+    "Pa": "Pa",
+    "Sv": "Sv",
+    "U": "U",
+    "U/L": "U/L",
+    "V": "V",
+    "V.A": "VA",
+    "V.A{reactive}": "var",
+    "W": "W",
+    "W.h": "Wh",
+    "W.h/km": "Wh/km",
+    "W/kg": "W/kg",
+    "W/m2": "W/m²",
+    "[Btu_IT]": "Btu",
+    "[Btu_IT]/h": "Btu/h",
+    "[Cal]": "Cal",
+    "[HP]": "hp",
+    "[IU]": "IU",
+    "[IU]/L": "IU/L",
+    "[IU]/mL": "IU/mL",
+    "[MET]": "MET",
+    "[arb'U]": "arb. U",
+    "[cft_i]": "ft³",
+    "[cup_m]": "cup (metric)",
+    "[cup_us]": "cup",
+    "[degF]": "°F",
+    "[foz_br]": "fl oz (UK)",
+    "[foz_us]": "fl oz",
+    "[ft_i]": "ft",
+    "[ft_i]/s": "ft/s",
+    "[g]": "gn",
+    "[gal_br]": "gal (UK)",
+    "[gal_us]": "gal",
+    "[gal_us]/min": "gal/min",
+    "[in_i'Hg]": "inHg",
+    "[in_i]": "in",
+    "[in_i]/h": "in/h",
+    "[kn_i]": "kn",
+    "[lb_av]": "lb",
+    "[lbf_av]": "lbf",
+    "[lbf_av].[ft_i]": "lbf·ft",
+    "[mi_i]": "mi",
+    "[mi_i]/[gal_us]": "mpg",
+    "[mi_i]/h": "mph",
+    "[nmi_i]": "nmi",
+    "[oz_av]": "oz",
+    "[pH]": "pH",
+    "[ppb]": "ppb",
+    "[ppm]": "ppm",
+    "[ppth]": "‰",
+    "[psi]": "psi",
+    "[pt_us]": "pt",
+    "[qt_us]": "qt",
+    "[sft_i]": "ft²",
+    "[stone_av]": "st",
+    "[tbs_m]": "tbsp (metric)",
+    "[tbs_us]": "tbsp",
+    "[tsp_m]": "tsp (metric)",
+    "[tsp_us]": "tsp",
+    "[yd_i]": "yd",
+    "a": "a",
+    "atm": "atm",
+    "bar": "bar",
+    "bit": "bit",
+    "bit/s": "bit/s",
+    "cal": "cal",
+    "cd": "cd",
+    "cd/m2": "cd/m²",
+    "cm": "cm",
+    "cm2": "cm²",
+    "cm[H2O]": "cmH₂O",
+    "d": "d",
+    "dB": "dB",
+    "dB[SPL]": "dB SPL",
+    "dB[W]": "dBW",
+    "dBm": "dBm",
+    "dL": "dL",
+    "deg": "°",
+    "eV": "eV",
+    "g": "g",
+    "g/L": "g/L",
+    "g/dL": "g/dL",
+    "g/m3": "g/m³",
+    "g/s": "g/s",
+    "h": "h",
+    "hPa": "hPa",
+    "har": "ha",
+    "kBq": "kBq",
+    "kBy": "kB",
+    "kHz": "kHz",
+    "kJ": "kJ",
+    "kOhm": "kΩ",
+    "kPa": "kPa",
+    "kW": "kW",
+    "kW.h": "kWh",
+    "kW.h/(100.km)": "kWh/100 km",
+    "kat": "kat",
+    "kbit/s": "kbit/s",
+    "kcal": "kcal",
+    "kcal/d": "kcal/d",
+    "kcal/h": "kcal/h",
+    "kcal/kg": "kcal/kg",
+    "kg": "kg",
+    "kg/m2": "kg/m²",
+    "kg/m3": "kg/m³",
+    "km": "km",
+    "km/L": "km/L",
+    "km/h": "km/h",
+    "lm": "lm",
+    "lx": "lx",
+    "m": "m",
+    "m/s": "m/s",
+    "m/s2": "m/s²",
+    "m2": "m²",
+    "m3": "m³",
+    "m3/h": "m³/h",
+    "mA": "mA",
+    "mA.h": "mAh",
+    "mGy": "mGy",
+    "mL": "mL",
+    "mL/(kg.min)": "mL/(kg·min)",
+    "mL/min": "mL/min",
+    "mSv": "mSv",
+    "mV": "mV",
+    "mW": "mW",
+    "m[IU]/L": "mIU/L",
+    "mbar": "mbar",
+    "mg": "mg",
+    "mg/L": "mg/L",
+    "mg/dL": "mg/dL",
+    "mg/m3": "mg/m³",
+    "min": "min",
+    "min/[mi_i]": "min/mi",
+    "min/km": "min/km",
+    "mm": "mm",
+    "mm/h": "mm/h",
+    "mm[Hg]": "mmHg",
+    "mmol": "mmol",
+    "mmol/L": "mmol/L",
+    "mmol/mol": "mmol/mol",
+    "mo": "mo",
+    "mol": "mol",
+    "mol/L": "mol/L",
+    "ms": "ms",
+    "ng": "ng",
+    "ng/mL": "ng/mL",
+    "nm": "nm",
+    "nmol/L": "nmol/L",
+    "pCi/L": "pCi/L",
+    "pg/mL": "pg/mL",
+    "pmol/L": "pmol/L",
+    "rad": "rad",
+    "s": "s",
+    "s/(100.[yd_i])": "s/100 yd",
+    "s/(100.m)": "s/100 m",
+    "s/(500.m)": "s/500 m",
+    "s/km": "s/km",
+    "s/m": "s/m",
+    "t": "t",
+    "uS/cm": "μS/cm",
+    "uSv": "μSv",
+    "uSv/h": "μSv/h",
+    "ug": "μg",
+    "ug/L": "μg/L",
+    "ug/dL": "μg/dL",
+    "ug/m3": "μg/m³",
+    "umol": "μmol",
+    "umol/L": "μmol/L",
+    "us": "μs",
+    "wk": "wk",
+    "{count}": "{count}",
+    "{score}": "score"
+  },
+  "symbolCodes": {
+    "/μL": "/uL",
+    "10³/μL": "10*3/uL",
+    "10¹²/L": "10*12/L",
+    "10⁶/μL": "10*6/uL",
+    "10⁹/L": "10*9/L",
+    "Ah": "A.h",
+    "Bq/m³": "Bq/m3",
+    "Btu": "[Btu_IT]",
+    "Btu/h": "[Btu_IT]/h",
+    "IU/L": "[IU]/L",
+    "IU/mL": "[IU]/mL",
+    "L/100 km": "L/(100.km)",
+    "MET": "[MET]",
+    "N·m": "N.m",
+    "W/m²": "W/m2",
+    "Wh/km": "W.h/km",
+    "arb. U": "[arb'U]",
+    "cd/m²": "cd/m2",
+    "cmH₂O": "cm[H2O]",
+    "cm²": "cm2",
+    "cup": "[cup_us]",
+    "cup (metric)": "[cup_m]",
+    "dB SPL": "dB[SPL]",
+    "dBW": "dB[W]",
+    "fl oz": "[foz_us]",
+    "fl oz (UK)": "[foz_br]",
+    "ft²": "[sft_i]",
+    "ft³": "[cft_i]",
+    "g/m³": "g/m3",
+    "gal": "[gal_us]",
+    "gal (UK)": "[gal_br]",
+    "gal/min": "[gal_us]/min",
+    "gn": "[g]",
+    "ha": "har",
+    "hp": "[HP]",
+    "in/h": "[in_i]/h",
+    "kWh/100 km": "kW.h/(100.km)",
+    "kg/m²": "kg/m2",
+    "kg/m³": "kg/m3",
+    "kn": "[kn_i]",
+    "kΩ": "kOhm",
+    "lbf": "[lbf_av]",
+    "lbf·ft": "[lbf_av].[ft_i]",
+    "m/s²": "m/s2",
+    "mAh": "mA.h",
+    "mIU/L": "m[IU]/L",
+    "mL/(kg·min)": "mL/(kg.min)",
+    "mg/m³": "mg/m3",
+    "min/mi": "min/[mi_i]",
+    "mpg": "[mi_i]/[gal_us]",
+    "mph": "[mi_i]/h",
+    "m²": "m2",
+    "m³": "m3",
+    "m³/h": "m3/h",
+    "nmi": "[nmi_i]",
+    "psi": "[psi]",
+    "qt": "[qt_us]",
+    "s/100 m": "s/(100.m)",
+    "s/100 yd": "s/(100.[yd_i])",
+    "s/500 m": "s/(500.m)",
+    "score": "{score}",
+    "st": "[stone_av]",
+    "tbsp": "[tbs_us]",
+    "tbsp (metric)": "[tbs_m]",
+    "tsp": "[tsp_us]",
+    "tsp (metric)": "[tsp_m]",
+    "°": "deg",
+    "Ω": "Ohm",
+    "μS/cm": "uS/cm",
+    "μSv": "uSv",
+    "μSv/h": "uSv/h",
+    "μg": "ug",
+    "μg/L": "ug/L",
+    "μg/dL": "ug/dL",
+    "μg/m³": "ug/m3",
+    "μmol": "umol",
+    "μmol/L": "umol/L",
+    "μs": "us",
+    "‰": "[ppth]",
+    "′": "'",
+    "″": "''"
+  },
+  "print": {
+    "prefixes": {
+      "E": "E",
+      "G": "G",
+      "Gi": "Gi",
+      "Ki": "Ki",
+      "M": "M",
+      "Mi": "Mi",
+      "P": "P",
+      "T": "T",
+      "Ti": "Ti",
+      "Y": "Y",
+      "Z": "Z",
+      "a": "a",
+      "c": "c",
+      "d": "d",
+      "da": "da",
+      "f": "f",
+      "h": "h",
+      "k": "k",
+      "m": "m",
+      "n": "n",
+      "p": "p",
+      "u": "μ",
+      "y": "y",
+      "z": "z"
+    },
+    "atoms": {
+      "%": "%",
+      "'": "′",
+      "''": "″",
+      "10*": "10",
+      "10^": "10",
+      "A": "A",
+      "B": "B",
+      "B[SPL]": "B SPL",
+      "B[W]": "BW",
+      "Bq": "Bq",
+      "By": "B",
+      "C": "C",
+      "Cel": "°C",
+      "Ci": "Ci",
+      "F": "F",
+      "Gy": "Gy",
+      "H": "H",
+      "Hz": "Hz",
+      "J": "J",
+      "K": "K",
+      "L": "L",
+      "N": "N",
+      "Ohm": "Ω",
+      "Pa": "Pa",
+      "S": "S",
+      "Sv": "Sv",
+      "T": "T",
+      "U": "U",
+      "V": "V",
+      "W": "W",
+      "Wb": "Wb",
+      "[Btu_IT]": "Btu",
+      "[Cal]": "Cal",
+      "[HP]": "hp",
+      "[IU]": "IU",
+      "[MET]": "MET",
+      "[arb'U]": "arb. U",
+      "[cft_i]": "ft³",
+      "[cup_m]": "cup",
+      "[cup_us]": "cup",
+      "[degF]": "°F",
+      "[foz_br]": "fl oz",
+      "[foz_us]": "fl oz",
+      "[ft_i]": "ft",
+      "[g]": "gn",
+      "[gal_br]": "gal",
+      "[gal_us]": "gal",
+      "[gil_br]": "gi",
+      "[gil_us]": "gi",
+      "[gr]": "gr",
+      "[iU]": "IU",
+      "[in_i'Hg]": "inHg",
+      "[in_i]": "in",
+      "[kn_i]": "kn",
+      "[lb_av]": "lb",
+      "[lbf_av]": "lbf",
+      "[mi_i]": "mi",
+      "[nmi_i]": "nmi",
+      "[oz_av]": "oz",
+      "[pH]": "pH",
+      "[pi]": "π",
+      "[ppb]": "ppb",
+      "[ppm]": "ppm",
+      "[ppth]": "‰",
+      "[pptr]": "pptr",
+      "[psi]": "psi",
+      "[pt_br]": "pt",
+      "[pt_us]": "pt",
+      "[qt_br]": "qt",
+      "[qt_us]": "qt",
+      "[sft_i]": "ft²",
+      "[stone_av]": "st",
+      "[tbs_m]": "tbsp",
+      "[tbs_us]": "tbsp",
+      "[tsp_m]": "tsp",
+      "[tsp_us]": "tsp",
+      "[yd_i]": "yd",
+      "a": "a",
+      "a_j": "a",
+      "ar": "a",
+      "atm": "atm",
+      "bar": "bar",
+      "bit": "bit",
+      "cal": "cal",
+      "cal_th": "cal",
+      "cd": "cd",
+      "d": "d",
+      "deg": "°",
+      "eV": "eV",
+      "g": "g",
+      "h": "h",
+      "kat": "kat",
+      "l": "l",
+      "lm": "lm",
+      "lx": "lx",
+      "m": "m",
+      "m[H2O]": "mH₂O",
+      "m[Hg]": "mHg",
+      "min": "min",
+      "mo": "mo",
+      "mo_j": "mo",
+      "mol": "mol",
+      "rad": "rad",
+      "s": "s",
+      "sr": "sr",
+      "t": "t",
+      "wk": "wk"
+    },
+    "prints": {
+      "1": "",
+      "A.h": "Ah",
+      "L/(100.km)": "L/100 km",
+      "V.A": "VA",
+      "V.A{reactive}": "var",
+      "W.h": "Wh",
+      "W.h/km": "Wh/km",
+      "[cup_m]": "cup (metric)",
+      "[foz_br]": "fl oz (UK)",
+      "[gal_br]": "gal (UK)",
+      "[mi_i]/[gal_us]": "mpg",
+      "[mi_i]/h": "mph",
+      "[tbs_m]": "tbsp (metric)",
+      "[tsp_m]": "tsp (metric)",
+      "cm[H2O]": "cmH₂O",
+      "dB[SPL]": "dB SPL",
+      "dB[W]": "dBW",
+      "har": "ha",
+      "kW.h": "kWh",
+      "kW.h/(100.km)": "kWh/100 km",
+      "mA.h": "mAh",
+      "mm[Hg]": "mmHg",
+      "s/(100.[yd_i])": "s/100 yd",
+      "s/(100.m)": "s/100 m",
+      "s/(500.m)": "s/500 m"
+    },
+    "wholes": [
+      "A.h",
+      "L/(100.km)",
+      "V.A",
+      "V.A{reactive}",
+      "W.h",
+      "W.h/km",
+      "[cup_m]",
+      "[foz_br]",
+      "[gal_br]",
+      "[mi_i]/[gal_us]",
+      "[mi_i]/h",
+      "[tbs_m]",
+      "[tsp_m]",
+      "s/(100.[yd_i])",
+      "s/(100.m)",
+      "s/(500.m)"
+    ],
+    "annotations": [
+      "reactive"
+    ]
+  },
+  "primary": {
+    "1": "fraction",
+    "Cel": "temperature",
+    "K": "temperature",
+    "[degF]": "temperature"
+  },
+  "aliases": {
+    "Cal": "[Cal]",
+    "IU": "[IU]",
+    "VA": "V.A",
+    "Wh": "W.h",
+    "bpm": "/min",
+    "cmAq": "cm[H2O]",
+    "count/min": "/min",
+    "dBASPL": "dB[SPL]",
+    "degC": "Cel",
+    "degF": "[degF]",
+    "hr": "h",
+    "in": "[in_i]",
+    "inHg": "[in_i'Hg]",
+    "kWh": "kW.h",
+    "km/hr": "km/h",
+    "kmph": "km/h",
+    "lb": "[lb_av]",
+    "mL/(kg*min)": "mL/(kg.min)",
+    "mcg": "ug",
+    "mi": "[mi_i]",
+    "mi/hr": "[mi_i]/h",
+    "ml/(kg·min)": "mL/(kg.min)",
+    "mmHg": "mm[Hg]",
+    "mmol<180.15588000005408>/L": "mmol/L",
+    "mmol<180.1558800000541>/L": "mmol/L",
+    "oz": "[oz_av]",
+    "ppb": "[ppb]",
+    "ppm": "[ppm]",
+    "rpm": "/min",
+    "var": "V.A{reactive}",
+    "yd": "[yd_i]",
+    "°C": "Cel",
+    "°F": "[degF]",
+    "℃": "Cel",
+    "℉": "[degF]"
+  },
+  "refused": [
+    "count"
+  ],
+  "comparators": [
+    "<",
+    "<=",
+    ">=",
+    ">"
+  ],
+  "maxDecimalDigits": 1000
+}

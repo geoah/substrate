@@ -202,13 +202,17 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kinds: %v", err)
 	}
-	// The SEEDED set is core and llm (record 0077) and nothing else: a domain
-	// package appearing here would be vocabulary silently going back to being
-	// seeded into every new repository.
+	// The SEEDED set is core, llm (record 0077) and console (record 0166)
+	// and nothing else: a domain package appearing here would be vocabulary
+	// silently going back to being seeded into every new repository.
+	seededPackages := map[string]bool{"core": true, "llm": true, "console": true}
 	for _, k := range declared {
-		if k.Authority != "substrate.reamde.dev" || (k.Package != "core" && k.Package != "llm") {
-			t.Errorf("a freshly created repository speaks %s — only core and llm are seeded", k.Identity)
+		if k.Authority != "substrate.reamde.dev" || !seededPackages[k.Package] {
+			t.Errorf("a freshly created repository speaks %s: only core, llm and console are seeded", k.Identity)
 		}
+	}
+	if _, err := ds.KindByRef(ctx, "substrate.reamde.dev/console/recordview"); err != nil {
+		t.Errorf("creation did not seed the console package's record view: %v", err)
 	}
 	// Every declaration kind carries one, not just record types.
 	for _, ref := range []struct{ typ, id string }{

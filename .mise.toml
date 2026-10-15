@@ -65,6 +65,21 @@ run = "go build -trimpath -o bin/substrate ./cmd/substrated"
 description = "Build the CLI -> bin/substratectl"
 run = "go build -trimpath -o bin/substratectl ./cmd/substratectl"
 
+# Synthetic provider data for one invented person (internal/synth): mock
+# recordings, webhook requests and hand-entered records in the shapes the
+# shipped provider functions read. `generate` writes them under .dev/synth;
+# `load` posts the webhook ones to a running substrate and applies the
+# records (SUBSTRATE_TOKEN carries the bearer, SYNTH_WEBHOOK_KEY the push
+# triggers' key). Arguments pass through:
+# `mise run synth:generate -- -providers whoop -from 2026-09-01`.
+[tasks."synth:generate"]
+description = "Generate synthetic provider data -> .dev/synth (args pass through)"
+run = "go run ./cmd/synth generate"
+
+[tasks."synth:load"]
+description = "Load .dev/synth into a running substrate: -server, -authority, SYNTH_WEBHOOK_KEY (args pass through)"
+run = "go run ./cmd/synth load"
+
 [tasks.test]
 description = "The whole Go suite, sequential: what ci:coverage runs on main"
 # SEQUENTIAL, not `depends`. mise runs dependencies in PARALLEL, and running
@@ -116,7 +131,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # database; the rest of that package runs again here, cheaply.
 #
 # ./internal/providere2e/...: the provider suites. That one starts a real
-# substrated and replays recorded upstream traffic through seven provider
+# substrated and replays recorded upstream traffic through nine provider
 # bundles side by side, three to five minutes of wall time (the slowest
 # case), and it wants `uv` and `python3` as well as a database (it skips
 # itself without them).
@@ -151,9 +166,9 @@ description = "Every database package but the engine and the provider suite: cat
 run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/..."
 
 [tasks."test:db:providers"]
-description = "The provider suite: seven closures synced end to end against a substrated the test starts, over recorded upstreams"
+description = "The provider suite: nine of the ten closures synced end to end against a substrated the test starts, over recorded upstreams; Apple Health, a webhook receiver, is in providertest"
 # Its own task and its own CI job (`providers e2e`), not a line in
-# test:db:rest: one run is three to five minutes on a laptop (the seven cases
+# test:db:rest: one run is three to five minutes on a laptop (the nine cases
 # run side by side, so the slowest one is the wall time) and longer on a
 # runner, past the `go test` job's budget. -p 1 keeps it alone on the box: the
 # suite pins one mock port per provider, so two of it at once would serve one
@@ -646,7 +661,7 @@ depends = ["console:install"]
 run = "node scripts/render-smoke.mjs --prepare"
 
 [tasks."console:render"]
-description = "Render the console's sign-in page and two signed-in routes in headless Chrome: console:render <base URL>"
+description = "Render the console's sign-in page and four signed-in routes in headless Chrome: console:render <base URL>"
 # Against any running substrate whose door reads no invite code and no second
 # factor: compose.yaml's defaults, and `dev`'s. It registers a new repository
 # through the form on every run, so point it at a substrate whose repositories

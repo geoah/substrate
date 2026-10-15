@@ -9,7 +9,8 @@
 #                    {"op": "invoke", "reqId": N, "id": <key>, "input": {...}}
 #   host -> parent   {"kind": "response", "reqId": N, "ok": true, ...}
 #                    {"kind": "response", "reqId": N, "ok": false, "error": "..."}
-#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"call", "params": {...}}
+#   host -> parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate"|"call"|
+#                     "units.convert"|"units.canonical"|"units.measure", "params": {...}}
 #                    ... answered by the parent's next line:
 #                    {"kind": "reply", "reqId": N, "ok": true, "result": {...}}
 #   host -> parent   {"kind": "log", "reqId": N, "line": "..."}   (no answer)
@@ -24,6 +25,8 @@
 # is an error frame the engine parks — never a host crash. Isolation is the
 # process boundary (user code never loads into the substrate); tightening
 # placement is a later dial on the same protocol.
+import datetime
+import decimal
 import hashlib
 import json
 import os
@@ -176,12 +179,17 @@ class HostError(Exception):
 # namespaced beside them, the SDK surface:
 #
 #   host.records.get/list/search   typed, type-scoped reads (committed state)
+#   host.records.aggregate         the aggregate read, budgeted like a list
 #   host.functions.call             function-to-function composition
 #   host.agents.call                run an agent to settlement, its reply back
 #   host.effects.put/patch/delete/  the buffered-effects builder — each APPENDS
 #     link/unlink/merge/split       a staged effect and returns a handle
 #   host.ids.external/url           deterministic, hash-backed, URL-safe ids
 #   host.page.resume / .more()      the paged-checkpoint wrapper
+#   host.units.convert/canonical/   the engine's unit table, over the host call
+#     measure
+#   host.observed.trace/local_day/  pure-Python builders for observed values
+#     period_id
 #
 # Writes STAY effects: the builder never writes mid-body, it accumulates the
 # effect list the engine already applies atomically after the body returns.
@@ -580,6 +588,16 @@ class Records:
             q["orderBy"] = order
         return self._host.list(**q)
 
+    def aggregate(self, body):
+        """The aggregate read (docs/api.md): `body` is the records route's
+        parameters as one document, {"filter": ..., "aggregate": ...,
+        "downsample": ...}. `filter.kinds` names the observed kinds read (and
+        `aggregate.bucket.records.filter.kinds` the records mode's), each held
+        to the reads allowlist. Returns the result dict: `rows`, each with
+        `start`, `end` and `values`. One call, its rows against the row
+        budget."""
+        return self._host.aggregate(body)
+
     def search(self, q, kinds, k=None, mode=None):
         params = {"q": q, "kinds": _as_kinds(kinds)}
         if k is not None:
@@ -613,10 +631,570 @@ class Agents:
         return self._host.call(agent, input)
 
 
+# --- units and observed values ------------------------------------------------
+#
+# host.units asks the ENGINE's unit table over the host call, so a body and the
+# write path that holds its effects read one table; there is no Python copy of
+# it. host.observed builds in pure Python the trace documents core's
+# `observed(packed)` admits from a body's own points, the labels a trace id
+# and a daily summary are composed from, and the stored spellings of numbers,
+# durations and instants; its `reconcile` is the one call that reads and
+# stages. Its rules mirror the engine's (vocabulary/observed.go); runner's
+# observed tests hold the two together.
+
+_RE_DECIMAL = re.compile(r"^[+-]?[0-9]+(\.[0-9]+)?$")
+_RE_ISO_DURATION = re.compile(
+    r"^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$")
+_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+_US = {"W": 7 * 86400 * 10**6, "D": 86400 * 10**6, "H": 3600 * 10**6, "M": 60 * 10**6, "S": 10**6}
+_MAX_UTC_OFFSET = 1080
+_TRACE_FORMS = ("gauge", "amount", "counter")
+_RESET_RULES = ("monotonic", "signed", "wrap")
+# The write's limits on one trace (vocabulary.MaxTracePoints and
+# MaxTraceBytes). The builder fills the byte limit less 64 KiB, which it
+# leaves for the properties a writer adds to each document (origins,
+# revision, adapter).
+_MAX_TRACE_POINTS = 20000
+_TRACE_BYTES_BUDGET = (1 << 20) - (64 << 10)
+
+
+def _decimal_text(fn, value):
+    """A number as the exact digits the engine stores. A str is held to the
+    decimal grammar and an int or a Decimal is written out; a float is written
+    as its shortest repr, which is the digits a JSON payload carried, so pass a
+    str or a Decimal to keep digits a float cannot hold."""
+    if isinstance(value, bool):
+        raise ValueError("%s: %r is a bool, not a number" % (fn, value))
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("%s: %r is not a finite number" % (fn, value))
+        value = decimal.Decimal(repr(value))
+    if isinstance(value, decimal.Decimal):
+        if not value.is_finite():
+            raise ValueError("%s: %r is not a finite number" % (fn, value))
+        return format(value, "f")
+    if isinstance(value, str) and _RE_DECIMAL.match(value):
+        return value
+    raise ValueError('%s: %r is not a decimal: pass digits as a str ("72.4"), an int or a Decimal'
+                     % (fn, value))
+
+
+def _duration_us(fn, field, value):
+    """An ISO 8601 duration (weeks, days and a time part, as the engine reads
+    one) in whole microseconds."""
+    m = _RE_ISO_DURATION.match(value) if isinstance(value, str) else None
+    if not m or not any(m.groups()):
+        raise ValueError("%s: %s %r is not an ISO 8601 duration (PT1H, PT5S, P1D)" % (fn, field, value))
+    total = decimal.Decimal(0)
+    for digits, unit in zip(m.groups(), "WDHMS"):
+        if digits:
+            total += decimal.Decimal(digits) * _US[unit]
+    if total != total.to_integral_value():
+        raise ValueError("%s: %s %r is finer than a microsecond" % (fn, field, value))
+    return int(total)
+
+
+def _format_duration(us):
+    """The one stored spelling of a duration, as the engine writes it: days,
+    then a time part, zero components omitted, PT0S for zero."""
+    days, us = divmod(us, 86400 * 10**6)
+    h, us = divmod(us, 3600 * 10**6)
+    mi, us = divmod(us, 60 * 10**6)
+    sec, frac = divmod(us, 10**6)
+    out = "P" + ("%dD" % days if days else "")
+    if h or mi or sec or frac or not days:
+        out += "T"
+        if h:
+            out += "%dH" % h
+        if mi:
+            out += "%dM" % mi
+        if frac:
+            out += "%d.%sS" % (sec, ("%06d" % frac).rstrip("0"))
+        elif sec or not (h or mi or days):
+            out += "%dS" % sec
+    return out
+
+
+def _aware(fn, field, at):
+    if not isinstance(at, datetime.datetime) or at.tzinfo is None or at.utcoffset() is None:
+        raise ValueError("%s: %s is a timezone-aware datetime, got %r" % (fn, field, at))
+    return at
+
+
+def _offset_minutes(fn, field, offset):
+    seconds = offset.total_seconds()
+    if seconds % 60 or abs(seconds) > _MAX_UTC_OFFSET * 60:
+        raise ValueError("%s: %s's UTC offset is whole minutes within %d either way, got %s"
+                         % (fn, field, _MAX_UTC_OFFSET, offset))
+    return int(seconds // 60)
+
+
+def _epoch_us(at):
+    delta = at.astimezone(datetime.timezone.utc) - _EPOCH
+    return (delta.days * 86400 + delta.seconds) * 10**6 + delta.microseconds
+
+
+def _instant(us):
+    """An instant in microseconds since the epoch as RFC 3339 UTC."""
+    t = _EPOCH + datetime.timedelta(microseconds=us)
+    if t.microsecond:
+        return t.strftime("%Y-%m-%dT%H:%M:%S.") + ("%06d" % t.microsecond).rstrip("0") + "Z"
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class Converted(str):
+    """A converted value's decimal digits, a str, with `exact`: False where the
+    result has no finite decimal expansion and was rounded to 20 significant
+    digits."""
+
+    exact = True
+
+
+class Units:
+    """The engine's unit table, asked over the host call: every code, alias and
+    factor is the one the write path holds an effect to. Errors are the
+    engine's, raised as HostError."""
+
+    def __init__(self, host):
+        self._host = host
+
+    def convert(self, value, from_unit, to_unit, measure=None):
+        """Convert exact digits between two units of one measure -> a decimal
+        str whose `exact` says whether it is every digit. Aliases are read
+        (`°C`, `kWh`, `mmHg`). Every digit comes back when the result has a
+        finite decimal expansion; one without is rounded to 20 significant
+        digits and `exact` is False. The value holds at most 1000 digits.
+        `measure` names the measure to convert in where the units' own reading
+        is not meant: a deviation in Cel converts to [degF] in
+        `temperature-difference`, without the offset."""
+        params = {"value": _decimal_text("units.convert", value),
+                  "from": from_unit, "to": to_unit}
+        if measure is not None:
+            params["measure"] = measure
+        out = self._host._call("units.convert", params)
+        converted = Converted(out.get("value"))
+        converted.exact = out.get("exact") is not False
+        return converted
+
+    def canonical(self, code):
+        """The code the engine stores for a unit spelling: `bpm` is `/min`,
+        `°C` is `Cel`, `kWh` is `kW.h`."""
+        return self._host._call("units.canonical", {"code": code}).get("code")
+
+    def measure(self, code):
+        """The name of the measure a unit belongs to: `mass` for `kg`, `rate`
+        for `/min`. An ambiguous or unknown code raises."""
+        return self._host._call("units.measure", {"code": code}).get("measure")
+
+
+def _ref_path(value):
+    """A stored reference's record path, in either spelling ({"ref": path} or
+    the bare path)."""
+    if isinstance(value, dict):
+        value = value.get("ref")
+    return value if isinstance(value, str) else ""
+
+
+def _same_value(a, b):
+    """Whether a stored property value is the one a write would store: a
+    reference in either spelling is its path, and a None member of a map is
+    absent."""
+    if isinstance(a, dict) and set(a) == {"ref"} and isinstance(b, str):
+        return a["ref"] == b
+    if isinstance(b, dict) and set(b) == {"ref"} and isinstance(a, str):
+        return b["ref"] == a
+    if isinstance(a, dict) and isinstance(b, dict):
+        keys = {k for k, v in a.items() if v is not None} | {k for k, v in b.items() if v is not None}
+        return all(_same_value(a.get(k), b.get(k)) for k in keys)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same_value(x, y) for x, y in zip(a, b))
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a is b
+    return a == b
+
+
+class Observed:
+    """Builders for observed values (docs/observations.md). `trace`,
+    `local_day`, `period_id`, `decimal`, `duration`, `instant`, `percent` and
+    `record_id` are pure Python: they compute and never write. `reconcile`
+    reads an origin's stored outputs and stages the writes and deletes that
+    bring them to what the origin implies now."""
+
+    def __init__(self, host=None):
+        self._host = host
+
+    def trace(self, points, *, metric, source, unit, form, period="PT1H", hold=None,
+              about=None, channel=None, reset_rule=None, wrap_at=None, delta=None,
+              circular=None, start=None, end=None):
+        """Pack points into the trace documents a kind binding
+        `observed(packed)` admits -> a list of property maps, oldest first,
+        each ready for host.effects.put(<trace kind>, <id>, properties).
+
+        `points` is [(at, value)] for numbers or [(at, code)] for codes, `at` a
+        timezone-aware datetime and a value or code None where the source had
+        nothing (unavailable from that point on). Each document covers one
+        fixed UTC period (`period`, aligned to the epoch: PT1H is the UTC
+        hour) and is split where the points' UTC offset changes, so every
+        document has one offset; a later part of a split period starts at its
+        first point. A part is split again before it passes 20,000 points or
+        the byte budget, so the write never refuses it for its size. Points
+        regularly spaced from the document's start are written with `every`,
+        anything else with `offsets` in milliseconds.
+
+        `start` and `end`, timezone-aware datetimes read to the millisecond,
+        bound the span this delivery covers: each document claims only the
+        part of its period inside [start, end), so two deliveries that share
+        an hour write two documents side by side. A point outside them
+        raises.
+
+        Each document names both keys of every exclusive pair, the one it
+        does not use as None (`every` or `offsets`, `values` or `codes`, and
+        `unit` on a trace of codes), so a put of it over a stored trace of the
+        other shape replaces that shape whole.
+
+        `reset_rule="wrap"` needs `wrap_at`, the value a counter wraps to zero
+        at; `delta` and `circular` mark temperature differences and angles.
+        `metric`, `source` and `about` are reference values (a full record
+        path or {"ref": path}). Ids are the caller's: compose each from
+        `period_id(document["at"], period)`."""
+        fn = "observed.trace"
+        if form not in _TRACE_FORMS:
+            if form == "summary":
+                raise ValueError("%s: a summary is one value per record: write an observation" % fn)
+            raise ValueError("%s: form is one of %s, got %r" % (fn, ", ".join(_TRACE_FORMS), form))
+        p_us = _duration_us(fn, "period", period)
+        if p_us <= 0:
+            raise ValueError("%s: period is longer than zero" % fn)
+        if hold is not None:
+            if form != "gauge":
+                raise ValueError("%s: only a gauge holds its value; a %s does not" % (fn, form))
+            _duration_us(fn, "hold", hold)
+        if reset_rule is not None:
+            if form != "counter":
+                raise ValueError("%s: only a counter resets; a %s does not" % (fn, form))
+            if reset_rule not in _RESET_RULES:
+                raise ValueError("%s: reset_rule is one of %s, got %r" % (fn, ", ".join(_RESET_RULES), reset_rule))
+        if wrap_at is not None:
+            if reset_rule != "wrap":
+                raise ValueError("%s: wrap_at is the value a wrapping counter returns to zero at: "
+                                 "pass reset_rule=\"wrap\"" % fn)
+            wrap_at = _decimal_text(fn, wrap_at)
+            if decimal.Decimal(wrap_at) <= 0:
+                raise ValueError("%s: wrap_at is above zero, got %s" % (fn, wrap_at))
+        elif reset_rule == "wrap":
+            raise ValueError("%s: a wrapping counter names the value it wraps at: pass wrap_at" % fn)
+        for name, flag in (("delta", delta), ("circular", circular)):
+            if flag is not None and not isinstance(flag, bool):
+                raise ValueError("%s: %s is True, False or None, got %r" % (fn, name, flag))
+        lo = hi = None
+        if start is not None:
+            lo = _epoch_us(_aware(fn, "start", start))
+            lo -= lo % 1000
+        if end is not None:
+            hi = _epoch_us(_aware(fn, "end", end))
+            hi += -hi % 1000
+        if lo is not None and hi is not None and hi <= lo:
+            raise ValueError("%s: end is after start" % fn)
+        coded, pts = None, []
+        for i, point in enumerate(points):
+            if not isinstance(point, (tuple, list)) or len(point) != 2:
+                raise ValueError("%s: point %d is an (at, value) pair" % (fn, i))
+            at, v = point
+            _aware(fn, "point %d's at" % i, at)
+            offset = _offset_minutes(fn, "point %d" % i, at.utcoffset())
+            if v is not None:
+                is_code = isinstance(v, str) and not _RE_DECIMAL.match(v)
+                if coded is None:
+                    coded = is_code
+                elif coded != is_code:
+                    raise ValueError("%s: point %d mixes a %s into a trace of %s"
+                                     % (fn, i, "code" if is_code else "number", "codes" if coded else "numbers"))
+                if is_code:
+                    if v == "":
+                        raise ValueError("%s: point %d's code is empty" % (fn, i))
+                else:
+                    v = _decimal_text(fn, v)
+            t = _epoch_us(at)
+            if (lo is not None and t < lo) or (hi is not None and t >= hi):
+                raise ValueError("%s: point %d at %s is outside [start, end)" % (fn, i, _instant(t)))
+            pts.append((t, i, offset, v))
+        if not pts:
+            return []
+        coded = bool(coded)
+        if coded and unit is not None:
+            raise ValueError("%s: a trace of codes carries no unit: pass unit=None" % fn)
+        if not coded and not unit:
+            raise ValueError("%s: a trace of numbers names the unit every value is in" % fn)
+        if coded and form == "counter":
+            raise ValueError("%s: a counter is a running total, a number, never a code" % fn)
+        if coded and (delta or circular):
+            raise ValueError("%s: delta and circular describe numbers; a trace of codes has none" % fn)
+        pts.sort()
+        # Pieces: one per fixed period, split where the offset changes and
+        # before a piece passes the point limit. A later piece of a split
+        # period starts at its first point, floored to the millisecond its
+        # offsets count in, and a split never falls inside one millisecond.
+        pieces = []
+        for t, _, offset, v in pts:
+            period_start = t - t % p_us
+            last = pieces[-1] if pieces else None
+            if last is None or last["period"] != period_start:
+                first = period_start if lo is None else max(period_start, lo)
+                pieces.append({"period": period_start, "start": first, "offset": offset, "points": []})
+            elif t // 1000 > last["points"][-1][0] // 1000 and (
+                    last["offset"] != offset or len(last["points"]) >= _MAX_TRACE_POINTS):
+                pieces.append({"period": period_start, "start": t - t % 1000, "offset": offset, "points": []})
+            pieces[-1]["points"].append((t, v))
+        common = {"metric": metric, "form": form, "source": source, "about": about, "channel": channel,
+                  "unit": None if coded else unit, "hold": hold, "resetRule": reset_rule,
+                  "wrapAt": wrap_at, "delta": delta, "circular": circular}
+        keep = ("metric", "form", "unit")  # written as given, None included
+
+        def build(piece_start, piece_end, offset, piece_points):
+            props = {"metric": metric, "form": form, "at": _instant(piece_start), "endsAt": _instant(piece_end),
+                     "utcOffsetStart": offset, "utcOffsetEnd": offset}
+            for key, value in common.items():
+                if value is not None or key in keep:
+                    props[key] = value
+            times = [t for t, _ in piece_points]
+            steps = {b - a for a, b in zip(times, times[1:])}
+            every = steps.pop() if len(steps) == 1 else 0
+            if len(times) > 1 and times[0] == piece_start and every > 0 \
+                    and every * len(times) <= piece_end - piece_start:
+                props["every"], props["offsets"] = _format_duration(every), None
+            else:
+                props["every"], props["offsets"] = None, [(t - piece_start) // 1000 for t in times]
+            listed = [v for _, v in piece_points]
+            props["codes"], props["values"] = (listed, None) if coded else (None, listed)
+            return props
+
+        docs = []
+
+        def emit(piece_start, piece_end, offset, piece_points):
+            doc = build(piece_start, piece_end, offset, piece_points)
+            if len(json.dumps(doc, separators=(",", ":"))) > _TRACE_BYTES_BUDGET:
+                # Halve at a millisecond boundary nearest the middle.
+                cuts = [k for k in range(1, len(piece_points))
+                        if piece_points[k][0] // 1000 > piece_points[k - 1][0] // 1000]
+                if cuts:
+                    k = min(cuts, key=lambda c: abs(c - len(piece_points) // 2))
+                    cut = piece_points[k][0] - piece_points[k][0] % 1000
+                    emit(piece_start, cut, offset, piece_points[:k])
+                    emit(cut, piece_end, offset, piece_points[k:])
+                    return
+            docs.append(doc)
+
+        for i, piece in enumerate(pieces):
+            nxt = pieces[i + 1] if i + 1 < len(pieces) else None
+            if nxt and nxt["period"] == piece["period"]:
+                piece_end = nxt["start"]
+            else:
+                piece_end = piece["period"] + p_us
+                if hi is not None:
+                    piece_end = min(piece_end, hi)
+            emit(piece["start"], piece_end, piece["offset"], piece["points"])
+        return docs
+
+    def local_day(self, at, utc_offset_minutes):
+        """The civil date at `at` where the clock was `utc_offset_minutes`
+        east of UTC, as YYYY-MM-DD: the day a daily summary or a recorded-local
+        reading belongs to."""
+        fn = "observed.local_day"
+        _aware(fn, "at", at)
+        if isinstance(utc_offset_minutes, bool) or not isinstance(utc_offset_minutes, int) \
+                or abs(utc_offset_minutes) > _MAX_UTC_OFFSET:
+            raise ValueError("%s: utc_offset_minutes is whole minutes within %d either way, got %r"
+                             % (fn, _MAX_UTC_OFFSET, utc_offset_minutes))
+        local = at.astimezone(datetime.timezone.utc) + datetime.timedelta(minutes=utc_offset_minutes)
+        return local.date().isoformat()
+
+    def decimal(self, value):
+        """A number as the digits the engine stores, never with an exponent:
+        an int as itself, a float as its shortest repr written out (1e-05 is
+        "0.00001", the digits a JSON payload carried), a Decimal or a digit
+        string as it is. None is None; a bool, NaN, an infinity or any other
+        value raises."""
+        if value is None:
+            return None
+        return _decimal_text("observed.decimal", value)
+
+    def duration(self, seconds):
+        """A length of time, as seconds (an int, a float, a Decimal or digits)
+        or a timedelta, in the one ISO 8601 spelling the engine stores
+        ("PT7H54M49S", "P1DT2H"), rounded to the microsecond. A negative
+        length raises."""
+        fn = "observed.duration"
+        if isinstance(seconds, datetime.timedelta):
+            us = (seconds.days * 86400 + seconds.seconds) * 10**6 + seconds.microseconds
+        else:
+            d = decimal.Decimal(_decimal_text(fn, seconds))
+            us = int((d * 10**6).to_integral_value(rounding=decimal.ROUND_HALF_EVEN))
+        if us < 0:
+            raise ValueError("%s: %r is a negative length of time" % (fn, seconds))
+        return _format_duration(us)
+
+    def instant(self, at):
+        """A timezone-aware datetime as the RFC 3339 UTC text the engine
+        stores ("2026-10-07T06:00:00Z"), to the microsecond."""
+        return _instant(_epoch_us(_aware("observed.instant", "at", at)))
+
+    def percent(self, part, whole):
+        """`part` over `whole` as a percentage rounded half up to two places,
+        the quantity a ratio such as a night's `efficiency` is written as:
+        {"value": "93.75", "unit": "%"}. Each is a number as `decimal` reads
+        one. None where either is None or `whole` is not above zero."""
+        fn = "observed.percent"
+        if part is None or whole is None:
+            return None
+        num = decimal.Decimal(_decimal_text(fn, part))
+        den = decimal.Decimal(_decimal_text(fn, whole))
+        if den <= 0:
+            return None
+        ratio = (num * 100 / den).quantize(decimal.Decimal("0.01"), rounding=decimal.ROUND_HALF_UP)
+        return {"value": format(ratio, "f"), "unit": "%"}
+
+    def record_id(self, provider, account, *parts):
+        """An output's id composed from upstream data: `<provider>/<part>/...`
+        as written where it is a record id (the id alphabet, at most 128
+        bytes), else host.ids.external(provider, account, that text), so an
+        upstream identifier outside the alphabet or past the length never
+        refuses the write."""
+        readable = "/".join([str(provider)] + [str(p) for p in parts])
+        if len(readable.encode("utf-8")) <= _MAX_ID_LEN and _RE_ID.match(readable):
+            return readable
+        return Ids().external(provider, account, readable)
+
+    def reconcile(self, origins, outputs, *, owned, adapter=None, stored=None):
+        """Write what an origin implies now and delete what it no longer
+        implies -> {"written": n, "unchanged": n, "deleted": n}.
+
+        `origins` is the record path of the row the outputs are built from, or
+        a list of paths where one delivery answers for several rows.
+        `outputs` maps (kind, id) to the properties the rows imply. `owned`
+        maps every output kind to each property the body sets on it: a write
+        names them all, None for one the rows no longer imply, and a put's
+        None deletes the key, so one put replaces what an earlier write set.
+        `adapter` is stamped on every output where given.
+
+        The stored side is every record of an owned kind whose `origin`, or
+        an entry of whose `origins`, names one of the paths (another
+        reference to the path, such as `derivedFrom`, does not count), read
+        page by page; `stored` passes records the body already read instead.
+        An output the stored side does not hold is read by its id, 500 to a
+        call, because another origin may hold it: an hour's trace built from
+        several rows names all of them. An output whose stored properties
+        already hold what it would be written with, `revision` aside, is not
+        written. A written output's `revision` is the higher of the one given
+        and the one stored: the write path refuses a falling revision, and a
+        delivery reads its rows as they stand now, so a lower one means a row
+        the output was built from went away, never that the delivery is
+        stale. Every stored output of the stored side that `outputs` does not
+        name is deleted."""
+        fn = "observed.reconcile"
+        if self._host is None:
+            raise ValueError("%s: reads the origin's outputs through the host; call host.observed" % fn)
+        paths = [origins] if isinstance(origins, str) else list(origins)
+        if not paths or not all(isinstance(p, str) and p for p in paths):
+            raise ValueError("%s: origins is a record path or a list of them, got %r" % (fn, origins))
+        if not isinstance(owned, dict) or not owned:
+            raise ValueError("%s: owned maps each output kind to the properties the body sets" % fn)
+        for kind, _ in outputs:
+            if kind not in owned:
+                raise ValueError("%s: %s is not a kind owned names" % (fn, kind))
+        if stored is None:
+            stored = []
+            for path in paths:
+                stored.extend(self._pages({"kinds": list(owned), "referencing": {"ref": path}}))
+        held = {}
+        for rec in stored:
+            props = rec.get("properties") or {}
+            named = [_ref_path(props.get("origin"))] + [_ref_path(o) for o in props.get("origins") or []]
+            if rec.get("kind") in owned and any(p in paths for p in named):
+                held[(rec.get("kind"), rec.get("id"))] = rec
+        others = {}
+        rest = sorted(key for key in outputs if key not in held)
+        for i in range(0, len(rest), 500):
+            chunk = rest[i:i + 500]
+            flt = {"kinds": sorted({k for k, _ in chunk}), "ids": sorted({r for _, r in chunk})}
+            for rec in self._pages(flt):
+                key = (rec.get("kind"), rec.get("id"))
+                if key in outputs and key not in held:
+                    others[key] = rec
+        counts = {"written": 0, "unchanged": 0, "deleted": 0}
+        for kind, rid in sorted(outputs):
+            full = {name: None for name in owned[kind]}
+            full.update(outputs[(kind, rid)])
+            if adapter is not None:
+                full["adapter"] = adapter
+            old = held.pop((kind, rid), None) or others.get((kind, rid))
+            have = (old or {}).get("properties") or {}
+            if old is not None and all(_same_value(have.get(k), v) for k, v in full.items() if k != "revision"):
+                counts["unchanged"] += 1
+                continue
+            rev = have.get("revision")
+            if isinstance(rev, (int, float)) and not isinstance(rev, bool) and \
+                    (full.get("revision") is None or rev > full["revision"]):
+                full["revision"] = int(rev)
+            self._host.effects.put(kind, rid, properties=full)
+            counts["written"] += 1
+        for kind, rid in sorted(held):
+            self._host.effects.delete(kind, rid)
+            counts["deleted"] += 1
+        return counts
+
+    def _pages(self, flt):
+        """Every live record a filter matches, read 500 to a page."""
+        out, after = [], None
+        while True:
+            query = {"filter": flt, "first": 500}
+            if after:
+                query["after"] = after
+            page = self._host.list(**query)
+            out.extend(page.get("records") or [])
+            after = page.get("cursor")
+            if not after:
+                return out
+
+    def period_id(self, at, period):
+        """The label a trace id ends with: `at` in UTC at the period's
+        resolution, so PT1H gives "2026-10-07T06", PT15M "2026-10-07T06:15"
+        and P1D "2026-10-07". An `at` off the period's grid (the later part of
+        a period split by an offset change) adds the finer fields it needs
+        ("2026-10-07T06:20:31"), so no two parts share a label."""
+        fn = "observed.period_id"
+        _aware(fn, "at", at)
+        p_us = _duration_us(fn, "period", period)
+        t = at.astimezone(datetime.timezone.utc)
+        us = _epoch_us(at)
+        fields = 1  # date, hour, minute, second, fraction
+        for step, n in ((86400 * 10**6, 1), (3600 * 10**6, 2), (60 * 10**6, 3), (10**6, 4)):
+            if p_us % step == 0:
+                fields = n
+                break
+        else:
+            fields = 5
+        for step, n in ((10**6, 5), (60 * 10**6, 4), (3600 * 10**6, 3), (86400 * 10**6, 2)):
+            if us % step:
+                fields = max(fields, n)
+                break
+        out = t.strftime("%Y-%m-%d")
+        if fields >= 2:
+            out += t.strftime("T%H")
+        if fields >= 3:
+            out += t.strftime(":%M")
+        if fields >= 4:
+            out += t.strftime(":%S")
+        if fields >= 5 and t.microsecond:
+            out += "." + ("%06d" % t.microsecond).rstrip("0")
+        return out
+
+
 class Host:
     """The body's host API: logging plus the capability-scoped reads, and the
-    SDK surface (records/functions/agents/effects/ids/page) namespaced beside
-    them."""
+    SDK surface (records/functions/agents/effects/ids/page/units/observed)
+    namespaced beside them."""
 
     def __init__(self, inp, req_id, logs):
         self._config = inp.get("config")
@@ -628,6 +1206,8 @@ class Host:
         self.agents = Agents(self)
         self.ids = Ids()
         self.page = Page(inp.get("resume"))
+        self.units = Units(self)
+        self.observed = Observed(self)
 
     @property
     def logs(self):
@@ -675,6 +1255,11 @@ class Host:
         `orderBy` is either the compact string ("at:desc,createdAt") or a list
         of {"property": ..., "desc": bool}."""
         return self._call("list", query).get("page") or {}
+
+    def aggregate(self, body):
+        """An aggregate read ({filter, aggregate, downsample?}) -> the result
+        dict."""
+        return self._call("aggregate", body).get("result") or {}
 
     def search(self, **params):
         """Lexical/semantic search (q, mode, kinds, k) -> SearchResult: the hits

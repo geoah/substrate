@@ -647,6 +647,22 @@ func listLive(t *testing.T, ds substrate.Dataset, kind string) []*substrate.Reco
 	}
 }
 
+// live reports whether one record exists and is not deleted. Only
+// ErrNotFound reads as absent: any other error (a kind the repository does
+// not declare, a database fault) fails the test, so a negative assertion
+// cannot pass on a read that never happened.
+func live(t *testing.T, ds substrate.Dataset, kind, id string) bool {
+	t.Helper()
+	row, err := ds.Get(context.Background(), kind, id)
+	if errors.Is(err, substrate.ErrNotFound) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("get %s %s: %v", kind, id, err)
+	}
+	return row.DeletedAt == nil
+}
+
 // countLive counts the live records of one kind.
 func countLive(t *testing.T, ds substrate.Dataset, kind string) int {
 	t.Helper()

@@ -1,16 +1,20 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -41,6 +45,13 @@ func (s *webhookSvc) ReceiveWebhook(_ context.Context, authority, trigger, key s
 func webhookHandler(fid string, err error) (*webhookSvc, http.Handler) {
 	svc := &webhookSvc{fakeService: newFakeService(), fid: fid, err: err}
 	return svc, New(Config{Service: svc})
+}
+
+// webhookHandlerReading is webhookHandler with its own read timeout; each
+// handler has its own slots, so tests that hold them run in parallel.
+func webhookHandlerReading(fid string, timeout time.Duration) http.Handler {
+	svc := &webhookSvc{fakeService: newFakeService(), fid: fid}
+	return New(Config{Service: svc, WebhookReadTimeout: timeout})
 }
 
 func postHook(h http.Handler, path string, body []byte, headers map[string]string) *httptest.ResponseRecorder {
@@ -143,7 +154,36 @@ func TestWebhookRefusals(t *testing.T) {
 	}
 }
 
-// The bounds: a non-multipart body past 1 MiB is 413, headers past 16 KiB are
+// A request the trigger's declared signature refuses is a 401 whose body says
+// no more than that: the reason the service wrapped (a stale timestamp here)
+// never reaches the unauthenticated sender.
+func TestWebhookSignatureRefusalIsATerse401(t *testing.T) {
+	refusal := fmt.Errorf("%w: webhook signature refused (timestamp outside maxSkew)", substrate.ErrAuth)
+	_, h := webhookHandler("", refusal)
+	rec := postHook(h, "/webhooks/geoah.example.com/signed", []byte("{}"), nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var out substrate.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("body = %s: %v", rec.Body.String(), err)
+	}
+	if out.Error.Code != "auth" || out.Error.Message != "webhook signature refused" {
+		t.Fatalf("error = %+v, want auth and the fixed message", out.Error)
+	}
+}
+
+// A body the service holds too large for what the trigger calls (an agent
+// reads at most 1 MiB) is a 413, as the door's own caps are.
+func TestWebhookTooLargeForTheCallableIs413(t *testing.T) {
+	_, h := webhookHandler("", fmt.Errorf("%w: an agent callable reads at most 1 MiB", substrate.ErrTooLarge))
+	rec := postHook(h, "/webhooks/geoah.example.com/to-agent", bytes.Repeat([]byte("x"), 2<<20), map[string]string{"Content-Type": "text/plain"})
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "bad_request") {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// The bounds: a non-multipart body past 8 MiB is 413, headers past 16 KiB are
 // 431, and neither reaches the service.
 func TestWebhookBounds(t *testing.T) {
 	svc, h := webhookHandler("f", nil)
@@ -160,6 +200,129 @@ func TestWebhookBounds(t *testing.T) {
 	}
 	if rec := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), maxWebhookInline), map[string]string{"Content-Type": "text/plain"}); rec.Code != http.StatusAccepted {
 		t.Fatalf("a body at the cap: status = %d", rec.Code)
+	}
+}
+
+// The inline cap is 8 MiB, the function frame a body rides in: a Health
+// Auto Export delivery of a day at minute grouping passes 1 MiB, and the app
+// never re-sends a part the door refused. Pinned in bytes rather than through
+// the constant, so lowering the constant fails here.
+func TestWebhookInlineCapIsEightMiB(t *testing.T) {
+	svc, h := webhookHandler("f", nil)
+	under := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), 8<<20-1), map[string]string{"Content-Type": "application/json"})
+	if under.Code != http.StatusAccepted {
+		t.Fatalf("a body one byte under 8 MiB: status = %d: %s", under.Code, under.Body.String())
+	}
+	if got := len(svc.last(t).req.Body); got != 8<<20-1 {
+		t.Fatalf("the service got %d bytes, want %d", got, 8<<20-1)
+	}
+	over := postHook(h, "/webhooks/geoah.example.com/t", bytes.Repeat([]byte("x"), 8<<20+1), map[string]string{"Content-Type": "application/json"})
+	if over.Code != http.StatusRequestEntityTooLarge || !strings.Contains(over.Body.String(), "exceeds 8 MiB") {
+		t.Fatalf("a body one byte past 8 MiB: status = %d: %s", over.Code, over.Body.String())
+	}
+	if len(svc.calls) != 1 {
+		t.Fatalf("the refused body reached the service: %d calls", len(svc.calls))
+	}
+}
+
+// A sender that trickles its body holds its slot for the read timeout at
+// most. Eight such connections take every slot and turn the next delivery
+// away with 503; once the deadline passes each is answered 408 and the door
+// admits again, although the eight are still open.
+func TestWebhookTrickledBodyGivesUpItsSlot(t *testing.T) {
+	t.Parallel()
+	const webhookReadTimeout = time.Second
+	h := webhookHandlerReading("f", webhookReadTimeout)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	post := func() int {
+		t.Helper()
+		resp, err := srv.Client().Post(srv.URL+"/webhooks/geoah.example.com/t", "application/json", strings.NewReader("{}"))
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	trickles := make([]net.Conn, maxConcurrentWebhooks)
+	for i := range trickles {
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = c.Close() }()
+		if _, err := fmt.Fprint(c, "POST /webhooks/geoah.example.com/t HTTP/1.1\r\nHost: example.com\r\n"+
+			"Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"); err != nil {
+			t.Fatal(err)
+		}
+		trickles[i] = c
+	}
+	for deadline := time.Now().Add(webhookReadTimeout / 2); post() != http.StatusServiceUnavailable; {
+		if time.Now().After(deadline) {
+			t.Fatal("the trickling connections never held every slot")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for deadline := time.Now().Add(4 * webhookReadTimeout); ; time.Sleep(50 * time.Millisecond) {
+		if code := post(); code == http.StatusAccepted {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("the door still answers %d while the trickles stay open", code)
+		}
+	}
+	for i, c := range trickles {
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		line, err := bufio.NewReader(c).ReadString('\n')
+		if err != nil || !strings.HasPrefix(line, "HTTP/1.1 408") {
+			t.Fatalf("trickle %d was answered %q (%v), want 408", i, line, err)
+		}
+	}
+}
+
+// A multipart request is held to four times the inline cap, so its body
+// gets four times the inline read deadline: one sending rate carries either
+// bound in time. A body whose second half arrives two deadlines after its
+// headers is answered 408 when it is JSON and 202 when it is multipart.
+func TestWebhookMultipartBodyGetsItsBoundsShareOfTime(t *testing.T) {
+	t.Parallel()
+	const webhookReadTimeout = 400 * time.Millisecond
+	h := webhookHandlerReading("hook-slow", webhookReadTimeout)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	var form bytes.Buffer
+	mw := multipart.NewWriter(&form)
+	_ = mw.WriteField("transcription", strings.Repeat("buy milk ", 64))
+	_ = mw.Close()
+	slow := func(contentType string, body []byte, finish bool) string {
+		t.Helper()
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = c.Close() }()
+		half := len(body) / 2
+		if _, err := fmt.Fprintf(c, "POST /webhooks/geoah.example.com/t HTTP/1.1\r\nHost: example.com\r\n"+
+			"Content-Type: %s\r\nContent-Length: %d\r\n\r\n%s", contentType, len(body), body[:half]); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * webhookReadTimeout)
+		if finish {
+			if _, err := c.Write(body[half:]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		line, err := bufio.NewReader(c).ReadString('\n')
+		if err != nil {
+			t.Fatalf("%s: read the answer: %v", contentType, err)
+		}
+		return line
+	}
+	if line := slow("application/json", []byte(`{"transcription":"buy milk"}`), false); !strings.HasPrefix(line, "HTTP/1.1 408") {
+		t.Fatalf("a JSON body past its deadline was answered %q, want 408", line)
+	}
+	if line := slow(mw.FormDataContentType(), form.Bytes(), true); !strings.HasPrefix(line, "HTTP/1.1 202") {
+		t.Fatalf("a multipart body inside four deadlines was answered %q, want 202", line)
 	}
 }
 

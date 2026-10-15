@@ -77,9 +77,10 @@ function startOfDay(t: number): number {
 }
 
 /** A stamp as a person says it, in the reader's own zone: "Today",
- * "Tomorrow", "Yesterday", a weekday within the coming week, else "3 Oct"
- * ("3 Oct 2025" outside this year). `time` appends the clock ("Today,
- * 14:00"). A value that is not a date comes back as it was. */
+ * "Tomorrow", "Yesterday", a weekday within the coming week, else "Oct 3"
+ * ("Oct 3, 2025" outside this year), month first as every table, chart and
+ * record section says a date. `time` appends the clock ("Today, 14:00"). A
+ * value that is not a date comes back as it was. */
 export function friendlyDate(
   iso: string,
   now = Date.now(),
@@ -95,9 +96,9 @@ export function friendlyDate(
   else if (days === -1) day = "Yesterday"
   else if (days > 1 && days < 7) day = WEEKDAYS[d.getDay()]
   else {
-    day = `${d.getDate()} ${MONTHS[d.getMonth()]}`
+    day = `${MONTHS[d.getMonth()]} ${d.getDate()}`
     if (d.getFullYear() !== new Date(now).getFullYear()) {
-      day += ` ${d.getFullYear()}`
+      day += `, ${d.getFullYear()}`
     }
   }
   if (!opts.time) return day
