@@ -32,8 +32,8 @@ var (
 // the wait for a pool connection nor the wait on the lock.
 //
 // An owner write (ownerFirst: in practice an owner's put, patch or delete of a
-// data record through the API or the console, and every write the webhook
-// door makes before it answers) is not queued: it goes straight
+// data record through the API or the console, and the webhook spool drain's
+// admission of a request the door already answered) is not queued: it goes straight
 // on to the lock, and owner writes do not wait for one another here. It still
 // waits for the transaction holding the lock and at most one admitted
 // background writer; priority never shortens the transaction already holding
@@ -89,12 +89,13 @@ func (ds *dataset) ownerFirst(ctx context.Context, actor substrate.Actor, intern
 type foregroundWritesKey struct{}
 
 // withForegroundWrites marks ctx's writes as owner writes at the write gate,
-// whatever their actor. It is for the internal writes a caller outside the
-// substrate waits on before its answer: the webhook door's admission, which
-// settles the request's blobs and parks it in one transaction. A sender that times out redelivers, and most drop a delivery
-// after a few tries, so those writes cannot queue behind every agent, sync
-// and function effect of the repository. Only the answer's own writes take
-// it: the fire the door spawns runs on its own context, as background.
+// whatever their actor. It is for the internal writes that record a request
+// a caller outside the substrate was already answered for: the webhook spool
+// drain's admission, which settles the request's blobs and parks it in one
+// transaction. The sender holds a 202 for a request that is in no list until
+// that commit, so it cannot queue behind every agent, sync and function
+// effect of the repository. Only the admission takes it: the fire the drain
+// spawns runs on its own context, as background.
 func withForegroundWrites(ctx context.Context) context.Context {
 	return context.WithValue(ctx, foregroundWritesKey{}, true)
 }

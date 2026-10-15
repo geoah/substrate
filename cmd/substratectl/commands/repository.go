@@ -138,6 +138,9 @@ from a snapshot still reads every byte.
 			fmt.Fprintf(a.out, "  sealed:    %d file(s), every one opened under %s\n", report.SealedFiles, credentialKeyEnv)
 			fmt.Fprintf(a.out, "  blobs:     %d copied (%d bytes), each hashed against its digest, and %d linked from the base\n",
 				report.Blobs-report.LinkedBlobs, report.BlobBytes, report.LinkedBlobs)
+			if report.WebhookSpool > 0 {
+				fmt.Fprintf(a.out, "  spool:     %d webhook request(s) answered and not yet in the changelog\n", report.WebhookSpool)
+			}
 			fmt.Fprintf(a.out, "  took:      %s\n", report.Took.Round(time.Millisecond))
 			return nil
 		},

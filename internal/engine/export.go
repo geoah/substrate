@@ -60,6 +60,11 @@ type export struct {
 	activeBytes int64
 	sealed      []changelogfile.SealedRecord
 	blobs       []storedBlob
+	// spool is the webhook requests answered and not yet drained at the
+	// point (decision 0167), read under the mutex: a drain deletes a file
+	// after its commit, so one listed here is either not in the changelog
+	// the archive holds or is found there by the restored drain.
+	spool []spoolCopy
 }
 
 // Export pins the repository's committed point (substrate.Exporter). It takes
@@ -150,6 +155,9 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	if e.blobs, err = storedBlobs(ctx, conn); err != nil {
 		return nil, err
 	}
+	if e.spool, err = spoolFilesForCopy(ds.dir); err != nil {
+		return nil, err
+	}
 	digests := make([]string, 0, len(e.blobs))
 	for _, b := range e.blobs {
 		digests = append(digests, b.digest)
@@ -178,8 +186,9 @@ func (e *export) Point() substrate.ExportPoint { return e.point }
 // WriteTo streams the tar (substrate.Export) and releases the repository's
 // export slot when it returns, however it returns. The order is the order a
 // restore needs and the order the operator's snapshot copies: the manifest,
-// the changelog, the sealed files, the blob bytes, and snapshot.json last, so
-// an archive that ends early lacks the file that vouches for it.
+// the changelog, the sealed files, the blob bytes, the webhook spool, and
+// snapshot.json last, so an archive that ends early lacks the file that
+// vouches for it.
 func (e *export) WriteTo(w io.Writer) (int64, error) {
 	defer e.ds.exporting.Store(false)
 	cw := &countingWriter{w: w}
@@ -231,6 +240,19 @@ func (e *export) write(tw *tar.Writer) error {
 		}
 		if err := e.writeBytes(tw, path.Join(sealed, changelogfile.SealedFileName(rec.Ref)), append(data, '\n')); err != nil {
 			return err
+		}
+	}
+	if len(e.spool) > 0 {
+		spool := path.Join(root, changelogfile.SpoolSubdir)
+		if err := tw.WriteHeader(&tar.Header{
+			Typeflag: tar.TypeDir, Name: spool + "/", Mode: 0o700, ModTime: e.point.TakenAt, Format: tar.FormatPAX,
+		}); err != nil {
+			return err
+		}
+		for _, f := range e.spool {
+			if err := e.writeBytes(tw, path.Join(spool, f.name), f.data); err != nil {
+				return err
+			}
 		}
 	}
 	if len(e.blobs) > 0 {

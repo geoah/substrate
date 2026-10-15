@@ -1180,12 +1180,12 @@ reach the server.
 
 | Answer | When |
 | --- | --- |
-| `202 {"fire": "hook-…"}` | the request is recorded in the repository's changelog and the fire is on its way; a restart resumes it under the same id, which names its `triggerrun` row |
+| `202 {"fire": "hook-…"}` | the request is on disk in the repository's spool, sealed; a drain records it in the changelog and starts the fire, and a restart drains and resumes it under the same id, which names its `triggerrun` row |
 | `404 not_found` | no such repository, trigger or key, a disabled trigger, or a trigger of another source: one answer for all of them, given before the body is read |
 | `400` | a multipart body the server cannot parse, or a body not received within 30 seconds (2 minutes for multipart) |
 | `413` | a non-multipart body over 1 MiB, or a multipart request over 32 MiB |
 | `431` | headers over 16 KiB |
-| `503` + `Retry-After` | more than eight deliveries in flight |
+| `503` + `Retry-After` | more than eight deliveries in flight, or the repository's spool holds 10,000 requests or 256 MiB that the drain has not recorded |
 
 A multipart/form-data request's file parts are stored in the repository's
 blob store (`PUT /api/v1/blobs`) before the fire; the callable reads their

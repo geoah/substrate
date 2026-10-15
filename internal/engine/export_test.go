@@ -581,12 +581,35 @@ func ReceiveWebhookSync(ctx context.Context, svc substrate.Service, authority, t
 	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, webhookFireInline)
 }
 
-// ReceiveWebhookHeld is the public webhook door stopped right after its
-// answer: the request is admitted and recorded, the fire id returned, and
-// nothing fires, the state a process leaves when it dies after the 202. A
-// test reopens the service to show the next open resumes it.
+// ReceiveWebhookHeld is the public webhook door with the drain run inline
+// and stopped right after it: the request is recorded as a pending entry,
+// the fire id returned, and nothing fires, the state a process leaves when
+// it dies between the drain's commit and the fire. A test reopens the
+// service to show the next open resumes it.
 func ReceiveWebhookHeld(ctx context.Context, svc substrate.Service, authority, trigger, key string, req substrate.WebhookRequest) (string, error) {
 	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, webhookFireHeld)
+}
+
+// ReceiveWebhookSpooled is the public webhook door stopped right after its
+// 202: the request is in the spool and nothing has drained it, the state a
+// process leaves when it dies between the answer and the drain.
+func ReceiveWebhookSpooled(ctx context.Context, svc substrate.Service, authority, trigger, key string, req substrate.WebhookRequest) (string, error) {
+	return svc.(*service).receiveWebhook(ctx, authority, trigger, key, req, webhookFireSpooled)
+}
+
+// WithWebhookSpoolBounds sets the per-repository spool bounds for one test.
+// The bounds are process-wide, so a test that calls it is not parallel.
+func WithWebhookSpoolBounds(t interface{ Cleanup(func()) }, maxEntries int, maxBytes int64) {
+	prevEntries, prevBytes := webhookSpoolMaxEntries, webhookSpoolMaxBytes
+	webhookSpoolMaxEntries, webhookSpoolMaxBytes = maxEntries, maxBytes
+	t.Cleanup(func() { webhookSpoolMaxEntries, webhookSpoolMaxBytes = prevEntries, prevBytes })
+}
+
+// SpoolStatsOf is the webhook spool's reading for one repository, as its
+// metrics report it.
+func SpoolStatsOf(ds substrate.Dataset) (entries int, bytes int64, oldest time.Time) {
+	st := ds.(*dataset).spoolStats()
+	return st.Entries, st.Bytes, st.Oldest
 }
 
 // WebhookPendingError is the error a recorded webhook request carries under

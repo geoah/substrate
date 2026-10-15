@@ -1116,17 +1116,24 @@ repository.
   `request`, a record trigger drains its backlog to head (the dispatcher's per-trigger
   budget does not apply), a schedule checks its due occurrence.
 - `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
-  request in the envelope, `202` with `{"fire": id}` once the request is
-  recorded in the repository's changelog and the fire is handed to the
-  background, and one `404` for every refusal (no such trigger, disabled,
-  wrong key). The callable's output is never the response. The record is a
-  `delivery` entry that lists the request under the trigger's parked
-  failures as `delivery accepted` until the fire settles
-  ([decision 0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)):
-  a server that stops after the `202`, or while the fire runs and before its
-  effects commit, runs the fire again under the same id on its trigger
-  dispatcher's next pass over the repository (an operator's process never
-  does), and a fire that fails parks the same entry. An agent
+  request in the envelope, `202` with `{"fire": id}` once the request is on
+  disk in the repository's spool, and one `404` for every refusal (no such
+  trigger, disabled, wrong key). The callable's output is never the
+  response. The spooled file is the request narrowed as the changelog
+  records it (below), sealed under the repository's data-encryption key and
+  fsynced before the answer, so the answer never waits for the changelog
+  lock ([decision 0167](decisions/0167-the-webhook-door-answers-after-a-sealed-spool-write.md)).
+  A drain records each spooled request in arrival order as a `delivery`
+  entry that lists it under the trigger's parked failures as `delivery
+  accepted` until the fire settles, deletes the file, and starts the fire
+  ([decision 0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)).
+  Until the drain has recorded it, a request is in no list and no count, and
+  a full spool (10,000 requests or 256 MiB per repository) answers `503`
+  with `Retry-After`. A server that stops after the `202` drains the spool
+  on its trigger dispatcher's next pass over the repository, and one that
+  stops while the fire runs, before its effects commit, runs the fire again
+  under the same id on that pass (an operator's process does neither); a
+  fire that fails parks the same entry. An agent
   callable's fire claims that entry before its loop, so one interrupted
   mid-loop is parked as interrupted and rerun once, like every agent
   delivery (next item).
@@ -1179,7 +1186,7 @@ repository.
   ([decision 0142](decisions/0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)). A
   failure's id is the seq of the changelog entry that parked it, so it
   survives a restore ([backups](operations.md#backups)). A webhook request
-  is recorded there minus what a replay does not need, from the `202` on:
+  is recorded there minus what a replay does not need, from its drain on:
   only the headers that describe the body (`content-type`, `content-length`,
   `content-encoding`, `user-agent`, `date`) and the ones the trigger declares
   in `source.webhook.headers` are kept, the query string is dropped, and the

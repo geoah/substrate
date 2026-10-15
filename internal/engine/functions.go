@@ -225,12 +225,17 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	if err := ds.sweepPagedCursors(ctx); err != nil {
 		ds.svc.log.Warn("substrate: sweeping orphaned paged cursors", "error", err)
 	}
-	// The webhook requests the door recorded and nothing fired: a stop after
-	// the 202 or mid-fire, a restore, a trigger that runs again. Detached,
+	// The webhook requests the drain recorded and nothing fired: a stop
+	// after the drain or mid-fire, a restore, a trigger that runs again. Detached,
 	// so a slow fire does not hold the pass (webhooks.go resumeWebhooks).
 	// The spend caps are read again once per pass, so a raised cap or a
 	// window that rolled on resumes a held trigger at the next pass.
 	ds.spend.expire()
+	// The spooled webhook requests first: a drain records each one as a
+	// pending entry, which the resume below or the drain's own spawn fires
+	// (webhookspool.go kickSpoolDrain). The first pass after a restart is
+	// what drains the spool the last process left.
+	ds.kickSpoolDrain()
 	ds.resumeWebhooks()
 	// The agent deliveries the last stop interrupted, rerun once at the
 	// open's first pass. Detached for the same reason as the resume

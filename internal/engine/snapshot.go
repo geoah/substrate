@@ -66,8 +66,11 @@ type SnapshotReport struct {
 	// KnownHead is the seq ending the run of segments the base holds as the
 	// source does (VerifyReport.KnownHead): the table was compared with the
 	// files from it on, and below it only when the base was taken.
-	KnownHead int64         `json:"knownHead,omitempty"`
-	Took      time.Duration `json:"took"`
+	KnownHead int64 `json:"knownHead,omitempty"`
+	// WebhookSpool is how many webhook requests the copy carries that the
+	// server answered and had not recorded in the changelog (decision 0167).
+	WebhookSpool int           `json:"webhookSpool,omitempty"`
+	Took         time.Duration `json:"took"`
 }
 
 // SnapshotOptions tunes SnapshotRepositoryWith.
@@ -279,6 +282,20 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 	}
 	report.SealedFiles = len(files)
 
+	// The server is stopped, so the spool holds exactly the requests it
+	// answered and did not record (decision 0167); the copy carries them for
+	// the restored server's first dispatcher pass to drain.
+	spooled, err := spoolFilesForCopy(src)
+	if err != nil {
+		return "", err
+	}
+	for _, f := range spooled {
+		if err := changelogfile.WriteSpoolFile(partial, f.name, f.data); err != nil {
+			return "", fmt.Errorf("substrate/engine: copy spool/%s: %w", f.name, err)
+		}
+	}
+	report.WebhookSpool = len(spooled)
+
 	blobs, err := storedBlobs(ctx, ds.db)
 	if err != nil {
 		return "", err
@@ -339,6 +356,9 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 	if err := s.checkCopiedSealed(ds, partial, files); err != nil {
 		return "", err
 	}
+	if err := checkCopiedSpool(partial, spooled); err != nil {
+		return "", err
+	}
 	if err := checkCopiedBlobs(ctx, tmpRoot, repo, toCopy); err != nil {
 		return "", err
 	}
@@ -350,6 +370,21 @@ func (s *service) buildSnapshot(ctx context.Context, ds *dataset, repo Repositor
 		return "", err
 	}
 	return partial, nil
+}
+
+// checkCopiedSpool reads every copied spool file back and holds it to the
+// source's bytes.
+func checkCopiedSpool(partial string, spooled []spoolCopy) error {
+	for _, f := range spooled {
+		data, err := changelogfile.ReadSpoolFile(partial, f.name)
+		if err != nil {
+			return fmt.Errorf("%w: spool/%s: %w", ErrSnapshotCopyDamaged, f.name, err)
+		}
+		if !bytes.Equal(data, f.data) {
+			return fmt.Errorf("%w: spool/%s differs from the source", ErrSnapshotCopyDamaged, f.name)
+		}
+	}
+	return nil
 }
 
 // checkCopiedSealed reads every sealed file of the copy and holds each to the
