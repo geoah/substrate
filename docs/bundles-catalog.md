@@ -1148,14 +1148,17 @@ write.
   to the next invocation. Its phases run in this order: `auth.test`,
   `team.info`, `users.list`, `conversations.list`, `conversations.info`,
   `conversations.history`, `conversations.replies`, `users.info`,
-  `files.info`, `bots.info`, `conversations.members`. `postmessage` posts one
+  `files.info`, `bots.info`, `conversations.members`. The same function
+  applies a batch of live events when a webhook delivers one; see
+  [live events](#live-events). `postmessage` posts one
   message, at the top level or in a thread; see
   [writing to Slack](#writing-to-slack).
-- **Triggers (3)**: `slack-messages-on-connect` fires on an account whose
+- **Triggers (4)**: `slack-messages-on-connect` fires on an account whose
   `enabledMessages` is true and which carries no `lastSyncedAt`;
   `slack-messages-scheduled` fires every 15 minutes and takes the account
   when it is due; `slack-messages-on-demand` fires while `syncRequestedAt`
-  differs from `syncRequestedAck`.
+  differs from `syncRequestedAck`; `slack-events` is the webhook a Socket
+  Mode sidecar posts live events to.
 - **Mappings**: none shipped. `user` is the identity kind a repository would
   map onto a person, and `profile.email` is the property a mapping matches
   on.
@@ -1286,6 +1289,76 @@ is an archived one's. Rosters are walked only with `enabledMembers` on and
 only for channels, never for DMs or group DMs. A file re-shared into a new
 channel after its row was filled in is not read again, so its `shares` and
 `channels` age.
+
+### Live events
+
+The walk sees a reaction, an edit or a delete only while the message is
+within a day of its conversation's history cursor, so on an older message
+those changes go stale. The `slack-events` webhook trigger takes them live.
+A Slack Socket Mode sidecar, which this repository does not ship, holds the
+websocket, acknowledges each `events_api` envelope, and POSTs batches of
+their payloads to `POST /webhooks/<authority>/slack-events` as
+`Content-Type: application/json`:
+
+```json
+{"version": 1, "events": [{"type": "event_callback", "team_id": "T…", "event_id": "Ev…", "event_time": 1760000000, "event": {"type": "reaction_added", "…": "…"}}]}
+```
+
+`slacksync` applies the batch to the one live account, chosen as the walk
+chooses it, and writes mirror rows only. It moves no `conversationsync`
+cursor and writes no account property (`lastSyncedAt`, `streamCursors` and
+the trait stay the walk's), so a message posted while the socket was down is
+still read by the next walk. A callback whose `team_id` is not the
+account's workspace is ignored, as is an event type the body does not know,
+and an account that has not synced yet (no `team`) or is paused takes
+nothing.
+
+| Event | What it writes |
+| --- | --- |
+| `message`, every subtype | the message, as history writes it; a reply also sets its parent's `latestReply`, `latestReplyAt`, its author in `replyUsers` and the parent's own thread reference. `replyCount` waits for the walk |
+| `message_changed` | the nested message, unless the row holds a later edit |
+| `message_deleted` | deletes the message, when the mirror holds it |
+| `reaction_added`, `reaction_removed` | the message's whole reaction set from `reactions.get` (`full=true`), and the whole message when the mirror never held it. A reaction on a file is skipped |
+| `pin_added`, `pin_removed` | the conversation joins or leaves the message's `pinnedTo`, with `pinnedInfo` |
+| `channel_created`, `channel_rename`, `group_rename` | the fields the event carries on the conversation |
+| `channel_archive`, `channel_unarchive`, `group_archive`, `group_unarchive` | `isArchived` |
+| `channel_deleted`, `group_deleted` | nothing: the walk keeps a deleted conversation's row too |
+| `member_joined_channel`, `member_left_channel` | the owner's own `isMember`, and the `members` roster where the row holds one |
+| `user_change`, `team_join` | the whole user, as `users.list` writes it |
+| `file_shared`, `file_change` | the file, read from `files.info` |
+| `file_deleted` | `mode: tombstone` on a mirrored file, as a deleted file's embed reads |
+
+Slack redelivers an event nobody acknowledged and does not promise order, so
+every write is one a batch can repeat or reorder. Within a batch the events
+run in `event_ts` order, a repeated `event_id` runs once, one message's
+reactions are read once, and a message the batch deletes is not written by
+its other events. Reactions come only from `reactions.get`, never from an
+event's copy of the message, and a payload whose edit is older than the
+row's is not written. A message whose conversation the mirror does not hold
+yet gets the conversation from `conversations.info`, or a row holding only
+its id when Slack refuses. `conversationFilter` holds back messages and
+reactions in the conversations it excludes. One order is not covered: a
+`message` event that arrives in a later batch than its own
+`message_deleted` (a sidecar re-posting an older batch after a newer one)
+writes the message back, and the walk does not delete it again. A sidecar
+keeps its batches in order by retrying a refused POST before it sends the
+next.
+
+A batch is bounded like a walk. One invocation starts no Slack call after
+10 seconds or 20 calls and pages the rest of the batch to the next; the
+whole batch makes at most 150 calls in 75 seconds. A 429 (or a
+`retryNotBefore` the walk was given) ends the batch's calls: the events that
+need no call are still applied, and the ones that need one are left to the
+walk. A Slack refusal of one target (`message_not_found`, `missing_scope`
+when the user token lacks `reactions:read`) skips that event and the batch
+goes on. Every delivery logs one line counting what it applied, skipped and
+ignored.
+
+The trigger ships without a key, so the endpoint takes any POST that reaches
+the server. A deployment reachable from outside sets `source.webhook.key` on
+the trigger record (16 to 128 characters of `[A-Za-z0-9_-]`), and the
+sidecar posts to `/webhooks/<authority>/slack-events/<key>`. Applying
+`triggers.yaml` again replaces `source` and drops the key.
 
 ### Writing to Slack
 

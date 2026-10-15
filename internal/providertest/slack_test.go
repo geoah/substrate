@@ -53,14 +53,21 @@ type fakeSlack struct {
 	// threads is every conversations.replies call, "<channel> <thread ts>",
 	// in order.
 	threads []string
+	// messages maps "<channel> <ts>" to the message reactions.get answers
+	// for it, reactions included; a message with no entry is
+	// `message_not_found`.
+	messages map[string]map[string]any
+	// limited makes reactions.get answer 429.
+	limited bool
 }
 
 func newFakeSlack(t *testing.T) *fakeSlack {
 	t.Helper()
 	f := &fakeSlack{
-		history: map[string][]map[string]any{},
-		replies: map[string][]map[string]any{},
-		refuse:  map[string]string{},
+		history:  map[string][]map[string]any{},
+		replies:  map[string][]map[string]any{},
+		refuse:   map[string]string{},
+		messages: map[string]map[string]any{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +135,18 @@ func newFakeSlack(t *testing.T) *fakeSlack {
 			writeJSON(w, map[string]any{"ok": true, "file": map[string]any{
 				"id": q.Get("file"), "name": "file " + q.Get("file"), "comments_count": 0,
 			}})
+		case "reactions.get":
+			if f.limited {
+				w.Header().Set("Retry-After", "30")
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+			msg, ok := f.messages[q.Get("channel")+" "+q.Get("timestamp")]
+			if !ok || q.Get("full") != "true" {
+				writeJSON(w, map[string]any{"ok": false, "error": "message_not_found"})
+				return
+			}
+			writeJSON(w, map[string]any{"ok": true, "type": "message", "channel": q.Get("channel"), "message": msg})
 		case "bots.info":
 			writeJSON(w, map[string]any{"ok": true, "bot": map[string]any{
 				"id": q.Get("bot"), "name": "bot " + q.Get("bot"),
