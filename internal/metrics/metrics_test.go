@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"testing"
+	"time"
 )
 
 // noConnector is a pool that never dials: the collector only reads the
@@ -91,5 +92,39 @@ func TestPoolStatsArePublishedAndDropped(t *testing.T) {
 	unregister()
 	if _, ok := value(); ok {
 		t.Fatal("the pool's series outlived its unregister")
+	}
+}
+
+// A repository's webhook spool publishes its depth, bytes and oldest age
+// under its name, and its unregister takes the three away.
+func TestWebhookSpoolGauges(t *testing.T) {
+	oldest := time.Now().Add(-90 * time.Second)
+	unregister := RegisterWebhookSpool("spool.example.com", func() SpoolStats {
+		return SpoolStats{Entries: 3, Bytes: 4096, Oldest: oldest}
+	})
+	read := func() map[string]float64 {
+		families, err := Registry.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]float64{}
+		for _, f := range families {
+			for _, m := range f.GetMetric() {
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "repository" && l.GetValue() == "spool.example.com" && m.GetGauge() != nil {
+						out[f.GetName()] = m.GetGauge().GetValue()
+					}
+				}
+			}
+		}
+		return out
+	}
+	got := read()
+	if got["substrate_webhook_spool_entries"] != 3 || got["substrate_webhook_spool_bytes"] != 4096 || got["substrate_webhook_spool_oldest_age_seconds"] < 90 {
+		t.Fatalf("spool gauges = %v", got)
+	}
+	unregister()
+	if got := read(); len(got) != 0 {
+		t.Fatalf("spool gauges after the unregister = %v", got)
 	}
 }

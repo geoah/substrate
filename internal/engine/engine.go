@@ -1180,7 +1180,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.
-	ds.unregisterMetrics = metrics.RegisterDBStats("repository:"+repo.ID, db)
+	unregisterDB := metrics.RegisterDBStats("repository:"+repo.ID, db)
+	unregisterSpool := metrics.RegisterWebhookSpool(repo.ID, ds.spoolStats)
+	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool() }
 	return ds, nil
 }
 

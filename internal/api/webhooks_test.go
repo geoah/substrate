@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -149,6 +150,16 @@ func TestWebhookRefusals(t *testing.T) {
 	rec := postHook(h, "/webhooks/geoah.example.com/nope", []byte("{}"), nil)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not_found") {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A repository whose webhook spool is full answers unavailable, which the
+// door says as 503 with Retry-After, so the sender redelivers later.
+func TestWebhookSpoolFullIsUnavailableWithRetryAfter(t *testing.T) {
+	_, h := webhookHandler("", fmt.Errorf("%w: the webhook spool of this repository is full; retry later", substrate.ErrUnavailable))
+	rec := postHook(h, "/webhooks/geoah.example.com/t", []byte("{}"), map[string]string{"Content-Type": "application/json"})
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("status = %d, Retry-After = %q: %s", rec.Code, rec.Header().Get("Retry-After"), rec.Body.String())
 	}
 }
 

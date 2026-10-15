@@ -29,10 +29,11 @@ import (
 // changefeed.go ChangesBefore), a trigger's own read hides it from the source
 // match (functions.go matchChanges), and it is never on the wire.
 //
-// The public webhook door writes the ledger too: a request it admits is a
-// parked failure carrying pendingWebhookError from before the 202 until its
-// fire settles, and the fire is that row's retry (webhooks.go admitWebhook,
-// fireWebhook, resumeWebhooks; decision 0068).
+// The public webhook door writes the ledger too, through its spool's drain:
+// a request it admits is a parked failure carrying pendingWebhookError from
+// the drain until its fire settles, and the fire is that row's retry
+// (webhooks.go admitWebhook, fireWebhook, resumeWebhooks; webhookspool.go;
+// decisions 0068 and 0167).
 //
 // One column is carried whole only where a restore needs it: a paged drain's
 // cursor (decision 0141). A provider cursor runs to hundreds of kilobytes and

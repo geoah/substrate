@@ -230,7 +230,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0065](0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md) | A snapshot is a stopped-server copy that records its head and lists what it needs | accepted |
 | [0066](0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md) | A backfill and an enum remap are ordinary record writes, composed with the rename | accepted |
 | [0067](0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md) | A lossy conversion runs only with a confirmation bound to its preview | accepted |
-| [0068](0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md) | An accepted webhook request is a pending entry in the delivery ledger before its `202` | accepted |
+| [0068](0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md) | An accepted webhook request is a pending entry in the delivery ledger before its `202` | superseded |
 | [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | accepted |
 | [0070](0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md) | A sample copy is upgraded through its origin stamp, and `requiresAtLeast` pins a floor under a requirement | accepted |
 | [0071](0071-a-webhook-url-names-the-repository-by-its-authority.md) | A webhook URL names the repository by its authority | accepted |
@@ -312,3 +312,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0151](0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md) | An agent delivery a restart interrupted is rerun once, at the first pass after the restart | proposed |
 | [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md) | A hand retry writes a run row, and the newest ok run outlives retention | proposed |
 | [0165](0165-a-commit-in-doubt-is-caught-up-by-the-next-write-and-no-write-grant-names-the-owners-auth-kinds.md) | A commit in doubt is caught up by the next write, and no write grant names the owner's auth kinds | accepted |
+| [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |

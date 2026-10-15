@@ -154,7 +154,7 @@ boot.
 | `SUBSTRATE_HEALTH_FAILING_AFTER` | `1h`                              | How long every delivery of a trigger must have parked, since its newest `ok` run, before the dispatcher opens its `trigger.failing/<trigger id>` alert and `trigger status` and `sync status` read `failing`. The next `ok` delivery, dispatched or retried by hand, resolves the alert whatever the window. Zero or negative refuses the boot, naming the variable. See [driving triggers](functions.md#driving-triggers). |
 | `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; a copied directory moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
-| `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}` and the Go runtime. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
+| `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}`, the webhook spool's `substrate_webhook_spool_entries`, `substrate_webhook_spool_bytes` and `substrate_webhook_spool_oldest_age_seconds` gauges and its `substrate_webhook_spool_drain_failures_total` and `substrate_webhook_spool_refusals_total` counters (all by `repository`: a growing age or a rising failure count is a drain that cannot record, and refusals are the door answering `503`), and the Go runtime. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. With a callback URL set and this unset, the server mints a random key per boot and warns: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers. Unset, the OAuth facility is off and no flow can start. |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
@@ -187,6 +187,8 @@ $SUBSTRATE_DATA_ROOT/
         blob-sha256-<hex>           # the bytes, content addressed (the fs blob store)
       sealed/
         secret-<hex>.json           # one file per sealed row: the ref with ':' as '-'
+      spool/
+        <ordinal>-hook-<id>.webhook # a webhook request answered 202 and not yet in the changelog, sealed under the DEK
 ```
 
 The changelog segments are newline-delimited JSON, one entry per line, each
@@ -1079,6 +1081,19 @@ retaken. A cron running this is enough:
 rsync -a --delete "$SUBSTRATE_DATA_ROOT"/ backup-host:/srv/substrate-backup/
 ```
 
+**The webhook spool rides with the directory.** `spool/` holds the webhook
+requests the door answered `202` and the drain has not recorded in the
+changelog yet, each sealed under the repository's DEK
+([decision 0167](decisions/0167-the-webhook-door-answers-after-a-sealed-spool-write.md)).
+A snapshot copies it with the server stopped, and an export reads it under
+the writer mutex that pins its point, so both carry every request answered
+before the point, and the restored server's first trigger dispatcher pass
+drains them. A file whose request the copied changelog already holds is
+deleted and delivers nothing twice. A live copy has one more window than the
+four above: `rsync` reads `changelog/` before `spool/`, so a request the
+drain records between those two reads is in neither, and `repository verify`
+cannot see the gap. Where that matters, take a snapshot or an export.
+
 **A snapshot is a copy with a recorded point, taken with the server stopped.**
 [`repository snapshot <repository> <destination root>`](#operator-recovery)
 writes `<destination root>/repositories/<authority>/`, the layout a data root
@@ -1315,6 +1330,9 @@ settled: the server's first trigger dispatcher pass over the restored
 repository runs each one under its original fire id, with the body read back
 from the blob store
 ([decision 0068](decisions/0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md)).
+A request answered and not yet recorded is a file under `spool/`, which the
+same pass drains into the changelog first
+([decision 0167](decisions/0167-the-webhook-door-answers-after-a-sealed-spool-write.md)).
 A record trigger comes back at the last delivery it acknowledged, or at its
 last edit if that is later, and the next pass re-reads the rows after it,
 which matched nothing under the source that scanned them, so nothing is

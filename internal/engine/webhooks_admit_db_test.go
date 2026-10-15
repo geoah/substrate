@@ -168,7 +168,7 @@ func TestAWebhookStagedButNotRecordedLeavesASweepableOrphan(t *testing.T) {
 
 	body := []byte(`{"say":"staged, then the process stopped"}`)
 	digest := blobDigest(body)
-	if _, err := ds.stageWebhook(ctx, tr, jsonDelivery(string(body)), ds.stageBlobs(actorWebhook)); err != nil {
+	if _, err := ds.stageWebhook(ctx, tr.WebhookHeaders, jsonDelivery(string(body)), "hook-staged", nowUTC(), ds.stageBlobs(actorWebhook)); err != nil {
 		t.Fatalf("stage: %v", err)
 	}
 	store, err := ds.blobBytes()
@@ -227,7 +227,7 @@ func TestAWebhookRecordPutsBackBytesSweptAfterTheStage(t *testing.T) {
 	body := []byte(`{"say":"swept before the commit"}`)
 	digest := blobDigest(body)
 	blobs := ds.stageBlobs(actorWebhook)
-	row, err := ds.stageWebhook(ctx, tr, jsonDelivery(string(body)), blobs)
+	row, err := ds.stageWebhook(ctx, tr.WebhookHeaders, jsonDelivery(string(body)), "hook-swept", nowUTC(), blobs)
 	if err != nil {
 		t.Fatalf("stage: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestAWebhookRecordPutsBackBytesSweptAfterTheStage(t *testing.T) {
 	if err := store.Delete(ctx, digest); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.recordWebhook(ctx, tr, row, blobs); err != nil {
+	if _, err := ds.recordWebhook(ctx, tr.ID, row, blobs, 0); err != nil {
 		t.Fatalf("record: %v", err)
 	}
 	if _, data, err := ds.GetBlob(ctx, digest); err != nil || string(data) != string(body) {

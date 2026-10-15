@@ -186,6 +186,9 @@ type dataset struct {
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
 	resumingWebhooks atomic.Bool
+	// spool is the webhook requests the door answered and the drain has not
+	// recorded yet (webhookspool.go).
+	spool webhookSpool
 	// interruptedRerun is where this open's one walk over the agent
 	// deliveries the last stop interrupted stands (agents.go
 	// rerunInterruptedAgentRuns): rerunNotStarted until a dispatcher pass
@@ -266,8 +269,9 @@ type dataset struct {
 	// row that can no longer be written would otherwise warn on every agent
 	// write for the life of the process.
 	warnedPolicies sync.Map
-	// unregisterMetrics drops this pool's sql.DBStats collector on close;
-	// nil on a dataset that never registered one (creation's seed dataset).
+	// unregisterMetrics drops this pool's sql.DBStats collector and the
+	// webhook spool's gauges on close; nil on a dataset that never
+	// registered them (creation's seed dataset).
 	unregisterMetrics func()
 
 	// reindexFrom is the search index version the open found below this

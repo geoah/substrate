@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -67,7 +68,69 @@ var (
 		Name: "substrate_trigger_deliveries_total",
 		Help: "Trigger deliveries that applied effects, by trigger id.",
 	}, []string{"trigger"})
+
+	// WebhookSpoolDrainFailures counts the spooled webhook requests the drain
+	// tried to record and could not, by repository. A drain that keeps
+	// failing leaves the spool to fill, so a rate above zero is the early
+	// sign of the door answering 503.
+	WebhookSpoolDrainFailures = promauto.With(Registry).NewCounterVec(prometheus.CounterOpts{
+		Name: "substrate_webhook_spool_drain_failures_total",
+		Help: "Spooled webhook requests the drain failed to record in the changelog, by repository.",
+	}, []string{"repository"})
+
+	// WebhookSpoolRefusals counts the webhook requests the door answered 503
+	// because the repository's spool was at its cap.
+	WebhookSpoolRefusals = promauto.With(Registry).NewCounterVec(prometheus.CounterOpts{
+		Name: "substrate_webhook_spool_refusals_total",
+		Help: "Webhook requests refused because the repository's spool was full, by repository.",
+	}, []string{"repository"})
 )
+
+// SpoolStats is one reading of a repository's webhook spool: the requests it
+// holds, their bytes on disk, and the receipt time of the oldest, zero when
+// it holds none.
+type SpoolStats struct {
+	Entries int
+	Bytes   int64
+	Oldest  time.Time
+}
+
+var (
+	spoolLabels      = []string{"repository"}
+	spoolEntriesDesc = prometheus.NewDesc("substrate_webhook_spool_entries", "Webhook requests answered and not yet recorded in the changelog.", spoolLabels, nil)
+	spoolBytesDesc   = prometheus.NewDesc("substrate_webhook_spool_bytes", "Bytes the webhook spool holds on disk.", spoolLabels, nil)
+	spoolOldestDesc  = prometheus.NewDesc("substrate_webhook_spool_oldest_age_seconds", "Age of the oldest spooled webhook request, 0 when the spool is empty.", spoolLabels, nil)
+)
+
+type spoolCollector struct {
+	repository string
+	stat       func() SpoolStats
+}
+
+func (c *spoolCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- spoolEntriesDesc
+	ch <- spoolBytesDesc
+	ch <- spoolOldestDesc
+}
+
+func (c *spoolCollector) Collect(ch chan<- prometheus.Metric) {
+	s := c.stat()
+	age := 0.0
+	if !s.Oldest.IsZero() {
+		age = max(time.Since(s.Oldest).Seconds(), 0)
+	}
+	ch <- prometheus.MustNewConstMetric(spoolEntriesDesc, prometheus.GaugeValue, float64(s.Entries), c.repository)
+	ch <- prometheus.MustNewConstMetric(spoolBytesDesc, prometheus.GaugeValue, float64(s.Bytes), c.repository)
+	ch <- prometheus.MustNewConstMetric(spoolOldestDesc, prometheus.GaugeValue, age, c.repository)
+}
+
+// RegisterWebhookSpool publishes stat as the substrate_webhook_spool_*
+// gauges under repository=name, with RegisterDBStats's take-over rule for a
+// repository reopened under the same name, and returns the matching
+// unregister.
+func RegisterWebhookSpool(name string, stat func() SpoolStats) (unregister func()) {
+	return register("webhookspool:"+name, &spoolCollector{repository: name, stat: stat})
+}
 
 // RegisterDBStats publishes a pool's sql.DBStats as the standard go_sql_*
 // gauges under db_name=name (open, idle, in-use, wait count and duration,
