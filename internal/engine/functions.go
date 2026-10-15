@@ -2052,7 +2052,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		payload = pending.Payload
 	} else {
 		var err error
-		if payload, err = ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders); err != nil {
+		if payload, err = ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders, putBlobs{ds}); err != nil {
 			return 0, false, err
 		}
 	}

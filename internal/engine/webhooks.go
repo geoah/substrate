@@ -163,25 +163,30 @@ func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key s
 // the write path makes durable (decision 0062), so a 202 names a request the
 // substrate holds. The row returned is what the fire runs and what a restart
 // resumes.
+//
+// The delivery is one changelog transaction: the blobs' bytes are written
+// before it, holding no lock (stageWebhook), and their manifests are settled
+// inside it, beside the park (recordWebhook), so the sender waits on the
+// changelog lock once.
 func (ds *dataset) admitWebhook(ctx context.Context, tr *trigger, req substrate.WebhookRequest) (foldFailure, error) {
-	parts, err := ds.spoolWebhookParts(ctx, req.Parts)
+	blobs := ds.stageBlobs(actorWebhook)
+	row, err := ds.stageWebhook(ctx, tr, req, blobs)
 	if err != nil {
 		return foldFailure{}, err
 	}
-	wid, err := newID()
-	if err != nil {
-		return foldFailure{}, err
-	}
-	fid := webhookFirePrefix + wid
-	at := nowUTC()
-	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
-	envelope["request"] = webhookRequestEnvelope(req, parts)
-	payload, err := ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders)
-	if err != nil {
-		return foldFailure{}, err
-	}
-	row := foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}
-	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+	return ds.recordWebhook(ctx, tr, row, blobs)
+}
+
+// recordWebhook is admitWebhook's transaction: the staged blobs' manifests,
+// the pending row and its delivery entry. The blob manifests' entries name
+// the webhook actor, the delivery entry the system.
+func (ds *dataset) recordWebhook(ctx context.Context, tr *trigger, row foldFailure, blobs *stagedBlobs) (foldFailure, error) {
+	err := ds.inTx(ctx, actorWebhook, true, func(t *txn) error {
+		// The manifests append before the seq is reserved: the delivery
+		// entry has to be the transaction's last.
+		if err := blobs.settle(t); err != nil {
+			return err
+		}
 		id, err := t.reserveSeq()
 		if err != nil {
 			return err
@@ -196,6 +201,50 @@ func (ds *dataset) admitWebhook(ctx context.Context, tr *trigger, req substrate.
 		return foldFailure{}, fmt.Errorf("substrate: webhook %s: record the request: %w", tr.ID, err)
 	}
 	return row, nil
+}
+
+// stageWebhook is admitWebhook up to its transaction: the request's bytes
+// staged into the blob store and the pending row built around their digests.
+// It writes nothing to the changelog, so a process that stops after it
+// leaves only objects no manifest names, for the orphan sweep.
+func (ds *dataset) stageWebhook(ctx context.Context, tr *trigger, req substrate.WebhookRequest, blobs blobSpool) (foldFailure, error) {
+	parts, err := ds.spoolWebhookParts(ctx, blobs, req.Parts)
+	if err != nil {
+		return foldFailure{}, err
+	}
+	wid, err := newID()
+	if err != nil {
+		return foldFailure{}, err
+	}
+	fid := webhookFirePrefix + wid
+	at := nowUTC()
+	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
+	envelope["request"] = webhookRequestEnvelope(req, parts)
+	payload, err := ds.parkedEnvelope(ctx, envelope, tr.WebhookHeaders, blobs)
+	if err != nil {
+		return foldFailure{}, err
+	}
+	return foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}, nil
+}
+
+// blobSpool is where a webhook request's bytes go before its envelope names
+// them by digest: staged for the admission's transaction to settle
+// (stagedBlobs), or stored outright (putBlobs).
+type blobSpool interface {
+	stage(ctx context.Context, up substrate.BlobUpload, data []byte) (string, error)
+}
+
+// putBlobs is the blobSpool for a park with no transaction of its own to
+// settle manifests in: each blob is stored and its manifest settled before
+// stage returns (PutBlob), under the webhook actor.
+type putBlobs struct{ ds *dataset }
+
+func (s putBlobs) stage(ctx context.Context, up substrate.BlobUpload, data []byte) (string, error) {
+	info, err := s.ds.PutBlob(ctx, actorWebhook, up, data, "")
+	if err != nil {
+		return "", err
+	}
+	return info.Digest, nil
 }
 
 // fireWebhook is the detached half: the pending entry's fire, one
@@ -378,7 +427,7 @@ func (ds *dataset) pendingWebhooks(ctx context.Context, id int64) ([]pendingWebh
 // envelope, which the runner protocol and an agent's user message both
 // bound; the digest does, and dedup by digest makes a sender's retry a no-op
 // on the store.
-func (ds *dataset) spoolWebhookParts(ctx context.Context, parts []substrate.WebhookPart) ([]map[string]any, error) {
+func (ds *dataset) spoolWebhookParts(ctx context.Context, blobs blobSpool, parts []substrate.WebhookPart) ([]map[string]any, error) {
 	if len(parts) == 0 {
 		return nil, nil
 	}
@@ -388,14 +437,14 @@ func (ds *dataset) spoolWebhookParts(ctx context.Context, parts []substrate.Webh
 			out = append(out, map[string]any{"name": p.Name, "value": p.Value})
 			continue
 		}
-		info, err := ds.PutBlob(ctx, actorWebhook,
-			substrate.BlobUpload{Name: blobNameOf(p.Filename), MediaType: p.MediaType}, p.Data, "")
+		digest, err := blobs.stage(ctx,
+			substrate.BlobUpload{Name: blobNameOf(p.Filename), MediaType: p.MediaType}, p.Data)
 		if err != nil {
 			return nil, fmt.Errorf("substrate: webhook part %q: %w", p.Name, err)
 		}
 		part := map[string]any{
 			"name": p.Name, "filename": p.Filename, "mediaType": p.MediaType,
-			"size": info.Size, "blob": info.Digest,
+			"size": int64(len(p.Data)), "blob": digest,
 		}
 		out = append(out, part)
 	}
@@ -479,7 +528,7 @@ func parkedHeaderKept(name string, declared map[string]bool) bool {
 // held against the orphan sweep while the row stands (blobs.go
 // parkedBlobsSQL) and collected once it retires. The changelog line holds
 // the digest and never the body.
-func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any, declared map[string]bool) (json.RawMessage, error) {
+func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any, declared map[string]bool, blobs blobSpool) (json.RawMessage, error) {
 	if envelope == nil {
 		return nil, nil
 	}
@@ -508,14 +557,14 @@ func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any, 
 			copied["query"] = map[string]any{}
 		}
 		if body, ok := req["body"].(map[string]any); ok {
-			spooled, err := ds.spoolParkedBody(ctx, body, req)
+			spooled, err := spoolParkedBody(ctx, blobs, body, req)
 			if err != nil {
 				return nil, err
 			}
 			copied["body"] = spooled
 		}
 		if parts, ok := req["parts"].([]any); ok {
-			spooled, err := ds.spoolParkedParts(ctx, parts)
+			spooled, err := spoolParkedParts(ctx, blobs, parts)
 			if err != nil {
 				return nil, err
 			}
@@ -530,12 +579,12 @@ func (ds *dataset) parkedEnvelope(ctx context.Context, envelope map[string]any, 
 	return raw, nil
 }
 
-// spoolParkedBody stores a delivered body's bytes content-addressed under
-// the webhook actor and returns the reference the parked envelope carries:
+// spoolParkedBody stores a delivered body's bytes content-addressed through
+// blobs and returns the reference the parked envelope carries:
 // `{blob, encoding}`, the encoding saying whether the callable read it as
 // `text` or `base64`, so the retry rebuilds the same shape. A body already
 // referenced (a re-park of a retried failure) passes through.
-func (ds *dataset) spoolParkedBody(ctx context.Context, body, req map[string]any) (map[string]any, error) {
+func spoolParkedBody(ctx context.Context, blobs blobSpool, body, req map[string]any) (map[string]any, error) {
 	if _, referenced := body["blob"]; referenced {
 		return body, nil
 	}
@@ -556,11 +605,11 @@ func (ds *dataset) spoolParkedBody(ctx context.Context, body, req map[string]any
 		return body, nil
 	}
 	mediaType, _ := req["contentType"].(string)
-	info, err := ds.PutBlob(ctx, actorWebhook, substrate.BlobUpload{MediaType: mediaType}, data, "")
+	digest, err := blobs.stage(ctx, substrate.BlobUpload{MediaType: mediaType}, data)
 	if err != nil {
 		return nil, fmt.Errorf("substrate: parked body: %w", err)
 	}
-	return map[string]any{"blob": info.Digest, "encoding": encoding}, nil
+	return map[string]any{"blob": digest, "encoding": encoding}, nil
 }
 
 // spoolParkedParts is the multipart half of the parking policy: a file part
@@ -569,7 +618,7 @@ func (ds *dataset) spoolParkedBody(ctx context.Context, body, req map[string]any
 // transcript, goes the same way, stored content-addressed and named as
 // `valueBlob`. Name, filename, media type and size stay in the entry; no
 // value does. A part already referenced (a re-park) passes through.
-func (ds *dataset) spoolParkedParts(ctx context.Context, parts []any) ([]any, error) {
+func spoolParkedParts(ctx context.Context, blobs blobSpool, parts []any) ([]any, error) {
 	out := make([]any, 0, len(parts))
 	for _, raw := range parts {
 		part, ok := raw.(map[string]any)
@@ -582,7 +631,7 @@ func (ds *dataset) spoolParkedParts(ctx context.Context, parts []any) ([]any, er
 			out = append(out, part)
 			continue
 		}
-		info, err := ds.PutBlob(ctx, actorWebhook, substrate.BlobUpload{MediaType: "text/plain"}, []byte(value), "")
+		digest, err := blobs.stage(ctx, substrate.BlobUpload{MediaType: "text/plain"}, []byte(value))
 		if err != nil {
 			return nil, fmt.Errorf("substrate: parked part %q: %w", part["name"], err)
 		}
@@ -592,7 +641,7 @@ func (ds *dataset) spoolParkedParts(ctx context.Context, parts []any) ([]any, er
 				copied[k] = v
 			}
 		}
-		copied["valueBlob"] = info.Digest
+		copied["valueBlob"] = digest
 		out = append(out, copied)
 	}
 	return out, nil

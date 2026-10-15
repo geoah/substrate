@@ -273,8 +273,8 @@ func TestWritesFinishOnTheSmallestPool(t *testing.T) {
 	waitGateIdle(t, &ds.gate)
 }
 
-// The webhook door's writes before its answer (the body's blob spool and the
-// admission) go past background writers waiting at the gate, as an owner's
+// The webhook door's write before its answer (the admission, which settles
+// the body's blob beside the pending entry) goes past background writers waiting at the gate, as an owner's
 // save does: a sender that times out redelivers, and drops the delivery after
 // a few tries. With the changelog lock held, one background writer parked on
 // it and another queued, a delivery is counted as an owner write and never

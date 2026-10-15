@@ -90,8 +90,8 @@ type foregroundWritesKey struct{}
 
 // withForegroundWrites marks ctx's writes as owner writes at the write gate,
 // whatever their actor. It is for the internal writes a caller outside the
-// substrate waits on before its answer: the webhook door's blob spool and
-// admission. A sender that times out redelivers, and most drop a delivery
+// substrate waits on before its answer: the webhook door's admission, which
+// settles the request's blobs and parks it in one transaction. A sender that times out redelivers, and most drop a delivery
 // after a few tries, so those writes cannot queue behind every agent, sync
 // and function effect of the repository. Only the answer's own writes take
 // it: the fire the door spawns runs on its own context, as background.
