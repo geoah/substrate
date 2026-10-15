@@ -130,17 +130,8 @@ func (ds *dataset) putBlobBytes(ctx context.Context, actor substrate.Actor, stor
 		return nil, err
 	}
 
-	// Re-store nothing: the digest is the content, so bytes already in the
-	// store are the bytes this request holds. The probe also heals a manifest
-	// whose object went missing, by putting them back.
-	held, err := store.Exists(ctx, digest)
-	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: probe blob bytes: %w", err)
-	}
-	if !held {
-		if err := store.Put(ctx, digest, size, bytes.NewReader(data)); err != nil {
-			return nil, fmt.Errorf("substrate/engine: store blob bytes: %w", err)
-		}
+	if err := ensureBlobBytes(ctx, store, digest, data); err != nil {
+		return nil, err
 	}
 
 	err = ds.inTx(ctx, actor, true, func(t *txn) error {
@@ -156,6 +147,103 @@ func (ds *dataset) putBlobBytes(ctx context.Context, actor substrate.Actor, stor
 		Digest: digest, Size: auth.size, Name: auth.name,
 		MediaType: auth.mediaType, Status: substrate.BlobStored,
 	}, nil
+}
+
+// ensureBlobBytes writes data under digest unless the store holds it. Bytes
+// already there are the bytes data holds, since the digest is the content, so
+// nothing is re-stored; the probe also heals a manifest whose object went
+// missing, by putting them back.
+func ensureBlobBytes(ctx context.Context, store blobbytes.Store, digest string, data []byte) error {
+	held, err := store.Exists(ctx, digest)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: probe blob bytes: %w", err)
+	}
+	if held {
+		return nil
+	}
+	if err := store.Put(ctx, digest, int64(len(data)), bytes.NewReader(data)); err != nil {
+		return fmt.Errorf("substrate/engine: store blob bytes: %w", err)
+	}
+	return nil
+}
+
+// stagedBlobs is the blob store path for a writer that commits the manifests
+// in a transaction it already has to open (webhooks.go admitWebhook), so the
+// blobs cost it no transaction of their own: stage writes the bytes, outside
+// any transaction and lock, and settle records each manifest at `stored`
+// inside the caller's transaction. There is no `pending` manifest in between.
+// A crash after stage leaves objects no manifest names, which no read
+// resolves and the orphan sweep removes once they are older than
+// BlobUploadGrace (blobOrphanSweep).
+type stagedBlobs struct {
+	ds    *dataset
+	actor substrate.Actor
+	store blobbytes.Store
+	blobs map[string]stagedBlob
+}
+
+// stagedBlob is one staged blob: its bytes, kept for settle, and what the
+// stager said about them.
+type stagedBlob struct {
+	data      []byte
+	name      string
+	mediaType string
+}
+
+// stageBlobs starts a staging whose manifests name actor as their creator.
+func (ds *dataset) stageBlobs(actor substrate.Actor) *stagedBlobs {
+	return &stagedBlobs{ds: ds, actor: actor, blobs: map[string]stagedBlob{}}
+}
+
+// stage writes data's bytes and returns their digest. The first name and
+// media type a digest is staged with are the ones settle offers, and as in
+// PutBlob they never displace what a stored manifest already says.
+func (s *stagedBlobs) stage(ctx context.Context, up substrate.BlobUpload, data []byte) (string, error) {
+	name, err := checkBlobName(up.Name)
+	if err != nil {
+		return "", err
+	}
+	if s.store == nil {
+		if s.store, err = s.ds.blobBytes(); err != nil {
+			return "", err
+		}
+	}
+	digest := blobDigest(data)
+	if _, staged := s.blobs[digest]; staged {
+		return digest, nil
+	}
+	if err := ensureBlobBytes(ctx, s.store, digest, data); err != nil {
+		return "", err
+	}
+	s.blobs[digest] = stagedBlob{data: data, name: name, mediaType: up.MediaType}
+	return digest, nil
+}
+
+// settle records every staged blob as `stored` inside t, each under its
+// exclusive digest lock, taken in digest order. Under the lock the bytes are
+// probed again and put back when missing: bytes stage found already in the
+// store, older than the grace and named by no manifest, are the orphan
+// sweep's to delete until a manifest names them, and the lock keeps the sweep
+// off them from here to the commit.
+func (s *stagedBlobs) settle(t *txn) error {
+	digests := make([]string, 0, len(s.blobs))
+	for d := range s.blobs {
+		digests = append(digests, d)
+	}
+	sort.Strings(digests)
+	for _, digest := range digests {
+		b := s.blobs[digest]
+		if err := t.lockKey(blobLockKey(digest)); err != nil {
+			return err
+		}
+		if err := ensureBlobBytes(t.ctx, s.store, digest, b.data); err != nil {
+			return err
+		}
+		if err := t.settleBlobRecord(s.actor, digest, int64(len(b.data)), b.name, b.mediaType); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // authoritativeBlobMeta is what a PUT settles and returns: the metadata a
@@ -718,7 +806,9 @@ func (ds *dataset) deleteOrphanBytes(ctx context.Context, store blobbytes.Store,
 // takes, so an upload in flight — which has already committed its `pending`
 // manifest before writing a byte — is never swept out from under. An object
 // younger than BlobUploadGrace is spared as well, which keeps the sweep off
-// the write path of the ordinary case entirely.
+// the write path of the ordinary case entirely, and off the bytes a staged
+// write (stagedBlobs) has put but not yet settled: its settle re-puts,
+// under the same lock, any the sweep reached first.
 func (ds *dataset) blobOrphanSweep(ctx context.Context, store blobbytes.Store) error {
 	ds.mu.Lock()
 	after := ds.blobSweepAfter
