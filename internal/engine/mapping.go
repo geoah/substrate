@@ -412,6 +412,14 @@ func probeValues(srcTy *vocabulary.Kind, src *erow, probe vocabulary.MatchRule) 
 // wrote: a person named `Ada Example` is found by `ada example` only when
 // both ends are folded. The stored side is folded with lower(btrim()) on each
 // live row of the target kind the probe reads.
+//
+// An exact probe reads records_containing (migration 0012) instead, because
+// under row level security no jsonb predicate reaches records_props_idx and a
+// probe runs under the changelog lock. Both ends of a probe are in the
+// short-string family (vocabulary/mapping.go), so every stored value is a JSON
+// string or a list of them, and containment of `{prop: v}` or `{prop: [v]}`
+// is the same set as `->>` equality or list containment. A folded probe has
+// no index to read: it compares a function of the stored value.
 func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values []string, fold bool) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
@@ -432,20 +440,17 @@ func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values
 				SELECT id FROM records
 				WHERE kind = $1 AND deleted_at IS NULL AND lower(btrim(props->>$2)) = lower($3)
 				ORDER BY id`, toIdentity, tp.Name, v)
-		case tp.Repeated:
-			needle, merr := json.Marshal([]string{v})
+		default:
+			var held any = v
+			if tp.Repeated {
+				held = []string{v}
+			}
+			needle, merr := json.Marshal(map[string]any{tp.Name: held})
 			if merr != nil {
 				return nil, merr
 			}
 			rows, err = t.query(`
-				SELECT id FROM records
-				WHERE kind = $1 AND deleted_at IS NULL AND props->$2 @> $3::jsonb
-				ORDER BY id`, toIdentity, tp.Name, needle)
-		default:
-			rows, err = t.query(`
-				SELECT id FROM records
-				WHERE kind = $1 AND deleted_at IS NULL AND props->>$2 = $3
-				ORDER BY id`, toIdentity, tp.Name, v)
+				SELECT id FROM records_containing($1, $2::jsonb) ORDER BY id`, toIdentity, needle)
 		}
 		if err != nil {
 			return nil, err
